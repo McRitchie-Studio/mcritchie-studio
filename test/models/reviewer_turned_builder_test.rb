@@ -45,10 +45,9 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     task = Task.create!(title: "Reviewer Turned Builder Task", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
     Current.task_event_actor = builder || BUILDER_SESSION
-    task.update!(stage: "building",
-                 metadata: { "devops" => task.devops.merge(
-                   ClaimLease.renewed(session: BUILDER_SESSION, nonce: "inst-B")
-                 ) })
+    Current.task_build_claim = true
+    Current.task_event_session = BUILDER_SESSION
+    task.update!(stage: "building")
     Current.reset
     Current.task_event_actor = BUILDER_SESSION
     task.update!(stage: "submitted")
@@ -71,26 +70,29 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     Current.reset
   end
 
-  # `bin/task move <slug> building --actor <soul>` — a deliberate build claim: a fresh
-  # lease for the calling session, and an event actor that NAMES somebody.
+  # `bin/task move <slug> building --actor <soul>` — a deliberate build claim: a
+  # `stage: building` PATCH carrying the calling session, and an event actor that
+  # NAMES somebody.
   def claim_build!(task, actor:, session:)
-    devops = task.reload.devops
+    task.reload
     Current.task_event_actor = actor
-    task.update!(stage: "building", metadata: task.metadata.merge(
-      "devops" => devops.merge(ClaimLease.renewed(session: session, nonce: "inst-R", prior: devops))
-    ))
+    Current.task_build_claim = true
+    Current.task_event_session = session
+    task.update!(stage: "building")
     task.reload
   ensure
     Current.reset
   end
 
-  # `bin/task heartbeat <slug>` — the same lease write with NO actor at all.
+  # An UNNAMED claim — `bin/task move <slug> building` with no --actor.
   def heartbeat!(task, session:)
-    devops = task.reload.devops
-    task.update!(metadata: task.metadata.merge(
-      "devops" => devops.merge(ClaimLease.renewed(session: session, nonce: "inst-R", prior: devops))
-    ))
     task.reload
+    Current.task_build_claim = true
+    Current.task_event_session = session
+    task.update!(stage: "building")
+    task.reload
+  ensure
+    Current.reset
   end
 
   # The loud half of "recorded or refused loudly" is a log line, so one test has to
@@ -107,7 +109,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
 
   def built_by(task) = task.reload.devops["built_by"]
   def authors(task) = task.reload.devops["builders"]
-  def unattributed(task) = task.reload.devops["builders_unattributed"]
 
   # --- THE REGRESSION: THE DOCUMENTED REPAIR --------------------------------
 
@@ -121,7 +122,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     assert_equal "shannon", built_by(task),
                  "the reviewer stated who wrote it; the board must not drop the statement"
     assert_equal ["shannon"], authors(task)
-    assert_nil unattributed(task)
   end
 
   test "the reviewer's repair clears the refusal it was prescribed for" do
@@ -153,7 +153,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
 
     assert_equal ["shannon", "carl"], authors(task),
                  "he is on record as having claimed the build; the set must say so"
-    assert_nil unattributed(task), "he named himself, so nothing here is unattributable"
   end
 
   test "but he never re-points built_by to himself" do
@@ -237,7 +236,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     claim_build!(task, actor: "carl", session: REVIEWER_SESSION)
 
     assert_equal ["shannon", "carl"], authors(task)
-    assert_nil unattributed(task), "he named himself, so nothing here is unattributable"
     assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
     refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "carl"
   end
@@ -270,7 +268,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
 
     assert_equal "shannon", built_by(task)
     assert_equal ["shannon"], authors(task), "a heartbeat names nobody and claims nothing"
-    assert_nil unattributed(task)
   end
 
   # --- THE FAIL-CLOSED DIRECTION ---------------------------------------------
@@ -287,20 +284,7 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
 
     assert_equal "shannon", built_by(task)
     assert_equal ["shannon"], authors(task), "a heartbeat names nobody and claims nothing"
-    assert_nil unattributed(task)
     assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
-  end
-
-  test "an unnamed claim from a session that is NOT reviewing still refuses" do
-    # The refusal has to survive the fix, or the whole mechanism is decoration.
-    task = submitted_task(builder: "shannon")
-    block_for_rework!(task)
-
-    heartbeat!(task, session: STRANGER_SESSION)
-
-    assert_equal STRANGER_SESSION, unattributed(task),
-                 "no review claim means an ordinary anonymous handoff"
-    assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"]
   end
 
   test "a named claim from a session that is NOT reviewing re-points built_by" do

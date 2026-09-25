@@ -5,7 +5,7 @@
 #
 # Why this test exists: until 2026-07-13 the `e2e` tier (shapes ui+db, onchain-vertical)
 # and `e2e_onchain` (shapes onchain, onchain-vertical) were demanded by the shape file
-# and executed by NOTHING — not bin/fast-check, not bin/full-suite-check, not CI, not
+# and executed by NOTHING — not bin/fast-check, not CI, not
 # the G3/G4 release gates. The requirement was satisfied ENTIRELY by a builder typing an
 # `[e2e] ...` string into devops.checks_run, which bin/dor-check then credited. The gate
 # demanded evidence it never collected and accepted a self-declaration in its place —
@@ -30,7 +30,6 @@
 # WHAT COUNTS AS A RUNNER — read before "fixing" a failure here by widening this list.
 # A runner is a file that EXECUTES a command in the pipeline:
 #   · .github/workflows/ci.yml   — the CI verdict (G2), every PR and both shippable tips
-#   · bin/full-suite-check       — the CI-independent local cert (G1)
 #   · bin/fast-check             — the builder's default cert (G1)
 #
 # `config/devops_test_suites.yml` is deliberately NOT a runner. It is a CATALOG, and
@@ -67,7 +66,6 @@ class FeatureShapeTiersTest < Minitest::Test
   FEATURE_SHAPES = File.join(ROOT, "config/feature_shapes.yml")
   CI_YML = File.join(ROOT, ".github/workflows/ci.yml")
   FAST_CHECK = File.join(ROOT, "bin/fast-check")
-  FULL_SUITE_CHECK = File.join(ROOT, "bin/full-suite-check")
 
   # The CANONICAL SPEC — the doc an agent actually reads to size its testing. It carries its
   # own copy of the shape→tiers matrix, and a second copy of a truth is a second place for it
@@ -82,8 +80,8 @@ class FeatureShapeTiersTest < Minitest::Test
   #
   #   unit/component/integration — all three live in test/**, and the minitest sweep runs
   #     every file there: CI's four `rails` shards (their union audited by
-  #     bin/rails-executed-set-check) plus its `system` job, and bin/full-suite-check's
-  #     full lane. One pattern, three tiers: the minitest suite does not
+  #     bin/rails-executed-set-check) plus its `system` job, and bin/fast-check's
+  #     mapped and spine lanes. One pattern, three tiers: the minitest suite does not
   #     distinguish them, and neither can a command matcher. The tier TAG is the
   #     builder's claim about WHICH file they wrote; the LANE is what proves the file
   #     runs. This guard is about the lane.
@@ -147,7 +145,7 @@ class FeatureShapeTiersTest < Minitest::Test
   # The runner corpus: what the pipeline EXECUTES. Note what is absent —
   # config/devops_test_suites.yml. See the header.
   def runner_commands
-    ci_run_commands(File.read(CI_YML)) + [File.read(FAST_CHECK), File.read(FULL_SUITE_CHECK)]
+    ci_run_commands(File.read(CI_YML)) + [File.read(FAST_CHECK)]
   end
 
   # Which runner, if any, executes this tier.
@@ -300,8 +298,8 @@ class FeatureShapeTiersTest < Minitest::Test
 
     assert_empty uncollected,
                  "config/feature_shapes.yml demands tier(s) #{uncollected.inspect} that NO RUNNER " \
-                 "EXECUTES. Nothing in .github/workflows/ci.yml, bin/fast-check, or " \
-                 "bin/full-suite-check runs them, so the requirement is satisfied ENTIRELY by a " \
+                 "EXECUTES. Nothing in .github/workflows/ci.yml or bin/fast-check runs them, " \
+                 "so the requirement is satisfied ENTIRELY by a " \
                  "builder typing '[#{uncollected.first}] ...' into devops.checks_run and " \
                  "bin/dor-check crediting the tag. That is a gate that demands evidence it never " \
                  "collects and accepts a self-declaration in its place. Two honest fixes, no " \
@@ -322,33 +320,6 @@ class FeatureShapeTiersTest < Minitest::Test
   #
   # `test-only` is the shape that breaks the weld. It has NO tiers (a diff with no
   # behavior has nothing for a tier to be evidence of) and it ships EXECUTABLE CODE.
-  # Under the inference it would have inherited a full-suite exemption nobody chose,
-  # invisible in the diff, on the change most able to break the suite quietly — a
-  # zero-tier shape with no executed evidence of any kind, which is precisely the
-  # "shape every under-tested change claims" this taxonomy must never grow.
-  #
-  # So the key is explicit and DEFAULTS TO TRUE (fail-closed), and a shape with no
-  # tiers has to say which it is. The assertion is deliberately about the SHAPES
-  # THAT COULD INHERIT THE BUG — not a hardcoded list of today's two — so the next
-  # zero-tier shape is caught the day it is written.
-  def test_integration_a_shape_with_no_tiers_declares_its_full_suite_gate
-    shapes = YAML.safe_load(File.read(FEATURE_SHAPES)).fetch("shapes")
-    tierless = shapes.reject { |_name, shape| Array(shape["dor_tiers"]).any? }
-
-    refute_empty tierless,
-                 "no zero-tier shape exists any more — if that is deliberate, delete this guard; do NOT " \
-                 "delete the principle that a suite exemption is chosen, never inherited."
-
-    tierless.each do |name, shape|
-      assert shape.key?("full_suite_gate"),
-             "shape #{name.inspect} demands NO tiers and does not declare `full_suite_gate`. " \
-             "bin/dor-check defaults it to TRUE, so nothing is broken right now — but the choice would " \
-             "be invisible, and it used to be INFERRED from the empty tier list, which is how a shape " \
-             "that ships executable code could inherit a full-suite exemption nobody picked. Declare it: " \
-             "`full_suite_gate: false` if this shape ships no code to certify (see `docs`), `true` if it " \
-             "does (see `test-only`)."
-    end
-  end
   # ====================================================================================
 
   def test_integration_no_shape_demands_a_structurally_unrunnable_tier
@@ -513,7 +484,7 @@ class FeatureShapeTiersTest < Minitest::Test
   # The zero-tier shapes are the ones whose contract is light enough that a wrong
   # claim costs real coverage, so each must say what earns it. Asserted about the
   # PROPERTY (no tiers) rather than today's two shapes, so the next zero-tier shape
-  # is caught the day it is written — the same reasoning as the full_suite_gate
+  # is caught the day it is written — the same reasoning as the tier
   # guard above, and the reason `docs` went five weeks unguarded: it predated the
   # rule and nothing asked it to catch up.
   def test_unit_a_shape_with_no_tiers_declares_what_earns_its_claim

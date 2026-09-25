@@ -27,6 +27,7 @@
 #     dor-check grades the TASK's tree. Never the tree you happen to stand in.
 
 require "minitest/autorun"
+require_relative "../../bin/lib/tree_fingerprint"
 require "json"
 require "tmpdir"
 require "fileutils"
@@ -34,7 +35,7 @@ require_relative "../support/session_env"
 require_relative "../support/outbound_seams"
 require_relative "../../bin/lib/control_replay"
 
-load File.expand_path("../../bin/lib/full_suite_gate.rb", __dir__)
+load File.expand_path("../../bin/lib/tree_fingerprint.rb", __dir__)
 
 class DorCheckRootGuardTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
@@ -226,8 +227,8 @@ class DorCheckRootGuardTest < Minitest::Test
 
   def test_integration_a_fresh_control_stamp_reads_fresh_from_the_primary
     with_test_only_projects do |projects, primary, tree|
-      stamp_fp = FullSuiteGate.fingerprint(tree)
-      refute_equal stamp_fp, FullSuiteGate.fingerprint(primary),
+      stamp_fp = TreeFingerprint.working_tree(tree)
+      refute_equal stamp_fp, TreeFingerprint.working_tree(primary),
                    "the two checkouts must hash differently, or this test proves nothing"
 
       verdict, code = control_check(control_task(stamp_fp), primary, projects)
@@ -242,7 +243,7 @@ class DorCheckRootGuardTest < Minitest::Test
     # The guard must not become a rubber stamp: re-rooting fixes WHERE we look, not
     # WHETHER the code changed. Edit the worktree after stamping → still STALE.
     with_test_only_projects do |projects, primary, tree|
-      stamp_fp = FullSuiteGate.fingerprint(tree)
+      stamp_fp = TreeFingerprint.working_tree(tree)
       write(tree, "test/models/widget_test.rb", "assert true # edited after the control ran\n")
 
       verdict, code = control_check(control_task(stamp_fp), primary, projects)

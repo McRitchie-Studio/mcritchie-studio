@@ -41,7 +41,7 @@ class PresenceClaimTest < Minitest::Test
 
   # The whole design rests on this pair. A pid alone is a recyclable integer, so a
   # reader holding only a pid cannot distinguish a live claim from a corpse whose
-  # number was handed to a stranger — which is how CertOrphanGuard once killed an
+  # number was handed to a stranger — which is how the retired cert orphan guard once killed an
   # unrelated bystander. `started_at` is the OS's own rendering of the start time,
   # and it is what makes (pid, started_at) name a PROCESS rather than a slot.
   def test_unit_the_record_carries_the_pid_and_the_OSs_start_time_for_it
@@ -50,7 +50,7 @@ class PresenceClaimTest < Minitest::Test
 
       assert_equal Process.pid, record["pid"]
       refute_nil record["pid_started_at"], "a claim with no start time can prove nothing about itself"
-      assert_equal CertOrphanGuard.process_started_at(Process.pid), record["pid_started_at"],
+      assert_equal ProcessTable.process_started_at(Process.pid), record["pid_started_at"],
                    "the start time must be the OS's, read for THIS process — not a clock we kept"
     end
   end
@@ -67,7 +67,7 @@ class PresenceClaimTest < Minitest::Test
       record = claim.body
 
       assert_equal Process.getpgrp, record["pgid"], "the group is the subject that outlives the supervisor"
-      assert_equal CertOrphanGuard.process_started_at(Process.getpgrp), record["pgid_started_at"],
+      assert_equal ProcessTable.process_started_at(Process.getpgrp), record["pgid_started_at"],
                    "and it carries its OWN identity — a pgid is a recyclable integer like any other"
     end
   end

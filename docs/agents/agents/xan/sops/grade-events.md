@@ -1,6 +1,25 @@
 # Grade Events
 
-## Status: Active
+## Status: Optional — not a heartbeat act since 2026-09-25
+
+Every task is now graded once when it ships (`Insights::TaskGrader`; thresholds in
+`config/learning_loop.yml`), so this manual act runs only when Mr. McRitchie asks
+for it by name.
+
+## The learning loop, in three parts
+
+This page owns the learning capability. It runs in three parts:
+
+1. **Every task is graded at ship, automatically.** When a task moves to
+   `shipped`, `Insights::TaskGrader` grades it once from facts already on the
+   board: bounces, gate failures, escalations, cost, and build and review time.
+   The thresholds live in `config/learning_loop.yml`; change a number there, not
+   in code. Nothing tripped means "nothing to learn", and nothing is written.
+   Something tripped writes ONE learning line, as a task note and as a banked
+   insight that `bin/session-insights` serves. No one runs this by hand.
+2. **Grade recent activities by hand, only when named.** This SOP, below.
+3. **Share the bank out.** [`share-insights.md`](share-insights.md) regenerates
+   the lessons doc from the banked insights.
 
 This is Xan's `grade-events` SOP. It grades recent resolved trajectory activities so
 useful agent behavior can become reusable memory.

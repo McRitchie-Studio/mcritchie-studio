@@ -55,37 +55,12 @@ require_relative "presence_claim"
 # that shared claim.
 #
 # AN EARLIER REVISION OF THIS FILE PUBLISHED INTO THE CERT RUNLOCK SLOT
-# (`CertOrphanGuard.lock_path(root)`), and that was wrong — but it was not arbitrary,
-# and the reason it was ever right is worth keeping, because it is what changed:
-# §5(c) of the design says sweeps are read by "the same glob and the same grader" as
-# certs, and when this slice was written `AgentPresence::CLAIM_GLOBS` held exactly two
-# `cert-run.json` patterns. A claim at §4's path was INVISIBLE to the reader, so it
-# would have left the sweep sitting in the reader's `backstop` as unattributed heavy
-# work — closing none of cost #3.
-#
-# That premise is now false. `certs-publish-no-phase` (PR #1161) taught the reader the
-# marker namespace directly — `bin/lib/agent_presence.rb`, `claim_paths`:
-#
-#     supervisors = File.join(".agents", "sessions", "*.presence-*")
-#     (CLAIM_GLOBS + [supervisors]).flat_map { ... }
-#
-# under a comment that states the safety property in four words: "Read here, reaped
-# nowhere." So the marker namespace is visible to the READER and invisible to the
-# REAPER by construction, and the tradeoff that forced the runlock slot is gone.
-#
-# WHY THAT SEPARATION IS LOAD-BEARING AND NOT A FILING PREFERENCE.
-# `CertOrphanGuard.preflight` REAPS: it SIGKILLs the process group a `cert-run.json`
-# names once it can prove the group is ours. A release-lane claim in that slot is a
-# loaded gun pointed at a production deploy, and it is NOT made safe by choosing a
-# primary checkout over a desk — an earlier version of this header claimed exactly that
-# and was FALSE (review, 2026-09-02). `CertRootGuard.refusal` is gated on a slug
-# (`bin/fast-check#wrong_root`, `bin/full-suite-check#wrong_root`) while the orphan
-# preflight is UNCONDITIONAL (`bin/lib/cert_orphan_guard.rb#preflight`, which both
-# certs call), so every slug-less
-# cert skips the root guard and preflights anyway — including the
-# `bin/full-suite-check --print` that `--install-hook` writes into
-# `.git/hooks/pre-push`. The correct defence is the one the namespace gives for free:
-# be somewhere the reaper does not read.
+# (the local certs' `cert-run.json`), and that was wrong: while the certs' orphan
+# guard REAPED the process group that file named, a release-lane claim in the slot
+# was a loaded gun pointed at a production deploy. `certs-publish-no-phase` (PR
+# #1161) taught the reader the marker namespace directly (`bin/lib/agent_presence.rb`,
+# `claim_paths`), and DevOps v3 phase 2b then retired the certs and their reaper
+# with them. The marker namespace stays for the reason below.
 #
 # WHAT THE MOVE RETIRED, said plainly so nobody re-adds it. The runlock is ONE FILE PER
 # ROOT, so the old writer had to refuse rather than clobber when a `prepare` and a

@@ -160,7 +160,7 @@ the ratchet's — run `bin/rails test test/docs/citation_resolution_guard_test.r
 |------|-------------|-------|------------|
 | **Seam** (preferred) | `bin/release.rb#commit_gem_version!` | No | lane 2 — the file must DEFINE that symbol |
 | **Prose seam** | "in `commit_gem_version!` — at its `rewrite_version` refusal" | No | review |
-| **Anchored line** (when the line really is the unit) | `bin/fast-check:339#"wrong_root = CertRootGuard.refusal"` | **Loudly** — lane 4 reds and names the line it slid to | lanes 1 + 4 — substantive AND carrying its anchor |
+| **Anchored line** (when the line really is the unit) | `bin/fast-check:209#"wrong_root = TaskTree.refusal"` | **Loudly** — lane 4 reds and names the line it slid to | lanes 1 + 4 — substantive AND carrying its anchor |
 | **Bare line** (legacy — lane 5 is closing it) | the same pointer without the `#"…"` | **Silently** | lane 1 only, and only when the rot lands on a blank line or an `end` |
 
 The rules, in order:

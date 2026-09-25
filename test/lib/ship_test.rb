@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # [integration] Harness tests for bin/ship — the fast-lane handoff wrapper
-# (commit → fast-check → push → non-draft PR into accepted → record pr_url →
-# dor-check → move submitted → read-back verify). Follows the house seam
+# (commit → optional pre-flight → push → non-draft PR into accepted → record
+# pr_url → dor-check → move submitted → read-back verify). Follows the house seam
 # pattern (test/lib/fast_check_test.rb): the REAL script is shelled via Open3
 # against a throwaway git repo (with a real bare `origin`, so the push lane is
 # exercised for real), with the board/cert/gate/GitHub CLIs stubbed via SHIP_*
@@ -21,7 +21,8 @@ require "fileutils"
 require "rbconfig"
 require_relative "../support/session_env"
 require_relative "../support/outbound_seams"
-require_relative "../../bin/lib/full_suite_gate"
+require_relative "../support/fake_desk"
+require_relative "../../bin/lib/tree_fingerprint"
 
 class ShipTest < Minitest::Test
   BIN = File.expand_path("../../bin/ship", __dir__)
@@ -154,13 +155,6 @@ class ShipTest < Minitest::Test
     }
     record["review_in_progress"] = review unless review == :absent
     JSON.generate(record)
-  end
-
-  # A build-claim devops slice with a lease `expires_in` seconds out — the shape
-  # `move building` writes (see test/lib/task_cli_test.rb's twin).
-  def claim_of(session:, nonce:, expires_in: 300)
-    { "claimed_session" => session, "claim_nonce" => nonce,
-      "claim_expires_at" => (Time.now + expires_in).utc.iso8601 }
   end
 
   # Run bin/ship with every seam stubbed. Returns [out, err, status, log_lines]
@@ -683,14 +677,13 @@ class ShipTest < Minitest::Test
 
   def test_resume_repairs_a_draft_misbased_pr_and_skips_landed_steps
     with_repo do |dir|
-      # A previous run already landed everything: commit done, cert recorded for
-      # THIS exact tree, PR open (but draft + mis-based), pr_url stored, task
-      # already submitted. Rerun must repair the PR and re-verify — nothing else.
+      # A previous run already landed everything: commit done, PR open (but draft +
+      # mis-based), pr_url stored, task already submitted. Rerun must repair the PR
+      # and re-verify — nothing else durable. (The pre-flight records nothing, so
+      # there is nothing for it to resume from; it simply runs again.)
       assert system("git -C #{dir} add -A >/dev/null 2>&1 && git -C #{dir} commit -q -m done")
-      fingerprint = FullSuiteGate.fingerprint(dir)
-      refute_nil fingerprint, "fixture repo must fingerprint"
       recorded = task_record(stage: "submitted", pr_url: PR_URL,
-                             checks_run: ["[fast-cert@#{fingerprint}] green"])
+                             checks_run: ["[unit] bin/rails test test/models"])
       existing = JSON.generate([{ "number" => 999, "url" => PR_URL, "isDraft" => true,
                                   "baseRefName" => "main" }])
 
@@ -698,7 +691,7 @@ class ShipTest < Minitest::Test
                                               show_json: recorded, moved_json: recorded)
 
       assert status.success?, "resume must complete, got:\n#{err}\n#{out}"
-      refute_includes markers(lines), "FAST #{SLUG}", "a fresh fingerprint-bound cert must skip fast-check"
+      assert_includes markers(lines), "FAST #{SLUG}", "the pre-flight runs on every ship — it recorded nothing to skip on"
       refute(lines.any? { |l| l[0] == "GH" && l[2] == "create" }, "an open PR must never be duplicated")
       assert(lines.any? { |l| l[0] == "GH" && l[1, 2] == %w[pr ready] }, "a draft PR must be marked ready")
       edit = lines.find { |l| l[0] == "GH" && l[1, 2] == %w[pr edit] }
@@ -710,106 +703,57 @@ class ShipTest < Minitest::Test
     end
   end
 
-  # --- red gates stop the line, resumably --------------------------------------
-
-  def test_red_fast_check_aborts_before_push_pr_and_move
-    with_repo do |dir|
-      _out, err, status, lines = run_ship(dir, extra_env: { "FAIL_FAST" => "1" })
-
-      refute status.success?, "a red cert must fail the ship"
-      # bin/fast-check now has TWO non-zero verdicts — a RED lane, and a REFUSAL to
-      # certify a diff that would execute no test at all (capped-cert-reports-green) —
-      # so ship's message names the STEP and the verdict instead of asserting a red
-      # lane it cannot distinguish from here. The die line, not a bare mention: the
-      # "2/8 cert — running bin/fast-check" line would otherwise satisfy this even if
-      # ship had died downstream.
-      assert_includes err, "bin/fast-check did NOT certify"
-      # KEYED ON THE DISK, not on the substring. The remedy is now an ABSOLUTE
-      # bin/ship (remedy-hints-print-bare-paths) so a builder on a satellite or gem
-      # desk can paste it, and `assert_includes err, "re-run bin/ship <slug>"` was
-      # blind to the difference in the OTHER direction: an absolute path CONTAINS
-      # "bin/ship <slug>", so the same assertion passed the bare form it was meant
-      # to reject. Ask the filesystem instead.
-      resume = err[%r{re-run (\S*/bin/ship) #{SLUG}}, 1]
-      refute_nil resume, "the failure must name the resume:\n#{err}"
-      assert File.executable?(resume), "the resume must name a runnable script, got #{resume.inspect}"
-      assert_equal ["TASK show", "FAST #{SLUG}"], markers(lines), "nothing may run past the red cert"
-      _remote = `git -C #{dir} rev-parse origin/#{BRANCH} 2>/dev/null`.strip
-      refute $?.success?, "the branch must NOT be pushed on a red cert"
-    end
-  end
-
-  # --- the DEFERRED cert (capped-cert-blocks-the-pr) ----------------------------
+  # --- the pre-flight is information, not a gate ---------------------------------
   #
-  # bin/fast-check exits 2 when it could execute ZERO test files because the mapped
-  # lane was CAPPED. That is NOT a certification — it is a recorded deferral to the
-  # PR's CI — and ship is where the decision to carry on lives, because the evidence
-  # a deferral points at needs a PUSH and a PR, which are steps 3 and 4 of this
-  # script. A cert runner that pushed would be a cert runner that ships.
+  # Since DevOps v3 phase 2b (/tasks/retire-local-cert-evidence) bin/fast-check is an
+  # OPTIONAL pre-flight that records nothing. Ship runs it at step 2, reports its
+  # verdict loudly, and carries on to the push and the PR whatever it said: the PR's
+  # settled green CI is the verdict, and step 7's dor-check reads it.
 
-  def test_a_deferred_cert_carries_on_to_the_push_the_pr_and_the_dor_verdict
+  def test_a_red_pre_flight_is_reported_loudly_and_the_ship_carries_on
     with_repo do |dir|
-      out, err, status, lines = run_ship(dir, extra_env: { "EXIT_FAST" => "2" })
+      out, err, status, lines = run_ship(dir, extra_env: { "FAIL_FAST" => "1" })
 
-      assert status.success?, "a deferral must NOT stop the line at step 2: #{err}"
-      assert_includes err, "2/8 cert — DEFERRED to CI"
-      assert_includes err, "step 7 REFUSES unless CI is GREEN",
-                      "the builder must be told what still has to be true"
-      assert_includes markers(lines), "GH pr", "the PR must actually be opened — that is the whole remedy"
-      assert_includes markers(lines), "DOR #{SLUG}", "and the verdict gate must still run"
+      assert status.success?, "a red pre-flight must NOT stop the line: #{err}"
+      assert_includes err, "2/8 pre-flight — RED"
+      assert_includes err, "step 7 REFUSES a red CI", "the builder is told where the verdict actually lands"
+      assert_includes markers(lines), "FAST #{SLUG}", "the pre-flight did run"
+      assert_includes markers(lines), "GH pr", "…and the PR was still opened"
+      assert_includes markers(lines), "DOR #{SLUG}", "…and the verdict gate still ran"
       assert_includes out, "stage: submitted (read back verified)"
+      _remote = `git -C #{dir} rev-parse origin/#{BRANCH} 2>/dev/null`.strip
+      assert $?.success?, "the branch IS pushed on a red pre-flight — CI says so on the record"
     end
   end
 
-  # THE FENCE, SHIP-SIDE. dor-check owns the verdict, and when it refuses a deferred
-  # diff ship must not present that as a new fault: the builder watched step 2 say
-  # "continuing", so the refusal has to read as the gate closing on schedule.
-  def test_a_deferred_cert_whose_dor_verdict_refuses_never_reaches_submitted
+  def test_a_green_pre_flight_says_ci_still_runs_the_full_suite
     with_repo do |dir|
-      _out, err, status, lines = run_ship(dir, extra_env: { "EXIT_FAST" => "2", "FAIL_DOR" => "1" })
+      _out, err, status, = run_ship(dir)
 
-      refute status.success?, "deferring is not skipping — a refused DoR verdict must fail the ship"
-      assert_includes err, "cert was DEFERRED to CI at step 2"
-      assert_includes err, "GREEN CI is the ONLY thing that can satisfy the suite gate"
-      refute_includes markers(lines), "TASK move", "the task must NOT cross the submitted seam"
+      assert status.success?, err
+      assert_includes err, "2/8 pre-flight — running bin/fast-check #{SLUG} (optional; nothing is recorded)"
+      assert_includes err, "2/8 pre-flight — green. CI still runs the full suite on the PR."
     end
   end
 
-  # AN ABSENT CI IS THE FAILURE MODE THIS WHOLE CHANGE IS DESIGNED AGAINST: a capped
-  # diff that pushes, gets no CI at all, and submits on nothing. Ship names the stakes
-  # BEFORE the verdict, so the refusal that follows is legible rather than a surprise.
-  def test_a_deferred_cert_names_the_stakes_when_ci_never_appears
+  def test_the_pre_flight_can_be_skipped_and_the_verdict_is_still_dor_checks
     with_repo do |dir|
-      _out, err, status, = run_ship(dir, extra_env: { "EXIT_FAST" => "2", "FAIL_DOR" => "1",
-                                                      "SHIP_CI_STATE" => "state:none" })
+      _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_PREFLIGHT" => "off" })
 
-      refute status.success?
-      assert_includes err, "CI is the ONLY evidence"
-      assert_includes err, "Deferring is not skipping."
+      assert status.success?, err
+      assert_includes err, "2/8 pre-flight — skipped (SHIP_PREFLIGHT=off)"
+      refute_includes markers(lines), "FAST #{SLUG}", "the pre-flight did not run"
+      assert_includes markers(lines), "DOR #{SLUG}", "the verdict gate still did"
     end
   end
 
-  # A DEFERRAL WITH THE CI WAIT DISARMED is a step-7 refusal waiting to happen, so it
-  # is called out at step 2 rather than left to look like a broken gate ten minutes on.
-  def test_a_deferred_cert_warns_when_the_ci_wait_is_disarmed
+  def test_a_missing_pre_flight_runner_does_not_stop_the_line_either
     with_repo do |dir|
-      _out, err, = run_ship(dir, extra_env: { "EXIT_FAST" => "2", "SHIP_CI_WAIT" => "off" })
+      _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_FAST_CHECK_BIN" => "/nonexistent/fast-check" })
 
-      assert_includes err, "SHIP_CI_WAIT=off and this diff has no local cert"
-    end
-  end
-
-  # AND THE PLAIN REFUSAL STILL STOPS THE LINE. Exit 1 is not exit 2, and the
-  # difference must be structural rather than a matter of wording: a diff that maps to
-  # NO test at all has no CI story to defer to, so nothing may be pushed for it.
-  def test_a_refusing_cert_exit_one_still_aborts_before_push
-    with_repo do |dir|
-      _out, err, status, lines = run_ship(dir, extra_env: { "EXIT_FAST" => "1" })
-
-      refute status.success?
-      assert_includes err, "bin/fast-check did NOT certify"
-      assert_equal ["TASK show", "FAST #{SLUG}"], markers(lines),
-                   "a refusal pushes nothing — only a DEFERRAL carries on"
+      assert status.success?, "an unlaunchable pre-flight is a RED pre-flight, and a red pre-flight does not gate: #{err}"
+      assert_includes err, "2/8 pre-flight — RED"
+      assert_includes markers(lines), "DOR #{SLUG}"
     end
   end
 
@@ -855,110 +799,51 @@ class ShipTest < Minitest::Test
     end
   end
 
-  def test_ship_refuses_a_task_a_different_live_instance_holds
-    with_repo do |dir|
-      foreign = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"), review: false)
-      _out, err, status, lines = run_ship(
-        dir, show_json: foreign,
-        extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default" }
-      )
-
-      refute status.success?, "shipping another builder's live task must refuse (non-zero exit)"
-      assert_match(/different live instance/i, err, "the refusal must say who holds it")
-      assert_match(/…9999/, err, "the refusal must name the holder")
-      assert_includes err, "bin/task begin #{SLUG} --steal", "the refusal must name the takeover path"
-      # THE ASSERTION IS "NO SIDE EFFECT", not "no subprocess". It used to be spelled
-      # as the latter (`[%w[TASK show]]` exactly), which was the same thing until the
-      # refusal started asking the board WHO holds the task — a READ, on a path that
-      # was already fatal. Spelled as a whitelist of one call, a diagnostic read
-      # reddens a test whose subject is that nothing was WRITTEN, so it is spelled as
-      # its own concern: no cert, no push, no PR, no move.
-      assert_empty(lines.map { |l| l[0, 2] } - [%w[TASK show], %w[TASK review-claim]],
-                   "the refusal may READ, but no step that writes may run past it")
-      refute_equal "", `git -C #{dir} status --porcelain`.strip, "no commit may land on a foreign-held task"
-    end
-  end
-
-  # ── THE REFUSAL NAMES THE HOLDER'S ROLE ─────────────────────────────────────
+  # ── THE DESK IS THE BUILD CLAIM ─────────────────────────────────────────────
   #
-  # THE NEAR-MISS (2026-09-01) that produced this pair. Ship refused a held task
-  # with "Ship must not hand off another builder's work — take the task over first
-  # (--steal)". Every fact was true and the sentence still misrouted: it describes a
-  # rival BUILDER, and the holder was a REVIEWER. Stealing a task mid-review VOIDS
-  # the no-self-review guarantee for that review and STRANDS its verdict — neither
-  # recoverable, neither visible afterwards — so the two holders cannot share one
-  # remedy line. test/lib/claim_holder_test.rb pins the decision table; these pin
-  # that bin/ship is wired to it and that each route reaches the right message.
+  # Ship's holder pre-check follows the build gate's one rule (bin/lib/desk_claim.rb):
+  # refuse only when a DIFFERENT live session's desk is bound to the task AND has
+  # uncommitted changes. The desk lives under SHIP_PROJECTS_DIR; the shipping session
+  # is CLAUDE_CODE_SESSION_ID.
 
-  def test_ship_routes_a_reviewer_held_task_to_ask_not_steal
+  def test_ship_refuses_when_a_foreign_live_desk_has_uncommitted_work
     with_repo do |dir|
-      held = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"), review: true)
-      _out, err, status, = run_ship(
-        dir, show_json: held,
-        extra_env: {
-          "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default",
-          "TASK_REVIEW_CLAIM_JSON" => JSON.generate(
-            { "holder" => { "session" => "sess-rival-9999", "agent" => "carl", "live" => true } }
-          )
-        }
-      )
-
-      refute status.success?
-      assert_includes err, "REVIEWING it", "the refusal must NAME the role it refuses on"
-      assert_includes err, "bin/task review-claim release #{SLUG}",
-                      "a live review is ASKED to release; that is the remedy the near-miss took " \
-                      "by hand, against the message's own advice"
-      assert_includes err, "carl", "and it must name who to ask"
-      refute_includes err, "--steal",
-                      "the steal path must not appear at all here — the reader who hit this acted " \
-                      "on the remedy line, and any --steal in it is the line they would have taken"
-    end
-  end
-
-  def test_ship_keeps_the_steal_remedy_for_a_builder_held_task
-    with_repo do |dir|
-      held = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"), review: false)
-      _out, err, = run_ship(
-        dir, show_json: held,
-        extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default" }
-      )
-
-      assert_includes err, "BUILDING it"
-      assert_includes err, "bin/task begin #{SLUG} --steal",
-                      "--steal is the correct remedy for the case it was written for and must " \
-                      "stay pasteable"
-      refute_includes err, "review-claim release",
-                      "there is no review to ask about; offering one sends the reader nowhere"
-    end
-  end
-
-  # A board that could not answer must not be read as a board that said "no review".
-  def test_ship_refuses_both_ways_when_the_role_cannot_be_established
-    with_repo do |dir|
-      held = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"), review: false)
-      _out, err, = run_ship(
-        dir, show_json: held,
-        extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default",
-                     "FAIL_REVIEW_CLAIM" => "1" }
-      )
-
-      assert_includes err, "DO NOT STEAL UNTIL YOU KNOW",
-                      "the lease read failed, so one of the two role facts is simply unknown — " \
-                      "collapsing that into 'no review' is the fail-open this change closes"
-      assert_includes err, "bin/task review-claim status #{SLUG}",
-                      "and the refusal must hand over the command that OBSERVES the lease"
-    end
-  end
-
-  def test_ship_proceeds_when_this_instance_holds_the_claim
-    with_repo do |dir|
-      own = task_record(claim: claim_of(session: "sess-shipper-1111", nonce: "inst-default"))
+      desks = File.join(File.expand_path("..", dir), "desks")
+      desk = FakeDesk.build(desks, task_slug: SLUG, session: "sess-rival-9999", dirty: true)
       _out, err, status, lines = run_ship(
-        dir, show_json: own,
-        extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default" }
+        dir, extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "SHIP_PROJECTS_DIR" => desks }
       )
 
-      assert status.success?, "the claim holder must ship freely, got:\n#{err}"
+      refute status.success?, "shipping over another session's uncommitted desk must refuse"
+      assert_includes err, desk, "the refusal must name the desk holding the work"
+      assert_includes err, "uncommitted changes"
+      assert_includes err, "bin/task begin #{SLUG} --steal", "the refusal must name the takeover path"
+      assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step that writes may run past it"
+      refute_equal "", `git -C #{dir} status --porcelain`.strip, "no commit may land"
+    end
+  end
+
+  def test_ship_proceeds_when_the_foreign_desk_is_clean
+    with_repo do |dir|
+      desks = File.join(File.expand_path("..", dir), "desks")
+      FakeDesk.build(desks, task_slug: SLUG, session: "sess-rival-9999", dirty: false)
+      _out, err, status, = run_ship(
+        dir, extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "SHIP_PROJECTS_DIR" => desks }
+      )
+
+      assert status.success?, "a clean foreign desk holds no work to lose, got:\n#{err}"
+    end
+  end
+
+  def test_ship_proceeds_from_its_own_dirty_desk
+    with_repo do |dir|
+      desks = File.join(File.expand_path("..", dir), "desks")
+      FakeDesk.build(desks, task_slug: SLUG, session: "sess-shipper-1111", dirty: true)
+      _out, err, status, lines = run_ship(
+        dir, extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "SHIP_PROJECTS_DIR" => desks }
+      )
+
+      assert status.success?, "the desk's own session must ship freely, got:\n#{err}"
       assert(lines.any? { |l| l[0, 2] == %w[TASK move] }, "the holder's ship must reach the move")
     end
   end
@@ -1128,7 +1013,7 @@ class ShipTest < Minitest::Test
       _out, err, status = run_ship_from(stranger, stranger, projects)
 
       refute status.success?, "no desk to re-root to — ship must refuse"
-      assert_includes err, "refusing to certify it"
+      assert_includes err, "refusing to run against it"
       refute_includes err, "re-rooting at the task worktree",
                       "with no desk on disk there is nothing to re-root to"
     end
@@ -1182,8 +1067,8 @@ class ShipTest < Minitest::Test
       dor = JSON.parse(File.read(File.join(snaps, "DOR.json")))
 
       # THE DISTINCTION, on disk, at the two boundaries that matter.
-      assert_equal ["working", "suite", "2/8 cert"], cert.values_at("phase", "weight", "lane"),
-                   "the cert phase is the one that costs everything — it must say so"
+      assert_equal ["working", "suite", "2/8 pre-flight"], cert.values_at("phase", "weight", "lane"),
+                   "the pre-flight phase is the one that costs everything — it must say so"
       assert_equal ["waiting", "idle", "6/8 ci"], ci.values_at("phase", "weight", "lane"),
                    "the CI wait costs NOTHING, and reading it as a competing cert is the whole defect"
       assert_equal ["working", "light", "7/8 dor"], dor.values_at("phase", "weight", "lane")
@@ -1210,7 +1095,7 @@ class ShipTest < Minitest::Test
       assert_operator cert.fetch("pid"), :>, 0
       refute_nil cert.fetch("pid_started_at"), "a claim with no start time proves nothing about itself"
       refute_empty cert.fetch("pid_started_at").to_s
-      # BOTH subjects, for the reason CertOrphanGuard's runlock carries both: the ship
+      # BOTH subjects, for the reason the retired cert runlock carried both: the ship
       # can be killed while the cert it spawned survives in its group, and a
       # single-subject claim reports that worst case as dead.
       assert_operator cert.fetch("pgid"), :>, 0
@@ -1252,7 +1137,7 @@ class ShipTest < Minitest::Test
       # it there strands a .git/HEAD.lock and the assertion becomes a race with the
       # tmpdir teardown rather than a statement about claims. Parked in the slow
       # stub, the kill lands where this test says it lands.
-      claim = wait_for_claim(dir, lane: "2/8 cert")
+      claim = wait_for_claim(dir, lane: "2/8 pre-flight")
       Process.kill("KILL", pid)
       Process.wait(pid)
 

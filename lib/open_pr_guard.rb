@@ -19,10 +19,10 @@
 #   ARCHIVE ONLY WHAT LEAVES NO WORK UNRESOLVED.
 #
 # "UNRESOLVED" is the load-bearing word, and it is a DIFFERENT harm from the one
-# lib/archive_holder_guard.rb exists to prevent. Read them together or this file
-# looks like it contradicts that one:
+# the archive holder gate (DeskClaim.dirty_bound, bin/lib/desk_claim.rb) exists to
+# prevent. Read them together or this file looks like it contradicts that one:
 #
-#   ArchiveHolderGuard  archiving DESTROYS uncommitted work in a desk.
+#   holder gate         archiving DESTROYS uncommitted work in a desk.
 #                       The harm is IRREVERSIBLE. No artifact can reconstruct it.
 #   OpenPrGuard         archiving ORPHANS a PR that is already durable.
 #                       The harm is that the work goes QUIET — neither merged nor
@@ -65,8 +65,8 @@
 # ═══ WHY AN UNREADABLE PR STATE WARNS RATHER THAN REFUSING ═══
 #
 # THIS IS THE ONE PLACE THIS FILE DEPARTS FROM THE HOLDER GATE, and the departure is
-# principled rather than convenient. bin/task's `archive_holder_facts` rescues in the
-# PROTECTIVE direction because "a check that blew up has told us nothing, and nothing
+# principled rather than convenient. bin/task's holder gate refuses in the
+# PROTECTIVE direction when it cannot read the desks because "a check that blew up has told us nothing, and nothing
 # must never authorize a destructive act". That is right where the loss is
 # irreversible. Here it is not:
 #
@@ -78,10 +78,9 @@
 #      this machine expires ABOUT HOURLY BY DESIGN, so an unreadable `gh` is the
 #      ROUTINE state, not the exceptional one. A gate that refuses on it refuses most
 #      archives on most days.
-#   3. AND THAT KILLS THE GATE. lib/archive_holder_guard.rb measured this exact
-#      failure: its first cut refused 31 of 34 live tasks, and its own docblock names
-#      the outcome — "a guard that refuses everything is uninstalled within a week,
-#      and then it protects nothing". `--force` becomes muscle memory and the refusal
+#   3. AND THAT KILLS THE GATE. The first cut of the archive holder guard measured
+#      this exact failure: it refused 31 of 34 live tasks, and a guard that refuses
+#      everything is uninstalled within a week, and then it protects nothing. `--force` becomes muscle memory and the refusal
 #      that matters is waved through with the rest.
 #
 # So the unknown WARNS, loudly, naming which PR could not be read and how to fix it.
@@ -95,9 +94,8 @@ module OpenPrGuard
 
   # Already `archived` — a re-archive is idempotent and must not newly refuse.
   #
-  # `shipped` IS DELIBERATELY ABSENT, unlike ArchiveHolderGuard::CONCLUDED_STAGES.
-  # That gate skips shipped because merged code leaves nothing uncommitted to
-  # destroy, which is true. It says nothing about whether every PR the task names
+  # `shipped` IS DELIBERATELY ABSENT. Merged code may leave nothing uncommitted to
+  # destroy, but that says nothing about whether every PR the task names
   # actually landed — the `merged` stamp is per-TASK while PRs are per-REPO, so a
   # multi-repo task reaches `shipped` on its primary while a sibling repo's PR is
   # still open. That is the population this gate exists for, and skipping it here
@@ -116,9 +114,8 @@ module OpenPrGuard
   # The devops list key that records a deliberate abandonment. It MUST be a
   # storable name in Task::DEVOPS_LIST_KEYS or the record silently evaporates —
   # `normalize_devops_metadata` drops any key outside DEVOPS_KEYS and the caller
-  # still gets a 200. That is the failure mode `agent_slug` had inside
-  # ArchiveHolderGuard::PAINT_KEYS: a key list nobody can populate is a promise the
-  # gate cannot keep. bin/task reads the record BACK after the write for the same
+  # still gets a 200. A key list nobody can populate is a promise the gate cannot
+  # keep. bin/task reads the record BACK after the write for the same
   # reason.
   RECORD_KEY = "abandoned_prs"
 

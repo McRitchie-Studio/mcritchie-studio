@@ -1,117 +1,83 @@
 # PR Review
 
-> **Stale GitHub credential? Fix it yourself and keep going — do not escalate.**
-> App installation tokens expire **~hourly BY DESIGN**. On `Bad credentials`, a
-> 401/403, an unreadable CI, or a `gh auth login` prompt, run
-> `eval "$(bin/gh-auth-refresh --export)"` — read its **stderr**, because `eval`
-> hides the exit code — then retry the exact command that failed. Asking Mr.
-> McRitchie to run `gh auth login` is both the terminal chore the operating model
-> forbids and a step that cannot work: `gh` refuses to store a credential while
-> `GH_TOKEN` is set. Architecture and symptom→fix: [`source-control.md`](../../../modules/source-control.md).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](../../../modules/token-session.md)).
 
 ## Status: Active
 
 This is Carl's `pr-review` SOP — the Lead Architect owns PR review. It reviews
 submitted PRs in bounded waves, and on a merge-ready verdict **merges the feat PR
-into `accepted`** and stops the task at `reviewed` — the accepted-ladder's first
-rung. Avi's `qa-release` sweep then promotes `accepted → release`.
+into `accepted`** and stops the task at `reviewed`. Avi's `qa-release` sweep then
+promotes `accepted → release`.
 
 **There is no Avi supervisor layer.** The driving SESSION is a Pokémon
 orchestrator; it claims reviewable PRs and spins up **one Carl per PR**. Each Carl
-is the deep/primary reviewer AND the OWNER of that review — he runs the gates,
-launches a light specialist at his own discretion, drives the verdict, and (on a
-merge-ready verdict) merges the PR himself.
+is the deep/primary reviewer AND the OWNER of that review: he runs the gates,
+summons a light specialist at his discretion, drives the verdict, and merges.
 
-## Scope
+A focus session reviews its own epic's PRs by tier instead
+([`../../../modules/focus-session.md`](../../../modules/focus-session.md)): there,
+a prose-only PR gets Xan alone. This sweep runs Carl plus a light on every PR.
+The rationale and incident history this page no longer carries are frozen
+verbatim in [`../../../archive/pr-review-2026-09-25.md`](../../../archive/pr-review-2026-09-25.md).
 
-Carl owns the review end-to-end. On approval this SOP merges the feat PR into the
-`accepted` branch (the ladder's first rung); it never merges to `release`/`main`,
-deploys QA, ships production, or archives work.
+## Scope and entry
 
-## Entry
-
-Run this SOP from the McRitchie Studio primary checkout:
+On approval this SOP merges the feat PR into `accepted`; it never merges to
+`release`/`main`, deploys, or archives. Run it from the hub primary against the
+production board (no `--local`):
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
 ```
 
-Use the production board by default. Do not add `--local`.
-
 ## The two levels — the session orchestrates, each Carl reviews and owns
 
-Review runs in two levels; keep them distinct:
-
-1. **Session Pokémon** (identity + orchestrator) — the base session driving the
-   cycle. It claims reviewable PRs, spins one Carl per claimed PR in bounded
-   waves, collects each Carl's verdict, and releases each review claim. **It does
-   not review the code itself.**
-2. **Carl (per PR)** — the **deep/primary reviewer AND review owner**, one instance
-   per PR, spawned as a `carl` subagent. Carl does the deep technical review, owns
-   the gates (`bin/dor-check`, cert/CI green, acceptance match), launches a **light
-   specialist** at his own discretion (a domain pick — see below), collects that
-   second read, drives the verdict, and on a merge-ready verdict **merges the feat
-   PR into `accepted`** himself. Runs
+1. **Session Pokémon** (the orchestrator) claims reviewable PRs, spins one Carl
+   per claimed PR in bounded waves, collects each verdict, and releases each
+   claim. **It does not review the code itself.**
+2. **Carl (per PR)**, a `carl` subagent, is the **deep/primary reviewer AND review
+   owner**: he runs the gates (`bin/dor-check`, CI green, acceptance match),
+   summons a **light specialist** at his discretion, drives the verdict, and
+   **merges the feat PR into `accepted`** himself. Runs
    [`pr-review-primary.md`](pr-review-primary.md).
-   - **The light specialist** (Shannon · Jasper · Steffon · Alex) is Carl's second
-     set of eyes — a focused domain second-read Carl summons, not a co-owner. Runs
-     [`pr-review-light.md`](pr-review-light.md). The light does not run the gates
-     and does not drive the verdict — a defect it spots reaches Carl as a scout
-     report, and only the review claim's holder spends the task's bounce. Carl is
-     the standing primary on every PR; the light is the domain
-     pick — `bin/reviewer-select <task> --no-record` previews the pair (primary Carl
-     + the domain light). Keep `--no-record` on a preview: a bare run RECORDS, and
-     recording ACQUIRES the task's review claim first — so it exits **10** rather
-     than seating a second pair on a PR someone else is already reviewing. From
-     the session that popped the task that claim is already yours
-     (`same_instance`), so this is invisible on the normal path.
+   - **The light specialist** (Shannon · Jasper · Steffon · Xan) is Carl's second
+     set of eyes, not a co-owner. Runs [`pr-review-light.md`](pr-review-light.md).
+     The light does not run the gates or drive the verdict; a defect it spots
+     reaches Carl as a scout report. `bin/reviewer-select <task> --no-record`
+     previews the pair. Keep `--no-record` on a preview: a bare run RECORDS, and
+     recording acquires the task's review claim (exit **10** if someone else holds it).
 
 ## Parallel-first — claim each PR, skip what's already being reviewed
 
 Review is a READ act on INDEPENDENT tasks, so **many `pr-review` sessions run at
-once**. The goal of a sitting is to review as many submitted PRs as you can; the
-one rule is **never review a task another session is already reviewing.** That
-guarantee lives at the TASK, not the role — there is no shift lease to acquire and
-no standing down. (The deploy/QA lanes are different: `qa-release` and
-`production-deploy` mutate one shared release candidate, so they keep the
-single-conductor `bin/devops-shift` lease. Review does not.)
+once**. The one rule: **never review a task another session is already
+reviewing.** That guarantee lives at the TASK: there is no shift lease. (The
+`qa-release` and `production-deploy` lanes mutate one shared release candidate, so
+they keep the single-conductor `bin/devops-shift` lease. Review does not.)
 
-**Claim with the atomic server pop.** The board exposes a single request that
-selects the highest-ranked reviewable **green-CI** task and claims it in one
-step:
+**Claim with the atomic server pop**, which selects the highest-ranked **green-CI**
+task and claims it in one step:
 
 ```bash
 slug=$(bin/task claim-next-review --agent carl) || true   # prints the claimed slug (exit 0), or "none" (exit 4)
 ```
 
-**`--agent <soul>` is what the board paints.** The claim is the atomic "I am
-reviewing this now" act, so the reviewing soul rides it and the task card fills its
-crew seat the instant the claim lands — before the reviewer reads a line, with no
-separate `bin/reviewer-select` call and no way for a launcher to forget. Omit it and
-the session's sticky `.acting-agent` supplies it; with neither, the lane is still
-claimed but the seat stays empty (the board never guesses a reviewer). The seat
-empties again on release, or within the claim's TTL if the reviewer dies.
+**`--agent <soul>` is what the board paints.** The reviewing soul rides the
+claim, so the card's crew seat fills the instant the claim lands. Omit it and the
+session's sticky `.acting-agent` supplies it; with neither, the seat stays empty.
 
-`bin/task claim-next-review` (`POST /api/v1/tasks/claim_next_review`) folds three
-reads into one atomic server-side pop: it ranks the reviewable queue, skips any
-task whose live CI is NOT green (red / pending / ci-less / conflicted are never
-popped — they defer to a later wave, so a red PR is never claimed), and acquires
-the per-task review lease (`TaskReviewClaim`: a **3h25m** TTL sized to outlast a
-real review unaided, renewed by the run, self-healing on crash) on the winner — all under a row lock, so two racing
-sessions serialize and exactly one wins. It prints **just the claimed slug** so a
-caller can `slug=$(bin/task claim-next-review)`, or **`none`** (exit 4) when
-nothing is eligible.
+The pop ranks the reviewable queue, skips any task whose live CI is NOT green
+(red, pending, ci-less, and conflicted tasks defer to a later wave), and acquires
+the per-task review lease (`TaskReviewClaim`, a **3h25m** TTL) on the winner, all
+under a row lock, so exactly one racing session wins. It prints **just the
+claimed slug**, or **`none`** (exit 4) when nothing is eligible.
 
-Because the pop only ever returns a **green-CI** task, the orchestrator never
-needs a separate pre-spawn CI check — a red or pending PR simply isn't claimed.
-A task whose CI flips red or conflicts AFTER the claim is caught inside the
-review: Carl's gate-zero (`bin/dor-check <task> --gate-role review`) blocks it
-back. That gate is an **allow-list** — `green` advances and every other state
-refuses, including a verdict it could not read (`unreadable` / `unverified` /
-`none`) and a blank `devops.pr_url`. The one escape is a fresh **full** cert
-(`bin/full-suite-check`, which runs `ci.yml`'s own command), which stands in for
-the unread verdict; a refusal with no such cert is a `conductor-review`, since the
-credential is not the builder's to fix. See `../../../modules/gates/dor.md`.
+A task whose CI flips red or conflicts AFTER the claim is caught by Carl's
+gate-zero (`bin/dor-check <task> --gate-role review`). That gate is an
+**allow-list**: `green` advances, and every other state refuses, including an
+unread verdict (`unreadable` / `unverified` / `none`) and a blank
+`devops.pr_url`. No local cert stands in for an unread verdict; such a refusal is
+a `conductor-review`. See `../../../modules/gates/dor.md`.
 
 Release the claim on the verdict (a crash frees it via the TTL, within 3h25m):
 
@@ -119,66 +85,45 @@ Release the claim on the verdict (a crash frees it via the TTL, within 3h25m):
 bin/task review-claim release <slug>
 ```
 
-**Read what release says — it names which of five states it found.** A clean drop is
-one quiet line. Exactly TWO states go to **stderr**, and both are worth stopping for:
-"your lease had LAPSED" means the task was FREE for part of your review, and "held by
-<soul>" means it changed hands and somebody else has been reviewing it too. Reconcile
-either before you treat your verdict as the only one. The other three print on STDOUT
-and still want reading. The exit code is 0 in every case, so the message is the signal.
+**Read what release says — it names which of five states it found.** Two states
+go to **stderr**, and both are worth stopping for: "your lease had LAPSED" (the
+task was free for part of your review) and "held by <soul>" (somebody else has
+been reviewing it too). Reconcile either before you trust your verdict. The exit
+code is 0 in every case, so the message is the signal.
 
-Keep each session's fan-out to **waves of five or fewer agents** (the per-session
-cap: the prod board Postgres has a hard connection budget). A Carl plus his light
-is two agents, so a wave is roughly two-to-five PRs depending on how many Carls
-summon a light. When the reviewable queue is larger than a wave, run it in
-successive waves — claim, spawn, collect, release, then claim the next wave.
+Keep each session's fan-out to **waves of five or fewer agents** (the board
+database has a hard connection budget). A Carl plus his light is two agents.
+Run a larger queue in successive waves: claim, spawn, collect, release, repeat.
 
 ## Preconditions
 
 At least one task is in `submitted` with green CI. If `bin/task claim-next-review`
-returns `none`, report "no reviewable PRs" and stop — UNLESS it also prints one of
-TWO warnings. `no CI is ingested for <repo>` is a WIRING gap, not a red queue: the
-board receives no Actions deliveries for that repo, so its PRs can never read green
-here however green GitHub is, and the task will sit in `submitted` until someone
-wires the webhook. Report the named repos to Mr. McRitchie (recipe:
-`../../../modules/deployment.md`, "Wiring a repo's Actions webhook") rather than
-closing the wave as "nothing to review".
+returns `none`, report "no reviewable PRs" and stop, UNLESS it prints one of two
+warnings:
 
-`the board's OWN ingested CI is what this refusal read` is an INGESTION gap on ONE
-HEAD: the repo IS wired (so the first warning stays silent), but the board holds no
-run for this PR's tip, so the pop refuses while `bin/dor-check --gate-role review`
-and `gh pr checks` — which read GitHub LIVE — say green. The line names the state
-and head SHA the board held; compare that SHA against the PR's real head. Do NOT
-force the lease, which makes the pop advisory. Report the disagreement instead.
+- `no CI is ingested for <repo>` is a WIRING gap: the board receives no Actions
+  deliveries for that repo. Report the repos to Mr. McRitchie (recipe:
+  `../../../modules/deployment.md`, "Wiring a repo's Actions webhook").
+- `the board's OWN ingested CI is what this refusal read` is an INGESTION gap on
+  ONE HEAD: the board holds no run for this PR's tip while GitHub says green.
+  Compare the SHA it names against the PR's real head, and report the
+  disagreement. Do NOT force the lease.
 
 ## Procedure
 
-**Summon each review as a Carl subagent (interactive tree visibility).** For each
-claimed PR, launch a **Carl** subagent via the Agent tool (`subagent_type: carl`)
-to own the review. It renders as a live node in the sub-agent tree, and — because
-Carl summons his light as his own child — that Carl node NESTS its light as a
-child, so the review fan-out shows up as a branch under each Carl rather than a
-flat wall of background shells.
-
-- **Why delegation is right HERE (and wrong for the sweep and the ship).** Review
-  is a **read** act: it inspects diffs and lands one task-stage verdict, so a
-  subagent that detaches costs a retry, nothing more. The acts that MUTATE shared
-  state across many minutes — `qa-release`, `production-deploy`, `archive-shipped`
-  — are the opposite, and each is DIRECT-DRIVEN by the conductor session (a
-  detached writer strands a half-applied merge/deploy that nobody owns). The line
-  is **mutating vs reading**, not *parallel vs serial*:
-  [`../../../modules/parallel-agent-devops.md`](../../../modules/parallel-agent-devops.md).
-  The one mutation review DOES land — the merge of the feat PR into `accepted` —
-  is a single, idempotent, re-runnable `gh pr merge`, and it is Carl's (the
-  review owner's) to make.
+**Summon each review as a Carl subagent** (`subagent_type: carl`). Carl summons
+his light as his own child, so each review shows as a branch in the agent tree.
+Delegation is right here because review is a **read** act; the one mutation it
+lands, `gh pr merge` into `accepted`, is idempotent and re-runnable. The acts that
+MUTATE shared state for many minutes (`qa-release`, `production-deploy`,
+`archive-shipped`) are direct-driven instead:
+[`../../../modules/parallel-agent-devops.md`](../../../modules/parallel-agent-devops.md).
 
 The orchestrator's loop, per wave:
 
-1. **Claim** the next reviewable PR — naming the soul that will review it, which
-   is what fills the card's crew seat:
-   `slug=$(bin/task claim-next-review --agent carl)`. Stop the wave when it
-   returns `none`.
-2. **Record the PR head** BEFORE spawning Carl — a provable lower bound on what
-   the review reads (it anchors the merge guard below):
+1. **Claim** the next PR, naming the reviewing soul:
+   `slug=$(bin/task claim-next-review --agent carl)`. Stop when it returns `none`.
+2. **Record the PR head** BEFORE spawning Carl; it anchors the merge guard below:
 
    ```bash
    gh pr view <feat-pr> --json headRefOid --jq .headRefOid
@@ -190,42 +135,25 @@ The orchestrator's loop, per wave:
    (base `accepted`), branch, repos, risk tags, acceptance criteria, the recorded
    head, and the checks already reported. Keep the wave to five or fewer agents in
    flight (Carl + his light count as two).
-4. **Carl reviews and owns.** He runs the deep review + gate-zero, summons **one**
-   light specialist at his discretion (previewed by `bin/reviewer-select <task>
-   --no-record` — Carl is the standing primary, the light is the domain pick;
-   `--no-record` because a bare run records and claims), collects the
-   light's read, and drives the verdict:
-   - **merge-ready** → Carl revalidates the head and **merges** (see Verdicts).
-   - **request-changes** → Carl blocks it back to the builder (see Verdicts).
+4. **Carl reviews and owns.** He runs the deep review and gate-zero, summons
+   **one** light at his discretion, collects its read, and drives the verdict:
+   **merge-ready** → revalidate the head and merge; **request-changes** → block
+   it back to the builder (see Verdicts).
 5. **Release the claim** on Carl's verdict: `bin/task review-claim release <slug>`.
 6. Re-query and run the next wave until `claim-next-review` returns `none`.
 
-When you narrate the orchestration, label the spawn **"review: <slug>"** — never
-"summon Avi" (there is no supervisor; Carl is both the reviewer and the owner).
+Label each spawn **"review: <slug>"**, never "summon Avi". The agent tree is
+ephemeral, so narrate every act on the Activities timeline too.
 
-- **Caveat.** The tree is a convenience, not the record of truth: it is ephemeral
-  (it vanishes when the session ends) and the autonomous heartbeat runs with no
-  terminal, so it renders no tree at all. The durable, full-visibility surface is
-  the Activities timeline — narrate every act there regardless of whether a tree
-  is showing.
-
-**Don't touch the release timeline.** A review wave runs BEFORE the next release
-candidate exists — the candidate is born when qa-release STARTS ASSEMBLING (the
-sweep's `current_or_open!`), not here. Post no `testing/start`: with no active
-release it now 404s, and opening one from review is exactly the empty 0-task
-"Next Release" ghost that was removed. Node 1 Testing greens on its own once
-qa-release's first sweep stamps `assembling` (`docs/agents/modules/task-board-api.md`,
-"Release stage timeline").
+**Don't touch the release timeline.** The next release candidate is born when
+qa-release starts assembling, not here. Post no `testing/start`.
 
 The wave IS the task's **G2 Review gate**
 ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md)):
-Carl's gate-zero (`bin/dor-check <task> --gate-role review`, strict: red AND
-pending both block) opens+closes its own `dor_review` gate, the primary lane
-(`g2a_primary`) closes from Carl's scout report, and the light lane (`g2b_light`)
-closes from the light's report (`merge-ready` = passed; a reportless lane stays in
-flight for the next wave). The chips render on the task's gates card; record the
-markers with `bin/gate` on a hand-run review (the manual commands are in the gate
-doc).
+gate-zero (`bin/dor-check <task> --gate-role review`, strict: red AND pending
+both block) closes `dor_review`, Carl's scout report closes `g2a_primary`, and the
+light's report closes `g2b_light`. On a hand-run review, record the markers with
+`bin/gate` (commands in the gate doc).
 
 ## Verdicts
 
@@ -234,19 +162,12 @@ doc).
   the review owner, does this.
 
   **Merge condition — merge only a head you have VALIDATED.** The orchestrator
-  recorded the PR head **before** spawning Carl (a provable lower bound on what the
-  review reads); Carl re-reads it before merging. Anchor to that before-spawn head,
-  not to "what the reviewers read" — nothing in the scout-report schema records a
-  reviewed SHA, and a comparison with no left-hand side reads as satisfied by
-  default. If the two are **equal**, the reads and the claim-time green CI both
-  describe that head — merge it. If the head **moved** during review, the reads and
-  claim-time CI describe a different SHA, so do not merge on the reviewers' word
-  alone: **revalidate the new head's CI, and merge only if it is green** (pinned
-  with `--match-head-commit`), holding for re-review otherwise. This is not
-  hypothetical — the seam of
-  [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md) invites a
-  builder (or a reviewer) to lease-push a `zap:` commit mid-cycle, which can land
-  while the review is reading.
+  recorded the PR head **before** spawning Carl; Carl re-reads it before merging.
+  Anchor to that before-spawn head: the scout report records no reviewed SHA.
+  **Equal** → merge it. **Moved** (a mid-review `zap:` push, per
+  [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)) →
+  **revalidate the new head's CI, and merge only if it is green**, pinned with
+  `--match-head-commit`; otherwise hold for re-review.
 
   ```bash
   gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # BEFORE spawn AND before merge
@@ -263,30 +184,18 @@ doc).
   bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
   ```
 
-  **A gem's merge then gets one more read — a DETECTOR, not a gate.** For a
-  registered gem, `bin/pr-review` audits that gem's `accepted` right after the
-  merge (`UpstreamMisfile.audit`). This merge is exactly where a branch that
-  forked BEFORE a changelog roll files its `## Unreleased` bullets under a version
-  that already shipped, and from then on both sides carry those lines, so the
-  promote-time misfile guard in `bin/release.rb` cannot see them. The audit asks
-  one tree an absolute question instead, prints how many entry lines it judged,
-  and never fails the review — the mis-filed state does not exist until the merge
-  lands, so there is nothing here to refuse. On a finding, move the named lines
-  back under `## Unreleased` on the gem's `accepted` in a CHANGELOG-only PR;
-  nothing downstream is held meanwhile.
+  **A gem's merge gets one more read, a DETECTOR and not a gate.** For a
+  registered gem, `bin/pr-review` audits the gem's `accepted` after the merge
+  (`UpstreamMisfile.audit`) for `## Unreleased` bullets mis-filed under a version
+  that already shipped. It never fails the review. On a finding, move the named
+  lines back under `## Unreleased` in a CHANGELOG-only PR.
 
-  **The first line is not optional, and it is not advice.** A 200 with a `login`
-  means `gh` would merge as a PERSON, and the merge would carry that human's name
-  forever. On 2026-08-29 two merges landed under Mr. McRitchie's own account
-  exactly this way: 1Password hit its cap, `bin/gh-token` returned EMPTY, and `gh`
-  treats an empty `GH_TOKEN` as *not set* and falls back to its keyring. Nobody
-  chose it; every agent had already been told not to. Refuse to merge on a 200, and
-  on any answer you cannot read — an identity you cannot establish is treated like a
-  bad one, and a refusal costs only a re-review. `bin/pr-review` performs this same
-  check automatically before every merge write (`bin/lib/acting_identity.rb`); this
-  line is for the hand-run sequence, which has no such guard. Do NOT substitute a
-  permissions probe ("can it read PRs?") — the deployer App and a personal `repo`
-  scope both pass that, so it admits the very credential this catches.
+  **The `gh api user` line is not optional.** A 200 with a `login` means `gh`
+  would merge as a PERSON, under that human's name forever; this happened twice
+  on 2026-08-29 when an empty `GH_TOKEN` fell back to the keyring. Refuse to merge
+  on a 200 and on any answer you cannot read. `bin/pr-review` runs the same check
+  itself (`bin/lib/acting_identity.rb`). Do NOT substitute a permissions probe:
+  the deployer App and a personal `repo` scope both pass it.
 
   Order matters: merge → stamp → move, so the task is `reviewed` **iff** its code
   is on `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`). If the `gh pr
@@ -296,34 +205,23 @@ doc).
   unclaimed: retarget it to `accepted`, then merge. **At a merge, anything unproven
   REFUSES** — the base read failed, the probe was unreadable, the base came back
   empty, the repo to probe could not be derived, or the base is another OPEN PR's
-  head, which is a deliberate STACK.
-  `bin/pr-review` REFUSES those and names the parent: retargeting a stack changes
-  what the PR MERGES without moving its head, so `--match-head-commit` cannot see
-  it, and merging would drag the parent's unmerged work onto `accepted`. Leave the
-  task `submitted` and re-review once the parent lands (GitHub retargets the child
-  itself when it does). The merge ORDER is the parent's review to decide, not this
-  one's. The other four refuse for the same reason in different clothes: a base the
-  guard could not judge is not a base it may retarget into a merge. `bin/ship` is
-  deliberately the opposite on those — it repairs on a doubt, because it never
-  merges and a wrong retarget there is loud and recoverable.
+  head, which is a deliberate STACK. `bin/pr-review` REFUSES those and names the
+  parent: retargeting a stack changes what the PR MERGES without moving its head,
+  so `--match-head-commit` cannot see it. Leave the task `submitted` and re-review
+  once the parent lands. `bin/ship` is deliberately the opposite: it repairs on a
+  doubt, because it never merges.
 
-  A reviewer who finds a zappable defect **fixes it forward** — lease-push a
-  bounded `zap:` commit to the PR branch — and leaves the verdict merge-ready;
-  Carl's head revalidation gates it on the post-zap CI. Fix-forward is the
-  **default** for a zap-scale finding (see the bounce rubric below); a reviewer
-  who cannot zap it mid-review **names** it and it lands afterward as a conductor
-  zap on `accepted`. Bounds, timing, and recording:
+  A reviewer who finds a zappable defect **fixes it forward**: lease-push a
+  bounded `zap:` commit to the PR branch and stay merge-ready; the head
+  revalidation gates it on the post-zap CI. Bounds and recording:
   [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
 
-- **Request changes — a bounce is spent only on a REACHABLE regression.** A
-  block costs the builder a full lap (rework → resubmit → new CI → new claim,
-  an hour or more), so it is reserved for a defect someone can actually hit: a
-  correctness bug, a security hole, a data-loss path, an acceptance criterion
-  the diff does not meet — or the one mechanical blocker, red CI. (A FAILED
-  `gh pr merge` is NOT a bounce — the merge-ready bullet above self-heals it:
-  leave the task `submitted`, resolve on GitHub, re-review.)
-  The feedback names the regression **with its trigger** ("X input → Y wrong
-  behavior"), not a preference. Every other finding is handled without a bounce:
+- **Request changes — a bounce is spent only on a REACHABLE regression.** A block
+  costs the builder a full lap, an hour or more, so it is reserved for a defect
+  someone can hit: a correctness bug, a security hole, a data-loss path, an unmet
+  acceptance criterion, or red CI. A FAILED `gh pr merge` is NOT a bounce (see
+  above). The feedback names the regression **with its trigger** ("X input → Y
+  wrong behavior"). Every other finding is handled without a bounce:
 
   - **Zap-scale defect (within zap bounds)** → the reviewer fixes it forward on
     the PR branch and stays merge-ready, as above. Bouncing a zappable finding
@@ -340,27 +238,20 @@ doc).
     --feedback "<one complete send-back>" --agent carl
   ```
 
-  `--summary` is the short headline the task **header** shows (keep it 4-6 words);
-  `--feedback` stays the full send-back the builder fixes from. Omit `--summary`
-  and the header derives one from the feedback's first line. (A red CI never
-  reaches a claim — `claim-next-review` only pops green-CI tasks — but a CI that
-  flips red mid-review is caught by Carl's `--gate-role review` gate-zero and
-  blocked back here.)
+  `--summary` is the 4-6 word headline the task **header** shows; `--feedback` is
+  the full send-back the builder fixes from.
 
   **Two-bounce circuit breaker.** A repeat bounce is a review deadlock, and a
-  deadlock is the operator's call, never a ping-pong (the record: one task
-  bounced 5× before this rule). `bin/task block --kind rework` therefore runs the
-  breaker itself and **REFUSES** the second bounce. Read it yourself before you
-  compose the block:
+  deadlock is the operator's call. The rework block runs the breaker itself and
+  **REFUSES** the second bounce. Read it before you compose the block:
 
   ```bash
   bin/task bounces <task>
   ```
 
   **Exit 0 = CLEAR is the only exit that authorizes a re-block.** 10 = TRIPPED
-  (escalate). Any other non-zero = the read FAILED (bad token, board error) or the
-  slug is unknown — **not** a clear, and never to be treated as zero. That is the
-  exact defect this command replaced (see the note below).
+  (escalate). Any other non-zero means the read FAILED or the slug is unknown:
+  **not** a clear.
 
   On **TRIPPED**, escalate rather than re-blocking:
 
@@ -375,25 +266,11 @@ doc).
   nothing for the operator to arbitrate — say so and the block proceeds, with the
   reason recorded on the row: `--breaker-ack "red CI, mechanical"`.
 
-  **Why it is a command and not a recipe.** It used to be four lines of prose
-  telling you to `GET /api/v1/activities?...&activity_type=qa_feedback` and count
-  the rows, and every hand-rolled copy counted them on the **unparsed
-  `Net::HTTPResponse`** — where `response["data"]` reads an HTTP *header*, returns
-  nil, and yields **0 prior bounces for every task on earth**, silently. The
-  breaker looked like it was working for as long as it existed. Three more reads
-  scored zero the same way: an expired token (401), a non-JSON error page, and a
-  **slug that does not exist** — the activities endpoint filters by `task_slug`
-  and answers `200` with an empty list, so a typo read CLEAR. `bin/task bounces`
-  refuses all four instead of answering.
-
-  What it reads, and what it never reads: the durable trail is the task's
-  `qa_feedback` **activities**, one row per bounce, classified by the `kind`
-  stamped on each row. Never probe the live block columns — a compliant
-  resubmission resolves the open feedback and the forward move wipes
-  `blocked_at`/`block_kind`, so the live block state is CLEAR exactly when the
-  breaker must fire. `bin/task show --verbose` does not surface those columns at
-  all, so its silence is not evidence either way. The task page timeline renders
-  the same rows for a human check.
+  Never count bounces by hand. Every hand-rolled count read zero on some failure
+  (an unparsed response, an expired token, an error page, an unknown slug);
+  `bin/task bounces` refuses all four instead. It reads the task's `qa_feedback`
+  **activities**, one row per bounce, never the live block columns, which a
+  compliant resubmission wipes.
 
 - **Wait-for-CI or low-confidence** — a CI that flips to pending mid-review defers:
   release the claim and re-query on a later wave. On low confidence, Carl routes to

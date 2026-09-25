@@ -38,9 +38,9 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal({}, heartbeat_release_scope_meta(nil))
   end
 
-  test "release scope meta also enriches local full-suite cert lanes (full_suite_scopes)" do
-    # bin/full-suite-check's lanes register under full_suite_scopes:; the band
-    # merges both sections so a LOCAL cert run gets phase/tier/host chips too.
+  test "release scope meta also enriches the retired local cert lanes (full_suite_scopes)" do
+    # The retired bin/full-suite-check's lanes registered under full_suite_scopes:;
+    # the section stays so historical rows keep their phase/tier/host chips.
     meta = heartbeat_release_scope_meta("full_suite_test")
     assert_equal "build", meta["phase"]
     assert_equal "full", meta["tier"]

@@ -2,9 +2,9 @@
 
 # Renders the two facts a claimed build card must keep separate:
 #
-#   LIVENESS — "the builder's run is still here" (the ClaimLease lease, renewed on a
-#              30s beat by the detached renewer — bin/lib/build_claim_renewer.rb —
-#              and redundantly by bin/statusline). It survives a wedged agent.
+#   LIVENESS — "the builder's run is still here" (the ClaimLease lease; the build
+#              lease is retired in devops-v3, so a new build card shows none). It
+#              survives a wedged agent.
 #   PROGRESS — "this task last produced a durable artifact N ago" (a TaskEvent or
 #              a GateRun — evidence that work actually landed).
 #

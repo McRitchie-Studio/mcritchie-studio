@@ -1,0 +1,13 @@
+<%# locals: (epic:) %>
+<%# The epic's DONE bar: shipped tasks (and archived ones that shipped first) over
+    every task the epic holds — EpicSummary#progress_percent, rounded down so a full
+    bar means every task is done. Server-rendered width; no Alpine. %>
+<div class="flex items-center gap-2 min-w-0" data-test="epic-progress" data-done="<%= epic.done_count %>" data-total="<%= epic.total %>">
+  <div class="h-2 flex-1 min-w-16 rounded-full bg-inset border border-subtle overflow-hidden"
+       role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= epic.progress_percent %>"
+       aria-label="<%= epic.done_count %> of <%= epic.total %> tasks done">
+    <div class="h-full rounded-full <%= epic.complete? ? "bg-green-500 dark:bg-green-400" : "bg-violet-500 dark:bg-violet-400" %>"
+         style="width: <%= epic.progress_percent %>%;"></div>
+  </div>
+  <span class="shrink-0 text-xs tabular-nums text-secondary"><%= epic.done_count %>/<%= epic.total %> done</span>
+</div>

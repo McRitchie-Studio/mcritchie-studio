@@ -5,7 +5,7 @@
 # asserts what actually goes on the wire.
 #
 # Why this file exists. A gate run recorded that a cert ran; it did not record WHO
-# ran it. On 2026-08-13 a challenger's own `bin/full-suite-check` opened a g1_cert
+# ran it. On 2026-08-13 a challenger's own local cert (since retired) opened a g1_cert
 # on a task held by someone else, and the build-claim gate quoted that cert back to
 # the challenger as evidence the HOLDER was alive — progress with no owner gets
 # credited to whoever holds the claim. Task#progress_actor reads the stamp this

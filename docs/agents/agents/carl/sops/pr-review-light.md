@@ -1,13 +1,6 @@
 # PR Review Light
 
-> **Stale GitHub credential? Fix it yourself and keep going — do not escalate.**
-> App installation tokens expire **~hourly BY DESIGN**. On `Bad credentials`, a
-> 401/403, an unreadable CI, or a `gh auth login` prompt, run
-> `eval "$(bin/gh-auth-refresh --export)"` — read its **stderr**, because `eval`
-> hides the exit code — then retry the exact command that failed. Asking Mr.
-> McRitchie to run `gh auth login` is both the terminal chore the operating model
-> forbids and a step that cannot work: `gh` refuses to store a credential while
-> `GH_TOKEN` is set. Architecture and symptom→fix: [`source-control.md`](../../../modules/source-control.md).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](../../../modules/token-session.md)).
 
 ## Status: Active
 
@@ -130,10 +123,7 @@ note it as a finding — do not guess.
 
 **Never run `bin/task block` on the task you are reviewing.** The two-bounce
 circuit breaker is a scarce, task-scoped resource that belongs to the reviewer who
-OWNS the verdict — the Carl who summoned you. It is now ENFORCED, not merely asked:
-during a live review claim a `--kind rework` block by any soul other than the claim
-holder is REFUSED with **exit 11** and writes nothing (the rules and the whole
-argument live in `lib/review_verdict_gate.rb`).
+OWNS the verdict — the Carl who summoned you.
 
 This rule was written from an incident, not from theory. On 2026-09-07 a light on
 turf-monster PR 594 ran `bin/task block --kind rework` on its own initiative and

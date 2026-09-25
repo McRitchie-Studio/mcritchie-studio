@@ -1,36 +1,26 @@
 # CLAUDE.md — Claude Code adapter for the McRitchie operating model
 
-Claude Code auto-loads this file; it does **not** auto-load `AGENTS.md` (that is
-the Codex convention). So this adapter carries the operating model for Claude
-sessions. **Read this whole file before acting.**
+Claude Code auto-loads this file, not `AGENTS.md`, so this adapter carries the
+gate that must not be missed and then imports the map. Read both before acting.
+The long form this adapter replaced is kept verbatim in
+`mcritchie-studio/docs/agents/archive/entry-docs-2026-09-24.md`.
 
 ## SOP invocation standard
 
 McRitchie SOPs live in `/Users/alex/projects/AGENTS.md`'s **SOP Invocation
-Standard** and the repo docs it points to. SOPs are first-class registered
-commands with finite names and stable files. If Mr. McRitchie's prompt names an
-SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
-`archive-shipped`, `clean-infra`, `deploy-with-task`, `live-score-watch`,
-`contest-rehearsal`, `sleeper-auction-watch`, `entry-forfeit`, `market-refresh`,
-`content-build`,
-`chrome-profiles`, `credential-filing`, `credential-rotation`,
-`workspace-provision`, `workspace-launch`, `domain-purchase`,
-`workspace-signup`, `domain-dns`, `website-launch`,
-`clean-up`, `process-backlog`, `work-backlog`, `slack-capture`,
-`gmail-capture`, `credential-issues`, `form-fill`, `focus-session`, `arbitrate-block`, or `full-cycle`, resolve that phrase
-through the SOP registry, read the mapped SOP, then execute it. For example, `pr-review` means read
-`mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` first and run that
-review-only SOP; do not start with `bin/pr-review --help`, `bin/qa-intake`,
-or GitHub PR discovery.
+Standard**. SOPs are first-class registered commands with finite names and stable
+files. If Alex's prompt names an SOP or heartbeat act such as `pr-review`,
+`qa-release`, `production-deploy`, `focus-session`, `building-sop`,
+`arbitrate-block`, `credential-rotation`, `clean-up`, `process-backlog`,
+`work-backlog`, or `full-cycle`, resolve that phrase through the SOP registry,
+read the mapped SOP, then execute it. For example, `pr-review` means read
+`mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` first; do not start
+with `bin/pr-review --help`, `bin/qa-intake`, or GitHub PR discovery.
 
-## ⛔ STOP — before writing ANY code (feature, bug, or chore — even a "small" one)
+## ⛔ STOP — before writing ANY code
 
-If your work will produce a code diff, you are a **Feature agent** and you MUST
-run the DevOps cycle. There is **no size exemption** — "it's just a small change"
-or "just a registry entry" is exactly when this gets skipped.
-
-**Use the fast lane — it is the DEFAULT path.** Two wrappers collapse the
-bookends below into one command each:
+Any diff (feature, bug, or chore, however small) runs the DevOps cycle. There is
+no size exemption. Name the hub's script and stand in the desk:
 
 ```bash
 /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
@@ -39,336 +29,25 @@ bookends below into one command each:
 
 cd <desk>   #   ... the worktree begin printed; build there ...
 
-/Users/alex/projects/mcritchie-studio/bin/ship <task-slug> -m "Commit message"
-```
-
-**Name the hub's script; stand in the desk.** Every fast-lane command —
-`bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/full-suite-check`,
-`bin/dor-check` — lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A
-**satellite** desk (the table below names all five) carries none of them, so the bare
-`bin/ship` dies there as `nohup: bin/ship: No such file or directory` — instantly,
-and looking like a broken install rather than a wrong path. Only a **hub** desk
-has them, which is the whole reason the bare form reads as correct.
-
-The absolute path alone is NOT the remedy, because the path and the cwd answer
-different questions: **the path picks the SCRIPT, the cwd picks the TREE it acts
-on.** Both halves are load-bearing, so state both — and know that the fast lane's
-two writers disagree about what a wrong cwd costs you:
-
-- **The cert writers REFUSE.** `bin/fast-check` and `bin/full-suite-check` root at
-  the cwd's git toplevel and take `CertRootGuard#refusal`
-  (`bin/lib/cert_root_guard.rb`), so from the hub against a satellite task they
-  exit 1 — measured: *"this run roots at /Users/alex/projects/mcritchie-studio
-  (branch main), which is not <slug>'s tree — refusing to certify it."*
-- **`bin/ship` RE-ROOTS — loudly, not silently.** It reads the same assessment but
-  wants `:resolved_root` rather than the refusal, so when the task's desk is on
-  disk it prints `re-rooting at the task worktree <desk> (you ran from <cwd>)` and
-  carries on THERE. It dies only when no desk resolves — absent from disk, or a
-  multi-repo tie. Every gate it then runs re-verifies the root from its own cwd, so
-  a wrong re-root cannot survive to a recorded verdict. Do not read the cert
-  writers' refusal as ship's behaviour: ship's own comment says it "re-roots rather
-  than refuses when the task's worktree exists on disk — loudly."
-
-| Desk | Fast lane from that desk |
-|------|--------------------------|
-| `mcritchie-studio` | Hub-absolute **or** bare `bin/…` — a hub desk checks the scripts out, so both resolve |
-| `turf-monster` · `rolio` · `mcritchie-industries` · `tax-studio` · `chain-ops` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
-| `studio-engine` · `solana-studio` · `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add` at `<repo>/.worktrees/<slug>`, stamp it with hub-absolute `bin/agent-worktree identity <repo> <slug> <soul>` (a hand-cut desk gets no stamp and no `UNSTAMPED` warning), and run the handoff steps by hand. All three still get a cert; see below |
-
-Row 2 is the REGISTRY, not the machine: it names every satellite in
-`config/satellites.yml`, including `tax-studio`, which has no checkout yet. It is
-listed because the rule is about where the scripts live, and it will hold the day
-the repo lands.
-
-**Row 3 is a missing WORKTREE lane — NOT a missing cert lane. All three of these
-repos can be certified today.** `bin/task begin` cannot desk any of the three, so
-none of them gets `begin` or `ship`. But `bin/fast-check` carries a REGISTRY-GATE
-branch (`FullSuiteGate.registry_gated?` + `FullSuiteGate.release_check_cmd`): from a
-plain `git worktree add` desk, hub-absolute `bin/fast-check <task>` runs the repo's
-DECLARED gate as the whole mapped lane, skipping the Rails prepare lane that does not
-apply. Three repos declare one in `config/release_repos.yml`, and all three name the SAME
-thing — `bin/release-check`, a script that repo owns: **studio-engine** and
-**solana-studio** (under `gems:`, registered 2026-08-31) and **turf-vault** (under
-`apps:`, declared 2026-09-14 and repointed at its own script the same day). A registry row
-CAN declare a raw command chain instead, and turf-vault did for a day — but a chain
-in the hub is a copy of another repo's CI that drifts from it, so it is the unblock
-path, not the shape to copy.
-
-**Budget turf-vault's lane at FIVE lanes and 76s cold — not four and "~1s".**
-Measured 2026-09-22 against `origin/accepted` at `09cdfb3`: two Node lanes, then
-`cargo check`, `cargo clippy` and `cargo test`. A fresh tree pays **76s** (empty
-`target/`, crate cache warm); **1-2s** is the RE-RUN, and quoting only the warm
-number is what makes an honest lane look broken. The suite is **171 `node:test`
-cases** and **60 Rust tests**. But 171 is not 171 executed assertions: with no
-`node_modules`, three self-skip on absent runtime deps and the summary reads
-`pass 168 / skipped 3` — and those three print as `ok <n> … # SKIP`, which is
-pass-SHAPED, so a scan for `not ok` sees nothing wrong. Install the deps and it
-reads `pass 171 / skipped 0`. **Re-derive these figures; never re-copy them:**
-`bin/release-check --list` prints the lane table, and `npm run test:scripts` and
-`cargo test --workspace --locked` print their own totals. A count here with no
-command beside it is stale by default — this one was.
-
-**Read turf-vault from `origin/accepted`, never from the local primary.** On
-2026-09-22 that primary sat at `66ffff1` with no `bin/` directory at all, while
-`origin/accepted` carried the script at `09cdfb3` — so `ls bin/` "proves" the lane
-does not exist, contradicting the paragraph below. The read that answers it:
-`git -C /Users/alex/projects/turf-vault fetch origin && git show
-origin/accepted:bin/release-check`.
-
-**Never record a "no tests" skip for turf-vault.** It has a suite and now has a lane
-to run it. Until 2026-09-14 it had the suite but no lane, because this branch keyed on
-the `gems` SECTION rather than on the DECLARED command — and the docs routed readers
-to a task that had already shipped the repo's first CI workflow and been ARCHIVED. If
-a repo ever again hits `COULD NOT RUN` here, the remedy is a `release_check:` on its
-registry row, not a task to go and ask.
-
-**Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
-the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
-`bin/reviewer-select` reads to keep a soul off its own PR.
-Omit it and the selector fails CLOSED: it refuses to pick, the reviewer chooses a
-light by hand, and the no-self-review property goes unverified for that review.
-**If a second soul finishes the task, claim it again** (`bin/task move <task>
-building --actor <soul>`): the set accumulates, so both authors are excluded, and a
-handoff that names nobody makes the selector refuse rather than guess. Measured
-2026-08-28 — `built_by` blank on six consecutive tasks across one review sitting,
-two reviewers reporting the refusal and hand-picking.
-
-**THE BUILD CLAIM STAMPS THE AUTHOR SET — a create alone does not.** `--agent`
-writes two independent facts, and only one of them is what review reads:
-
-- **AUTHOR SET** (`devops.built_by` + `devops.builders`) — stamped by the build
-  CLAIM (`move <task> building`), which `begin` makes on BOTH forms. This is
-  what `bin/reviewer-select` excludes on. The claim is only the TRIGGER; the
-  soul it records comes from a PRECEDENCE CHAIN (`Task#builder_to_stamp`) —
-  **`--actor <soul>`** first, else `devops.persona`, else **the task's assigned
-  `agent_slug`**, the no-flag default that keeps a bare `bin/task move <task>
-  building` attributed. An existing `built_by` is KEPT, so only an explicit
-  `--actor` re-points a recorded builder.
-- **ASSIGNEE** (the `agent_slug` column) — written by a create body, or by
-  `bin/task update <slug> --agent <soul>`. **A resume does not write it**: the
-  resume branch builds no `top_body`, so `--agent` reaches the claim as
-  `--actor` and never lands on the column. That is a property of the code
-  path, not a policy of sparing top-level columns — the same resume PATCH
-  writes `dev_size` (`bin/task#renewal`, the PATCH body it builds).
-
-Measured 2026-09-08 on throwaway tasks — no single write sets both:
-
-```text
-bin/task create --agent avi           → assignee avi     · authors NOT STAMPED
-bin/task begin <slug> --agent avi     → assignee unset   · authors ["avi"]
-bin/task begin --title … --agent avi  → assignee avi     · authors ["avi"]
-```
-
-Every row above reaches the author set through `--actor` — both `begin` forms
-forward `--agent` to the claim — so none of them can exercise the `agent_slug`
-fallback. Measured 2026-09-08, the path that does:
-
-```text
-bin/task create --agent avi, then a BARE
-  bin/task move <slug> building       → assignee avi     · authors ["avi"]
-```
-
-The actor there is the session UUID and no persona is set, so `--actor` cannot
-fire and the stamp comes from `agent_slug` alone. So `assignee: unassigned
-builders: avi` is a correctly attributed, fully protected task — not a missing
-stamp — while a blank assignee on a task NOBODY claimed by name is a real gap,
-because `agent_slug` is the last source the chain has. `bin/task show <slug>`
-prints the two lines separately for exactly this reason.
-
-**It works on BOTH forms of `begin`, and the value must be a soul SLUG** —
-lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
-`--agent turf_monster` cannot match the pattern the stamp reads, and both are now
-REFUSED rather than accepted-and-ignored. The resume form
-(`bin/task begin <slug> --agent <soul>`) forwards the builder to the claim as
-`--actor`. A RESUME HONOURS SIX FLAGS — `--slug`, `--repo`, `--agent`,
-`--dev-size`, `--steal`, and `--title` itself — and refuses every OTHER create
-flag with the `bin/task update` remedy rather than dropping it. It refuses them
-**whenever the task already exists**, not merely when `--title` is missing:
-re-running `begin` with the same title and a `--shape` is a resume too, and
-`--shape` used to vanish there in silence. `--title` stays legal because it is
-how a re-run NAMES the task whose slug was just resolved — so re-running the
-create line resumes cleanly, and only the OTHER create flags on it are refused.
-Measured 2026-08-29: four tasks
-resumed with `--agent` came back with `agent_slug` nil AND `built_by` nil, while
-the same flag on a `begin --title` create stamped both — the flag was silently
-discarded, and `begin` reported success either way. The `built_by` half was the
-defect and is fixed; the `agent_slug` half is the assignee/author split
-above, and a bare `bin/task create --agent <soul>` still stamps no author at
-all because it makes no claim.
-
-`bin/task begin` runs steps 1-2 (create → worktree → bind → `move building` →
-preflight) and prints the worktree path, port, and task URL. `bin/ship` — the
-HUB's script, run with that worktree as the cwd — runs steps 4-5 (commit →
-`bin/fast-check` → push →
-**non-draft** PR into `accepted` led by the task URL → record `pr_url` → **wait
-for CI to settle** → `bin/dor-check` → `move submitted` → read-back verify).
-Re-run either after a failure and it **resumes** — `bin/ship` with its worktree
-as the cwd,
-and `begin` **by slug** (`bin/task begin <task-slug>`). Re-running the whole
-`begin --title …` line once the task exists is now REFUSED rather than resumed: a
-create flag cannot land on a task that already exists, and dropping it in silence
-is how a task ends up shaped wrong. The refusal names both moves — where the
-value belongs, and how to resume without it.
-
-**`bin/ship` waits for the PR's CI before the DoR verdict**
-(`gate-submit-on-green-ci`), so a task reaches `submitted` carrying a GREEN CI
-rather than a fast cert credited provisionally against a pending one — and a red
-CI lands in the session that still has the worktree warm instead of bouncing into
-a cold one. The wait decides nothing: whatever it settles on, `bin/dor-check`
-runs next and owns the verdict exactly as before. It is bounded at both ends — a
-run that never appears, or never finishes, falls through to the verdict and the
-old provisional path. Disarm with `SHIP_CI_WAIT=off`.
-
-**Budget for it: a cold `bin/ship` now runs ~12 minutes**, not ~3. That exceeds
-what some agent harnesses allow one foreground command, so **run it in the
-background — and wait for it with `bin/ship-wait`**:
-
-```bash
-cd <desk>   #   ... the worktree begin printed; ship-wait roots the ship at the cwd ...
 /Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug> --launch -m "Commit message"
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug>   # attach to one already running
 ```
 
-It exits **0 succeeded · 1 failed · 2 still running at the timeout**, returns
-IMMEDIATELY when the ship has already finished, and takes its verdict from the
-ship's LOG — `bin/ship` can exit 0 on a run that never reached the seam, so
-"the process is gone" is never an outcome. **Do not hand-roll a `pgrep`
-watcher.** A pattern naming the ship also matches every sibling watcher shell
-that names it, so the condition is true forever and the wait can never fire
-(measured 2026-09-09: 30+ orphaned shells from one builder, and a session spent
-hand-polling). If a wait is cut short, re-run it; if the SHIP is cut short,
-re-run `bin/ship` (it resumes and finishes in seconds once CI has settled). A
-killed ship leaves the task in `building` with its PR already open, which the
-review sweep does not pop.
+- Write the test tiers your shape requires as you go, unit-first.
+- A cold ship takes about 12 minutes, so run it in the background with
+  `bin/ship-wait`; do not hand-roll a pgrep watcher.
+- `bin/fast-check` is an optional pre-flight; the cert gate (test-only included)
+  reads only the PR's settled green CI.
+- `bin/ship` stops at `submitted`. Never merge, deploy, or push `main` unless Alex
+  assigned you that lane in this session.
+- Detail: `mcritchie-studio/docs/agents/modules/building-sop.md` and
+  `mcritchie-studio/docs/agents/modules/fast-lane.md`.
 
-**Those minutes are now visible.** The task sits in `building` with its PR open
-while ship waits, and the board card shows that PR's CI meter there — `PR: <n>`,
-one mark per check inside the bar, and a clock that ticks while checks run and
-freezes to the run's duration when they settle. So "is it still going?" is a
-glance at the board, not a question for the session.
-Before a PR exists, the same card shows the current local-cert lane and clock;
-if its heartbeat stops, the open board flips that lane to `STALLED` and freezes
-the clock at the last proof of life.
+## GitHub auth is self-service
 
-Their limits, stated plainly: they change **no gate semantics**; `bin/ship`
-stops at `submitted` and never merges or deploys; `bin/ship` has no `--steal`
-(take a BUILDER-held task over with `bin/task begin <task-slug> --steal`, then
-ship — a REVIEWER-held task is asked to release, `bin/task review-claim release
-<task-slug>`, never stolen; the refusal names which holder you have);
-you still write the tests in step 3; and `bin/ship` is **not** `bin/release
-ship`, which is the G4 **production** deploy (`release → main`,
-ship-authority only). `begin` passes `--root <worktree>` to
-`bin/session-preflight`, and the preflight self-defends that the inspected root
-is the task's own desk, so its verdict describes the worktree it just created.
-
-The long form below stays canonical for what the wrappers don't cover
-(multi-repo tasks, a bespoke PR body, rerunning one step piecemeal). Either
-way, do **not** start editing files until you have:
-
-1. **Created the production task** —
-   `cd /Users/alex/projects/mcritchie-studio && bin/task create --title "<feature>"
-   --kind feature --shape <shape> --repo <app> --risk <tag>
-   --accept "<criterion>" --test "<tier>"`. **Title = 3-5 words** (the create API
-   rejects otherwise); the slug derives from it (`/tasks/<slug>`, seeds
-   `worktree_slug` + `feat/<slug>`) — pass `--slug` only to override.
-   **Each `--accept` bullet = 5-12 words.** Put any verbose detail/reasoning in
-   `--agent-context "…"` (free-form, for agent-to-agent communication). Classify
-   the **shape** (it selects the tests you must write, per `config/feature_shapes.yml`):
-   `ui-only` · `ui+db` · `backend` · `library` · `onchain` · `onchain-vertical` ·
-   `docs` · `test-only`. The last two carry no tiers; `test-only` is claimable
-   ONLY on a diff dor-check observes to be 100% test code, and still owes the
-   **cert gate** plus a `[control]` line naming a file in the diff. That gate is
-   the ordinary one — `full_suite_gate: true`, unlike `docs`, which waives it —
-   so **`bin/fast-check` plus a green CI satisfies it**, exactly as for a
-   feature. It does **not** mean you owe a local `bin/full-suite-check` run.
-2. **Allocated an isolated worktree** — `bin/agent-worktree new <app> <task>` —
-   and worked there on an allocated port. Never edit a primary checkout.
-
-While building:
-
-3. Write the **test tiers your shape requires as you go**, unit-first (this is
-   how bugs get caught before PR). Record them tier-tagged:
-   `bin/task update <task> --checks "[unit] ..." --checks "[integration] ..."`.
-   For a **bug**, write the failing regression test FIRST, at the lowest tier
-   that reproduces it.
-
-Before handoff:
-
-4. Certify — the task's **G1 Cert** gate: commit, then run `bin/fast-check
-   <task>` (the builder default, ~1 min) or `bin/full-suite-check <task>`
-   (CI-independent). These are hub scripts too: from a satellite desk name them
-   `/Users/alex/projects/mcritchie-studio/bin/…`, still standing in the desk.
-   The pipeline's gates run
-   **G1 Cert → G2 Review → G3 Candidate → G4 Ship**; standalone SOPs:
-   `mcritchie-studio/docs/agents/modules/gates/`.
-5. Push, open a PR **into `accepted`** (base `accepted`, not `release`/`main`)
-   whose body **leads with the task URL**; then verdict: run **`bin/dor-check
-   <task>`** and fix whatever it flags — it refuses an under-tested PR and its
-   verdict closes the gate. Then `bin/task move <task> submitted` **without
-   waiting for CI** — pending CI is a loud suggestion (the fast cert is credited
-   provisionally); red CI blocks; review's gate-zero holds the authoritative
-   CI verdict and bounces a red-CI task back before any reviewer spawns.
-
-Task lifecycle is two workflows meeting at the `submitted` seam — **Build**
-(feature agent) `designed → building → submitted` (you own through `submitted`)
-and **Deploy** (DevOps) `submitted → reviewed → assembled → shipped`. The code
-walks a three-rung branch ladder — **`accepted` → `release` → `main`**: every
-repo keeps persistent `accepted` and `release` branches, and feature PRs target
-**`accepted`** (not `release`/`main`). On a merge-ready verdict review **merges
-the feat PR into `accepted`**, stamps `merged: "accepted"`, then moves the task
-`reviewed` (invariant: `reviewed` ⟺ code-on-`accepted`; a merge failure leaves it
-`submitted`). Review is still review-only in that it never touches `release`/
-`main` and never deploys. Avi's self-healing `qa-release` sweep (`bin/release
-prepare`) then **promotes ALL of `accepted` onto `release` via ONE batch PR per
-repo** (not N per-task merges), records membership (re-stamping `merged:
-"release"`), deploys QA, and flips members `assembled` only on QA-green; Steffon's
-`production-deploy` (`bin/release ship`) fast-forwards `release → main` (stamping
-`merged: "main"`). `blocked` = needs attention; `archived` = terminal.
-Full spec: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
-
-**Sizing trio (po/dev/actual).** Avi is the default sizer — he sets `po_size` at
-creation (`bin/task create … --po-size small|medium|large|xl`), a forecast, not a
-gate (backfill later with `bin/task update --po-size`). The per-task Pokémon
-stamps its `dev_size` as it claims the task (`bin/task move <task> building
---dev-size <size>`; optional). At ship, `actual_size` auto-derives from MEASURED
-$cost (sum of `cost` across the task's TaskEvents) when blank — powering the sizing
-intelligence dashboard.
-
-**Never** push to `main`, merge, deploy, or publish gems unless Mr. McRitchie
-explicitly assigns you that lane in this session.
-
-If you skipped any of the above and already edited files: stop, create the task
-now, move the work into a worktree/branch, and proceed from step 3.
-
-Full SOP: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
-
-## 🔑 GitHub auth is SELF-SERVICE — never stop to ask for it
-
-`bin/ship`, `pr-review`, and every CI read reach GitHub with a **GitHub App
-installation token that expires about hourly BY DESIGN**. When one goes stale you
-will see `Bad credentials`, a 401/403, or a `gh auth login` prompt. That is
-**yours to fix**, in one command, and then you continue:
-
-```bash
-eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"
-```
-
-Do **not** ask Mr. McRitchie to run `gh auth login`. It is the terminal chore the
-operating model forbids, and it would not work anyway — `gh` refuses to store a
-credential while `GH_TOKEN` is set, and `GH_TOKEN` outranks the keyring it would
-write to. Escalate only AFTER running the command above and reading its stderr,
-and report what it said. Architecture, the two lane identities (`agent` builds
-and merges, `deployer` cannot touch PRs), and a symptom→fix table:
-`mcritchie-studio/docs/agents/modules/source-control.md`.
-
-**If that one command does not clear it, run the `token-session` SOP**
-(`mcritchie-studio/docs/agents/modules/token-session.md`) rather than
-improvising. It carries the lifecycle in one table — no token mints one, a fresh
-one is served with ZERO 1Password reads, a 401 retires exactly that token — plus
-the diagnostic that turns an indefinite wait into a decision:
-`op service-account ratelimit` reports the account's remaining quota and its
-reset DIRECTLY. The daily cap is account-wide and shared by every lane, so
-"1Password is down" is usually "the quota is spent".
+On `Bad credentials`, a 401, or a `gh auth login` prompt, run
+`eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` and
+retry. Never ask Alex to run `gh auth login`. If that fails, run the
+`token-session` SOP.
 
 ---
 

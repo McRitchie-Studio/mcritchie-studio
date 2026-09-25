@@ -1,241 +1,143 @@
 # PR Review Primary
 
-> **Stale GitHub credential? Fix it yourself and keep going — do not escalate.**
-> App installation tokens expire **~hourly BY DESIGN**. On `Bad credentials`, a
-> 401/403, an unreadable CI, or a `gh auth login` prompt, run
-> `eval "$(bin/gh-auth-refresh --export)"` — read its **stderr**, because `eval`
-> hides the exit code — then retry the exact command that failed. Asking Mr.
-> McRitchie to run `gh auth login` is both the terminal chore the operating model
-> forbids and a step that cannot work: `gh` refuses to store a credential while
-> `GH_TOKEN` is set. Architecture and symptom→fix: [`source-control.md`](../../../modules/source-control.md).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](../../../modules/token-session.md)).
 
 ## Status: Active
 
-This is the **primary reviewer role SOP** — the deep review **Carl** runs as the
-**standing primary AND owner** of a submitted PR. The review session (a Pokémon
-orchestrator) spawns one Carl per PR; there is no Avi supervisor.
+This is the **primary reviewer role SOP**: the deep review **Carl** runs as the
+**standing primary AND owner** of one submitted PR. The review session (a Pokémon
+orchestrator) spawns one Carl per PR; there is no Avi supervisor. In a focus
+session, Xan runs this same SOP alone on a prose-only PR.
 
-You are **Carl, the review OWNER**: you do the **deep technical review**, you
-**own the gates** (`bin/dor-check`, cert/CI green, acceptance match), you
-**summon a LIGHT specialist** at your own discretion for a focused domain second
-read, you **DRIVE the verdict**, and on a merge-ready verdict you **merge the feat
-PR into `accepted`** yourself. The light is your **second set of eyes**, not a
-co-owner: it reports a focused domain read up to you, it does **not** run the
-gates, and it does **not** drive the verdict: a defect it spots reaches you as a
-**scout report**, and **the bounce is yours to spend, not its** (step 6).
+You are **Carl, the review OWNER**. You do the **deep technical review**, you
+**own the gates** (`bin/dor-check`, CI green, acceptance match), you **summon a
+LIGHT specialist** at your discretion, you **DRIVE the verdict**, and on
+merge-ready you **merge the feat PR into `accepted`** yourself. The light is your
+**second set of eyes**, not a co-owner: it does **not** run the gates or drive the
+verdict. A defect it spots reaches you as a **scout report**, and **the bounce is
+yours to spend, not its** (step 6).
 
-You review-only in one direction: you merge the feat PR into `accepted` (the
-ladder's first rung) but never merge to `release`/`main`, deploy QA, ship
-production, or archive work. Avi's `qa-release` sweep owns everything past
-`accepted`.
+You never merge to `release`/`main`, deploy, or archive. Avi's `qa-release` sweep
+owns everything past `accepted`. The rationale and incident history this page no
+longer carries are frozen verbatim in
+[`../../../archive/pr-review-primary-2026-09-25.md`](../../../archive/pr-review-primary-2026-09-25.md).
 
-## Scope
+## Entry and preconditions
 
-One PR / one task. Deep review + ownership — you own the gates, summon the light,
-drive the verdict, and merge into `accepted` on approval. This SOP does not touch
-`release`/`main`, deploy QA, ship production, or archive work.
-
-## Entry
-
-Work from the McRitchie Studio primary checkout as Carl:
+Work from the hub primary as Carl:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
 ```
 
-Read `/Users/alex/projects/AGENTS.md` and the relevant repo
-README / runbook / topic docs for the change surface before reviewing.
+Read `/Users/alex/projects/AGENTS.md` and the repo docs for the change surface.
 
-## Preconditions
-
-The orchestrator handed you a task slug, its PR (base `accepted`), branch, repos,
-risk tags, acceptance criteria, the **recorded PR head** (captured before you were
-spawned — the merge guard's lower bound), and the checks already reported. The PR
-was claimed via `bin/task claim-next-review --agent <your-soul>` (the soul fills the
-board's crew seat the moment the claim lands), which only pops **green-CI** tasks,
-so its CI was green at claim time. If any of that is missing, note it as a finding
-— do not guess.
+The orchestrator handed you: the task slug, its PR (base `accepted`), branch,
+repos, risk tags, acceptance criteria, the **recorded PR head** (the merge guard's
+lower bound), and the checks already reported. The claim came from
+`bin/task claim-next-review --agent <your-soul>`, which pops only **green-CI**
+tasks. If anything is missing, note it as a finding; do not guess.
 
 ## Procedure
 
-1. **Narrate as Carl — before any review work.** Open a soul-attributed activity so
-   the Alex heartbeat's Agent column attributes the review to Carl, not the base
-   session mascot:
+1. **Narrate as Carl, before any review work:**
 
    ```bash
    bin/agent-activity start --category Verify --agent carl --task <task-slug> --reason "review: <task-slug>"
    ```
 
-2. **Summon your LIGHT specialist — your call, one soul.** You are the standing
-   primary; pick the domain specialist whose eyes the change most wants and summon
-   **one** light. `bin/reviewer-select <task> --no-record` previews the pair (you as
-   primary + the domain light) — use it to choose, or override with your own domain
-   judgment. Keep `--no-record` on a preview: a bare run RECORDS the pair, and
-   recording takes the task's review claim:
+2. **Summon your LIGHT: your call, one soul.** Preview the domain pick, or
+   override it with your own judgment. Keep `--no-record`: a bare run RECORDS the
+   pair, and recording takes the task's review claim.
 
    ```bash
-   bin/reviewer-select <task> --no-record        # preview the domain light (Shannon / Jasper / Steffon / Alex)
+   bin/reviewer-select <task> --no-record        # preview the domain light (Shannon / Jasper / Steffon / Xan)
    ```
 
-   Spawn that soul as a light reviewer via the Agent tool, `description`:
-   `light review: <soul>`, pointed at [`pr-review-light.md`](pr-review-light.md).
-   It runs in parallel with your deep review and reports up to you. Summon **at
-   most one** light — a focused second read, not a committee. (You may skip the
-   light on a trivial change and note that you did.)
+   Spawn that soul via the Agent tool, `description`: `light review: <soul>`,
+   pointed at [`pr-review-light.md`](pr-review-light.md). Summon **at most one**.
+   You may skip the light on a trivial change; note that you did.
 
-   **Say in the brief where the light may write.** The builder still owns the
-   task's desk; you and your light are readers there
+   **Say in the brief where the light may write.** The builder owns the desk; you
+   and your light are readers there
    ([the desk writer convention](../../../modules/worktrees.md#the-desk-writer-convention)).
-   If either of you will run a MUTATION pass, each needs a throwaway of its own —
-   a mutation is a write, and two mutation passes in one tree corrupt each other's
-   results. It happened on 2026-08-30: your backup captured your light's
-   mutation, and her run came back with four failures that were yours — one
-   collision, seen from both seats. **If BOTH of you will mutate, a throwaway
-   each is not enough**: a copied `.env.test.local` names the desk's ONE test
-   database, so ask for a real desk each (`bin/agent-worktree new`).
-   Name the throwaway in the spawn brief; the light cannot see what you are doing.
+   A mutation pass is a write, so each mutating reviewer needs its own throwaway,
+   and if BOTH of you mutate, a real desk each (`bin/agent-worktree new`), since a
+   copied `.env.test.local` names the desk's one test database.
 
-3. **Deep review.** Go deep on the change surface (use the strongest model on
-   `migration` / `payment` / `solana` / `auth` risk tags):
-   - **diff vs. acceptance** — the change does what the task's acceptance criteria say.
-   - **checks / tests (you own this gate)** — the shape's Definition-of-Ready
-     **base** tiers are green in `checks_run`; run the review gate-zero
+3. **Deep review.** Use the strongest model on `migration` / `payment` / `solana`
+   / `auth` risk tags.
+   - **diff vs. acceptance**: the change does what the acceptance criteria say.
+   - **checks and tests (your gate)**: the shape's base tiers are in `checks_run`,
+     and the review gate-zero passes:
 
      ```bash
      bin/dor-check <task-slug> --gate-role review
      ```
 
-     and confirm it passes. This gate is yours, not the light's. The
-     `--gate-role review` flag matters twice: your verdict lands as a SOP on the
-     task's **G2a Primary** gate attempt
-     ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md))
-     instead of closing the builder's **G1 Cert** — a bare `bin/dor-check
-     <task-slug>` would stamp the builder's gate as if the builder ran it — and it
-     keeps the **strict CI semantics**: the claim popped a green PR, but CI can
-     flip mid-review, so YOUR run is the authoritative in-review CI verdict — red
-     and still-running both block, and no local cert stands in for the settled
-     green (since 2026-09-24 the gate reads no cert receipt at all).
-     **The gate is an ALLOW-LIST: green advances, everything else refuses.** That
-     includes states it has never heard of, and it includes an UNREAD verdict —
-     `unreadable` (the token was refused), `unverified`, and `none` — because a
-     gate cannot be the authoritative CI verdict for a CI it could not read. It
-     also includes a blank `devops.pr_url`, which used to pass silently.
+     `--gate-role review` matters twice. Your verdict lands on the task's **G2a
+     Primary** gate ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md))
+     instead of closing the builder's G1. And it keeps **strict CI semantics**:
+     red and still-running both block, and no local cert stands in for the
+     settled green.
 
-     **On a PR that carries CODE there is no escape either.** Until 2026-09-24 a
-     fresh `bin/full-suite-check` cert stood in for an unread verdict here and the
-     refusal named that command; both retired with the receipts
-     (`dor-reads-settled-ci-verdict`). Do not send the builder to
-     `bin/full-suite-check` on any refusal: the gate no longer reads what it
-     records, and the run would leave the refusal byte-identical.
+     **The gate is an ALLOW-LIST: green advances, everything else refuses**,
+     including states it has never heard of, an UNREAD verdict (`unreadable`,
+     `unverified`, `none`), and a blank `devops.pr_url`. There is no local cert
+     to send the builder to, on a code PR or a doc-only one.
 
-     **On a DOC-ONLY PR there is no escape at all, and green is NECESSARY but
-     not SUFFICIENT.** When the task's kind is `docs` / `chore` / `cleanup` *and*
-     the observed diff ships no behavior, the gate takes its **exempt** path: the
-     shape/test-tier gate is waived, and because it is waived there is no suite
-     left whose result could stand in for the CI verdict. So a full cert changes
-     nothing there, and **the refusal no longer offers one** — it says plainly
-     that a local cert does not stand in. Do not send the builder to
-     `bin/full-suite-check` on a doc-only refusal; it is a wasted run.
-
-     Until 2026-09-05 this SOP promised the opposite, and so did the gate: it
-     printed the code-path remedy and then refused the exact cert it had just
-     named (`/tasks/exempt-refusal-prints-dead-remedy`). What to do instead is
-     unchanged from any other unread verdict — **defer** while checks are coming,
-     and `conductor-review` when the cause is a credential the builder does not
-     own.
-
-     **Expect a refusal that a GREEN CI does not clear.** This SOP used to say
-     green was the only thing that advances the exempt path, which read as though
-     green were enough. It is not, since the PR-read refusal joined this path:
-     a **failed read of the PR's own file list** — `unreadable` (the credential
-     was refused) or `unverified` (no `gh`, a 404, a transport error) — refuses
-     the review verdict on its own, on a CI that is fully green. The exemption
-     was never proven against the artifact the gate judges, and a local tree is
-     not allowed to stand in for it in this role. The refusal's closing line
-     names which half refused, so read it before routing: a CI fault and an
-     unread PR take different fixes, and only the credential half is cleared by
+     **Expect a refusal that a GREEN CI does not clear.** On a doc-only PR (kind
+     `docs` / `chore` / `cleanup`, no behavior in the diff) the gate takes its
+     **exempt** path, and a **failed read of the PR's own file list**
+     (`unreadable` or `unverified`) refuses the verdict on a fully green CI. The
+     refusal's closing line names which half refused: a CI fault and an unread
+     PR take different fixes, and only the credential half is cleared by
      `eval "$(bin/gh-auth-refresh --export)"`.
 
-     **In a GEM repo the same is true.** `studio-engine` and `solana-studio` have
-     no `ci.yml` for the resolver to read (their workflow is `engine-ci.yml` /
-     `gem-ci.yml`), and their `bin/fast-check` runs the `release_check` their
-     `config/release_repos.yml` row names — as a pre-flight, not as evidence the
-     gate reads. Their PR's own CI is the suite verdict there as everywhere.
+     Gem repos work the same way: their PR's own CI (`engine-ci.yml`,
+     `gem-ci.yml`) is the verdict, and `bin/fast-check` there is only a pre-flight.
 
-     **When it refuses on an unread verdict, that is a `conductor-review`, not a
-     `request-changes`.** The builder does not own the credential. For
-     `unreadable`, `wait-for-ci` is futile — CI already reported and this token
-     cannot hear it — so mint a fresh App token with `bin/gh-app-mint-token` (never
-     print it) and retry the exact check read; re-running `dor-check` alone will
-     never clear it. For `none`, the opposite: **wait, a check is coming.** Every
-     repo in the ecosystem ships a `pull_request`-triggered workflow — verified at
-     source 2026-08-31 on both `accepted` and `main`: `solana-studio`'s
-     `gem-ci.yml` (`name: Gem CI`), `turf-vault`'s `ci.yml` (`name: CI`),
-     `studio-engine`'s `engine-ci.yml`, and `ci.yml` in every app — so there is no
-     repo left where "no check will ever appear" is a property of the REPO. This
-     paragraph used to say `solana-studio` and `turf-vault` had **no workflows at
-     all** and that the full cert was the only route there; both halves are now
-     false, and it contradicted the gem-repo paragraph two above, which already
-     named `gem-ci.yml`. When checks genuinely never arrive the cause is the PR's
-     MERGE STATE, not the repo: `bin/lib/ci_status.rb` calls that `conflicted` or
-     `ci_less`, each carrying its own remedy, and folding either into `none` is the
-     PR-#509 stall.
+     **An unread verdict is a `conductor-review`, not a `request-changes`**: the
+     builder does not own the credential.
+     - `unreadable`: waiting is futile. Mint a fresh App token with
+       `bin/gh-app-mint-token` (never print it) and retry the exact check read.
+     - `none`: **wait, a check is coming**. Every repo ships a
+       `pull_request`-triggered workflow. When checks genuinely never arrive, the
+       cause is the PR's merge state, which `bin/lib/ci_status.rb` reports as
+       `conflicted` or `ci_less`, each with its own remedy.
 
-     **Run it from wherever you are — the gate validates every tree it touches.**
-     You are standing in the studio primary (the Entry above), which is not the
-     task's checkout, so `dor-check` resolves the task's own worktree/branch and
-     says so on stderr (`⚠ dor-check: RE-ROOTING …`, naming both trees). That
-     banner is the gate working, not a warning about your setup. It checks the same
-     two axes — right repo, right branch — on the checkout it JUMPS TO *and* on the
-     one you are STANDING in, so a stale desk, a detached `HEAD`, or another repo's
-     worktree of the same name is refused rather than quietly graded. Hence
-     three of its refusals need YOUR judgment rather than a re-run:
-     `AMBIGUOUS TASK TREE` (a multi-repo task has a worktree per repo and
-     `devops.pr_url` didn't name one of them — re-run with
-     `DOR_CHECK_DIFF_ROOT=<the right checkout>`), `TASK TREE NOT FOUND` (a directory
-     carrying the task's name is on disk but is on the wrong branch or in the wrong
-     repo — the message names which; check the task's branch out there, or declare
-     the right tree) and
-     `root guard: … NO tree here can grade its cert` (fetch the branch, or point
-     `DOR_CHECK_DIFF_ROOT` at the task's checkout). Never "fix" any of them by
-     re-running from a tree you happen to have handy: until 2026-08-08 this gate
-     read whatever checkout you stood in, and one unrelated dirty `.md` on the
-     primary was enough for it to call a multi-file code PR "doc-only" and wave
-     it through.
-   - **your domain checklist** — walk Carl's REVIEW CHECKLIST (in
-     [`../role.md`](../role.md)) against the diff for the hard-won backend gotchas:
-     N+1s, transaction boundaries, `rescue_and_log` on every write path, migration
-     + seed + test in one commit, slug-based FKs, Zeitwerk/eager-load traps.
-   - **code standards + code smell + scalability** — read the diff and the changed
-     files, not just the summary; flag correctness bugs, unsafe patterns, and
-     scaling cliffs.
-   - **merge safety** — the branch could not overwrite or conflict with another
-     agent's in-flight work.
-   - **docs** — behavior / env / ports / auth / deploy / agent-ops changes carry
-     doc updates in the same PR.
-   - **prior art** — before writing that the diff *introduces*, *exposes*, or
-     *first makes reachable* anything, check whether the surface was ALREADY
-     there. Read what the diff replaced, deleted files included (`git show
-     origin/accepted:<path>`, `git diff --diff-filter=D --name-only origin/accepted...HEAD`), compare route + CSP +
-     auth + data, and state the delta in one line ("net exposure change: zero"
-     is a complete answer). If you did not look, write `prior art: not
-     investigated` — an omission reads as "none", and a reader will act on it.
-     This is not hypothetical: an advisory that skipped it produced
-     `finding-6a5fdcd157b3`, which called turf-monster "the first consumer where
-     the iframe actually renders" when TM's *deleted* view had carried the
-     identical unsandboxed iframe, same URL, same CSP, all along.
+     **Run it from wherever you are.** From the hub primary, `dor-check` resolves
+     the task's own tree and says so on stderr (`⚠ dor-check: RE-ROOTING …`);
+     that banner is the gate working. Three refusals need your judgment, not a
+     re-run from whatever tree is handy:
+     - `AMBIGUOUS TASK TREE`: re-run with `DOR_CHECK_DIFF_ROOT=<the right checkout>`.
+     - `TASK TREE NOT FOUND`: the named directory is on the wrong branch or repo;
+       check the task's branch out there, or declare the right tree.
+     - `root guard: … NO tree here can grade its cert`: fetch the branch, or point
+       `DOR_CHECK_DIFF_ROOT` at the task's checkout.
+   - **your domain checklist**: walk Carl's REVIEW CHECKLIST ([`../role.md`](../role.md)):
+     N+1s, transaction boundaries, `rescue_and_log` on every write path,
+     migration + seed + test in one commit, slug-based FKs, eager-load traps.
+   - **code standards, smells, scalability**: read the diff and the changed
+     files, not the summary.
+   - **merge safety**: the branch cannot overwrite another agent's in-flight work.
+   - **docs**: behavior, env, ports, auth, deploy, or agent-ops changes carry doc
+     updates in the same PR.
+   - **prior art**: before writing that the diff *introduces* or *exposes*
+     anything, read what it replaced, deleted files included (`git show
+     origin/accepted:<path>`, `git diff --diff-filter=D --name-only
+     origin/accepted...HEAD`), and state the delta in one line. If you did not
+     look, write `prior art: not investigated`.
 
-4. **Collect the light's report** and classify all findings (yours + the light's)
-   as blockers, non-blockers, or questions. **A blocker is a REACHABLE
-   regression** — correctness, security, data loss, or an acceptance criterion
-   the diff does not meet — named with its trigger. A zap-scale finding (within
-   [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md) bounds)
-   is not a blocker: fix it forward on the PR branch and stay merge-ready.
-   Scope, style, and hardening ideas are non-blockers: record them with
+4. **Collect the light's report and classify every finding.** **A blocker is a
+   REACHABLE regression** (correctness, security, data loss, an unmet acceptance
+   criterion), named with its trigger. A zap-scale finding is not a blocker: fix
+   it forward on the PR branch
+   ([`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)) and
+   stay merge-ready. Scope, style, and hardening ideas are notes:
    `bin/task note <task-slug> --comment "..." --agent carl`.
 
-5. **Record your scout report on the task** (drop `--dry-run` once the payload
-   looks right):
+5. **Record your scout report** (drop `--dry-run` once the payload looks right):
 
    ```bash
    bin/devops-cycle --record-scout-report <task-slug> --scout-agent carl \
@@ -243,22 +145,19 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      --summary "..." --finding "..." --check "..." --dry-run
    ```
 
-   - **merge-ready** — no blockers; proceed to the merge (step 6). Record this
-     **whenever your review found no blockers**, including when a CI lane is still
-     running — your verdict is about the diff, and step 6 has a path that merges it
-     for you once CI settles. It is also the ONLY outcome that can arm that path.
-   - **request-changes** — a defect; block it back to the builder (step 6).
-   - **wait-for-ci** — record this only when you are genuinely undecided pending
-     the CI result (a flaky lane you want to read yourself). If your review is
-     clean and you are only waiting on the clock, record **merge-ready** and arm
-     the merge in step 6 instead — an unarmed `wait-for-ci` is the outcome that
-     stranded seven correct verdicts on the night of 2026-08-10/11.
-   - **conductor-review** — low confidence (the humility valve); route to a human.
+   - **merge-ready**: no blockers. Record it **whenever your review found no
+     blockers**, even with a CI lane still running; it is the only outcome that
+     can arm the merge in step 6.
+   - **request-changes**: a defect; block it back (step 6).
+   - **wait-for-ci**: only when you are genuinely undecided pending the CI
+     result. If your review is clean and you are only waiting on the clock,
+     record **merge-ready** and arm the merge instead.
+   - **conductor-review**: low confidence (the humility valve); route to a human.
 
-6. **Drive the verdict — you own this.**
+6. **Drive the verdict: you own this.**
 
-   - **merge-ready → merge the feat PR into `accepted`.** Revalidate the head
-     against the recorded one, then merge in ONE load-bearing sequence:
+   - **merge-ready → merge the feat PR into `accepted`**, in ONE load-bearing
+     sequence:
 
      ```bash
      gh api user   # WHO am I merging as? 403 "not accessible by integration" = the App. STOP on a 200.
@@ -272,170 +171,93 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
      ```
 
-     **The identity line comes first because the damage it prevents is invisible
-     afterwards.** A 200 with a `login` means `gh` would merge as a PERSON, and the
-     merge carries that human's name permanently. On 2026-08-29 two merges landed
-     under Mr. McRitchie's own account this way — 1Password hit its cap,
-     `bin/gh-token` returned EMPTY, and `gh` reads an empty `GH_TOKEN` as *not set*
-     and falls back to its keyring. Refuse on a 200, and on any answer you cannot
-     read. `bin/pr-review` does this automatically before every merge write
-     (`bin/lib/acting_identity.rb`); this line covers the hand-run sequence.
+     - **Identity first.** A 200 with a `login` means `gh` would merge as a
+       PERSON, under that human's name forever. Refuse on a 200 and on any answer
+       you cannot read. `bin/pr-review` runs this check itself
+       (`bin/lib/acting_identity.rb`); the line covers the hand-run sequence.
+     - **A waiting operator-approval request never holds the merge.** Merge
+       anyway, and put one line in your handoff note: "Merged with the operator's
+       approval request from <setter> unanswered." The move to `reviewed` settles
+       the request to `none`, and the board comments to the setter.
+     - **A base that is another OPEN PR's head is a STACK: REFUSE it, never
+       retarget it.** Retargeting changes what the PR MERGES without moving its
+       head, so `--match-head-commit` cannot see it. Leave the task `submitted`,
+       NAME the parent in your report, and re-review once the parent lands.
+       Anything else self-heals ONLY when the guard can PROVE the base unclaimed
+       (a merged or closed parent, a deleted branch, `release`, `main`). If the
+       base read failed, the probe could not be read, the base came back EMPTY,
+       or you cannot tell which repo to probe, REFUSE. Five conditions refuse and
+       only a proven-unclaimed base retargets (`bin/lib/stacked_pr.rb`).
+     - **Order matters: merge → stamp → move**, so the task is `reviewed` **iff**
+       its code is on `accepted`. If `gh pr merge` FAILS, leave the task
+       `submitted` and UNSTAMPED, resolve it on GitHub, and re-review.
+     - `bin/task merged` verifies its own write. To double-check, read the
+       **top-level** field, never `.metadata.devops.merged` (always `null`):
 
-     **A waiting operator-approval request never holds the merge.** Mr. McRitchie
-     decided it on 2026-09-10: surface it, do not block. When the builder asked
-     for his eyes (`approval_status: waiting`) and he has not answered,
-     `bin/task show` prints an `OPERATOR APPROVAL STILL WAITING` block on stderr
-     naming who asked, when, the local demo URL, and the latest handoff note.
-     Merge anyway, and put one line in your step-6 handoff note: "Merged with the
-     operator's approval request from <setter> unanswered." The move to `reviewed`
-     then settles the request to `none` (never a fabricated `approved`), and the
-     board posts a comment on the task addressed to the setter. He can still
-     answer afterwards with `--approval approved` or `--approval changes_requested`,
-     which are legal at every stage. `bin/pr-review` prints the same block before
-     its own merge, and `bin/review-autopilot arm` prints it at arm time.
+       ```bash
+       bin/task show <task-slug> --verbose | grep merged   # or: bin/task field <task-slug> merged
+       ```
 
-     **A base that is another OPEN PR's head is a STACK — REFUSE it, never
-     retarget it.** Retargeting changes what the PR MERGES without moving its
-     head, so `--match-head-commit` cannot see it and the parent's unmerged work
-     rides onto `accepted` with the merge. Leave the task `submitted`, NAME the
-     parent in your report, and re-review once the parent lands — GitHub
-     retargets the child itself when it does. The merge ORDER is the parent's
-     review to decide, not yours. Everything else still self-heals ONLY when the guard can PROVE it: a merged or
-     closed parent, a deleted branch, `release`, `main`. If it cannot prove it — the
-     base read failed, the probe could not be read, the base came back EMPTY, or you
-     cannot tell which repo to probe — REFUSE. At a merge, unproven is not
-     mis-based: five conditions refuse and only a proven-unclaimed base retargets. `bin/pr-review` does
-     this automatically (`bin/lib/stacked_pr.rb`, shared with `bin/ship`); the
-     two probe lines above cover the hand-run sequence — and if either probe
-     ERRORS rather than answering, that is a refusal too, not a retarget.
-
-     `bin/task merged` verifies its own write, so a silent success IS the stamp.
-     If you double-check it anyway, read the **top-level** field — `merged` is a
-     Task column, so `.metadata.devops.merged` is `null` on every task, stamped
-     or not, and reads as a dropped write when nothing dropped:
-
-     ```bash
-     bin/task show <task-slug> --verbose | grep merged   # or: bin/task field <task-slug> merged
-     ```
-
-     Order matters: merge → stamp → move, so the task is `reviewed` **iff** its
-     code is on `accepted`. If the `gh pr merge` FAILS, leave the task `submitted`
-     and UNSTAMPED — resolve the conflict/checks on GitHub, then re-review. A
-     head that moved during review merges only if its new CI is green (a
-     reviewer-applied `zap:` is the common cause — see
-     [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)); the
-     `--match-head-commit` pin refuses a head that advances again after you
-     revalidate.
-
-   - **merge-ready but CI has NOT settled → ARM the merge and stop waiting.**
-     Do not idle on a running lane hoping to outlive it. Hand your already-made
-     decision to the board and end cleanly:
+   - **merge-ready but CI has NOT settled → ARM the merge and stop waiting:**
 
      ```bash
      bin/review-autopilot arm <task-slug> --agent carl   # --head <sha> if `gh` is unavailable
      ```
 
-     The board pins the PR's current head, and merges into `accepted` + stamps
-     `merged: accepted` + moves the task `reviewed` — exactly the sequence above —
-     the moment CI concludes GREEN **for that exact tree**. Then it stops.
+     The board pins the PR's current head and runs the merge sequence above the
+     moment CI concludes GREEN **for that exact tree**, where green means every
+     workflow GitHub ran on it. Red, pending, cancelled, and **absent** check-runs
+     do nothing; a moved head is refused; an expired window does not run late; and
+     it stands down while a live review claim is held.
+     - Arming is REFUSED unless the task's **latest** scout report is
+       `merge-ready`. To change your mind, record a later scout report; the armed
+       merge refuses at fire time. You do not have to disarm.
+     - Check or undo it: `bin/review-autopilot list`, `run <task>`, `disarm <task>`.
+     - **Read the exit code.** Exit **2**: the tool declined (your verdict is not
+       `merge-ready`, or bad flags). Exit **1**: it could not READ the board, so
+       nothing was armed; fix the read and re-run.
 
-     This does not review anything and cannot: arming is REFUSED unless the task's
-     **latest** scout report is `merge-ready` — yours from step 5, or a later
-     re-affirmation — and every guard fails closed. GREEN means **every workflow
-     GitHub ran on that tree** concluded green, not just the repo's own suite: a
-     gem's downstream `Consumer CI` gets a vote alongside its `Engine CI`, so
-     arming and walking away with a slow consumer lane still running is safe.
-     Red, pending, cancelled and **absent** check-runs
-     all do nothing (absence is the signature of a CONFLICTING PR, never a pass); a
-     head that moved off the pin is refused rather than merged, because your verdict
-     described a different tree; and an action nobody could execute inside its
-     window expires instead of running late. It also stands down entirely while a
-     live review claim is held — it is for the reviewer that is GONE, not a
-     second reviewer racing you.
-
-     **Changing your mind is enough — you do not have to disarm.** Record a later
-     scout report (`request-changes`, `wait-for-ci`, `conductor-review`) and the
-     armed merge refuses at fire time, because the autopilot follows your STANDING
-     decision rather than the one that happened to be current when you armed. A
-     later `merge-ready` from the light reviewer is a re-affirmation, not a
-     revision, so it still merges.
-
-     Check or undo it any time — `bin/review-autopilot list`, `run <task>` (execute
-     now), `disarm <task>`. Then release your claim (step 7) and close out; the
-     merge lands without you.
-
-     **Two refusals, and they ask for opposite things — read the exit code.**
-     Exit **2** is the tool declining: your standing verdict is not `merge-ready`,
-     or the flags were wrong. Exit **1** is `could not run` — it could not READ the
-     board (a redirect, a 401, an outage), so nothing was armed and your verdict
-     still stands; fix the read and re-run the same command. `arm` refuses rather
-     than arming on an unreadable task record, because the approval block above is
-     the last thing a person sees before a merge runs with no reviewer present.
-     Until 2026-09-20 that read went unchecked: with `--head` supplied a 301
-     WARNED, armed anyway, and exited **0**.
-
-   - **request-changes → block it back to the builder** (only for a reachable
-     regression per step 4 — never for a finding you could zap or note):
+   - **request-changes → block it back to the builder**, only for a reachable
+     regression per step 4:
 
      ```bash
      bin/task block <task-slug> --kind rework --summary "<4-6 word headline>" \
        --feedback "<one complete send-back>" --agent carl
      ```
 
-     **Two-bounce circuit breaker:** read it before you compose the block —
+     **Two-bounce circuit breaker:** read it before you compose the block:
 
      ```bash
      bin/task bounces <task-slug>
      ```
 
      **Exit 0 = CLEAR is the only exit that authorizes a re-block**; 10 = TRIPPED
-     (escalate); any other non-zero = a FAILED read or an unknown slug, which is
-     never to be read as zero. The block command runs the same
-     check and REFUSES a second bounce, so a TRIPPED task cannot be re-blocked by
-     accident. It counts the task's `qa_feedback` activity rows, one per bounce,
-     classified by the kind stamped on each; never probe the live block columns,
-     which a compliant resubmission wipes exactly when the breaker must fire.
+     (escalate); any other non-zero = a FAILED read or an unknown slug, never a
+     zero. The block command runs the same check and REFUSES a second bounce.
 
-     **The bounce is YOURS, and only yours.** During your live review claim, a
-     `--kind rework` block by any soul other than the claim's holder is REFUSED
-     with **exit 11** and writes nothing. That includes the light you summoned: its
-     finding reaches you as a scout report and you decide whether it is worth the
-     bounce. (2026-09-07, turf-monster PR 594: a light spent the task's only bounce
-     on its own initiative, and the owning Carl was then refused his own block.)
-     Pass `--agent carl` as shown above so your block matches the claim you hold.
-     If YOUR OWN block is refused with exit 11, the claim names a different soul or
-     none at all — `bin/task review-claim status <task-slug>` says which, and
-     `bin/task review-claim acquire <task-slug> --agent carl` renews it in your name.
+     **The bounce is YOURS, and only yours** — not the light's you summoned.
+     Pass `--agent carl` so your block is attributed to you.
 
-     On TRIPPED, do not re-block to the builder — escalate the deadlock to the
-     operator instead: `bin/task block <task-slug> --kind dependency --summary
-     "Escalated: <4-6 word disagreement>" --feedback "<both positions, in brief>"
-     --agent carl`, and flag it **⚠ Escalated** in your final report. For a
-     MECHANICAL bounce (red CI, merge conflict — nothing to arbitrate), add
-     `--breaker-ack "red CI, mechanical"` and the rework block proceeds with the
-     reason recorded.
+     On TRIPPED, escalate instead: `bin/task block <task-slug> --kind dependency
+     --summary "Escalated: <4-6 word disagreement>" --feedback "<both positions,
+     in brief>" --agent carl`, flagged **⚠ Escalated** in your report. For a
+     MECHANICAL bounce (red CI, merge conflict), add
+     `--breaker-ack "red CI, mechanical"` and the block proceeds.
 
-   **Beat the claim when you cross a gate.** `bin/task review-claim renew
-   <task-slug>` — a FOREGROUND command, which is the one thing a dead reviewer
-   cannot run. It is what proves a WORKER is still behind this claim, as opposed
-   to a detached renewer anchored to a session that is alive for its own reasons
-   (`bin/lib/review_worker_pulse.rb`). You do not need a timer: once per gate is
-   enough, and the beat costs one board call. Skipping it never fails a review —
-   the claim is held for `ClaimLease::REVIEW_TTL_SECONDS` from acquisition
-   regardless — it only means that past that window a conductor reading
-   `review-claim status` cannot tell your live review from an abandoned one.
+   **Beat the claim when you cross a gate:** `bin/task review-claim renew
+   <task-slug>`. It is a FOREGROUND command, so it proves a live worker is behind
+   the claim. Once per gate is enough; skipping it never fails a review.
 
-7. **Release the review claim on your verdict** (the orchestrator that claimed it
-   releases it; release it yourself if you claimed it directly):
+7. **Release the review claim on your verdict** (release it yourself if you
+   claimed it directly):
 
    ```bash
    bin/task review-claim release <task-slug>
    ```
 
-   **On an ARMED merge this release is load-bearing, not housekeeping.** The
-   autopilot stands down while a live review claim is held, so an armed merge
-   waits until your claim is released or its lease lapses. Release it and the
-   merge can land in seconds; forget, and it idles out the TTL first.
+   **On an ARMED merge this release is load-bearing.** The autopilot stands down
+   while a live claim is held, so an unreleased claim idles the merge out to the
+   TTL.
 
 8. **Close the activity with your verdict:**
 
@@ -443,26 +265,23 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
    bin/agent-activity end --outcome "<verdict>: <one-line reason>"
    ```
 
-9. **Return a concise final message** to the orchestrator summarizing the recorded
-   outcome, the merge (or the block), and any blockers.
+9. **Return a concise final message** to the orchestrator: the recorded outcome,
+   the merge (or the block), and any blockers.
 
 ## Exit Seam
 
 Your scout report is recorded, the review claim is released, and your activity is
 closed with a verdict. The task is `reviewed` (merged into `accepted`), `blocked`,
-or **still `submitted` with its merge ARMED** — a recorded decision that lands on
-its own when CI concludes green for the head you pinned. Ending here is a clean
-exit, not an unfinished review: the point of arming is that nothing needs you
-awake to finish it.
+or **still `submitted` with its merge ARMED**, which lands on its own when CI
+concludes green for the head you pinned. Ending on an armed merge is a clean exit.
 
 ## Related
 
-- [`pr-review.md`](pr-review.md) — the orchestrator SOP that claims PRs and spawns
-  you.
-- [`pr-review-light.md`](pr-review-light.md) — the focused second-read role SOP the
-  light specialist you summon runs.
-- [`../role.md`](../role.md) — Carl's REVIEW CHECKLIST (the backend gotchas).
-- [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md) —
+- [`pr-review.md`](pr-review.md): the orchestrator SOP that claims PRs and spawns you.
+- [`pr-review-light.md`](pr-review-light.md): the focused second-read role SOP
+  your light runs.
+- [`../role.md`](../role.md): Carl's REVIEW CHECKLIST.
+- [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md):
   single-PR review primitive.
-- [`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md) —
+- [`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md):
   the G2 Review gate your lane (G2a) records into.

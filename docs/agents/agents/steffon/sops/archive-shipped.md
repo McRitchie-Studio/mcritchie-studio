@@ -258,8 +258,7 @@ a design that deliberately chose **not** to gate the bulk archive.
 
 `bin/release archive` archives through `Release::Conductor.archive_completed!`,
 which calls `task.archive!` on the **model**. That path **bypasses the CLI's
-open-PR gate on purpose** (`lib/archive_holder_guard.rb`, "THIS GATE IS THE CLI
-PATH, DELIBERATELY"), and it must keep bypassing it: the gate reads GitHub, the
+open-PR gate on purpose**, and it must keep bypassing it: the gate reads GitHub, the
 App installation token expires about hourly **by design**, and a gate there could
 refuse an entire release closeout on one stale read. **Refusing a closeout is
 worse than a late orphan report** — and a gate that refuses most days gets

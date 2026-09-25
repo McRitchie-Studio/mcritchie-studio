@@ -48,17 +48,16 @@ require "test_helper"
 # path picks the SCRIPT, the cwd picks the TREE it acts on. THE TWO WRITERS DIFFER ON
 # WHAT A WRONG CWD COSTS, and conflating them is a real defect this file shipped once:
 #
-#   * THE CERT WRITERS REFUSE. bin/fast-check and bin/full-suite-check root at the cwd's
-#     git toplevel and take CertRootGuard#refusal — the only two callers of it — so from
-#     the hub against a satellite task they exit 1: "this run roots at
-#     …/mcritchie-studio (branch main), which is not <slug>'s tree — refusing to certify
-#     it."
-#   * bin/ship RE-ROOTS, LOUDLY. It reads CertRootGuard.assess directly because it wants
+#   * THE PRE-FLIGHT REFUSES. bin/fast-check roots at the cwd's git toplevel and takes
+#     TaskTree#refusal — its only caller — so from the hub against a satellite task it
+#     exits 1: "this run roots at …/mcritchie-studio (branch main), which is not
+#     <slug>'s tree — refusing to run against it."
+#   * bin/ship RE-ROOTS, LOUDLY. It reads TaskTree.assess directly because it wants
 #     :resolved_root, prints "re-rooting at the task worktree <desk> (you ran from
 #     <cwd>)" and carries on there; it die!s only when resolved_root is nil (no desk on
 #     disk, or a multi-repo tie). Its own comment says so: ship "re-roots rather than
 #     refuses when the task's worktree exists on disk — loudly". The first draft of this
-#     header attached the cert writers' verbatim refusal to bin/ship, which is the
+#     header attached the pre-flight's verbatim refusal to bin/ship, which is the
 #     highest-credibility claim form in this house pointed at the wrong command.
 #
 # Either way a `cd <hub>` earlier in the block does NOT excuse a bare form for any
@@ -106,7 +105,14 @@ require "test_helper"
 # rather than hidden behind a `skip`, because a skip would have reported a passing test
 # name for a guard switched off in the one place it runs on every PR.
 class FastLaneHubPathDocsTest < ActiveSupport::TestCase
-  DOCS = %w[docs/agents/claude.md docs/agents/index.md].freeze
+  # RETARGETED 2026-09-24 (agents-map-two-hundred-lines): the entry docs became a map
+  # plus a thin adapter, and their fast-lane section (the desk table, the good prompt)
+  # moved verbatim to modules/fast-lane.md. All three still name desk-run commands, so
+  # all three are scanned; the table and the template are read where they now live.
+  DOCS = %w[docs/agents/claude.md docs/agents/index.md docs/agents/modules/fast-lane.md].freeze
+
+  # The doc that carries the three-row desk table and the good-prompt template.
+  FAST_LANE_DOC = "docs/agents/modules/fast-lane.md"
 
   # The projects root the generated entry docs are written against. It is a literal in
   # the docs (they open with "Work from /Users/alex/projects"), so it is a literal here.
@@ -125,14 +131,16 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # resolves its helper from its own __dir__, so the hub-absolute form works from any cwd.
   # It is usually wrapped — eval "$(bin/gh-auth-refresh --export)" — and BARE is not
   # anchored to the line start, so the wrapper does not hide it.
-  DESK_RUN = %w[ship-wait ship fast-check full-suite-check dor-check gh-auth-refresh].freeze
+  DESK_RUN = %w[ship-wait ship fast-check dor-check gh-auth-refresh].freeze
 
   # The info-string token that excuses a fence from the pasteable scan. See the header.
   NOT_PASTEABLE = "not-pasteable"
 
-  # Today exactly one fence is excused: the in-flight roster mock-up in the
-  # communication-style section, which illustrates chat OUTPUT (`bin/ship restyle-…`
-  # beside meter glyphs), not a command. Raising this number is a decision, not a fix.
+  # Until 2026-09-24 exactly one fence was excused: the in-flight roster mock-up in
+  # index.md's communication-style section, which illustrates chat OUTPUT
+  # (`bin/ship restyle-…` beside meter glyphs), not a command. The map dropped that
+  # mock-up (communication-style.md carries it), so today NONE is excused; the cap
+  # stays at one so the old shape remains legal. Raising it is a decision, not a fix.
   MAX_EXCUSED_FENCES = 1
 
   # The label the good-prompt template sits under — used ONLY to locate the pin below.
@@ -266,11 +274,15 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     DOCS.each do |rel|
       pasteable = fences(read_doc(rel)).reject(&:excused?)
 
-      # FLOOR — the widening is live. Each doc carries non-bash fences that must now be
-      # scanned; if the scan ever narrows back to one language, this reddens first.
-      refute_empty pasteable.reject { |f| f.lang == "bash" },
-                   "#{rel}: no non-bash fence was scanned — the guard has narrowed back to " \
-                   "fence LANGUAGE, which is the hole guard-skips-copy-paste-fences closed"
+      # FLOOR — the widening is live. The map and the fast-lane page carry non-bash
+      # fences that must be scanned; if the scan ever narrows back to one language,
+      # this reddens first. claude.md is exempt from the per-doc floor since
+      # 2026-09-24: the thin adapter has a single fence, and it is bash.
+      unless rel == "docs/agents/claude.md"
+        refute_empty pasteable.reject { |f| f.lang == "bash" },
+                     "#{rel}: no non-bash fence was scanned — the guard has narrowed back to " \
+                     "fence LANGUAGE, which is the hole guard-skips-copy-paste-fences closed"
+      end
       assert_operator pasteable.sum { |f| f.lines.size }, :>, 0, "#{rel}: no fenced lines were parsed"
 
       pasteable.each do |fence|
@@ -303,8 +315,12 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     assert_operator excused.size, :<=, MAX_EXCUSED_FENCES,
                     "#{excused.size} fences are marked #{NOT_PASTEABLE}, over the cap of " \
                     "#{MAX_EXCUSED_FENCES}: #{excused.map { |(rel, f)| "#{rel}:#{f.opened_at}" }.join(', ')}"
-    # Non-vacuity: the marker parser must actually find the one known excuse.
-    assert_operator excused.size, :>=, 1, "no #{NOT_PASTEABLE} fence found — the info-string parser is broken"
+    # Non-vacuity: the docs carry no excused fence today, so prove on a known sample
+    # that the marker parser still finds one — an empty `excused` above is only
+    # evidence when the parser can see the marker at all.
+    sample = "```#{NOT_PASTEABLE}\nbin/ship some-task\n```\n```text\nplain\n```\n"
+    assert_equal 1, fences(sample).count(&:excused?),
+                 "no #{NOT_PASTEABLE} fence found in a sample that carries one — the info-string parser is broken"
   end
 
   # The in-app viewer (app/controllers/docs_controller.rb, Redcarpet) drops a fence whose
@@ -322,11 +338,11 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # SCANNED (never excused) and must carry the hub-absolute ship. Located by its label;
   # a relabel fails CLOSED here rather than quietly dropping the pin.
   test "the good prompt template is scanned and names ship absolutely" do
-    body = read_doc("docs/agents/index.md")
+    body = read_doc(FAST_LANE_DOC)
     # end_with?, not ==: the label closes a wrapped prose line ("…and the feature. A good
     # prompt is:"), and the fence opens two lines below it.
     label_at = body.lines.index { |line| line.rstrip.end_with?(GOOD_PROMPT_LABEL) }
-    refute_nil label_at, "docs/agents/index.md lost the line #{GOOD_PROMPT_LABEL.inspect} — " \
+    refute_nil label_at, "#{FAST_LANE_DOC} lost the line #{GOOD_PROMPT_LABEL.inspect} — " \
                          "re-point GOOD_PROMPT_LABEL so the template stays pinned"
 
     template = fences(body).find { |f| f.opened_at > label_at + 1 }
@@ -367,7 +383,7 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     rows_seen = 0
     slugs_seen = 0
 
-    DOCS.each do |rel|
+    [FAST_LANE_DOC].each do |rel|
       rows = table_rows(read_doc(rel))
       assert_equal 3, rows.size,
                    "#{rel}: expected the 3-row fast-lane desk table, found #{rows.size} row(s)"
@@ -411,8 +427,8 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     end
 
     # Non-vacuity: a table scan that matched nothing would satisfy every loop above.
-    assert_operator rows_seen, :>=, DOCS.size * 3, "the table scan found no rows"
-    assert_operator slugs_seen, :>=, DOCS.size * 6, "the table scan found too few repo slugs"
+    assert_operator rows_seen, :>=, 3, "the table scan found no rows"
+    assert_operator slugs_seen, :>=, 6, "the table scan found too few repo slugs"
   end
 
   # Rides along: on a machine that HAS the sibling checkouts, a shim landing in a

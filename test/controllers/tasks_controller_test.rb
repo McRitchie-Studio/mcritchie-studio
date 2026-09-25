@@ -418,6 +418,19 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select %(nav[aria-label="Board sections"] a[href="#{heartbeat_all_activities_path}"]), count: 0
   end
 
+  test "[component] the board sections nav wraps at phone width on every board surface" do
+    # At 390px the admin nav overflowed /epics and /stages sideways; it wraps instead.
+    [tasks_path, deployments_path, stages_path, epics_path].each do |path|
+      get path
+      assert_response :success
+      nav = css_select(%(nav[aria-label="Board sections"])).first
+      assert nav, "expected the board sections nav on #{path}"
+      classes = nav["class"].split
+      assert_includes classes, "flex-wrap", "the nav on #{path} must wrap"
+      assert_includes classes, "gap-y-1", "wrapped rows on #{path} need a row gap"
+    end
+  end
+
   test "[component] deployments board links to the Xan pipeline and insights" do
     get deployments_path
     assert_response :success

@@ -252,10 +252,10 @@ zap on the task the ordinary way (§ Recording).
 
 **The CI is not the whole verdict, so do not stop here.** "Merge-ready plus a
 green CI" is what the *merge* needs; it is not what `bin/dor-check` grades. Your
-push moved the branch tree, and the fingerprint-bound lanes — the cert always,
-and the `[control@<fp>]` stamp on a `test-only` PR — go STALE on a tree move
-that a green CI says nothing about. Read the next section before you write the
-verdict: it is what you have to run, in which checkout, and in what order.
+push moved the branch tree, and on a `test-only` PR the fingerprint-bound
+`[control@<fp>]` stamp goes STALE on a tree move that a green CI says nothing
+about. Read the next section before you write the verdict: it is what you have
+to run, in which checkout, and in what order.
 
 **Name it instead** when it is out of bounds, or you'd rather not apply it:
 state the file and line, the one-line fix, and the bounds check (e.g. `within
@@ -273,14 +273,12 @@ without you —
 ### After a reviewer zap — what re-checks itself, and what does not
 
 **Since 2026-09-24 `bin/dor-check` reads no cert receipt** (`dor-reads-settled-ci-verdict`,
-phase 2a of DevOps v3): the suite evidence is the PR's settled GREEN CI for its
-current head, which re-runs on the zapped head by itself. So the cert paragraphs
-below no longer describe a gate refusal — a `[fast-cert@<fp>]` gone STALE is
-invisible to the verdict — and re-certifying after a zap is a courtesy to the next
-reader of `checks_run`, not a step the gate demands. What still bites is the
-**head check** (the graded tree must be the PR head) and, on a `test-only` PR,
-the **`[control@<fp>]` stamp**, which is still fingerprint-graded exactly as
-described. The paragraphs stay until phase 2b removes the receipts.
+phase 2a of DevOps v3), and the local certs that wrote them retired the same day
+(`retire-local-cert-evidence`, phase 2b): the suite evidence is the PR's settled
+GREEN CI for its current head, which re-runs on the zapped head by itself. What
+still bites after a push is the **head check** (the graded tree must be the PR
+head) and, on a `test-only` PR, the **`[control@<fp>]` stamp**, which is
+fingerprint-graded exactly as the certs were.
 
 Pushing a zap moves the PR head. Some of the machinery around the review notices
 and some of it does not, and the difference used to be invisible. Measured on
@@ -291,8 +289,7 @@ because they happened to re-verify by hand.
 |---|---|
 | GitHub CI verdict | **Yes** — checks re-run on the new head. |
 | The tree `bin/dor-check --gate-role review` grades | **Now guarded.** It re-roots to the *builder's desk*, which sits wherever the builder left it. It refuses when that tree is not the PR head. |
-| The full-suite cert fingerprint | **No longer graded** (2026-09-24). It still moves as described below — from a worktree yes; from a separate clone no — but the verdict does not read it. |
-| The `[control@<fp>]` stamp (`test-only` PRs only) | **Same trigger as the cert, same two cases** — it is graded by the same fingerprint machinery. Clearing it is a SECOND command, `bin/control-check`; re-certifying does not touch it. See below. |
+| The `[control@<fp>]` stamp (`test-only` PRs only) | **Moves with the tree — two cases, below.** Clearing it is a SECOND command, `bin/control-check`; a green CI does not touch it. |
 | The e2e declared-vs-executed set | **No** — it ran once, against the base as it was then. |
 | The PR's AUTHOR SET (who may review it next) | **Yes, since 2026-09-09** — `bin/pr-review` records the head move as a fix-forward. Before that it did **not**, and the gap seated a reviewer on his own commit. See below. |
 | The task's stage | **No mechanism found.** See the open question below. |
@@ -332,12 +329,8 @@ builder* stamp and is the wrong instrument here twice over, because it drags a
 submitted task back onto `building` mid-review and re-points `built_by` at a
 reviewer. Your soul joins `devops.builders`; `built_by` is left alone.
 
-**A fix-forward nobody can name REFUSES.** Where the pusher cannot be
-attributed, the record carries `--unnamed` instead, `bin/reviewer-select` reports
-the author set INCOMPLETE and refuses to pick until someone runs the command
-above. That is the intended cost: a commit is provably in the diff whose author
-is somewhere in the pool, so a confident pick is the one answer that must not be
-available.
+Where the pusher cannot be attributed, nothing is recorded: the commit still
+carries its git author, which the author set derives from.
 
 **The gate now refuses a stale tree rather than grading one.** `--gate-role
 review` re-roots to the builder's desk, and on turf #519 that desk sat at
@@ -349,83 +342,51 @@ naming both SHAs. The remedy is one command:
 git fetch origin <branch>     # then re-run dor-check
 ```
 
-**Expect the cert to go STALE — and know the one case where it does not.** The
-cert is bound to a git *tree* hash, so a zap changes the tree and the cert stops
-matching (observed on solana-studio #29, where the reviewer had to re-certify).
-`bin/dor-check --gate-role review` recomputes that hash as
-`origin/<branch>^{tree}` **in the builder's desk** — or in the repo's primary
-checkout when that repo has no desk for the task — and it never runs `git fetch`.
-So the whole question is whether the checkout you push from writes the copy of
-`refs/remotes/origin/<branch>` that the gate reads. Distance is not the test;
-**ref sharing** is:
+**Expect the control stamp to go STALE — and know the one case where it does not.**
+On a `test-only` PR the `[control@<fp>]` stamp is bound to a git *tree* hash, so a
+zap changes the tree and the stamp stops matching. `bin/dor-check --gate-role
+review` recomputes that hash as `origin/<branch>^{tree}` **in the builder's desk**
+— or in the repo's primary checkout when that repo has no desk for the task — and
+it never runs `git fetch`. So the whole question is whether the checkout you push
+from writes the copy of `refs/remotes/origin/<branch>` that the gate reads.
+Distance is not the test; **ref sharing** is:
 
-- **A worktree SHARES that ref, so the cert correctly goes STALE.** Every
+- **A worktree SHARES that ref, so the stamp correctly goes STALE.** Every
   worktree of a repo keeps ONE ref store, in the common git dir (`git rev-parse
   --git-common-dir`); only `HEAD` and a few per-worktree refs are private. The
   throwaway `.worktrees/zap-<slug>` desk this protocol tells you to cut hangs off
-  the same primary checkout the builder's desk does — `git worktree add` shares the
-  ref store wherever the path lands, and the recipes' `--git-common-dir` only puts
-  that path *inside* `.worktrees/`, which is what `desk_guard.rb`'s `desk?`
-  predicate needs (see above) — so your push moves the very ref
-  the cert is fingerprinted against, the desk resolves the new tree with no fetch,
-  and the lane reads STALE. **That is the house case**, because worktrees are the
-  house desk, and the refusal is the guard working rather than a bug in the gate.
-  If the zap was yours, re-certify it — but from a checkout standing **on the
-  pushed head**. `bin/full-suite-check` fingerprints the WORKING tree, and your
-  push moved the shared *ref*, not the builder desk's *files*; re-certifying that
-  desk as it stands re-stamps the tree that was already there and the lane reads
-  STALE again. Move first, then certify: `git -C <desk> merge --ff-only
-  origin/<branch>`, then `bin/full-suite-check <task>`.
-- **A separate CLONE keeps its own refs, so the cert reads FRESH — the dangerous
+  the same primary checkout the builder's desk does, so your push moves the very
+  ref the stamp is graded against, the desk resolves the new tree with no fetch,
+  and the lane reads STALE. **That is the house case**, and the refusal is the
+  guard working rather than a bug in the gate. If the zap was yours, re-run the
+  control — but from a checkout standing **on the pushed head**.
+  `bin/control-check` fingerprints the WORKING tree, and your push moved the
+  shared *ref*, not the builder desk's *files*; re-running it in that desk as it
+  stands re-stamps the tree that was already there and the lane reads STALE
+  again. Move first, then stamp: `git -C <desk> merge --ff-only origin/<branch>`,
+  then `bin/control-check <task>`.
+- **A separate CLONE keeps its own refs, so the stamp reads FRESH — the dangerous
   reading.** A distinct clone, a push from another machine, or GitHub's
-  **Update branch** button never touches the desk's `origin/<branch>`. The hash still
-  matches the builder's cert and the lane reads FRESH over a tree that is no
+  **Update branch** button never touches the desk's `origin/<branch>`. The hash
+  still matches the recorded stamp and the lane reads FRESH over a tree that is no
   longer the PR head: a green that is evidence of nothing. Only the head check
   above — the stale-tree refusal in this section — catches that one, by comparing
-  the graded commit to the PR head. **Re-certify here too, with more reason than in
-  the worktree case:** `git -C <desk> fetch origin <branch>`, then `git -C <desk>
-  merge --ff-only origin/<branch>`, then `bin/full-suite-check <task>`. Do not stop
-  after the fetch: it moves the ref and not your files, so a cert taken between
-  those two commands stamps the tree you already had and the lane stays STALE. A
-  STALE lane is the gate telling you the cert is out of date; this FRESH is the cert being
-  wrong while looking right, so nothing prompts you if you skip it.
-
-**`bin/fast-check` clears a STALE cert too — `bin/full-suite-check` is the
-CI-INDEPENDENT option, not the required one.** Both bullets above name
-`bin/full-suite-check` because it certifies while leaning on nothing remote, and
-a reviewer who reads it as the only way out pays ~30 minutes for a ~1 minute
-job. The route ladder `bin/dor-check` runs is shape- and **role**-independent: a
-fresh `[fast-cert@<fp>]` plus a **settled green** GitHub CI is accepted in the
-review lane exactly as at submit (the `fast_fresh && ci[:state] == :green`
-branch carries no `review_role` condition — unlike the *provisional* branch
-below it, which is builder-only and is the one thing review's gate-zero is
-strict about). So after a zap: move the desk first, then `bin/fast-check
-<task>`, and let the zap's own CI carry the full suite. Reach for
-`bin/full-suite-check` when CI is **red, pending, or absent** — the three states
-that never credit a fast cert — or when you want the verdict to stand without
-one. Either way the ORDER above is what matters, and it is the same for both.
-
-Measured 2026-09-21 on two merged hub PRs, both cleared with a FAST cert:
-
-- **#1512** (`correct-redaction-comment-claims`) — the reviewer's own
-  `zap: list the inline key literal as a guarded fixture` (`e2859a27`) landed on
-  top of the builder's commit (`aef84448`) and staled the cert. The cert the task
-  ended up carrying is `[fast-cert@ff126491…]`, and `ff126491…` is
-  `e2859a27^{tree}` **exactly** — not the builder commit's tree (`6bba811b…`). A
-  re-run of `bin/fast-check` from the builder's desk, after the move, cleared it.
-- **#1494** (`harden-workspace-rake-sweeps`) — no zap at all: a builder's
-  `Merge remote-tracking branch 'origin/accepted'` (`873455de`) became the head
-  and moved the tree past the cert, and gate-zero refused. The recorded
-  `[fast-cert@bc5c60ed…]` is that merge commit's tree. **Any** head move does
-  this; a zap is simply the one a reviewer causes themselves.
+  the graded commit to the PR head. **Re-run the control here too, with more
+  reason than in the worktree case:** `git -C <desk> fetch origin <branch>`, then
+  `git -C <desk> merge --ff-only origin/<branch>`, then `bin/control-check
+  <task>`. Do not stop after the fetch: it moves the ref and not your files, so a
+  stamp taken between those two commands binds the tree you already had and the
+  lane stays STALE. A STALE lane is the gate telling you the stamp is out of date;
+  this FRESH is the stamp being wrong while looking right, so nothing prompts you
+  if you skip it.
 
 **`<desk>` is the checkout the gate grades** — the builder's desk, or the repo's
 primary when that repo has no desk for the task; `bin/dor-check`'s refusal prints
 the path. **Keep the `-C`.** A reviewer runs `--gate-role review` from the primary
-checkout, which sits on `release` or `main` by SOP, and `cert_root_guard` accepts a
-cert only from the graded tree — so the move and the re-certify both belong in
-`<desk>`, not wherever you are standing. Drop the `-C` and paste the move from a
-primary and the fast-forward lands on THAT checkout instead: it moves onto the
+checkout, which sits on `release` or `main` by SOP, and `bin/control-check`
+fingerprints whatever tree it is run in — so the move and the re-run both belong
+in `<desk>`, not wherever you are standing. Drop the `-C` and paste the move from
+a primary and the fast-forward lands on THAT checkout instead: it moves onto the
 feature head, prints `Fast-forward`, and exits 0. Nothing is pushed and a hard
 reset back to the primary's upstream recovers it, but until then every later gate
 and every `bin/release` read is looking at a poisoned checkout.
@@ -433,7 +394,7 @@ and every `bin/release` read is looking at a poisoned checkout.
 **If the fast-forward REFUSES** (`Not possible to fast-forward`), `<desk>` carries a
 commit the PR head does not, and **neither hint git prints there ends the job**:
 `--no-ff` SUCCEEDS and leaves a tree still holding what the PR head lacks, and `git
-rebase` alone leaves that commit on top — either way the cert stamps a tree that
+rebase` alone leaves that commit on top — either way the control stamps a tree that
 never merges, so the lane stays STALE and you have moved the desk further from the
 PR head. Read what is at stake first (`git -C <desk> log --oneline
 origin/<branch>..HEAD`), then pick by what that commit IS. If it belongs on this
@@ -443,19 +404,15 @@ head the merge wanted. If it does not and the desk is yours, `git -C <desk> rese
 lean on the CI green for that exact head and say so in the review.
 
 Measured 2026-09-08 on real repositories and pinned by
-`test/docs/zap_cert_freshness_docs_test.rb`: a push from a sibling worktree moved
-the reading checkout's `origin/<branch>^{tree}` with no fetch, while the identical
-push from a separate clone left it unchanged until that checkout fetched. Carl hit
-the worktree half zapping studio-engine #305 the same day — he followed the older
-wording, expected FRESH, and the gate correctly refused a stale cert.
-
-Measured again 2026-09-09, on the **remedy** rather than the mechanism, and the
-move step above is what that added: after a clone-side zap, `git fetch` alone
-cleared the head refusal but left the lane STALE, and re-certifying at that point
-left it STALE — only moving the checkout onto the fetched head first read FRESH.
-The worktree case behaves the same way, because the ref moves there without the
-files. `bin/dor-check`'s own refusal prints the corrected three-step remedy, and
-both are pinned by `test_the_printed_remedy_clears_the_state_it_is_printed_into`.
+`test/docs/zap_cert_freshness_docs_test.rb` (first for the local cert, now for
+the control stamp, which moves by the same mechanism): a push from a sibling
+worktree moved the reading checkout's `origin/<branch>^{tree}` with no fetch,
+while the identical push from a separate clone left it unchanged until that
+checkout fetched. Measured again 2026-09-09 on the **remedy**: after a clone-side
+zap, `git fetch` alone cleared the head refusal but left the lane STALE, and
+re-stamping at that point left it STALE — only moving the checkout onto the
+fetched head first read FRESH. `bin/dor-check`'s own refusal prints that
+three-step remedy, pinned by `test_the_printed_remedy_clears_the_state_it_is_printed_into`.
 
 **A base that moves mid-review is reported, not refused.** `accepted` moves
 constantly and blocking every review after any merge would wedge the lane, so
@@ -467,42 +424,38 @@ contract that counts it. That review came out right by luck. GitHub's own
 `BEHIND` signal is not a substitute: it only appears where branch protection
 demands an up-to-date branch, and `UNKNOWN` is passed over in silence.
 
-**ON A `test-only` PR THE CONTROL STALES WITH THE CERT — and re-certifying does
-not clear it.** `bin/dor-check` grades the recorded `[control@<fp>]` stamp with
-the *same* fingerprint machinery as the certs (`control_evidence_status` calls
-`FullSuiteGate.lane_status` on the same tree hash), so one moved head stales
-**two** lanes and the gate flips from PASS on two counts a green CI does not
-clear:
+**ON A `test-only` PR THE CONTROL STALES — and only `bin/control-check` clears
+it.** `bin/dor-check` grades the recorded `[control@<fp>]` stamp against the tree
+hash (`control_evidence_status` calls `CertEvidence.lane_status`), so one moved
+head flips the gate from PASS on a count a green CI does not clear:
 
 ```text
-fast-cert: STALE (certified for @<old tree>, but the branch tree is @<new tree>)
 the recorded control is STALE (it was run against different code)
 ```
 
-They are **separate lanes with separate writers**. `bin/fast-check` and
-`bin/full-suite-check` write the cert lane and touch the control not at all, so
-a reviewer who re-certifies and re-runs the gate watches one error disappear and
-the other stay exactly where it was. The full recovery is **three steps, in this
-order**:
+Measured live at the G2 review of fixture-rev-helper-hides-failure (PR #1505):
+one reviewer zap flipped `bin/dor-check` from PASS to "DoR-to-Merge NOT met", and
+a reviewer who re-ran the (since retired) cert watched this error stay exactly
+where it was — the cert never touched the control. The recovery is **two steps,
+in this order**:
 
 ```bash
 git -C <desk> merge --ff-only origin/<branch>   # move the desk onto the zapped head
-cd <desk> && /Users/alex/projects/mcritchie-studio/bin/fast-check <task>
 cd <desk> && /Users/alex/projects/mcritchie-studio/bin/control-check <task>
 ```
 
 **Scope, so you do not go looking for this on a PR that cannot have it.** The
 control lane is required only where the shape declares
 `required_evidence: [control]`, and `config/feature_shapes.yml` declares it on
-**`test-only` alone**. On every other shape a zap stales the cert only.
+**`test-only` alone**. On every other shape a zap moves nothing the gate grades
+but the head.
 
-**Both re-runs belong in the DESK, and they punish a wrong root differently —
-one loudly, one silently.** `bin/fast-check` takes `CertRootGuard.refusal` and
-**exits 1** from a tree that is not the task's, and `cert_root_guard` has **no
+**The re-run belongs in the DESK, and the two runners punish a wrong root
+differently — one loudly, one silently.** `bin/fast-check` takes
+`TaskTree.refusal` and **exits 1** from a tree that is not the task's, with **no
 reviewer override**: a reviewer standing in the throwaway `.worktrees/zap-<slug>`
-desk this protocol told them to cut **cannot certify from it**, so the staleness
-they just caused is not clearable from where they are standing. That refusal is
-the guard working. `bin/control-check` has no such refusal — it roots at the
+desk this protocol told them to cut cannot pre-flight from it, and that refusal
+is the guard working. `bin/control-check` has no such refusal — it roots at the
 cwd's git toplevel (`RepoRoot.code_root`, overridable with `CONTROL_CHECK_ROOT`)
 and fingerprints whatever tree it finds, so run from the wrong one it **succeeds**
 and stamps a `[control@<fp>]` the gate can never match. You learn about that at
@@ -540,8 +493,8 @@ ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/za
 git worktree add "$ZAP" --detach origin/accepted   # throwaway desk
 cd "$ZAP"
 # Running a test tier here? This throwaway has NO desk to copy .env.test.local
-# from and no built assets either, and under .worktrees/ desk_guard refuses that
-# cert lane by name — which is the right failure, but it leaves you holding a
+# from and no built assets either, and under .worktrees/ desk_guard refuses the
+# pre-flight by name — which is the right failure, but it leaves you holding a
 # refusal. Provision a real desk instead, which does BOTH for you:
 #   bin/agent-worktree new <app> zap-<slug>
 # …fix, then:

@@ -11,7 +11,7 @@
 #   G3 Candidate  (release) pre-QA gate + QA deploy + boot smoke + post_deploy
 #   G4 Ship       (release) frozen-SHA gate + prod deploy + /up + smoke seal
 #
-# The two DoR gates are the OPTION-B split: cert (full-suite-check) owns g1_cert
+# The two DoR gates are the OPTION-B split: the (since retired) local cert owned g1_cert
 # open+close on its own; the Definition-of-Ready verdict is its OWN gate, with a
 # separate attempt for the builder (`dor`, dor-check at submit) and the reviewer's
 # gate-zero (`dor_review`, dor-check --gate-role review). CI stays a handoff, not

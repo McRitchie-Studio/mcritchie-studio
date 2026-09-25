@@ -25,15 +25,9 @@ require "test_helper"
 # CONTENT, and `test_the_sweep_can_see_extensionless_bin_scripts` fails if the
 # blind spot ever reopens.
 #
-# THE RULE IS A CONDITION, NOT A FLAT PROHIBITION — and getting this wrong is how
-# a guard becomes a false claim in its own right. The gate is
-# `GATED_KINDS = %w[rework]` with `ALLOWED = [NOT_GATED, NO_REVIEW, OWNER]`
-# (lib/review_verdict_gate.rb), so THREE of its six verdicts pass: `--kind
-# dependency` and `--kind environment` are NOT_GATED, a task with no live review
-# claim is NO_REVIEW, and the holder is OWNER. "A light may not block" is
-# therefore WRONG in half the cases, and this guard never asserts it. What it
-# pins is the conditional: while a review claim is LIVE, a `--kind rework` block
-# by a soul other than the holder is refused (exit 11).
+# The verdict-owner gate (exit 11) that once enforced this rule was deleted in
+# devops-v3 (one session owns each review by construction); the rule is now
+# policy, and this guard pins only the prose.
 #
 # Deliberately NOT pinned: pr-review-light.md's absolute "Never run `bin/task
 # block` on the task you are reviewing." That is STRICTER than the gate, and Carl
@@ -111,9 +105,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
     # `bin/task block` does NOT stamp the task's author set directly. `Task#block!`
     # sets `blocked_at`, which `build_claim_save?` rejects and `submit_save?` never
     # matches, so `enforce_builder_stamp` writes no author on the block PATCH at
-    # all. The author set is reached SECOND-HAND: the block lands the task back on
-    # `building`, the statusline heartbeat adopts the freed lease with no soul, and
-    # THAT stamps `builders_unattributed`. The harm is a MISATTRIBUTED AUDIT ROW —
+    # all. The harm is a MISATTRIBUTED AUDIT ROW —
     # real, and worth guarding, but not a disarmed no-self-review gate.
     #
     # PARSED, NOT LISTED, so a THIRD kind added later is covered the moment it
@@ -447,9 +439,11 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   test "[unit] the run extractor finds real block invocations in both a bare script and a markdown doc" do
     corpus = self.class.corpus
 
-    script_runs = block_runs(corpus.fetch("bin/task"))
+    # bin/pr-review, not bin/task: bin/task's one comment run left with the build-claim
+    # heartbeat (devops-v3: the desk is the build claim).
+    script_runs = block_runs(corpus.fetch("bin/pr-review"))
     assert_operator script_runs.size, :>=, 1,
-      "extracted no `bin/task block` runs from bin/task — the extractor is blind to extensionless scripts, " \
+      "extracted no `bin/task block` runs from bin/pr-review — the extractor is blind to extensionless scripts, " \
       "which is the exact failure this guard exists to prevent"
 
     doc_runs = block_runs(corpus.fetch("docs/agents/modules/pr-review-sop.md"))
@@ -757,27 +751,12 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
     "light-block-counts" => /light reviewer'?s? block counts/i
   }.freeze
 
-  # The ONLY sanctioned occurrences, each pinned to one file with its reason.
-  # `lib/review_verdict_gate.rb`'s header QUOTES the three grants it was written
-  # to kill, as the record of what the prose used to say — deleting the quotes
-  # would delete the evidence. Every entry is liveness-checked below, so a stale
-  # exemption FAILS rather than quietly widening into a blanket pass for its file.
-  GRANT_EXEMPTIONS = [
-    { file: "lib/review_verdict_gate.rb", pattern: "any-reviewer-can-block",
-      why: "header quotes pr-review-light.md's retired Scope line as the defect record" },
-    { file: "lib/review_verdict_gate.rb", pattern: "any-reviewer-can-stop",
-      why: "header quotes the retired request-changes bullet as the defect record" },
-    { file: "lib/review_verdict_gate.rb", pattern: "light-block-counts",
-      why: "header quotes the retired request-changes bullet as the defect record" }
-  ].freeze
-
   test "[integration] no file grants the bounce to any reviewer" do
     offenders = []
     self.class.corpus.each do |rel, text|
       body = flat(text)
       GRANT_PATTERNS.each do |name, pattern|
         next unless body.match?(pattern)
-        next if GRANT_EXEMPTIONS.any? { |e| e[:file] == rel && e[:pattern] == name }
 
         offenders << "#{rel} [#{name}] …#{body[[(body =~ pattern) - 40, 0].max, 150]}…"
       end
@@ -788,27 +767,10 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
 
       #{offenders.join("\n      ")}
 
-      Only the soul the review claim records as its HOLDER may SPEND a task's bounce
-      (lib/review_verdict_gate.rb — a `--kind rework` block by anyone else exits 11
-      and writes nothing). Any reviewer may RAISE the finding; a light records it with
+      Only the soul the review claim records as its HOLDER may SPEND a task's bounce.
+      Any reviewer may RAISE the finding; a light records it with
       `bin/task note <task> --comment "…"` and the primary decides.
-
-      If this text is a deliberate historical QUOTE of the retired wording, add it to
-      GRANT_EXEMPTIONS with the reason — do not widen the pattern.
     MSG
-  end
-
-  test "[unit] every grant exemption is still live — a stale one fails rather than widening" do
-    GRANT_EXEMPTIONS.each do |exemption|
-      text = self.class.corpus[exemption[:file]]
-      assert text, "GRANT_EXEMPTIONS names #{exemption[:file]}, which the sweep did not read"
-
-      pattern = GRANT_PATTERNS.fetch(exemption[:pattern])
-      assert_match pattern, flat(text),
-        "stale exemption: #{exemption[:file]} no longer matches #{exemption[:pattern]} " \
-        "(#{exemption[:why]}). Delete the entry — an exemption that matches nothing is a " \
-        "standing hole in the guard."
-    end
   end
 
   # ---------------------------------------------------------------------------
@@ -822,8 +784,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # rather than `rework` alone:
   #
   #   --kind rework, on a submitted task → the LITERAL "avi". Carl pasting his own
-  #     gate-zero command grades FOREIGN against his own claim and exits 11. Loud,
-  #     and it writes nothing.
+  #     gate-zero command records the bounce against avi.
   #   --kind dependency (and every other kind) → NIL. The block succeeds, exit 0,
   #     and the wire payload is {"event":{"source":"cli"},"kind":"dependency"} —
   #     no `actor`, no `by`. Silent, and it WRITES.
@@ -831,14 +792,12 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # So the kind this rule used to skip is the one that lands a send-back on the
   # record with nobody's name on it. The cost is a MISATTRIBUTED AUDIT ROW: the
   # block PATCH itself stamps no author (`Task#block!` sets `blocked_at`, which
-  # `build_claim_save?` rejects and `submit_save?` never matches), but it lands the
-  # task on `building`, and the statusline heartbeat then adopts the freed lease
-  # with no soul and stamps `builders_unattributed`. Second-order and real — not,
+  # `build_claim_save?` rejects and `submit_save?` never matches). Real — not,
   # as an earlier draft claimed, a disarmed no-self-review gate.
   #
   # A NOTE ON THE WORD "BOUNCE", which this heading used to carry. Only `--kind
   # rework` spends the task's bounce; dependency and environment are NOT_GATED and
-  # spend nothing (lib/review_verdict_gate.rb). They still need their actor, for
+  # spend nothing. They still need their actor, for
   # the attribution reason above rather than the budget one, so the rule is about
   # BLOCKS and the heading now says so.
   #
@@ -906,26 +865,29 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/pr-review", match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
-    { file: "bin/task", match: /lands the task back on building and ends with write_feature_marker/,
-      why: "comment explaining the feature-marker repoint" },
     { file: "docs/agents/agents/carl/sops/pr-review-light.md", match: /on its own initiative/,
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
-    { file: "docs/agents/agents/carl/sops/pr-review.md", match: /therefore runs the breaker itself/,
-      why: "prose describing what the command does, not an instruction to run it" },
+    # Retargeted 2026-09-25 (capability-pages-under-three-hundred): the live pr-review.md no
+    # longer carries this prose; its verbatim pre-cut copy lives in the archive.
+    { file: "docs/agents/archive/pr-review-2026-09-25.md", match: /therefore runs the breaker itself/,
+      why: "prose describing what the command does, not an instruction to run it (frozen archive copy)" },
     { file: "docs/agents/modules/devops-task-board.md",
-      match: /lands the task back on building, and three readers/,
+      match: /lands the task back on building, and two readers/,
       why: "prose describing the stage effect on board readers" },
     { file: "docs/agents/modules/gates/g2-review.md", match: /exits 10\), re-run it/,
       why: "prose naming the breaker's exit code" },
+    { file: "docs/agents/archive/pr-review-sop-2026-09-25.md",
+      match: /lands the task on building, and every reader/,
+      why: "prose describing the stage effect on board readers (frozen archive copy)" },
+    { file: "docs/agents/archive/pr-review-sop-2026-09-25.md",
+      match: /runs the same check and refuses the second bounce/,
+      why: "prose describing the breaker, not an instruction to run it (frozen archive copy)" },
     { file: "docs/agents/modules/pr-review-sop.md",
       match: /lands the task on building, and every reader/,
       why: "prose describing the stage effect on board readers" },
     { file: "docs/agents/modules/pr-review-sop.md",
       match: /runs the same check and refuses the second bounce/,
-      why: "prose describing the breaker, not an instruction to run it" },
-    { file: "lib/review_verdict_gate.rb",
-      match: /on its own initiative, then reported back to its Carl/,
-      why: "header narrating the incident the gate exists to prevent" }
+      why: "prose describing the breaker, not an instruction to run it" }
   ].freeze
 
   test "[integration] every runnable block command names its acting soul, whatever its kind" do
@@ -949,8 +911,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       `default_block_actor`, and the damage depends on the kind:
 
         --kind rework, submitted task → the literal "avi", so Carl pasting his own
-          gate-zero command grades FOREIGN against his own review claim and exits
-          11, writing nothing.
+          gate-zero command records the bounce against the wrong soul.
         every other kind → nil. Exit 0, and it WRITES a block whose payload carries
           no `actor` and no `by` — a send-back on the record naming nobody, which
           the statusline then compounds by adopting the freed lease unattributed.
@@ -1010,21 +971,12 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       "the SOP must keep RAISE — any reviewer may raise the finding")
     assert_match(/only the claim's holder may SPEND/i, body,
       "the SOP must keep SPEND — only the review claim's holder spends the bounce")
-    assert_match(/while a review claim is live/i, body,
-      "the rule is CONDITIONAL on a live review claim — with no live claim the gate returns " \
-      "NO_REVIEW and the block proceeds; dropping the qualifier overstates the gate")
-    assert_match(/--kind dependency and --kind environment spend no bounce and are not gated/i, body,
-      "GATED_KINDS is rework ONLY — dependency and environment are NOT_GATED. Dropping this " \
-      "clause turns the rule into 'a light may never block', which is wrong in half the gate's verdicts")
-    assert_match(/exit 11/i, body, "the SOP must name the refusal the rule is enforced by")
   end
 
-  test "[integration] the G2 gate doc keeps the raise/spend split and its enforcement" do
+  test "[integration] the G2 gate doc keeps the raise/spend split" do
     body = flat(self.class.corpus.fetch("docs/agents/modules/gates/g2-review.md"))
 
     assert_match(/any reviewer may RAISE a blocking finding/i, body,
       "G2 must keep RAISE — the light's finding is a scout report, not a refusal to file it")
-    assert_match(/claim's holder is REFUSED with exit 11/i, body,
-      "G2 must state the enforcement, not merely ask for the behaviour")
   end
 end

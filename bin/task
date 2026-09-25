@@ -23,7 +23,7 @@
 # (default https://mcritchie.studio).
 #
 # Usage:
-#   bin/task list [--stage S] [--agent A] [--epic E] [--reviewable] [--json]
+#   bin/task list [--stage S] [--agent A] [--epic E] [--reviewable] [--all] [--json]
 #     ( --json prints the full fetched records as an array — the same payload
 #       `show --json` prints, for the whole page in ONE board read. )
 #   bin/task show <slug> [--json | --verbose|-v]
@@ -86,15 +86,15 @@
 #     actual_size is auto-derived from measured usage at ship. )
 #   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ...".
 #     It REPLACES your tier tags (pass every one you want kept) but can NOT drop the
-#     cert evidence bin/fast-check / bin/full-suite-check stamp — "[full-suite@<fp>]"
-#     lines are machine-owned and carried forward. Record checks before or after you
-#     certify; both orders are safe. See lib/cert_evidence.rb. )
+#     control stamp bin/control-check records — a "[control@<fp>]" line is
+#     machine-owned and carried forward. Record checks before or after the control;
+#     both orders are safe. See lib/cert_evidence.rb. )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
-#   ( --requires-migration / --no-requires-migration: the `backend_migration`
-#     exclusive-lane flag, a top-level Task column. SELF-FLAG it the moment you
-#     discover the task needs a schema change, then take the lane with
-#     `bin/task migration-lane acquire <slug>`. See exclusive-lanes.md. )
+#   ( --requires-migration / --no-requires-migration: a plain top-level Task
+#     flag. SELF-FLAG it the moment you discover the task needs a schema change;
+#     the duplicate-migration collision check in dor-check and ship
+#     (bin/lib/migration_collision.rb) is the protection. )
 #   ( --depends-on <task-slug>: the explicit task-to-task RELEASE ORDER edge, a
 #     top-level Task column (tasks.dependencies). Repeatable; this task sorts
 #     AFTER every task named here that rides the same release.
@@ -122,10 +122,10 @@
 #       or `begin <slug>` — RESUMES after a partial failure instead of minting
 #       a duplicate task. Orchestration only: the claim gate, preflight, and
 #       every later gate keep their own semantics — a resume of an already-
-#       `building` task runs the SAME build-claim gate the move applies, so a
-#       task a DIFFERENT live instance holds refuses before any worktree step;
-#       --steal overrides it exactly as it does on `move`, and is forwarded to
-#       the child `move building` on the fresh path.
+#       `building` task runs the SAME desk rule the move applies (a foreign live
+#       desk with uncommitted changes refuses before any worktree step); --steal
+#       overrides it exactly as it does on `move`, and is forwarded to the child
+#       `move building` on the fresh path.
 #       --agent SOUL works on BOTH forms and must be a soul SLUG (lowercase with
 #       single hyphens); on the RESUME form it rides to the claim as --actor, so
 #       devops.built_by is stamped even though a resume sets no agent_slug.
@@ -150,21 +150,14 @@
 #       Claude/Codex session auto-captures model + token delta + cost from its
 #       transcript, so a bare move still leaves a full paper trail; flags
 #       override. The from/to/duration spine is recorded server-side regardless. )
-#     ( the move to `building` CLAIMS the task for this live instance (session id +
-#       a per-process nonce) under a TTL lease. It REFUSES (loudly) if a DIFFERENT,
-#       non-expired instance already holds it — pass --steal to take it over. An
-#       expired / dead-session lease is reclaimed automatically. )
-#     ( the move to `archived` is TERMINAL and destroys UNCOMMITTED work no gate,
-#       review, or CI would ever surface — so it REFUSES (exit 1, no board write)
-#       any task it cannot prove holds NO WORK AT RISK, and NAMES what it could not
-#       verify. Work at risk is uncommitted state, which lives in a DESK: a desk
-#       being written into, a cert running against one, or an operator parked in
-#       front of one. Board activity is already durable and never holds the gate. A
-#       record carrying only an app and a mascot names no session to ask, and that
-#       is a REFUSAL, not a free task: on 2026-09-01 exactly such a record was
-#       resolved only by messaging the peer session. `shipped`/`archived` tasks and
-#       tasks nobody ever picked up archive freely. --force is the human decision
-#       seam and names the grade it waived. See lib/archive_holder_guard.rb. )
+#     ( the move to `building` CLAIMS the task. The desk bound to it is the claim —
+#       no lease, no renewal. It REFUSES (exit 1, no write) only when a DIFFERENT
+#       live session's desk is bound to the task AND has uncommitted changes, and
+#       names that desk; --steal overrides that one case. See bin/lib/desk_claim.rb. )
+#     ( the move to `archived` is TERMINAL and can destroy UNCOMMITTED work, so it
+#       REFUSES (exit 1, no board write) when a desk bound to the task on this
+#       machine has uncommitted changes (or its git status cannot be read), and
+#       names that desk. --force overrides. See bin/lib/desk_claim.rb. )
 #     ( the move to `archived` ALSO refuses when the task still has an OPEN PR, and
 #       names each PR and its state. That is a DIFFERENT question from the holder
 #       gate above: the PR is durable and survives the archive, but it survives OPEN
@@ -184,25 +177,12 @@
 #       on the accepted branch (the ladder's first rung); the sweep/ship stamp
 #       release/main. NOT a stage move, NOT event-recorded; read back to confirm it
 #       persisted so a dropped stamp never strands the task off every RC. )
-#   bin/task fix-forward <slug> --agent <soul>[,<soul>] | --unnamed
+#   bin/task fix-forward <slug> --agent <soul>[,<soul>]
 #     ( record a REVIEWER FIX-FORWARD (a zap): a soul who pushed a commit onto this
 #       task's PR branch WITHOUT holding the build. He is an author of the merged
 #       diff, so he joins the author set `bin/reviewer-select` excludes — but he
 #       makes no build claim, and the claim is the only thing that stamped it. Named
-#       souls join devops.builders (never built_by). --unnamed records a fix-forward
-#       nobody can attribute: the author set is then INCOMPLETE and reviewer-select
-#       REFUSES until a later --agent names who pushed. )
-#   bin/task heartbeat <slug> [--desk PATH]           # renew this instance's build-claim lease (bin/statusline calls it)
-#   bin/task claim-renew-loop <slug> --anchor-pid <p> --anchor-start <s> [--desk PATH]   # internal
-#     ( THE DETACHED BUILD-CLAIM RENEWER, started by the claim itself (`move
-#       building` / `begin`) and never invoked by hand. Renewal used to live only in
-#       bin/statusline, which runs when Claude Code PAINTS — and a headless agent
-#       shell paints nothing, so a headless build ran unclaimed from 120s in while a
-#       cold `bin/ship` takes ~12 minutes. It renews on a 30s beat while its ANCHOR
-#       process lives, the task is still `building`, and the holder has not been
-#       shown to have walked away. bin/lib/build_claim_renewer.rb carries the whole
-#       argument. TASK_BUILD_CLAIM_RENEWER=off|on overrides; a SANDBOXED run
-#       (every test process) defaults to off. )
+#       souls join devops.builders (never built_by). )
 #   bin/task session-mascot [--persona SLUG|none] [--print]
 #     ( draw this Claude/Codex session's Pokémon marker before a task exists.
 #       --persona jasper temporarily shows a soul instead; --persona none reverts. )
@@ -212,6 +192,13 @@
 #       --actor for a single owner (Avi QA → assembled, Steffon ship → shipped);
 #       repeat --reviewer for the senior pair (the review pair is normally recorded
 #       automatically by bin/reviewer-select, which records by default). )
+#   bin/task wait-window <slug> [--interval SECONDS] [--grace SECONDS] [--json]
+#     ( blocks until the task's OPEN operator window is answered — the `Escalated:`
+#       dependency block cleared, or the approval request out of `waiting` — or it
+#       lapses. Exit 0 answered · 2 lapsed (the window end + --grace passed with it
+#       still open: proceed on the default the design names) · 1 the board could
+#       not be read · 3 usage. Reads the task API's DERIVED `windows` list, so the
+#       board's clock and config/release_builder.yml decide; nothing here does. )
 #   bin/task bounces <slug>
 #     ( THE TWO-BOUNCE CIRCUIT BREAKER's read — run it BEFORE a rework block.
 #       Counts the task's prior send-backs from its durable qa_feedback activity
@@ -229,12 +216,8 @@
 #       A --kind rework block with NO --feedback still posts one (with a placeholder
 #       body + a warning): the columns are wiped on resubmit, so a prose-less bounce
 #       would otherwise vanish from every durable store and never be counted. )
-#     ( --kind rework is gated TWICE, authorisation before budget. FIRST the
-#       VERDICT-OWNER gate: during a LIVE review claim, only the reviewer the claim
-#       names may spend the task's bounce — anyone else is REFUSED (exit 11) with
-#       nothing written (lib/review_verdict_gate.rb). A LIGHT reviewer files a scout
-#       report to its primary instead; it does not hold the verdict. THEN the
-#       breaker: `bounces` runs and REFUSES (exit 10) when it is tripped, naming the
+#     ( --kind rework is gated by the two-bounce breaker: `bounces` runs and
+#       REFUSES (exit 10) when it is tripped, naming the
 #       escalation. --breaker-ack "reason" proceeds anyway for a MECHANICAL bounce
 #       (red CI, merge conflict — nothing to arbitrate); the reason is recorded on
 #       the activity, so an override is evidence, not a bypass. )
@@ -251,17 +234,6 @@
 #       task could burn. Those rows price into measured $cost, which derives
 #       actual_size and the reviewer-select baselines. Reports only — purging is the
 #       operator's call. Exit 2 when suspects are found. )
-#   bin/task migration-lane <acquire|release|status> [<task-slug>] [--label L] [--agent A]
-#     ( The `backend_migration` EXCLUSIVE LANE — one Dev writes a migration at a time
-#       (docs/agents/system/exclusive-lanes.md). Acquire BEFORE `bin/rails g migration`,
-#       before creating a file in db/migrate/, before touching db/schema.rb; release on
-#       the way out. The lane is global, so the optional <task-slug> only RECORDS which
-#       task holds it, so a refused Dev knows whom to ask for an ETA.
-#       Pair it with `--requires-migration` on create/update: the flag says this task
-#       needs a schema change, the lane serializes the work.
-#       `status` is a plain read and needs no agent session; acquire/release do.
-#       Exit: 0 acquired/reported · 10 REFUSED (a live holder — queue, don't retry-storm)
-#       · 1 error. )
 #   bin/task review-claim acquire <slug> [--label L] [--agent A]
 #   bin/task review-claim <release|status|renew> <slug>
 #   bin/task claim-next-review [--label L] [--agent A]
@@ -288,16 +260,9 @@
 #      task" (HTTP 404 + the API's own "task not found" body). Never fired on a
 #      failed read: a Heroku router 404, a route-level 404, a 5xx, or a rejected
 #      flag all stay on 1, because the guard FREES a worktree on this code.
-#  10  REFUSED — a live holder refused `migration-lane acquire`, or the two-bounce
-#      circuit breaker refused `bounces` / `block --kind rework` (escalate, do not
+#  10  REFUSED — the two-bounce circuit breaker refused `bounces` / `block --kind rework` (escalate, do not
 #      retry). Distinct from 1 so "the breaker says escalate" is never confused
 #      with "the read failed".
-#  11  NOT THE VERDICT OWNER — `block --kind rework` was refused because a LIVE
-#      review claim names a DIFFERENT reviewer (or names none, or could not be
-#      read). Nothing was written. Distinct from 10 on purpose: 10 means "the
-#      budget is spent, escalate" and routes to `--kind dependency`, which is the
-#      OWNER's move — a light that read 10 here would file an escalation on a
-#      review it does not hold.
 #   1  everything else — transport/API failures, usage errors, rejected flags.
 
 require "net/http"
@@ -312,11 +277,7 @@ require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
-require_relative "lib/anchor_heartbeat"
 require_relative "../lib/claim_holder"
-require_relative "../lib/desk_activity"
-require_relative "../lib/review_verdict_gate"
-require_relative "../lib/archive_holder_guard"
 require_relative "../lib/open_pr_guard"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
@@ -329,14 +290,13 @@ require_relative "lib/task_author_fields"
 require_relative "lib/session_identity"
 require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
-require_relative "lib/cert_root_guard"
+require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
+require_relative "lib/desk_claim"
 # The desk's git identity: the soul `bin/ship` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
 require_relative "../lib/commit_identity"
 require_relative "lib/stamp_confirmation"
-require_relative "lib/build_claim_renewer"
-require_relative "lib/session_markers"
 require_relative "lib/approval_request_notice"
 
 # THE ABSOLUTE `bin/task` A REFUSAL HANDS BACK — this very script, resolved from its
@@ -464,19 +424,6 @@ def print_session_marker(marker)
   puts parts.join(" · ")
 end
 
-# --- Build claim lease (V2: the enforcement gate) --------------------------
-# The per-PROCESS-instance nonce that, with the session id, identifies the LIVE
-# INSTANCE holding a claim (see lib/claim_lease.rb). Anchored to the long-lived
-# `claude`/`codex` agent process so it's stable across a terminal's many bin/task
-# calls yet differs between two terminals — the shared resolution now lives on
-# SessionIdentity.nonce (reused by bin/devops-shift's shift lease). Memoized here so
-# the gate + the renewal agree and `ps` runs once.
-def claim_nonce
-  return @claim_nonce if defined?(@claim_nonce)
-
-  @claim_nonce = SessionIdentity.nonce(ENV)
-end
-
 # The narration CLI (fast-lane-narrates-activities): `begin` opens the session's
 # ORIENT activity through this so the default fast-lane path leaves a
 # task-attributed trail instead of stranding orientation in the Unlabeled bucket.
@@ -495,224 +442,72 @@ rescue StandardError
   nil
 end
 
-# REFUSES a move-to-building — `exit 1`, before any write — when the task is
-# already claimed by a DIFFERENT, still-live instance. Unclaimed / expired /
-# corrupt / same-instance claim freely. `--steal` is the ONLY way past it.
-#
-# It is LOUD about that refusal: it names WHO holds the task, IN WHAT ROLE, how
-# fresh their lease is, the holder's last durable progress, and the exact command
-# to re-run. Loud is HOW it refuses, not INSTEAD of refusing.
-#
-# THE ROLE IS PART OF THE REFUSAL, not decoration. This gate used to describe every
-# holder as a rival BUILDER and offer `--steal`, which is the correct remedy for
-# exactly one of the two holders it can meet. A REVIEWER's claim looks identical
-# from here, and stealing a task mid-review VOIDS THE NO-SELF-REVIEW GUARANTEE for
-# that review and STRANDS its verdict — neither recoverable, neither visible
-# afterwards. So a live review routes to "ask them to release", an unknown routes
-# the same way, and only a positively-established absence of review routes to
-# `--steal`. lib/claim_holder.rb owns that table and every word of the message.
-#
-# `--steal` ITSELF IS UNCHANGED and still the only way past the gate. Over a live
-# review it now prints what it is waiving before it proceeds — the posture
-# enforce_archive_holder_gate! takes with --force — because a guarantee waived in
-# silence is one nobody can audit later.
-#
-# WHY THAT SENTENCE IS SPELLED OUT. This comment used to read "Loud (not a hard
-# block)", meaning "overridable by --steal" — and it READ as warns-and-proceeds.
-# A reader carried that reading into docs/agents/modules/worktrees.md as "warns
-# and proceeds — it is loud, not blocking", which would have had the next agent
-# pre-arm --steal against a live builder's desk: the exact fail-open this gate
-# exists to close. That doc has SINCE BEEN CORRECTED (it reads "refuses — exit
-# 1" today, so do not go hunting for the bad sentence there); this comment and
-# ClaimLease's disposition legend are the other half of the same fix.
+# THE BUILD-CLAIM GATE: THE DESK IS THE CLAIM (bin/lib/desk_claim.rb). There is no
+# lease to take or renew. It REFUSES — exit 1, before any write — in exactly one
+# case: a DIFFERENT live session's desk is bound to this task AND that desk has
+# uncommitted changes, which is the one case where claiming can lose work. The
+# refusal names the desk. `--steal` is the override for that case; it prints the
+# desks it is claiming over and proceeds. Every other case claims freely.
 #
 # test/commands/task_claim_gate_test.rb pins the refusal by asserting the gate
-# sends NO PATCH on the refused path — the one assertion a warns-and-proceeds
-# gate could not pass — and it reads the exit code out of THIS function, so a
-# future reword cannot drift from the code again in silence.
-#
-# :corrupt (an unparseable lease) stays DELIBERATELY fail-open here, unlike the
-# reclaim guard (bin/agent-worktree), which withholds on it: claiming a task
-# WRITES a fresh parseable lease via ClaimLease.renewed — a reversible act that
-# heals the corrupted record — whereas reclaiming destroys a desk, which heals
-# nothing. Same disposition, opposite stakes.
-def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil, steal_hint: nil)
-  claim = ClaimLease.from_devops(devops)
-  decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
-  return if decision != :held_by_other
+# sends NO PATCH on the refused path, and reads the exit code out of THIS function.
+def enforce_claim_gate!(slug, mover_session, steal:, steal_hint: nil)
+  blockers = DeskClaim.blocking_on_disk(slug, session: mover_session, projects_dir: PROJECTS_DIR)
+  return if blockers.empty?
 
-  # WHAT ROLE THE HOLDER IS IN, before either branch below speaks. The refusal used
-  # to describe every holder as a rival BUILDER and offer --steal, which is the
-  # right remedy for exactly one of the two cases; see lib/claim_holder.rb for the
-  # 2026-09-01 near-miss and why stealing mid-review is unrecoverable rather than
-  # merely rude.
-  reviewer = review_holder(slug)
-  role = ClaimHolder.role(review_in_progress: (task || {})["review_in_progress"],
-                          review_claim_live: reviewer["live"])
-  takeover = steal_hint || "#{ClaimHolder::TASK_COMMAND} move #{slug} building --steal"
-
-  # --steal STAYS AVAILABLE — it is the correct remedy for the builder case it was
-  # written for, and an operator who has already asked the reviewer must be able to
-  # proceed. What it must never do is proceed SILENTLY over a live review, so this
-  # names the guarantee being waived, the same posture the archive gate takes with
-  # --force. NOT a refusal: the flag is the operator's decision, and this is the log
-  # entry that lets the next reader see which proof was skipped.
   if steal
-    if role == ClaimHolder::REVIEWING
-      ClaimHolder.steal_override_warning(
-        slug, reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
-      ).each { |line| warn!(line) }
-    end
+    DeskClaim.steal_notice(slug, blockers).each { |line| warn!(line) }
     return
   end
 
-  warn!("⚠  #{ClaimHolder.refusal(
-    slug: slug, claim: claim, role: role,
-    steal_command: takeover, retry_command: takeover.sub(" --steal", ""),
-    reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
-  ).join("\n")}")
-  # The heartbeat in that message only proves a TERMINAL IS PAINTING — it says
-  # nothing about whether the holder is advancing. Name the progress fact too, so a
-  # decision to --steal is made on evidence instead of on a green dot.
-  warn!("     #{progress_line(task, challenger: mover_session)}") if task
+  takeover = steal_hint || "#{ClaimHolder::TASK_COMMAND} move #{slug} building --steal"
+  warn!(DeskClaim.refusal(slug, blockers, steal_command: takeover,
+                                        retry_command: takeover.sub(" --steal", "")).join("\n"))
   exit 1
 end
 
-# WHETHER A REVIEW LEASE IS HELD on this task, and by whom. Read only on the
-# refusal/override paths, where one extra call is free and a name is what turns
-# "ask them to release" into something actionable.
-#
-# TRI-STATE, deliberately: `{"live" => true, …}` a reviewer holds it, `{"live" =>
-# false}` the board says nobody does, `{}` WE DID NOT GET AN ANSWER. Collapsing the
-# last two would turn a board hiccup into "no review" and route it to --steal, which
-# is the fail-open this gate exists to close; an empty hash reaches
-# ClaimHolder.role as nil and lands on the UNKNOWN route instead.
-def review_holder(slug)
-  # NOT `api` — that helper die!s on any non-2xx, and a diagnostic read must never
-  # be able to kill the gate it is informing. A board that answers 500 here has told
-  # us nothing, and "nothing" is a route (UNKNOWN), not a crash.
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}/review_claim", base_url: BASE_URL, token: token)
-  return {} unless res.code.to_i.between?(200, 299)
+# The desks bound to `slug` on this machine, for `show`. Never raises: a read that
+# failed says so instead of passing for "no desk".
+def desk_claim_summary(slug)
+  desks = DeskContext.holders_of(slug, desks: DeskContext.desks(root: PROJECTS_DIR, table: ProcessTable.process_table))
+  return "none on this machine" if desks.empty?
 
-  holder = TaskBoard.parse_body(res).dig("data", "holder")
-  holder.is_a?(Hash) ? holder.merge("live" => holder["live"] ? true : false) : { "live" => false }
-rescue StandardError
-  {}
+  desks.map { |d| "#{DeskClaim.path(d)} · #{d[:grade].to_s.upcase} · session #{DeskClaim.short_session(d)}" }.join("; ")
+rescue StandardError => e
+  "unreadable (#{e.class})"
 end
 
 # --- the ARCHIVE holder gate ---------------------------------------------------
 #
-# `archived` is TERMINAL, and what it destroys is UNCOMMITTED work no gate, review,
-# or CI would ever surface. So this path REFUSES what it cannot prove is free and
-# NAMES what it could not verify, rather than proceeding on a guess — the posture
-# bin/lib/cert_orphan_guard.rb already applies to the far less destructive act of
-# reaping a process. The decision table and every message live in
-# lib/archive_holder_guard.rb; this function is only the I/O around them.
+# `archived` is TERMINAL, and what it can destroy is UNCOMMITTED work in a desk. So
+# it refuses exactly one case (devops-v3 4b-ii-b): a desk bound to this task exists
+# on this machine and has uncommitted changes. The rule lives in
+# bin/lib/desk_claim.rb (DeskClaim.dirty_bound); this is only the I/O around it.
 #
-# It reads the task FRESH rather than trusting anything already in hand: the whole
-# question is whether somebody is working RIGHT NOW, and a stale record answers a
-# different one.
+# A read that blew up has told us nothing, and nothing must never authorize a
+# destructive act, so a failure refuses (and --force still overrides it).
 def enforce_archive_holder_gate!(slug, force:)
-  task = api(:get, "/api/v1/tasks/#{slug}")["data"]
-  devops = task.dig("metadata", "devops") || {}
-  claim = ClaimLease.from_devops(devops)
-  facts = archive_holder_facts(slug, task, devops, claim)
+  blockers =
+    begin
+      DeskClaim.dirty_bound_on_disk(slug, projects_dir: PROJECTS_DIR)
+    rescue StandardError => e
+      warn!("warning: #{slug}: could not read the desks bound to it (#{e.class}: #{e.message}) — withholding")
+      nil
+    end
+  return if blockers&.empty?
 
-  grade = ArchiveHolderGuard.decide(
-    stage: task["stage"], devops: devops,
-    claim_live: facts[:claim_live], abandoned: facts[:abandoned]
-  )
-  return if ArchiveHolderGuard.permitted?(grade)
-
-  # NAME WHAT IS BEING OVERRIDDEN. A --force that prints nothing turns the gate
-  # into a speed bump nobody remembers clearing; the operator (or the next reader
-  # of the log) must be able to see which proof was waived.
   if force
-    warn!("--force: archiving #{slug} anyway — the holder gate graded it #{grade.to_s.upcase} " \
-          "and could not prove the task free.")
+    warn!("--force: archiving #{slug} anyway — #{blockers ? "#{blockers.length} dirty desk(s) bound to it" : "its desks could not be read"}.")
     return
   end
 
-  warn!(ArchiveHolderGuard.refusal(
-          grade, slug: slug, stage: task["stage"], devops: devops, claim: claim,
-          channel: ArchiveHolderGuard.working_channel(facts[:channels])
-        ))
+  force_command = "#{ClaimHolder::TASK_COMMAND} move #{slug} archived --force"
+  if blockers
+    warn!(DeskClaim.archive_refusal(slug, blockers, force_command: force_command).join("\n"))
+  else
+    warn!("⚠  refusing to archive #{slug}: its desks could not be read. To archive anyway: #{force_command}")
+  end
   exit 1
-end
-
-# The liveness facts the gate decides on. I/O only — ClaimLease owns the
-# arithmetic, so the unit tier can drive every combination without a board or a
-# filesystem.
-#
-# THE CHANNELS ARE THE THREE THAT ATTEST WORK AT RISK, and the board-progress
-# channel this function used to gather is deliberately absent. Graded against the
-# live board on 2026-09-02 it held 31 of 34 tasks — 16 of them with no desk at all —
-# because Task#holder_liveness_seconds_ago degrades to the age of the task's own
-# CREATE where no holder owns an artifact, and because every `bin/task` write resets
-# it, so triaging a task armed this gate against archiving that same task. See
-# lib/archive_holder_guard.rb, "WHY BOARD PROGRESS IS NOT A CHANNEL HERE".
-# `heartbeat_abandoned?` below still gathers it: that consumer asks whether a LEASE
-# may lapse, which is a recoverable answer to a different question.
-#
-# A CHECK THAT BLEW UP HAS TOLD US NOTHING, and nothing must never authorize a
-# destructive act. So the rescue resolves to the PROTECTIVE direction — claim
-# assumed live, not abandoned, desk unknown — and the resulting refusal says
-# plainly that the check could not be completed. This is the SAME direction
-# heartbeat_abandoned? rescues in, for the same reason: in both, the unknown
-# protects the holder. The two differ only in what is at stake, which is why this
-# one also assumes the claim is live rather than merely declining to free it.
-def archive_holder_facts(slug, task, devops, claim)
-  channels = {
-    desk_touched: archive_desk_touched(devops),
-    gate_in_flight: holder_scoped(task, "holder_gate_in_flight", "gate_in_flight") ? true : false,
-    awaiting_approval: devops["approval_status"].to_s.strip == "waiting"
-  }
-  {
-    claim_live: ClaimLease.live?(claim),
-    abandoned: ArchiveHolderGuard.abandonable?(**channels),
-    channels: channels
-  }
-rescue StandardError => e
-  warn "warning: #{slug}: the holder check could not be completed (#{e.class}: #{e.message}) — withholding"
-  { claim_live: true, abandoned: false, channels: { desk_touched: nil } }
-end
-
-# Has anyone written into this task's desk lately? true / false / nil.
-#
-# THE DESK IS ASKED WHERE THE TASK SAYS IT IS, never where we happen to be standing.
-# bin/task's heartbeat resolves the desk from its own cwd (correct there — it runs
-# INSIDE the desk it judges), but an archive runs from the primary checkout, and
-# DeskActivity.desk_root refuses any directory not bound to the task, so a cwd-based
-# resolution here would answer nil every single time and the gate would refuse every
-# archive on the machine. A guard that refuses everything gets switched off, and then
-# it protects nothing.
-#
-# A task may name several repos, so every candidate desk is asked and the answers are
-# folded PROTECTIVELY: any desk being worked in wins, then any desk we could not read,
-# and only an all-quiet reading returns false.
-def archive_desk_touched(devops)
-  answers = archive_desk_dirs(devops).map do |dir|
-    ArchiveHolderGuard.desk_touched_for(
-      dir,
-      exists: File.directory?(dir),
-      reader: ->(root) { DeskActivity.touched_since?(root, Time.now - ClaimLease::DESK_IDLE_SECONDS) }
-    )
-  end
-  # No desk recorded at all is a REAL answer, not an unknown: a task with no worktree
-  # has no uncommitted work in one for an archive to destroy.
-  return false if answers.empty?
-  return true if answers.include?(true)
-
-  answers.include?(nil) ? nil : false
-end
-
-def archive_desk_dirs(devops)
-  worktree = devops["worktree_slug"].to_s.strip
-  return [] if worktree.empty?
-
-  Array(devops["repositories"]).map { |repo| repo.to_s.strip }.reject(&:empty?).map do |repo|
-    File.join(PROJECTS_DIR, repo, ".worktrees", worktree)
-  end
 end
 
 # --- the ARCHIVE open-PR gate --------------------------------------------------
@@ -826,8 +621,7 @@ end
 # The abandonment record has to SURVIVE the write. `abandoned_prs` must be a
 # storable name in Task::DEVOPS_LIST_KEYS; anything outside DEVOPS_KEYS is dropped
 # by normalize_devops_metadata and the caller still gets a 200. That silent
-# evaporation is exactly what `release_slug` cost and what `agent_slug` cost inside
-# ArchiveHolderGuard::PAINT_KEYS, so this reads the record back and fails LOUDLY
+# evaporation is exactly what `release_slug` cost, so this reads the record back and fails LOUDLY
 # rather than reporting an override that recorded nothing.
 #
 # The archive has ALREADY LANDED by the time this runs — the stage move and the
@@ -902,367 +696,6 @@ def archived_pr_index(tasks)
                                deliberate: OpenPrGuard.abandonment_recorded?(recorded, ref[:url]))
     end
   end
-end
-
-# "last durable progress ~28m ago (cert failed)" — or an honest "unknown" when the
-# task has produced no artifact yet. Never dress an absence of evidence as trouble.
-#
-# AND NEVER CREDIT THE HOLDER WITH WORK IT DID NOT DO. This line is the evidence a
-# second agent decides `--steal` on, and on 2026-08-13 it manufactured that
-# evidence: the refused agent had just run `bin/full-suite-check`, its cert landed
-# a g1_cert row on the task, and this line reported "last durable progress ~2m ago
-# (g1_cert passed)" as the holder's. The gate credited the challenger's own work to
-# the holder and cited it as grounds to keep the challenger out — a claim that
-# generates its own justification, which is unfalsifiable rather than merely wrong.
-#
-# So progress is reported HOLDER-SCOPED, and the unattributed remainder is named
-# as what it is. `challenger` is the session asking, so the one reading that it
-# cannot use its own cert as proof of someone else's liveness is the session that
-# ran it.
-def progress_line(task, challenger: nil)
-  holder_seconds = task["holder_progress_seconds_ago"]
-  return holder_progress_line(task, holder_seconds) unless holder_seconds.nil?
-
-  seconds = task["progress_seconds_ago"]
-  return "last durable progress: none recorded yet (no cert, gate, or stage move)" if seconds.nil?
-
-  # Something landed, but not the holder's. Say whose, and say plainly that it is
-  # not evidence about the holder.
-  actor = task["last_progress_actor"].to_s
-  detail = task["last_progress_label"].to_s.empty? ? "" : " (#{task['last_progress_label']})"
-  whose =
-    if !actor.empty? && actor == challenger.to_s
-      "is THIS session's own work"
-    elsif actor.empty?
-      "has no recorded owner"
-    else
-      "belongs to …#{actor[-4..] || actor}"
-    end
-
-  "the holder has landed nothing attributable to it — the newest artifact " \
-    "(~#{ClaimLease.humanize_age(seconds)} ago#{detail}) #{whose}, so it says nothing about the holder"
-end
-
-# A holder-scoped liveness fact, falling back to its task-wide twin when the board
-# does not publish one — see ClaimLease.holder_scoped for why the fallback is the
-# conservative direction. It lives in the shared module because bin/agent-worktree's
-# reclaim guard asks the same question of the same payload about a DIRECTORY, and
-# two spellings of "is the holder working" is how those two answers drift apart.
-def holder_scoped(task, holder_key, task_wide_key)
-  ClaimLease.holder_scoped(task, holder_key, task_wide_key)
-end
-
-# Has the holder walked away? Gathers the four independent channels ClaimLease
-# .abandoned? weighs and hands them over — the arithmetic stays in the shared
-# module (so the unit tier can exercise every combination), the I/O stays here.
-#
-# The desk is asked FIRST and its unknown answer decides alone, because the desk
-# is the only channel that can see an agent editing code without touching the
-# board — the exact holder this gate must never evict. `desk_root` refuses any
-# directory not bound to this task, so a heartbeat fired from a primary checkout
-# (whose mtimes belong to every agent on the machine, and so are always fresh)
-# resolves nil and the claim is kept rather than judged on someone else's work.
-#
-# THE BOARD CHANNELS ARE HOLDER-SCOPED, and that is the difference between fixing
-# this and half-fixing it. Both remaining channels used to read the TASK-WIDE fact,
-# so a queued challenger running `bin/full-suite-check` on the held slug landed a
-# checkpoint and opened a g1_cert on someone else's task — and the abandoned holder
-# renewed for another 1h29m on the strength of the challenger's own work. That is
-# the incident this gate exists to end, one indirection over from where it was
-# fixed in the refusal message.
-#
-# The gate_in_flight channel is FILTERED, never dropped: a cert writes nothing into
-# the desk for up to 94 measured minutes, so a holder mid-cert still needs it. A
-# gate opened BY the holder protects the holder; one opened by a challenger does
-# not; one nobody signed is an unknown and still protects.
-# A HEARTBEAT RENEWS A LEASE; IT NEVER ACQUIRES ONE. True only when this
-# renewal is allowed to write the claim.
-#
-# THE DEFECT THIS CLOSES — a reviewer recorded as an author.
-#
-# `bin/task block <slug> --kind rework` lands the task back on `building` and
-# ends with write_feature_marker, which repoints the BLOCKING session's
-# per-session marker at the task it just bounced. bin/statusline then reads that
-# marker, sees `stage: building`, and fires this heartbeat — from a session that
-# never built anything. The task's claim keys were stripped when it moved to
-# `submitted` (#enforce_build_claim_invariant), so the lease read :unclaimed, the
-# heartbeat ADOPTED it, and the PATCH landed a claim naming the reviewer's
-# session. Server-side that write is indistinguishable from a handoff:
-# Task#claim_lease_rewritten? makes it a build claim, it names no soul, and
-# Task#builder_roll_call duly stamped `devops.builders_unattributed` with the
-# reviewer's session id. `bin/reviewer-select` then refuses the NEXT round —
-# "the AUTHORS ARE UNKNOWN" — because the author set now reads incomplete.
-#
-# Measured 2026-09-04: four bounced tasks in one review sitting, each needing a
-# hand-passed `--builder <soul>` before it could be reviewed again. Passing
-# `--agent carl` to the block does not help, because the stamp is not written by
-# the block at all — it is written by the throttled (~45s) heartbeat that follows
-# it, which carries no actor. The same adoption also left the REVIEWER holding
-# the build claim, which is why the documented repair (`bin/task move <slug>
-# building --actor <author>`) was itself refused as :held_by_other.
-#
-# THE RULE. Renewing a lease this session already holds asserts nothing about
-# authorship and stays exactly as it was. ACQUIRING one — an :unclaimed or
-# :expired lease naming somebody else, or nobody — is a claim, and a claim must
-# be made deliberately (`bin/task move <slug> building`), never inferred from the
-# fact that a terminal is painting. The one exception is a bound DESK: a
-# worktree whose .agent-context.json names THIS task is evidence that this
-# session is at the task's workbench, which is the recovery path a builder whose
-# lease lapsed depends on. DeskActivity.desk_root refuses any directory not bound
-# to this task, so a reviewer's primary checkout resolves none.
-#
-# Fail CLOSED (do not acquire) on any error: a heartbeat that declines writes
-# nothing, and the ordinary `move building` still claims the task.
-def heartbeat_may_claim?(slug, devops, session, desk_hint)
-  held = devops["claimed_session"].to_s.strip
-  return true if !held.empty? && held == session.to_s.strip
-
-  !DeskActivity.desk_root(desk_hint || Dir.pwd, slug).nil?
-rescue StandardError
-  false
-end
-
-def heartbeat_abandoned?(slug, task, devops, desk_hint)
-  root = DeskActivity.desk_root(desk_hint || Dir.pwd, slug)
-  touched = root.nil? ? nil : DeskActivity.touched_since?(root, Time.now - ClaimLease::DESK_IDLE_SECONDS)
-
-  ClaimLease.abandoned?(
-    desk_touched: touched,
-    progress_age: holder_scoped(task, "holder_liveness_seconds_ago", "progress_seconds_ago"),
-    gate_in_flight: holder_scoped(task, "holder_gate_in_flight", "gate_in_flight") ? true : false,
-    awaiting_approval: devops["approval_status"].to_s.strip == "waiting"
-  )
-rescue StandardError
-  # A liveness check that blew up has told us NOTHING, and nothing must never
-  # free a desk. Best-effort like the rest of the heartbeat.
-  false
-end
-
-def holder_progress_line(task, seconds)
-  label = task["holder_progress_label"].to_s
-  detail = label.empty? ? "" : " (#{label})"
-  quiet = task["progress_quiet"] ? "  ← held, but nothing has landed in a long time" : ""
-  # ClaimLease owns the formatter (required above): the gate and the board card
-  # state the same fact, so they render it through the same code.
-  "last durable progress by the holder ~#{ClaimLease.humanize_age(seconds)} ago#{detail}#{quiet}"
-end
-
-# --- ONE renewal, and the loop that repeats it -----------------------------
-#
-# THE DEFECT THIS SECTION CLOSES. Until 2026-09-09 the build claim was renewed by
-# exactly one thing: `bin/statusline`, which runs when Claude Code PAINTS. A
-# HEADLESS AGENT SHELL PAINTS NOTHING, so a headless build renewed nothing and its
-# lease lapsed 120s after the claim — for the rest of the build. Measured that
-# night: one task lapsed ~2 minutes after `begin`, was adopted by another session,
-# and `bin/ship` refused nine minutes on; another was found lapsed 8.6 HOURS while
-# its PR sat open. A cold `bin/ship` now runs ~12 minutes BY DESIGN, so the
-# DEFAULT successful path was six times longer than the lease protecting it.
-#
-# THE RENEWAL IS ONE FUNCTION WITH TWO CALLERS, deliberately. `heartbeat` (the
-# status line, when there is one) and `claim-renew-loop` (the detached renewer,
-# always) must not be two implementations of "may this lease be renewed" — that is
-# how the build gate and the heartbeat would drift into disagreeing about who
-# holds a task. bin/lib/build_claim_renewer.rb owns the loop CONTROL; this
-# function owns the I/O and every guard.
-#
-# THE GUARDS, in the order they must be asked:
-#   stage != building  → :not_building. A build claim is forged ONLY by an explicit
-#                        `move building`; renewing on a `designed` task would forge
-#                        a live claim on work nobody is building.
-#   :held_by_other     → :held_by_other. Never steal a live foreign claim.
-#   may_claim? false   → :declined. A heartbeat RENEWS a lease; it never ACQUIRES
-#                        one, except from a session sitting at the task's BOUND
-#                        desk. (Adopting on a free lease is how a reviewer's
-#                        terminal got recorded as a task's author, 2026-09-04.)
-#   abandoned?         → :declined. The holder walked away — see ClaimLease
-#                        .abandoned?. Declining is the whole mechanism: nothing is
-#                        reclaimed or deleted, the lease simply stops being renewed.
-#
-# EVERY FAILURE IS :cant_run, never a stop. A board we could not reach has told us
-# nothing about the builder, and the loop above treats it as "carry on".
-def renew_build_claim(slug, desk_hint)
-  session = session_identity.first
-  return :cant_run if session.nil?
-
-  current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
-  return :not_building unless current["stage"] == "building"
-
-  devops = current.dig("metadata", "devops") || {}
-  decision = ClaimLease.evaluate(ClaimLease.from_devops(devops), session: session, nonce: claim_nonce)
-  return :held_by_other if decision == :held_by_other
-  return :declined unless heartbeat_may_claim?(slug, devops, session, desk_hint)
-  return :declined if heartbeat_abandoned?(slug, current, devops, desk_hint)
-
-  merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce, prior: devops))
-  api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
-  :renewed
-rescue SystemExit, StandardError
-  :cant_run
-end
-
-# The desk whose file mtimes decide whether this claim is still being WORKED.
-#
-# Resolved from the TASK, not only from the caller's cwd, because the claim is
-# often made somewhere else: `bin/task begin` runs from the hub primary and
-# allocates the desk as a side effect, so a cwd-only answer would hand the renewer
-# no desk on the single most common path. Both candidates go through
-# DeskActivity.desk_root, which REFUSES any directory not carrying an
-# .agent-context.json bound to this very slug — so a wrong guess resolves to nil
-# rather than to somebody else's mtimes, and `--desk` never becomes a universal
-# override. nil is honest, and it is NOT free: with no desk the abandonment check
-# answers "unknown", which never frees a claim, so the renewer can no longer tell a
-# dead builder from a live one. That is why a desk-less renewer runs on a shorter
-# leash (BuildClaimRenewer::DESKLESS_LIFETIME_SECONDS) rather than the full cap.
-#
-# EVERY repository, not the first. A multi-repo task's desk can live under any repo it
-# names, and this used to read `repositories.first` while its sibling archive_desk_dirs
-# mapped over all of them — so a task whose desk sat under its SECOND repo resolved no
-# desk, the abandonment gate answered "unknown" (which never frees a claim), and the
-# renewer ran for its whole lifetime on a builder it could not see.
-def build_claim_desk(slug, devops, fallback = Dir.pwd)
-  dv = devops || {}
-  worktree = [dv["worktree_slug"], slug].map { |v| v.to_s.strip }.find { |v| !v.empty? }
-  candidates = Array(dv["repositories"]).map { |repo| repo.to_s.strip }.reject(&:empty?)
-                                        .map { |repo| File.join(PROJECTS_DIR, repo, ".worktrees", worktree) }
-  candidates << fallback
-  candidates.compact.find { |dir| DeskActivity.desk_root(dir, slug) }
-rescue StandardError
-  nil
-end
-
-# May this run start a detached renewer at all? Three states, and the middle one is
-# the interesting one:
-#
-#   TASK_BUILD_CLAIM_RENEWER=off/on  — an explicit answer always wins.
-#   SANDBOXED (TaskUsageSandbox.active?) — DEFAULT OFF. Every test process arms the
-#     sandbox, and a test that claims a task against a THROWAWAY board would otherwise
-#     leave behind a real background process polling an endpoint that no longer exists.
-#     That is not hypothetical: this feature's own first cut left two of them running
-#     on the machine that wrote it, from one unrelated suite file. Default-DENY is the
-#     only version that holds, because annotating the N test files that claim a task
-#     misses the N+1st one written next year — the partial correction this house has
-#     paid for twice.
-#   otherwise — DEFAULT ON. A real build gets a real renewer.
-#
-# A test that means to exercise the renewer opts back in with
-# TASK_BUILD_CLAIM_RENEWER=on (test/commands/build_claim_renewer_integration_test.rb).
-def build_claim_renewer_armed?
-  setting = ENV["TASK_BUILD_CLAIM_RENEWER"].to_s.strip.downcase
-  return false if setting == "off"
-  return true if setting == "on"
-
-  !TaskUsageSandbox.active?
-end
-
-# The process the lease's LIFETIME answers to — the long-lived `claude`/`codex`
-# CLI, the same one its IDENTITY (the nonce) is derived from, so the two cannot
-# drift apart. TASK_BUILD_CLAIM_ANCHOR_PID lets a headless runner (or a test) name
-# its own long-lived owner instead of relying on an agent ancestor being present.
-def build_claim_anchor
-  override = ENV["TASK_BUILD_CLAIM_ANCHOR_PID"].to_s.strip
-  return { pid: override.to_i, start: SessionIdentity.proc_start(override) } unless override.empty?
-
-  SessionIdentity.agent_process
-end
-
-# Start the detached renewer for a claim we just took. Called from BOTH build-claim
-# acquisition sites (`move building` and `begin`'s resume claim), after the write
-# has landed — a renewer for a claim that failed to persist would renew nothing.
-#
-# NO ANCHOR ⇒ NO RENEWER, and we say so rather than implying cover we are not
-# providing. A plain shell or a CI run has no agent process to answer for the
-# lease's lifetime, and starting a background process whose owner we cannot
-# identify is how a phantom holder is born: nothing would ever tell it to stop.
-# That case keeps exactly its previous behavior — the status line, or nothing.
-#
-# Best-effort throughout. A renewer that fails to start must never fail the claim
-# that started it: the task IS claimed either way, and the worst case is today's
-# behavior.
-def start_build_claim_renewer(slug, devops, desk_hint = nil)
-  return nil unless build_claim_renewer_armed?
-
-  session, provider = session_identity
-  return nil if session.to_s.strip.empty?
-
-  anchor = build_claim_anchor
-  if anchor.nil?
-    warn "note: #{AnchorHeartbeat.unanchored_notice(subject: "build claim",
-                                                    ttl_seconds: ClaimLease::DEFAULT_TTL_SECONDS,
-                                                    fallback: "a PAINTING session's status line")}"
-    return nil
-  end
-
-  desk = desk_hint || build_claim_desk(slug, devops)
-  # ONE RENEWER PER TASK, NOT PER CLAIM. Every build claim lands here — `move building`
-  # and `begin`'s resume — and a resume is the documented normal path, so without this
-  # N resumes left N loops renewing one lease (measured in review of ms#1356: three
-  # moves, three live loops, 16 PATCHes in ~8s). A live loop already renewing THIS
-  # instance's lease from THIS desk is reused; any other one on this task is stopped
-  # and replaced, so exactly one is left either way.
-  existing = recorded_build_claim_renewer(session, slug)
-  if existing
-    return existing[:pid] if existing[:nonce] == claim_nonce.to_s && existing[:desk] == desk.to_s
-
-    terminate_build_claim_renewer(existing[:pid])
-  end
-  argv = [RbConfig.ruby, File.expand_path(__FILE__), "claim-renew-loop", slug,
-          "--anchor-pid", anchor[:pid].to_s, "--anchor-start", anchor[:start].to_s]
-  argv += ["--desk", desk] if desk
-  # The identity the renewer must carry. Once detached it reparents away from the
-  # agent process, so it can no longer walk its way back to either half of the
-  # live-instance identity — and a renewer that GUESSED its nonce would renew
-  # nothing while reporting success, which is indistinguishable from the bug it
-  # exists to fix (bin/lib/review_claim_cli.rb learned this the same way).
-  env = { "TASK_CLAIM_NONCE" => claim_nonce.to_s }
-  env[provider.to_s == "codex" ? "CODEX_THREAD_ID" : "CLAUDE_CODE_SESSION_ID"] = session.to_s
-  pid = Process.spawn(env, *argv, out: File::NULL, err: File::NULL, pgroup: true)
-  Process.detach(pid)
-  SessionMarkers.write(session, PROJECTS_DIR, build_claim_renewer_marker(slug),
-                       "#{pid}\t#{claim_nonce}\t#{desk}\n", env: ENV)
-  pid
-rescue StandardError
-  nil
-end
-
-# The per-(session, task) marker naming the renewer this session started for a task.
-# Slugs are validated kebab-case on the board; sanitised anyway, like every marker.
-#
-# NO LEADING DOT, UNLIKE EVERY SIBLING IN THIS STORE, and it must stay that way.
-# SessionMarkers.last_signal_at selects markers on the stem "<id>." to decide
-# whether an agent is still WORKING, so this family is invisible to it — which is
-# correct, because this marker is stamped by the CLAIMING process at claim time and
-# never rewritten. Under a dot it would let a build claim vouch for its own holder's
-# liveness. Adding one is therefore a liveness change, not a naming tidy, and it
-# would also orphan every live marker: `build_claim_renewer` READS this exact name
-# to find a running renewer. The full argument, and the guard, live beside
-# last_signal_at in bin/lib/session_markers.rb.
-def build_claim_renewer_marker(slug)
-  "build-claim-renewer-#{slug.to_s.gsub(/[^A-Za-z0-9._-]/, "")}"
-end
-
-# The renewer this session recorded for `slug`, as { pid:, nonce:, desk: } — or nil
-# when there is none, it has exited, or the pid now belongs to some other process.
-# A pid alone is not identity: pids are reused, so the live process must still BE
-# this task's `claim-renew-loop` (the trailing space keeps `foo` from matching
-# `foo-bar`) before anything is reused or signalled.
-def recorded_build_claim_renewer(session, slug)
-  text = SessionMarkers.read(session, PROJECTS_DIR, build_claim_renewer_marker(slug)).to_s
-  pid_text, nonce, desk = text.chomp.split("\t", 3)
-  pid = pid_text.to_i
-  return nil unless pid.positive?
-
-  command = IO.popen(["ps", "-o", "command=", "-p", pid.to_s], err: File::NULL, &:read).to_s
-  return nil unless command.include?("claim-renew-loop #{slug} ")
-
-  { pid: pid, nonce: nonce.to_s, desk: desk.to_s }
-rescue StandardError
-  nil
-end
-
-def terminate_build_claim_renewer(pid)
-  Process.kill("TERM", pid.to_i)
-rescue StandardError
-  nil # already gone
 end
 
 SCALAR_FLAGS = {
@@ -1417,13 +850,6 @@ COMMA_FREE_LIST_FLAGS = %w[--repo --risk].freeze
 # Task#release_pr_urls — you do not repeat it here, and it WINS for the repo it
 # names (one repo, one authoritative PR).
 MAP_FLAGS = { "--pr-url-for" => "pr_urls" }.freeze
-# The `devops.fix_forward` entry meaning "a reviewer fix-forward happened here and
-# nobody can say whose commit it is". Deliberately NOT a soul slug: every reader
-# (ReviewerSelector#fix_forward_unnamed, Task#fix_forward_authors) sorts these
-# entries by asking `Task.soul?`, so the marker needs no shared constant to be
-# understood — only to be written and retired consistently, which is this file's job.
-FIX_FORWARD_UNNAMED = "unattributed"
-
 NOTE_FLAGS = {
   "--handoff" => "handoff",
   "--qa-feedback" => "qa_feedback",
@@ -1448,14 +874,9 @@ SOUL_SLUG = /\A[a-z]+(?:-[a-z]+)*\z/
 SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
 # Top-level Task columns parse_flags accepts alongside the devops flags.
 TOP_FLAGS = %w[--slug --title --description --agent --priority --stage].freeze
-# VALUELESS top-level boolean columns. `requires_migration` is the
-# `backend_migration` exclusive-lane flag (docs/agents/system/exclusive-lanes.md):
-# the SOP tells a backend Dev to SELF-FLAG the moment they discover they need a
-# migration, and until this flag existed there was no way to do it — the column
-# was writable only through the admin-gated /sizing editor, so the instruction
-# named a behaviour no agent could perform. Both polarities are explicit because
-# un-flagging matters too (a task that turns out NOT to need a migration should
-# hand the lane back and say so).
+# VALUELESS top-level boolean columns. `requires_migration` is a plain flag a
+# builder SELF-FLAGS the moment they discover they need a migration. Both
+# polarities are explicit because un-flagging matters too.
 BOOL_FLAGS = {
   "--requires-migration"    => ["requires_migration", true],
   "--no-requires-migration" => ["requires_migration", false]
@@ -1570,17 +991,9 @@ end
 EXIT_TASK_NOT_FOUND = 4
 
 # The two-bounce circuit breaker REFUSED this rework block (`bounces` reports the
-# same code when the breaker is tripped). Same "refused, do not retry-storm"
-# meaning `migration-lane` gives 10; distinct from 1 so a caller can tell "the
+# same code when the breaker is tripped). Distinct from 1 so a caller can tell "the
 # breaker says escalate" from "the read failed".
 EXIT_BREAKER_TRIPPED = 10
-
-# The caller is not the reviewer who OWNS this task's verdict, so its rework block
-# was refused before any write (lib/review_verdict_gate.rb). DISTINCT from 10 on
-# purpose: 10 means "the budget is spent, escalate", and this means "the budget is
-# not yours to spend" — a light that saw 10 would follow the breaker's escalation
-# recipe, which is the owner's move, not its own.
-EXIT_NOT_VERDICT_OWNER = 11
 
 # Page size `list --json` asks for. 100 is the index's own ceiling
 # (Api::Paginatable clamps per_page), so this is "as few round trips as the API
@@ -2105,12 +1518,12 @@ def build_devops(base, scalars, lists)
   end
   lists.each { |k, v| devops[k] = v unless v.empty? }
   # checks_run is TWO namespaces in one list. The author owns the tier tags
-  # ("[unit] ...") and --checks REPLACES those, as documented. The cert writers
-  # (bin/fast-check, bin/full-suite-check) own the fingerprint-bound evidence
-  # ("[full-suite@<fp>] ..."), and --checks must NOT be able to replace THAT: an
-  # agent recording its test plan after certifying used to wipe its own cert, and
-  # bin/dor-check then called freshly certified code "full-suite: MISSING" (a
-  # false negative in the G1 gate whose only visible remedy was another suite
+  # ("[unit] ...") and --checks REPLACES those, as documented. bin/control-check
+  # owns the fingerprint-bound control stamp ("[control@<fp>] ..."), and --checks
+  # must NOT be able to replace THAT: an agent recording its test plan after the
+  # local cert used to wipe the cert's line, and bin/dor-check then called freshly
+  # certified code "full-suite: MISSING" (a false negative whose only visible
+  # remedy was another suite
   # run). Carry every evidence lane the caller did not itself supply. The board
   # enforces the same rule (Task#preserve_cert_evidence) for every other writer;
   # doing it here too means an agent is protected the moment it pulls this branch,
@@ -2289,19 +1702,21 @@ def print_task_verbose(task)
   puts "  agent_context: #{dv["agent_context"] || "-"}"
   print_bullets("test_plan", dv["test_plan"])
   print_bullets("checks_run", dv["checks_run"])
-  # THE LEASE IS RENDERED WITH ITS VERDICT, never as a bare timestamp. This line
-  # used to read `claim: session <id> · expires <ts>` with no mark when <ts> was in
-  # the PAST — measured 2026-09-02, it printed `expires 04:12:26Z` at 04:14:28Z, so
-  # an expired lease and a live one were the same picture. The reader sampled it
-  # twice, saw the two samples agree, and concluded "live" about a claim that was
-  # already dead. ClaimHolder.render_lease is the one rendering every surface uses
-  # (this line and the claim gate's refusal), so the display and the refusal cannot
-  # drift into disagreeing about the same lease.
-  puts "  claim: session #{dv["claimed_session"] || "-"} · #{ClaimHolder.render_lease(ClaimLease.from_devops(dv))}"
+# THE CLAIM IS THE DESK (bin/lib/desk_claim.rb): the desks on this machine bound
+# to the task, each with its holder's grade. No lease is read.
+puts "  claim: desk #{desk_claim_summary(task["slug"] || dv["worktree_slug"])}"
   print_author_fields(task)
   puts "  approval_status: #{dv["approval_status"] || "-"}   requested_by: #{dv["approval_requested_by"] || "-"}   " \
        "requested_at: #{dv["approval_requested_at"] || "-"}   dropped_at: #{dv["approval_request_dropped_at"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
+  # THE OPERATOR WINDOWS (devops-v3-design.md section 6), derived server-side and
+  # carried on the payload as `windows` — the same list `wait-window` polls. "-"
+  # when nothing waits on the operator; else each open window's kind, its mm:ss
+  # (or lapsed label) as the board painted it, and the ISO end it counts to.
+  if task.key?("windows")
+    windows = Array(task["windows"]).map { |w| "#{w["kind"]} #{w["label"]} (ends #{w["ends_at"]})" }
+    puts "  windows: #{windows.empty? ? "-" : windows.join(" · ")}"
+  end
   # ALWAYS emitted, "-" when empty — the same rule print_column_fields is built
   # on, for the same reason. This is the surface an operator confirms a
   # --pr-url-for write on, and a line that vanishes when the map is empty makes
@@ -2500,30 +1915,6 @@ def default_block_actor(task, kind)
   return "avi" if kind.to_s == "rework" && task.is_a?(Hash) && task["stage"].to_s == "submitted"
 
   nil
-end
-
-# ONLY THE VERDICT OWNER MAY SPEND THE BOUNCE. Refuses — exit 11 — a rework block
-# by a soul that is not the live review claim's holder, and writes NOTHING when it
-# does. It refuses; it does not warn and carry on.
-#
-# The rules, the tri-state, and the whole argument for keying this on the SOUL rather
-# than on the lease live in lib/review_verdict_gate.rb — including the measurement that
-# makes the lease unusable here (a light subagent shares its primary's session id AND
-# nonce, so a lease check grades it :same_instance and waves the incident through).
-# This function is only the I/O around that decision.
-#
-# It reads the claim FRESH: the question is who owns the verdict RIGHT NOW, and a
-# stale record answers a different one.
-def enforce_review_verdict_gate!(slug, kind:, actor:)
-  return unless ReviewVerdictGate::GATED_KINDS.include?(kind.to_s.strip)
-
-  holder = review_holder(slug)
-  verdict = ReviewVerdictGate.verdict(kind: kind, holder: holder, actor: actor)
-  return if ReviewVerdictGate.allowed?(verdict)
-
-  ReviewVerdictGate.refusal(verdict, slug: slug, actor: actor, holder: holder)
-                   .each_with_index { |line, i| warn!(i.zero? ? "block: #{line}" : line) }
-  exit EXIT_NOT_VERDICT_OWNER
 end
 
 # ---------------------------------------------------------------------------
@@ -2914,6 +2305,9 @@ when "list"
   # reclaim sweep resolved a build claim per desk, and at 141 desks that serialised
   # into a sweep that never finished.
   as_json = !ARGV.delete("--json").nil?
+  # --all walks every page (as --json does) but keeps the three-column rendering.
+  # Without it a bare list shows one page of 20 and says so in its total line.
+  every_page = as_json | !ARGV.delete("--all").nil?
   # --json is for callers that DECIDE on the record, so it asks the index for the
   # show-shaped row (full=1) and for every page, not the default 20. A batch that
   # silently carried the raw row would answer review_in_progress/gate_in_flight
@@ -2930,7 +2324,8 @@ when "list"
     q << "epic=#{top["epic_slug"]}"
   end
   q << "reviewable=1" if reviewable
-  q += ["full=1", "per_page=#{LIST_JSON_PER_PAGE}"] if as_json
+  q << "full=1" if as_json
+  q << "per_page=#{LIST_JSON_PER_PAGE}" if every_page
   path = "/api/v1/tasks#{q.empty? ? "" : "?#{q.join("&")}"}"
   # A board that predates `full` rejects it with a 400 naming the param. Degrade to
   # the raw listing rather than dying: this CLI ships in worktrees and CI while the
@@ -2938,21 +2333,24 @@ when "list"
   # The raw rows are still a truthful listing — they are simply missing the derived
   # fields, and every consumer that DECIDES on them is required to notice that for
   # itself (see bin/agent-worktree's BATCH_REQUIRED_FIELDS).
-  tasks = begin
-    api(:get, path)["data"] || []
+  first = begin
+    api(:get, path)
   rescue SystemExit
     raise unless as_json
 
     q -= ["full=1"]
     path = "/api/v1/tasks?#{q.join("&")}"
     warn "note: this board does not serve full=1 yet; listing raw rows (derived fields absent)"
-    api(:get, path)["data"] || []
+    api(:get, path)
   end
+  tasks = first["data"] || []
+  # The index's meta.total: how many rows the filter matches across every page.
+  total = first.dig("meta", "total")
   # Walk the remaining pages so --json is the WHOLE set, not the newest page. The
   # index caps per_page at 100, and Task.recent is newest-first: a single page
   # would hand a batch caller the newest 20 — i.e. exactly the live work — and
   # silently omit the rest.
-  if as_json
+  if every_page
     page = 1
     while tasks.size == (page * LIST_JSON_PER_PAGE)
       page += 1
@@ -2966,7 +2364,13 @@ when "list"
     puts JSON.pretty_generate(tasks)
   else
     tasks.each { |t| puts "#{t["slug"]}  [#{t["stage"]}]  #{t["title"]}" }
-    puts "(#{tasks.size} task(s))"
+    # Say so when this is one page of a longer list: a bare "(20 task(s))" read as
+    # the whole board, and the rest was silently missing.
+    if total.is_a?(Integer) && total > tasks.size
+      puts "(#{tasks.size} of #{total} — pass --all or --json for every row)"
+    else
+      puts "(#{tasks.size} task(s))"
+    end
   end
 when "show"
   usage = "usage: #{$PROGRAM_NAME} show <slug> [--json | --verbose|-v]"
@@ -3059,8 +2463,7 @@ when "orphan-prs"
   #
   # WHY IT EXISTS SEPARATELY FROM THE GATE. `bin/release archive` flips shipped tasks
   # through Release::Conductor.archive_completed! — the MODEL path — which by design
-  # bypasses the CLI gate entirely (see lib/archive_holder_guard.rb, "THIS GATE IS
-  # THE CLI PATH, DELIBERATELY"). So the gate cannot be the only answer even in
+  # bypasses the CLI gate entirely. So the gate cannot be the only answer even in
   # principle, and it says nothing at all about the orphans already on the board:
   # studio-engine #245 sat open under an archived task for a month and surfaced only
   # because a human asked for a backlog audit.
@@ -3228,18 +2631,14 @@ when "begin"
   dv = task.dig("metadata", "devops") || {}
 
   # THE RESUME CLAIM GATE. An already-`building` task skips the child `move
-  # building` below — which is where the build-claim gate lives — so a bare
-  # resume once continued a task ANOTHER live instance owned (the review-blocked
-  # build-ownership hole). Run the SAME gate here, and run it BEFORE the
-  # worktree steps so a foreign-held desk is refused before begin touches it:
-  # :held_by_other refuses loudly (holder + progress named) unless --steal;
-  # unclaimed / expired / corrupt stay fail-open exactly as the move's gate
-  # treats them (the 4/5 re-claim writes the fresh, healing lease). No session
-  # identity → no gate and no claim, mirroring `move`'s plain-shell degrade.
+  # building` below — which is where the build-claim gate lives — so run the SAME
+  # desk rule here, BEFORE the worktree steps: a foreign live desk with uncommitted
+  # changes refuses unless --steal. No session identity → no gate, mirroring
+  # `move`'s plain-shell degrade.
   mover_session = session_identity.first
   if stage == "building" && !mover_session.nil?
-    enforce_claim_gate!(slug, dv, mover_session, steal: steal, task: task,
-                        steal_hint: "#{ClaimHolder::TASK_COMMAND} begin #{slug} --steal")
+    hint = "#{ClaimHolder::TASK_COMMAND} begin #{slug} --steal"
+    enforce_claim_gate!(slug, mover_session, steal: steal, steal_hint: hint)
   end
 
   # Open the session's ORIENT activity now — after the claim gate admits this
@@ -3274,44 +2673,27 @@ when "begin"
     if mover_session.nil?
       warn!("begin 4/5 claim — already [building]; no session identity, leaving the claim as-is")
     else
-      # The gate above admitted this instance — now WRITE the claim so ownership
-      # durably lands on it: a --steal transfers it, an expired/corrupt lease is
-      # adopted (and healed), our own lease is renewed. Same read-merge-write as
-      # `move building` and `heartbeat` — a FRESH read so bind-task's writes are
-      # not clobbered — plus the marker + usage seed the move path stamps, so the
-      # statusline heartbeat renews the new holder's lease instead of letting a
-      # stolen claim silently lapse back after the TTL.
+      # The gate above admitted this session — now record the CLAIM so the builder
+      # stamp runs. The desk bound in step 3 IS the claim; this write carries no
+      # lease. It names `stage: building` (unchanged, so no TaskEvent is written) and
+      # the mover's session on the event: the board reads that pair as a build claim
+      # (Api::V1::TasksController#capture_task_event_context → Task#build_claim_save?).
+      # A FRESH read so bind-task's writes are not clobbered.
       current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
       merged = stamp_session(current.dig("metadata", "devops") || {})
-      # prior: the stored claim, so a blank-nonce renewal never erases a good nonce.
-      merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce,
-                                       prior: current.dig("metadata", "devops")))
-      # The renewal REWRITES the claim lease, so Task#build_claim_save? is true and
-      # the builder stamp runs on this save — it just had no actor to read. An
-      # `event.actor` gives it one (Api::V1::TasksController#capture_task_event_context, a before_action on :update,
-      # drains it into Current), and it writes no spurious TaskEvent:
-      # record_transition_event is gated on `saved_change_to_stage?`, and this
-      # patch carries no stage.
-      renewal = { "devops" => merged }
+      resume_claim = { "stage" => "building", "devops" => merged }
       # dev_size is a TOP-LEVEL column, so it rides beside "devops", exactly as
-      # `move` sends it. Without this the resume form ADVERTISED --dev-size and
-      # dropped it on this branch alone — a resume of an already-`building` task —
-      # which is precisely the advertised-but-unwired defect this task removes.
-      renewal["dev_size"] = top["dev_size"] if top["dev_size"]
-      renewal["event"] = { "source" => "cli", "actor" => builder } unless builder.empty?
-      api(:patch, "/api/v1/tasks/#{slug}", renewal)
+      # `move` sends it.
+      resume_claim["dev_size"] = top["dev_size"] if top["dev_size"]
+      resume_claim["event"] = { "source" => "cli", "session" => mover_session }
+      resume_claim["event"]["actor"] = builder unless builder.empty?
+      api(:patch, "/api/v1/tasks/#{slug}", resume_claim)
       seed_usage_baseline(slug)
-      # The RESUME branch takes a claim without going through `move`, so it must
-      # start its own renewer — otherwise a resumed build is exactly the case this
-      # fix exists for (a headless run whose lease lapses 120s later). The
-      # non-resume branch below delegates to a child `bin/task move … building`,
-      # which starts one there; the renewer is detached, so it outlives that child.
-      start_build_claim_renewer(slug, merged)
       write_feature_marker(current.merge("metadata" => { "devops" => merged }))
-      warn!("begin 4/5 claim — already [building]; claim renewed for this instance")
+      warn!("begin 4/5 claim — already [building]; claimed from this desk")
     end
   else
-    # An explicit child `move building` so the claim lease, --dev-size stamp,
+    # An explicit child `move building` so the build claim, --dev-size stamp,
     # usage-baseline seed, and read-back verify all ride the ONE existing path.
     # The child move is THIS script. TASK_BEGIN_MOVE_BIN overrides it for tests —
     # the same seam shape as TASK_BEGIN_WORKTREE_BIN / TASK_BEGIN_PREFLIGHT_BIN
@@ -3329,7 +2711,7 @@ when "begin"
 
   reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped: builder.empty? ? nil : builder)
 
-  worktree_dir = CertRootGuard.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
+  worktree_dir = TaskTree.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
   die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
   preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
   # Pin the inspected root to the worktree. session-preflight resolves its own
@@ -3402,7 +2784,7 @@ when "move"
     when "--actor"      then event["actor"]      = ARGV.shift || die!("--actor needs a value")
     when "--dev-size"   then dev_size = ARGV.shift || die!("--dev-size needs a value"); validate_size!("--dev-size", dev_size)
     when "--steal"      then steal = true # override the build-claim gate (take a live foreign claim)
-    when "--force"      then force = true # override the ARCHIVE holder gate (see lib/archive_holder_guard.rb)
+    when "--force"      then force = true # override the ARCHIVE gates (see bin/lib/desk_claim.rb)
     else unknown_flag!(flag, valid: %w[--model --tokens-in --tokens-out --cost --actor --dev-size --steal --force], context: "move")
     end
   end
@@ -3410,9 +2792,6 @@ when "move"
   # tokens + cost) from the session transcript so a bare move still leaves a full
   # paper trail. Best-effort; a missing transcript leaves the event spine-only.
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
-  # ARCHIVE REFUSES WHAT IT CANNOT PROVE FREE. Runs BEFORE the PATCH, so a refusal
-  # leaves the task exactly where it was. lib/archive_holder_guard.rb owns the
-  # decision table and every refusal message.
   # BOTH ARCHIVE GATES, in order of what they protect. The holder gate guards
   # UNCOMMITTED work (irreversible if wrong); the open-PR gate guards a DURABLE PR
   # from going unwatched (recoverable, and bin/task orphan-prs is the recovery).
@@ -3430,25 +2809,23 @@ when "move"
   # window in which a task is archived without the record of why its PR was dropped.
   body["devops"] = archive_devops if archive_devops
   body["dev_size"] = dev_size if dev_size # the builder's estimate, set alongside the stage move
-  # Claim the task on the move to building. The gate refuses (loudly, overridable
-  # with --steal) when a DIFFERENT live instance already holds it; otherwise it
-  # claims/renews the lease. Read-merge-write so the claim + session fields ride
-  # alongside existing devops without wiping them. Belt and braces since
-  # api-devops-patch-replaces: the server merges too now, but this CLI must stay
-  # correct against a board that has not taken that fix yet.
-  # No session → no claim (plain shell / CI degrades).
+  # Claim the task on the move to building. The desk is the claim: the gate
+  # refuses only a foreign live desk with uncommitted changes (overridable with
+  # --steal). No lease is written. The mover's session rides on the event so the
+  # board knows who claimed (Task#build_claim_save?). Read-merge-write so the
+  # session fields ride alongside existing devops without wiping them.
+  # No session → no claim gate (plain shell / CI degrades).
   if stage == "building" && !mover_session.nil?
+    enforce_claim_gate!(slug, mover_session, steal: steal)
     current = api(:get, "/api/v1/tasks/#{slug}")["data"]
     current_devops = current.dig("metadata", "devops") || {}
-    enforce_claim_gate!(slug, current_devops, mover_session, steal: steal, task: current)
     # Seed the usage baseline at the CLAIM so the build work transition
     # (building→submitted) records a true token delta. Idempotent: a no-op when
     # autofill above already wrote a baseline this move (e.g. a bare move), it
     # matters when explicit usage flags skipped autofill.
     seed_usage_baseline(slug)
-    merged = stamp_session(current_devops)
-    merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce, prior: current_devops))
-    body["devops"] = merged
+    body["devops"] = stamp_session(current_devops)
+    event["session"] = mover_session
   end
   # Can this move settle a pending approval request at all? That is
   # Task#settle_operator_approval_past_request_window's own first line, and it is asked ONCE:
@@ -3472,12 +2849,6 @@ when "move"
   # itself is correct and still succeeds; what must not happen is doing it quietly.
   warn_dropped_approval_request!(task, slug, approval_before) if settleable
   verify_abandonment_recorded!(slug, archive_devops[OpenPrGuard::RECORD_KEY]) if archive_devops
-  # A CLAIM WITHOUT A RENEWER LAPSES IN TWO MINUTES. Started here, AFTER the
-  # read-back verify, because a renewer for a claim that did not persist would
-  # renew a lease nobody holds. Best-effort and silent on success: the task is
-  # claimed either way, and a renewer that fails to start degrades to exactly the
-  # status-line-only behavior this change replaces.
-  start_build_claim_renewer(slug, task.dig("metadata", "devops") || {}) if stage == "building" && !mover_session.nil?
   write_feature_marker(task)
   print_task(task)
 when "merged"
@@ -3519,40 +2890,26 @@ when "fix-forward"
   # reviewed). This posts one devops key and moves nothing.
   #
   # APPENDS. The list is read, unioned, and re-posted, so a second zap by a different
-  # soul cannot drop the first — and naming a soul CLEARS a prior --unnamed marker,
-  # which is the whole resolution path out of the refusal.
-  usage = "usage: #{$PROGRAM_NAME} fix-forward <slug> --agent <soul>[,<soul>] | --unnamed"
+  # soul cannot drop the first.
+  usage = "usage: #{$PROGRAM_NAME} fix-forward <slug> --agent <soul>[,<soul>]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   souls = []
-  unnamed = false
   while ARGV.any?
     case (flag = ARGV.shift)
-    when "--agent"   then souls.concat((ARGV.shift || die!("--agent needs a value")).split(/[,\s]+/))
-    when "--unnamed" then unnamed = true
-    else unknown_flag!(flag, valid: %w[--agent --unnamed], context: "fix-forward")
+    when "--agent" then souls.concat((ARGV.shift || die!("--agent needs a value")).split(/[,\s]+/))
+    else unknown_flag!(flag, valid: %w[--agent], context: "fix-forward")
     end
   end
   souls = souls.map { |soul| soul.to_s.strip }.reject(&:empty?).uniq
-  die!(usage) if souls.empty? && !unnamed
-  # OPPOSITE CLAIMS, so the line is refused rather than silently resolved one way.
-  # "steffon pushed it" and "nobody can say who pushed it" cannot both be asserted,
-  # and guessing which the caller meant is how a refusal gets lifted by accident.
-  die!("--agent and --unnamed are opposite claims — pass one: #{usage}") if souls.any? && unnamed
+  die!(usage) if souls.empty?
   # Handle SHAPE is checked here, not on the server: `--agent Steffon` or
-  # `--agent turf_monster` matches no soul, so it would land as an UNNAMED entry and
-  # read as "a zap nobody could attribute" — a typo silently becoming a refusal, with
-  # the value that caused it stored as if it were the marker.
+  # `--agent turf_monster` matches no soul, so it would join nobody.
   bad = souls.reject { |soul| soul.match?(/\A[a-z]+(?:-[a-z]+)*\z/) }
   die!("not soul slugs (lowercase, single hyphens): #{bad.join(", ")}") if bad.any?
 
   current = Array((api(:get, "/api/v1/tasks/#{slug}")["data"] || {}).dig("metadata", "devops", "fix_forward"))
              .map { |entry| entry.to_s.strip }.reject(&:empty?)
-  posted = if unnamed
-    (current + [FIX_FORWARD_UNNAMED]).uniq
-  else
-    # Naming an author RETIRES the marker: the fact it stood for is now on record.
-    (current.reject { |entry| entry == FIX_FORWARD_UNNAMED } + souls).uniq
-  end
+  posted = (current + souls).uniq
   api(:patch, "/api/v1/tasks/#{slug}", { "devops" => { "fix_forward" => posted } })
 
   # READ BACK. A 200 is not persistence, and this stamp's whole job is to be there
@@ -3568,18 +2925,13 @@ when "fix-forward"
     warn!("  if it recurs the board write is failing server-side — check ErrorLog.")
     exit 1
   end
-  if souls.any? && (short = souls - authors).any?
+  if (short = souls - authors).any?
     warn!("✗ fix-forward recorded on #{slug} but #{short.join(", ")} did NOT join the author set.")
     warn!("  devops.builders reads [#{authors.join(", ")}]. The record landed and the fold did")
     warn!("  not, so bin/reviewer-select would still seat them. Check Task#builder_roll_call.")
     exit 1
   end
-  if unnamed
-    puts "fix-forward recorded on #{slug}: UNNAMED — the author set is now INCOMPLETE and"
-    puts "  bin/reviewer-select will REFUSE until: #{SELF_CMD} fix-forward #{slug} --agent <soul>"
-  else
-    puts "fix-forward recorded on #{slug}: #{souls.join(", ")} (authors: #{authors.join(", ")})"
-  end
+  puts "fix-forward recorded on #{slug}: #{souls.join(", ")} (authors: #{authors.join(", ")})"
 when "intent"
   # Record an INTENT — an agent (or the two senior reviewers) STARTING a stage's
   # work, the moment it begins — so /deployments + the task timeline show who's on
@@ -3624,8 +2976,8 @@ when "intent"
   print_task(task) if task
 when "checkpoint"
   # Emit a CHECKPOINT event — a named moment WITHIN the current stage that does not
-  # move it. bin/full-suite-check bookends the local-certification testing phase with
-  # `checkpoint <slug> cert --status started` then `--status completed`. POSTs to the
+  # move it. (The retired local cert bookended its testing phase with
+  # `checkpoint <slug> cert --status started` then `--status completed`.) POSTs to the
   # same events/<name>/{start,complete} endpoints the API checkpoint path uses;
   # source defaults to "system" so it skips the usage gate (a marker, not agent work).
   usage = "usage: #{$PROGRAM_NAME} checkpoint <slug> <name> --status started|completed [--source S] [--message M]"
@@ -3656,99 +3008,6 @@ when "checkpoint"
   event["metadata"] = { "session" => checkpoint_session } unless checkpoint_session.nil?
   api(:post, "/api/v1/tasks/#{slug}/events/#{name}/#{status == "started" ? "start" : "complete"}", { "event" => event })
   puts "checkpoint #{name} #{status} on #{slug}"
-when "heartbeat"
-  # The STATUS LINE's build-claim renewal — bin/statusline calls this each render
-  # (throttled to 45s). It is now the SECOND renewer, not the only one: since
-  # 2026-09-09 the claim starts a detached renewer of its own (`claim-renew-loop`
-  # below), because a headless agent shell paints no status line and so renewed
-  # nothing at all. This path remains because it costs nothing and covers the
-  # session that has a terminal. RENEWS THIS INSTANCE'S CLAIM on <slug>, and does no
-  # more than that: it NEVER steals a live foreign claim, and it does not ADOPT a
-  # free one either — an unclaimed or expired lease is acquired only from a session
-  # sitting at the task's bound DESK (#heartbeat_may_claim?), because acquiring a
-  # lease is a claim of authorship and a painting terminal is not. Fully
-  # best-effort: no session, no slug, or any API error → silent no-op (a heartbeat
-  # must never disrupt the status line). Prints nothing on success.
-  usage = "usage: #{$PROGRAM_NAME} heartbeat <slug> [--desk PATH]"
-  slug = positional!(ARGV.shift || die!(usage), usage)
-  # The desk whose file mtimes decide whether this claim is still being WORKED, and
-  # whether it may be ACQUIRED at all. bin/statusline passes its cwd when that cwd
-  # is a bound worktree; absent, we try cwd anyway. Either way
-  # DeskActivity.desk_root refuses any directory not bound to THIS task, so a
-  # heartbeat fired from a primary checkout resolves no desk — and that costs it
-  # BOTH desk-backed powers: #heartbeat_abandoned? has no mtimes to read (see the
-  # abandonment check below), and #heartbeat_may_claim? DECLINES to acquire a free
-  # lease rather than falling back to renewing. Declining is the point: adopting on
-  # a resolved-nothing was how a reviewer's terminal claimed the task it had just
-  # bounced and got recorded as its author.
-  heartbeat_desk = nil
-  while ARGV.any?
-    case (flag = ARGV.shift)
-    when "--desk" then heartbeat_desk = ARGV.shift || die!("--desk needs a path")
-    else unknown_flag!(flag, valid: %w[--desk], context: "heartbeat")
-    end
-  end
-  # The renewal itself is #renew_build_claim above — ONE implementation, shared with
-  # the detached `claim-renew-loop`. Every guard, and the argument for each, lives
-  # there.
-  #
-  # THE EXIT CODE IS DELIBERATELY 0 WHATEVER HAPPENS, and this is the one place in
-  # the stack where that is right. bin/statusline fires this on every render; a
-  # nonzero exit here would paint a failure into the operator's status line for the
-  # ordinary case of a heartbeat that correctly DECLINED. The renewer needs the
-  # verdict this throws away, which is exactly why the renewer does not shell out to
-  # this command — it calls the shared function and reads the outcome directly.
-  # test/commands/task_heartbeat_claim_test.rb pins both halves of that contract.
-  begin
-    renew_build_claim(slug, heartbeat_desk)
-  rescue SystemExit, StandardError
-    nil # best-effort: swallow API/transport failures
-  end
-when "claim-renew-loop"
-  # THE DETACHED BUILD-CLAIM RENEWER — started by the claim (`move building` /
-  # `begin`), never invoked by hand. It is the answer to a build claim that only a
-  # PAINTING TERMINAL could renew: renewal now belongs to the RUN, so a headless
-  # agent shell holds its task for the whole of a ~12-minute ship instead of losing
-  # it 120 seconds in. bin/lib/build_claim_renewer.rb carries the full argument,
-  # including why the TTL was NOT simply raised and how a dead builder is still
-  # distinguished from a working one.
-  #
-  # It cannot re-derive its own identity (detached, it has reparented away from the
-  # agent process), so the session id and the live-instance nonce ride in from the
-  # spawner's env, and the ANCHOR — the process whose life the lease follows — is
-  # named on the command line.
-  usage = "usage: #{$PROGRAM_NAME} claim-renew-loop <slug> --anchor-pid <pid> --anchor-start <start> [--desk PATH]"
-  slug = positional!(ARGV.shift || die!(usage), usage)
-  anchor_pid = nil
-  anchor_start = nil
-  renew_desk = nil
-  while ARGV.any?
-    case (flag = ARGV.shift)
-    when "--anchor-pid"   then anchor_pid = ARGV.shift || die!("--anchor-pid needs a pid")
-    when "--anchor-start" then anchor_start = ARGV.shift || die!("--anchor-start needs a start signature")
-    when "--desk"         then renew_desk = ARGV.shift || die!("--desk needs a path")
-    else unknown_flag!(flag, valid: %w[--anchor-pid --anchor-start --desk], context: "claim-renew-loop")
-    end
-  end
-  die!(usage) if anchor_pid.to_s.strip.empty? || anchor_start.to_s.strip.empty?
-  BuildClaimRenewer.run(
-    # See bin/lib/anchor_heartbeat.rb. This lane is the LEAST exposed of the four —
-    # its beat already runs ClaimLease.abandoned? — but the two checks answer
-    # different questions and neither covers the other. `abandoned?` asks whether
-    # THIS TASK'S desk and board rows have gone quiet, and answers "unknown" (which
-    # never frees a claim) whenever no desk resolves; the seam asks whether the
-    # SESSION behind the anchor is doing anything at all, which is exactly the fact
-    # a desk-less renewer has none of. The 2026-09-22 orphan was a build claim.
-    alive: AnchorHeartbeat.alive_check(
-      resident: -> { SessionIdentity.process_alive?(anchor_pid, anchor_start) },
-      signal: -> { AnchorHeartbeat.signal_age(session: session_identity.first, projects_dir: PROJECTS_DIR) }
-    ),
-    beat: -> { renew_build_claim(slug, renew_desk) },
-    sleeper: ->(seconds) { sleep(seconds) },
-    clock: -> { Time.now },
-    interval: ShiftRenewer.interval_from(ENV["TASK_BUILD_CLAIM_RENEW_INTERVAL"]),
-    max_lifetime: BuildClaimRenewer.lifetime_for(desk: renew_desk)
-  )
 when "session-mascot"
   # Eagerly paint the session's Pokémon mascot onto the per-session marker so
   # bin/statusline shows it in SECONDS — fired by a SessionStart hook, before any
@@ -3858,16 +3117,8 @@ when "block"
   # This read doubles as the existence check the breaker would otherwise repeat —
   # an unknown slug die!s here with EXIT_TASK_NOT_FOUND before anything else runs.
   current = api(:get, "/api/v1/tasks/#{slug}")["data"]
-  # WHO THIS BLOCK WOULD BE ATTRIBUTED TO, resolved BEFORE either gate rather than
-  # just before the write. The verdict-owner gate below compares this soul against
-  # the review claim's, so computing it late would leave the gate judging a caller
-  # it had not yet identified.
+  # WHO THIS BLOCK WOULD BE ATTRIBUTED TO — the breaker's recipes print it.
   blocker = resolved_block_actor(agent, current, kind: kind)
-  # THE VERDICT-OWNER GATE FIRES FIRST — before the breaker, because this is an
-  # AUTHORISATION question and the breaker is a BUDGET question. Asking the budget
-  # first would print escalation guidance to an agent with no standing to act on it,
-  # and — the actual defect — would let a non-owner reach the write at all.
-  enforce_review_verdict_gate!(slug, kind: kind, actor: blocker)
   # THE BREAKER FIRES HERE, before the block lands — a warning printed after the
   # bounce is recorded is a receipt, not a safety mechanism. Only `rework` is
   # gated: `dependency` IS the escalation this refusal routes you to, and
@@ -3903,8 +3154,7 @@ when "block"
       # no actor, no `by`. It leaves a block whose audit row names nobody. (It does not
       # poison `bin/reviewer-select`: `Task#block!` lands the task on `building` with
       # `blocked_at` set, which is neither a `build_claim_save?` nor a `submit_save?`,
-      # so `enforce_builder_stamp` writes no author. The author set is only reached
-      # second-hand, when the statusline later adopts the freed lease unnamed.)
+      # so `enforce_builder_stamp` writes no author.)
       warn!("    #{BlockRecipe.escalation(slug, agent: resolved_block_actor(agent, current, kind: "dependency"))}")
       warn!("")
       warn!("  If this bounce is MECHANICAL and not a disagreement (red CI, a merge conflict, a")
@@ -3915,8 +3165,7 @@ when "block"
       # run already resolved to is what it will ACTUALLY record, and printing it is how
       # a wrong one becomes VISIBLE rather than silent. (A pasted block does not run as
       # whoever pasted it: `resolved_block_actor` returns the literal "avi" for
-      # rework-on-submitted, so the bare remedy printed to the verdict owner was a
-      # command the verdict-owner gate then REFUSED him — exit 11, nothing written.)
+      # rework-on-submitted, so a bare remedy would record the wrong soul.)
       warn!("    #{BlockRecipe.breaker_ack(slug, agent: blocker)}")
       exit EXIT_BREAKER_TRIPPED
     end
@@ -4026,6 +3275,36 @@ when "usage-audit"
     end
   end
   usage_audit!(dir)
+when "wait-window"
+  # THE OPERATOR-WINDOW WAIT (devops-v3-design.md section 6): block until the
+  # task's open window is answered — the `Escalated:` block cleared, or the
+  # approval request answered — or it lapses. Reads the DERIVED `windows` list the
+  # task API carries (Task#operator_windows), so this CLI holds no window math and
+  # reads no YAML: the board's clock decides. Bounded by construction — the loop's
+  # deadline is the latest open end plus the grace — so it can never wait forever
+  # on a task nobody answers. Exit codes and the loop: bin/lib/wait_window.rb.
+  require_relative "lib/wait_window"
+  begin
+    window_opts = WaitWindow.parse_args(ARGV)
+  rescue WaitWindow::UsageError => e
+    warn e.message
+    exit WaitWindow::EXIT_USAGE
+  end
+  # A read that fails is NOT an empty window list: nil here is counted by the
+  # loop, and only the board's own "task not found" ends the wait at once.
+  window_reader = lambda do
+    res = TaskBoard.request(:get, "/api/v1/tasks/#{window_opts.slug}", base_url: BASE_URL, token: token)
+    parsed = TaskBoard.parse_body(res)
+    next :not_found if task_not_found_response?(res, parsed)
+    next nil unless res.code.to_i.between?(200, 299)
+
+    parsed["data"].is_a?(Hash) ? parsed["data"] : nil
+  rescue StandardError
+    nil
+  end
+  exit WaitWindow.run(slug: window_opts.slug, reader: window_reader, sleeper: ->(seconds) { sleep(seconds) },
+                      clock: -> { Time.now }, interval: window_opts.interval, grace: window_opts.grace,
+                      out: $stdout, err: $stderr, json: window_opts.json)
 when "review-claim"
   # The per-TASK REVIEW claim (per-task-pr-review-claim) — the review LANE's per-task
   # lease, so MANY pr-review sessions run in parallel and each SKIPS a task already
@@ -4053,78 +3332,6 @@ when "claim-next-review"
   # a `--help` that fell through it once claimed a real task.
   require_relative "lib/review_claim_cli"
   exit(ReviewClaimCli.new.run(["claim-next", *ARGV]))
-when "migration-lane"
-  # The `backend_migration` exclusive lane (docs/agents/system/exclusive-lanes.md).
-  # Before `bin/rails g migration`, before creating a file in db/migrate/, before
-  # touching db/schema.rb — acquire. If the lane is held, queue and chat the holder.
-  #
-  # The lane is GLOBAL, so `acquire`/`release` take no slug of their own; the
-  # optional <task-slug> only RECORDS which task holds it, so a refused Dev is told
-  # who to ask. Exit codes: 0 acquired / lane reported · 10 refused (a live holder)
-  # · 1 error. 10 is distinct from 1 because "someone else is migrating" is a normal
-  # outcome a script should branch on, not a failure.
-  usage = "usage: #{$PROGRAM_NAME} migration-lane <acquire|release|status> [<task-slug>] [--label L] [--agent A]"
-  sub = positional!(ARGV.shift || die!(usage), usage)
-  die!(usage) unless %w[acquire release status].include?(sub)
-
-  lane_task = nil
-  lane_label = nil
-  lane_agent = nil
-  until ARGV.empty?
-    arg = ARGV.shift
-    case arg
-    when "--label" then lane_label = ARGV.shift || die!("--label needs a value")
-    when "--agent" then lane_agent = ARGV.shift || die!("--agent needs a value")
-    else
-      unknown_flag!(arg, valid: %w[--label --agent], context: "migration-lane") if arg.start_with?("-")
-      lane_task = arg
-    end
-  end
-
-  # `status` is a pure read, so it must work from a plain shell with no agent
-  # session. acquire/release cannot: a lease with no identity could never be
-  # renewed or released by its owner, and a lane holder nobody can name is exactly
-  # the wedged lane this build exists to prevent.
-  if sub == "status"
-    holder = api(:get, "/api/v1/migration_lane")["data"]["holder"]
-    if holder.nil? || !holder["live"]
-      puts "migration lane: FREE"
-      exit 0
-    end
-    puts "migration lane: HELD"
-    puts "  task:    #{holder["task_slug"] || "-"}"
-    puts "  agent:   #{holder["agent"] || "-"}"
-    puts "  label:   #{holder["label"] || "-"}"
-    puts "  since:   #{holder["acquired_at"] || "-"}"
-    puts "  expires: #{holder["expires_at"] || "-"}"
-    exit 0
-  end
-
-  session, = session_identity
-  die!("migration-lane #{sub} needs an agent session (CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID); `status` works without one") if session.nil?
-  nonce = claim_nonce
-
-  if sub == "acquire"
-    data = api(:post, "/api/v1/migration_lane", {
-      session: session, nonce: nonce, task_slug: lane_task, agent: lane_agent, label: lane_label
-    })["data"]
-    holder = data["holder"] || {}
-    if data["acquired"]
-      puts "migration lane ACQUIRED#{lane_task ? " for #{lane_task}" : ""} (expires #{holder["expires_at"]})"
-      puts "release it with: bin/task migration-lane release"
-      exit 0
-    end
-    warn "migration lane HELD by #{holder["agent"] || holder["label"] || holder["session"] || "another session"}" \
-         "#{holder["task_slug"] ? " (task #{holder["task_slug"]})" : ""} since #{holder["acquired_at"]}"
-    warn "queue: pick up a non-migration task and ask the holder for an ETA."
-    exit 10
-  end
-
-  data = api(:post, "/api/v1/migration_lane/release", { session: session, nonce: nonce })["data"]
-  # Releasing something you never held is a harmless no-op, not an error — the
-  # SOP's belt-and-suspenders release fires on every exit path.
-  puts data["released"] ? "migration lane RELEASED" : "migration lane not held by this session (no-op)"
-  exit 0
 else
   print_usage!
   exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)

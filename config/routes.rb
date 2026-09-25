@@ -45,8 +45,17 @@ Rails.application.routes.draw do
   post "triage/:slug/promote", to: "triage#promote", as: :promote_triage_finding
   post "triage/:slug/dismiss", to: "triage#dismiss", as: :dismiss_triage_finding
   get "deployments", to: "tasks#deployments", as: :deployments
+  # The epic view: every epic with its progress by stage, and one epic's tasks
+  # grouped by stage on the board's own card (EpicsController, public-read).
+  get "epics", to: "epics#index", as: :epics
+  get "epics/:slug", to: "epics#show", as: :epic
   get "deployments/all", to: "releases#index", as: :all_deployments
   get "deployments/:slug", to: "releases#show", as: :deployment
+  # The operator's production-authority GRANT (design section 6): the Approve
+  # button on the Next Release card posts here while a timed `bin/release ship`
+  # waits on its window. Admin-gated in ReleasesController; records the one
+  # `ship_authorized completed` event through Release#grant_ship_authorization!.
+  post "deployments/:slug/ship_authorization", to: "releases#authorize_ship", as: :authorize_ship_deployment
   get "review_events", to: "tasks#review_events_hub", as: :review_events_hub
   get "stages", to: "tasks#stages", as: :stages
   # /stages/sop — the operator's DevOps SOP as an accountability-swimlane infographic.
@@ -423,14 +432,6 @@ Rails.application.routes.draw do
       # `_ship`/`_gate` reclaim guard asks `?role=deployer`: a live deployer claim means a
       # ship is in progress, so those fixed-path workspaces must not be reclaimed mid-ship.
       get "release_conductor_claims/live", to: "release_conductor_claims#live", as: :release_conductor_claims_live
-      # The `backend_migration` exclusive lane (exclusive-lanes.md) — a SINGLETON,
-      # not nested under a task: the lane is global and the holding task is a
-      # property of the claim. CLI: `bin/task migration-lane acquire|release|status`.
-      # These routes are the whole reason the lane is operable at all — it shipped
-      # as a session advisory lock that no agent could reach (see MigrationLaneClaim).
-      get  "migration_lane", to: "migration_lane_claims#show", as: :migration_lane
-      post "migration_lane", to: "migration_lane_claims#acquire", as: :migration_lane_acquire
-      post "migration_lane/release", to: "migration_lane_claims#release", as: :migration_lane_release
       resources :releases, only: [], param: :slug do
         member do
           post "events/:step/start", to: "release_events#start", as: :event_start

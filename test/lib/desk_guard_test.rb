@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Unit tests for bin/lib/desk_guard.rb — the desk guard both G1 cert runners
-# (bin/fast-check, bin/full-suite-check) consult before running a test lane, and that
+# (bin/fast-check) consults before running a test lane, and that
 # bin/agent-worktree's bringup asserts the desk with.
 #
 # THE BUG THESE VECTORS EXIST FOR (live, 2026-07-14). The first cut of this guard allowed on
@@ -26,7 +26,7 @@
 # Also picked up by the normal `bin/rails test` sweep. The resolver's own plumbing (env
 # pass-through, chdir, boot failure) is proven against a shimmed `bin/rails` at the bottom.
 # The shelled end-to-end refusals live in test/lib/fast_check_test.rb and
-# test/lib/full_suite_check_test.rb.
+# test/lib/fast_check_test.rb.
 
 # Under `bin/rails test`, boot the app BEFORE desk_guard's path-load of
 # app/models/release/gate_workspace.rb. That file opens `class Release` with no

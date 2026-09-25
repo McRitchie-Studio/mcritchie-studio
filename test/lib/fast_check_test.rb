@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
-# Harness tests for bin/fast-check — the G1 FAST cert runner (diff-mapped tests
-# + core spine + rubocop on changed files, recording "[fast-cert@<fp>]"
-# fingerprint-bound evidence). Mirrors test/lib/full_suite_check_test.rb's seam
-# pattern: the script is shelled with its lanes stubbed via FAST_CHECK_* env vars
-# against throwaway git repos, so the ORCHESTRATION is exercised without a real
-# Rails run; the board/gate CLIs are stubbed via FAST_CHECK_TASK_BIN /
-# FAST_CHECK_GATE_BIN so the durable-record writes are asserted without a board.
-# Selection logic itself is unit-tested in test/lib/fast_cert_test.rb.
+# Harness tests for bin/fast-check — the OPTIONAL local pre-flight (diff-mapped
+# tests + core spine + rubocop on changed files). Since DevOps v3 phase 2b
+# (/tasks/retire-local-cert-evidence) it records NOTHING on the task: no receipt,
+# no gate attempt, no checkpoint. The PR's settled green CI is the verdict; this
+# script buys earliness and says so.
+#
+# The script is shelled with its lanes stubbed via FAST_CHECK_* env vars against
+# throwaway git repos, so the ORCHESTRATION is exercised without a real Rails run;
+# the board CLI is stubbed via FAST_CHECK_TASK_BIN so the one read it still makes
+# (the tree check) can be driven and every write it must NOT make can be asserted
+# absent. Selection logic itself is unit-tested in test/lib/fast_cert_test.rb.
 # Run directly:
 #   ruby -Itest test/lib/fast_check_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
@@ -19,76 +22,24 @@ require "fileutils"
 require "rbconfig"
 require "shellwords"
 require_relative "../support/session_env"
-require_relative "../../bin/lib/full_suite_gate"
-require_relative "../../bin/lib/fast_cert"
 
 class FastCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/fast-check", __dir__)
-  DOR = File.expand_path("../../bin/dor-check", __dir__)
 
-  # THE CHILD CERT HAS NO DATABASE. Say so, or it inherits ours.
-  #
-  # Every test here spawns the REAL bin/fast-check against a THROWAWAY git repo in a
-  # tmpdir — a repo with no database anywhere near it. But the child inherits this
-  # process's env, and a worktree's `bin/rails test` exports TEST_DATABASE_URL (from
-  # .env.test.local) AND holds an open connection to that database the moment anything
-  # in the run loads test_helper. So the child cert resolved the DB from the INHERITED
-  # env (test_db_url reads ENV before the root's dotenv), probed OUR worktree's test DB,
-  # found one foreign backend holding it — THE TEST RUNNER THAT SPAWNED IT — and did
-  # exactly what it is built to do: REFUSED. Exit 1.
-  #
-  #   fast-check: REFUSING — the test DB mcritchie_studio_test_<worktree> is held by 1
-  #   other session(s): pid 505 (bin/rails).            # ← pid 505 IS the test runner
-  #
-  # 27 tests across this file and full_suite_check_test.rb went red that way under
-  # `bin/rails test test/lib/` (the whole dir in ONE process), and stayed green when run
-  # alone — because a bare minitest file opens no AR connection and there is then nothing
-  # holding the DB. That difference reads as a spooky "inter-file interaction"; it is
-  # only ever this, and it will red-light the cert's own mapped lane for anyone whose
-  # diff touches these files alongside an AR-touching test.
-  #
-  # The fix is to stop lying to the child: this tmpdir repo has NO database. Unset the
-  # inherited URL (test_db_url → nil → foreign_backends → [], no probe at all) and point
-  # the probe at a psql that does not exist. cert_orphan_guard_reaper_test.rb already
-  # carried this defence (its NO_DB_ENV); it simply never reached the two harness files.
-  # The DB backstop is covered on its own terms there and in cert_orphan_guard_test.rb.
+  # THE CHILD HAS NO DATABASE. The desk guard boots the app it finds; a tmpdir fixture
+  # must not inherit this process's TEST_DATABASE_URL and go probing the desk's DB.
   NO_AMBIENT_DB = { "TEST_DATABASE_URL" => nil, "CERT_GUARD_PSQL" => "/nonexistent/psql" }.freeze
 
-  # THE one place a child env is built in this file. Both scrubs — the agent session
-  # (SessionEnv) and the ambient database (above) — are applied HERE, so a new spawn
-  # site cannot quietly acquire either leak; patching five call sites one at a time is
-  # how the fifth gets missed. Same discipline the guard itself now follows: ONE
-  # predicate, not a rule repeated wherever someone remembers it.
   def child_env(overrides = {})
     SessionEnv.neutralized(NO_AMBIENT_DB.merge(overrides))
-  end
-
-  # --- [unit] the harness's own child env --------------------------------------------
-
-  def test_child_env_never_hands_the_child_our_database
-    env = child_env("FAST_CHECK_ROOT" => "/tmp/whatever")
-
-    assert env.key?("TEST_DATABASE_URL"), "the key must be PRESENT and nil — that is what UNSETS it"
-    assert_nil env["TEST_DATABASE_URL"],
-              "a child cert rooted at a throwaway repo must not inherit THIS suite's test DB: it would " \
-              "probe our database, find the test runner that spawned it holding a connection, and refuse"
-    assert_nil env["CLAUDE_CODE_SESSION_ID"], "…and it still must not inherit the live agent session"
-    assert_equal "/tmp/whatever", env["FAST_CHECK_ROOT"], "overrides still pass through"
-  end
-
-  def test_evaluate_grades_the_fast_lane_alongside_the_full_lanes
-    checks = ["[fast-cert@abc1234] fast green"]
-    assert_equal :fresh, FullSuiteGate.lane_status(checks, FullSuiteGate::FAST_LANE, "abc1234")
-    assert_equal :stale, FullSuiteGate.lane_status(checks, FullSuiteGate::FAST_LANE, "fffffff")
-    assert_equal :missing, FullSuiteGate.lane_status([], FullSuiteGate::FAST_LANE, "abc1234")
   end
 
   # --- fixtures --------------------------------------------------------------------
 
   # A temp git repo shaped like an app: a changed model + its convention test, a
-  # spine test + spine config, and one committed baseline. Yields the dir.
-  # `subpath:` puts the repo somewhere specific under the temp dir — e.g.
-  # ".worktrees/<slug>", which is what makes it read as an agent DESK (DeskGuard).
+  # spine test + spine config, and one committed baseline. Yields the dir and a
+  # writer. `subpath:` puts the repo under e.g. ".worktrees/<slug>", which is what
+  # makes it read as an agent DESK (DeskGuard).
   def with_repo(subpath: nil)
     Dir.mktmpdir do |tmp|
       dir = subpath ? File.join(tmp, subpath) : tmp
@@ -104,11 +55,6 @@ class FastCheckTest < Minitest::Test
       write.call("test/models/spine_core_test.rb", "spine test\n")
       write.call("spine.yml", "spine:\n  - test/models/spine_core_test.rb\n")
       write_repo_shape(dir, subpath) if subpath
-      # The harness writes its stub CLIs and their log INTO the repo dir, so without
-      # this they read as untracked dirt to the dirty-tree guard (cert_tree_guard.rb)
-      # — test tooling, not uncommitted work. Ignoring them keeps the fixture's dirt
-      # HONEST: the only uncommitted file is the branch diff itself (widget.rb below).
-      # stub.log* also covers the TASK stub's read-back sentinel (stub.log.updated).
       write.call(".gitignore", "stub.log*\n*-stub\n")
       git.call("init -q")
       git.call("config user.email tester@example.com")
@@ -121,22 +67,10 @@ class FastCheckTest < Minitest::Test
     end
   end
 
-  # Make the fixture REPO-SHAPED, because the desk guard does not read a file — it BOOTS THE
-  # APP and reads back the database it actually connects to (bin/lib/desk_guard.rb). A desk
-  # fixture therefore needs the two things a real desk has:
-  #
-  #   * the REPO's config/database.yml — one level up from <repo>/.worktrees/<slug> — which
-  #     is where the SHARED test database name is read from (ERB-stripped, so no env var can
-  #     rewrite the value the resolution is compared against); and
-  #   * a `bin/rails` to boot. The shim answers with DESK_DB_STUB, so each test STATES what
-  #     the booted app would resolve to, and defaults to the SHARED name — the hazard.
-  #
-  # DESK FIXTURES ONLY. A plain `with_repo` (no subpath) is not under .worktrees/, so the
-  # guard returns before it would boot anything and the shape buys nothing — while a
-  # `bin/rails` it does not need would quietly rewrite two OTHER fixtures: the turf-monster
-  # one asserts CiTestCommand still REFUSES a repo with no ci.yml, and the studio-engine one
-  # asserts a gem has "no bin/rails to purge one with". Both would keep passing for the
-  # wrong reason, or stop passing at all.
+  # Make a desk fixture REPO-SHAPED: the desk guard boots the app and reads back the
+  # database it connects to, so a desk needs the repo's config/database.yml (one level
+  # up from <repo>/.worktrees/<slug>) and a `bin/rails` to boot. The shim answers with
+  # DESK_DB_STUB, defaulting to the SHARED name — the hazard.
   def write_repo_shape(dir, subpath)
     repo_root = File.expand_path("../..", dir)
     FileUtils.mkdir_p(File.join(repo_root, "config"))
@@ -154,57 +88,17 @@ class FastCheckTest < Minitest::Test
     File.chmod(0o755, shim)
   end
 
-  # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG_<MARKER>; exits 1 when
-  # FAIL_TOKEN is set and appears in its argv, else 0. For the TASK stub, `show`
-  # prints TASK_SHOW_JSON so the runner's read-then-write can be exercised.
-  #
-  # It is minimally STATEFUL so the cert's read-back is exercised end to end —
-  # crucially INCLUDING the fresh evidence line, whose runtime fingerprint no
-  # fixture can spell, so the only faithful way to model "the write landed" is to
-  # reflect the ACTUAL written line back:
-  #   * `update` drops a sentinel beside STUB_LOG and CAPTURES the --checks VALUES
-  #     it stored (to .written), so a later `show` can echo them — the real board
-  #     makes a write readable, which is the whole premise of the read-back.
-  #   * `show` after an update serves TASK_SHOW_JSON_AFTER_UPDATE (else
-  #     TASK_SHOW_JSON) with the captured lines merged in, so the read-back sees
-  #     the evidence line the cert actually wrote. Overrides:
-  #       - STUB_READBACK_DROP_WRITTEN=1 → do NOT merge the written lines (models a
-  #         write that never landed — e.g. the evidence line vanished).
-  #       - FAIL_SHOW_AFTER_UPDATE=1 → the post-write read itself fails (a blip).
-  #     TASK_SHOW_JSON_AFTER_UPDATE with a line DROPPED still models a lost
-  #     pre-existing line: the written evidence is merged back, that line is not.
+  # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG; exits 1 when FAIL_TOKEN is
+  # set and appears in its argv. The TASK stub serves `show` from TASK_SHOW_JSON.
   def write_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
-      require "json"
       log = ENV.fetch("STUB_LOG")
       File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
-      sentinel = log + ".updated"
-      written  = log + ".written"
-      if ARGV.first == "update"
-        File.write(sentinel, "1")
-        vals = []
-        i = 0
-        while i < ARGV.length
-          if ARGV[i] == "--checks" then vals << ARGV[i + 1].to_s; i += 2 else i += 1 end
-        end
-        File.open(written, "a") { |f| vals.each { |v| f.puts(v) } }
-      end
       if ARGV.first == "show"
-        exit 1 if ENV["FAIL_SHOW_AFTER_UPDATE"] == "1" && File.exist?(sentinel)
-        after = ENV["TASK_SHOW_JSON_AFTER_UPDATE"].to_s
-        base  = (!after.empty? && File.exist?(sentinel)) ? after : ENV["TASK_SHOW_JSON"].to_s
-        unless base.empty?
-          doc = JSON.parse(base)
-          if File.exist?(sentinel) && File.exist?(written) && ENV["STUB_READBACK_DROP_WRITTEN"] != "1"
-            dv = ((doc["metadata"] ||= {})["devops"] ||= {})
-            checks = Array(dv["checks_run"])
-            File.readlines(written, chomp: true).each { |w| checks << w unless checks.include?(w) }
-            dv["checks_run"] = checks
-          end
-          puts JSON.generate(doc)
-        end
+        json = ENV["TASK_SHOW_JSON"].to_s
+        puts json unless json.empty?
       end
       token = ENV["FAIL_TOKEN"].to_s
       exit(!token.empty? && ARGV.join(" ").include?(token) ? 1 : 0)
@@ -213,26 +107,14 @@ class FastCheckTest < Minitest::Test
     stub
   end
 
-  # Run bin/fast-check against `dir` with every seam stubbed. Returns
-  # [stdout, exitcode, log_lines] where log_lines is the parsed stub log
-  # ([[marker, argv...], ...] in call order).
-  #
-  # implicit_root: true drops the FAST_CHECK_ROOT override and runs the script
-  # WITH `dir` as its cwd instead — the root resolves from the cwd git toplevel,
-  # exercising the task-root guard (which an explicit override bypasses). stderr
-  # is merged into stdout there so the refusal message is assertable.
-  # A repo fixture that IDENTIFIES as a given slug. cert_repo comes from the
-  # checkout's origin remote (CertRootGuard.repo_of_checkout), so a registry-driven
-  # test cannot be written without one — a temp repo otherwise answers with its
-  # random tmpdir name and matches no registry row.
+  # A repo fixture that IDENTIFIES as a given slug (TaskTree.repo_of_checkout reads
+  # the origin remote), so a registry-driven test can be written at all.
   def with_repo_named(slug, release_check: nil)
     with_repo do |dir|
       assert system("git -C #{dir} remote add origin " \
                     "https://github.com/McRitchie-Studio/#{slug}.git >/dev/null 2>&1"),
              "could not name the fixture repo #{slug}"
       if release_check
-        # The registry names bin/release-check for a gem; the fixture must carry one
-        # or the lane is legitimately unlaunchable and the test proves nothing.
         FileUtils.mkdir_p(File.join(dir, "bin"))
         File.write(File.join(dir, "bin/release-check"), release_check)
         File.chmod(0o755, File.join(dir, "bin/release-check"))
@@ -242,300 +124,22 @@ class FastCheckTest < Minitest::Test
   end
 
   GEM_GATE_OK = "#!/bin/sh\nexit 0\n"
-
-  # --- gem repos on the BUILDER DEFAULT path -----------------------------------
-  #
-  # bin/full-suite-check learned to certify a gem repo; this script — the one
-  # builders actually run — did not, and every lane died on an unrescued
-  # Errno::ENOENT for `bin/rails` before a single test ran. These execute that path.
-
-  def test_a_gem_repo_runs_its_registry_gate_and_no_rails_lane
-    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
-      log = File.join(dir, "stub.log")
-      # NO FAST_CHECK_TEST_CMD: the unaided path is the whole point. The prepare
-      # command is a tripwire — a gem has no test DB, so it must never run.
-      # `nil` UNSETS the variable for the child. Omitting the key instead would leave
-      # run_check's own stub command in place and the registry path would never run —
-      # the first version of this test did exactly that and passed for no reason.
-      out, code = run_check(dir, extra_env: {
-        "FAST_CHECK_TEST_CMD" => nil,
-        "FAST_CHECK_TEST_PREPARE_CMD" => "sh -c 'echo PREPARE >> #{log.shellescape}'"
-      })
-
-      assert_equal 0, code, "an unaided gem cert must complete:\n#{out}"
-      refute_match(/PREPARE/, File.exist?(log) ? File.read(log) : "",
-        "a gem has no test database and no bin/rails to prepare one with — the " \
-        "prepare lane must not APPLY, not merely be skippable")
-      refute_match(/Errno::ENOENT|cert_process\.rb:\d+:in/, out,
-        "the crash this fixes must not resurface as a backtrace:\n#{out}")
-    end
-  end
-
-  def test_a_gem_cert_line_names_the_command_it_actually_ran
-    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
-      out, = run_check(dir, extra_env: { "FAST_CHECK_TEST_CMD" => nil })
-
-      # THE EVIDENCE MUST DESCRIBE WHAT RAN. The app wording counts diff-mapped
-      # paths, all zero for a gem — so the first working version of this fix emitted
-      # "0 mapped + 0 spine test path(s), rubocop on 0 changed file(s)" after running
-      # the repo's ENTIRE gate. Every number true, the sentence false.
-      refute_match(/0 mapped \+ 0 spine/, out,
-        "a cert that ran the whole gate must not read as one that tested nothing:\n#{out}")
-      assert_match(/whole registry gate/, out,
-        "the line must name what was actually executed:\n#{out}")
-    end
-  end
-
-  # A GEM RUNS NO RUBOCOP LANE — asserted by whether the lane's stub was INVOKED,
-  # not by scanning output for a string fast-check never emits.
-  #
-  # The first version of this test checked `refute_match(/\[rubocop@/)`, which is
-  # vacuous: fast-check emits ONE [fast-cert@...] line and no per-lane evidence at
-  # all, so that assertion was true no matter what ran. A mutation proved it — and
-  # then proved something better, that the lint-waiver branch it was written for was
-  # unreachable code, since every lint_lane:none repo also takes the registry-gate
-  # branch, which omits the rubocop lane before a waiver could be consulted.
-  def test_a_gem_repo_invokes_no_rubocop_lane_at_all
-    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
-      # fail_token makes the rubocop stub FAIL if it is ever invoked, so a lane that
-      # sneaks through reddens the cert rather than passing quietly.
-      _, code, lines = run_check(dir, fail_token: "RUBOCOP",
-                                      extra_env: { "FAST_CHECK_TEST_CMD" => nil })
-
-      assert_equal 0, code
-      assert_empty lane_calls(lines, "RUBOCOP"),
-        "a gem ships no rubocop; the lane must never be invoked for one"
-    end
-  end
-
-  def test_an_app_repo_is_unchanged_by_the_gem_path
-    with_repo_named("turf-monster") do |dir|
-      out, code = run_check(dir)
-
-      assert_equal 0, code, "no app repo may regress:\n#{out}"
-      assert_match(/mapped/, out,
-        "an app still reports its diff-mapped selection — the registry path must not " \
-        "quietly become the answer for every repo:\n#{out}")
-    end
-  end
-
   GEM_GATE_RED = "#!/bin/sh\nexit 1\n"
 
-  # --- the gem lane must be able to FAIL ---------------------------------------
-  #
-  # This script is the cert WRITER for the whole pipeline, so a cert that cannot
-  # fail is worse than a missing one. Every other gem test here asserts a GREEN
-  # gem or the app control; nothing guarded the gem lane's place in the verdict
-  # hash, and dropping mapped_res from it would certify a gem GREEN over a RED
-  # gate with all of them still passing.
+  GUARD_JSON = JSON.generate(
+    "metadata" => { "devops" => {
+      "branch" => "feat/task-x", "worktree_slug" => "task-x", "checks_run" => []
+    } }
+  )
 
-  def test_a_gem_whose_gate_FAILS_certifies_nothing
-    with_repo_named("studio-engine", release_check: GEM_GATE_RED) do |dir|
-      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
-                                        extra_env: { "FAST_CHECK_TEST_CMD" => nil,
-                                                     "TASK_SHOW_JSON" => SHOW_JSON })
-
-      refute_equal 0, code, "a red gem gate must fail the cert:\n#{out}"
-      refute_match(/\[fast-cert@/, out, "and must record NO evidence:\n#{out}")
-
-      closes = lines.select { |l| l[0] == "GATE" && l.include?("close") }
-      assert_equal 1, closes.length, "exactly one gate close, not zero and not two"
-      assert_includes closes.flatten, "--failed", "and the verdict must be failed"
-    end
-  end
-
-  # A gem whose registry row names bin/release-check but whose checkout does not
-  # carry it must stay RED. A silent skip here would be the worst outcome of all:
-  # a repo that certifies green having run nothing.
-  def test_a_gem_missing_its_declared_gate_stays_red
-    with_repo_named("studio-engine") do |dir|
-      out, code = run_check(dir, args: ["task-x"], merge_stderr: true,
-                                 extra_env: { "FAST_CHECK_TEST_CMD" => nil,
-                                              "TASK_SHOW_JSON" => SHOW_JSON })
-
-      refute_equal 0, code, "a declared gate that is absent is RED, never skipped:\n#{out}"
-      refute_match(/\[fast-cert@/, out)
-      assert_match(/COULD NOT RUN/, out,
-        "and it must name the COMMAND as the problem, not the diff:\n#{out}")
-    end
-  end
-
-  # --- a REGISTRY-GATED `apps` REPO --------------------------------------------
-  #
-  # The whole-gate branch used to key on the `gems` SECTION, so an `apps` row could
-  # never reach it however completely it declared its lane. turf-vault is the repo
-  # that cost: an Anchor program with four real CI lanes (56/56 node:test assertions
-  # plus both Rust lanes) and NO way for a builder to certify it — while six hub
-  # sites routed the reader to a task that had shipped the repo's first CI workflow
-  # and then been ARCHIVED. Keying on the DECLARATION closes it, and these execute
-  # that path: every gem test above would still pass with the `apps` half broken.
-  #
-  # The declared command is STUBBED here on purpose. Its real value (that repo's own
-  # bin/release-check, which runs npm + cargo lanes) needs a Node and Rust toolchain
-  # and the actual turf-vault checkout, neither of which belongs in a unit fixture;
-  # that the registry supplies it is proven by FullSuiteGate.release_check_cmd below,
-  # and that it runs is proven by running bin/fast-check in the real repo. What these
-  # pin is the BRANCH.
-
-  def test_a_registry_gated_app_repo_runs_its_declared_gate_and_no_rails_lane
-    with_repo_named("turf-vault") do |dir|
-      log = File.join(dir, "stub.log")
-      # The prepare command is a tripwire: an Anchor repo has no test DB and no
-      # bin/rails, so the lane must not APPLY — not merely be skippable.
-      out, code, lines = run_check(dir, fail_token: "RUBOCOP", extra_env: {
-        "FAST_CHECK_TEST_PREPARE_CMD" => "sh -c 'echo PREPARE >> #{log.shellescape}'"
-      })
-
-      assert_equal 0, code, "a registry-gated apps repo must certify:\n#{out}"
-      refute_match(/PREPARE/, File.exist?(log) ? File.read(log) : "",
-        "turf-vault has no Rails test database; the prepare lane must not apply to it")
-      assert_empty lane_calls(lines, "RUBOCOP"),
-        "turf-vault lints with prettier, not rubocop; the lane must never be invoked"
-      refute_match(/cert-deferred/, out,
-        "with a lane declared there is a suite to run, so the zero-evidence guard must " \
-        "no longer DEFER this repo before any lane:\n#{out}")
-    end
-  end
-
-  # THE LANE MUST BE ABLE TO FAIL. A cert that cannot go red is worth nothing — the
-  # exact reasoning turf-vault's own ci.yml records for adding its scripts suite.
-  def test_a_registry_gated_app_repo_reddens_when_its_declared_gate_fails
-    with_repo_named("turf-vault") do |dir|
-      out, code = run_check(dir, fail_token: "TEST", args: ["task-x"], merge_stderr: true,
-                                 extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
-
-      refute_equal 0, code, "a red declared gate must fail the cert:\n#{out}"
-      refute_match(/\[fast-cert@/, out, "and must record NO evidence:\n#{out}")
-    end
-  end
-
-  # An app that declares NOTHING is the control: it must keep its diff-mapped lane
-  # and its Rails prepare. Without this, "every repo now takes the registry path"
-  # would pass every other assertion here.
-  def test_an_app_that_declares_no_gate_keeps_the_rails_path
-    with_repo_named("turf-monster") do |dir|
-      log = File.join(dir, "stub.log")
-      out, code = run_check(dir, extra_env: {
-        "FAST_CHECK_TEST_PREPARE_CMD" => "sh -c 'echo PREPARE >> #{log.shellescape}'"
-      })
-
-      assert_equal 0, code, "no app repo may regress:\n#{out}"
-      assert_match(/PREPARE/, File.exist?(log) ? File.read(log) : "",
-        "a Rails app with no declared gate still owes its test-DB prepare — the registry " \
-        "path must not quietly become the answer for every repo")
-    end
-  end
-
-  # --- the predicate itself ------------------------------------------------------
-
-  def test_registry_gated_is_keyed_on_the_declaration_not_the_section
-    assert FullSuiteGate.registry_gated?("turf-vault"),
-           "turf-vault declares a release_check and is an `apps` row — the section must not decide this"
-    refute FullSuiteGate.gem_repo?("turf-vault"),
-           "and it must reach the branch WITHOUT being reclassified as a gem, which would make the " \
-           "release conductor try to publish an Anchor program to RubyGems"
-
-    assert FullSuiteGate.registry_gated?("studio-engine"), "a gem must be unchanged by the generalisation"
-    refute FullSuiteGate.registry_gated?("turf-monster"), "a Rails app declaring nothing owes the Rails lanes"
-    refute FullSuiteGate.registry_gated?("mcritchie-studio"), "the hub itself must never take this branch"
-  end
-
-  # WHAT THIS ASSERTS CHANGED WITH THE DECLARATION (2026-09-14). It used to require the
-  # string "test:scripts", because the row spelled turf-vault's four CI lanes out as an
-  # `&&` chain and the lane list was readable right here. The row now names that repo's
-  # own `bin/release-check` — the shape studio-engine and solana-studio use — so the
-  # lanes are no longer in this repo to assert, and the naming is the property this
-  # registry can still hold: a chain here would be a COPY of another repo's CI that
-  # drifts from it. WHICH lanes the script runs is enforced where both artifacts live,
-  # by turf-vault's own scripts/tests/release-check-covers-ci.test.js, inside its CI.
-  def test_turf_vault_declared_command_is_supplied_by_the_registry
-    cmd = FullSuiteGate.release_check_cmd("turf-vault").to_s
-
-    refute_empty cmd, "turf-vault's registry row declares no cert command"
-    assert_equal "bin/release-check", cmd,
-                 "turf-vault's declared gate must be the script that repo owns. A command chain here is a " \
-                 "hub-side copy of its ci.yml and drifts from it; the local cert then covers less than the " \
-                 "CI verdict it is credited against."
-  end
-
-  # --- acceptance 3: the attempt closes on a crash path ------------------------
-  #
-  # Every other test here runs --print, where gate_slug is nil and the at_exit
-  # block never executes — so this criterion shipped untested the first time.
-  # This copies the script, injects a raise where a lane crash would land, and
-  # reads the gate ledger.
-
-  def test_an_unrescued_crash_closes_the_g1_attempt_failed
-    with_repo do |dir, _|
-      # A MIRROR OF THE TREE, never the tree. bin/fast-check resolves `require_relative
-      # "lib/..."` (bin/lib, whose own requires reach ../../lib) and ROOT/config from its
-      # OWN location, so a bare copy anywhere else dies on a LoadError before it opens the
-      # attempt — a different failure than the one under test, and one that reads exactly
-      # like "the attempt never opened".
-      #
-      # The copy used to live BESIDE the real script for that reason, and that placement
-      # was the bug: every sweep that globs bin/* could list it and then find it deleted
-      # by the ensure below. CI job 102764654211 (rails (4)) went red on exactly that, in
-      # test/docs/cert_label_vocabulary_test.rb, on a PR that had nothing to do with it.
-      # So the copy now lives in a throwaway tree whose bin/lib, lib and config are
-      # symlinks to the real ones: the script resolves everything it would in place, and
-      # nothing that reads the repository can ever see it.
-      real_root = File.expand_path("..", File.dirname(BIN))
-      mirror = Dir.mktmpdir("fast-check-crash-mirror")
-      FileUtils.mkdir_p(File.join(mirror, "bin"))
-      links = { File.join(mirror, "bin", "lib") => File.join(real_root, "bin", "lib"),
-                File.join(mirror, "lib") => File.join(real_root, "lib"),
-                File.join(mirror, "config") => File.join(real_root, "config") }
-      links.each { |link, target| File.symlink(target, link) }
-      crashing = File.join(mirror, "bin", "fast-check-crash-fixture")
-      src = File.read(BIN).sub("unless skip_test_prepare", "raise \"boom\"\nunless skip_test_prepare")
-      File.write(crashing, src)
-      File.chmod(0o755, crashing)
-
-      _, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true, bin: crashing,
-                                      extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
-
-      refute_equal 0, code
-      gate = lines.select { |l| l[0] == "GATE" }
-      assert gate.any? { |l| l.include?("open") }, "the attempt must have opened"
-      closes = gate.select { |l| l.include?("close") }
-      assert_equal 1, closes.length,
-        "a crash must close the attempt exactly once — leaving it open reads as " \
-        "STALLED on the board, and closing twice creates a spurious extra attempt " \
-        "whose --failed row becomes the verdict"
-      assert_includes closes.flatten, "--failed"
-    ensure
-      # Unlink the symlinks BEFORE removing the mirror, so nothing here can ever walk
-      # into the real bin/lib, lib or config — whatever rm_rf's policy on links.
-      links&.each_key { |link| File.unlink(link) if File.symlink?(link) }
-      FileUtils.rm_rf(mirror) if mirror
-    end
-  end
-
-  # THE GUARD THAT WOULD HAVE CAUGHT THE DOUBLE-CLOSE. A happy path must emit
-  # exactly ONE close, and it must be --success.
-  def test_a_passing_cert_closes_exactly_once_and_succeeds
-    with_repo do |dir, _|
-      _, code, lines = run_check(dir, args: ["task-x"],
-                                      extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
-
-      assert_equal 0, code
-      closes = lines.select { |l| l[0] == "GATE" && l.include?("close") }
-      assert_equal 1, closes.length, "a second close would create attempt n+1, and " \
-                                     "latest_by_key takes the LAST — so a spurious " \
-                                     "--failed row becomes the verdict over a PASSING cert"
-      assert_includes closes.flatten, "--success"
-    end
-  end
-
-  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false, merge_stderr: false, bin: BIN)
+  # Run bin/fast-check against `dir` with every seam stubbed. Returns [output,
+  # exitcode, log_lines]; the narration is stderr, so it is merged by default.
+  # implicit_root: true drops FAST_CHECK_ROOT and runs WITH `dir` as the cwd, so the
+  # root resolves from the cwd git toplevel and the tree check is exercised.
+  def run_check(dir, args: [], fail_token: "", extra_env: {}, implicit_root: false, bin: BIN)
     log = File.join(dir, "stub.log")
     lane = write_stub(dir, "lane-stub", "LANE")
-    gate = write_stub(dir, "gate-stub", "GATE")
     task = write_stub(dir, "task-stub", "TASK")
-    # child_env: the child must name NO agent session (bin/fast-check shells to bin/task
-    # and the gate — test/support/session_env.rb) and must not inherit our test DB
-    # (NO_AMBIENT_DB). Both scrubs live in child_env; never build a child env by hand.
     env = child_env({
       "FAST_CHECK_ROOT" => dir,
       "FAST_CHECK_DIFF_BASE" => "HEAD",
@@ -543,7 +147,6 @@ class FastCheckTest < Minitest::Test
       "FAST_CHECK_TEST_PREPARE_CMD" => "true",
       "FAST_CHECK_TEST_CMD" => "#{lane.shellescape} TEST",
       "FAST_CHECK_RUBOCOP_CMD" => "#{lane.shellescape} RUBOCOP",
-      "FAST_CHECK_GATE_BIN" => gate,
       "FAST_CHECK_TASK_BIN" => task,
       "STUB_LOG" => log,
       "FAIL_TOKEN" => fail_token
@@ -553,10 +156,8 @@ class FastCheckTest < Minitest::Test
       if implicit_root
         env.delete("FAST_CHECK_ROOT")
         IO.popen(env, "#{cmd} 2>&1", chdir: dir, &:read)
-      elsif merge_stderr
-        IO.popen(env, "#{cmd} 2>&1", &:read)
       else
-        IO.popen(env, "#{cmd} 2>/dev/null", &:read)
+        IO.popen(env, "#{cmd} 2>&1", &:read)
       end
     code = $?.exitstatus
     lines = File.exist?(log) ? File.readlines(log, chomp: true).map { |l| l.split("\t") } : []
@@ -567,16 +168,57 @@ class FastCheckTest < Minitest::Test
     lines.select { |l| l[0] == "LANE" && l[1] == first_arg }.map { |l| l[2..] }
   end
 
-  # --- [unit] lanes + selection wiring ----------------------------------------------
+  def board_writes(lines)
+    lines.select { |l| l[0] == "TASK" && l[1] != "show" }
+  end
 
-  def test_green_run_prints_fingerprint_bound_fast_cert_evidence
+  def commit_all(dir)
+    assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
+    assert system("git", "-C", dir, "commit", "-qm", "widget", out: File::NULL, err: File::NULL)
+  end
+
+  # --- [integration] the pre-flight writes NOTHING ---------------------------------
+
+  def test_a_green_run_records_nothing_on_the_task
     with_repo do |dir, _|
-      out, code, = run_check(dir)
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      commit_all(dir)
+      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON, "FAST_CHECK_DIFF_BASE" => "HEAD~1" })
+
       assert_equal 0, code, out
-      assert_match(/\A\[fast-cert@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/, out)
-      assert_match(/full suite runs on CI/, out)
+      assert_match(/pre-flight green: 1 mapped \+ 1 spine test path\(s\)/, out)
+      assert_match(/Nothing is recorded on the task/, out, "the run says out loud what it did not do")
+      refute_match(/\[fast-cert@|\[cert-deferred@|\[full-suite@/, out, "no receipt of any lane")
+      assert_empty board_writes(lines), "no bin/task update, no checkpoint, no gate: #{lines.inspect}"
+      assert_equal [%w[show task-x --json]], lines.select { |l| l[0] == "TASK" }.map { |l| l[1..] },
+                   "the ONLY board read is the tree check"
     end
   end
+
+  def test_a_dirty_tree_runs_because_nothing_is_stamped
+    with_repo do |dir, _|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      # widget.rb is still uncommitted — the retired dirty-tree guard refused this.
+      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
+
+      assert_equal 0, code, "a pre-flight stamps no tree, so an uncommitted tree is fine to run: #{out}"
+      refute_match(/DIRTY/, out)
+      assert_includes lane_calls(lines, "TEST").flatten, "test/models/widget_test.rb"
+    end
+  end
+
+  def test_the_print_flag_is_gone_with_the_receipt_it_suppressed
+    with_repo do |dir, _|
+      out, code, = run_check(dir, args: ["--print"])
+
+      refute_equal 0, code, "--print used to mean 'do not record'; there is nothing to not record"
+      assert_match(/invalid option: --print/, out)
+    end
+  end
+
+  # --- [unit] lanes + selection wiring --------------------------------------------
 
   def test_mapped_lane_gets_the_diff_mapped_test_and_spine_lane_gets_the_spine
     with_repo do |dir, _|
@@ -589,993 +231,18 @@ class FastCheckTest < Minitest::Test
     end
   end
 
-  # --- the mapped cap -----------------------------------------------------------
-  #
-  # A FAST LANE THAT CAN SILENTLY BECOME A FULL SUITE is worse than a slow one:
-  # the builder cannot tell which they are in. Observed live 2026-08-15 — a diff
-  # touching config/initializers/studio.rb mapped to 45 test files and this script
-  # was still running at 39m34s against a lane g1-cert.md budgets at ~1 minute,
-  # which bin/ship runs by DEFAULT.
-  #
-  # Driven through the script rather than the module because the decision is only
-  # half the fix: the other half is that the mapped lane does not RUN, the spine
-  # still does, and the builder is told why.
-
-  # A file with no convention target falls back to a grep for its SUBJECT — for a
-  # class, its constant — and this fixture makes that grep match many test files,
-  # which is the real shape of the defect.
-  #
-  # THE WIDE FILE IS A TWIN-LESS MODEL, not an initializer, and that changed with the
-  # subject-reference fix: a config file is now named by its PATH, so
-  # config/initializers/widget.rb greps for that path and cannot map wide any more. A
-  # model with no test/models/<x>_test.rb still greps its bare constant — the shape
-  # app/models/agent_activity.rb has in the hub today, 29 files — so it is what still
-  # reproduces the cap trip these tests are about. It is gizmo.rb rather than
-  # widget.rb because with_repo hands widget.rb a convention twin.
-  def with_wide_mapping_repo
-    with_repo do |dir, write|
-      (1..20).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
-      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
-      assert system("git", "-C", dir, "commit", "-qm", "wide", out: File::NULL, err: File::NULL)
-      # The branch diff: a model with NO convention target. widget.rb cannot play
-      # this part — with_repo gives it test/models/widget_test.rb, so it maps by
-      # convention and never greps at all.
-      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
-      yield dir, write
-    end
-  end
-
-  def test_a_wide_mapping_skips_the_mapped_lane_and_still_runs_the_spine
-    with_wide_mapping_repo do |dir, _|
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, "the cap is not a failure — it is a narrower cert"
-      tests = lane_calls(lines, "TEST")
-      assert_equal 1, tests.size, "the mapped lane must not run: #{lines.inspect}"
-      assert_equal ["test/models/spine_core_test.rb"], tests[0],
-                   "the spine still runs — capped means narrower, not uncertified"
-      assert_match(/MAPPED LANE CAPPED/, out)
-    end
-  end
-
-  # THE BUILDER IS TOLD WHAT TRIPPED IT AND WHAT TO DO. A silently skipped lane is
-  # how a cert stops meaning anything, and "too many files" without a culprit
-  # sends them through their whole diff.
-  def test_the_capped_run_names_the_cap_the_culprit_and_the_way_out
-    with_wide_mapping_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
-
-      assert_match(/exceeds the cap of 15/, out, "the cap it applied is printed")
-      assert_match(%r{widest mapping: app/models/gizmo\.rb}, out, "the culprit is named")
-      assert_match(/bin\/full-suite-check/, out, "the command that DOES cover this diff is offered")
-      assert_match(/FAST_CHECK_MAPPED_CAP/, out, "the deliberate override is discoverable")
-    end
-  end
-
-  # AND THE SKIP REASON IS DURABLE, not just console noise — it lands on the lane
-  # record, so the task shows WHY the mapped lane did not run rather than an
-  # unexplained gap.
-  def test_the_cap_reason_is_recorded_on_the_skipped_lane
-    with_wide_mapping_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
-
-      assert_match(/mapped file\(s\) over the cap of 15/, out)
-      assert_match(/spine only; use bin\/full-suite-check/, out)
-    end
-  end
-
-  # THE RECORDED EVIDENCE MUST SAY CAPPED. checks_run gets exactly ONE line, and
-  # mapped_only.size counts what MAPPED, not what RAN — so a capped run recorded
-  # "20 mapped" for zero mapped tests, reading identically to a real pass.
-  def test_the_capped_run_records_the_cap_in_the_evidence_line
-    with_wide_mapping_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
-
-      assert_match(/fast cert green: 0 mapped \(CAPPED: \d+ mapped path\(s\) over the cap of 15/, out)
-      refute_match(/fast cert green: [1-9]\d* mapped \+/, out,
-                   "the recorded evidence claims mapped tests ran when the lane was skipped")
-    end
-  end
-
-  # A RAISED CAP MUST LET IT THROUGH, or the override is decoration.
-  def test_raising_the_cap_runs_the_mapped_lane
-    with_wide_mapping_repo do |dir, _|
-      _, code, lines = run_check(dir, extra_env: { "FAST_CHECK_MAPPED_CAP" => "500" })
-
-      assert_equal 0, code
-      assert_equal 2, lane_calls(lines, "TEST").size,
-                   "with the cap raised the mapped lane runs again"
-    end
-  end
-
-  # THE CAP READS THE POST-SPINE SET, asserted AT THE CALL SITE. The unit test
-  # proves cap_decision counts what it is handed; this proves bin/fast-check hands
-  # it the right thing, which is a separate claim and the one a mutation walked
-  # straight through — swapping `mapped_only` for `mapped` reddened nothing.
-  #
-  # WHY IT MATTERS: the cap is about how much EXTRA work this lane does. A mapped
-  # test the spine already runs costs it nothing, so a diff whose mapping is
-  # entirely spine-covered must not be refused — capping the raw union would
-  # punish exactly the diffs the spine already covers best.
-  def test_a_wide_mapping_that_the_spine_already_covers_is_not_capped
-    with_repo do |dir, write|
-      write.call("app/models/base_gizmo.rb", "class BaseGizmo; end\n")
-      wide = (1..20).map { |i| "test/lib/wide_#{i}_test.rb" }
-      wide.each { |rel| write.call(rel, "Gizmo.reset\n") }
-      # The spine covers all but TWO, so the raw union is 20 (over the cap of 15)
-      # while the post-spine set is 2 (well under it).
-      #
-      # NOT all 20: leaving the post-spine set EMPTY makes this test unable to
-      # fail. `mapped_only.empty?` is checked BEFORE the cap, so an empty set takes
-      # the "covered by the spine" skip either way and the mutation walks through.
-      # The set has to be non-empty and small for the two behaviours to differ.
-      spined = wide.first(18)
-      write.call("spine.yml", "spine:\n#{spined.map { |r| "  - #{r}" }.join("\n")}\n")
-      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
-      assert system("git", "-C", dir, "commit", "-qm", "wide-spine", out: File::NULL, err: File::NULL)
-      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
-
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code
-      refute_match(/MAPPED LANE CAPPED/, out,
-                   "the cap tripped on the RAW mapping (20) instead of the post-spine set (2) — " \
-                   "this lane had 2 files of extra work, nowhere near the cap")
-      tests = lane_calls(lines, "TEST")
-      assert_equal 2, tests.size, "the mapped lane runs its two uncovered files, plus the spine"
-      assert_equal wide.last(2).sort, tests[0].sort,
-                   "only the mapped files the spine does NOT already run"
-    end
-  end
-
-  # AND THE NORMAL CASE IS UNTOUCHED. The cap is worthless if it changes the lane
-  # every builder actually gets.
-  def test_a_narrow_diff_is_unaffected_by_the_cap
-    with_repo do |dir, _|
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code
-      assert_equal 2, lane_calls(lines, "TEST").size
-      refute_match(/MAPPED LANE CAPPED/, out)
-    end
-  end
-
-  # --- [integration] the cap's TWIN FALLBACK ---------------------------------------
-  #
-  # THE CLIFF THIS REPLACES, measured on this repo 2026-09-06/07:
-  #
-  #   bin/dor-check alone                    15 mapped (the cap exactly) → ran 15
-  #   bin/dor-check + bin/lib/ci_status.rb   16 mapped (one over)        → ran 0
-  #
-  # The second row is PR #1236's own shape and is strictly WORSE than before the family
-  # hop, which ran the two twins. Driven through the SCRIPT, not the module, because the
-  # module decision is half the fix: the other half is that the lane RUNS the twins, the
-  # builder is told it narrowed, and the evidence line stops claiming zero.
-
-  # --- the margin: the run BEFORE the cliff -------------------------------------------
-  #
-  # AT the cap, not over it — the state the hub's release registry sat in on
-  # 2026-09-22 (15 mapped paths against a cap of 15, no convention twin, because a
-  # .yml has none). Everything here is GREEN: the lane runs its whole mapped set. What
-  # is worth saying is what the NEXT run does.
-  def with_at_cap_mapping_repo
-    with_repo do |dir, write|
-      (1..15).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
-      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
-      assert system("git", "-C", dir, "commit", "-qm", "at-cap", out: File::NULL, err: File::NULL)
-      # The branch diff: a model with NO convention target, so the grep rung maps it
-      # and there is nothing for a capped lane to fall back to.
-      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
-      yield dir, write
-    end
-  end
-
-  # AT the cap WITH a twin — the other arm of the warning's conditional. Both arms get
-  # a fixture because the sentence they choose between is the actionable half: "one
-  # more path and this lane runs a NARROWER cert" and "one more path and this lane runs
-  # NOTHING" ask different things of the reader.
-  def with_at_cap_family_repo
-    with_repo do |dir, write|
-      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n")
-      write.call("test/lib/wide_tool_test.rb", "twin\n")
-      14.times { |i| write.call("test/lib/wide_tool_aspect#{i}_test.rb", "sibling #{i}\n") }
-      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
-      assert system("git", "-C", dir, "commit", "-qm", "at-cap-family", out: File::NULL, err: File::NULL)
-      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n# edit\n")
-      yield dir, write
-    end
-  end
-
-  # THE HEADLINE: the cliff announces itself one run early, and announcing it changes
-  # nothing about the cert. A warning that also narrowed the lane would be a second
-  # cliff wearing a friendlier word.
-  def test_the_lane_warns_at_the_cap_and_still_runs_its_whole_mapped_set
-    with_at_cap_mapping_repo do |dir, _|
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, out
-      assert_match(/MAPPED LANE NEAR THE CAP — 15 of 15, 0 path\(s\) of margin left/, out)
-      tests = lane_calls(lines, "TEST")
-      assert_equal 2, tests.size, "mapped + spine both run: #{lines.inspect}"
-      assert_equal 15, tests[0].size, "the whole mapped set still runs — this is not a cap trip"
-      refute_match(/MAPPED LANE CAPPED/, out, "nothing was capped; the cap is where this is HEADED")
-    end
-  end
-
-  # WHAT THE NEXT RUN COSTS, which is the only reason to warn at all. With no twin the
-  # answer is ZERO mapped tests over a still-green cert — the silent-green failure this
-  # margin exists for — and the warning has to say that, not just "near the cap".
-  def test_the_near_cap_warning_says_the_next_path_would_leave_zero_mapped_tests
-    with_at_cap_mapping_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
-
-      assert_match(%r{widest mapping: app/models/gizmo\.rb → 15 test file\(s\)}, out,
-                   "the subject that is at the cap is named")
-      assert_match(/NO convention twin to fall back to.*runs ZERO tests/m, out)
-      assert_match(/cite the CONSTANT that names a path/, out, "and the remedy is stated")
-    end
-  end
-
-  # THE OTHER ARM. A diff WITH a twin degrades to a narrower cert rather than to
-  # nothing, and the warning must say so — overstating the cost is how a warning gets
-  # ignored, which is the same failure as understating it.
-  def test_the_near_cap_warning_names_the_twin_fallback_when_one_exists
-    with_at_cap_family_repo do |dir, _|
-      out, code, = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, out
-      assert_match(/MAPPED LANE NEAR THE CAP — 15 of 15/, out)
-      assert_match(/falls back to the 1 convention twin\(s\) of this diff — a NARROWER cert/, out)
-      refute_match(/runs ZERO tests/, out, "this diff HAS a twin — saying otherwise overstates it")
-    end
-  end
-
-  # THE MARGIN IS DURABLE. The narration above is stderr in a ship log nobody re-reads;
-  # the evidence line lands on the task's checks_run, where the reviewer and the next
-  # builder see it. It stays a GREEN line counting what RAN — the clause is appended,
-  # not substituted.
-  def test_the_margin_is_recorded_on_the_evidence_line
-    with_at_cap_mapping_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
-
-      assert_match(/fast cert green: 15 mapped \(NEAR THE CAP of 15: 0 path\(s\) of margin/, out)
-      refute_match(/fast cert green: 15 mapped \+/, out,
-                   "the bare wording would record an at-cap run as an ordinary one")
-    end
-  end
-
-  # THE ORDINARY BUILD IS UNTOUCHED — the regression that matters for a warning. One
-  # that fires on a 1-path diff is noise, and noise is how the real one gets skipped.
-  def test_an_ordinary_diff_is_never_warned_about_the_cap
-    with_repo do |dir, _|
-      out, code, = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, out
-      refute_match(/NEAR THE CAP/, out)
-      assert_match(/fast cert green: 1 mapped \+ 1 spine test path\(s\)/, out,
-                   "and the evidence line is byte-identical to what it always was")
-    end
-  end
-
-  # AND A CAPPED RUN IS NOT ALSO "NEAR". :approaching and :capped are exclusive in
-  # FastCert.cap_decision; this is the end-to-end proof that the SCRIPT reads them that
-  # way, because a run that printed both would leave the builder unable to tell whether
-  # the lane ran.
-  #
-  # BOTH SURFACES, and the second one is the one that bites. Measured by mutation
-  # 2026-09-22: dropping `!capped` from cap_decision leaves the RUN unchanged, because
-  # the run reaches the warning down an `elsif` that a capped decision never enters —
-  # so a --print-only assertion here passes for a reason that has nothing to do with
-  # the exclusivity it claims to test. --list prints the margin narration BEFORE it
-  # branches on the cap, and is where the contradiction actually surfaces.
-  def test_a_capped_run_does_not_also_claim_to_be_near_the_cap
-    with_wide_mapping_repo do |dir, _|
-      run, = run_check(dir, merge_stderr: true)
-
-      assert_match(/MAPPED LANE CAPPED/, run)
-      refute_match(/NEAR THE CAP/, run)
-
-      preview, = run_check(dir, args: ["--list"], merge_stderr: true)
-
-      assert_match(/mapped cap 15 — EXCEEDED/, preview, "the preview agrees the cap tripped")
-      refute_match(/NEAR THE CAP/, preview,
-                   "a preview that says EXCEEDED and NEAR THE CAP at once tells the builder nothing")
-    end
-  end
-
-  # A family whose mapping exceeds the cap AND whose changed file HAS a twin — the
-  # shape with_wide_mapping_repo cannot express (an initializer has no twin at all).
-  def with_family_over_cap_repo
-    with_repo do |dir, write|
-      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n")
-      write.call("test/lib/wide_tool_test.rb", "twin\n")
-      20.times { |i| write.call("test/lib/wide_tool_aspect#{i}_test.rb", "sibling #{i}\n") }
-      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
-      assert system("git", "-C", dir, "commit", "-qm", "family", out: File::NULL, err: File::NULL)
-      # The branch diff: the tool itself, which maps to its twin PLUS twenty siblings.
-      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n# edit\n")
-      yield dir, write
-    end
-  end
-
-  # THE HEADLINE: past the cap, the mapped lane runs the TWIN instead of nothing.
-  def test_a_capped_family_runs_its_convention_twin_instead_of_nothing
-    with_family_over_cap_repo do |dir, _|
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, out
-      tests = lane_calls(lines, "TEST")
-      assert_equal 2, tests.size, "the mapped lane RUNS (narrowed) plus the spine: #{lines.inspect}"
-      assert_equal ["test/lib/wide_tool_test.rb"], tests[0],
-                   "the capped lane falls back to the convention twin, not to nothing"
-      assert_equal ["test/models/spine_core_test.rb"], tests[1]
-      assert_match(/MAPPED LANE CAPPED/, out, "still loud — the cap did trip")
-      assert_match(/falling back to the CONVENTION TWINS/, out, "and it says what runs instead")
-    end
-  end
-
-  # THE EVIDENCE MUST SAY WHAT RAN. "0 mapped (CAPPED: ...)" over a lane that ran a
-  # twin is the same class of lie the capped line was fixed for in the first place.
-  def test_the_twin_fallback_is_named_in_the_evidence_line
-    with_family_over_cap_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
-
-      assert_match(/fast cert green: 1 twin\(s\) \(CAPPED: 21 mapped path\(s\) over the cap of 15;/, out)
-      assert_match(/fell back to the convention twins/, out)
-      refute_match(/fast cert green: 0 mapped/, out,
-                   "the lane ran a test — recording zero would understate real evidence")
-    end
-  end
-
-  # THE FENCE, DRIVEN END TO END (PR #1226). On a SATELLITE — an empty spine — this
-  # exact shape used to DEFER, because a capped lane over no spine executed nothing.
-  # With a twin to fall back on it executes a real test, so it certifies. That is the
-  # deliberate answer to "certification or deferral", and it holds only because the
-  # guard keys on ZERO EXECUTED TESTS rather than on the cap: the twin IS evidence,
-  # and a deferral has none.
-  def test_a_capped_family_with_a_twin_certifies_where_it_used_to_defer
-    with_family_over_cap_repo do |dir, write|
-      write.call("spine.yml", "spine: []\n") # the satellite: no spine resolves
-
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, "a run that executed its twin is a cert, not a deferral:\n#{out}"
-      refute_match(/DEFERRING to GitHub CI/, out)
-      assert_match(/\[fast-cert@/, out, "a CERT line, because a real test ran")
-      assert_equal [["test/lib/wide_tool_test.rb"]], lane_calls(lines, "TEST"),
-                   "and the twin is exactly what ran"
-    end
-  end
-
-  # THE OTHER HALF OF THE FENCE, UNCHANGED. Capped with NO twin to take, over an empty
-  # spine, still executes zero tests — so it still defers, byte-for-byte as before. The
-  # fallback moved the guard's INPUT, never its keying.
-  def test_a_capped_diff_with_no_twin_still_defers
-    with_wide_mapping_repo do |dir, write|
-      write.call("spine.yml", "spine: []\n")
-
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 2, code, "no twin, no spine — nothing ran, so nothing is certified:\n#{out}"
-      assert_match(/NOT CERTIFIED — DEFERRING to GitHub CI/, out)
-      assert_match(/convention-twin fallback was empty too/, out,
-                   "and the receipt explains why the fallback did not save it")
-      assert_empty lane_calls(lines, "TEST")
-    end
-  end
-
-  # --- [integration] WHICH EMPTY the twin fallback was ------------------------------
-  #
-  # A REACHABLE FALSE STATEMENT TO THE OPERATOR, found reviewing PR #1242 and
-  # reproduced against this binary before the fix, verbatim:
-  #
-  #   fast-check: MAPPED LANE CAPPED — 79 mapped test file(s) exceeds the cap of 15.
-  #     no changed file has an existing test twin, so there is no fallback to take.
-  #
-  # printed for a diff touching app/views/tasks/_board.html.erb, whose convention twin
-  # test/controllers/tasks_controller_test.rb IS a declared spine entry. A twin existed
-  # and the spine was already running it. `:fallback_considered` is counted AFTER the
-  # spine dedupe, so BOTH empties arrive at the narration as 0 and one sentence covered
-  # both. The OUTCOME was right — there is nothing to add that the spine is not already
-  # running — and that is what makes the sentence the worse half: it sends the builder
-  # hunting a coverage gap that does not exist, and a warning that fires on a false
-  # negative is how builders learn to ignore warnings.
-
-  # A capped diff whose ONLY convention twin is a spine entry: the twin-less wide file
-  # supplies the cap trip, the twin-owning file supplies the twin the spine swallows.
-  def with_spine_covered_twin_repo
-    with_repo do |dir, write|
-      (1..20).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
-      # THE FIXTURE IS THIS ONE LINE: test/models/widget_test.rb is app/models/widget.rb's
-      # convention twin AND a declared spine entry, so the spine dedupe empties the
-      # fallback without the diff ever lacking a twin.
-      write.call("spine.yml",
-                 "spine:\n  - test/models/spine_core_test.rb\n  - test/models/widget_test.rb\n")
-      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
-      assert system("git", "-C", dir, "commit", "-qm", "spine-covers-the-twin",
-                    out: File::NULL, err: File::NULL)
-      # The branch diff: the twin-OWNING file (modified, so it is a change), plus the
-      # twin-LESS file whose grep trips the cap.
-      write.call("app/models/widget.rb", "class Widget\n  def id\n    1\n  end\nend\n")
-      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
-      yield dir, write
-    end
-  end
-
-  def test_a_spine_covered_twin_is_not_reported_as_no_twin_at_all
-    with_spine_covered_twin_repo do |dir, _|
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, out
-      assert_match(/MAPPED LANE CAPPED/, out, "the fixture has to actually trip the cap:\n#{out}")
-      refute_match(/no changed file has an existing test twin/, out,
-                   "app/models/widget.rb HAS one — the spine is running it:\n#{out}")
-      assert_match(/ALREADY A SPINE ENTRY/, out,
-                   "and the builder is told WHICH empty this was:\n#{out}")
-      # THE OUTCOME NEVER MOVED, only the sentence: the spine still runs the twin and
-      # the mapped lane still adds nothing.
-      assert_equal [%w[test/models/spine_core_test.rb test/models/widget_test.rb]],
-                   lane_calls(lines, "TEST"),
-                   "the spine lane alone, carrying the twin: #{lines.inspect}"
-    end
-  end
-
-  # THE OTHER EMPTY IS UNTOUCHED. A diff with no twin at all still gets the sentence it
-  # always got — this separates two cases, it does not retire one.
-  def test_a_diff_with_no_twin_at_all_still_says_so
-    with_wide_mapping_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
-
-      assert_match(/no changed file has an existing test twin/, out, out)
-      refute_match(/ALREADY A SPINE ENTRY/, out,
-                   "there is no twin here for the spine to have covered:\n#{out}")
-    end
-  end
-
-  # THE WIDEST MAPPING IS EXPLAINED BY BOTH RUNGS THAT CAN PRODUCE IT. The narration
-  # said "a file with no convention target falls back to a word-boundary grep of its
-  # camelized name" as though that were the rule, and printed it for every cap trip.
-  # RE-DERIVED 2026-09-08 over all 1952 tracked files, one at a time: 11 exceed the
-  # cap alone and THREE never grep (bin/release and bin/release.rb reach 23 through the
-  # ORPHAN family, bin/dor-check 18 through its twin's family). Of the eight that do
-  # grep, two are named by a PATH plus a quoted name, not by a camelized anything. The
-  # sentence described 6 of the 11 and was printed for all of them.
-  def test_the_cap_narration_does_not_blame_a_camelized_grep_for_every_width
-    with_wide_mapping_repo do |dir, _|
-      out, = run_check(dir, merge_stderr: true)
-
-      assert_match(%r{widest mapping: app/models/gizmo\.rb}, out, "the culprit is still named")
-      refute_match(/word-boundary grep of its/, out,
-                   "the grep is not word-bounded for a PATH token, and the family rung is no grep at all")
-      assert_match(/Two rungs map this wide/, out, "both causes of a wide mapping are named:\n#{out}")
-      assert_match(/quoted command name/, out,
-                   "and the grep is described by what it actually searches for:\n#{out}")
-    end
-  end
-
-  # THE PREVIEW AGREES WITH THE RUN about which empty this is. `--list` reports counts
-  # rather than sentences, but "0 considered" reads as "no twin exists" just as loudly,
-  # and the two views of one decision must not disagree.
-  def test_the_capped_preview_says_the_spine_already_runs_the_twin
-    with_spine_covered_twin_repo do |dir, _|
-      out, code, = run_check(dir, args: ["--list"], merge_stderr: true)
-
-      assert_equal 0, code, out
-      assert_match(/falling back to the 0 convention twin\(s\) of 0 considered/, out,
-                   "the count itself is unchanged — it is honest about what the fallback weighed")
-      assert_match(/1 twin\(s\) DO exist — the spine already runs them/, out,
-                   "and the preview says why that 0 is not a missing twin:\n#{out}")
-      assert_includes out.lines.map(&:chomp), "spine   test/models/widget_test.rb",
-                      "…which the preview then shows, on the spine lane:\n#{out}"
-    end
-  end
-
-  # EVERY TWIN IS PREVIEWED EXACTLY ONCE. `--list` used to print the fallback in TWO
-  # passes — the labelled walk over mapped_only, then a second walk over
-  # `(fallback - mapped_only)` — and that second pass could only ever be empty (the
-  # fallback is a subset of the mapped set; the invariant is pinned in
-  # fast_cert_family_test.rb). Removing dead code is safe only if something notices
-  # when it stops being dead, so this asserts the PREVIEW's property rather than the
-  # subtraction's: one line per twin, none missing, none doubled.
-  def test_the_capped_preview_lists_each_twin_exactly_once
-    with_family_over_cap_repo do |dir, _|
-      out, code, = run_check(dir, args: ["--list"], merge_stderr: true)
-
-      assert_equal 0, code, out
-      twins = out.lines.map(&:chomp).select { |l| l.start_with?("twin") }
-
-      assert_equal ["twin    test/lib/wide_tool_test.rb"], twins,
-                   "the twin is previewed exactly once — not doubled, not missing:\n#{out}"
-    end
-  end
-
-  # --- [integration] the zero-evidence guard --------------------------------------
-  #
-  # THE DEFECT, live on turf-monster PR #549 (2026-09-05) and reproduced against this
-  # binary before the fix, verbatim:
-  #
-  #   fast cert green: 0 mapped (CAPPED: 20 mapped path(s) over the cap of 15; spine
-  #   only — bin/full-suite-check covers this diff) + 0 spine test path(s), rubocop on
-  #   1 changed file(s) (0.7s; full suite runs on CI)      exit 0, 0 test lanes invoked
-  #
-  # The mapped lane was capped, so it announced a fallback to the spine; the spine then
-  # resolved to ZERO paths. The cert reported GREEN having run no test at all — rubocop
-  # was the only executed lane, and a linter cannot observe behaviour. It is not an
-  # exotic shape: config/fast_cert_spine.yml is anchored in the HUB, and none of its
-  # entries exist in turf-monster or rolio (verified 2026-09-05, all five absent in
-  # both), so on either satellite the mapped lane is the ONLY lane that can run a test.
-  #
-  # Driven through the script, not the module, because the module decision is half the
-  # fix: the other half is that NOTHING runs, NOTHING is recorded, and the exit code
-  # says so. bin/ship reads output rather than exit codes, so both are asserted.
-
-  # A repo whose spine config resolves to NOTHING — the satellite shape.
-  def with_empty_spine(dir, write)
-    write.call("spine.yml", "spine: []\n")
-    [dir, write]
-  end
-
-  # WHAT PR #1226 ESTABLISHED, KEPT: this run still does not certify, still emits no
-  # "[fast-cert@" line, and still runs no test. WHAT CHANGED: the verdict is DEFERRED
-  # rather than refused, because the refusal landed at ship step 2 of 8 — before the
-  # push, before the PR, before any CI — and its only remedy was a ~30-minute local
-  # suite against CI's ~9 for the identical command. The evidence moves to CI; the
-  # demand for evidence does not move at all (bin/dor-check requires the GREEN).
-  def test_a_capped_lane_over_an_empty_spine_DEFERS_instead_of_certifying
-    with_wide_mapping_repo do |dir, write|
-      with_empty_spine(dir, write)
-
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 2, code, "a deferral is NOT success — it must stay falsy to every system() caller:\n#{out}"
-      assert_match(/NOT CERTIFIED — DEFERRING to GitHub CI/, out)
-      refute_match(/fast cert green/, out,
-                   "the exact defect this must never become: a green cert over zero executed tests:\n#{out}")
-      refute_match(/\[fast-cert@/, out,
-                   "no CERT line may be emitted — nothing was certified")
-      assert_match(/\[cert-deferred@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/, out,
-                   "a RECEIPT is emitted instead, fingerprint-bound like every other lane")
-      assert_empty lane_calls(lines, "TEST"), "no test lane ran, which is still the point"
-    end
-  end
-
-  # THE SCOPE, PINNED IN ONE TEST. The refusal this change relocates is a SATELLITE
-  # condition, not a cap condition, and nothing else in this file states that as a
-  # contrast. config/fast_cert_spine.yml has five entries and ALL FIVE exist only in
-  # the hub (measured 2026-09-06: turf-monster 0 of 5, rolio 0 of 5), so ONE capped
-  # diff splits two ways — and both halves were observed on real builds the same day:
-  #
-  #   HUB       51 paths over the cap → mapped lane skipped → THE SPINE STILL RAN →
-  #             certified green and accepted against a green CI. The cap cost
-  #             coverage, not the PR.
-  #   SATELLITE 29 paths over the cap → mapped lane skipped → spine resolves to
-  #             NOTHING → zero executed tests → the builder paid ~30 minutes of local
-  #             full suite before he could open a PR.
-  #
-  # Same diff, same cap, opposite outcomes — so a fix that changed the HUB half would
-  # be over-broad, and one that keyed on the cap instead of on the zero would change
-  # exactly the wrong half. This asserts both halves from one fixture.
-  def test_the_hub_shape_certifies_and_only_the_satellite_shape_defers
-    with_wide_mapping_repo do |dir, _|
-      hub_out, hub_code, hub_lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, hub_code, "the HUB half: a capped lane over a LIVE spine still certifies:\n#{hub_out}"
-      assert_match(/fast cert green: 0 mapped \(CAPPED:/, hub_out)
-      refute_match(/DEFERRING/, hub_out, "the hub must not acquire a deferral it never needed")
-      assert_equal [["test/models/spine_core_test.rb"]], lane_calls(hub_lines, "TEST"),
-                   "and the spine is what makes it certifiable"
-    end
-
-    with_wide_mapping_repo do |dir, write|
-      write.call("spine.yml", "spine: []\n") # the satellite: none of the hub's spine resolves
-
-      sat_out, sat_code, sat_lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 2, sat_code, "the SATELLITE half: the same cap over NO spine defers:\n#{sat_out}"
-      assert_match(/DEFERRING to GitHub CI/, sat_out)
-      assert_empty lane_calls(sat_lines, "TEST"), "nothing could run — that is the whole condition"
-    end
-  end
-
-  # THE RECEIPT IS THE DEFERRAL, so it has to REACH THE BOARD — dor-check grades the
-  # record, not the message. Recorded through the same `--checks` funnel the green path
-  # uses (bin/task merges client-side against the board's current state, so the write
-  # cannot clobber the builder's tier lines even on a board that predates this lane).
-  def test_a_deferred_run_records_its_receipt_on_the_board
-    with_wide_mapping_repo do |dir, write|
-      with_empty_spine(dir, write)
-
-      out, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true,
-                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
-                                                "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
-
-      assert_equal 2, code, out
-      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
-      refute_nil update, "the receipt must be RECORDED, or the deferral is a shrug: #{lines.inspect}"
-      recorded = update[update.index("--checks") + 1]
-      assert_match(/\A\[cert-deferred@[0-9a-f]{7,64}/, recorded, "recorded as the DEFERRAL lane: #{recorded}")
-      assert_match(/CAPPED/, recorded, "and the record carries the cause")
-      assert_match(/read-back confirms/, out, "the write is VERIFIED, never declared")
-      assert_empty lines.select { |l| l[0] == "GATE" },
-                   "still no g1_cert attempt — no lane ran, so there is no testing window to report"
-    end
-  end
-
-  # A RECEIPT THAT DID NOT LAND IS WORSE THAN A REFUSAL: ship would push, open the PR,
-  # wait out CI, and dor-check would then refuse for want of the receipt — the same
-  # 30 minutes, spent later and less legibly. So an unrecordable deferral REFUSES.
-  def test_a_deferral_that_cannot_be_recorded_refuses_instead
-    with_wide_mapping_repo do |dir, write|
-      with_empty_spine(dir, write)
-
-      out, code, = run_check(dir, args: ["some-task"], merge_stderr: true, fail_token: "update",
-                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
-                                          "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
-
-      assert_equal 1, code, "an unrecordable deferral is a REFUSAL, not a deferral:\n#{out}"
-      assert_match(/FAILED to record the receipt/, out)
-    end
-  end
-
-  # THE REFUSAL IS ACTIONABLE OR IT IS JUST A NEW WAY TO BE STUCK. It names what
-  # tripped it, the culprit file, and the ONE command that covers a diff this broad.
-  def test_the_refusal_names_the_cap_the_culprit_and_the_remedy
-    with_wide_mapping_repo do |dir, write|
-      with_empty_spine(dir, write)
-
-      out, code, = run_check(dir, merge_stderr: true)
-
-      assert_equal 2, code, out
-      assert_match(/CAPPED/, out, "what tripped it")
-      assert_match(%r{app/models/gizmo\.rb}, out, "the culprit file")
-      assert_match(%r{bin/full-suite-check}, out, "the remedy is named")
-      assert_match(/FAST_CHECK_MAPPED_CAP=20/, out, "the deliberate override stays discoverable")
-    end
-  end
-
-  # NOTHING IS RECORDED AND NO G1 ATTEMPT IS STAMPED for a run that truly REFUSES. The
-  # guard is a precondition on the SELECTION, decided before any lane — like the root,
-  # desk, and dirty-tree guards — so a refused run leaves the board exactly as it found
-  # it. An attempt that ran no lane would otherwise report a window that measured
-  # nothing. (Driven on the UNMAPPED diff, which is the door that still refuses; the
-  # capped door now writes its receipt, asserted above.)
-  def test_a_refused_run_writes_nothing_to_the_board_or_the_gate
-    with_wide_mapping_repo do |dir, write|
-      with_empty_spine(dir, write)
-      # UNMAPPED, not capped: drop the branch diff's twin-less model (whose bare
-      # constant is what maps wide) and leave prose, which maps to nothing at all.
-      FileUtils.rm_f(File.join(dir, "app/models/gizmo.rb"))
-      write.call("docs/note.md", "prose only\n")
-
-      _, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true,
-                                 extra_env: { "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
-
-      assert_equal 1, code
-      assert_empty lines.select { |l| l[0] == "TASK" && l[1] == "update" },
-                   "a refused cert must record no evidence: #{lines.inspect}"
-      assert_empty lines.select { |l| l[0] == "GATE" },
-                   "and must stamp no g1_cert attempt: #{lines.inspect}"
-    end
-  end
-
-  # THE OTHER DOOR INTO THE SAME ROOM, and why this guard is keyed on ZERO EXECUTED
-  # TESTS rather than on the cap. Keyed on the cap, a satellite diff mapping to 20 test
-  # files would be refused while one mapping to NONE — strictly LESS evidence — would
-  # still certify green on rubocop alone. Before the fix this printed
-  # "fast cert green: 0 mapped + 0 spine test path(s), rubocop on 0 changed file(s)".
-  def test_a_diff_that_maps_to_nothing_over_an_empty_spine_is_refused_too
-    with_repo do |dir, write|
-      write.call("spine.yml", "spine: []\n")
-      FileUtils.rm_f(File.join(dir, "app/models/widget.rb"))
-      write.call("docs/note.md", "prose only\n")
-
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 1, code, "zero evidence is zero evidence however it was reached:\n#{out}"
-      assert_match(/maps to NO test file/, out, "the reason given is the REAL one")
-      refute_match(/CAPPED/, out, "no cap tripped — saying so would misdirect the builder")
-      refute_match(/fast cert green/, out)
-      assert_empty lane_calls(lines, "TEST")
-    end
-  end
-
-  # --- [integration] the no-suite-owed waiver (fast-check-ignores-docs-shape) --------
-  #
-  # THE DEFECT. config/feature_shapes.yml says of `docs`: `dor_tiers: []`,
-  # `full_suite_gate: false`, "a doc change certifies by REVIEW, not a test lane". This
-  # script never asked. On a ONE-FILE MARKDOWN diff in a satellite checkout — where the
-  # hub-anchored spine resolves nothing — the guard above refused and named
-  # bin/full-suite-check, so 316 lines of prose that cannot reach a test bought a
-  # ~31-minute turf-monster suite run (measured 2026-09-07 on
-  # /tasks/wallet-transport-architecture-doc).
-  #
-  # WHAT THESE PIN IS THE PAIR, not the waiver. One test says the prose diff certifies;
-  # the four after it say the refusal is untouched the moment either half of the waiver's
-  # evidence is missing. A fix that also loosened a CODE diff would be a regression, so
-  # each of those four carries the `docs` LABEL and is refused anyway.
-
-  DOCS_SHAPE_JSON = JSON.generate("metadata" => { "devops" => { "shape" => "docs" } })
-  BACKEND_SHAPE_JSON = JSON.generate("metadata" => { "devops" => { "shape" => "backend" } })
-
-  # A repo whose committed state is prose plus an EMPTY spine — the satellite condition
-  # (nothing in the hub's spine list resolves here), reproduced without needing a
-  # satellite. Deliberately NOT `with_repo`: that fixture's diff is an app model, and
-  # rewriting its tracked spine.yml to empty would itself put a behavioural .yml in the
-  # diff and kill the very waiver under test.
-  # `spine:` is the fixture's COMMITTED spine.yml body, and it selects which of the
-  # zero-evidence guard's two doors this prose diff arrives at. The default `spine: []`
-  # declares nothing, so FastCert.zero_test_outcome REFUSES. Pass a spine that declares
-  # a path this checkout does not have and it DEFERS instead (the satellite condition,
-  # PR #1287) — which is the other verdict the waiver has to beat. It is written before
-  # the initial commit either way, so it never enters the diff and never disturbs the
-  # observation half of the waiver.
-  def with_prose_repo(spine: "spine: []\n")
-    Dir.mktmpdir do |dir|
-      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
-      write = lambda do |rel, body|
-        full = File.join(dir, rel)
-        FileUtils.mkdir_p(File.dirname(full))
-        File.write(full, body)
-      end
-      write.call(".gitignore", "stub.log*\n*-stub\n")
-      write.call("spine.yml", spine)
-      write.call("README.md", "# fixture\n")
-      write.call("bin/deploy.sh", "#!/bin/sh\necho ship\n")
-      FileUtils.chmod(0o755, File.join(dir, "bin/deploy.sh"))
-      git.call("init -q")
-      git.call("config user.email tester@example.com")
-      git.call("config user.name tester")
-      git.call("add -A")
-      git.call("commit -q -m init")
-      yield dir, write, git
-    end
-  end
-
-  def prose_check(dir, shape_json: DOCS_SHAPE_JSON)
-    run_check(dir, args: ["some-task"], merge_stderr: true,
-                   extra_env: { "TASK_SHOW_JSON" => shape_json })
-  end
-
-  # THE FIX ITSELF. Exit 0, nothing executed, nothing recorded.
-  def test_a_docs_shaped_prose_diff_is_waived_instead_of_sent_to_the_full_suite
-    with_prose_repo do |dir, write|
-      write.call("docs/wallet-transport.md", "# Wallet transport\n\n316 lines of prose\n")
-
-      out, code, lines = prose_check(dir)
-
-      assert_equal 0, code, "a shape whose own config owes no suite must not be refused:\n#{out}"
-      assert_match(/NO CERT OWED/, out)
-      assert_match(/full_suite_gate/, out, "it names the DECLARATION it read")
-      assert_match(%r{docs/wallet-transport\.md}, out, "and the file it OBSERVED")
-      refute_match(/REFUSING TO CERTIFY/, out)
-      refute_match(%r{bin/full-suite-check}, out,
-        "the ~31-minute detour is the whole defect — it must not be named as the remedy")
-
-      assert_empty lane_calls(lines, "TEST"), "no test lane may run — there is nothing to run"
-      assert_empty lines.select { |l| l[0] == "TASK" && l[1] == "update" },
-                   "a waiver is the ABSENCE of a cert, so it records none: #{lines.inspect}"
-      assert_empty lines.select { |l| l[0] == "GATE" },
-                   "and stamps no g1_cert attempt — a window that measured nothing"
-      refute_match(/\[fast-cert@/, out, "and must never emit an evidence line")
-    end
-  end
-
-  # HALF ONE OF THE EVIDENCE: THE SHAPE. Identical prose diff, a shape that owes a
-  # suite — the refusal is exactly as it was. This is what makes the fix shape-aware
-  # rather than a softened guard.
-  def test_the_same_prose_diff_under_a_shape_that_owes_a_suite_still_refuses
-    with_prose_repo do |dir, write|
-      write.call("docs/wallet-transport.md", "# Wallet transport\n")
-
-      out, code, = prose_check(dir, shape_json: BACKEND_SHAPE_JSON)
-
-      assert_equal 1, code, "backend owes unit+integration; nothing here waives that:\n#{out}"
-      assert_match(/REFUSING TO CERTIFY/, out)
-      refute_match(/NO CERT OWED/, out)
-    end
-  end
-
-  # …and with NO shape on the task at all, which is the fail-closed default: an
-  # unreachable board, an unshaped task, and an unknown shape all land here.
-  def test_an_unshaped_task_still_refuses
-    with_prose_repo do |dir, write|
-      write.call("docs/wallet-transport.md", "# Wallet transport\n")
-
-      out, code, = prose_check(dir, shape_json: JSON.generate("metadata" => { "devops" => {} }))
-
-      assert_equal 1, code, "no shape read, no waiver:\n#{out}"
-      assert_match(/REFUSING TO CERTIFY/, out)
-    end
-  end
-
-  # THE PRECEDENCE, PINNED — the waiver beats the DEFERRAL, not only the refusal.
-  #
-  # bin/fast-check's comment and g1-cert.md's verdict table both say the waiver
-  # "INTERCEPTS BOTH VERDICTS, refuse and defer", but until this test only the REFUSE
-  # door was exercised: every other waiver case here uses the default `spine: []`
-  # fixture, which declares nothing and so can only refuse. This is the DEFER door — a
-  # spine that DECLARES an entry this checkout does not resolve, which is exactly the
-  # satellite condition PR #1287 added (turf-monster resolves 0/5 of the hub's spine).
-  #
-  # REACHABLE, not hypothetical, and it is this change's OWN motivating case: the
-  # measured defect (/tasks/wallet-transport-architecture-doc) was a docs diff in a
-  # satellite checkout, so post-#1287 that diff DEFERS rather than refuses. A waiver
-  # that only beat the refusal would leave the original bug standing exactly where it
-  # was found.
-  #
-  # WITHOUT this test the ordering is inert to mutation: narrowing the waiver's
-  # `if zero` to `if zero && zero[:kind] == :refuse` keeps all 88 other cases in this
-  # file green (measured in review, 2026-09-08) while sending every satellite docs diff
-  # back to a deferral — writing a receipt that bin/dor-check never reads for this
-  # shape, since its only consumer sits inside the `full_suite_gate` block `docs` skips.
-  def test_the_waiver_beats_a_DEFERRAL_and_not_only_a_refusal
-    with_prose_repo(spine: "spine:\n  - test/hub_only_spine_test.rb\n") do |dir, write|
-      write.call("docs/wallet-transport.md", "# Wallet transport\n\n316 lines of prose\n")
-
-      out, code, lines = prose_check(dir)
-
-      assert_equal 0, code,
-                   "a declared-but-unresolved spine DEFERS for a code shape; a shape that owes " \
-                   "no suite must be WAIVED, not deferred:\n#{out}"
-      assert_match(/NO CERT OWED/, out)
-      refute_match(/DEFERRED/, out, "a waived diff has nothing to defer TO — no cert is asked of CI here")
-      assert_empty lines.select { |l| l[0] == "TASK" && l[1] == "update" },
-                   "and writes no receipt: the deferral's receipt is read only inside " \
-                   "bin/dor-check's full_suite_gate block, which a `docs` shape skips"
-    end
-  end
-
-  # THE CONTROL for the test above: the SAME declared-but-unresolved spine under a shape
-  # that owes a suite still DEFERS. Without it, a fixture that had quietly stopped being
-  # able to defer at all would let the precedence test pass for the wrong reason.
-  def test_the_same_unresolved_spine_still_defers_for_a_shape_that_owes_a_suite
-    with_prose_repo(spine: "spine:\n  - test/hub_only_spine_test.rb\n") do |dir, write|
-      write.call("docs/wallet-transport.md", "# Wallet transport\n")
-
-      out, code, = prose_check(dir, shape_json: BACKEND_SHAPE_JSON)
-
-      assert_equal FastCert::DEFERRED_EXIT, code, "PR #1287's satellite deferral, intact:\n#{out}"
-      refute_match(/NO CERT OWED/, out)
-    end
-  end
-
-  # HALF TWO OF THE EVIDENCE: THE DIFF. The `docs` LABEL is on the task and the refusal
-  # stands anyway, because the diff ships code. This is the property that separates this
-  # waiver from PR #1172 (a `docs`-shaped diff carrying app/models/task.rb told
-  # "DoR-to-Merge met") — the label narrows what an OBSERVATION may excuse; it never
-  # substitutes for one.
-  def test_a_docs_shaped_diff_that_ships_code_still_refuses
-    with_prose_repo do |dir, write|
-      write.call("docs/wallet-transport.md", "# Wallet transport\n")
-      write.call("app/models/widget.rb", "class Widget; end\n")
-
-      out, code, = prose_check(dir)
-
-      assert_equal 1, code, "one behavioural file kills the waiver, whatever the shape:\n#{out}"
-      assert_match(/REFUSING TO CERTIFY/, out)
-      refute_match(/NO CERT OWED/, out)
-    end
-  end
-
-  # THE RENAME THAT HIDES AN EXECUTABLE INSIDE A .md. `git diff --name-only` — the
-  # SELECTION view — shows only `notes.md`, so classifying from it would call this diff
-  # prose and waive a commit that DELETED a script from bin/. The waiver classifies from
-  # the rename-aware view instead (FastCert.classifiable_paths). Without that, this test
-  # goes green with exit 0, which is the fail-green in full.
-  def test_a_rename_burying_an_executable_in_a_markdown_path_still_refuses
-    with_prose_repo do |dir, _, git|
-      git.call("mv bin/deploy.sh notes.md")
-
-      out, code, = prose_check(dir)
-
-      assert_equal 1, code,
-                   "the DELETED bin/deploy.sh is the behaviour change and is invisible in the " \
-                   "new path — classifying on the destination alone waives it:\n#{out}"
-      assert_match(/REFUSING TO CERTIFY/, out)
-      refute_match(/NO CERT OWED/, out)
-    end
-  end
-
-  # A GEM NEVER REACHES THE WAIVER, because it never reaches the guard the waiver
-  # intercepts: its registry command IS its suite and runs as the mapped lane. Pinned so
-  # a future edit cannot route a gem's prose diff around its own gate.
-  def test_a_gem_repo_certifies_through_its_registry_gate_not_the_waiver
-    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
-      out, code, = run_check(dir, args: ["some-task"], merge_stderr: true,
-                             extra_env: { "FAST_CHECK_TEST_CMD" => nil,
-                                          "FAST_CHECK_CHANGED_FILES" => "README.md",
-                                          "TASK_SHOW_JSON" => DOCS_SHAPE_JSON })
-
-      assert_equal 0, code, out
-      refute_match(/NO CERT OWED/, out, "a gem runs its whole gate; it is never waived")
-      assert_match(/whole registry gate/, out)
-    end
-  end
-
-  # --- and the half that MUST NOT MOVE ---------------------------------------------
-
-  # THE ANY-CAP-DEGRADES RULING, REJECTED AND PINNED. A capped run whose SPINE still ran
-  # executed real tests. It is a NARROWER cert, already labelled honestly by the
-  # "0 mapped (CAPPED: ...)" evidence and the loud MAPPED LANE CAPPED narration — which
-  # is exactly what the cap was designed to produce. Degrading it too would refuse builds
-  # that legitimately certified.
-  def test_a_capped_run_that_still_runs_a_spine_certifies_exactly_as_before
-    with_wide_mapping_repo do |dir, _|
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, "the cap alone is not a refusal — it is a narrower cert:\n#{out}"
-      assert_match(/fast cert green: 0 mapped \(CAPPED: \d+ mapped path\(s\) over the cap of 15/, out)
-      refute_match(/REFUSING TO CERTIFY/, out)
-      assert_equal [["test/models/spine_core_test.rb"]], lane_calls(lines, "TEST"),
-                   "the spine still runs, and it is what makes this run certifiable"
-    end
-  end
-
-  # THE ORDINARY BUILD IS UNTOUCHED — the regression that matters. An over-broad guard
-  # that degraded normal certs would be worse than the bug it fixes.
-  def test_an_ordinary_diff_certifies_exactly_as_before
-    with_repo do |dir, _|
-      out, code, lines = run_check(dir, merge_stderr: true)
-
-      assert_equal 0, code, out
-      assert_match(/fast cert green: 1 mapped \+ 1 spine test path\(s\)/, out)
-      refute_match(/REFUSING TO CERTIFY/, out)
-      assert_equal [["test/models/widget_test.rb"], ["test/models/spine_core_test.rb"]],
-                   lane_calls(lines, "TEST"), "both lanes run, unchanged"
-    end
-  end
-
-  # THE OVERRIDE IS NOT A DEAD END. A builder who deliberately raises the cap runs the
-  # mapped lane, executes tests, and certifies — so the refusal always has a way through
-  # that does not require a second command.
-  def test_raising_the_cap_clears_the_refusal_on_an_empty_spine
-    with_wide_mapping_repo do |dir, write|
-      with_empty_spine(dir, write)
-
-      out, code, lines = run_check(dir, merge_stderr: true,
-                                   extra_env: { "FAST_CHECK_MAPPED_CAP" => "500" })
-
-      assert_equal 0, code, "with the mapped lane running there IS evidence:\n#{out}"
-      refute_match(/REFUSING TO CERTIFY/, out)
-      assert_equal 1, lane_calls(lines, "TEST").size, "the mapped lane ran"
-    end
-  end
-
-  # A GEM IS EXEMPT, and the exemption has to be exercised on a diff that WOULD trip the
-  # guard — mapping to nothing, over an empty spine. A gem's registry command IS its
-  # suite and runs as the mapped lane, so reading `mapped_only` for one would refuse the
-  # repo that runs the MOST. Written against a mapping diff first, this test passed
-  # vacuously: `mapped_only` was non-empty and no guard was ever consulted.
-  def test_a_gem_repo_is_never_refused_by_the_zero_evidence_guard
-    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
-      File.write(File.join(dir, "spine.yml"), "spine: []\n")
-      FileUtils.rm_f(File.join(dir, "app/models/widget.rb"))
-      FileUtils.mkdir_p(File.join(dir, "docs"))
-      File.write(File.join(dir, "docs/note.md"), "prose only\n")
-
-      out, code = run_check(dir, merge_stderr: true, extra_env: { "FAST_CHECK_TEST_CMD" => nil })
-
-      assert_equal 0, code, "a gem runs its whole registry gate — there is nothing to refuse:\n#{out}"
-      refute_match(/REFUSING TO CERTIFY/, out)
-      assert_match(/whole registry gate/, out, "and it certifies on the gate it actually ran")
-    end
-  end
-
   def test_rubocop_lane_is_scoped_to_changed_lintable_files_only
     with_repo do |dir, _|
       _, code, lines = run_check(dir)
       assert_equal 0, code
       lint = lane_calls(lines, "RUBOCOP")
       assert_equal 1, lint.size
-      assert_equal ["app/models/widget.rb"], lint[0],
-                   "rubocop runs on the CHANGED file only — never the whole repo"
+      assert_equal ["app/models/widget.rb"], lint[0], "rubocop runs on the CHANGED file only"
     end
   end
 
   def test_mapped_tests_already_covered_by_the_spine_run_once
     with_repo do |dir, write|
-      # The diff now ALSO touches the spine-covered model: its mapped test is the
-      # spine test itself, so the mapped lane must not re-run it.
       write.call("app/models/spine_core.rb", "class SpineCore; end\n")
       _, code, lines = run_check(dir)
       assert_equal 0, code
@@ -1585,182 +252,58 @@ class FastCheckTest < Minitest::Test
     end
   end
 
-  def test_red_test_lane_exits_nonzero_and_records_nothing
-    with_repo do |dir, _|
-      out, code, = run_check(dir, fail_token: "widget_test")
-      assert_equal 1, code, out
-      refute_match(/\[fast-cert@/, out, "a red lane must not certify")
+  def test_doc_only_diff_skips_test_and_rubocop_lanes_but_still_runs_the_spine
+    with_repo do |dir, write|
+      write.call("docs/notes.md", "notes\n")
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md" },
+                                        fail_token: "RUBOCOP")
+      assert_equal 0, code, out
+      assert_empty lane_calls(lines, "RUBOCOP"), "no lintable files → rubocop lane skipped"
+      assert_equal [["test/models/spine_core_test.rb"]], lane_calls(lines, "TEST"), "the spine still runs"
     end
   end
 
-  def test_red_rubocop_lane_exits_nonzero_and_records_nothing
+  def test_list_mode_prints_the_selection_without_running_anything
+    with_repo do |dir, _|
+      out, code, lines = run_check(dir, args: ["--list"])
+      assert_equal 0, code, out
+      assert_match(%r{mapped\s+test/models/widget_test\.rb}, out)
+      assert_match(%r{spine\s+test/models/spine_core_test\.rb}, out)
+      assert_match(%r{lint\s+app/models/widget\.rb}, out)
+      assert_empty lines, "--list must not run lanes or touch the board"
+    end
+  end
+
+  # --- red, hung and unlaunchable lanes -------------------------------------------
+
+  def test_red_test_lane_exits_nonzero
+    with_repo do |dir, _|
+      out, code, = run_check(dir, fail_token: "widget_test")
+      assert_equal 1, code, out
+      assert_match(/lane\(s\) RED: mapped-tests/, out)
+      refute_match(/pre-flight green/, out)
+    end
+  end
+
+  def test_red_rubocop_lane_exits_nonzero
     with_repo do |dir, _|
       out, code, = run_check(dir, fail_token: "RUBOCOP")
       assert_equal 1, code, out
-      refute_match(/\[fast-cert@/, out)
+      assert_match(/lane\(s\) RED: rubocop-changed/, out)
     end
   end
 
   def test_a_timed_out_runner_is_named_as_hung_never_as_a_red_suite
     with_repo do |dir, _|
       slow_runner = "#{RbConfig.ruby.shellescape} -e #{"sleep 30".shellescape} --"
-      out, code, = run_check(
-        dir,
-        extra_env: {
-          # fast-check appends selected test paths; `--` makes this stub ignore them.
-          "FAST_CHECK_TEST_CMD" => slow_runner,
-          "FAST_CHECK_LANE_TIMEOUT" => "1"
-        },
-        merge_stderr: true
-      )
+      out, code, = run_check(dir, extra_env: { "FAST_CHECK_TEST_CMD" => slow_runner,
+                                              "FAST_CHECK_LANE_TIMEOUT" => "1" })
 
       assert_equal 1, code, out
-      assert_match(/RUNNER HUNG/, out)
-      assert_match(/NOT a test failure/, out)
+      assert_match(/lane HUNG/, out)
+      assert_match(/NOT a red suite/, out)
       assert_match(/FAST_CHECK_LANE_TIMEOUT/, out)
-      refute_match(/lane\(s\) RED/, out,
-                   "a runner that produced no verdict must never be reported as red tests")
-      refute_match(/\[fast-cert@/, out, "a timed-out runner must never certify")
-    end
-  end
-
-  def test_doc_only_diff_skips_test_and_rubocop_lanes_but_still_runs_the_spine
-    with_repo do |dir, write|
-      write.call("docs/notes.md", "notes\n")
-      env = { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md" }
-      out, code, lines = run_check(dir, extra_env: env, fail_token: "RUBOCOP")
-      # rubocop's stub would FAIL if invoked — a doc-only diff must skip it.
-      assert_equal 0, code, out
-      assert_empty lane_calls(lines, "RUBOCOP"), "no lintable files → rubocop lane skipped"
-      assert_equal [["test/models/spine_core_test.rb"]], lane_calls(lines, "TEST"),
-                   "the spine still runs when nothing maps"
-      assert_match(/\[fast-cert@/, out)
-    end
-  end
-
-
-  # --- the SATELLITE door: a checkout that resolves none of the DECLARED spine --------
-  #
-  # THE PAIR THAT IS THE WHOLE BUG. The test directly above
-  # (test_doc_only_diff_skips_test_and_rubocop_lanes_but_still_runs_the_spine) sends the SAME
-  # docs-only diff through a HUB-shaped checkout and gets exit 0 with a "[fast-cert@" line,
-  # because the spine resolves there. These send it through a SATELLITE-shaped checkout — the
-  # config declares entries, none of which exist in this tree — which is what every satellite
-  # is: measured 2026-09-07, config/fast_cert_spine.yml declares 5 entries, the hub resolves
-  # 5/5 and turf-monster, rolio, turf-vault, studio-engine and solana-studio each resolve 0/5.
-  # It used to exit 1 and kill bin/ship at step 2 of 8, before any PR or CI existed.
-  #
-  # A spine config declaring a path that is NOT in the fixture is the whole satellite shape;
-  # nothing else about the repo has to change, which is the point — the diff is identical.
-  def satellite_spine(write)
-    write.call("spine.yml", "spine:\n  - test/models/task_test.rb\n  - test/models/release_test.rb\n")
-  end
-
-  def test_a_docs_only_diff_on_a_SATELLITE_checkout_DEFERS_instead_of_dying
-    with_repo do |dir, write|
-      satellite_spine(write)
-      write.call("docs/notes.md", "notes\n")
-
-      out, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true,
-                                   extra_env: { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md",
-                                                "TASK_SHOW_JSON" => SHOW_JSON,
-                                                "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
-
-      assert_equal FastCert::DEFERRED_EXIT, code, "the satellite door must DEFER, not die at step 2:\n#{out}"
-      assert_empty lane_calls(lines, "TEST"), "nothing resolved, so nothing ran — that is the premise"
-      refute_match(/\[fast-cert@/, out, "IT CERTIFIES NOTHING — a green cert line here would be the fail-green")
-      refute_match(/fast cert green/, out, "…and it must not say green either")
-      assert_match(/resolves NONE/i, out, "the cause named must be the checkout, not the diff")
-    end
-  end
-
-  # A DEFERRAL WITHOUT A RECORDED RECEIPT IS A SHRUG. This is the answer to "how would you
-  # know it certified nothing?": the run writes a [cert-deferred@<fp>] receipt that SAYS so,
-  # bound to this tree's fingerprint, and bin/dor-check credits it only beside a GREEN CI.
-  def test_the_satellite_deferral_records_a_receipt_naming_the_unresolved_spine
-    with_repo do |dir, write|
-      satellite_spine(write)
-      write.call("docs/notes.md", "notes\n")
-
-      out, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true,
-                                   extra_env: { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md",
-                                                "TASK_SHOW_JSON" => SHOW_JSON,
-                                                "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
-
-      assert_equal FastCert::DEFERRED_EXIT, code, out
-      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
-      refute_nil update, "the receipt must be RECORDED: #{lines.inspect}"
-      recorded = update[update.index("--checks") + 1]
-      assert_match(/\A\[cert-deferred@[0-9a-f]{7,64}/, recorded, "recorded as the DEFERRAL lane: #{recorded}")
-      assert_match(/resolves NONE of the 2 spine entries/, recorded,
-                   "the receipt carries the REAL cause and its count, or nobody can read it back")
-      refute_match(/CAPPED/, recorded, "no cap tripped here — a receipt naming one is a false cause")
-      assert_empty lines.select { |l| l[0] == "GATE" },
-                   "no lane ran, so there is no g1_cert testing window to report"
-    end
-  end
-
-  # ============ THE GATE IS NOT A RUBBER STAMP =======================================
-  # The easy way to make a docs-only satellite diff "ship" is to make the lane run nothing
-  # and call it green. This is the test that says we did not. SAME satellite checkout, SAME
-  # unresolvable spine — but the diff maps to a test that EXISTS, and that test lane goes
-  # RED. Nothing about the satellite condition may rescue it: the guard never fires (a test
-  # WILL run), the lane fails, and the exit is 1, which kills bin/ship at step 2.
-  def test_a_RED_lane_on_the_SAME_satellite_checkout_still_FAILS
-    with_repo do |dir, write|
-      satellite_spine(write)
-
-      out, code, lines = run_check(dir, args: ["some-task"], merge_stderr: true, fail_token: "TEST",
-                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
-                                                "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
-
-      assert_equal 1, code, "a red lane is a REFUSAL, not a deferral — ship must die here:\n#{out}"
-      refute_equal FastCert::DEFERRED_EXIT, code, "the satellite condition must never launder a red suite"
-      refute_match(/\[fast-cert@/, out, "and it certifies nothing")
-      refute_match(/DEFERR/i, out, "nor may it advertise the deferral it is not taking")
-      assert_equal [["test/models/widget_test.rb"]], lane_calls(lines, "TEST"),
-                   "the mapped lane DID run — which is exactly why the guard stayed out of it"
-    end
-  end
-
-  # AND THE GREEN HALF OF THE SAME PROOF: a satellite diff that maps to a PASSING test
-  # certifies normally. The deferral is reachable ONLY when nothing runs.
-  def test_a_mapped_lane_on_a_satellite_checkout_still_CERTIFIES_normally
-    with_repo do |dir, write|
-      satellite_spine(write)
-
-      out, code, lines = run_check(dir)
-
-      assert_equal 0, code, out
-      assert_match(/\[fast-cert@/, out, "a satellite whose diff maps to a real test certifies as ever")
-      assert_equal [["test/models/widget_test.rb"]], lane_calls(lines, "TEST"),
-                   "one mapped run and NO spine run — the spine resolved to nothing here"
-    end
-  end
-
-  # --- the REMEDY names a command THIS checkout can run ------------------------------
-  #
-  # MEASURED 2026-09-07: bin/full-suite-check exists ONLY in the hub. turf-monster, rolio,
-  # turf-vault, studio-engine and solana-studio have no such file, so the bare
-  # "bin/full-suite-check <task>" this verdict used to print was a command the reader's repo
-  # could not execute — the same defect as a gate naming a workflow trigger that is false.
-  def test_the_satellite_verdict_names_the_HUB_ABSOLUTE_full_suite_path
-    with_repo do |dir, write|
-      satellite_spine(write)
-      write.call("docs/notes.md", "notes\n")
-      FileUtils.mkdir_p(File.join(dir, "bin"))
-      File.write(File.join(dir, "bin", "rails"), "#!/bin/sh\nexit 0\n")
-
-      out, = run_check(dir, args: ["some-task"], merge_stderr: true,
-                       extra_env: { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md",
-                                    "TASK_SHOW_JSON" => SHOW_JSON,
-                                    "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" })
-
-      hub_bin = File.expand_path("../../bin/full-suite-check", __dir__)
-      assert_match(/#{Regexp.escape(hub_bin)} some-task/, out,
-                   "a satellite has no bin/full-suite-check of its own — name the hub's ABSOLUTE path")
-      refute_match(/[^\/]\bbin\/full-suite-check some-task/, out,
-                   "a bare relative path is not runnable from a satellite checkout")
+      refute_match(/lane\(s\) RED/, out, "a runner that produced no verdict must never be reported as red tests")
     end
   end
 
@@ -1768,25 +311,27 @@ class FastCheckTest < Minitest::Test
     with_repo do |dir, _|
       out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_TEST_PREPARE_CMD" => "false" })
       assert_equal 1, code, out
-      assert_empty lane_calls(lines, "TEST"), "no lane runs against an unprepared test env"
-      refute_match(/\[fast-cert@/, out)
+      assert_match(/test-env prepare failed/, out)
+      assert_empty lane_calls(lines, "TEST"), "no test lane runs on a failed prepare"
     end
   end
 
-  # --- [unit] the virgin-tree bundled-asset regression -------------------------------
-  #
-  # A fake `bin/rails` that models the two Rails behaviours this cert depends on:
-  #
-  #   1. `test:prepare` is the hook a CSS/JS bundler enhances to BUILD its artifact
-  #      (tailwindcss-rails: `Rake::Task["test:prepare"].enhance(["tailwindcss:build"])`).
-  #      NOTHING else builds it -- `db:test:prepare` does not (tailwindcss enhances it
-  #      only as a FALLBACK, when test:prepare is undefined).
-  #   2. Propshaft raises "The asset ... is not present in the asset pipeline" when a
-  #      view's stylesheet_link_tag target was never built.
-  #
-  # The fake fails its `test` lane ONLY on the missing artifact -- never on the paths --
-  # so the test reproduces the exact production symptom (a virgin worktree, where the
-  # gitignored app/assets/builds/ holds nothing but .keep) and nothing else.
+  def test_an_absent_prepare_runner_is_could_not_run_not_an_env_gap
+    with_repo do |dir, _|
+      out, code, = run_check(dir, extra_env: { "FAST_CHECK_TEST_PREPARE_CMD" => "/nonexistent/rails db:test:prepare" })
+
+      assert_equal 1, code, out
+      assert_match(/COULD NOT RUN/, out)
+      refute_match(/USUALLY an ENV gap/, out)
+      assert_match(/release_check:/, out, "the remedy names the registry key that declares a non-Rails lane")
+      assert_match(%r{config/release_repos\.yml}, out)
+    end
+  end
+
+  # --- the virgin-tree bundled-asset regression -----------------------------------
+  # fast-check's test lanes pass explicit paths, and Rails skips its own test:prepare
+  # whenever an argument looks like a path — so the prepare lane must invoke the hook
+  # that builds the gitignored CSS itself, or every view test in a fresh desk errors.
   def write_fake_rails(dir)
     rails = File.join(dir, "bin", "rails")
     FileUtils.mkdir_p(File.dirname(rails))
@@ -1808,917 +353,398 @@ class FastCheckTest < Minitest::Test
     FileUtils.chmod("+x", rails)
   end
 
-  # Regression (build-assets-on-worktree-bringup): fast-check's test lanes pass EXPLICIT
-  # FILE PATHS, and Rails SKIPS its own test:prepare whenever an argument looks like a
-  # path -- Rails::Command::TestCommand runs it only `if self.args.none?(
-  # EXACT_TEST_ARGUMENT_PATTERN)`. So the bundler hook that CI and bin/full-suite-check
-  # reach -- CI's Rails shards by invoking test:prepare themselves (bin/ci-shard), CI's
-  # system job and full-suite-check's rake-routed line by naming a rake TEST TASK whose
-  # spawned `rails <task>` carries no path and no -n; the release gate workspaces prep
-  # their own env since gate-workspace-skips-test-prepare, PR #522 -- never fires
-  # here, and on a virgin worktree every
-  # view-rendering test errored with
-  # `The asset "tailwind.css" is not present in the asset pipeline`: ~77 red on a
-  # ci.yml-only or docs-only diff. A G1 cert that reports an ENV GAP as a test
-  # regression is lying, so the cert must run test:prepare ITSELF.
-  #
-  # Note this deliberately does NOT stub FAST_CHECK_TEST_PREPARE_CMD / FAST_CHECK_TEST_CMD
-  # (a nil value UNSETS the var for the child): the DEFAULT lane commands are the thing
-  # under test — the bug lived in the default.
   def test_prepare_lane_builds_bundled_assets_before_the_path_arg_test_lanes
     with_repo do |dir, _|
       write_fake_rails(dir)
-      out, code, lines = run_check(dir, extra_env: {
-                                     "FAST_CHECK_TEST_PREPARE_CMD" => nil, # use the real default
-                                     "FAST_CHECK_TEST_CMD" => nil,         # use the real default
-                                     "FAST_CHECK_RUBOCOP_CMD" => "true"
-                                   })
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_TEST_PREPARE_CMD" => nil,
+                                                     "FAST_CHECK_TEST_CMD" => nil,
+                                                     "FAST_CHECK_RUBOCOP_CMD" => "true" })
       rails = lines.select { |l| l[0] == "RAILS" }.map { |l| l[1..] }
 
-      assert_equal ["db:test:prepare", "test:prepare"], rails[0],
-                   "the prepare lane must run Rails' test:prepare hook (which builds the bundled " \
-                   "CSS) as well as the test DB prepare — the path-arg test lanes below will not"
-      assert_path_exists File.join(dir, "app/assets/builds/tailwind.css"),
-                         "prepare must leave the bundled asset on disk for the lanes that follow"
-      assert_equal ["test", "test/models/widget_test.rb"], rails[1], "mapped lane still runs by path"
-      assert_equal ["test", "test/models/spine_core_test.rb"], rails[2], "spine lane still runs by path"
-      assert_equal 0, code, "a virgin tree must certify GREEN, not red on a missing asset:\n#{out}"
-      assert_match(/\A\[fast-cert@/, out)
+      assert_equal ["db:test:prepare", "test:prepare"], rails[0]
+      assert_path_exists File.join(dir, "app/assets/builds/tailwind.css")
+      assert_equal ["test", "test/models/widget_test.rb"], rails[1]
+      assert_equal ["test", "test/models/spine_core_test.rb"], rails[2]
+      assert_equal 0, code, "a virgin tree must run green, not red on a missing asset:\n#{out}"
     end
   end
 
-  def test_list_mode_prints_the_selection_without_running_anything
-    with_repo do |dir, _|
-      out, code, lines = run_check(dir, args: ["--list"])
-      assert_equal 0, code, out
-      assert_match(%r{mapped\s+test/models/widget_test\.rb}, out)
-      assert_match(%r{spine\s+test/models/spine_core_test\.rb}, out)
-      assert_match(%r{lint\s+app/models/widget\.rb}, out)
-      assert_empty lines, "--list must not run lanes or emit gate/task writes"
+  # --- registry-gated repos ---------------------------------------------------------
+
+  def test_a_gem_repo_runs_its_registry_gate_and_no_rails_lane
+    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
+      log = File.join(dir, "stub.log")
+      out, code = run_check(dir, extra_env: {
+        "FAST_CHECK_TEST_CMD" => nil,
+        "FAST_CHECK_TEST_PREPARE_CMD" => "sh -c 'echo PREPARE >> #{log.shellescape}'"
+      })
+
+      assert_equal 0, code, "an unaided gem pre-flight must complete:\n#{out}"
+      refute_match(/PREPARE/, File.exist?(log) ? File.read(log) : "",
+                   "a gem has no test database — the prepare lane must not APPLY")
+      assert_match(/whole registry gate/, out, "the summary names what was actually executed")
+      refute_match(/Errno::ENOENT/, out)
     end
   end
 
-  def test_fingerprint_matches_the_shared_modules_recompute
-    # The writer stamps the hash FullSuiteGate computes for the tree it certified.
-    # (bin/dor-check no longer reads the fast-cert receipt —
-    # /tasks/dor-reads-settled-ci-verdict — and its `--suite-fingerprint` seam went
-    # with it; the control-stamp lane it still grades recomputes through this module.)
-    with_repo do |dir, _|
-      out, = run_check(dir)
-      runner_fp = out[/@([0-9a-f]{7,64})[:\]]/, 1]
-      assert_equal FullSuiteGate.fingerprint(dir), runner_fp
-    end
-  end
+  def test_a_gem_repo_invokes_no_rubocop_lane_at_all
+    with_repo_named("studio-engine", release_check: GEM_GATE_OK) do |dir|
+      _, code, lines = run_check(dir, fail_token: "RUBOCOP", extra_env: { "FAST_CHECK_TEST_CMD" => nil })
 
-  # --- [integration] durable-record writes: task evidence + G1 gate markers ---------
-
-  SHOW_JSON = JSON.generate(
-    "metadata" => { "devops" => { "checks_run" => [
-      "[unit] bin/rails test test/models/widget_test.rb",
-      "[full-suite@fullfp] tests green",
-      "[fast-cert@oldfp] prior fast cert"
-    ] } }
-  )
-
-  # The cert records its evidence and NOTHING else. Preservation of the author's
-  # tier tags and the other lanes is the WRITE FUNNEL's job, not the writer's —
-  # asserting it on the writer's argv is asserting the wrong layer, and the
-  # writer-side "merge" it used to do is exactly what let a stale snapshot replace
-  # newer tier lines (round-3). The preservation half is covered where it lives:
-  # lib/cert_evidence.rb (test/lib/cert_evidence_test.rb), the board funnel
-  # (test/models/task_cert_evidence_test.rb), and the real CLI end-to-end
-  # (test/lib/task_cli_test.rb). The END STATE is asserted here by the read-back
-  # tests below.
-  def test_recording_records_the_fresh_evidence_line
-    with_repo do |dir, _|
-      out, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
-      assert_equal 0, code, out
-
-      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
-      refute_nil update, "green run records evidence via task update: #{lines.inspect}"
-      checks = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
-      assert(checks.any? { |c| c =~ /\A\[fast-cert@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/ }, "fresh fast-cert line recorded")
-      refute_includes checks.join("\n"), "[fast-cert@oldfp]",
-                      "the stale fast-cert line is never resent — the funnel supersedes this lane"
-    end
-  end
-
-  # --- [integration] read-back: "preserved" is VERIFIED, never declared -------------
-  # The 2026-07-20 wipe (fast-check-preserves-checks): the script printed "tier
-  # tags preserved" over a write whose result it never looked at. The claim is now
-  # backed by a post-write read of the board.
-
-  def test_lost_preexisting_lines_after_the_write_fail_the_cert_loudly
-    with_repo do |dir, _|
-      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
-      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
-                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
-                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
-      assert_equal 1, code, "a write whose read-back lost pre-existing checks lines must fail loudly: #{out}"
-      assert_match(/MISSING/, out)
-      assert_match(%r{\[unit\] bin/rails test test/models/widget_test\.rb}, out,
-                   "the lost lines are named so the builder can re-record them")
-      refute_match(/tier tags preserved/, out, "no blanket claim over a write that lost lines")
-    end
-  end
-
-  # Round-3 regression (review block, 2026-07-20 — Carl): the cert used to resend
-  # the WHOLE merged list (its snapshot of the author's lines + its evidence).
-  # That is an AUTHOR write, so the funnel replaces the author namespace with the
-  # SNAPSHOT — and any tier line the board gained after the snapshot was read (a
-  # builder recording checks during a multi-minute cert, a concurrent writer) is
-  # replaced by stale content. The cert owns exactly one namespace, so it now
-  # sends ONLY its evidence line: a PURE-EVIDENCE write, which the funnel merges
-  # against the board's CURRENT state at write time. No snapshot, no window.
-  def test_recording_sends_only_evidence_never_the_author_snapshot
-    with_repo do |dir, _|
-      _, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
       assert_equal 0, code
-      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
-      refute_nil update
-      checks = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
-      assert_equal 1, checks.size,
-                   "the cert must send ONE line — its own evidence. Resending its snapshot of the author's " \
-                   "lines lets a stale read replace newer tier lines: #{checks.inspect}"
-      assert_match(/\A\[fast-cert@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/, checks.first)
+      assert_empty lane_calls(lines, "RUBOCOP")
     end
   end
 
-  # The property the pure-evidence write buys: tier lines the board gained AFTER
-  # the cert's read still survive, because the funnel merges at write time.
-  def test_tier_lines_added_during_the_cert_are_not_replaced_by_the_stale_snapshot
-    with_repo do |dir, _|
-      # The board gained a newer tier line after the cert's pre-write read.
-      newer = JSON.generate("metadata" => { "devops" => { "checks_run" => [
-        "[unit] bin/rails test test/models/widget_test.rb",
-        "[full-suite@fullfp] tests green",
-        "[integration] recorded DURING the cert run"
-      ] } })
-      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
-                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
-                                                "TASK_SHOW_JSON_AFTER_UPDATE" => newer })
-      assert_equal 0, code, out
-      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
-      sent = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
-      refute_includes sent, "[unit] bin/rails test test/models/widget_test.rb",
-                      "a stale author snapshot must never be resent — that is what replaces newer tier lines"
-      refute(sent.any? { |l| l.start_with?("[full-suite@") },
-             "the cert does not own another lane's evidence either: #{sent.inspect}")
-    end
-  end
+  def test_a_gem_whose_gate_fails_is_red
+    with_repo_named("studio-engine", release_check: GEM_GATE_RED) do |dir|
+      out, code, = run_check(dir, extra_env: { "FAST_CHECK_TEST_CMD" => nil })
 
-  # Round-5 regression (review block, 2026-07-20 — light lane): the cert must
-  # verify the ONE line it OWNS. If the fresh [fast-cert@…] evidence line does not
-  # land on the board, the cert cannot tell "my evidence landed" from "my evidence
-  # vanished" — the missing-signal-read-as-success shape this PR exists to kill,
-  # turned on the cert's own output. A read-back missing the evidence line must
-  # exit NONZERO and say "re-run the cert" (NOT the author re-record remedy — a
-  # hand-written evidence line forges the certification).
-  def test_evidence_line_missing_from_the_read_back_fails_the_cert
-    with_repo do |dir, _|
-      # DROP_WRITTEN models the evidence write never landing; the pre-existing
-      # lines are all still present, so ONLY the cert's own line is missing.
-      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
-                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
-                                                "STUB_READBACK_DROP_WRITTEN" => "1" })
-      assert_equal 1, code, "a read-back missing the fresh evidence line must FAIL the cert: #{out}"
-      assert_match(/MISSING/, out)
-      remedy = out[%r{re-run the cert: (\S*/bin/fast-check) task-x}, 1]
-      refute_nil remedy,
-                 "the remedy for a lost evidence line is a re-run, never a hand-written evidence line: #{out}"
-      # ABSOLUTE and runnable: bin/fast-check exists only in the hub, so the bare form
-      # this used to print died on every satellite and gem desk.
-      assert File.executable?(remedy), "the re-run must name a runnable script, got #{remedy.inspect}"
-      refute_match(/read-back confirms/, out, "a vanished evidence line must not report a confirmed cert")
-      # The G1 attempt must close FAILED, not success-while-exit-1.
-      close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
-      refute_nil close
-      assert_includes close, "--failed", "the durable gate must not read success when the command exits 1"
-    end
-  end
-
-  # Round-3 regression (review block, 2026-07-20 — Shannon): the recovery command
-  # is meant to be PASTED into a shell, so every line must be SHELL-quoted.
-  # `String#inspect` is a RUBY literal: it leaves $(…), backticks and friends live
-  # inside double quotes, so pasting the remedy would execute them.
-  def test_recovery_command_is_shell_safe_not_ruby_inspect
-    with_repo do |dir, _|
-      pwned = File.join(dir, "pwned")
-      # A tier line carrying live shell syntax. `$(…)` and the backticks EXECUTE
-      # inside double quotes, which is exactly what a Ruby-inspect command emits.
-      nasty = %([integration] cost $(touch #{pwned}) and `touch #{pwned}` "quoted")
-      before = JSON.generate("metadata" => { "devops" => { "checks_run" => [nasty] } })
-      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
-      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
-                             extra_env: { "TASK_SHOW_JSON" => before,
-                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
       assert_equal 1, code, out
-      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
-      refute_nil remedy, out
-      command = remedy[/bin\/task update task-x.*/].strip
-
-      # The DECISIVE check: run the remedy through a REAL shell (Shellwords.split
-      # would not model command substitution and passes even for a Ruby-inspect
-      # command — a false green). A stub `bin/task` on PATH records the argv it
-      # actually received; the shell must hand it the line VERBATIM and must not
-      # execute the embedded substitution.
-      argv_log = File.join(dir, "remedy-argv.log")
-      bindir = File.join(dir, "remedy-bin")
-      FileUtils.mkdir_p(bindir)
-      File.write(File.join(bindir, "task"), <<~SH)
-        #!/bin/sh
-        for a in "$@"; do printf '%s\\n' "$a" >> #{argv_log.shellescape}; done
-      SH
-      FileUtils.chmod("+x", File.join(bindir, "task"))
-      system({ "PATH" => "#{bindir}:#{ENV.fetch('PATH')}" },
-             "/bin/sh", "-c", command.sub(%r{\Abin/task}, "task"),
-             out: File::NULL, err: File::NULL)
-
-      refute File.exist?(pwned),
-             "the remedy EXECUTED embedded shell syntax when pasted: #{command}"
-      received = File.exist?(argv_log) ? File.readlines(argv_log, chomp: true) : []
-      assert_equal nasty, received.last,
-                   "the shell must hand bin/task the line VERBATIM: #{received.inspect} from #{command}"
+      assert_match(/lane\(s\) RED: registry-gate/, out)
     end
   end
 
-  # Round-2 regression (review block, 2026-07-20): on a PARTIAL loss the printed
-  # recovery must re-record the UNION — the surviving lines AND the lost ones.
-  # `--checks` replaces the author namespace, so a remedy listing only the lost
-  # lines would itself drop the survivors when the builder runs it.
-  def test_partial_loss_recovery_re_records_survivors_and_lost_alike
-    with_repo do |dir, _|
-      before = JSON.generate("metadata" => { "devops" => { "checks_run" => [
-        "[unit] surviving unit line",
-        "[integration] lost integration line"
-      ] } })
-      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [
-        "[unit] surviving unit line"
-      ] } })
-      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
-                             extra_env: { "TASK_SHOW_JSON" => before,
-                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+  def test_a_gem_missing_its_declared_gate_is_could_not_run
+    with_repo_named("studio-engine") do |dir|
+      out, code, = run_check(dir, extra_env: { "FAST_CHECK_TEST_CMD" => nil })
+
       assert_equal 1, code, out
-      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
-      refute_nil remedy, "the loud failure prints a runnable re-record command: #{out}"
-      # Assert the PROPERTY (what a shell parses out of the command), not the
-      # spelling — the lines are shell-quoted, so a raw substring match would be
-      # asserting the quoting style rather than the recovery content.
-      recorded = Shellwords.split(remedy[/bin\/task update task-x.*/].strip)
-                           .each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
-      assert_includes recorded, "[integration] lost integration line", "the lost line is re-recorded"
-      assert_includes recorded, "[unit] surviving unit line",
-                      "the SURVIVING line must be in the remedy too — --checks replaces the author " \
-                      "namespace, so a lost-lines-only remedy would drop the survivors"
+      assert_match(/COULD NOT RUN: registry-gate/, out)
+      refute_match(/lane\(s\) RED/, out, "a missing command is not a failing test")
     end
   end
 
-  def test_green_run_reports_read_back_verified_preservation
-    with_repo do |dir, _|
-      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
-                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+  def test_a_registry_gated_app_repo_runs_its_declared_gate_and_no_rails_lane
+    with_repo_named("turf-vault", release_check: GEM_GATE_OK) do |dir|
+      log = File.join(dir, "stub.log")
+      out, code, lines = run_check(dir, fail_token: "RUBOCOP", extra_env: {
+        "FAST_CHECK_TEST_CMD" => nil,
+        "FAST_CHECK_TEST_PREPARE_CMD" => "sh -c 'echo PREPARE >> #{log.shellescape}'"
+      })
+
       assert_equal 0, code, out
-      assert_match(/read-back confirms the evidence line landed/, out,
-                   "the confirmed claim names the evidence line the cert verified")
-      assert_match(/all 2 pre-existing checks line\(s\) kept/, out,
-                   "…and states the pre-existing count that was verified")
+      refute_match(/PREPARE/, File.exist?(log) ? File.read(log) : "")
+      assert_empty lane_calls(lines, "RUBOCOP")
+      assert_match(/whole registry gate/, out)
     end
   end
 
-  def test_green_run_with_no_prior_checks_claims_no_preservation
-    with_repo do |dir, _|
-      empty = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
-      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
-                             extra_env: { "TASK_SHOW_JSON" => empty })
+  def test_an_app_that_declares_no_gate_keeps_the_rails_path
+    with_repo_named("turf-monster") do |dir|
+      out, code, lines = run_check(dir)
+
       assert_equal 0, code, out
-      assert_match(/no pre-existing checks lines to preserve/, out)
-      refute_match(/tier tags preserved/, out, "never claim preservation when nothing pre-existed")
+      assert_equal 2, lane_calls(lines, "TEST").size
+      assert_match(/1 mapped/, out, "an app still reports its diff-mapped selection")
     end
   end
 
-  def test_unverifiable_read_back_reports_unverified_without_failing_the_cert
-    with_repo do |dir, _|
-      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
-                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
-                                          "FAIL_SHOW_AFTER_UPDATE" => "1" })
-      assert_equal 0, code, "a read-back blip must not fail a recorded green cert: #{out}"
-      assert_match(/UNVERIFIED/, out)
-      refute_match(/tier tags preserved/, out, "an unverified write must not claim preservation")
+  # --- the mapped cap ---------------------------------------------------------------
+
+  # A twin-less model whose grep matches many test files — the real shape of a cap trip.
+  def with_wide_mapping_repo
+    with_repo do |dir, write|
+      (1..20).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
+      commit_all(dir)
+      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
+      yield dir, write
     end
   end
 
-  def test_green_run_opens_g1_appends_one_sop_per_lane_and_self_closes_success
-    with_repo do |dir, _|
-      _, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+  def test_a_wide_mapping_skips_the_mapped_lane_and_still_runs_the_spine
+    with_wide_mapping_repo do |dir, _|
+      out, code, lines = run_check(dir)
+
+      assert_equal 0, code, "the cap is not a failure — it is a narrower pre-flight"
+      assert_equal [["test/models/spine_core_test.rb"]], lane_calls(lines, "TEST")
+      assert_match(/MAPPED LANE CAPPED/, out)
+      assert_match(/exceeds the cap of 15/, out)
+      assert_match(%r{widest mapping: app/models/gizmo\.rb}, out, "the culprit is named")
+      assert_match(/FAST_CHECK_MAPPED_CAP/, out, "the deliberate override is discoverable")
+      assert_match(/CI runs the full mapped set on the PR/, out, "the net is named, not a local full suite")
+      refute_match(/full-suite-check/, out, "the retired local full suite is never offered")
+      assert_match(/pre-flight green: 0 mapped \(CAPPED: 20 mapped path\(s\) over the cap of 15; spine only\)/, out)
+    end
+  end
+
+  def test_raising_the_cap_runs_the_mapped_lane
+    with_wide_mapping_repo do |dir, _|
+      _, code, lines = run_check(dir, extra_env: { "FAST_CHECK_MAPPED_CAP" => "500" })
+
       assert_equal 0, code
-      gate = lines.select { |l| l[0] == "GATE" }
-      assert_equal %w[open] + (%w[sop] * 8) + %w[close], gate.map { |l| l[1] },
-                   "open + TWO sops per lane (running, then the verdict) + a self-close on " \
-                   "green (cert owns g1_cert now, not dor-check): #{gate.inspect}"
-      sops = gate.select { |l| l[1] == "sop" }
-      sop_names = sops.map { |l| l[l.index("--sop") + 1] }
-      assert_equal %w[test-prepare test-prepare mapped-tests mapped-tests spine spine
-                      rubocop-changed rubocop-changed], sop_names
-
-      # Each lane ANNOUNCES ITSELF BEFORE IT RUNS, then reports its verdict. The
-      # board reads that leading `running` row to name the lane a building task is
-      # inside — the whole point of the local-check indicator. A lane that only
-      # emitted on completion would leave the slowest lane (the one an operator is
-      # actually staring at) permanently unnamed.
-      results = sops.map { |l| l[l.index("--result") + 1] }
-      assert_equal %w[running pass running pass running pass running pass], results,
-                   "every lane must emit running BEFORE its verdict: #{results.inspect}"
-
-      # The running row carries the command, so the card's tooltip can show exactly
-      # what is executing without opening the session.
-      first_running = sops.find { |l| l[l.index("--result") + 1] == "running" }
-      assert_includes first_running, "--cmd"
-      close = gate.find { |l| l[1] == "close" }
-      assert_includes close, "--success", "the green cert closes g1_cert success itself"
-      assert(gate.all? { |l| l[2] == "task" && l[3] == "task-x" && l[4] == "g1_cert" })
+      assert_equal 2, lane_calls(lines, "TEST").size
     end
   end
 
-  def test_red_lane_closes_g1_failed
-    with_repo do |dir, _|
-      _, code, lines = run_check(dir, args: ["task-x"], fail_token: "widget_test",
-                                      extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
-      assert_equal 1, code
-      close = lines.find { |l| l[0] == "GATE" && l[1] == "close" }
-      refute_nil close, "a red lane closes the G1 attempt: #{lines.inspect}"
-      assert_includes close, "--failed"
-    end
-  end
+  def test_a_wide_mapping_that_the_spine_already_covers_is_not_capped
+    with_repo do |dir, write|
+      write.call("app/models/base_gizmo.rb", "class BaseGizmo; end\n")
+      wide = (1..20).map { |i| "test/lib/wide_#{i}_test.rb" }
+      wide.each { |rel| write.call(rel, "Gizmo.reset\n") }
+      spined = wide.first(18)
+      write.call("spine.yml", "spine:\n#{spined.map { |r| "  - #{r}" }.join("\n")}\n")
+      commit_all(dir)
+      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
 
-  def test_print_mode_emits_no_gate_or_task_writes
-    with_repo do |dir, _|
-      out, code, lines = run_check(dir, args: ["task-x", "--print"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
-      assert_equal 0, code, out
-      assert_empty(lines.select { |l| %w[GATE TASK].include?(l[0]) },
-                   "--print is a dry run — no durable-record writes: #{lines.inspect}")
-      assert_match(/\[fast-cert@/, out, "the evidence line still prints")
-    end
-  end
+      out, code, lines = run_check(dir)
 
-  def test_cert_checkpoints_bound_the_run_in_non_print_mode
-    with_repo do |dir, _|
-      _, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
       assert_equal 0, code
-      checkpoints = lines.select { |l| l[0] == "TASK" && l[1] == "checkpoint" }
-      assert_equal [%w[started], %w[completed]],
-                   checkpoints.map { |l| [l[l.index("--status") + 1]] },
-                   "a cert checkpoint opens and closes the Local Certification window"
+      refute_match(/MAPPED LANE CAPPED/, out, "the cap reads the post-spine set (2), not the raw mapping (20)")
+      tests = lane_calls(lines, "TEST")
+      assert_equal 2, tests.size
+      assert_equal wide.last(2).sort, tests[0].sort
     end
   end
 
-  def test_unreadable_task_checks_aborts_without_writing
+  def test_a_narrow_diff_is_unaffected_by_the_cap
     with_repo do |dir, _|
-      # TASK stub fails on `show` → the runner must NOT blind-write --checks.
-      out, code, lines = run_check(dir, args: ["task-x"],
-                                        extra_env: { "TASK_SHOW_JSON" => "", "FAIL_TOKEN" => "show" })
-      assert_equal 1, code, out
-      refute(lines.any? { |l| l[0] == "TASK" && l[1] == "update" },
-             "a blind --checks write would wipe tier tags — abort instead")
+      out, code, lines = run_check(dir)
+
+      assert_equal 0, code
+      assert_equal 2, lane_calls(lines, "TEST").size
+      refute_match(/MAPPED LANE CAPPED|NEAR THE CAP/, out)
     end
   end
 
-  # --- [integration] task-root guard: the cert must root at the TASK's tree ---------
-  # Regression for the 2026-07-12 fail-GREEN: run from the hub primary (on main),
-  # the cert rooted at the cwd's git toplevel and green-certified MAIN's tree for
-  # an unrelated task. With a task slug and an IMPLICIT root (cwd, no
-  # FAST_CHECK_ROOT), the cert must verify the root IS the task's tree —
-  # its checked-out branch is the task's branch, or it is the task's
-  # .worktrees/<worktree_slug> dir — and REFUSE otherwise (bin/lib/cert_root_guard.rb).
+  # --- the margin: the run BEFORE the cliff -----------------------------------------
 
-  GUARD_JSON = JSON.generate(
-    "metadata" => { "devops" => {
-      "branch" => "feat/task-x", "worktree_slug" => "task-x", "checks_run" => []
-    } }
-  )
+  def with_at_cap_mapping_repo
+    with_repo do |dir, write|
+      (1..15).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
+      commit_all(dir)
+      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
+      yield dir, write
+    end
+  end
 
-  # --- [integration] desk guard: a desk that does not own its test DB may not certify ---
-  # Right root, but is it a WHOLE desk? A desk whose test env resolves to the SHARED base
-  # <app>_test certifies against the database the primary checkout and the release gate
-  # workspaces are using — silently. bin/agent-worktree's bringup is atomic now and cannot
-  # leave such a desk behind; this is the second lock, because desks half-built by the OLD
-  # tool are still on disk and .env.test.local can be deleted by hand. bin/lib/desk_guard.rb.
-  #
-  # These drive the guard END TO END, through the shelled runner and a real `bin/rails`
-  # boot (the fixture's shim — see write_repo_shape): DESK_DB_STUB is what the booted app
-  # answers, and the verdict must follow THAT, never a declared string.
+  def with_at_cap_family_repo
+    with_repo do |dir, write|
+      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n")
+      write.call("test/lib/wide_tool_test.rb", "twin\n")
+      14.times { |i| write.call("test/lib/wide_tool_aspect#{i}_test.rb", "sibling #{i}\n") }
+      commit_all(dir)
+      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n# edit\n")
+      yield dir, write
+    end
+  end
+
+  def test_the_lane_warns_at_the_cap_and_still_runs_its_whole_mapped_set
+    with_at_cap_mapping_repo do |dir, _|
+      out, code, lines = run_check(dir)
+
+      assert_equal 0, code, out
+      assert_match(/MAPPED LANE NEAR THE CAP — 15 of 15, 0 path\(s\) of margin left/, out)
+      assert_match(%r{widest mapping: app/models/gizmo\.rb → 15 test file\(s\)}, out)
+      assert_match(/NO convention twin to fall back to.*runs ZERO tests/m, out)
+      tests = lane_calls(lines, "TEST")
+      assert_equal 15, tests[0].size, "the whole mapped set still runs — this is not a cap trip"
+      refute_match(/MAPPED LANE CAPPED/, out)
+    end
+  end
+
+  def test_the_near_cap_warning_names_the_twin_fallback_when_one_exists
+    with_at_cap_family_repo do |dir, _|
+      out, code, = run_check(dir)
+
+      assert_equal 0, code, out
+      assert_match(/falls back to the 1 convention twin\(s\) of this diff — a NARROWER pre-flight/, out)
+      refute_match(/runs ZERO tests/, out)
+    end
+  end
+
+  # --- the cap's TWIN FALLBACK -------------------------------------------------------
+
+  def with_family_over_cap_repo
+    with_repo do |dir, write|
+      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n")
+      write.call("test/lib/wide_tool_test.rb", "twin\n")
+      20.times { |i| write.call("test/lib/wide_tool_aspect#{i}_test.rb", "sibling #{i}\n") }
+      commit_all(dir)
+      write.call("bin/wide-tool", "#!/usr/bin/env ruby\n# edit\n")
+      yield dir, write
+    end
+  end
+
+  def test_a_capped_family_runs_its_convention_twin_instead_of_nothing
+    with_family_over_cap_repo do |dir, _|
+      out, code, lines = run_check(dir)
+
+      assert_equal 0, code, out
+      tests = lane_calls(lines, "TEST")
+      assert_equal [["test/lib/wide_tool_test.rb"], ["test/models/spine_core_test.rb"]], tests
+      assert_match(/falling back to the CONVENTION TWINS/, out)
+      assert_match(/pre-flight green: 1 twin\(s\) \(CAPPED: 21 mapped path\(s\) over the cap of 15\)/, out)
+    end
+  end
+
+  def with_spine_covered_twin_repo
+    with_repo do |dir, write|
+      (1..20).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Gizmo.reset\n") }
+      write.call("spine.yml", "spine:\n  - test/models/spine_core_test.rb\n  - test/models/widget_test.rb\n")
+      commit_all(dir)
+      write.call("app/models/widget.rb", "class Widget\n  def id\n    1\n  end\nend\n")
+      write.call("app/models/gizmo.rb", "class Gizmo; end\n")
+      yield dir, write
+    end
+  end
+
+  def test_a_spine_covered_twin_is_not_reported_as_no_twin_at_all
+    with_spine_covered_twin_repo do |dir, _|
+      out, code, lines = run_check(dir)
+
+      assert_equal 0, code, out
+      assert_match(/MAPPED LANE CAPPED/, out)
+      refute_match(/no changed file has an existing test twin/, out)
+      assert_match(/ALREADY A SPINE ENTRY/, out)
+      assert_equal [%w[test/models/spine_core_test.rb test/models/widget_test.rb]], lane_calls(lines, "TEST")
+    end
+  end
+
+  def test_the_capped_preview_lists_each_twin_exactly_once
+    with_family_over_cap_repo do |dir, _|
+      out, code, = run_check(dir, args: ["--list"])
+
+      assert_equal 0, code, out
+      assert_equal ["twin    test/lib/wide_tool_test.rb"], out.lines.map(&:chomp).select { |l| l.start_with?("twin") }
+    end
+  end
+
+  # --- nothing to run: a fact, not a refusal ---------------------------------------
+  # The retired cert REFUSED or DEFERRED a run that would execute zero tests, because
+  # it was about to stamp evidence. The pre-flight stamps nothing: it says no test lane
+  # ran and exits 0. CI runs the whole suite on the PR either way.
+
+  def satellite_spine(write)
+    write.call("spine.yml", "spine:\n  - test/models/task_test.rb\n  - test/models/release_test.rb\n")
+  end
+
+  def test_a_docs_only_diff_on_a_satellite_checkout_runs_no_test_lane_and_says_so
+    with_repo do |dir, write|
+      satellite_spine(write)
+      write.call("docs/notes.md", "notes\n")
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_CHANGED_FILES" => "docs/notes.md" })
+
+      assert_equal 0, code, "nothing to run is not a failure:\n#{out}"
+      assert_match(/NO TEST LANE TO RUN — the diff maps to no test file, and this checkout resolves NONE of the 2 spine entries/, out)
+      assert_match(/GitHub CI runs the full suite on the PR/, out)
+      assert_match(/pre-flight ran no lane/, out)
+      assert_empty lane_calls(lines, "TEST")
+      refute_match(/DEFERR|REFUSING|full-suite-check/, out, "no deferral, no refusal, no local full suite")
+    end
+  end
+
+  def test_a_capped_diff_with_no_twin_over_an_empty_spine_runs_no_test_lane
+    with_wide_mapping_repo do |dir, write|
+      write.call("spine.yml", "spine: []\n")
+
+      out, code, lines = run_check(dir)
+
+      assert_equal 0, code, out
+      assert_match(/NO TEST LANE TO RUN — the mapped lane was CAPPED/, out)
+      assert_match(/no spine is declared/, out)
+      assert_empty lane_calls(lines, "TEST")
+      assert_equal 1, lane_calls(lines, "RUBOCOP").size, "rubocop still lints the changed file"
+    end
+  end
+
+  def test_a_red_lane_on_the_same_satellite_checkout_still_fails
+    with_repo do |dir, write|
+      satellite_spine(write)
+      out, code, lines = run_check(dir, fail_token: "TEST")
+
+      assert_equal 1, code, out
+      assert_match(/lane\(s\) RED: mapped-tests/, out)
+      assert_equal [["test/models/widget_test.rb"]], lane_calls(lines, "TEST")
+    end
+  end
+
+  def test_a_mapped_lane_on_a_satellite_checkout_runs_normally
+    with_repo do |dir, write|
+      satellite_spine(write)
+      out, code, lines = run_check(dir)
+
+      assert_equal 0, code, out
+      assert_equal [["test/models/widget_test.rb"]], lane_calls(lines, "TEST"), "one mapped run and NO spine run"
+      assert_match(/pre-flight green: 1 mapped \+ 0 spine/, out)
+    end
+  end
+
+  # --- desk guard: a desk that does not own its test DB may not run a lane ----------
 
   def test_a_desk_with_no_isolated_test_db_is_refused_before_any_lane_runs
     with_repo(subpath: ".worktrees/half-built") do |dir, _|
-      # The shim defaults to the SHARED name: bringup never gave this desk a DB of its own.
       out, code, lines = run_check(dir, implicit_root: true)
 
-      assert_equal 1, code, "a desk with no isolated test DB must refuse, not certify: #{out}"
+      assert_equal 1, code, out
       assert_match(/no isolated test DB/, out)
-      assert_match(/SHARED base test database/, out, "the refusal says WHY it matters")
-      assert_match(/ENV issue/, out, "and names it as an env issue, not a regression in the diff")
-      assert_empty lane_calls(lines, "TEST"), "the refusal fires BEFORE any lane runs"
-      refute_match(/\[fast-cert@/, out, "nothing certified against a shared database")
-    end
-  end
-
-  # THE INERT-PIN VECTOR, end to end. The desk PINS an isolated test DB and the app IGNORES
-  # the pin (turf-monster, whose database.yml had no `url:` key) — so it resolves to the
-  # SHARED database anyway. A presence-checking guard certifies this. It must refuse, and it
-  # must say the pin is inert rather than send the operator back to bringup, which would
-  # faithfully rewrite the very same inert pin.
-  def test_a_desk_whose_pin_is_ignored_by_the_app_is_refused
-    with_repo(subpath: ".worktrees/inert-pin") do |dir, write|
-      write.call(".env.test.local", "TEST_DATABASE_URL=postgresql://localhost/studio_test_inert_pin\n")
-      out, code, lines = run_check(dir, implicit_root: true) # shim still answers SHARED
-
-      assert_equal 1, code, "a pin the app ignores is not isolation: #{out}"
-      assert_match(/SHARED test database/, out)
-      assert_match(/IGNORES it/, out, "the refusal must name the app's config, not the desk")
+      assert_match(/SHARED base test database/, out)
       assert_empty lane_calls(lines, "TEST"), "the refusal fires BEFORE any lane runs"
     end
   end
 
-  # The control. Same desk layout, and the booted app really does land on its own DB. The
-  # guard must not refuse a properly-provisioned worktree — that is where every cert
-  # legitimately runs, so a guard that fails this one is worse than no guard.
-  def test_a_desk_that_resolves_to_its_own_test_db_certifies_normally
+  def test_a_desk_that_resolves_to_its_own_test_db_runs_normally
     with_repo(subpath: ".worktrees/whole-desk") do |dir, write|
       write.call(".env.test.local", "TEST_DATABASE_URL=postgresql://localhost/studio_test_whole_desk\n")
-      out, code, lines = run_check(dir, implicit_root: true,
-                                   extra_env: { "DESK_DB_STUB" => "studio_test_whole_desk" })
+      out, code, lines = run_check(dir, implicit_root: true, extra_env: { "DESK_DB_STUB" => "studio_test_whole_desk" })
 
       assert_equal 0, code, out
-      refute_empty lane_calls(lines, "TEST"), "the lanes must run in a whole desk"
-    end
-  end
-
-  # A SQLite desk (rolio) has NO TEST_DATABASE_URL by design — its test DB is a FILE inside
-  # the desk, private by construction. Demanding the pin refused a perfectly isolated tree.
-  def test_a_sqlite_desk_certifies_with_no_pin_at_all
-    with_repo(subpath: ".worktrees/rolio-desk") do |dir, _|
-      out, code, lines = run_check(dir, implicit_root: true,
-                                   extra_env: { "DESK_DB_STUB" => "storage/test.sqlite3" })
-
-      assert_equal 0, code, "a SQLite desk's test DB is a file inside it — allow: #{out}"
       refute_empty lane_calls(lines, "TEST")
     end
   end
 
-  def test_wrong_root_cert_is_refused_before_any_lane_runs
+  def test_a_sqlite_desk_runs_with_no_pin_at_all
+    with_repo(subpath: ".worktrees/rolio-desk") do |dir, _|
+      out, code, lines = run_check(dir, implicit_root: true, extra_env: { "DESK_DB_STUB" => "storage/test.sqlite3" })
+
+      assert_equal 0, code, out
+      refute_empty lane_calls(lines, "TEST")
+    end
+  end
+
+  # --- the tree check: the pre-flight must root at the TASK's tree ------------------
+
+  def test_wrong_root_is_refused_before_any_lane_runs
     with_repo do |dir, _|
-      # cwd = a tree on its default branch (main/master) — NOT task-x's tree.
       out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
                                    extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
-      assert_equal 1, code, "a wrong-root cert must refuse, not green-certify: #{out}"
-      assert_match(/not task-x's tree/, out, "the refusal names the task")
-      assert_match(%r{feat/task-x}, out, "the refusal names the expected branch")
-      refute_match(/\[fast-cert@/, out, "no evidence for a tree the task never touched")
+      assert_equal 1, code, "a wrong-root pre-flight tells the builder nothing about their diff: #{out}"
+      assert_match(/not task-x's tree/, out)
+      assert_match(%r{feat/task-x}, out)
+      assert_match(/refusing to run against it/, out)
       assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
-      refute(lines.any? { |l| l[0] == "GATE" }, "no G1 attempt opens for a refused run: #{lines.inspect}")
-      refute(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "nothing recorded for a refused run")
     end
   end
 
-  # A desk is written two ways on this machine, and the guard knew one:
-  #
-  #   <repo>/.worktrees/<slug>   the MANAGED layout bin/agent-worktree builds
-  #   <repo>.worktrees/<slug>    the SIBLING tree the gem repos use
-  #
-  # bin/agent-worktree manages only the registered Rails apps, so a studio-engine or
-  # solana-studio desk is cut with a plain `git worktree add` and lands beside the
-  # repo. Shelled, because this is the seam the operator actually meets: the refusal
-  # below is the text bin/fast-check, bin/full-suite-check and bin/ship all die! with,
-  # and answering it by hand — export DOR_CHECK_DIFF_ROOT and re-run — is what taught
-  # reviewers to override the guard on every engine review.
-  def test_a_sibling_tree_desk_certifies_on_its_physical_vouch
+  def test_a_sibling_tree_desk_runs_on_its_physical_vouch
     with_repo(subpath: "studio-engine.worktrees/task-x") do |dir, _|
-      # COMMIT first: the cert is the LAST build step, so the dirty-tree guard would
-      # otherwise refuse before the root guard is ever consulted (and this test would
-      # pass for the wrong reason). Diffing from HEAD~1 keeps widget.rb in the lane.
       commit_all(dir)
-      # Default branch, NOT feat/task-x: the branch axis cannot vouch, so ONLY the
-      # physical desk vouch can save this run — which is what makes it a layout test
-      # rather than a branch test that would pass either way.
       out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
-                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON,
-                                                "FAST_CHECK_DIFF_BASE" => "HEAD~1" })
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON, "FAST_CHECK_DIFF_BASE" => "HEAD~1" })
 
-      assert_equal 0, code, "standing IN the task's desk must certify, whatever the layout: #{out}"
-      refute_match(/not task-x's tree/, out, "the builder was standing in the desk it named")
-      assert_match(/\[fast-cert@/, out, "the cert must actually be stamped")
-      refute_empty lane_calls(lines, "TEST"), "the lanes must run in the task's own desk"
+      assert_equal 0, code, out
+      refute_match(/not task-x's tree/, out)
+      refute_empty lane_calls(lines, "TEST")
     end
   end
 
-  # The control, and the half a second glob must not cost: the sibling tree is a desk
-  # LAYOUT, not a blanket exemption. A tree that merely lives in one, under the wrong
-  # name, is still not this task's tree and must still refuse.
   def test_a_sibling_tree_directory_that_is_not_the_tasks_desk_still_refuses
     with_repo(subpath: "studio-engine.worktrees/some-other-task") do |dir, _|
       out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
                                    extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
 
-      assert_equal 1, code, "another task's desk is not this task's tree: #{out}"
+      assert_equal 1, code, out
       assert_match(/not task-x's tree/, out)
-      refute_match(/\[fast-cert@/, out, "no evidence for a tree the task never touched")
-      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
+      assert_empty lane_calls(lines, "TEST")
     end
   end
 
-  def test_task_branch_checkout_certifies_without_a_root_override
+  def test_explicit_root_override_bypasses_the_tree_check
     with_repo do |dir, _|
-      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
-      # COMMIT the branch diff first — the dirty-tree guard below now enforces what
-      # was previously only a house rule, so the cert is the LAST build step. Diffing
-      # from HEAD~1 keeps widget.rb in the mapped lane now that it is committed.
-      commit_all(dir)
-      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
-                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON,
-                                                "FAST_CHECK_DIFF_BASE" => "HEAD~1" })
-      assert_equal 0, code, "the task's own tree certifies from cwd with no override: #{out}"
-      assert_match(/\[fast-cert@/, out)
-      assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
-      assert_includes lane_calls(lines, "TEST").flatten, "test/models/widget_test.rb",
-                      "the mapped lane still selects off the diff once it is committed"
+      out, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
+      assert_equal 0, code, out
+      refute_match(/not task-x's tree/, out)
+      assert_empty lines.select { |l| l[0] == "TASK" }, "an explicit root reads nothing from the board"
     end
-  end
-
-  # --- [integration] dirty-tree guard: certify only a fully-committed HEAD ----------
-  # The cert fingerprint is a git TREE hash of the WORKING tree, so a cert taken with
-  # edits uncommitted stamps GREEN evidence for code the PR never receives — live on
-  # 2026-07-14, when a worktree's 146 lines of finished, tested work were certified
-  # and then never reached PR #537. The refusal must land BEFORE any lane runs or any
-  # gate/checkpoint/evidence write, exactly like the root guard above
-  # (bin/lib/cert_tree_guard.rb).
-
-  def test_dirty_tree_cert_is_refused_before_any_lane_runs
-    with_repo do |dir, _|
-      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
-      # The RIGHT tree (task-x's branch) — but widget.rb is still uncommitted.
-      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
-                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
-
-      assert_equal 1, code, "an uncommitted tree must refuse, not green-certify: #{out}"
-      assert_match(/DIRTY/, out)
-      assert_match(%r{app/models/widget\.rb}, out, "the refusal NAMES the uncommitted file")
-      assert_match(/commit/i, out, "the refusal states the fix")
-      refute_match(/\[fast-cert@/, out, "no evidence for a tree that is not on the PR")
-      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
-      refute(lines.any? { |l| l[0] == "GATE" }, "no G1 attempt opens for a refused run: #{lines.inspect}")
-      refute(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "nothing recorded for a refused run")
-    end
-  end
-
-  def test_stale_mtime_tree_still_certifies
-    # THE FALSE POSITIVE the guard must not become. A tracked file rewritten with
-    # IDENTICAL content has a fresh mtime, leaving git's stat cache stale — which the
-    # cheap dirty reads (git diff-index) call MODIFIED. On the CERT path a false
-    # refusal blocks every handoff, so the guard refreshes the index before reading
-    # it. Unit-level proof, including the index-refresh mechanism itself, lives in
-    # test/lib/cert_tree_guard_test.rb.
-    with_repo do |dir, _|
-      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
-      commit_all(dir)
-
-      tracked = File.join(dir, "app/models/widget.rb")
-      body = File.read(tracked)
-      File.write(tracked, body)                                       # byte-identical rewrite
-      FileUtils.touch(tracked, mtime: Time.now + (10 * 365 * 24 * 3600))
-      refute system("git", "-C", dir, "diff-index", "--quiet", "HEAD", out: File::NULL, err: File::NULL),
-             "fixture check: the index must actually BE stat-stale, else this proves nothing"
-
-      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
-                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON,
-                                                "FAST_CHECK_DIFF_BASE" => "HEAD~1" })
-
-      assert_equal 0, code, "a stat-stale index is a CLEAN tree — it must still certify: #{out}"
-      refute_match(/DIRTY/, out, "a file nobody edited must never be reported as uncommitted work")
-      assert_match(/\[fast-cert@/, out)
-      assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
-    end
-  end
-
-  # --- [integration] the TIMEOUT-ORPHAN regression ------------------------------------
-  #
-  # Live bug, 2026-07-13. bin/fast-check outran the harness's 120s Bash timeout (a
-  # diff that maps to ~120 test files runs 7+ minutes). The timeout killed the cert
-  # PARENT — and the `bin/rails test` grandchild SURVIVED it, reparented to launchd
-  # (PPID 1), still holding an open PG connection to the worktree's test DB:
-  #
-  #   41578  1  41538  R  ruby bin/rails test test/models/task_test.rb ...
-  #   pid 41763 | idle in transaction | bin/rails
-  #
-  # Every retry then died in the test-prepare lane with
-  #
-  #   PG::ObjectInUse: database "..._test_..." is being accessed by other users
-  #   DETAIL: There is 1 other session using the database.
-  #   Tasks: TOP => db:test:load_schema => db:test:purge
-  #
-  # which fast-check reported as "USUALLY an ENV gap ... NOT a regression in your
-  # diff" — never NAMING the orphan. So the agent retried blindly: three cert
-  # attempts, 35 minutes, zero board progress, while its ClaimLease heartbeat kept
-  # the task looking healthy on the board.
-  #
-  # Root cause: `system(env, cmd, chdir: root)` runs the lane in the cert's OWN
-  # process group and installs no signal handler, so a signal aimed at the cert
-  # never reaches the suite. The cert must (a) put each lane in its own process
-  # GROUP and reap that group when it dies, and (b) detect an orphan it could not
-  # prevent and say its name.
-
-  # A lane stub that records its pid and then hangs — stands in for `bin/rails test`
-  # holding the test DB. Returns the path; the pid lands in <dir>/lane.pid.
-  def write_hanging_lane(dir)
-    lane = File.join(dir, "hanging-lane")
-    File.write(lane, <<~RUBY)
-      #!#{RbConfig.ruby}
-      File.write(File.join(#{dir.inspect}, "lane.pid"), Process.pid.to_s)
-      sleep 120
-    RUBY
-    FileUtils.chmod("+x", lane)
-    lane
-  end
-
-  def alive?(pid)
-    Process.kill(0, pid)
-    true
-  rescue Errno::ESRCH, Errno::EPERM
-    false
-  end
-
-  # Has a process WE spawned actually exited? `kill(0)` cannot answer this for our own
-  # children: a killed child lingers as a ZOMBIE whose pid still answers signal 0 until
-  # its parent reaps it. (A real orphan is reparented to launchd, which reaps it at once
-  # — the zombie is an artefact of the test owning the process.) So we wait on it.
-  def exited?(pid, timeout: 10)
-    deadline = Time.now + timeout
-    loop do
-      return true if Process.waitpid(pid, Process::WNOHANG)
-      return false if Time.now > deadline
-
-      sleep 0.1
-    end
-  rescue Errno::ECHILD
-    true # already reaped
-  end
-
-  def wait_until(timeout: 10)
-    deadline = Time.now + timeout
-    sleep 0.1 until yield || Time.now > deadline
-    yield
-  end
-
-  # THE regression: kill the cert the way a harness timeout does, and the suite it
-  # spawned must not outlive it. Before the fix the lane survived as an orphan
-  # holding the test DB; after it, the cert reaps its whole process group.
-  def test_a_killed_cert_does_not_orphan_the_suite_it_spawned
-    with_repo do |dir, _|
-      lane = write_hanging_lane(dir)
-      env = child_env(
-        {
-          "FAST_CHECK_ROOT" => dir,
-          "FAST_CHECK_DIFF_BASE" => "HEAD",
-          "FAST_CHECK_SPINE" => File.join(dir, "spine.yml"),
-          "FAST_CHECK_TEST_PREPARE_CMD" => "true",
-          "FAST_CHECK_TEST_CMD" => lane.shellescape,
-          "FAST_CHECK_RUBOCOP_CMD" => "true",
-          "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" # the guard is tested separately below
-        }
-      )
-      cert = Process.spawn(env, BIN, "--print", chdir: dir, out: File::NULL, err: File::NULL)
-      pid_file = File.join(dir, "lane.pid")
-      assert wait_until { File.exist?(pid_file) }, "the lane never started"
-      lane_pid = File.read(pid_file).to_i
-      assert alive?(lane_pid), "the lane should be running before we kill the cert"
-
-      # The harness timeout: signal the cert PROCESS, not the group.
-      Process.kill("TERM", cert)
-      Process.waitpid(cert)
-
-      reaped = wait_until(timeout: 10) { !alive?(lane_pid) }
-      assert reaped,
-             "ORPHAN: the suite (pid #{lane_pid}) outlived the cert that spawned it. It keeps the " \
-             "worktree test DB open, and every retry dies on PG::ObjectInUse blaming 'an ENV gap'."
-    ensure
-      Process.kill("KILL", lane_pid) if lane_pid && alive?(lane_pid)
-    end
-  end
-
-  # --- [integration] the guard: an orphan we could NOT prevent must be NAMED ----------
-  #
-  # A SIGKILLed cert runs no handler, so prevention alone can never be complete. The
-  # next cert therefore reads the runlock the previous one left. A dead cert pid whose
-  # process group is still alive is NOT, by itself, proof of an abandoned suite: a pgid
-  # is a recyclable integer and this lock is repo-relative (it outlives reboots), so the
-  # number may since have been handed to a stranger. The lock therefore records the OS's
-  # start time for the group leader, and the guard reaps only what that identity proves
-  # is ours. Anything else is refused or discarded — never killed, never silently
-  # blocked.
-
-  # The OS's own start-time record, read independently of the code under test — a
-  # fixture that builds itself with the implementation it is checking proves nothing.
-  def os_start_time(pid)
-    # 2>/dev/null: the dead-cert fixtures name pids like 999_999 on purpose, and `ps`
-    # grumbles "process id too large" onto stderr. A cert log is a signal; do not
-    # teach anyone to read past noise in it.
-    out = `ps -p #{pid.to_i} -o lstart= 2>/dev/null`.strip.squeeze(" ")
-    out.empty? ? nil : out
-  end
-
-  # The runlock as CertProcess writes it: WHO, and — the whole point — WHEN.
-  # `pgid_started_at:` overrides the identity, to forge the two locks that matter:
-  # a recycled pgid (a start time that is not this process's) and a legacy lock
-  # (`nil` — written before the guard recorded identity at all).
-  # The runlock lives in the GIT DIR, never in the working tree — a lock inside the tree
-  # is untracked dirt in any repo that does not ignore `tmp/`, and the cert now refuses a
-  # dirty tree (see bin/lib/cert_orphan_guard.rb#lock_path). Resolved here by asking git
-  # DIRECTLY, not by calling CertOrphanGuard: a fixture that builds itself with the
-  # implementation it is checking proves nothing.
-  def git_dir(dir)
-    out = `git -C #{dir.shellescape} rev-parse --absolute-git-dir 2>/dev/null`.strip
-    refute_empty out, "the fixture repo must be a git repo"
-    out
-  end
-
-  def write_lock(dir, cert_pid:, pgid:, pgid_started_at: :real, cert_started_at: :real)
-    started = pgid_started_at == :real ? os_start_time(pgid) : pgid_started_at
-    cert_started = cert_started_at == :real ? os_start_time(cert_pid) : cert_started_at
-    lock = File.join(git_dir(dir), "cert-run.json")
-    FileUtils.mkdir_p(File.dirname(lock))
-    File.write(lock, JSON.generate("cert_pid" => cert_pid, "cert_started_at" => cert_started,
-                                   "pgid" => pgid, "pgid_started_at" => started, "lane" => "spine",
-                                   "db" => "studio_test_x", "started_at" => "2026-07-13T05:00:00Z"))
-    lock
-  end
-
-  def test_a_leftover_orphan_group_is_named_and_reaped_before_the_lanes_run
-    with_repo do |dir, _|
-      # An orphan: a live process group whose cert parent is long dead.
-      orphan = Process.spawn("sleep 120", pgroup: true)
-      orphan_pgid = Process.getpgid(orphan)
-      write_lock(dir, cert_pid: 999_999, pgid: orphan_pgid) # 999999 = a pid that is not running
-
-      # implicit_root: runs from `dir` with stderr merged, so the guard's message is assertable.
-      out, code, lines = run_check(dir, implicit_root: true)
-
-      assert_equal 0, code, "reaping our own orphan is self-healing — the cert proceeds: #{out}"
-      assert_match(/#{orphan_pgid}/, out, "the cert must NAME the orphan it reaped, not swallow it")
-      assert_match(/NOT a regression in your diff/, out, "an ENV-class condition must say so")
-      assert exited?(orphan),
-             "the orphan (pgid #{orphan_pgid}) must be REAPED — it is what holds the test DB"
-      refute_empty lane_calls(lines, "TEST"), "after reaping, the cert runs normally"
-    ensure
-      begin
-        if orphan
-          Process.kill("KILL", orphan)
-          Process.waitpid(orphan)
-        end
-      rescue Errno::ESRCH, Errno::ECHILD
-        nil # already reaped by the guard — which is the point of the test
-      end
-    end
-  end
-
-  def test_a_live_concurrent_cert_is_refused_and_never_killed
-    with_repo do |dir, _|
-      # NOT an orphan: another cert is genuinely running in this tree. Killing it
-      # would be hostile, and running beside it is the known two-suites-on-one-test-DB
-      # hazard (it SIGSEGVs Ruby). Refuse — and leave it alone.
-      sibling = Process.spawn("sleep 120", pgroup: true)
-      write_lock(dir, cert_pid: sibling, pgid: Process.getpgid(sibling))
-
-      out, code, lines = run_check(dir, implicit_root: true)
-
-      assert_equal 1, code, "a concurrent cert in the same tree must be refused: #{out}"
-      assert_match(/#{sibling}/, out, "the refusal names the running cert")
-      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
-      assert alive?(sibling), "a LIVE cert must never be killed by the guard"
-      refute_match(/\[fast-cert@/, out, "nothing is certified against a contended test DB")
-    ensure
-      Process.kill("KILL", sibling) if sibling && alive?(sibling)
-    end
-  end
-
-  def test_a_stale_lock_from_a_fully_dead_cert_never_blocks_a_cert
-    with_repo do |dir, _|
-      # Nothing survived — the lock is a corpse. It must not refuse a healthy cert.
-      write_lock(dir, cert_pid: 999_998, pgid: 999_999)
-      out, code, = run_check(dir)
-      assert_equal 0, code, "a stale lock must be cleared, not treated as a live claim: #{out}"
-      assert_match(/\[fast-cert@/, out)
-    end
-  end
-
-  def test_a_runlock_whose_pgid_was_RECYCLED_never_kills_the_bystander
-    with_repo do |dir, _|
-      # THE BLOCKING BUG, end to end through the real bin/fast-check. The lock is days
-      # old, its cert is long dead, and the OS has since handed its pgid to an unrelated
-      # process. Grading that "alive, therefore mine" made the cert TERM/KILL an innocent
-      # bystander and print "ORPHAN REAPED" (caught in review, 2026-07-14).
-      #
-      # The recorded start time is the tell: it names an instant before this process
-      # existed, so the group is provably NOT ours.
-      bystander = Process.spawn("sleep 120", pgroup: true)
-      bygid = Process.getpgid(bystander)
-      write_lock(dir, cert_pid: 999_999, pgid: bygid, pgid_started_at: "Mon Jul  6 18:40:11 2026")
-
-      out, code, lines = run_check(dir, implicit_root: true)
-
-      # NOT `alive?`: a child we killed lingers as a zombie whose pid still answers
-      # signal 0, so kill(0) would report a murdered bystander as alive and pass this
-      # test on a regression. `exited?` waitpid()s — it cannot be fooled.
-      refute exited?(bystander, timeout: 2),
-             "THE BLOCKING BUG: fast-check KILLED an innocent process (pid #{bystander}) whose only " \
-             "crime was being handed the recycled pgid #{bygid}"
-      assert_equal 0, code, "and a stranger's process must not wedge the cert either: #{out}"
-      assert_match(/NOT killing it/i, out, "the cert must say out loud that it refused to kill")
-      refute_empty lane_calls(lines, "TEST"), "it discards the stale lock and runs normally"
-    ensure
-      begin
-        if bystander
-          Process.kill("KILL", bystander)
-          Process.waitpid(bystander)
-        end
-      rescue Errno::ESRCH, Errno::ECHILD
-        nil # already gone — which would mean the regression this test exists to catch
-      end
-    end
-  end
-
-  def test_a_legacy_runlock_with_no_identity_refuses_rather_than_killing_on_a_guess
-    with_repo do |dir, _|
-      # A lock written before the guard recorded identity (this is what is on disk in
-      # every worktree today). Something is alive under that pgid. It might be our
-      # stranded suite; it might be the operator's editor. We cannot tell — and a reaper
-      # that guesses is worse than no reaper, so a human decides.
-      unknown = Process.spawn("sleep 120", pgroup: true)
-      ungid = Process.getpgid(unknown)
-      write_lock(dir, cert_pid: 999_999, pgid: ungid, pgid_started_at: nil)
-
-      out, code, lines = run_check(dir, implicit_root: true)
-
-      refute exited?(unknown, timeout: 2), "never kill what you cannot prove is yours"
-      assert_equal 1, code, "an unprovable claim on the test DB is refused, not walked into: #{out}"
-      assert_match(/#{ungid}/, out, "the refusal NAMES what it found")
-      assert_match(/rm .*cert-run\.json/, out, "and hands over the way to clear a lock that is not yours")
-      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
-    ensure
-      begin
-        if unknown
-          Process.kill("KILL", unknown)
-          Process.waitpid(unknown)
-        end
-      rescue Errno::ESRCH, Errno::ECHILD
-        nil # already gone — which would mean the regression this test exists to catch
-      end
-    end
-  end
-
-  # THE SECOND BUG, end to end through the real bin/fast-check (review, 2026-07-14).
-  #
-  # A truncated runlock names process group 1. pid 1 (launchd/init) is always alive, so the
-  # guard finds live members under that number and REFUSES — correctly. The bug was what it
-  # PRINTED while refusing:
-  #
-  #   If it IS a stranded suite:  kill -TERM -1
-  #
-  # POSIX defines `kill -TERM -1` as EVERY process the caller may signal. The cert would not
-  # fire it — `signalable?` saw to that — and then handed it to a human to paste, in the
-  # house's authoritative "here is how to clear it" voice, at the exact moment (35 minutes
-  # into a wedge) that a human pastes without reading. The code path was hardened and the
-  # COPY path was not, and the copy path is the one with a human on the end of it.
-  #
-  # This asserts it where an operator actually meets it: on the real cert's real stdout.
-  def test_a_runlock_naming_group_1_refuses_without_ever_printing_kill_TERM_minus_1
-    with_repo do |dir, _|
-      write_lock(dir, cert_pid: 999_999, pgid: 1, pgid_started_at: nil)
-
-      out, code, lines = run_check(dir, implicit_root: true)
-
-      assert_equal 1, code, "a runlock naming group 1 is garbage — refuse, never run beside it: #{out}"
-      refute_match(/kill\s+(?:-\w+\s+)*-?[01]\b/, out,
-                   "THE BUG: the cert refused to FIRE `kill -TERM -1` and then PRINTED it for a human " \
-                   "to paste. It signals every process the caller owns. Full output:\n#{out}")
-      assert_match(/rm .*cert-run\.json/, out,
-                   "a lock naming group 1 is garbage by construction; the only remediation is to discard it")
-      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
-    end
-  end
-
-  def test_explicit_root_override_bypasses_the_dirty_tree_guard
-    # Same contract as the root guard: an EXPLICIT FAST_CHECK_ROOT is the deliberate
-    # CI/test seam, so it bypasses. (run_check's default path sets it — that is why
-    # every other test in this file certifies against the fixture's uncommitted diff.)
-    with_repo do |dir, _|
-      out, code, = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
-      assert_equal 0, code, "an explicitly-declared root still certifies: #{out}"
-      refute_match(/DIRTY/, out)
-    end
-  end
-
-  # Commit everything in `dir` — the fixture's uncommitted branch diff — so the cert
-  # runs against a fully-committed HEAD, which the dirty-tree guard now requires.
-  def commit_all(dir)
-    assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
-    assert system("git", "-C", dir, "commit", "-qm", "widget", out: File::NULL, err: File::NULL)
   end
 end

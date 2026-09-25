@@ -32,8 +32,7 @@ The gate flow order: [G1 Cert](g1-cert.md) → [DoR](dor.md) → **G2 Review**
   lens. No gates, no verdict-drive: a defect reaches the primary as a scout
   report, and the primary — the review claim's holder — decides whether to spend
   the task's bounce. Any reviewer may RAISE a blocking finding (`bin/task note
-  <slug> --comment` spends none); a `--kind rework` block by any soul other than
-  the claim's holder is REFUSED with exit 11 (`lib/review_verdict_gate.rb`).
+  <slug> --comment` spends none).
 
 Each lane's verdict comes from its reviewer's **scout report**:
 `merge-ready` passes the lane; `request-changes`, `wait-for-ci`, and

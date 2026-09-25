@@ -28,7 +28,7 @@ simpler, the specifics stay exact.
 - **Plain words first.** Introduce a new concept in familiar terms before its
   jargon name; re-explaining a thing simply is the proof you understand it.
 - **Brevity always.** Omit needless words — the house guide is *The Elements of
-  Style* (see the House Writing Style section of the agent entry).
+  Style* (see House Writing Style below).
 - **No wall of prose.** Three sentences is the ceiling before you switch to a
   list or table.
 
@@ -156,10 +156,9 @@ Use these for the `firm` rows rather than guessing:
 
 | Work | Typical | Note |
 |------|---------|------|
-| `bin/fast-check <task>` | ~1 min | the builder default cert |
+| `bin/fast-check <task>` | ~1 min | the builder's optional pre-flight |
 | `bin/ship <task>` (cold) | ~12 min | includes the CI wait; ~3 min with `SHIP_CI_WAIT=off` |
-| CI full suite on a PR | ~9 min | the authoritative lane |
-| `bin/full-suite-check <task>` | ~31 min | local, CI-independent — measured against CI's ~9 |
+| CI full suite on a PR | ~9 min | the one verdict per tree |
 
 Everything else — a review agent, an exploration sweep, a research fan-out — is
 `rough`. Estimate from the work's shape, and let the elapsed column carry the
@@ -255,6 +254,27 @@ The mechanics that still matter (`studio-engine/app/models/studio/link.rb:37`):
   does this before it prints.
 - **turf-monster note:** its request-side controllers derive `return_to` from
   contest params, so pass the path you actually want him on.
+
+## House Writing Style — correct Mr. McRitchie's copy
+
+Mr. McRitchie's prompts and drafts often arrive with spelling and grammar
+errors. Treat them as normal input, never as intent. The standing rules:
+
+- **Correct as you transcribe.** When his words head anywhere durable — UI
+  copy, emails, docs, task records, PR text — fix spelling, punctuation, and
+  grammar on the way through. This autonomy is standing: do not ask permission
+  for mechanical corrections, and never reproduce a typo into an app or doc.
+- **Mechanics only.** Correct the mechanics; keep his meaning, facts, and
+  voice. If a garbled phrase leaves the intent genuinely ambiguous, ask, and
+  list the readings you considered.
+- **The house guide is *The Elements of Style* (Strunk & White)** — Mr.
+  McRitchie's favorite book on writing well. Compose and correct by its
+  teachings: omit needless words; prefer the active voice; put statements in
+  positive form; use definite, specific, concrete language.
+- **Guardrails.** Style corrections never rename code identifiers, routes, or
+  API fields on their own; frozen archives and audit snapshots stay as
+  written; proper nouns and domain jargon stand. App-bound copy still rides
+  the DevOps cycle like any other change.
 
 ## Guardrails
 

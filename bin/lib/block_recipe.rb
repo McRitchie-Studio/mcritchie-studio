@@ -14,10 +14,6 @@ require_relative "fast_lane"
 # NIL for every other kind. Measured 2026-09-08 by executing both recipes verbatim:
 #
 #   the breaker-ack re-run, pasted by the reviewer it was printed for
-#     → exit 11, ZERO writes. It resolves to "avi", which grades FOREIGN against the
-#       reviewer's own live claim. The breaker hands the verdict owner a command the
-#       verdict-owner gate then refuses him.
-#   the same re-run with no live review claim
 #     → exit 0, and it WRITES `by: "avi"` — a bounce recorded against a soul that did
 #       nothing.
 #   the escalation (`--kind dependency`)
@@ -30,9 +26,8 @@ require_relative "fast_lane"
 # unattributed block joins the task's AUTHOR SET and makes `bin/reviewer-select` refuse
 # to pick. It does not. `Task#block!` lands the task on `building` with `blocked_at`
 # set, which `build_claim_save?` explicitly rejects and `submit_save?` never matches,
-# so `enforce_builder_stamp` writes no author on the block PATCH at all. The author set
-# is only reached SECOND-HAND, if the statusline later adopts the freed lease with no
-# soul and stamps `builders_unattributed` itself. The harm here is a misattributed
+# so `enforce_builder_stamp` writes no author on the block PATCH at all. The harm here
+# is a misattributed
 # audit row — real, and worth the fix, but not a disarmed no-self-review guard.
 #
 # WHY A TABLE AND NOT TWO METHODS. The escalation was a sibling of the filed defect,

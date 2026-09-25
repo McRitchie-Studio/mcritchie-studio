@@ -478,8 +478,8 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
                                       env: { "AGENT_WORKTREE_TASK_JSON" => live_claim_json })
 
     assert status.success?, err
-    assert_includes out, "withheld mcritchie-studio/terminal-context: held by a live builder claim"
-    assert_match(/builder heartbeat \d+s ago/, out, "the heartbeat age makes the hold checkable")
+    assert_includes out, "withheld mcritchie-studio/terminal-context: held by a legacy build lease"
+    assert_match(/lease renewed \d+s ago/, out, "the heartbeat age makes the hold checkable")
     # The old copy ("no clean merged or base-equivalent candidates") was a LIE here: the
     # desk IS clean and IS base-equivalent — it is simply occupied.
     assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
@@ -488,7 +488,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   # THE CORRUPT FOURTH STATE. A claim whose expiry is present but unparseable is unverifiable:
   # withheld (an outage-grade "I cannot tell", not a free desk), but the reason must be HONEST.
-  # Before the corrupt_expiry? branch this printed "held by a live builder claim … heartbeat  s
+  # Before the corrupt_expiry? branch this printed "held by a legacy build lease … heartbeat  s
   # ago" — a builder that was never confirmed, plus a nil-age interpolation. This asserts the
   # honest "claim expiry unverifiable" copy propagates through report_withheld.
   test "[integration] cleanup withholds a corrupt-claim worktree as expiry-unverifiable, not a live builder" do
@@ -500,7 +500,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_includes out, "withheld mcritchie-studio/terminal-context: claim expiry unverifiable"
-    refute_includes out, "held by a live builder claim",
+    refute_includes out, "held by a legacy build lease",
                     "a corrupt lease is NOT a confirmed builder — the hold must not misattribute one"
     refute_match(/heartbeat\s+s ago/, out, "the garbled nil-age interpolation must be gone")
     assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
@@ -514,7 +514,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
                                       env: removal_env("AGENT_WORKTREE_TASK_JSON" => live_claim_json))
 
     assert status.success?, "#{out}\n#{err}"
-    assert_includes out, "withheld mcritchie-studio/terminal-context: held by a live builder claim"
+    assert_includes out, "withheld mcritchie-studio/terminal-context: held by a legacy build lease"
     assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
     refute_includes out, "reclaim candidates:"
   end
@@ -553,7 +553,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert status.success?, "#{out}\n#{err}"
     assert Dir.exist?(@worktree_dir),
            "a builder who claimed the task AFTER selection must not have their desk destroyed"
-    assert_includes out, "skipping mcritchie-studio/terminal-context: held by a live builder claim"
+    assert_includes out, "skipping mcritchie-studio/terminal-context: held by a legacy build lease"
     refute_includes out, "reclaimed mcritchie-studio/terminal-context"
   end
 
@@ -713,7 +713,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     payload = JSON.parse(File.read(registry))
     worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
     refute worktree.fetch("cleanup_candidate"), "the conductor must not be told to remove a held desk"
-    assert_match(/live builder claim/, worktree.fetch("withheld_reason"), "…and it must be told WHY")
+    assert_match(/legacy build lease/, worktree.fetch("withheld_reason"), "…and it must be told WHY")
     assert_equal 0, payload.dig("summary", "cleanup_candidates"), "the summary agrees with the field"
     assert_equal 1, payload.dig("summary", "withheld")
   end
@@ -756,7 +756,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: {})
 
     assert status.success?, err
-    assert_match(/has no bound task, so no build claim can be checked/, err,
+    assert_match(/has no bound task, so no build lease can be checked/, err,
                  "the desk we actually lost must not fail open in silence")
     refute_includes out, "cleanup candidates:",
                     "a desk with no claim to check is the one the sweep ate — the desk channel " \

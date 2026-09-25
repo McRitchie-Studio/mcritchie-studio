@@ -13,14 +13,7 @@ tasks first.** You filed them, so you still hold the context that made them wort
 filing, and there is rarely a shortage. Reaching into another session's tasks is
 what you do when you run out — not what you open with.
 
-> **Stale GitHub credential? Fix it yourself and keep going — do not escalate.**
-> App installation tokens expire **~hourly BY DESIGN**. On `Bad credentials`, a
-> 401/403, an unreadable CI, or a `gh auth login` prompt, run
-> `eval "$(bin/gh-auth-refresh --export)"` — read its **stderr**, because `eval`
-> hides the exit code — then retry the exact command that failed. Asking Mr.
-> McRitchie to run `gh auth login` is both the terminal chore the operating model
-> forbids and a step that cannot work: `gh` refuses to store a credential while
-> `GH_TOKEN` is set. Architecture and symptom→fix: [`source-control.md`](source-control.md).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
 ## Status: Active
 
@@ -203,9 +196,9 @@ this rubric, in order, and **say the reason out loud** when you claim:
 
 ### The anti-rank — leave these for a dedicated sitting
 
-- **`requires_migration: true`** — the `backend_migration` lane is GLOBAL and
-  serializes every migration writer on the machine. One at a time, and never as
-  one of four.
+- **`requires_migration: true`** — two migrations in flight can collide, and the
+  duplicate-migration check refuses the second at ship. One at a time, and never
+  as one of four.
 - **`onchain` / `onchain-vertical` shapes** — operator/QA-stop verification.
 - **Acceptance you cannot restate in one sentence.** Ask Mr. McRitchie instead of
   guessing; a misread acceptance costs the whole build.

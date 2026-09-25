@@ -134,13 +134,19 @@ module Api
       end
 
       def task_json(task)
+        unresolved = task.unresolved_feedback_activity
         task.as_json.merge(
           # Override the raw gates column with the self-healing read — a stale
           # version (or a pre-backfill row) rebuilds live from gate_runs instead
           # of serving `{}`. Index keeps the raw column (no per-row rebuild cost).
           "gates" => Task::GatesProjection.cached_or_built(task),
           "latest_activity" => latest_activity_json(task),
-          "unresolved_feedback" => activity_json(task.unresolved_feedback_activity),
+          "unresolved_feedback" => activity_json(unresolved),
+          # THE OPERATOR WINDOWS, derived (Task#operator_windows): each open
+          # approval/escalation clock with its ISO end, remaining seconds and a
+          # `lapsed` flag, escalation first. `bin/task wait-window` polls this;
+          # an empty list means nothing is waiting on the operator.
+          "windows" => task.operator_windows(unresolved: unresolved).map(&:to_h),
           # FRESH BUILD OR RESUBMISSION — beside `unresolved_feedback`, deliberately,
           # because that field is what a reader reaches for and it answers a DIFFERENT
           # question: it holds the TEXT of a send-back and is cleared only by an
@@ -265,7 +271,12 @@ module Api
         # before_action — so treat anything that isn't Parameters as "no payload".
         event = nil unless event.is_a?(ActionController::Parameters)
         Current.task_event_source = sanitized_task_event_source(event)
+        # A PATCH naming `stage: building` is a BUILD CLAIM even when the task is
+        # already building (a re-claim or a handoff) — Task#build_claim_save?.
+        Current.task_build_claim = params[:stage].to_s == "building"
         return if event.blank?
+
+        Current.task_event_session = event[:session].presence
 
         Current.task_event_actor      = event[:actor].presence
         Current.task_event_model      = event[:model].presence
@@ -320,16 +331,10 @@ module Api
           # Set through the same one-path PATCH update as `stage` (no named-transition
           # endpoint — see config/routes.rb).
           :merged,
-          # The `backend_migration` exclusive-lane flag (exclusive-lanes.md). The
-          # SOP has always told a backend Dev to SELF-FLAG the moment they realize
-          # they need a migration — "update the flag, acquire the lane, then write
-          # the migration file" — while this permit list left `requires_migration`
-          # writable ONLY through the admin-gated /sizing editor, so no agent could
-          # carry out the instruction. Permitting it here widens the writers from
-          # admin-only to any bearer-token agent, which is the point: the flag is a
-          # DevOps signal like the size trio beside it, not an authorization
-          # boundary. The lane's mutual exclusion lives in MigrationLaneClaim, and
-          # is not weakened by anyone flipping this boolean.
+          # A plain flag a builder SELF-FLAGS on discovering a schema change —
+          # a DevOps signal like the size trio beside it, not an authorization
+          # boundary. (The exclusive migration lane it once paired with is
+          # deleted; bin/lib/migration_collision.rb is the protection.)
           :requires_migration,
           # The epic handle (`bin/task create|begin|update --epic <slug>`), a
           # TOP-LEVEL column like `dependencies` below it — never a devops key,

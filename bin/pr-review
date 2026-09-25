@@ -391,9 +391,8 @@ def reviewer_prompt(task, reviewer, role, reviewers)
     else
       "As the LIGHT you are a focused second read through your domain lens. You do NOT run the gates and do NOT " \
         "drive the verdict — report your findings up to the PRIMARY, who owns it. The task's bounce belongs to " \
-        "the review claim's holder, and that is not you: do NOT run `bin/task block` on this task. During a live " \
-        "review claim a `--kind rework` block by any soul other than the claim's holder is REFUSED with exit 11 " \
-        "and writes nothing. Record a finding WITHOUT spending the bounce — any reviewer may do this — with " \
+        "the review claim's holder, and that is not you: do NOT run `bin/task block` on this task. " \
+        "Record a finding WITHOUT spending the bounce — any reviewer may do this — with " \
         "`#{TASK_CMD} note #{task.fetch("slug")} --comment \"<your finding>\"`, then hand it to the primary."
     end
 
@@ -978,15 +977,16 @@ end
 #
 # Names the SEATED reviewers when they are known. When they are not — a resumed
 # supervisor, a hand-spawned review, a snapshot that lost the pair — it records
-# `--unnamed`, which makes the author set INCOMPLETE and makes reviewer-select
-# REFUSE until a human names the pusher. That asymmetry is the whole design: a
-# fix-forward we cannot attribute must fail CLOSED, because the alternative is the
-# populated-and-confident-but-short author set this seam exists to prevent.
+# nothing and says so: the pusher's commit still carries its git author, which
+# Task#derived_authors reads.
 def record_fix_forward(slug, reviewer_slugs)
   souls = Array(reviewer_slugs).map { |soul| soul.to_s.strip }.reject(&:empty?)
-  args = souls.empty? ? ["--unnamed"] : ["--agent", souls.join(",")]
-  ok = task_write(["fix-forward", slug, *args])
-  puts "  fix-forward: PR head moved under review — recorded #{souls.empty? ? "UNNAMED" : souls.join(" + ")} as author(s)" if ok
+  if souls.empty?
+    warn "  fix-forward: PR head moved under review on #{slug}, but no seated reviewer is known — nothing recorded"
+    return false
+  end
+  ok = task_write(["fix-forward", slug, "--agent", souls.join(",")])
+  puts "  fix-forward: PR head moved under review — recorded #{souls.join(" + ")} as author(s)" if ok
   warn "  fix-forward: FAILED to record the head move on #{slug} — reviewer-select may seat the pusher" unless ok
   ok
 end
@@ -1155,7 +1155,7 @@ def start_review(task, review_number)
                     "doc-only the gate takes its EXEMPT path, where NO cert stands in and a GREEN CI is " \
                     "NECESSARY AND NOT SUFFICIENT: that path refuses on an unread PR file list too, and one " \
                     "fault hides both reads — a refused token, or a `gh`/network failure; do not send the " \
-                    "builder to bin/full-suite-check on that refusal"
+                    "builder to a local cert on that refusal — there is none"
                 else
                   ""
                 end

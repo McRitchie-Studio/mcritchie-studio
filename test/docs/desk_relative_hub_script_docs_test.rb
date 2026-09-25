@@ -9,7 +9,7 @@ require "test_helper"
 # carries bin/ship, so it works there; a turf-monster or rolio desk carries none, so a
 # builder pasting it got `No such file or directory` — the exact failure the change that
 # wrote it existed to kill. Nothing caught it: the entry-doc guard
-# (test/docs/fast_lane_hub_path_docs_test.rb) reads only claude.md and index.md, and its
+# (test/docs/fast_lane_hub_path_docs_test.rb) reads only the entry docs and modules/fast-lane.md, and its
 # BARE pattern exempts any `/`-prefixed form by design, so `<desk>/bin/ship` passes it.
 #
 # The rule here is narrower than that guard and complementary to it: in ANY fenced block
@@ -20,7 +20,7 @@ class DeskRelativeHubScriptDocsTest < ActiveSupport::TestCase
 
   # Scripts only the hub carries. Each must really be an executable in THIS repo's bin/
   # (asserted below), so the list cannot drift into naming phantoms.
-  HUB_ONLY = %w[ship ship-wait fast-check full-suite-check dor-check task].freeze
+  HUB_ONLY = %w[ship ship-wait fast-check dor-check task].freeze
 
   # Longest-first so `ship` never shadows `ship-wait` in the alternation.
   DESK_BIN = %r{<(?:desk|worktree)>/bin/(#{Regexp.union(HUB_ONLY.sort_by { |s| -s.size })})(?![\w-])}

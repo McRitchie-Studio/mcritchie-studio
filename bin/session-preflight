@@ -675,8 +675,8 @@ end
       # moment a builder decides what to run. (The falsified phrase is described
       # rather than quoted here on purpose: test/docs/zap_control_lane_docs_test.rb
       # refuses it anywhere in this file, so quoting it to warn about it reddens the
-      # suite.) `full_suite_gate: true` means NOT EXEMPT, and since
-      # /tasks/dor-reads-settled-ci-verdict the cert gate has ONE form of evidence for
+      # suite.) test-only is NOT EXEMPT from the CI gate, and since
+      # /tasks/dor-reads-settled-ci-verdict that gate has ONE form of evidence for
       # every shape: a SETTLED GREEN CI for the PR's head (bin/lib/ci_gate.rb). A
       # builder-side pending CI is a WAIT, not a failure; no local run stands in.
       puts "  claimable ONLY on a diff dor-check OBSERVES to be 100% test code (test/, tests/, e2e/) — " \

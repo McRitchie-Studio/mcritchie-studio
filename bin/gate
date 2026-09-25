@@ -3,8 +3,8 @@
 
 # bin/gate — record gate-run markers for the branded testing gates (G1 Cert …
 # G4 Ship; see docs/agents/modules/gates/). The thin CLI over the board's
-# /api/v1/gates surface: producers (bin/full-suite-check, bin/dor-check,
-# bin/pr-review) shell it FIRE-AND-FORGET so a gate write never breaks the work
+# /api/v1/gates surface: producers (bin/dor-check, bin/pr-review, bin/release)
+# shell it FIRE-AND-FORGET so a gate write never breaks the work
 # it observes; humans use `show` to read a subject's attempts.
 #
 # Usage:
@@ -129,7 +129,7 @@ end
 
 # WHOSE gate run this is. A gate row records that a cert ran; it did not record
 # WHO ran it, and that gap manufactured evidence: on 2026-08-13 a challenger's own
-# `bin/full-suite-check` opened a g1_cert on a task held by someone else, and the
+# local cert (retired since) opened a g1_cert on a task held by someone else, and the
 # claim gate then quoted that cert back to the challenger as proof the HOLDER was
 # alive. Progress with no owner gets credited to whoever holds the claim.
 #

@@ -128,9 +128,16 @@ Use the production board. Do not pass `--local`.
      --feedback "POLICY QUESTION for Alex. Reviewer: <X>. Builder: <Z>. Avi's recommendation: <ruling I would make>. Window: 20 min from <time>; on lapse the recommendation stands." --agent avi
    ```
 
-   Until the operator-window fields land on the board, put the same question to
-   Alex in chat with the time. When the window lapses without an answer, record
-   the recommendation as the ruling, labeled `auto-decision`, and continue.
+   The board derives the 20-minute window from `blocked_at` and shows it as a
+   countdown chip on the card; put the same question to Alex in chat with the
+   time, then wait on it:
+
+   ```bash
+   bin/task wait-window <slug>     # exit 0 answered (block cleared) · 2 lapsed · 1 board unreadable
+   ```
+
+   When it lapses without an answer, record the recommendation as the ruling,
+   labeled `auto-decision`, clear the block, and continue.
 
 9. **One learning, at most.** If the arbitration taught something a future
    builder or reviewer would use, one line:

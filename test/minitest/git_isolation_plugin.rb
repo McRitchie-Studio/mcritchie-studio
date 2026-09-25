@@ -11,7 +11,7 @@
 #       - <tmpdir>/.git/objects/maintenance.lock
 #
 # It has reddened CI at least four times (2026-08-19, -08-20 twice — once on a
-# `rails` shard on `accepted` — and 2026-08-30 on CertRootGuardTest). Nothing is
+# `rails` shard on `accepted` — and 2026-08-30 on the root guard's test). Nothing is
 # wrong with the tests. It is a race between git's housekeeping and the tmpdir's
 # teardown, and it fires in a DIFFERENT file each time.
 #
@@ -35,7 +35,7 @@
 # `load_plugins` BEFORE `process_args` — which is what triggers railties'
 # `load_tests`. So this module body executes before a single test file is
 # required, on every automated path: `bin/rails test`, `rake test` (which shells
-# back to it), `bin/fast-check`, `bin/full-suite-check`, `bin/ci-shard`,
+# back to it), `bin/fast-check`, `bin/ci-shard`,
 # `bin/agent-worktree test`, and the release gate.
 #
 # ⚠️ TWO LIMITS, both measured, both worth knowing before you trust this:

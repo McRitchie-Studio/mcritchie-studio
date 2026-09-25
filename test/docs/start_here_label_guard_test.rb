@@ -2,6 +2,12 @@
 
 require "test_helper"
 
+# RETARGETED 2026-09-24 (agents-map-two-hundred-lines): the Start Here table moved
+# out of docs/agents/index.md, which became a ~200-line map, into
+# docs/agents/start-here.md, verbatim. The rule it guards is unchanged, so the guard
+# follows the table. Historical line citations below (index.md:613) describe the
+# file as it stood then.
+#
 # GUARD (guard-start-here-labels, 2026-09-04): the "Start Here" table in
 # docs/agents/index.md is prose-labelled — `| Turf Monster live score watch SOP |
 # `…/sops/live-score-watch.md` |` — and until this test existed NOTHING checked
@@ -74,7 +80,7 @@ require "test_helper"
 # not this guard, and pretending otherwise would bury two real misses in a
 # skip list.
 class StartHereLabelGuardTest < ActiveSupport::TestCase
-  INDEX = Rails.root.join("docs/agents/index.md")
+  INDEX = Rails.root.join("docs/agents/start-here.md")
   SECTION_HEADING = "## Start Here"
 
   # Two-column Start Here row pointing into an agent's own SOP or heartbeat file.
@@ -141,7 +147,7 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
     text = INDEX.read
     start = text.index(SECTION_HEADING)
     refute_nil start,
-      "docs/agents/index.md lost its '#{SECTION_HEADING}' heading. This guard scopes " \
+      "docs/agents/start-here.md lost its '#{SECTION_HEADING}' heading. This guard scopes " \
       "itself by that heading; without it the scan reads NOTHING and passes vacuously."
 
     finish = text.index(/^## /, start + SECTION_HEADING.length) || text.length
@@ -188,7 +194,7 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
     {
       unrowed: on_disk.sort - seen.sort,
       dead: rows.reject { |row| on_disk.include?(row[:path]) }
-                .map { |row| "docs/agents/index.md:#{row[:line]}  — #{row[:path]} is not on disk" },
+                .map { |row| "docs/agents/start-here.md:#{row[:line]}  — #{row[:path]} is not on disk" },
       duplicated: seen.tally.select { |_, count| count > 1 }
     }
   end
@@ -268,7 +274,7 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
       "rows:\n#{violations[:unrowed].join("\n")}"
 
     assert_empty violations[:unrowed],
-      "These SOP/heartbeat files exist on disk but no Start Here row in docs/agents/index.md " \
+      "These SOP/heartbeat files exist on disk but no Start Here row in docs/agents/start-here.md " \
       "points at them, so this guard never inspects a label for them. Add the row."
 
     # The mirror image, and the miss this closes: a row that OUTLIVES its file.
@@ -290,7 +296,7 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
       why = label_violation(**row)
       next if why.nil?
 
-      "docs/agents/index.md:#{row[:line]}  — #{why}"
+      "docs/agents/start-here.md:#{row[:line]}  — #{why}"
     end
 
     assert_empty offenders,
@@ -385,10 +391,10 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
     dead = "docs/agents/agents/steffon/sops/bucket-provision.md"
 
     # THE LINE NUMBERS ARE FIXTURE VALUES, NOT CITATIONS — but the expected message
-    # necessarily spells one as `docs/agents/index.md:<n>`, and
+    # necessarily spells one as `docs/agents/start-here.md:<n>`, and
     # test/docs/citation_resolution_guard_test.rb's census cannot tell the two apart:
     # it reads that string as a pointer into the real file and requires the line to be
-    # substantive. So they point at the TOP of index.md (1 = its H1, 3 = its first
+    # substantive. So they point at the TOP of start-here.md (1 = its H1, 3 = its first
     # sentence), where an edit further down cannot rot them. They were 621/622 and did
     # rot, on 2026-09-14, when an unrelated three-line insertion higher up in that doc
     # slid line 622 onto a blank.
@@ -402,7 +408,7 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
     assert_empty violations[:unrowed],
       "a deleted file must not surface as unrowed — that is the direction already covered, and " \
       "reading it that way is how the miss stayed invisible"
-    assert_equal [ "docs/agents/index.md:3  — #{dead} is not on disk" ], violations[:dead],
+    assert_equal [ "docs/agents/start-here.md:3  — #{dead} is not on disk" ], violations[:dead],
       "a row outliving its file must be flagged, and the failure must name the row's line"
   end
 

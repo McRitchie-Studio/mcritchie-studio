@@ -154,15 +154,6 @@ class Task < ApplicationRecord
     }
   }.freeze
   REVIEW_STATUSES = %w[started completed failed info].freeze
-  # The `backend_migration` exclusive-lane key (docs/agents/system/exclusive-lanes.md).
-  # The lane is CLAIMED through MigrationLaneClaim, not here. Task once carried a
-  # `try_acquire_migration_lane` / `release_migration_lane` pair wrapping
-  # `pg_try_advisory_lock(hashtext(...))`; both are gone. A session advisory lock
-  # could not back this lane — bin/task is an HTTP client with no DB connection,
-  # and a lock taken in a web request rides the POOLED connection past the
-  # response, where it is re-entrant (two acquires on one pooled connection are
-  # BOTH granted). See MigrationLaneClaim for the durable, unique-indexed claim.
-  MIGRATION_LANE = "backend_migration".freeze
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
   # The only stages where a WAITING operator-approval request is meaningful: the
   # ones where the LOCAL DEMO the request points at is still servable, so somebody
@@ -347,11 +338,9 @@ class Task < ApplicationRecord
   #     later, written by exactly one internal path (OpenPrGuard#record) and never by
   #     a flag or a form. Splitting one would read as more abandonments than happened,
   #     the mirror of the newline hazard that writer already defends against.
-  #   fix_forward — identifier-shaped, and a split would be safe. Left alone anyway
-  #     because its joined entry fails CLOSED: ReviewerSelector#builder_known? needs
-  #     fix_forward_unnamed empty, so "carl,steffon" makes the selector REFUSE and a
-  #     human looks. Repairing it quietly would trade a loud stall for a silent
-  #     auto-correct on the no-self-review guarantee.
+  #   fix_forward — identifier-shaped, and a split would be safe. Left alone: a
+  #     joined "carl,steffon" entry names no soul and adds nobody, and bin/task
+  #     fix-forward already splits its --agent list before posting.
   # The rule is ASSERTED, not merely described here:
   # test/models/task_devops_identifier_lists_test.rb asks the prose question over the
   # COMPLEMENT of this constant, so a key wrongly added here fails there as well.
@@ -410,10 +399,14 @@ class Task < ApplicationRecord
   # priority clause, and `set_stage_timestamp` re-ranks a card to the top of its new
   # column on a stage move — both are Task-specific and stay here.
   include Studio::Board::Rankable
+  include TaskDerivedFacts
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
+  # Xan's one ship-time grade (Insights::TaskGrader). Destroyed with the task: the
+  # learning it banked lives on as an ActionGrade, so the lesson outlives the grade.
+  has_one :task_grade, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_transitions, foreign_key: :task_slug, primary_key: :slug,
                               inverse_of: :task, dependent: :destroy
@@ -546,14 +539,13 @@ class Task < ApplicationRecord
   # board UI form, a raw API call, the console — lands here, so the guard is on
   # the model rather than in any one caller. See #preserve_cert_evidence.
   before_save :preserve_cert_evidence
-  # The build claim is a BUILD-STAGE lease, re-asserted as an INVARIANT on every
-  # save rather than handled at any one transition. It both RELEASES the claim
-  # once the task leaves `building` and DEFENDS it from a client write that blanks
-  # or bypasses the keys while it is there. See #enforce_build_claim_invariant.
-  before_save :enforce_build_claim_invariant
+  # WHO CLAIMED THE BUILD — devops.claimed_session, a server-owned attribution
+  # record (no lease: the desk is the build claim). Stamped on a claim, defended
+  # otherwise, cleared on leaving `building`. See #stamp_build_claim_session.
+  before_save :stamp_build_claim_session
   # WHO BUILT THIS is a property of the build CLAIM, not of the transition into
-  # `building`. Registered AFTER enforce_build_claim_invariant so it reads the
-  # restored claim (that guard decides what counts as a claim write) — and, like
+  # `building`. Registered AFTER stamp_build_claim_session so it reads the
+  # stamped claimer — and, like
   # its five siblings above, it re-asserts a server-owned devops key on every save
   # so a client cannot clear it by posting it blank. See #enforce_builder_stamp.
   before_save :enforce_builder_stamp
@@ -568,6 +560,10 @@ class Task < ApplicationRecord
   # #autoderive_actual_size — it only fills a BLANK actual_size (never clobbers a
   # manual size) and never unwinds the ship if derivation fails.
   after_update :autoderive_actual_size, if: :saved_change_to_stage?
+  # ...and once the ship COMMITS, grade it (the learning loop, devops-v3 §9). After
+  # commit so the job reads the committed ship and its actual_size; enqueue only, so
+  # grading can never slow or roll back a ship. See #enqueue_task_grading.
+  after_commit :enqueue_task_grading, on: :update, if: -> { saved_change_to_stage? && stage == "shipped" }
   after_commit :refresh_duration_metrics_for_release_changes, on: %i[create update destroy]
   after_commit :refresh_testing_phases_after_change, on: %i[create update]
   # Avi auto shirt-sizes a task the instant it enters `designed` WITHOUT a po_size
@@ -1146,15 +1142,6 @@ class Task < ApplicationRecord
     Array(devops["builders"]).map { |s| self.class.canonical_soul(s) }.select(&:present?).uniq
   end
 
-  # The claiming session that named NO soul while other authors were already on
-  # record — i.e. "someone else worked this task and the record cannot say who".
-  # Present ⇒ the author set is INCOMPLETE, ReviewerSelector reports the builder
-  # UNKNOWN, and `bin/reviewer-select` refuses rather than rolling a reviewer who
-  # might be that someone. Server-owned like #devops_builders.
-  def devops_builders_unattributed
-    devops.fetch("builders_unattributed", "").presence
-  end
-
   # WHO MOVED THE PR HEAD OUTSIDE THE BUILD CLAIM — the reviewer fix-forward (a
   # "zap"), recorded by `bin/task fix-forward` and posted by bin/pr-review at the
   # seam where it already PROVES the head moved during review.
@@ -1175,8 +1162,7 @@ class Task < ApplicationRecord
   # ENTRIES THAT NAME A SOUL join `builders` (never `built_by` — a reviewer
   # recorded as the CURRENT builder of the PR he reviewed is the same defect
   # inverted; the same rule #reviewer_taking_the_build? already enforces). Entries
-  # that name NO soul are the "we saw a fix-forward and cannot attribute it" marker
-  # — ReviewerSelector reads them as an INCOMPLETE author set and the CLI refuses.
+  # that name no soul add nobody.
   def devops_fix_forward
     Array(devops["fix_forward"]).map { |slug| self.class.canonical_soul(slug) }.reject(&:empty?)
   end
@@ -1220,12 +1206,13 @@ class Task < ApplicationRecord
     format(RESUME_COMMANDS.fetch(provider, RESUME_COMMANDS["claude"]), "…#{id[-4..]}")
   end
 
-  # --- Build claim lease (V2: the enforcement gate) -------------------------
-  # The LIVE INSTANCE that owns this task while it's building — the session id
-  # PLUS a per-process nonce, under a TTL lease (claim_expires_at) renewed by the
-  # heartbeat (bin/statusline). `bin/task move <task> building` refuses to claim a
-  # task already held by a different, non-expired instance. The lease math lives
-  # in ClaimLease (shared verbatim with the standalone bin/task CLI).
+  # --- Build claim lease fields (legacy readers) -----------------------------
+  # The session id PLUS a per-process nonce, under a TTL (claim_expires_at). The
+  # build claim itself is now the DESK bound to the task (bin/lib/desk_claim.rb):
+  # no lease, no TTL, no renewer — nothing renews these fields for a build, and
+  # bin/statusline renews only the DevOps shift lease. These readers remain for
+  # records that still carry the fields. The lease math lives in ClaimLease
+  # (shared verbatim with the standalone bin/task CLI).
   def devops_claim
     ClaimLease.from_devops(devops)
   end
@@ -1292,7 +1279,7 @@ class Task < ApplicationRecord
   #
   # The fields above answer "what has landed on this task". They do NOT answer
   # "is the holder alive", and on 2026-08-13 the claim gate treated them as if
-  # they did: a challenger ran `bin/full-suite-check`, the cert landed a g1_cert
+  # they did: a challenger ran the (since retired) local cert, which landed a g1_cert
   # gate row on the task, and the gate refused that same challenger with "last
   # durable progress ~2m ago (g1_cert passed)" — the challenger's OWN work, quoted
   # back as proof the holder was working. Unowned progress gets credited to
@@ -1437,6 +1424,20 @@ class Task < ApplicationRecord
 
   def waiting_for_operator_approval?
     approval_status == OPERATOR_APPROVAL_WAITING
+  end
+
+  # The OPERATOR WINDOWS this task carries right now (Devops::Windows, design
+  # section 6) — DERIVED, escalation first: the approval clock from
+  # devops.approval_requested_at while the request is `waiting`, and the
+  # escalation clock from blocked_at on a live dependency block whose summary
+  # leads `Escalated:`. Nothing is stored; the card, the task API and
+  # `bin/task wait-window` all read this one method. `unresolved` is the open
+  # block Activity the board and the API already preload (the summary lives on
+  # it); left nil, a live block looks it up itself — one query, only when there
+  # is a block to read.
+  def operator_windows(unresolved: nil)
+    unresolved = unresolved_feedback_activity if unresolved.nil? && blocked?
+    Devops::Windows.for_task(self, unresolved: unresolved)
   end
 
   def unresolved_feedback_activity
@@ -2630,7 +2631,7 @@ class Task < ApplicationRecord
   # a block fills with a soul slug. nil when the row names nobody, and nil must
   # stay nil: a guessed owner is exactly the failure this exists to end.
   def progress_actor(row)
-    row.metadata.to_h["session"].presence || row.actor.presence
+    row.metadata.to_h["session"].presence || TaskEvent.named_actor(row.actor)
   end
 
   # The newest artifact produced BY a given session. Filtered in Ruby over the
@@ -2834,6 +2835,19 @@ class Task < ApplicationRecord
     log.save!
   end
 
+  # after_commit trigger: grade the task the moment it lands in `shipped`
+  # (TaskGradingJob → Insights::TaskGrader). Best-effort like its sibling below: an
+  # enqueue failure is logged, never raised, and the grader is idempotent, so the
+  # learning_loop:backfill task picks up anything a dropped enqueue missed.
+  def enqueue_task_grading
+    TaskGradingJob.perform_later(slug)
+  rescue StandardError => e
+    log = ErrorLog.capture!(e)
+    log.target = self
+    log.target_name = slug
+    log.save!
+  end
+
   # after_commit trigger: fire Avi's async shirt-sizer the moment a task ENTERS
   # `designed` with a blank po_size — a fresh create (the birth stage) or a move
   # back INTO designed that's still unsized. Enqueue only (AviSizingJob owns the
@@ -2898,7 +2912,11 @@ class Task < ApplicationRecord
       occurred_at: occurred,
       seconds_in_from: previous && (occurred - previous.occurred_at).round,
       source: Current.task_event_source,
-      actor: Current.task_event_actor.presence,
+      # NEVER blank (devops-v3 §9: 43% of transitions carried no actor). A move with
+      # no caller attribution — a model method, the conductor, a job — is recorded
+      # as TaskEvent::SYSTEM_ACTOR, which authorship readers skip (see
+      # TaskEvent.named_actor) so "system" is never mistaken for a builder or owner.
+      actor: Current.task_event_actor.to_s.strip.presence || TaskEvent::SYSTEM_ACTOR,
       **task_event_usage_attrs,
       # Merge the review-bypass marker (set only by Conductor.sweep!(override:true)
       # for `bin/release merge --override`) onto THIS transition, so the review-gate
@@ -3159,7 +3177,7 @@ class Task < ApplicationRecord
   def enforce_builder_stamp
     # An explicit devops teardown (the whole hash removed) is left alone — this
     # guard defends the builder key, not the existence of devops. Same posture as
-    # #enforce_build_claim_invariant.
+    # #stamp_build_claim_session.
     return unless metadata.is_a?(Hash) && metadata["devops"].is_a?(Hash)
 
     claim = build_claim_save?
@@ -3171,12 +3189,11 @@ class Task < ApplicationRecord
     # a confidently-wrong author set is worse than a refusing one.
     soul = (named unless reviewer_taking_the_build?(named)) ||
            self.class.canonical_soul(prior_devops["built_by"]).presence
-    authors, unattributed = builder_roll_call(claim, named, soul)
+    authors = builder_roll_call(claim, named, soul)
 
-    return if soul.nil? && authors.empty? && unattributed.nil?
+    return if soul.nil? && authors.empty?
     return if metadata["devops"]["built_by"].to_s == soul.to_s &&
-              Array(metadata["devops"]["builders"]) == authors &&
-              metadata["devops"]["builders_unattributed"].to_s == unattributed.to_s
+              Array(metadata["devops"]["builders"]) == authors
 
     merged = metadata.deep_dup
     merged["devops"]["built_by"] = soul if soul
@@ -3185,15 +3202,10 @@ class Task < ApplicationRecord
     else
       merged["devops"].delete("builders")
     end
-    if unattributed
-      merged["devops"]["builders_unattributed"] = unattributed
-    else
-      merged["devops"].delete("builders_unattributed")
-    end
     self.metadata = merged
   end
 
-  # THE AUTHOR SET, and whether it is COMPLETE. Returns [authors, unattributed].
+  # THE AUTHOR SET. Returns the authors.
   #
   # `built_by` holds ONE soul, but a task can have SEVERAL authors: a session limit
   # kills a builder mid-work and another soul finishes the job. Rule 1 of
@@ -3214,20 +3226,10 @@ class Task < ApplicationRecord
   # client attempt to write it and this callback rebuilds it from the prior record
   # on every save. A client can no more shrink the author set than forge it.
   #
-  # `unattributed` is the half that keeps this FAIL-CLOSED. Accumulating only helps
-  # when each claim names a soul; the handoff that names NOBODY (a bare `bin/task
-  # move <slug> building`, actor a session UUID) would otherwise leave a set of one
-  # that READS complete — the original bug, one layer along. When a claim from a
-  # DIFFERENT live instance resolves no soul while authors are already on record, we
-  # record WHICH session we could not name. Present ⇒ "someone else worked this and
-  # we cannot say who" ⇒ ReviewerSelector reports the builder UNKNOWN and the CLI
-  # refuses. It clears when that same session finally identifies itself.
-  #
-  # Keyed on the live INSTANCE (claimed_session + claim_nonce, ClaimLease's identity)
-  # rather than on the claim save, because the lease is renewed on a timer with no
-  # actor (the detached build-claim renewer every 30s, bin/statusline's heartbeat every
-  # 45s): treating a renewal as an anonymous handoff would refuse every task in the
-  # fleet, and a guard that cries wolf gets routed around.
+  # A claim or submit that names NO soul adds nobody. The UNNAMED marker that once
+  # recorded such a session (devops.builders_unattributed) is deleted (devops-v3
+  # 4b-ii-b): authors are also derived from git (Task#derived_authors), so a
+  # session-only claim no longer makes the set unknowable.
   #
   # TWO authorship moments, not one. Accumulating on the CLAIM alone still misses the
   # author who never claimed — see the `submit_save?` branch below, which closes that
@@ -3244,19 +3246,9 @@ class Task < ApplicationRecord
               .map { |s| self.class.canonical_soul(s) }.select { |s| self.class.soul?(s) }.uniq
     soul = self.class.canonical_soul(soul) if soul
     authors |= [soul] if soul && self.class.soul?(soul)
-    unattributed = prior_devops["builders_unattributed"].to_s.strip.presence
 
     if claim
-      if named
-        authors |= [named]
-        # The session we could not name has now named itself — the gap it opened is
-        # closed. ONLY that session closes it: a THIRD soul claiming by name says
-        # nothing about who the second one was, and clearing on any named claim
-        # would hand the fail-open straight back.
-        unattributed = nil if unattributed == claiming_party_id
-      elsif authors.any? && claim_party_changed?
-        unattributed = claiming_party_id
-      end
+      authors |= [named] if named
     elsif submit_save?
       # THE AUTHOR IS NOT ALWAYS THE CLAIMER — the half the accumulator above cannot
       # see. Everything before this point keys on the CLAIM, so a soul who never
@@ -3272,25 +3264,10 @@ class Task < ApplicationRecord
       # human decides, while this one fails CONFIDENTLY WRONG. It is also the standard
       # shape of a session-limit handover, which happened FOUR times that day.
       #
-      # So the SUBMIT is an authorship moment too, and it is the right one: it is the
-      # save that turns a diff into a PR, so whoever drives it is the party handing
-      # over work. Two outcomes, mirroring the claim above:
-      #   NAMED — `--actor <soul>` on the submit ADDS that soul to the set. The
-      #     handover author can therefore declare themselves through the flag that
-      #     already exists, with no new one to remember.
-      #   UNNAMED — a bare submit carries the mover's SESSION as its actor. When that
-      #     session is provably not the one that claimed the task, an author worked
-      #     here whom the record cannot name, which is precisely what
-      #     `builders_unattributed` already means: ReviewerSelector reports the authors
-      #     UNKNOWN and the CLI refuses. Omitting the flag is therefore LOUD (a refusal
-      #     a human must clear) rather than silent, which is the failure mode that
-      #     produced /tasks/agent-flag-silently-drops.
+      # So the SUBMIT is an authorship moment too: `--actor <soul>` on the submit
+      # ADDS that soul to the set. A bare submit names nobody and adds nobody.
       actor = Current.task_event_actor.to_s.strip
-      if self.class.soul?(actor)
-        authors |= [actor]
-      elsif authors.any? && (shipper = handoff_shipping_party(actor))
-        unattributed = shipper
-      end
+      authors |= [actor] if self.class.soul?(actor)
     end
 
     # THE THIRD AUTHORSHIP MOMENT — the REVIEWER FIX-FORWARD (a "zap"), which is
@@ -3310,9 +3287,7 @@ class Task < ApplicationRecord
     # save, so re-folding it is idempotent and a task cannot lose its zap author to
     # an unrelated write. Entries that name no soul are deliberately dropped here and
     # read by ReviewerSelector instead — see #devops_fix_forward.
-    authors |= fix_forward_authors
-
-    [authors, unattributed]
+    authors | fix_forward_authors
   end
 
   # The souls named by `devops.fix_forward`, current save and prior record unioned.
@@ -3333,54 +3308,11 @@ class Task < ApplicationRecord
     stage == "submitted" && will_save_change_to_stage?
   end
 
-  # The SHIPPING session, when it is provably NOT the one holding the claim — the
-  # signature of an author who never claimed. nil (no signal, stay silent) unless
-  # every part of that is on record, because a guard that cries wolf gets routed
-  # around and this one has to survive the ordinary case untouched:
-  #   - a blank actor says nothing (a plain shell / CI submit stamps no actor);
-  #   - a soul actor is handled by the caller — it NAMES the author rather than
-  #     flagging one, so it never reaches here;
-  #   - an operator EMAIL is a board action, not a shipping session. Dragging a card
-  #     to `submitted` on the web is not evidence about who wrote the diff, and
-  #     stamping it would refuse reviews for a move that carries no authorship claim
-  #     at all (TasksController sets the actor to current_user.email there);
-  #   - a BLANK claimed_session leaves nothing to differ FROM. A claim that recorded
-  #     no session (plain shell / CI) is already the degraded path; inferring a
-  #     handover from its absence would flag every such task;
-  #   - and the common case by far — the claimer ships their OWN work, actor ==
-  #     claimed_session — must produce no signal whatsoever.
-  # What remains is the exact PR #1094 shape: session A claimed, session B shipped.
-  def handoff_shipping_party(actor)
-    return nil if actor.empty? || actor.include?("@")
-
-    claimed = prior_devops["claimed_session"].to_s.strip
-    return nil if claimed.empty? || actor == claimed
-
-    actor
-  end
-
-  # The party holding the claim — the agent SESSION (ClaimLease's `claimed_session`).
-  # Not the session+nonce pair: the nonce distinguishes two PROCESSES of one session
-  # (the operator's terminal-A/terminal-B case), which is the same party working, so
-  # keying on it would refuse to clear a gap the same soul had just closed from a
-  # restarted terminal. "unknown" when the claim names no session, so an
-  # unattributed handoff is still recorded (and still clearable) for want of an id.
-  def claiming_party_id
-    devops = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
-    devops["claimed_session"].to_s.strip.presence || "unknown"
-  end
-
-  # True when a DIFFERENT party is claiming than the one on record — a handoff, not
-  # a heartbeat. claim_expires_at moves on every statusline renewal by design and
-  # claim_nonce moves on every new process, so neither can mark a change of hands.
-  def claim_party_changed?
-    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
-    current["claimed_session"].to_s != prior_devops["claimed_session"].to_s
-  end
-
   # True when THIS save is a build claim: the task lands (or sits) on `building`
-  # and the save either moves it there or (re)writes the claim lease — the two
-  # shapes `bin/task move <slug> building` takes, whether or not the stage changes.
+  # and the save either moves it there or is a PATCH naming `stage: building`
+  # (Current.task_build_claim) — the two shapes `bin/task move <slug> building`
+  # takes, whether or not the stage changes. There is no lease to rewrite any more:
+  # the desk is the build claim (bin/lib/desk_claim.rb).
   # A block! lands on `building` too but is NOT a build claim: the blocker is not
   # the builder (detected by blocked_at being set in this same save).
   #
@@ -3393,7 +3325,7 @@ class Task < ApplicationRecord
     return false if reviewing_party_renewal?
     return true if will_save_change_to_stage?
 
-    claim_lease_rewritten?
+    Current.task_build_claim ? true : false
   end
 
   # The reviewing session's write that CLAIMS NOTHING — the only one this seam may
@@ -3433,14 +3365,14 @@ class Task < ApplicationRecord
   # Nothing used to distinguish the two. A build claim is an assertion of
   # authorship (`bin/task move <slug> building`); a lease renewal is a liveness
   # ping. Both arrive as one shape — a devops PATCH that rewrites ClaimLease's
-  # keys — so #claim_lease_rewritten? read them identically, and any session whose
+  # keys — so the old lease-rewrite test read them identically, and any session whose
   # status line happened to be pointed at a `building` task became a recorded
   # (unnamed) worker on it.
   #
   # That is not hypothetical. `bin/task block <slug> --kind rework` lands the task
   # back on `building` and repoints the BLOCKING session's feature marker at it, so
   # bin/statusline fires that session's build-claim heartbeat seconds later. The
-  # claim keys were stripped at `submitted` (#enforce_build_claim_invariant), so the
+  # claim keys were stripped at `submitted`, so the
   # heartbeat adopted the free lease, the write named no soul, and #builder_roll_call
   # stamped `devops.builders_unattributed` with the REVIEWER's session id. The author
   # set then reads INCOMPLETE and `bin/reviewer-select` refuses the next round —
@@ -3498,8 +3430,7 @@ class Task < ApplicationRecord
   # method makes read 2. Perf-trivial on a unique index; stated because a comment that
   # says "never" is a thing the next caller builds on.
   def live_reviewing_party_claim
-    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
-    session = current["claimed_session"].to_s.strip
+    session = claiming_session.to_s.strip
     return nil if session.empty?
 
     review = TaskReviewClaim.find_by(task_slug: slug)
@@ -3599,14 +3530,18 @@ class Task < ApplicationRecord
     true
   end
 
-  # True when this save writes a claim lease that differs from the stored one — a
-  # re-claim or a renewal. Compared AFTER enforce_build_claim_invariant, so a write
-  # that simply omitted the claim — a raw whole-column `metadata:` assignment, or a
-  # key posted blank — reads as unchanged once that guard restores the keys from the
-  # prior record, and is correctly not a claim.
-  def claim_lease_rewritten?
-    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
-    ClaimLease::CLAIM_KEYS.any? { |key| current[key].to_s != prior_devops[key].to_s }
+  # The session making THIS build claim: the claiming PATCH's event session (bin/task
+  # sends it on every `move building` and `begin` claim), else the event actor when
+  # that is a session id rather than a soul or an operator email (an older CLI's
+  # bare move). nil when the write names no session.
+  def claiming_session
+    session = Current.task_event_session.to_s.strip
+    return session if session.present?
+
+    actor = Current.task_event_actor.to_s.strip
+    return nil if actor.empty? || actor.include?("@") || self.class.soul?(actor)
+
+    actor
   end
 
   # The soul to record as the builder, or nil to leave built_by as-is. Precedence:
@@ -3851,15 +3786,15 @@ class Task < ApplicationRecord
 
   # devops.checks_run carries TWO namespaces. The AUTHOR owns the tier tags
   # ("[unit] bin/rails test ..."), and a checks update REPLACES those — that is the
-  # documented contract. The CERT WRITERS (bin/fast-check, bin/full-suite-check)
-  # own the fingerprint-bound evidence ("[full-suite@<tree-hash>] ..."), which
-  # bin/dor-check reads to decide whether this exact code is certified. A write
-  # may supersede an evidence LANE only by SUPPLYING evidence for it; every lane
-  # the incoming list does not address is carried forward. The rule is symmetric
-  # (reverse regression 2026-07-20, fast-check-preserves-checks): a PURE-EVIDENCE
-  # write — every incoming line `[lane@fp]`, what a cert writer sends when its own
-  # read of checks_run came back stale or empty — supplies no author line and so
-  # cannot supersede the author namespace; the tier tags are carried forward too.
+  # documented contract. bin/control-check owns the fingerprint-bound control stamp
+  # ("[control@<tree-hash>] ..."), which bin/dor-check grades for the test-only
+  # shape. A write may supersede an evidence LANE only by SUPPLYING evidence for
+  # it; every lane the incoming list does not address is carried forward. The rule
+  # is symmetric (reverse regression 2026-07-20, fast-check-preserves-checks): a
+  # PURE-EVIDENCE write — every incoming line `[lane@fp]` — supplies no author line
+  # and so cannot supersede the author namespace; the tier tags are carried forward
+  # too. (The local cert receipts this rule was written for retired in DevOps v3
+  # phase 2b; the control stamp is the lane that remains.)
   #
   # Regression (2026-07-12, hit twice in one session): `bin/task update --checks`
   # replaced the whole array, so an agent recording its tier-tagged test plan
@@ -3887,77 +3822,34 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # The build claim exists only while the task is BUILDING, and while it is
-  # building it survives a client PATCH that forgot to mention it. One invariant,
-  # two failures it retires.
+  # THE BUILD CLAIM IS THE DESK (devops-v3 piece 4b-i; bin/lib/desk_claim.rb). The
+  # 120s lease it replaced (claimed_session + claim_nonce + claim_expires_at, renewed
+  # by a detached renewer and the status line) is gone. ONE key survives, as an
+  # attribution record rather than a lease: devops.claimed_session names the session
+  # that made the last build claim, which the review-claim seam
+  # (#live_reviewing_party_claim) reads. Nothing expires or renews it.
   #
-  # RELEASE. Every other lease in this codebase has an explicit release that nils
-  # its columns — DevopsShift, TaskReviewClaim, ReleaseConductorClaim,
-  # MigrationLaneClaim all do. The devops build claim was the one lease with NO
-  # release path at all: `bin/task move <slug> submitted` sends no devops, nothing
-  # server-side cleared the keys, and the normalizer silently drops blanks
-  # (`next if normalized_value.blank?`) so a client could not clear them even on
-  # purpose. Sessions therefore stopped heartbeating and walked away, leaving a
-  # stale holder on the row forever. Stating it as an invariant rather than
-  # hanging it off the submitted transition means it also heals the rows already
-  # carrying a dead claim, and it cannot be escaped by a path that moves the stage
-  # some other way.
+  #   - a BUILD CLAIM save stamps it from #claiming_session;
+  #   - any other save on a `building` task keeps the stored value, so a client
+  #     cannot re-point or erase who claimed (only a claim may);
+  #   - leaving `building` clears it, as the lease's release did.
   #
-  # PRESERVE. This USED TO BE the whole story: Api::V1::TasksController#task_params
-  # assigned metadata WHOLESALE, so every PATCH carrying `devops` REPLACED the
-  # subhash and deleted any key the client did not echo. The board's own edit form
-  # permits no claim keys at all (app/controllers/tasks_controller.rb), so opening a
-  # task on the board and saving it silently destroyed a LIVE claim — and a destroyed
-  # claim reads as unclaimed, which lets a second agent take a desk someone is working
-  # at. Both paths now fold through Task.merge_devops_into_metadata since
-  # `api-devops-patch-replaces`, so a merely OMITTED claim key survives on its own.
-  # Two doors still reach this guard: a key posted BLANK (the fold keys on the
-  # posted names and the normalizer drops blanks, so a blank claim key IS a delete),
-  # and a raw whole-column `metadata:` write, which is permitted wholesale and folds
-  # through nothing. That is also why `bin/task show --json` and `bin/task begin`
-  # disagreed about the same lease 20 seconds apart: not two readers of one fact,
-  # but one fact being erased and rewritten underneath them. This is the same
-  # self-healing shape as #restore_mascot_identity and #preserve_cert_evidence,
-  # applied to the keys that decide who owns a desk.
-  #
-  # Note what is NOT here: nothing expires a lease. Expiry stays where it belongs,
-  # on the TTL clock in ClaimLease — restoring an omitted key preserves a lease
-  # that is still lapsing on its own schedule, it does not extend it.
-  def enforce_build_claim_invariant
+  # RETIRED_LEASE_KEYS are dropped on every save — the one-release tolerance for rows
+  # an older CLI wrote. Readers already treat a missing expiry as unclaimed.
+  RETIRED_LEASE_KEYS = %w[claim_nonce claim_expires_at].freeze
+
+  def stamp_build_claim_session
     devops = metadata.is_a?(Hash) ? metadata["devops"] : nil
-    # An explicit devops teardown (the whole hash removed) is left alone — this
-    # guard defends the claim namespace, not the existence of devops.
+    # An explicit devops teardown (the whole hash removed) is left alone.
     return unless devops.is_a?(Hash)
 
-    updated = devops.dup
-    if stage == "building"
-      return if new_record?
-
-      # Fill in ONLY for the holder already on the row. A payload naming a
-      # DIFFERENT session is a re-claim or a steal and stands entirely on its own:
-      # inheriting the previous holder's nonce would staple one instance's
-      # identity to another instance's claim — the rule ClaimLease.renewed states
-      # for itself as "a DIFFERENT session's nonce is never inherited".
-      #
-      # Reachable, not theoretical. SessionIdentity.nonce degrades to "" whenever
-      # the agent process cannot be resolved (the detached case), and
-      # normalize_devops_metadata drops blank values, so a real steal arrives
-      # naming a NEW claimed_session with NO claim_nonce at all — precisely the
-      # shape this guard has to refuse to complete from the old record.
-      #
-      # A payload naming NO session is not talking about the claim (the blank-post
-      # and raw-metadata-write cases this method exists for), and there the stored
-      # claim is restored whole.
-      incoming_session = updated["claimed_session"].to_s
-      return unless incoming_session.empty? || incoming_session == prior_devops["claimed_session"].to_s
-
-      ClaimLease::CLAIM_KEYS.each do |key|
-        next if updated[key].present? || prior_devops[key].blank?
-
-        updated[key] = prior_devops[key]
-      end
+    updated = devops.except(*RETIRED_LEASE_KEYS)
+    claimer = claiming_session if stage == "building" && build_claim_save?
+    kept = stage == "building" ? (claimer || prior_devops["claimed_session"].presence) : nil
+    if kept
+      updated["claimed_session"] = kept
     else
-      ClaimLease::CLAIM_KEYS.each { |key| updated.delete(key) }
+      updated.delete("claimed_session")
     end
     return if updated == devops
 

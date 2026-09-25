@@ -46,7 +46,7 @@ and each answers a question adjacent to the one an agent actually asks.**
 | Surface | Where | Answers | Liveness model |
 |---------|-------|---------|----------------|
 | Cert runlock `cert-run.json` | local, in each desk's **git dir** | is a suite running against *this desk's* test DB | **OS identity** (pid + start time) — exact, no timeout |
-| Build claim (`claimed_session`/`claim_nonce`/`claim_expires_at`) | board | who holds this task | TTL 120s + renewer, fail-open |
+| Build claim (the desk bound to the task, `bin/lib/desk_claim.rb`) | local, `.agent-context.json` | who holds this task | the desk's anchor process; refuses only a foreign live desk with uncommitted changes |
 | Devops shift lease | board | who holds this *role lane* | TTL 120s + anchor renewer |
 | Review claim | board | who is reviewing this task | TTL 3h25m + anchor renewer |
 | Release conductor claim (`assembler`/`deployer`) | board | is a release live | TTL 120s + anchor renewer |
@@ -85,13 +85,14 @@ one caller has ever asked.
 > **No claim asserts its own liveness. Every claim carries the OS's proof of
 > identity, and the READER decides.**
 
-This is `bin/lib/cert_orphan_guard.rb`'s rule, promoted from one file to a
-surface. It is the entire answer to the constraint that makes or breaks this
+This was `bin/lib/cert_orphan_guard.rb`'s rule, promoted from one file to a
+surface; the guard retired with the local certs (DevOps v3 phase 2b, 2026-09-24)
+and the rule now lives in `bin/lib/process_table.rb`. It is the entire answer to the constraint that makes or breaks this
 design, and it is why the design is not a heartbeat.
 
-**Why not a heartbeat or a TTL lease.** The house already has five TTL leases
-(`Task`, `DevopsShift`, `TaskReviewClaim`, `ReleaseConductorClaim`,
-`MigrationLaneClaim`),
+**Why not a heartbeat or a TTL lease.** The house had five TTL leases
+(`Task`, `DevopsShift`, `TaskReviewClaim`, `ReleaseConductorClaim`, and the since
+deleted `MigrationLaneClaim`),
 and they have already demonstrated the failure mode twice:
 
 - The shift lease was renewed by `bin/statusline` — i.e. by a *UI paint*, not by
@@ -110,8 +111,9 @@ for free, with **no timeout to tune and no renewer to leak.**
 
 ### Reuse decision, stated plainly
 
-**I am REUSING `CertOrphanGuard`'s identity rule and EXTENDING its scope. I am
-not replacing it, and I am not modifying its reaping.**
+**I am REUSING the cert orphan guard's identity rule and EXTENDING its scope
+(since 2026-09-24 the rule is `bin/lib/process_table.rb`; the reaping half
+retired). I am not replacing it.**
 
 - **Reused as-is:** the `(pid, os_start_time)` identity proof — `ps -o lstart=`
   compared as an opaque string, never a parsed clock; the atomic `write tmp +
@@ -191,11 +193,12 @@ ship is not a cert, and the reader translates that one pair of names at its
 boundary (`AgentPresence.supervisor_pid`) instead of the record lying about what
 it holds.
 
-**And the claim stays OUT of the runlock slot**, which is a safety property rather
-than a filing preference. `CertOrphanGuard.preflight` REAPS — it SIGKILLs the
-group a `cert-run.json` names — and it reads only `<root>/.git/cert-run.json`. A
-claim in the session-marker namespace is invisible to it by construction, so the
-reaper can never be aimed at a process no cert spawned.
+**And the claim stays OUT of the runlock slot.** While the cert orphan guard
+lived, that was a safety property: it REAPED — SIGKILLed — the group a
+`cert-run.json` named, and read only `<root>/.git/cert-run.json`, so a claim in
+the session-marker namespace was invisible to it by construction. The reaper
+retired with the certs (2026-09-24); the namespace stays because one file per
+PROCESS has no shared slot to contend for.
 
 **Any new writer must launder its path through
 `TaskUsageSandbox.enforce!(..., store: "session-marker")`.** This is enforced,
@@ -247,8 +250,8 @@ hidden inside each git dir where `git status` cannot see it.
 | | |
 |---|---|
 | **Written** | `cert_pid`, `cert_started_at`, `pgid`, `pgid_started_at`, `lane`, `db`, `started_at` |
-| **By whom** | `CertProcess.run_bounded`, per lane, at spawn |
-| **Cleared** | by `settle` when the group is provably gone; by the next cert's `CertOrphanGuard.preflight`; **kept on purpose** when a reap is refused, because then the lock is the only record naming the survivor |
+| **By whom** | the retired local certs, per lane, at spawn — **nothing writes it since 2026-09-24**; the reader still grades a leftover one like any other claim |
+| **Cleared** | by the retired cert's `settle` when the group was provably gone; a stranded one now stays until a human removes it, and grades as a corpse on the next read |
 | **Read** | glob `*/.git/cert-run.json` + `*/.git/worktrees/*/cert-run.json`, grade each |
 | **On death** | the file stays; the reader grades it a corpse on the very next read, because the pid is gone or its start time no longer matches |
 
@@ -310,26 +313,19 @@ Two things it decides for itself, both load-bearing:
   local workload the ship creates was reporting the conductor's ambient `light`.
 
 **FIRST BUILT IN THE RUNLOCK SLOT, AND MOVED — the reasoning, because it is a
-reasoning this document caused.** The first revision published to
-`CertOrphanGuard.lock_path(root)`. It was not arbitrary: §5(c) above said sweeps
-are read by *"the same glob and the same grader"* as certs, and at that moment
-`CLAIM_GLOBS` held two `cert-run.json` patterns and nothing else — so a claim at
-§4's path was invisible to the reader and would have closed none of cost #3. That
-premise died when slice 3 (`certs-publish-no-phase`) taught the reader the marker
-namespace directly, under the comment that names the property: **read here, reaped
-nowhere.**
+reasoning this document caused.** The first revision published to the cert
+runlock slot. It was not arbitrary: §5(c) above said sweeps are read by *"the same
+glob and the same grader"* as certs, and at that moment `CLAIM_GLOBS` held two
+`cert-run.json` patterns and nothing else — so a claim at §4's path was invisible
+to the reader and would have closed none of cost #3. That premise died when slice
+3 (`certs-publish-no-phase`) taught the reader the marker namespace directly,
+under the comment that names the property: **read here, reaped nowhere.**
 
-The move matters because `CertOrphanGuard.preflight` **reaps** — it SIGKILLs the
-process group a `cert-run.json` names — so a release-lane claim in that slot points
-a reaper at a production deploy, and makes a concurrent cert print a `kill -TERM`
-line naming it. **Rooting at a primary checkout does not make that safe, and an
-earlier version of this section said it did.** `CertRootGuard.refusal` is gated on
-a slug (`bin/fast-check#wrong_root`, `bin/full-suite-check#wrong_root`) while the orphan
-preflight is unconditional (`bin/lib/cert_orphan_guard.rb#preflight`, which both certs
-call), so every slug-less cert skips the root guard and
-preflights anyway — including the `bin/full-suite-check --print` that
-`--install-hook` writes into `.git/hooks/pre-push`. The defence is the namespace,
-not the path within it.
+The move mattered because the cert orphan guard **reaped** — it SIGKILLed the
+process group a `cert-run.json` named, unconditionally, from every cert run — so
+a release-lane claim in that slot pointed a reaper at a production deploy. That
+guard retired with the local certs on 2026-09-24 (DevOps v3 phase 2b); the
+namespace stays for the reason below.
 
 **What the move retired, recorded so nobody restores it.** The runlock is one file
 per ROOT, so the old writer had to refuse rather than clobber when a `prepare` and a
@@ -388,8 +384,8 @@ one half of the answer, and neither carries the other's key:
 | `.agents/sessions/<id>.json` | yes — it is keyed by session id | **stops recording it** once the session moves to a desk |
 | `<desk>/.agent-context.json` | **no — it has no session field at all** | yes, and it is refreshed on `new` / `up` / `status` / `bind-task` |
 
-`bin/task:1160` is `return if Dir.pwd.include?("/.worktrees/")` — and it is
-deliberate, not a bug: the comment says a worktree session overrides the marker
+`bin/task#write_feature_marker` opens with `return if Dir.pwd.include?("/.worktrees/")`
+— and it is deliberate, not a bug: the comment says a worktree session overrides the marker
 with its own `.agent-context.json`. That reasoning is sound for the statusline,
 which only ever asks about *itself*. It fails completely for a peer asking about
 *someone else*, because the desk context has no session id to hand back. Verified
@@ -509,8 +505,8 @@ Scope discipline is the point of this document.
    release claims answer ownership questions *across sessions and machines* and
    stay where they are. This surface answers capacity questions about *this
    machine*. Moving them is a far larger change with no measured cost pushing it.
-4. **No change to `CertOrphanGuard`'s reaping.** The reader never signals
-   anything, ever.
+4. **The reader never signals anything, ever.** (The cert orphan guard whose
+   reaping this once deferred to has since retired; nothing reaps on a claim.)
 5. **No scheduler and no admission control.** The surface *informs* a launch
    decision; it does not gate one. An automatic gate that is wrong wedges the
    whole machine, and we would be building it before a single day's evidence that
@@ -561,7 +557,7 @@ Why this one pays for itself alone:
   once, against the cheapest possible writer, validates read-derived truth on a
   file already proven under kill *before* anything riskier depends on it.
 - **It replaces a check that is correct by luck.** `ps aux | grep -E
-  "full-suite-check|fast-check|rails test"` catches the cert phase and misses the
+  "fast-check|rails test"` catches the pre-flight phase and misses the
   CI wait by coincidence of naming; nothing in it *encodes* that distinction, so
   it degrades silently the first time a lane is renamed. The reader's answer is
   derived from the process table by construction.

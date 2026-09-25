@@ -76,7 +76,7 @@ marker_write_refused() {
   # Sandboxed + unpinned → refuse. Say so ON STDERR: the Ruby half aborts loudly, and
   # a silent bash refusal is indistinguishable from "nothing happened". If
   # TASK_USAGE_SANDBOX ever leaked into an interactive shell, every render would stop
-  # renewing BOTH the build claim and the shift lease with no way to tell why. The
+  # renewing the shift lease with no way to tell why. The
   # status line itself still renders — we fail the WRITE, not the caller.
   printf 'statusline: TASK_USAGE_SANDBOX is on and CLAUDE_PROJECTS_DIR is unset — refusing to write the narration marker into the real store.\n' >&2
   return 0
@@ -126,74 +126,12 @@ file_mtime() {  # path -> epoch seconds, 0 when unknown
   printf '%s' "$m"
 }
 
-# --- Build-claim heartbeat (best-effort lease renewal) ---------------------
-# A live terminal renews its build claim each render, so a crashed/closed session
-# stops renewing and its lease lapses (TTL) — making the task reclaimable by the
-# next claimant. Throttled to ~once/HEARTBEAT_THROTTLE seconds and run detached so
-# it never delays the status line. STATUSLINE_HEARTBEAT_FG=1 runs it inline (tests).
 TASK_BIN="${TASK_BIN:-$(dirname "$0")/task}"
-heartbeat_claim() {  # slug stage is_desk
-  local slug="$1" stage="$2" is_desk="$3"
-  local sid
-  sid=$(agent_session_id)
-  [ -z "$slug" ] && return 0
-  [ -z "$sid" ] && return 0
-  [ -x "$TASK_BIN" ] || return 0
-  # Only a live BUILD claim is renewed. A claim is forged ONLY by an explicit
-  # `move building`, so:
-  #   building → renew (the explicit claim), whatever the source.
-  #   "" (no stage) → renew ONLY for a worktree desk (.agent-context.json): a
-  #      build desk legitimately carries no stage. The per-session marker must
-  #      NOT renew on an empty/missing stage — `bin/task create` repoints that
-  #      marker to a fresh `designed`/unowned task (and a create response that
-  #      omits stage leaves it blank), so renewing here forged a live claim on a
-  #      task nobody was building: the creator's mascot ticking green on an
-  #      unclaimed `designed` task (the conductor-files-a-follow-up bug).
-  #   anything else (designed/submitted/…) → never renew.
-  case "$stage" in
-    building) ;;
-    "")       [ "$is_desk" = "1" ] || return 0 ;;
-    *)        return 0 ;;
-  esac
-  local mdir="$PROJECTS/.agents/sessions"
-  local marker="$mdir/${sid}.heartbeat"
-  local throttle="${STATUSLINE_HEARTBEAT_THROTTLE:-45}"
-  if [ -f "$marker" ]; then
-    local mtime age
-    mtime=$(file_mtime "$marker")
-    age=$(( $(date +%s) - mtime ))
-    [ "$age" -lt "$throttle" ] && return 0
-  fi
-  # Fail closed: unpinned marker destination. DELIBERATELY the last gate before the
-  # write — every `return 0` above means no write was ever pending, and a refusal
-  # printed for a write that was never going to happen is noise that dilutes exactly
-  # the signal this message exists to carry (a SILENT refusal is indistinguishable
-  # from "nothing happened", which is why it must be loud when it is real).
-  marker_write_refused && return 0
-  mkdir -p "$mdir" 2>/dev/null
-  : > "$marker"
-  # Hand the heartbeat the DESK, so the lease is renewed on evidence of work
-  # rather than on evidence that this status line is painting. Only a bound
-  # worktree is passed: bin/task verifies the .agent-context.json names this very
-  # task, and a session with no desk resolves none and keeps renewing as before.
-  # Passed explicitly rather than relying on the child's cwd, since the detached
-  # form below inherits whatever directory the render happened to run in.
-  # Built with `set --` rather than a string: bash 3.2 is the shell here, and an
-  # unquoted "$desk_args" would word-split a desk path containing a space.
-  set -- "$slug"
-  [ "$is_desk" = "1" ] && set -- "$@" --desk "$cwd"
-  if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then
-    "$TASK_BIN" heartbeat "$@" >/dev/null 2>&1
-  else
-    ( "$TASK_BIN" heartbeat "$@" >/dev/null 2>&1 & ) >/dev/null 2>&1
-  fi
-}
 
 # --- DevOps SHIFT heartbeat (best-effort lease renewal) --------------------
 # A session that holds a devops SHIFT (bin/devops-shift acquire wrote a
-# <sid>.devops-shift marker naming the lane) renews it each render, exactly like the
-# build claim above. Same throttle + detach posture, on its OWN throttle marker so it
-# never contends with the build-claim heartbeat.
+# <sid>.devops-shift marker naming the lane) renews it each render, throttled and
+# detached, on its OWN throttle marker.
 #
 # THIS IS NO LONGER THE ONLY RENEWER, and must never become one again. Renewing here
 # alone made the lease a property of the UI: a headless holder (background agent run,
@@ -219,7 +157,8 @@ heartbeat_shift() {
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
-  # Fail closed, and LAST — see heartbeat_claim. The common case by far is a session
+  # Fail closed, and LAST: every early return above means no write was pending. The
+  # common case by far is a session
   # holding no shift at all, which returns above; refusing there printed a warning on
   # nearly every render for a write that was never pending.
   marker_write_refused && return 0
@@ -267,7 +206,7 @@ heal_session_mascot() {  # mascot is_desk
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
-  # Fail closed, and LAST — see heartbeat_claim for why the refusal belongs here
+  # Fail closed, and LAST — see heartbeat_shift for why the refusal belongs here
   # and not above the early returns.
   marker_write_refused && return 0
   mkdir -p "$mdir" 2>/dev/null
@@ -439,7 +378,6 @@ if [ -n "$src" ]; then
     feat="${genesis_feat} ▸ ${feat}"
   fi
   render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color" "$mascot_emoji" "$mascot_shiny" "$app_color"
-  heartbeat_claim "$task" "$stage" "$src_is_desk"   # renew this terminal's build-claim lease (desk-aware)
   heartbeat_shift                                    # renew this terminal's devops SHIFT lease (if one is held)
 else
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null)

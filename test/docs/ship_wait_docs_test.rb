@@ -19,14 +19,15 @@ require "test_helper"
 class ShipWaitDocsTest < ActiveSupport::TestCase
   AGENTS = Rails.root.join("docs", "agents")
 
-  # The four places the "run it in the background" advice lives. claude.md and
+  # The places the "run it in the background" advice lives. claude.md and
   # index.md are the SOURCES of the generated projects-root CLAUDE.md / AGENTS.md
   # — editing the roots directly is what drifts them.
   BACKGROUND_DOCS = [
     "claude.md",
     "index.md",
     "modules/building-sop.md",
-    "modules/devops-task-board.md"
+    "modules/devops-task-board.md",
+    "modules/fast-lane.md"
   ].freeze
 
   # Markdown-emphasis-insensitive read (the house pattern, mirrors

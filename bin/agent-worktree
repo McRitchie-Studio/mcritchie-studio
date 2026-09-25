@@ -1254,8 +1254,8 @@ end
 # Rails::Command::TestCommand runs the prepare task only `if self.args.none?(
 # EXACT_TEST_ARGUMENT_PATTERN)`, so `bin/rails test test/models/x_test.rb` SKIPS it while
 # a run whose spawned `rails <task>` carries no path and no `-n` gets it for free. That
-# spawn is what a rake TEST TASK produces, and it is how CI's system job and
-# bin/full-suite-check reach the hook; CI's Rails shards take the other route and invoke
+# spawn is what a rake TEST TASK produces, and it is how CI's system job reaches
+# the hook; CI's Rails shards take the other route and invoke
 # `test:prepare` themselves (bin/ci-shard). No CI invocation is an argless `bin/rails
 # test`. (The release
 # gate workspaces prep their own env the same way as this method — `db:test:prepare
@@ -2047,7 +2047,7 @@ end
 # builder or a reviewer without asking two peers. Neither is a hard question — the
 # facts were on disk the whole time, in two files that did not name each other.
 def run_holder(task_slug, session_id: nil, json: false)
-  table = CertOrphanGuard.process_table
+  table = ProcessTable.process_table
   desks = DeskContext.desks(root: PROJECTS_DIR, table: table)
   matches =
     if session_id
@@ -4129,7 +4129,7 @@ def claim_hold(record, fresh: false, announce: false)
   # so it never goes quietly.
   if slug.nil?
     if announce
-      warn "note: #{worktree_label(record)} has no bound task, so no build claim can be checked; " \
+      warn "note: #{worktree_label(record)} has no bound task, so no build lease can be checked; " \
            "treating it as free"
     end
     return nil
@@ -4152,9 +4152,9 @@ def claim_hold(record, fresh: false, announce: false)
   if task_record.nil?
     if announce
       warn "warning: #{worktree_label(record)} is bound to task #{slug}, but its board record could " \
-           "not be read, so the build claim could not be checked. Withholding it."
+           "not be read, so the build lease could not be checked. Withholding it."
     end
-    return "bound to task #{slug}, but the board record could not be read, so the build claim " \
+    return "bound to task #{slug}, but the board record could not be read, so the build lease " \
            "could not be checked; withholding rather than nominating a desk we cannot verify " \
            "(re-run once the board is reachable)"
   end
@@ -4172,20 +4172,21 @@ def claim_hold(record, fresh: false, announce: false)
   # ("heartbeat  s ago"), because heartbeat_age has no parseable lease to derive from.
   # ClaimLease.corrupt_expiry? exists precisely to split this out.
   if ClaimLease.corrupt_expiry?(claim)
-    return "claim expiry unverifiable (#{slug}) — the build claim's lease timestamp is present " \
-           "but unparseable, so the builder's liveness cannot be checked; withholding rather " \
+    return "claim expiry unverifiable (#{slug}) — the legacy build lease's timestamp is present " \
+           "but unparseable, so its liveness cannot be checked; withholding rather " \
            "than nominating a desk we cannot verify — inspect task #{slug}"
   end
 
   age = ClaimLease.heartbeat_age(claim)
-  "held by a live builder claim (#{slug}) — builder heartbeat #{age}s ago " \
-    "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)"
+  "held by a legacy build lease (#{slug}) — lease renewed #{age}s ago " \
+    "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s); nothing writes these leases since the desk " \
+    "became the build claim, so it lapses on its own"
 rescue StandardError => e
   # Always log — a guard that disables itself in silence is worse than no guard, and on the
   # quiet (doctor/registry) lane an unexpected error would otherwise nominate a held desk
   # with no trace, which is the one contract this guard exists to protect.
-  warn "warning: #{worktree_label(record)}: could not check the build claim (#{e.class}: #{e.message})"
-  "the build claim could not be checked (#{e.class}); withholding rather than nominating a desk " \
+  warn "warning: #{worktree_label(record)}: could not check the build lease (#{e.class}: #{e.message})"
+  "the build lease could not be checked (#{e.class}); withholding rather than nominating a desk " \
     "we cannot verify"
 end
 
@@ -4634,9 +4635,9 @@ def claim_clearance(record)
   return "no live release conductor claim (#{RELEASE_CLAIM_ROLES.join("/")})" if ship_workspace_record?(record)
 
   slug = task_record_slug(record[:env] || {})
-  return "no bound task, so no build claim to hold it" unless slug
+  return "no bound task, so no build lease to hold it" unless slug
 
-  "no live build claim on #{slug}"
+  "no legacy build lease on #{slug} (nothing writes leases now; the desk itself is the build claim)"
 end
 
 # What the BOARD-STAGE channel observed. The whole point of the channel is that the

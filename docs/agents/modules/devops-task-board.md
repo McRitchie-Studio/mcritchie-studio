@@ -206,6 +206,47 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    refused (a 422 naming the stage and the value). This is the same remedy `bin/task
    move` prints when it announces a discarded request.
 
+## Operator windows
+
+Three clocks give Mr. McRitchie a bounded time to answer, and name what happens
+when he does not (design: `docs/agents/system/devops-v3-design.md`, section 6).
+Every window is **derived** — a timestamp the task or release already carries
+plus a length from `config/release_builder.yml` (`operator_windows:`) — so there
+is no window column, and changing a length moves every countdown at once.
+
+| Window | Opens from | Default | While it runs | On lapse |
+|---|---|---|---|---|
+| UI approval | `devops.approval_requested_at`, while `approval_status` is `waiting` | 10 min | the card's countdown chip beside the WAITING APPROVAL bar | review proceeds as today; the chip reads `unanswered, proceeding`; a later answer is still recorded |
+| Escalation | `blocked_at` on a `dependency` block whose summary leads `Escalated:` | 20 min | the countdown chip on the card | the session applies the recommendation the block's feedback carries, labeled `auto-decision` |
+| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why |
+
+The chip (`tasks/_window_chip`) sits beside the epic chip on the card and in the
+Next Release card's badge cluster, ticks `mm:ss` from the server-painted value,
+and renders identically on the page and on the live push. The task API carries
+the same facts under `windows` (kind, `ends_at`, `remaining_seconds`, `lapsed`,
+`label`), escalation first.
+
+**Wait on a window from a session:**
+
+```bash
+bin/task wait-window <slug> [--interval 15] [--grace 60] [--json]
+```
+
+It polls the board until the open window is **answered** (the `Escalated:`
+block cleared, or the approval request out of `waiting`) or **lapses**, and
+prints what it saw. Exit `0` answered · `2` lapsed (the window end plus the
+grace passed with it still open — proceed on the default above) · `1` the board
+could not be read · `3` usage. It is bounded by construction: the loop's deadline
+is the latest open end plus the grace, recomputed on every read.
+
+**Grant production authority:** the Approve button on `/deployments` (admin)
+posts `POST /deployments/<release>/ship_authorization`, which records the one
+`ship_authorized completed` event under the conductor's own idempotency key —
+so a grant and the ship's own completion stamp are one row. `bin/release ship
+--mode ask|timed|auto` picks how authority is taken (default `timed`, from
+`production_ship.mode`); `--yes` alone is `auto`; the recipe lives in Steffon's
+`production-deploy` SOP.
+
 ## Task Conversation and QA Feedback
 
 The task board owns the durable conversation for an increment. `/tasks` cards
@@ -609,8 +650,8 @@ bullet into fragments, which is a worse defect than the one the guard fixes.
 The slug is derived from the title client-side and passed explicitly, so the
 same `begin` rerun finds the task it created. A resume of an already-`building`
 task runs the **same build-claim gate** as `bin/task move building`, before any
-worktree step: a task a different live instance holds refuses loudly with the
-holder named; `bin/task begin <task-slug> --steal` takes it over, and on the
+worktree step: another live session's desk with uncommitted changes refuses, with
+the desk named; `bin/task begin <task-slug> --steal` claims over it, and on the
 fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fast-check`
 → push → **non-draft** PR into `accepted` whose body leads with the task URL →
 record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
@@ -623,7 +664,7 @@ cd <desk>                            # the worktree begin printed
 
 **Both halves of that are load-bearing, and `begin` now prints them for you.**
 The PATH picks the script: every fast-lane script — `bin/task`, `bin/ship`,
-`bin/fast-check`, `bin/full-suite-check`, `bin/dor-check` — lives in
+`bin/fast-check`, `bin/dor-check` — lives in
 mcritchie-studio/bin ALONE, so a bare `bin/ship` on a turf-monster or rolio desk
 dies as `nohup: bin/ship: No such file or directory`. The CWD picks the TREE the
 script acts on — and `bin/ship` does **not refuse** a foreign root. It roots at the
@@ -632,9 +673,9 @@ the task worktree … (you ran from …)`, `bin/ship`'s `--- rooting ---` block)
 running every gate `chdir`'d there; it dies only when no desk resolves on disk.
 Stand in the desk anyway, for the two reasons that are NOT a refusal by ship: a
 re-root is a correction you have to notice and trust rather than the tree you
-chose, and the cert **writers** you run by hand afterwards — `bin/fast-check`,
-`bin/full-suite-check` — refuse ANY foreign root outright (`this run roots at …
-which is not <slug>'s tree — refusing to certify it`). `bin/ship` dies with that
+chose, and the pre-flight you run by hand afterwards — `bin/fast-check` —
+refuses ANY foreign root outright (`this run roots at … which is not <slug>'s
+tree — refusing to run against it`). `bin/ship` dies with that
 same text when no desk resolves; it never refuses a root it can re-root from.
 `bin/task begin` closes by printing the resolved `cd <desk> && <absolute
 bin/ship> <task-slug>` line, ready to paste — a hub desk ships its own `bin/`, so
@@ -658,15 +699,10 @@ Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
 loudly). Before its first side effect it enforces the two handoff-seam guards
 the child gates don't own: the task must be `building` (or `submitted` — a
 resume; a `designed` task is sent back through `bin/task begin`), and the
-build claim must not belong to a **different live instance**. That refusal
-**names the holder's ROLE and routes on it**: a **builder** is taken over with
-`bin/task begin <task-slug> --steal` first, then ship; a **reviewer** is
-**asked to release** (`bin/task review-claim release <task-slug>`, run by
-them) and never stolen, because a takeover mid-review voids the no-self-review
-guarantee for that review and strands its verdict. When the board cannot
-establish the role it says so and sends you to `bin/task review-claim status
-<task-slug>`, which OBSERVES the lease rather than printing a timestamp to
-difference by hand. Its
+task must not be bound to **another live session's desk with uncommitted
+changes** — the build claim's one refusal ([the desk is the
+claim](#the-build-claim-the-desk-is-the-claim)). The refusal names the desk;
+`bin/task begin <task-slug> --steal` claims over it, then ship. Its
 read-back pins the exact `pr_url` it recorded — a stale/foreign URL on the
 board fails the verify. It repairs an existing PR in place — `gh pr ready` for
 a draft, `gh pr edit --base accepted` for a mis-based one — and never
@@ -675,9 +711,9 @@ the wrappers don't cover (multi-repo tasks, bespoke PR bodies).
 
 **The CI settle wait (step 6/8, `gate-submit-on-green-ci`).** With the PR open and
 `pr_url` recorded, ship HOLDS until the PR's CI reaches a real state, then runs
-the DoR verdict — so `submitted` normally carries a **green** CI instead of a fast
-cert credited provisionally against a pending one, and a red CI arrives while the
-builder's worktree is still warm rather than bouncing into a cold session.
+the DoR verdict — so `submitted` carries a settled **green** CI, and a red CI
+arrives while the builder's worktree is still warm rather than bouncing into a
+cold session.
 
 Three properties keep it from becoming a gate of its own, and all three are the
 point:
@@ -901,13 +937,10 @@ Neither empty prints `-` any more, because "nobody is assigned" is ordinary and
 
 ```bash
 bin/task show <slug>              # assignee: unassigned  builders: carl
-bin/task show <slug> --verbose    # built_by / builders / unattributed, + where each lives
+bin/task show <slug> --verbose    # built_by / builders, + where each lives
 bin/task move <slug> building --actor <soul>   # stamp an author, in place, at any time
 ```
 
-`builders: shannon +1 UNNAMED` means `devops.builders_unattributed` is set — a
-session worked the task while naming no soul, so the names shown are a SUBSET and
-`bin/reviewer-select` refuses rather than seating a pool that may hold an author.
 A value shown as `not a soul handle` is a session id or an email left on the
 record by a claim that ran without `--actor`: visible on purpose, because it is
 the tell for a stamp that never happened. The roster check itself lives in
@@ -915,13 +948,12 @@ the tell for a stamp that never happened. The roster check itself lives in
 never predicts the selector's verdict.
 
 **A REVIEWER IS NOT AN AUTHOR, and a bounce no longer says otherwise.** `bin/task
-block <slug> --kind rework` lands the task back on `building`, and three readers
+block <slug> --kind rework` lands the task back on `building`, and two readers
 used to take that for a build claim by the blocking session:
 
 | Reader | What it recorded | Now |
 |--------|------------------|-----|
-| the build-claim renewal (`bin/task heartbeat` from `bin/statusline`; the detached renewer on its own beat) | ADOPTED the free lease, so the reviewer held the desk | renews a lease this session already holds; only a bound DESK may adopt a free one |
-| `devops.builders_unattributed` | the reviewer's SESSION, so the author set read incomplete | a write from the session holding the task's live `TaskReviewClaim` is not a build claim |
+| the build-claim renewal (`bin/task heartbeat` from `bin/statusline`; the detached renewer on its own beat) | ADOPTED the free lease, so the reviewer held the desk | retired: the desk is the build claim, and nothing renews one |
 | `ReviewerSelector#builders` | the blocking SOUL, from the block's `→ building` event | a block's transition carries `blocked: true` and is skipped |
 
 Measured 2026-09-04: four bounced tasks in one review sitting, each needing a
@@ -1016,7 +1048,27 @@ Three rules, all of them the column-not-devops rule in different clothes:
   quoting the rule, so a handle the chip cannot print and the filter cannot match
   is never stored.
 - A `begin` **resume** refuses `--epic` like every other create flag and names
-  the `update` remedy — set it on the existing task instead.
+the `update` remedy — set it on the existing task instead.
+
+### The epic view
+
+An epic has its own pages, reached from the **Epics** link above every board:
+
+- **`/epics`** lists every epic, newest activity first. Each row shows the task
+  count by stage, a done bar, when the epic started and when it last moved.
+  **Done** means the task reached production: `shipped`, or `archived` after it
+  shipped. A task archived without shipping counts toward the total only.
+- **`/epics/<slug>`** shows that epic's tasks grouped by stage, on the board's own
+  card. The header gives the counts, the done bar, and the span from the first
+  task created to the last task shipped, with links to both boards filtered to the
+  epic.
+- **Release notes** group each app's tasks under their epic, loose tasks first.
+  The Discord header lists the release's epics, and each task card names its
+  epic in the footer. The release card on `/deployments` shows the same epics as
+  chips.
+
+Both pages read `EpicSummary`, which folds one grouped query over `tasks`. There
+is no epic table: an epic exists while a task carries its slug.
 
 ## Cleanup Tasks
 
@@ -1080,7 +1132,8 @@ Do not hand-format the Discord post when the API is available.
 
 Call the API with the accepted production task slugs, release metadata, URL, and
 verification checks. The API groups linked task titles by application in the
-standard ecosystem order and points every task link at the production task read
+standard ecosystem order, nests each group's tasks under their epic when they
+carry one, and points every task link at the production task read
 page on McRitchie Studio.
 
 Run a dry-run first:
@@ -1104,159 +1157,21 @@ After confirming the rendered `message`, repeat the same request without
 `DISCORD_DEPLOY_WEBHOOK_URL` retained as a fallback for older environments.
 Never commit webhook URLs.
 
-## The build claim: liveness and progress are two facts
+## The build claim: the desk is the claim
 
-Unsupervised task claiming arrived, so the lease fields this section once
-deferred now ship. They live in `metadata.devops` and the math is `ClaimLease`
-(`lib/claim_lease.rb`), shared verbatim by the `bin/task` CLI and the Task model:
-
-- `claimed_session` — the agent session holding the desk
-- `claim_nonce` — a per-PROCESS token (two terminals resuming one session id are
-  two instances)
-- `claim_expires_at` — a 120s TTL, renewed on a 30s beat by the **detached renewer**
-  the claim starts (`bin/lib/build_claim_renewer.rb`) — and redundantly by the
-  heartbeat in `bin/statusline` when a terminal happens to be painting — and
-  **declined once the holder can be shown to have gone** (see "A lease is
-  renewed by work" below)
-
-**The lease attests that the builder's run is still here, and that nothing has shown
-the holder to be gone.** It does NOT attest that someone is working — the rule is
-negative on purpose, because every unknown keeps the desk. Renewal moved off the
-status line on 2026-09-09: a headless agent shell paints nothing, so a headless build
-renewed nothing and ran unclaimed from two minutes in, while a cold `bin/ship` takes
-~12 minutes by design. The declining half arrived on 2026-08-13; before it, the
-status-line heartbeat (throttled to 45s) renewed the claim unconditionally, so the lease stayed green through a
-wedged agent — on 2026-07-13 a session held a perfectly healthy-looking lease for
-35 minutes while producing nothing, and the board's green dot was read as
-progress. It never meant that.
-
-**A claim is released when the task leaves `building`.** The build claim is a
-build-stage lease, re-asserted as an invariant on every save
-(`Task#enforce_build_claim_invariant`), so `submitted`/`blocked`/`reviewed`/… all
-drop the keys. The same invariant carries a live claim through a PATCH that omits
-it: the API used to replace `metadata["devops"]` wholesale (it merges since
-`api-devops-patch-replaces`), and the board's own edit form permits no claim keys,
-so before this a board save silently destroyed a live claim — which then read as
-*unclaimed* and invited a second agent onto an occupied desk. The invariant stays:
-it is what defends the claim against a caller that posts the keys BLANK, which the
-merge honors as a deliberate clear.
-
-So the board carries a **second, independent fact** beside it — the task's last
-**durable artifact**, derived (never declared) from evidence we already write:
-
-- **TaskEvents** — stage moves, intents, and cert checkpoints
-- **GateRuns** — a gate opening, recording a lane, or closing
-
-`Task#last_progress_at` / `#last_progress_label` / `#progress_seconds_ago` expose
-it; the API projects it on the task; the card and the claim gate state it in words
-("last durable progress ~2.5h ago · g1_cert failed"). A wedged agent cannot fake
-these, because they exist only when work actually landed.
-
-**There is deliberately no STALLED verdict, and you should not add one.** Measured
-over 243 real building windows (prod, 14 days): the median HEALTHY window already
-contains a **26-minute** board-write silence (p90 66m, p99 125m), and legitimate
-certs run to **94 minutes** at p99. A "no durable write in 15m ⇒ stalled" rule —
-the obvious design — flags **79% of healthy desks**, and still misses the wedge
-that motivated it (its failing certs wrote no gate rows at all). Silence is not
-evidence of a wedge: agents think, run long certs, and wait on the operator. A
-chip that cries wolf on four of five healthy desks is the same lying gate with its
-polarity flipped, and it trains every reader to ignore it.
-
-What ships instead is honest and quiet about its limits:
-
-- the **age** is always shown for a live claim — a fact, not a verdict;
-- a conservative `quiet` note, **derived from the measurements above rather than
-  chosen**: `ClaimLease::PROGRESS_QUIET_SECONDS` = the worst measured healthy
-  window (the 125m p99) × 1.5 = **3h07m**. It carries a margin because at n=243
-  that p99 rests on two or three tail observations — a point estimate the corpus
-  cannot pin down — and a threshold parked ON it would flag healthy desks whenever
-  the tail breathed. It is suppressed while a gate is in flight, and reads
-  **healthy whenever the fact is unknown**. Re-measure the corpus and the
-  threshold moves with it; the guard test asserts the property (no measured
-  healthy window may ever render quiet), never the literal;
-- **nothing is destructive.** Quiet reclaims no desk, blocks no move, and never
-  touches the lease. A quiet desk is still a HELD desk.
-
-### Progress belongs to whoever produced it
-
-A durable artifact records **who** made it — the session, stamped in
-`metadata["session"]` by `bin/task checkpoint` and `bin/gate`, or already carried
-in `task_events.actor` on a CLI stage move. Unattributed progress used to be
-credited to whoever held the claim, which let a lease manufacture its own
-evidence: on 2026-08-13 a challenger ran `bin/full-suite-check`, the cert landed a
-`g1_cert` row on a task it did **not** hold, and the claim gate refused that same
-challenger with *"last durable progress ~2m ago (g1_cert passed)"* — the
-challenger's own work, quoted back as proof the holder was alive.
-
-So the gate reports `holder_progress_*` (the newest artifact the **holder**
-produced) and names the remainder honestly — "THIS session's own work", "belongs
-to …abcd", or "has no recorded owner". An unowned row stays unowned; a guessed
-owner is the failure this exists to end.
-
-### A lease is renewed by work, not by a status line
-
-Both renewers — the detached `claim-renew-loop` the claim starts (every 30s) and
-`bin/statusline`'s `bin/task heartbeat <slug> --desk <desk>` (every ~45s, when a
-terminal is painting) — call the same renewal, `renew_build_claim` in `bin/task`.
-It renews only when it cannot show the holder has gone; it declines when
-**every** channel has been silent past `ClaimLease::DESK_IDLE_SECONDS`:
-
-- **desk mtimes** (`DeskActivity`) — authored files under the holder's own desk,
-  pruned of machine churn (`.git`, `log`, `tmp`, `node_modules`, build output). A
-  running server or a `git status` from the status line is not a worker.
-- **a gate in flight** — a cert writes nothing into the desk for up to 94 minutes.
-- **operator approval** — a task parked on Mr. McRitchie is not abandoned.
-- **durable board progress** — a holder working through the API still reads alive.
-
-**The two board channels are holder-scoped**, and that is the difference between
-fixing this and half-fixing it. Both once read the *task-wide* fact, so a queued
-challenger running `bin/full-suite-check` on a held slug landed a checkpoint and
-opened a `g1_cert` on someone else's task — and the abandoned holder renewed for
-another 1h29m on the strength of the challenger's own work. The heartbeat reads
-`holder_liveness_seconds_ago` and `holder_gate_in_flight` instead. The gate
-channel is **filtered, never dropped**: a holder mid-cert still needs it, so a
-gate opened *by the holder* protects the holder and one opened by a challenger
-does not.
-
-**Every unknown keeps the desk.** No desk bound to the task, an unreadable root, a
-walk over budget, an exception, an artifact **nobody signed**, or a board too old
-to publish the holder-scoped field all resolve to "not abandoned", because freeing
-a desk too late costs waiting while freeing it too early costs the work. So an
-unsigned gate run still protects its holder — nobody is not "somebody else", and
-reading a missing field as proof of absence would evict a live worker on a schema
-gap. The desk must be bound to *this* task (`.agent-context.json`); a primary
-checkout is written by every agent on the machine, so judging a claim there would
-renew it forever — the same bug one indirection out.
-
-The same rule runs in **both directions**, which is why the refusal message and
-the reaping decision disagree about an unsigned row on purpose. The message
-argues the holder is *alive*, so it may never cite a row nobody signed
-(`holder_progress_*`, strict). The heartbeat argues the holder is *gone*, so it
-may never reap on one (`holder_liveness_*`, permissive). Both refuse to invent
-evidence; they are asserting opposite propositions.
-
-`DESK_IDLE_SECONDS` is **derived, not chosen**: 341 desk-edit gaps measured across
-37 real worktrees split into a working band and an abandoned (left-overnight) one,
-with no samples in the 3556s–3895s gutter between them. The threshold is the worst
-**working** gap × 1.5 = **1h29m**. Deriving it from the pooled p99 (6.4h) would be
-circular — that tail *is* the bug. The guard test asserts both sides: no measured
-working gap may read as abandoned, and the median abandoned gap must still be
-caught.
-
-Nothing here reclaims a desk. The renewal simply declines, the TTL lapses, and the
-ordinary claim gate admits the next claimant — and if the call was wrong, the
-holder's next beat re-claims the task, so the mistake heals itself.
-
-**And a renewal never ACQUIRES a lease it does not hold.** Everything above is
-about *keeping* a claim; this is the other end. A claim is made deliberately
-(`bin/task move <slug> building`), never inferred from the fact that a terminal is
-painting — so an `:unclaimed` or `:expired` lease is not adopted just because a
-session's marker points at the task. The one exception is a bound DESK: a worktree
-whose `.agent-context.json` names *this* task is evidence the session is at its
-workbench, which is how a builder whose lease lapsed re-adopts it. A reviewer's
-primary checkout can never produce that evidence, which is the point — `bin/task
-block` repoints the blocking session's marker at the task it just bounced, and the
-heartbeat that followed used to take the desk and the authorship with it.
+A task is claimed while a desk bound to it exists on this machine: a worktree
+whose `.agent-context.json` names the task (`bin/agent-worktree holder <slug>`
+lists them). There is no lease, no TTL and no renewer. `bin/task move <slug>
+building`, `bin/task begin <slug>` and `bin/ship` refuse in exactly one case: a
+**different live session's** desk is bound to the task **and** has uncommitted
+changes. The refusal names that desk; `--steal` on `move` or `begin` claims over it
+and leaves its files on disk. Every other case claims freely, and the focus session
+arbitrates its own builders. The board records who made the last claim in
+`devops.claimed_session` (server-stamped from the claim PATCH, cleared when the task
+leaves `building`), which the author roll call reads. The 120s lease this replaced
+(`claim_nonce`, `claim_expires_at`, the detached renewer, the status-line heartbeat)
+is gone: headless agents never renewed it, and its refusals sent builders to
+`--steal` on their own tasks. Code: `bin/lib/desk_claim.rb`.
 
 ## The release owns the gem version — builders never write one
 
@@ -1370,7 +1285,7 @@ bump from the task's `kind`.
 ## Remedy hints name a command you can actually run
 
 **Every command a fast-lane script tells you to run is an absolute path.** When
-`bin/ship`, `bin/fast-check`, `bin/full-suite-check` or `bin/dor-check` refuses
+`bin/ship`, `bin/fast-check` or `bin/dor-check` refuses
 and hands you a next move, the line it prints is pasteable from wherever you are
 standing — `/Users/…/mcritchie-studio/bin/ship <slug>`, never a bare
 `bin/ship <slug>`.

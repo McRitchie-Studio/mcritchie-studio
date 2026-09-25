@@ -38,8 +38,7 @@ class ReviewerRepairStampApiTest < ActionDispatch::IntegrationTest
 
   # `bin/task move <slug> building [--actor <soul>]`.
   def claim!(task, actor:, session:)
-    patch_task(task.slug, stage: "building", event: { actor: actor },
-                          devops: ClaimLease.renewed(session: session, nonce: "inst-B"))
+    patch_task(task.slug, stage: "building", event: { actor: actor, session: session })
   end
 
   def submit!(task, actor:)
@@ -53,22 +52,15 @@ class ReviewerRepairStampApiTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  # `bin/task heartbeat <slug>` — a devops PATCH with a fresh lease and NO event.
+  # An UNNAMED claim (`bin/task move <slug> building`, no --actor).
   def heartbeat!(task, session:)
-    devops = task.reload.metadata["devops"] || {}
-    patch_task(task.slug, devops: devops.merge(
-      ClaimLease.renewed(session: session, nonce: "inst-R", prior: devops)
-    ))
+    patch_task(task.slug, stage: "building", event: { session: session })
   end
 
   # `bin/task move <slug> building --actor <soul>` run from the REVIEWER's session:
-  # the same shape as claim!, but the lease names the session holding the review.
+  # the same shape as claim!, but the event names the session holding the review.
   def repair!(task, actor:, session: REVIEWER_SESSION)
-    devops = task.reload.metadata["devops"] || {}
-    patch_task(task.slug, stage: "building", event: { actor: actor },
-                          devops: devops.merge(
-                            ClaimLease.renewed(session: session, nonce: "inst-R", prior: devops)
-                          ))
+    patch_task(task.slug, stage: "building", event: { actor: actor, session: session })
   end
 
   # A submitted task whose author the record cannot name — a bare `bin/task move`
@@ -163,7 +155,6 @@ class ReviewerRepairStampApiTest < ActionDispatch::IntegrationTest
 
     devops = task.reload.metadata["devops"]
     assert_equal ["shannon"], devops["builders"], "a heartbeat names nobody and claims nothing"
-    assert_nil devops["builders_unattributed"]
     assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
   end
 end

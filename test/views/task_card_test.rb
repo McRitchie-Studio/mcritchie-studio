@@ -783,7 +783,7 @@ class TaskCardTest < ActionView::TestCase
   # the way a real mid-build task looks hours after it was opened.
   def claimed_building_task(title:, now: Time.current, genesis_age: 6.hours)
     task = Task.create!(title: title, stage: "building")
-    task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+    task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
     TaskEvent.where(task_slug: task.slug).update_all(occurred_at: now - genesis_age)
     task.reload
   end

@@ -198,17 +198,7 @@ honest, and **none of them needs a manual flag in the common case**:
   leave `built_by` naming only the FIRST, and the selector then happily seated the
   actual author: measured twice on 2026-08-30, and prevented only by a hand-passed
   `--busy`, which is a habit rather than a property.
-  **A handoff that names NOBODY is refused, not guessed.** An anonymous claim by a
-  different session records `devops.builders_unattributed`, and the builder set
-  reads INCOMPLETE until **that same session** names itself — because a set of one
-  that is silently missing an author is the original bug one layer along. Only the
-  unnamed session closes its own gap: a THIRD soul claiming by name says nothing
-  about who the second one was, and clearing on any named claim would hand the
-  fail-open straight back. Note it keys on
-  the claiming SESSION, not on the save: the lease is renewed on a timer with no
-  actor (the detached build-claim renewer every 30s, `bin/statusline` every 45s),
-  and treating a renewal as a handoff would refuse every task in the fleet. A guard
-  that cries wolf gets routed around.
+  A handoff that names NOBODY adds nobody; the author set also derives from git.
   `built_by` itself is **auto-stamped on any build CLAIM**: a bare
   `bin/task move <slug> building` records the task's soul persona, else its
   assigned `agent_slug` (an explicit `--actor <soul>` move wins over both; an

@@ -1,322 +1,91 @@
 # Worktrees
 
-Parallel agents should use git worktrees rather than sharing one checkout.
-The default for any code or active-doc edit is to work in an isolated worktree
-with an allocated port.
+Every code or active-doc edit happens in an isolated worktree (a **desk**,
+`/Users/alex/projects/<repo>/.worktrees/<task-slug>`) on an allocated port; primary
+checkouts are loading docks. History cut from this page:
+[`../archive/worktrees-2026-09-25.md`](../archive/worktrees-2026-09-25.md).
 
 ## Fresh Worktree Checklist
 
-**Steps 1-3 are what `bin/task begin` automates** — it is the default path for a
-single-repo task (`bin/task begin --title "Three To Five Words" --repo <app> --agent <soul> …`,
-or `bin/task begin <task-slug>` to resume), and it prints the worktree path,
-port, and task URL. (`begin` runs step 3 below with `--root <worktree>`, so its
-preflight inspects the desk it just created.) Run the checklist by hand when the
-fast lane does not fit, and use steps 4-10 either way — `begin` does not cover
-them.
+**Steps 1-3 are what `bin/task begin` automates** (`bin/task begin --title "Three To Five Words" --repo <app> --agent <soul> …`;
+resume with `bin/task begin <task-slug>`). Steps 4-9 apply either way.
 
-Run these in order. Each step names the command and the proof it worked.
-
-1. **Create the desk** — `bin/agent-worktree new <app> <task-slug>` from the
-   mcritchie-studio primary. It cuts `feat/<task-slug>` from the base ref —
-   `origin/accepted` when the repo has one, falling back to `origin/release`,
-   then `origin/main` (`base_ref_for`) — copies the primary `.env`, writes
-   `.env.agent-stack` (allocated port, isolated dev DB, Redis DB,
-   `LOCAL_EMAIL_CAPTURE=1`), provisions the isolated test DB, and builds
-   `app/assets/builds/tailwind.css`.
-2. **Bind the task immediately** — `bin/agent-worktree bind-task <app>
-   <task-slug> <task-record-slug-or-url>`. `new` does NOT auto-bind. Unbound,
-   the session has no task URL (terminal context, PR body) and the desk sits
-   outside the live-claim guard — the exact window a cleanup sweep once
-   destroyed.
-3. **Preflight the desk** — `bin/session-preflight` ships ONLY in
-   mcritchie-studio. For a hub desk, run the worktree's own copy from inside
-   it (`cd /Users/alex/projects/mcritchie-studio/.worktrees/<task-slug> &&
-   bin/session-preflight <task-slug>`): the script roots at its own file
-   location, so the primary's copy inspects the primary checkout instead. For
-   a satellite desk (Turf Monster, Rolio, …), the script does not exist in
-   that repo — run the hub primary's copy pointed at the desk:
-   `bin/session-preflight <task-slug> --root
-   /Users/alex/projects/<repo>/.worktrees/<task-slug>`. Hub-owned helpers —
-   `bin/task` and `config/feature_shapes.yml` — resolve from the script's own
-   repo, never from `--root`, so a satellite desk needs no `--file` task-JSON
-   dump (`--file` remains a manual escape hatch, not the satellite path); only
-   the inspected-tree checks (drift, dirty tree, doc drift, stale scan) read
-   from `--root`. Read the output as
-   signal, not a to-do list: drift, changed files, and PR overlap are measured
-   against the same ladder base the desk was cut from — `origin/accepted`,
-   falling back to `origin/release`, then `origin/main`, mirroring
-   `base_ref_for` in `bin/agent-worktree` — and the report names the ref it
-   compared against. Resolve what touches YOUR task — blocked feedback, stale
-   terminology, overlap on files you will edit — before editing.
-4. **Verify env and port** — `.env` exists in the worktree, and
-   `bin/agent-worktree whereami` prints the app, task URL, port, database, and
-   Redis DB. No port means the stack env is missing; re-run `new`.
-5. **Verify assets and test DB** — `new` runs `bin/rails db:test:prepare
-   test:prepare` under `RAILS_ENV=test` best-effort; a printed warning means
-   it failed. Confirm `app/assets/builds/tailwind.css` exists: the directory
-   is gitignored, and `bin/rails test <file>` skips the asset build, so a
-   missing `tailwind.css` is the classic first-test failure (`The asset
-   "tailwind.css" is not present in the asset pipeline`). Recovery:
-   `RAILS_ENV=test bin/rails db:test:prepare test:prepare` in the worktree.
-   `RAILS_ENV=test` is load-bearing: dotenv loads `.env.test.local` (which
-   pins `TEST_DATABASE_URL` at the isolated test DB) only in the test env —
-   without it the test section resolves to the SHARED `<app>_test` database
-   and the command prepares the wrong one.
-6. **Boot before any live preview** — `bin/agent-worktree up <app>
-   <task-slug>`. It runs `bin/rails db:prepare` first (a hand-started `rails
-   server` without it 500s with `NoDatabaseError`), boots the stack in the
-   background, and polls `/up` until 200.
-7. **Prove the URL before claiming it** — hand out a demo URL only after `/up`
-   returns 200. `up` prints `(/up 200)`; re-check any time with
-   `bin/agent-worktree status <app> <task-slug>` or
-   `curl -s -o /dev/null -w "%{http_code}" http://localhost:<port>/up`.
-8. **Know your data** — the stack DB (`<app>_development_<task-slug>`) is NOT
-   the base dev DB. It starts from `db:prepare` (schema + seeds), not from the
-   primary's data. Never assume shared records; seed what the demo needs.
-9. **Run tests through the wrapper** — `bin/agent-worktree test <app>
-   <task-slug>` is the canonical path in EVERY repo: it re-runs the test-env
-   prep (isolated test DB + tailwind build), then runs the suite hermetically
-   — `RAILS_ENV=test`, the isolated test DB, and `PARALLEL_WORKERS=1`
-   injected by the wrapper (single-process BY DESIGN: parallel workers
-   deadlock cloning a cold test DB). A plain `bin/rails test` is an
-   acceptable substitute ONLY in the mcritchie-studio hub, whose
-   `test_helper` defaults local runs to one worker and whose `.env.test.local`
-   pins the isolated test DB. In Turf Monster and Rolio a plain run forks
-   `:number_of_processors` workers, and Turf's test config has no
-   `TEST_DATABASE_URL` seam — neither single-process nor isolated, so use the
-   wrapper. Do not source `.env.agent-stack` before tests.
-10. **Email lands locally** — `LOCAL_EMAIL_CAPTURE=1` is the stack default;
-    magic links and all other mail appear at
-    `http://localhost:<port>/_studio/local_emails`, never in a real inbox.
-
-## Current Direction
-
-Avoid visible sibling directories such as `turf-monster-feature-name` as the long-term default. They make `/Users/alex/projects` hard to scan at scale.
-
-Preferred layout:
-
-```text
-/Users/alex/projects/<repo>                 # primary checkout
-/Users/alex/projects/<repo>/.worktrees/<task-slug>
-```
-
-Do not include an agent id in the path. Tasks can transfer between agents, and multiple agents may collaborate on one branch.
-
-Think of worktrees as desks and primary checkouts as loading docks. Agents do
-feature work at desks. The primary checkout stays stable for reading,
-integration, final merge, and deploy.
+1. **Create the desk** — `bin/agent-worktree new <app> <task-slug>` cuts `feat/<task-slug>`
+   from the base ref (`accepted`, else `release`, else `main`), writes `.env.agent-stack`,
+   provisions the isolated test DB, and builds `app/assets/builds/tailwind.css`.
+2. **Bind the task immediately** — `bin/agent-worktree bind-task <app> <task-slug>
+   <task-record-slug-or-url>`; `new` does NOT auto-bind.
+3. **Preflight the desk** — `bin/session-preflight <task-slug> --root <desk>` (the hub's
+   copy). Resolve what touches YOUR task before editing.
+4. **Verify env and port** — `bin/agent-worktree whereami`; no port means re-run `new`.
+5. **Verify assets and test DB** — `app/assets/builds/tailwind.css` exists; else run
+   `RAILS_ENV=test bin/rails db:test:prepare test:prepare` (the env var is load-bearing).
+6. **Boot, then prove the URL** — `bin/agent-worktree up <app> <task-slug>` runs
+   `db:prepare` and polls `/up`; hand out a URL only after it returns 200.
+7. **Know your data** — the stack DB starts from schema + seeds; seed what the demo needs.
+8. **Run tests through the wrapper** — `bin/agent-worktree test <app> <task-slug>` in
+   EVERY repo (hermetic, isolated test DB, `PARALLEL_WORKERS=1`). A plain `bin/rails test`
+   is fine only in the hub. Do not source `.env.agent-stack` before tests.
+9. **Email lands locally** — at `http://localhost:<port>/_studio/local_emails`.
 
 ## Startup Rule
 
-When a new agent session starts actual implementation work:
+Without the fast lane: agree acceptance criteria; create the production task; `bin/agent-worktree
+plan <app> <task-slug>`; `new`; `bind-task`; move the task to `building`; `up` when a URL is
+needed; edit only inside the desk. When the local behavior is ready for Mr. McRitchie:
 
-1. Identify the target app and the feature being requested. Accumulate
-   acceptance criteria until Mr. McRitchie and the agent are aligned on the
-   goal. If implementation starts with any remaining ambiguity, call it out in
-   the task and handoff.
-2. Create or update the production McRitchie Studio task-board item before
-   editing. The production `Task.slug` is immutable and generated by the app;
-   use `metadata["devops"]["worktree_slug"]` for the human-readable feature
-   handle. The task should include acceptance criteria, affected repos, risk
-   tags, expected `test_plan`, and release-slug metadata when relevant.
-3. Inspect the primary checkout only for status and context.
-4. Run `bin/agent-worktree plan <app> <task-slug>`.
-5. Run `bin/agent-worktree new <app> <task-slug>`.
-6. Bind the production task URL with
-   `bin/agent-worktree bind-task <app> <task-slug> <task-record-slug-or-url>`
-   so `whereami`, terminal context, snapshots, and PR bodies can lead from the
-   task record.
-7. Move the task to `building`.
-8. Run `bin/agent-worktree up <app> <task-slug>` when a browser or local URL is
-   needed.
-9. Make edits only inside `/Users/alex/projects/<repo>/.worktrees/<task-slug>`.
-10. When the local behavior is ready for Mr. McRitchie to inspect, keep the task
-   in `building` and mark it for operator validation:
+```bash
+bin/task update <task-slug> --local-url http://localhost:<port>/<path> --approval waiting
+```
 
-   ```bash
-   bin/task update <task-slug> --local-url http://localhost:<port>/<path> --approval waiting
-   ```
+```text
+Task: https://mcritchie.studio/tasks/<task-slug>
+Local Demo: http://localhost:<port>/<path>
+Local Inbox: http://localhost:<port>/_studio/local_emails   # only for email/auth flows
+```
 
-   In chat, return the URL in this exact top-level format:
-
-   ```text
-   Task: https://mcritchie.studio/tasks/<task-slug>
-   Local Demo: http://localhost:<port>/<path>
-   Local Inbox: http://localhost:<port>/_studio/local_emails   # only for email/auth flows
-   ```
-
-   Waiting approval cards float to the top of their stage and pulse on the board.
-   A `waiting` request is legal for as long as the local demo it points at can be
-   served — `designed`, `building` and `submitted` — so it SURVIVES `bin/ship` and
-   keeps pulsing in the review column (fixed 2026-09-09; the seam used to sit at
-   `submitted`, and the documented handoff discarded the request). The window
-   closes at `reviewed`: the work has merged, so any save at `reviewed` or later
-   settles an open request to `none` — settled, never a fabricated `approved`.
-   **The desk is NOT yet reclaimable there** — `RECLAIMABLE_STAGES` is
-   `%w[shipped archived]` (`bin/agent-worktree`), so `stage_hold` withholds a
-   desk bound to a `reviewed` task. Merged and reclaimable are two different
-   events, and the window closes on the first. After requested changes, set `--approval
-   changes_requested` and keep building.
-11. Commit coherent work on the feature branch.
-12. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
-   packet.
-13. Update the task with branch, PR URL (`finish --push --pr` stamps it for
-   you; verify), local URL, `checks_run`, and any changed acceptance criteria. Add a task conversation `handoff` note with the
-   change summary, verification, and review focus. Move it to `submitted` when
-   the PR is ready for Avi.
-14. Return the task URL first, then the PR URL, branch, worktree path, local
-   URL, tests, and PR/QA recommendation in the handoff. Do not merge to `main`
-   unless assigned the QA/Release lane.
-
-Exceptions:
-
-- Pure read-only audit or exploration can stay in the primary checkout.
-- The explicit deploy owner may use the primary checkout for integration,
-  version bumps, deploy commits, and production rollout.
-- Emergency fixes can use the fastest safe path, but the handoff must say why
-  the worktree path was skipped.
+The request survives `bin/ship`; the window closes at `reviewed`. **The desk is NOT yet
+reclaimable there** — `RECLAIMABLE_STAGES` is `%w[shipped archived]`. Then commit, `finish`,
+record the PR and `checks_run`, and move to `submitted`. Exceptions: read-only audits, the
+deploy owner, and emergencies (say why).
 
 ## Launcher
 
-Use McRitchie Studio's launcher for new parallel task stacks:
-
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/agent-worktree apps
-bin/agent-worktree plan turf-monster docs-stack
-bin/agent-worktree new turf-monster docs-stack
-bin/agent-worktree bind-task turf-monster docs-stack task-abc123def456
-bin/agent-worktree up turf-monster docs-stack
-bin/agent-worktree finish turf-monster docs-stack
+bin/agent-worktree plan|new|up|status|down|finish <app> <task-slug>
+bin/agent-worktree bind-task <app> <task-slug> task-abc123def456
+bin/agent-worktree list | whereami | doctor | snapshot --write | scale status
+bin/agent-worktree cleanup [--write | --reclaim [--yes]]
+bin/agent-worktree remove <app> <task-slug> --yes
 bin/agent-worktree sweep-orphan-dbs          # dry run; --yes drops orphaned desk DBs
 ```
 
-The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from the current **base ref** — `origin/accepted` when the repo has one (the persistent feature-PR target), else `origin/release`, else `origin/main` — copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
-
 ### A desk commits as its claiming soul
 
-`new --soul <soul>` stamps the desk's **own** git config with the soul's commit
-identity, spelled exactly as `bin/ship` spells it:
+`new --soul <soul>` (passed by `bin/task begin --agent <soul>`) stamps the desk's **own**
+`config.worktree` with the soul's identity; re-stamp with `bin/agent-worktree identity <app>
+<slug> <soul>`. It never writes `~/.gitconfig` and refuses a primary. Without `--soul`, `new`
+prints `identity: UNSTAMPED`. **A desk cut by hand gets no stamp and no warning**
+(studio-engine, solana-studio, turf-vault): cut it at `<repo>/.worktrees/<slug>` and run
+`/Users/alex/projects/mcritchie-studio/bin/agent-worktree identity <repo> <slug> <soul>`.
 
-```bash
-bin/agent-worktree new turf-monster docs-stack --soul carl
-# identity: Carl <carl@mcritchie.studio> — stamped in this desk's own git config
-bin/agent-worktree identity turf-monster docs-stack shannon   # re-stamp an existing desk
-```
-
-`bin/task begin --agent <soul>` passes `--soul` for you, then reads the recorded
-builder back after the claim and re-stamps if it differs. So a hand-run `git
-commit`, a merge-forward, or a rebase in the desk names the builder, just as
-`bin/ship`'s own commit does.
-
-How it works, and what it will not do:
-
-- **The stamp lives in `.git/worktrees/<desk>/config.worktree`**, via
-  `extensions.worktreeConfig`. It is not the shared `.git/config`, so a sibling
-  desk and the primary resolve exactly as before. The one shared write is the
-  switch `extensions.worktreeConfig = true`, once per repo.
-- **Nothing here writes `~/.gitconfig`, and no soul identity may land there.**
-  No agent writes a `user.*` key there, by script or by hand.
-  Its one sanctioned global write is the credential-helper wiring that
-  `bin/install-git-credential-helper` prints and you run once
-  ([source-control.md](source-control.md#how-the-two-tools-are-wired--differently));
-  it names a helper, not an author.
-- **It refuses a primary checkout.** A primary is a loading dock: release
-  artifact commits and the operator's own commits land there, and a stamp would
-  name a soul on all of them.
-- **An unstamped desk is announced, not silent.** `new` without `--soul` prints
-  `identity: UNSTAMPED` with what a hand commit will be authored as and the
-  `identity` command that fixes it. A stamp that fails never fails `new` or
-  `begin`, because the desk is still whole.
-- **A desk cut by hand gets no stamp and no warning.** The studio-engine,
-  solana-studio and turf-vault lanes have no `bin/task begin`, so their desk is a
-  plain `git worktree add`, and neither `new` nor `begin` runs to stamp it or
-  print `UNSTAMPED`. Cut it at `<repo>/.worktrees/<slug>`, where `identity` looks,
-  and stamp it before the first commit:
-  `/Users/alex/projects/mcritchie-studio/bin/agent-worktree identity <repo> <slug> <soul>`.
-- **A worktree cut from a stamped desk inherits the stamp** (git copies
-  `config.worktree`; measured on git 2.50.1). A zap throwaway cut from a
-  builder's desk commits as that builder unless the zapper names themselves.
-
-**Never run a plain `git config user.name` in a desk.** Without `--worktree` it
-writes the shared `.git/config` and renames every desk in the repo. That is how
-turf-monster came to author every desk's hand commits as `Steffon (Claude)` until
-2026-09-16. Full layering, the readers of git authorship, and why an unstamped
-commit is not made to fail:
-[source-control.md → Commit Authorship](source-control.md#commit-authorship--which-soul-git-log-names).
+**Never run a plain `git config user.name` in a desk**: without `--worktree` it renames
+every desk in the repo ([source-control.md → Commit Authorship](source-control.md#commit-authorship--which-soul-git-log-names)).
 
 ### Every subcommand accounts for its whole command line
 
-`--help` on **any** subcommand answers and does **nothing** — it allocates no
-worktree, port, Redis DB or Postgres database, starts no stack, and writes no
-stack env or context marker. An argument a subcommand does not recognize is
-**refused**, not dropped.
-
-This was not always true, and the gap was the dangerous kind. The dispatcher read
-`cmd = ARGV.shift || "help"` and no arm validated the remainder, so the bare
-`bin/agent-worktree --help` fell through to usage — looking safe — while one
-position over:
-
-```bash
-bin/agent-worktree new <app> <task> --help     # ONCE created a real desk;
-                                               # now answers and allocates nothing
-```
-
-`new` destructured `app_name, raw_task, maybe_type, *rest = ARGV` and chose the
-branch type with `maybe_type&.start_with?("--") ? "feat" : ...`, so `--help` was
-*recognized as flag-shaped and thrown away on purpose* while `*rest` was never
-inspected. `bind-task … --help` wrote the stack env and marker, `up … --help`
-started the stack, `status … --help` wrote the marker, and `scale out --help`
-grew the persisted Redis band. Fixed by
-[`/tasks/worktree-subcommand-drops-help`](https://mcritchie.studio/tasks/worktree-subcommand-drops-help).
-
-**Exit codes, and why help is never 0.** Help exits **1**; a refusal exits **2**;
-a teardown (`remove … --yes`, `cleanup --reclaim --yes`) that finished but left a
-process running exits **3** (see *A spared process is a leak* under Lifecycle).
-Exit 0 from this launcher is read as a *fact* by four callers, and a probe
-establishes none of them:
-
-| Caller | What exit 0 asserts |
-|---|---|
-| `bin/task` (`begin_step!`, on `new` + `bind-task`) | the worktree was created, and the task is bound |
-| `bin/qa-intake` (`snapshot --write`) | the worktree registry was refreshed |
-| `bin/release.rb` (`restore-primary`) | the primary was returned to a clean `main` |
-| `bin/release.rb` (`cleanup --reclaim`) | the reclaim ran (the ship counts reclaimed desks from the output and ignores the code, so a **3** still counts) |
-
-Usage goes to **stderr**, never stdout, because `shell-hook zsh` is consumed as
-`eval "$(bin/agent-worktree shell-hook zsh)"` from the login shell.
-
-**One arm forwards.** `test <app> <task-slug> [-- rails-test-args]` hands its
-tail to `bin/rails test`, so those tokens are minitest's to account for: that arm
-gets the help scan and nothing else, and `-n /pattern/` still forwards. For
-minitest's own help, run `bin/rails test --help` inside the desk.
-
-The dictionary lives in `bin/lib/agent_worktree_cli.rb` (`AgentWorktreeCli::COMMANDS`),
-read by the shared `bin/lib/cli_arg_guard.rb` — the same shape `bin/release` and
-`bin/qa-server` use. Adding a subcommand without a dictionary entry fails
-`test/lib/agent_worktree_cli_test.rb`, which derives the arm list from the
-dispatcher's own source.
+`--help` anywhere answers and does nothing; an unknown argument is refused. Help exits
+**1**, a refusal **2**, a leaky teardown **3**; exit 0 is a fact callers rely on.
+`test … -- <args>` forwards its tail to `bin/rails test` (`AgentWorktreeCli::COMMANDS`).
 
 ### `new` is atomic: a complete desk, or nothing
 
-`bin/agent-worktree new` either produces a **whole desk** or leaves **nothing behind**. It **preflights the Redis band** and refuses before creating anything at all; then every step that lands registers its own inverse, and any non-local exit unwinds them in reverse — the checkout, its git registration, the branch, the stack env (which *is* the port + Redis reservation), and a Redis band it grew.
+Every step registers its inverse and any exit (SIGINT, SIGTERM, SIGHUP) unwinds them; an
+unfinished rollback prints `unwind INCOMPLETE for <label>`. Bringup is idempotent, so the
+repair for any partial desk is to re-run `bin/agent-worktree new <app> <task-slug>`.
 
-This matters because the desk's whole job is **isolation**. A desk that does not own its test database does not fail loudly — it silently joins the database the primary checkout and the release gate workspaces use, giving cross-suite pollution, `PG::ObjectInUse` on purge, and phantom order-dependent failures. A full Redis band once left exactly that desk on disk (worktree + branch, no stack env, no test DB) and said nothing.
-
-Four properties are worth knowing by name, because each one closes a way the rollback used to lie or miss:
-
-- **A SIGTERM unwinds exactly like a Ctrl-C.** SIGINT raises `Interrupt` on its own; SIGTERM and SIGHUP do not — their default disposition kills the process outright (rc=143) with no rollback. SIGTERM is the *common agent path*: an agent runs `new` under a harness Bash timeout and the harness TERMs the process group. `new` traps both into the same unwind, and restores the prior handlers on the way out.
-- **The undo is registered the instant the checkout exists**, from inside `ensure_git_worktree`, not where it returns. The network `git fetch` — the slowest and most interrupt-likely step — stays *outside* the guarded region, where an interrupt costs nothing because nothing has been created yet.
-- **A rollback that could not finish says so.** Every undo returns its own verdict and the printer honours it: `unwound: <label>` when the thing is really gone, `unwind INCOMPLETE for <label> — it is still on disk; remove it by hand` when it is not. The undos work through `sh(..., allow_fail: true)` and `FileUtils`, neither of which raises, so an unconditional "unwound" reported a clean rollback for a locked worktree while the desk sat on disk — and an operator who reads "unwound" stops looking.
-- **A grown Redis band is unwound too.** Allocation grows the band restart-free when the current one is full; a bringup that then failed left it permanently inflated. (It self-heals on the next `remove`'s auto-shrink — which is exactly the kind of "eventually" that hides a leak.)
-
-Bringup is **idempotent**: re-running `new` over an existing or half-built desk completes the missing pieces and never deletes what it did not create — only what *this* run created is registered for rollback. So the repair for any partial desk is simply:
-
-```bash
-bin/agent-worktree new <app> <task-slug>
-```
-
-**When the band is full**, `new` refuses *before* cutting anything, with the remedies cheapest first:
+**When the band is full**, `new` refuses before cutting anything. Remedies, cheapest first:
 
 ```bash
 bin/agent-worktree cleanup --reclaim         # dry run: merged + clean desks, safe to release
@@ -325,549 +94,81 @@ bin/agent-worktree scale --provision         # INFRA LANE: raises the Redis ceil
                                              # bounces every running stack
 ```
 
-Use `bin/agent-worktree status <app> <task-slug>` to recover the URL later, and `bin/agent-worktree down <app> <task-slug>` to stop a running stack.
-Use `bin/agent-worktree finish <app> <task-slug>` when the work is committed
-and ready for PR/QA handoff.
-
 ## Lifecycle
 
-Use the launcher as the source of truth for worktree stack state:
+- `list` shows health, URL, branch, dirty/merge state, database, Redis DB and pidfile.
+- `finish` blocks dirty, empty, stale or already-merged branches. `--push --pr` opens a draft
+  PR on the base branch and stamps `devops.pr_url` on the bound task.
+- `doctor` reports drift and **orphan** worktrees (prune a stale one with `git -C <repo> worktree prune`).
+- `snapshot --write` writes the non-secret cross-app registry to
+  `/Users/alex/projects/.agents/worktree-registry.json` (override `AGENT_WORKTREE_REGISTRY`).
+- `cleanup` is a dry run: clean candidates merged into, or diff-equivalent to, the base ref,
+  each with its safety class, `rationale:` line, and exact `remove … --yes` command. That
+  dry run is the approval packet.
+- `cleanup --write` files candidates on the **desk ledger** (`DeskRecord`, Desks panel on
+  [/deployments](https://mcritchie.studio/deployments)). A teardown files its record
+  **before** destroying anything, so **when the board is unreachable the teardown
+  REFUSES**. [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history.
 
-```bash
-bin/agent-worktree list
-bin/agent-worktree whereami
-bin/agent-worktree bind-task turf-monster task-slug task-abc123def456
-bin/agent-worktree shell-hook zsh
-bin/agent-worktree status turf-monster task-slug
-bin/agent-worktree finish turf-monster task-slug
-bin/agent-worktree doctor
-bin/agent-worktree snapshot
-bin/agent-worktree cleanup
-bin/agent-worktree cleanup --reclaim
-bin/agent-worktree cleanup --reclaim --yes
-bin/agent-worktree remove turf-monster task-slug --yes
-bin/agent-worktree scale status
-```
+### The reclaim safety rule
 
-- `list` shows task, health, URL, branch, dirty state, merge state, ahead/behind, database, Redis DB, pidfile state, and local inbox URL.
-- `bind-task` stores the production McRitchie Studio task record slug and URL in
-  the generated stack env, then refreshes `.agent-context.json`. Pass either
-  `task-<hex>` or `https://mcritchie.studio/tasks/task-<hex>`. Use this after
-  the production task exists and before PR handoff so the terminal context and
-  PR body lead from the task record.
-- `whereami` reads the nearest `.agent-context.json` marker and prints the app,
-  production task record, task URL, task/worktree slug, branch, local URL, port,
-  Redis DB, database, terminal title, prompt badge, and shell exports. Pass
-  `<app> <task-slug>` to refresh the marker for a known stack, `--json` for
-  machine-readable output, or `--shell` for exports/title commands. The shell
-  form recomputes exports from validated scalar context fields at runtime and
-  ignores any persisted executable shell content in `.agent-context.json`.
-- `shell-hook zsh` prints a zsh hook that refreshes `AGENT_CONTEXT_*`
-  variables and the terminal title whenever the prompt redraws or the working
-  directory changes. It does not edit shell dotfiles; source it explicitly when
-  you want evergreen terminal titles.
-- `status` shows the detailed state for one generated stack.
-- `finish` prints a feature graduation packet and PR body. It blocks dirty
-  worktrees, branches with no commits ahead of the base ref, stale branches
-  behind the base ref, and already-merged branches. Add `--push` to push the
-  branch. `--push --pr` additionally requires a bound production task record
-  from `bind-task`, then creates a draft PR **based on the base branch
-  (`accepted`, else `release`, else `main`)** through `gh` when available, and stamps the
-  created PR's URL onto the bound task (`devops.pr_url`) in the same handoff
-  (best-effort: a board blip warns with the manual `bin/task update --pr-url`
-  command instead of failing the finish).
-- `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to the base ref. It also reconciles `git worktree list` against the managed registry per repo and flags any **orphan** — a git worktree that is neither the primary checkout nor a managed `.worktrees/*` dir — with its path, branch, and merge/clean state. An orphan whose directory was deleted on disk but is still tracked by git is reported distinctly as **prunable** (clear it with `git -C <repo> worktree prune`); `doctor` and `snapshot --write` both tolerate it and still exit 0. Orphans are detect-and-report only; removal stays approval-gated (`bin/agent-worktree remove`).
-- `snapshot` prints a non-secret JSON registry of every generated worktree,
-  including health, local URLs, branch state, Redis DB, database name, cleanup
-  candidacy, compare URL, and doctor issues. The payload also carries a
-  top-level `capacity` block (`floor`, `step`, `current`, `used`, `free`,
-  `physical_max`) describing the elastic Redis band.
-- `snapshot --write` writes the same registry to
-  `/Users/alex/projects/.agents/worktree-registry.json` for conductor sessions,
-  dashboards, and future automation. That file is cross-app, so every write
-  covers every app's desks: an app argument filters only the printed view, and
-  the refresh after `remove` and `cleanup --reclaim --yes` is never scoped to one
-  app. A scoped write once erased the other apps' desks from the file and from
-  the desk ledger. Set
-  `AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json` when a sandboxed
-  session needs a scratch write instead of the shared projects registry.
-- `cleanup` is a dry run. It prints clean worktree candidates whose branch is
-  either contained in the base ref (`origin/accepted`, else `origin/release`, else `origin/main`) or has
-  an empty final diff against the base ref after a squash merge. A branch merged
-  into `accepted` but not yet shipped to `main` therefore counts as done. Each
-  candidate prints the exact safety class (`merged` or `base-equivalent`), base
-  ref, ahead/behind count, stack health, `/up` code, pidfile state, Redis DB,
-  database state, and the exact `bin/agent-worktree remove … --yes` command. Use
-  that dry run as the approval packet before deleting anything.
-- `cleanup --write` files candidates on the **desk ledger** — `DeskRecord` on the
-  board, visible on the Desks panel at [/deployments](https://mcritchie.studio/deployments).
-  It does not remove files, worktrees, branches, databases, Redis keys, or processes.
-- **The ledger is a database now, and that is the fix — not a relocation.** It used
-  to be [`../maintenance/delete-later.md`](../maintenance/delete-later.md), written by
-  `bin/agent-worktree` into whatever checkout it ran from. `ledger_path` was anchored
-  to `HUB_DIR`, and a cleanup is normally run from the **primary**, which sits on
-  `main` — a branch nobody may commit to. So the audit row was created in the one
-  place it could never be saved from. "Restore later" stashes piled up between
-  2026-06-26 and 2026-08-31 carrying **166 rows** across **twelve stashes** plus the
-  primary's own uncommitted tree; not one was ever restored, and a reclaim sweep
-  stranded 25 more *during the conversation about the defect*. Every
-  earlier fix idea moved the write somewhere else and still needed a human to
-  remember a follow-up; a board write is durable the moment it lands.
-- **The episode rule survived the move, unchanged.** The ledger is keyed by
-  TEARDOWN, not by path. Desk paths recycle — `_ship` is torn down once per release
-  cycle at the same path — so every teardown opens its own record, carrying its own
-  HEAD SHA and its own date. The only record a write may edit is an **open** one for
-  that path: a `candidate` being resolved into `removed <date>`, which is one episode
-  changing state. A teardown writes to its episode twice: it opens it as `removing`
-  before it destroys anything, then closes it as `removed <date>`, or as `leaked <date>`
-  when it spared a process (see *A spared process is a leak* below). A record carrying `resolved_on` is history and is never rewritten —
-  `DeskRecord` raises `ResolvedRecordImmutable` on an update or a destroy, which is a
-  stronger guarantee than the file could offer because this medium has exactly ONE
-  writer. `test/models/desk_record_test.rb` holds it.
-- **When the board is unreachable the teardown REFUSES.** `bin/agent-worktree` files
-  the record **before** it stops a stack, flushes a Redis DB, drops a database or
-  removes a git worktree, so a refused write costs a retry and leaves nothing
-  half-done. There is deliberately **no local queue**: a spool that flushes "on next
-  contact" is the same *somebody must remember* this change removes. The cost is
-  close to zero in practice, because the automatic sweeps already withhold every
-  bound desk when the board is unreadable (see the CLAIM channel below) — all that
-  fails closed is the explicit single-desk `remove … --yes`. `snapshot --write` is
-  the other way round: it destroys nothing, so a failed sync warns loudly and the
-  local registry file is still written.
-  Only the teardown's FIRST write fails closed. The closing write lands after the desk
-  is gone, so a failure there warns instead, and the record keeps reading `removing`
-  until a snapshot misses the desk and lists it as vanished. A board that predates
-  `removing` refuses it by name (`unknown status "removing"`); the teardown then files
-  one `removed` record first, the old way, rather than refusing every teardown until
-  the board deploys. A leak is still reported on the command line and in the exit code.
-- **The markdown ledger and its archive are TRACKED HISTORY. Do not delete either.**
-  They hold every row filed before the cutover, `bin/archive-docs` still rolls
-  resolved rows between them on the `archive-shipped` beat, and `bin/ledger-guard`
-  still refuses a tree that lost a dated row — it compares the two files against the
-  merge base with `origin/accepted` (then `release`, `main`), `bin/archive-docs` runs
-  it at both ends of the roll, and `test/lib/ledger_guard_test.rb` runs it in CI on
-  every PR. **The guard names its own scope in its verdict** (`markdown ledger +
-  archive`), because a green exit there is not a verdict on the board's desk records —
-  those are covered by the model invariant above, and a guard that silently stops
-  covering something is worse than no guard. `/tasks/harvest-stranded-ledger-stashes`
-  imported the stranded rows from those files with **`bin/harvest-desk-ledger`** — 166 of
-  them, not the 98 first surveyed, because that survey read six of the twelve stashes and
-  none of the primary's uncommitted tree. It sequenced **after** this change, because
-  recovering them while the system still stranded records would just re-strand them. The
-  harvest is keyed on the row text (`DeskLedgerImport.import_key`, unique in the schema),
-  so re-running it writes nothing — `DeskRecord.file!` could not absorb a second run, as
-  it resolves through the OPEN episode for a desk path and every stranded row is a
-  resolved teardown.
-- **A refusal is only a guard if its caller reads it.** `bin/archive-docs` runs
-  the same check at both ends of the archive roll and exits non-zero — and that
-  exit code sat **ignored** by `bin/release archive`, which printed the warning
-  and committed the loss anyway, until `sweep_docs`' two call sites were taught to
-  abort on it. The invariant lives in `bin/lib/ledger_guard.rb`; the caller-side
-  half is pinned by `test/lib/release_archive_docs_refusal_test.rb`.
-- **The occupancy guard (why git state alone is not enough).** A worktree is a
-  candidate only when it is git-eligible **AND nobody is working at it**. A
-  brand-new worktree off `release` and one whose work was **fast-forward merged**
-  are **git-identical** — both clean, both `HEAD == base`, both 0-ahead — so
-  `cleanup_ready?` provably cannot tell a desk someone just sat down at from
-  finished work. **Six** independent channels answer that question (and for a
-  **discovered repo** the SECOND of them returns a hold outright, short-circuiting the
-  four after it — which is why such a desk is withheld, see **unbound on a DISCOVERED
-  repo** below), and every
-  destructive path, `doctor`, and the registry route through ONE decision
-  (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
-  can never nominate a desk the sweep would refuse. A withheld desk is named with its
-  reason, and **every branch that gives up on checking says so**, because a guard that
-  silently disables itself is worse than no guard. A *nominated* desk is explained too:
-  the dry run prints a `rationale:` line and the desk record carries the same
-  `Cleared: …` sentence, naming which questions were asked and what came back — see
-  **Every nomination explains itself** below.
-  - **The ORIGIN channel** (`origin_hold`) asks the repo's remote whether merge evidence
-    can still be refreshed at all, and it runs **first** because every hold after it reads
-    remote-tracking refs. A failed fetch leaves those refs STALE, and stale is not
-    conservative for a RETIRED repo: a deleted remote's tracking refs are frozen in a
-    merged-looking state, so they read as ELIGIBLE forever. `:gone` (the remote answers
-    "repository not found") and `:error` (auth, or no network) both withhold, but earn
-    different words so nobody is sent looking for a repo that is fine. The fetch is bounded
-    at 20s (`AGENT_WORKTREE_ORIGIN_FETCH_TIMEOUT`), runs once per repo per command, and
-    runs at EVERY entry point that reads the verdict — `cleanup`, `cleanup --reclaim`,
-    `doctor` and the registry snapshot — because populating it in the reclaim sweep alone
-    left the other three nominating desks the sweep refuses.
-  - **The CLAIM channel** asks the board who holds the task: the **live build-claim
-    lease** (`ClaimLease`, renewed by the builder's status line under a 120s TTL). A
-    confirmed hold names the builder's heartbeat age, so the hold is checkable. The
-    board read is genuinely bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it
-    kills the child — a hung or black-holed board cannot stall a sweep.
-  - **The STAGE channel** (`stage_hold`) asks the board whether the **pipeline** is
-    finished with the task, and frees a desk only at `shipped` or `archived`. It is the
-    only channel that can see the rungs ABOVE `accepted` — the release sweep, QA, the
-    production ship — and the other five all go quiet at the `reviewed` seam. **2026-09-20:
-    a dry run offered 19 candidates, 5 of them tasks at `reviewed` riding a release that
-    was still assembling.** Nothing malfunctioned: `reviewed` MEANS the branch is merged
-    onto `accepted`, so git read affirmatively safe; review closed the PR on the way
-    there; the builder's lease lapsed at the handoff; the reviewer had finished; and
-    nobody had typed in the desk for hours. Five honest clearances over five live desks,
-    and `--yes` would have deleted the local branch behind every one. The hold names the
-    stage, and a cleared desk names it too, so the safe/unsafe split is readable rather
-    than implicit. It costs no round-trip — it reads the record the claim channel just
-    memoized.
+A fresh desk and a merged one are **git-identical**, so git alone never frees a desk.
+**Six independent channels** decide, through ONE decision every path shares
+(`reclaim_verdict`), as an `||` chain, in order:
 
-    Where it CANNOT get an answer it withholds, each case in its own words, because a
-    failed read is not a clean read and an answer you could not get must never buy more
-    freedom than one you got and disliked: an **unreadable board** (re-run once it is
-    reachable), a **task the board says does not exist** and a **record carrying no
-    `stage`** (both name `remove … --yes`, because the board answered and waiting changes
-    nothing). Failing CLOSED on an unreadable board is the deliberate exception this file's
-    "never wedge the sweep" instinct does not get: withholding is a deferral, freeing is an
-    irreversible teardown, and the board is most likely to be down during exactly the heavy
-    parallel devops that prompts a mass reclaim. The read is bounded (10s), so it defers
-    rather than hangs. **No bound task is the one forced fail-open** — `_ship`/`_gate`
-    carry none by design — and its clearance says so rather than implying a stage was read.
-  - **The DESK channel** (`desk_hold`) asks the filesystem whether anyone is at the
-    directory, and it exists because the claim channel has a hole it structurally
-    cannot cover. **2026-08-13: a `cleanup --reclaim` sweep destroyed a desk a builder
-    had just created and was working in.** The desks most at risk carry no live claim
-    to read — inside the `new → bind-task → move building` window, half-allocated by a
-    failed `bind-task`, or simply between renewals — so all of them read as free, and
-    the blast radius is another session's **uncommitted** work, which no gate, review,
-    or CI can catch because it never becomes a commit. Three signals, all reusing the
-    lease work's own arithmetic (`ClaimLease.abandoned?`) rather than inventing a
-    second notion of "is the holder working":
-    - **desk age** (`DeskActivity.age_seconds`, read off the worktree `.git` marker) —
-      a desk cannot have been idle longer than it has existed, so anything younger
-      than `ClaimLease::DESK_IDLE_SECONDS` (1h29m) is held. Not a new threshold: it is
-      the floor the existing one implies.
-    - **desk mtimes** (`DeskActivity.touched_since?`) — an agent that is working writes
-      files; one that has walked away does not. Committing does not touch a working
-      file, so a desk whose work has merged still carries the mtimes of the edits that
-      made it — clean, landed, and occupied.
-    - **the holder's gate** (`holder_gate_in_flight`) — a cert writes **nothing** into
-      its desk for up to the measured 94-minute p99, so an hour-old desk mid-cert is
-      invisible to both signals above. This is why an age threshold alone was not the
-      fix.
+1. **ORIGIN** (`origin_hold`) — a gone or unreachable remote withholds.
+2. **CLAIM** (`claim_hold`) — an old lease row, if any; `_ship`/`_gate` are held by ANY live
+   `ReleaseConductorClaim` (`assembler` + `deployer`). An unbound desk on a **discovered
+   repo** (studio-engine) gets a hold outright — a **short-circuit**: the later channels
+   never run at all. **No discovered desk is ever auto-reclaimed**; use `remove`.
+3. **STAGE** (`stage_hold`) — frees a bound desk only at `shipped` or `archived`, failing
+   closed on an unreadable board (withholding defers; freeing is irreversible).
+4. **REVIEW** (`review_hold`) — a reviewer on the task (`review_in_progress`) holds it.
+5. **DESK** (`desk_hold`) — desk age under `ClaimLease::DESK_IDLE_SECONDS` (1h29m), recent
+   mtimes (`DeskActivity.touched_since?`), or the holder's gate in flight. Every unknown holds.
+6. **PR** (`pr_hold`) — an open, unmerged PR holds; with `gh` unreachable the board's
+   `pr_url` without a `merged` stamp holds.
 
-    Every unknown holds the desk, the same rule the claim lease uses: an undatable
-    desk or an unreadable walk is withheld, and the hold says "we could not check"
-    rather than claiming a builder nobody confirmed.
-  - **The PR channel** (`pr_hold`) asks GitHub whether the branch's work actually
-    **landed**, because git-eligibility does not. A branch whose diff against the base
-    is empty — the base moved on, an equivalent change landed by another route — is
-    git-eligible while its pull request is still **open and unmerged**: litter to git,
-    live work to the pipeline. An open PR withholds the desk (reclaim deletes the local
-    branch). `gh` answering "none" frees it; `gh` **unreachable** falls back to the
-    board — a task carrying a `pr_url` with no `merged` stamp is unlanded work and is
-    withheld, while a merged stamp or no PR at all frees it. That fallback, rather than
-    a flat fail-closed, is deliberate: `gh` is optional tooling, and withholding every
-    desk on a machine without it would wedge the sweep permanently and silently.
-  - **The REVIEW channel** (`review_hold`) asks the board whether a **reviewer** is on
-    the task (`review_in_progress`). Review is a second lane with its own claim: a
-    reviewer works the builder's desk — reading it, running its suite, merging from
-    it — without ever taking the BUILD claim, and mostly READS, so the desk's mtimes
-    stay quiet. **2026-08-14: a sweep nominated a desk another live session was
-    reviewing.** Positive signal only, so an older board that cannot answer does not
-    re-decide the unreadable-board case the claim channel already owns.
-  - **The release WORKSPACES (`_ship`/`_gate`) are held by ANY live release claim, not
-    just a ship's.** They are fixed-path infrastructure `bin/release` recreates on
-    demand, so they carry no bound task and would otherwise fail open through the
-    unbound branch. `claim_hold` withholds them whenever a live `ReleaseConductorClaim`
-    exists in **either** role (`RELEASE_CLAIM_ROLES` = `assembler` + `deployer`), and
-    withholds on a can't-tell read. **2026-08-14: the guard asked about `deployer`
-    alone**, on the reading that `_ship` is "the tree the deploy works in". It is not —
-    `bin/release prepare` (the assembler, Avi's `qa-release` sweep) merges release
-    branches forward and runs `bundle lock` for every consumer **inside `_ship`**. So
-    during a live prepare the deployer claim was legitimately free, and a reclaim listed
-    both repos' `_ship` desks as "safe: merged on `origin/accepted` (clean)" while the
-    sweep was writing in them. A role added to `ReleaseConductorClaim::ROLES` must be
-    added to `RELEASE_CLAIM_ROLES` too: asking one role of a two-role lifecycle is not a
-    narrower guard, it is a guard that is absent half the time.
-  - **A QUIET desk is still a HELD desk — quiet never makes it reclaimable.** The
-    board also reports a task's last *durable* progress beside its liveness (see
-    [`devops-task-board.md`](devops-task-board.md#the-build-claim-liveness-and-progress-are-two-facts)),
-    and a live claim that has landed nothing in hours reads `quiet`. That is
-    **informational**: `quiet` is not an input to `reclaim_verdict` at all, and every
-    channel it does read can only ADD a hold — none can free a desk another channel
-    kept. So a quiet desk is withheld exactly like a busy one. This is on purpose.
-    A healthy build legitimately goes silent for a long time (certs reach 94
-    minutes at p99), so reclaiming on staleness would trade a rare lying-green for
-    a **frequent lying-red** — and a false reclaim destroys work in flight. A human
-    reads the progress fact and decides; the sweep never does.
-  - **Fail-open, except where it would destroy something.** When the guard reads the
-    claim, the dispositions short of a *confirmed, parseable* live lease are *not*
-    alike, and the destroy path treats them differently:
-    - **lapsed** — we checked; the builder is gone. Reclaimable everywhere. ✔
-    - **unbound** — we cannot *identify* the desk, so there is no claim to look up.
-      The CLAIM channel is forced to fail open (withholding every unidentifiable desk
-      would wedge cleanup), and it warns. The **desk channel still judges it**, so an
-      unbound desk is protected while it is fresh or in use and released once cold.
-    - **unbound on a DISCOVERED repo** — the same absence, but **permanent**, so it is
-      **withheld forever** rather than released once cold. A discovered repo (one with a
-      worktree tree but no registry entry — `studio-engine`, and its `.sibling` tree) can
-      never carry a bound task at all: `TASK_RECORD_SLUG` is written by `bind-task`, which
-      routes through `app_for`, and `app_for` stays registry-only because `new`/`up`/`plan`
-      need a port range a discovered repo has no answer for. So the fail-open above would be
-      a *standing licence to destroy* rather than a best-effort. So `claim_hold` **returns a
-      hold outright** for such a desk — and because it is SECOND in an `||` chain, that
-      return means stage, review, desk and pr **never run at all**. They are UNREACHED,
-      not blind, and the difference is the whole point: a blind channel returns `nil`, and
-      `nil` FREES. (Only `review_hold` would genuinely have had nothing to read; `stage`
-      fails open at its own slug guard, and `pr_hold`'s primary lane reads GitHub by
-      branch rather than the board. Counting "dead channels" was the wrong question —
-      in an `||` chain only the first one to return is ever asked.) What would otherwise
-      be left is desk age plus mtimes — and `desk_activity` prunes `tmp`, `log`, `coverage`, `vendor` and
-      `.bundle`, which is exactly and only what a gem builder writes while running a suite,
-      with a cert p99 of 94 minutes against a 1h29m idle window. Measured before the guard:
-      `cleanup --reclaim studio-engine` nominated 4 desks on mtime evidence alone. So
-      **unbound + unverifiable = HOLD**, and the consequence is stated plainly: **no
-      discovered desk is ever auto-reclaimed**, because none can ever be bound. Coverage
-      buys *visibility* — `doctor`, `list`, `snapshot`, and the dry run's withheld lines —
-      not teardown. Tear one down deliberately with the `remove` command the sweep prints.
-      Restoring automated reclaim means giving gem desks a **real liveness signal**; the
-      most promising route is not pruning `tmp/` for stackless repos, where a write
-      genuinely means a suite is running, unlike a Rails desk whose server churns `tmp/`
-      constantly.
-    - **corrupt** — a claim is present but its lease timestamp is *unparseable*, so
-      liveness cannot be checked. **Withheld everywhere**, exactly like an unreadable
-      board: a desk we cannot verify must never read as free on a destroy path. But
-      the hold is named *honestly* — `claim expiry unverifiable … inspect task
-      <slug>`, **not** `held by a live builder` — because we never confirmed a
-      builder, only that we could not check (and there is no heartbeat age to report).
-      `ClaimLease.corrupt_expiry?` exists precisely to make this branch. Distinct from
-      a **blank** expiry, which is a never-renewed relic and stays fail-open (lapsed):
-      the renewer always writes an expiry, so blank means dead, unparseable means
-      unreadable.
-    - **bound, but the board could not be read** (500 / timeout / auth) — we know the
-      desk *could* be claimed and simply failed to find out. It is **withheld
-      everywhere**. The board 500s under Postgres pressure during heavy parallel
-      devops — exactly when many worktrees exist and the sweep gets run — so outage
-      and mass-reclaim are **correlated, not independent**, and failing open reopens
-      the original incident precisely when everyone believes it is covered. The costs
-      are asymmetric: withholding during an outage is a **deferral** (re-run when the
-      board is back); nominating a desk you could not verify leads to an
-      **irreversible teardown**.
-  - **There is no "advisory" lane.** Every caller answers one question — *is this desk
-    a cleanup candidate?* — and that answer is consumed to **destroy**: the registry
-    feeds `bin/qa-intake`, which prints a `remove … --yes` per candidate; the `cleanup`
-    dry-run prints the same command; `cleanup --write` files the desk on the desk
-    ledger; `doctor` labels it a candidate. An earlier cut split these
-    into "destroy" and "advisory" lanes and let the advisory ones fail open — so during
-    exactly the outage this guard exists to survive, the sweep withheld a live
-    builder's desk while the conductor's front door recommended tearing it down. During
-    an outage the truthful answer is *"I cannot tell"*, and **withholding is that
-    answer**; nominating is the lie. The one exception is `remove … --yes` — the
-    explicit operator override, which warns and proceeds.
-  - **The unbound desk was the gap, and the desk channel closed it.**
-    `TASK_RECORD_SLUG` is written by `bind-task`, never by `new`, so a builder inside
-    the `new → bind-task → move building` window has no task and therefore no claim to
-    check. That is the exact desk both incidents destroyed. The claim channel still
-    fails open on it and still says so; the **desk channel** now judges it on age and
-    mtimes, so a fresh or busy unbound desk survives and a cold one is still collected.
-    Bind the task immediately after `new` anyway — a bound desk gets the gate channel
-    too, which is the only thing that sees a holder mid-cert.
-  - **What this costs, stated plainly.** A **bound** desk is held until its task reaches
-    `shipped` or `archived` — a full release cycle, not an idle window — so a merged desk
-    keeps its Redis band slot through QA and the production ship. `ClaimLease::DESK_IDLE_SECONDS`
-    (1h29m) is the DESK channel's threshold alone, and since the stage channel landed it is
-    the whole wait only for an **unbound** desk, which has no task to ask a stage of. That is
-    a real trade against band pressure, taken deliberately: disk and a slot are recoverable, a
-    destroyed desk is not. `remove <app> <task> --yes` still tears one down on demand, so
-    nothing is stuck — only nothing is automatic.
-  - **Every nomination explains itself.** `safe: merged on origin/accepted (clean,
-    +0/-0)` is a **git fact**, and it was true of all three load-bearing desks the
-    2026-08-14 sweep offered up. So a nominated candidate also prints
-    `rationale: <what each channel asked and answered>` in the dry run
-    (`reclaim_evidence` → `rationale`), and the desk record carries the same
-    sentence as `Cleared: …` beside the git facts. Read it as the approval packet: a
-    channel that could not be asked says so there (`GitHub unreachable`), which is how
-    you spot a sweep running with a blind guard **before** approving 29 teardowns. A
-    desk removed against a hold (the explicit `remove … --yes` override) files the
-    **hold** in that cell instead — an archive row never borrows the language of a
-    cleared candidate.
-- `cleanup --reclaim` is the **scale-down-on-close normal flow**: a merged
-  worktree self-releases its Redis slot the same way a stack scales down when it
-  closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
-  auto-remove — clean, either contained in the base ref or base-equivalent, **and
-  unoccupied** (`reclaimable?`, all six channels in the order they run: a reachable
-  origin, no live build-claim, a bound task the board puts at `shipped` or
-  `archived`, no reviewer on the task, a desk old enough, quiet enough, and with no
-  gate in flight to be called abandoned, and no open unmerged PR on the branch) —
-  and prints the same safety evidence, rationale, and
-  removal command as `cleanup`. It never lists a dirty, unmerged, claimed, fresh, or
-  actively-edited worktree, never a desk whose PR is still open, and never `_ship`/
-  `_gate` while a release conductor holds a claim; the candidate set is sourced from
-  `.worktrees/*` only, so the primary checkout is never a candidate.
-- `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
-  safe candidate (stop the stack, flush the stack's Redis DB, drop the desk's
-  Postgres databases, file the desk record **first**, remove the Git worktree, delete
-  the stale local branch), re-verifying each candidate under the worktree lock — **including a fresh re-read of the build
-  claim**. That re-read matters: the candidate list is computed once, but teardowns
-  run serially inside the lock, so a builder who sits down and claims a task
-  mid-sweep would otherwise have their clean `HEAD == base` desk destroyed on
-  minutes-stale evidence. A worktree that turned dirty/unmerged **or newly claimed**
-  in the interim is skipped, with the reason printed. After the batch it shrinks the
-  Redis band toward the floor (`maybe_scale_in`) and refreshes the registry once.
-  Output names each reclaimed worktree, the freed Redis DB, and the resulting band
-  size. Safe to re-run; with no candidates it prints a clear no-op message (naming
-  any desks withheld for a live claim) and changes nothing.
-- **`remove … --yes` is the explicit operator override and is deliberately NOT
-  blocked by the claim** — you may be evicting a desk whose session died mid-lease.
-  It **warns loudly** when a live claim is present, but proceeds. The automatic paths
-  (`cleanup`, `--reclaim`, and the registry the conductor reads) refuse a held desk
-  outright, so nothing ever *recommends* that removal.
-- `remove <app> <task-slug> --yes` is the approved deletion path after Mr.
-  McRitchie or the conductor authorizes cleanup. It refuses dirty or
-  non-equivalent worktrees, stops the stack, flushes the stack's Redis DB (so a
-  reused DB number cannot inherit stale keys), **drops the desk's per-worktree
-  Postgres databases** — the dev DB, its `_test_` sibling, and their parallel-test
-  shards, named from the desk's own stack env rather than swept by pattern, and any
-  that still has an open connection is left in place — files the desk record on the
-  board **before** any of it, removes the Git worktree, deletes the stale local branch, shrinks the Redis band toward
-  the floor when slots free up, and refreshes the registry.
-- **A spared process is a leak, and the teardown reports it.** The generic Rails stop
-  signals a pid only when `lsof` puts its cwd inside the desk (`cwd_is_desk?`): a
-  pidfile's pid can be recycled, a port holder can be any app, and SIGTERM cannot be
-  undone. So a process the teardown cannot prove is the desk's is left running. Until
-  2026-09-16 that left only a stderr line: the command exited 0 and the ledger read
-  `removed`, while the process kept its port and its memory. Now each spared process:
-  - prints `teardown-leak: <app>/<desk> pid <pid> (web pidfile, port <n>, cwd <dir>) is
-    still running …` (`port holder` in place of `pidfile` when only the port named it);
-  - closes the desk's record as **`leaked`**, with the evidence in `leaked_processes`
-    (`pid`, `label`, `via`, `port`, `cwd`) and a reason that leads with `LEFT RUNNING:`,
-    so the Desks panel's Finished list shows it. `GET /api/v1/desk_records?status=leaked`
-    lists every leak;
-  - makes the command exit **3** (`TEARDOWN_LEAK_EXIT`). `cleanup --reclaim --yes`
-    tears down every candidate first, marks the leaking desk's `reclaimed …` line,
-    prints `reclaim: N of M reclaimed desk(s) left a process running: …`, and exits 3
-    once at the end. One leak never stops the batch.
+So a desk is `reclaimable?` only when clean, merged, and cleared by all six — its task at
+`shipped` or `archived` included. `quiet` never frees a desk, and no lane fails open. **The
+cost:** a bound desk stands through the whole release cycle.
 
-  The process is still never signalled. Check it with `ps -o pid,command -p <pid>` and
-  stop it by hand only if it is the desk's. `down` spares the same way but only warns,
-  because it tears nothing down and has no outcome to record.
-  `test/commands/agent_worktree_teardown_leak_test.rb` holds this end to end.
+- `cleanup --reclaim --yes` tears each candidate down like `remove`, re-verifying under the
+  lock, then shrinks the Redis band. Safe to re-run.
+- `remove <app> <task-slug> --yes` is the operator override (warns on a live claim, refuses
+  a dirty desk): record first, then stack, Redis DB, Postgres DBs, worktree and branch.
+- **A spared process is a leak**: `teardown-leak: …`, a **`leaked`** record, exit **3**.
+  Check `ps -o pid,command -p <pid>`; stop it by hand only if it is the desk's.
 
-  **None of this covers a turf-monster desk yet.** One with a stack env stops through
-  its own `bin/tm down` (in `remove`, the reclaim and `down` alike). That script
-  signals a pidfile's pid when its command matches `puma|rails|ruby`, never checks
-  the cwd or the port holder, and deletes the pidfiles, so the checks after it find
-  nothing. When it succeeds, the teardown still exits 0 and records `removed`.
-- `scale status` prints the Redis band: floor, step, current band + DB range,
-  used, free, and the physical ceiling (`databases` from Redis). `scale out` /
-  `scale in` are manual nudges (respect floor and physical ceiling). `scale
-  --provision [--yes]` raises the physical `databases` and restarts Redis once;
-  see [Scale Note](#scale-note).
-
-Deletion remains approval-gated:
-
-1. Run `bin/agent-worktree cleanup <app>` to see candidates.
-2. Confirm `bin/agent-worktree doctor <app>` has no dirty or unique-work
-   warnings for the target.
-3. After approval, run `bin/agent-worktree remove <app> <task-slug> --yes`.
-4. Run `bin/qa-intake --refresh --apps <apps>` so the conductor view no longer
-   reports the removed worktree.
-
-## Squash-Merge Cleanup
-
-GitHub squash merges do not preserve the feature branch SHA on the base. After a
-PR lands, a branch can appear behind its base ref even when all of its content
-was merged. Do not rely on ahead/behind alone.
-
-The launcher now treats an empty final diff against the base ref
-(`origin/accepted`, else `origin/release`, else `origin/main`) as a cleanup
-candidate. Before removing a squash-merged worktree manually (substitute the
-repo's resolved base ref):
-
-1. Pull the primary checkout so `origin/accepted` is current.
-2. From the feature worktree, confirm the final diff is empty:
-
-   ```bash
-   git diff --stat origin/accepted..HEAD
-   git diff --name-status origin/accepted..HEAD
-   ```
-
-3. If both commands are empty, prefer
-   `bin/agent-worktree remove <app> <task-slug> --yes` after approval.
-4. If the diff is not empty, do not delete. The branch contains work not
-   represented on the base; send it back through PR/QA or salvage deliberately.
+Deletion stays approval-gated: `cleanup <app>`, confirm `doctor <app>` shows no unique
+work, `remove <app> <task-slug> --yes` after approval, then `bin/qa-intake --refresh --apps
+<apps>`. For a squash-merged branch, confirm `git diff --stat origin/accepted..HEAD` and
+`git diff --name-status origin/accepted..HEAD` are empty first; if not, do not delete.
 
 ## Rules
 
-- Branch from the **base ref** (feature PRs target the persistent `accepted`
-  branch, not `release`/`main`). This is the launcher default: `bin/agent-worktree
-  new` cuts from `origin/accepted`, `finish --pr` opens the PR with `--base
-  accepted`, and ahead/behind + cleanup/merge checks all reckon against
-  `origin/accepted`.
-  - **Fallback:** a repo with no `origin/accepted` falls back to
-    `origin/release`, then `origin/main`, for the branch cut, the PR base, and
-    the comparison base. The resolved base is reported per-worktree (`base_ref`
-    in `snapshot`/registry, the `base:` line in `finish`).
-- One task branch per worktree.
-- Never commit task work on the primary `main` checkout unless you are the
-  explicit deploy owner for that repo.
-- A feature branch is the backup and collaboration unit. `accepted` is the
-  reviewed integration lane (`release` is the QA lane; `main` is the shipped
-  lane, fast-forwarded from `release` at ship time), not a place to rush code
-  so it is not lost.
-- Feature agents push their branch and open/prepare a PR into `accepted`.
-  Review merges to `accepted`; Avi's `qa-release` promotes
-  `accepted → release`; Steffon ships `release → main`.
-- If the primary checkout is dirty, ahead, or moves while you are working, treat
-  it as shared-floor drift. Do not fold those changes into your task silently.
-  Report it and continue from the isolated worktree.
-- Do not remove a worktree until its branch/PR status is known.
-- Log stale worktrees on the desk ledger (`bin/agent-worktree cleanup --write`, or the
-  teardown's own record) before deleting them. The markdown
-  [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history now —
-  read it, do not append to it.
-- **One writer per desk — the build-claim holder.** Conductor, primary reviewer,
-  and light reviewer read; they do not write. Run every mutation pass on a
-  throwaway. See [The Desk Writer Convention](#the-desk-writer-convention).
+- Branch from the **base ref** (`accepted`, else `release`, else `main`); PRs target it.
+- One task branch per worktree. Never commit task work on a primary unless you are the
+  deploy owner. A pushed feature branch is the backup, not `main`.
+- A dirty or moving primary is shared-floor drift: report it, do not fold it in.
+- Do not remove a worktree until its branch/PR status is known; log it on the desk ledger.
+- **One writer per desk — the build-claim holder.** See
+  [The Desk Writer Convention](#the-desk-writer-convention).
 
 ## The Desk Writer Convention
 
-A desk is a worktree. Two collisions on 2026-08-30 came from the same gap:
-nothing said who may **write** to one, so every agent improvised. The second is
-listed from both seats below, because each reviewer saw a different symptom of
-the one episode.
-
-- A conductor believed a builder had lost staged work, wrote the correction
-  itself, and committed it onto the builder's branch **while that builder's ship
-  was running**. The rescue prose was wrong on the one point that mattered, and
-  the only reason anyone noticed was the cert's tree binding (below).
-- A primary reviewer's backup of a source file captured **his light's** in-flight
-  mutation instead of the shipped code.
-- A light's mutation run was corrupted by her **primary's** concurrent mutation
-  and reported four unrelated failures.
-
-The mutation collision was caught by luck plus a good invariant. The rules below
-are the cheapest way to stop relying on either.
-
 ### One writer per desk: the build-claim holder
 
-**The desk belongs to whoever holds the task's build claim. Everyone else
-reads.** Conductor, primary reviewer, and light reviewer are all readers.
-
-Reading is unrestricted — `git log`, `git diff`, `git show`, opening files.
-Writing is not, and "writing" is wider than committing. A mutation, a `git
-stash`, a `git checkout` of one path, an editor save, a `bin/rails db:*` are all
-writes, and every one is visible to the desk's holder as a changed working tree.
-
-**A task claim is not a desk claim.** A reviewer legitimately holds a *review*
-claim on a task whose desk the *builder* still owns, and a light legitimately
-works the same task as its primary. Holding a claim on the task is not
-permission to write to the desk.
-
-Note also that `--actor` does not express the claim. `bin/task move <slug>
-building --actor <soul>` records the soul on the *event*; the claim itself is
-`claimed_session` + `claim_nonce` in `metadata.devops`
-(`ClaimLease::CLAIM_KEYS`, `lib/claim_lease.rb:37`),
-keyed by session, not by soul. A soul slug and a session id live in different
-namespaces.
+**The desk belongs to whoever holds the task's build claim, and the build claim is the
+desk bound to the task** (`bin/lib/desk_claim.rb`). Conductor, primary reviewer, and light
+reviewer read. Reading (`git log`, `git diff`, opening files) is unrestricted; a mutation,
+`git stash`, a path checkout, an editor save or a `bin/rails db:*` is a write. **A task
+claim is not a desk claim**: a review claim never licenses writes.
 
 ### How to tell whether someone is already in a desk
 
-Three cheap reads, in the order worth trying. None of them requires new
-machinery.
-
 ```bash
-bin/task show <slug> --verbose             # `claim: session <id> · LIVE · lapses in 47s (<ts>)`
+bin/task show <slug> --verbose             # `claim: desk <path> · <GRADE> · session …`
 bin/task review-claim status <slug>        # OBSERVES the review lease: renewing, dying, or free
 bin/agent-worktree list | grep -A1 <slug>  # the desk's `dirty` flag and live pid
 
@@ -877,85 +178,23 @@ ruby -I lib -r desk_activity \
   "$PWD/.worktrees/<slug>"
 ```
 
-What each one is worth:
-
-- **The claim** is authoritative for the *task* and renews on the status line's
-  45s-throttled heartbeat under a 120s TTL, so a live holder is unambiguous. It prints with its
-  **verdict already worked out** — `LIVE · lapses in 47s` or `EXPIRED · lapsed 2m
-  ago … free to claim` — because the line used to print a bare `expires <ts>` and
-  a lapsed lease looked exactly like a live one (measured 2026-09-02: `expires
-  04:12:26Z` shown at 04:14:28Z, read as live twice in a row).
-  `bin/task move … building` on a task another live instance holds **refuses** —
-  `exit 1`, naming the holder, **the holder's ROLE**, the lease freshness, and the
-  last durable progress (`enforce_claim_gate!` in `bin/task`, wired at both the
-  `move` and the `begin`-resume call site; the decision table is
-  `lib/claim_holder.rb`).
-- **The refusal routes on the ROLE, and so should you.** A **builder** is taken
-  over with `--steal`, which is what that flag was written for. A **reviewer** is
-  **asked to release** (`bin/task review-claim release <slug>`, run by *them*) —
-  never stolen: taking a task over mid-review voids the no-self-review guarantee
-  for that review and strands the reviewer's verdict, neither recoverable nor
-  visible afterwards. When the board cannot establish the role, the refusal says
-  so and sends you to `review-claim status` first. `--steal` still overrides
-  everything, and over a live review it prints what it is waiving before it
-  proceeds.
-- **`bin/task review-claim status <slug>` OBSERVES the lease**; it does not print
-  a timestamp for you to difference by hand. It watches whether
-  `claim_expires_at` **moves** (a holder is renewing → alive), **never moves**
-  across a full renewal cycle (nothing is heartbeating it → dying), or has
-  **already passed** (free). An absent or lapsed lease answers instantly; a live
-  holder answers within a renewal cycle; `--observe-for <s>` widens the window and
-  `--json` is the machine face. **Do not substitute two reads of your own:**
-  sampling twice makes you look for *agreement*, and two reads of one lease agree
-  about the state every time — two sessions independently did exactly that on
-  2026-09-01 and both declared the question unanswerable. A single read cannot
-  help either: 74s into a 120s TTL looks identical whether the holder renews at
-  90s or never again.
-- **The `dirty` flag** is the only desk-side occupancy signal that exists today,
-  and it is a symptom, not an identity — it says work is present, never whose.
-- **`DeskActivity.touched_since?`** is the same filesystem-mtime probe the
-  reclaim guard uses to withhold a desk somebody is working in
-  (`lib/desk_activity.rb:74`), and it is the only one of the three that answers
-  "right now" rather than "at some point". It discriminates: `true` on a desk
-  being worked, `false` on an idle one.
+`move … building`, `begin` and `bin/ship` **refuse** only when another live session's bound
+desk has uncommitted changes; `--steal` overrides. **A REVIEWER is asked, never stolen from**
+(`bin/task review-claim release <slug>`, run by them).
 
 ### If you believe a builder lost work, tell the builder
 
-A helper who thinks a desk has lost work cannot distinguish *lost* from *not
-written yet* from *deliberately discarded*. **Report it on the task record and
-let the writer decide. Do not reconstruct the work yourself.**
-
-The 2026-08-30 rescue is the argument. The conductor's replacement prose said an
-incomplete-author flag clears on "a named claim", which reads as **any** named
-claim — precisely the fail-open the builder had rejected in design. The builder
-caught it only because it was forced to explain a commit it did not author. A
-rescue writes unreviewed prose onto someone else's PR under their name.
-
-**If the builder is gone, become the writer — do not write as a non-writer.**
-The claim already distinguishes the two cases, so you do not have to judge it:
+Report it on the task record and let the writer decide; **do not reconstruct the work
+yourself**. If the builder is gone, become the writer first:
 
 ```bash
-bin/task move <slug> building --actor <soul>   # reclaims a dead lease automatically
+bin/task move <slug> building --actor <soul>   # claims when no other live desk is dirty
 bin/task begin <slug> --steal --agent <soul>   # takes over a LIVE holder, deliberately
 ```
 
-An expired or dead-session lease is reclaimed **automatically** by the move; a
-different live instance's lease **refuses loudly**, and `--steal` is the explicit
-override. Either way you end up the desk's writer on the record before you touch
-a file, which is the whole point. The problem in incident 1 was never that the
-prose got fixed; it was that nobody owned the fix.
-
 ### Mutation testing never runs in a shared desk
 
-**Run every mutation pass on a throwaway desk, never in the desk itself.** Both
-reviewers who were bitten reached this independently, one of them mid-review.
-
-This is not a new rule — it is the [zap protocol's](zap-protocol.md) throwaway-desk
-rule applied to a second seam. That protocol already requires every zap to be
-prepared on `git worktree add … --detach <base>`, "never a checkout that holds
-other work". Its stated reason is abort hygiene; the reason here is that a
-mutation is a write, and a write into an occupied desk corrupts whatever else is
-reading it. Same remedy, same command:
+**Run every mutation pass on a throwaway desk** (the [zap protocol's](zap-protocol.md) rule):
 
 ```bash
 REPO="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")"   # the PRIMARY checkout, from anywhere
@@ -965,189 +204,35 @@ cp <desk>/.env.test.local "$MUT"/                        # REQUIRED — see belo
 (cd "$MUT" && bin/rails test:prepare)                    # REQUIRED — see below
 ```
 
-**All three details are load-bearing.** Skip one and a loud tree collision
-becomes a silent database one — or a green mutant that only looks green:
+- **`.env.test.local` is untracked**; without it the throwaway runs on the SHARED test DB.
+- **Put it under `.worktrees/`**, so `bin/lib/desk_guard.rb` recognizes it as a desk.
+- **`bin/rails test:prepare` builds the gitignored assets**; without it a mutant reads as
+  caught when the tree only lacks `tailwind.css`.
 
-- **`.env.test.local` is untracked**, so no worktree add and no `git archive`
-  carries it. Without it `TEST_DATABASE_URL` renders empty,
-  `config/database.yml` falls back to `database: <app>_test`, and the throwaway
-  runs against the **shared** test database that the primary checkout, CI, and
-  every concurrent suite use. Verified: a detached worktree off `origin/accepted`
-  resolves to `mcritchie_studio_test`.
-- **Put it under `.worktrees/`.** `bin/lib/desk_guard.rb` refuses a cert lane
-  whose test DB is the shared one, but its `desk?` predicate returns true **only**
-  for a path whose parent directory is `.worktrees`. A throwaway in `/tmp` or
-  `../` is not a desk, so the guard cannot fire and the shared-database run is
-  admitted in silence. The same tree under `.worktrees/` is refused by name, with
-  the missing file called out.
-- **`bin/rails test:prepare` builds the gitignored assets.** `.env.test.local` is
-  one of TWO untracked classes a worktree cannot carry; the other is the repo's
-  build output, which `git worktree add` cannot bring because git does not track
-  it. Measured 2026-09-22: a bare hub throwaway ran
-  `test/integration/smooth_load_layout_test.rb` to `The asset "tailwind.css" is
-  not present in the asset pipeline`, and a turf-monster one ran
-  `test/views/violet_text_contrast_test.rb` to 8 failures of 11 — on trees with
-  nothing wrong with them. In a MUTATION pass that reads as a mutant the suite
-  caught, which is the one wrong answer a mutation run can give. The full
-  reasoning, including why this is a call and never a list of filenames, is in
-  the [zap protocol](zap-protocol.md#the-three-seams).
-
-Isolating the tree does not isolate the database. Carrying `.env.test.local`
-points the throwaway at the **desk's** test DB, which the builder's own suite
-also uses — so copying it is right for one mutator and wrong for two. The rule:
-
-- **One mutator, idle desk** — a throwaway under `.worktrees/` with
-  `.env.test.local` copied across. This is the common case.
-- **Two mutators, or a busy desk** — a real desk each
-  (`bin/agent-worktree new <app> <slug>`), which provisions an isolated test DB,
-  port, and Redis slot atomically. Nothing else gives two mutators two
-  databases: two throwaways carrying the *same* `.env.test.local` share one, and
-  `db:test:purge` drops the other's mid-run.
-
-Ask the orchestrator for the second case. No review SOP assigns a working
-directory inside the task's desk today — the primary is pointed at the studio
-primary checkout and the light at the projects root — so both reviewers reach
-the same desk by improvisation, and a light cannot see what its primary is doing
-unless the spawn brief says so.
+One mutator on an idle desk: the throwaway above. Two mutators, or a busy desk: a real desk
+each (`bin/agent-worktree new <app> <slug>`), since copies of one `.env.test.local` share a DB.
 
 ### A sanctioned non-writer commit announces itself first
 
-A reviewer zap is a legitimate non-writer commit. Three things make it safe:
-
-1. **Announce on the task record before pushing**, so the desk's holder learns it
-   from the board rather than from a refused gate. The zap protocol already
-   requires a `bin/task note`; do it *before* the push, not after.
-2. **Prefix the subject `zap:`** — the established machine-readable marker
-   (`git log --format='%s' -500 | grep -c '^zap'` → 60 on `accepted`,
-   2026-08-31). The 2026-08-30 conductor write carried no prefix, no body, and
-   no trailer, which is why it read as unexplained.
-3. **The writer re-derives its cert.** A foreign commit invalidates the
-   fingerprint by construction; the cert must be retaken, not re-credited.
+A reviewer zap: `bin/task note` on the task **before** pushing, a subject prefixed `zap:`,
+and CI re-runs on the new head (a `test-only` `[control@<fp>]` stamp is retaken).
 
 ### What already enforces this, and what does not
 
-Prefer these over trust. All were verified by execution.
-
 | Check | Where | Catches |
 |---|---|---|
-| Cert tree fingerprint | `bin/dor-check <task> --suite-fingerprint` | Any foreign change to the desk's working tree |
-| Dirty-tree cert refusal | `bin/lib/cert_tree_guard.rb`, every cert | Certifying over uncommitted (possibly foreign) state |
-| Shared-test-DB refusal | `bin/lib/desk_guard.rb`, every cert lane | A desk **or throwaway under `.worktrees/`** on the shared test DB |
+| Control stamp fingerprint (`test-only` PRs) | `bin/dor-check <task>` grades `[control@<fp>]` against the tree | Any foreign change to the desk's working tree after the control ran |
+| Shared-test-DB refusal | `bin/lib/desk_guard.rb`, the pre-flight | A desk **or throwaway under `.worktrees/`** on the shared test DB |
 | Desk occupancy | `DeskActivity.touched_since?`, `bin/agent-worktree list` | Someone working in a desk right now |
 | Reclaim withhold | `desk_hold` + `stage_hold`, `bin/agent-worktree cleanup --reclaim` | Destroying a desk younger than 1h29m, touched, mid-gate, or bound to a task the board does not put at `shipped`/`archived` |
 
-The fingerprint is a git tree hash of `git add -A` + `write-tree`
-(`bin/lib/full_suite_gate.rb:104`), so it covers tracked edits **and**
-untracked-not-ignored files. Verified: dropping one
-untracked file into a desk moved it `b584e196…` → `49db0fb3…`, and removing the
-file restored it exactly.
-
-**Its four limits, stated plainly, because it is a backstop and not a
-convention:**
-
-- It fires only at **cert and ship time**. A foreign write between ships is
-  invisible to it. It caught the 2026-08-30 conductor write only because a ship
-  happened to be in flight.
-- It is **state-based, not event-based**. A write reverted before the next cert
-  leaves the fingerprint identical, so a mutation pass that cleans up after
-  itself is undetectable — which is exactly what incidents 2 and 3 were.
-- It reports **"stale cert"**, not "someone else wrote here". The reader still
-  has to work out why.
-- It serves only the **writer**. No reader is warned about anything.
-
-**Two things that look like they would help and do not:**
-
-- **Git authorship names the CLAIMING soul, not the writer of a foreign
-  write.** A desk stamped at creation (from 2026-09-16) commits as a soul (see
-  [A desk commits as its claiming soul](#a-desk-commits-as-its-claiming-soul)),
-  but only as the soul that CLAIMED the desk. A conductor or reviewer writing into
-  someone else's desk by hand commits under the HOLDER's stamp, so the foreign
-  write this convention forbids is exactly the one authorship cannot expose.
-  Before the stamp it was worse: measured on `origin/accepted`, 2026-08-31, 187
-  of the last 300 commits were `Alex McRitchie <amcritchie@gmail.com>`, and on
-  turf-monster a shared `Steffon (Claude)` default named Steffon on every desk.
-  The 2026-08-30 conductor write (`9f9ad2de`) and the builder's own correction
-  (`0f6c0ddf`) are indistinguishable by author, date, and trailer. Any guard
-  keyed on "commit author differs from claim holder" is still dead on arrival.
-  Re-derive the mix rather than trusting a count:
-
-  ```bash
-  git log --format='%an <%ae>' -300 | sort | uniq -c | sort -rn
-  ```
-- **`.agent-context.json` does not record an occupant.** Its keys name the
-  task, branch, port, database, and Redis slot; there is no agent, soul, or
-  session field, and `bin/agent-worktree list` has no occupant column.
-
-Closing that last gap would mean writing the holder into the desk marker at claim
-time and reading it from a second party — genuinely new machinery, so it is
-filed rather than improvised:
-[`desk-marker-names-holder`](https://mcritchie.studio/tasks/desk-marker-names-holder).
-Its price, so the trade is decidable: a new key
-in `.agent-context.json`, a writer on the claim path, and a reader in whatever
-warns; the marker is regenerated by `bin/agent-worktree` on several operations,
-so it would need refreshing or it goes stale and lies; and it is an unsigned
-local file any agent can edit, so it can advise but never enforce. The rules
-above hold without it.
+Git authorship names the CLAIMING soul, so it cannot expose a foreign write.
 
 ### The session scratchpad is shared — namespace every write
 
-Every rule above isolates a **desk**. The agent harness also hands each session a
-**scratchpad** — `/private/tmp/claude-501/<project>/<session-id>/scratchpad` —
-and that directory is keyed by **session, not by agent**. Every sibling a session
-spawns writes to the same one. It is not a desk, nothing leases it, and none of
-the checks in the table above look at it. The harness namespaces its *own*
-per-agent files (`tasks/<agent-id>.output`) and hands agents the scratchpad with
-no naming guidance at all.
-
-**Rule: namespace every scratchpad write with the task slug or your agent id.**
-
-| Instead of | Write |
-|---|---|
-| `ship.log` | `ship-<task-slug>.log` |
-| `probe.json`, `out.txt` | `<task-slug>/probe.json` |
-| `backup/agent-worktree` | `<task-slug>/backup/agent-worktree` |
-| `shots/desktop-dark.png` | `<task-slug>/shots/desktop-dark.png` |
-
-For anything past a single file, create `scratchpad/<task-slug>/` once and stop
-thinking about it.
-
-**`>>` is not the fix.** Appending to a shared log interleaves two runs, which is
-what did the damage below: the reader took another agent's success lines for his
-own. Separate files, not a shared one.
-
-**The 2026-09-01 incident.** Carl redirected his ship to `scratchpad/ship.log`
-while steffon's ship was writing that exact path. Carl's `>` truncated the file;
-steffon's writer still held an fd at offset 5407 and kept writing there. The
-result is one 9,132-byte file holding carl's run (`fast-check
-state-names-waived-lane`, PR #1150) in bytes 0-2820, a 2,586-byte NUL hole, and
-steffon's run (`ship-waiter-misreports-ci`, PR #1148) from byte 5407 on. Reading
-the mixed stream, carl killed his own ship believing he had shipped steffon's
-task. Nothing was lost, but only by luck: steffon's ship completed regardless and
-carl's branch was still unpushed.
-
-**How to recognise it.** The NUL hole makes the file **binary**, so a plain
-`grep` stops reporting matches. Measured on the collided file: `grep
-state-names-waived-lane ship.log` printed nothing and exited 1, while `grep -a`
-found the line and exited 0 (ugrep 7.8.4; GNU grep instead prints `Binary file
-… matches`). Either way the log does not look corrupt — it looks like it never
-mentioned what you searched for. The implementation-independent tell is `file
-<log>` reporting `data` instead of `ASCII text`:
-
-```bash
-file scratchpad/ship.log                 # => "data" means holed, not text
-tr -dc '\000' < scratchpad/ship.log | wc -c   # NUL bytes = truncation hole
-grep -a 'feat/' scratchpad/ship.log      # -a reads a holed file as text
-```
-
-**The silent case is worse.** A collided log at least leaves a hole you can find.
-Two agents backing up to the same name — `backup/agent-worktree`,
-`hub-git-config-backup.txt`, `index.md.orig` — write *sequentially*, leave no
-hole, and destroy the earlier restore point in silence. You learn about it when
-you restore and get someone else's file.
-
-**For a pristine copy you intend to restore, use `bin/scratch-backup`** rather
-than `cp`. A convention only protects the agents who read it, and this is the one
-violation nobody can see:
+**Namespace every write with the task slug** (`ship-<task-slug>.log`, not `ship.log`;
+`scratchpad/<task-slug>/…`); `>>` interleaves. A collided log reads `data` to `file`. For a
+copy you mean to restore, use `bin/scratch-backup`:
 
 ```bash
 bin/scratch-backup save    bin/agent-worktree   # before you mutate it
@@ -1156,275 +241,59 @@ bin/scratch-backup verify  bin/agent-worktree   # exit 0 = intact, 3 = not
 bin/scratch-backup list                         # your namespace, with statuses
 ```
 
-It gives you both halves. **Namespaced** — every entry lives under
-`<root>/<owner>/backup/`, `owner` being your task slug (from the desk's
-`.agent-context.json`) or your session id, so two agents cannot reach one path;
-an owner it cannot resolve REFUSES rather than defaulting to a shared directory.
-**Verified** — `save` records a SHA-256 receipt beside the copy and `restore`
-re-hashes before it writes, so if the namespace is ever defeated you get a
-refusal instead of someone else's file. `save` also refuses to overwrite a backup
-whose content differs from the file as it stands now, which is the
-mutation-testing footgun: save pristine, mutate, re-run save, and the copy you
-were about to restore is gone.
-
-`--root` and `--owner` override both; `--force` overrides only the save guard.
-There is deliberately no `--force` on `restore` — that switch would read "restore
-a file you have just been told is not yours".
-
-Measured 2026-09-01 on the session that collided: 873 top-level entries, 9 of
-them (~1%) carrying an agent id; `ship.log` the only one bearing the NUL-hole
-fingerprint; a shared un-namespaced `backup/` holding `atomic-event.good`,
-`manifest.good`, `test.good`, and `BASELINE.sha`; and 24 of 56 files in `shots/`
-on generic `desktop-*`/`phone-*` names. Agents already feel the pressure and
-improvise privately — `probe` ×17, `mut` ×10, `ship` ×9, `mutate` ×8 base names
-carrying numeric or letter variants (`ship2`, `ship-a`, `testserver3`). A private
-dodge is no defence against a sibling who also starts at the obvious name.
-
-
 ## Multi-Agent Safety & Merge Patterns
 
-When several agents build in parallel and their work converges on **one branch**
-— e.g. scaffolding a new app: Rolio's first cut was 4 gap features by 4 agents
-merged together — isolation and merge discipline matter more than usual. The
-patterns below came out of that run.
-
-**Isolation — use a manual `git worktree add` per agent.**
-
-- The Agent tool's `isolation: worktree` mode was **unreliable when the target
-  repo differs from the session repo** — agents leaked their edits onto the main
-  checkout instead of an isolated worktree. For cross-repo or multi-agent fan-out,
-  give each agent an explicit `git worktree add -b <branch> .worktrees/<slug>
-  <base>` and point it at that absolute path.
-- One branch per worktree; never let two agents share a checkout (branches switch
-  under you and files mutate mid-edit — see the "parallel sessions in shared
-  worktree" lessons).
-
-**Design the work to merge cleanly — new-files-first.**
-
-- Prefer **new files** over editing shared ones. A feature that lands as its own
-  partial, service, model, or stylesheet never conflicts.
-- **Shared view edits = a new partial + a single `<%= render %>` line at a named
-  anchor.** Each agent adds only its one render line at the agreed anchor; the
-  body lives in the agent's own partial. Conflicts shrink to one predictable line.
-- **Routes: additive blocks.** Each agent appends its own routes block (ideally a
-  `namespace`/`scope` of its own) rather than editing a shared resource line.
-- **One migration owner per integration.** Two agents writing migrations against
-  the same tables will collide on `schema.rb`. Either nominate a single migration
-  owner, or have the orchestrator **pre-add the columns** before fanning out so
-  the agents only read them.
-
-**The recurring conflict: the CSS end-of-file seam.**
-
-- Multiple agents appending styles to the same stylesheet conflict at the
-  **end-of-file**. This one is expected; **resolve it by keeping both blocks** —
-  the changes are additive by construction. Don't agonize over it, concatenate.
-
-**Merge sequentially, suite green between merges.**
-
-- Integrate one branch at a time and **run the full suite green between each
-  merge** — never batch-merge several agents' branches and test once at the end.
-  A red suite after a sequential merge points at exactly one branch.
-
-This is the multi-agent build path referenced by
-[`../system/new-app-onboarding-sop.md`](../system/new-app-onboarding-sop.md).
+Agents converging on one branch each get `git worktree add -b <branch> .worktrees/<slug>
+<base>`; prefer new files and one `<%= render %>` line per shared view; one migration owner;
+keep both blocks at a CSS end-of-file conflict; merge sequentially, suite green between.
 
 ## Handoff Contract
 
-A feature-agent handoff should include:
+Task URL first; then branch, desk path, local URLs, PR URL, `checks_run` and readiness.
+Never leave Mr. McRitchie with "run these commands."
 
-- McRitchie Studio task URL first, then task slug, current stage, and acceptance
-  criteria status.
-- App, task slug, branch, and worktree path.
-- Local review URL and local inbox URL when a server was started.
-- PR URL or the exact reason a PR was not opened.
-- QA-intake status when available, but do not use `bin/qa-intake` as a
-  substitute for the task-board record.
-- Task conversation status: whether any `qa_feedback` remains open in practice,
-  and the latest `handoff` note the feature agent added.
-- Tests/checks run and their result in task `devops.checks_run`.
-- Files or behavior changed at a high level.
-- The `bin/agent-worktree finish` result.
-- Whether the branch is ready for Avi review, needs another agent, or needs
-  release-conductor integration.
+## Terminal Context
 
-Do not leave Mr. McRitchie with "run these commands." Start the stack, prove the
-URL, and name any blocker that truly needs owner action.
-
-## Machine Registry
-
-`bin/agent-worktree snapshot --write` is the local registry for scale. It does
-not contain secrets and is safe to hand to another agent session as current
-machine context.
-
-Use it when:
-
-- a QA or release conductor starts a shift
-- multiple feature agents are active at once
-- worktree ports, Redis DBs, or pidfiles appear inconsistent
-- a dashboard or future supervisor needs a machine-readable queue
-
-The registry is intentionally local under `/Users/alex/projects/.agents/`.
-McRitchie Studio documents and owns the format, but the file itself reflects the
-current machine and should not be treated as a Git-tracked source of truth.
-If the agent runtime blocks writing to that directory, rerun the command with
-filesystem approval or set `AGENT_WORKTREE_REGISTRY` to a writable scratch path.
-
-## Terminal Context Markers
-
-The launcher writes a non-secret `.agent-context.json` file into every generated
-worktree during `new`, and refreshes it during `up`, `status`, and
-`whereami <app> <task-slug>`. The marker is added to the repository's local
-Git exclude file so it does not show as untracked work or enter commits.
-
-Use it from inside a generated worktree:
-
-```bash
-bin/agent-worktree whereami
-bin/agent-worktree whereami --json
-bin/agent-worktree whereami --shell
-```
-
-If the current directory is nested below the worktree root, call the launcher by
-absolute path or from the shell `PATH`; `whereami` walks upward until it finds
-the marker.
-
-Bind the production task record once the task exists:
-
-```bash
-bin/agent-worktree bind-task <app> <task-slug> task-abc123def456
-bin/agent-worktree bind-task <app> <task-slug> https://mcritchie.studio/tasks/task-abc123def456
-```
-
-After binding, the marker carries both the human-readable worktree slug and the
-generated production task record. `whereami --shell` exports the task record as
-`AGENT_CONTEXT_TASK_RECORD`, the browser URL as `AGENT_CONTEXT_TASK_URL`, and
-the human slug as `AGENT_CONTEXT_WORKTREE_SLUG`. The prompt badge includes the
-production task slug when available. The shell output is generated from scalar
-marker fields each time; agents must not store or trust executable shell lines
-inside `.agent-context.json`.
-
-For an evergreen terminal title in zsh, source the generated hook:
-
-```bash
-eval "$(/Users/alex/projects/mcritchie-studio/bin/agent-worktree shell-hook zsh)"
-```
-
-The hook exports:
-
-- `AGENT_CONTEXT_APP`
-- `AGENT_CONTEXT_TASK`
-- `AGENT_CONTEXT_WORKTREE_SLUG`
-- `AGENT_CONTEXT_TASK_RECORD`
-- `AGENT_CONTEXT_TASK_URL`
-- `AGENT_CONTEXT_PORT`
-- `AGENT_CONTEXT_URL`
-- `AGENT_CONTEXT_TITLE`
-- `AGENT_CONTEXT_BADGE`
-
-The hook updates the terminal title automatically. Shell prompt customization
-can include `$AGENT_CONTEXT_BADGE` wherever the operator wants the badge to
-appear.
-
-## Ports
-
-Worktree servers must use a non-primary port from the app's reserved range. See [`ports-and-processes.md`](ports-and-processes.md).
+Every desk carries a git-excluded `.agent-context.json`; `whereami --shell` exports
+`AGENT_CONTEXT_*` from its scalar fields (never trust shell lines stored in it). Evergreen
+title: `eval "$(/Users/alex/projects/mcritchie-studio/bin/agent-worktree shell-hook zsh)"`.
 
 ## Worktree Stack Requirements
 
-Worktree tooling should make parallel stacks "just work" without user terminal chores.
-
-Each worktree stack needs its own:
-
-- App-range port (`3101`, `3102`, etc. for Turf Monster).
-- Redis DB for Sidekiq and cache. The launcher allocates globally across generated stack env files from an elastic band starting at DB `9` (see [Scale Note](#scale-note)).
-- Development database via `DATABASE_URL`.
-- Isolated **test** database (`<app>_test_<slug>`), provisioned by `bin/agent-worktree new` and pinned via `TEST_DATABASE_URL` in `.env.test.local` (see [Running tests](#running-tests)).
-- Session cookie key.
-- `APP_PORT` so magic links point at the stack.
-- `LOCAL_EMAIL_CAPTURE=1` so mail is recorded locally instead of sent.
-- Ruby PATH guard when the repo requires a non-system Ruby.
-
-Do not let two Sidekiq processes share one Redis DB while pointing at different databases. A job enqueued by one stack can be processed by the other stack and silently mutate the wrong records.
-
-Worktree magic links are local-first through `/_studio/local_emails`. The central launcher writes `LOCAL_EMAIL_CAPTURE=1`, blanks provider mail credentials in `.env.agent-stack`, and prints the inbox URL next to the app URL. Agents should request the magic link in the UI, then open:
-
-```text
-http://localhost:<port>/_studio/local_emails
-```
-
-The inbox shows recent outbox rows and proof links such as magic-link sign-in URLs. Worktree stacks should not email real recipients unless the task is specifically testing real delivery. For provider tests, intentionally set `LOCAL_EMAIL_CAPTURE=0` and restore the needed mail credentials in that stack env.
-
-Callback-heavy flows such as Stripe, Google OAuth, CDP/MoonPay, webhooks, and emailed magic links stay on the primary port unless the provider and local listener are configured for the worktree port.
+Each stack gets its own port ([`ports-and-processes.md`](ports-and-processes.md)), Redis DB,
+dev and test databases, cookie key, `APP_PORT`, and `LOCAL_EMAIL_CAPTURE=1` (set `0` only to
+test real delivery). Never let two Sidekiq processes share a Redis DB. Callback-heavy flows
+(Stripe, OAuth, webhooks) stay on the primary port unless configured for the desk's.
 
 ## Running tests
 
-`bin/agent-worktree new` provisions an isolated test database (`<app>_test_<slug>`) and writes `.env.test.local` with `TEST_DATABASE_URL` pointing at it. `config/database.yml`'s `test.url` reads `TEST_DATABASE_URL`, and an explicit `url:` wins over `DATABASE_URL` — so a plain `bin/rails test` resolves to the isolated test DB **out of the box**:
-
-```bash
-bin/rails test           # auto-resolves to <app>_test_<slug>; no manual prep
-bin/agent-worktree test mcritchie-studio <slug>   # same, single-process + hermetic env
-```
-
-Do **not** `source .env.agent-stack` before running tests. You do not need the dev `DATABASE_URL` to test (the test DB resolves on its own), and sourcing it sets `AGENT_WORKTREE=1`/`LOCAL_EMAIL_CAPTURE=1`, which routes mail into the local capture store and diverges email-delivery tests from CI. Source `.env.agent-stack` only for dev-DB chores like `bin/rails runner` seeding. `bin/agent-worktree test` sidesteps this with a hermetic env (correct Ruby PATH, `RAILS_ENV=test`, single-process to avoid the parallel worker-DB clone deadlock on a cold test DB).
+`new` writes `.env.test.local` with `TEST_DATABASE_URL`, so `bin/rails test` in a hub desk
+resolves to the isolated DB; `bin/agent-worktree test <app> <slug>` is the hermetic path. Do
+**not** `source .env.agent-stack` before tests (it routes mail into local capture).
 
 ### The desk guard
 
-`bin/fast-check` and `bin/full-suite-check` **refuse to run in a desk whose test database is the repo's shared one** (`bin/lib/desk_guard.rb`). The cert would otherwise run against the same database the primary checkout and the release gate workspaces use, and `full-suite-check`'s first lane (`db:test:purge`) would *destroy* it mid-suite.
-
-It **resolves** the property rather than trusting a declaration: it boots the app in the desk at `RAILS_ENV=test`, reads back the database it actually connects to, and compares that against the repo's shared test database (read from `config/database.yml` with the **ERB stripped**, so no env var can rewrite the comparison). Postgres desks qualify by having a different database *name*; SQLite desks (rolio) qualify by their test-DB *file* being inside the desk. It **fails closed** for a Rails desk — an app that will not boot, or a config it cannot read, is a refusal, not a pass — while a repo that is not a Rails app at all has no test DB to protect and is admitted without booting.
-
-A `TEST_DATABASE_URL` being *present* proves nothing: it only takes effect if the app's `config/database.yml` reads it (`url: <%= ENV["TEST_DATABASE_URL"] %>` in the `test:` block). turf-monster lacked that line for a period, so its desks pinned an isolated-looking URL, ran on the **shared** `turf_monster_test`, and a presence-checking guard waved them through.
-
-The refusal names it as an **env/config issue, not a regression in your diff**, and distinguishes the two causes: re-provision (`bin/agent-worktree new <app> <slug>`) when bringup did not complete, or fix the repo's `config/database.yml` when the pin is inert.
-
-The reserved release workspaces (`.worktrees/_gate`, `.worktrees/_ship`) are **not** agent desks and are not guarded here — they are covered by the stricter `assert_private_gate_db!` in `bin/release.rb`, which proves their DB is private before `db:test:purge` destroys it.
-
-Bringup is atomic now and cannot leave such a desk behind, so this is the second lock on the same door. It still earns its keep: desks half-built by the old tool are on disk, `.env.test.local` can be deleted by hand, and a rollback that missed a case must never yield a silently-shared suite. The guard asserts the **positive** property — this tree has a test DB of its own — rather than blacklisting the ways bringup can break.
+`bin/fast-check` **refuses a desk whose test database is the repo's shared one**
+(`bin/lib/desk_guard.rb`, which boots the app and reads the database it really uses). It is
+an env/config issue: re-provision with `bin/agent-worktree new <app> <slug>`, or make the
+repo's `config/database.yml` read `TEST_DATABASE_URL`.
 
 ## Scale Note
 
-Redis capacity has two layers:
+Physical capacity is Redis `databases` (fixed at startup; stock is 16). The **soft band**
+starts at DB `9`, idles at **20 slots** (`FLOOR`) and moves by **10** (`STEP`):
 
-- **Physical capacity** is the Redis `databases` setting. It is fixed at Redis
-  startup; changing it needs a restart. Stock Redis exposes `0-15` (16 DBs).
-- **Soft band** is the slot range the launcher allocates from, starting at DB
-  `9`. It is elastic and restart-free within the physical ceiling.
+- **Scale-out (auto):** a full band grows by 10 with no restart; at the physical ceiling it
+  aborts with guidance to run `cleanup` or `scale --provision`.
+- **Scale-in (auto):** `remove`, `cleanup --write` and `cleanup --reclaim --yes` shrink it by
+  10, never below the floor or past a used DB.
+- `scale status` prints the band and ceiling; `scale out` / `scale in` nudge it by hand.
 
-The band idles at **20 slots** (`FLOOR`) and changes by **10** (`STEP`):
-
-- **Scale-out (auto):** when the band is full and physical room remains,
-  `allocate_redis_db` grows the band by 10 (`scaled out: 20 -> 30 slots`) and
-  retries. No restart. At the physical ceiling it aborts with guidance to run
-  `cleanup` or `scale --provision`.
-- **Scale-in (auto):** `remove`, `cleanup --write`, and `cleanup --reclaim --yes`
-  drop the band by 10 (never below the floor, never stranding a still-used DB) as
-  slots free up (`scaled in: 30 -> 20 slots`). No restart. `cleanup --reclaim
-  --yes` is the hands-off scale-down-on-close path: it releases every safe
-  candidate, then calls `maybe_scale_in` once for the batch.
-
-The band size is persisted in `/Users/alex/projects/.agents/redis-capacity.json`
-and band allocation + capacity mutation are guarded by a `flock` on
-`/Users/alex/projects/.agents/agent-worktree.lock` so concurrent `new`/`up`
-runs cannot collide.
-
-Inspect the band with `bin/agent-worktree scale status`. To realize the full
-20-slot floor you need physical `databases >= 29` (DB 9 band start + 20). The
-band caps band hand-outs at the physical ceiling, so on stock Redis (16 DBs)
-only DBs `9-15` are usable until you provision.
-
-To raise physical capacity (one-time, target `databases 64`):
+The full floor needs `databases >= 29`. To raise it (one-time, target 64):
 
 ```bash
 bin/agent-worktree scale --provision         # interactive confirm
 bin/agent-worktree scale --provision --yes   # skip the prompt
 ```
 
-This edits the brew `redis.conf` (`$(brew --prefix)/etc/redis.conf`, overridable
-with `AGENT_REDIS_CONF`) and restarts Redis **exactly once**. It is idempotent
-(no-op when `databases` is already at/above target). The restart **bounces every
-running worktree stack** on `localhost:6379`, so it belongs to the QA/infra lane
-during a quiet window, never mid-session while other stacks are live.
-
-Overrides: `AGENT_REDIS_FLOOR`, `AGENT_REDIS_STEP`,
-`AGENT_REDIS_PHYSICAL_TARGET`, and the legacy `AGENT_REDIS_MAX_DB` (pins the band
-top explicitly). Do not set band overrides past what Redis actually serves.
+It restarts Redis once, **bouncing every running stack**: QA/infra lane, quiet window only.

@@ -560,7 +560,7 @@ class DorCheckExemptCiTest < Minitest::Test
   # The GATED twin of `devops` — a code diff under a shaped bug.
   GATED_CODE_DIFF = "app/models/thing.rb"
 
-  # What bin/full-suite-check records: a full cert at a fingerprint. Whatever the
+  # What the retired bin/full-suite-check recorded: a full cert at a fingerprint. Whatever the
   # hash, the gate must not read it.
   FULL_CERT_RECEIPTS = ["[full-suite@#{'a' * 40}] bin/rails test (11004 runs, 0 failures)",
                         "[rubocop@#{'a' * 40}] bin/rubocop (clean)"].freeze

@@ -2,8 +2,8 @@
 
 # [unit][integration] THE REMEDY HINTS THE FAST-LANE SCRIPTS PRINT MUST RESOLVE.
 #
-# THE DEFECT THIS CLOSES. bin/ship, bin/fast-check, bin/full-suite-check,
-# bin/dor-check and bin/task live in mcritchie-studio/bin ALONE — no satellite
+# THE DEFECT THIS CLOSES. bin/ship, bin/fast-check, bin/dor-check and bin/task
+# live in mcritchie-studio/bin ALONE — no satellite
 # (turf-monster, rolio) and no gem (studio-engine, solana-studio, turf-vault)
 # carries any of them. A builder on one of those desks therefore reached the
 # script through its ABSOLUTE path, because that is the only way they could have
@@ -59,6 +59,7 @@ require "tmpdir"
 require "fileutils"
 require "time"
 require_relative "../support/session_env"
+require_relative "../support/fake_desk"
 require_relative "../../bin/lib/fast_lane"
 
 class RemedyHintGuardTest < Minitest::Test
@@ -67,7 +68,7 @@ class RemedyHintGuardTest < Minitest::Test
 
   # The hub-only fast-lane scripts. A bare mention of any of these, carrying an
   # operand, is an instruction a non-hub desk cannot run.
-  HUB_ONLY = %w[ship fast-check full-suite-check dor-check task session-preflight
+  HUB_ONLY = %w[ship fast-check dor-check task session-preflight
                 agent-worktree pr-review reviewer-select gh-auth-refresh release].freeze
 
   # bare `bin/<hub-only script>`, optional subcommand words, then an OPERAND — an
@@ -105,12 +106,12 @@ class RemedyHintGuardTest < Minitest::Test
   # sites, none of them in this task's scope: bin/lib/review_claim_cli.rb (16),
   # bin/agent-worktree (14), bin/lib/agent_worktree_cli.rb (13), bin/reviewer-select (8),
   # bin/release.rb (7 — and MOST are correctly bare, since the conductor runs bin/release
-  # from the hub primary by SOP), lib/review_verdict_gate.rb (6), bin/conductor (5),
-  # bin/control-check (4), bin/qa-intake (4), lib/archive_holder_guard.rb (4),
+  # from the hub primary by SOP), bin/conductor (5),
+  # bin/control-check (4), bin/qa-intake (4),
   # bin/lib/desk_guard.rb (1), bin/ship-wait (1), lib/open_pr_guard.rb (1).
   # Add a file here as it is cleaned; the sweep is what keeps it clean afterwards.
-  SWEPT = %w[bin/ship bin/fast-check bin/full-suite-check bin/dor-check
-             bin/lib/fast_cert.rb lib/claim_holder.rb
+  SWEPT = %w[bin/ship bin/fast-check bin/dor-check
+             lib/claim_holder.rb
              bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
              bin/session-preflight bin/lib/block_recipe.rb].freeze
 
@@ -118,11 +119,12 @@ class RemedyHintGuardTest < Minitest::Test
   # BROKEN scanner reports. Point SWEPT at paths that no longer exist, let a file read
   # back truncated, or narrow INSTRUCTION_RE until it matches nothing, and the sweep goes
   # green having proved nothing at all. Measured on the shipped tree 2026-09-09: 103
-  # routed sites across 16,391 lines in 12 files. These are FLOORS with headroom, not
-  # equalities — routing more remedies must never redden them.
-  MINIMUM_SWEPT_FILES = 12
-  MINIMUM_SWEPT_LINES = 14_000
-  MINIMUM_ROUTED_SITES = 90
+  # routed sites across 16,391 lines in 12 files; 2026-09-24, after the local cert
+  # scripts retired: 69 sites across ~13,400 lines in 10 files. These are FLOORS with
+  # headroom, not equalities — routing more remedies must never redden them.
+  MINIMUM_SWEPT_FILES = 10
+  MINIMUM_SWEPT_LINES = 12_000
+  MINIMUM_ROUTED_SITES = 60
 
   # A remedy that HAS been routed: the helper called directly, or one of the resolved
   # constants interpolated into a message. This is the POSITIVE side of the sweep —
@@ -157,7 +159,7 @@ class RemedyHintGuardTest < Minitest::Test
     # That neighbour is the proof it is a transcript and not a hint: nobody argues
     # `git push` should be absolute. The reader is being told what happened, not
     # what to do; the remedy, when there is one, is the die! line underneath.
-    { file: "bin/ship", match: /say "2\/8 cert — running/, why: "step transcript, not a handed-over command" },
+    { file: "bin/ship", match: /say "2\/8 pre-flight — running/, why: "step transcript, not a handed-over command" },
     { file: "bin/ship", match: /say "5\/8 record —/, why: "step transcript, not a handed-over command" },
     { file: "bin/ship", match: /say "7\/8 dor — running/, why: "step transcript, not a handed-over command" },
     { file: "bin/ship", match: /say "8\/8 submit —/, why: "step transcript, not a handed-over command" },
@@ -170,24 +172,6 @@ class RemedyHintGuardTest < Minitest::Test
     # into shared, durable records.
     { file: "bin/dor-check", match: /"sop" => "dor-check", "cmd" =>/, why: "board-recorded gate evidence, not a hint" },
     { file: "bin/dor-check", match: /gate_sops = \[\{ "sop" => "dor-check"/, why: "board-recorded gate evidence, not a hint" },
-
-    # --- content of a generated git hook ----------------------------------------
-    # bin/full-suite-check's opt-in pre-push installer WRITES a hook file into another
-    # repo's .git/hooks, and `bin/full-suite-check --print` is the line it writes (plus
-    # the marker it greps that file for, and the sentence telling an operator to add
-    # that same line by hand). Bare is not a lapse here, it is REQUIRED, for two
-    # independent reasons. (1) Git runs a hook with the cwd at the top of the repo the
-    # hook belongs to, so the bare form resolves BY CONSTRUCTION and names that repo's
-    # own checker. (2) An absolute path would bake THIS worktree's location into a
-    # different repo's hook file — it would still be pointing here after this desk is
-    # reclaimed. The marker line has a third reason on top: it is matched against hooks
-    # already on disk, so changing its text orphans every hook already installed.
-    { file: "bin/full-suite-check", match: /HOOK_MARKER = "# managed by:/,
-      why: "marker text matched against hooks already on disk — changing it orphans them" },
-    { file: "bin/full-suite-check", match: /"`exec bin\/full-suite-check --print` yourself/,
-      why: "names the literal line the operator must add to a hook file, which must stay bare" },
-    { file: "bin/full-suite-check", match: /^\s*exec bin\/full-suite-check --print$/,
-      why: "body of the generated pre-push hook; git runs it with cwd at that repo's root" },
 
     # --- text written INTO the board -------------------------------------------
     # Same rule as dor-check's gate evidence, reached from the other direction. This
@@ -265,14 +249,14 @@ class RemedyHintGuardTest < Minitest::Test
     total = per_file.values.sum
 
     assert_operator total, :>=, MINIMUM_ROUTED_SITES,
-                    "only #{total} routed remedy site(s) across the swept set (measured 2026-09-09 at 103). " \
+                    "only #{total} routed remedy site(s) across the swept set (measured 2026-09-09 at 103; 69 on 2026-09-24 after the local cert scripts retired). " \
                     "Either the routing was torn out, or ROUTED_RE stopped recognising it:\n" \
                     "#{per_file.map { |rel, n| "  #{rel}: #{n}" }.join("\n")}"
 
     # Named individually because a collapse in ONE file disappears into a healthy total.
     # bin/session-preflight is deliberately absent: wave 2 fixed its usage banners with
     # $PROGRAM_NAME and reworded one prose line, and it routes no remedy of its own.
-    %w[bin/ship bin/fast-check bin/full-suite-check bin/dor-check bin/lib/fast_cert.rb
+    %w[bin/ship bin/dor-check
        lib/claim_holder.rb bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
        bin/lib/block_recipe.rb].each do |rel|
       assert_operator per_file.fetch(rel), :>=, 2,
@@ -284,9 +268,9 @@ class RemedyHintGuardTest < Minitest::Test
   # A CONSTANT CAN BE RE-POINTED AT THE BARE FORM, AND NO SOURCE-TEXT GUARD CAN SEE IT.
   #
   # MEASURED 2026-09-09 while building this wave. Replace
-  #   FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", File.expand_path(".."))
+  #   FAST_CHECK_CMD = FastLane.remedy_command("fast-check", File.expand_path(".."))
   # with
-  #   FULL_SUITE_CMD = "bin/full-suite-check"
+  #   FAST_CHECK_CMD = "bin/fast-check"
   # and EVERY test above stays green. The call sites still read `#{FULL_SUITE_CMD}`, so
   # ROUTED_RE still counts them as routed; the declaration itself carries no OPERAND, so
   # INSTRUCTION_RE correctly declines to read it as an instruction. The refusal then
@@ -355,9 +339,10 @@ class RemedyHintGuardTest < Minitest::Test
       'puts "  bin/reviewer-select will REFUSE until: bin/task fix-forward #{slug} --agent <soul>"',
       '"Run the DoR gate as `bin/dor-check #{task.fetch("slug")} --gate-role review` so your verdict"',
       '"`bin/task note #{task.fetch("slug")} --comment \"<your finding>\"`, then hand it to the primary."',
-      '"`bin/full-suite-check #{slug}`, which runs ci.yml\'s own command (test:system included)"',
+      '"`bin/fast-check #{slug}`, which runs the diff-mapped tests and the spine"',
+
       '"Record it: `bin/task update #{slug} --pr-url <url>`.", false]',
-      '"certify in full instead: bin/full-suite-check #{cert_task}."',
+      '"run the pre-flight first: bin/fast-check #{cert_task}."',
       "      bin/task block <slug> --kind dependency --agent <agent> \\",
       # THE FLAG-OPERAND SHAPE — invisible to the original rule, six live sites.
       'warn "Usually a stale token: eval \"$(bin/gh-auth-refresh --export)\""',
@@ -411,7 +396,7 @@ class RemedyHintGuardTest < Minitest::Test
   # --- the helper --------------------------------------------------------------
 
   def test_remedy_command_names_an_absolute_executable_for_every_swept_script
-    %w[ship fast-check full-suite-check dor-check task].each do |script|
+    %w[ship fast-check dor-check task].each do |script|
       line = FastLane.remedy_command(script, BIN, "some-task")
       first = line.split(" ").first
 
@@ -471,29 +456,12 @@ class RemedyHintGuardTest < Minitest::Test
     assert_equal "#{File.join(BIN, 'task')} move some-task building", line
   end
 
-  def test_the_cert_remedy_is_absolute_in_the_hub_arm_too
-    # The hub arm used to return the bare "bin/full-suite-check <task>". It was
-    # defensible — CertRootGuard makes the cert writers' cwd agree with `root`, so
-    # a hub tree DOES carry the script — but it left one refusal speaking two
-    # dialects, and it rested on a guard the FAST_CHECK_ROOT seam bypasses.
-    require_relative "../../bin/lib/fast_cert"
-
-    hub = FastCert.remedy("some-task", root: REPO, hub_root: REPO)
-    satellite = FastCert.remedy("some-task", root: "/x/turf-monster", hub_root: REPO)
-
-    assert_equal "#{File.join(BIN, 'full-suite-check')} some-task", hub
-    assert_equal "#{File.join(BIN, 'full-suite-check')} some-task", satellite
-    [hub, satellite].each do |line|
-      refute_match(%r{\Abin/}, line, "a bare form is not runnable from a satellite or gem desk")
-    end
-  end
-
   # --- end to end: what bin/ship ACTUALLY PRINTS -------------------------------
   #
   # The claim refusal is the highest-traffic remedy in the house and the one that
   # fires EARLIEST — before ship has rooted — so its reader is the most likely to
   # be standing somewhere the bare form cannot resolve. It is also reachable from
-  # a test without a board: a task whose lease names another session.
+  # a test without a board: a task bound to another session's dirty desk.
   #
   # The assertion is deliberately not a substring match. It splits the printed
   # command, takes the script, and asks the DISK.
@@ -502,6 +470,7 @@ class RemedyHintGuardTest < Minitest::Test
       work = File.join(root, "work")
       FileUtils.mkdir_p(work)
       task_bin = write_task_stub(root)
+      FakeDesk.build(root, task_slug: "held-task", session: "sess-rival-9999", dirty: true)
 
       out, err, status = Open3.capture3(
         ship_env(root, task_bin), File.join(BIN, "ship"), "held-task", chdir: work
@@ -533,20 +502,17 @@ class RemedyHintGuardTest < Minitest::Test
   # directory, or a BARE `bin/<script>` — so the assertion above can catch the
   # bare form rather than silently skipping it.
   def printed_commands(text)
-    text.scan(%r{(?:/[^\s"']*)?bin/(?:ship|task|fast-check|full-suite-check|dor-check)(?:[ \t]+[^\s"'\n]+)*})
+    text.scan(%r{(?:/[^\s"']*)?bin/(?:ship|task|fast-check|dor-check)(?:[ \t]+[^\s"'\n]+)*})
         .map(&:strip).uniq
   end
 
-  # A board CLI stub serving one task: [building], claimed by ANOTHER session with
-  # a live lease. That is the state ship's claim gate refuses on.
+  # A board CLI stub serving one task: [building]. The desk FakeDesk builds beside it
+  # (another session's, with uncommitted work) is what ship's claim gate refuses on.
   def write_task_stub(root)
     path = File.join(root, "task-stub")
     payload = {
       "slug" => "held-task", "stage" => "building", "review_in_progress" => false,
-      "metadata" => { "devops" => {
-        "claimed_session" => "sess-rival-9999", "claim_nonce" => "inst-A",
-        "claim_expires_at" => (Time.now + 300).utc.iso8601
-      } }
+      "metadata" => { "devops" => {} }
     }
     File.write(path, <<~SH)
       #!/bin/sh

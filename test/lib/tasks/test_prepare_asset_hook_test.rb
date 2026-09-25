@@ -16,7 +16,7 @@ require "minitest/mock"
 # `test:prepare` itself, or it names a rake TEST TASK (`test`, `test:system`) whose
 # spawned `rails <task>` carries no path and no `-n`. CI uses both — its Rails shards
 # invoke the task (bin/ci-shard), its system job takes the spawn route — and
-# bin/full-suite-check's rake-routed line takes the spawn route too. NO CI INVOCATION
+# (The retired local cert's rake-routed line took the spawn route too.) NO CI INVOCATION
 # IS AN ARGLESS `bin/rails test`; naming the routes rather than a command line is what
 # keeps this paragraph true the next time CI's invocation changes.
 # Runs that pass EXPLICIT TEST PATHS do not get it for free —
@@ -138,7 +138,7 @@ class TestPrepareAssetHookTest < ActiveSupport::TestCase
   test "[unit] a path or -n argument suppresses the prepare task the hook rides on" do
     assert_equal ["test:prepare"], prepare_tasks_invoked_by([]),
                  "an argless `rails test` must reach run_prepare_task — that is what builds " \
-                 "the CSS for CI and bin/full-suite-check."
+                 "the CSS for CI."
 
     assert_empty prepare_tasks_invoked_by(["test/lib/tasks/test_prepare_asset_hook_test.rb"]),
                  "a path argument must suppress run_prepare_task; if it stopped doing so, " \

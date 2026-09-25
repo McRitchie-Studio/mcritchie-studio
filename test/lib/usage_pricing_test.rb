@@ -25,6 +25,23 @@ class UsagePricingTest < Minitest::Test
     assert_equal "25.0".to_d, UsagePricing.price({ "output" => MTOK }, "claude-opus-4-8")
   end
 
+  # The fleet's 5-series models were unpriced from mid-August 2026, so every
+  # TaskEvent carried tokens but a nil cost. Each must price now.
+  def test_the_five_series_models_carry_a_rate
+    assert_equal "5.0".to_d,  UsagePricing.price({ "input" => MTOK }, "claude-opus-5")
+    assert_equal "20.0".to_d, UsagePricing.price({ "output" => MTOK }, "claude-opus-5-5")
+    assert_equal "0.2".to_d,  UsagePricing.price({ "cache_read" => MTOK }, "claude-opus-5-5")
+    assert_equal "0.25".to_d, UsagePricing.price({ "cache_read" => MTOK }, "claude-fable-5-1")
+    assert_equal "2.0".to_d,  UsagePricing.price({ "input" => MTOK }, "claude-sonnet-5")
+  end
+
+  def test_a_captured_opus_five_five_transition_prices_non_nil
+    cost = UsagePricing.cost_from_capture(model: "claude-opus-5-5", tokens_in: 21_295, tokens_out: 10_587,
+                                          cache_creation_tokens: 0, cache_read_tokens: 9_677_271)
+    refute_nil cost, "the shape a real 2026-09-25 transition carried must price"
+    assert cost.positive?
+  end
+
   def test_cache_read_prices_at_ten_percent_of_input
     # 1M cache_read on opus ($5 in) => $5 * 0.10 = $0.50.
     assert_equal "0.5".to_d, UsagePricing.price({ "cache_read" => MTOK }, "claude-opus-4-8")

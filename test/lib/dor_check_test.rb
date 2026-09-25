@@ -13,7 +13,8 @@ require "socket"
 require_relative "../support/session_env"
 require_relative "../support/outbound_seams"
 require_relative "../../bin/lib/ci_status"
-require_relative "../../bin/lib/full_suite_gate"
+require_relative "../../bin/lib/tree_fingerprint"
+require_relative "../../bin/lib/ci_gate"
 
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
@@ -1445,8 +1446,8 @@ class DorCheckTest < Minitest::Test
   end
 
   # ==== THE RECEIPTS ARE INERT — in both directions ===============================
-  # bin/fast-check and bin/full-suite-check still stamp their fingerprint lines (phase
-  # 2b removes them); this gate must neither credit nor refuse on them.
+  # The local certs that stamped these lines retired in phase 2b; a task from before
+  # may still carry them, and this gate must neither credit nor refuse on them.
 
   def test_a_recorded_full_cert_does_not_stand_in_for_a_red_ci
     devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + FULL_CERT_RECEIPTS)
@@ -2380,7 +2381,7 @@ class DorCheckTest < Minitest::Test
     # carrying the tree's ACTUAL fingerprint must grade fresh, or bin/control-check
     # would write evidence the gate cannot read.
     with_control_repo do |dir|
-      fingerprint = FullSuiteGate.fingerprint(dir)
+      fingerprint = TreeFingerprint.working_tree(dir)
       refute_empty fingerprint.to_s, "could not compute the repo fingerprint"
       devops = TEST_ONLY_CONTRACT.merge(
         "checks_run" => ["[control@#{fingerprint}] NECESSARY — replayed test/models/a_test.rb"]
@@ -2446,7 +2447,7 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_integration_a_full_suite_bypass_does_not_fabricate_an_executed_control
-    # REGRESSION, found while wiring this gate. FullSuiteGate#verdict DEFAULTED every
+    # REGRESSION, found while wiring this gate. The retired suite verdict DEFAULTED every
     # evidence lane to :fresh when it short-circuited on a recorded `[full-suite-bypass]`,
     # and reading the control's freshness off that verdict reported a control as
     # EXECUTED that nothing ran. The suite verdict is no longer computed at all, and the

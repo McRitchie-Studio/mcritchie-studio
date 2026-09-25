@@ -24,7 +24,7 @@ module Api
       test "show projects the progress fact alongside the live claim" do
         now = Time.current
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         # to_stage IS the checkpoint's name (record_checkpoint_event writes it there).
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 3.minutes,
@@ -45,7 +45,7 @@ module Api
       test "show names a review check-in by its own lane, not as a cert" do
         now = Time.current
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 3.minutes,
                           from_stage: "building", to_stage: "review_primary_complete",
@@ -62,7 +62,7 @@ module Api
       test "show reports a quiet claim without touching the lease" do
         now = Time.current
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         silence = ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - silence,
@@ -80,7 +80,7 @@ module Api
       # Fail safe: a task with no durable artifact reads UNKNOWN, never quiet.
       test "show reports unknown progress for a task that has produced nothing" do
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A") })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A") })
         TaskEvent.where(task_slug: task.slug).delete_all
 
         get api_v1_task_path(task.slug), headers: @headers
@@ -111,7 +111,7 @@ module Api
         # "sess-challenger" would take that branch and stop testing this one.
         holder = "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6"
         challenger = "s3f2a4c5-6d7e-4f80-9b12-c3d4e5f6a7b8"
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: holder, nonce: "inst-A", now: now) })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: holder, nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         GateRun.where(subject_slug: task.slug).delete_all
         # The holder's last sign of life is older than the idle window.
@@ -548,18 +548,20 @@ module Api
       end
 
       # --- Cert evidence is a MACHINE-OWNED namespace (regression: an agent that
-      # recorded its tier-tagged test plan AFTER certifying wiped the
-      # fingerprint-bound cert lines, and bin/dor-check then reported
-      # "full-suite: MISSING" on code it had just certified). The API is the path
+      # recorded its tier-tagged test plan AFTER stamping evidence wiped the
+      # fingerprint-bound line, and bin/dor-check then reported it MISSING on
+      # code it had just checked). Since DevOps v3 phase 2b the only such lane is
+      # bin/control-check's `[control@fp]`; a retired full-suite receipt is plain
+      # author prose and an author write replaces it. The API is the path
       # bin/task PATCHes, so the guard must hold here, not only in the CLI. ---
 
       test "[integration] api checks_run update preserves cert evidence" do
-        full = "[full-suite@1512171634558ef1234567890abcdef123456789] bin/rails test (782 runs, 0 failures)"
-        rubocop = "[rubocop@1512171634558ef1234567890abcdef123456789] bin/rubocop (clean)"
+        control = "[control@1512171634558ef1234567890abcdef123456789] NECESSARY — replayed test/models/a_test.rb"
+        retired = "[full-suite@1512171634558ef1234567890abcdef123456789] bin/rails test (782 runs, 0 failures)"
         task = Task.create!(
           title: "Api Cert Evidence Guard",
           stage: "building",
-          metadata: { "devops" => { "kind" => "bug", "checks_run" => [full, rubocop] } }
+          metadata: { "devops" => { "kind" => "bug", "checks_run" => [control, retired] } }
         )
 
         # The exact payload `bin/task update <slug> --checks "[unit] ..."` sends
@@ -571,8 +573,8 @@ module Api
 
         assert_response :success
         task.reload
-        assert_includes task.devops_checks_run, full, "the API dropped the full-suite cert evidence"
-        assert_includes task.devops_checks_run, rubocop, "the API dropped the rubocop cert evidence"
+        assert_includes task.devops_checks_run, control, "the API dropped the control evidence"
+        refute_includes task.devops_checks_run, retired, "a retired full-suite receipt is no longer protected evidence"
         assert_includes task.devops_checks_run, "[unit] bin/rails test test/models"
       end
 
@@ -1052,7 +1054,7 @@ module Api
         patch api_v1_task_path(@task.slug), params: { requires_migration: true }, headers: @headers, as: :json
 
         assert_response :success
-        assert @task.reload.requires_migration, "an agent must be able to flag its own task for the lane"
+        assert @task.reload.requires_migration, "an agent must be able to flag its own task"
       end
 
       # Un-flagging matters too: a task that turns out NOT to need a migration hands

@@ -139,7 +139,30 @@ class TaskEventTest < ActiveSupport::TestCase
 
     event = task.task_events.chronological.last
     assert_equal "submitted", event.to_stage
-    assert_nil event.actor, "model-driven transitions record no actor (no claimant fallback)"
+    assert_equal TaskEvent::SYSTEM_ACTOR, event.actor,
+                 "model-driven transitions record the system actor (no claimant fallback)"
+    assert_nil TaskEvent.named_actor(event.actor), "and the system actor names nobody"
+  end
+
+  test "every transition records an actor: the caller when named, else system, never blank" do
+    task = Task.create!(title: "actor never blank task")
+    genesis = task.task_events.chronological.last
+    assert_equal TaskEvent::SYSTEM_ACTOR, genesis.actor, "the genesis event names the system"
+
+    Current.set(task_event_actor: "  ") { task.update!(stage: "building") }
+    assert_equal TaskEvent::SYSTEM_ACTOR, task.task_events.chronological.last.actor, "a blank actor is not an actor"
+
+    Current.set(task_event_actor: "carl") { task.update!(stage: "submitted") }
+    assert_equal "carl", task.task_events.chronological.last.actor, "a named caller is kept"
+
+    assert task.task_events.transitions.all? { |e| e.actor.present? }, "no transition is blank"
+  end
+
+  test "named_actor reads the system placeholder and blanks as nobody" do
+    assert_nil TaskEvent.named_actor(nil)
+    assert_nil TaskEvent.named_actor("")
+    assert_nil TaskEvent.named_actor(TaskEvent::SYSTEM_ACTOR)
+    assert_equal "avi", TaskEvent.named_actor(" avi ")
   end
 
   # --- reviewers recorded on submitted→reviewed (the avatars payload) ---

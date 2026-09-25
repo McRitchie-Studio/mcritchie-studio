@@ -6,12 +6,12 @@
 #   release_scopes — the scopes `bin/release` RUNS (run_test_scope in
 #     bin/release.rb resolves a scope key here and emits START/COMPLETED/FAILED
 #     telemetry stamped with this metadata).
-#   full_suite_scopes — the LOCAL cert lanes `bin/full-suite-check` RUNS. Each
-#     lane self-reports a kind=test_scope AgentAction (via the same
-#     bin/agent-activity `action` verb) tagged with its key here, so a local cert
-#     is a gradeable /xan/pipeline unit like a release run. Kept SEPARATE from
-#     release_scopes so bin/release.rb's registry stays release-only; the pipeline
-#     helper reads BOTH sections for phase/tier/host chips.
+#   full_suite_scopes — the LOCAL cert lanes the retired `bin/full-suite-check`
+#     RAN (DevOps v3 phase 2b, 2026-09-24). Each lane self-reported a
+#     kind=test_scope AgentAction tagged with its key here; the section stays so
+#     the historical rows keep their phase/tier/host chips on /xan/pipeline. Kept
+#     SEPARATE from release_scopes so bin/release.rb's registry stays release-only;
+#     the pipeline helper reads BOTH sections.
 #   ci_scopes — the GitHub Actions jobs `bin/ci-scope-capture` INGESTS. It reads a
 #     PR's `gh pr checks` and self-reports one kind=test_scope AgentAction per
 #     completed job through the SAME `action` verb — so a CI run is a gradeable
@@ -301,9 +301,9 @@ release_scopes:
     blocks: seal
     mutates: false
 
-# The LOCAL cert lanes bin/full-suite-check runs, in order. Each is a gradeable
-# test_scope verdict on /xan/pipeline (event_slug = the key below). Blocking:
-# a red lane fails the cert. host: local — the agent's own machine, no deploy.
+# The LOCAL cert lanes the retired bin/full-suite-check ran, in order — kept so
+# the historical test_scope rows on /xan/pipeline (event_slug = the key below)
+# keep their chips. Nothing emits them since 2026-09-24.
 full_suite_scopes:
   full_suite_db_reset:
     description: Reset the test DB before certifying (bin/rails db:test:purge db:test:prepare) — must be clean or the suite is not certified

@@ -59,6 +59,23 @@ class Release::BuilderPolicyTest < ActiveSupport::TestCase
     assert_equal true, decision.to_h.fetch("operator_gated_ship")
   end
 
+  test "[unit] production ship mode defaults to timed from config and rides the decision" do
+    assert_equal "timed", Release::BuilderPolicy.production_ship_mode
+
+    decision = Release::BuilderPolicy.evaluate([reviewed_task("mode", repos: ["mcritchie-studio"])])
+    assert_equal "timed", decision.production_ship_mode
+    assert_equal "timed", decision.to_h.fetch("production_ship_mode")
+  end
+
+  test "[unit] production ship mode refuses a value outside ask|timed|auto" do
+    Release::BuilderPolicy.stub(:config, { "production_ship" => { "mode" => "sometimes" } }) do
+      assert_raises(ArgumentError) { Release::BuilderPolicy.production_ship_mode }
+    end
+    Release::BuilderPolicy.stub(:config, { "production_ship" => { "mode" => "auto" } }) do
+      assert_equal "auto", Release::BuilderPolicy.production_ship_mode
+    end
+  end
+
   test "production ship names the autonomous kickoff command" do
     decision = Release::BuilderPolicy.evaluate([reviewed_task("autonomous", repos: ["mcritchie-studio"])])
 

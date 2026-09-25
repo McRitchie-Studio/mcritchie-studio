@@ -375,8 +375,8 @@ key → `INVALID_GATE_KEY`; a task-grain key on a release (or vice versa) →
 **Deliberately NO usage gate** — gate markers are deterministic pipeline
 boundaries, not usage-bearing work events (the same rationale as `bin/task
 checkpoint`'s `source=system` default). Do not re-add a
-`MISSING_EVENT_USAGE`-style requirement; producers (`bin/fast-check`,
-`bin/full-suite-check`, `bin/dor-check`, `bin/pr-review`, `bin/release`) post
+`MISSING_EVENT_USAGE`-style requirement; producers (`bin/dor-check`,
+`bin/pr-review`, `bin/release`) post
 fire-and-forget — a gate write must never break the work it observes.
 
 Prefer the CLI over raw curl: `bin/gate open|sop|close|show` wraps this
@@ -714,16 +714,16 @@ See footgun 4 for the full set of fields that live outside `devops`.
    acceptance list, and sending one `pr_urls` entry replaces the whole map. Send
    every element you want kept (`bin/task`'s list flags work the same way, which
    is why `--checks` REPLACES your tier tags).
-   **One exception, by design: cert evidence in `checks_run` is machine-owned.**
-   The fingerprint-bound lines the cert tools stamp (`[full-suite@<fp>]`,
-   `[rubocop@<fp>]`, `[fast-cert@<fp>]`, `[cert-deferred@<fp>]` — what
-   `bin/dor-check` grades) survive a
-   `checks_run` you send without them: the board carries forward every evidence
+   **One exception, by design: the control stamp in `checks_run` is
+   machine-owned.** The fingerprint-bound line `bin/control-check` stamps
+   (`[control@<fp>]`, what `bin/dor-check` grades on a `test-only` task) survives
+   a `checks_run` you send without it: the board carries forward every evidence
    lane your payload does not itself supply (`Task#preserve_cert_evidence`,
    `lib/cert_evidence.rb`). Your own tier tags are still replaced wholesale, so
    send every `[unit] …` / `[integration] …` line you want kept. Supplying a
-   `[<lane>@<fingerprint>]` line by hand is not a legitimate write — it forges a
-   certification; run `bin/fast-check` / `bin/full-suite-check` instead.
+   `[control@<fingerprint>]` line by hand is not a legitimate write — it forges
+   the control; run `bin/control-check` instead. (The local cert receipts this
+   rule was written for retired on 2026-09-24; a leftover one is author prose.)
 2. **List delimiting is decided by the KEY, not by the payload's type.**
    `normalize_devops_list` splits every list value on **newlines**. It *also*
    splits on **commas** for the two IDENTIFIER keys — `repositories` and
@@ -900,13 +900,12 @@ bin/task move <slug> submitted \               # optional per-transition usage �
   --model M --tokens-in N --tokens-out N --cost D --actor A   #   recorded on the TaskEvent
 ```
 
-> ⚠️ **`bin/task list` caps at 20 rows, recency-ordered across all stages, with
-> no truncation warning.** It surfaces only the API's default page (`per_page=20`,
-> `created_at DESC`) and discards `meta`, so it prints `(20 task(s))` even when
-> more exist — older tasks in quiet apps silently fall off. **`bin/task list
-> --stage <stage>` is the reliable enumeration** (an actionable stage holds far
-> fewer than 20); enumerate the Deploy queue by stage at the start of every cycle
-> (see [`parallel-agent-devops.md` → Step 0](parallel-agent-devops.md#step-0--assess-the-queue-by-stage)).
+> **`bin/task list` shows one page of 20 rows by default**, newest first across all
+> stages, and says so: when more rows match, its last line reads `(20 of 57 — pass
+> --all or --json for every row)` from the index's `meta.total`. `--all` walks every
+> page (100 per read) in the same three-column rendering; `--json` walks every page
+> as full records. `--stage <stage>` still narrows the read to one queue (see
+> [`parallel-agent-devops.md` → Step 0](parallel-agent-devops.md#step-0--assess-the-queue-by-stage)).
 
 List flags are **repeatable** (one value per flag), so commas inside an
 `acceptance`/`test_plan` item are safe. Fall back to the raw API above only when

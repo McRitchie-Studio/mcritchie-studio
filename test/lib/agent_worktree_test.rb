@@ -246,8 +246,8 @@ class AgentWorktreeTest < Minitest::Test
       end
       print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
     RUBY
-    assert_match(/held by a live builder claim \(busy-task\)/, out)
-    assert_match(/builder heartbeat \d+s ago/, out, "the age makes the hold verifiable, not a bare refusal")
+    assert_match(/held by a legacy build lease \(busy-task\)/, out)
+    assert_match(/lease renewed \d+s ago/, out, "the age makes the hold verifiable, not a bare refusal")
   end
 
   # A CORRUPT claim — the lease is PRESENT but its expiry is unparseable, so liveness cannot be
@@ -290,7 +290,7 @@ class AgentWorktreeTest < Minitest::Test
     # git-eligible + unheld → free, no reason
     assert_equal "[true, nil]", verdict_for(held: false, dirty: false)
     # git-eligible but HELD → withheld, WITH a reason to print
-    assert_match(/\A\[false, "held by a live builder claim/, verdict_for(held: true, dirty: false))
+    assert_match(/\A\[false, "held by a legacy build lease/, verdict_for(held: true, dirty: false))
     # not git-eligible → never a candidate, and NOT "withheld" (nothing to narrate)
     assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
   end
@@ -988,7 +988,7 @@ class AgentWorktreeTest < Minitest::Test
 
     assert_match(/merged into origin\/accepted, tree clean/, out, "the git fact")
     assert_match(/no open PR for feat\/t \(GitHub asked\)/, out, "the PR channel, and that it was actually asked")
-    assert_match(/no live build claim on t/, out, "the claim channel")
+    assert_match(/no legacy build lease on t/, out, "the claim channel")
     assert_match(/board stage `shipped`/, out, "the board-stage channel")
     assert_match(/no review in progress/, out, "the review channel")
     assert_match(/desk idle/, out, "the desk channel")

@@ -6,11 +6,10 @@ require "yaml"
 # CiTestCommand — "what does CI actually run?", read from the repo's OWN
 # .github/workflows/ci.yml.
 #
-# WHY THIS EXISTS. bin/full-suite-check is the CI-INDEPENDENT cert: the route a
-# builder takes when CI's verdict is unavailable (rolio's CI can't even be read
-# by bin/dor-check today) or too slow to wait for. Its whole selling point is
-# "you don't need CI's verdict" — which is a LIE the moment it runs LESS OF CI'S
-# RUBY SUITE than CI does. It ran `bin/rails test`, which SKIPS test/system, while
+# WHY THIS EXISTS. The release gate (bin/release.rb) runs CI's own command locally
+# as a CI-INDEPENDENT check. Its whole selling point is "the same suite CI runs" —
+# which is a LIE the moment it runs LESS OF CI'S RUBY SUITE than CI does. The
+# retired local cert ran `bin/rails test`, which SKIPS test/system, while
 # every repo's CI runs `bin/rails db:test:prepare test test:system`. A builder could
 # take the CI-independent route, go green, and have ZERO system coverage.
 #
@@ -1065,9 +1064,9 @@ module CiTestCommand
   end
 
   # The LOUD half. Returns an operator-facing message when this repo has CI we can read
-  # but CANNOT honestly stand in for — and nil when the cert may proceed. The caller
-  # aborts on it (bin/full-suite-check), because a cert that cannot find CI's suite must
-  # refuse, not quietly certify something else.
+  # but CANNOT honestly stand in for — and nil when the run may proceed. A caller
+  # aborts on it, because a run that cannot find CI's suite must refuse, not quietly
+  # run something else.
   #
   # Deliberately silent for a repo with NO ci.yml: DEFAULT is a full-suite superset
   # there, which is honest — it just isn't CI's own line.

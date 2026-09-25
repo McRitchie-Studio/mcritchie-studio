@@ -3,7 +3,7 @@
 # Standalone test for bin/ci-scope-capture — the LOCAL-INGESTION half of test-scope
 # telemetry: it reads a PR's `gh pr checks` and self-reports one kind=test_scope
 # AgentAction per completed CI job through the SAME `bin/agent-activity action` verb
-# bin/full-suite-check and bin/release.rb use. It shells out to the script with the
+# bin/release.rb uses. It shells out to the script with the
 # gh reads stubbed (CI_SCOPE_CHECKS_JSON / CI_SCOPE_HEAD_SHA) and the emit seam
 # pointed at a stub that logs argv (CI_SCOPE_AGENT_ACTIVITY), so the parse+emit is
 # exercised with NO network. Run directly:

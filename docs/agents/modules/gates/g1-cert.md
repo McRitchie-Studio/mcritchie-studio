@@ -1,730 +1,118 @@
-# G1 Cert — the builder's certification gate
+# G1 — the builder's optional pre-flight
 
-## Status: Active
+## Status: Active (rewritten 2026-09-24, DevOps v3 phase 2b)
 
-G1 Cert is the first branded testing gate of the devops pipeline: the
-**builder's certification that the exact code being handed off is green**. It is
-a **task-grain** gate (GateRun key `g1_cert`) owned by the feature agent, run
-from the task's worktree. It is a **self-closing cert**: `bin/fast-check` or
-`bin/full-suite-check` OPEN and CLOSE the `g1_cert` attempt themselves (green →
-success, red → failed). The Definition-of-Ready verdict (`bin/dor-check`) is a
-**separate** gate now — see [`dor.md`](dor.md) — so G1 Cert is exactly the local
-test/lint cert, nothing else.
+G1 is the first of the branded testing gates in the devops pipeline, and since
+`retire-local-cert-evidence` it is the **builder's optional local pre-flight**,
+nothing more: `bin/fast-check` runs the tests the branch diff maps to, the core
+spine, and rubocop on the changed files, prints its result, and **records
+nothing**. The one verdict per tree is the PR's **settled GREEN GitHub CI**,
+which [DoR](dor.md) reads at the submit seam and review's gate-zero reads
+again. G1 buys earliness — catch the obvious break in about a minute, before
+the push and the ten-minute CI round-trip — and nothing else.
 
-The gate flow order: **G1 Cert** (this doc) → [DoR](dor.md) →
+The gate flow order: **G1 pre-flight** (this doc) → [DoR](dor.md) →
 [G2 Review](g2-review.md) → [G3 Candidate](g3-candidate.md) →
 [G4 Ship](g4-ship.md).
 
-## What this gate verifies
+## What changed, and why
 
-- The shape's **DoR test tiers** are green, tier-tagged in `devops.checks_run`
-  (`[unit] …`, `[integration] …`, per `config/feature_shapes.yml`).
-- The **local cert** — a fast, honest pre-flight that the builder runs before the
-  push. Since 2026-09-24 (`dor-reads-settled-ci-verdict`) it is **not evidence the
-  DoR verdict reads**: `bin/dor-check` credits one form of suite evidence, the PR's
-  settled GREEN GitHub CI, and the receipts below are inert to it until phase 2b of
-  DevOps v3 removes them. The lanes still run, still refuse a red tree, and still
-  record what they ran:
-  - **fast** (the builder default) — `bin/fast-check`: diff-mapped tests + core
-    spine + rubocop on changed files, ~1 min, stamping a `[fast-cert@<fp>]` line.
-  - **full** — `bin/full-suite-check`: `ci.yml`'s own command locally, stamping
-    `[full-suite@<fp>]` + `[rubocop@<fp>]`. A repo that DECLARES `lint_lane: none`
-    in `config/release_repos.yml` (today: `studio-engine` and `solana-studio`,
-    neither of which ships rubocop at all) records only the `[full-suite@<fp>]`
-    line — the waiver is declared, never inferred from a missing binary. See
-    `FullSuiteGate.required_lanes`.
-  - **bypass** — a `[full-suite-bypass] <reason>` checks_run line. Recorded, and
-    read by nothing.
-
-The shape tiers, required metadata, and the PR's GitHub CI — the suite evidence —
-are checked by the `dor-check` **verdict**, which closes the separate **DoR** gate
-([`dor.md`](dor.md)), not this one. G1 Cert is purely the local cert lanes.
+Until 2026-09-24 this page described a **certification**: `bin/fast-check` and
+`bin/full-suite-check` fingerprinted the working tree, stamped a receipt on the
+task, opened and closed a `g1_cert` GateRun, and refused a wrong, dirty, or
+orphan-holding tree so the receipt could be trusted. `bin/dor-check` stopped
+reading those receipts on 2026-09-24 (`dor-reads-settled-ci-verdict`, phase 2a
+of DevOps v3), and stale receipts had been the largest DoR failure cause (439
+builder-side and 337 review-side refusals). Phase 2b removed the machinery that
+produced them: `bin/full-suite-check`, the fingerprint receipts, the bypass and
+deferral hatches, the cert root/tree/orphan guards and their runlock, and the
+`g1_cert` gate emits. What survives is listed under *What still holds* below.
+The design rationale is `docs/agents/system/devops-v3-design.md`, sections 5
+and 7 ("Certs and evidence").
 
 ## Who runs it
 
-The **feature (builder) agent**, from the task worktree. The cert opens AND
-closes `g1_cert` on its own — no reviewer ever touches this gate. (The primary
-reviewer's gate-zero re-runs `dor-check --gate-role review`, but that lands on
-the [DoR review](dor.md) gate `dor_review`, not here.)
+The **feature (builder) agent**, from the task worktree — by hand, or through
+`bin/ship`, which runs it at step 2/8 and **carries on whatever it says**. A red
+pre-flight is printed loudly there because it almost always means a red CI ten
+minutes later; it is not a refusal. `SHIP_PREFLIGHT=off` skips it.
 
 ## Procedure
 
-Run everything from the task worktree. Order matters: **final commit → cert →
-push → open the PR → (CI settles) → dor-check → submit**. The verdict reads the
-PR's CI, so it runs after the PR is open; `bin/ship` holds at step 6/8 for the CI
-to settle before it, and a still-pending CI reads as a WAIT there, not a pass.
-
-The worktree rooting is **enforced**: given a task slug, both cert runners
-verify the cwd's checkout IS the task's tree (its branch, or its desk in
-EITHER layout — `<repo>/.worktrees/<slug>`, or the sibling
-`<repo>.worktrees/<slug>` the gem repos use) and **refuse** otherwise. A run
-from the wrong checkout (e.g. the hub primary on `main`) exits 1 instead of
-green-certifying an unrelated tree, and the refusal names WHICH case it is:
-the desk to `cd` into, the desks that exist but are not this task's (each with
-the axis it failed), the desks that tie, or no desk anywhere
-(`bin/lib/cert_root_guard.rb`).
-
-**A cert can refuse for an ENV/CONFIG reason — that is not a red suite.** Before
-any lane runs, both cert runners boot the app in the desk and prove its test
-database is not the repo's **shared** one (`bin/lib/desk_guard.rb`). A cert
-against a shared DB certifies nothing, and `full-suite-check`'s first lane
-(`db:test:purge`) would destroy that database under every concurrent suite. The
-refusal says which of two things it is — bringup did not complete
-(re-provision: `bin/agent-worktree new <app> <slug>`), or the repo's
-`config/database.yml` does not honour the desk's `TEST_DATABASE_URL` pin (fix
-the repo, or rebase). It also refuses a **Rails** desk when it cannot prove
-isolation **either way** (the app will not boot). A repo that is **not a Rails
-app** — a gem or Anchor desk (`studio-engine`, `solana-studio`, `turf-vault`)
-with no `bin/rails` and no `config/database.yml` — has no test DB to protect, so
-the guard is inapplicable and **admits without booting**; it never refuses one
-for lacking an app to boot. **None of these is a regression in your diff** — do
-not go hunting one, and do not record the refusal as a failed cert attempt.
-
-The **committed tree** is enforced the same way: given a task slug, both cert
-runners **refuse a dirty working tree**, naming the uncommitted files and
-telling you to commit first (`bin/lib/cert_tree_guard.rb`). The fingerprint is a
-tree hash of the WORKING tree, so certifying with edits still uncommitted stamps
-GREEN evidence over code the PR never receives — on 2026-07-14 a worktree's 146
-lines of finished, tested work were certified and then never reached PR #537.
-"Certify after the final commit" is now a rule, not a memory. (A stat-stale
-index — a file rewritten with identical content, so only its mtime moved — is
-NOT dirt: the guard refreshes the index before reading it, so it cannot
-false-refuse a tree nobody edited.)
-
-Both cert runners open with an **orphan preflight** (`bin/lib/cert_orphan_guard.rb`)
-before any lane runs. A cert that outran its harness timeout leaves its
-`bin/rails test` grandchild alive, holding the worktree's test DB — and every
-retry then dies in test-prepare on `PG::ObjectInUse`, so the retry path recreates
-the deadlock and the agent can never dig out (live, 2026-07-13: three attempts,
-35 minutes, zero board progress). Each cert therefore leaves a runlock naming its
-process group **and that group's OS start time**, and the next cert reads it:
-
-| It finds | It does |
-|----------|---------|
-| a suite whose start time **matches** the runlock | **reaps** the group, names it, continues |
-| a **live** sibling cert | **refuses** — two suites on one test DB SIGSEGV Ruby |
-| the pgid **recycled** onto a stranger | **never kills it**; discards the lock, continues |
-| a group it **cannot prove** is ours | **refuses** and names what is alive — a human decides |
-| a **malformed** lock (names no integer pid/pgid) | **clears it** loudly and continues — it names nobody, so there is nobody to kill; the DB backstop speaks for a real orphan |
-| a lock naming group **0 or 1** | **refuses** and leaves the lock — the lock is corrupt, no cert ever ran in those groups, and no kill would be correct. `rm` it yourself |
-| a reap it **could not perform** (the suite outlived TERM+KILL, or its identity stopped matching under us) | **refuses, and KEEPS the runlock** — the lock is the only record naming that process. It offers a kill **only** when the group is still provably ours; against a stranger it offers `rm <lock>` and an `inspect` line, never a kill |
-
-An exit-1 from the preflight is an **ENV refusal, not a red diff** — it names the
-pid and the DB. Never `rm` the runlock to get past a refusal you have not read: it
-is naming a process that is still holding your database.
-
-**Every kill the cert prints is a kill it would fire.** The command in a refusal is an
-instruction — it gets pasted into a shell exactly as printed — so the copy is gated on
-the same predicate as the trigger (`CertOrphanGuard.reapable?`): signalable **and**
-provably ours, re-proved at the moment of emission. When the guard cannot prove the
-group is ours it prints **no kill at all**, because none would be correct. If you ever
-see the cert suggest a kill it did not itself attempt, that is a bug — report it.
-
-**The runlock lives in the repo's git dir** (`<git-dir>/cert-run.json`; in a worktree
-that is `.git/worktrees/<name>/`, so each desk keeps its own), **never in the working
-tree**. It has to: the lock's job is to SURVIVE a SIGKILLed cert, so a lock inside the
-tree is an untracked file in any repo that does not ignore `tmp/` — studio-engine and
-turf-vault do not — and the cert **refuses a dirty tree**. The next cert would abort
-`DIRTY` on the guard's own artefact, the orphan preflight would never run, and the
-deadlock above would be back, permanently. Keeping the lock out of the tree makes that
-impossible by construction rather than by every repo remembering to ignore `tmp/`.
-
-1. **Certify — fast route (default):**
-
-   ```bash
-   bin/fast-check <task-slug>
-   ```
-
-   Lanes, in order (each recorded on the gate as one executed-SOP entry):
-
-   - `test-prepare` — `bin/rails db:test:prepare test:prepare` (abort on red —
-     never certify against an unprepared test env). **Read the output; do not
-     assume the cause.** A red here has three quite different meanings and
-     guessing among them is what burned 35 minutes: `PG::ObjectInUse` is an
-     ORPHANED suite holding your test DB (the preflight above names it — if it
-     did not, say so, that is a guard gap); an asset error such as `The asset
-     "tailwind.css" is not present` after a stylesheet change is a REGRESSION IN
-     YOUR DIFF failing the asset build; a missing DB/role is a genuine env gap.
-     Blaming "an ENV gap" by reflex is the reflex this gate exists to break.
-     There is a FOURTH meaning the cert now separates by itself: the runner is
-     simply **not in this checkout** (turf-vault is Anchor/Rust and has no
-     `bin/rails`). That prints `COULD NOT RUN`, never "an ENV gap you can fix" —
-     there is no fix, because there is nothing to prepare. The cert **refuses**
-     rather than skipping the lane, since a skipped prepare certifies a repo
-     whose tests never ran; a repo whose cert lane is not Rails has to DECLARE
-     one — a `release_check:` on its row in `config/release_repos.yml`, which is
-     the remedy the refusal itself now names. turf-vault declared exactly that on
-     2026-09-14, so it no longer reaches this refusal at all. The
-     same split applies to the later lanes: a missing command is reported as
-     `lane(s) COULD NOT RUN`, never `lane(s) RED`.
-     Both tasks, one boot: the test DB, and
-     Rails' `test:prepare` hook, which is what BUILDS the gitignored
-     `app/assets/builds/tailwind.css`. The lanes below pass explicit test
-     paths, and Rails skips its own `test:prepare` whenever an argument looks
-     like a path — so without this lane a fresh worktree red-flags every
-     view-rendering test with `The asset "tailwind.css" is not present in the
-     asset pipeline`. See `docs/agents/modules/testing.md`.
-   - **A REGISTRY-GATED REPO TAKES A DIFFERENT ROUTE ENTIRELY.** The three lanes
-     below are Rails-app assumptions — `bin/rails`, `bin/rubocop` — and a gem or an
-     Anchor repo has neither, so an unaided `bin/fast-check` used to die on an
-     unrescued `Errno::ENOENT` before running a single test. A repo whose registry
-     row (`config/release_repos.yml`) DECLARES a `release_check` now runs **its own
-     gate command** instead, skips the Rails prepare lane that does not apply to it,
-     and runs no rubocop lane. There is no diff-mapped shortcut for such a repo — the
-     declared command IS the suite — and the evidence line says so rather than
-     reporting a subset that was never selected.
-
-     **It is keyed on the DECLARATION, not on the `gems` section** (`FullSuiteGate.registry_gated?`,
-     changed 2026-09-14). While it keyed on the section, an `apps` row could never
-     reach this branch however completely it declared its lane — which is why
-     turf-vault had real CI lanes and no local cert for months. Declared today,
-     all three naming a `bin/release-check` their own repo owns: studio-engine and
-     solana-studio (studio-engine measured 2026-08-26 at ~215s for 102 files / 1491
-     runs) and turf-vault (**five** lanes — two Node, three Rust — measured
-     2026-09-22 against `origin/accepted` at `09cdfb3`: **76s cold**, 1-2s on a
-     re-run; re-derive the table with `bin/release-check --list` rather than
-     trusting this line). So a
-     studio-engine OR a turf-vault builder CAN use the fast route.
-
-     **Budget the COLD number.** The figure here read "four CI lanes … ~1s warm"
-     until 2026-09-22, when `cargo test` had already been a lane for a week and the
-     node suite had grown from 61 cases to 171. A builder who budgets a cert
-     against the warm number alone concludes a 76s lane has hung. Measure
-     turf-vault from `origin/accepted`, never from the local primary — on
-     2026-09-22 that primary was stale at `66ffff1` with no `bin/` on disk at all.
-   - `mapped-tests` — `bin/rails test <files the branch diff maps to>` (path
-     convention, falling back to a grep for the SUBJECT'S IDENTITY — a script's
-     path and quoted command name, a config's path and quoted basename, an app
-     class's full constant, any other `.rb`'s camelized stem; skipped when
-     nothing maps). It is **not** "a class-name grep": naming only that rung
-     misreads the cap trips this repo actually has, where three of the eleven
-     single-file trippers reach their width through a test FAMILY and never grep
-     at all (measured below). `FastCert#grep_tokens` owns the rule.
-     A tool whose convention twin lives in `test/lib/` also maps its whole test
-     **family** — the suffixed `test/lib/<stem>_<aspect>_test.rb` siblings that
-     are nobody else's twin. **A tool's tests are a family, not a twin:**
-     `bin/dor-check` has fifteen, and until 2026-09-06 a diff touching it mapped
-     to ONE, so `dor_check_exempt_ci_test.rb` — a self-checking registry over
-     `bin/dor-check`'s own source — was unreachable from the cert and reddened
-     PR #1236 in CI instead. Scoped to `test/lib/` because `test/<layer>/`
-     mirrors `app/<layer>/` one file to one file, where a prefix sibling is a
-     DIFFERENT subject's test.
-     **CAPPED at 15 files** after the spine dedupe — and `bin/dor-check`'s family
-     was fifteen, which was the cap EXACTLY. (A family grows with its tool: the
-     same family measures **18** at 2026-09-08, so `bin/dor-check` now exceeds
-     the cap on its own. Re-measured 2026-09-24, after `dor-reads-settled-ci-verdict`
-     retired five of the family's tests: **14** alone and **15** with
-     `bin/lib/ci_status.rb` — at the cap, not over it; that PR's own three-file diff,
-     adding `bin/lib/ci_gate.rb`, is 24. Re-derive the number rather than reading it
-     here.) Read
-     those two numbers together —
-     this doc printed them six lines apart without drawing the conclusion (the cap
-     landed `96dcae17`, 2026-08-18; the family count `2b310c08`, 2026-09-06):
-     `bin/dor-check` **plus any one co-changed mapped file is 16**, so the
-     most-edited file in this repo crossed the cap on any multi-file diff.
-     Measured on a real desk 2026-09-06/07:
-
-     | diff | mapped | before the cap fallback | now |
-     |---|---|---|---|
-     | `bin/dor-check` alone | 15 | ran 15 | ran 15 |
-     | `bin/dor-check` + `bin/lib/ci_status.rb` | 16 | ran **0** | runs its **2 twins** |
-
-     **Past the cap the lane degrades to the CONVENTION TWINS, not to nothing.**
-     The twins are the pre-family set — each changed file's existing convention
-     target, 1-2 paths per file — so crossing the cap is a **slope, not a cliff**,
-     and widening a test family is monotone-good at every size: the floor never
-     drops below what the diff mapped to before the family hop existed. The
-     fallback **excludes the grep**, deliberately, because the grep is what the cap
-     exists to stop: `config/initializers/studio.rb` mapped to 45 files and ran
-     39m34s against this ~1-minute budget. A changed file with no twin therefore
-     contributes nothing, and **the fallback is capped by the same number** — 20
-     twins is still too many, and degrades again to the spine. Three rungs, one
-     number: full mapped set → convention twins → spine only. Every rung is
-     announced loudly (the cap, the widest-mapping file, and what runs instead)
-     and named on the evidence line. For a diff this wide the right cert is
-     `bin/full-suite-check`; raise the cap deliberately with
-     `FAST_CHECK_MAPPED_CAP=<n>`.
-
-     **THE MARGIN — the cap now says so BEFORE it trips.**
-     `FastCert::DEFAULT_MAPPED_MARGIN` (2) makes `cap_decision` report
-     `:approaching` for a
-     mapped set inside `cap - margin .. cap`, and `bin/fast-check` then prints
-     `MAPPED LANE NEAR THE CAP — N of 15, M path(s) of margin left` — naming the
-     widest mapping, whether the next path over would fall back to convention
-     twins or to **nothing**, and the remedy (cite the CONSTANT that names a path
-     rather than spelling the path in new test prose). The run is **unchanged**:
-     the whole mapped set still executes and the cert is still green. The clause
-     also rides the evidence line (`N mapped (NEAR THE CAP of 15: M path(s) of
-     margin …)`), which is the only channel that outlives the run.
-     `:approaching` and `:capped` are exclusive — a reader takes exactly one.
-
-     **A RUNTIME WARNING REACHES THE WRONG BUILDER, WHICH IS WHY THERE ARE TWO
-     TRIPWIRES.** The margin is computed over the diff's mapped set, so it warns
-     whoever has the at-cap subject in their diff. The person who actually trips
-     the cap usually does not: they add a test file that merely NAMES the subject.
-     Measured — a one-file diff adding a test that spells a config's path maps to
-     **1** path (its own) and never mentions the cap. What that builder sees is
-     `test/lib/fast_cert_subject_test.rb` going red on a file they did not touch.
-     So that file carries two pinned config sweeps — one for sources OVER the cap
-     and one for sources inside the MARGIN — and both now fail with the token that
-     reached the subject, every test file that answers to it, and the remedy
-     (`FastCert.spelling_breakdown`). The margin sweep is what reds one or two
-     spellings BEFORE a mapped lane goes quiet.
-
-     **Do NOT raise the cap to clear either sweep.** That moves the cliff without
-     removing it, and the cap exists to stop a broad diff dragging the whole suite
-     into the mapped lane. Take the spelling back out instead.
-
-     **WHICH CAUSE ACTUALLY TRIPS THE CAP — measured, because the two want
-     different answers.** Re-derived 2026-09-08 over all **1952** tracked
-     files, one at a time (`FastCert.mapping(root, [path])`): **11 sources
-     alone exceed the cap.** Eight reach that width through the GREP — six named
-     by a constant (`test/support/session_env.rb` 79,
-     `app/models/agent_activity.rb` 29, `github_workflow_run.rb` 25,
-     `current.rb` 23, `builder.rb` 18, `test/support/outbound_seams.rb` 18) and
-     two by a PATH plus a quoted name (`config/test_health.yml` 23,
-     `bin/rubocop` 20). **Three do not:** `bin/release` and `bin/release.rb` at
-     23 reach it through the ORPHAN family (no same-named twin was ever written),
-     and `bin/dor-check` at 18 through its convention twin's family.
-     These counts track the TREE, not the mapping rule — re-derive before
-     editing this paragraph, do not paste it.
-
-     **RE-DERIVED 2026-09-22** over all **2229** tracked files, classified by the
-     RUNG that reached the count rather than by the count alone: the shape above
-     survives and every number in it has moved. **12** sources alone exceed the
-     cap; the same **three** never reach the grep (`bin/release` and
-     `bin/release.rb` at **30** through the orphan family, `bin/dor-check` at
-     **19** through its twin's family); of the **nine** that do grep, two are
-     still named by a path plus a quoted name (`config/test_health.yml` 28,
-     `bin/rubocop` 21) and seven by a constant.
-
-     **AND THE POPULATION THE OVER-CAP CENSUS CANNOT SEE.** The same sweep counts
-     the sources sitting AT the cap: **two**, `config/release_repos.yml` and
-     `test/support/task_usage_sandbox.rb` (15 of 15), plus two one under
-     (`bin/rake`, `config/feature_shapes.yml`). Those are the same defect one run
-     earlier, and until 2026-09-22 nothing announced them — see **the margin**
-     below.
-
-     Two things follow. A single-file cap trip is **no longer always a grep
-     precision failure**: it was when the fallback landed, and `bin/dor-check`
-     has since grown past the cap on its own. And the fallback is still a slope
-     rather than a shorter cliff, for the reason that has not moved — a source
-     that reaches the grep or the orphan family has **ZERO convention twins by
-     construction**, since `FastCert#mapping` looks past the convention target
-     only when it is MISSING. So ten of the eleven take nothing from the fallback
-     and degrade to the spine exactly as they did before it existed, while
-     `bin/dor-check` — the only one of them with a twin — degrades to that twin
-     instead of to nothing. The fallback is defined against the **convention
-     twins**, never as "the mapped set, truncated" — truncating 39 arbitrary grep
-     matches to 15 arbitrary grep matches would be a shorter cliff, not a slope.
-     **The grep's precision is a separate defect and is deliberately NOT addressed
-     here** (this change owns the degradation, not the selection).
-
-     **THE CAP COUNTS FILES, NOT SECONDS — and for a heavy family those diverge.**
-     Measured on this hardware 2026-09-07, the `bin/dor-check` diff at exactly the
-     cap: mapped lane **220.0s** (15 files, 383 runs), spine 37.4s, rubocop 2.1s,
-     **whole cert 262.2s**. That is **~4.4x the ~1-minute budget this lane
-     advertises**, while still legally under the cap. So the cap of 15 is a
-     reasonable bound on FILES and a poor proxy for TIME here, and the twin
-     fallback is cheaper than the lane it replaces (the same two twins measured
-     97.7s).
-
-     And the grep lane is worse again: `bin/pr-review`'s **39-file** mapping —
-     the shape that capped a real ship on 2026-09-07 — measured **422.4s** (1291
-     runs), **~7x the budget**, under some CPU contention so read it as an upper
-     bound. Three points, same hardware, same day:
-
-     | lane | files | runs | wall clock | vs ~60s budget |
-     |---|---|---|---|---|
-     | grep (`bin/pr-review`) | 39 | 1291 | 422.4s | ~7.0x |
-     | family (`bin/dor-check`) | 15 | 383 | 220.0s | ~3.7x |
-     | twin fallback | 2 | 290 | 97.7s | ~1.6x |
-
-     **A cap of 15 FILES admits a 220s lane and rejects a 422s one — but it would
-     equally admit 15 trivial files at 5s.** It bounds the wrong quantity. That is
-     an argument about the CAP, not about this fallback, and it is deliberately not
-     acted on here. Retune the cap with a measurement in hand, and update these
-     numbers when you do — a budget with no recorded normal case is a number nobody
-     can safely change.
-   - `spine` — `bin/rails test <config/fast_cert_spine.yml entries>` (the
-     always-run critical core, ~10-20s). **The list is anchored in the HUB** and
-     filtered to paths that exist under the code root, so a SATELLITE checkout
-     resolves NONE of it — verified 2026-09-05: all five entries are absent from
-     both turf-monster and rolio. On a satellite the mapped lane is therefore the
-     only lane that can run a test at all, which is what makes the guard below
-     more than a corner case.
-   - `rubocop-changed` — `bin/rubocop <changed lintable files>` (never the
-     whole repo; skipped when none)
-
-   **A CERT THAT EXECUTES ZERO TEST FILES DOES NOT CERTIFY.** Before any lane
-   runs, `bin/fast-check` counts the test paths this run will actually execute —
-   the mapped lane (its **twin fallback** when the cap tripped, EMPTY only when
-   there are no twins either) plus the spine — and refuses to report green when
-   that set is empty. **It has three verdicts. Two of them ask WHY nothing would
-   run; the third asks a question that comes before it — was a suite OWED at all?**
-
-   | the set is empty because… | verdict | exit | what happens |
-   |---|---|---|---|
-   | the task's **shape owes no suite** (`full_suite_gate: false`, no `dor_tiers`) **and** the OBSERVED diff ships **no behaviour** | **WAIVE** | `0` | nothing runs, nothing recorded; `bin/ship` carries on and `bin/dor-check` re-derives the same waiver from the shape |
-   | the diff maps to **NO test file** (no convention target, no grep hit) **and NO spine is declared** (`config/fast_cert_spine.yml` missing, empty, or unparseable) | **REFUSE** | `1` | nothing recorded, nothing pushed; remedy is the hub's `bin/full-suite-check <task>` |
-   | the mapped lane was **CAPPED** *and* **no twin fallback was available** (no changed file has a twin, or the twins were themselves over the cap) | **DEFER** | `2` | a `[cert-deferred@<fp>]` receipt is recorded; `bin/ship` pushes and opens the PR; **`bin/dor-check` then requires a GREEN CI** |
-   | this **CHECKOUT resolves NONE of the spine entries the config DECLARES** — the satellite case | **DEFER** | `2` | same receipt, same `bin/ship` continuation, same GREEN-CI demand at `bin/dor-check` |
-
-   **The spine is hub-anchored, and that is what the LAST row is for.** Measured
-   2026-09-07: `config/fast_cert_spine.yml` declares five entries; the hub resolves
-   **5/5** while turf-monster, rolio, turf-vault, studio-engine and solana-studio
-   each resolve **0/5**. So the SAME docs-only diff certified green in the hub (the
-   spine ran) and was REFUSED on a satellite — a verdict decided by where the
-   builder was standing, reported as a fact about the diff, and it killed `bin/ship`
-   at step 2 of 8 before any PR or CI existed. What the hub's green buys on such a
-   diff is a **tree-health smoke test**, never coverage of the prose that changed; a
-   satellite cannot run it, but CI runs that repo's whole suite on the same tree. So
-   the deferral demands strictly MORE evidence than the hub's green, not less.
-
-   **The remedy names the HUB'S ABSOLUTE path**, because `bin/full-suite-check`
-   exists **only** in the hub (measured 2026-09-07: absent from turf-monster, rolio,
-   turf-vault, studio-engine and solana-studio). A bare `bin/full-suite-check
-   <task>` is not a command a satellite checkout can run.
-
-   **The WAIVE row is not a softer refusal — it is a prior question**
-   (`bin/lib/shape_contract.rb`, added 2026-09-07 by
-   `/tasks/fast-check-ignores-docs-shape`). `config/feature_shapes.yml` says of the
-   `docs` shape, in its own words, `dor_tiers: []` + `full_suite_gate: false` +
-   "a doc change certifies by REVIEW, not a test lane". `bin/dor-check` has honoured
-   that for months — it gates its whole suite-evidence block on
-   `shape_def.fetch("full_suite_gate", true)`. `bin/fast-check` never asked, so a
-   **one-file markdown diff in a satellite checkout** (where the hub-anchored spine
-   resolves nothing) was REFUSED here and sent to `bin/full-suite-check`: measured
-   2026-09-07 on `/tasks/wallet-transport-architecture-doc`, a ~31-minute
-   turf-monster suite run to certify 316 lines of prose that cannot reach a test.
-   Two halves of one gate holding opposite answers to one question.
-
-   **It takes TWO facts and the second is the safety.** The shape's DECLARATION
-   only ever narrows what an OBSERVATION of the diff may excuse — it never
-   substitutes for one:
-
-   | | what is read | fails closed when |
-   |---|---|---|
-   | **the declaration** | the shape's stanza in `config/feature_shapes.yml` | the shape is blank, unknown, or unreadable; `full_suite_gate` is absent (it defaults **true**); or ANY `dor_tiers` entry is declared |
-   | **the observation** | `CodeDiff.doc_only?` over the **rename-aware** path view (`FastCert.classifiable_paths`) — the same classifier `bin/dor-check`'s exempt-kind gate runs | one behavioural file is present, or the diff cannot be observed at all (an empty list is "we saw nothing", never "there is nothing but prose") |
-
-   A `docs`-shaped diff carrying `app/models/task.rb` is refused exactly as before —
-   that is PR #1172's defect, and the label is what this waiver *narrows*, never
-   what unlocks it. The observation reads **both sides of a rename**, so
-   `R100 bin/deploy.sh docs/notes.md` — which `--name-only` shows as one prose file
-   — still refuses: the DELETED script is the behaviour change and it is invisible
-   in the new path. The strict `doc_only?` is used rather than the `docs` shape's
-   own looser `docs_with_guards?`, because the one way a docs+guards diff reaches
-   this guard is a guard test that was **deleted**, and a deleted test is precisely
-   the change that needs a suite.
-
-   **Nothing is recorded on the WAIVE path, deliberately.** The deferral writes a
-   receipt because `bin/dor-check` REQUIRES one; this has no such consumer —
-   dor-check reaches the same conclusion from the same config key at the verdict,
-   freshly, so a receipt would be a line nothing grades. It would also cost more
-   than it looks: a new evidence lane is unknown to the DEPLOYED board's
-   `CertEvidence.lane_of`, which keys the machine-owned namespace on lane
-   membership, so until the board shipped a pure-evidence write on it would
-   classify as an AUTHOR write and replace the author namespace (the footgun in
-   `lib/cert_evidence.rb#preserve`). No `g1_cert` attempt is stamped either, for
-   the same reason the REFUSE path stamps none.
-
-   **A gem never reaches it.** The whole zero-evidence guard is skipped for a gem
-   repo — its registry command IS its suite and runs as the mapped lane — so a
-   `docs`-shaped prose diff in `studio-engine` still runs `bin/release-check`.
-
-   **A capped run that DOES take its twin fallback certifies — it does not defer.**
-   That is the deliberate answer, and it holds because the guard is keyed on ZERO
-   EXECUTED TESTS and never on the cap: a twins run executed real tests, so there
-   is nothing to defer. It is a **narrower cert, honestly labelled** (`N twin(s)
-   (CAPPED: …)` on the evidence line) — the same treatment a capped run over a live
-   spine has always had. No run that executes zero tests starts reporting green,
-   and no run loses evidence: every run this changes previously executed either the
-   spine alone or nothing at all, and now executes strictly more.
-
-   **Deferring is not skipping — the refusal MOVES, from ship step 2 to step 7.**
-   A capped diff mapped to MORE relevant tests than the cap, not fewer, and CI
-   runs every one of them on this exact tree in the run the PR triggers anyway;
-   only the RUNNER was wrong, and we chose that ourselves for a budget reason. So
-   the cert authority moves to CI. (Since 2026-09-24 that is true of every diff,
-   not only a capped one: `bin/dor-check` reads the CI verdict and no receipt, so
-   a deferral simply means no local pre-flight ran.) A red CI, an ABSENT CI
-   (`:none`), and a CI nobody could read all still refuse the submit. Exit `2` is
-   deliberately non-zero so every `system(...)` caller that has not been taught
-   about deferral keeps reading it as "not certified".
-
-   Why it moved at all: `bin/fast-check` runs at **ship step 2 of 8 — before the
-   push, before the PR, before any CI exists**, so a refusal left the builder with
-   no PR and one remedy — a local full suite MEASURED at ~30 minutes against CI's
-   ~9 for the identical command. A build paid that in full on 2026-09-06.
-
-   **It is a SATELLITE condition, not a cap condition**, and the difference decides
-   which builds change. The spine's five entries **all exist only in the hub**
-   (measured 2026-09-06: turf-monster 0 of 5, rolio 0 of 5), so one capped diff
-   splits two ways — both observed the same day:
-
-   | | what happened | verdict |
-   |---|---|---|
-   | **Hub** (`release-offers-retired-cert`) | `bin/release.rb` mapped 50 files, **51 paths over the cap** → mapped lane skipped → **the spine still ran** | certified green, accepted against a green CI. The cap cost coverage, not the PR. **Unchanged by this.** |
-   | **Satellite** (`empty-solana-network-fails-open`, turf-monster) | 29 paths over the cap → mapped lane skipped → **spine resolves to nothing** | zero executed tests → REFUSED, and the builder paid the ~30 minutes. **This is what defers now.** |
-
-   **The twin fallback narrows that satellite row further, and this is the point of
-   it.** Since the capped lane now takes its twins, a satellite diff reaches the
-   deferral only when NONE of its changed files has a twin — so the deferral serves
-   the shape it was built for (a grep-driven mapping over an empty spine) and stops
-   catching diffs that had perfectly good twins sitting there unrun. Fewer
-   deferrals, on strictly more local evidence, with the fence unmoved.
-
-   So the population the deferral serves is the **six non-hub repos**. The guard
-   stays keyed on the ZERO and merely READS the cap: keyed on the cap it would have
-   changed the hub half, which needs nothing.
-
-   On the REFUSE path nothing is recorded and no `g1_cert` attempt is stamped; it
-   is a precondition on the SELECTION, the same shape as the root, desk, and
-   dirty-tree guards. On the DEFER path the receipt is the ONLY thing written —
-   still no `g1_cert` attempt, because no lane ran and an attempt would report a
-   testing window that measured nothing. A deferral that cannot be RECORDED
-   refuses (exit 1) instead: an unrecorded deferral would push, wait out CI, and
-   be refused at step 7 for want of the receipt.
-
-   It exists because turf-monster PR #549 recorded this, verbatim:
-   `fast cert green: 0 mapped (CAPPED: 26 > 15; spine only) + 0 spine test
-   path(s), rubocop on 3 changed file(s)`. The mapped lane was capped, so it
-   announced a fallback to the spine; the spine then resolved to zero paths. The
-   gate printed **green** having run no test at all — rubocop was the only
-   executed lane, and a linter cannot observe behaviour. Three of five builds
-   that night degraded this way and every reviewer had to be told by hand to
-   weight CI over the G1 cert.
-
-   **Keyed on the zero, not on the cap** — deliberately. Keyed on the cap, a
-   satellite diff mapping to 26 test files would be treated worse than one mapping
-   to NONE, strictly less evidence, which would still certify green on rubocop
-   alone. The cap decides only WHICH of the two verdicts you get, never whether a
-   run with no tests may report green.
-   **A capped run whose spine still ran is NOT refused**: it executed real tests
-   and its evidence says which rung it ran on — `N twin(s) (CAPPED: …)` when the
-   twin fallback took, `0 mapped (CAPPED: …)` when there were no twins or they
-   were themselves over the cap — beside the loud `MAPPED LANE CAPPED`
-   narration. A narrower cert, honestly labelled, which is what the cap was
-   designed to produce. A gem repo is exempt (its registry command IS its suite
-   and runs as the mapped lane).
-
-   **The cap NUMBER is unchanged, and so is this guard's keying**: the
-   zero-evidence guard alters what a capped run REPORTS, never how much it runs.
-   What a capped run RUNS did change, one rung along and by a different change —
-   the convention-twin fallback documented above (`f0cc947a`), which is why the
-   evidence line now has two capped wordings rather than one. Read the two
-   statements in that order; collapsing them into "the cap itself is unchanged"
-   is what made this paragraph contradict its own page.
-
-   All lanes green stamps one `[fast-cert@<fp>]` line into `checks_run`,
-   merged with the existing list (tier tags and full-suite evidence are
-   preserved; only a prior fast-cert line is replaced). A skipped lane is
-   recorded as a pass with a `skipped: <why>` command — considered, not lost.
-
-   Preview without writing anything: `bin/fast-check <task-slug> --print`
-   (also skips every gate/board write). `--list` prints the selected test
-   files and exits.
-
-2. **Or certify — full route** (when CI can't vouch, or for release-grade
-   verification):
-
-   ```bash
-   bin/full-suite-check <task-slug>
-   ```
-
-   Lanes: `test-db-reset` (`bin/rails db:test:purge db:test:prepare`),
-   `full-suite` (**what CI's `test` job runs, verbatim** — read from the repo's own
-   `.github/workflows/ci.yml`; today `bin/rails db:test:prepare test test:system` — which since the hub's suite was SHARDED is the single command covering CI's `rails` shards plus its `system` job, not a copy of any one CI step,
-   the ENTIRE Ruby suite **including the system tier**), `rubocop` (`bin/rubocop`,
-   the whole repo — the rubocop check in CI's `static` job). Green lanes stamp `[full-suite@<fp>]` +
-   `[rubocop@<fp>]`.
-
-   The `rubocop` lane is SKIPPED-BY-DECLARATION for a repo carrying
-   `lint_lane: none`, and BOTH halves now honour it. The READER
-   (`FullSuiteGate.required_lanes`) stops asking for the evidence, and the
-   WRITER skips the lane rather than shelling out: `bin/full-suite-check`
-   resolves `lint_waived = FullSuiteGate.lint_waived?(cert_repo)`, warns that
-   the lane is skipped by declaration, and records `rubocop_res = lint_waived
-   ? nil : run_lane(...)` — so no `bin/rubocop` is invoked and no rubocop
-   evidence is stamped. Such a repo therefore CERTIFIES BY THIS ROUTE, owing
-   only `[full-suite@<fp>]`.
-
-   **Who declares it:** `studio-engine` and — since 2026-08-31 — `solana-studio`.
-   Until then solana-studio declared nothing, so this route COULD NOT PASS there:
-   the lane shelled out to a `bin/rubocop` the repo does not ship, came back
-   `COULD NOT RUN`, and the writer exits before recording — **discarding the GREEN
-   suite lane with it** (`no evidence recorded for the red lane(s)`). That was not
-   cosmetic at the time: `agents/carl/sops/pr-review-primary.md` then named this
-   command as THE escape when a PR's CI verdict was unreadable, so a reviewer
-   following the SOP in that repo had no path at all. (That escape retired on
-   2026-09-24; the cert is a pre-flight now, in every repo.)
-
-   **ABSENT vs BROKEN — the pair of rules that keeps them apart.** A missing lint
-   toolchain and a broken one want opposite treatments, and the waiver is only safe
-   because BOTH rules hold:
-
-   - **Never inferred** (`FullSuiteGate#lint_waived?`). A missing `bin/rubocop`
-     waives NOTHING — only a reviewable line in `config/release_repos.yml` does.
-     Without this, every broken rubocop install silently stops linting its repo.
-   - **Always audited** (`bin/lib/lint_waiver_guard.rb`). A declaration is a claim
-     about the tree, so a waived repo found carrying a lint toolchain
-     (`.rubocop.yml`, `bin/rubocop`, or rubocop in the `Gemfile`/gemspec — a
-     transitive `Gemfile.lock` entry is deliberately NOT a marker) is **REFUSED**,
-     before any lane runs, naming the registry line to delete. Without this, a
-     waived repo that later GAINS rubocop certifies green while nothing lints it.
-
-   The guard can only ever REVOKE a waiver, never grant one; that is why it lives
-   outside `FullSuiteGate`, whose source is asserted free of any environment read
-   (`test/lib/cert_lint_lane_waiver_test.rb`). When the lint lane is UNRUNNABLE in
-   a repo that declared nothing, the verdict stays RED — and now also names the
-   registry route, so a genuinely toolchain-less repo has somewhere to go.
-
-   (This paragraph previously said the writer did not yet honour the
-   declaration and that such a repo "cannot yet be certified by this route".
-   That was true for fifteen minutes: the prose landed `f99639be` at 13:18:33
-   and the code that honoured the flag landed `b677fb91` at 13:33:19 the same
-   day, and the file contradicted itself from then until this correction.)
-
-   The lane runs CI's command because this route's whole claim is
-   CI-INDEPENDENCE — **it may never run less of CI's Ruby suite than CI does**.
-   (It once did: it ran `bin/rails test`, which **skips `test/system`**, so a
-   builder could take the CI-independent route, go green, and have zero system
-   coverage.) Scope it exactly: the cert covers CI's **`test` job**, not all of CI
-   — `scan_ruby` (brakeman), `scan_js` (importmap audit) and turf-monster's
-   `playwright` e2e job are CI's alone, which is one reason the DoR verdict reads
-   CI and not the cert. The cert keeps that claim by
-   **refusing whatever it cannot SEE or cannot RUN**, across the repo's **PR-gating
-   workflows**: CI's Ruby suite split across steps, across **jobs**, or across
-   **workflow files**; a suite it can see but cannot run verbatim (a multi-line
-   script, or a **wrapper** like `docker compose run web bin/rails test:system`); a
-   foreign runner beside the rails step; a job it **cannot see into** (a job-level
-   `uses:`, a composite action, a body with no `steps:`); and a command whose text
-   does not say what it runs (`run: ${{ matrix.cmd }}`, `run: $SUITE`) each make the
-   cert **REFUSE loudly** instead of certifying the narrower half. What it still does
-   NOT see, stated plainly: a suite inside a **third-party `uses:` action** (list it
-   in `KNOWN_INERT_ACTIONS` once you have checked it, or it refuses) or behind an
-   executable that is neither a known runner nor a readable file in this repo; and a
-   repo with **no `ci.yml`** falls back to the `DEFAULT` full-suite command — a
-   superset, not CI's own line. Two consequences
-   worth knowing: the system tier drives a real headless **Chrome**, and a host
-   without one **aborts up front as an ENV error** — *"NOT a regression in your
-   diff"* — never as a red suite; and the command's shape is load-bearing —
-   `bin/rails test test:system` is **broken** (`test` is a real rails command, so
-   `test:system` parses as a path → `LoadError`), which is why `db:test:prepare`
-   leads and routes the line through rake. See `bin/lib/ci_test_command.rb`.
-
-3. **Record the tier tags as you built** — in either order, before or after you
-   certify:
-
-   ```bash
-   bin/task update <task-slug> --checks "[unit] ..." --checks "[integration] ..."
-   ```
-
-   `checks_run` holds two namespaces, and each side preserves the other's:
-
-   - **You own the tier tags** (`[unit] …`, `[integration] …`, a
-     `[full-suite-bypass] <why>` record). `--checks` REPLACES those — pass every
-     tag you want kept. The cert tools never touch them.
-   - **The cert tools own the evidence** (`[full-suite@<fp>:<repo>]`,
-     `[rubocop@<fp>:<repo>]`, `[fast-cert@<fp>:<repo>]`). `--checks` **cannot**
-     drop those: any lane your update does not itself supply is carried forward,
-     by the CLI and by the board (`lib/cert_evidence.rb`). Recording your test
-     plan after certifying used to wipe the cert and make `bin/dor-check` report
-     `full-suite: MISSING` on freshly certified code — it no longer can, and since
-     2026-09-24 `bin/dor-check` reads none of these lines anyway.
-
-   A lane is superseded only by a line FOR that lane **in that repo**, which is what
-   a re-cert writes. The `:<repo>` scope is why a task naming two repos keeps a cert
-   for EACH. `bin/dor-check` gates every repo the task has a PR in by that PR's own
-   CI, and names each one in its verdict. Never hand-write a `[<lane>@<fingerprint>]`
-   line: that forges a certification, and the fingerprint exists to make the cert
-   mean something.
-
-4. **Verdict — the DoR gate** (its own gate; closes `dor`, not `g1_cert`):
-
-   ```bash
-   bin/dor-check <task-slug>
-   ```
-
-   Deterministic, no judgment: shape tiers, required metadata, post-deploy
-   nudges, and the PR's real GitHub CI — which is the suite evidence. Exit 0 =
-   ready to advance `submitted → reviewed` on a settled GREEN CI; a CI still
-   running is a WAIT (exit 1, its own headline; `bin/ship` holds for it at 6/8),
-   and a task with NO open PR has no verdict to read — push and open the PR
-   first, then run the verdict. Full mechanics: [`dor.md`](dor.md).
-
-## Success, failure, and attempt semantics
-
-One GateRun row = one **attempt** (`started_at → finished_at`, `success`,
-`sops`). Retries are first-class: a failed attempt closes and the re-run opens
-attempt n+1 — repeated cert failures are visible signal, never one collapsed
-window.
-
-- `bin/fast-check` / `bin/full-suite-check` **OPEN** the task's `g1_cert`
-  attempt at start and append one SOP entry per lane
-  (`{sop, cmd, result, duration_ms}`).
-- A **red lane closes the attempt `failed`** (the re-run opens attempt n+1) —
-  a red test-DB lane short-circuits the cert on the spot; a red mapped / spine
-  / rubocop lane still lets the remaining lanes run, and the `failed` close
-  lands once the lanes finish. Either way the cert REFUSES and the attempt
-  never closes `success`; a lane that went red or hung records nothing.
-- **A green lane is banked even when a SIBLING lane fails** — `bin/full-suite-check`
-  only, since 2026-09-01. A rubocop lane that passed over 1,229 files used to be
-  discarded because the suite lane hung at the ceiling, so the re-run re-paid
-  twenty minutes at an UNCHANGED tree hash. The banked line is fingerprint-bound
-  and per-repo, exactly as on the green path, so two partial runs over one tree
-  COMPOSE. It buys no pass: the run still exits 1, still closes `failed`, and the
-  task still owes every lane it did not measure. `bin/fast-check` does not bank —
-  its lanes roll into one `[fast-cert@…]` line, so there is no sibling to keep.
-- A **green cert CLOSES the attempt `success`** ITSELF — the cert owns the whole
-  `g1_cert` window (open + close). `dor-check` no longer touches `g1_cert`; its
-  verdict is the separate [DoR](dor.md) gate.
-- **Never emitted:** `--print` cert runs. All gate writes are fire-and-forget —
-  a board blip never changes a verdict or an exit code.
-
-The Definition-of-Ready verdict semantics — the `dor` / `dor_review` attempts,
-their `dor-check` / `tiers` / `ci` SOPs, the builder-side WAIT on a pending CI,
-and the `--gate-role` split — now live in their own gate doc: [`dor.md`](dor.md).
-
-## The CI seam — the cert is CI-independent either way
-
-**This gate is unaffected by the CI wait**, and that is worth saying plainly: the
-cert runs before the PR exists, so it has never had a CI state to wait on. Whether
-CI is green, red, or unborn changes nothing about `bin/fast-check` or
-`bin/full-suite-check`.
-
-What sits downstream of it did change (`gate-submit-on-green-ci`, 2026-08-16):
-`bin/ship` now holds between opening the PR and running the DoR verdict, until the
-PR's CI settles — so the builder certs (this gate), opens the PR, **waits**, runs
-the dor-check verdict (the DoR gate), and moves the task `submitted` on a green CI.
-Full CI-seam mechanics — the builder-side WAIT when the settle times out, the
-review-side gate-zero, and the bounce round-trip — are in [`dor.md`](dor.md).
+```bash
+cd <desk>
+/Users/alex/projects/mcritchie-studio/bin/fast-check <task-slug>
+/Users/alex/projects/mcritchie-studio/bin/fast-check <task-slug> --list   # the selection, no run
+```
+
+It is a hub script (`mcritchie-studio/bin` alone), so name it by its absolute
+path from a satellite or gem desk, standing in that desk.
+
+Lanes, in order:
+
+- `test-prepare` — `bin/rails db:test:prepare test:prepare` (abort on red).
+  Both tasks in one boot: the test DB, and Rails' `test:prepare` hook, which
+  builds the gitignored `app/assets/builds/tailwind.css`. The lanes below pass
+  explicit test paths, and Rails skips its own `test:prepare` whenever an
+  argument looks like a path. A red here is usually an ENV gap, not your diff —
+  but a broken stylesheet in your diff fails it too. A runner that is simply not
+  in this checkout prints `COULD NOT RUN` and names the fix: a `release_check:`
+  on the repo's row in `config/release_repos.yml`.
+- **A registry-gated repo runs its declared gate instead.** A gem, or an `apps`
+  row that declares `release_check:` (turf-vault), has no `bin/rails` and no
+  diff-mapped subset: the declared command (`bin/release-check` for all three
+  today) runs as the whole lane, the prepare lane does not apply, and there is
+  no rubocop lane. `bin/lib/release_registry.rb` reads the declaration; nothing
+  probes a tree for a runner.
+- `mapped-tests` — `bin/rails test <files the diff maps to>`: path convention,
+  a tool's test family, then a grep for the subject's identity
+  (`bin/lib/fast_cert.rb`). Past the cap (15 after the spine dedupe,
+  `FAST_CHECK_MAPPED_CAP`) the lane falls back to the convention twins, or to
+  the spine alone, and says so; near the cap it warns one run early.
+- `spine` — `config/fast_cert_spine.yml`, the always-run core (~10-20s). It is
+  anchored in the hub, so a satellite checkout resolves none of it.
+- `rubocop-changed` — `bin/rubocop <changed lintable files>`, never the whole
+  repo.
+
+Exit 0 means every lane that ran is green — including a run where **no test
+lane ran at all** (a diff that maps to nothing on a checkout with no spine),
+which the script says out loud: CI runs the full suite on the PR either way.
+Exit 1 means a lane was red, hung (`FAST_CHECK_LANE_TIMEOUT`, default 900s —
+reported as a hung runner, never as a red suite), or could not launch, or the
+run was refused before any lane ran.
+
+## What still holds
+
+- **The tree check.** Given a task slug and no `FAST_CHECK_ROOT`, the run
+  refuses a root that is not the task's tree — its branch, or its desk in either
+  layout (`<repo>/.worktrees/<slug>`, `<repo>.worktrees/<slug>`) — and names the
+  desk to `cd` into (`bin/lib/task_tree.rb`). A pre-flight of an unrelated tree
+  tells you nothing about your diff, and reads as green.
+- **The desk guard.** A desk whose test database resolves to the repo's
+  **shared** one is refused before any lane runs (`bin/lib/desk_guard.rb`): the
+  prepare lane would reset that database under every concurrent suite.
+- **The process group.** Each lane runs in its own process group and a signal
+  aimed at the pre-flight reaps the lane with it (`bin/lib/lane_runner.rb`), so
+  a harness timeout does not leave `bin/rails test` holding the desk's test DB.
+- **The control lane.** The `test-only` shape still owes `bin/control-check`,
+  which is not a cert: it replays the pre-change tests and stamps the one
+  fingerprint-bound line the DoR verdict still grades, `[control@<fp>]`.
+
+A dirty tree is **not** refused any more — nothing is stamped, so there is
+nothing to stamp wrong.
 
 ## UI surfaces
 
-- **Task gates card** — the "Testing gates" card on
-  `https://mcritchie.studio/tasks/<slug>` renders the G1 Cert chip: latest
-  attempt (`attempt ×n` retry badge), passed / failed / in-flight status, and
-  the expandable per-lane SOP list with ✓/✗ and durations.
-- **CLI read:** `bin/gate show task <task-slug>` (add `--json` for the raw
-  attempts).
+The task's "Testing gates" card still carries a G1 chip keyed `g1_cert`. Nothing
+writes that gate since 2026-09-24, so on a task built after that date it reads
+as not run; the CI meter on the board card is the live signal.
 
 ## Background — not needed to execute
 
-- The 90/10 rethink behind the fast route, the fingerprint mechanics, and the
-  CI-status gate: `docs/agents/system/devops-cycle-design.md` §3.3.
-- Evidence format + fingerprint implementation: `bin/lib/full_suite_gate.rb`;
-  test selection: `bin/lib/fast_cert.rb`.
-- **Disarm switches — for the harness only, never for a wedge.**
-  `FAST_CHECK_SKIP_ORPHAN_GUARD=1` (`bin/fast-check`) and
-  `FULL_SUITE_SKIP_ORPHAN_GUARD=1` (`bin/full-suite-check`) skip the orphan
-  preflight entirely. They exist so the guard's OWN test suite can spawn certs
-  without each one refusing against its siblings. **Do not reach for them to get
-  past a refusal**: the refusal is naming a live process holding your test DB,
-  and skipping it just walks you back into `PG::ObjectInUse` with the evidence
-  suppressed. `CERT_GUARD_PS` / `CERT_GUARD_PSQL` likewise exist to inject
-  fixtures in tests, not to steer a real cert.
+- The design: `docs/agents/system/devops-v3-design.md` §5 (the rigor protocol)
+  and §7 (the guard catalog, "Certs and evidence").
+- Test selection: `bin/lib/fast_cert.rb`; the lane runner: `bin/lib/lane_runner.rb`;
+  the registry read: `bin/lib/release_registry.rb`.
 
 ## Related
 
@@ -732,5 +120,5 @@ review-side gate-zero, and the bounce round-trip — are in [`dor.md`](dor.md).
   builder runs at submit (`dor`) and the primary reviewer re-runs as gate-zero
   (`dor_review`, `--gate-role review`).
 - [`g2-review.md`](g2-review.md) — the senior-review lanes that follow DoR.
-- [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write
-  surface `bin/gate` posts through.
+- [`../building-sop.md`](../building-sop.md) — where the pre-flight sits in the
+  builder's flow.

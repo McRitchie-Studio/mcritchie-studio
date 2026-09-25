@@ -7,13 +7,12 @@
 # `building` and repoints the BLOCKING session's feature marker at it. bin/statusline
 # reads that marker, sees `building`, and fires that session's build-claim heartbeat
 # — from a session that never built anything. The claim keys were stripped when the
-# task moved to `submitted` (Task#enforce_build_claim_invariant), so the lease read
+# task moved to `submitted` (the retired lease invariant), so the lease read
 # :unclaimed, the heartbeat ADOPTED it, and the resulting PATCH named the reviewer's
 # session. Server-side that is indistinguishable from a handoff: the lease was
-# rewritten, the write named no soul, and #builder_roll_call stamped
-# `devops.builders_unattributed` with the REVIEWER's session id. The author set then
-# reads INCOMPLETE and `bin/reviewer-select` refuses the next round — "the AUTHORS
-# ARE UNKNOWN".
+# rewritten, the write named no soul, and #builder_roll_call stamped the (since
+# deleted) UNNAMED marker with the REVIEWER's session id, so `bin/reviewer-select`
+# refused the next round.
 #
 # Measured 2026-09-04: four bounced tasks in one review sitting, each needing a
 # hand-passed `--builder <soul>` before it could be reviewed again. `--agent carl`
@@ -27,10 +26,8 @@
 #   · test/commands/task_heartbeat_claim_test.rb — the CLI never SENDS that write:
 #     a heartbeat renews a lease it already holds and never acquires a free one.
 #
-# AND THE HALF THAT MUST NOT MOVE. The refusal is fail-CLOSED on purpose: a
-# genuinely incomplete author set must still refuse, or the whole mechanism is
-# decoration. A fix that made the selector always succeed would satisfy the bug
-# report and destroy the property. Every "still refuses" test below is that half.
+# AND THE HALF THAT MUST NOT MOVE. An EMPTY author set must still refuse, or the
+# whole mechanism is decoration.
 require "test_helper"
 
 class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
@@ -45,12 +42,7 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
   def submitted_task(builder: "shannon")
     task = Task.create!(title: "Reviewer Author Seam Task", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
-    Current.task_event_actor = builder
-    task.update!(stage: "building",
-                 metadata: { "devops" => task.devops.merge(
-                   ClaimLease.renewed(session: BUILDER_SESSION, nonce: "inst-B")
-                 ) })
-    Current.reset
+    claim_as!(task, session: BUILDER_SESSION, actor: builder)
     Current.task_event_actor = BUILDER_SESSION
     task.update!(stage: "submitted")
     task
@@ -66,14 +58,23 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     Current.reset
   end
 
-  # What `bin/task heartbeat` PATCHes: the devops hash with a fresh lease for the
-  # heartbeating session, and NO event actor (a heartbeat names nobody).
-  def heartbeat_lease!(task, session:, nonce: "inst-R")
-    devops = task.reload.devops
-    task.update!(metadata: task.metadata.merge(
-      "devops" => devops.merge(ClaimLease.renewed(session: session, nonce: nonce, prior: devops))
-    ))
+  # A build claim as the API delivers it: `stage: building` with the claiming
+  # session on the event, and an actor only when the mover passed --actor.
+  def claim_as!(task, session:, actor: nil)
     task.reload
+    Current.task_event_actor = actor
+    Current.task_build_claim = true
+    Current.task_event_session = session
+    task.update!(stage: "building")
+    task.reload
+  ensure
+    Current.reset
+  end
+
+  # An UNNAMED claim (`bin/task move <slug> building`, no --actor) — the shape the
+  # retired status-line heartbeat used to send.
+  def heartbeat_lease!(task, session:, **)
+    claim_as!(task, session: session)
   end
 
   def reviewing!(task, session: REVIEWER_SESSION, nonce: "inst-R", reviewer: "carl")
@@ -84,7 +85,6 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
   end
 
   def authors(task) = task.reload.devops["builders"]
-  def unattributed(task) = task.reload.devops["builders_unattributed"]
 
   # --- THE REGRESSION ---------------------------------------------------------
 
@@ -97,8 +97,6 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
 
     assert_equal ["shannon"], authors(task),
                  "the reviewer's session never wrote a line of this diff"
-    assert_nil unattributed(task),
-               "the block bounced the task; it did not hand the build to an unnamed party"
     assert_equal "shannon", task.reload.devops["built_by"]
   end
 
@@ -114,7 +112,6 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
 
     assert_equal true, decision["builder_known"],
                  "the record names its author; a bounce must not turn that into UNKNOWN"
-    assert_nil decision["builders_unattributed"]
     assert_equal ["shannon"], decision["builders"]
   end
 
@@ -150,12 +147,7 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     reviewing!(task)
     block_for_rework!(task)
 
-    devops = task.reload.devops
-    Current.task_event_actor = "carl"
-    task.update!(metadata: task.metadata.merge(
-      "devops" => devops.merge(ClaimLease.renewed(session: REVIEWER_SESSION, nonce: "inst-R", prior: devops))
-    ))
-    Current.reset
+    claim_as!(task, session: REVIEWER_SESSION, actor: "carl")
 
     assert_equal "shannon", task.reload.devops["built_by"],
                  "the reviewer named himself, and that never re-points the builder"
@@ -216,60 +208,13 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
 
   # --- THE FAIL-CLOSED HALF, WHICH MUST NOT MOVE ------------------------------
 
-  test "an unnamed claim by a session that is NOT reviewing still refuses" do
-    # The property the whole mechanism exists for. A session that holds no review
-    # claim is an ordinary handoff: it worked here and the record cannot name it,
-    # so the author set is incomplete and selection refuses.
-    task = submitted_task
-    block_for_rework!(task)
-
-    heartbeat_lease!(task, session: STRANGER_SESSION, nonce: "inst-S")
-
-    assert_equal STRANGER_SESSION, unattributed(task),
-                 "an anonymous claimant with no review claim is still an unnamed author"
-    assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"]
-  end
-
-  test "an EXPIRED review claim does not exempt the writing session" do
-    # The exemption is bound to a LIVE review lease, not to "this session once
-    # reviewed something". A lapsed reviewer is indistinguishable from any other
-    # unnamed party, and unknown must refuse.
-    task = submitted_task
-    reviewing!(task)
-    TaskReviewClaim.find_by(task_slug: task.slug)
-                   .update!(claim_expires_at: 10.minutes.ago)
-    block_for_rework!(task)
-
-    heartbeat_lease!(task, session: REVIEWER_SESSION)
-
-    assert_equal REVIEWER_SESSION, unattributed(task),
-                 "a lapsed review lease is not a live reviewer"
-    assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"]
-  end
-
-  test "a live review claim held by a DIFFERENT session does not exempt this one" do
-    # The seam compares the writing session against the review holder. A task under
-    # review by session A does not license session B to claim it anonymously.
-    task = submitted_task
-    reviewing!(task)
-    block_for_rework!(task)
-
-    heartbeat_lease!(task, session: STRANGER_SESSION, nonce: "inst-S")
-
-    assert_equal STRANGER_SESSION, unattributed(task),
-                 "somebody else is reviewing; this claimant is still unnamed"
-  end
-
   test "a task with no author on record still refuses" do
     # The other genuine unknown: nothing was ever stamped. Selection must refuse on
     # the empty set exactly as before — this fix touches who gets ADDED, never
     # whether an empty set counts as known.
     task = Task.create!(title: "Never Stamped Author Task", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
-    task.update!(stage: "building",
-                 metadata: { "devops" => task.devops.merge(
-                   ClaimLease.renewed(session: BUILDER_SESSION, nonce: "inst-B")
-                 ) })
+    claim_as!(task, session: BUILDER_SESSION)
     task.update!(stage: "submitted")
 
     assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"],
@@ -287,17 +232,9 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     block_for_rework!(task)
     heartbeat_lease!(task, session: REVIEWER_SESSION)
 
-    Current.task_event_actor = "xan"
-    devops = task.reload.devops
-    task.update!(stage: "building",
-                 metadata: task.metadata.merge(
-                   "devops" => devops.merge(ClaimLease.renewed(session: STRANGER_SESSION, nonce: "inst-S",
-                                                               prior: devops))
-                 ))
-    Current.reset
+    claim_as!(task, session: STRANGER_SESSION, actor: "xan")
 
     assert_equal %w[shannon xan], authors(task).sort_by { |s| %w[shannon xan].index(s) },
                  "the soul who finished the rework joins the set"
-    assert_nil unattributed(task)
   end
 end

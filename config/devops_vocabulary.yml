@@ -47,8 +47,8 @@ lanes:
         gate: self-paced
       - type: test
         label: PR Review
-        expectation: "Certify the FULL suite + FULL rubocop green at the exact tree (fingerprint-bound)."
-        gate: bin/full-suite-check then bin/dor-check
+        expectation: "Run the optional pre-flight, push, open the PR, and let the PR's settled green CI be the verdict."
+        gate: bin/fast-check (optional) then bin/dor-check
       - type: stage_update
         label: Submitted
         stage: submitted

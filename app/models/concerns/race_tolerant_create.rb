@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # Find-or-create for a SINGLETON row that two first-acquirers may reach at once —
-# the create race every claim/lease model in this app runs (MigrationLaneClaim,
-# DevopsShift, TaskReviewClaim, ReleaseConductorClaim). The loser must re-read the
+# the create race every claim/lease model in this app runs (DevopsShift,
+# TaskReviewClaim, ReleaseConductorClaim). The loser must re-read the
 # winner's row and go on to contend for it normally; it must never see an
 # exception, because the whole point of these models is to ANSWER "who holds it".
 #

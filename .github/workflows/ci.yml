@@ -452,7 +452,7 @@ jobs:
         # Dockerfile, and nothing on the test path references it. `curl`,
         # `postgresql-client` and `libvips` all stay — measured, not assumed:
         # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
-        # and bin/lib/cert_orphan_guard.rb shells `psql`, and libvips is required
+        # and bin/agent-worktree shells `psql` to do it, and libvips is required
         # outright by image_processing + Active Storage's boot-time
         # Vips.block_untrusted call.
         timeout-minutes: 25
@@ -596,7 +596,7 @@ jobs:
         # Dockerfile, and nothing on the test path references it. `curl`,
         # `postgresql-client` and `libvips` all stay — measured, not assumed:
         # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
-        # and bin/lib/cert_orphan_guard.rb shells `psql`, and libvips is required
+        # and bin/agent-worktree shells `psql` to do it, and libvips is required
         # outright by image_processing + Active Storage's boot-time
         # Vips.block_untrusted call.
         timeout-minutes: 25

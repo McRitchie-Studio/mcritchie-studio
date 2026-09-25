@@ -698,7 +698,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
 
   def multi_author_task(shape: "backend", built_by: "steffon", builders: %w[steffon xan], unattributed: nil)
     devops = { "shape" => shape, "built_by" => built_by, "builders" => builders }
-    devops["builders_unattributed"] = unattributed if unattributed
+    devops["builders_unattributed"] = unattributed if unattributed # the retired UNNAMED marker
     task = task_for(shape: shape)
     task.update_columns(metadata: { "devops" => devops })
     task.reload
@@ -738,22 +738,26 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl"
   end
 
-  test "an author list known to be INCOMPLETE is not a known builder" do
-    # The accumulator only helps while each claim names a soul. A handoff that named
-    # NOBODY leaves a set of one that READS complete — the original bug, one layer
-    # along — so the unattributed claim has to be able to say so.
+  test "a legacy UNNAMED marker no longer makes the author set unknown" do
+    # devops.builders_unattributed was deleted in devops-v3 4b-ii-b. A record still
+    # carrying it is read on its named authors alone.
     decision = ReviewerSelector.explain(
       multi_author_task(builders: %w[steffon], unattributed: "0198c0de-face-7000-b0b0-5eaced0ff1ce")
     )
 
-    assert_equal %w[steffon], decision["builders"], "steffon is still on record"
-    assert_equal false, decision["builder_known"],
-      "a set missing a soul we cannot name is not a settled answer"
-    assert_equal "0198c0de-face-7000-b0b0-5eaced0ff1ce", decision["builders_unattributed"],
-      "and the decision names the session it could not attribute"
+    assert_equal %w[steffon], decision["builders"]
+    assert_equal true, decision["builder_known"]
+    refute decision.key?("builders_unattributed"), "the decision no longer reports the marker"
   end
 
-  test "a complete two-author set IS known — incompleteness is the only new refusal" do
+  test "an EMPTY author set is still not a known builder" do
+    decision = ReviewerSelector.explain(multi_author_task(built_by: nil, builders: []))
+
+    assert_equal [], decision["builders"]
+    assert_equal false, decision["builder_known"], "nobody on record refuses, as before"
+  end
+
+  test "a complete two-author set IS known" do
     # The guard must not refuse every multi-author task, or it gets routed around.
     assert_equal true, ReviewerSelector.explain(multi_author_task)["builder_known"]
   end
@@ -767,14 +771,6 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal true, decision["builder_known"], "the caller has spoken for the task"
     refute_includes decision["candidates"], "xan"
     refute_includes decision["candidates"], "steffon"
-  end
-
-  test "an override CLEARS an unattributed gap — the caller stated the fact" do
-    task = multi_author_task(builders: %w[steffon], unattributed: "sess-gone")
-    decision = ReviewerSelector.new(task, builder: "steffon,xan").decision
-
-    assert_equal true, decision["builder_known"], "an explicit override is authoritative"
-    assert_nil decision["builders_unattributed"]
   end
 
   test "authors kept back for want of candidates are REPORTED, not silently seated" do
@@ -794,13 +790,6 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
 
     assert_match(/builder=steffon\(excluded\),xan\(excluded\)/, logger.lines.last,
       "both authors and their exclusion state are on the audit line")
-  end
-
-  test "the audit log shouts UNKNOWN with the session it could not attribute" do
-    logger = CapturingLogger.new
-    ReviewerSelector.new(multi_author_task(builders: %w[steffon], unattributed: "sess-42"), logger: logger).reviewers
-
-    assert_match(/builder=UNKNOWN\(unattributed:sess-42\)/, logger.lines.last)
   end
 
   test "a single-author task rolls the SAME light as before the author set existed" do

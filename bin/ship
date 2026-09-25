@@ -4,45 +4,45 @@
 # bin/ship — the fast-lane HANDOFF wrapper: one command from "code done" to
 # `submitted`.
 #
-# Collapses the standing pre-handoff sequence — commit → G1 cert
+# Collapses the standing pre-handoff sequence — commit → optional pre-flight
 # (bin/fast-check) → push → NON-DRAFT PR into `accepted` (body led by the task
 # URL) → record pr_url → WAIT for CI to settle → DoR verdict (bin/dor-check) →
 # move `submitted` → read-back verify — into one idempotent, resumable command.
 # Its inverse is `bin/task begin`, which collapses the session-start sequence.
 #
 # THE CI WAIT (step 6, gate-submit-on-green-ci) holds the handoff while the PR's
-# CI is still running, so `submitted` carries a GREEN CI instead of a fast cert
-# credited provisionally against a pending one. It decides nothing itself — see
+# CI is still running, so `submitted` carries a GREEN CI — the one verdict per
+# tree that bin/dor-check reads. It decides nothing itself — see
 # bin/lib/ci_wait.rb for why that boundary is the whole design — and it is bounded
 # at both ends, falling through to the DoR verdict if CI never appears or never
 # finishes. Disarm with SHIP_CI_WAIT=off.
 #
 # ORCHESTRATION plus the two guards the handoff seam itself owns. Every spawned
-# gate still runs and still owns its verdict: bin/fast-check certifies (with its
-# root/dirty-tree guards), bin/dor-check closes the DoR gate, bin/task move
-# read-back-verifies the stage write. But the move-to-SUBMITTED path has no
+# gate still runs and still owns its verdict: bin/dor-check closes the DoR gate,
+# bin/task move read-back-verifies the stage write. bin/fast-check is NOT a gate:
+# it is the optional local pre-flight, run at step 2 for the builder's benefit and
+# reported loudly, and the ship carries on whatever it said — the PR's settled
+# green CI is the verdict, at step 7. But the move-to-SUBMITTED path has no
 # claim gate of its own (only move-to-building does), so ship asks two questions
 # BEFORE its first side effect:
 #
 #   * the BUILD-STAGE SEAM — the task must be [building] (or [submitted], a
 #     resume). Ship hands off a build; it never teleports a `designed` task
 #     past the claim/dev-size/baseline stamps the building move records.
-#   * HOLDER OWNERSHIP — the same ClaimLease the build gate enforces: a task a
-#     DIFFERENT live instance holds refuses loudly. The refusal NAMES THE HOLDER'S
-#     ROLE and routes on it: a BUILDER is taken over with `bin/task begin <slug>
-#     --steal`, a REVIEWER is ASKED to release (`bin/task review-claim release
-#     <slug>`) — never stolen, because a steal mid-review voids the no-self-review
-#     guarantee and strands the verdict — and a role the board could not report
-#     routes to "find out first". lib/claim_holder.rb owns that table. Session-less
-#     runs degrade claim-free, exactly as `move`/`begin` do.
+#   * HOLDER OWNERSHIP — the same desk rule the build gate enforces
+#     (bin/lib/desk_claim.rb): a task bound to a DIFFERENT live session's desk that
+#     has uncommitted changes refuses, naming the desk. Nothing else does: there is
+#     no lease to read, and a reviewer's hold is the separate review claim, which
+#     ship does not take. The takeover line names `bin/task begin <slug> --steal`,
+#     because ship has no --steal of its own and handing off work is never the
+#     moment to seize it. Session-less runs degrade claim-free, exactly as
+#     `move`/`begin` do.
 #
 # Ship sequences the rest, and skips a step whose OUTCOME is already durably
 # recorded — which is exactly what makes a rerun after a partial failure
 # CONTINUE from where it died instead of duplicating work:
 #
 #   * clean tree            → commit skipped
-#   * fresh cert evidence   → fast-check skipped (fingerprint-bound: ANY edit
-#                             re-arms it — see FastLane.cert_fresh?)
 #   * branch already pushed → push is a no-op
 #   * open PR exists        → repaired in place (`gh pr ready` if draft — the
 #                             known finish --pr trap: a DRAFT PR defers
@@ -54,7 +54,7 @@
 # ROOTING: run it from the task's worktree. From anywhere else it re-roots at
 # the task's worktree LOUDLY when that worktree exists on disk (the reader
 # remedy — every gate it then spawns re-verifies the root itself), and refuses
-# when it can't find the task's tree (CertRootGuard).
+# when it can't find the task's tree (TaskTree).
 #
 # Usage:
 #   bin/ship <task-slug>                     # commit message defaults to the task title
@@ -62,7 +62,8 @@
 #
 # Test seams (the house pattern — each defaults to the real sibling tool):
 #   SHIP_TASK_BIN         board CLI (default bin/task)
-#   SHIP_FAST_CHECK_BIN   G1 cert runner (default bin/fast-check)
+#   SHIP_FAST_CHECK_BIN   pre-flight runner (default bin/fast-check)
+#   SHIP_PREFLIGHT        `off` skips the optional pre-flight at 2/8 (default: run it)
 #   SHIP_DOR_CHECK_BIN    DoR gate (default bin/dor-check)
 #   SHIP_GH_BIN           GitHub CLI (default gh)
 #   SHIP_ROOT             explicit code root — bypasses the root guard (CI/tests)
@@ -142,20 +143,18 @@ require_relative "lib/hub_move_diagnosis"
 HubMoveDiagnosis.install!(root: File.expand_path("..", __dir__), command: File.basename(__FILE__))
 
 require_relative "lib/repo_root"
-require_relative "lib/cert_root_guard"
+require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
 require_relative "lib/stacked_pr"
-require_relative "lib/fast_cert"
 require_relative "lib/gh_auth_retry"
 require_relative "lib/pr_overlap"
 require_relative "lib/migration_collision"
-require_relative "lib/full_suite_gate"
 require_relative "lib/session_identity"
 require_relative "lib/presence_claim"
 require_relative "lib/ci_status"
 require_relative "lib/ci_wait"
-require_relative "../lib/claim_lease"
-require_relative "../lib/claim_holder"
+require_relative "lib/desk_claim"
+require_relative "lib/projects_root"
 require_relative "../lib/commit_identity"
 
 ROOT = File.expand_path("..", __dir__)
@@ -165,8 +164,8 @@ DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __
 
 # ── remedy forms of the fast-lane scripts ship NAMES in a refusal ─────────────
 # Absolute and resolvable, so a builder standing on a turf-monster, rolio, or gem
-# desk can paste them: bin/ship, bin/task, bin/fast-check, bin/full-suite-check
-# and bin/dor-check all live in mcritchie-studio/bin ALONE, so the bare form ship
+# desk can paste them: bin/ship, bin/task, bin/fast-check and bin/dor-check all
+# live in mcritchie-studio/bin ALONE, so the bare form ship
 # used to print resolved only from a hub desk and died as `No such file or
 # directory` everywhere else. Resolved from THIS script's own __dir__ — the very
 # ship that is speaking, and its siblings beside it — which is why it can never be
@@ -178,7 +177,6 @@ DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __
 SHIP_CMD = FastLane.remedy_command("ship", __dir__)
 TASK_CMD = FastLane.remedy_command("task", __dir__)
 FAST_CHECK_CMD = FastLane.remedy_command("fast-check", __dir__)
-FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", __dir__)
 DOR_CHECK_CMD = FastLane.remedy_command("dor-check", __dir__)
 # The token refresh is the one remedy here that is ALREADY self-service house-wide
 # (AGENTS.md prints it bare), but it is a hub-only script like the rest, so the
@@ -273,74 +271,21 @@ unless %w[building submitted].include?(stage)
        "Claim it first: #{TASK_CMD} begin #{slug} (or #{TASK_CMD} move #{slug} building), then re-run #{SHIP_CMD} #{slug}.")
 end
 
-# WHETHER A REVIEW LEASE IS HELD ON THIS TASK, and by whom — the second of the two
-# facts ClaimHolder.role folds. Read through the board CLI (never a hand-rolled HTTP
-# call — the CLI owns auth and the exit-code contract), with `--no-observe` because
-# a refusal wants a fact and a name, not a verdict: the observing read waits out a
-# renewal cycle, and forty seconds is no way to answer a refusal.
-#
-# THE RETURN IS TRI-STATE, and that is the whole reason it is not a boolean:
-#
-#   { "live" => true,  "agent" =>, "session" => }  a reviewer holds it
-#   { "live" => false }                            the board answered: nobody does
-#   { }                                            WE DID NOT GET AN ANSWER
-#
-# Collapsing the last two would turn every board hiccup into "no review", which is
-# precisely the fail-open this whole change exists to close. An empty hash reaches
-# `role` as nil and lands on the UNKNOWN route, which asks before it steals.
-def ship_review_holder(slug)
-  out = IO.popen([TASK_BIN, "review-claim", "status", slug, "--json", "--no-observe"],
-                 err: File::NULL, &:read)
-  return {} unless $?.success?
-
-  holder = JSON.parse(out)["holder"]
-  holder.is_a?(Hash) ? holder.merge("live" => holder["live"] ? true : false) : { "live" => false }
-rescue StandardError
-  {}
-end
-
 # --- builder ownership -------------------------------------------------------
-# The same claim lease the build gate enforces, asked BEFORE the first side
-# effect (commit/push/PR/move): the move-to-submitted path has no claim gate of
-# its own, so without this a second session could hand off — and commit into —
-# a task another live instance is building. Only :held_by_other refuses
-# (unclaimed/expired/corrupt stay fail-open, the build gate's posture); a
-# session-less run degrades claim-free, exactly as `move`/`begin` do.
-#
-# THE REFUSAL NAMES THE HOLDER'S ROLE, and that is not cosmetic. This message used
-# to say "Ship must not hand off another builder's work — take the task over first
-# (--steal)" on EVERY held task, a sentence that describes a rival BUILDER and
-# offers the remedy written for that case. On 2026-09-01 the actual holder was a
-# REVIEWER, and stealing a task mid-review voids the no-self-review guarantee for
-# that review and strands its verdict — neither recoverable, neither visible
-# afterwards. So the role is looked up (the board's own `review_in_progress`, which
-# is already on the payload ship read above) and the remedy routes on it:
-# `--steal` for a builder, "ask them to release" for a reviewer, and "find out
-# first" when the board could not answer. lib/claim_holder.rb owns that decision
-# table and every word of the message.
-#
-# Ship still has no --steal of its own — handing off work is never the moment to
-# seize it — so the takeover line names `bin/task begin <slug> --steal`, the path
-# that durably TRANSFERS the claim.
+# The desk is the build claim (bin/lib/desk_claim.rb), asked BEFORE the first side
+# effect (commit/push/PR/move): the move-to-submitted path has no claim gate of its
+# own, so without this a second session could hand off — and commit into — a task
+# whose desk holds another live session's uncommitted work. That is the only case
+# that refuses. Ship has no --steal of its own; the takeover line names
+# `bin/task begin <slug> --steal`. A session-less run degrades claim-free.
 mover_session = SessionIdentity.identity.first
 unless mover_session.nil?
-  claim = ClaimLease.from_devops(devops)
-  if ClaimLease.evaluate(claim, session: mover_session, nonce: SessionIdentity.nonce(ENV)) == :held_by_other
-    # ONE extra read, on an already-fatal path, to answer "is a reviewer holding
-    # this?" from the review LEASE as well as from the board's stage-scoped
-    # `review_in_progress` column. Both are consulted because neither is sufficient:
-    # the column is false for a task bounced back to `building` under a live review
-    # lease, and the lease read can fail. ClaimHolder.role folds them lopsidedly —
-    # either yes is a review, only both no is a build.
-    reviewer = ship_review_holder(slug)
-    role = ClaimHolder.role(review_in_progress: task["review_in_progress"],
-                            review_claim_live: reviewer["live"])
-    warn "ship: " + ClaimHolder.refusal(
-      slug: slug, claim: claim, role: role,
-      steal_command: "#{TASK_CMD} begin #{slug} --steal",
-      retry_command: "#{SHIP_CMD} #{slug}",
-      reviewer: reviewer["agent"], reviewer_session: reviewer["session"]
-    ).join("\n")
+  projects_dir = [ENV["SHIP_PROJECTS_DIR"], ENV["CLAUDE_PROJECTS_DIR"]].map { |v| v.to_s.strip }.find { |v| !v.empty? }
+  projects_dir ||= ProjectsRoot.default_projects_dir
+  blockers = DeskClaim.blocking_on_disk(slug, session: mover_session, projects_dir: projects_dir)
+  unless blockers.empty?
+    warn "ship: " + DeskClaim.refusal(slug, blockers, steal_command: "#{TASK_CMD} begin #{slug} --steal",
+                                                    retry_command: "#{SHIP_CMD} #{slug}").join("\n")
     exit 1
   end
 end
@@ -349,18 +294,18 @@ end
 # An explicit SHIP_ROOT is the deliberate CI/test seam (bypasses the guard, same
 # contract as FAST_CHECK_ROOT). Otherwise root at the cwd's git toplevel and ask
 # the root guard whether that IS the task's tree; ship WRITES (a commit), but
-# unlike a cert writer it re-roots rather than refuses when the task's worktree
+# unlike the pre-flight it re-roots rather than refuses when the task's worktree
 # exists on disk — loudly, and every gate it then runs re-verifies the root from
 # its own cwd, so a wrong re-root cannot survive to a recorded verdict.
 root = ENV["SHIP_ROOT"].to_s.strip
 if root.empty?
   root = RepoRoot.git_toplevel(Dir.pwd) || Dir.pwd
-  assessment = CertRootGuard.assess(task_bin: TASK_BIN, slug: slug, root: root, devops: devops,
-                                    projects_dir: ENV["SHIP_PROJECTS_DIR"])
+  assessment = TaskTree.assess(task_bin: TASK_BIN, slug: slug, root: root, devops: devops,
+                               projects_dir: ENV["SHIP_PROJECTS_DIR"])
   # standing_in_task_desk — you are physically AT …/.worktrees/<slug>, even if HEAD is
   # detached mid-rebase. ship is a WRITER (it commits), so it takes the same vouch
-  # bin/fast-check and bin/full-suite-check take through CertRootGuard#refusal. ship
-  # reads `assess` directly rather than `#refusal` (it wants :resolved_root), so it
+  # bin/fast-check takes through TaskTree#refusal. ship reads `assess` directly
+  # rather than `#refusal` (it wants :resolved_root), so it
   # has to honor the vouch explicitly; it had been getting it for free from a
   # short-circuit inside assess until 2026-08-09.
   #
@@ -407,10 +352,9 @@ end
 
 # --- presence: publish the phase, so a peer can READ what this run costs ------
 #
-# A ship SPANS both states — it certifies (expensive) and then it waits on CI
-# (free) — and the PROCESS NAME is identical in both. That is the one place a
-# cert runlock structurally cannot answer, because the runlock describes a SUITE
-# and this describes the supervisor that comes and goes around several.
+# A ship SPANS both states — it runs the pre-flight (expensive) and then it waits
+# on CI (free) — and the PROCESS NAME is identical in both, so the claim names
+# the phase.
 #
 # MEASURED on this box, 2026-09-01, by the reader this feeds
 # (bin/agent-presence): five `bin/ship` groups, all at 0.0% CPU, all reported
@@ -419,12 +363,10 @@ end
 # about to take a core-set for ten minutes. Nothing on disk told them apart.
 #
 # The weights below are the SHIP'S OWN cost, and they are deliberately not
-# uniform. `2/8 cert` carries `suite` even though bin/fast-check publishes a
-# runlock of its own moments later: between this line and that lock there is a
-# real window (measured at ~11s) in which a suite is starting and NOTHING says
-# so. Over-reporting cost buys a peer some delay; under-reporting it buys a
-# saturated machine and a lost 45-minute run, so the double count is the side to
-# err on. The reader's own dedupe is the follow-up seam — see the task record.
+# uniform. `2/8 pre-flight` carries `suite` because bin/fast-check publishes no
+# claim of its own: this line is the only thing that says a suite is running.
+# Over-reporting cost buys a peer some delay; under-reporting it buys a saturated
+# machine and a lost 45-minute run, so that is the side to err on.
 #
 # Publishing is best-effort by construction (SessionMarkers.write rescues to nil):
 # a marker must never take down the ship it is describing. Clearing is an
@@ -432,7 +374,7 @@ end
 # it a corpse on the very next read, with no timeout to elapse.
 PRESENCE_PHASES = {
   commit: ["1/8 commit", PresenceClaim::WORKING, PresenceClaim::LIGHT],
-  cert: ["2/8 cert", PresenceClaim::WORKING, PresenceClaim::SUITE],
+  preflight: ["2/8 pre-flight", PresenceClaim::WORKING, PresenceClaim::SUITE],
   push: ["3/8 push", PresenceClaim::WORKING, PresenceClaim::LIGHT],
   pr: ["4/8 pr", PresenceClaim::WAITING, PresenceClaim::IDLE],
   record: ["5/8 record", PresenceClaim::WAITING, PresenceClaim::IDLE],
@@ -483,53 +425,25 @@ else
   end
 end
 
-# --- 2/8 G1 cert (bin/fast-check) --------------------------------------------
-# Skipped only when the recorded evidence is FRESH for this exact tree — the
-# fingerprint is a git tree hash, so any edit since the cert re-arms this step.
+# --- 2/8 pre-flight (bin/fast-check, optional) --------------------------------
+# The local pre-flight is information for the builder, not a gate: it runs the
+# diff-mapped tests, the spine and rubocop on the changed files, and records
+# NOTHING. Whatever it says, the ship carries on to the push and the PR — the PR's
+# settled green CI is the verdict, and step 7's dor-check reads it. A red
+# pre-flight is printed LOUDLY here so the builder reads it before CI repeats it
+# ten minutes later; SHIP_PREFLIGHT=off skips the run.
 
-presence!(:cert)
-fingerprint = FullSuiteGate.fingerprint(root)
-if FastLane.cert_fresh?(devops["checks_run"], fingerprint)
-  say "2/8 cert — fresh cert evidence already recorded for #{fingerprint.to_s[0, 12]}; skipping bin/fast-check."
+presence!(:preflight)
+if ENV["SHIP_PREFLIGHT"].to_s.strip.casecmp?("off")
+  say "2/8 pre-flight — skipped (SHIP_PREFLIGHT=off); CI is the verdict."
 else
-  say "2/8 cert — running bin/fast-check #{slug}"
-  cert_ok = system(FAST_CHECK_BIN, slug, chdir: root)
-  cert_status = $?&.exitstatus
-  if cert_ok
-    # certified locally — nothing to say that fast-check has not already said.
-  elsif cert_status == FastCert::DEFERRED_EXIT
-    # THE DEFERRAL, AND WHY THE POLICY LIVES HERE (capped-cert-blocks-the-pr).
-    #
-    # bin/fast-check has just told us it could execute ZERO test files because the mapped
-    # lane was CAPPED, and has recorded a fingerprint-bound receipt saying so. It cannot
-    # decide what happens next: the only evidence that can settle this diff is a CI run,
-    # and a CI run needs a PUSH and a PR — both of which are steps 3 and 4 of THIS script.
-    # A cert runner that pushed would be a cert runner that ships.
-    #
-    # So detection sits with the cert and the decision sits here, and the decision is:
-    # CARRY ON. The refusal is not dropped, it is MOVED — step 7's dor-check credits the
-    # receipt only beside a GREEN CI, and refuses a red one, an absent one, one it could
-    # not read, and a receipt gone stale under a later edit. What the builder gets back is
-    # the ~30 minutes of local full suite that the old step-2 death charged them for
-    # evidence CI was about to produce anyway.
-    deferred_cert = true
-    say "2/8 cert — DEFERRED to CI (see above): no local lane could certify this diff, so the " \
-        "cert receipt now rides on the PR's CI. Continuing to push + PR; step 7 REFUSES unless CI is GREEN."
-    unless CiWait.enabled?(ENV)
-      # Worth its own line: with the wait disarmed the usual outcome is a step-7 refusal on a
-      # CI that simply has not reported yet, and the builder would read that as a real block.
-      say "2/8 cert — NOTE: SHIP_CI_WAIT=off and this diff has no local cert, so step 7 will " \
-          "refuse until CI reports. Leave the wait armed for a deferred cert."
-    end
+  say "2/8 pre-flight — running bin/fast-check #{slug} (optional; nothing is recorded)"
+  if system(FAST_CHECK_BIN, slug, chdir: root)
+    say "2/8 pre-flight — green. CI still runs the full suite on the PR."
   else
-    # TWO DIFFERENT ERRANDS, and "fix the red lane" is the wrong one for half of them.
-    # bin/fast-check REFUSES a diff it cannot certify at all — a diff that maps to NO test,
-    # over an empty spine, executes nothing, so it exits 1 with nothing red. Sending that
-    # reader to hunt a failing lane is the same misdirection the cert keeps stamping out.
-    die!("bin/fast-check did NOT certify — read its output above. A RED lane means fix the " \
-         "failure. A REFUSAL means this diff cannot be fast-certified at all (it names the " \
-         "command that covers it — usually #{FULL_SUITE_CMD} #{slug}). Either way, re-run " \
-         "#{SHIP_CMD} #{slug} afterwards; it resumes here.")
+    say "2/8 pre-flight — RED (exit #{$?&.exitstatus}). Read bin/fast-check's output above: a red lane " \
+        "here almost always means a red CI in ~10 minutes, and step 7 REFUSES a red CI. Continuing " \
+        "to push + PR so CI can say so on the record; fix and re-run #{SHIP_CMD} #{slug} if it does."
   end
 end
 
@@ -841,14 +755,6 @@ if CiWait.enabled?(ENV)
     reporter: ->(state, polls, left) { say "6/8 ci — #{state}; #{left.round}s left (poll #{polls})" }
   )
   say "6/8 ci — #{CiWait.summary(wait)}"
-  # A DEFERRED cert has NO local evidence underneath it, so a non-green settle here is not
-  # the usual "provisional handoff" — it is the whole gate. Say which situation the reader
-  # is in BEFORE dor-check's refusal, so the refusal reads as expected rather than as a
-  # surprise. (dor-check still owns the verdict; this line grades nothing.)
-  if deferred_cert && wait.state.to_s.to_sym != :green
-    say "6/8 ci — this diff's cert was DEFERRED to CI, so CI is the ONLY evidence: step 7 will " \
-        "REFUSE on anything but a settled GREEN. Deferring is not skipping."
-  end
   # Named, not silent: every give-up path hands a NON-green state to dor-check, and
   # the operator must be able to tell "CI said no" from "we stopped asking" from
   # "we never got through" — three different facts with three different remedies.
@@ -881,15 +787,11 @@ presence!(:dor)
 
 say "7/8 dor — running bin/dor-check #{slug}"
 unless system(DOR_CHECK_BIN, slug, chdir: root)
-  if deferred_cert
-    # The fence closing, exactly as designed. Name it as such: a builder who watched step 2
-    # say "continuing" needs to read this as the gate doing its job, not as a new fault.
-    die!("bin/dor-check refused — and this diff's cert was DEFERRED to CI at step 2, so a GREEN CI is " \
-         "the ONLY thing that can satisfy the suite gate for it. Read what it flagged above: a RED CI " \
-         "means fix the failure and push; NO CI / a CI still running means re-run #{SHIP_CMD} #{slug} once " \
-         "it reports. No local run stands in for it (dor-check reads the CI verdict alone).")
-  end
-  die!("bin/dor-check refused — fix everything it flagged, then re-run #{SHIP_CMD} #{slug} (it resumes here).")
+  # The verdict is dor-check's: a RED CI means fix the failure and push; a CI still
+  # running (SHIP_CI_WAIT=off, or the settle timeout) means re-run once it reports.
+  # No local run stands in for it.
+  die!("bin/dor-check refused — read what it flagged above (a RED CI: fix and push; a CI still " \
+       "running: wait for it), then re-run #{SHIP_CMD} #{slug} (it resumes here).")
 end
 
 # --- 8/8 submit + read-back verify -------------------------------------------

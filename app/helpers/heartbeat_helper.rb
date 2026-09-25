@@ -87,7 +87,7 @@ module HeartbeatHelper
   # The test-scope registry (config/devops_test_suites.yml) — the SINGLE source
   # for a test-scope run's phase/tier/host. It MERGES all three scope sections so
   # the band enriches release runs (`release_scopes:`, bin/release), local cert runs
-  # (`full_suite_scopes:`, bin/full-suite-check), AND ingested CI runs (`ci_scopes:`,
+  # (`full_suite_scopes:`, the retired bin/full-suite-check's historical rows), AND ingested CI runs (`ci_scopes:`,
   # bin/ci-scope-capture) alike; their keys are distinct (release_/full_suite_/ci_),
   # so a collision never arises today. The Test-runs band DERIVES this metadata at
   # render from the run's event_slug (the scope key) so it is never stored on the

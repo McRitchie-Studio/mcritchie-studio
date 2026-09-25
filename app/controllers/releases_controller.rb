@@ -2,6 +2,7 @@ class ReleasesController < ApplicationController
   RELEASES_PER_PAGE = 25
 
   skip_before_action :require_authentication, only: %i[index show]
+  before_action :require_admin, only: %i[authorize_ship]
 
   def index
     releases_scope = Release.order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
@@ -41,7 +42,42 @@ class ReleasesController < ApplicationController
     @tasks = @release.tasks.includes(:task_events).order(:position, :created_at).to_a
   end
 
+  # POST /deployments/:slug/ship_authorization — the operator grants production
+  # authority to a timed `bin/release ship` waiting on its window (the Approve
+  # button on the Next Release card; the events API is the scripted twin). One
+  # idempotent event, so a double click or a grant that races ship's own lapse
+  # completion never records twice. Answers JSON to the card's fetch and a
+  # redirect to a plain form post.
+  def authorize_ship
+    release = Release.find_by(slug: params[:slug])
+    return respond_missing_release unless release
+
+    rescue_and_log(target: release) do
+      event = release.grant_ship_authorization!(
+        actor: current_user&.email,
+        source: "web",
+        metadata: { "granted_from" => "deployments" }
+      )
+      respond_to do |format|
+        format.json { render json: { data: release.ship_authorization_state.merge("event_id" => event.id) } }
+        format.html { redirect_to deployments_path, notice: "Production authority granted for #{release.slug}." }
+      end
+    end
+  rescue StandardError => e
+    respond_to do |format|
+      format.json { render json: { error: e.message }, status: :unprocessable_entity }
+      format.html { redirect_to deployments_path, alert: e.message }
+    end
+  end
+
   private
+
+  def respond_missing_release
+    respond_to do |format|
+      format.json { render json: { error: "release not found" }, status: :not_found }
+      format.html { redirect_to deployments_path, alert: "Release not found" }
+    end
+  end
 
   def requested_page
     page = params[:page].to_i

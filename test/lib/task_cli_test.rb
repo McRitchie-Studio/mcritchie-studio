@@ -17,11 +17,8 @@ require "rbconfig"
 require "tmpdir"
 require "fileutils"
 require "time"
+require "uri"
 require_relative "../support/session_env"
-# The idle window the desk-keyed heartbeat decides on. Read from the module the
-# CLI itself reads, never re-spelled here: a test that pins its own copy of a
-# derived threshold goes green while the real one drifts out from under it.
-require_relative "../../lib/claim_lease"
 
 class TaskCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
@@ -198,8 +195,16 @@ class TaskCliTest < Minitest::Test
 
     # The tasks INDEX (bin/task list): data is an ARRAY, not a single record. Without
     # this the fallback below returns one object and `list` would iterate a Hash.
+    # @stub_list seeds the index rows; it pages them the way Api::Paginatable does
+    # (page/per_page, default 20, clamped to 100) and carries the same meta.total.
     if method == "GET" && path =~ %r{\A/api/v1/tasks(\?.*)?\z}
-      return ["200 OK", JSON.generate("data" => [])]
+      rows = @stub_list || []
+      query = URI.decode_www_form(path.split("?", 2)[1].to_s).to_h
+      page = [query.fetch("page", 1).to_i, 1].max
+      per_page = query.fetch("per_page", 20).to_i.clamp(1, 100)
+      return ["200 OK", JSON.generate("data" => rows.slice((page - 1) * per_page, per_page) || [],
+                                      "meta" => { "page" => page, "per_page" => per_page, "total" => rows.size,
+                                                  "total_pages" => (rows.size.to_f / per_page).ceil })]
     end
 
     # The ACTIVITIES index — an ARRAY too, and `bin/task block --kind rework` reads
@@ -949,17 +954,11 @@ class TaskCliTest < Minitest::Test
     end
   end
 
-  # --- Build claim lease gate (V2) — the move-to-building enforcement ---------
-
-  # A devops slice carrying an existing claim with a lease `expires_in` seconds out.
-  def claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
-    {
-      "kind" => "feature",
-      "claimed_session" => session,
-      "claim_nonce" => nonce,
-      "claim_expires_at" => (Time.now + expires_in).utc.iso8601
-    }
-  end
+  # --- The build claim: the desk is the claim (bin/lib/desk_claim.rb) --------
+  #
+  # No lease is written or read. The refusal itself (a foreign live desk with
+  # uncommitted changes) is driven against real desks in
+  # test/commands/task_claim_gate_test.rb; these pin what the claim PATCH carries.
 
   def patch_of(requests)
     requests.find { |r| r[:method] == "PATCH" }
@@ -969,423 +968,37 @@ class TaskCliTest < Minitest::Test
     JSON.parse(patch_of(requests)[:body]).fetch("devops")
   end
 
-  # AC #1 + #4: a live claim held by a DIFFERENT instance (same session, other
-  # nonce ⇒ the terminal-A/terminal-B case) REFUSES the move — exit 1, loud, and
-  # NO stage PATCH — and points the operator at --steal.
-  def test_move_to_building_refuses_a_live_foreign_claim
-    requests, _out, err, status = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
-    )
-    refute status.success?, "a live foreign claim must refuse the move (non-zero exit)"
-    assert_nil patch_of(requests), "a refused move must NOT PATCH the stage"
-    assert_match(/different live instance/i, err)
-    assert_match(/--steal/, err)
-  end
-
-  # [integration] The refusal must name the PROGRESS fact, not just the heartbeat.
-  # A heartbeat says only "the builder's run is still here" — it stayed green through the
-  # 2026-07-13 wedge. A second agent deciding whether to --steal needs to know what
-  # the holder has actually LANDED, so the gate prints the last durable artifact.
-  #
-  # Holder-SCOPED since 2026-08-13: the artifact must be one the holder produced.
-  # See test_refusal_never_credits_the_challengers_own_work_to_the_holder for the
-  # failure that forced the scoping.
-  def test_refusal_names_the_holders_last_durable_progress
-    _requests, _out, err, status = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300),
-      stub_progress: { "progress_seconds_ago" => 9000, "last_progress_label" => "g1_cert failed",
-                       "last_progress_actor" => SESSION,
-                       "holder_progress_seconds_ago" => 9000,
-                       "holder_progress_label" => "g1_cert failed",
-                       "progress_quiet" => true }
-    )
-    refute status.success?
-    assert_match(/last durable progress by the holder ~2\.5h ago \(g1_cert failed\)/, err)
-    assert_match(/nothing has landed in a long time/, err)
-    # ...and it still refuses. Naming a quiet holder never frees the desk: the
-    # operator still has to choose --steal. Nothing here reclaims anything.
-    assert_match(/--steal/, err)
-  end
-
-  # A healthy holder mid-cert is NOT dressed up as trouble — the gate reports its
-  # progress plainly, with no quiet warning.
-  def test_refusal_reports_a_progressing_holder_without_alarm
-    _requests, _out, err, = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300),
-      stub_progress: { "progress_seconds_ago" => 120, "last_progress_label" => "g1_cert running",
-                       "last_progress_actor" => SESSION,
-                       "holder_progress_seconds_ago" => 120,
-                       "holder_progress_label" => "g1_cert running",
-                       "progress_quiet" => false }
-    )
-    assert_match(/last durable progress by the holder ~2m ago \(g1_cert running\)/, err)
-    refute_match(/nothing has landed/, err)
-  end
-
-  # Fail safe: a board that reports no progress fact (an older API, a task that has
-  # produced nothing yet) must read as UNKNOWN — never as a stalled holder.
-  def test_refusal_states_unknown_progress_honestly
-    _requests, _out, err, = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
-    )
-    assert_match(/none recorded yet/, err)
-    refute_match(/nothing has landed/, err)
-  end
-
-  # AC #1: --steal overrides the gate and takes the claim for the stealer's instance.
-  def test_move_to_building_with_steal_takes_the_claim
-    requests, _out, _err, status = run_task(
-      ["move", "demo-task", "building", "--steal"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
-    )
-    assert status.success?, "--steal must let the move through"
-    devops = patch_devops(requests)
-    assert_equal SESSION, devops["claimed_session"]
-    assert_equal "inst-B", devops["claim_nonce"], "the stealer's instance now holds the claim"
-    assert devops["claim_expires_at"], "a fresh lease is written"
-  end
-
-  # AC #3: an EXPIRED lease is reclaimed automatically — no --steal, no refusal.
-  def test_move_to_building_reclaims_an_expired_lease
+  # The claim names `stage: building` and the mover's session on the event — the
+  # pair the board reads as a build claim — and writes NO lease keys.
+  def test_move_to_building_claims_with_the_session_and_no_lease
     requests, _out, _err, status = run_task(
       ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: OTHER_SESSION, nonce: "inst-A", expires_in: -30)
-    )
-    assert status.success?, "an expired lease is silently reclaimable"
-    devops = patch_devops(requests)
-    assert_equal SESSION, devops["claimed_session"]
-    assert_equal "inst-B", devops["claim_nonce"]
-  end
-
-  # A CORRUPT (unparseable) lease keeps the gate's fail-open posture: the move
-  # claims freely — no --steal, no refusal — and writing the fresh lease heals
-  # the garbled record. Deliberately opposite to the reclaim guard
-  # (bin/agent-worktree), which WITHHOLDS on :corrupt: claiming writes state,
-  # reclaiming destroys it. Pinned here so a future "corrupt must block
-  # everywhere" refactor trips this test instead of silently changing bin/task.
-  def test_move_to_building_reclaims_a_corrupt_expiry_lease
-    corrupt = claim_devops(session: OTHER_SESSION, nonce: "inst-A")
-    corrupt["claim_expires_at"] = "not-a-time"
-    requests, _out, _err, status = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: corrupt
-    )
-    assert status.success?, "a corrupt lease stays fail-open at the BUILD gate (heal by re-claiming)"
-    devops = patch_devops(requests)
-    assert_equal SESSION, devops["claimed_session"]
-    assert_equal "inst-B", devops["claim_nonce"]
-    refute_nil Time.parse(devops["claim_expires_at"]), "the re-claim writes a fresh PARSEABLE lease"
-  end
-
-  # AC #3: an unclaimed task is claimed on the move with the mover's identity.
-  def test_move_to_building_claims_an_unclaimed_task
-    requests, _out, _err, status = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION },
       stub_devops: { "kind" => "feature" }
     )
     assert status.success?
-    devops = patch_devops(requests)
-    assert_equal SESSION, devops["claimed_session"]
-    assert_equal "inst-B", devops["claim_nonce"]
+    body = JSON.parse(patch_of(requests)[:body])
+    assert_equal "building", body["stage"]
+    assert_equal SESSION, body.dig("event", "session"), "the board learns who claimed from the event"
+    devops = body.fetch("devops")
+    %w[claimed_session claim_nonce claim_expires_at].each do |key|
+      refute devops.key?(key), "the claim writes no lease key (#{key})"
+    end
     assert_equal "feature", devops["kind"], "existing devops is preserved (read-merge-write)"
   end
 
-  # AC #2: the SAME instance (session AND nonce match) re-moving renews, no --steal.
-  def test_move_to_building_same_instance_renews_its_own_claim
-    requests, _out, _err, status = run_task(
+  # An old row still carrying a LIVE lease from another session is not a refusal:
+  # only a foreign desk with uncommitted changes refuses, and the board's lease keys
+  # are no longer read.
+  def test_move_to_building_ignores_a_stored_lease
+    requests, _out, err, status = run_task(
       ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30)
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION },
+      stub_devops: { "kind" => "feature", "claimed_session" => OTHER_SESSION, "claim_nonce" => "inst-A",
+                     "claim_expires_at" => (Time.now + 300).utc.iso8601 }
     )
-    assert status.success?, "re-moving my own task is fine"
-    devops = patch_devops(requests)
-    assert_equal SESSION, devops["claimed_session"]
-    assert_equal "inst-A", devops["claim_nonce"]
-  end
-
-  # --- Heartbeat (the lease renewal bin/statusline drives) --------------------
-
-  # A HEARTBEAT RENEWS A LEASE; IT NEVER ACQUIRES ONE. This asserted the opposite
-  # until 2026-09-05, which is how a REVIEWER became a recorded worker on a task it
-  # had only bounced. Story + the bound-desk exception: task_heartbeat_claim_test.rb.
-  def test_heartbeat_does_not_adopt_an_unclaimed_task
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
-      stub_devops: { "kind" => "feature" }
-    )
-    assert status.success?, "declining is not an error — the heartbeat stays best-effort"
-    assert_nil patch_of(requests), "a claim is made deliberately, never inferred from a painting terminal"
-  end
-
-  def test_heartbeat_renews_this_instances_own_claim
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 20)
-    )
-    assert status.success?
-    assert_equal SESSION, patch_devops(requests)["claimed_session"]
-  end
-
-  # A heartbeat must NOT steal a live claim held by a different instance.
-  def test_heartbeat_does_not_steal_a_live_foreign_claim
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
-    )
-    assert status.success?, "the heartbeat is best-effort and silent"
-    assert_nil patch_of(requests), "a heartbeat never steals a live foreign claim"
-  end
-
-  def test_heartbeat_without_a_session_is_a_silent_noop
-    requests, _out, _err, status = run_task(["heartbeat", "demo-task"])
-    assert status.success?
-    assert_nil patch_of(requests), "no session → no claim write"
-  end
-
-  # The authoritative guard: a heartbeat renews a BUILD claim, and a build claim
-  # only exists once the task is actually `building`. A task still in `designed`
-  # (the create default) is unclaimed by definition — `bin/task create` repoints
-  # the creator's session marker to it, and a stray heartbeat must NOT forge a
-  # live claim there (the creator's mascot ticking on an unowned `designed` task).
-  def test_heartbeat_skips_a_designed_task
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
-      stub_devops: { "kind" => "feature" },
-      stub_stage: "designed"
-    )
-    assert status.success?, "the heartbeat stays best-effort and silent"
-    assert_nil patch_of(requests), "a non-building task is unclaimed — no claim is forged"
-  end
-
-  # And the same for any other non-build stage (e.g. an already-`submitted` task) —
-  # only the live BUILD stage is renewed.
-  def test_heartbeat_skips_a_submitted_task
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
-      stub_devops: { "kind" => "feature" },
-      stub_stage: "submitted"
-    )
-    assert status.success?
-    assert_nil patch_of(requests), "only a `building` task heartbeats — never a submitted one"
-  end
-
-  # --- The desk-keyed heartbeat (a lease renewed by WORK, not by a status line)
-  #
-  # bin/statusline fires `heartbeat` every ~45s from a painting terminal, so before
-  # this the lease said only "a terminal is open" — and this machine carries
-  # `claude` processes days old. These cases are written as the two errors the
-  # guard can make, and they are not symmetric: renewing a dead claim costs other
-  # agents minutes of waiting, while declining a LIVE one costs a worker its desk.
-
-  # Build a desk bound to `slug`, holding one file `age` seconds old.
-  def desk(slug: "demo-task", age: 5, name: "app/models/thing.rb")
-    root = File.join(sandbox_root, "desk-#{age}-#{name.gsub(%r{[/.]}, '-')}")
-    FileUtils.mkdir_p(File.join(root, File.dirname(name)))
-    File.write(File.join(root, ".agent-context.json"), JSON.generate("task_slug" => slug))
-    path = File.join(root, name)
-    File.write(path, "x")
-    at = Time.now - age
-    File.utime(at, at, path)
-    # The context file is written NOW, so it would read as fresh activity on its
-    # own; age it with the rest so a "quiet desk" is genuinely quiet.
-    File.utime(at, at, File.join(root, ".agent-context.json"))
-    root
-  end
-
-  def heartbeat_env(session: SESSION, nonce: "inst-A")
-    { "CLAUDE_CODE_SESSION_ID" => session, "TASK_CLAIM_NONCE" => nonce }
-  end
-
-  # THE ONE THAT PROTECTS A REAL WORKER. The holder is editing files in its desk
-  # and has written NOTHING to the board for far longer than the idle window — the
-  # exact 2026-08-13 session, which was writing bespoke test files while looking
-  # dead from the board's side. Its claim must survive.
-  def test_heartbeat_renews_a_claim_whose_desk_is_being_written_even_with_a_silent_board
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", desk(age: 3)],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => 100 * ClaimLease::DESK_IDLE_SECONDS,
-                       "gate_in_flight" => false }
-    )
-    assert status.success?
-    devops = patch_devops(requests)
-    refute_nil devops, "a session writing its desk is WORKING — its lease must be renewed"
-    assert_equal SESSION, devops["claimed_session"]
-    assert devops["claim_expires_at"], "the lease is pushed out on desk evidence alone"
-  end
-
-  # The bug itself: an open terminal on a desk nobody is touching, with nothing
-  # landing on the board either. Every channel silent, so the heartbeat declines
-  # and the lease lapses on the ordinary TTL.
-  def test_heartbeat_declines_to_renew_a_claim_whose_desk_has_gone_quiet
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
-                       "gate_in_flight" => false }
-    )
-    assert status.success?, "the heartbeat stays best-effort and silent"
-    assert_nil patch_of(requests),
-               "an open terminal is not a worker — a status line must not renew an abandoned claim"
-  end
-
-  # A cert writes nothing into the desk while it runs (measured g1_cert p99: 94
-  # minutes). Without this channel a long green cert is indistinguishable from a
-  # walked-away terminal, and the gate would evict an agent mid-certification.
-  def test_heartbeat_renews_a_quiet_desk_while_a_gate_is_in_flight
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
-                       "gate_in_flight" => true }
-    )
-    assert status.success?
-    refute_nil patch_devops(requests), "a cert in flight is work — the desk is quiet because certs are quiet"
-  end
-
-  # THE INCIDENT, VERBATIM — and the reason "the gate prints an honest message" was
-  # only half the fix. The holder walked away. A QUEUED CHALLENGER then ran
-  # `bin/full-suite-check` on the held slug, which lands a checkpoint AND opens a
-  # g1_cert on a task it does not hold. Task-wide the board now looks busy — recent
-  # progress, a gate in flight — and reading those two task-wide facts renewed the
-  # abandoned lease for another 1h29m, which is the stall this task exists to end.
-  # Holder-scoped, both facts say what is actually true: the holder has produced
-  # nothing in far longer than the window, and the running gate is not its own.
-  def test_heartbeat_declines_when_only_a_challengers_cert_is_moving_the_task
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => 120, "gate_in_flight" => true,
-                       "holder_liveness_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
-                       "holder_gate_in_flight" => false }
-    )
-    assert status.success?, "the heartbeat stays best-effort and silent"
-    assert_nil patch_of(requests),
-               "a challenger's own cert is not evidence the holder is alive — the lease must still lapse"
-  end
-
-  # THE CONVERSE, which is what the actor filter has to buy without losing. The
-  # HOLDER is mid-cert: a cert writes nothing into the desk for up to the measured
-  # 94-minute p99, so the desk is legitimately silent and this channel is the only
-  # thing between a working agent and eviction. Filtering the channel by actor
-  # keeps it for the holder — dropping it would have reaped exactly this session.
-  def test_heartbeat_renews_a_silent_desk_while_the_holders_own_gate_is_in_flight
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
-                       "gate_in_flight" => true,
-                       "holder_liveness_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
-                       "holder_gate_in_flight" => true }
-    )
-    assert status.success?
-    refute_nil patch_devops(requests),
-               "the holder's own cert is the one thing that proves it is still there — never reap mid-cert"
-  end
-
-  # A board that does not publish the holder-scoped fact at all (an older
-  # deployment, a trimmed serializer) is an UNKNOWN, and an unknown may never free
-  # a desk. The fallback is the task-wide twin, which is strictly more protective
-  # because it counts everyone's work. Without it a missing key would read as "the
-  # holder has produced nothing, ever" and reap a live holder on a schema gap.
-  def test_heartbeat_falls_back_to_the_task_wide_progress_when_the_board_omits_the_holder_scoped_one
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => 120, "gate_in_flight" => false }
-    )
-    assert status.success?
-    refute_nil patch_devops(requests), "a board that cannot answer the question has not answered it 'no'"
-  end
-
-  # Parked on the operator is not abandoned: the agent is right to be doing
-  # nothing, and the task record says so.
-  def test_heartbeat_renews_a_quiet_desk_awaiting_operator_approval
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A",
-                                expires_in: 30).merge("approval_status" => "waiting"),
-      stub_progress: { "progress_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
-                       "gate_in_flight" => false }
-    )
-    assert status.success?
-    refute_nil patch_devops(requests), "a task waiting on Mr. McRitchie is blocked on a human, not abandoned"
-  end
-
-  # FAIL TOWARD NOT STEALING. No desk resolves (a primary checkout, an unbound
-  # session), so we know nothing about whether this holder is working — and
-  # nothing must never free a desk. Renew, exactly as before this change.
-  def test_heartbeat_renews_when_no_desk_can_be_resolved
-    plain = File.join(sandbox_root, "no-context")
-    FileUtils.mkdir_p(plain)
-
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", plain],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => 100 * ClaimLease::DESK_IDLE_SECONDS,
-                       "gate_in_flight" => false }
-    )
-    assert status.success?
-    refute_nil patch_devops(requests), "an unreadable desk is no evidence at all — it must never free a claim"
-  end
-
-  # A desk bound to a DIFFERENT task tells us nothing about this one. It must be
-  # refused rather than read: the primary checkout is written by every agent on
-  # the machine, so judging a claim there would renew it forever.
-  def test_heartbeat_refuses_to_judge_this_claim_by_another_tasks_desk
-    foreign = desk(slug: "somebody-elses-task", age: 3)
-
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task", "--desk", foreign],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => 100 * ClaimLease::DESK_IDLE_SECONDS,
-                       "gate_in_flight" => false }
-    )
-    assert status.success?
-    # Renewed, because a refused desk is UNKNOWN, not quiet — but the point is
-    # that the foreign desk's freshness played no part in the decision.
-    refute_nil patch_devops(requests)
-  end
-
-  # Without --desk the heartbeat still tries its cwd, so a desk session gets the
-  # guard even if a caller forgets the flag.
-  def test_heartbeat_falls_back_to_the_working_directory_for_the_desk
-    requests, _out, _err, status = run_task(
-      ["heartbeat", "demo-task"],
-      env: heartbeat_env,
-      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
-      stub_progress: { "progress_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
-                       "gate_in_flight" => false },
-      chdir: desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)
-    )
-    assert status.success?
-    assert_nil patch_of(requests), "cwd is a bound desk and it is quiet — the claim is not renewed"
+    assert status.success?, "a stored lease must not refuse the move, got:\n#{err}"
+    refute_nil patch_of(requests)
   end
 
   # --- Certs must SIGN their artifacts ---------------------------------------
@@ -1417,65 +1030,6 @@ class TaskCliTest < Minitest::Test
     refute_nil post
     assert_nil JSON.parse(post[:body]).dig("event", "metadata"),
                "no session means no owner — never a guessed one"
-  end
-
-  # --- The refusal's evidence must be the HOLDER's ---------------------------
-
-  # The circular refusal, as it actually happened. The challenger ran
-  # bin/full-suite-check, its cert landed a g1_cert row on the task, and the gate
-  # quoted that back at the challenger as proof the holder was alive. The gate may
-  # not cite the challenger's own work as the holder's.
-  def test_refusal_never_credits_the_challengers_own_work_to_the_holder
-    _requests, _out, err, status = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: OTHER_SESSION, nonce: "inst-A", expires_in: 300),
-      # The newest artifact belongs to the CHALLENGER; the holder has produced
-      # nothing attributable to it.
-      stub_progress: { "progress_seconds_ago" => 120, "last_progress_label" => "g1_cert passed",
-                       "last_progress_actor" => SESSION,
-                       "holder_progress_seconds_ago" => nil, "holder_progress_label" => nil,
-                       "progress_quiet" => false }
-    )
-    refute status.success?
-    refute_match(/progress by the holder/, err,
-                 "the holder produced nothing — reporting its progress would be inventing it")
-    assert_match(/THIS session's own work/, err,
-                 "the challenger must be told the cert it is being refused on is its own")
-    assert_match(/says nothing about the holder/, err)
-  end
-
-  # And when the holder HAS landed something of its own, that is what gets
-  # reported — attributed, and scoped to the holder rather than to the task.
-  def test_refusal_reports_the_holders_own_durable_progress
-    _requests, _out, err, status = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: OTHER_SESSION, nonce: "inst-A", expires_in: 300),
-      stub_progress: { "progress_seconds_ago" => 120, "last_progress_label" => "g1_cert passed",
-                       "last_progress_actor" => SESSION,
-                       "holder_progress_seconds_ago" => 1_680,
-                       "holder_progress_label" => "moved to building",
-                       "progress_quiet" => false }
-    )
-    refute status.success?
-    assert_match(/last durable progress by the holder ~28m ago \(moved to building\)/, err)
-    refute_match(/THIS session's own work/, err,
-                 "the holder's own progress is the answer — the challenger's cert is not mentioned")
-  end
-
-  # Progress with no recorded owner is reported as exactly that. An older row, or a
-  # plain-shell run, names nobody — and "nobody" must not quietly become "the holder".
-  def test_refusal_states_unattributed_progress_as_unowned
-    _requests, _out, err, = run_task(
-      ["move", "demo-task", "building"],
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
-      stub_devops: claim_devops(session: OTHER_SESSION, nonce: "inst-A", expires_in: 300),
-      stub_progress: { "progress_seconds_ago" => 300, "last_progress_label" => "g1_cert passed",
-                       "last_progress_actor" => nil, "holder_progress_seconds_ago" => nil }
-    )
-    assert_match(/has no recorded owner/, err)
-    refute_match(/progress by the holder/, err)
   end
 
   # --- show --json / --verbose (the visibility wins) --------------------------
@@ -1690,20 +1244,18 @@ class TaskCliTest < Minitest::Test
     assert_match(/builders: NOT STAMPED/, line, "an assignee is not evidence that anyone built it")
   end
 
-  # `builders_unattributed` means a session worked this task while naming no soul,
-  # so the names on record are a SUBSET. Rendering a subset as the whole set is
-  # the failure that fails confidently rather than closed.
-  def test_show_marks_an_incomplete_author_set_as_incomplete
+  # The retired UNNAMED marker renders nothing: a legacy record carrying it reads
+  # exactly like one without it.
+  def test_show_ignores_the_retired_unnamed_marker
     stamped = { "kind" => "bug", "built_by" => "shannon", "builders" => ["shannon"] }
     _requests, complete_out, = run_task(["show", "demo-task"], stub_devops: stamped)
-    _requests, incomplete_out, _err, status = run_task(
+    _requests, legacy_out, _err, status = run_task(
       ["show", "demo-task"],
       stub_devops: stamped.merge("builders_unattributed" => "02a41c7d-4b9e-84c2-af9c-041f22ac02c7")
     )
     assert status.success?
-    assert_match(/UNNAMED/, summary_line(incomplete_out))
-    refute_equal summary_line(complete_out), summary_line(incomplete_out),
-                 "a complete author set and an incomplete one must not summarise alike"
+    refute_match(/UNNAMED/, summary_line(legacy_out))
+    assert_equal summary_line(complete_out), summary_line(legacy_out)
   end
 
   # A bare `bin/task move <slug> building` leaves the SESSION on the record. It is
@@ -1733,12 +1285,12 @@ class TaskCliTest < Minitest::Test
     # verbose block grows to. Reading them by content would let the assertion
     # match the CLI's own prose about built_by instead of the rendered values.
     lines = out.lines.map(&:rstrip)
-    claim_at = lines.index { |l| l.include?("claim: session") }
+    claim_at = lines.index { |l| l.include?("claim: desk") }
     refute_nil claim_at, "the verbose block must still print the claim line"
     sources, locator = lines[claim_at + 1], lines[claim_at + 2]
     assert_match(/built_by: xan/, sources)
     assert_match(/builders: shannon, xan/, sources)
-    assert_match(/unattributed: none/, sources)
+    refute_match(/unattributed/, sources)
     assert_match(/metadata\.devops\.builders/, locator)
     assert_match(/agent_slug/, locator)
   end
@@ -1750,7 +1302,7 @@ class TaskCliTest < Minitest::Test
     _requests, out, _err, status = run_task(["show", "demo-task", "--verbose"])
     assert status.success?
     lines = out.lines.map(&:rstrip)
-    sources = lines[lines.index { |l| l.include?("claim: session") } + 1]
+    sources = lines[lines.index { |l| l.include?("claim: desk") } + 1]
     assert_match(/built_by: NOT STAMPED/, sources)
     assert_match(/builders: NOT STAMPED/, sources)
   end
@@ -2491,15 +2043,16 @@ class TaskCliTest < Minitest::Test
     assert_equal "http://localhost:3001/demo", devops["local_url"]
   end
 
-  # --- cert evidence is machine-owned (regression) ---
+  # --- the control stamp is machine-owned (regression) ---
   # `--checks` REPLACES the author's checks_run lines. It must NOT be able to
-  # replace the fingerprint-bound cert lines bin/fast-check / bin/full-suite-check
-  # stamp: recording a test plan after certifying used to wipe the cert, and
-  # bin/dor-check then called freshly certified code "full-suite: MISSING". The
-  # CLI already GETs the task before the PATCH, so it carries the evidence forward
-  # itself — the board enforces the same rule for every other writer.
-  FULL_EVIDENCE = "[full-suite@1512171634558ef1234567890abcdef123456789] bin/rails test (782 runs, 0 failures)"
-  RUBOCOP_EVIDENCE = "[rubocop@1512171634558ef1234567890abcdef123456789] bin/rubocop (clean)"
+  # replace the fingerprint-bound `[control@<fp>]` stamp bin/control-check records
+  # (the same rule once protected the local cert receipts, retired in DevOps v3
+  # phase 2b): recording a test plan after the control ran used to wipe it, and
+  # bin/dor-check then called freshly replayed code MISSING. The CLI already GETs
+  # the task before the PATCH, so it carries the evidence forward itself — the
+  # board enforces the same rule for every other writer.
+  FULL_EVIDENCE = "[control@1512171634558ef1234567890abcdef123456789:mcritchie-studio] NECESSARY — replayed test/models/a_test.rb"
+  RUBOCOP_EVIDENCE = "[control@1512171634558ef1234567890abcdef123456789:turf-monster] NECESSARY — replayed test/models/b_test.rb"
 
   def test_update_checks_preserves_machine_written_cert_evidence
     requests, = run_task(
@@ -2510,8 +2063,8 @@ class TaskCliTest < Minitest::Test
     patch = requests.find { |r| r[:method] == "PATCH" }
     refute_nil patch
     checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
-    assert_includes checks, FULL_EVIDENCE, "--checks wiped the full-suite cert evidence"
-    assert_includes checks, RUBOCOP_EVIDENCE, "--checks wiped the rubocop cert evidence"
+    assert_includes checks, FULL_EVIDENCE, "--checks wiped the hub's control stamp"
+    assert_includes checks, RUBOCOP_EVIDENCE, "--checks wiped turf's control stamp"
     assert_includes checks, "[unit] bin/rails test test/models"
     assert_includes checks, "[integration] bin/rails test test/controllers"
   end
@@ -2528,10 +2081,10 @@ class TaskCliTest < Minitest::Test
     assert_equal ["[unit] fresh plan", FULL_EVIDENCE], JSON.parse(patch[:body]).dig("devops", "checks_run")
   end
 
-  # A cert writer supersedes the lanes it SUPPLIES (that is how bin/fast-check and
-  # bin/full-suite-check re-stamp their own lane) — the rest is carried over.
+  # A stamp writer supersedes the namespace it SUPPLIES (that is how bin/control-check
+  # re-stamps its own lane per repo) — the rest is carried over.
   def test_update_checks_supersedes_a_lane_it_supplies
-    stale_full = "[full-suite@0000000000000000000000000000000000000000] bin/rails test (781 runs, 0 failures)"
+    stale_full = "[control@0000000000000000000000000000000000000000:mcritchie-studio] NO-SIGNAL — replayed test/models/a_test.rb"
     requests, = run_task(
       ["update", "demo-task", "--checks", "[unit] plan", "--checks", FULL_EVIDENCE],
       stub_devops: { "kind" => "bug", "checks_run" => ["[unit] plan", stale_full, RUBOCOP_EVIDENCE] }
@@ -2540,17 +2093,16 @@ class TaskCliTest < Minitest::Test
     refute_nil patch
     checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
     assert_equal ["[unit] plan", FULL_EVIDENCE, RUBOCOP_EVIDENCE], checks
-    refute_includes checks, stale_full, "a re-cert must replace its own stale lane"
+    refute_includes checks, stale_full, "a re-run must replace its own stale stamp"
   end
 
-  # The reverse regression (2026-07-20, fast-check-preserves-checks): a cert
-  # writer whose OWN read of checks_run came back stale/empty sends a
-  # PURE-EVIDENCE --checks update. The CLI's read-merge (build_devops) reads the
-  # board's CURRENT list right before the PATCH, so it must carry the tier tags
-  # the writer's stale read missed — a write that supplies no author line may not
+  # The reverse regression (2026-07-20, fast-check-preserves-checks): a stamp
+  # writer sends a PURE-EVIDENCE --checks update. The CLI's read-merge
+  # (build_devops) reads the board's CURRENT list right before the PATCH, so it
+  # must carry the tier tags — a write that supplies no author line may not
   # supersede the author namespace.
   def test_pure_evidence_update_carries_the_boards_tier_tags
-    fast = "[fast-cert@1512171634558ef1234567890abcdef123456789] fast cert green: 4 mapped"
+    fast = "[control@1512171634558ef1234567890abcdef123456789] NECESSARY — replayed test/models/a_test.rb"
     requests, = run_task(
       ["update", "demo-task", "--checks", fast],
       stub_devops: { "kind" => "bug",
@@ -2561,7 +2113,7 @@ class TaskCliTest < Minitest::Test
     refute_nil patch
     checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
     assert_includes checks, "[unit] bin/rails test test/models",
-                    "a pure-evidence cert write wiped the builder's tier tags"
+                    "a pure-evidence stamp write wiped the builder's tier tags"
     assert_includes checks, "[integration] bin/rails test test/controllers"
     assert_includes checks, fast
   end
@@ -2783,7 +2335,7 @@ class TaskCliTest < Minitest::Test
     parsed = JSON.parse(patch[:body])
     assert_equal "building", parsed["stage"]
     assert_equal "medium", parsed["dev_size"], "the builder's estimate rides as a top-level column"
-    assert_equal SESSION, parsed.dig("devops", "claimed_session"), "the claim still lands alongside it"
+    assert_equal SESSION, parsed.dig("event", "session"), "the claim still lands alongside it"
   end
 
   # A bare building move (no --dev-size) sends no dev_size — it's optional.
@@ -2839,6 +2391,39 @@ class TaskCliTest < Minitest::Test
     assert_empty requests
     assert_match(/unknown flag "--stag"/, err)
     assert_match(/--stage/, err, "a close typo earns a suggestion")
+  end
+
+  def list_rows(count)
+    (1..count).map { |i| { "slug" => "task-#{i}", "stage" => "designed", "title" => "Task #{i}" } }
+  end
+
+  # The index pages at 20 by default; a bare list used to print those 20 and
+  # "(20 task(s))" with no hint that 37 more existed.
+  def test_list_prints_the_board_total_when_the_page_is_not_every_row
+    @stub_list = list_rows(57)
+    _requests, out, err, status = run_task(["list"])
+    assert status.success?, err
+    assert_equal 20, out.lines.count { |l| l.start_with?("task-") }
+    assert_includes out, "20 of 57 — pass --all or --json for every row"
+  end
+
+  def test_list_total_line_is_the_plain_count_when_every_row_is_shown
+    @stub_list = list_rows(3)
+    _requests, out, _err, status = run_task(["list"])
+    assert status.success?
+    assert_includes out, "(3 task(s))"
+    refute_includes out, "pass --all"
+  end
+
+  def test_list_all_pages_through_every_row
+    @stub_list = list_rows(157)
+    requests, out, err, status = run_task(["list", "--all"])
+    assert status.success?, "--all is a valid list flag (#{err})"
+    gets = requests.select { |r| r[:method] == "GET" && r[:path].start_with?("/api/v1/tasks?") }
+    assert_equal 2, gets.size, "157 rows at 100 per page is two reads"
+    assert(gets.all? { |r| r[:path].include?("per_page=100") })
+    assert_equal 157, out.lines.count { |l| l.start_with?("task-") }
+    assert_includes out, "(157 task(s))"
   end
 
   # --reviewable is the parallel-review queue filter: the SOP documents

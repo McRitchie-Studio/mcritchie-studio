@@ -36,8 +36,7 @@ class ReviewerBounceAuthorsApiTest < ActionDispatch::IntegrationTest
   # `bin/task move <slug> building` — the actor names the builder, the devops slice
   # carries the lease that records WHICH session holds the desk.
   def claim!(task, actor:, session:)
-    patch_task(task.slug, stage: "building", event: { actor: actor },
-                          devops: ClaimLease.renewed(session: session, nonce: "inst-B"))
+    patch_task(task.slug, stage: "building", event: { actor: actor, session: session })
   end
 
   # `bin/task move <slug> submitted` — the mover's session is the default actor.
@@ -53,13 +52,10 @@ class ReviewerBounceAuthorsApiTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  # `bin/task heartbeat <slug>` — a devops PATCH carrying a fresh lease and NO
-  # event at all. That is the whole shape of it: a heartbeat names nobody.
+  # An UNNAMED claim (`bin/task move <slug> building`, no --actor) — the shape the
+  # retired status-line heartbeat used to send: it names nobody.
   def heartbeat!(task, session:)
-    devops = task.reload.metadata["devops"] || {}
-    patch_task(task.slug, devops: devops.merge(
-      ClaimLease.renewed(session: session, nonce: "inst-R", prior: devops)
-    ))
+    patch_task(task.slug, stage: "building", event: { session: session })
   end
 
   def submitted_task(title)
@@ -81,8 +77,6 @@ class ReviewerBounceAuthorsApiTest < ActionDispatch::IntegrationTest
     devops = task.reload.metadata["devops"]
     assert_equal "shannon", devops["built_by"]
     assert_equal ["shannon"], devops["builders"]
-    assert_nil devops["builders_unattributed"],
-               "the reviewer bounced this task; the record must not call that authorship"
   end
 
   test "reviewer selection still selects after the bounce" do
@@ -99,19 +93,5 @@ class ReviewerBounceAuthorsApiTest < ActionDispatch::IntegrationTest
     assert_equal ["shannon"], decision["builders"]
     refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "shannon",
                     "and the real author is still excluded from the seats"
-  end
-
-  test "an unnamed claim from a session that is NOT reviewing still refuses" do
-    # THE FAIL-CLOSED HALF, through the same door. The refusal exists for a real
-    # incomplete author set, and a fix that made selection always succeed would
-    # satisfy the bug report while destroying the property.
-    task = submitted_task("Bounce Failclosed Still Refuses")
-
-    block!(task, by: "carl")
-    heartbeat!(task, session: REVIEWER_SESSION)
-
-    assert_equal REVIEWER_SESSION, task.reload.metadata.dig("devops", "builders_unattributed"),
-                 "no review claim means an ordinary anonymous handoff"
-    assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"]
   end
 end

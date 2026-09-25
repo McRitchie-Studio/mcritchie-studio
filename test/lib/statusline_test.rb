@@ -235,7 +235,7 @@ class StatuslineTest < Minitest::Test
     refute_includes out, "\e[38;5;213m", "and never the old pink tint"
   end
 
-  # --- Heartbeat wiring (V2): the status line renews the active build claim ----
+  # --- No build-claim heartbeat: the desk is the claim -------------------------
 
   # Run statusline with a stub `task` binary (records its args) wired in via
   # TASK_BIN, in foreground heartbeat mode so the call is observable. Returns the
@@ -273,40 +273,14 @@ class StatuslineTest < Minitest::Test
     end
   end
 
-  # The status line renews the claim — and, since 2026-08-13, hands over the DESK
-  # it is rendering in so the renewal is decided on evidence of work rather than on
-  # evidence that this status line is painting. Without the desk, an open terminal
-  # renews a build claim forever (bin/task falls back to "unknown", which never
-  # frees a claim), which is exactly the stall this fix exists to end.
-  def test_statusline_fires_the_heartbeat_for_the_active_building_task
-    calls = heartbeat_calls(stage: "building")
-    assert_equal ["heartbeat session-claim-lease-gate --desk #{heartbeat_desk}"], calls,
-                 "a building task's status line should renew its claim via `task heartbeat <slug> --desk <desk>`"
-  end
-
-  def test_statusline_throttles_repeated_heartbeats
-    calls = heartbeat_calls(stage: "building", runs: 3)
-    assert_equal 1, calls.size, "the throttle suppresses repeat heartbeats within the window"
-  end
-
-  def test_statusline_does_not_heartbeat_a_non_building_task
-    assert_empty heartbeat_calls(stage: "submitted"),
-                 "only the live BUILD claim is renewed — other stages don't heartbeat"
-  end
-
-  def test_statusline_does_not_heartbeat_without_a_session
-    assert_empty heartbeat_calls(stage: "building", session: nil),
-                 "no session → no claim to renew"
-  end
-
-  # A WORKTREE build desk legitimately carries no stage (.agent-context.json is
-  # written with stage:nil → ""). Its claim must STILL renew — the empty-stage
-  # renew is load-bearing for worktrees and must not regress.
-  def test_statusline_still_heartbeats_an_empty_stage_worktree_desk
-    calls = heartbeat_calls(stage: "")
-
-    assert_equal ["heartbeat session-claim-lease-gate --desk #{heartbeat_desk}"], calls,
-                 "an empty-stage worktree desk is a real build — its claim renews"
+  # THE DESK IS THE BUILD CLAIM (bin/lib/desk_claim.rb): there is no lease left to
+  # renew, so no render — building, or a stageless worktree desk — calls
+  # `bin/task heartbeat`. That subcommand is gone.
+  def test_statusline_never_renews_a_build_claim
+    ["building", ""].each do |stage|
+      assert_empty heartbeat_calls(stage: stage).grep(/\Aheartbeat\b/),
+                   "stage #{stage.inspect}: the status line must not renew a build claim"
+    end
   end
 
   # --- Per-session marker: filing/owning a task is NOT a build desk -----------
@@ -315,7 +289,7 @@ class StatuslineTest < Minitest::Test
   # display context, NOT a build desk. Run statusline with that marker as the only
   # source — a cwd WITHOUT a worktree .agent-context.json — and a stub `task` that
   # records its invocations. Returns the recorded `task` calls.
-  def session_marker_heartbeat_calls(stage:, session: SESSION, slug: "skip-self-claim-demo")
+  def session_marker_calls(stage:, session: SESSION, slug: "skip-self-claim-demo")
     Dir.mktmpdir do |dir|
       projects = File.join(dir, "projects")
       FileUtils.mkdir_p(File.join(projects, ".agents", "sessions"))
@@ -347,31 +321,16 @@ class StatuslineTest < Minitest::Test
       # carry no mascot, so every render here also (correctly) fires the mascot
       # self-heal; asserting "no calls at all" would make these gates fail on an
       # unrelated, working feature. Assert the heartbeat, not the quiet.
-      raw = File.exist?(calls) ? File.read(calls).lines.map(&:strip) : []
-      raw.grep(/\Aheartbeat\b/)
+      File.exist?(calls) ? File.read(calls).lines.map(&:strip) : []
     end
   end
 
-  # The bug: `bin/task create` repoints the creator's per-session marker to the new
-  # `designed` task; the heartbeat then forged a live build-claim on a task nobody
-  # was building (the creator's mascot ticking green on an unowned task).
-  def test_statusline_does_not_heartbeat_a_designed_session_marker
-    assert_empty session_marker_heartbeat_calls(stage: "designed"),
-                 "a freshly-filed `designed` task in the per-session marker must not forge a claim"
-  end
-
-  # The empty-stage loophole, scoped: a per-session marker with no stage (a create
-  # response that omitted it) is NOT a build desk — it must not renew.
-  def test_statusline_does_not_heartbeat_an_empty_stage_session_marker
-    assert_empty session_marker_heartbeat_calls(stage: ""),
-                 "an empty/missing stage in the per-session marker is not a build desk"
-  end
-
-  # A REAL builder claim (`move building`) from the primary checkout writes the
-  # per-session marker with stage=building — that still renews, filling the slot.
-  def test_statusline_heartbeats_a_building_session_marker
-    assert_equal ["heartbeat skip-self-claim-demo"], session_marker_heartbeat_calls(stage: "building"),
-                 "a real move→building claim still renews from the per-session marker"
+  # The per-session marker path renews nothing either, whatever stage it names.
+  def test_statusline_never_renews_from_a_session_marker
+    %w[building designed].each do |stage|
+      assert_empty session_marker_calls(stage: stage).grep(/\Aheartbeat\b/),
+                   "stage #{stage}: the per-session marker must not renew a build claim"
+    end
   end
 
   # --- Session-mascot self-heal ------------------------------------------------
@@ -647,9 +606,14 @@ class StatuslineTest < Minitest::Test
     Dir.mktmpdir do |dir|
       home = File.join(dir, "home")
       FileUtils.mkdir_p(home)
-      File.write(File.join(dir, ".agent-context.json"), JSON.generate(
+      # A per-session marker with NO mascot, so the render's mascot self-heal is the
+      # write the guard has to judge (a desk makes no board call since the build-claim
+      # heartbeat was retired).
+      sessions = File.join(home, "projects", ".agents", "sessions")
+      FileUtils.mkdir_p(sessions)
+      File.write(File.join(sessions, "#{SESSION}.json"), JSON.generate(
         "app" => "mcritchie-studio", "worktree_slug" => "guard-narration-marker-writes",
-        "task_record_slug" => "guard-narration-marker-writes",
+        "task_slug" => "guard-narration-marker-writes",
         "task_url" => "https://mcritchie.studio/tasks/guard-narration-marker-writes", "stage" => stage
       ))
       calls = File.join(dir, "calls.log")
@@ -671,7 +635,7 @@ class StatuslineTest < Minitest::Test
       out, err, = Open3.capture3(env, "/bin/bash", BIN, stdin_data: stdin)
 
       { out: out, err: err,
-        markers: Dir.glob(File.join(home, "projects", ".agents", "sessions", "*")),
+        markers: Dir.glob(File.join(sessions, "*")) - [File.join(sessions, "#{SESSION}.json")],
         calls: File.exist?(calls) ? File.read(calls).lines.map(&:strip) : [] }
     end
   end
@@ -726,13 +690,13 @@ class StatuslineTest < Minitest::Test
     assert_includes out, "…#{SESSION[-4..]}", "and still resolves the session — only the WRITE is refused"
   end
 
-  # And the happy path it must NOT break: a sandboxed run that IS pinned writes its
-  # marker and renews normally. A guard that fails closed on the happy path is
-  # worse than the bug — the six heartbeat_calls tests above ride on this.
-  def test_integration_a_sandboxed_but_pinned_statusline_still_heartbeats
-    calls = heartbeat_calls(stage: "building")
+  # And the happy path it must NOT break: a sandboxed run that IS pinned still makes
+  # its board calls. A guard that fails closed on the happy path is worse than the
+  # bug. The mascot self-heal is the call a mascot-less fixture makes.
+  def test_integration_a_sandboxed_but_pinned_statusline_still_calls_the_board
+    calls = session_marker_calls(stage: "building")
 
-    assert_equal ["heartbeat session-claim-lease-gate --desk #{heartbeat_desk}"], calls,
-                 "pinned at a tmpdir, the destination is provable — narration works normally under test"
+    assert_includes calls, "session-mascot",
+                    "pinned at a tmpdir, the destination is provable — narration works normally under test"
   end
 end

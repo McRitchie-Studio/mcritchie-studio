@@ -24,6 +24,10 @@ module ReleaseNotes
     BLOCKED_GLYPH = "⚠️".freeze
     # completed_at render for the "shipped …" line (e.g. "3:28 PM").
     SHIPPED_TIME_FORMAT = "%-l:%M %p".freeze
+    # The epic marker — the handle a task carries in tasks.epic_slug. Inside each app
+    # group, a release's tasks sit under their epic (loose tasks first), a card wears
+    # its epic in the footer, and the header lists the epics the release carries.
+    EPIC_GLYPH = "🧩".freeze
 
     def initialize(app:, environment:, release:, sha:, url:, tasks:, checks: nil, release_slug: nil, seal: nil)
       @app = app.presence || "mcritchie-studio"
@@ -70,7 +74,12 @@ module ReleaseNotes
     # a lead embed, so this is task cards ONLY. Only meaningful when #embeddable? —
     # a caller picks via #discord_payload.
     def embeds
-      @tasks.map { |task| task_embed(task) }
+      epic_ordered(@tasks).map { |task| task_embed(task) }
+    end
+
+    # The distinct epics this release carries, in the order their first task appears.
+    def epic_slugs
+      @tasks.filter_map { |task| epic_of(task) }.uniq
     end
 
     private
@@ -78,16 +87,24 @@ module ReleaseNotes
     # The markdown deploy header that leads the message `content` (NOT an embed):
     #   # 🚀 Production Deployment
     #   ### [<release tag> <distinct app emojis>](<production url>)
-    #   🟢 Production smoke seal: passed   (a third line ONLY when a seal exists)
+    #   🧩 devops-v3 · board-polish         (ONLY when a task carries an epic)
+    #   🟢 Production smoke seal: passed   (ONLY when a seal exists)
     # Line 2 is an H3-sized masked link — Discord renders `### [text](url)` so.
     def header_content
-      [["# 🚀 Production Deployment", release_link_line], (seal_line if @seal)].flatten.compact.join("\n")
+      ["# 🚀 Production Deployment", release_link_line, epics_line, (seal_line if @seal)].compact.join("\n")
     end
 
     # The post-ship production smoke verdict, appended to the release notes body +
     # the Discord header. Rendered only when a seal is present.
     def seal_line
       @seal.verdict_line
+    end
+
+    # "🧩 devops-v3 · board-polish" — the epics the release carries, or nil (no line)
+    # when none of its tasks belongs to an epic.
+    def epics_line
+      slugs = epic_slugs
+      slugs.empty? ? nil : "#{EPIC_GLYPH} #{slugs.join(' · ')}"
     end
 
     def release_link_line
@@ -115,6 +132,8 @@ module ReleaseNotes
       }
       thumbnail = task_thumbnail(task)
       embed[:thumbnail] = thumbnail if thumbnail
+      epic = epic_of(task)
+      embed[:footer] = { text: "#{EPIC_GLYPH} #{epic}" } if epic
       embed
     end
 
@@ -218,10 +237,35 @@ module ReleaseNotes
       end.tap(&:pop)
     end
 
+    # An app group's task bullets. Tasks with no epic come first, flat; each epic
+    # then gets its own "🧩 <epic>" line with its tasks indented beneath it, in the
+    # order the epic's first task appears.
     def task_lines(tasks)
       return ["• No deployed tasks"] if tasks.empty?
 
-      tasks.map { |task| "• [#{escape_link_label(task.title)}](#{task_url(task)})" }
+      loose, epic_tasks = tasks.partition { |task| epic_of(task).nil? }
+      lines = loose.map { |task| task_line(task) }
+      epic_tasks.group_by { |task| epic_of(task) }.each do |epic, members|
+        lines << "#{EPIC_GLYPH} #{epic}"
+        lines.concat(members.map { |task| "  #{task_line(task)}" })
+      end
+      lines
+    end
+
+    def task_line(task)
+      "• [#{escape_link_label(task.title)}](#{task_url(task)})"
+    end
+
+    # The task's epic handle, or nil. Read defensively: a caller may hand in a
+    # task-like object that predates the column.
+    def epic_of(task)
+      task.respond_to?(:epic_slug) ? task.epic_slug.presence : nil
+    end
+
+    # Loose tasks keep their place; each epic's tasks are pulled together at the
+    # position of that epic's first task, so a release's cards read epic by epic.
+    def epic_ordered(tasks)
+      tasks.group_by { |task| epic_of(task) || task.object_id }.values.flatten
     end
 
     def tasks_by_group

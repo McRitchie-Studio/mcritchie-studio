@@ -56,15 +56,13 @@
 # rework bounce lands the task back on `building`, so that transition names the
 # REVIEWER who sent the work back, not an author.
 #
-# ⛔ THIS TOOL REFUSES (exit 2, selecting and recording NOTHING) in four states,
+# ⛔ THIS TOOL REFUSES (exit 2, selecting and recording NOTHING) in three states,
 # because an empty exclusion list is not the same answer as "nobody to exclude" —
 # conflating them is what let it pick Carl to review Carl's own PR on 2026-08-13:
-#   1. NO author on record — nothing to exclude.
-#   2. The author set is INCOMPLETE — another session claimed the task and named no
-#      soul (devops.builders_unattributed), so a soul we cannot name worked on it.
-#   3. An author would be SEATED — the pool was too small to drop them all, so one
+#   1. NO author on record — the stamped AND git-derived author set is empty.
+#   2. An author would be SEATED — the pool was too small to drop them all, so one
 #      was KEPT eligible (the recorder degrades here by design; the CLI must not).
-#   4. A `--builder` entry NAMED NOBODY — see the roster note below.
+#   3. A `--builder` entry NAMED NOBODY — see the roster note below.
 # State the fact to proceed: `--builder <soul>[,<soul>]` names the authors,
 # `--builder none` asserts that no soul built it. Fix it durably upstream with
 # `bin/task move <slug> building --actor <soul>`.
@@ -647,15 +645,7 @@ if (unresolved = Array(decision["builder_override_unresolved"])).any?
 end
 
 unless decision["builder_known"]
-  # THE HEADLINE MUST NAME THE FACT IT REFUSED ON. An unnamed reviewer FIX-FORWARD is
-  # not "the authors are unknown" — the authors are known, and the set is INCOMPLETE
-  # by one commit that is provably in the diff. Reporting it under the unknown-author
-  # headline sends the reader to stamp a builder who is already stamped, and the
-  # remedy they would reach for next (`--builder none`) asserts that NO soul built
-  # this — which is false here and lifts the guard entirely.
-  zap_unnamed = Array(decision["fix_forward_unnamed"])
-  headline = zap_unnamed.any? ? "A FIX-FORWARD AUTHOR IS UNNAMED" : "the AUTHORS ARE UNKNOWN"
-  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — #{headline}.")
+  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — the AUTHORS ARE UNKNOWN.")
   if builder
     # An override was passed and it named NOBODY on the roster — a typo. Say that,
     # rather than the record's story: `--builder stefon` is a different problem from
@@ -665,60 +655,29 @@ unless decision["builder_known"]
     warn!("  override is authoritative — so it names nobody rather than falling back to")
     warn!("  the record it was meant to correct. Check the spelling against:")
     warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(', ')}")
-  elsif zap_unnamed.any?
-    # A REVIEWER ZAP NOBODY CAN NAME. bin/pr-review proved the PR head advanced while
-    # the reviewers held it, so a commit in this diff was written by someone other
-    # than the builders on record — and it recorded that it could not say who.
-    warn!("  Authors on record: #{Array(decision["builders"]).join(", ")}.")
-    warn!("  But the PR head MOVED under review and the fix-forward was recorded")
-    warn!("  #{zap_unnamed.join(", ")} — which names no soul. A reviewer who fixes forward")
-    warn!("  puts his own commit in the merged diff, so he is an author of this PR; the")
-    warn!("  set above is therefore short by one, and every soul the pool might seat is")
-    warn!("  a candidate for the commit nobody claimed. Refusing rather than rolling.")
-  elsif (session = decision["builders_unattributed"].to_s.strip).empty?
-    if (stray = Array(decision["record_unresolved"])).any?
-      # NAMED, BUT NOT A SOUL. Saying "blank" here is false, and the durable fix
-      # below would overwrite the typo rather than correct it — so the reader is
-      # told what the record actually holds.
-      warn!("  The record NAMES #{stray.join(", ")}, which matches no soul on the roster,")
-      warn!("  so the author set is empty even though devops.built_by is NOT blank. The")
-      warn!("  exclusion has nothing to exclude. Check the spelling against:")
-      warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(", ")}")
-    else
-      warn!("  devops.built_by is blank and no `→ building` BUILD CLAIM names a soul, so")
-      warn!("  the no-self-review exclusion has nothing to exclude. Selecting anyway could")
-      warn!("  hand the PR to the soul who wrote it — refusing instead.")
-      warn!("  (A rework block bounces the task onto `building` too. That transition is the")
-      warn!("  REVIEWER's and is deliberately NOT read as authorship, so after a bounce the")
-      warn!("  trail holds no author to find — state the fact, or stamp it durably below.)")
-    end
+  elsif (stray = Array(decision["record_unresolved"])).any?
+    # NAMED, BUT NOT A SOUL. Saying "blank" here is false, and the durable fix
+    # below would overwrite the typo rather than correct it — so the reader is
+    # told what the record actually holds.
+    warn!("  The record NAMES #{stray.join(", ")}, which matches no soul on the roster,")
+    warn!("  so the author set is empty even though devops.built_by is NOT blank. The")
+    warn!("  exclusion has nothing to exclude. Check the spelling against:")
+    warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(", ")}")
   else
-    # The INCOMPLETE set. Someone else worked this task and the record cannot say
-    # who — so the authors on record are a subset, and a pick made over that subset
-    # can still land on an author (measured 2026-08-30: PR #1081 seated Alex).
-    warn!("  Authors on record: #{Array(decision["builders"]).join(", ")}.")
-    warn!("  But session #{session} ALSO worked this task — it claimed or shipped it")
-    warn!("  while naming no soul — so the author list is INCOMPLETE, and the exclusion")
-    warn!("  cannot cover a soul it cannot name. A handoff mid-build does this: a")
-    warn!("  session limit kills the claimer and ANOTHER soul writes and ships the diff,")
-    warn!("  so the set names the claimer and the real author is still in the pool.")
+    warn!("  devops.built_by is blank, no `→ building` BUILD CLAIM names a soul, and no")
+    warn!("  author could be derived from the PR's commits, so the no-self-review")
+    warn!("  exclusion has nothing to exclude. Selecting anyway could hand the PR to the")
+    warn!("  soul who wrote it — refusing instead.")
+    warn!("  (A rework block bounces the task onto `building` too. That transition is the")
+    warn!("  REVIEWER's and is deliberately NOT read as authorship, so after a bounce the")
+    warn!("  trail holds no author to find — state the fact, or stamp it durably below.)")
   end
   warn!("")
-  if zap_unnamed.any?
-    # `--builder none` is deliberately ABSENT from this branch. It asserts that no
-    # soul built the task, and here a commit demonstrably exists — offering it would
-    # be handing the reader a lever that clears the refusal by denying its premise.
-    warn!("  Resolve it by naming who fixed forward (durable — it stamps the author set):")
-    warn!("    bin/task fix-forward #{named} --agent <soul>[,<soul>]  # who pushed to the PR")
-    warn!("  Or state the whole set for this pick only:")
-    warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]  # every author, zapper included")
-  else
-    warn!("  Resolve it by stating the fact (name EVERY author, comma-separated):")
-    warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who wrote it")
-    warn!("    bin/reviewer-select #{named} --builder none              # no soul built it")
-    warn!("  Durable fix (stamps the author for next time, re-claims included):")
-    warn!("    bin/task move #{named} building --actor <soul>")
-  end
+  warn!("  Resolve it by stating the fact (name EVERY author, comma-separated):")
+  warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who wrote it")
+  warn!("    bin/reviewer-select #{named} --builder none              # no soul built it")
+  warn!("  Durable fix (stamps the author for next time, re-claims included):")
+  warn!("    bin/task move #{named} building --actor <soul>")
   exit 2
 end
 

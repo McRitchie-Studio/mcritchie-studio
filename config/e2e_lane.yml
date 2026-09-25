@@ -243,7 +243,16 @@
 # the card's epic chip filtering the board. Coverage ADDED; `quarantined` untouched at 10.
 # MEASURED with the lister on THIS tree, never by arithmetic:
 #   npx playwright test --list => 161
-total_specs: 161
+# 161 -> 163 on 2026-09-24: the two e2e/board_window_chip.spec.js specs
+# (/tasks/operator-windows-on-board), the operator-window countdown on the card.
+# Coverage ADDED; `quarantined` untouched at 10.
+# MEASURED with the lister on THIS tree, never by arithmetic:
+#   npx playwright test --list => 163
+# 163 -> 164 on 2026-09-25: e2e/epics_page.spec.js (/tasks/epic-view-and-notes), /epics
+# clicking through to an epic's tasks by stage. Coverage ADDED; `quarantined` untouched at 10.
+# MEASURED with the lister on THIS tree, never by arithmetic:
+#   npx playwright test --list => 164
+total_specs: 164
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -386,7 +395,22 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 161
 #   npx playwright test --list --grep-invert @quarantine => 151
-executed: 151
+# 151 -> 153 on 2026-09-24: the two e2e/board_window_chip.spec.js specs pin the
+# operator-window countdown (/tasks/operator-windows-on-board) — a waiting approval's
+# card wears a ticking mm:ss chip, an hour-old one reads the lapsed label, an
+# `Escalated:` block wears the escalation chip, and a quiet card wears none.
+# Coverage ADDED; `quarantined` untouched at 10.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 163
+#   npx playwright test --list --grep-invert @quarantine => 153
+# 153 -> 154 on 2026-09-25: e2e/epics_page.spec.js pins the epic view
+# (/tasks/epic-view-and-notes) — the board links to /epics, an epic's row clicks
+# through to /epics/<slug>, and its tasks show on the board card under their stage.
+# Coverage ADDED; `quarantined` untouched at 10.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 164
+#   npx playwright test --list --grep-invert @quarantine => 154
+executed: 154
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

@@ -7,11 +7,10 @@ require_relative "../../lib/claim_lease"
 #
 # WHY IT EXISTS. Every renewing lease in this house anchors its renewer to a
 # long-lived `claude`/`codex` process and asks ONE question of it, through a
-# lambda that is byte-identical in all four lanes:
+# lambda that is byte-identical in all three lanes:
 #
 #     alive: -> { SessionIdentity.process_alive?(pid, start) }
 #
-#     bin/task                     (claim-renew-loop)  the BUILD claim
 #     bin/lib/review_claim_cli.rb  (#renew_loop)       the REVIEW claim
 #     bin/lib/release_claim_cli.rb (#renew_loop)       the RELEASE conductor claim
 #     bin/devops-shift             (#renew_loop)       the DEVOPS SHIFT lease
@@ -59,9 +58,8 @@ require_relative "../../lib/claim_lease"
 # into a DEADLOCK: the desk cannot be reclaimed, cannot be taken, and the work inside
 # it is invisible to every sweep. A lapsed lease is recoverable; this is not.
 #
-# WHY ONLY ONE LANE HAD AN ANSWER. The BUILD lane already compensates —
-# bin/lib/build_claim_renewer.rb's third condition runs `ClaimLease.abandoned?` on
-# every beat (desk mtimes + holder-scoped board progress + gate-in-flight). The
+# WHY THE LANES DIFFERED. The BUILD lane (retired in devops-v3: the desk is the
+# build claim) ran `ClaimLease.abandoned?` on every beat. The
 # REVIEW lane compensates with a shortened lifetime cap. The RELEASE and SHIFT lanes
 # compensate with NOTHING: they pass a bare `ShiftRenewer.run` whose only brake short
 # of the 12-hour safety cap is the anchor check above. That asymmetry is not a
@@ -212,13 +210,8 @@ module AnchorHeartbeat
   # working session in a 3_112-gap corpus went 59.9 minutes, against a bound of
   # 187.5.
   #
-  # There is precedent for this reuse, and it is looser than it reads:
-  # BuildClaimRenewer::DESKLESS_LIFETIME_SECONDS is literally this same constant,
-  # but `lifetime_for(desk:)` passes it as a max_lifetime — a TOTAL BUDGET from a
-  # fixed origin, which kills a healthy desk-less builder at 3h07m no matter how
-  # busy it is. IDLE_AFTER_SECONDS is a SLIDING WINDOW that resets on every
-  # narration write. Same argument, different mechanism, and this use is the more
-  # forgiving of the two — so the looseness errs toward HOLD.
+  # IDLE_AFTER_SECONDS is a SLIDING WINDOW that resets on every narration write,
+  # so a busy session never reaches it — the looseness errs toward HOLD.
   #
   # WHAT IT COSTS, stated plainly: an anchor whose session goes quiet for longer than
   # this while genuinely working loses its lease. The lease then lapses on the
@@ -331,19 +324,10 @@ module AnchorHeartbeat
   # unattended two minutes in.
   #
   # +subject+ is the lane's own noun ("assembler claim", "shift", "review").
-  #
-  # +fallback+ names the ONE thing that might still renew it, for the single lane
-  # where that is true: the BUILD claim is also renewed by bin/statusline. It is a
-  # parameter rather than a sentence in three of the four messages because a claim
-  # that says "unless a status line renews it" in a HEADLESS run is not a caveat, it
-  # is a false reassurance — a headless agent shell paints nothing, which is the
-  # whole reason the detached renewer exists (bin/lib/build_claim_renewer.rb).
-  def unanchored_notice(subject:, ttl_seconds:, fallback: nil)
-    tail = fallback ? " Only #{fallback} can renew it now, and only while that is running." : ""
-
+  def unanchored_notice(subject:, ttl_seconds:)
     "no agent process to anchor a renewer to — NOTHING will renew this #{subject}, " \
       "so it lapses in ~#{ClaimLease.humanize_age(ttl_seconds)} and the rest of this run is " \
       "UNPROTECTED. Continuing anyway: the claim guards against a second conductor, " \
-      "it is not required for this run to be correct.#{tail}"
+      "it is not required for this run to be correct."
   end
 end

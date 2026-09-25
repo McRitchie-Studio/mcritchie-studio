@@ -662,7 +662,7 @@ end
     FileUtils.mkdir_p(File.join(hub, "config"))
     FileUtils.cp(SCRIPT, File.join(hub, "bin", "session-preflight"))
     FileUtils.cp_r(File.join(ROOT, "bin", "lib"), File.join(hub, "bin", "lib"))
-    # AND THE REPO'S lib/, because bin/lib REACHES BACK INTO IT: full_suite_gate.rb
+    # AND THE REPO'S lib/, because bin/lib REACHES BACK INTO IT: task_tree.rb
     # requires `../../lib/cert_evidence`, and it is pulled in the moment anything on
     # this path requires bin/lib/fast_lane (ci_status.rb does, for the absolute
     # remedy commands it composes). A "copied hub" missing lib/ is not a hub — it

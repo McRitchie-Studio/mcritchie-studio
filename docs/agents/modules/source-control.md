@@ -1,10 +1,10 @@
 # Source Control
 
-Everything an agent needs to push, open a PR, read CI, and merge — and to fix
-its own credential when that stops working. **The provider is currently GitHub**
-(the `McRitchie-Studio` org). This file is written so a second provider could be
-added without rewriting the workflow around it: the contract lives at the top,
-the GitHub specifics underneath.
+Everything an agent needs to push, open a PR, read CI, and merge, and to fix its
+own credential when that stops working. **The provider is GitHub** (the
+`McRitchie-Studio` org). The contract is at the top; the GitHub specifics are
+underneath. The rationale and measurements this page no longer carries are frozen
+verbatim in [`../archive/source-control-2026-09-25.md`](../archive/source-control-2026-09-25.md).
 
 ## ⛔ The standing rule: source-control auth is SELF-SERVICE
 
@@ -16,24 +16,12 @@ eval "$(bin/gh-auth-refresh --export)"
 ```
 
 That is the whole recovery. It resolves this session's lane, refreshes both
-stores, verifies by read-back, and prints the identity it installed — never the
-token.
+stores, verifies by read-back, and prints the identity it installed, never the
+token. A GitHub token is not Mr. McRitchie's to hand over: installation tokens are
+minted on demand, expire about hourly by design, and every lane re-mints its own.
 
-This rule exists because the general First Rule — *"ask Mr. McRitchie for
-approvals, **credentials**, product judgment, or external access"* — reads as
-though a GitHub token were his to hand over. **It is not.** Installation tokens
-are minted on demand from 1Password by a script built for exactly this, they
-expire about hourly by design, and every agent lane can re-mint its own. Handing
-that upward is the terminal chore the same rule forbids.
-
-The failure mode this replaces, observed repeatedly: an agent mid-`pr-review`
-hits `Bad credentials`, reads "credentials" as an escalation category, and stops
-a whole review wave to ask for a manual `gh auth login` — which, run as asked,
-**would not have worked** (see *The `gh auth login` trap* below).
-
-**Escalate only after** `eval "$(bin/gh-auth-refresh --export)"` has been run and
-its stderr read. If it fails, the useful report is *what it said*, not "I need
-GitHub auth."
+**Escalate only after** you have run it and read its stderr. Report *what it
+said*, not "I need GitHub auth."
 
 | Situation | Yours or his? |
 |-----------|---------------|
@@ -45,31 +33,23 @@ GitHub auth."
 
 ## Provider Policy
 
-- **One provider is active at a time**, and the ecosystem names it here. Today
-  that is GitHub. Repo-level facts (which repos exist, which ports they take)
-  stay in [`app-registry.md`](app-registry.md); 1Password item names, fields,
-  and attachments stay in [`credentials.md`](credentials.md).
+- **One provider is active at a time**, named here. Repo facts live in
+  [`app-registry.md`](app-registry.md); 1Password items in [`credentials.md`](credentials.md).
 - **Agents never hold a long-lived personal token.** Auth is a short-lived
-  credential minted per lane from a secrets store. A provider that cannot do
-  that does not meet the contract.
-- **Identity is per-lane, and the lanes are privilege boundaries** — the build /
-  review lane can open and merge PRs; the ship lane cannot, by design. A
-  provider must express that split as separate credentials, not as etiquette.
-- **Tools recover themselves.** Any script making a provider API call routes
-  through one mint-and-retry helper rather than growing its own. Adding a
-  provider means teaching that helper, not teaching N scripts.
-- **The workflow is provider-neutral**; only the transport is not. The branch
-  ladder (`accepted → release → main`), the gates, and the task lifecycle are
-  defined in [`../system/devops-cycle-design.md`](../system/devops-cycle-design.md)
-  and do not mention GitHub. Swapping providers should touch *this* file, the
-  credential scripts, and CI — not the SOPs.
+  credential minted per lane from a secrets store.
+- **Identity is per-lane, and the lanes are privilege boundaries**: build and
+  review can open and merge PRs; the ship lane cannot, by design.
+- **Tools recover themselves** through one mint-and-retry helper.
+- **The workflow is provider-neutral.** A second provider needs a credential
+  broker answering the `bin/gh-token` contract, a git credential helper, a
+  classifier entry in `bin/lib/gh_auth_retry.rb`, a CI adapter, and a section
+  here, and **no SOP edits**.
 
 ## GitHub — The Current Provider
 
-Since the **2026-07-29 org migration** every repo lives under the
-**McRitchie-Studio** org, and `git`/`gh` authenticate as one of **two GitHub
-Apps**. Fine-grained PATs are retired: they cannot call the check-runs API at
-all, which the CI gates read.
+Every repo lives under the **McRitchie-Studio** org, and `git`/`gh` authenticate
+as one of **two GitHub Apps**. Fine-grained PATs are retired: they cannot call the
+check-runs API the CI gates read.
 
 ### At a glance
 
@@ -98,15 +78,11 @@ The two items live in different vaults, read by different tokens: the agent's in
 ~/.zprofile.admin`). A ship session sources that profile **before** exporting
 `GH_APP_ITEM`; an ordinary agent shell cannot read the deployer at all.
 
-This is a **privilege boundary, not a preference.** A ship session that recovers
-its credential carelessly and installs the *agent* App has handed itself the
-merge grant the deployer is denied on purpose — which is precisely what the old
-recovery advice did. `bin/gh-auth-refresh` honours `GH_APP_ITEM`, so the two
-legs cannot disagree.
-
-Grants above were read 2026-08-12 from `GET /app/installations`. If a
-`not accessible by integration` ever contradicts this table, re-read it there
-rather than trusting the table.
+This is a **privilege boundary, not a preference.** A ship session that installs
+the *agent* App has handed itself the merge grant the deployer is denied.
+`bin/gh-auth-refresh` honours `GH_APP_ITEM`, so the two legs cannot disagree. If
+a `not accessible by integration` ever contradicts the table, re-read the grants
+from `GET /app/installations`.
 
 ### How the two tools are wired — differently
 
@@ -115,7 +91,7 @@ confusion here.
 
 | Tool | Wiring |
 |------|--------|
-| **`git`** (https push/fetch) | The global credential helper `bin/gh-app-git-credential` answers from the **shared session** `bin/gh-token` holds, and mints only on a cache miss. Nothing to refresh BY HAND — a token git rejects comes back to the helper as `erase`, which retires that one session so the next call mints once. (It minted per call until 2026-08-29; that cost three 1Password reads per git operation and once spent the daily quota.) |
+| **`git`** (https push/fetch) | The global credential helper `bin/gh-app-git-credential` answers from the **shared session** `bin/gh-token` holds, and mints only on a cache miss. Nothing to refresh by hand: a token git rejects comes back as `erase`, which retires that session so the next call mints once |
 | **`gh`** (and any API caller) | Reads an ambient credential. **Goes stale hourly.** This is the one you fix |
 
 Wire the git leg once, globally. **Point it at the INSTALLED helper, never at
@@ -128,33 +104,19 @@ git config --global --replace-all credential."https://github.com".helper \
   "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential" '/gh-app-git-credential$'
 ```
 
-Both halves of that command are load-bearing, measured 2026-09-14 on an isolated
-copy of the real `~/.gitconfig`. `[credential "https://github.com"]` already holds
-TWO values there — an empty reset, then the in-tree path — so a plain
-`git config … helper "<path>"` exits 5 with *cannot overwrite multiple values
-with a single value*, and a bare `--replace-all` collapses both, dropping the
-empty reset that stops the generic `[credential] helper = osxkeychain` answering
-github.com. The value-pattern matches only this helper's own lines, wherever they
-point, so running the command again converges on one value instead of appending a
-second. The installer is the source: `bin/lib/credential_helper_install.rb`.
+Both halves are load-bearing. `--replace-all` is needed because the real
+`~/.gitconfig` holds two values there (an empty reset, then the helper), and a
+plain set exits 5. The value-pattern keeps the empty reset that stops
+`osxkeychain` answering github.com, and makes a re-run converge on one value.
+Source: `bin/lib/credential_helper_install.rb`.
 
-> **Why not `<repo>/bin/gh-app-git-credential`?** Because that path is inside a
-> WORKING TREE, and a working tree moves. `git checkout` does not rewrite a file
-> in place — it unlinks the path and creates it afresh — so while the hub
-> primary moves, the helper briefly does not exist, and a `git push` landing in
-> that window dies with `gh-app-git-credential: No such file or directory`.
-> Measured four times on 2026-09-10 across three sessions, once with the
-> helper's mtime matching the push to the second while the primary moved
-> fbae68f0 → 50cfea07. `bin/install-git-credential-helper` copies the helper's
-> whole closure into `~/.mcritchie/git-credential/versions/<digest>/` and points
-> a stable `current` symlink at it, so no checkout can take it away.
->
-> It is a SNAPSHOT, so it can go stale. `bin/install-git-credential-helper
-> --check` reports the installed digest, whether it matches this repo, and
-> whether git is wired to it; re-run the installer after any change to
-> `bin/gh-token`, `bin/gh-app-git-credential`, or anything they reach. Nothing
-> in that command edits `~/.gitconfig` — it prints the one-line change and its
-> revert, and you run them.
+> **Why not `<repo>/bin/gh-app-git-credential`?** A working tree moves: `git
+> checkout` unlinks and recreates files, so a push during a checkout dies with
+> `No such file or directory`. The installer copies the helper's closure into
+> `~/.mcritchie/git-credential/versions/<digest>/` behind a stable `current`
+> symlink. It is a SNAPSHOT, so run `bin/install-git-credential-helper --check`
+> and re-install after any change to `bin/gh-token` or the helper. The installer
+> never edits `~/.gitconfig`; it prints the change and its revert.
 
 ### Three stores, and they rank
 
@@ -165,21 +127,17 @@ second. The installer is the source: `bin/lib/credential_helper_install.rb`.
 3. the stored fallback
 
 `bin/gh-token`'s cache (`<projects>/.agents/github-tokens.json`) is a **fourth,
-separate** thing — the broker's two-slot cache, which minting refreshes. **None
-of these refresh each other**, which is why an interactive `gh` goes stale
-roughly hourly while the broker cache reads perfectly fresh, and why "I just
-minted a token" and "`gh` works" are different claims.
+separate** store. **None of these refresh each other**, so "I just minted a
+token" and "`gh` works" are different claims.
 
 `eval "$(bin/gh-auth-refresh --export)"` is the form that repairs **both** the
 keyring and this shell's `GH_TOKEN`. Drop `--export` and it refreshes only the
 keyring, then **exits 3** if a set `GH_TOKEN` still shadows the result — because
 for that session nothing was actually fixed.
 
-**`eval` hides the exit code — read stderr.** `eval "$(…)"` reports the `export`
-builtin's status, not the command's, so the 0/1/3 contract is invisible in the
-very form prescribed here. If nothing was exported, it failed: `eval` of an empty
-string succeeds silently and leaves the stale token in place. The command says
-what happened on **stderr** either way.
+**`eval` hides the exit code — read stderr.** `eval "$(…)"` reports the
+`export` builtin's status, and `eval` of an empty string succeeds silently. If
+nothing was exported, it failed; the command says what happened on **stderr**.
 
 ### Symptom → fix
 
@@ -195,44 +153,27 @@ that matters is *what else*.
 | **`gh auth login` prompt / "requires authentication"** | No accepted credential reached GitHub at all | Confirm 1Password is unlocked: `op whoami` |
 | **Broker says fresh, GitHub still refuses** | The cache is **age-based**; a *revoked* token still reads as fresh | `bin/gh-auth-refresh --force` bypasses the cache |
 
-**The liveness probe is `gh api rate_limit`, NOT `gh api user`.** An App
-installation token **cannot call `/user` at all** — Apps are forbidden from it by
-design — so a perfectly healthy token answers `403 Resource not accessible by
-integration` there. A 403 on `/user` **CONFIRMS** App auth; it does not diagnose
-a fault, and reading it as one sends you chasing a grant that cannot exist.
+**The liveness probe is `gh api rate_limit`, NOT `gh api user`.** An App token
+cannot call `/user` at all, so a healthy token answers `403 Resource not
+accessible by integration` there. A 403 on `/user` CONFIRMS App auth.
 
 ### The `gh auth login` trap
 
-> **Never pipe the broker into `gh auth login`.** The retired advice was
-> `bin/gh-token | gh auth login -h github.com --with-token`, and it is broken in
-> exactly the configuration these docs create:
->
-> 1. **It cannot run when `GH_TOKEN` is set.** `gh` refuses to store a credential
->    while `GH_TOKEN` is in the environment — exit 1, keyring untouched (measured
->    on gh 2.92.0). The one instruction a blocked agent was handed is refused
->    outright, and re-running never helps.
-> 2. **Even when it runs, it fixes the wrong store.** `GH_TOKEN` outranks the
->    keyring, so a session with an expired export keeps sending the expired token
->    no matter how fresh the keyring becomes.
-> 3. **It crossed a privilege boundary.** It ignored `GH_APP_ITEM`, so a **ship**
->    session recovering this way installed the **agent** App.
+> **Never pipe the broker into `gh auth login`.** It cannot run while `GH_TOKEN`
+> is set (`gh` refuses to store a credential then). Even when it runs, it fixes
+> the keyring, which `GH_TOKEN` outranks. And it ignores `GH_APP_ITEM`, so a ship
+> session recovering this way installs the **agent** App.
 
-This is also why *asking Mr. McRitchie to run `gh auth login`* is not a fallback:
-it is the same broken step, executed by a more expensive operator. `gh auth
-status` is likewise not safe to paste into a transcript — it prints a leading
-token fragment by default.
+So *asking Mr. McRitchie to run `gh auth login`* is not a fallback either. `gh
+auth status` is not safe to paste into a transcript: it prints a token fragment.
 
 ### What recovers automatically, and what does not
 
 **Tools should not need a manual refresh.** `bin/lib/gh_auth_retry.rb` classifies
-an auth refusal and `bin/gh-token` supplies the replacement, giving any caller
-one mint-and-retry, each recovering **as its own lane**. `bin/ship`,
-`bin/pr-review`, and `bin/lib/ci_status.rb` (every CI read the gates make) route
-through it.
-
-So: **if a *tool* stops on auth, that tool is missing the wiring** — that is a
-bug in the tool, not a chore for the operator. The manual refresh is for an
-interactive `gh` in a terminal, and for the seam where an agent runs `gh` by hand.
+an auth refusal and `bin/gh-token` supplies the replacement, one mint-and-retry per
+caller, each in its own lane. `bin/ship`, `bin/pr-review`, and
+`bin/lib/ci_status.rb` route through it. **If a *tool* stops on auth, that tool is
+missing the wiring**: a bug, not a chore. The manual refresh is for a hand-run `gh`.
 
 ### Secret hygiene
 
@@ -250,10 +191,8 @@ interactive `gh` in a terminal, and for the seam where an agent runs `gh` by han
 
 ## Usage In The Standard Workflow
 
-Where source control actually shows up in a normal task, and who does what. The
-authority for the lifecycle itself is
-[`../system/devops-cycle-design.md`](../system/devops-cycle-design.md); this is
-the transport view.
+The transport view of a normal task. The lifecycle itself is
+[`../system/devops-cycle-design.md`](../system/devops-cycle-design.md).
 
 | Step | Command | Lane | Identity |
 |------|---------|------|----------|
@@ -268,28 +207,30 @@ the transport view.
 Two rules that are about source control, not process:
 
 - **Feature PRs target `accepted`.** Never `release`, never `main`. `bin/ship`
-  pins the base for you — except on a DELIBERATE STACK, where the base is another
-  OPEN PR's head. There `bin/ship` leaves the base alone and `bin/pr-review`
-  refuses to merge, both naming the parent, because retargeting a stack moves what
-  the PR merges without moving its head. A base PROVEN unclaimed (a merged parent, a
-  closed one, a deleted branch, `release`, `main`) still self-heals — but the two
-  differ on DOUBT, and deliberately: where the guard cannot prove either way (an
-  unreadable probe, a failed base read, an empty base), `bin/ship` repairs and
-  `bin/pr-review` REFUSES, because review's next step is a merge.
+  pins the base, except on a DELIBERATE STACK (the base is another OPEN PR's
+  head), where it leaves the base alone and `bin/pr-review` refuses to merge. On
+  a base it cannot judge, `bin/ship` repairs and `bin/pr-review` REFUSES, because
+  review's next step is a merge.
 - **A pushed branch preserves code; `main` does not.** `main` is for shipped
   integration, not backup.
 
 ### The commands, in one place
 
 ```bash
+eval "$(bin/gh-auth-refresh --export)"      # fix this session's credential; read its stderr
 source ~/.zprofile.admin                    # ship lane only: load the admin 1Password token
-eval "$(bin/gh-auth-refresh --export)"      # fix this session's credential
-bin/gh-auth-refresh --identity deployer     # force the ship identity
+export GH_APP_ITEM=github.mcritchie-deployer  # ship lane only, BEFORE the push
 bin/gh-auth-refresh --force                 # bypass the broker cache (revoked token)
 bin/gh-token --status                       # cache state; prints NO token
 gh api rate_limit                           # is the credential live?
 op whoami                                   # is 1Password unlocked?
 ```
+
+Do not install the deployer into `gh` with `bin/gh-auth-refresh --identity
+deployer`: the script accepts the flag, but the deployer App has no
+`pull_requests` grant and `bin/release` calls `gh pr`, so the next PR call fails.
+The two ship-lane lines above are the whole deployer fix
+([`token-session.md`](token-session.md#the-deployer-lane--self-service-on-a-provisioned-machine)).
 
 ## Commit Authorship — which soul `git log` names
 
@@ -301,9 +242,6 @@ and the two are unrelated. The soul is always the **task's `devops.built_by`**
 Carl <carl@mcritchie.studio>      # name titleised from the slug; local part IS the slug
 ```
 
-The email's local part is the soul slug, so `git log --format=%ae` joins straight
-to the board's author set with no mapping table.
-
 It reaches a commit through **two layers**, because a desk commits by two paths:
 
 | Commit path | Identity comes from | Set by |
@@ -311,14 +249,9 @@ It reaches a commit through **two layers**, because a desk commits by two paths:
 | `bin/ship`'s 1/8 commit | The environment (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`), which outranks every config file | `CommitIdentity.commit!`, from `built_by` at that moment |
 | Every other desk commit: your own mid-build commits, a merge-forward, a rebase | The **desk's own** config file, `.git/worktrees/<desk>/config.worktree` | `bin/agent-worktree new --soul <soul>`, which `bin/task begin --agent <soul>` passes |
 
-**Layer 2 exists because layer 1 covers one commit.** Measured on turf-monster's
-`origin/accepted`, 2026-09-07 to 2026-09-16: 14 commits read `Steffon
-<steffon@mcritchie.studio>` (layer 1) while **131 commits and 50 merges** read
-`Steffon (Claude)`, a shared default that every desk's hand commits inherited,
-whoever the builder was. On 2026-09-15 a reviewer read that default as authorship
-and reasoned wrongly from it. The default was removed from
-`/Users/alex/projects/turf-monster/.git/config` on 2026-09-16 (the old values are
-on the [task record](https://mcritchie.studio/tasks/turf-monster-git-identity-wrong)).
+**Layer 2 exists because layer 1 covers one commit.** Before it, desk hand
+commits inherited a shared repo default (`Steffon (Claude)` on turf-monster), and
+a reviewer read that default as authorship.
 
 **`bin/task begin` keeps the two layers in step.** It stamps the desk from
 `--agent` as it is cut, then reads the recorded `built_by` back after the claim and
@@ -337,27 +270,15 @@ building --actor <soul>`) repoints `built_by` but not the desk, so stamp it too:
 ```
 
 **A task that names no builder is not given one.** `bin/ship` says so and commits
-under the checkout's own identity, and `begin` leaves the desk unstamped. On this
-Mac that identity is the operator's global one (`Alex McRitchie
-<amcritchie@gmail.com>`), the same as every primary checkout. An unattributed
-commit that admits it is recoverable; one laundered under a guessed soul is not.
-
-**Why an unstamped commit does not simply fail.** Making git refuse would need an
-empty `user.name`, and that was measured and rejected: it breaks `git stash`, and
-git's own error tells the reader to run `git config --global user.name` (a write to
-the operator's file) or to drop `--global` and set the shared repo default (the
-defect above). The loud signal lives in `new` and `begin`, where the printed fix is
-the right one.
+under the checkout's own identity (the operator's global one), and `begin` leaves
+the desk unstamped. An unattributed commit that admits it is recoverable; one
+laundered under a guessed soul is not.
 
 **Never a plain `git config user.name` in a desk.** Without `--worktree` that write
-lands in the shared `.git/config` (config resolves through `--git-common-dir`) and
-renames every desk in the repo at once. That is how turf-monster's default got
-there. `bin/agent-worktree identity` is the only sanctioned writer. It refuses a
-primary checkout, a value that is not a soul slug, and a repo the switch would
-change behind someone's back: shared config carrying `core.bare=true` or
-`core.worktree`, or a dormant `config.worktree` left in another desk (git ignores
-it while the extension is off, and would start honouring it). None of the eight
-repos carried either on 2026-09-16. Its only shared write is
+lands in the shared `.git/config` and renames every desk in the repo at once.
+`bin/agent-worktree identity` is the only sanctioned writer. It refuses a primary
+checkout, a value that is not a soul slug, and a repo whose shared config would
+change behind someone's back. Its only shared write is
 `extensions.worktreeConfig = true`, once per repo.
 
 **A worktree cut FROM a stamped desk inherits the stamp** (git copies
@@ -366,29 +287,11 @@ cut from a builder's desk therefore commits as the builder. A reviewer or conduc
 zapping from there names themselves per commit: see the
 [zap protocol](zap-protocol.md#reviewer--apply-a-bounded-zap-or-name-it).
 
-**Who reads git authorship, and what the stamp changes.**
-
-| Reader | What it reads | Effect of the stamp |
-|---|---|---|
-| `bin/reviewer-select` | The board's author set (`devops.built_by` + `devops.builders`), never git | None. No-self-review holds either way |
-| `bin/pr-review` fix-forward | The PR head SHA and the seated reviewers, not the commit author | None |
-| Sizing (`actual_size`) and the Alex learning heartbeat | TaskEvent cost and agent activities, not git | None |
-| `bin/lib/upstream_misfile.rb` | `git blame` for commit SHAs only | None |
-| `Github::CommitFetcher` builder monitor (`amcritchie`, cohort `ai_builder`) | GitHub's `author.login`, which GitHub resolves from the commit **email** | **Fewer commits counted.** `amcritchie@gmail.com` resolves to `amcritchie`; `<soul>@mcritchie.studio` resolves to no account (measured: turf `8b270728` → `amcritchie`, `2636e534` → null). Desk hand commits on the public repos stop counting toward that monitor, as ship commits already had |
-| People reading `git log` / `git blame` | Author name and email | Now names the claiming soul instead of a shared default |
-
-This is **read-only** with respect to `devops.builders`, the author set
-`bin/reviewer-select` excludes. Nothing here writes the board, so it can neither
-forge that set nor silence the refusal an incomplete one raises.
-
-## Adding A Second Provider
-
-The seam is deliberately narrow. A new provider needs: a credential broker
-answering the `bin/gh-token` contract (per-lane, short-lived, cached on disk
-because agents are separate processes), a git credential helper, a classifier
-entry in `bin/lib/gh_auth_retry.rb`, a CI adapter, and a section in this file.
-It should need **no SOP edits** — if it does, a SOP has leaked transport detail
-and that is the thing to fix first.
+**Only people and one monitor read git authorship.** `bin/reviewer-select`,
+fix-forward, sizing, and the learning heartbeat all read the board, never git, so
+the stamp cannot forge or silence the author set review excludes on. The one
+machine reader is the `Github::CommitFetcher` builder monitor, which counts fewer
+commits, since `<soul>@mcritchie.studio` resolves to no GitHub account.
 
 ## Where To Read Next
 

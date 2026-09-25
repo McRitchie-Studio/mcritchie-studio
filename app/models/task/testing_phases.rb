@@ -84,7 +84,7 @@ class Task
     }.freeze
     PHASE_KEYS = PHASE_DEFINITIONS.keys.freeze
 
-    # The checkpoint NAME bin/full-suite-check bookends the local-certification phase
+    # The checkpoint NAME the (since retired) local cert bookended its testing phase with
     # with (record_checkpoint_event name → TaskEvent#to_stage).
     CERT_CHECKPOINT = "cert"
     CERT_FINISHED = %w[completed finished failed].freeze

@@ -71,4 +71,4 @@ Shannon has an eye. Sees the half-pixel gap nobody else notices, gets the spacin
 
 - [`git-protocol.md`](../../system/git-protocol.md) — branch naming, send-back consumption, ethics
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — `dev_size` honestly, blind to others
-- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — UI work rarely needs the migration lane, but flag it to Carl if my partial change requires one
+- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — UI work rarely needs a migration, but I flag `--requires-migration` and tell Carl if my change requires one

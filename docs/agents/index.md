@@ -1,46 +1,138 @@
 # McRitchie Agent Entry
 
-This is the canonical source for the generated projects-root `AGENTS.md`.
-McRitchie Studio owns this file so the agent operating model survives a wiped local machine and can be restored from GitHub.
+The map every session loads (source: `mcritchie-studio/docs/agents/index.md`). Read
+it once, then drill into the page your work needs; each rule is one line with a link
+to its detail. The long form it replaced is frozen verbatim in
+`mcritchie-studio/docs/agents/archive/entry-docs-2026-09-24.md`.
 
-Paths below are written for the generated file at `/Users/alex/projects/AGENTS.md`.
+## Who is who
+
+**Alex** (Mr. McRitchie) is the human owner. **Xan** (slug `xan`) is the
+orchestrator agent; the seat was slugged `alex` until 2026-09-24. Older docs say
+Mr. McRitchie for the owner; read both names as him.
+
+| Soul | Seat | Soul docs |
+|------|------|-----------|
+| Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` | `docs/agents/agents/pokemon/` |
+| Xan | Orchestrator; runs focus sessions; the documentation reviewer | `docs/agents/agents/xan/` |
+| Carl | Lead Architect; primary reviewer of code PRs; merges into `accepted` | `docs/agents/agents/carl/` |
+| Shannon · Jasper | Review lights for UI · on-chain | `docs/agents/agents/<soul>/` |
+| Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
+| Steffon | Infrastructure light; runs `production-deploy`, credentials, desks | `docs/agents/agents/steffon/` |
+| Turf Monster | The Turf Monster app's operator: scores, contests, markets | `docs/agents/agents/turf_monster/` |
+| Rex · Mason · Mack | Marketing strategy (CMO) · brand voice and launches · general worker | `docs/agents/agents/<soul>/` |
 
 ## SOP Invocation Standard
 
 SOPs are first-class registered commands in this workspace. The set is finite,
 the names are stable, and every SOP name maps to a repo file. Do not treat an SOP
 name as ordinary prose, generic GitHub triage, or a broad workflow request.
+McRitchie operating procedures are normal repo docs, not installed skills.
 
-McRitchie operating procedures are normal repo docs, not installed skills. When
-Mr. McRitchie names an SOP or heartbeat act such as `pr-review`, `qa-release`,
-`production-deploy`, `clean-up`, `process-backlog`, `work-backlog`, `slack-capture`,
-`gmail-capture`, `credential-issues`, `form-fill`, `focus-session`, `arbitrate-block`, or `full-cycle`, resolve that phrase through the SOP registry and directory
-convention here, read the mapped SOP, then execute it.
-
-SOP locations:
-
-- Agent heartbeats live at
-  `mcritchie-studio/docs/agents/agents/<agent>/HEARTBEAT.md`.
-- Agent-specific SOPs live at
-  `mcritchie-studio/docs/agents/agents/<agent>/sops/<sop>.md`.
+- Heartbeats live at `mcritchie-studio/docs/agents/agents/<agent>/HEARTBEAT.md`.
+- Agent-specific SOPs live at `mcritchie-studio/docs/agents/agents/<agent>/sops/<sop>.md`.
 - Shared primitives live under `mcritchie-studio/docs/agents/modules/`.
 
-Invocation rule:
+When Alex names one (`pr-review`, `qa-release`, `production-deploy`, `focus-session`,
+`clean-up`, …), open your activity, resolve it in the registry tables at the end of
+this map, and read the mapped HEARTBEAT.md or SOP file before queue inspection,
+`--help` probing, GitHub PR discovery, or tool/plugin selection. Then execute it.
+Each SOP stands alone; a design doc is background, never an execution path.
 
-1. Open the required trajectory activity.
-2. Resolve the invocation in the finite registry below, including legacy aliases.
-3. Read the mapped `HEARTBEAT.md` or SOP file before queue inspection,
-   `--help` probing, GitHub PR discovery, or tool/plugin selection.
-4. Execute the procedure in that file. If it points to a shared primitive, read
-   that primitive next.
+## The pipeline
 
-SOP files stand alone. Each SOP is executable start-to-finish from its own
-file — every command, gate, and decision rule is inline. An SOP may reference
-only: (1) other registered SOPs at composition seams, (2) a registered shared
-primitive such as `modules/pr-review-sop.md`, exactly one hop, and (3) an
-explicitly marked "Background — not needed to execute" section. Design docs
-such as `system/devops-cycle-design.md` are architecture — the why, never a
-required execution path. Do not follow a Background reference to run an SOP.
+```text
+Alex + focus session ──▶ Pokémon builder ──PR green──▶ reviewer ──merge──▶ (accepted)
+  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Xan for prose*
+(accepted) ──Avi runs qa-release──▶ release, QA green ──Steffon runs production-deploy──▶ (main)
+                                                         within Alex's 30-minute window
+```
+
+- \* Xan alone reviews prose only on the focus-session path. The `pr-review` sweep
+  still runs Carl plus a light on every PR.
+- Task stages: **Build** `designed → building → submitted` (the builder), then
+  **Deploy** `submitted → reviewed → assembled → shipped`. `blocked` needs
+  attention; `archived` is terminal. Code walks `accepted` → `release` → `main`.
+- Alex's operator windows: 10 min for a UI approval, 20 for an escalation, 30 for
+  production authority (`config/release_builder.yml`).
+- Detail: `docs/agents/system/devops-v3-design.md` and `docs/agents/system/devops-cycle-design.md`.
+
+## The commands that matter
+
+All live in the hub, `/Users/alex/projects/mcritchie-studio/bin`. **The path picks
+the SCRIPT, the cwd picks the TREE**: name the hub's script, stand in the desk.
+
+| Command | What it does |
+|---------|--------------|
+| `bin/task begin --title "Three To Five Words" --agent <soul> --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, claims it, preflights |
+| `bin/ship-wait <task-slug> --launch -m "Commit message"` | Runs `bin/ship` and waits: commit, push, PR into `accepted`, CI, `bin/dor-check`, `submitted` |
+| `bin/task show <slug> -v` · `bin/task list --stage <stage>` | Read one task · read the board |
+| `bin/release status` | Where the current release stands |
+| `bin/agent-activity start\|next\|end` | Narrate your work (rule 1 below) |
+
+A cold ship takes about 12 minutes, so run it in the background with `bin/ship-wait`;
+do not hand-roll a pgrep watcher. `bin/fast-check` is an optional one-minute
+pre-flight, and the cert gate (test-only included) reads only the PR's settled green CI.
+Where each command may run, the author set, and the long form:
+`docs/agents/modules/fast-lane.md`.
+
+## First Rules
+
+1. **Narrate.** Open a `bin/agent-activity` Explore activity before your first tool call; keep one per unit of work. Detail: `docs/agents/modules/heartbeats.md`.
+2. **Task before code.** Any diff, even a small one, starts with `bin/task begin`; there is no size exemption. Detail: `docs/agents/modules/building-sop.md`.
+3. **Desks, not primaries.** Edit only in your task's worktree; primary checkouts are for reading and deploys. Detail: `docs/agents/modules/worktrees.md`.
+4. **GitHub auth is self-service.** On a 401, run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"`; never ask Alex for `gh auth login`. Detail: `docs/agents/modules/token-session.md`.
+5. **Never merge, deploy, or push `main`** unless Alex assigned you that lane in this session. `bin/ship` stops at `submitted`.
+6. **Concurrency cap: 5 at a time.** At most five agents, dynos, or board-writing commands in flight; the board database has 20 connections.
+7. **No secrets in output.** Use named 1Password references and purpose-built scripts. Detail: `docs/agents/modules/credentials.md`.
+8. **No terminal chores for Alex.** Run safe commands yourself; ask him only for approvals, product judgment, or a credential only he holds.
+
+Namespace scratch writes by task slug (`ship-<task-slug>.log`); sibling agents share one scratchpad.
+Correct Alex's spelling and grammar as you transcribe, by *The Elements of Style*.
+
+## Talking to Alex
+
+1. **Idea first:** lead with the outcome in plain words, three sentences at most.
+2. **Then specifics:** a table or list with every handle: task URL, slug, path, branch, PR URL, command.
+3. **Labels:** `Task:`, `Magic Link:` (the stack's `/_studio/local_review?return_to=/<path>` mint URL), `Local Demo:`, `Local Inbox:`.
+4. **Name work by its task slug**; PR numbers and SHAs are plumbing.
+5. **End a chat hand-back with the in-flight roster**, stamped in Denver time, even when nothing runs.
+
+Detail: `docs/agents/modules/communication-style.md`.
+
+## Repos
+
+| Repo | Role | Local port |
+|------|------|------------|
+| `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
+| `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
+| `rolio` | Release-managed standalone with reserved satellite range | 3300 |
+| `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3400 |
+| `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
+| `solana-studio` | Ruby Solana primitives | none |
+| `turf-vault` | Anchor smart contract | none |
+
+Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/ports-and-processes.md`.
+
+## Where to drill in
+
+| When your work touches | Read |
+|------------------------|------|
+| Every doc, by topic (the full index) | `docs/agents/start-here.md` |
+| The ecosystem | `docs/ECOSYSTEM.md` |
+| **Build**: a task, from claim to `submitted` | `docs/agents/modules/building-sop.md`; command rules in `docs/agents/modules/fast-lane.md` |
+| Holding an epic | `docs/agents/modules/focus-session.md` |
+| The board | `docs/agents/modules/devops-task-board.md` |
+| **Review**: a PR, from claim to merge | `docs/agents/agents/carl/sops/pr-review.md`; the reviewer's own steps in `docs/agents/agents/carl/sops/pr-review-primary.md` |
+| **Release**: `accepted` → QA → production | `docs/agents/agents/avi/sops/qa-release.md`, `docs/agents/agents/steffon/sops/production-deploy.md`, `docs/agents/modules/gates/` |
+| **Desks and infra** | `docs/agents/modules/worktrees.md` |
+| Tests | `docs/agents/modules/testing.md` |
+| **Credentials** and GitHub auth | `docs/agents/modules/token-session.md` (a broken session), `docs/agents/modules/source-control.md` (how auth works), `docs/agents/modules/credentials.md` (1Password) |
+| **Communication**: reporting to Alex | `docs/agents/modules/communication-style.md` |
+| **Learning**: grades and insights | `docs/agents/agents/xan/sops/grade-events.md` |
+| History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
+
+## SOP Invocation Table
 
 | Invocation | Owner | Read first |
 |------------|-------|------------|
@@ -98,782 +190,10 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 
-For `pr-review`, read Carl's `pr-review.md` and run the bounded review it
-describes. A review session (a Pokémon orchestrator) spins one Carl per PR;
-there is no Avi supervisor. Each Carl runs the deep review, summons a domain
-light at his discretion, merges approved work onto `accepted`, and stops at
-`reviewed` (never `release`/`main`, never a deploy); Avi's `qa-release` sweep
-promotes `accepted → release` plus QA, and Steffon's `production-deploy` ships
-`release → main`.
-
-## First Rules
-
-- Work from `/Users/alex/projects` unless Mr. McRitchie gives a different root.
-- Treat `mcritchie-studio` as the documentation and bootstrap anchor.
-- Keep repo-specific facts in the owning repo, but keep cross-repo operating rules here.
-- **Alex** is the owner/operator; **Xan** is the orchestrator agent. In agent
-  docs and handoffs, **Xan** (slug `xan`) means the orchestrator; **Alex** means
-  Mr. McRitchie. Older docs still say **Mr. McRitchie** for the owner — that
-  sweep lands with the phase-5 docs restructure, so read both names as him. The
-  seat was slugged `alex` until 2026-09-24; `Task::SOUL_ALIASES` reads the old
-  slug as `xan` for one release.
-- When editing active docs, fix nearby ambiguous references you notice:
-  **Xan** for the agent/orchestrator, **Alex** (or **Mr. McRitchie**) for the
-  owner/operator. Leave historical/archive snapshots alone unless you are
-  already promoting or correcting that file.
-- Do not print secrets. Use named 1Password references and purpose-built scripts.
-- Do not hand Mr. McRitchie terminal chores. Run safe commands yourself; ask Mr.
-  McRitchie for approvals, product judgment, external access, or a credential
-  only he can supply.
-- **Source-control auth is NOT one of those — it is SELF-SERVICE.** A stale
-  `gh`/`git` credential is yours to fix, in one command, and then keep going:
-  `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` — the hub's copy, so it
-  resolves from any desk. Installation tokens expire about
-  hourly BY DESIGN and every lane re-mints its own, so "I need you to run `gh
-  auth login`" is both the terminal chore this rule forbids and a step that
-  would not work (`gh` refuses to store a credential while `GH_TOKEN` is set).
-  Escalate only after running it and reading its stderr — then report what it
-  said. Full map:
-  `mcritchie-studio/docs/agents/modules/source-control.md`.
-- Prefer a concrete local result Mr. McRitchie can inspect: a URL, a diff, a
-  passing command, or a short audit.
-- For feature work, identify the feature being requested and accumulate
-  acceptance criteria until the agent and Mr. McRitchie are in sync on the
-  goal. Do not start implementation from a fuzzy feature request unless the
-  remaining ambiguity is low-risk and explicitly called out.
-- Worktrees are desks; primary checkouts are loading docks. If you will edit
-  code or app docs, create or enter an isolated worktree with an allocated port
-  before making changes unless Mr. McRitchie explicitly assigns you as the
-  deploy owner for that repo.
-- **The session scratchpad is shared — namespace every write.** Sibling agents
-  spawned from one session get the *same* scratch directory, so the obvious
-  filename is the dangerous one. Write `ship-<task-slug>.log`, never `ship.log`,
-  and put multi-file work under `scratchpad/<task-slug>/`. On 2026-09-01 two
-  ships shared `ship.log`, one truncated the other, and the agent reading the
-  mixed stream killed his own run believing it was his sibling's. Appending
-  (`>>`) is not the fix — it interleaves. For a pristine copy you mean to
-  restore — mutation testing, an `.orig`, a `.good` — use `bin/scratch-backup
-  save|restore` instead of `cp`: it namespaces the copy for you and REFUSES a
-  restore that does not match the receipt it took. A collided backup leaves no
-  hole to find, so you would otherwise learn about it by restoring someone
-  else's file. Full rule:
-  `mcritchie-studio/docs/agents/modules/worktrees.md`.
-- A pushed feature branch preserves code. `main` is for shipped integration,
-  not backup. Feature agents push their own branch and open a PR into `accepted`;
-  review merges it onto `accepted`, and Avi's `qa-release` sweep promotes
-  `accepted → release` for QA.
-
-## House Writing Style — correct Mr. McRitchie's copy
-
-Mr. McRitchie's prompts and drafts often arrive with spelling and grammar
-errors. Treat them as normal input, never as intent. The standing rules:
-
-- **Correct as you transcribe.** When his words head anywhere durable — UI
-  copy, emails, docs, task records, PR text — fix spelling, punctuation, and
-  grammar on the way through. This autonomy is standing: do not ask permission
-  for mechanical corrections, and never reproduce a typo into an app or doc.
-- **Mechanics only.** Correct the mechanics; keep his meaning, facts, and
-  voice. If a garbled phrase leaves the intent genuinely ambiguous, ask, and
-  list the readings you considered.
-- **The house guide is *The Elements of Style* (Strunk & White)** — Mr.
-  McRitchie's favorite book on writing well. Compose and correct by its
-  teachings: omit needless words; prefer the active voice; put statements in
-  positive form; use definite, specific, concrete language.
-- **Guardrails.** Style corrections never rename code identifiers, routes, or
-  API fields on their own; frozen archives and audit snapshots stay as
-  written; proper nouns and domain jargon stand. App-bound copy still rides
-  the DevOps cycle like any other change.
-
-## House Communication Style — reporting to Mr. McRitchie
-
-Mr. McRitchie reads slowly, but wants full specifics once an idea lands. Every
-operator-facing message (chat reply, handoff, task note, PR summary) carries
-**two layers, in order**; a chat hand-back adds a third:
-
-- **Layer 1 — the idea.** Lead with the outcome, in plain words, as if
-  explaining to a smart 13-year-old. One idea per sentence; each point a
-  sentence or less; three sentences is the ceiling before switching to a list.
-- **Layer 2 — the specifics.** A table or bulleted list with every handle he
-  needs to dive in: task URL, slug, file path, branch, PR URL, local URL +
-  port, function name, exact command. Never trade this layer away for brevity
-  — simple is not vague.
-- **Layer 3 — the in-flight roster.** *(Chat hand-backs only — a PR body has
-  no roster.)* The moment a turn ends and the ball is back in his court, print
-  what is still cooking: one row per live subagent, background command, ship,
-  or deploy, with a ten-cell `▰▱` meter, time elapsed, time left, and how firm
-  that number is — or, when it forecasts nothing, its condition. **Print it
-  even when nothing is running** — it then collapses to one line under a
-  swapped header, `🥱 Nothing In Flight: <time>`, so silence never means two
-  things. Stamp it in **Denver time**
-  (`TZ=America/Denver date "+%-I:%M %p %Z"`) so he can measure the drift
-  himself, and cap the block at 68 columns so the confidence mark never
-  truncates. It is the LAST thing in the message.
-
-  ```not-pasteable
-  🚀 In Flight: 2:14 PM MDT
-  ──────────────────────────────────────────────────────────────────
-  carl · review fix-cta-timing  ▰▰▰▰▱▱▱▱▱▱  4m in · ~6m left   rough
-  bin/ship restyle-in-flight…   ▰▰▰▱▱▱▱▱▱▱  3m in · ~9m left   firm
-  avi · qa-release sweep        ▱▱▱▱▱▱▱▱▱▱  queued on green CI
-  ──────────────────────────────────────────────────────────────────
-  ```
-- **Review handoffs lead with a review link.** Hand him the stack's own
-  in-request MINT URL, never a token you minted in a console
-  (`http://localhost:<port>/_studio/local_review?return_to=/<path>`, or
-  `bin/review-link /<path>` where it ships), and put it on a `Magic Link:` label
-  above `Local Demo:`. A console mint lands in the WRONG database on a desk and
-  bounces him to the sign-in wall. Recipe in the module below.
-- **Form factor:** prefer tables and bulleted lists over paragraphs; keep the
-  exact top-level labels (`Task:`, `Local Demo:`, `Local Inbox:`).
-- **Name work by its task slug.** The slug (`remove-prod-deploy-approval`) is the
-  operator's name for the work; a bare PR number (`#610`) is plumbing. PR
-  numbers, branches, and SHAs stay in layer 2, beside the slug they belong to.
-
-Full module: `mcritchie-studio/docs/agents/modules/communication-style.md`.
-
-## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
-
-This is how you work here: **as you work you MUST narrate your trajectory into
-activities — without being asked.** Narration is the default, not an add-on; a fresh
-session with no explicit prompt still narrates from its first real unit of work.
-Your raw tool-calls attribute server-side to whichever activity is currently open, so
-a session with no activities reads as a wall of raw tool calls instead of "Explore:
-find api issue → found the nil-guard". Do not wait to be told — **your FIRST
-activity opens BEFORE your first tool call**: an `Explore` (or `Plan`) "orient" activity —
-read the task, scan the code you'll touch — even on a small, pinpointed change. Go
-straight to `Edit` and your orientation strands in the "Unlabeled" bucket, so the
-"understand the task" beat is lost. Open the orient activity first, then keep the trail
-going to handoff.
-
-Open an activity at each natural work boundary:
-
-```bash
-bin/agent-activity start --category <Explore|Edit|Verify|Version|Workflow|Delegate|Clarify|Remote|Research|Plan> --reason "what am I doing"
-```
-
-When one unit of work ends and the next begins, roll the boundary in **one call**
-— close the prior activity with its result and open the next together:
-
-```bash
-bin/agent-activity next --outcome "what just happened" --category <C> --reason "what's next"
-```
-
-Close the final open activity when the work (or the session) is done:
-
-```bash
-bin/agent-activity end --outcome "what happened"
-```
-
-- `bin/atomic-event` remains a compatibility alias for existing hooks and older docs.
-- **Lead with orient** — your opening activity is `Explore`/`Plan` and opens BEFORE
-  any tool runs; nothing should land in "Unlabeled" at the top of a session.
-- **Keep activities meaningful** — one per unit of work, not one per tool call
-  (navigate `cd` **and** the `bin/agent-activity`/`bin/atomic-event` narration
-  calls themselves are dropped automatically; opening a new activity auto-closes
-  the prior one).
-- **Stamp the task on your first activity** — add `--task <slug>` to `start`/`next`
-  so the activity is task-attributed immediately, instead of a blank TASK until a
-  later `bin/task`/`bind-task` write lands. In a `feat/<slug>` worktree it's
-  inferred from the branch, so `--task` is mainly for a primary/conductor
-  checkout working a specific task.
-- **Always give a result** — every `next`/`end` records what actually happened
-  ("Explore: find api issue → found the nil-guard"), not just the intent; an
-  activity without a result is a wasted activity.
-- **Log the activity's key method when it has one** — add `--key-method "<code>"`
-  (+ optional `--key-lang bash|ruby|sql|js`) to `next`/`end` when the completed
-  activity had ONE load-bearing call worth copying — the line another agent (or the
-  operator) would rerun, e.g. `--key-method "User.find_by(email: ...)" --key-lang
-  ruby`. Most activities have none; skip it rather than invent one. It renders on the
-  heartbeat rows as a copyable chip with a language badge. (Raw bash actions get
-  theirs automatically — the capture hook logs each Bash call's command as its
-  `key_method` and its description as its goal `summary`, so keep writing good
-  Bash descriptions.)
-- Keep `--reason`/`--outcome` short (~4-7 words).
-- **It's non-fatal** — narration never blocks your work, and it powers the Xan
-  learning heartbeat (`/xan/heartbeat`). There is no reason to skip it.
-
-## DevOps Routing — read before writing ANY code
-
-If your work will produce a code diff — a feature, a bug, or a chore, **even a
-"small" one** — you are a Feature agent and you follow the cycle. There is **no
-size exemption**: "it's just a small change" is exactly when this gets skipped.
-
-### The fast lane — the DEFAULT path
-
-Two wrappers collapse the cycle's bookends into one command each. Reach for
-them first; the long form below is the fallback.
-
-```bash
-/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
-  --repo <app> --kind <kind> \
-  --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
-
-cd <desk>   #   ... the worktree begin printed; build there ...
-
-/Users/alex/projects/mcritchie-studio/bin/ship <task-slug> -m "Commit message"
-```
-
-**Name the hub's script; stand in the desk.** Every fast-lane command —
-`bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/full-suite-check`,
-`bin/dor-check` — lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A
-**satellite** desk (the table below names all five) carries none of them, so the bare
-`bin/ship` dies there as `nohup: bin/ship: No such file or directory` — instantly,
-and looking like a broken install rather than a wrong path. Only a **hub** desk
-has them, which is the whole reason the bare form reads as correct.
-
-The absolute path alone is NOT the remedy, because the path and the cwd answer
-different questions: **the path picks the SCRIPT, the cwd picks the TREE it acts
-on.** Both halves are load-bearing, so state both — and know that the fast lane's
-two writers disagree about what a wrong cwd costs you:
-
-- **The cert writers REFUSE.** `bin/fast-check` and `bin/full-suite-check` root at
-  the cwd's git toplevel and take `CertRootGuard#refusal`
-  (`bin/lib/cert_root_guard.rb`), so from the hub against a satellite task they
-  exit 1 — measured: *"this run roots at /Users/alex/projects/mcritchie-studio
-  (branch main), which is not <slug>'s tree — refusing to certify it."*
-- **`bin/ship` RE-ROOTS — loudly, not silently.** It reads the same assessment but
-  wants `:resolved_root` rather than the refusal, so when the task's desk is on
-  disk it prints `re-rooting at the task worktree <desk> (you ran from <cwd>)` and
-  carries on THERE. It dies only when no desk resolves — absent from disk, or a
-  multi-repo tie. Every gate it then runs re-verifies the root from its own cwd, so
-  a wrong re-root cannot survive to a recorded verdict. Do not read the cert
-  writers' refusal as ship's behaviour: ship's own comment says it "re-roots rather
-  than refuses when the task's worktree exists on disk — loudly."
-
-| Desk | Fast lane from that desk |
-|------|--------------------------|
-| `mcritchie-studio` | Hub-absolute **or** bare `bin/…` — a hub desk checks the scripts out, so both resolve |
-| `turf-monster` · `rolio` · `mcritchie-industries` · `tax-studio` · `chain-ops` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
-| `studio-engine` · `solana-studio` · `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add` at `<repo>/.worktrees/<slug>`, stamp it with hub-absolute `bin/agent-worktree identity <repo> <slug> <soul>` (a hand-cut desk gets no stamp and no `UNSTAMPED` warning), and run the handoff steps by hand. All three still get a cert; see below |
-
-Row 2 is the REGISTRY, not the machine: it names every satellite in
-`config/satellites.yml`, including `tax-studio`, which has no checkout yet. It is
-listed because the rule is about where the scripts live, and it will hold the day
-the repo lands.
-
-**Row 3 is a missing WORKTREE lane — NOT a missing cert lane. All three of these
-repos can be certified today.** `bin/task begin` cannot desk any of the three, so
-none of them gets `begin` or `ship`. But `bin/fast-check` carries a REGISTRY-GATE
-branch (`FullSuiteGate.registry_gated?` + `FullSuiteGate.release_check_cmd`): from a
-plain `git worktree add` desk, hub-absolute `bin/fast-check <task>` runs the repo's
-DECLARED gate as the whole mapped lane, skipping the Rails prepare lane that does not
-apply. Three repos declare one in `config/release_repos.yml`, and all three name the SAME
-thing — `bin/release-check`, a script that repo owns: **studio-engine** and
-**solana-studio** (under `gems:`, registered 2026-08-31) and **turf-vault** (under
-`apps:`, declared 2026-09-14 and repointed at its own script the same day). A registry row
-CAN declare a raw command chain instead, and turf-vault did for a day — but a chain
-in the hub is a copy of another repo's CI that drifts from it, so it is the unblock
-path, not the shape to copy.
-
-**Budget turf-vault's lane at FIVE lanes and 76s cold — not four and "~1s".**
-Measured 2026-09-22 against `origin/accepted` at `09cdfb3`: two Node lanes, then
-`cargo check`, `cargo clippy` and `cargo test`. A fresh tree pays **76s** (empty
-`target/`, crate cache warm); **1-2s** is the RE-RUN, and quoting only the warm
-number is what makes an honest lane look broken. The suite is **171 `node:test`
-cases** and **60 Rust tests**. But 171 is not 171 executed assertions: with no
-`node_modules`, three self-skip on absent runtime deps and the summary reads
-`pass 168 / skipped 3` — and those three print as `ok <n> … # SKIP`, which is
-pass-SHAPED, so a scan for `not ok` sees nothing wrong. Install the deps and it
-reads `pass 171 / skipped 0`. **Re-derive these figures; never re-copy them:**
-`bin/release-check --list` prints the lane table, and `npm run test:scripts` and
-`cargo test --workspace --locked` print their own totals. A count here with no
-command beside it is stale by default — this one was.
-
-**Read turf-vault from `origin/accepted`, never from the local primary.** On
-2026-09-22 that primary sat at `66ffff1` with no `bin/` directory at all, while
-`origin/accepted` carried the script at `09cdfb3` — so `ls bin/` "proves" the lane
-does not exist, contradicting the paragraph below. The read that answers it:
-`git -C /Users/alex/projects/turf-vault fetch origin && git show
-origin/accepted:bin/release-check`.
-
-**Never record a "no tests" skip for turf-vault.** It has a suite and now has a lane
-to run it. Until 2026-09-14 it had the suite but no lane, because this branch keyed on
-the `gems` SECTION rather than on the DECLARED command — and the docs routed readers
-to a task that had already shipped the repo's first CI workflow and been ARCHIVED. If
-a repo ever again hits `COULD NOT RUN` here, the remedy is a `release_check:` on its
-registry row, not a task to go and ask.
-
-**Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
-the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
-`bin/reviewer-select` reads to keep a soul off its own PR.
-Omit it and the selector fails CLOSED: it refuses to pick, the reviewer chooses a
-light by hand, and the no-self-review property goes unverified for that review.
-**If a second soul finishes the task, claim it again** (`bin/task move <task>
-building --actor <soul>`): the set accumulates, so both authors are excluded, and a
-handoff that names nobody makes the selector refuse rather than guess. Measured
-2026-08-28 — `built_by` blank on six consecutive tasks across one review sitting,
-two reviewers reporting the refusal and hand-picking.
-
-**THE BUILD CLAIM STAMPS THE AUTHOR SET — a create alone does not.** `--agent`
-writes two independent facts, and only one of them is what review reads:
-
-- **AUTHOR SET** (`devops.built_by` + `devops.builders`) — stamped by the build
-  CLAIM (`move <task> building`), which `begin` makes on BOTH forms. This is
-  what `bin/reviewer-select` excludes on. The claim is only the TRIGGER; the
-  soul it records comes from a PRECEDENCE CHAIN (`Task#builder_to_stamp`) —
-  **`--actor <soul>`** first, else `devops.persona`, else **the task's assigned
-  `agent_slug`**, the no-flag default that keeps a bare `bin/task move <task>
-  building` attributed. An existing `built_by` is KEPT, so only an explicit
-  `--actor` re-points a recorded builder.
-- **ASSIGNEE** (the `agent_slug` column) — written by a create body, or by
-  `bin/task update <slug> --agent <soul>`. **A resume does not write it**: the
-  resume branch builds no `top_body`, so `--agent` reaches the claim as
-  `--actor` and never lands on the column. That is a property of the code
-  path, not a policy of sparing top-level columns — the same resume PATCH
-  writes `dev_size` (`bin/task#renewal`, the PATCH body it builds).
-
-Measured 2026-09-08 on throwaway tasks — no single write sets both:
-
-```text
-bin/task create --agent avi           → assignee avi     · authors NOT STAMPED
-bin/task begin <slug> --agent avi     → assignee unset   · authors ["avi"]
-bin/task begin --title … --agent avi  → assignee avi     · authors ["avi"]
-```
-
-Every row above reaches the author set through `--actor` — both `begin` forms
-forward `--agent` to the claim — so none of them can exercise the `agent_slug`
-fallback. Measured 2026-09-08, the path that does:
-
-```text
-bin/task create --agent avi, then a BARE
-  bin/task move <slug> building       → assignee avi     · authors ["avi"]
-```
-
-The actor there is the session UUID and no persona is set, so `--actor` cannot
-fire and the stamp comes from `agent_slug` alone. So `assignee: unassigned
-builders: avi` is a correctly attributed, fully protected task — not a missing
-stamp — while a blank assignee on a task NOBODY claimed by name is a real gap,
-because `agent_slug` is the last source the chain has. `bin/task show <slug>`
-prints the two lines separately for exactly this reason.
-
-**It works on BOTH forms of `begin`, and the value must be a soul SLUG** —
-lowercase with single hyphens (`steffon`, `turf-monster`). `--agent Steffon` or
-`--agent turf_monster` cannot match the pattern the stamp reads, and both are now
-REFUSED rather than accepted-and-ignored. The resume form
-(`bin/task begin <slug> --agent <soul>`) forwards the builder to the claim as
-`--actor`. A RESUME HONOURS SIX FLAGS — `--slug`, `--repo`, `--agent`,
-`--dev-size`, `--steal`, and `--title` itself — and refuses every OTHER create
-flag with the `bin/task update` remedy rather than dropping it. It refuses them
-**whenever the task already exists**, not merely when `--title` is missing:
-re-running `begin` with the same title and a `--shape` is a resume too, and
-`--shape` used to vanish there in silence. `--title` stays legal because it is
-how a re-run NAMES the task whose slug was just resolved — so re-running the
-create line resumes cleanly, and only the OTHER create flags on it are refused.
-Measured 2026-08-29: four tasks
-resumed with `--agent` came back with `agent_slug` nil AND `built_by` nil, while
-the same flag on a `begin --title` create stamped both — the flag was silently
-discarded, and `begin` reported success either way. The `built_by` half was the
-defect and is fixed; the `agent_slug` half is the assignee/author split
-above, and a bare `bin/task create --agent <soul>` still stamps no author at
-all because it makes no claim.
-
-`bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
-`move building` → `session-preflight`) and prints the worktree path, port, and
-task URL. `bin/ship` — the HUB's script, run with that worktree as the cwd —
-runs steps 5-6 (commit → `bin/fast-check` → push → **non-draft** PR into
-`accepted` led by the task URL →
-record `pr_url` → **wait for CI to settle** → `bin/dor-check` → `move submitted`
-→ read-back verify).
-Re-running either after a failure **resumes** — each skips the steps already
-durably recorded. Resume `begin` **by slug** (`bin/task begin <task-slug>`):
-once the task exists, re-running the whole `--title …` line is REFUSED rather
-than resumed, because a create flag cannot land on an existing task and dropping
-it in silence is how a task ends up shaped wrong. Mechanics:
-`docs/agents/modules/devops-task-board.md`.
-
-**`bin/ship` waits for CI before the verdict** (`gate-submit-on-green-ci`). The
-builder no longer pays for a local FULL suite — measured at ~31 min against CI's
-~9 for the identical command — so the wall-clock that justified submitting before
-CI settled is gone. The trade: ~20 min back to the builder, `submitted` carrying a
-GREEN CI instead of a provisional one, and a red CI caught by the session that
-still has the worktree warm rather than bounced into a cold one. The wait decides
-nothing — `bin/dor-check` runs next and owns the verdict — and it is bounded at
-both ends, falling through to the old provisional path when a run never appears or
-never finishes. `SHIP_CI_WAIT=off` disarms it.
-
-**Budget for it: a cold `bin/ship` now runs ~12 minutes**, not ~3. That exceeds
-what some agent harnesses allow one foreground command, so **run it in the
-background — and wait for it with `bin/ship-wait`**:
-
-```bash
-cd <desk>   #   ... the worktree begin printed; ship-wait roots the ship at the cwd ...
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug> --launch -m "Commit message"
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug>   # attach to one already running
-```
-
-It exits **0 succeeded · 1 failed · 2 still running at the timeout**, returns
-IMMEDIATELY when the ship has already finished, and takes its verdict from the
-ship's LOG — `bin/ship` can exit 0 on a run that never reached the seam, so
-"the process is gone" is never an outcome. **Do not hand-roll a `pgrep`
-watcher.** A pattern naming the ship also matches every sibling watcher shell
-that names it, so the condition is true forever and the wait can never fire
-(measured 2026-09-09: 30+ orphaned shells from one builder, and a session spent
-hand-polling). If a wait is cut short, re-run it; if the SHIP is cut short,
-re-run `bin/ship` (it resumes and finishes in seconds once CI has settled). A
-killed ship leaves the task in `building` with its PR already open, which the
-review sweep does not pop.
-
-**Those minutes are now visible.** The task sits in `building` with its PR open
-while ship waits, and the board card shows that PR's CI meter there — `PR: <n>`,
-one mark per check inside the bar, and a clock that ticks while checks run and
-freezes to the run's duration when they settle. So "is it still going?" is a
-glance at the board, not a question for the session.
-Before a PR exists, the same card shows the current local-cert lane and clock;
-if its heartbeat stops, the open board flips that lane to `STALLED` and freezes
-the clock at the last proof of life.
-
-**What the wrappers do NOT do — read before trusting them:**
-
-- They change **no gate semantics**. Every gate still runs and still owns its
-  verdict; the wrappers only sequence the steps.
-- `bin/ship` **stops at `submitted`**. It never merges, never deploys, never
-  touches `release`/`main`.
-- `bin/ship` has **no `--steal`**. Take a **builder**-held task over with
-  `bin/task begin <task-slug> --steal`, then ship. A **reviewer**-held task is
-  ASKED to release (`bin/task review-claim release <task-slug>`, run by them) and
-  never stolen — a takeover mid-review voids the no-self-review guarantee for that
-  review and strands its verdict. The refusal names which holder you have.
-- **You still write the tests** (step 4). Neither wrapper invents test tiers.
-- `bin/ship` is **not** `bin/release ship`. `bin/release ship` is the **G4
-  production deploy** (`release → main`, ship-authority only); `bin/ship` pins
-  base `accepted` and stops at the `submitted` seam.
-- `begin` passes `--root <worktree>` to `bin/session-preflight`, and the
-  preflight self-defends that the inspected root is the task's own desk — so its
-  verdict describes the worktree it just created, not the primary checkout.
-
-Use the long form when the fast lane does not cover the case: multi-repo tasks,
-a bespoke PR body, a task someone else created and shaped, or any single step
-you need to rerun piecemeal.
-
-### The long form (fallback)
-
-Before editing a single file:
-
-1. **Create the production task** (`bin/task create`, or the board UI at
-   https://mcritchie.studio) with `kind` and `shape`. The `shape` auto-selects
-   the tests you must write (`config/feature_shapes.yml`): `ui-only`
-   (copy/styling) · `ui+db` (UI that persists) · `backend` (job/service, no UI)
-   · `library` (studio-engine / solana-studio) · `onchain` (turf-vault /
-   `Solana::*`) · `onchain-vertical` (wallet+DB+UI+program) · `docs`
-   (prose only) · `test-only` (the diff is 100% `test/`, `tests/`, `e2e/`).
-   The last two carry **no tiers** — and `test-only` is not a lighter contract:
-   it is claimable **only** on a diff dor-check OBSERVES to be all test code, it
-   still owes the **cert gate**, and it owes a `[control]` line naming a file
-   in the diff, because the question a test-only change must answer is *does the
-   changed test still bite?* The cert gate it owes is the ORDINARY one
-   (`full_suite_gate: true`, unlike `docs`, which waives it), so
-   **`bin/fast-check` plus a green CI satisfies it** — `bin/dor-check`'s route
-   ladder has no `test-only` branch. Read "owes the cert gate" as "is not
-   exempt", never as "must run the full suite locally".
-2. **Allocate an isolated worktree** (`bin/agent-worktree new <app> <task>`) on
-   an allocated port. Do not edit on a primary checkout.
-3. **Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task> --root <desk>`** before editing —
-   the hub's script, pointed at the task's desk. Bare, it inspects the checkout it
-   lives in (`DEFAULT_ROOT`), never your desk; `bin/task begin` passes `--root` for
-   exactly this reason. Fix
-   branch drift, latest blocker feedback, generated-doc drift, stale terminology,
-   or PR overlap it reports before spending implementation time.
-
-While building:
-
-4. Write the **test tiers your shape requires as you go**, unit-first — this is
-   how bugs get caught before PR, not after. Record them tier-tagged:
-   `bin/task update <task> --checks "[unit] ..." --checks "[integration] ..."`.
-   For a **bug**, write the failing regression test FIRST, at the lowest tier
-   that reproduces it.
-
-Before handoff:
-
-5. Certify — the task's **G1 Cert** gate
-   (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): commit, then run
-   `bin/fast-check <task>` (the builder default — diff-mapped tests + core
-   spine + rubocop on changed files, ~1 min) or `bin/full-suite-check <task>`
-   (CI-independent). These are hub scripts too: from a satellite desk name
-   them `/Users/alex/projects/mcritchie-studio/bin/…`, still standing in the desk.
-6. Push, open a PR **into `accepted`** (base `accepted`, not `release`/`main`)
-   whose body **leads with the task URL**, then verdict: run **`bin/dor-check
-   <task>`** and fix whatever it flags — it refuses an under-tested PR and its
-   verdict closes the gate. Then `bin/task move <task> submitted` **without
-   waiting for CI**: a pending CI is a loud suggestion (the fast cert is credited
-   provisionally), a red CI still blocks, and the authoritative CI verdict is
-   review's gate-zero — the `pr-review` session only pops green-CI PRs, and a CI
-   that flips red mid-review is bounced back by Carl's gate-zero with the failing
-   checks named.
-
-The task lifecycle is two workflows (full spec:
-`docs/agents/system/devops-cycle-design.md`), and the code walks a three-rung
-branch ladder — **`accepted` → `release` → `main`**:
-
-- **Build** (feature agent) — `designed → building → submitted`. You own
-  `designed` through `submitted` (the seam); opening the PR (base `accepted`)
-  hands off to DevOps.
-- **Deploy** (DevOps) — `submitted → reviewed → assembled → shipped`. Every repo
-  keeps persistent `accepted` and `release` branches (feature PRs target
-  **`accepted`**, never `release`/`main`). Review **merges the feat PR into
-  `accepted`**: on a merge-ready verdict `pr-review` `gh pr merge`s it, stamps
-  `merged: "accepted"`, then moves the task `reviewed` (invariant: `reviewed` ⟺
-  code-on-`accepted`; a merge failure leaves it `submitted`, a mis-based PR
-  self-heals by retargeting to `accepted` only when the base is PROVEN unclaimed;
-  a deliberate STACK on another open PR's head, an unreadable probe, a failed base
-  read, an empty base, or a repo to probe that could not be derived all make review
-  REFUSE and name what it could not prove) — or `bin/task block <task> --kind
-  rework --feedback "…" --agent carl` (back to you). Review still never touches
-  `release`/`main` and never deploys. Avi's self-healing `qa-release` sweep
-  (`bin/release prepare`) then **promotes ALL of `accepted` onto `release` via
-  ONE batch PR per repo** (`--base release --head accepted`, not N per-task
-  merges), records `reviewed` members + `assembled` stragglers (re-stamping
-  `merged: "release"`; a `reviewed` member with no `merged` stamp is a HELD
-  anomaly, left behind), deploys QA, and flips members `assembled` only on
-  **QA-green**. Steffon's `production-deploy` (`bin/release ship`) fast-forwards
-  each repo's `release → main` (stamping `merged: "main"`) → `shipped`.
-- **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
-  rework, or a dependency); **`archived`** is terminal.
-
-**The branded testing gates (G1–G4).** The pipeline's test verdicts are
-recorded as four attempt-aware gates: **G1 Cert** (the builder's
-certification — fast/full cert + the dor-check verdict, closed at submit even
-with CI still pending) → **G2 Review** (the authoritative CI verdict — the
-green-CI-only claim pop plus the primary + light review lanes; the
-primary's gate-zero is `bin/dor-check <task> --gate-role review`, strict on
-red/pending CI) → **G3 Candidate** (Avi's pre-QA suite + QA deploy,
-release-grain) → **G4 Ship** (Steffon's frozen-SHA gate + prod deploy,
-release-grain, the same tree-verdict read on the frozen SHA). Task gates render on the task's gates
-card; release gates as the /deployments G3/G4 columns. Each gate's standalone
-SOP lives in `mcritchie-studio/docs/agents/modules/gates/`.
-
-**Sizing the work — the po/dev/actual trio.** Avi is the default sizer: he sets
-`po_size` when he creates and grooms the task (`bin/task create … --po-size
-small|medium|large|xl`). It is a forecast, **not** a hard gate — a task can be
-created without one and backfilled later (`bin/task update <task> --po-size …`).
-The per-task Pokémon stamps its own `dev_size` as it CLAIMS the task (`bin/task
-move <task> building --dev-size <size>`; optional). At ship, `actual_size`
-**auto-derives** from the task's MEASURED $cost (sum of `cost` across its
-TaskEvents, bucketed by `Task::ACTUAL_SIZE_COST_THRESHOLDS`) — only when blank,
-never clobbering a manual size. (Cost, not tokens: the token total is ~98%
-cache_read and pinned everything to XL.) The trio (PO forecast vs. dev forecast vs. measured
-actual) powers the sizing intelligence dashboard.
-
-**The task slug is the genesis.** Creating it in step 1 trickles down to
-everything: the worktree (bound by slug), the task URL
-(`https://mcritchie.studio/tasks/<slug>`), and the terminal feature indicator —
-`bin/task` writes the active-feature marker the status line reads (a worktree
-session overrides it via its own `.agent-context.json`). The marker also keeps a
-**write-once genesis**: the first task a session claims is stamped as
-`genesis_*` and never repointed, so after later creates/moves the status line
-reads `<genesis-slug> ▸ <current-slug>` — the session keeps its bearing on why
-it was spun up. **Announce it every
-session, not on request:** open with one line — `<app-slug> · <feature-slug> ·
-<task URL>` — so the active feature is visible in any tool (Claude's status bar,
-Codex's output; the terminal auto-links the URL), and restate the task URL at
-handoff.
-
-**Never** push to `main`, merge, deploy, or publish gems unless Mr. McRitchie
-assigns you that lane in this session. Full SOP + the two-workflow release model:
-`mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
-
-## Default Operating Context
-
-Assume Mr. McRitchie starts agent sessions from `/Users/alex/projects`, and
-that a plain feature request should be enough context to begin. Steps 4-6 below
-are collapsed by `bin/task begin`, and step 10 by `bin/ship` — prefer those (see
-**DevOps Routing** above, including their limits). The flow is written out here
-so the fallback path, and what each wrapper is accountable for, stay legible.
-The default launch flow is:
-
-1. Read this file, then `mcritchie-studio/docs/ECOSYSTEM.md`.
-2. Identify the target repo and read its README/RUNBOOK/topic docs relevant to
-   the request.
-3. Pull/check `main` and inspect git status before editing.
-4. If the work is a feature, bug, QA, release, cleanup, or active-doc change,
-   create or update a production McRitchie Studio task-board item before
-   implementation (see **DevOps Routing** above — no size exemption). Record
-   `devops["kind"]`, `devops["shape"]` (classifies the required tests),
-   acceptance criteria, affected repos, risk tags, expected checks in
-   `devops["test_plan"]`, and `devops["worktree_slug"]`. **Naming discipline
-   (enforced by the create API):** the **title is 3-5 words** and the slug
-   derives from it (the readable `/tasks/<slug>` URL; seeds `worktree_slug` +
-   `feat/<slug>` — pass `--slug` only to override); **each acceptance bullet is
-   5-12 words**. Put verbose detail/reasoning in `--agent-context` (free-form,
-   for agent-to-agent communication). Move the task to `building` once the agent
-   starts work.
-5. If the task will change code or active docs, allocate an isolated worktree
-   from McRitchie Studio and work there. Keep the primary checkout stable for
-   integration, review, and deploys. Bind the generated production task URL to
-   the worktree with `bin/agent-worktree bind-task <app> <worktree-slug> <task-slug-or-url>`
-   so `whereami`, terminal context, snapshots, and PR bodies can lead from the
-   task record.
-6. Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task-slug> --root <desk>` before editing
-   (the `--root` points it at the desk, not at the hub it lives in); it
-   surfaces latest task feedback, release-branch drift, PR state, same-file PR
-   overlap, generated-doc drift, stale terminology, and required test tiers.
-7. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
-   `3100-3199`, Tax Studio planned at `3200-3299`, Rolio reserved at
-   `3300-3399`, and Chain Ops planned at `3400-3499`.
-8. Build the feature and, before opening the PR, mark any inspectable local UI
-   or workflow as waiting on Mr. McRitchie's approval:
-   `bin/task update <task-slug> --local-url http://localhost:<port>/<path>
-   --approval waiting`. In chat, return `Local Demo:
-   http://localhost:<port>/<path>` as a top-level line. For email/auth flows,
-   also return `Local Inbox: http://localhost:<port>/_studio/local_emails`.
-   Waiting-approval tasks float to the top of their stage and pulse on the board.
-   The request SURVIVES the handoff — it stays live through `submitted` and keeps
-   pulsing in the review column, and is settled only when review merges the work
-   (`reviewed`). So ask before you ship, but do not stall the handoff waiting for
-   an answer.
-9. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
-   operations change, update the owning active docs in the same pass.
-10. Commit and push the feature branch, and run `bin/agent-worktree finish
-   <app> <task-slug>` to prepare PR/QA handoff. With the PR open, run
-   `bin/dor-check <task-slug>` and resolve anything it flags. Update the task
-   with branch, PR URL, local URL, tier-tagged `devops["checks_run"]` (e.g.
-   `[unit] ...`, `[integration] ...`), and any changed acceptance criteria,
-   then move it to `submitted` — do not wait for CI (review's gate-zero owns
-   the CI verdict; a red CI bounces the task back). Handoffs should include
-   the task URL before the PR URL. Deploy or merge only when Mr. McRitchie
-   assigned that lane or the task explicitly includes production rollout.
-
-For a new feature session, Mr. McRitchie should only need to say the target app
-and the feature. A good prompt is:
-
-```text
-Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
---kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
---risk <tag> --accept "<criterion>" --test "<tier>". It creates the task,
-allocates the isolated worktree on an allocated port, claims the task, and
-preflights (pinning the worktree via --root). Read the preflight output and fix
-any blockers before implementation.
-Write the test tiers your shape requires as you go (unit-first); record them
-tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
-with `/Users/alex/projects/mcritchie-studio/bin/task update <task> --local-url http://localhost:<port>/<path>
---approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
-chat. The request rides through the handoff and keeps pulsing in review, so hand
-off rather than stalling on an answer. Update docs if behavior changes. Then hand
-off, WITH THE DESK AS CWD, using the hub's copy of the script —
-/Users/alex/projects/mcritchie-studio/bin/ship <task> -m "<commit message>" (a
-satellite desk carries no copy of it; only the cwd is the desk's) — it
-commits, certifies, pushes, opens the non-draft PR into accepted
-led by the task URL, waits for the PR's CI to settle, runs dor-check, and
-moves the task to submitted (review's gate-zero still holds the authoritative
-CI verdict). Fall back to
-the long-form commands if the task spans repos or needs a bespoke PR body.
-Do not merge or deploy unless I explicitly assigned that lane.
-```
-
-## Start Here
-
-| Need | Read |
-|------|------|
-| Ecosystem map | `mcritchie-studio/docs/ECOSYSTEM.md` |
-| Fresh-machine rebuild | `mcritchie-studio/docs/agents/system/house-burn-down.md` |
-| DevOps v3 design (ratified 2026-09-24, landing in phases) | `mcritchie-studio/docs/agents/system/devops-v3-design.md` |
-| Ecosystem build script | `mcritchie-studio/docs/agents/system/ecosystem-build.md` |
-| Agent culture | `mcritchie-studio/docs/agents/modules/culture.md` |
-| Credentials and 1Password | `mcritchie-studio/docs/agents/modules/credentials.md` |
-| Credential item names | `mcritchie-studio/docs/agents/modules/credential-inventory.md` |
-| **Source control (GitHub): architecture, auth, usage** | `mcritchie-studio/docs/agents/modules/source-control.md` |
-| **GitHub token session broken (401, `Bad credentials`, push refused)** | `mcritchie-studio/docs/agents/modules/token-session.md` |
-| Shared email operations | `mcritchie-studio/docs/agents/modules/email-operations.md` |
-| Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
-| New app onboarding (tiers + SOP) | `mcritchie-studio/docs/agents/system/new-app-onboarding-sop.md` |
-| **App templates (base vs web3 bolt-on)** | `mcritchie-studio/docs/agents/system/app-templates.md` |
-| Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
-| Object storage (S3 buckets, keys, conventions) | `mcritchie-studio/docs/agents/modules/object-storage.md` |
-| Knowledge capture (team@, intake protocol, sweep) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
-| Slack capture (connect, read, categorize a channel) | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
-| Gmail capture (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
-| Credential issues (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
-| Form fill (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
-| Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
-| Agent presence (who is working, machine headroom) | `mcritchie-studio/docs/agents/system/agent-presence.md` |
-| Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
-| Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
-| Building SOP (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
-| Focus session (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/modules/focus-session.md` |
-| Pokémon builder soul (the general builder every task is built by) | `mcritchie-studio/docs/agents/agents/pokemon/role.md` |
-| Modal lifecycle (build in the app, graduate to a gem) | `mcritchie-studio/docs/agents/modules/modal-lifecycle.md` |
-| Process backlog (groom designed, build four wide) | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
-| Work backlog (your own tasks, two-three wide) | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
-| Workflows (five soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
-| Carl heartbeat launcher | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
-| Carl PR review SOP (orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
-| Carl slow PR review SOP | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
-| Carl primary reviewer role SOP | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
-| Carl light reviewer role SOP | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |
-| Avi heartbeat launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
-| Avi QA release SOP | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
-| Avi deploy with task SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
-| Avi arbitrate block SOP (a builder contested a review block; Avi rules) | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
-| Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
-| Steffon production deploy SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
-| Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
-| Steffon clean infra SOP (worktrees, disk, "no space") | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
-| Steffon bucket provision SOP (per-app S3 + IAM) | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
-| Steffon credential filing SOP (naming, logos, vault lanes) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
-| Steffon credential rotation SOP (rotate one secret everywhere) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
-| Steffon workspace provision SOP (client Google Workspace read access) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-provision.md` |
-| Steffon workspace launch SOP (new domain to first draft, walks the operator) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-launch.md` |
-| Steffon domain purchase SOP (buy on Squarespace, prove ownership) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
-| Steffon workspace signup SOP (Google Workspace, alex@ + team@) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-signup.md` |
-| Steffon domain DNS SOP (verify, MX, SPF, DKIM, DMARC) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
-| Steffon website launch SOP (hosted site: Squarespace or our app) | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
-| Steffon Chrome profiles SOP (avatar-menu roster, fresh Mac) | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
-| Turf Monster heartbeat launcher | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
-| Turf Monster live score watch SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
-| Turf Monster contest rehearsal SOP (QA devnet lifecycle) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
-| Turf Monster sleeper auction watch SOP (live draft valuation) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
-| Turf Monster entry forfeit SOP (withdraw one entrant, forfeit fee) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
-| Turf Monster market refresh SOP (rebuild a span's benchmarks from fresh lines) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
-| Turf Monster content build SOP (drain the idea queue, write the takes) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
-| Turf Monster roster sync SOP (refresh players/teams before a season) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
-| Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
-| Xan heartbeat launcher | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
-| Xan grade events SOP | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
-| Xan share insights SOP | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
-| Xan full cycle SOP | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
-| Xan clean up SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
-| Rex heartbeat launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
-| Rex constraint diagnosis SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
-| Rex content sprint SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
-| DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
-| Fast lane (`bin/task begin` / `bin/ship`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
-| Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
-| Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
-| LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
-| Island background animator | `mcritchie-studio/docs/agents/system/island-background-animator.md` |
-| Codex runtime updates | `mcritchie-studio/docs/agents/modules/codex-updates.md` |
-| Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |
-| Tests | `mcritchie-studio/docs/agents/modules/testing.md` |
-| G1 Cert gate (builder certification) | `mcritchie-studio/docs/agents/modules/gates/g1-cert.md` |
-| G2 Review gate (primary + light lanes) | `mcritchie-studio/docs/agents/modules/gates/g2-review.md` |
-| G3 Candidate gate (pre-QA + QA deploy) | `mcritchie-studio/docs/agents/modules/gates/g3-candidate.md` |
-| G4 Ship gate (frozen-SHA + prod deploy) | `mcritchie-studio/docs/agents/modules/gates/g4-ship.md` |
-| Deploys | `mcritchie-studio/docs/agents/modules/deployment.md` |
-| CDN rollout (edge + origin lockdown) | `mcritchie-studio/docs/agents/system/cdn-rollout.md` |
-| Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
-| Memory maintenance | `mcritchie-studio/docs/agents/modules/memory-maintenance.md` |
-| Result distillation (findings not raw ops) | `mcritchie-studio/docs/agents/modules/result-distillation.md` |
-| Communication style (reporting to Mr. McRitchie) | `mcritchie-studio/docs/agents/modules/communication-style.md` |
-| Audit playbook | `mcritchie-studio/docs/agents/modules/audit-playbook.md` |
-| Shared SES production proof | `mcritchie-studio/docs/agents/audits/ses-production-proof-2026-06-14.md` |
-| Current final closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-17.md` |
-| Session retrospective | `mcritchie-studio/docs/agents/audits/session-retrospective-2026-06-17.md` |
-| Prior final audit | `mcritchie-studio/docs/agents/audits/fresh-final-audit-2026-06-15.md` |
-| Prior ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
-| Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
-| Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
-| Parking lot (kept, not on the board) | `mcritchie-studio/docs/agents/maintenance/parking-lot.md` |
-| Dependency decisions (Dependabot backlog verdicts) | `mcritchie-studio/docs/agents/maintenance/dependency-decisions.md` |
-
 ## SOP Registry
 
-This table repeats the top-level SOP registry for agents that jump straight to
-the reference section. SOP invocations are plain text prompts, not installed
-skills. When Mr. McRitchie says one of these phrases, read the owning soul's
-`HEARTBEAT.md` when the phrase is a heartbeat launcher, then read the specific
-SOP file linked below. A heartbeat may set agent attribution and choose the act
-order, then it references the SOP. The SOP files are independent and do not
-depend on the heartbeat.
+The same registry again, for agents that jump to the reference section. A
+heartbeat may set attribution and act order; the SOP files do not depend on it.
 
 | Invocation | Owner | Read |
 |------------|-------|------|
@@ -931,192 +251,8 @@ depend on the heartbeat.
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 
-## Repos
-
-| Repo | Role | Local port |
-|------|------|------------|
-| `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
-| `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
-| `rolio` | Release-managed standalone with reserved satellite range | 3300 |
-| `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3400 |
-| `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
-| `solana-studio` | Ruby Solana primitives | none |
-| `turf-vault` | Anchor smart contract | none |
-
-## Session Shape
-
-1. Read this file first.
-2. Read only the modules relevant to the task.
-3. Check git status before editing.
-4. If editing code or active docs, create or enter the task worktree first.
-5. Make scoped changes in the correct repo or worktree.
-6. Run meaningful verification yourself.
-7. Hand back something inspectable: local URL, screenshot, test output summary, diff summary, or explicit blocker.
-8. Update docs when behavior or workflow changes.
-
-## Parallel Work Quick Start
-
-> **Concurrency cap — 5 at a time.** Cap parallel work at **5 concurrent
-> operations per session** — at most 5 agents / `heroku run` dynos / parallel
-> board-writing commands in flight at once. The prod board Postgres (essential-0)
-> has a **20 hard-connection limit**, and a heavy fan-out (parallel review agents +
-> the ship's `heroku run` dynos + `bin/task`/`bin/release` CLI + web/worker pools)
-> once spiked past it → `FATAL: too many connections` → the board briefly 500'd.
-> Parallelism stays first-class (fan-out is still the default for devops) — just
-> **bounded**: fan out reviews and any other batch in **waves of ≤5**, never all at
-> once; when a queue is larger than 5, run it in successive waves.
-
-For feature work, active-doc edits, or any task that might be committed, start
-from McRitchie Studio, create or update the task-board item, then allocate a
-worktree:
-
-```bash
-cd /Users/alex/projects/mcritchie-studio
-bin/task begin --title "Three To Five Words" --repo turf-monster --agent <soul> --shape <shape>
-bin/agent-worktree up turf-monster task-slug     # only when you need a live stack
-
-cd <desk>                                        # the worktree begin printed
-/Users/alex/projects/mcritchie-studio/bin/ship task-slug -m "Commit message"
-```
-
-`bin/task begin` covers create + `new` + `bind-task` + `move building` +
-`session-preflight` (see **DevOps Routing** above for what it does NOT do). The
-long form stays available for multi-repo work and piecemeal reruns:
-
-```bash
-cd /Users/alex/projects/mcritchie-studio   # run these from the hub
-bin/agent-worktree plan turf-monster task-slug
-bin/agent-worktree new turf-monster task-slug
-bin/agent-worktree bind-task turf-monster task-slug task-abc123def456
-bin/session-preflight task-slug --root <desk>   # the worktree `new` printed
-bin/agent-worktree up turf-monster task-slug
-bin/agent-worktree finish turf-monster task-slug
-```
-
-`--root` is not optional there. `bin/session-preflight` inspects the checkout it
-LIVES in unless told otherwise (`DEFAULT_ROOT` is the script's own repo), so the
-bare form run from the hub reports on the hub primary whichever task you name —
-never a task's desk — and its own self-defense then flags a WRONG checkout.
-`bin/task begin` passes `--root <worktree>` for exactly this reason.
-
-Return the printed `http://localhost:<port>` URL in the handoff.
-
-Every feature or bug cycle must have a production McRitchie Studio task before
-code or active-doc edits start. Keep the **title 3-5 words** (the slug derives
-from it — the readable task URL — and seeds `metadata["devops"]["worktree_slug"]`
-+ the `feat/<slug>` branch; `--slug` overrides) and **each acceptance bullet
-5-12 words**; verbose detail goes in `devops["agent_context"]`. Bind the task
-URL to the worktree.
-Use `metadata["devops"]` to record affected repos, branch, PR URL, local URL,
-QA URL, production URL when deployed, release slug, risk tags, acceptance
-criteria, test plan, checks run in `devops["checks_run"]`, and
-`approval_status` when waiting for Mr. McRitchie's local validation.
-`bin/qa-intake` helps Avi discover PR/worktree state, but it does not replace
-the task-board record.
-
-Primary checkouts are for reading, status checks, integration, and deployment.
-Do not commit task work from a primary checkout unless you are explicitly acting
-as the deploy owner. If a primary checkout becomes dirty or moves while you are
-working, report the changed floor and continue from your worktree.
-
-For local validation chat, use exact top-level labels so Mr. McRitchie never has
-to hunt through prose:
-
-```text
-Task: https://mcritchie.studio/tasks/<task-slug>
-Magic Link: http://localhost:<port>/_studio/local_review?return_to=/<path>
-Local Demo: http://localhost:<port>/<path>
-```
-
-`Magic Link:` is the local stack's own mint endpoint: each click signs him in
-and lands him on the page under review, minting a fresh single-use token
-in-request. That makes it REUSABLE — checking the link does not spend it — and
-puts the row in the desk's own database by construction. The recipe lives in
-`mcritchie-studio/docs/agents/modules/communication-style.md`. `Local Demo:`
-stays the plain path: it is the durable fallback and what `--local-url`
-records on the task.
-
-For email or auth flows, also return the printed local inbox:
-
-```text
-Local Inbox: http://localhost:<port>/_studio/local_emails
-```
-
-Worktree stacks default to `LOCAL_EMAIL_CAPTURE=1`, so magic links and other emails are recorded there instead of sent to real inboxes.
-
-Feature work graduates through PR/QA, not direct `main` pushes. Use
-`bin/agent-worktree finish <app> <task-slug> --push --pr` when the branch is
-ready for review. The same handoff must update the task with the branch,
-PR URL, local URL, and `devops["checks_run"]`, then move the task to
-`submitted`. Keep the worktree and branch until review confirms the PR was merged
-or intentionally abandoned.
-
-For a dedicated review/QA session, use the recurring QA intake prompt in
-`mcritchie-studio/docs/agents/modules/parallel-agent-devops.md`. That cycle
-stops after QA deployment; production rollout needs a separate explicit prompt
-(`production-deploy`, or Xan's ship-authority `full-cycle`).
-The conductor queue starts with:
-
-```bash
-cd /Users/alex/projects/mcritchie-studio
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
-```
-
-The command joins open GitHub PRs to the local worktree registry and labels
-items as `avi-ready`, `avi-ready-draft`, `checks-review`, `merge-risk`,
-`needs-agent`, `missing-local-branch`, or `ready-to-open-pr`. Each queue item
-also prints an `action:` line; use it as the next owner handoff.
-
-QA servers, once provisioned, are operated with `mcritchie-studio/bin/qa-server`.
-They are release-candidate targets for Mr. McRitchie review before production;
-production deploy remains separately ship-authority gated.
-
-Before reusing or deleting worktrees, inspect lifecycle state:
-
-```bash
-bin/agent-worktree list
-bin/agent-worktree doctor
-bin/agent-worktree snapshot --write
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
-bin/agent-worktree cleanup
-bin/agent-worktree cleanup --reclaim [--yes]
-bin/agent-worktree remove <app> <task-slug> --yes
-```
-
-`snapshot --write` refreshes the local non-secret worktree registry at
-`/Users/alex/projects/.agents/worktree-registry.json` for QA/conductor
-sessions. `cleanup` is dry-run only; `cleanup --write` only files candidates on the
-desk ledger (`DeskRecord`; the Desks panel at `/deployments`). Actual removal stays
-approval-gated and should use
-`bin/agent-worktree remove <app> <task-slug> --yes` so stack stop, ledger
-update, Git worktree removal, local branch deletion, and registry refresh happen
-together. `cleanup --reclaim` is the scale-down-on-close batch flow: the dry run
-lists every worktree SAFE to auto-release (clean + merged/main-equivalent +
-unoccupied, never the primary) with its Redis DB, and `cleanup --reclaim --yes`
-runs that same full `remove` teardown for each candidate, then shrinks the Redis
-band toward the floor. Git eligibility alone is NOT the safety rule — a fresh
-desk is git-identical to a merged one, and reclaiming on that once destroyed a
-live builder's desk — so a desk younger than 1h29m, one being written to, or one
-whose holder has a gate in flight is withheld. A **bound** desk is withheld
-further, until the board puts its task at `shipped` or `archived`: a merged desk
-stands through the whole release cycle, not 1h29m, because `reviewed` means
-mid-release, not finished. An unreadable board withholds too. See
-`mcritchie-studio/docs/agents/modules/worktrees.md`.
-
-The worktree launcher uses an elastic Redis band starting at DB `9`. The band
-idles at `20` slots, auto-grows by `10` (restart-free) when full while physical
-room remains, and auto-shrinks by `10` (never below `20`) as worktrees close
-(`remove`, `cleanup --write`, and `cleanup --reclaim --yes` all trigger the
-shrink).
-Physical capacity is the Redis `databases` setting, fixed at startup; the band
-can never exceed it. Inspect both with `bin/agent-worktree scale status`. If the
-band is capped by physical room, run `bin/agent-worktree scale --provision` once
-to raise Redis `databases` (this restarts Redis and bounces every running stack;
-leave it for the QA/infra lane).
-
 ## LLM Adapters
 
-A generated root `CLAUDE.md` adapter is required because Claude Code auto-loads
-that file, not `AGENTS.md`. Keep it thin: inline the DevOps gate, then `@AGENTS.md`.
-Do not create root `CODEX.md`; Codex reads `AGENTS.md` natively. See
-`mcritchie-studio/docs/agents/modules/llm-adapters.md`.
+Claude Code auto-loads `CLAUDE.md`, a thin adapter: the DevOps gate, then `@AGENTS.md`.
+Codex reads `AGENTS.md` natively; do not create a root `CODEX.md`. Detail:
+`docs/agents/modules/llm-adapters.md`.

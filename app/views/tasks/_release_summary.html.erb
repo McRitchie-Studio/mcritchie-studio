@@ -44,6 +44,35 @@
             </span>
           <% end %>
         <% end %>
+        <%# THE PRODUCTION WINDOW (design section 6): while a timed `bin/release ship`
+            waits on its ship_authorization request, the countdown chip
+            (tasks/_window_chip, the card's own) sits here with the operator's
+            APPROVE button beside it. The button posts the one grant through the
+            page's CSRF meta (the dev board tools' idiom) so it renders identically
+            on the page and on the live push — no session-dependent branch in a
+            partial the broadcaster re-renders; the controller's admin gate answers
+            a click from anyone else. Both drop the moment the grant lands, because
+            the release event re-renders this card. %>
+        <% if current && (ship_window = rel.ship_authorization_window) %>
+          <span class="flex shrink-0 items-center gap-1.5" data-test="release-ship-window">
+            <%= render "tasks/window_chip", window: ship_window %>
+            <button type="button"
+                    data-test="release-ship-approve"
+                    data-approve-url="<%= authorize_ship_deployment_path(rel.slug) %>"
+                    title="Grant production authority now — the timed ship deploys as soon as this lands"
+                    class="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border transition bg-sky-600 text-white border-sky-500 hover:bg-sky-500 dark:bg-sky-500 dark:text-sky-950 dark:border-sky-400 dark:hover:bg-sky-400 disabled:opacity-60 disabled:cursor-wait"
+                    onclick="event.stopPropagation(); (async (btn) => {
+                      btn.disabled = true; btn.textContent = 'Approving…';
+                      const csrf = document.querySelector('meta[name=csrf-token]')?.content;
+                      try {
+                        const res = await fetch(btn.dataset.approveUrl, { method: 'POST', headers: { 'X-CSRF-Token': csrf, 'Accept': 'application/json' }, credentials: 'same-origin' });
+                        if (res.ok) { btn.textContent = 'Approved'; return; }
+                        if (res.status === 401 || res.status === 403 || res.redirected) { btn.textContent = 'Sign in as admin'; btn.disabled = false; return; }
+                        btn.textContent = 'Retry approve'; btn.disabled = false;
+                      } catch (e) { btn.textContent = 'Retry approve'; btn.disabled = false; }
+                    })(this)">Approve</button>
+          </span>
+        <% end %>
         <% if (seal = rel.smoke_seal) %>
           <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_smoke_seal_classes(seal) %>" data-test="release-smoke-seal-badge" data-seal-status="<%= seal.status %>" title="<%= release_smoke_seal_title(seal) %>"><%= seal.badge %> Seal</span>
         <% end %>
@@ -107,6 +136,20 @@
           <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
         <% end %>
       </div>
+    <%# The EPICS this release carries — one epic chip (tasks/_epic_chip, the card's
+        own) per distinct tasks.epic_slug among its members, so the operator reads a
+        release as the epics it moves, not only as a pile of tasks. Renders nothing
+        when no member belongs to an epic. Server-rendered from the members already
+        loaded above, so the live broadcast re-render draws the same row. %>
+    <% release_epics = members.filter_map { |t| t.epic_slug.presence }.uniq %>
+    <% if release_epics.any? %>
+      <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs" data-test="release-epics">
+        <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Epics</span>
+        <% release_epics.each do |epic_slug| %>
+          <%= render "tasks/epic_chip", epic_slug: epic_slug %>
+        <% end %>
+      </div>
+    <% end %>
     <% if members.any? || trailing %>
       <%# Member pills on the left; optional trailing chip (e.g. the kickoff chip)
           inline on the right of the same row. Last Release pills stay on one

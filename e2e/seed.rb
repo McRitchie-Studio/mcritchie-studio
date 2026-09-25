@@ -408,6 +408,9 @@ quiet_claim_task = Task.create!(
   stage: "building", priority: 1, agent_slug: "carl",
   metadata: { "devops" => e2e_claim }
 )
+# An OLD-ROW lease (the build lease is retired: a save sheds its keys), seeded past
+# the callbacks so the quiet chip's reader still has one to read.
+quiet_claim_task.update_columns(metadata: { "devops" => e2e_claim })
 # Its only durable artifact sits past the derived quiet threshold — stated relative
 # to the threshold so the fixture keeps demonstrating quiet if the corpus is
 # re-measured. to_stage carries the checkpoint's NAME, exactly as the app writes it.
@@ -424,6 +427,9 @@ working_claim_task = Task.create!(
   stage: "building", priority: 1, agent_slug: "carl",
   metadata: { "devops" => e2e_claim }
 )
+# An OLD-ROW lease (the build lease is retired: a save sheds its keys), seeded past
+# the callbacks so the quiet chip's reader still has one to read.
+working_claim_task.update_columns(metadata: { "devops" => e2e_claim })
 TaskEvent.where(task_slug: working_claim_task.slug).update_all(occurred_at: 6.hours.ago)
 # An OPEN gate: the cert is running right now. This is the evidence that keeps a
 # slow-but-healthy build off the quiet list, however long it stays silent.

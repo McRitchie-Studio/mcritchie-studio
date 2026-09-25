@@ -1,172 +1,105 @@
 # Workflows — the five soul launchers
 
-The **Workflows card** on `/deployments` — the third of the four summary cards
-(`tasks/_heartbeats_card`) — renders five **soul-avatar heartbeat launchers**
-(`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher` per soul)
-on two surfaces drawn from ONE chip list. The card shows **one soul at a time** on a
-five-minute carousel that starts on Turf Monster (the soul in frame slides up, the
-next slides in from below; it holds while hovered). A click on the card opens the
-**Workflows sidebar**: every soul and every command, each chip beside what it
-launches. Each launcher is a soul face — **a link to that soul's `/agents/<slug>`
-page** — with a **prompt-like row 1** plus one or more **copyable action rows**,
-each carrying a leading icon (a ❤️ on the heartbeat row; a `1️⃣`–`3️⃣` keycap on the
-three ordered release actions, a themed glyph on the rest):
+The **Workflows card** on `/deployments` (`tasks/_heartbeats_card`) renders five
+**soul-avatar heartbeat launchers** (`ApplicationHelper#heartbeat_launchers`, one
+`tasks/_heartbeat_launcher` per soul) from ONE chip list: a five-minute carousel of
+one soul at a time, and a click-through **Workflows sidebar** listing every soul
+and command. Each launcher links to that soul's `/agents/<slug>` page and carries
+a **prompt-like row 1** plus **copyable action rows**:
 
-- **Row 1 — the prompt-like soul heartbeat** (❤️): `Carl Heartbeat` · `Avi
-  Heartbeat` · `Steffon Heartbeat` · `Xan Heartbeat` · `Turf Monster Heartbeat`.
-  One per soul.
-- **The action rows** — one copyable row each, ordered along the pipeline (the
-  number icons read across the souls: review → assemble → ship):
+- **Row 1** (❤️): `Carl Heartbeat` · `Avi Heartbeat` · `Steffon Heartbeat` ·
+  `Xan Heartbeat` · `Turf Monster Heartbeat`.
+- **The action rows**, ordered along the pipeline (keycaps read review → assemble → ship):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
   - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
-  - **Xan** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
+  - **Xan** → `🧑🏻‍🏫 grade-events` (optional: every task is graded at ship) · `📡 share-insights` · `🌎 full-cycle`
   - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal`
 
-  `archive-shipped` is deliberately NOT a chip: `production-deploy` runs it as its
-  final step, so the cleaning rides every release instead of waiting to be
-  remembered. It stays a registered invocation by name. The keycap sequence
-  therefore ends at `3️⃣`, and `clean-infra` took the slot but not the number — it
-  is off-sequence on purpose, invoked when the machine is in the way.
+  Four registered acts are deliberately NOT chips; each stays invocable by name:
+  - `archive-shipped` — `production-deploy` runs it as its final step, so the
+    keycap sequence ends at `3️⃣`; `clean-infra` took the slot but is off-sequence.
+  - `sleeper-auction-watch` — calendar-bound (one draft evening a year), and at 21
+    characters it needs 114px against the card's 98px chip text area, so it clips.
+    `test/system/workflows_card_chip_fit_test.rb` holds that measurement.
+  - `entry-forfeit` — externally triggered: an entrant asks to withdraw.
+  - `market-refresh` / `content-build` — schedule- and queue-shaped.
 
-  `sleeper-auction-watch` is deliberately NOT a chip either, for the opposite
-  reason: nothing runs it for you, and nothing should schedule it. The auction
-  watch is calendar-bound — one league's draft, one evening a year — and that
-  decision is settled in
-  [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
+  A chip does not imply a cadence (`clean-infra`, `deploy-with-task` and
+  `contest-rehearsal` are chips and are direct-invoke); do not restate that
+  retired argument. Decisions: [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
 
-  `entry-forfeit` is deliberately NOT a chip either, for a third reason: it is
-  externally triggered. An entrant asks to withdraw, so the request arrives from
-  outside the team at a moment nobody here picks. `clean-infra`,
-  `deploy-with-task` and `contest-rehearsal` are all on the card because the
-  operator chooses when to run them; there is nothing to choose here until
-  someone outside asks. Registered by name, owned in the prose guard's
-  `ACT_OWNER`, and settled in the same
-  [`turf_monster/HEARTBEAT.md`](../agents/turf_monster/HEARTBEAT.md).
-
-  The **card's** own reason is separate, and it is the one worth stating because a
-  test can hold it: at 21 characters the slug needs 114px, while an act chip's text
-  area on the summary card's carousel (four cards up at xl) is 98px — so it clips,
-  losing its last three characters. Measured 2026-09-18 at 1300px; `test/system/workflows_card_chip_fit_test.rb`
-  holds it and fails if the card is ever widened enough for the reason to expire.
-  It is **not** that a chip implies a cadence: `clean-infra`, `deploy-with-task`
-  and `contest-rehearsal` are all on the card and all three are direct-invoke or
-  off-sequence, so that argument never survived contact with the card's own
-  contents. It was retired 2026-09-09 — do not restate it. Like `archive-shipped`
-  the auction watch stays a registered invocation by name, invoked the evening it
-  is wanted (see
-  [`sleeper-auction-watch`](../agents/turf_monster/sops/sleeper-auction-watch.md)).
-
-**Every row is independently copyable** (the row-1 heartbeat prompt and each act),
-and **any of them**, pasted into a fresh agent session run from
-`/Users/alex/projects`, launches that heartbeat. All rows are **recognized
-launchers** — listed in the generated root `AGENTS.md` SOP Invocation Standard
-registry and in
-[`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Each act wraps
-a single release **atom** (see §1.4's atom table), except `xan` /
-`grade-events`, which is the learning loop and lives outside the release
-pipeline.
-
-Each soul's action-level procedure lives with that soul:
-[`Carl`](../agents/carl/HEARTBEAT.md),
-[`Avi`](../agents/avi/HEARTBEAT.md),
-[`Steffon`](../agents/steffon/HEARTBEAT.md),
-[`Xan`](../agents/xan/HEARTBEAT.md), and
-[`Turf Monster`](../agents/turf_monster/HEARTBEAT.md). This page is the
-cross-soul map.
+**Every row is independently copyable**, and any of them, pasted into a fresh
+session run from `/Users/alex/projects`, launches that heartbeat. All rows are
+registered in the root `AGENTS.md` SOP registry and in
+[`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md); each act wraps
+one release **atom**, except Xan's learning-loop acts. Each soul's procedure lives
+with that soul ([`Carl`](../agents/carl/HEARTBEAT.md),
+[`Avi`](../agents/avi/HEARTBEAT.md), [`Steffon`](../agents/steffon/HEARTBEAT.md),
+[`Xan`](../agents/xan/HEARTBEAT.md),
+[`Turf Monster`](../agents/turf_monster/HEARTBEAT.md)); this page is the
+cross-soul map. History cut from it lives in
+[`../archive/heartbeats-2026-09-25.md`](../archive/heartbeats-2026-09-25.md).
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
 | **Carl** (`carl`) | `Carl Heartbeat` | `pr-review`, `pr-review-slow` | submitted PRs waiting for review | each PR `reviewed` (merged into `accepted`) or `blocked` |
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only), `arbitrate-block` (registered, not a chip — a builder contests a review block and the session that spawned it invokes Avi) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
-| **Xan** (`xan`) | `Xan Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
+| **Xan** (`xan`) | `Xan Heartbeat` | `share-insights`, `full-cycle`; `grade-events` is optional (every task is graded at ship) and runs only when named | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
 | **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP), `market-refresh` (registered, not a chip — weekly, but the moment is read off the schedule), `content-build` (registered, not a chip — queue-shaped; it runs when games finalise) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
 > `archive-shipped` MUTATE shared state across many minutes, so the heartbeat
-> session runs them ITSELF — never via an ephemeral Agent-tool subagent, which can
-> detach and leave the mutation half-applied with no terminal to finish it (this is
-> how a partial release candidate once sat unnoticed). Subagents stay first-class
-> for **read** fan-out: `pr-review` spins **one Carl per PR** (each summoning his
-> own light) as subagents, because a detached review costs only a retry. The line
-> is *mutating vs reading*, not *parallel vs serial*. Recovery for an interrupted
-> mutation is to RE-RUN it — the conductor's commands are self-healing. Details:
-> [`parallel-agent-devops.md`](parallel-agent-devops.md).
+> session runs them ITSELF — never via an Agent-tool subagent, which can detach and
+> leave the mutation half-applied. Subagents stay first-class for **read** fan-out:
+> `pr-review` spins **one Carl per PR** as subagents. The line is *mutating vs
+> reading*. Recovery for an interrupted mutation is to RE-RUN it; the commands are
+> self-healing ([`parallel-agent-devops.md`](parallel-agent-devops.md)).
 
-> **Sticky attribution — the FIRST action of a `<Soul> Heartbeat`.** Run
-> `bin/agent-activity heartbeat <soul>` (e.g. `bin/agent-activity heartbeat carl`) so
-> EVERY activity self-attributes to that soul — stacked over the stable base session
-> mascot — without re-passing `--agent` on each `start`/`next`. An explicit
-> `--agent` on an activity still WINS over the sticky (a delegated reviewer keeps its
-> own soul). It clears on `bin/agent-activity heartbeat --clear` or at session end
-> (`close-open`). This is why the heartbeat's own orient/workflow activities show the
-> soul instead of falling back to the base mascot.
->
-> **Lanes re-homed (2026-07-22).** Review moved to **Carl** (one Carl per PR — the
-> standing primary + owner, no Avi supervisor), and the release lanes flipped: **Avi**
-> now owns the `qa-release` sweep + QA (stages 1–3), **Steffon** now owns
-> `production-deploy` (stages 4–5) + `archive-shipped`. They surface on the
-> standalone /deployments **Workflows** card (five souls, sized to the Next Release
-> card); the 5-stage release tracker stays in the **Next Release** card.
+> **Sticky attribution — the FIRST action of a `<Soul> Heartbeat`.**
+> `bin/agent-activity heartbeat <soul>` attributes EVERY activity to that soul; an
+> explicit `--agent` still WINS. Clear it with `bin/agent-activity heartbeat --clear`.
 
 ## Launching a heartbeat in a fresh session — the quick start
 
-Every heartbeat starts the same way in a **fresh agent session** (Claude or
-Codex) run from `/Users/alex/projects`. This is the whole boot sequence — a new
-session needs nothing else:
+Every heartbeat boots the same way in a **fresh agent session** (Claude or Codex)
+run from `/Users/alex/projects`:
 
-1. **Say a launcher row.** Paste the row-1 prompt (`Carl Heartbeat` · `Avi
-   Heartbeat` · `Steffon Heartbeat` · `Xan Heartbeat`) or any single act row from
-   the /deployments Workflows card. The generated root `AGENTS.md` maps those
-   launcher phrases directly to this module, the owning soul's `HEARTBEAT.md`, and
-   the relevant SOP file. No installed skill is required.
-2. **Stamp attribution FIRST** — before any other tool call:
-   `cd /Users/alex/projects/mcritchie-studio && bin/agent-activity heartbeat
-   <carl|avi|steffon|xan>`.
-3. **Run the soul's acts** from the mcritchie-studio primary
-   checkout (the board is **prod** by default; pass `--yes` on the release verbs
-   the act owns). The full per-soul heartbeat launchers are
-   [`Carl`](../agents/carl/HEARTBEAT.md),
-   [`Avi`](../agents/avi/HEARTBEAT.md),
-   [`Steffon`](../agents/steffon/HEARTBEAT.md), and
-   [`Xan`](../agents/xan/HEARTBEAT.md); the numbered sections below summarize
-   them.
+1. **Say a launcher row** (row 1 or any act row). The root `AGENTS.md` maps each
+   phrase to the owning soul's `HEARTBEAT.md` and SOP. No installed skill needed.
+2. **Stamp attribution FIRST**, before any other tool call:
+   `cd /Users/alex/projects/mcritchie-studio && bin/agent-activity heartbeat <carl|avi|steffon|xan>`.
+3. **Run the soul's acts** from the mcritchie-studio primary checkout (the board
+   is **prod** by default; pass `--yes` on the release verbs the act owns).
 
-The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
+The per-soul cheat sheet:
 
 | Soul | Acts | Commands each act drives |
 |---|---|---|
 | **Carl** | `pr-review` → `pr-review-slow` | per `submitted` PR (waves ≤5): `bin/task claim-next-review` → spin one Carl → the [review-one primitive](pr-review-sop.md) → on a merge-ready verdict `gh pr merge` into `accepted` + `bin/task move <task> reviewed` |
 | **Avi** | `qa-release` | `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` (stages 1–3, members `assembled` on QA-green) |
 | **Steffon** | `production-deploy` → `archive-shipped` | `bin/release status` → **if** QA-green: `bin/release ship --yes` (stages 4–5); then `bin/release archive --yes` (preview `--dry-run`) |
-| **Xan** | `grade-events` · `share-insights` · `full-cycle` | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
+| **Xan** | `share-insights` · `full-cycle` · `grade-events` (optional, only when named) | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
 
-> **Script-assisted review.** `bin/pr-review` is a codex-based review loop that
-> composes `bin/devops-cycle`, `bin/reviewer-select`, and codex reviewer
-> sub-processes (running `carl/sops/pr-review-{primary,light}.md`), writes the
-> `bin/task move|block|note` handoffs itself, and prints a retrospective. It is
-> **review-only** — approved tasks stop at `reviewed` (merged into `accepted`);
-> Avi's `qa-release` sweep owns the `accepted → release` promotion. It predates
-> the native-Claude "one Carl per PR" model (`carl/sops/pr-review.md`, the
-> canonical interactive path) and hasn't been ported yet. The working invocation:
+> **Script-assisted review.** `bin/pr-review` is a codex-based, **review-only**
+> loop (composes `bin/devops-cycle`, `bin/reviewer-select`, and codex reviewers
+> running `carl/sops/pr-review-{primary,light}.md`; approved tasks stop at
+> `reviewed`). The canonical interactive path is `carl/sops/pr-review.md`. Invoke:
 >
 > ```bash
 > bin/pr-review --run --limit <N> --max-idle-cycles 1 \
 >   --codex-workdir /Users/alex/projects/mcritchie-studio
 > ```
 >
-> - **`--codex-workdir` must be a trusted git checkout** — the projects-root
->   default is not a git repo, so `codex exec` refuses and every reviewer exits 1.
-> - **`--max-idle-cycles 1`** exits once the queue drains; the default (240
->   polls × 60 s idle-sleep) keeps the loop alive ~4 h waiting for new PRs.
-> - Dry-run is the default — only `--run` launches reviewers and writes tasks.
->   `--fast` reviews in bounded waves; slow (one PR at a time) is the default.
+> `--codex-workdir` must be a trusted git checkout (the projects root is not one,
+> so every reviewer exits 1). `--max-idle-cycles 1` exits once the queue drains
+> (the default waits ~4 h). Dry-run is the default; only `--run` writes. `--fast`
+> reviews in bounded waves; one PR at a time is the default.
 
 ## The release handoff seam — Avi owns stages 1–3, Steffon owns 4–5
 
-The current-release stages (`Release::STAGES`, rendered on /deployments as the
-per-repo lanes tracker, `ApplicationHelper#release_repo_lanes`) are five:
+The five release stages (`Release::STAGES`, `ApplicationHelper#release_repo_lanes`):
 
 | # | Stage key | Active → complete label | Owner | Driven by |
 |---|---|---|---|---|
@@ -176,20 +109,14 @@ per-repo lanes tracker, `ApplicationHelper#release_repo_lanes`) are five:
 | 4 | `confirming` | **Confirming → Confirmed** | Steffon | `bin/release ship` |
 | 5 | `production_deploying` | **Deploying → Deployed** | Steffon | `bin/release ship` |
 
-**The souls split the pipeline (2026-07-22): Carl reviews; Avi assembles + QAs;
-Steffon ships.** Avi owns stages 1–3 (Testing → Assembling → Deploying QA) via
-`qa-release` (`bin/release prepare`) — which owns the **`accepted → release`
-merge**: it SWEEPS the reviewed queue onto the candidate, merges each into
-`release`, and flips members `reviewed → assembled` only on **QA-green** — and
-stops at **Live on QA**. **Steffon owns stages 4–5** (Confirming → Deploying) via
-`production-deploy` (`bin/release ship`) and finishes at **Deployed**. The seam
-between them — **"deployed to QA."** — is the **Avi → Steffon handoff**:
-Avi's `qa-release` ends there and reports it; Steffon's `production-deploy` begins
-only once it is true.
+**Carl reviews; Avi assembles + QAs; Steffon ships.** Avi's `qa-release`
+(`bin/release prepare`) owns the **`accepted → release` merge**, flips members
+`reviewed → assembled` only on **QA-green**, and stops at **Live on QA**.
+Steffon's `production-deploy` (`bin/release ship`) begins only once that is true
+and finishes at **Deployed**. **"Deployed to QA"** is the Avi → Steffon handoff.
 
 **The `merged` column is the crash-recovery spine.** Orthogonal to `stage`, it
-records WHERE the task's code physically is, so an interrupted heartbeat
-contextualizes itself from durable state instead of guessing:
+records WHERE the task's code physically is:
 
 | `stage` + `merged` | Means |
 |---|---|
@@ -200,301 +127,174 @@ contextualizes itself from durable state instead of guessing:
 | `shipped` + `main` | done |
 
 An interrupted Avi run **skips re-merging** a `merged: release` task; an
-interrupted Steffon run **skips re-ff'ing** a `merged: main` one (the git ffs no-op
-anyway — the stamp is the readable signal).
+interrupted Steffon run **skips re-ff'ing** a `merged: main` one.
 
 ## Operator-launched today, schedule-ready tomorrow  *(DESIGN NOTE — load-bearing)*
 
-These acts are **operator-launched** (copy-paste from the card) today. Each act's
-SOP below is deliberately written so it can be **run on a schedule/cadence later
-without rework**. Three properties make that safe, and every act must keep all
-three:
+These acts are operator-launched today and must stay schedulable without rework.
+Every act keeps three properties:
 
-1. **Idempotent** — re-running when there is nothing to do is a safe no-op that
-   reports "nothing waiting" and exits. `pr-review` on an empty queue,
-   `qa-release` with nothing reviewed, no stragglers, and no RC in flight,
-   `production-deploy` on a `release == main` (or no QA-green release), and
-   `archive-shipped` with nothing shipped must each just report and stop —
-   never fabricate work.
-2. **Explicit precondition** — each states what must already be true to begin (the
-   "Enters at" column above). A scheduler checks the precondition, and skips
+1. **Idempotent** — with nothing to do it reports "nothing waiting" and exits
+   (`pr-review` on an empty queue, `qa-release` with nothing reviewed and no RC in
+   flight, `production-deploy` on `release == main`, `archive-shipped` with nothing
+   shipped). Never fabricate work.
+2. **Explicit precondition** — the "Enters at" column above; a scheduler skips
    cleanly when it is not met.
-3. **Named exit seam** — each ends at a definite stage/state plus a report (the
-   "Exit seam" column). A scheduler reads the seam and can chain the next act
-   (`pr-review` → `qa-release` → `production-deploy` → `archive-shipped`) or bank
-   the result (`grade-events`).
+3. **Named exit seam** — the "Exit seam" column; a scheduler chains the next act
+   (`pr-review` → `qa-release` → `production-deploy` → `archive-shipped`).
 
-No heartbeat assumes a human is watching mid-run: no interactive prompts (pass
-`--yes` on the `bin/release` verbs an agent shell owns), bounded blast radius, and
-a self-contained report at each seam. Moving these to a cron/queue trigger later is
-a wiring change, not a rewrite.
+No heartbeat assumes a human is watching: no interactive prompts (pass `--yes` on
+the `bin/release` verbs an agent shell owns), bounded blast radius, and a
+self-contained report at each seam.
 
 ---
 
 ## 1. Carl Heartbeat — `Carl Heartbeat` / `pr-review` / `pr-review-slow`
 
-Canonical heartbeat launcher:
-[`../agents/carl/HEARTBEAT.md`](../agents/carl/HEARTBEAT.md). The summary below
-keeps the cross-soul page readable; Carl's standalone act SOPs win for review
-mechanics:
-[`pr-review`](../agents/carl/sops/pr-review.md), and
-[`pr-review-slow`](../agents/carl/sops/pr-review-slow.md).
-
-**Enter as Carl** (the Lead Architect). Review every waiting PR. The review
-session (a Pokémon orchestrator) spins **one Carl per PR** — the standing primary
-AND owner; there is no Avi supervisor. On a merge-ready verdict Carl merges the
-feat PR into `accepted` and stops at `reviewed` — the `accepted → release`
-promotion is Avi's `qa-release` sweep.
+Launcher: [`../agents/carl/HEARTBEAT.md`](../agents/carl/HEARTBEAT.md); SOPs
+[`pr-review`](../agents/carl/sops/pr-review.md) and
+[`pr-review-slow`](../agents/carl/sops/pr-review-slow.md) win for mechanics.
+**Enter as Carl.** **Review-only:** approved work stops at `reviewed` (merged onto
+`accepted`); Avi's `qa-release` sweep owns the promotion.
 
 ### Act 1 — `pr-review`
 
-Canonical SOP:
-[`../agents/carl/sops/pr-review.md`](../agents/carl/sops/pr-review.md).
-
-Review every waiting PR. **Review-only:** approved work stops at `reviewed` (merged
-onto `accepted`) — the `accepted → release` promotion belongs to Avi's self-healing
-`qa-release`, which sweeps the reviewed queue promptly.
-
-- **Precondition:** at least one `submitted` PR with green CI. Empty / no green-CI
-  queue → report "no reviewable PRs" and stop (idempotent no-op).
+- **Precondition:** at least one `submitted` PR with green CI. None → report "no
+  reviewable PRs" and stop.
 - **Steps:**
   1. `bin/task claim-next-review` → the highest-ranked reviewable **green-CI** PR,
      claimed atomically (red / pending / conflicted are never popped).
-  2. For each PR, in **waves of ≤5** (the board DB connection cap; a Carl + his
-     light count as two), spin **one Carl** — the [review-one primitive](pr-review-sop.md).
-     Carl runs [`pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md),
-     owns the gates, and summons **one** domain LIGHT (his own child) who runs
-     [`pr-review-light.md`](../agents/carl/sops/pr-review-light.md); each reviewer
-     narrates **as its soul** (`--agent`). Carl drives the verdict — there is no
-     supervisor.
+  2. For each PR, in **waves of ≤5** (a Carl + his light count as two), spin **one
+     Carl** — the [review-one primitive](pr-review-sop.md). Carl runs
+     [`pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md), owns the
+     gates, and summons **one** domain LIGHT who runs
+     [`pr-review-light.md`](../agents/carl/sops/pr-review-light.md). Each reviewer
+     narrates **as its soul** (`--agent`).
   3. **Merge-ready** → Carl revalidates the head, `gh pr merge` the feat PR into
      `accepted`, `bin/task merged <task> accepted`, then `bin/task move <task>
-     reviewed` (merge → stamp → move; the task is `reviewed` iff its code is on
-     `accepted`).
+     reviewed` (merge → stamp → move).
   4. **Problems** → Carl, who holds the review claim, blocks: `bin/task block
-     <task> --kind rework --feedback "…" --agent carl` (one block never halts the
-     batch; only the claim's holder may spend the bounce — anyone else is refused
-     with exit 11). It runs the **two-bounce circuit breaker** first
-     and REFUSES a repeat send-back (exit 10), naming the `dependency`
-     escalation to run instead — a review deadlock is Mr. McRitchie's call. Read
-     it standalone with `bin/task bounces <task>`; a MECHANICAL bounce (red CI,
-     merge conflict) proceeds on `--breaker-ack "<reason>"`.
-- **Exit seam:** every `submitted` PR is resolved — `reviewed` (merged into
-  `accepted`, awaiting Avi's sweep) or `blocked`. Report per-PR.
+     <task> --kind rework --feedback "…" --agent carl` (only the claim's holder
+     spends the bounce). The **two-bounce
+     circuit breaker** REFUSES a repeat send-back (exit 10) and names the
+     `dependency` escalation instead; read it with `bin/task bounces <task>`. A
+     MECHANICAL bounce (red CI, merge conflict) proceeds on `--breaker-ack "<reason>"`.
+- **Exit seam:** every `submitted` PR is `reviewed` or `blocked`. Report per-PR.
 
 ### Act 2 — `pr-review-slow`
 
-Canonical SOP:
-[`../agents/carl/sops/pr-review-slow.md`](../agents/carl/sops/pr-review-slow.md).
-
-The same as `pr-review`, but **serialized** — one PR at a time.
-
-- **Precondition:** at least one reviewable `submitted` PR. Empty queue → report + stop.
-- **Steps:** the `pr-review` loop with **`--max-agents 1`** — review one PR
-  (one Carl → on a merge-ready verdict merge into `accepted` + `bin/task move
-  <task> reviewed`), then **re-query the board** before choosing the next. Use it
-  for a steady trickle or when parallel review waves would thrash the board DB.
-- **Exit seam:** every `submitted` PR resolved — `reviewed` or `blocked`.
+The same loop, **serialized** (`--max-agents 1`), re-querying the board before each
+PR. Use it when parallel waves would thrash the board DB.
 
 ## 2. Avi Heartbeat — `Avi Heartbeat` / `qa-release`
 
-Canonical heartbeat launcher:
-[`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md). The summary below
-keeps the cross-soul page readable; Avi's own heartbeat doc wins for mechanics.
-
-**Enter as Avi** (the Product Owner). The self-healing sweep + QA. The detailed
-act SOP lives with Avi: [`qa-release`](../agents/avi/sops/qa-release.md) sweeps
-reviewed work through the `accepted → release` merge, QA, and the QA-green flip.
-Avi owns release **stages 1–3** (Testing → Assembling → Deploying QA), including
-the merge. [`deploy-with-task`](../agents/avi/sops/deploy-with-task.md) is a
-direct-invoke single-task production expedite, never part of the heartbeat
-composition.
+Launcher: [`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md). **Enter as
+Avi** (the Product Owner). Avi owns release **stages 1–3**, including the merge.
+[`deploy-with-task`](../agents/avi/sops/deploy-with-task.md) is a direct-invoke
+single-task expedite, never part of the heartbeat.
 
 ### Act 1 — `qa-release`
 
-Canonical SOP:
-[`../agents/avi/sops/qa-release.md`](../agents/avi/sops/qa-release.md).
+SOP: [`../agents/avi/sops/qa-release.md`](../agents/avi/sops/qa-release.md). Run
+the self-healing `bin/release prepare --yes` sweep: reviewed work plus stragglers
+onto `release`, pre-QA gate, QA deploy, and members `assembled` only on QA-green.
+`qa-deploy` is the legacy alias.
 
-Run the self-healing `bin/release prepare --yes` sweep: reviewed work plus
-stragglers onto `release`, pre-QA gate, QA deploy, and members `assembled` only
-on QA-green. `qa-deploy` is the legacy alias.
-
-- **Precondition:** `reviewed` work and/or an `assembled` straggler off the current
-  RC. Nothing reviewed, no stragglers, no RC in flight → report + stop (idempotent no-op).
-- **Exit seam:** the RC is **live on QA**, members `assembled` on QA-green — the
-  Avi → Steffon handoff. Report the release slug + QA URL.
+- **Precondition:** `reviewed` work and/or an `assembled` straggler. Nothing
+  reviewed, no stragglers, no RC in flight → report + stop.
+- **Exit seam:** the RC **live on QA**, members `assembled`. Report slug + QA URL.
 
 ## 3. Steffon Heartbeat — `Steffon Heartbeat` / `production-deploy` / `archive-shipped`
 
-Canonical heartbeat launcher:
-[`../agents/steffon/HEARTBEAT.md`](../agents/steffon/HEARTBEAT.md). The summary
-below keeps the cross-soul page readable; Steffon's own heartbeat doc wins for
-Steffon mechanics:
-[`production-deploy`](../agents/steffon/sops/production-deploy.md) and
-[`archive-shipped`](../agents/steffon/sops/archive-shipped.md).
-
-**Enter as Steffon** (the Platform Engineer). Two acts, run **downstream-first**:
-ship a QA-green release if one is ready, then archive the prior cycle. Steffon owns
-release **stages 4–5** (post-QA → prod) plus the archive.
+Launcher: [`../agents/steffon/HEARTBEAT.md`](../agents/steffon/HEARTBEAT.md).
+**Enter as Steffon** (the Platform Engineer). Two acts, **downstream-first**: ship
+a QA-green release if one is ready, then archive the prior cycle. Steffon owns
+release **stages 4–5** plus the archive.
 
 ### Act 1 — `production-deploy`
 
-Canonical SOP:
-[`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/production-deploy.md).
+SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/production-deploy.md).
 
-Ship the assembled, QA-green release to production.
-
-- **Precondition:** a release is **ready** — i.e. Avi has taken it through
-  `qa-release` and it is **`assembled` + deployed to QA (QA-green)** (members read
-  `assembled` + `merged: release`). If nothing is ready to ship (`release ==
+- **Precondition:** a release is **`assembled` + deployed to QA (QA-green)**
+  (members read `assembled` + `merged: release`). Nothing ready (`release ==
   main`, or no QA-green release) → report "nothing to ship" and continue to
-  `archive-shipped` (idempotent no-op).
+  `archive-shipped`.
 - **Steps:**
-  1. Clean the primary checkouts (the delete-later ledger no longer grows on its own —
-     desk records go to the board — but a pre-cutover stash may still be parked there) — ship
-     from a **primary checkout**, not a worktree (gems resolve as siblings).
-  2. Run the **full e2e on the FROZEN ship SHA**, then `bin/release ship --yes` —
-     drive **stages 4–5** (Confirming → Deploying): fast-forward each repo's
-     `release → main` (stamping that repo's members `merged: "main"` as each ff
-     lands — the interrupted-run skip signal) and deploy production.
-  3. Prod-smoke, green seal, and post release notes (`ship!` flips members
-     `shipped`, `merged` stays `main`).
+  1. Ship from a **primary checkout**, not a worktree (gems resolve as siblings);
+     a pre-cutover stash may still be parked there.
+  2. Run the **full e2e on the FROZEN ship SHA**, then `bin/release ship --yes`:
+     fast-forward each repo's `release → main` (stamping `merged: "main"` as each
+     ff lands) and deploy production.
+  3. Prod-smoke, green seal, and post release notes (`ship!` flips members `shipped`).
   4. Restore the primary checkouts.
   5. Post-ship agent-docs sync — ship auto-runs `bin/install-agent-docs` from the
-     hub's **ship workspace** (`mcritchie-studio/.worktrees/_ship`, the tree
-     pinned at the SHA that just shipped; non-fatal, never aborts a completed
-     ship), so the installed docs (`~/.claude` + `~/.codex` skills, the
-     projects-root `AGENTS.md`/`CLAUDE.md`) are published from exactly what
-     shipped. The hub **primary is the fallback, not the source** — taken only
-     when that workspace holds no installer — because step 4's restore is
-     best-effort (it refuses a primary holding a live session's work), so the
-     primary can sit a release behind. **Steffon owns this step and its
-     mechanism** (the `Run Deployment`
-     building block in
-     [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md)); if it
-     warns, run the installer path the warn line prints, not the primary's copy.
+     hub's **ship workspace** (`mcritchie-studio/.worktrees/_ship`, pinned at the
+     SHA that just shipped; non-fatal, never aborts a completed ship). The hub
+     **primary is the fallback, not the source** — taken only when that workspace
+     holds no installer, because step 4's restore is best-effort. **Steffon owns
+     this step and its mechanism**; if it warns, run the installer path the warn
+     line prints, not the primary's copy.
 - **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
-  slug. An interrupted run re-runs safely: published gems skip, ffs no-op
-  (`merged: main` members are already over), re-pins are idempotent.
+  slug. An interrupted run re-runs safely: published gems skip, ffs no-op,
+  re-pins are idempotent.
 
-> ⚠️ **Ship authority.** This crosses the production gate. Run it only when the
-> operator launched it (the `Steffon Heartbeat` / `production-deploy` chip / phrase) or
-> otherwise granted ship authority in-session. The `--yes` answers only the human
-> confirm; it never skips the preflight, frozen-SHA tests, gem publish, deploy
-> smoke, or partial-ship recovery. (A dirty primary does NOT block it: the deploy
-> runs from its own `.worktrees/_ship` checkout at the frozen SHA.)
+> ⚠️ **Ship authority.** Run it only when the operator launched it (the `Steffon
+> Heartbeat` / `production-deploy` chip or phrase) or granted ship authority
+> in-session. `--yes` answers only the human confirm; it never skips the preflight,
+> frozen-SHA tests, gem publish, deploy smoke, or partial-ship recovery. A dirty
+> primary does NOT block it: the deploy runs from `.worktrees/_ship`.
 
 ### Act 2 — `archive-shipped`
 
-Canonical SOP:
-[`../agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md).
-
+SOP: [`../agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md).
 Archive shipped work and reclaim completed worktrees. `archive-completed` is the
 legacy alias.
 
 ## 4. Xan Heartbeat — `Xan Heartbeat` / `grade-events` / `share-insights` / `full-cycle`
 
-Canonical heartbeat launcher:
-[`../agents/xan/HEARTBEAT.md`](../agents/xan/HEARTBEAT.md). The summary below
-keeps the cross-soul page readable; Xan's standalone act SOPs win for Xan
-mechanics:
-[`grade-events`](../agents/xan/sops/grade-events.md),
-[`share-insights`](../agents/xan/sops/share-insights.md), and
-[`full-cycle`](../agents/xan/sops/full-cycle.md).
+Launcher: [`../agents/xan/HEARTBEAT.md`](../agents/xan/HEARTBEAT.md). The
+operator view is [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline).
 
-**Enter as Xan** (the Lead Orchestrator). Three acts: grade recent trajectory
-activities for the learning layer, share the BANKED insights out to every agent, and
-— with ship authority — run the whole DevOps cycle end to end. The distillation
-pipeline at [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline) is the
-operator view of the first two: Activities → Insights (Xan grades) →
-Confirmations (McRitchie's `mcr` grades).
+### Act 1 — `grade-events` (optional since 2026-09-25)
 
-### Act 1 — `grade-events`
+SOP: [`../agents/xan/sops/grade-events.md`](../agents/xan/sops/grade-events.md).
+Every task is graded once at ship (`Insights::TaskGrader`, thresholds in
+`config/learning_loop.yml`), so run this act only when Mr. McRitchie names it.
 
-Canonical SOP:
-[`../agents/xan/sops/grade-events.md`](../agents/xan/sops/grade-events.md).
-
-Grade a batch of recent trajectory activities for quality so the learning layer keeps
-only what makes the next agent smarter.
-
-- **Precondition:** resolved activities awaiting a grade (there usually are). None
-  ungraded → report "nothing to grade" and stop (idempotent no-op).
-- **Steps (first-class CLI path — bearer-gated, no HTML scraping):**
-  1. `bin/agent-activity awaiting [--limit 10]` — the resolved activities Xan hasn't
-     graded yet (id + category · reason → outcome + task), oldest → newest.
-  2. Grade each: `bin/agent-activity grade <activity-id> --disposition good|not
-     --slug "<4–7 words>" [--long-form "<anchor>"]`.
-  3. **Bank** the ones that make the next agent smarter (`--bank`); **discard** the
-     rest (`--discard`). Banked insights feed forward via `bin/session-insights`.
-  4. The browser drawer at `/xan/heartbeat` is the equivalent **admin** path
-     (same writes; it also owns the **`mcr` audit-of-Xan** lane, which the agent
-     CLI cannot write — the bearer `grade` endpoint always grades as `xan`).
-- **Exit seam:** ~10 activities graded, useful insights banked. (Mr. McRitchie audits a
-  shrinking sample as the signal proves out — he does so on the
-  [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline) page, where **Confirm**
-  promotes an insight into column 3 as an `mcr` grade.)
+- **Precondition:** resolved activities awaiting a grade. None → report and stop.
+- **Steps:** `bin/agent-activity awaiting [--limit 10]` → `bin/agent-activity grade
+  <activity-id> --disposition good|not --slug "<4–7 words>"` → `--bank` or
+  `--discard`. The `/xan/heartbeat` drawer is the admin path (the `mcr` lane).
+- **Exit seam:** ~10 activities graded, useful insights banked.
 
 ### Act 2 — `share-insights`
 
-Canonical SOP:
-[`../agents/xan/sops/share-insights.md`](../agents/xan/sops/share-insights.md).
+SOP: [`../agents/xan/sops/share-insights.md`](../agents/xan/sops/share-insights.md).
+Share the **Insight Bank** (`ActionGrade.banked`, whichever grader recorded each
+row) through the docs so every next agent starts with the curated lessons.
 
-Take the **Insight Bank** — `ActionGrade.banked`, whichever grader recorded each
-row — and share it out through the platform's docs, so every next agent starts with
-the curated lessons. (Renamed from `propagate-insights`: the act is named for its
-audience — the next agents — not the doc-write mechanics.)
-
-- **Precondition:** the bank is non-empty (at least one banked `ActionGrade`).
-  Empty bank → report "nothing to share" and stop (idempotent no-op). **Banking is
-  the gate, not the grader:** `mcr` marks Mr. McRitchie's audit *of* an Xan grade,
-  a lane the agent CLI cannot even write, so gating on it stands the act down over
-  every lesson an agent banks — see the SOP's Preconditions.
-- **Steps:**
-  1. Regenerate the tracked lessons doc from the bank (composes with the lever-3
-     generator — `bin/rails insights:doc`, which reads `ActionGrade.banked`).
-     **That is the whole act — it installs nothing, and owes no install step.** The
-     generator writes one file, `../shared/insights.md`, which the docs installer has
-     never published (its payload is the two entry docs plus `docs/agents/skills/`),
-     and a fresh session reads insights from the board via `bin/session-insights`,
-     not from that file. Nobody hand-runs the installer, and the exemption list is
-     closed at two: [`docs-maintenance.md`](docs-maintenance.md) § Editing The Entry
-     Docs.
-- **Exit seam:** every banked insight is in the tracked doc. A re-run with nothing
-  newly banked is a clean no-op.
+- **Precondition:** at least one banked `ActionGrade`. Empty bank → report and
+  stop. **Banking is the gate, not the grader:** `mcr` marks Mr. McRitchie's audit
+  *of* an Xan grade, a lane the agent CLI cannot write.
+- **Steps:** `bin/rails insights:doc` regenerates `../shared/insights.md` from the
+  bank. **That is the whole act — it installs nothing, and owes no install step**
+  ([`docs-maintenance.md`](docs-maintenance.md) § Editing The Entry Docs).
+- **Exit seam:** every banked insight is in the tracked doc.
 
 ### Act 3 — `full-cycle`
 
-Canonical SOP:
-[`../agents/xan/sops/full-cycle.md`](../agents/xan/sops/full-cycle.md).
+SOP: [`../agents/xan/sops/full-cycle.md`](../agents/xan/sops/full-cycle.md). Run
+`pr-review` → `qa-release` (`bin/release prepare --yes`) → `production-deploy`
+(`bin/release ship`). **Precondition:** `submitted` PRs and/or an `assembled`
+release; nothing anywhere → report and stop. **Exit seam:** the release `shipped`.
 
-Run the **whole DevOps cycle** end to end — the launcher that replaced the retired
-`Merge, Assemble, Deploy` chip. Named `full-cycle` to avoid colliding with the
-read-only `bin/devops-cycle` snapshot tool.
-
-- **Precondition:** there is work to move — `submitted` PRs to review, and/or an
-  `assembled` release to ship. Nothing anywhere (`release == main`, empty queue) →
-  report "nothing to run" and stop (idempotent no-op).
-- **Steps** (the three atoms in sequence — Carl + Avi + Steffon):
-  1. `pr-review` — review every `submitted` PR (review-only → `reviewed`, merged into `accepted`).
-  2. `qa-release` — `bin/release prepare --yes` (the self-healing sweep: promote the
-     `accepted → release` batch PR, stages 1–3 → live on QA, members `assembled`
-     on QA-green).
-  3. `production-deploy` — `bin/release ship` (stages 4–5 → prod), same frozen-SHA
-     tests, deploy smoke, green seal, release notes.
-- **Exit seam:** the whole release `shipped` (stage 5 **Deployed**). Report the prod
-  SHA + release slug.
-
-> ⚠️ **Full ship authority.** `full-cycle` crosses the production gate autonomously
-> — run it only when the operator launched it (the `Xan Heartbeat` / `full-cycle`
-> phrase) or otherwise granted ship authority in-session. It uses the SAME
-> deterministic gates as `production-deploy`; `--yes` answers only the human
-> confirm. For expediting ONE task on a clean ladder, use Avi's
+> ⚠️ **Full ship authority.** Run `full-cycle` only when the operator launched it
+> or granted ship authority in-session. It uses the SAME deterministic gates as
+> `production-deploy`. To expedite ONE task on a clean ladder, use Avi's
 > [`deploy-with-task`](../agents/avi/sops/deploy-with-task.md) act instead.
 
 ---
 
-**Source of truth for the launcher mapping:**
-`ApplicationHelper#heartbeat_launchers` (the card) →
-[`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md) (the atoms +
-this launcher set) → root `AGENTS.md` / [`index.md`](../index.md) (the quick
-launcher index). If they drift, §1.4 wins; fix the others in the same pass.
+**Source of truth:** `ApplicationHelper#heartbeat_launchers` →
+[`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md) → root `AGENTS.md`
+/ [`index.md`](../index.md). If they drift, §1.4 wins; fix the others in one pass.

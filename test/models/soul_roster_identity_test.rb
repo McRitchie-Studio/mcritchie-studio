@@ -61,8 +61,6 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
     assert_equal "pokemon", task.reload.devops["built_by"]
     assert_equal %w[pokemon], task.devops["builders"],
       "a Pokemon-built task must never come back NOT STAMPED"
-    assert_nil task.devops["builders_unattributed"],
-      "the claim named a soul, so nothing is missing from the set"
   end
 
   test "a Rex build claim stamps the author set" do

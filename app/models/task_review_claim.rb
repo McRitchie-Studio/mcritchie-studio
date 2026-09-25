@@ -114,11 +114,27 @@ class TaskReviewClaim < ApplicationRecord
     task = Task.find_by(slug: task_slug.to_s.strip)
     return false if task.nil?
 
-    ([task.devops_built_by] + task.devops_builders).map { |s| s.to_s.strip }.include?(slug)
+    # The STAMPED author set first, on its own: an exception inside derivation must
+    # never discard it. Then the PR's own commit authors (Task#derived_authors,
+    # devops-v3 piece 4a), so a soul whose commits are on the PR is refused even
+    # when no claim ever named them; a failed derivation adds nobody.
+    reviewer = Task.canonical_soul(slug)
+    stamped = [task.devops_built_by] + task.devops_builders
+    return true if stamped.map { |s| Task.canonical_soul(s) }.include?(reviewer)
+
+    derived_self_review?(task, reviewer)
   rescue StandardError => e
     Rails.logger.warn("[review-claim] self-review check failed for #{task_slug}: #{e.class}: #{e.message}")
     false
   end
+
+  def self.derived_self_review?(task, reviewer)
+    task.derived_authors.map { |s| Task.canonical_soul(s) }.include?(reviewer)
+  rescue StandardError => e
+    Rails.logger.warn("[review-claim] derived authors failed for #{task.slug}: #{e.class}: #{e.message}")
+    false
+  end
+  private_class_method :derived_self_review?
 
   # The intent write behind the crew seat. TaskEvent broadcasts on create-commit, so
   # the board paints the reviewer live — no refresh, no polling.
@@ -350,8 +366,7 @@ class TaskReviewClaim < ApplicationRecord
   # Seconds since the holder's last heartbeat, derived as `expiry - TTL`. It MUST be
   # handed this lane's TTL: the default is the 120s build-claim one, and reading a
   # review lease through it reports every freshly renewed claim as ~3h stale — a lie
-  # the skip message and the status read would both print. MigrationLaneClaim passes
-  # its own for the same reason.
+  # the skip message and the status read would both print.
   def heartbeat_age(now: Time.current)
     ClaimLease.heartbeat_age(claim_hash, now: now, ttl: ClaimLease::REVIEW_TTL_SECONDS)
   end

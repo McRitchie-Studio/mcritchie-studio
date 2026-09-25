@@ -2,14 +2,12 @@
 # frozen_string_literal: true
 
 # bin/ci-scope-capture — make a PR's GitHub Actions run GRADEABLE by ingesting its
-# check verdicts LOCALLY, the same shape a local cert (bin/full-suite-check) and a
-# release run (bin/release) already emit.
+# check verdicts LOCALLY, the same shape a release run (bin/release) already emits.
 #
 # WHY LOCAL INGESTION (no CI POST): CI has no board token and a fork PR couldn't be
 # trusted with one, so instead of POSTing FROM GitHub Actions we READ the finished
 # checks with `gh pr checks` and SELF-REPORT them from the session — reusing the
-# EXACT `bin/agent-activity action` verb bin/release.rb and bin/full-suite-check
-# self-report through. CI results just become another SOURCE of kind=test_scope
+# EXACT `bin/agent-activity action` verb bin/release.rb self-reports through. CI results just become another SOURCE of kind=test_scope
 # AgentActions on /xan/pipeline. NO CI secret, NO ci.yml change, NO server change.
 #
 # It reads:  gh pr checks <pr> --json name,bucket,startedAt,completedAt
@@ -26,7 +24,7 @@
 # The ci_<key>s are registered under `ci_scopes:` in config/devops_test_suites.yml,
 # which supplies each row's phase/tier/host chips on the pipeline's Test-runs band.
 #
-# GUARDS mirror bin/full-suite-check's emit_test_scope EXACTLY so telemetry NEVER
+# GUARDS mirror bin/release.rb's test-scope emit EXACTLY so telemetry NEVER
 # breaks or slows anything and is a pure no-op with no session/span:
 #   - session gate: no CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID → emit nothing.
 #   - span gate: the `action` verb SELF-CHECKS the open-activity marker and no-ops
@@ -55,8 +53,7 @@ require_relative "lib/session_identity"
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = File.expand_path("task", __dir__)
 
-# The narration CLI — the SAME emit seam bin/full-suite-check and bin/release.rb
-# self-report through. Fired forget-fully for telemetry only; overridable for tests.
+# The narration CLI — the SAME emit seam bin/release.rb self-reports through. Fired forget-fully for telemetry only; overridable for tests.
 AGENT_ACTIVITY = ENV.fetch("CI_SCOPE_AGENT_ACTIVITY", File.expand_path("agent-activity", __dir__))
 
 # The check-run buckets that carry a real verdict. pending/skipping/cancel are not
@@ -64,8 +61,7 @@ AGENT_ACTIVITY = ENV.fetch("CI_SCOPE_AGENT_ACTIVITY", File.expand_path("agent-ac
 VERDICT_BUCKETS = { "pass" => "pass", "fail" => "fail" }.freeze
 
 # The live agent session id (Claude or Codex), or "" when none — the telemetry
-# session gate. Blank means "no session to attribute to": skip the emit entirely,
-# exactly as bin/full-suite-check's emit_test_scope does.
+# session gate. Blank means "no session to attribute to": skip the emit entirely.
 def agent_session_id
   SessionIdentity.id
 end
@@ -171,7 +167,7 @@ rescue JSON::ParserError, TypeError
 end
 
 # Best-effort test-scope telemetry for ONE CI job — the CI-ingestion MIRROR of
-# bin/full-suite-check's emit_test_scope. Emits ONE kind=test_scope AgentAction
+# the release gate's test-scope emit. Emits ONE kind=test_scope AgentAction
 # through the SAME `bin/agent-activity action` verb, tagged event_slug=<ci scope>,
 # result_slug=pass|fail, duration_ms, plus the stable idempotency_key. It ALSO
 # carries the job's REAL GitHub window (--started-at/--completed-at, the raw

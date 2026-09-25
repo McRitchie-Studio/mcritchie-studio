@@ -50,7 +50,6 @@ test/controllers/api/v1/event_grades_controller_test.rb: 0.39
 test/controllers/api/v1/gate_runs_controller_test.rb: 0.44
 test/controllers/api/v1/github_webhooks_controller_test.rb: 0.11
 test/controllers/api/v1/insights_controller_test.rb: 0.17
-test/controllers/api/v1/migration_lane_claims_controller_test.rb: 0.22
 test/controllers/api/v1/release_conductor_claims_controller_test.rb: 0.5
 test/controllers/api/v1/release_events_controller_test.rb: 1.53
 test/controllers/api/v1/release_notes_controller_test.rb: 0.16
@@ -137,7 +136,6 @@ test/integration/heartbeat_feedback_test.rb: 0.75
 test/integration/heartbeat_grade_auth_test.rb: 0.23
 test/integration/last_release_fx_router_test.rb: 1.01
 test/integration/links_hub_test.rb: 0.28
-test/integration/migration_lane_exclusion_race_test.rb: 1.89
 test/integration/model_page_adoption_test.rb: 0.5
 test/integration/onboarding_first_name_test.rb: 0.44
 test/integration/qa_green_stamp_ordering_test.rb: 0.93
@@ -182,14 +180,7 @@ test/lib/bounce_check_cli_test.rb: 8.96
 test/lib/bounce_ledger_test.rb: 0.12
 test/lib/cert_database_reaper_integration_test.rb: 1.27
 test/lib/cert_database_reaper_test.rb: 0.13
-test/lib/cert_emission_test.rb: 0.09
 test/lib/cert_evidence_test.rb: 0.14
-test/lib/cert_orphan_guard_reaper_test.rb: 3.52
-test/lib/cert_orphan_guard_test.rb: 0.66
-test/lib/cert_process_test.rb: 0.96
-test/lib/cert_root_guard_test.rb: 4.93
-test/lib/cert_runlock_test.rb: 0.62
-test/lib/cert_tree_guard_test.rb: 0.3
 test/lib/ci_apt_step_timeout_test.rb: 5.29
 test/lib/ci_bundle_retry_test.rb: 0.02
 test/lib/ci_job_timeout_test.rb: 0.02
@@ -231,7 +222,6 @@ test/lib/fast_lane_test.rb: 0.08
 test/lib/feature_marker_test.rb: 0.04
 test/lib/feature_shape_tiers_test.rb: 0.08
 test/lib/feature_shapes_audit_test.rb: 0.03
-test/lib/full_suite_check_test.rb: 61.72
 test/lib/gate_cli_test.rb: 1.66
 test/lib/gh_auth_retry_test.rb: 0.1
 test/lib/gh_identity_test.rb: 0.05
@@ -339,7 +329,6 @@ test/models/game_test.rb: 0.26
 test/models/gate_run_test.rb: 1.04
 test/models/github_commit_range_test.rb: 0.04
 test/models/has_key_method_test.rb: 0.08
-test/models/migration_lane_claim_test.rb: 0.23
 test/models/model_pricing_test.rb: 0.15
 test/models/model_rate_override_test.rb: 0.09
 test/models/news_test.rb: 0.43

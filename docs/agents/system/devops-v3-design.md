@@ -52,7 +52,7 @@ drop it.
 ## 2. The shape of v3
 
 ```text
-Alex + focus session ──files a startable task──▶ Pokémon builder ──PR green──▶ Carl (subagent)
+Alex + focus session ──files a startable task──▶ Pokémon builder ──PR green──▶ reviewer (subagent)
    holds the epic plan                            desk · build · ship           review · merge
                                                        ▲                            │
                                                        └────── blocker ─────────────┘
@@ -72,8 +72,8 @@ GitHub webhooks ─── CI verdicts, PR state ───▶ the board: a derive
 Three rules:
 
 1. **The focus session owns build and review.** It files tasks just-in-time,
-   spawns builders in parallel, and spawns Carl for each PR the moment it is
-   green. Rework happens in the same desk with the same context.
+   spawns builders in parallel, and spawns each PR's reviewer the moment it is
+   green: Carl for code, Xan alone for prose (§4 tiers). Rework happens in the same desk with the same context.
 2. **One suite per tree.** A tree hash earns one verdict, from CI. Every gate
    reads it; nothing re-runs an identical tree. Local certs become optional
    pre-flights that write no evidence.
@@ -82,10 +82,11 @@ Three rules:
    `pr_url` and cert receipts by hand, so the tools that check those stamps
    against each other have nothing left to refuse.
 
-At today's mechanics the idea-to-production floor on an empty board is about 45
+At today's mechanics the idea-to-production floor on an empty board is 57 to 65
 minutes: build 23 min at the median with ship's CI wait inside it, review 6 to 14
-min with no queue, sweep to QA 14 min, ship 14 min. It becomes about 30 once G3
-and G4 credit the PR's tree instead of re-running it.
+min with no queue, sweep to QA 14 min, ship 14 min. In v3 it becomes about 40 for
+a median build and about 30 for a small one, once G3 and G4 credit the PR's tree
+instead of re-running it.
 
 ## 3. Epics and just-in-time tasks
 
@@ -118,8 +119,9 @@ shows its age. No refusal, no cap.
 ## 4. Builder-triggered review, and how deep
 
 **The flow.** When a builder's `bin/ship` reaches `submitted` with a green PR,
-the focus session spawns Carl for that PR with the epic plan, the task, and the
-recorded head. Carl runs the primary review he runs today: gate-zero on the CI
+the focus session spawns that PR's reviewer with the epic plan, the task, and the
+recorded head: Carl for code, Xan alone for prose (tiers below). Carl runs the
+primary review he runs today: gate-zero on the CI
 verdict, the deep read, an optional light, a verdict, and the merge into
 `accepted`. A blocker comes straight back to the session, which still has the
 desk and the context. The standalone `pr-review` sweep stays only as the orphan
@@ -202,7 +204,7 @@ pre-flight that writes no evidence.
 | Repo | Adds | Gap today |
 |---|---|---|
 | mcritchie-studio | System tests for the board; docs registry tests; the production seal | None structural |
-| turf-monster | On-chain journey against devnet (`contest-rehearsal`) | The devnet nightly has never executed; make the rehearsal a QA post-deploy lane for on-chain diffs or keep it an operator stop and say so |
+| turf-monster | On-chain journey against devnet (`contest-rehearsal`) | The devnet nightly fires every night and skips itself (131 of 132 runs skipped); make the rehearsal a QA post-deploy lane for on-chain diffs or keep it an operator stop and say so |
 | studio-engine | Consumer CI against both apps; engine Playwright | None |
 | solana-studio | Gem CI plus Playwright | None |
 | turf-vault | Node and Rust tests via `bin/release-check`; upgrades by hand through Squads | No desk lane; certify from a plain worktree |
@@ -227,6 +229,10 @@ escalations reached Alex; the next move landed 48 minutes later at the median.
 
 Mechanically: one `window_expires_at` field per gate, set when the request is
 posted, one command the session runs to wait on it, and a countdown on the card.
+Landed in PR #1586: the three windows' minutes and the ship mode live in
+`config/release_builder.yml`, read by `Devops::Windows`. Each countdown derives
+from those minutes plus a timestamp the task or release already carries, so no
+`window_expires_at` column was needed.
 
 ## 7. Guard catalog
 
@@ -264,7 +270,7 @@ window with a clock.
 | `full-suite-check` + fingerprint evidence | Local full suite; DoR re-grades the tree hash | A stale or partial cert | The top DoR failure: 439 + 337 refusals | delete: the CI tree verdict replaces it |
 | Cert root, tree and orphan guards | Refuse the wrong or dirty tree; reap zombie certs | Certifying someone else's code | False STALE 6 of 6 once; the reaper once killed an innocent process | delete with the evidence system |
 | `control-check` | Replays pre-change tests for test-only diffs | A silently deleted assertion | Builders produced it unprompted | keep as a review lane |
-| Bypass and deferral receipts | `[full-suite-bypass]`, `[cert-deferred]` | A cert that could not run | unmeasured | delete |
+| Bypass and deferral receipts | the full-suite bypass hatch and the cert-deferred receipt | A cert that could not run | unmeasured | delete |
 
 ### Definition of Ready
 
@@ -380,6 +386,22 @@ from day 4.
 
 Collision points: the card partial (epic chip and countdown) and `dor-check`
 (2a and 4a), each serialized inside its lane.
+
+**4a as built.** `Github::TaskDerivation` reads GitHub's API, never a checkout,
+because the board runs on Heroku. `Task#merged_rung` names the highest of `main`,
+`release` and `accepted` that contains the PR's merge commit. It falls back to the
+`merged` stamp only when GitHub finds no merge, so `bin/task merged` overrides
+only then; when GitHub places the commit, the derived rung wins. A compare cannot
+see a revert, so a reverted merge still reads as merged; the rework path repoints
+the task at a new PR. `Task#pr_url_or_derived` finds the PR headed by the task
+branch, skipping any PR whose exact url the task lists as abandoned.
+`Task#derived_authors` maps `<soul>@mcritchie.studio` commit emails and
+Co-Authored-By trailers to souls. `ReviewerSelector` and the review-claim backstop
+union those authors with the stamps. `bin/release`'s detection, resolve and
+stranded-commit snippets, and the multi-repo record check, read the derived values.
+Tasks share one derivation per process for a minute: each GitHub answer is cached,
+and the first failed read stops the rest, so an outage costs one timeout per sweep.
+Every stamp and guard stays until 4b.
 
 ## 11. Decisions recorded on 2026-09-24
 

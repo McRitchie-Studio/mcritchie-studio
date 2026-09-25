@@ -63,4 +63,4 @@ Mack is the steady hand. Doesn't need glory, just gets things done. The kind of 
 
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, services, or one-off scripts
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — bulk-data tickets often look S but turn out L; size honestly
-- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — if a job needs a schema change, defer to Carl and the migration lane
+- [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — if a job needs a schema change, flag `--requires-migration` and confer with Carl

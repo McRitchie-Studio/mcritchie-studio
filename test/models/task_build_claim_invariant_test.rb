@@ -1,23 +1,14 @@
 # frozen_string_literal: true
 
-# The build claim as a STAGE INVARIANT, and the attribution of durable progress.
+# The build claim's server half, and the attribution of durable progress.
 #
-# Two failures from 2026-08-13 live here, and they share a cause: the claim keys
-# in metadata["devops"] were treated as ordinary client data.
-#
-#   RELEASE — every other lease in this app (DevopsShift, TaskReviewClaim,
-#   ReleaseConductorClaim, MigrationLaneClaim) has an explicit release that nils
-#   its columns. The devops build claim had none: sessions stopped heartbeating
-#   and walked away, leaving a dead holder on the row.
-#
-#   PRESERVE — Api::V1::TasksController ASSIGNED metadata WHOLESALE, so any PATCH
-#   carrying `devops` deleted the keys it did not echo, and the board's own edit
-#   form echoes none of them. A board save silently destroyed a LIVE claim, which
-#   is why two readers of "the same fact" disagreed 20 seconds apart: the fact was
-#   being erased and rewritten underneath them. Both write paths fold through
-#   Task.merge_devops_into_metadata since `api-devops-patch-replaces`, so an OMITTED
-#   claim key survives on its own; the invariant still answers a key posted BLANK and
-#   a raw whole-column `metadata:` write, which is what the cases below drive.
+# THE DESK IS THE BUILD CLAIM (devops-v3 piece 4b-i; bin/lib/desk_claim.rb). The
+# 120s lease is gone. The board keeps ONE key, devops.claimed_session, as an
+# attribution record stamped by a build claim (a PATCH naming `stage: building`
+# with the mover's session on its event) — Task#stamp_build_claim_session. It is
+# cleared when the task leaves `building`, and the retired lease keys
+# (claim_nonce, claim_expires_at) are dropped on every save, which is the
+# one-release tolerance for rows an older CLI wrote.
 require "test_helper"
 
 class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
@@ -32,107 +23,94 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   setup do
     @now = Time.current
     @task = tasks(:in_progress_task) # stage: building
-    @claim = ClaimLease.renewed(session: HOLDER, nonce: "inst-A", now: @now)
-    @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(@claim) })
+    claim!(HOLDER)
     TaskEvent.where(task_slug: @task.slug).delete_all
     GateRun.where(subject_slug: @task.slug).delete_all
   end
 
-  def claim_keys(task = @task)
-    task.reload.devops.slice(*ClaimLease::CLAIM_KEYS)
-  end
-
-  # --- PRESERVE: a client that forgets the claim must not destroy it ---------
-
-  # The board's edit form permits no claim keys, so this payload is the shape a board
-  # save USED TO leave at the model. Before the invariant it wiped a live lease and
-  # the desk read as unclaimed — inviting a second agent onto a desk someone was
-  # working at. Both write paths fold through Task.merge_devops_into_metadata since
-  # `api-devops-patch-replaces`, so this now drives the model write directly.
-  test "a raw whole-column metadata write that omits the claim keys does not destroy a live claim" do
-    @task.update!(metadata: { "devops" => { "kind" => "feature", "branch" => "feat/x" } })
-
-    assert_equal @claim, claim_keys, "an omitted key is not a released claim"
-    assert @task.reload.claim_live?(now: @now), "the desk is still held by its holder"
-  end
-
-  # Preserving is not extending. The lease keeps lapsing on its own TTL clock —
-  # restoring an omitted key must never push the expiry out.
-  test "preserving an omitted claim does not renew its lease" do
-    lapsed = ClaimLease.renewed(session: HOLDER, nonce: "inst-A", now: @now - 10.minutes)
-    @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(lapsed) })
-
-    @task.update!(metadata: { "devops" => { "kind" => "feature" } })
-
-    assert_equal lapsed["claim_expires_at"], claim_keys["claim_expires_at"],
-                 "the expiry is carried forward verbatim, not refreshed"
-    refute @task.reload.claim_live?(now: @now), "a lapsed lease stays lapsed"
-  end
-
-  # An explicit re-claim still wins — preservation only fills what was omitted.
-  test "an incoming claim overwrites the stored one" do
-    fresh = ClaimLease.renewed(session: STEALER, nonce: "inst-B", now: @now)
-    @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(fresh) })
-
-    assert_equal STEALER, claim_keys["claimed_session"]
-    assert_equal "inst-B", claim_keys["claim_nonce"]
-  end
-
-  # The preservation must not become inheritance ACROSS holders. A steal names a
-  # new session, SessionIdentity.nonce degrades to "" whenever the agent process
-  # cannot be resolved, and normalize_devops_metadata drops blanks — so a real
-  # steal arrives naming a new holder with NO nonce. Completing it from the old
-  # record would staple the previous instance's token to the new holder's claim,
-  # and the two-terminals guard would then be comparing one agent's identity
-  # against another's.
-  test "a claim naming a different session never inherits the previous holders nonce" do
-    stolen = { "claimed_session" => STEALER, "claim_expires_at" => (@now + 120).utc.iso8601 }
-    @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(stolen) })
-
-    assert_equal STEALER, claim_keys["claimed_session"]
-    assert_nil claim_keys["claim_nonce"], "one instance's token must never ride another instance's claim"
-    assert_equal stolen["claim_expires_at"], claim_keys["claim_expires_at"],
-                 "and the stealer's own lease stands, not the previous holder's"
-  end
-
-  # --- RELEASE: the claim is a BUILD-stage lease ----------------------------
-
-  test "moving out of building releases the claim" do
-    @task.update!(stage: "submitted")
-
-    assert_empty claim_keys, "a submitted task is not being built — nobody holds a build claim on it"
-    refute @task.reload.claim_live?(now: @now)
-  end
-
-  # Stated as an invariant rather than hung off the submitted transition, so every
-  # exit releases — including the ones a `submitted`-only guard would miss.
-  # Read from Task::STAGES rather than a hand-listed copy: a stage added later
-  # must inherit the invariant automatically, or this test silently stops covering
-  # the newest exit from `building`.
-  test "every non-building stage releases the claim" do
-    (Task::STAGES - %w[building]).each do |stage|
-      @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(@claim) }, stage: "building")
-      @task.update!(stage: stage)
-
-      assert_empty claim_keys, "stage #{stage} is not a build — the claim must be released"
+  # A build claim exactly as the API delivers one: `stage: building` on the PATCH
+  # (Current.task_build_claim) and the mover's session on the event.
+  def claim!(session, devops: { "kind" => "feature" })
+    Current.set(task_build_claim: true, task_event_session: session) do
+      @task.update!(stage: "building", metadata: { "devops" => devops })
     end
   end
 
-  # The invariant heals rows that already carry a dead claim, without needing the
-  # stage to move: a save of any kind re-asserts it.
-  test "a non-building task sheds a stale claim on any save" do
+  def claimed(task = @task)
+    task.reload.devops["claimed_session"]
+  end
+
+  # --- STAMP: a claim names its session, and writes no lease -------------------
+
+  test "a build claim stamps the claiming session and writes no lease" do
+    assert_equal HOLDER, claimed
+    assert_nil @task.devops["claim_nonce"], "no per-instance nonce: the desk is the claim"
+    assert_nil @task.devops["claim_expires_at"], "no TTL: nothing renews or expires a build claim"
+    refute @task.claim_live?(now: @now), "readers see no live lease"
+  end
+
+  test "a re-claim by another session re-points the claimer" do
+    claim!(STEALER)
+
+    assert_equal STEALER, claimed
+  end
+
+  # Only a claim may change who claimed. A write that posts a different session, or
+  # blanks it, or omits it, is not a claim.
+  test "a non-claim write cannot re-point or erase the claimer" do
+    @task.update!(metadata: { "devops" => { "kind" => "feature", "claimed_session" => STEALER } })
+    assert_equal HOLDER, claimed, "a posted session is not a claim"
+
+    @task.update!(metadata: { "devops" => { "kind" => "feature", "branch" => "feat/x" } })
+    assert_equal HOLDER, claimed, "an omitted session is not a released claim"
+  end
+
+  # The one-release tolerance: a row an older CLI wrote sheds its lease keys on the
+  # next save, and keeps the claimer.
+  test "retired lease keys are dropped on any save" do
+    old = @task.metadata.deep_dup
+    old["devops"].merge!("claim_nonce" => "inst-A", "claim_expires_at" => (@now + 90).utc.iso8601)
+    @task.update_columns(metadata: old)
+
+    @task.update!(title: "Retitled Task Here")
+
+    assert_nil @task.reload.devops["claim_nonce"]
+    assert_nil @task.devops["claim_expires_at"]
+    assert_equal HOLDER, claimed
+  end
+
+  # --- RELEASE: the claimer is a BUILD-stage fact ----------------------------
+
+  test "moving out of building clears the claimer" do
+    @task.update!(stage: "submitted")
+
+    assert_nil claimed, "a submitted task is not being built — nobody holds a build claim on it"
+  end
+
+  # Read from Task::STAGES rather than a hand-listed copy: a stage added later must
+  # inherit the rule automatically.
+  test "every non-building stage clears the claimer" do
+    (Task::STAGES - %w[building]).each do |stage|
+      claim!(HOLDER)
+      @task.update!(stage: stage)
+
+      assert_nil claimed, "stage #{stage} is not a build — the claimer must be cleared"
+    end
+  end
+
+  test "a non-building task sheds a stale claimer on any save" do
     @task.update_columns(stage: "submitted") # bypass callbacks: seed the bad row
     assert_equal HOLDER, @task.reload.devops["claimed_session"], "precondition: the stale claim is on the row"
 
     @task.update!(title: "Retitled Task Here")
 
-    assert_empty claim_keys, "the stale holder is shed the next time the row is written"
+    assert_nil claimed, "the stale holder is shed the next time the row is written"
   end
 
-  test "the claim survives saves that keep the task building" do
+  test "the claimer survives saves that keep the task building" do
     @task.update!(title: "Still Building This")
 
-    assert_equal @claim, claim_keys
+    assert_equal HOLDER, claimed
   end
 
   # --- ATTRIBUTION: progress belongs to whoever produced it ------------------
@@ -151,7 +129,7 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
                     created_at: at, updated_at: at)
   end
 
-  # THE CIRCULAR REFUSAL, at its source. A challenger's own full-suite-check lands
+  # THE CIRCULAR REFUSAL, at its source. A challenger's own local cert (since retired) lands
   # a g1_cert on a task it does not hold; the holder has produced nothing. The
   # holder-scoped fact must stay EMPTY rather than absorb the challenger's work.
   test "a challengers cert is not counted as the holders progress" do
@@ -199,16 +177,6 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
     assert_in_delta 300, @task.holder_progress_seconds_ago(now: @now), 5
   end
 
-  # The board chip asks the same question the gate does, so it must not be
-  # answerable with someone else's work either.
-  test "a challengers cert does not make a quiet holder read as healthy" do
-    checkpoint!(session: HOLDER, at: @now - (ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes))
-    gate!(session: CHALLENGER, at: @now - 2.minutes)
-
-    assert @task.claim_progress_quiet?(now: @now),
-           "the holder has been silent for longer than the threshold — a stranger's cert does not revive it"
-  end
-
   # --- REAPING: the same rule, pointed the other way -------------------------
   #
   # The attribution above is strict: an unowned row is never claimed AS the
@@ -236,7 +204,7 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   end
 
   # THE REGRESSION. The holder is long gone; a queued challenger runs its own
-  # full-suite-check on the held slug, landing a checkpoint AND opening a g1_cert.
+  # the local cert on the held slug, landing a checkpoint AND opening a g1_cert.
   # Task-wide both signals now say "busy", and reading them renewed the dead lease
   # for another 1h29m. The lease must still reap.
   test "a challengers own cert does not revive an abandoned lease" do

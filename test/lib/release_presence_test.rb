@@ -43,7 +43,7 @@ require "tmpdir"
 require "fileutils"
 require_relative "../support/session_env"
 require_relative "../../bin/lib/release_presence"
-require_relative "../../bin/lib/cert_orphan_guard"
+require_relative "../../bin/lib/process_table"
 require_relative "../../bin/lib/agent_presence"
 
 class ReleasePresenceClaimTest < Minitest::Test
@@ -88,7 +88,7 @@ class ReleasePresenceClaimTest < Minitest::Test
   # the parse and the grade exactly as `bin/agent-presence` does, so a claim that fails to
   # appear here is a claim that closes nothing — which is the failure mode that put the
   # first revision of this module in the wrong namespace.
-  def reader_claims(store, table: CertOrphanGuard.process_table)
+  def reader_claims(store, table: ProcessTable.process_table)
     AgentPresence.claims(root: store, table: table)
   end
 
@@ -101,12 +101,9 @@ class ReleasePresenceClaimTest < Minitest::Test
       assert_equal [path], claim_files(store),
                    "the claim belongs in the session-marker namespace — " \
                    ".agents/sessions/<key>.presence-<kind>-<pid>, which is §4's own nomination"
-      refute_path_exists CertOrphanGuard.lock_path(root),
-                         "and NOT in the cert runlock slot. CertOrphanGuard.preflight REAPS " \
-                         "whatever a cert-run.json names — it SIGKILLs that process group — so a " \
-                         "release-lane claim there points a reaper at a production deploy. The " \
-                         "namespace separation is the safety property (agent_presence.rb: 'Read " \
-                         "here, reaped nowhere'), not a filing preference"
+      refute_path_exists File.join(root, ".git", "cert-run.json"),
+                         "and NOT in the retired cert runlock slot: one file per PROCESS has no " \
+                         "shared slot to contend for (agent_presence.rb: 'Read here, reaped nowhere')"
 
       found = reader_claims(store)
 
@@ -296,7 +293,7 @@ class ReleasePresenceClaimTest < Minitest::Test
 
   # THE PROPERTY THAT CHANGED WITH THE NAMESPACE, pinned so nobody restores the old one.
   #
-  # While the claim lived in `CertOrphanGuard.lock_path(root)` there was ONE slot per root,
+  # While the claim lived in the cert runlock slot there was ONE slot per root,
   # so a `prepare` and a `ship` running at once contended for it: the writer had to refuse
   # rather than clobber, and the loser published NOTHING (it stayed visible only through
   # the reader's backstop, as unattributed load). The marker namespace is keyed by session

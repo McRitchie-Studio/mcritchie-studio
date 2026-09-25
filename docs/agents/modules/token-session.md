@@ -87,15 +87,10 @@ eval "$(bin/gh-auth-refresh --export)"
 op service-account ratelimit
 ```
 
-It reports remaining and reset **directly**. On 2026-08-29 three separate retry
-loops backed off politely for hours against an account whose daily quota was
-already at 1000/1000 — an indefinite wait that one command turns into a
-decision. A retry loop against a quota-limited broker **must** query the quota
-before it sleeps.
-
-⚠️ **`op service-account ratelimit` ITSELF COSTS A READ.** Poll it in a loop and
-you are spending the quota you are measuring. Measured 2026-08-31: every read
-observed during a 25-minute "steady state" window was the monitoring command.
+It reports remaining and reset **directly**, which turns an indefinite wait into
+a decision. A retry loop against a quota-limited broker **must** query the quota
+before it sleeps. ⚠️ **The command ITSELF COSTS A READ**, so never poll it in a
+loop.
 
 **2a. Then ask WHAT SPENT IT — that part is a query now, not an investigation.**
 
@@ -111,15 +106,8 @@ Every `op` invocation the `bin/` stack makes is recorded to
 timestamp — by `bin/lib/op_meter.rb` (Ruby callers) and `bin/lib/op-meter.sh`
 (shell callers). Reading that log costs nothing.
 
-**Why this exists.** On 2026-08-31 the account showed 247 read_writes consumed in
-three hours and nothing recorded which command spent them. Reconstruction by
-measurement came up empty — `bin/task`: 0 reads, authenticated git ops: 0,
-steady state: 0 — because the spend was **bursty**, concentrated across twelve
-review subagents plus their merges and ships, roughly 20 reads per agent. And it
-was the *second* time: `bin/gh-app-git-credential` already carried a comment
-saying three reads per push/fetch/repo was "the reason a day of ordinary work
-spent the account's quota". Found once, fixed once, un-findable again because
-nothing logged it.
+Do not re-derive the spend by measurement: it is bursty (a review fan-out spends
+about 20 reads per agent), and only the log attributes it.
 
 **Attributing a fan-out.** Export `MCR_OP_METER_CONTEXT` before spawning a batch
 and `--by context` separates that batch's spend from everything else:
@@ -178,21 +166,11 @@ else
 fi
 ```
 
-Executed 2026-08-30 during the quota outage that prompted this section: it
-minted a working installation token with **zero** 1Password reads and the proof
-call answered `10`. The empty-token guard is not decoration — see
-*An empty token is not an absent one* below.
-
-Two notes. **Do not `echo` the token**; capture it, use it, let it age out.
-And for the **ship** lane swap in `4431542` and the deployer `.pem` — that pair
-reaches its `McRitchie-Studio` installation, verified the same day.
-
-**Why the app id is in the repo at all.** Before 2026-08-30 it lived only in
-1Password, so this recipe — the documented fallback for "1Password is down" —
-required 1Password. That circle cost a night's pushes. An app id is an identity
-claim, not a credential: it is the JWT's `iss`, and GitHub checks the signature
-against the app's **public** key, so the id alone earns a `401`. The reasoning
-and the tests behind that classification are in `credential-inventory.md`.
+The recipe mints with **zero** 1Password reads. **Do not `echo` the token**, and
+keep the empty-token guard (see *An empty token is not an absent one* below). For
+the **ship** lane, swap in `4431542` and the deployer `.pem`. The app id is an
+identity claim, not a credential, which is why it may live in the repo:
+`credential-inventory.md` has the reasoning.
 
 ## Symptom → cause → fix
 
@@ -220,17 +198,12 @@ account may be signed in. On 2026-08-29 two merges landed under Mr. McRitchie's
 own account this way, with every agent having been told not to use it. Check the
 value before exporting it, or let the command fail loudly.
 
-**A merge no longer takes your word for it.** The instruction above already
-existed on 2026-08-29 and was already followed — every agent had been told not
-to use the personal credential, and none did; `gh` substituted it for them. So
-the defence is mechanical, and it sits at the merge itself: `bin/pr-review`
-asks `gh api user` **before** any write on the merge path and refuses unless the
-answer is a GitHub App installation (`bin/lib/acting_identity.rb`). An App gets
-403 "Resource not accessible by integration"; a person gets 200 with a login.
-It **fails closed** — an identity it cannot determine is refused like a bad
-one — and a refusal costs only a re-review, because the task stays `submitted`
-and unstamped. An empty `GH_TOKEN` is caught from the environment without an API
-call at all, and earns one mint-and-retry before the refusal stands.
+**A merge no longer takes your word for it.** `bin/pr-review` asks `gh api user`
+**before** any write on the merge path and refuses unless the answer is a GitHub
+App installation (`bin/lib/acting_identity.rb`): an App gets 403 "Resource not
+accessible by integration", a person gets 200 with a login. It **fails closed**,
+and a refusal costs only a re-review. An empty `GH_TOKEN` earns one mint-and-retry
+before the refusal stands.
 
 Note the boundary: this guards the **feat → `accepted`** merge. The
 `accepted → release` batch merge in `bin/release.rb` is not yet wired to it.
@@ -282,23 +255,18 @@ on disk at all — genuinely needs Mr. McRitchie, once, to run
 `bin/setup-1pass-token --admin`. That is the only credential step on either lane
 that is his. Everything else here, both lanes included, is yours.
 
-Do not read a deployer refusal as that case without checking. On 2026-08-30 an
-agent did exactly that and put a repeated hand-mint chore on Mr. McRitchie while
-a production deploy waited; the token had been at `~/.zprofile.admin` since
-2026-08-28, and sourcing it worked on the first try.
+Do not read a deployer refusal as that case without checking for
+`~/.zprofile.admin` first; sourcing it is usually the whole fix.
 
 ---
 
 ## Background — not needed to execute
 
-Why the shared cache exists: the credential helper used to re-derive a session
-from the private key on **every** git operation — three 1Password reads per
-push, per fetch, per repo, per agent. A day of ordinary work spent the account's
-1000-read daily quota and stopped every lane for eighteen hours, with eight
-reviewed tasks unable to ship. Reading the shared session first makes a warm git
-operation cost zero reads and a cold one two. There is no lock and no global
-counter, so "one mint an hour" is the shape of the win, not a guarantee — see
-*How often the key is actually read* above.
+Why the shared cache exists: the credential helper once re-derived a session
+from the private key on every git operation, and a day of ordinary work spent the
+account's 1000-read daily quota. Reading the shared session first makes a warm git
+operation cost zero reads. The full history is in
+[`../archive/token-session-2026-09-25.md`](../archive/token-session-2026-09-25.md).
 
 Deeper reference: `mcritchie-studio/docs/agents/modules/source-control.md`
 (architecture, the three credential stores and how they rank) and

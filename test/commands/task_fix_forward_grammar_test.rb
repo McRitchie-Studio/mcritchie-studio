@@ -36,22 +36,18 @@ class TaskFixForwardGrammarTest < ActiveSupport::TestCase
 
     refute_equal 0, code
     assert_match(/--agent/, output)
+  end
+
+  # --unnamed is deleted (devops-v3 4b-ii-b); it is now an unknown flag.
+  def test_unnamed_is_no_longer_a_flag
+    output, code = run_cli("some-task", "--unnamed")
+
+    refute_equal 0, code
     assert_match(/--unnamed/, output)
   end
 
-  # The two flags are OPPOSITE claims. Resolving the line one way would lift or
-  # impose a refusal by guess, which is exactly how a guard gets cleared by
-  # accident.
-  def test_agent_and_unnamed_together_are_refused
-    output, code = run_cli("some-task", "--agent", "steffon", "--unnamed")
-
-    refute_equal 0, code
-    assert_match(/opposite claims/, output)
-  end
-
   # THE INVERSION GUARD. A capitalised or underscored handle matches no soul, so
-  # accepting it would silently convert a named fix-forward into an unattributable
-  # one — a stricter state than the caller asked for, reached by a typo.
+  # accepting it would silently record a fix-forward that adds nobody.
   def test_a_handle_that_is_not_a_soul_slug_is_refused_not_stored
     %w[Steffon turf_monster steffon@mcritchie.studio].each do |handle|
       output, code = run_cli("some-task", "--agent", handle)

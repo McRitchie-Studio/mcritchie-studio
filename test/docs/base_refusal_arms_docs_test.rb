@@ -59,8 +59,12 @@ class BaseRefusalArmsDocsTest < ActiveSupport::TestCase
   # Every doc surface that ENUMERATES the review-side refusal set. A doc that
   # merely mentions a mis-based PR in passing is not on this list — only the
   # ones that spell the set out, because those are the ones a reader counts.
+  #
+  # index.md left this list on 2026-09-24 (agents-map-two-hundred-lines): it became
+  # a ~200-line map that names no refusal arm, so it no longer enumerates the set.
+  # Its old enumeration is frozen in archive/entry-docs-2026-09-24.md; the two SOPs
+  # below still spell the set out and stay guarded.
   ENUMERATING_DOCS = [
-    "index.md",
     "agents/carl/sops/pr-review.md",
     "agents/carl/sops/pr-review-primary.md"
   ].freeze

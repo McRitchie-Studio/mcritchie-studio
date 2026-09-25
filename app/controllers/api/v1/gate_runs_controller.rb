@@ -8,8 +8,8 @@ module Api
     # Deliberately NO usage gate here: gate markers are deterministic pipeline
     # boundaries, not usage-bearing work events — the same rationale as
     # `bin/task checkpoint`'s source=system default. Do NOT re-add a
-    # MISSING_EVENT_USAGE-style requirement; producers (bin/full-suite-check,
-    # bin/dor-check, bin/pr-review, bin/release) post fire-and-forget.
+    # MISSING_EVENT_USAGE-style requirement; producers (bin/dor-check,
+    # bin/pr-review, bin/release) post fire-and-forget.
     class GateRunsController < BaseController
       before_action :set_subject
       before_action :validate_key!, except: :index

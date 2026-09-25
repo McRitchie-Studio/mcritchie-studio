@@ -145,10 +145,13 @@ class Release
         bool: [], value: ["--feedback"], allow_positional: true
       },
       "ship" => {
-        synopsis: "bin/release ship [--finalize-only [<release>]] [--by NAME] [--slug REL] " \
+        synopsis: "bin/release ship [--finalize-only [<release>]] [--by NAME] [--slug REL] [--mode ask|timed|auto] " \
                   "[--reason \"…\" (with the global --skip-test-gate)]",
         consequence: "NOTHING was pushed to `main`, deployed to production, or published to RubyGems",
-        bool: ["--finalize-only"], value: ["--by", "--slug", "--reason"], allow_positional: true
+        # --mode: HOW production authority is taken (bin/lib/ship_authority.rb) —
+        # ask (the confirm prompt), timed (post the request, wait on the operator
+        # window; the config default), auto (`--yes` semantics).
+        bool: ["--finalize-only"], value: ["--by", "--slug", "--reason", "--mode"], allow_positional: true
       },
       "finalize" => {
         synopsis: "bin/release finalize [<release>] [--by NAME] [--slug REL]",
@@ -182,7 +185,7 @@ class Release
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
             "ship [--finalize-only [<release>]]|finalize [<release>]|status|archive|retro} " \
-            "[--task SLUG ...] [--slug REL] [--by NAME] [--feedback …] [--clean-only] [--expedite] " \
+            "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto] [--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
 
     # The global flags, consumed before the dispatcher — named in every

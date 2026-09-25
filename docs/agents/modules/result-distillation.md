@@ -90,7 +90,7 @@ keeps every rung populated so neither direction dead-ends at a wall of raw rows.
 Distill when the result **changes what you do next** or **supports a verdict**:
 
 - A diff, `git status`, or code you read to decide whether a change is correct.
-- `bin/dor-check`, `bin/full-suite-check`, or a test/CI run that gates a handoff.
+- `bin/dor-check`, `bin/fast-check`, or a test/CI run that gates a handoff.
 - A query, log, or grep whose answer picks a branch, confirms a hypothesis, or
   rules one out ("checked the FK, found it cascades, therefore reseed clears
   dependents first").

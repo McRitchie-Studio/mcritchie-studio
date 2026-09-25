@@ -9,13 +9,13 @@
 # zap_cert_freshness_docs_test.rb, pins WHICH pushes stale the builder's CERT. This
 # file pins the two things that sat next to that and were never written down:
 #
-#   (1) THE CONTROL STALES TOO, on a `test-only` PR, from the same tree move — and
-#       the cert writers do not clear it. Measured live at the G2 review of
+#   (1) THE CONTROL STALES, on a `test-only` PR, from the tree move — and only
+#       bin/control-check clears it. Measured live at the G2 review of
 #       fixture-rev-helper-hides-failure (PR #1505): one reviewer zap flipped
 #       bin/dor-check from PASS to "DoR-to-Merge NOT met" on TWO counts, and a
 #       reviewer who re-certified watched one of them stay exactly where it was.
-#       `[control@<fp>]` is graded by the same FullSuiteGate machinery as the certs,
-#       so it is the same trigger with a different writer: bin/control-check.
+#       The local cert lane has since retired (DevOps v3 phase 2b); the control is
+#       the fingerprint-bound lane that remains, graded through CertEvidence.
 #
 #   (2) THE RE-CERT DOES NOT HAVE TO BE THE FULL SUITE. bin/dor-check's route ladder
 #       has no `test-only` branch and the FAST route has no `review_role` condition,
@@ -54,19 +54,19 @@ class ZapControlLaneDocsTest < Minitest::Test
   # --- (1) THE CONTROL LANE ---------------------------------------------------
 
   # The mechanism the doc asserts, read off the gate. If control evidence ever stops
-  # being graded by the cert's fingerprint machinery, the doc's "same trigger" claim
+  # being graded by the tree fingerprint, the doc's "stales on a tree move" claim
   # becomes false and this fails FIRST — before a reviewer follows it.
-  def test_the_control_stamp_is_graded_by_the_same_fingerprint_machinery_as_the_certs
+  def test_the_control_stamp_is_graded_by_the_tree_fingerprint
     body = source("bin/dor-check")
     # Anchored on column-zero `def`/`end`: this is a top-level method, and a lazy
     # slice to the first indented `end` stops inside its own guard clause.
     fn = body[/^def control_evidence_status\(.*?^end$/m]
     refute_nil fn, "bin/dor-check no longer defines control_evidence_status — re-point this guard"
 
-    assert_match(/FullSuiteGate\.lane_status\(/, fn,
-                 "control_evidence_status no longer grades the control with FullSuiteGate.lane_status. The " \
-                 "doc tells a reviewer the control stales on the SAME trigger as the cert BECAUSE it is the " \
-                 "same machinery — if that stopped being true, the doc is now wrong")
+    assert_match(/CertEvidence\.lane_status\(/, fn,
+                 "control_evidence_status no longer grades the control with CertEvidence.lane_status. The " \
+                 "doc tells a reviewer the control stales on a tree move BECAUSE it is fingerprint-graded — " \
+                 "if that stopped being true, the doc is now wrong")
     assert_match(/fingerprint/, fn,
                  "control_evidence_status no longer resolves a fingerprint — the whole 'stales with the " \
                  "cert' claim rests on the stamp being tree-bound")
@@ -87,16 +87,15 @@ class ZapControlLaneDocsTest < Minitest::Test
                  "the same change"
   end
 
-  # The two writers, and the asymmetry in what a WRONG ROOT costs you. The doc says
+  # The two runners, and the asymmetry in what a WRONG ROOT costs you. The doc says
   # fast-check refuses loudly and control-check does not refuse at all; both halves are
   # load-bearing, because only one of them tells the operator anything.
-  def test_the_cert_writer_refuses_a_wrong_root_and_the_control_writer_does_not
-    assert_match(/CertRootGuard\.refusal\(/, source("bin/fast-check"),
-                 "bin/fast-check no longer takes CertRootGuard.refusal. The doc leans on that refusal twice: " \
-                 "it is why a reviewer cannot certify from their throwaway zap desk, and it is the LOUD half " \
-                 "of the loud/silent pair this section teaches")
+  def test_the_preflight_refuses_a_wrong_root_and_the_control_writer_does_not
+    assert_match(/TaskTree\.refusal\(/, source("bin/fast-check"),
+                 "bin/fast-check no longer takes TaskTree.refusal. The doc leans on that refusal: it is the " \
+                 "LOUD half of the loud/silent pair this section teaches")
 
-    refute_match(/CertRootGuard\.refusal\(/, source("bin/control-check"),
+    refute_match(/TaskTree\.refusal\(/, source("bin/control-check"),
                  "bin/control-check now REFUSES a wrong root. That is an improvement — and it falsifies the " \
                  "doc, which warns that this runner succeeds from the wrong tree and stamps a fingerprint " \
                  "nothing can match. Delete that warning rather than leaving a scare in place")
@@ -116,40 +115,32 @@ class ZapControlLaneDocsTest < Minitest::Test
     body
   end
 
-  # The doc half: the recovery must name the control runner, and must not imply a
-  # re-cert clears it. Order is the finding — cert writer, THEN control writer.
-  def test_the_recovery_runs_the_control_after_the_cert
+  # The doc half: the recovery must name the control runner, and must move the desk
+  # BEFORE it. Order is the finding — a control stamped against a tree that is about
+  # to change is stale on arrival.
+  def test_the_recovery_moves_the_desk_before_the_control
     flat = control_recovery_block.gsub(/\s+/, " ")
 
     assert_match(%r{bin/control-check}, flat,
-                 "the recovery never names bin/control-check. A reviewer who re-certifies and re-runs the gate " \
-                 "is left with a second STALE error and no command that clears it — the exact dead end " \
-                 "measured on PR #1505")
+                 "the recovery never names bin/control-check. A reviewer who re-runs the gate is left with a " \
+                 "STALE error and no command that clears it — the exact dead end measured on PR #1505")
+    refute_match(%r{bin/(?:full-suite)-check}, flat, "the retired local full suite is never offered")
 
-    # ORDER IS PINNED ON THE FENCED RECIPE, not on the paragraph. The prose around it
-    # names both writers to say what each one does NOT clear, and indexing on the
-    # literal finds that mention first — the same trap the sibling file hit and
-    # documented. What a reader copies is the block.
+    # ORDER IS PINNED ON THE FENCED RECIPE, not on the paragraph. What a reader copies
+    # is the block.
     recipe = control_recovery_block[/```bash\n(.*?)```/m, 1]
-    refute_nil recipe, "the recovery no longer prints a copyable block — the three steps are ordered, and " \
-                       "prose alone lets a reader run them in any order"
+    refute_nil recipe, "the recovery no longer prints a copyable block — the steps are ordered, and prose " \
+                       "alone lets a reader run them in any order"
 
     move = recipe.index(/\bmerge --ff-only\b/)
-    cert_writer = recipe.index(%r{bin/(?:fast|full-suite)-check})
     control_writer = recipe.index(%r{bin/control-check})
 
-    refute_nil move, "the recipe no longer MOVES the desk onto the zapped head. Both lanes fingerprint the " \
-                     "WORKING tree, so both stay stale without it"
-    refute_nil cert_writer, "the recipe names no cert writer — both lanes are stale and it clears one"
-    refute_nil control_writer, "the recipe names no control writer — it clears the cert and leaves the " \
-                               "second STALE error exactly where PR #1505 found it"
-
-    assert move < cert_writer,
-           "the recipe re-certifies BEFORE moving the desk. Order is the whole finding — a cert taken in that " \
-           "order stamps the tree the reader already had, and the lane stays STALE"
-    assert cert_writer < control_writer,
-           "the recipe runs the control BEFORE the cert writer. Move, re-certify, then re-run the control — " \
-           "a control stamped against a tree that is about to change is stale on arrival"
+    refute_nil move, "the recipe no longer MOVES the desk onto the zapped head. The control fingerprints " \
+                     "the WORKING tree, so it stays stale without it"
+    refute_nil control_writer, "the recipe names no control writer — nothing clears the STALE stamp"
+    assert move < control_writer,
+           "the recipe runs the control BEFORE moving the desk — a control stamped against a tree that " \
+           "is about to change is stale on arrival"
   end
 
   # The forward pointer at the seam. A reviewer who applies a zap is told, where they
@@ -183,42 +174,20 @@ class ZapControlLaneDocsTest < Minitest::Test
   # The ruling, read off the gate rather than off either document. Since
   # /tasks/dor-reads-settled-ci-verdict there is no route ladder: the suite evidence is
   # the PR's settled GREEN CI in BOTH roles, and the one role split left is that a
-  # pending CI is a WAIT for the builder and a refusal for review. The docs that told
-  # a reviewer "bin/fast-check plus a green CI clears a stale cert" now describe a
-  # receipt nothing reads — the recovery recipe below is kept for the CONTROL lane,
-  # which is still fingerprint-graded.
+  # pending CI is a WAIT for the builder and a refusal for review. The recovery recipe
+  # above is kept for the CONTROL lane, which is still fingerprint-graded.
   def test_the_suite_evidence_is_the_settled_green_ci_in_both_roles
     body = source("bin/dor-check")
 
     refute_match(/suite_route = "fast/, body,
                  "bin/dor-check has grown a fast/provisional route again — the docs say the receipts are inert")
-    refute_match(/FullSuiteGate\.evaluate\(/, body,
+    refute_match(/FullSuiteGate|full_suite_gate/, body,
                  "bin/dor-check grades a cert receipt again; the CI verdict is the whole suite gate")
     assert_includes CiGate::ONLY_EVIDENCE, "settled GREEN GitHub CI",
                     "the one-evidence sentence must name the settled green"
     assert CiGate.waiting?({ state: :pending }, review_role: false), "a builder-side pending CI is a WAIT"
     refute CiGate.waiting?({ state: :pending }, review_role: true), "review's gate-zero refuses a pending CI"
     refute CiGate.waiting?({ state: :green }, review_role: false)
-  end
-
-  # The shape gate has no test-only branch: `full_suite_gate: true` means NOT EXEMPT.
-  # bin/dor-check no longer branches on the flag at all — the CI verdict is asked of
-  # every shape — while bin/fast-check's ShapeContract still reads it to waive the
-  # optional pre-flight on a prose diff. The yml contrast the docs lean on stays.
-  def test_the_shape_flag_is_read_by_the_preflight_not_by_the_verdict
-    refute_match(/shape_def\.fetch\("full_suite_gate"/, source("bin/dor-check"),
-                 "bin/dor-check branches on full_suite_gate again — the CI verdict applies to every shape, " \
-                 "and a flag that waives it re-opens the docs-shape hole")
-    assert_match(/fetch\("full_suite_gate", true\)/, source("bin/lib/shape_contract.rb"),
-                 "ShapeContract no longer reads the flag; the pre-flight waiver rests on it")
-
-    shapes = YAML.load_file(File.join(ROOT, "config/feature_shapes.yml"))
-    shapes = shapes["shapes"] || shapes
-    assert_equal true, shapes.dig("test-only", "full_suite_gate"),
-                 "test-only no longer declares full_suite_gate: true — the docs' 'not exempt, unlike docs' " \
-                 "contrast rests on it"
-    assert_equal false, shapes.dig("docs", "full_suite_gate"),
-                 "docs no longer declares full_suite_gate: false — it is the other half of the same contrast"
   end
 
   # EVERY SURFACE THAT STATES THE RULE — and this list IS the guard's scope.
@@ -232,6 +201,7 @@ class ZapControlLaneDocsTest < Minitest::Test
   FAST_OR_FULL_SURFACES = %w[
     docs/agents/claude.md
     docs/agents/index.md
+    docs/agents/modules/fast-lane.md
     docs/agents/system/devops-cycle-design.md
     docs/agents/modules/building-sop.md
     config/feature_shapes.yml
