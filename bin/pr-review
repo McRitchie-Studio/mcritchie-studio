@@ -106,8 +106,8 @@ REVIEWER_SELECT_BIN = BinHelpers.bin_for("REVIEWER_SELECT_BIN", "reviewer-select
 TASK_BIN = BinHelpers.bin_for("TASK_BIN", "task")
 GATE_BIN = BinHelpers.bin_for("GATE_BIN", "gate")
 # The accepted-ladder's first rung: on a merge-ready verdict the supervisor merges
-# the feat PR into `accepted` and stamps merged:"accepted" before moving the task
-# `reviewed` (the sweep later promotes accepted→release). GH_BIN is the injectable
+# the feat PR into `accepted` and moves the task `reviewed` (the board derives the
+# merged rung itself; the sweep later promotes accepted→release). GH_BIN is the injectable
 # gh seam (mirrors TASK_BIN) so the command tests fake the merge without shelling.
 # No bin/gh sibling ships — gh is the external GitHub CLI, so bin_for resolves it
 # through PATH (the 2026-07-19 wave stranded 4 merge-ready verdicts when it didn't).
@@ -897,15 +897,13 @@ rescue StandardError => e
 end
 
 # The merge-ready verdict handoff — the accepted-ladder's first rung. Merge the
-# feat PR into `accepted`, stamp merged:"accepted", then move the task `reviewed`
-# and leave the Avi-QA handoff note. ORDER is load-bearing:
-#   1. Merge first. A merge FAILURE returns false WITHOUT stamping or moving, so a
-#      broken PR keeps the task `submitted` (invariant: reviewed ⟺ code-on-accepted).
-#   2. Stamp merged:"accepted" BEFORE the stage move — the two board writes aren't
-#      atomic, so stamp-first means a failure between them can only leave
-#      (submitted, merged:accepted), which self-heals on the next wave (re-merge is
-#      a no-op, the stamp is idempotent), NEVER the forbidden (reviewed, unstamped)
-#      the sweep would drop as a HELD anomaly.
+# feat PR into `accepted`, then move the task `reviewed` and leave the Avi-QA
+# handoff note. Merge FIRST: a merge FAILURE returns false WITHOUT moving, so a
+# broken PR keeps the task `submitted` (invariant: reviewed ⟺ code-on-accepted).
+#
+# NO `merged` STAMP (devops-v3 4c-i). The board derives the rung from GitHub
+# (Task#merged_rung) and refreshes its `merged` column itself when the task lands
+# on `reviewed` (TaskMergedRungRefreshJob), so review no longer writes it.
 def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: nil)
   # A carried operator-approval request is SHOWN before the merge and never refuses
   # it (surface-waiting-request-at-merge). The move below settles it and the board
@@ -914,7 +912,6 @@ def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: 
   # Pin the merge to the head we revalidated: the zapped head when a zap advanced it,
   # else the head the reviewers saw. finish_review already proved this head's CI green.
   return false unless merge_feature_pr(slug, task&.dig("devops", "pr_url"), merge_head: zap_head || reviewed_head)
-  return false unless task_write(["merged", slug, "accepted"])
 
   ok = task_write(["move", slug, "reviewed", "--actor", "avi"])
   # A reviewer-applied zap advanced the head during review; its post-zap CI was

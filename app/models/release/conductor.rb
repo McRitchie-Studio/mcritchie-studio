@@ -219,7 +219,10 @@ class Release
     # Task's `merged` inclusion — an unknown location raises. Returns the slugs.
     def record_merged!(slugs:, merged:)
       list = Array(slugs)
-      Task.where(slug: list).find_each { |task| task.update!(merged: merged) }
+      Task.where(slug: list).find_each do |task|
+        task.update!(merged: merged)
+        Release.refresh_merged_cache(task)
+      end
       list
     end
 

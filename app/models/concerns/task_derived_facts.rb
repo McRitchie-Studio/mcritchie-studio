@@ -125,6 +125,33 @@ module TaskDerivedFacts
     nil
   end
 
+  # Stages whose task can have a PR. A `designed` card has none yet, and an
+  # archived one is done asking, so neither costs a GitHub read on a show.
+  PR_CACHE_STAGES = %w[building submitted reviewed assembled shipped].freeze
+
+  # Fills a BLANK `devops.pr_url` with the derived one and returns the task's PR
+  # url — the self-healing read tasks#show runs (the same shape as its gates
+  # projection). This is what lets bin/ship skip its `--pr-url` write: the board
+  # finds the PR on the task branch and caches it, so every reader that still
+  # keys on `devops.pr_url` (dor-check, the review gate, the CI meter) sees it.
+  # Never overwrites a recorded url, and never raises: an unreadable GitHub
+  # leaves the column as it was and answers with what is recorded.
+  def cache_derived_pr_url!(derivation: github_derivation)
+    recorded = devops_url("pr")
+    return recorded if recorded.present? || !PR_CACHE_STAGES.include?(stage.to_s)
+
+    url = derived_pr_url(derivation: derivation)
+    return nil if url.blank?
+
+    fresh = metadata.deep_dup
+    (fresh["devops"] ||= {})["pr_url"] = url
+    update!(metadata: fresh)
+    url
+  rescue Github::TaskDerivation::Unreadable, ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn("[task-derivation] #{slug}: PR url not cached: #{e.class}: #{e.message}")
+    recorded
+  end
+
   # #release_pr_urls plus a derived PR for every repo the task names that carries
   # no recorded url. Recorded urls always win; derivation only fills gaps. A repo
   # whose lookup fails stays a gap, so the multi-repo record check still refuses it.

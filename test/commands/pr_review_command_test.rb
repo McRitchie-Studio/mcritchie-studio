@@ -1135,14 +1135,15 @@ assert_includes reviewer_calls.first, "--busy-auto",
   end
 
   # --- the accepted-ladder's first rung: review MERGES feat → accepted ----------
-  # On a merge-ready verdict the supervisor now merges the feat PR into `accepted`,
-  # stamps merged:"accepted", THEN moves the task `reviewed` (the sweep later promotes
-  # accepted→release). The order is load-bearing: merge → stamp → move, so a failure
-  # can never leave the forbidden (reviewed, unstamped) state. GH_BIN fakes the merge.
+  # On a merge-ready verdict the supervisor merges the feat PR into `accepted`, THEN
+  # moves the task `reviewed` (the sweep later promotes accepted→release). It no
+  # longer stamps merged:"accepted" (devops-v3 4c-i): the board derives the rung from
+  # GitHub and refreshes the column when the task lands on `reviewed`. GH_BIN fakes
+  # the merge.
 
-  # [integration] Happy path: merge the feat PR into accepted, stamp merged:accepted,
-  # move reviewed — IN THAT ORDER.
-  def test_merge_ready_merges_feat_into_accepted_then_stamps_then_moves
+  # [integration] Happy path: merge the feat PR into accepted, then move reviewed —
+  # IN THAT ORDER, and with no hand-written merged stamp.
+  def test_merge_ready_merges_feat_into_accepted_then_moves_without_stamping
     ready = task("ladder-pr", created_at: "2026-06-29T12:00:00Z")
     reviewed = task("ladder-pr", created_at: "2026-06-29T12:00:00Z",
                                  reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
@@ -1156,20 +1157,18 @@ assert_includes reviewer_calls.first, "--busy-auto",
     merge_call = json_lines(@gh_log).find { |a| a[0] == "pr" && a[1] == "merge" }
     assert merge_call, "a merge-ready verdict merges the feat PR into accepted"
 
-    # The task was stamped merged:accepted AND moved reviewed.
+    # The task was moved reviewed, and NOT stamped: the board derives `merged`.
     task_calls = json_lines(@task_log)
-    assert_includes task_calls, ["merged", "ladder-pr", "accepted"], "review stamps merged:accepted"
+    refute_includes task_calls.map(&:first), "merged", "review no longer stamps merged; the board derives it"
     moves = task_calls.select { |a| a.first == "move" }
     assert_equal [["move", "ladder-pr", "reviewed", "--actor", "avi"]], moves
 
-    # ORDER across the shared sequence log: merge → stamp → move.
+    # ORDER across the shared sequence log: merge → move.
     seq = json_lines(@sequence_log)
     merge_i = seq.index { |e| e[0] == "gh" && e[1] == "pr" && e[2] == "merge" }
-    stamp_i = seq.index { |e| e[0] == "task" && e[1] == "merged" }
     move_i  = seq.index { |e| e[0] == "task" && e[1] == "move" }
-    assert merge_i && stamp_i && move_i, "expected merge, stamp, and move all to run"
-    assert merge_i < stamp_i, "merge the feat PR onto accepted BEFORE stamping merged:accepted"
-    assert stamp_i < move_i, "stamp merged:accepted BEFORE moving reviewed (invariant: never reviewed+unstamped)"
+    assert merge_i && move_i, "expected merge and move both to run"
+    assert merge_i < move_i, "merge the feat PR onto accepted BEFORE moving reviewed (reviewed ⟺ code-on-accepted)"
   end
 
   # [unit] A mis-based feat PR (base != accepted) is RETARGETED to accepted, then
@@ -1214,9 +1213,9 @@ assert_includes reviewer_calls.first, "--busy-auto",
   end
 
   # [unit] Crash recovery: a `gh pr merge` that fails because the PR ALREADY merged on
-  # a prior interrupted run (whose stamp/move died) is NOT a bounce — the review-merge
-  # reads the PR state, sees MERGED, and proceeds to stamp + move.
-  def test_merge_failure_but_pr_already_merged_proceeds_to_stamp_and_move
+  # a prior interrupted run (whose move died) is NOT a bounce — the review-merge
+  # reads the PR state, sees MERGED, and proceeds to the move.
+  def test_merge_failure_but_pr_already_merged_proceeds_to_move
     ready = task("recovered-pr", created_at: "2026-06-29T12:00:00Z")
     reviewed = task("recovered-pr", created_at: "2026-06-29T12:00:00Z",
                                     reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
@@ -1228,7 +1227,7 @@ assert_includes reviewer_calls.first, "--busy-auto",
     assert_includes out, "already merged on GitHub (interrupted prior run)"
 
     task_calls = json_lines(@task_log)
-    assert_includes task_calls, ["merged", "recovered-pr", "accepted"]
+    refute_includes task_calls.map(&:first), "merged"
     moves = task_calls.select { |a| a.first == "move" }
     assert_equal [["move", "recovered-pr", "reviewed", "--actor", "avi"]], moves
   end
@@ -1256,7 +1255,7 @@ assert_includes reviewer_calls.first, "--busy-auto",
 
     assert json_lines(@gh_log).find { |a| a[0] == "pr" && a[1] == "merge" }, "the zapped head merges on green CI"
     task_calls = json_lines(@task_log)
-    assert_includes task_calls, ["merged", "zap-green-pr", "accepted"]
+    assert_includes task_calls, ["move", "zap-green-pr", "reviewed", "--actor", "avi"]
     note = task_calls.find { |a| a.first == "note" }
     assert note && note.any? { |arg| arg.to_s.include?("Reviewer zap") && arg.to_s.include?("head000") && arg.to_s.include?("zap0000") },
            "the handoff note records the head advance and that post-zap CI was revalidated green"
