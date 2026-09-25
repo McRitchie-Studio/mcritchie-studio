@@ -216,8 +216,8 @@ concern. To keep that overlap from waiting out the identical suite twice on one
 tree, the G3 pre-QA gate **credits** an existing green conclusion before polling,
 in two shapes (both `bin/release.rb`, `pre_qa_gate`): **same-SHA** — the promote
 fast-forwarded, so the release tip IS the accepted head whose completed greens
-cover the pending duplicates (`ci_credit_verdict` → `CiStatus.credit_for_sha`,
-G4's `ship_gate_skip?` discipline); and **same-TREE** — the live batch-PR merge
+cover the pending duplicates (`ci_credit_verdict` → `CiStatus.credit_for_sha` — a
+read the G4 ship gate now runs on the frozen ship SHA too); and **same-TREE** — the live batch-PR merge
 minted a new SHA snapshotting the accepted head's exact tree
 (`tree_identical_promote`), so the accepted head's green vouches for that content
 — credited when it is already green, and **waited on** when it is still in flight
@@ -548,7 +548,7 @@ when it ships. **Bias to action: green tests = go**, because both `accepted` and
 | **submitted** (task) — REVIEW | **Carl** (standing primary + owner) + a domain LIGHT | Session Pokémon spins **one Carl per PR** → Carl summons **one LIGHT** at his discretion | The review session claims a green-CI PR (`bin/task claim-next-review`) and spins **one Carl** — the standing primary AND owner; **there is no Avi supervisor**. Carl does the deep review, owns the gates, and **summons one domain LIGHT** for a focused second read — the domain pick from {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform · Xan=Documentation}, previewed by **`bin/reviewer-select <task> --no-record`** (`ReviewerSelector` — a bare run RECORDS the pair and takes the task's review claim, so a preview always carries `--no-record`; excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`), else `devops.persona`, else the task's assigned `agent_slug`**; **busy souls** come from `--busy a,b,c` and/or `--busy-auto`; **KEEP fallback:** when the exclusions would leave too few, the least-bad are kept; the primary Carl + domain light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Carl and the light confirm DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker → **Carl merges the feat PR into `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed` ✅, then STOPS — review never touches `release`/`main` and never deploys; the `accepted → release` promotion (next row) is Avi's; a blocker → `blocked` (rework, with `qa_feedback`) | **G2 Review** (lanes `g2a_primary` + `g2b_light`; Carl's gate-zero = `bin/dor-check <task> --gate-role review`, recorded on the separate `dor_review` gate) — merge-ready primary + light reads (Carl = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — SWEEP (task) | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`) | `bin/release prepare` DETECTS every `reviewed` task + any `assembled` straggler off the current RC, ensures a candidate (`Release.current_or_open!`), and PROMOTES **ONE `accepted → release` batch PR per repo** — not N per-task `feat → release` merges (review already landed each feat PR on `accepted`); the promote is SKIPPED for a repo already level, or for a task already stamped `merged: release/main` (interrupted-run recovery). Then record membership + `merged: "release"` (`Release::Conductor.sweep!`) — **stage stays `reviewed`**. Honors `dependencies` + producer-first. Nothing detected + nothing active → idempotent no-op. **Bias to action: green tests = go** (`release` reverts cleanly) | deterministic sweep (conflicts surface at PR-merge; a conflicted PR is swept PAST — block-and-move); review gate: only `reviewed`/`assembled` tasks sweep (`--override` = audited `review_bypassed`) |
 | **assembled** (release) — QA | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`, same run) | After the sweep, the **stale-tree gate** (`Release::StaleTreeCheck`) re-reads `origin/release..origin/accepted` for every three-rung repo in the deploy plan and REFUSES unless `release` already carries `accepted` — asserting the promote's EFFECT, because the promote picks its repos from board stamps and so cannot see a commit with no task behind it (that gap once printed `✓ Assembled` over a tree missing the fix). Then the **pre-QA gate** runs the **next tier — integration + an e2e smoke** (registry `qa_test_cmd`) on `origin/release` BEFORE deploying; green → `prepare` deploys it to QA → **Discord QA-deployment note** → on **QA-green** `Release::Conductor.qa_green!` flips swept members `reviewed → assembled` (merged stays `release`) + release `assembled` | **G3 Candidate** (release-grain; spans pre-QA suite → QA boot smokes → post-deploy hooks; closes with the QA-green flip) — deterministic suite; ⛔ regression → **eject the offender** (`bin/release eject <task>` = detach + block + merged cleared; revert its merge commit) — the REST rides the re-run. **`prepare` waits-for-boot** (`/up`-smoke race) and **defers the flip** until QA returns 200 — a failure leaves members `reviewed` for the next self-healing run |
-| **→ shipped** (release) | **Steffon**, then ship authority | Steffon tests; operator or autonomous kickoff authorizes; conductor deploys | Steffon runs the **full local suite (registry `test_cmd`) on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"; self-gated when G3 certified that exact SHA + command this run). A QA-only run (`pr-review` → Avi's `qa-release`) stops here for the operator; Steffon's **`production-deploy`** act ships a QA-green release, and Alex's **`full-cycle`** continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo (stamping members **`merged: "main"`** as each ff lands — the interrupted-ship skip signal), deploys → `production_smoke` → **Discord release notes** → members `shipped` (merged stays `main`) | **G4 Ship** (release-grain; spans the frozen-SHA gate → prod deploys → `/up` smokes → hooks → the non-blocking smoke seal, which retries once after 30s through the dyno boot window before recording red) — 🔒 explicit ship authority — after Steffon's test confirmation, before deploy; rollback on smoke fail |
+| **→ shipped** (release) | **Steffon**, then ship authority | Steffon tests; operator or autonomous kickoff authorizes; conductor deploys | Steffon's gate **reads GitHub CI's settled verdict for the FROZEN ship SHA's tree** (the exact prod code — fixes "shipped ≠ tested"; the same credit-or-poll read G3 ran on the release tip; nothing runs locally and no G3 record is consulted). A QA-only run (`pr-review` → Avi's `qa-release`) stops here for the operator; Steffon's **`production-deploy`** act ships a QA-green release, and Alex's **`full-cycle`** continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo (stamping members **`merged: "main"`** as each ff lands — the interrupted-ship skip signal), deploys → `production_smoke` → **Discord release notes** → members `shipped` (merged stays `main`) | **G4 Ship** (release-grain; spans the frozen-SHA gate → prod deploys → `/up` smokes → hooks → the non-blocking smoke seal, which retries once after 30s through the dyno boot window before recording red) — 🔒 explicit ship authority — after Steffon's test confirmation, before deploy; rollback on smoke fail |
 
 Clarifications:
 
@@ -556,20 +556,23 @@ Clarifications:
   confirm the task's acceptance criteria at the review step, and **Avi confirms
   acceptance again at ship** (on the frozen SHA). It is checked twice by design —
   once before merge, once before prod — not a one-time gate.
-- **Test-tier → step map (efficiency — no redundant re-runs):** **base**
+- **Test-tier → step map (one tree, one verdict):** **base**
   (unit/component) @ **review** (the two seniors — the **G2 Review** gate) ·
   **integration + e2e-smoke** @ **QA** (Avi — the **G3 Candidate** gate;
-  the hub registers its FULL suite as `qa_test_cmd`, the batch certification) ·
-  **full-suite** @ **ship** (Steffon, on the frozen ship SHA — the **G4 Ship**
-  gate; the honest relabel from "full e2e": the registry `test_cmd` is the
-  repo's highest LOCAL tier, never a browser run). Each tier runs once, at the
-  step that owns it — no step re-runs a lower tier the previous step already
-  proved green, and G4 **self-gates** (skips, with a visible skip SOP) when G3
-  certified the exact frozen SHA with the same command this run **and its CI
-  auditor did not go red** — a G3 green that GitHub CI CONTRADICTS for that same
-  SHA fails open and re-runs the suite, like a missing/red/drifted record
-  (`Release::ShipSequence.ship_gate_skip?`; fail-open only — an auditor can cause
-  more checking, never block a ship, and no-data never arms it). Encoded as
+  the hub registers its FULL suite as `qa_test_cmd`, and the gate READS GitHub
+  CI's verdict for it on the release tip) · **full-suite** @ **ship** (Steffon —
+  the **G4 Ship** gate; the honest relabel from "full e2e": the registry
+  `test_cmd` names the repo's full suite as CI runs it, never a browser run).
+  Every tier is EXECUTED once, in CI, on the PR's tree; each later step
+  **reads** that verdict rather than re-running it. G3 resolves the release tip
+  — a same-SHA / same-tree green credited from the accepted head, else the tip's
+  own run polled to a conclusion — and G4 runs the **same read on the frozen
+  ship SHA** (`resolve_release_ci_verdict`; classified by
+  `Release::ShipSequence.ship_gate_kind`): green or credited passes and the SOP
+  names the source; red, unreadable, a diverged tree with no green of its own,
+  or a verdict still unsettled past the poll bound all abort, fail-closed. G4
+  consults no G3 record — the self-skip (`ship_gate_skip?`) went with the local
+  suite it spared; `qa_gates` is the audit trail. Encoded as
   `Release::STEP_TEST_TIERS` (ownership is disjoint by construction — a tier maps
   to exactly one step); ship runs Steffon's frozen-SHA gate **before**
   ship authorization (`bin/release ship` → `ship_gate`, then `confirm`, unless
@@ -1030,8 +1033,10 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    published OLDER than the published version (`Release::LockDrift`; ahead is
    never a finding, since a producer may track an unreleased gem).
 5. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
-   e2e-smoke tier `prepare` owns — `Release::STEP_TEST_TIERS`) runs on
-   `origin/release` BEFORE anything deploys. A regression → **eject the
+   e2e-smoke tier `prepare` owns — `Release::STEP_TEST_TIERS`) names the suite CI
+   ran; the gate READS GitHub CI's verdict for `origin/release` BEFORE anything
+   deploys — a same-SHA / same-tree green credited from the accepted head, else
+   the tip's own run polled to a conclusion; nothing runs locally. A regression → **eject the
    offender** (`bin/release eject <task> --feedback "…"` — detach + block +
    `merged` cleared — then revert its merge commit on `release`) and re-run: the
    sweep self-heals and the REST of the RC rides on. Unset `qa_test_cmd` = the
@@ -1684,11 +1689,11 @@ for each task in {submitted}:
 release.assembling:
   bin/release prepare (Avi, SELF-HEALING): detect reviewed + assembled stragglers, honoring dependencies + lanes (§4.2)
   sweep: overlap planner (warn) → gh pr merge each (base release; SKIP merged: release/main) → sweep! ALL in ONE heroku run (ensure)  — conflict ⇒ leave reviewed, keep the rest
-  members reviewed + merged:release; pre-QA gate (qa_test_cmd: integration + e2e-smoke on origin/release)  — regression ⇒ bin/release eject <task> + revert, keep the rest
+  members reviewed + merged:release; pre-QA gate (READ GitHub CI's verdict for origin/release; qa_test_cmd names the suite CI ran)  — regression ⇒ bin/release eject <task> + revert, keep the rest
   deploy origin/release → QA + Discord notes → wait-for-boot /up → QA-GREEN ⇒ qa_green!: members → assembled + release.assembled  — failure ⇒ members stay reviewed (next run self-heals)
-  # full e2e + highest tier runs at ship, on the FROZEN ship SHA (Steffon) — §1.2
+  # G4 reads CI's settled verdict for the FROZEN ship SHA's tree (Steffon) — §1.2
 release.assembled:
-  Steffon: full e2e + highest tier on the FROZEN ship SHA      # §1.2 — closes "shipped ≠ tested"
+  Steffon: READ CI's settled verdict for the FROZEN ship SHA's tree   # §1.2 — closes "shipped ≠ tested"; nothing runs locally
   if operator_made_the_release: bin/release ship → PREFLIGHT (each app on clean main, else abort) → ff release → main, bin/deploy → production_smoke → notes → members shipped  # ONLY here
   else: no-op (HARD STOP — wait for the operator to Make the release)
 
@@ -1837,7 +1842,8 @@ surfaces.
   (`submitted`/`reviewed`/`assembled`).
 - **Multi-repo `ship`**: producer-first, hub-before-satellites deploy across every
   release repo (gems → re-pin consumers → hub → satellites) with the per-repo
-  `test_cmd` gate and partial-ship recovery (§1.1).
+  `test_cmd` gate (a CI read of the frozen tree since devops-v3) and partial-ship
+  recovery (§1.1).
 
 **Next**
 

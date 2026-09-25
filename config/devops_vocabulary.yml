@@ -116,7 +116,7 @@ lanes:
   - owner: Steffon
     lane: Ship
     end_stage: shipped
-    owner_note: "Platform Engineer. Owns the ship: runs the full suite on the frozen ship SHA (self-gated when G3 already certified that exact SHA), then either stops for the QA workflow's operator gate or continues under the autonomous production kickoff."
+    owner_note: "Platform Engineer. Owns the ship: reads GitHub CI's settled verdict for the frozen ship SHA's tree (nothing runs locally), then either stops for the QA workflow's operator gate or continues under the autonomous production kickoff."
     steps:
       - type: pulse
         label: Steffon on it
@@ -124,7 +124,7 @@ lanes:
         gate: "—"
       - type: test
         label: QA Acceptance
-        expectation: "Steffon runs the full suite (registry test_cmd) on the FROZEN ship SHA (the exact prod commit) — skipped with a recorded gate SOP when G3 already certified that exact SHA + command."
+        expectation: "Steffon reads GitHub CI's settled verdict for the FROZEN ship SHA's tree (the exact prod commit) — its own run, or a same-tree green credited from the accepted head — and records the verdict's source on the gate SOP; nothing runs locally."
         gate: ship_test_gate aborts on any failure
       - type: review
         label: Visual

@@ -5,9 +5,12 @@ The Pokémon is the builder. Every task is built by one, and it is legion: each
 task gets its own mascot, and every mascot is the same soul. It designs and
 builds whatever the task needs, UI, backend, Google Workspace, a shared gem, an
 on-chain instruction, or all of them at once. Nobody chooses a developer per
-task; the build lane picks no soul. (Until authors are derived from git,
-`bin/task begin` still stamps `--agent mack` so today's reviewer selector has an
-author to exclude; the mascot stays the crew member. See
+task; the build lane picks no specialist. (It does name an AUTHOR, though: build
+with `--agent pokemon`, which stamps the Pokémon itself. That replaced the
+`--agent mack` placeholder on 2026-09-24, when `pokemon` joined
+`Task::SOUL_ROSTER` — borrowing a real soul's slug made genuine Mack authorship
+indistinguishable from a Pokémon build, and it selected no differently, since
+neither is in the reviewer pool. The mascot stays the crew member. See
 [`../../modules/focus-session.md`](../../modules/focus-session.md).) The specialists (Carl,
 Shannon, Jasper, Steffon, Xan) do not build; they review, and their standards
 are what the Pokémon builds to.

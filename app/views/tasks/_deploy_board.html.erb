@@ -576,6 +576,9 @@ document.addEventListener('turbo:before-cache', function() {
   <%# The `|| Rails.env.local?` clause went with the dev tools when they moved up
       to the header actions — without them a board with no apps would render an
       empty filter row locally. %>
+  <%# Epic filter — the same server-side ?epic=<slug> narrowing /tasks honours, with
+      the way back pointing at THIS board. %>
+  <%= render "tasks/epic_filter", epic_slug: @epic_filter, clear_path: deployments_path %>
   <% board_apps = (@tasks_by_stage&.values&.flatten || []).flat_map(&:devops_repositories).uniq.sort %>
   <% if board_apps.any? %>
     <div class="flex flex-wrap items-center gap-2 mb-4" data-test="board-filter-row">

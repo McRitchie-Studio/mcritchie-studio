@@ -522,51 +522,40 @@ ship**.
 RubyGems version can never be re-pushed. That aborts, before anything is
 published, and prints the same labeled-branch rescue. Run it, then re-run ship.
 
-The frozen-SHA test gate is each app's registry `test_cmd` — the **full local
-suite** (`Release::STEP_TEST_TIERS`: `ship → full-suite`; it is not a browser
-e2e run — browser-level verification is the post-deploy smoke seal). It runs in
-the repo's **isolated gate workspace** (a private detached worktree at
-`<repo>/.worktrees/_gate`, under its own lock, with a proven-private test DB) —
-NOT on the primary. Nothing at all is mutated before ship authority: a red gate or
-a declined confirm leaves every checkout exactly as it found it.
+The frozen-SHA test gate is a **READ**, not a run. For each app carrying a
+registry `test_cmd` (the hub; a `repo_script` satellite leaves it unset and
+self-gates in its own `bin/deploy`), `ship` reads **GitHub CI's settled verdict
+for the frozen ship SHA's tree** through the same credit-or-poll resolution
+`prepare` ran on the release tip: the SHA's own run, polled to a conclusion, or a
+same-SHA / same-tree green credited from the accepted head. Nothing runs on this
+machine, nothing is mutated before ship authority, and no lock is taken: a red
+gate or a declined confirm leaves every checkout exactly as it found it.
 
-It **self-gates against G3**, but ONLY on G3's RECORDED verdict
-(`metadata["qa_gates"][repo]`, written only after a GREEN pre-QA suite): same
-command + same frozen SHA + green **+ an auditor that did not go red** ⇒ it
-records a visible skip SOP instead of re-running, so the full suite runs once per
-release batch.
+It **does not self-gate against G3's record** any more. The `qa_gates` row
+`prepare` wrote is the audit trail; the ship gate reads CI for the frozen tree
+itself and records a `ship_test_gate` SOP naming the verdict's **source** —
+`credited — tree-identical promote — accepted head <sha> … shares tree <tree>` or
+`the SHA's own run, polled to a settled conclusion`.
 
-⏱ **Everything else FAILS OPEN — the gate RUNS.** No G3 record (a G3 that was
-skipped or never ran), a red record, a different command, a drifted/straggler
-SHA, **or a RED auditor** (GitHub CI called that same SHA broken while G3 called
-it green) all re-trigger the full suite. **Budget for it:** a ship after a
-skipped, red, or CI-contradicted G3 now takes a full-suite run where it used to
-skip instantly. That is deliberate — an uncertified SHA must not reach production
-unchecked. Details:
-[`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md).
+⏱ **What holds the ship, and what you do:**
 
-⚠ **If the ship prints `G3 certified <sha> GREEN but GitHub CI called that SHA
-RED`, STOP AND READ IT.** G3's local suite passed on that commit and GitHub CI
-failed on the *same* commit. The gate is already re-running the suite for you
-(the certification is distrusted) — but **do not read that re-run as a
-backstop**: it re-runs the **local** `test_cmd`, the very suite that already
-passed, while the failing lane is one only CI can see (the browser `test:system`
-suite). **Nothing downstream will catch this for you.** You are the last gate
-before production:
+| You see | It means | You do |
+|---|---|---|
+| `GitHub CI GREEN @ <sha> — credited — …` or `… — the SHA's own run …` | The tree earned its green. | Nothing — the gate passed. |
+| `test gate FAILED … called frozen <sha> RED (<checks>)` | A broken frozen commit. | Read the failing check; fix forward on `release`, or `bin/release eject <task> --feedback "…"` and have Avi re-run `prepare`. **Do not ship.** |
+| `test gate FAILED … UNREADABLE` | A token fault; the gate did not poll. | `eval "$(bin/gh-auth-refresh --export)"`, then re-run `bin/release ship`. |
+| `test gate HELD … shares neither SHA nor tree with the accepted head … OWN run has NO green verdict` | No earlier green could vouch for this tree (a lock-bump commit, or `accepted` moved on) and its own run has not settled. | Let CI conclude on the frozen SHA, then re-run `ship`. |
+| `test gate HELD … NO green verdict for frozen <sha> (pending …) after polling ~1200s` | CI is still building (a just-pushed re-pin). | Wait, or widen `RELEASE_CI_POLL_TIMEOUT`; re-run `ship`. |
 
-- Open the named check on GitHub and read the failure.
-- If it is real — **do not ship.** Fix forward, or `bin/release eject <task>
-  --feedback "<the failing check>"` and have Steffon re-run `bin/release
-  prepare`.
-- If you ship past it anyway, that is a **deliberate, unguarded call** — say so
-  out loud in the handoff.
-- **"no GitHub verdict for `<sha>`" is NOT this alarm.** That is the normal line
-  today (CI does not build `release` yet) and means nothing is wrong.
+A still-building run is **polled** for up to `RELEASE_CI_POLL_TIMEOUT` (~20 min)
+before it holds, so a ship right after a re-pin costs a wait, never a false red.
+Details: [`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md).
 
 If a ship gate is a genuine false negative, the supported override is
-`bin/release ship --skip-test-gate --reason "…"` — it confirms, and records a
-**red** gate SOP. **Never** blank the registry's `test_cmd`/`qa_test_cmd` to get
-past a gate: that silently disarmed this gate while printing "already green".
+`bin/release ship --skip-test-gate --reason "…"` — it confirms, reads no verdict,
+and records a **red** gate SOP. **Never** blank the registry's
+`test_cmd`/`qa_test_cmd` to get past a gate: a blank reads as "self-gates" and
+skips the READ, silently disarming the last gate before production.
 
 **The seal retries once through the boot window — expect a possible ~30s
 pause.** The seal runs seconds after the deploy, so its smoke can land inside

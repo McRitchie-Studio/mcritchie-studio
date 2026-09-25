@@ -108,10 +108,33 @@ class AgentsSeedTest < ActiveSupport::TestCase
     refute Agent.exists?(slug: "xan-docs"), "the separate xan-docs persona is retired (folded into xan)"
   end
 
-  test "every soul has an avatar path" do
+  # EVERY SOUL RENDERS A FACE — the property the board actually needs, which is not
+  # quite "every soul declares an avatar path". components/_agent_avatar always draws
+  # the deterministic initials bubble and lays the <img> over it only when `avatar` is
+  # present, removing it on a 404. So a soul with NO portrait renders exactly as one
+  # whose file is missing, and pokemon and rex ship without portraits on purpose —
+  # there is no artwork for them yet, and a path to a file that does not exist is a
+  # dead request on every board render plus a claim the next reader has to disprove.
+  #
+  # Asserting the path alone could not tell those two cases apart, so this asks for
+  # the rendering property instead and is STRICTLY STRONGER for it: a declared path
+  # must still live under /agents/ AND must now resolve to a file on disk — a typo'd
+  # or deleted portrait was invisible to the old assertion — while a soul with no
+  # path must still resolve the fallback the component falls back to.
+  test "every soul renders a face" do
     run_seed
     Agent.find_each do |agent|
-      assert agent.avatar.to_s.start_with?("/agents/"), "#{agent.slug} is missing an avatar path"
+      if agent.avatar.present?
+        assert agent.avatar.to_s.start_with?("/agents/"),
+          "#{agent.slug}: an avatar path must live under /agents/ (got #{agent.avatar.inspect})"
+        assert Rails.public_path.join(agent.avatar.to_s.delete_prefix("/")).file?,
+          "#{agent.slug}: avatar #{agent.avatar} does not exist in public/"
+      else
+        assert agent.avatar_initials.present?,
+          "#{agent.slug} has no portrait, so the initials fallback must render"
+        assert_match(/\A#\h{6}\z/, agent.avatar_color,
+          "#{agent.slug} has no portrait, so the fallback needs a deterministic hue")
+      end
     end
   end
 

@@ -544,10 +544,12 @@ module CiStatus
   #   cert_route: :retired
   #                     — the RELEASE-grain path (G3), where a task-grain suite never
   #                       existed to substitute. It names the command the operator
-  #                       re-runs (`bin/release prepare`) instead of a `<task>`
-  #                       placeholder G3 has nothing to fill
-  #                       (/tasks/release-offers-retired-cert). ONE CALLER TODAY:
-  #                       bin/release.rb's G3 pre-QA gate.
+  #                       re-runs (`bin/release prepare` / `bin/release ship`)
+  #                       instead of a `<task>` placeholder the gate has nothing to
+  #                       fill (/tasks/release-offers-retired-cert). TWO CALLERS
+  #                       TODAY, both in bin/release.rb: the G3 pre-QA gate and the
+  #                       G4 ship gate, which reads CI for the frozen tree exactly
+  #                       as G3 reads it for the release tip.
   #
   # `also_refused:` KEEPS THE CLOSING LINE FROM OUTRUNNING THE GATE. The task-grain
   # denial used to end flatly "this gate advances on a GREEN CI and nothing else."
@@ -577,6 +579,8 @@ module CiStatus
   #                                         spelling; both values print the task-grain
   #                                         denial.
   #   bin/release.rb G3 pre-QA  :retired  — the release-grain denial.
+  #   bin/release.rb G4 ship    :retired  — the same denial for the frozen ship SHA
+  #                                         (ship_test_gate_ci_abort's :unreadable).
   #
   # A default that nobody asserts is how the wrong half goes quietly stale, so all of
   # them are pinned.

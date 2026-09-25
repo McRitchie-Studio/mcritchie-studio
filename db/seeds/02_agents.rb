@@ -172,6 +172,49 @@ agents_data = [
       "review_role" => nil,
       "reviewer" => false
     }
+  },
+  # The general BUILDER, and the ecosystem's most prolific author — the operating
+  # model routes every task through it. Seeded so the author set can name it:
+  # `--agent pokemon` used to pass the CLI's shape check and die at the roster,
+  # leaving the task `builders: NOT STAMPED` and `bin/reviewer-select` refusing.
+  # It is legion (each task wears its own mascot, recorded per-task in
+  # devops.mascot) but ONE soul, so the slug is stable and the costume is not.
+  # `reviewer => false` and absent from ReviewerSelector::POOL: it builds, it never
+  # reviews, so naming it as the author excludes nobody and frees no seat. It
+  # replaces the `--agent mack` placeholder, which borrowed a real soul's slug and
+  # made genuine Mack authorship indistinguishable from a Pokémon build.
+  {
+    name: "Pokémon",
+    slug: "pokemon",
+    status: "active",
+    agent_type: "worker",
+    title: "General Builder",
+    description: "The builder. Every task is built by one, and it is legion: each task gets its own mascot, and every mascot is the same soul. Builds whatever the task needs — UI, backend, Google Workspace, a shared gem, an on-chain instruction — to the standards the specialists review to. Builds; never reviews, releases, or deploys.",
+    avatar: nil,
+    position: 9,
+    metadata: {
+      "review_role" => nil,
+      "reviewer" => false
+    }
+  },
+  # The CMO. A launcher, a docs directory, a HEARTBEAT and two registered SOPs
+  # (constraint-diagnosis, content-sprint) — a fully established soul that was never
+  # on the register. Measured 2026-09-24: zero attributed rows, so this gap was
+  # LATENT rather than live; it would have fired silently the first time Rex
+  # authored anything, exactly as Pokémon's did. Non-reviewing, like Mason.
+  {
+    name: "Rex",
+    slug: "rex",
+    status: "active",
+    agent_type: "specialist",
+    title: "Chief Marketing Officer",
+    description: "Owns the demand side: diagnoses the one constraint limiting demand, designs and prices the offer, allocates channels, sets volume targets, and instruments a campaign so its result can be read. Advises the operator brand, Turf Monster, and McRitchie Industries. Strategy, not copy — brand voice and launch mechanics stay with Mason.",
+    avatar: nil,
+    position: 10,
+    metadata: {
+      "review_role" => nil,
+      "reviewer" => false
+    }
   }
 ]
 
@@ -182,12 +225,12 @@ agents_data = [
 AGENT_EMOJI = {
   "xan" => "🧭", "avi" => "📋", "carl" => "🛠", "shannon" => "🎨",
   "jasper" => "🧪", "steffon" => "🚀", "turf-monster" => "🐲",
-  "mack" => "📦", "mason" => "📣"
+  "mack" => "📦", "mason" => "📣", "pokemon" => "⚡", "rex" => "📈"
 }.freeze
 AGENT_COLOR = {
   "xan" => "#818CF8", "avi" => "#FB7185", "carl" => "#F97316", "shannon" => "#EC4899",
   "jasper" => "#9945FF", "steffon" => "#06B6D4", "turf-monster" => "#84CC16",
-  "mack" => "#9CA3AF", "mason" => "#EF4444"
+  "mack" => "#9CA3AF", "mason" => "#EF4444", "pokemon" => "#FACC15", "rex" => "#14B8A6"
 }.freeze
 
 # `alex` → `xan`, IN PLACE. db/migrate/20260924210000_rename_alex_soul_to_xan.rb

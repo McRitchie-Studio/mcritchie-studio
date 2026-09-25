@@ -706,7 +706,10 @@ class DorCheckExemptCiTest < Minitest::Test
     "bin/lib/ci_gate.rb" => { states_route: 0, takes_default: 1 },
     "bin/dor-check" => { states_route: 0, takes_default: 1 },
     "bin/pr-review" => { states_route: 1, takes_default: 0 },
-    "bin/release.rb" => { states_route: 1, takes_default: 0 }
+    # G3's pre_qa_ci_abort and G4's ship_test_gate_ci_abort — both release-grain
+    # denials (:retired); the ship gate reads CI for the frozen tree exactly as G3
+    # reads it for the release tip, so its :unreadable branch carries the same remedy.
+    "bin/release.rb" => { states_route: 2, takes_default: 0 }
   }.freeze
 
   REPO_ROOT = File.expand_path("../..", __dir__)

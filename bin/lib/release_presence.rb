@@ -151,7 +151,9 @@ module ReleasePresence
   # (`bin/prod-smoke:77`), against a production URL. So the rule reads BOTH fields and is
   # written to fail toward `suite`:
   #
-  #   a scope is cheap  ⟺  its host is not local  AND  its tier is one that executes
+  #   a scope is cheap  ⟺  its host is `ci` (a GitHub Actions runner ran it; this box
+  #                        only READS the verdict — the G3/G4 tree-verdict gates), OR
+  #                        its host is not local  AND  its tier is one that executes
   #                        somewhere else — `smoke` (a curl poll) or `hook` (`heroku run`)
   #
   # Everything else — every local host, every unrecognised tier, a missing registry
@@ -160,6 +162,7 @@ module ReleasePresence
   # that was actually free, and under-reporting it lets a peer launch a suite into a
   # saturated box, which is cost #3 all over again.
   REMOTE_TIERS = %w[smoke hook].freeze
+  CI_HOST      = "ci"
 
   class << self
     # `RELEASE_PRESENCE=off` disarms the writer entirely — the escape hatch a deploy
@@ -175,6 +178,7 @@ module ReleasePresence
       row = meta.is_a?(Hash) ? meta : {}
       host = row["host"].to_s.strip.downcase
       tier = row["tier"].to_s.strip.downcase
+      return WEIGHT_LIGHT if host == CI_HOST
       return WEIGHT_LIGHT if !host.empty? && host != "local" && REMOTE_TIERS.include?(tier)
 
       WEIGHT_SUITE

@@ -3,6 +3,16 @@ class Content
     # Higgsfield Soul — text-to-image generation
     # 9:16 vertical for TikTok (Higgsfield::Client::VERTICAL_9_16)
 
+    # HOW HARD THE CHARACTER IDENTITY PULLS, on the API's 0..1 scale.
+    #
+    # 0.8 rather than 1.0: these are ACTION shots described by a scene prompt —
+    # a quarterback mid-throw, a camera behind the player — and a reference
+    # pinned at full strength fights the pose for control of the frame. Leaving
+    # a fifth of the budget to the prompt is the starting point, not a measured
+    # optimum; nobody has compared outputs, because doing so costs a generation
+    # per value.
+    CHARACTER_REFERENCE_STRENGTH = 0.8
+
     def self.assets_latest
       content = Content.where(stage: "script").order(position: :desc, created_at: :desc).first
       raise "No script content to generate assets" unless content
@@ -40,7 +50,8 @@ class Content
           prompt: prompt,
           width_and_height: Higgsfield::Client::VERTICAL_9_16,
           quality: "1080p",
-          enhance_prompt: true
+          enhance_prompt: true,
+          **character_reference
         )
 
         puts "    -> #{image_url.truncate(80)}"
@@ -59,15 +70,25 @@ class Content
       parts << scene["description"] if scene["description"]
       parts << "Camera: #{scene["camera"]}" if scene["camera"]
 
-      # Player appearance
-      if @content.source_news&.primary_person_slug
-        athlete = Athlete.joins(:person).find_by(people: { slug: @content.source_news.primary_person_slug })
-        if athlete
-          parts << "Player build: #{athlete.build}" if athlete.build.present?
-          parts << "Player skin tone: #{athlete.skin_tone}" if athlete.skin_tone.present?
-          parts << "Player hair: #{athlete.hair_description}" if athlete.hair_description.present?
-        end
-      end
+      # HOW THE PERSON LOOKS — from their recorded LOOK when they have one.
+      #
+      # This used to re-derive build/skin tone/hair from the Athlete record
+      # inline, which was Appearance#generation_brief's own body written a second
+      # time. #generation_brief had ZERO callers anywhere in the app (measured
+      # 2026-09-24: two test references and nothing else), so the richer of the
+      # two — the one that also carries the look's descriptor and the operator's
+      # free-text generation notes — was the one nothing sent to Higgsfield.
+      # Wiring it here is what makes a Jim Carrey or a George Bush in the cast
+      # describable at all: neither has an Athlete record, so the old block
+      # produced nothing for them.
+      #
+      # THE ATHLETE FALLBACK STAYS, and is not redundant with it. A person with
+      # an Athlete record but no look on file is the ordinary state — a look is
+      # only filed when someone attaches an image or names a colorway — and
+      # dropping to `nil` there would have deleted a description the prompt
+      # carries today.
+      brief = appearance&.generation_brief.presence || athlete&.physical_brief
+      parts << brief if brief.present?
 
       # Team uniforms
       if @content.source_news&.primary_team_slug
@@ -81,6 +102,49 @@ class Content
 
       parts << "Vertical 9:16 aspect ratio, photorealistic, dramatic lighting"
       parts.join(". ")
+    end
+
+    # PIN THE SHOT TO THIS PERSON'S FACE — the whole point of the lane.
+    #
+    # Returns the two keyword arguments, or an EMPTY HASH, which is why the call
+    # site splats it: an unpinned generation must send neither key rather than
+    # sending nulls.
+    #
+    # READINESS IS CHECKED, NOT ASSUMED. An identity is minted `not_ready` and
+    # takes a minute or so to reach `completed`, so a generation fired straight
+    # after a create would name an identity that is still training. Falling back
+    # to an unpinned shot is the right degradation: the picture is still made,
+    # it just does not hold the likeness — whereas raising here would strand a
+    # whole content run on a reference that will be ready shortly.
+    def character_reference
+      return {} unless appearance&.higgsfield_reference_ready?
+
+      {
+        custom_reference_id: appearance.higgsfield_reference_id,
+        custom_reference_strength: CHARACTER_REFERENCE_STRENGTH
+      }
+    end
+
+    # The look this content's subject is being drawn in. `defined?` rather than
+    # `||=` because nil is the common answer — most people have no look on file —
+    # and `||=` would re-run the lookup for every scene in the run.
+    def appearance
+      return @appearance if defined?(@appearance)
+
+      @appearance = person&.default_appearance
+    end
+
+    def athlete
+      return @athlete if defined?(@athlete)
+
+      @athlete = person&.athlete_profile
+    end
+
+    def person
+      return @person if defined?(@person)
+
+      slug = @content.source_news&.primary_person_slug
+      @person = slug.present? ? Person.find_by(slug: slug) : nil
     end
   end
 end

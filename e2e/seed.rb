@@ -317,6 +317,21 @@ cleared_block_task = Task.create!(
   metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
 )
 
+# Epic chip demo: a task that belongs to an epic (tasks.epic_slug) wears the violet
+# epic chip beside its slug, and clicking the chip filters the board to that epic
+# (/tasks?epic=devops-v3). Read-only against this fixture; every other seeded card
+# belongs to no epic, which is what makes the filtered board provably NARROWER.
+Task.create!(
+  title: "Epic chip demo",
+  slug: "e2e-epic-chip-demo",
+  description: "A task stamped with an epic, so the board card carries the epic chip.",
+  stage: "building",
+  priority: 1,
+  agent_slug: "mack",
+  epic_slug: "devops-v3",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+
 # --- Per-application RELEASE INCLUSION markers (Avi's qa-release disposition) ----
 # Two REVIEWED cards on the Deploy board: the default ships and carries NO marker
 # (shipping every reviewed task is the default), while an app Avi held back for
@@ -680,14 +695,14 @@ gate_now = Time.current
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
                success: false, source: "seed", actor: "steffon",
                metadata: { "reason" => "1 app(s) never returned /up 200" },
-               sops: [{ "sop" => "pre_qa_gate", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 412_000 },
+               sops: [{ "sop" => "pre_qa_gate", "cmd" => "GitHub CI GREEN @ e2edemo — the SHA's own run, polled to a settled conclusion (bin/rails test ran in CI, not here)", "result" => "pass", "duration_ms" => 412_000 },
                       { "sop" => "qa_up_smoke", "cmd" => "curl /up", "result" => "fail", "duration_ms" => 120_000 }],
                now: gate_now - 27.minutes)
 GateRun.open!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
               source: "seed", actor: "steffon", now: gate_now - 26.minutes)
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
                success: true, source: "seed", actor: "steffon",
-               sops: [{ "sop" => "pre_qa_gate", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 405_000 },
+               sops: [{ "sop" => "pre_qa_gate", "cmd" => "GitHub CI GREEN @ e2edemo — the SHA's own run, polled to a settled conclusion (bin/rails test ran in CI, not here)", "result" => "pass", "duration_ms" => 405_000 },
                       { "sop" => "qa_up_smoke", "cmd" => "curl /up", "result" => "pass", "duration_ms" => 8_000 },
                       { "sop" => "qa_post_deploy", "cmd" => "bin/rails db:seed:pokemon", "result" => "pass", "duration_ms" => 14_000 }],
                now: gate_now - 9.minutes)
@@ -696,7 +711,7 @@ GateRun.open!(subject_type: "release", subject_slug: shipped_release.slug, key: 
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g4_ship",
                success: true, source: "seed", actor: "avi",
                metadata: { "seal" => "green" },
-               sops: [{ "sop" => "ship_test_gate", "cmd" => "skipped — bin/rails test already green @ e2edemo at G3 (pre-QA gate, same SHA + command)", "result" => "pass" },
+               sops: [{ "sop" => "ship_test_gate", "cmd" => "GitHub CI GREEN @ e2edemo — credited — tree-identical promote — accepted head e2edemo concluded green and shares tree e2etree with release e2edemo (bin/rails test ran in CI, not here)", "result" => "pass" },
                       { "sop" => "deploy:mcritchie-studio", "cmd" => "git push heroku main", "result" => "pass", "duration_ms" => 95_000 },
                       { "sop" => "prod_up_smoke", "cmd" => "curl https://mcritchie.studio/up", "result" => "pass", "duration_ms" => 900 },
                       { "sop" => "prod_smoke_seal", "cmd" => "bin/prod-smoke mcritchie-studio", "result" => "pass", "duration_ms" => 41_000 }],

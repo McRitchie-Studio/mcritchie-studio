@@ -15,7 +15,11 @@ module Api
       # and friends), and the raw index does not carry them. A batch built on the
       # raw index looks complete, answers those questions with nil, and a guard
       # reading nil as "no" fails OPEN. See bin/agent-worktree's reclaim batch.
-      INDEX_PARAMS = %w[stage agent_slug reviewable page per_page full].freeze
+      #
+      # `epic=<slug>` narrows to one epic's tasks — the same Task.for_epic scope the
+      # boards' `?epic=` filter and the card's epic chip resolve through, so the
+      # API and the page can never disagree about which tasks an epic holds.
+      INDEX_PARAMS = %w[stage agent_slug epic reviewable page per_page full].freeze
 
       before_action :capture_task_event_context, only: [:create, :update, :intent, :block]
       before_action :set_task, only: [:show, :update, :destroy, :intent, :block]
@@ -26,6 +30,7 @@ module Api
         tasks = Task.recent
         tasks = tasks.by_stage(params[:stage]) if params[:stage].present?
         tasks = tasks.where(agent_slug: params[:agent_slug]) if params[:agent_slug].present?
+        tasks = tasks.for_epic(params[:epic]) if params[:epic].present?
         # `reviewable=1` narrows to submitted tasks NOT already under live review —
         # the per-task-review-claim query many parallel pr-review sessions poll. It
         # already implies stage=submitted (Task.reviewable folds it in), so it works
@@ -326,6 +331,13 @@ module Api
           # boundary. The lane's mutual exclusion lives in MigrationLaneClaim, and
           # is not weakened by anyone flipping this boolean.
           :requires_migration,
+          # The epic handle (`bin/task create|begin|update --epic <slug>`), a
+          # TOP-LEVEL column like `dependencies` below it — never a devops key,
+          # which Task::DEVOPS_COLUMN_KEYS refuses with a 422 naming this field.
+          # `null` or `"none"` clears it; the model normalizes (lowercase, strip)
+          # and refuses a value that is not a slug, so a 422 here quotes the rule
+          # rather than storing a handle the `?epic=` filter would never match.
+          :epic_slug,
           # The explicit task-to-task release edge (`bin/task update <slug>
           # --depends-on <task-slug>`, repeatable). An ARRAY permit, because the
           # column is jsonb holding a list of slugs — that is the exact shape

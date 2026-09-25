@@ -426,7 +426,10 @@ model or suite assertion on their existence in every environment.
 
 Tasks carry DevOps metadata in `tasks.metadata["devops"]`. The UI exposes these
 fields, and agents may also write them through the JSON API with a top-level
-`devops` object.
+`devops` object. Three names live OUTSIDE it, as top-level Task columns —
+`release_slug` (the sweep's, read-only), `dependencies` (`--depends-on`) and
+`epic_slug` (`--epic`) — and a `devops` write to any of them is a 422; each has
+its own section below.
 
 Supported fields:
 
@@ -982,6 +985,38 @@ deploy before another. Three properties decide whether it does anything:
   reason: two docs told agents to declare this field, in a bracketed literal
   syntax nothing parsed, months before anything could write it at all. The
   devops namespace is exactly where that habit points.
+
+## Epic Slug — the epic a task belongs to
+
+`epic_slug` is the THIRD top-level column an agent reaches for, and like
+`dependencies` **it is yours to write.** It is the one field the board carries
+for an epic (DevOps v3, `docs/agents/system/devops-v3-design.md` §3): an epic is
+a plan the focus session holds, not a card, so there is no Epic record to create
+first — the slug is simply the handle its tasks share. A card whose task has one
+wears an **epic chip** beside its task-slug chip, and clicking the chip filters
+the board to that epic (`/tasks?epic=<slug>`; `/deployments` honours the same
+param). Same charset as a task slug, lowercased on the way in.
+
+```bash
+bin/task create --title "…" --epic <epic-slug>   # or on `begin --title …`
+bin/task update <slug> --epic <epic-slug>         # set or re-point it
+bin/task update <slug> --epic none                # clear it
+bin/task field <slug> epic_slug                   # read back: the column, machine-readable
+bin/task show <slug>                              # prints `epic: <slug>` when set, nothing otherwise
+bin/task list --epic <epic-slug>                  # that epic's tasks (GET /api/v1/tasks?epic=)
+```
+
+Three rules, all of them the column-not-devops rule in different clothes:
+
+- It is a **top-level column, not a `devops` key.** Post it beside `devops` on
+  the API (`{"epic_slug": "devops-v3"}`), never inside it; a `devops` write to the
+  name is refused with a 422 naming the column (`Task::DEVOPS_COLUMN_KEYS`), and
+  any shadow a pre-wiring write parked there is shed on the next save.
+- `null` or `"none"` clears it; a value that is not a slug is refused with a 422
+  quoting the rule, so a handle the chip cannot print and the filter cannot match
+  is never stored.
+- A `begin` **resume** refuses `--epic` like every other create flag and names
+  the `update` remedy — set it on the existing task instead.
 
 ## Cleanup Tasks
 

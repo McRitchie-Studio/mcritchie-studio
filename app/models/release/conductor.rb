@@ -738,21 +738,14 @@ class Release
     # run instead of scrolling past in a terminal, and so agreement data accrues
     # release over release.
     #
-    # It is ARMED for G4, in the FAIL-OPEN direction only: a "red" state makes
-    # Release::ShipSequence.ship_gate_skip? refuse to skip, so the ship gate re-runs
-    # its suite on the frozen SHA rather than self-gate on a certification GitHub CI
-    # contradicts. It can cause MORE checking; it can NEVER block a ship. Absent
-    # (nil) when the auditor was not consulted, and "none"/"pending"/"unverified"
-    # mean GitHub had nothing to say — none of which is a red, and none of which
-    # changes the skip decision.
-    #
-    # This is the ONLY evidence G4's ship gate accepts for skipping its own suite
-    # (Release::ShipSequence.ship_gate_skip?). It is deliberately NOT derivable
-    # from anything else on the release: `qa_shas` records what was DEPLOYED to
-    # QA, and the registry records what WOULD be run — neither proves a suite ran.
-    # Written by bin/release's pre_qa_gate ONLY after the suite returns green, so
-    # a gate that was skipped, misconfigured, or red leaves NO record and G4 fails
-    # open (runs the suite). See ship_gate_skip? for the disarm bug this closes.
+    # NOTHING GATES ON THIS RECORD. It is the release's audit trail of what G3
+    # concluded — the G4 ship gate reads GitHub CI for the frozen ship SHA's tree
+    # itself (bin/release test_gate → resolve_release_ci_verdict), so a record
+    # here can neither skip nor arm the ship gate, and a missing one costs only the
+    # audit line. The self-skip it used to license (ship_gate_skip?) went with the
+    # local suite it spared. Written by bin/release's pre_qa_gate on EVERY verdict:
+    # ok:true beside a green CI, ok:false beside anything else, so a red G3 is
+    # recorded as failed rather than silently un-stamped.
     #
     # Keyed by repo and MERGED, like record_qa_shas: a re-run of `prepare` (the
     # sweep is self-healing) re-certifies and overwrites its own repo's record,

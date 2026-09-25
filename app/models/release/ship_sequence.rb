@@ -712,83 +712,55 @@ class Release
       sha.empty? ? nil : sha
     end
 
-    # --- G4 self-gating: skip a ship test gate G3 already certified ------------
+    # --- G4: the tree-verdict READ (devops-v3 §5, the one-verdict rule) ---------
     #
-    # The 90/10 policy runs the full suite ONCE per release batch: the hub
-    # registers its FULL suite as `qa_test_cmd`, so the G3 pre-QA gate certifies
-    # the batch on origin/release BEFORE anything deploys. Re-running the ship
-    # test gate then proves nothing new — so G4 may skip it. But it may ONLY skip
-    # on PROOF that G3 actually ran and passed.
+    # One tree earns one verdict. G4 runs nothing and consults no record of its own:
+    # it READS GitHub CI's settled verdict for the frozen ship SHA's TREE, resolved
+    # exactly as G3 resolves the release tip's (bin/release.rb#resolve_release_ci_verdict):
+    # the SHA's own run, polled to a conclusion, or a same-SHA / same-tree green
+    # credited from the accepted head. The I/O stays in bin/release; these two pure
+    # helpers classify what was read, so the gate's SOP names the verdict's SOURCE
+    # and its abort names WHAT IT READ.
     #
-    # SAFETY BUG this closes (found 2026-07-12): the old predicate inferred that
-    # proof from the REGISTRY plus `qa_shas` — `test_cmd == qa_test_cmd &&
-    # frozen_sha == qa_sha`. Neither term proves a suite ever RAN:
-    #   * `qa_shas` is stamped by the QA DEPLOY LOOP (bin/release.rb), not by the
-    #     gate. It records what was DEPLOYED, never what was CERTIFIED.
-    #   * the registry is read fresh at ship, so it can differ from what prepare
-    #     read minutes earlier.
-    # Together they let G3 skip and G4 STILL self-skip — silently disarming the
-    # production gate. The documented gate-skip recipe walked exactly into this:
-    # comment out `qa_test_cmd` so prepare's gate skips, then RESTORE the file
-    # before ship (ship's preflight REFUSED a dirty primary back then) — and now
-    # the registry reads equal again, the deployed SHA matches, and G4 skips a
-    # suite NOTHING ever ran. A skipped G3 must never certify a SHA.
+    # The self-skip against G3's `qa_gates` record (ship_gate_skip? / auditor_red?)
+    # is gone with the local suite it used to spare: a record of a suite nothing
+    # re-runs cannot skip anything, and a read of CI for the frozen tree is the
+    # verdict itself. G3's record stays on the release as the audit trail only.
     #
-    # THE FIX: skip only against the gate's OWN recorded verdict —
-    # release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok"}, written by
-    # pre_qa_gate ONLY after the suite comes back green (Conductor.record_qa_gate).
-    # Skip iff that record exists, is green, and matches BOTH the command the ship
-    # gate would run AND the frozen ship SHA. Anything else — no record, a red
-    # record, a different command, a drifted/straggler SHA — FAILS OPEN and runs
-    # the gate. The caller (bin/release test_gate) records the skip as a visible
-    # gate SOP, never a silent omission.
+    # The kinds, and the gate result each carries:
+    #   :green      — the SHA's own run concluded green                     → PASS
+    #   :credited   — a same-SHA or same-tree green vouched for the tree    → PASS
+    #   :red        — a check failed or was cancelled                       → ABORT (a broken frozen commit)
+    #   :unreadable — the API refused the read (401/403)                    → ABORT (a token fault; never polled)
+    #   :diverged   — the tree shares neither SHA nor tree with the accepted
+    #                 head, so no earlier green could vouch for it, AND its own
+    #                 run gave no green within the poll bound                → ABORT (names the divergence)
+    #   :held       — pending / none / unverified past the poll bound       → ABORT (let CI conclude, re-run)
     #
-    # AND: a G3 whose AUDITOR went red (`record["ci"]["state"] == "red"` — GitHub
-    # CI called that same SHA broken while the local gate called it green) also
-    # FAILS OPEN. This is what makes G4 a real backstop for the cross-check's
-    # dangerous direction instead of a claimed one: on a green G3 the frozen ship
-    # SHA is the certified SHA, so WITHOUT this clause the skip fires and the G3
-    # alarm is the ONLY thing between a CI-red commit and production. A gate
-    # system that claims a backstop it does not have makes its own alarm
-    # dismissible.
-    #
-    # FAIL-OPEN ONLY, NEVER FAIL-CLOSED. The auditor may cause MORE checking; it
-    # may never block a ship on its own. Only the literal state "red" arms this —
-    # "none"/"pending"/"unverified" (GitHub had nothing to say: today ci.yml
-    # doesn't even build `release`) and an absent "ci" key are SILENCE, and
-    # silence changes nothing. The cost of a false red is one redundant suite run.
-    def ship_gate_skip?(test_cmd:, frozen_sha:, qa_gate:)
-      cmd = test_cmd.to_s.strip
-      sha = frozen_sha.to_s.strip
-      return false if cmd.empty? || sha.empty?
+    # Exactly two kinds pass. Every other kind fails CLOSED — including every
+    # no-data state — because a false green here ships an untested tree to prod.
+    def ship_gate_kind(ci, credited: false, diverged: false)
+      state = ci.is_a?(Hash) ? ci[:state] : nil
+      return credited ? :credited : :green if state == :green
+      return :red if state == :red
+      return :unreadable if state == :unreadable
 
-      record = qa_gate.is_a?(Hash) ? qa_gate : {}
-      return false unless record["ok"] == true || record[:ok] == true
-      return false if auditor_red?(record)
-
-      certified_cmd = (record["cmd"] || record[:cmd]).to_s.strip
-      certified_sha = (record["sha"] || record[:sha]).to_s.strip
-      certified_cmd == cmd && certified_sha == sha
+      diverged ? :diverged : :held
     end
 
-    # Did GitHub CI call the SHA G3 certified BROKEN? Only a literal "red" counts
-    # (see ship_gate_skip?): every other state — and no auditor at all — is no
-    # data, and no data must never arm or block the ship gate.
-    def auditor_red?(qa_gate)
-      record = qa_gate.is_a?(Hash) ? qa_gate : {}
-      ci = record["ci"] || record[:ci]
-      return false unless ci.is_a?(Hash)
-
-      (ci["state"] || ci[:state]).to_s == "red"
+    def ship_gate_pass?(kind)
+      %i[green credited].include?(kind)
     end
 
-    # The G3 gate record for a repo out of release.metadata["qa_gates"] (the twin
-    # of frozen_sha for qa_shas). nil when the gate never recorded a verdict for
-    # this repo — which ship_gate_skip? reads as "not certified" and runs the gate.
-    def qa_gate(qa_gates, repo)
-      gates = qa_gates.is_a?(Hash) ? qa_gates : {}
-      record = gates[repo] || gates[repo.to_s] || gates[repo.to_sym]
-      record.is_a?(Hash) ? record : nil
+    # The SOURCE of a green verdict, for the gate SOP: the credit note CiStatus /
+    # tree_credit_note wrote (which names the accepted head, the shared tree, or the
+    # completed runs that covered the pending duplicates), or the SHA's own run.
+    # Never blank, so a SOP always says where its green came from.
+    def verdict_source(ci, credited: false)
+      return "the SHA's own run, polled to a settled conclusion" unless credited
+
+      note = ci.is_a?(Hash) ? ci[:credited].to_s.strip : ""
+      "credited — #{note.empty? ? 'source not recorded' : note}"
     end
 
     # --- resuming a KILLED ship: is the frozen SHA ALREADY live on prod? --------

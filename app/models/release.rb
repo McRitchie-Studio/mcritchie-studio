@@ -118,16 +118,16 @@ class Release < ApplicationRecord
   # §1.2, "Test-tier → step map"). Each tier runs ONCE, at the step that OWNS it —
   # no step re-runs a lower tier a previous step already proved green:
   #   review  → base (unit/component), by the two senior reviewers
-  #   prepare → integration + e2e-smoke, by Steffon on origin/release at QA
-  #             (the hub registers its FULL suite as qa_test_cmd — the G3 batch
-  #             certification that lets G4 self-gate an unchanged SHA)
-  #   ship    → full-suite (the registry test_cmd — the repo's highest LOCAL
-  #             tier; it was never a browser e2e run, hence the honest relabel
-  #             from "e2e-full"), by Steffon on the FROZEN ship SHA. SELF-GATED:
-  #             skipped when G3 already certified that exact SHA with that
-  #             exact command this run (bin/release test_gate), so the full
-  #             suite runs once per release batch; a drifted/straggler SHA
-  #             re-triggers it.
+  #   prepare → integration + e2e-smoke, by Avi on origin/release at QA
+  #             (the hub registers its FULL suite as qa_test_cmd; the G3 gate
+  #             READS GitHub CI's verdict for it — a same-SHA / same-tree green
+  #             credited from the accepted head, else the tip's own polled run)
+  #   ship    → full-suite (the registry test_cmd — the repo's full suite as CI
+  #             runs it; it was never a browser e2e run, hence the honest relabel
+  #             from "e2e-full"), READ by Steffon's G4 gate for the FROZEN ship
+  #             SHA's tree through the same credit-or-poll resolution (bin/release
+  #             test_gate). Nothing runs locally at either gate: one tree earns
+  #             one verdict (devops-v3 §5), so the tier is executed once, in CI.
   # The ownership is disjoint by construction (a tier maps to exactly one step),
   # which is what makes "runs once" enforceable — see step_owning_tier.
   STEP_TEST_TIERS = {

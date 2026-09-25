@@ -548,18 +548,20 @@ module Api
       end
 
       # --- Cert evidence is a MACHINE-OWNED namespace (regression: an agent that
-      # recorded its tier-tagged test plan AFTER certifying wiped the
-      # fingerprint-bound cert lines, and bin/dor-check then reported
-      # "full-suite: MISSING" on code it had just certified). The API is the path
+      # recorded its tier-tagged test plan AFTER stamping evidence wiped the
+      # fingerprint-bound line, and bin/dor-check then reported it MISSING on
+      # code it had just checked). Since DevOps v3 phase 2b the only such lane is
+      # bin/control-check's `[control@fp]`; a retired full-suite receipt is plain
+      # author prose and an author write replaces it. The API is the path
       # bin/task PATCHes, so the guard must hold here, not only in the CLI. ---
 
       test "[integration] api checks_run update preserves cert evidence" do
-        full = "[full-suite@1512171634558ef1234567890abcdef123456789] bin/rails test (782 runs, 0 failures)"
-        rubocop = "[rubocop@1512171634558ef1234567890abcdef123456789] bin/rubocop (clean)"
+        control = "[control@1512171634558ef1234567890abcdef123456789] NECESSARY — replayed test/models/a_test.rb"
+        retired = "[full-suite@1512171634558ef1234567890abcdef123456789] bin/rails test (782 runs, 0 failures)"
         task = Task.create!(
           title: "Api Cert Evidence Guard",
           stage: "building",
-          metadata: { "devops" => { "kind" => "bug", "checks_run" => [full, rubocop] } }
+          metadata: { "devops" => { "kind" => "bug", "checks_run" => [control, retired] } }
         )
 
         # The exact payload `bin/task update <slug> --checks "[unit] ..."` sends
@@ -571,8 +573,8 @@ module Api
 
         assert_response :success
         task.reload
-        assert_includes task.devops_checks_run, full, "the API dropped the full-suite cert evidence"
-        assert_includes task.devops_checks_run, rubocop, "the API dropped the rubocop cert evidence"
+        assert_includes task.devops_checks_run, control, "the API dropped the control evidence"
+        refute_includes task.devops_checks_run, retired, "a retired full-suite receipt is no longer protected evidence"
         assert_includes task.devops_checks_run, "[unit] bin/rails test test/models"
       end
 

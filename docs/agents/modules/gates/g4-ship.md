@@ -15,14 +15,17 @@ The four gates in order: [G1 Cert](g1-cert.md) → [G2 Review](g2-review.md) →
 
 The gate window spans the whole irreversible half of the ship:
 
-- **The frozen-SHA test gate** (`ship_test_gate` SOPs) — **GitHub CI's conclusion
-  for the repo's QA-frozen SHA** is read BEFORE ship authority and before any push,
-  so "shipped" can never mean "untested". Since DevOps v2 Phase 3 the verdict is CI
-  (`ci_verdict(repo, frozen_sha)` → `ci_pass?`, fail-closed — **only green ships**),
-  not a local re-run: the registry `test_cmd` is still **recorded** (the drift/skip
-  check needs it) but its execution in an isolated gate workspace was demoted then
-  **deleted in Phase 4**. CI's Actions run covers
-  the repo's full suite INCLUDING the browser `test:system` lane no local gate ran.
+- **The frozen-SHA test gate** (`ship_test_gate` SOPs) — **GitHub CI's settled
+  verdict for the repo's QA-frozen SHA's TREE** is read BEFORE ship authority and
+  before any push, so "shipped" can never mean "untested". Nothing runs on the
+  conductor's machine: the frozen SHA is resolved through the **same credit-or-poll
+  read G3 runs on the release tip** (`resolve_release_ci_verdict`) — its own run,
+  polled to a conclusion, or a same-SHA / same-tree green credited from the
+  accepted head — and **only green ships** (fail-closed). The registry `test_cmd`
+  is the gate's SWITCH and names the suite CI ran; it is recorded on the SOP beside
+  the verdict's source, never executed. CI's run covers the repo's full suite
+  INCLUDING the browser `test:system` lane. See
+  [The tree-verdict read](#the-tree-verdict-read-one-tree-one-verdict) below.
 - **Ship authority** — the explicit production confirm, after the gate and
   before any deploy.
 - **The prod deploys** (`deploy:<repo>` SOPs) — per-app `git push` to Heroku
@@ -50,77 +53,73 @@ The gate window spans the whole irreversible half of the ship:
     treat it with more weight than before. The seal's contract is otherwise
     unchanged — still non-blocking, still never auto-rolls-back.
 
-## G4 self-gating (the 90/10 policy)
+## The tree-verdict read (one tree, one verdict)
 
-CI's verdict for the release SHA is established **once per release batch, at G3**.
-The ship test gate SKIPS re-reading it for a repo **only against G3's own recorded
-verdict** — `release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok", "ci"}`, which
-`prepare` writes ONLY after that repo's G3 verdict came back GREEN. It skips iff
-(`Release::ShipSequence.ship_gate_skip?`, unit-tested):
+**One tree earns one verdict** (devops-v3 §5): L0–L3 run once, on the PR's tree,
+in CI; every later gate READS that verdict. G3 and G4 do not run suites, and G4
+no longer consults G3's record either — the self-skip against
+`release.metadata["qa_gates"]` (`Release::ShipSequence.ship_gate_skip?`) went
+with the local suite it used to spare. The frozen ship SHA is resolved through
+the **same path G3 runs on the release tip** (`resolve_release_ci_verdict`,
+`bin/release.rb`), in order:
 
-- a G3 record exists for the repo and is **green** (`"ok" => true`), **and**
-- its `"cmd"` is EXACTLY the `test_cmd` the ship gate would run, **and**
-- its `"sha"` is EXACTLY the frozen ship SHA, **and**
-- its **auditor did not go red** — `"ci" => {"state" => "red"}` means GitHub CI
-  called that SAME SHA broken (in Phase 3 a red CI aborts `prepare`, so this is a
-  defensive check against a stale or hand-built record — see
-  [G3 Certification](g3-candidate.md#certification-what-g4-reads)).
+1. **Same-SHA credit** — the frozen SHA IS the accepted head (a fast-forward
+   promote) and its completed greens cover every pending duplicate by check name
+   (`ci_credit_verdict` → `CiStatus.credit_for_sha`).
+2. **Same-TREE credit** — the frozen SHA is a batch-PR merge commit whose tree
+   equals the accepted head's (`tree_identical_promote`), and the accepted
+   head's own run is green — or still in flight, in which case the gate waits on
+   it inside the poll bound (`tree_identical_ci_outcome`).
+3. **Its own run** — otherwise the frozen SHA's own run is polled until it
+   settles, up to `RELEASE_CI_POLL_TIMEOUT` (default ~1200s, re-read every
+   `RELEASE_CI_POLL_INTERVAL`, default 15s). Red and unreadable return at once.
 
-Everything else does **not** self-skip — no record, an `ok:false` record, a
-different command, a drifted/straggler SHA, a red auditor, blank inputs — and G4
-**re-derives the verdict from GitHub CI on the frozen SHA** (`ci_verdict` → `ci_pass?`).
+The gate classifies what it read (`Release::ShipSequence.ship_gate_kind`,
+unit-tested) and records a `ship_test_gate` SOP naming the **source** of the
+verdict — `GitHub CI GREEN @ <sha> — credited — tree-identical promote — accepted
+head <sha> … shares tree <tree> …`, or `… — the SHA's own run, polled to a settled
+conclusion` — plus the registry command CI ran. Exactly two kinds pass:
 
-The skip decision and the verdict have **different failure modes**, and the
-distinction is the whole point:
+| Kind | What was read | G4 result |
+|------|---------------|-----------|
+| `green` | The frozen SHA's own run concluded green. | **PASS** — the SOP names the own run. |
+| `credited` | A same-SHA or same-tree green vouched for the frozen tree. | **PASS** — the SOP names the credit (both SHAs and the shared tree). |
+| `red` | A check failed or was cancelled. | **ABORT** — a broken frozen commit: read the failing check, fix on `release`, re-run `bin/release ship`. |
+| `unreadable` | The API refused the read (401/403). | **ABORT at once** — a token fault polling cannot heal; the abort prints the credential remedy. Never polled. |
+| `diverged` | The frozen tree shares neither SHA nor tree with the accepted head (a consumer lock-bump commit; `accepted` moved on), AND its own run gave no green within the bound. | **ABORT** — names both halves: why no credit applied, and what the own run read. |
+| `held` | `pending` / `none` / `unverified` past the poll bound (a just-pushed re-pin still building). | **ABORT** — let CI conclude on the frozen SHA (or widen the bound), re-run `bin/release ship`. |
 
-- **The skip is fail-OPEN.** A missing/mismatched/red-auditor record makes G4
-  *re-check* rather than trust the record — a skip never fires on doubt. `none` /
-  `pending` / `unverified` and a record with no `"ci"` key leave the skip decision
-  exactly as it was (no data never arms the non-skip).
-- **The verdict is fail-CLOSED.** Once G4 re-reads CI, only a **green** frozen SHA
-  ships; red, and every no-data/pending state (`none`/`pending`/`unverified`/
-  `unreadable` — e.g. a just-pushed re-pin whose CI has not concluded), **abort the
-  ship**. This is the Phase 3 inversion: the pre-v2 gate re-ran a *local* suite here
-  (fail-open, "not a backstop for CI's lane"); now CI itself is the last verdict
-  before the irreversible deploy, and it CAN see every lane.
+Every non-pass row records a **failed** SOP and aborts BEFORE ship authority,
+before any push, leaving origin untouched. G3's record cannot talk a red or held
+read past the gate: a green `qa_gates` row beside a red frozen SHA still aborts
+(`test_ship_test_gate_ignores_the_g3_record_and_reads_ci_for_the_frozen_tree`).
 
-When a red auditor is what triggered the re-check, the ship **says so** — it names
-the distrusted record and re-derives the verdict from GitHub CI on the frozen SHA.
+**It fetches nothing.** The read uses whatever `origin/accepted` the last fetch
+left, because the ship path touches no ref before ship authority. A stale
+accepted ref can only decline a credit (the SHA's own run is the fallback) or
+credit an OLDER accepted head whose tree is identical — and a green for
+identical content is a verdict for this tree, which is the whole rule.
 
-> **Why not the registry + `qa_shas`?** That was the old rule, and it was a
-> silent **disarm**. `qa_shas` is stamped by the QA *deploy loop*, so it records
-> what was DEPLOYED, never what was CERTIFIED; and the registry is re-read at
-> ship, so it can differ from what `prepare` read. The documented gate-skip
-> recipe (blank `qa_test_cmd` so G3 skips → restore the file before ship, because
-> ship's preflight used to refuse a dirty primary) therefore made G4 skip a suite
-> that **nothing ever ran**, while printing "already green". A skipped G3 must
-> never certify a SHA. **Do not use that recipe** — it no longer works, by design.
-
-The skip is recorded as a **visible `ship_test_gate` SOP** on the gate run
-("skipped — `<cmd>` certified green @ `<sha>` at G3"), never a silent omission.
 A repo with **no registry `test_cmd` self-gates** at its own deploy and is
-skipped with its own step note. In practice: the hub (same full suite registered
-at G3 and G4) skips on an unchanged, G3-certified SHA; satellites (integration
-subset at G3, full suite at their own deploy) always run their full pre-prod
-check.
+skipped with its own step note: the `repo_script` satellites' `bin/deploy` runs
+their suite in the ship workspace. **Do not blank `test_cmd` to get past a red
+gate** — a blank reads as "self-gates" and skips the READ, which silently disarms
+the last gate before production; the supported override is
+[`--skip-test-gate`](#overriding-a-ship-gate-you-believe-is-a-false-negative).
 
 ## Where the verdict comes from
 
-**GitHub CI**, on the frozen ship SHA — `ci_verdict(repo, frozen_sha)` reads the
-Actions conclusion for that exact commit, and the gate result is `ci_pass?` of it.
-Nothing runs on this machine; the verdict comes off the laptop.
+**GitHub CI**, for the frozen ship SHA's tree — the credit-or-poll resolution
+above, the same one G3 ran on the release tip minutes or hours earlier. Nothing
+runs on this machine; the verdict comes off the laptop.
 
-> **Pre-v2 (deleted): the isolated gate workspace suite.** Before Phase 3 the suite ran
-> in the repo's isolated gate workspace (`Release::GateWorkspace`, role `gate`) — a
-> private detached worktree at `<repo>/.worktrees/_gate` pinned at the frozen ship
-> SHA, under the dedicated gate-workspace lock, with a test DB the gate **proved**
-> private, **never** the shared primary. The gate's invocation of it was commented out
-> in the canary window and **deleted in Phase 4**. The `GateWorkspace` primitive itself
-> lives on under role `ship` — the ship reuses it to run a `repo_script` satellite's own
-> pre-prod deploy suite — but no gate runs a suite in it. Its whole reason for existing
-> as a *gate* — a suite that lazily autoloads over minutes against a tree other sessions
-> can `git checkout` is not a check — is now moot: CI runs in a clean, isolated Actions
-> environment by construction.
+> **Deleted, in order:** the suite in the repo's isolated gate workspace
+> (`Release::GateWorkspace`, role `gate`) — demoted at DevOps v2 Phase 3, deleted
+> in Phase 4; then the single un-polled `ci_verdict` read and the self-skip against
+> G3's record (`ship_gate_skip?` / `auditor_red?`) — replaced by the tree-verdict
+> read above (devops-v3 piece 2b-ii). The `GateWorkspace` primitive lives on under
+> role `ship` for the gem build, the consumer lock bump / re-pin, and a
+> `repo_script` satellite's own pre-prod deploy suite — never for a gate.
 
 ## Where the DEPLOY runs — the ship has its own checkout too
 
@@ -213,18 +212,21 @@ never be re-pushed. The preflight therefore still **aborts** on that (and only
 that: untracked files are invisible to the gemspec's `git ls-files`), *before*
 anything is published, printing the same labeled-branch rescue.
 
-**Operator note — ship is now FASTER, but a non-green CI HOLDS it.** Since Phase 3
-the ship gate no longer re-runs a local suite on the frozen SHA — it reads GitHub
-CI's already-computed verdict, which is near-instant. The trade: an uncertified SHA
-(a re-pin whose CI has not concluded, a red frozen commit) **fails the gate closed**
-and holds the ship until CI is green — or you take the `--skip-test-gate` override
-below. An uncertified SHA must not reach production unchecked.
+**Operator note — ship is FAST when the tree already earned its green, and a
+non-green CI HOLDS it.** The ship gate reads GitHub CI's settled verdict for the
+frozen tree — near-instant when that run settled at prepare, or when the accepted
+head's green credits it; a still-building run is **polled** for up to
+`RELEASE_CI_POLL_TIMEOUT` (~20 min) rather than failed on the first read. The
+trade: an uncertified tree (a re-pin whose CI has not concluded, a red frozen
+commit) **fails the gate closed** and holds the ship until CI is green — or you
+take the `--skip-test-gate` override below. An uncertified tree must not reach
+production unchecked.
 
 ## Overriding a ship gate you believe is a false negative
 
 `bin/release ship --skip-test-gate --reason "…"`
 
-It demands a reason, **confirms** before skipping, runs no suite, and records a
+It demands a reason, **confirms** before skipping, reads no verdict, and records a
 **red** `ship_test_gate` gate SOP — so a skipped gate is visible in the release
 record forever. Use it only when the code is verified green elsewhere and the
 instrument is the thing that's broken; then **fix the instrument**.
@@ -260,7 +262,7 @@ The conductor records the gate for you:
    `confirming`/`confirmed` beats. Gates record verdicts; they never replace
    stamps).
 2. **Collect** — every test scope inside the window appends an executed-SOP
-   entry: `ship_test_gate` per app (run or visible skip), `deploy:<repo>` per
+   entry: `ship_test_gate` per app (the tree-verdict read, naming its source), `deploy:<repo>` per
    deploy, `prod_post_deploy` per hook, `prod_smoke_seal`.
 3. **Close** —
    - **`success`** after every repo deployed, `/up` came back green, the
@@ -300,7 +302,7 @@ The conductor records the gate for you:
 - [`../../agents/steffon/sops/production-deploy.md`](../../agents/steffon/sops/production-deploy.md)
   — the owning SOP; run that end-to-end, this doc explains the gate it
   produces.
-- [`g3-candidate.md`](g3-candidate.md) — the gate whose certified SHA +
-  command enable this gate's self-gating skip.
+- [`g3-candidate.md`](g3-candidate.md) — the gate that ran the same read on the
+  release tip; its `qa_gates` record is the audit trail, not an input here.
 - [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write
   surface.
