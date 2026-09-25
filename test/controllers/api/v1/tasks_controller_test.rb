@@ -18,10 +18,11 @@ module Api
         }
       end
 
-      # [integration] devops-v3 4c-i: show serves the PR url the board DERIVES, and
-      # caches it into a blank `devops.pr_url`, so bin/ship can skip its write and
-      # its read-back still pins the exact PR. The index stays derivation-free.
-      test "show serves and caches the derived PR url; the index asks GitHub nothing" do
+      # [integration] devops-v3 4c-i: the board DERIVES the PR url and caches it into
+      # a blank `devops.pr_url`, so bin/ship can skip its write and its read-back still
+      # pins the exact PR. The derivation runs in TaskPrUrlCacheJob, never in the
+      # request; the index queues nothing.
+      test "show queues the PR url fill and the next show serves the cached url" do
         task = tasks(:in_progress_task)
         task.update_columns(stage: "building", metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
         url = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/4242"
@@ -30,9 +31,15 @@ module Api
         Github::TaskDerivation.reset_shared!
         TaskDerivedFacts.stub(:enabled?, true) do
           Github::TaskDerivation.stub(:new, fake) do
-            get api_v1_tasks_path(full: 1), headers: @headers
+            assert_no_enqueued_jobs(only: TaskPrUrlCacheJob) do
+              get api_v1_tasks_path(full: 1), headers: @headers
+            end
             assert_response :success
-            assert_empty fake.calls, "a full index page must not derive per row"
+
+            perform_enqueued_jobs(only: TaskPrUrlCacheJob) do
+              get api_v1_task_path(task.slug), headers: @headers
+            end
+            assert_equal url, task.reload.devops_url("pr"), "the job cached what it derived"
 
             get api_v1_task_path(task.slug), headers: @headers
           end
@@ -42,7 +49,6 @@ module Api
         body = response.parsed_body["data"]
         assert_equal url, body["pr_url_or_derived"]
         assert_equal url, body.dig("metadata", "devops", "pr_url"), "the served record carries the cached url"
-        assert_equal url, task.reload.devops_url("pr"), "the board cached what it derived"
       ensure
         Github::TaskDerivation.reset_shared!
       end

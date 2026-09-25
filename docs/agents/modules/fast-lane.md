@@ -84,7 +84,7 @@ each from GitHub and keeps its old column as a cache:
 | Fact | Derived from | Cache refreshed by |
 |------|--------------|--------------------|
 | `merged` | the rung that contains the PR's merge commit (`Task#merged_rung`) | the move to `reviewed`, a merged-PR webhook, the release record steps |
-| `pr_url` | the PR whose head is the task branch (`Task#pr_url_or_derived`) | `bin/task show` of a building-or-later task fills a blank one |
+| `pr_url` | the PR whose head is the task branch (`Task#pr_url_or_derived`) | `bin/task show` of a building-or-later task queues `TaskPrUrlCacheJob` to fill a blank one; the request never waits on GitHub |
 | authors | the PR's commits: `<soul>@mcritchie.studio` emails and soul `Co-Authored-By` trailers (`Task#derived_authors`) | read live on every review |
 
 So review does not run `bin/task merged` (it remains a manual override for a PR

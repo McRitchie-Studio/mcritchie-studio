@@ -51,10 +51,9 @@ module Api
         render_data(records, meta: result[:meta])
       end
 
-      # SHOW ONLY, not the `full=1` index: the derived facts may ask GitHub for the
-      # PR whose head is the task branch, and a page of 100 rows must not. Derived
-      # FIRST, because deriving can fill the blank `devops.pr_url` cache and the
-      # task JSON must carry the filled value.
+      # SHOW ONLY, not the `full=1` index: a blank PR url queues one background
+      # GitHub lookup, and a page of 100 rows must not queue 100. Show itself never
+      # waits on GitHub (TaskDerivedFacts#recorded_pr_url_enqueuing_fill).
       def show
         derived = derived_facts_json(@task)
         render_data(task_json(@task).merge(derived))
@@ -139,13 +138,14 @@ module Api
       end
 
       # The facts the board DERIVES from GitHub (devops-v3 4c-i), beside the stamps
-      # they supersede. `pr_url_or_derived` is the recorded `devops.pr_url`, else the
-      # PR whose head is the task branch, which this read also caches into the blank
-      # column (Task#cache_derived_pr_url!). bin/ship's record step skips its write
-      # when this names the PR it opened, and its read-back verifies it. nil when
-      # neither is known or GitHub cannot be read.
+      # they supersede. `pr_url_or_derived` is the recorded `devops.pr_url`. When
+      # that is blank the request does NOT ask GitHub (a slow GitHub would hold it
+      # past Heroku's 30s router limit): it queues TaskPrUrlCacheJob to derive the
+      # PR on the task branch into the column, and a later show serves it. bin/ship's
+      # record step skips its write when this names the PR it opened, and writes the
+      # url itself otherwise; its read-back verifies it either way.
       def derived_facts_json(task)
-        { "pr_url_or_derived" => task.cache_derived_pr_url! }
+        { "pr_url_or_derived" => task.recorded_pr_url_enqueuing_fill }
       rescue StandardError => e
         Rails.logger.warn("[tasks#show] #{task.slug}: derived facts unavailable: #{e.class}: #{e.message}")
         { "pr_url_or_derived" => task.devops_url("pr").presence }

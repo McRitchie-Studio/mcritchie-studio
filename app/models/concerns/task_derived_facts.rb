@@ -130,8 +130,8 @@ module TaskDerivedFacts
   PR_CACHE_STAGES = %w[building submitted reviewed assembled shipped].freeze
 
   # Fills a BLANK `devops.pr_url` with the derived one and returns the task's PR
-  # url — the self-healing read tasks#show runs (the same shape as its gates
-  # projection). This is what lets bin/ship skip its `--pr-url` write: the board
+  # url — the self-healing fill TaskPrUrlCacheJob runs for tasks#show (in the
+  # background, never in the request). This is what lets bin/ship skip its `--pr-url` write: the board
   # finds the PR on the task branch and caches it, so every reader that still
   # keys on `devops.pr_url` (dor-check, the review gate, the CI meter) sees it.
   # Never overwrites a recorded url, and never raises: an unreadable GitHub
@@ -149,6 +149,22 @@ module TaskDerivedFacts
     url
   rescue Github::TaskDerivation::Unreadable, ActiveRecord::ActiveRecordError => e
     Rails.logger.warn("[task-derivation] #{slug}: PR url not cached: #{e.class}: #{e.message}")
+    recorded
+  end
+
+  # The request-path read of the task's PR url: the recorded column, NEVER GitHub.
+  # A web request must not wait on GitHub (a rate limit or outage would hold it past
+  # Heroku's 30s router limit), so a blank url in a PR stage is filled in the
+  # background by TaskPrUrlCacheJob (#cache_derived_pr_url!) and the NEXT read
+  # serves it. Never raises: a failed enqueue answers with what is recorded.
+  def recorded_pr_url_enqueuing_fill
+    recorded = devops_url("pr").presence
+    return recorded if recorded || !PR_CACHE_STAGES.include?(stage.to_s) || !TaskDerivedFacts.enabled?
+
+    TaskPrUrlCacheJob.perform_later(slug)
+    nil
+  rescue StandardError => e
+    Rails.logger.warn("[task-derivation] #{slug}: PR url fill not enqueued: #{e.class}: #{e.message}")
     recorded
   end
 
