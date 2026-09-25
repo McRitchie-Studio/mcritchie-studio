@@ -96,7 +96,7 @@ satellites:
 
   - slug: cyvasse
     display_name: "Cyvasse"
-    emoji: ""
+    emoji: "🐉"
     port: 3600
     heroku_app: "cyvasse"
     production_url: "https://cyvasse.mcritchie.studio"
