@@ -261,7 +261,13 @@ class Task < ApplicationRecord
     # the wrong store a 422 instead, and #shed_column_shadow_keys drops any value
     # a pre-wiring write already parked there.
     "dependencies" => "the tasks.dependencies column — set it with " \
-                      "`bin/task update <slug> --depends-on <task-slug>` (repeatable)"
+                      "`bin/task update <slug> --depends-on <task-slug>` (repeatable)",
+    # Listed the day the column was born, before any writer could park a shadow
+    # under it. The epic chip and the `?epic=` board filter both read the COLUMN,
+    # so a devops write to this name would be the release_slug incident again: a
+    # value visible on the task page that no chip and no filter ever sees.
+    "epic_slug" => "the tasks.epic_slug column — set it with " \
+                   "`bin/task update <slug> --epic <epic-slug>` (`--epic none` clears it)"
   }.freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url
@@ -384,6 +390,16 @@ class Task < ApplicationRecord
   # `task-<hex>` fallback. Used to validate `dependencies` entries — see
   # #dependencies_name_real_tasks.
   DEPENDENCY_SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
+  # An epic's slug wears the SAME charset as a task slug — it is the handle the
+  # card's epic chip prints and `/tasks?epic=<slug>` filters on, so it must be
+  # URL-safe and readable by the same rule. There is deliberately no Epic model
+  # behind it (devops-v3-design.md §3): the plan lives with the focus session,
+  # and the board carries only this one optional, indexed column.
+  EPIC_SLUG = DEPENDENCY_SLUG
+  # The value an API writer sends to CLEAR the epic without reaching for JSON
+  # `null` — the CLI's `--epic none` spelling, honoured at the model so every
+  # writer (API, form, console) agrees on what "none" means for this column.
+  EPIC_CLEAR_VALUE = "none"
 
   # Board rank read-model (studio-engine board primitive). Supplies `reposition!`
   # (the shared reorder write, driven by Studio::Board::Reorderable in the
@@ -437,6 +453,14 @@ class Task < ApplicationRecord
   # unsaveable because a dependency it declared last month has since been
   # archived away. Writing the field is what has to be right.
   validate :dependencies_name_real_tasks, if: :dependencies_changed?
+  # The epic handle, when present, must be a slug the chip can print and the
+  # `?epic=` filter can match — refused with a 422 through both API paths rather
+  # than stored in a shape the filter would never find again. Normalized
+  # (stripped, lowercased, blank → nil) in #normalize_epic_slug before this runs.
+  validates :epic_slug, format: { with: EPIC_SLUG,
+                                  message: "must be a slug — lowercase letters, digits and single " \
+                                           "separators (e.g. devops-v3)" },
+                        allow_nil: true
   validates :priority, inclusion: { in: [0, 1, 2] }
   validates :pm_size,     inclusion: { in: SIZES }, allow_nil: true
   validates :po_size,     inclusion: { in: SIZES }, allow_nil: true
@@ -450,6 +474,10 @@ class Task < ApplicationRecord
   # later, once the task it must wait on exists. Runs before the validation that
   # reads it, so the check and the stored value are the same list.
   before_validation :normalize_dependencies
+  # EVERY save, like dependencies: the epic is set and cleared after creation,
+  # and the filter compares the stored column byte-for-byte, so the value must
+  # be canonical before the format validation reads it.
+  before_validation :normalize_epic_slug
   before_validation :default_devops_handles_from_slug, on: :create
   # Persona BEFORE the Pokémon draw: when a session "acts as" a soul (devops.persona),
   # stamp the agent's name/color/emoji as the mascot and skip the Pokémon entirely.
@@ -603,6 +631,15 @@ class Task < ApplicationRecord
   # the `building` guard is what keeps the scope to CURRENTLY-blocked tasks.
   scope :blocked, -> { where(stage: "building").where.not(blocked_at: nil) }
   scope :recent, -> { order(created_at: :desc) }
+  # The epic filter both boards and the API index share (`?epic=<slug>`). The
+  # param is normalized through the SAME rule the column was written with, so
+  # `?epic=DevOps-V3` finds the tasks stamped `devops-v3` rather than nothing. A
+  # blank or unparseable value yields an EMPTY scope, never the whole board: an
+  # epic link that resolves to "everything" would read as a working filter.
+  scope :for_epic, ->(value) {
+    normalized = Task.normalize_epic_slug(value)
+    normalized ? where(epic_slug: normalized) : none
+  }
   # Board order: highest `position` first, so the freshest task in a column sits
   # on top. `position` is an event-driven RANK — a create or a stage move stamps
   # it to (column max + 100), floating that task to the top (see
@@ -2266,6 +2303,20 @@ class Task < ApplicationRecord
           "un-merges nothing — from reviewed on, the code is already on accepted. Next time, ask " \
           "BEFORE the work merges — a request now survives the handoff to submitted and pulses " \
           "through review."
+  end
+
+  # The ONE canonical form of an epic handle, shared by the write (the
+  # before_validation callback) and every read that must match it (the
+  # `for_epic` scope behind `?epic=`). Strips, lowercases, and turns blank or
+  # the clear token (`"none"`) into nil so a writer can clear the column without
+  # JSON null. Returns the lowercased string otherwise — VALIDATION, not this
+  # method, decides whether that string is a legal slug, so the refusal can
+  # quote what was sent.
+  def self.normalize_epic_slug(value)
+    text = value.to_s.strip.downcase
+    return nil if text.empty? || text == EPIC_CLEAR_VALUE
+
+    text
   end
 
   def self.normalize_devops_metadata(raw)
@@ -4249,6 +4300,15 @@ class Task < ApplicationRecord
       else Array(raw)
       end
     self.dependencies = list.flatten.map { |entry| entry.to_s.strip }.reject(&:empty?).uniq
+  end
+
+  # Canonicalize the epic handle at the one door every writer passes through
+  # (see Task.normalize_epic_slug). Runs on every save so an API `"none"`, a
+  # padded or upper-cased value, and an empty string all land as the same stored
+  # fact — nil or a lowercase slug — which is what lets the board filter compare
+  # the column directly.
+  def normalize_epic_slug
+    self.epic_slug = self.class.normalize_epic_slug(epic_slug)
   end
 
   # Every declared dependency must name a REAL, DIFFERENT task.

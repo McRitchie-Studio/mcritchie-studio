@@ -244,6 +244,9 @@
     <% end %>
     <code class="block text-[10px] font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1"
           style="<%= right_fade_style %>"><%= task.slug %></code>
+    <%# The epic chip sits beside the slug, outside its fade like the emojis; its
+        own partial renders nothing when the task belongs to no epic. %>
+    <%= render "tasks/epic_chip", epic_slug: task.epic_slug %>
     <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
   </div>
 

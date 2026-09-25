@@ -1568,6 +1568,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_220000) do
     t.jsonb "dependencies", default: [], null: false
     t.text "description"
     t.string "dev_size"
+    t.string "epic_slug"
     t.text "error_message"
     t.datetime "failed_at"
     t.datetime "g1_failed_at"
@@ -1599,6 +1600,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_220000) do
     t.string "title", null: false
     t.datetime "updated_at", null: false
     t.index ["agent_slug"], name: "index_tasks_on_agent_slug"
+    t.index ["epic_slug"], name: "index_tasks_on_epic_slug"
     t.index ["priority"], name: "index_tasks_on_priority"
     t.index ["release_slug"], name: "index_tasks_on_release_slug"
     t.index ["requires_migration"], name: "index_tasks_on_requires_migration"

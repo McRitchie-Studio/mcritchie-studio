@@ -260,6 +260,10 @@ document.addEventListener('turbo:before-cache', function() {
     </div>
   </div>
 
+  <%# Epic filter — a server-side narrowing (?epic=<slug>, TasksController#load_board),
+      unlike the client-side app chips below; the banner names the epic and links back. %>
+  <%= render "tasks/epic_filter", epic_slug: @epic_filter, clear_path: tasks_path %>
+
   <%# App filter — toggle a repo to hide all its cards (client-side, resets on
       reload). Built from the repos present on the board. %>
   <% if board_apps.any? %>
