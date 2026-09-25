@@ -593,7 +593,12 @@ a failed delivery prints Discord's own error. To re-post a shipped release's not
 ```bash
 bin/release notes <release-slug>          # dry run: the notes + the measured message split
 bin/release notes <release-slug> --post   # send them
+bin/release notes <release-slug> --post --force   # send them again, over a delivery that worked
 ```
+
+The ship records whether Discord took the notes on the release's `release_notes`
+event (`metadata.delivered`, plus the message count). A `--post` over notes already
+delivered posts nothing, says so, and exits 1; `--force` is the deliberate second post.
 
 Current intended QA apps:
 

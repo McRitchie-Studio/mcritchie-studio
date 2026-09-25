@@ -270,6 +270,14 @@ dev and test databases, cookie key, `APP_PORT`, and `LOCAL_EMAIL_CAPTURE=1` (set
 test real delivery). Never let two Sidekiq processes share a Redis DB. Callback-heavy flows
 (Stripe, OAuth, webhooks) stay on the primary port unless configured for the desk's.
 
+Every write of `.env.agent-stack` (`new`, `bind-task`) also writes `.env.development.local`
+with the desk's `DATABASE_URL`, `REDIS_URL` and `PORT`. dotenv loads it for the development
+env, so a bare `bin/rails db:prepare` or `bin/rails runner` in a hub desk reaches the desk's
+own database whether or not the stack was ever booted. A hub desk WITHOUT that pointer is
+refused by `config/initializers/desk_database_guard.rb` rather than handed the shared
+`mcritchie_studio_development`; the refusal prints the fix, `bin/agent-worktree new
+mcritchie-studio <slug>`. `ALLOW_SHARED_DEV_DB=1` overrides it when you mean the shared DB.
+
 ## Running tests
 
 `new` writes `.env.test.local` with `TEST_DATABASE_URL`, so `bin/rails test` in a hub desk
