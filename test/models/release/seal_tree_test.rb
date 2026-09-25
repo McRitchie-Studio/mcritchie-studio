@@ -1,0 +1,95 @@
+require "test_helper"
+require "tmpdir"
+require "fileutils"
+
+class Release
+  # Regression: rel-20260925-3b1f5c — the post-ship seal ran bin/prod-smoke from
+  # the hub PRIMARY, which still held the PRE-ship tree, so it smoked the old
+  # specs against the new prod and recorded a false red. Release::SealTree decides
+  # where the seal runs (the ship workspace at the frozen SHA, never the primary)
+  # and refuses — UNSEALED, not red — when the shipped specs cannot run.
+  class SealTreeTest < ActiveSupport::TestCase
+    FROZEN = "cafebabe11111111111111111111111111111111".freeze
+
+    # A runnable ship workspace: the smoke script and the playwright runner.
+    def with_workspace(script: true, playwright: true)
+      Dir.mktmpdir do |dir|
+        if script
+          FileUtils.mkdir_p(File.join(dir, "bin"))
+          File.write(File.join(dir, SealTree::SCRIPT), "#!/bin/sh\n")
+          File.chmod(0o755, File.join(dir, SealTree::SCRIPT))
+        end
+        if playwright
+          FileUtils.mkdir_p(File.join(dir, "node_modules", ".bin"))
+          File.write(File.join(dir, SealTree::PLAYWRIGHT), "#!/bin/sh\n")
+          File.chmod(0o755, File.join(dir, SealTree::PLAYWRIGHT))
+        end
+        yield dir
+      end
+    end
+
+    test "[unit] a workspace pinned at the frozen SHA is where the seal runs" do
+      with_workspace do |dir|
+        verdict = SealTree.resolve(workspace: dir, frozen_sha: FROZEN, head_sha: FROZEN)
+        assert_predicate verdict, :runnable?
+        assert_equal dir, verdict.root, "the seal runs from the ship workspace itself"
+      end
+    end
+
+    test "[unit] an abbreviated frozen SHA names the same commit" do
+      with_workspace do |dir|
+        assert_predicate SealTree.resolve(workspace: dir, frozen_sha: FROZEN[0, 7], head_sha: "#{FROZEN}\n"), :runnable?
+      end
+    end
+
+    test "[unit] a workspace at another SHA refuses and names both SHAs" do
+      with_workspace do |dir|
+        verdict = SealTree.resolve(workspace: dir, frozen_sha: FROZEN, head_sha: "deadbeef" * 5)
+        refute_predicate verdict, :runnable?
+        assert_nil verdict.root, "a refusal offers no tree — not even a fallback to the primary"
+        assert_includes verdict.reason, "deadbee"
+        assert_includes verdict.reason, "cafebab"
+      end
+    end
+
+    test "[unit] a blank frozen SHA or HEAD refuses" do
+      with_workspace do |dir|
+        assert_includes SealTree.resolve(workspace: dir, frozen_sha: " ", head_sha: FROZEN).reason, "no frozen ship SHA"
+        refute_predicate SealTree.resolve(workspace: dir, frozen_sha: FROZEN, head_sha: ""), :runnable?
+      end
+    end
+
+    test "[unit] a missing workspace refuses" do
+      verdict = SealTree.resolve(workspace: "/nonexistent/_ship", frozen_sha: FROZEN, head_sha: FROZEN)
+      assert_equal "the ship workspace is missing", verdict.reason
+      assert_equal "the ship workspace is missing", SealTree.resolve(workspace: nil, frozen_sha: FROZEN, head_sha: FROZEN).reason
+    end
+
+    test "[unit] a shipped tree without bin/prod-smoke refuses" do
+      with_workspace(script: false) do |dir|
+        assert_includes SealTree.resolve(workspace: dir, frozen_sha: FROZEN, head_sha: FROZEN).reason, "bin/prod-smoke"
+      end
+    end
+
+    test "[unit] a workspace without playwright refuses rather than smoking red" do
+      with_workspace(playwright: false) do |dir|
+        assert_includes SealTree.resolve(workspace: dir, frozen_sha: FROZEN, head_sha: FROZEN).reason, "playwright"
+      end
+    end
+
+    test "[unit] the unsealed summary says the specs could not run, never FAILED" do
+      summary = SealTree.summary("the ship workspace is missing")
+      assert_equal "unsealed: could not run the shipped specs — the ship workspace is missing", summary
+      refute_includes summary, "FAILED"
+      refute_includes SmokeSeal::STATUSES, SealTree::UNSEALED,
+                      "unsealed is the ABSENCE of a seal, never a stored seal status"
+    end
+
+    test "[unit] same_commit? matches prefixes and never a blank" do
+      assert SealTree.same_commit?(FROZEN, FROZEN[0, 7].upcase)
+      refute SealTree.same_commit?(FROZEN, "")
+      refute SealTree.same_commit?("", "")
+      refute SealTree.same_commit?(FROZEN, "deadbeef")
+    end
+  end
+end
