@@ -445,14 +445,17 @@ module StageAgentsHelper
   # keeps its palette stand-in, not overridden.
   def event_stage_agents(evt, by_slug, mascot_agent)
     stage = evt.to_stage
+    # The SYSTEM_ACTOR placeholder names nobody, so it reads as actor-less here and
+    # the Deploy tail still falls back to the stage's role owner.
+    actor = TaskEvent.named_actor(evt.actor)
     if Task::BUILD_STAGES.include?(stage)
       if (agent = event_mascot_agent(evt, mascot_agent))
         [StageAgent.new(stage: stage, from_label: evt.from_label,
-                        label: evt.actor.presence || evt.mascot_snapshot["slug"].presence || agent.name,
+                        label: actor || evt.mascot_snapshot["slug"].presence || agent.name,
                         weight: nil, agent: agent, seconds: evt.seconds_in_from)]
-      elsif evt.actor.present?
-        [StageAgent.new(stage: stage, from_label: evt.from_label, label: evt.actor, weight: nil,
-                        agent: resolve_actor_agent(evt.actor, by_slug), seconds: evt.seconds_in_from)]
+      elsif actor
+        [StageAgent.new(stage: stage, from_label: evt.from_label, label: actor, weight: nil,
+                        agent: resolve_actor_agent(actor, by_slug), seconds: evt.seconds_in_from)]
       else
         []
       end
@@ -462,9 +465,9 @@ module StageAgentsHelper
                        weight: reviewer["weight"], agent: resolve_actor_agent(reviewer["slug"], by_slug),
                        seconds: evt.seconds_in_from)
       end
-    elsif evt.actor.present?
-      [StageAgent.new(stage: stage, from_label: evt.from_label, label: evt.actor, weight: nil,
-                      agent: resolve_actor_agent(evt.actor, by_slug), seconds: evt.seconds_in_from)]
+    elsif actor
+      [StageAgent.new(stage: stage, from_label: evt.from_label, label: actor, weight: nil,
+                      agent: resolve_actor_agent(actor, by_slug), seconds: evt.seconds_in_from)]
     elsif (owner = (STAGE_OWNER[stage] && by_slug[STAGE_OWNER[stage]]))
       [StageAgent.new(stage: stage, from_label: evt.from_label, label: owner.slug, weight: nil,
                       agent: owner, seconds: evt.seconds_in_from)]

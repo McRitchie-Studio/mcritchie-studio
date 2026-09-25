@@ -237,7 +237,8 @@ class Release
 
     def assembly_actor(task)
       reviewed = task.task_events.transitions.where(to_stage: "reviewed").chronological.last
-      return reviewed.actor if reviewed&.actor.present?
+      named = TaskEvent.named_actor(reviewed&.actor)
+      return named if named
 
       reviewers = task.latest_intent_reviewers("reviewed")
       primary = Array(reviewers).find { |r| %w[primary heavy].include?(r["weight"].to_s) } || Array(reviewers).first

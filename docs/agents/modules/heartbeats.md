@@ -409,10 +409,14 @@ pipeline at [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline) is the
 operator view of the first two: Activities → Insights (Xan grades) →
 Confirmations (McRitchie's `mcr` grades).
 
-### Act 1 — `grade-events`
+### Act 1 — `grade-events` (optional since 2026-09-25)
 
 Canonical SOP:
 [`../agents/xan/sops/grade-events.md`](../agents/xan/sops/grade-events.md).
+
+No longer run by `Xan Heartbeat`: every task is graded once at ship
+(`Insights::TaskGrader`, thresholds in `config/learning_loop.yml`). Run this act only
+when Mr. McRitchie names it.
 
 Grade a batch of recent trajectory activities for quality so the learning layer keeps
 only what makes the next agent smarter.

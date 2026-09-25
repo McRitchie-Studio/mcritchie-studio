@@ -67,10 +67,10 @@ if (gem = Task.find_by(title: "Review Turf Monster Tailwind PR")) &&
 end
 
 # 2) UNDER-SLUG CREW: a building card with two distinct build actors → the lane grid.
-# Guard on ACTORED events (a Task auto-stamps a nil-actor genesis event on create),
+# Guard on ACTORED events (a Task auto-stamps a system-actor genesis event on create),
 # so this adds the crew once and re-seeds clean.
 if (crew = Task.find_by(title: "Generate player prop lines")) &&
-   crew.task_events.where.not(actor: nil).none?
+   crew.task_events.where.not(actor: [nil, TaskEvent::SYSTEM_ACTOR]).none?
   crew_event(crew, to_stage: "designed", occurred_at: 2.days.ago, actor: "shannon")
   crew_event(crew, from_stage: "designed", to_stage: "building",
                    occurred_at: 1.day.ago, seconds_in_from: 86_400, actor: "carl")
@@ -78,7 +78,7 @@ end
 
 # 3) FULL DEPLOY CREW + gem on a shipped card → the whole journey + footer 💎.
 if (shipped = Task.find_by(title: "Deploy Turf Monster v2.1")) &&
-   shipped.task_events.where.not(actor: nil).none?
+   shipped.task_events.where.not(actor: [nil, TaskEvent::SYSTEM_ACTOR]).none?
   shipped.update!(metadata: shipped.metadata.deep_merge("devops" => { "shape" => "library" })) \
     if shipped.metadata.dig("devops", "shape") != "library"
   crew_event(shipped, to_stage: "designed", occurred_at: 5.days.ago, actor: "shannon")

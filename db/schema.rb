@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_24_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1539,6 +1539,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_220000) do
     t.datetime "updated_at", null: false
     t.index ["task_slug", "kind"], name: "index_task_events_on_task_slug_and_kind"
     t.index ["task_slug", "occurred_at"], name: "index_task_events_on_task_slug_and_occurred_at"
+  end
+
+  create_table "task_grades", force: :cascade do |t|
+    t.bigint "action_grade_id"
+    t.datetime "created_at", null: false
+    t.jsonb "facts", default: {}, null: false
+    t.datetime "graded_at", null: false
+    t.string "grader", default: "xan", null: false
+    t.text "learning"
+    t.string "note_activity_slug"
+    t.string "task_slug", null: false
+    t.jsonb "tripped", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.string "verdict", null: false
+    t.index ["task_slug"], name: "index_task_grades_on_task_slug", unique: true
+    t.index ["verdict"], name: "index_task_grades_on_verdict"
   end
 
   create_table "task_review_claims", force: :cascade do |t|
