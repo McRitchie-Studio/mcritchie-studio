@@ -70,8 +70,84 @@ The client now targets, all measured live:
 the video model moved from a body field into the PATH — so `generate_video`
 REFUSES a non-nil `model:` rather than accepting and ignoring it.
 
+### Character identity — generating THIS person, not a person
+
+Without an identity, "a quarterback mid-throw" invents a new face on every call
+and a five-scene run comes back as five different men. Higgsfield's **custom
+reference** fixes that: post a set of reference photos once, get a UUID, then
+every generation naming that UUID renders the same face.
+
+Measured live on 2026-09-24 with the production credential — request AND
+response, which makes this the one part of the integration whose answers are not
+guesses:
+
+| | Measured |
+|---|---|
+| Create | `POST /v1/custom-references` → **200** |
+| Body | `{"name": String, "input_images": [{"type":"image_url","image_url":"https://…"}]}` |
+| Read one | `GET /v1/custom-references/{uuid}` → 200 (`status`, `fail_reason`, `reference_media`) |
+| List | **none** — `GET` on the collection answers 405, so the id we store IS the record |
+| Pin | `custom_reference_id` (UUID) + `custom_reference_strength` on `POST /higgsfield-ai/soul/v2/standard` |
+
+Four validator facts worth not rediscovering, each one a paid round-trip:
+
+- `input_images` items are **objects**. A bare URL string answers 422
+  `model_attributes_type`, an item without `type` answers `missing`, and `type`
+  is a one-member literal (`image_url`).
+- The list has **min_length 1** — `[]` answers `too_short`.
+- `custom_reference_id` is validated as a UUID (422 `uuid_parsing` on anything
+  else), which is how we know the field is wired rather than ignored.
+- `custom_reference_strength` is a **float in 0.0..1.0**, not a level. 99
+  answers `less_than_equal`, -5 answers `greater_than_equal`, `"banana"` answers
+  `float_parsing`. The client refuses all three locally.
+
+**The identity is not usable when it is created.** The create answers
+`status: "not_ready"`, and a poll walked it `not_ready` → `queued` →
+`in_progress` → `completed` in about a minute. `thumbnail_url` was still null at
+`completed`, so it is not a readiness signal. `Appearance#higgsfield_reference_ready?`
+is true only for `completed` — deliberately positive-form, because the inverse
+("not one of the pending words") would read a FAILED status as ready.
+
+**The published spec does not list `/v1/custom-references`.**
+`docs.higgsfield.ai/docs/openapi.json` carries 8 paths and this is not among
+them. The spec is incomplete; the endpoint is live. Probe before concluding
+something is absent.
+
+**Where it lives in the app.**
+
+| Piece | File |
+|---|---|
+| Mint / read | `Higgsfield::Client#create_custom_reference`, `#custom_reference` |
+| Which photos | `Appearances::ReferenceImages` — **injected**, see below |
+| Mint + record + poll | `Appearances::CreateCharacterReference` |
+| Storage | `appearances.higgsfield_reference_id` / `_status` / `_synced_at` |
+| Spending it | `Content::AssetsAgent#character_reference` (only when ready) |
+| Operator | `rake appearances:character_reference SLUG=look-xxx`, `rake appearances:refresh_character_references` |
+
+**The reference list is a seam, not a lookup.** Today's floor is the cached ESPN
+headshot (`Studio::ImageCache`, purpose `headshot`, variants 100/400, mirrored by
+`Nflverse::SeedPlayers#cache_headshot`) plus the operator's `reference_url` when
+they have typed one. One image satisfies the API's minimum, so the lane works
+now. The character sheet the operator actually wants — head-on, profile, back,
+expressions — needs an image-search credential that does not exist yet; when it
+does, it is a new callable passed as `references:` and nothing else in the lane
+moves.
+
+**Higgsfield fetches our URLs server-side**, so every reference image must be
+publicly reachable by THEM, not merely by us. Verified 2026-09-24: a real cached
+headshot answers 200 to an unauthenticated `curl -sI`, `Studio::S3.url` builds an
+unsigned virtual-host URL, and the created reference came back with the image
+re-hosted on Higgsfield's own CDN — which only happens if their fetch succeeded.
+A signed or private URL would not survive that hop.
+
+**One live create was made to measure all of the above** (a reference named
+`mcritchie-probe-alec-anderson`, id `1af15765-…`). No generation was run, so
+nothing here says anything about the credit state of the media endpoints.
+
 **What is still unverified, and why.** The account answers `not_enough_credits`
-on every media type, so no SUCCESSFUL payload has ever been observed. Request
+on every media type, so no successful GENERATION payload has ever been observed.
+(The character-identity endpoints above ARE measured end to end, response
+included — they mint no media, and a create answered 200.) Request
 shapes are measured; RESPONSE parsing is written tolerantly against the
 plausible shapes and marked `UNVERIFIED` in the source. Both the URL read and
 the status read fail loudly WITH the payload rather than returning nil or
