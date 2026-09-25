@@ -153,7 +153,28 @@ class ReviewerSelector
   # merely not saying). It is the caller's stated fact, and the only thing other
   # than a real soul that satisfies #builder_known? — so the fail-closed guard in
   # `bin/reviewer-select` has an explicit, auditable escape instead of being
-  # routed around when a Pokémon session (no soul) genuinely did the build.
+  # routed around.
+  #
+  # IT IS NO LONGER THE POKÉMON ESCAPE. This line read "when a Pokémon session (no
+  # soul) genuinely did the build" until 2026-09-24, when `pokemon` joined
+  # Task::SOUL_ROSTER. A Pokémon build now names its author like any other, so
+  # reaching for `none` there would assert something false about the commonest
+  # build path in the ecosystem — and a hand-passed escape on nearly every PR is a
+  # ritual, not an audit. What is left for `none` is the genuinely unattributed
+  # build: a change driven straight from the operator's own hands, or a lane that
+  # provably has no soul behind it.
+  #
+  # ⚠ IT IS THE ONE INPUT HERE THAT FAILS **OPEN**, so assert it only when it is
+  # TRUE. Everything else in this class fails closed — a blank builder refuses, a
+  # typo refuses, an incomplete set refuses — precisely because an unnamed author
+  # might be sitting in the pool. `none` lifts that refusal on the caller's word
+  # alone, and nothing can check the word. MEASURED 2026-09-24 on
+  # data-flow-doc-contradicts-code, a docs PR Xan wrote while the task carried no
+  # stamp: `--builder none` seated **xan** as the light on Xan's own diff, while
+  # `--builder xan` (and `--builder alex`, through the alias) correctly excluded
+  # her and seated jasper. A false `none` does not merely skip an exclusion — it
+  # produces the confidently-wrong seating this class's header calls the worse
+  # failure, and reports the property upheld. Hardening it is /tasks/builder-none-fails-open.
   NO_BUILDER = "none"
 
   # The two reviewer-role NAMES, sourced from the single vocabulary

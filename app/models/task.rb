@@ -3038,14 +3038,42 @@ class Task < ApplicationRecord
   # lifted by a value identifying no one. A blank builder fails closed and is safe;
   # a typo'd one failed open and was not.
   #
+  # IT REGISTERS IDENTITIES, NOT REVIEW SEATS. "Is this somebody" and "may this
+  # soul review" are different questions with different answers, and the second is
+  # asked elsewhere — ReviewerSelector::POOL, plus Agent.metadata["reviewer"]. Most
+  # of this list cannot review anything: turf-monster, mack, mason, pokemon and rex
+  # are all non-reviewing souls. Being here only makes a name ATTRIBUTABLE.
+  #
+  # Reading it as a review register is what kept POKEMON off it until 2026-09-24.
+  # Pokémon is the general builder the operating model routes every task through,
+  # so it is the most prolific author in the ecosystem — and `--agent pokemon` was
+  # accepted by the CLI's shape check and dropped here, silently, leaving the task
+  # `builders: NOT STAMPED` and `bin/reviewer-select` refusing to pick. Measured
+  # against prod that day: soul-character-reference-lane carries agent_slug
+  # "pokemon" with built_by nil and builders []. That refusal was FALSE — Pokémon
+  # is not in POOL, so naming it excludes nobody and no seat is at risk; the record
+  # simply had no word for the party that had plainly done the work.
+  #
+  # The legion objection ("every task gets a fresh mascot, so what does excluding
+  # Pokémon even mean?") argues FOR the entry, not against it. The mascot is
+  # per-task and already recorded separately (devops.mascot); the SOUL is constant.
+  # A per-mascot identity would make every task a brand-new unknown.
+  #
+  # It also retires a placeholder. `--agent mack` was the documented stand-in — a
+  # real soul's slug, borrowed so the selector had someone to exclude — which put
+  # untrue authorship on the record and left genuine Mack rows indistinguishable
+  # from Pokémon ones. `pokemon` produces the identical selection outcome (neither
+  # is in POOL) while recording what actually happened. None of this pre-empts
+  # deriving authors from git (v3 phase 4); it is strictly better until then.
+  #
   # The static list is the FLOOR, not the whole answer: .soul_roster unions the
   # seeded Agent slugs over it, so a newly seeded soul validates without a code
   # change. It is a floor rather than a plain DB read because ReviewerSelector
   # DEGRADES to built-in defaults with no Agent rows at all (see its header), and a
-  # roster that empties with the DB would turn every soul into an unknown. Keep it
-  # in lockstep with db/seeds/02_agents.rb — test/models/agents_seed_test.rb asserts
-  # every seeded slug appears here.
-  SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason].freeze
+  # roster that empties with the DB would turn every soul into an unknown. A soul
+  # added HERE and not to the seed breaks that promise in the other direction, so
+  # keep the two in lockstep — test/models/agents_seed_test.rb asserts both ways.
+  SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason pokemon rex].freeze
 
   # RETIRED SLUGS THAT STILL RESOLVE — a READ alias, one release wide. The
   # orchestrator seat `alex` became `xan` on 2026-09-24 (the human operator takes
@@ -3069,8 +3097,11 @@ class Task < ApplicationRecord
 
   # Every soul slug this deployment recognises: the static floor plus whatever is
   # seeded. Any lookup error (no table yet, DB down, mid-migration) degrades to the
-  # floor — which still names all nine real souls, so degrading never turns a real
-  # soul into an unknown NOR an unknown into a soul.
+  # floor — which names every real soul on its own, so degrading never turns a real
+  # soul into an unknown NOR an unknown into a soul. That promise is why a new soul
+  # goes in SOUL_ROSTER and not only in the seed: a roster entry that exists only as
+  # an Agent row vanishes in exactly the degraded mode the floor exists for, and the
+  # sentence above would quietly stop being true for it.
   # Memoized per request/job (Current.soul_roster) — .soul? is asked once per
   # candidate on every build claim and every reviewer selection, and an unmemoized
   # roster re-SELECTs the agents table several times per save.
