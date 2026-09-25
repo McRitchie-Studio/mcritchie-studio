@@ -11,7 +11,9 @@
 # Also picked up by the normal `bin/rails test` sweep.
 #
 # A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is frozen at its size by
-# config/test_health.yml precisely so new work lands somewhere else. The harness
+# the suite's test-health ratchet precisely so new work lands somewhere else
+# (and naming that ratchet's config file here would map this file onto it in
+# the fast cert, which pins how many tests that path reaches). The harness
 # below is the small one (a sealed subprocess loading the script with the ship
 # conductor stubbed) rather than a copy of that file's private harness; the
 # conductor stub is that file's SHIP_STUB, copied as the sibling files copy what
