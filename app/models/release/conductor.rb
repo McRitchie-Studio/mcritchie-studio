@@ -480,8 +480,10 @@ class Release
     # the pure plan. See Release::SweepPlan.repo_coverage_gap.
     def validate_member_pr_coverage!(release)
       offenders = release.ordered_members.filter_map do |task|
+        # Derived PRs fill the gaps (devops-v3 piece 4a): a repo whose PR exists
+        # on the task branch but was never recorded is covered, not refused.
         missing = Release::SweepPlan.repo_coverage_gap(repos: task.release_repos,
-                                                       pr_repos: task.release_pr_urls.keys,
+                                                       pr_repos: task.derived_release_pr_urls.keys,
                                                        kind: task.release_kind)
         "#{task.slug} (no PR url for #{missing.join(', ')})" if missing.any?
       end
