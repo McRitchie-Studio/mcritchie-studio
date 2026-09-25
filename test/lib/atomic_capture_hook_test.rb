@@ -761,7 +761,7 @@ class AtomicCaptureHookTest < Minitest::Test
 
   # ── [unit] secret redaction (audit 2026-07-02 high finding #6) ───────────
   # tool_input / tool_response are the sole source of AgentAction.input/output,
-  # which render on the PUBLIC /alex/heartbeat surface. The hook must never ship a
+  # which render on the PUBLIC /xan/heartbeat surface. The hook must never ship a
   # secret off the machine. Two layers: whole-field suppression for secret-reading
   # commands/files (a bare value has no key to match), and pattern redaction for
   # KEY=VALUE + known credential formats everywhere.

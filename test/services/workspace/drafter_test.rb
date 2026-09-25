@@ -12,14 +12,20 @@ class WorkspaceDrafterTest < ActiveSupport::TestCase
   class FakeClient
     attr_reader :calls
 
-    def initialize(matches: [])
-      @matches = matches
+    # `matches` may be split into pages: [[page1...], [page2...]] via `pages:`.
+    def initialize(matches: [], pages: nil)
+      @pages = pages || [ matches ]
       @calls = []
     end
 
-    def messages_list(query:, limit:)
+    def messages_list(query:, limit:, cursor: nil)
       @calls << [ :messages_list, query, limit ]
-      G::ListMessagesResponse.new(messages: @matches.map { |id, thread| G::Message.new(id: id, thread_id: thread) })
+      index = cursor.to_i
+      page = @pages.fetch(index, [])
+      G::ListMessagesResponse.new(
+        messages: page.map { |id, thread| G::Message.new(id: id, thread_id: thread) },
+        next_page_token: (index + 1 < @pages.size ? (index + 1).to_s : nil)
+      )
     end
 
     def threads_get(id, format:)
@@ -111,5 +117,38 @@ class WorkspaceDrafterTest < ActiveSupport::TestCase
 
   test "every draft must name who asked for it" do
     assert_raises(Workspace::Drafter::Error) { Workspace::Drafter.new(mailbox: "alex@mason.test", drafted_by: " ") }
+  end
+
+  test "a second thread hiding on page TWO still makes the query ambiguous" do
+    # A long thread can fill the first page alone. Deciding from that page would
+    # thread the reply into it while another matching conversation sits unread.
+    client = FakeClient.new(pages: [ Array.new(3) { |i| [ "m#{i}", "t-long" ] }, [ [ "m9", "t-other" ] ] ])
+
+    assert_raises(Workspace::ThreadFinder::Ambiguous) do
+      drafter(client).call(markdown: "x", reply_query: "from:vendor.test")
+    end
+    assert_equal 2, client.calls.count { |c| c.first == :messages_list }, "it walked to page two"
+    refute client.calls.any? { |c| c.first == :threads_get }, "no thread is opened while deciding"
+  end
+
+  test "one thread spread over several pages resolves to that thread" do
+    client = FakeClient.new(pages: [ [ [ "m1", "t-7" ] ], [ [ "m2", "t-7" ] ] ])
+
+    assert_equal "t-7", Workspace::ThreadFinder.new(client).thread_id_for("subject:payment")
+  end
+
+  test "a draft whose log row fails is reported by its Gmail id, and ErrorLog hears of it" do
+    client = FakeClient.new
+    captured = []
+    MailboxDraft.stub(:create!, ->(**) { raise ActiveRecord::RecordInvalid }) do
+      ErrorLog.stub(:capture!, ->(e) { captured << e }) do
+        error = assert_raises(Workspace::Drafter::Error) do
+          drafter(client).call(to: "a@b.test", subject: "s", markdown: "x")
+        end
+        assert_match(/draft r-1 WAS created in alex@mason.test/, error.message)
+      end
+    end
+    assert_equal 1, captured.size
+    assert_equal [ :drafts_create ], client.calls.map(&:first), "the draft itself was made — only its log failed"
   end
 end

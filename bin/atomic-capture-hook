@@ -4,7 +4,7 @@
 # bin/atomic-capture-hook — provider-neutral PostToolUse hook that streams every
 # tool call into the atomic-capture endpoint (Phase B live-capture). A FRESH
 # Claude Code or Codex session, with this wired as a PostToolUse hook, populates
-# the per-action trajectory at /alex/heartbeat LIVE — one AgentAction row per
+# the per-action trajectory at /xan/heartbeat LIVE — one AgentAction row per
 # tool call.
 #
 # Claude Code invokes a PostToolUse hook with the event JSON on STDIN:
@@ -731,7 +731,7 @@ class AtomicCaptureHook
 
   # ── Secret redaction (audit 2026-07-02 high finding #6) ───────────────────
   # tool_input / tool_response are the SOLE source of AgentAction.input/output,
-  # which render on the PUBLIC /alex/heartbeat surface — so a secret must never be
+  # which render on the PUBLIC /xan/heartbeat surface — so a secret must never be
   # stored (and never leaves the box: we redact HERE, before the POST). Two layers:
   #   1. WHOLE-FIELD suppression when the tool touches secret MATERIAL — a Bash
   #      command that prints a secret, or a read/write of a secret FILE. A bare

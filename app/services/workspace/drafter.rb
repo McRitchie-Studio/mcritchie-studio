@@ -42,7 +42,20 @@ module Workspace
 
       draft = client.drafts_create(raw: message.to_mime, thread_id: reply&.thread_id)
       message_id = draft.message&.id
-      log = MailboxDraft.create!(
+      log = record!(mailbox, draft, message, message_id, reply)
+
+      Result.new(draft_id: draft.id, message_id: message_id, thread_id: log.gmail_thread_id,
+                 url: GmailClient.draft_url(message_id || draft.id, mailbox: mailbox.address), log: log)
+    end
+
+    private
+
+    # The draft ALREADY EXISTS in Gmail by the time this runs, so a failure here
+    # must not read as "no draft": it is an unlogged draft. ErrorLog gets the
+    # exception (best-effort — a failing ErrorLog must not hide the original),
+    # and the raise names the Gmail draft id so the operator can find it.
+    def record!(mailbox, draft, message, message_id, reply)
+      MailboxDraft.create!(
         workspace_mailbox: mailbox,
         drafted_by: @drafted_by,
         gmail_draft_id: draft.id,
@@ -51,12 +64,15 @@ module Workspace
         subject: message.subject.to_s[0, 250],
         recipients: (message.to + message.cc).join(", ")[0, 250]
       )
-
-      Result.new(draft_id: draft.id, message_id: message_id, thread_id: log.gmail_thread_id,
-                 url: GmailClient.draft_url(message_id || draft.id, mailbox: mailbox.address), log: log)
+    rescue StandardError => e
+      begin
+        ErrorLog.capture!(e) if defined?(ErrorLog)
+      rescue StandardError
+        nil
+      end
+      raise Error, "draft #{draft.id} WAS created in #{mailbox.address} but its log row failed " \
+                   "(#{e.class}) — the draft is in Gmail; record it by hand"
     end
-
-    private
 
     def allowed_mailbox!
       mailbox = WorkspaceMailbox.find_by(address: @address)

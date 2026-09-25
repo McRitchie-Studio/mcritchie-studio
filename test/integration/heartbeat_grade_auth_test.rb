@@ -27,7 +27,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     a = action
 
     assert_difference -> { ActionGrade.count }, 1 do
-      post heartbeat_grade_path(a), params: { grader: "alex", disposition: "good" }, as: :json
+      post heartbeat_grade_path(a), params: { grader: "xan", disposition: "good" }, as: :json
     end
 
     assert_response :success, "grade writes are public while build-first mode holds"
@@ -47,10 +47,10 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
   # ── reads stay public ──────────────────────────────────────────────────────
 
   test "[integration] the heartbeat and Insight Bank reads remain public (no auth)" do
-    get alex_heartbeat_path
+    get xan_heartbeat_path
     assert_response :success
 
-    get alex_insights_path
+    get xan_insights_path
     assert_response :success
   end
 
@@ -58,11 +58,11 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
 
   test "[integration] a banked SPAN grade renders on the Insight Bank without crashing" do
     e = span(reason_slug: "trace the nil-guard", task_slug: nil)
-    grade = ActionGrade.create!(agent_activity: e, grader: "alex", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: e, grader: "xan", disposition: "good",
                                 slug: "promote this span to a guardrail")
     grade.bank!
 
-    get alex_insights_path
+    get xan_insights_path
 
     assert_response :success
     assert_select "[data-test=insight-bank]"
@@ -75,7 +75,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
                                 slug: "the span was noisy")
     grade.bank!
 
-    get alex_insights_path
+    get xan_insights_path
 
     assert_response :success
     assert_match "the span was noisy", response.body

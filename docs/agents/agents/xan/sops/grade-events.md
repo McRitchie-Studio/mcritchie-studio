@@ -2,12 +2,12 @@
 
 ## Status: Active
 
-This is Alex's `grade-events` SOP. It grades recent resolved trajectory activities so
+This is Xan's `grade-events` SOP. It grades recent resolved trajectory activities so
 useful agent behavior can become reusable memory.
 
 ## Scope
 
-This SOP is part of Alex's learning loop. It does not review PRs, merge release
+This SOP is part of Xan's learning loop. It does not review PRs, merge release
 work, deploy QA, ship production, or archive work.
 
 ## Entry
@@ -22,7 +22,7 @@ Use the production board by default. Do not add `--local`.
 
 ## Preconditions
 
-Resolved agent activities are awaiting Alex's grade. If none are waiting,
+Resolved agent activities are awaiting Xan's grade. If none are waiting,
 report "nothing to grade" and stop.
 
 ## Procedure
@@ -43,8 +43,8 @@ bin/agent-activity grade <activity-id> --disposition not --slug "<4-7 words>" --
 Bank only insights that make the next agent smarter. Discard generic narration,
 routine success, and anything that should not become instruction.
 
-The browser path at `/alex/heartbeat` is the operator/admin equivalent. The CLI
-grades as Alex; Mr. McRitchie's confirmation lane remains in the browser
+The browser path at `/xan/heartbeat` is the operator/admin equivalent. The CLI
+grades as Xan; Mr. McRitchie's confirmation lane remains in the browser
 pipeline.
 
 ## Exit Seam

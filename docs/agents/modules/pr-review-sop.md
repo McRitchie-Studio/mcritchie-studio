@@ -30,7 +30,7 @@ orchestrator) → **one Carl per PR** (the standing primary AND owner) → **one
 LIGHT** Carl summons. **There is no Avi supervisor.** Carl reviews deeply, owns the
 gates, summons the light, drives the verdict, and merges. Each reviewer reviews **as
 their own soul**, and each review shows up in the Agent column of the Alex heartbeat
-(`/alex/heartbeat`) attributed to that soul. Nothing here overrides the canonical
+(`/xan/heartbeat`) attributed to that soul. Nothing here overrides the canonical
 stage ownership in `devops-cycle-design.md` §1.2 — it is the operational how-to for
 that stage.
 

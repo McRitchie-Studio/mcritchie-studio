@@ -230,6 +230,13 @@ them to read and send. Nothing in this lane sends.
 Each address we may draft as is its own allow-list row, proven with its own
 token. The workspace's `team@` subject is not enough to draft as `alex@`.
 
+**What a mailbox row opens: that address's MAIL, never its Drive.** Drafting as
+`alex@`, and reading the one thread a draft answers, run with purpose `:mail`,
+which admits a mailbox row. Drive walks run with purpose `:workspace`, which
+admits only the workspace's own subject — so `Workspace::Credentials.authorizer_for`
+refuses to build a Drive authorizer for `alex@` even though the Google grant
+itself would allow it. The grant is domain-wide; the purpose is the boundary.
+
 ```bash
 bin/rails 'workspace:add_mailbox[<address>]'           # SIGNATURE='markdown' optional
 bin/rails 'workspace:check_mailbox[<address>]'         # proves it; flips a pending workspace active too

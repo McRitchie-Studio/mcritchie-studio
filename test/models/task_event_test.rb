@@ -172,12 +172,12 @@ class TaskEventTest < ActiveSupport::TestCase
 
   test "an explicit Current.task_event_reviewers override is recorded verbatim" do
     Current.task_event_reviewers = [{ "slug" => "carl", "weight" => "primary" },
-                                    { "slug" => "alex", "weight" => "light" }]
+                                    { "slug" => "xan", "weight" => "light" }]
     task = Task.create!(title: "reviewer override sample task", stage: "submitted")
     task.review!
 
     reviewers = task.task_events.chronological.last.metadata["reviewers"]
-    assert_equal %w[carl alex], reviewers.map { |r| r["slug"] }, "Avi's curated pair wins over auto-select"
+    assert_equal %w[carl xan], reviewers.map { |r| r["slug"] }, "Avi's curated pair wins over auto-select"
   ensure
     Current.reset
   end

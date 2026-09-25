@@ -15,7 +15,7 @@ module Api
           post api_v1_activities_path,
                params: {
                  task_slug: @task.slug,
-                 agent_slug: "alex",
+                 agent_slug: "xan",
                  activity_type: "qa_feedback",
                  description: "QA blocked until CI is green.",
                  metadata: { source: "api" }

@@ -20,13 +20,13 @@ test("dashboard loads with agent cards", async ({ page }) => {
 
 test("agents page loads", async ({ page }) => {
   await page.goto("/agents");
-  await expect(page.locator("body")).toContainText("Alex");
+  await expect(page.locator("body")).toContainText("Xan");
   await expect(page.locator("body")).toContainText("Mack");
 });
 
 test("agent detail loads", async ({ page }) => {
-  await page.goto("/agents/alex");
-  await expect(page.locator("body")).toContainText("Alex");
+  await page.goto("/agents/xan");
+  await expect(page.locator("body")).toContainText("Xan");
   await expect(page.locator("body")).toContainText("orchestrator");
 });
 

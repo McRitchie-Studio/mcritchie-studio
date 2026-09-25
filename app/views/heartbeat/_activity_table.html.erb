@@ -6,7 +6,7 @@
     AgentActivity fields; attributed actions are controller-loaded for drill-downs (no
     per-row query). Each activity is a collapsible tbody (Alpine, default collapsed);
     expanding it drills into those raw agent_actions read-only. Each activity carries
-    inline good/not quick-grade radios (Alex + McRitchie, POSTing to the activity grade
+    inline good/not quick-grade radios (Xan + McRitchie, POSTing to the activity grade
     endpoint); drilled-down raw action rows open the grading drawer. Raw
     actions the agent never narrated (a null agent_activity_id) fall into the single
     trailing "Unlabeled" group. Locals: activity_rows (Array of [AgentActivity,
@@ -38,7 +38,7 @@
         <th>Model / Tokens</th>
         <th>Cost</th>
         <th>Command</th>
-        <th>Alex</th>
+        <th>Xan</th>
         <th>McRitchie</th>
       </tr>
     </thead>
@@ -50,12 +50,12 @@
       <% mascot_slug = activity.mascot.presence || totals[:mascot] %>
       <% pokemon = pokemon_by_slug[mascot_slug] %>
       <% grades_for = activity_grades[activity.id] || {} %>
-      <% alex_g = grades_for[ActionGrade::ALEX] %>
+      <% xan_g = grades_for[ActionGrade::XAN] %>
       <% mcr_g = grades_for[ActionGrade::MCR] %>
       <tbody class="hb-evtgroup" data-test="heartbeat-event"
              data-category="<%= activity.category %>" data-activity-id="<%= activity.id %>"
-             data-alex-disp="<%= alex_g&.disposition %>" data-alex-slug="<%= alex_g&.slug %>"
-             data-alex-graded="<%= alex_g.present? %>" data-alex-banked="<%= !!alex_g&.banked %>"
+             data-xan-disp="<%= xan_g&.disposition %>" data-xan-slug="<%= xan_g&.slug %>"
+             data-xan-graded="<%= xan_g.present? %>" data-xan-banked="<%= !!xan_g&.banked %>"
              data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
              data-mcr-graded="<%= mcr_g.present? %>" data-mcr-banked="<%= !!mcr_g&.banked %>"
              x-data="heartbeatActivityRow()" x-init="hydrate($el)"
@@ -119,7 +119,7 @@
               <% end %>
             </div>
           </div></td>
-          <%= render "heartbeat/activity_feedback_cell", activity: activity, alex: alex_g, mcr: mcr_g %>
+          <%= render "heartbeat/activity_feedback_cell", activity: activity, xan: xan_g, mcr: mcr_g %>
         </tr>
 
         <% if actions.any? %>

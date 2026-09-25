@@ -1,4 +1,4 @@
-# The grading layer over the learning heartbeat — Alex's feedback record.
+# The grading layer over the learning heartbeat — Xan's feedback record.
 #
 # A grade targets EXACTLY ONE of two things (an additive dual-FK, not a
 # polymorphic rewrite): a raw agent action OR a narrated agent activity. The model
@@ -7,12 +7,12 @@
 # Either target can carry up to TWO ActionGrade rows, distinguished by the
 # `grader` column:
 #
-#   grader = "alex"  — Alex's grade of the action/activity itself.
-#   grader = "mcr"   — Mr. McRitchie's audit OF Alex's grade for that target
-#                      (the recursive audit: McRitchie grades Alex's grading).
+#   grader = "alex"  — Xan's grade of the action/activity itself.
+#   grader = "mcr"   — Mr. McRitchie's audit OF Xan's grade for that target
+#                      (the recursive audit: McRitchie grades Xan's grading).
 #
 # The (agent_action_id, grader) and (agent_activity_id, grader) pairs are each
-# unique, so a target holds at most one Alex grade and one McRitchie audit —
+# unique, so a target holds at most one Xan grade and one McRitchie audit —
 # never two of either.
 #
 # Each grade is a 4–7 word feedback `slug` plus a BINARY `disposition`
@@ -29,10 +29,14 @@
 # (the heartbeat UI wiring, T4) is responsible for wrapping these in rescue_and_log
 # with target/parent context, per backend discipline.
 class ActionGrade < ApplicationRecord
-  # Who graded — TWO rows per action: Alex's grade, and the McRitchie audit of it.
-  ALEX    = "alex"
+  # Who graded — TWO rows per action: Xan's grade, and the McRitchie audit of it.
+  XAN     = "xan"
   MCR     = "mcr"
-  GRADERS = [ALEX, MCR].freeze
+  GRADERS = [XAN, MCR].freeze
+  # The seat's retired slug (renamed 2026-09-24). Kept one release as a
+  # compile-time alias for an out-of-tree caller; every in-tree reference says XAN,
+  # and a row posted as "alex" is normalized to XAN before validation below.
+  ALEX    = XAN
 
   # Binary disposition — the credit signal. No "pending" here: a row only exists
   # once a grader has committed to a verdict (the UI's pending state is the
@@ -65,19 +69,23 @@ class ActionGrade < ApplicationRecord
   belongs_to :source_activity, class_name: "Activity", foreign_key: :source_activity_slug,
                                primary_key: :slug, optional: true, inverse_of: :seeded_grades
 
+  # A retired grader slug (Task::SOUL_ALIASES) resolves to its successor rather
+  # than failing inclusion — the read alias, applied at the one write seam.
+  before_validation { self.grader = Task.canonical_soul(grader) if grader.present? }
+
   validates :grader, inclusion: { in: GRADERS }
   validates :disposition, inclusion: { in: DISPOSITIONS }
   validates :slug, presence: true
   # Exactly one target — a grade is of an action OR an activity, never both, never
   # neither (replaces the old agent_action presence guarantee).
   validate :exactly_one_target
-  # One Alex grade + one McRitchie audit PER TARGET — never two of either. The
+  # One Xan grade + one McRitchie audit PER TARGET — never two of either. The
   # uniqueness is scoped per FK and only fires for the FK that is actually set,
   # so an action grade and an activity grade by the same grader never collide.
   validates :grader, uniqueness: { scope: :agent_action_id }, if: -> { agent_action_id.present? }
   validates :grader, uniqueness: { scope: :agent_activity_id },  if: -> { agent_activity_id.present? }
 
-  scope :by_grader,  ->(grader) { where(grader: grader) }
+  scope :by_grader,  ->(grader) { where(grader: Task.canonical_soul(grader)) }
   scope :banked,     -> { where(banked: true) }            # the Insight Bank
   scope :discarded,  -> { where(discarded: true) }
   scope :for_action, ->(action) { where(agent_action_id: action) }
@@ -87,7 +95,7 @@ class ActionGrade < ApplicationRecord
   scope :seeded_candidates, -> { where.not(source_activity_slug: nil) }
   # Candidates still AWAITING grade — seeded but not yet banked into the Insight
   # Bank nor set aside. The read the pipeline surfaces (heartbeat#pipeline): the
-  # queue of block-mined lessons for the operator/Alex to promote or discard.
+  # queue of block-mined lessons for the operator/Xan to promote or discard.
   scope :pending_candidates, -> { seeded_candidates.where(banked: false, discarded: false) }
 
   # The learning loop's OUTPUT — the curated lessons a FRESH session carries in.
@@ -154,9 +162,10 @@ class ActionGrade < ApplicationRecord
     update!(discarded: true, banked: false)
   end
 
-  def alex?
-    grader == ALEX
+  def xan?
+    grader == XAN
   end
+  alias alex? xan? # retired name, one release (see ALEX above)
 
   def mcr?
     grader == MCR

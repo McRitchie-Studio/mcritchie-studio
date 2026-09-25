@@ -67,6 +67,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     "qa-release" => "Avi",
     "qa-deploy" => "Avi",           # legacy alias — the spelling bin/release.rb and bin/conductor actually use
     "deploy-with-task" => "Avi",
+    "arbitrate-block" => "Avi",     # registered 2026-09-24 with DevOps v3 phase 1: a contested review block is ruled on by Avi
     "live-score-watch" => "Turf Monster",  # re-homed 2026-08-26: the judgment it asks for is sports-domain
     "contest-rehearsal" => "Turf Monster",  # registered 2026-09-04 with the second act; the guard is the only thing that keeps a docs claim from drifting
     "sleeper-auction-watch" => "Turf Monster",  # registered 2026-09-09 with the third act. It is deliberately off the launcher card, so no card test can see a wrong-owner claim about it; this row is the whole mechanism
@@ -78,6 +79,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     "production-deploy" => "Steffon",
     "archive-shipped" => "Steffon",
     "clean-infra" => "Steffon",
+    "workspace-launch" => "Steffon",  # registered 2026-09-24 with its sub-SOPs; on Steffon's card but not a heartbeat act
     "ship gate" => "Steffon",
     "pr-review" => "Carl"           # Carl reowned review at the 2026-07-22 reslot
   }.freeze

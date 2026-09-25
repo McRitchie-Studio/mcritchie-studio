@@ -46,7 +46,7 @@ skills_data.each do |data|
 end
 
 assignments = {
-  "alex"         => ["task-orchestration", "rails-development", "api-integration", "monitoring"],
+  "xan"          => ["task-orchestration", "rails-development", "api-integration", "monitoring"],
   "avi"          => ["pr-review", "product-strategy", "release-management", "qa", "rails-development"],
   "carl"         => ["rails-development", "activerecord-postgres", "background-jobs", "api-design", "ruby-gem-authoring"],
   "shannon"      => ["ui-development", "tailwind-css", "alpine-js", "rails-views-erb", "design-systems"],

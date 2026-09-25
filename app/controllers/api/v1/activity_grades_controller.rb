@@ -1,12 +1,12 @@
 module Api
   module V1
     class ActivityGradesController < BaseController
-      # The bearer AGENT path for the Alex heartbeat grade-events loop — the
+      # The bearer AGENT path for the Xan heartbeat grade-events loop — the
       # first-class alternative to the admin browser drawer. `awaiting` returns the
-      # resolved activities still ungraded by Alex; `create` records Alex's grade.
+      # resolved activities still ungraded by Xan; `create` records Xan's grade.
       #
-      # PROVENANCE, NOT A SECURITY BOUNDARY: this path ALWAYS grades as `alex` — the
-      # grader is never read from params, so there is no way to post an audit-OF-Alex
+      # PROVENANCE, NOT A SECURITY BOUNDARY: this path ALWAYS grades as `xan` — the
+      # grader is never read from params, so there is no way to post an audit-OF-Xan
       # (`grader: "mcr"`) row THROUGH THIS ENDPOINT. That is all it buys. The `mcr`
       # lane is NOT otherwise gated: HeartbeatController skips authentication
       # (build-first, 2026-07-03), so an anonymous request forges an `mcr` row with no
@@ -16,18 +16,18 @@ module Api
 
       # GET /api/v1/agent_activities/awaiting_grade?limit=N
       #
-      # The resolved activities Alex hasn't graded yet, newest-resolved first (capped by
+      # The resolved activities Xan hasn't graded yet, newest-resolved first (capped by
       # the model to 1..MAX_GRADE_BATCH). Each row carries what the grader needs to
       # judge it (id, category, reason, outcome, provenance).
       def awaiting
-        activities = AgentActivity.awaiting_grade(grader: ActionGrade::ALEX, limit: batch_limit)
+        activities = AgentActivity.awaiting_grade(grader: ActionGrade::XAN, limit: batch_limit)
                            .map(&:to_grading_row)
         render_data(activities, meta: { count: activities.size })
       end
 
       # POST /api/v1/agent_activities/:id/grade
       #
-      # Upsert Alex's grade of the activity: { disposition: good|not, slug?, long_form?,
+      # Upsert Xan's grade of the activity: { disposition: good|not, slug?, long_form?,
       # intent?: bank|discard }. Returns the recorded grade. A missing activity is a 404;
       # an invalid grade is a 422 (both via BaseController).
       def create
@@ -47,7 +47,7 @@ module Api
       def record_grade_with_capture(activity)
         ActionGrade.record_activity_grade(
           activity: activity,
-          grader: ActionGrade::ALEX, # forced — never client-supplied
+          grader: ActionGrade::XAN, # forced — never client-supplied
           disposition: grade_params[:disposition],
           slug: grade_params[:slug],
           long_form: grade_params.key?(:long_form) ? grade_params[:long_form] : :unset,

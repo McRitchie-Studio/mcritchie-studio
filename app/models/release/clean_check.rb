@@ -24,7 +24,7 @@ class Release
   # to production with the guard fully green: the operator was told the release
   # was clean, and it was — the rung BELOW it was not. Expediting is safe only
   # when `accepted == release == main`. On a DIRTY ladder the guard REFUSES and
-  # OFFERS the `Alex Heartbeat` `full-cycle` launcher (ship the WHOLE release)
+  # OFFERS the `Xan Heartbeat` `full-cycle` launcher (ship the WHOLE release)
   # instead of silently shipping the pending work.
   #
   # It reads FOUR signals — a BOARD signal and a GIT signal for each rung — and is
@@ -129,7 +129,7 @@ class Release
     #                             as riding `release` with release == main, i.e. an
     #                             INTERRUPTED SHIP whose code is already in prod
     #   "message"              => the operator-facing verdict line(s): a short OK
-    #                             when clean, or the REFUSAL + `Alex Heartbeat`
+    #                             when clean, or the REFUSAL + `Xan Heartbeat`
     #                             full-cycle OFFER (listing the pending work and any
     #                             signal conflict) when dirty.
     def evaluate(pending_tasks: [], repo_states: [], accepted_tasks: [],
@@ -256,7 +256,7 @@ class Release
       lines << "  ⚠ #{release_conflict}" if release_conflict
       lines << "  ⚠ #{conflict}" if conflict
       lines << "  Expediting one task now would DRAG that pending work to production."
-      lines << "  → Ship the WHOLE release instead: run the `Alex Heartbeat` `full-cycle` launcher."
+      lines << "  → Ship the WHOLE release instead: run the `Xan Heartbeat` `full-cycle` launcher."
       lines.join("\n")
     end
 

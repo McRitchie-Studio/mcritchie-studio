@@ -11,7 +11,7 @@
 
 ## Status: Active
 
-This is Alex's `full-cycle` SOP. It runs review, QA release, and production
+This is Xan's `full-cycle` SOP. It runs review, QA release, and production
 deploy with explicit ship authority.
 
 ## Scope

@@ -20,7 +20,7 @@ The bank is the **single source of truth**; the tracked doc
   primary checkout or a desk worktree reads an EMPTY local one — writing a
   confident `0 banked insights` over a doc that was right. The exact command, and
   the independent count check that proves it read the bank, are in
-  [`share-insights.md`](../agents/alex/sops/share-insights.md).
+  [`share-insights.md`](../agents/xan/sops/share-insights.md).
 - **Staleness is detected, not remembered** — `InsightsDocFreshnessJob` runs
   weekly on the board (`config/recurring.yml`) and writes an **ErrorLog** receipt
   when the doc's recorded count diverges from the bank, when the bank has been

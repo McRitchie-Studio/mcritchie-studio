@@ -34,7 +34,7 @@ module Insights
   #   Insights::BlockMiner.mine!                          # scan every resolved block
   #   Insights::BlockMiner.mine!(task_slug: "some-task")  # scan one task's blocks
   class BlockMiner
-    ALEX = ActionGrade::ALEX
+    ALEX = ActionGrade::XAN
 
     # A candidate's short label — the first few words of the block feedback (the
     # long_form carries the full text). Kept terse like the other grade slugs.

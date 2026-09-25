@@ -33,7 +33,7 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
     assert_equal %w[assembled assembled], [a.reload.stage, b.reload.stage]
     assert_equal 2, rel.tasks.count, "the self-healing sweep never duplicates membership"
 
-    rel.ship!(by: "alex")
+    rel.ship!(by: "xan")
     assert_equal "shipped", rel.reload.state
     assert_equal %w[shipped shipped], [a.reload.stage, b.reload.stage]
     assert_equal %w[main main], [a.merged, b.merged], "ship stamps the final git-location"
@@ -61,7 +61,7 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
     assert_equal "release", a.merged
 
     # Ship completes the ladder: release → main.
-    rel.ship!(by: "alex")
+    rel.ship!(by: "xan")
     assert_equal "shipped", a.reload.stage
     assert_equal "main", a.merged, "ship stamps the final git-location"
   end

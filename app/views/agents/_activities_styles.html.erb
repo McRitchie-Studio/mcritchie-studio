@@ -1,5 +1,5 @@
 <%# The /agents/activities layer on top of the reused heartbeat component styles.
-    The page renders inside #alex-heartbeat (so the shared avatar / chip / key-method /
+    The page renders inside #xan-heartbeat (so the shared avatar / chip / key-method /
     grade component styles resolve and the dark palette matches its sibling), and this
     layer adds the activities-table specifics.
 
@@ -7,5 +7,5 @@
     app/assets/tailwind/heartbeat.css (imported by app/assets/tailwind/application.css)
     so they compile once into tailwind.css instead of re-serializing on every HTML
     response. This partial is kept as a no-op stub so its existing render sites stay
-    valid; the rules are unchanged and #alex-heartbeat-scoped. Removing the now-dead
+    valid; the rules are unchanged and #xan-heartbeat-scoped. Removing the now-dead
     render calls is a safe follow-up. %>

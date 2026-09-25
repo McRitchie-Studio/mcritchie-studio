@@ -1,0 +1,117 @@
+# What each McRitchie Studio workspace package includes — and which SOP delivers
+# each feature. This is the ONE place package contents live: the public /packages
+# page renders it as two swim lanes, one row per feature, so the difference
+# between Basic and Pro reads across the row ("2 users" vs "10 users").
+# Steffon's workspace-launch SOP runs the features a package includes.
+#
+# Prices set by Mr. McRitchie 2026-09-24: Basic $100/mo, Pro $500/mo, 10% off
+# billed annually. A blank `price_monthly` renders "Pricing coming soon".
+#
+# Feature keys:
+#   name      customer-facing label
+#   icon      an emoji, a brand logo key (google, tiktok, instagram — partials in
+#             app/views/packages/logos/), or a list of logo keys shown side by side.
+#             Use a logo only where the customer gets that brand's product.
+#   blurb     one customer-facing sentence: what they get, not how
+#   basic/pro what that package gets, shown IN the row:
+#               a string  → the package's value ("2 users")
+#               true      → included, nothing to quantify
+#               omitted   → not included (the lane shows "Not included")
+#   sop       registered SOP invocation that delivers it (docs/agents/agents/*/sops/<sop>.md)
+#   section   optional — the part of that SOP that applies
+#   you_do    what the CUSTOMER / operator does themselves (blank = nothing)
+#   status    live (an SOP delivers it today) or planned (no SOP yet: "Coming soon")
+billing:
+  annual_discount_percent: 10
+
+packages:
+  - key: basic
+    name: Basic
+    tagline: Your company on its own domain, with an agent that drafts your email.
+    price_monthly: 100
+  - key: pro
+    name: Pro
+    tagline: An agent that knows your business, not just your inbox.
+    price_monthly: 500
+
+features:
+  - name: Hosted domain
+    icon: "🌐"
+    blurb: Your own domain and website, registered, hosted and kept online for you.
+    basic: 1 domain · standard hosting
+    pro: 1 domain · more power + database space
+    sop: website-launch
+    you_do: Approve the domain and hosting costs
+    status: live
+  - name: Google Workspace
+    icon: google
+    blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
+    basic: 2 users
+    pro: 10 users
+    sop: workspace-signup
+    you_do: Sign up and create the users
+    status: live
+  - name: Email that lands in the inbox
+    icon: "📬"
+    blurb: Verification, SPF, DKIM and DMARC set up so your mail is trusted, not spammed.
+    basic: true
+    pro: true
+    sop: domain-dns
+    you_do: Paste the records we give you
+    status: live
+  - name: Agentic email drafting
+    icon: "✍️"
+    blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
+    basic: true
+    pro: true
+    sop: workspace-provision
+    section: "7. Drafting mailboxes"
+    you_do: Approve our key once
+    status: live
+  - name: Password vault
+    icon: "🔐"
+    blurb: Every new login filed in 1Password, never pasted in chat.
+    basic: true
+    pro: true
+    sop: credential-filing
+    you_do: Paste each password once
+    status: live
+  - name: Dedicated browser profile
+    icon: "🧭"
+    blurb: A Chrome profile for the new company, so accounts never mix.
+    basic: true
+    pro: true
+    sop: chrome-profiles
+    status: live
+  - name: Knowledge base from your Drive
+    icon: "📚"
+    blurb: Your agent indexes the Drive folders you choose, so drafts use your real documents.
+    pro: true
+    sop: workspace-provision
+    section: "4. Attach the folders"
+    you_do: Name the folders
+    status: live
+  - name: File storage
+    icon: "🗄️"
+    blurb: A private storage bucket for your app's uploads and exports.
+    pro: true
+    sop: bucket-provision
+    status: live
+  - name: Credential rotation
+    icon: "🔄"
+    blurb: Any leaked or aging secret rotated everywhere it is used, in one pass.
+    pro: true
+    sop: credential-rotation
+    status: live
+  - name: Social media outreach
+    icon: [tiktok, instagram]
+    blurb: Weekly TikTok and Instagram content, tested at volume and measured, not just posted.
+    pro: true
+    sop: content-sprint
+    you_do: Approve the weekly plan
+    status: live
+  - name: Team drafting access
+    icon: "👥"
+    blurb: Your admins can draft as the mailboxes you grant them, with every draft logged.
+    pro: true
+    status: planned

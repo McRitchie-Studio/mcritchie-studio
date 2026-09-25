@@ -91,8 +91,8 @@ class Admin::ModelPricingControllerTest < ActionDispatch::IntegrationTest
     # The feed's own table + row partial (agents/_activities_table → agents/_activity_row),
     # NOT a hand-rolled table — so this page can never drift from /agents/activities.
     assert_select "[data-test=agents-activities-table]"
-    # Scoped under #alex-heartbeat so the hb-*/aa-* style layers actually apply.
-    assert_select "#alex-heartbeat.aa-page [data-test=agents-activities-table]"
+    # Scoped under #xan-heartbeat so the hb-*/aa-* style layers actually apply.
+    assert_select "#xan-heartbeat.aa-page [data-test=agents-activities-table]"
   end
 
   test "[component] validation errors are visible on the page, not swallowed" do

@@ -30,7 +30,7 @@ class HeartbeatStylesDeinlinedTest < ActiveSupport::TestCase
 
   test "[component] heartbeat.css carries the load-bearing rules and keyframes" do
     css = HEARTBEAT_CSS.read
-    assert_match(/#alex-heartbeat\b/, css, "heartbeat.css must scope its rules to #alex-heartbeat")
+    assert_match(/#xan-heartbeat\b/, css, "heartbeat.css must scope its rules to #xan-heartbeat")
     %w[aa-flash aa-spin hb-spin aa-count-pulse].each do |kf|
       assert_match(/@keyframes\s+#{Regexp.escape(kf)}\b/, css,
         "heartbeat.css must define @keyframes #{kf} (carried over from the inline block)")

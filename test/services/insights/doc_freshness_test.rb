@@ -181,7 +181,7 @@ module Insights
 
     def banked(slug:, **overrides)
       action = AgentAction.capture(session_id: "fresh-#{slug.object_id}", kind: "edit", outcome: "ok")
-      grade = ActionGrade.create!({ agent_action: action, grader: "alex", slug: slug,
+      grade = ActionGrade.create!({ agent_action: action, grader: "xan", slug: slug,
                                     disposition: "good" }.merge(overrides))
       grade.bank!
       grade

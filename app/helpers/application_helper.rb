@@ -174,6 +174,9 @@ module ApplicationHelper
     slug = run&.actor.presence
     return nil if slug.blank?
 
+    # Read through the retired-slug alias (Task::SOUL_ALIASES) so a gate stamped
+    # `alex` in the alias's one release still resolves to the xan seat's row.
+    slug = Task.canonical_soul(slug)
     lookup ? lookup[slug] : Agent.find_by(slug: slug)
   end
 
@@ -1103,7 +1106,7 @@ module ApplicationHelper
   # The four legacy release-wide meta-trigger chips (Avi Heartbeat Slow/Fast,
   # Build and Deploy QA Release, Merge Assemble Deploy) were retired in favor of
   # the soul heartbeat launchers in +heartbeat_launchers+ (Carl owns pr-review +
-  # pr-review-slow; Alex gains the full-cycle act that carries the former
+  # pr-review-slow; Xan gains the full-cycle act that carries the former
   # Merge/Assemble/Deploy).
   def devops_kickoffs
     {
@@ -1120,10 +1123,10 @@ module ApplicationHelper
   # PROMPT-LIKE row 1 plus one or more copyable atom acts. Every row is an
   # INDEPENDENTLY-copyable valid launch
   # prompt. +heartbeat+ (row 1) is the prompt-like soul heartbeat phrase — one per
-  # soul ("Carl Heartbeat" / "Avi Heartbeat" / "Steffon Heartbeat" / "Alex
+  # soul ("Carl Heartbeat" / "Avi Heartbeat" / "Steffon Heartbeat" / "Xan
   # Heartbeat" / "Turf Monster Heartbeat"); +actions+ are the launcher acts that
   # scope that heartbeat's work (Carl: pr-review + pr-review-slow; Avi: qa-release +
-  # deploy-with-task; Steffon: production-deploy + clean-infra; Alex: grade-events +
+  # deploy-with-task; Steffon: production-deploy + clean-infra + workspace-launch; Xan: grade-events +
   # share-insights + full-cycle; Turf Monster: live-score-watch +
   # contest-rehearsal).
   #
@@ -1159,8 +1162,8 @@ module ApplicationHelper
     [
       { agent_slug: "carl",    heartbeat: "Carl Heartbeat",    actions: ["pr-review", "pr-review-slow"],                   label: "Review",        title: "Carl — review submitted PRs, one Carl per PR (review-only)" },
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task"],                label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
-      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra"],              label: "Ship + sweep",  title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
-      { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" },
+      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra", "workspace-launch"], label: "Ship + sweep", title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
+      { agent_slug: "xan",     heartbeat: "Xan Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Xan — grade, share insights, + full DevOps cycle heartbeat" },
       { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" }
     ]
   end
@@ -1176,6 +1179,7 @@ module ApplicationHelper
     "production-deploy" => "Ship a QA-ready release to production",
     "qa-release"        => "Prepare + deploy the QA release",
     "clean-infra"       => "Sweep this machine: desks, disk, Redis band",
+    "workspace-launch"  => "Launch a new company workspace, step by step",
     "live-score-watch"  => "Watch a live NFL slot and record every score",
     "contest-rehearsal" => "Rehearse a whole contest on QA, end to end",
     "grade-events"      => "Grade 10 recent events for quality",
@@ -1204,7 +1208,8 @@ module ApplicationHelper
   # acts get a 1→3 keycap so the buttons read as a sequence across the souls (Carl
   # pr-review 1 → Avi qa-release 2 → Steffon production-deploy 3); the off-sequence
   # acts get a themed glyph (🐢 slow review, 🧑🏻‍🏫 grading, 🌎 the whole cycle,
-  # ⚡ the single-task expedite, 🧹 the infra sweep, 🏈 the live score watch). The
+  # ⚡ the single-task expedite, 🧹 the infra sweep, 🏈 the live score watch, 🏢 the
+  # new-workspace launch). The
   # heartbeat row itself gets a ❤️ in the view.
   #
   # The sequence lost its 4️⃣ (archive-shipped) when production-deploy took over
@@ -1217,6 +1222,7 @@ module ApplicationHelper
     "qa-release"        => "2️⃣",
     "production-deploy" => "3️⃣",
     "clean-infra"       => "🧹",
+    "workspace-launch"  => "🏢",
     "live-score-watch"  => "🏈",
     "contest-rehearsal" => "🎬",
     "pr-review-slow"    => "🐢",
@@ -1256,7 +1262,7 @@ module ApplicationHelper
       ],
       "Deploy" => [
         { stage: "submitted", kick: devops_kickoffs["submitted"],
-          what: "The intake queue — submitted PRs waiting for review. The review session spins ONE Carl per PR: the standing primary AND owner (there is no Avi supervisor). Carl runs the deep technical review, owns the gates, summons a domain LIGHT at his discretion from {Shannon · Jasper · Steffon · Alex} via reviewer-select, drives the verdict, and merges the feat PR into accepted.",
+          what: "The intake queue — submitted PRs waiting for review. The review session spins ONE Carl per PR: the standing primary AND owner (there is no Avi supervisor). Carl runs the deep technical review, owns the gates, summons a domain LIGHT at his discretion from {Shannon · Jasper · Steffon · Xan} via reviewer-select, drives the verdict, and merges the feat PR into accepted.",
           who: "Carl (standing primary + owner) → domain LIGHT",
           tests: "Base tier — unit + component. Carl + the light confirm green, plus code standards, smell, scalability, and acceptance.",
           gate: "A merge-ready verdict (Carl = Opus on migration / payment / solana / auth). One complete qa_feedback on a fail.",
@@ -1277,7 +1283,7 @@ module ApplicationHelper
           what: "Live in production and shown as the board's Last Release; release notes are posted as part of Run Deployment.",
           who: "Steffon (tests the frozen SHA) → operator gate or autonomous deploy trigger",
           tests: "Full e2e + highest tier on the FROZEN ship SHA (the exact prod code — fixes 'shipped ≠ tested').",
-          gate: "🔒 Avi's qa-release stops for the operator at QA; Steffon's production-deploy (or the Alex full-cycle) grants ship authority after the same gates pass.",
+          gate: "🔒 Avi's qa-release stops for the operator at QA; Steffon's production-deploy (or the Xan full-cycle) grants ship authority after the same gates pass.",
           nxt: "On explicit ship authority: bin/release ship ff's release → main, deploys prod → shipped, then Archive completed tasks" }
       ]
     }

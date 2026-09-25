@@ -3,7 +3,7 @@ require "test_helper"
 # [component] the pipeline "Test runs" band partial — each release test-scope
 # verdict renders as a gradeable row (scope-key headline, pass/fail pill,
 # phase/tier/host DERIVED from the scope registry, counts + duration, a grade
-# link to the action drawer); an Alex "not" grade paints the row rail; an empty
+# link to the action drawer); an Xan "not" grade paints the row rail; an empty
 # set renders nothing. Rendered in isolation so the band is proven without the
 # whole pipeline page.
 class PipelineTestRunsBandTest < ActionView::TestCase
@@ -45,10 +45,10 @@ class PipelineTestRunsBandTest < ActionView::TestCase
     assert_select "[data-test=pl-test-verdict].not", text: "fail"
   end
 
-  test "an Alex 'not' grade paints the row rail" do
+  test "an Xan 'not' grade paints the row rail" do
     run = run_action(scope: "pre_qa_gate", result: "pass")
-    grade = ActionGrade.create!(agent_action: run, grader: "alex", disposition: "not", slug: "flaky gate")
-    render_band([run], { run.id => { "alex" => grade } })
+    grade = ActionGrade.create!(agent_action: run, grader: "xan", disposition: "not", slug: "flaky gate")
+    render_band([run], { run.id => { "xan" => grade } })
     assert_select "[data-test=pl-test-run].is-not", { count: 1 }
   end
 

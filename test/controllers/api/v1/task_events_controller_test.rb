@@ -13,7 +13,7 @@ module Api
       test "start records a lifecycle intent for the next task stage" do
         assert_difference -> { @task.task_events.count }, 1 do
           post "/api/v1/tasks/#{@task.slug}/events/building/start",
-               params: { event: { actor: "alex" } },
+               params: { event: { actor: "xan" } },
                headers: @headers,
                as: :json
         end
@@ -22,12 +22,12 @@ module Api
         event = @task.task_events.last
         assert event.intent?
         assert_equal "building", event.to_stage
-        assert_equal "alex", event.actor
+        assert_equal "xan", event.actor
       end
 
       test "complete moves a task stage and requires usage" do
         post "/api/v1/tasks/#{@task.slug}/events/building/complete",
-             params: { event: { actor: "alex" } },
+             params: { event: { actor: "xan" } },
              headers: @headers,
              as: :json
 
@@ -36,7 +36,7 @@ module Api
         post "/api/v1/tasks/#{@task.slug}/events/building/complete",
              params: {
                event: {
-                 actor: "alex",
+                 actor: "xan",
                  model: "gpt-5",
                  tokens_in: 4000,
                  tokens_out: 800,

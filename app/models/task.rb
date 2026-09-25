@@ -1131,7 +1131,7 @@ class Task < ApplicationRecord
   # falls back to a soul actor on the `→ building` TaskEvent, and REFUSES to
   # auto-select while the answer stays unknown.
   def devops_built_by
-    devops.fetch("built_by", "").presence
+    self.class.canonical_soul(devops.fetch("built_by", "")).presence
   end
 
   # EVERY soul that WORKED this task, in the order recorded — the answer `built_by`
@@ -1143,7 +1143,7 @@ class Task < ApplicationRecord
   # excludes the whole set, so a handoff no longer leaves a co-author eligible to
   # review their own diff.
   def devops_builders
-    Array(devops["builders"]).map(&:to_s).select(&:present?)
+    Array(devops["builders"]).map { |s| self.class.canonical_soul(s) }.select(&:present?).uniq
   end
 
   # The claiming session that named NO soul while other authors were already on
@@ -1178,7 +1178,7 @@ class Task < ApplicationRecord
   # that name NO soul are the "we saw a fix-forward and cannot attribute it" marker
   # — ReviewerSelector reads them as an INCOMPLETE author set and the CLI refuses.
   def devops_fix_forward
-    Array(devops["fix_forward"]).map { |slug| slug.to_s.strip }.reject(&:empty?)
+    Array(devops["fix_forward"]).map { |slug| self.class.canonical_soul(slug) }.reject(&:empty?)
   end
 
   # --- Session resume (V1: store + display + copy; no enforcement gate) -------
@@ -3045,7 +3045,27 @@ class Task < ApplicationRecord
   # roster that empties with the DB would turn every soul into an unknown. Keep it
   # in lockstep with db/seeds/02_agents.rb — test/models/agents_seed_test.rb asserts
   # every seeded slug appears here.
-  SOUL_ROSTER = %w[alex avi carl shannon jasper steffon turf-monster mack mason].freeze
+  SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason].freeze
+
+  # RETIRED SLUGS THAT STILL RESOLVE — a READ alias, one release wide. The
+  # orchestrator seat `alex` became `xan` on 2026-09-24 (the human operator takes
+  # the name Alex, so a soul slug reading `alex` would name the owner). The data
+  # migration RenameAlexSoulToXan repointed every STORED `alex` soul value, but a
+  # sticky heartbeat marker, a shell alias, or a `--actor alex` typed from memory
+  # still arrives for a while, and each must land on the seat rather than on
+  # "unknown" — an unknown builder refuses review, and a retired slug that reads
+  # as unknown would refuse it for the wrong reason. Read-only: nothing WRITES
+  # the legacy slug, because every stamp goes through .canonical_soul first.
+  # Retire the entry, and the alias with it, one release after the rename.
+  SOUL_ALIASES = { "alex" => "xan" }.freeze
+
+  # The slug a soul is recorded under today: a retired alias resolves to its
+  # successor, anything else passes through (stripped). Every writer that stamps
+  # a soul calls this, so the record never carries a retired slug twice.
+  def self.canonical_soul(slug)
+    value = slug.to_s.strip
+    SOUL_ALIASES.fetch(value, value)
+  end
 
   # Every soul slug this deployment recognises: the static floor plus whatever is
   # seeded. Any lookup error (no table yet, DB down, mid-migration) degrades to the
@@ -3066,8 +3086,10 @@ class Task < ApplicationRecord
   # authorship guards (who built this, who may not review it) ask this; the
   # session-vs-handle disambiguation in #disowned? still asks SOUL_SLUG alone,
   # because there a typo'd handle is correctly "not a session id".
+  # A retired alias (SOUL_ALIASES) counts as its successor, so `alex` is a soul
+  # for as long as the alias stands.
   def self.soul?(slug)
-    value = slug.to_s
+    value = canonical_soul(slug)
     value.match?(SOUL_SLUG) && soul_roster.include?(value)
   end
 
@@ -3117,7 +3139,7 @@ class Task < ApplicationRecord
     # as the builder of the PR he is reviewing is the same defect fully inverted, and
     # a confidently-wrong author set is worse than a refusing one.
     soul = (named unless reviewer_taking_the_build?(named)) ||
-           prior_devops["built_by"].to_s.strip.presence
+           self.class.canonical_soul(prior_devops["built_by"]).presence
     authors, unattributed = builder_roll_call(claim, named, soul)
 
     return if soul.nil? && authors.empty? && unattributed.nil?
@@ -3185,8 +3207,11 @@ class Task < ApplicationRecord
     # from it alone would drop the author already on record — the very overwrite this
     # exists to prevent, and the only thing a task stamped before `builders` existed
     # has to give.
+    # Read through the alias (canonical_soul) so a set stamped under a retired
+    # slug and a claim made under its successor dedupe to ONE author.
     authors = (Array(prior_devops["builders"]) + [prior_devops["built_by"]])
-              .map { |s| s.to_s.strip }.select { |s| self.class.soul?(s) }.uniq
+              .map { |s| self.class.canonical_soul(s) }.select { |s| self.class.soul?(s) }.uniq
+    soul = self.class.canonical_soul(soul) if soul
     authors |= [soul] if soul && self.class.soul?(soul)
     unattributed = prior_devops["builders_unattributed"].to_s.strip.presence
 
@@ -3578,9 +3603,11 @@ class Task < ApplicationRecord
   # stamping it named a builder that excluded nobody while reading as known. It now
   # falls through to the later rules, and if none resolve the builder stays blank —
   # UNKNOWN, which refuses. An unrecognised soul must never do better than silence.
+  # Whatever resolves is stamped CANONICAL (Task.canonical_soul): a claim made as
+  # a retired alias records the successor, so the alias stays read-only.
   def builder_to_stamp
     actor = Current.task_event_actor.presence
-    return actor if actor && self.class.soul?(actor)
+    return self.class.canonical_soul(actor) if actor && self.class.soul?(actor)
     # Rule 2 consults the STORED builder as well as the incoming one: a client that
     # posts built_by BLANK — or a raw whole-column `metadata:` write, which is
     # permitted wholesale and folds through nothing — leaves the incoming value
@@ -3589,6 +3616,7 @@ class Task < ApplicationRecord
     return nil if devops["built_by"].presence || prior_devops["built_by"].presence
 
     [devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
+                                            &.then { |slug| self.class.canonical_soul(slug) }
   end
 
   # `set_initial_position` (the `before_create` genesis seed above) now comes from

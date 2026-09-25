@@ -2,12 +2,12 @@
 
 ## Status: Active
 
-This is Alex's `share-insights` SOP. It publishes the Insight Bank — the curated
+This is Xan's `share-insights` SOP. It publishes the Insight Bank — the curated
 lessons of `ActionGrade.banked` — into the tracked agent docs.
 
 ## Scope
 
-This SOP is part of Alex's learning loop. It does not review PRs, merge release
+This SOP is part of Xan's learning loop. It does not review PRs, merge release
 work, deploy QA, ship production, or archive work.
 
 ## Entry
@@ -43,19 +43,19 @@ correctly. If the bank is empty, report "nothing to share" and stop.
 
 **Banked-ness is the gate; the grader is not.** `#bank!` is the curation act (and
 is mutually exclusive with `#discard!`), while `grader` records only WHO WROTE THE
-ROW: `alex` is Alex's grade of the activity, `mcr` is Mr. McRitchie's audit **of
+ROW: `xan` is Xan's grade of the activity, `mcr` is Mr. McRitchie's audit **of
 that grade** — a second row on the same target, written from the browser drawer
-and never by the agent CLI, because the agent API always grades as `alex`. That
+and never by the agent CLI, because the agent API always grades as `xan`. That
 is PROVENANCE, NOT PROOF: the heartbeat drawer skips authentication (build-first,
 2026-07-03), so an `mcr` row is writable with no token at all. "A shared token
 can never forge the audit lane" is therefore true but vacuous — one more reason
 the grader cannot be the gate. Every other reader of the bank agrees: the feed-forward
-`/api/v1/insights` hook and the `/alex/insights` page both read
+`/api/v1/insights` hook and the `/xan/insights` page both read
 `ActionGrade.banked` with no grader filter.
 
 So an entry condition of `grader: "mcr"` would stand this SOP down over every
 lesson an agent can bank — which is precisely what it did. This section used to
-require McRitchie confirmation while all five banked lessons were Alex-graded, so
+require McRitchie confirmation while all five banked lessons were Xan-graded, so
 the SOP reported "nothing to share" over the bank it exists to publish
 (`/tasks/sop-precondition-blocks-sharing`). The guard in
 `test/docs/share_insights_precondition_docs_test.rb` now EXECUTES the condition

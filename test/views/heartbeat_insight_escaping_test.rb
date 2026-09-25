@@ -51,7 +51,7 @@ class HeartbeatInsightEscapingTest < ActionView::TestCase
 
   test "[component] markup in an action's insight_label renders inert, separator intact" do
     a = action(event_slug: SCRIPT_PAYLOAD)
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::XAN,
                                 slug: "escape the label", disposition: ActionGrade::GOOD)
 
     render_insight(grade)
@@ -74,7 +74,7 @@ class HeartbeatInsightEscapingTest < ActionView::TestCase
   # is what this pins.
   test "[component] markup in an action's kind renders inert, separator intact" do
     a = action(kind: IMG_PAYLOAD, event_slug: nil)
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::XAN,
                                 slug: "escape the kind", disposition: ActionGrade::GOOD)
 
     render_insight(grade)
@@ -89,7 +89,7 @@ class HeartbeatInsightEscapingTest < ActionView::TestCase
 
   test "[component] markup in an activity grade's task_slug renders inert" do
     e = activity(task_slug: IMG_PAYLOAD)
-    grade = ActionGrade.create!(agent_activity: e, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_activity: e, grader: ActionGrade::XAN,
                                 slug: "escape the activity slug", disposition: ActionGrade::GOOD)
 
     render_insight(grade)
@@ -104,7 +104,7 @@ class HeartbeatInsightEscapingTest < ActionView::TestCase
 
   test "[component] markup in task_slug renders inert, separator intact" do
     a = action(event_slug: "ordinary label", task_slug: IMG_PAYLOAD)
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::XAN,
                                 slug: "escape the slug", disposition: ActionGrade::GOOD)
 
     render_insight(grade)
@@ -119,7 +119,7 @@ class HeartbeatInsightEscapingTest < ActionView::TestCase
 
   test "[component] both interpolations escaped together with two separators" do
     a = action(event_slug: SCRIPT_PAYLOAD, task_slug: IMG_PAYLOAD)
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::XAN,
                                 slug: "escape both", disposition: ActionGrade::GOOD)
 
     render_insight(grade)
@@ -140,7 +140,7 @@ class HeartbeatInsightEscapingTest < ActionView::TestCase
   # rendered partial, so a comment that stops commenting fails the suite.
   test "[component] the explanatory comment never leaks onto the page" do
     a = action(event_slug: "label here", task_slug: "slug-here")
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::XAN,
                                 slug: "no leak", disposition: ActionGrade::GOOD)
 
     render_insight(grade)
@@ -156,7 +156,7 @@ class HeartbeatInsightEscapingTest < ActionView::TestCase
 
   test "[component] a plain label and slug render with the middot separators" do
     a = action(event_slug: "Implement the view code", task_slug: "escape-insight-label-and-slug")
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::XAN,
                                 slug: "plain provenance", disposition: ActionGrade::GOOD)
 
     render_insight(grade)

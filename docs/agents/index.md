@@ -14,7 +14,7 @@ name as ordinary prose, generic GitHub triage, or a broad workflow request.
 McRitchie operating procedures are normal repo docs, not installed skills. When
 Mr. McRitchie names an SOP or heartbeat act such as `pr-review`, `qa-release`,
 `production-deploy`, `clean-up`, `process-backlog`, `work-backlog`, `slack-capture`,
-`gmail-capture`, `credential-issues`, `form-fill`, or `full-cycle`, resolve that phrase through the SOP registry and directory
+`gmail-capture`, `credential-issues`, `form-fill`, `focus-session`, `arbitrate-block`, or `full-cycle`, resolve that phrase through the SOP registry and directory
 convention here, read the mapped SOP, then execute it.
 
 SOP locations:
@@ -52,6 +52,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `qa-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| `arbitrate-block` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
@@ -69,18 +70,25 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `credential-filing` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | `credential-rotation` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
 | `workspace-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-provision.md` |
+| `workspace-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-launch.md` |
+| `domain-purchase` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
+| `workspace-signup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-signup.md` |
+| `domain-dns` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
+| `website-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
 | `chrome-profiles` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
-| `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
-| `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
-| `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
-| `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
-| `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| `full-cycle` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
+| `clean-up` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
+| `grade-events` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
+| `share-insights` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
+| `Xan Heartbeat` | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
+| `Alex Heartbeat` (legacy alias) | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
 | `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| `focus-session` | Shared | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
@@ -103,12 +111,16 @@ promotes `accepted → release` plus QA, and Steffon's `production-deploy` ships
 - Work from `/Users/alex/projects` unless Mr. McRitchie gives a different root.
 - Treat `mcritchie-studio` as the documentation and bootstrap anchor.
 - Keep repo-specific facts in the owning repo, but keep cross-repo operating rules here.
-- In agent docs and handoffs, **Alex** means the Alex agent/orchestrator. The
-  owner/operator is **Mr. McRitchie**.
+- **Alex** is the owner/operator; **Xan** is the orchestrator agent. In agent
+  docs and handoffs, **Xan** (slug `xan`) means the orchestrator; **Alex** means
+  Mr. McRitchie. Older docs still say **Mr. McRitchie** for the owner — that
+  sweep lands with the phase-5 docs restructure, so read both names as him. The
+  seat was slugged `alex` until 2026-09-24; `Task::SOUL_ALIASES` reads the old
+  slug as `xan` for one release.
 - When editing active docs, fix nearby ambiguous references you notice:
-  **Alex** for the agent/orchestrator, **Mr. McRitchie** for the owner/operator.
-  Leave historical/archive snapshots alone unless you are already promoting or
-  correcting that file.
+  **Xan** for the agent/orchestrator, **Alex** (or **Mr. McRitchie**) for the
+  owner/operator. Leave historical/archive snapshots alone unless you are
+  already promoting or correcting that file.
 - Do not print secrets. Use named 1Password references and purpose-built scripts.
 - Do not hand Mr. McRitchie terminal chores. Run safe commands yourself; ask Mr.
   McRitchie for approvals, product judgment, external access, or a credential
@@ -277,8 +289,8 @@ bin/agent-activity end --outcome "what happened"
   `key_method` and its description as its goal `summary`, so keep writing good
   Bash descriptions.)
 - Keep `--reason`/`--outcome` short (~4-7 words).
-- **It's non-fatal** — narration never blocks your work, and it powers the Alex
-  learning heartbeat (`/alex/heartbeat`). There is no reason to skip it.
+- **It's non-fatal** — narration never blocks your work, and it powers the Xan
+  learning heartbeat (`/xan/heartbeat`). There is no reason to skip it.
 
 ## DevOps Routing — read before writing ANY code
 
@@ -777,6 +789,8 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
 | Building SOP (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| Focus session (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/modules/focus-session.md` |
+| Pokémon builder soul (the general builder every task is built by) | `mcritchie-studio/docs/agents/agents/pokemon/role.md` |
 | Modal lifecycle (build in the app, graduate to a gem) | `mcritchie-studio/docs/agents/modules/modal-lifecycle.md` |
 | Process backlog (groom designed, build four wide) | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | Work backlog (your own tasks, two-three wide) | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
@@ -789,6 +803,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Avi heartbeat launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Avi QA release SOP | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | Avi deploy with task SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| Avi arbitrate block SOP (a builder contested a review block; Avi rules) | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | Steffon production deploy SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
@@ -797,6 +812,11 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Steffon credential filing SOP (naming, logos, vault lanes) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | Steffon credential rotation SOP (rotate one secret everywhere) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
 | Steffon workspace provision SOP (client Google Workspace read access) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-provision.md` |
+| Steffon workspace launch SOP (new domain to first draft, walks the operator) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-launch.md` |
+| Steffon domain purchase SOP (buy on Squarespace, prove ownership) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
+| Steffon workspace signup SOP (Google Workspace, alex@ + team@) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-signup.md` |
+| Steffon domain DNS SOP (verify, MX, SPF, DKIM, DMARC) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
+| Steffon website launch SOP (hosted site: Squarespace or our app) | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
 | Steffon Chrome profiles SOP (avatar-menu roster, fresh Mac) | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
 | Turf Monster heartbeat launcher | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
 | Turf Monster live score watch SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
@@ -807,11 +827,11 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Turf Monster content build SOP (drain the idea queue, write the takes) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | Turf Monster roster sync SOP (refresh players/teams before a season) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
-| Alex heartbeat launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
-| Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
-| Alex share insights SOP | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
-| Alex full cycle SOP | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
-| Alex clean up SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
+| Xan heartbeat launcher | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
+| Xan grade events SOP | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
+| Xan share insights SOP | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
+| Xan full cycle SOP | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
+| Xan clean up SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
 | Rex heartbeat launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | Rex constraint diagnosis SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | Rex content sprint SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
@@ -866,6 +886,7 @@ depend on the heartbeat.
 | `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `qa-deploy` (legacy alias) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| `arbitrate-block` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
@@ -883,17 +904,24 @@ depend on the heartbeat.
 | `credential-filing` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | `credential-rotation` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
 | `workspace-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-provision.md` |
+| `workspace-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-launch.md` |
+| `domain-purchase` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
+| `workspace-signup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-signup.md` |
+| `domain-dns` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
+| `website-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
 | `chrome-profiles` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
-| `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
-| `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
-| `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
-| `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
-| `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
+| `Xan Heartbeat` | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
+| `Alex Heartbeat` (legacy alias) | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
+| `grade-events` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
+| `share-insights` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
+| `full-cycle` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
+| `clean-up` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| `focus-session` | Shared | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
@@ -1026,7 +1054,7 @@ or intentionally abandoned.
 For a dedicated review/QA session, use the recurring QA intake prompt in
 `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md`. That cycle
 stops after QA deployment; production rollout needs a separate explicit prompt
-(`production-deploy`, or Alex's ship-authority `full-cycle`).
+(`production-deploy`, or Xan's ship-authority `full-cycle`).
 The conductor queue starts with:
 
 ```bash

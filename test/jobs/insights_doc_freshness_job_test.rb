@@ -19,7 +19,7 @@ class InsightsDocFreshnessJobTest < ActiveSupport::TestCase
 
   def banked(slug:)
     action = AgentAction.capture(session_id: "job-#{slug.object_id}", kind: "edit", outcome: "ok")
-    ActionGrade.create!(agent_action: action, grader: "alex", slug: slug, disposition: "good").bank!
+    ActionGrade.create!(agent_action: action, grader: "xan", slug: slug, disposition: "good").bank!
   end
 
   test "[integration] a stale doc writes an ErrorLog receipt naming the drift" do

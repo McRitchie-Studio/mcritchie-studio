@@ -14,6 +14,9 @@ heartbeat still belongs on the card when the operator invokes it by name.
 - [`qa-release`](sops/qa-release.md) - the self-healing sweep: merge the reviewed
   queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on
   QA-green.
+- [`arbitrate-block`](sops/arbitrate-block.md) - rule on a review block a builder
+  contested with evidence: accept, overrule, or split (invoked by the session
+  that holds the epic, never on a schedule).
 - [`deploy-with-task`](sops/deploy-with-task.md) - expedite ONE named task to
   production behind the clean-ladder guard (interactive: it asks "What task?").
 

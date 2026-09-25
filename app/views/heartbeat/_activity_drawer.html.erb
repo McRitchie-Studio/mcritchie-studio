@@ -1,10 +1,10 @@
 <%# The per-activity grading drawer body, lazy-loaded into the shared turbo-frame when the
     operator clicks an activity's grade button. The activity-level mirror of _drawer: a header,
     a key/value summary (category, status, opened, the measured token/cost/model of the
-    activity span), then Alex's activity grade editor and the McRitchie audit editor.
+    activity span), then Xan's activity grade editor and the McRitchie audit editor.
     The editors POST to the activity grade endpoint via fetch (heartbeatActivityEditor),
     so the drawer stays a read-only GET. Locals: activity, actions (its attributed
-    AgentActions), alex (ActionGrade | nil), mcr (ActionGrade | nil). %>
+    AgentActions), xan (ActionGrade | nil), mcr (ActionGrade | nil). %>
 <%= turbo_frame_tag "hb-drawer" do %>
   <% activity ||= local_assigns[:event] %>
   <% stage_transitions ||= {} %>
@@ -39,12 +39,12 @@
       <span class="hb-k">Cost</span><span class="hb-mono"><%= heartbeat_cost(totals[:cost]) %></span>
     </div>
 
-    <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::ALEX,
-          who: "Alex", role_label: "grades this activity", grade: alex,
-          save_label: "Save Alex grade", allow_bank: true %>
+    <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::XAN,
+          who: "Xan", role_label: "grades this activity", grade: xan,
+          save_label: "Save Xan grade", allow_bank: true %>
 
     <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::MCR,
-          who: "Mr. McRitchie → Alex", role_label: "audits Alex's activity grade", grade: mcr,
+          who: "Mr. McRitchie → Xan", role_label: "audits Xan's activity grade", grade: mcr,
           save_label: "Save audit", allow_bank: false %>
   </div>
 <% end %>

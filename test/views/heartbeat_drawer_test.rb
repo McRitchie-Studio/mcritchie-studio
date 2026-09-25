@@ -16,7 +16,7 @@ class HeartbeatDrawerTest < ActionView::TestCase
       input: %({"type":"text","file":{"path":"a.rb","content":"alpha\\nbeta"}})
     )
 
-    render partial: "heartbeat/drawer", locals: { action: a, alex: nil, mcr: nil }
+    render partial: "heartbeat/drawer", locals: { action: a, xan: nil, mcr: nil }
 
     pane = css_select("pre[data-test=drawer-input]").first
     assert pane, "the input pane must render"
@@ -31,7 +31,7 @@ class HeartbeatDrawerTest < ActionView::TestCase
   test "[component] the drawer renders a non-JSON output untouched (never mangled)" do
     a = action(output: "git push origin feat/x && echo done")
 
-    render partial: "heartbeat/drawer", locals: { action: a, alex: nil, mcr: nil }
+    render partial: "heartbeat/drawer", locals: { action: a, xan: nil, mcr: nil }
 
     pane = css_select("pre[data-test=drawer-output]").first
     assert pane, "the output pane must render"

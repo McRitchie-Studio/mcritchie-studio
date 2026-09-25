@@ -79,7 +79,7 @@ than trusting a slug pinned here.** `/tasks/repair-quarantined-e2e-clusters` too
 first three (2026-08-18); the rest are still tagged. This paragraph cited
 `/tasks/repair-rotted-e2e-specs` as the live ticket long after that task was archived
 with all 18 specs still tagged — the "archived task the docs cite as live" trap
-catalogued in `docs/agents/agents/alex/sops/clean-up.md`.
+catalogued in `docs/agents/agents/xan/sops/clean-up.md`.
 
 **"May only fall" is enforced, and note WHERE the baseline comes from** — the ratchet
 compares the ceiling against its value on **`origin/release`**, not against the copy in

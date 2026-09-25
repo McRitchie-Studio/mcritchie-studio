@@ -874,7 +874,7 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
   fi
 
   # Wire the PostToolUse hook so every tool call streams into the atomic-capture
-  # endpoint and a fresh session populates /alex/heartbeat live (Phase B live
+  # endpoint and a fresh session populates /xan/heartbeat live (Phase B live
   # capture). Same discipline as the SessionStart mascot hook: point at the
   # primary checkout (survives worktree cleanup), prune stale worktree copies,
   # and only append when our command isn't already wired — never clobbering the
