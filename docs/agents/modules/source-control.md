@@ -217,14 +217,20 @@ Two rules that are about source control, not process:
 ### The commands, in one place
 
 ```bash
+eval "$(bin/gh-auth-refresh --export)"      # fix this session's credential; read its stderr
 source ~/.zprofile.admin                    # ship lane only: load the admin 1Password token
-eval "$(bin/gh-auth-refresh --export)"      # fix this session's credential
-bin/gh-auth-refresh --identity deployer     # force the ship identity
+export GH_APP_ITEM=github.mcritchie-deployer  # ship lane only, BEFORE the push
 bin/gh-auth-refresh --force                 # bypass the broker cache (revoked token)
 bin/gh-token --status                       # cache state; prints NO token
 gh api rate_limit                           # is the credential live?
 op whoami                                   # is 1Password unlocked?
 ```
+
+Do not install the deployer into `gh` with `bin/gh-auth-refresh --identity
+deployer`: the script accepts the flag, but the deployer App has no
+`pull_requests` grant and `bin/release` calls `gh pr`, so the next PR call fails.
+The two ship-lane lines above are the whole deployer fix
+([`token-session.md`](token-session.md#the-deployer-lane--self-service-on-a-provisioned-machine)).
 
 ## Commit Authorship — which soul `git log` names
 

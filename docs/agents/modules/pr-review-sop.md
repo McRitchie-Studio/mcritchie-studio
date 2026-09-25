@@ -34,7 +34,7 @@ their own soul**, and each review shows up in the Agent column of the Alex heart
 stage ownership in `devops-cycle-design.md` §1.2 — it is the operational how-to for
 that stage.
 
-> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
 ## When to invoke
 

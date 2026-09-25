@@ -13,7 +13,7 @@ tasks first.** You filed them, so you still hold the context that made them wort
 filing, and there is rarely a shortage. Reaching into another session's tasks is
 what you do when you run out — not what you open with.
 
-> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
 ## Status: Active
 

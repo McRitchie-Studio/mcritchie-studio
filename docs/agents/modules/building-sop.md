@@ -21,7 +21,7 @@ script runs, the author set, the long form) are in [`fast-lane.md`](fast-lane.md
 The rationale and history this page no longer carries are frozen verbatim in
 [`../archive/building-sop-2026-09-25.md`](../archive/building-sop-2026-09-25.md).
 
-> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
 ## The lanes, so you know where you stop
 
