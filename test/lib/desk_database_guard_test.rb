@@ -49,4 +49,28 @@ class DeskDatabaseGuardTest < Minitest::Test
     assert_nil refusal(override: "1")
     assert refusal(override: ""), "a blank override is not an override"
   end
+
+  # REGRESSION (2026-09-25): a host-only URL was read as database "localhost" and
+  # passed, while Rails merged it over database.yml and connected to the shared DB.
+  def test_a_host_only_url_resolves_to_the_configured_database_and_is_refused
+    assert refusal(database_url: "postgresql://localhost"), "no path means database.yml's shared DB"
+    assert refusal(database_url: "postgresql://localhost/"), "a bare trailing slash names no database"
+    assert refusal(database_url: "postgresql://localhost:5432?pool=5"), "a port and query name no database"
+    assert refusal(database_url: "postgresql://user:pw@localhost:5432"), "credentials name no database"
+  end
+
+  def test_effective_database_reads_the_path_not_the_last_segment_of_the_whole_url
+    assert_equal SHARED, DeskDatabaseGuard.effective_database("postgresql://localhost", SHARED)
+    assert_equal "desk_db", DeskDatabaseGuard.effective_database("postgresql://localhost:5432/desk_db?pool=5", SHARED)
+    assert_equal SHARED, DeskDatabaseGuard.effective_database(nil, SHARED)
+  end
+
+  def test_the_refusal_names_the_cause_it_saw
+    unset = refusal
+    assert_includes unset, "no development pointer"
+    pointed = refusal(database_url: "postgresql://localhost")
+    refute_includes pointed, "no development pointer",
+                    "a pointer that exists but resolves to the shared DB is not 'no pointer'"
+    assert_includes pointed, "DATABASE_URL resolves to the shared database"
+  end
 end
