@@ -136,8 +136,7 @@ class OpenPrGuardTest < Minitest::Test
     assert_equal :concluded, OpenPrGuard.decide(prs: [pr(:open)], stage: "archived")
   end
 
-  # THE DELIBERATE DIFFERENCE FROM ArchiveHolderGuard::CONCLUDED_STAGES, which skips
-  # `shipped`. The `merged` stamp is per-TASK while PRs are per-REPO, so a multi-repo
+  # `shipped` IS NOT SKIPPED, deliberately. The `merged` stamp is per-TASK while PRs are per-REPO, so a multi-repo
   # task reaches shipped on its primary with a sibling repo's PR still open — the
   # shape most likely to strand, and the one an inherited skip would exempt.
   def test_a_shipped_task_with_an_open_pr_is_still_refused
@@ -228,10 +227,8 @@ class OpenPrGuardTest < Minitest::Test
     assert_includes text, "bin/task move probe archived --force", "and --force is the decision seam"
   end
 
-  # THE CONFIDENT LIE THIS MUST NOT INHERIT. When `archive_holder_facts` rescues, its
-  # refusal body claims a live session holds the task while the honest reason sits
-  # only in the `warning:` line above it. The equivalent mistake here would be a
-  # warning that reads as a finding about the PR's state.
+  # THE CONFIDENT LIE THIS MUST NOT TELL: a warning that reads as a finding about
+  # the PR's state when the check could not read it.
   def test_the_unreadable_warning_never_claims_the_pr_is_open
     text = OpenPrGuard.unreadable_warning(slug: "probe", prs: [pr(:unknown)])
 

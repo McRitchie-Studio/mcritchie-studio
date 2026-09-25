@@ -95,4 +95,45 @@ class DeskClaimTest < Minitest::Test
       assert_equal [path], found.map { |d| DeskClaim.path(d) }
     end
   end
+
+  # --- the archive holder guard: a dirty desk bound to the task -------------
+
+  def dirty_bound(desks, dirty: true)
+    DeskClaim.dirty_bound(SLUG, desks: desks, dirty: ->(_) { dirty })
+  end
+
+  def test_unit_archive_refuses_a_dirty_bound_desk_whoever_holds_it
+    [desk, desk(session: ME), desk(grade: :dead)].each do |d|
+      assert_equal 1, dirty_bound([d]).length, "a dirty desk loses work whatever its holder's state"
+    end
+  end
+
+  def test_unit_archive_refuses_an_unreadable_desk
+    assert_equal 1, dirty_bound([desk], dirty: nil).length
+  end
+
+  def test_unit_archive_passes_a_clean_desk_or_none
+    assert_empty dirty_bound([desk], dirty: false)
+    assert_empty dirty_bound([])
+    assert_empty dirty_bound([desk(slug: "other-task")])
+  end
+
+  def test_unit_the_archive_refusal_names_the_desk_and_the_override
+    lines = DeskClaim.archive_refusal(SLUG, [desk], force_command: "bin/task move #{SLUG} archived --force")
+    text = lines.join("\n")
+
+    assert_includes text, "/desks/#{OTHER}"
+    assert_includes text, "--force"
+  end
+
+  def test_integration_dirty_bound_on_disk_finds_only_the_dirty_desk
+    Dir.mktmpdir do |root|
+      path = FakeDesk.build(root, task_slug: SLUG, session: ME, dirty: true)
+      FakeDesk.build(root, task_slug: SLUG, session: OTHER, dirty: false, repo: "turf-monster")
+
+      found = DeskClaim.dirty_bound_on_disk(SLUG, projects_dir: root)
+
+      assert_equal [path], found.map { |d| DeskClaim.path(d) }
+    end
+  end
 end

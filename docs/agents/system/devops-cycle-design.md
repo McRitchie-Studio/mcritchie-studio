@@ -77,7 +77,7 @@ This design answers seven goals:
 | Task state machine — Build `designed→building→submitted→reviewed`, Deploy `reviewed→assembled→shipped`, plus `blocked`/`archived` | `Task` model, `devops-task-board.md` | The spine. Everything routes through the task. |
 | `kind` (feature/bug/chore/qa/release/cleanup), `metadata["devops"]` contract | `devops-task-board.md` | SOP routing key + handoff record. |
 | Activity log: `comment` / `clarification` / `qa_feedback` / `handoff` + scout reports | `Activity`, task-board API | The durable QA↔feature-agent channel. |
-| Sealed-bid sizing, `backend_migration` claim lane, `release_conductor` lane | `sizing-rubric.md`, `exclusive-lanes.md` | Order-of-operations machinery. |
+| Sealed-bid sizing, `release_conductor` lane | `sizing-rubric.md`, `exclusive-lanes.md` | Order-of-operations machinery. |
 | Test lanes (pr_review_gate / local_proof / qa_acceptance / production_smoke / nightly_deep / quarantine) + `config/devops_test_suites.yml` + `bin/devops-tests` | `testing.md` | The *when/where* axis of the pyramid. |
 | `bin/qa-intake`, `bin/devops-cycle` (scout packets/decisions/readiness), `bin/agent-worktree`, `bin/qa-server`, `bin/deploy` | `parallel-agent-devops.md` | The conductor toolchain the heartbeat agent drives. |
 | Discord `POST /api/v1/release_notes` (dry-run, grouped-by-app, standardized) | release notes service | The standardized visibility primitive. |
@@ -903,8 +903,7 @@ board):
    promotes `accepted → release` and flips the member `assembled` on QA-green. Carl
    blocks → **`bin/task block <task> --kind rework --feedback "…" --agent carl`**
    (one complete send-back — any reviewer may RAISE a blocking finding, but only
-   the review claim's holder may SPEND the bounce; a `--kind rework` block by any
-   other soul is refused with exit 11). That command runs the **two-bounce
+   the review claim's holder may SPEND the bounce). That command runs the **two-bounce
    circuit breaker** first
    (`bin/task bounces <task>` reads it standalone: exit 0 CLEAR · 10 TRIPPED ·
    any other non-zero UNKNOWN, which is never to be read as zero) and **refuses**
@@ -1721,10 +1720,10 @@ The heartbeat agent will not merge-race conflicting work:
   post-merge rebase — so siblings that all touched `task.rb` / a shared helper /
   the docs don't conflict on `release` *after* passing review. Warning-only (it
   never blocks); the conductor reads it to choose order / rebase the loser.
-- **Migrations:** two tasks touching `db/schema.rb` or migrations → serialize
-  via the `backend_migration` lane (`bin/task migration-lane acquire
-  <task-slug>`, a durable unique-indexed claim — see `exclusive-lanes.md`); the
-  second one holds with a note.
+- **Migrations:** two tasks touching `db/schema.rb` or migrations → the
+  duplicate-migration collision check in `bin/dor-check` and `bin/ship`
+  (`bin/lib/migration_collision.rb`) refuses the colliding one; there is no
+  lane (see `exclusive-lanes.md`).
 - **studio-engine + consumers:** gem publish → consumer lockfile bump → app
   deploy is one ordered `release_conductor` lane; the agent promotes the
   train in order, never a consumer ahead of its gem.

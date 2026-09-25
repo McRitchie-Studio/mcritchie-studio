@@ -109,7 +109,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
 
   def built_by(task) = task.reload.devops["built_by"]
   def authors(task) = task.reload.devops["builders"]
-  def unattributed(task) = task.reload.devops["builders_unattributed"]
 
   # --- THE REGRESSION: THE DOCUMENTED REPAIR --------------------------------
 
@@ -123,7 +122,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     assert_equal "shannon", built_by(task),
                  "the reviewer stated who wrote it; the board must not drop the statement"
     assert_equal ["shannon"], authors(task)
-    assert_nil unattributed(task)
   end
 
   test "the reviewer's repair clears the refusal it was prescribed for" do
@@ -155,7 +153,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
 
     assert_equal ["shannon", "carl"], authors(task),
                  "he is on record as having claimed the build; the set must say so"
-    assert_nil unattributed(task), "he named himself, so nothing here is unattributable"
   end
 
   test "but he never re-points built_by to himself" do
@@ -239,7 +236,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
     claim_build!(task, actor: "carl", session: REVIEWER_SESSION)
 
     assert_equal ["shannon", "carl"], authors(task)
-    assert_nil unattributed(task), "he named himself, so nothing here is unattributable"
     assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
     refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "carl"
   end
@@ -272,7 +268,6 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
 
     assert_equal "shannon", built_by(task)
     assert_equal ["shannon"], authors(task), "a heartbeat names nobody and claims nothing"
-    assert_nil unattributed(task)
   end
 
   # --- THE FAIL-CLOSED DIRECTION ---------------------------------------------
@@ -289,20 +284,7 @@ class ReviewerTurnedBuilderTest < ActiveSupport::TestCase
 
     assert_equal "shannon", built_by(task)
     assert_equal ["shannon"], authors(task), "a heartbeat names nobody and claims nothing"
-    assert_nil unattributed(task)
     assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
-  end
-
-  test "an unnamed claim from a session that is NOT reviewing still refuses" do
-    # The refusal has to survive the fix, or the whole mechanism is decoration.
-    task = submitted_task(builder: "shannon")
-    block_for_rework!(task)
-
-    heartbeat!(task, session: STRANGER_SESSION)
-
-    assert_equal STRANGER_SESSION, unattributed(task),
-                 "no review claim means an ordinary anonymous handoff"
-    assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"]
   end
 
   test "a named claim from a session that is NOT reviewing re-points built_by" do

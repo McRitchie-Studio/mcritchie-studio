@@ -106,8 +106,8 @@ class RemedyHintGuardTest < Minitest::Test
   # sites, none of them in this task's scope: bin/lib/review_claim_cli.rb (16),
   # bin/agent-worktree (14), bin/lib/agent_worktree_cli.rb (13), bin/reviewer-select (8),
   # bin/release.rb (7 — and MOST are correctly bare, since the conductor runs bin/release
-  # from the hub primary by SOP), lib/review_verdict_gate.rb (6), bin/conductor (5),
-  # bin/control-check (4), bin/qa-intake (4), lib/archive_holder_guard.rb (4),
+  # from the hub primary by SOP), bin/conductor (5),
+  # bin/control-check (4), bin/qa-intake (4),
   # bin/lib/desk_guard.rb (1), bin/ship-wait (1), lib/open_pr_guard.rb (1).
   # Add a file here as it is cleaned; the sweep is what keeps it clean afterwards.
   SWEPT = %w[bin/ship bin/fast-check bin/dor-check

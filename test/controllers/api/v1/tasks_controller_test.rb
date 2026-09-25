@@ -1054,7 +1054,7 @@ module Api
         patch api_v1_task_path(@task.slug), params: { requires_migration: true }, headers: @headers, as: :json
 
         assert_response :success
-        assert @task.reload.requires_migration, "an agent must be able to flag its own task for the lane"
+        assert @task.reload.requires_migration, "an agent must be able to flag its own task"
       end
 
       # Un-flagging matters too: a task that turns out NOT to need a migration hands

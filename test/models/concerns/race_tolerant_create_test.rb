@@ -11,12 +11,12 @@ require "test_helper"
 # the caller a row it never asked for. So these tests lean hardest on the failures
 # that must STILL raise; they are the ones that catch the lazy fix.
 #
-# Exercised through the four real lease models rather than a fabricated AR class,
+# Exercised through the three real lease models rather than a fabricated AR class,
 # because their validation sets are the ones the guard actually meets in
 # production — including a scoped uniqueness (ReleaseConductorClaim) and an
 # `inclusion:` on the very attribute being looked up.
 class RaceTolerantCreateTest < ActiveSupport::TestCase
-  LEASE_MODELS = [MigrationLaneClaim, DevopsShift, TaskReviewClaim, ReleaseConductorClaim].freeze
+  LEASE_MODELS = [DevopsShift, TaskReviewClaim, ReleaseConductorClaim].freeze
 
   # ── THE CONTRACT IS SHARED ────────────────────────────────────────────────
 
@@ -30,13 +30,13 @@ class RaceTolerantCreateTest < ActiveSupport::TestCase
   # ── WHAT IT SWALLOWS ──────────────────────────────────────────────────────
 
   test "[unit] a uniqueness collision returns the row that already exists" do
-    existing = MigrationLaneClaim.create!(lane: "backend_migration", claimed_session: "winner")
+    existing = DevopsShift.create!(lane: "probe-lane")
     # Exactly what a losing racer meets: the validator reports :taken because the
     # rival's row is already committed.
-    found = MigrationLaneClaim.find_or_create_tolerating_race!(lane: "backend_migration")
+    found = DevopsShift.find_or_create_tolerating_race!(lane: "probe-lane")
 
     assert_equal existing.id, found.id, "the loser must be handed the winner's row"
-    assert_equal 1, MigrationLaneClaim.where(lane: "backend_migration").count
+    assert_equal 1, DevopsShift.where(lane: "probe-lane").count
   end
 
   test "[unit] a SCOPED uniqueness collision returns the existing row" do
@@ -56,7 +56,7 @@ class RaceTolerantCreateTest < ActiveSupport::TestCase
 
   test "[unit] a blank key still raises — same attribute, different error" do
     error = assert_raises(ActiveRecord::RecordInvalid) do
-      MigrationLaneClaim.find_or_create_tolerating_race!(lane: nil)
+      DevopsShift.find_or_create_tolerating_race!(lane: nil)
     end
     assert_equal [:blank], error.record.errors.details[:lane].map { |d| d[:error] }
   end
@@ -73,31 +73,31 @@ class RaceTolerantCreateTest < ActiveSupport::TestCase
   end
 
   test "[unit] a uniqueness error on an attribute we did NOT look up still raises" do
-    record = MigrationLaneClaim.new
+    record = DevopsShift.new
     record.errors.add(:some_other_column, :taken)
 
-    refute MigrationLaneClaim.uniqueness_collision_on?(record, [:lane]),
+    refute DevopsShift.uniqueness_collision_on?(record, [:lane]),
            ":taken on an attribute outside the lookup names a different row than find_by! would return"
   end
 
   test "[unit] a uniqueness error MIXED with another failure still raises" do
-    record = MigrationLaneClaim.new
+    record = DevopsShift.new
     record.errors.add(:lane, :taken)
     record.errors.add(:lane, :too_long)
 
-    refute MigrationLaneClaim.uniqueness_collision_on?(record, [:lane]),
+    refute DevopsShift.uniqueness_collision_on?(record, [:lane]),
            "a record failing for a second reason was never merely a race loser"
   end
 
   test "[unit] an empty error set is not a race" do
-    refute MigrationLaneClaim.uniqueness_collision_on?(MigrationLaneClaim.new, [:lane]),
+    refute DevopsShift.uniqueness_collision_on?(DevopsShift.new, [:lane]),
            "a RecordInvalid carrying no details must propagate, not be read as a collision"
   end
 
   test "[unit] a plain :taken on a looked-up attribute IS the race" do
-    record = MigrationLaneClaim.new
+    record = DevopsShift.new
     record.errors.add(:lane, :taken)
 
-    assert MigrationLaneClaim.uniqueness_collision_on?(record, [:lane])
+    assert DevopsShift.uniqueness_collision_on?(record, [:lane])
   end
 end

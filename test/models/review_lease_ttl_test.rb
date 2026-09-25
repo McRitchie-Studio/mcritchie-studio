@@ -116,7 +116,7 @@ class ReviewLeaseTtlTest < ActiveSupport::TestCase
                     ClaimLease::MEASURED_REVIEW_WINDOW_SECONDS.fetch(:parked_p99),
                     "the TTL deliberately does NOT chase the parked band — that band has no ceiling"
     assert_operator ClaimLease::REVIEW_TTL_SECONDS, :<, 4 * 60 * 60,
-                    "and it stays under the migration lane's 4h, which has no renewer at all"
+                    "and it stays under 4h, inside one working session"
   end
 
   # --- The derivation, checked against the corpus it claims to answer to ------

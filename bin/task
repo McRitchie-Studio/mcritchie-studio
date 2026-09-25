@@ -91,10 +91,10 @@
 #     both orders are safe. See lib/cert_evidence.rb. )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
-#   ( --requires-migration / --no-requires-migration: the `backend_migration`
-#     exclusive-lane flag, a top-level Task column. SELF-FLAG it the moment you
-#     discover the task needs a schema change, then take the lane with
-#     `bin/task migration-lane acquire <slug>`. See exclusive-lanes.md. )
+#   ( --requires-migration / --no-requires-migration: a plain top-level Task
+#     flag. SELF-FLAG it the moment you discover the task needs a schema change;
+#     the duplicate-migration collision check in dor-check and ship
+#     (bin/lib/migration_collision.rb) is the protection. )
 #   ( --depends-on <task-slug>: the explicit task-to-task RELEASE ORDER edge, a
 #     top-level Task column (tasks.dependencies). Repeatable; this task sorts
 #     AFTER every task named here that rides the same release.
@@ -154,17 +154,10 @@
 #       no lease, no renewal. It REFUSES (exit 1, no write) only when a DIFFERENT
 #       live session's desk is bound to the task AND has uncommitted changes, and
 #       names that desk; --steal overrides that one case. See bin/lib/desk_claim.rb. )
-#     ( the move to `archived` is TERMINAL and destroys UNCOMMITTED work no gate,
-#       review, or CI would ever surface — so it REFUSES (exit 1, no board write)
-#       any task it cannot prove holds NO WORK AT RISK, and NAMES what it could not
-#       verify. Work at risk is uncommitted state, which lives in a DESK: a desk
-#       being written into, a cert running against one, or an operator parked in
-#       front of one. Board activity is already durable and never holds the gate. A
-#       record carrying only an app and a mascot names no session to ask, and that
-#       is a REFUSAL, not a free task: on 2026-09-01 exactly such a record was
-#       resolved only by messaging the peer session. `shipped`/`archived` tasks and
-#       tasks nobody ever picked up archive freely. --force is the human decision
-#       seam and names the grade it waived. See lib/archive_holder_guard.rb. )
+#     ( the move to `archived` is TERMINAL and can destroy UNCOMMITTED work, so it
+#       REFUSES (exit 1, no board write) when a desk bound to the task on this
+#       machine has uncommitted changes (or its git status cannot be read), and
+#       names that desk. --force overrides. See bin/lib/desk_claim.rb. )
 #     ( the move to `archived` ALSO refuses when the task still has an OPEN PR, and
 #       names each PR and its state. That is a DIFFERENT question from the holder
 #       gate above: the PR is durable and survives the archive, but it survives OPEN
@@ -184,14 +177,12 @@
 #       on the accepted branch (the ladder's first rung); the sweep/ship stamp
 #       release/main. NOT a stage move, NOT event-recorded; read back to confirm it
 #       persisted so a dropped stamp never strands the task off every RC. )
-#   bin/task fix-forward <slug> --agent <soul>[,<soul>] | --unnamed
+#   bin/task fix-forward <slug> --agent <soul>[,<soul>]
 #     ( record a REVIEWER FIX-FORWARD (a zap): a soul who pushed a commit onto this
 #       task's PR branch WITHOUT holding the build. He is an author of the merged
 #       diff, so he joins the author set `bin/reviewer-select` excludes — but he
 #       makes no build claim, and the claim is the only thing that stamped it. Named
-#       souls join devops.builders (never built_by). --unnamed records a fix-forward
-#       nobody can attribute: the author set is then INCOMPLETE and reviewer-select
-#       REFUSES until a later --agent names who pushed. )
+#       souls join devops.builders (never built_by). )
 #   bin/task session-mascot [--persona SLUG|none] [--print]
 #     ( draw this Claude/Codex session's Pokémon marker before a task exists.
 #       --persona jasper temporarily shows a soul instead; --persona none reverts. )
@@ -225,12 +216,8 @@
 #       A --kind rework block with NO --feedback still posts one (with a placeholder
 #       body + a warning): the columns are wiped on resubmit, so a prose-less bounce
 #       would otherwise vanish from every durable store and never be counted. )
-#     ( --kind rework is gated TWICE, authorisation before budget. FIRST the
-#       VERDICT-OWNER gate: during a LIVE review claim, only the reviewer the claim
-#       names may spend the task's bounce — anyone else is REFUSED (exit 11) with
-#       nothing written (lib/review_verdict_gate.rb). A LIGHT reviewer files a scout
-#       report to its primary instead; it does not hold the verdict. THEN the
-#       breaker: `bounces` runs and REFUSES (exit 10) when it is tripped, naming the
+#     ( --kind rework is gated by the two-bounce breaker: `bounces` runs and
+#       REFUSES (exit 10) when it is tripped, naming the
 #       escalation. --breaker-ack "reason" proceeds anyway for a MECHANICAL bounce
 #       (red CI, merge conflict — nothing to arbitrate); the reason is recorded on
 #       the activity, so an override is evidence, not a bypass. )
@@ -247,17 +234,6 @@
 #       task could burn. Those rows price into measured $cost, which derives
 #       actual_size and the reviewer-select baselines. Reports only — purging is the
 #       operator's call. Exit 2 when suspects are found. )
-#   bin/task migration-lane <acquire|release|status> [<task-slug>] [--label L] [--agent A]
-#     ( The `backend_migration` EXCLUSIVE LANE — one Dev writes a migration at a time
-#       (docs/agents/system/exclusive-lanes.md). Acquire BEFORE `bin/rails g migration`,
-#       before creating a file in db/migrate/, before touching db/schema.rb; release on
-#       the way out. The lane is global, so the optional <task-slug> only RECORDS which
-#       task holds it, so a refused Dev knows whom to ask for an ETA.
-#       Pair it with `--requires-migration` on create/update: the flag says this task
-#       needs a schema change, the lane serializes the work.
-#       `status` is a plain read and needs no agent session; acquire/release do.
-#       Exit: 0 acquired/reported · 10 REFUSED (a live holder — queue, don't retry-storm)
-#       · 1 error. )
 #   bin/task review-claim acquire <slug> [--label L] [--agent A]
 #   bin/task review-claim <release|status|renew> <slug>
 #   bin/task claim-next-review [--label L] [--agent A]
@@ -284,16 +260,9 @@
 #      task" (HTTP 404 + the API's own "task not found" body). Never fired on a
 #      failed read: a Heroku router 404, a route-level 404, a 5xx, or a rejected
 #      flag all stay on 1, because the guard FREES a worktree on this code.
-#  10  REFUSED — a live holder refused `migration-lane acquire`, or the two-bounce
-#      circuit breaker refused `bounces` / `block --kind rework` (escalate, do not
+#  10  REFUSED — the two-bounce circuit breaker refused `bounces` / `block --kind rework` (escalate, do not
 #      retry). Distinct from 1 so "the breaker says escalate" is never confused
 #      with "the read failed".
-#  11  NOT THE VERDICT OWNER — `block --kind rework` was refused because a LIVE
-#      review claim names a DIFFERENT reviewer (or names none, or could not be
-#      read). Nothing was written. Distinct from 10 on purpose: 10 means "the
-#      budget is spent, escalate" and routes to `--kind dependency`, which is the
-#      OWNER's move — a light that read 10 here would file an escalation on a
-#      review it does not hold.
 #   1  everything else — transport/API failures, usage errors, rejected flags.
 
 require "net/http"
@@ -309,9 +278,6 @@ require_relative "../lib/task_usage_sandbox"
 require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
 require_relative "../lib/claim_holder"
-require_relative "../lib/desk_activity"
-require_relative "../lib/review_verdict_gate"
-require_relative "../lib/archive_holder_guard"
 require_relative "../lib/open_pr_guard"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
@@ -458,15 +424,6 @@ def print_session_marker(marker)
   puts parts.join(" · ")
 end
 
-# The per-PROCESS-instance nonce that, with the session id, identifies a live
-# instance holding the MIGRATION LANE (see migration-lane below). The shared
-# resolution lives on SessionIdentity.nonce. Memoized so `ps` runs once.
-def claim_nonce
-  return @claim_nonce if defined?(@claim_nonce)
-
-  @claim_nonce = SessionIdentity.nonce(ENV)
-end
-
 # The narration CLI (fast-lane-narrates-activities): `begin` opens the session's
 # ORIENT activity through this so the default fast-lane path leaves a
 # task-attributed trail instead of stranding orientation in the Unlabeled bucket.
@@ -520,136 +477,37 @@ rescue StandardError => e
   "unreadable (#{e.class})"
 end
 
-# WHETHER A REVIEW LEASE IS HELD on this task, and by whom. Read only on the
-# refusal/override paths, where one extra call is free and a name is what turns
-# "ask them to release" into something actionable.
-#
-# TRI-STATE, deliberately: `{"live" => true, …}` a reviewer holds it, `{"live" =>
-# false}` the board says nobody does, `{}` WE DID NOT GET AN ANSWER. Collapsing the
-# last two would turn a board hiccup into "no review" and route it to --steal, which
-# is the fail-open this gate exists to close; an empty hash reaches
-# ClaimHolder.role as nil and lands on the UNKNOWN route instead.
-def review_holder(slug)
-  # NOT `api` — that helper die!s on any non-2xx, and a diagnostic read must never
-  # be able to kill the gate it is informing. A board that answers 500 here has told
-  # us nothing, and "nothing" is a route (UNKNOWN), not a crash.
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}/review_claim", base_url: BASE_URL, token: token)
-  return {} unless res.code.to_i.between?(200, 299)
-
-  holder = TaskBoard.parse_body(res).dig("data", "holder")
-  holder.is_a?(Hash) ? holder.merge("live" => holder["live"] ? true : false) : { "live" => false }
-rescue StandardError
-  {}
-end
-
 # --- the ARCHIVE holder gate ---------------------------------------------------
 #
-# `archived` is TERMINAL, and what it destroys is UNCOMMITTED work no gate, review,
-# or CI would ever surface. So this path REFUSES what it cannot prove is free and
-# NAMES what it could not verify, rather than proceeding on a guess — the posture
-# bin/lib/cert_orphan_guard.rb already applies to the far less destructive act of
-# reaping a process. The decision table and every message live in
-# lib/archive_holder_guard.rb; this function is only the I/O around them.
+# `archived` is TERMINAL, and what it can destroy is UNCOMMITTED work in a desk. So
+# it refuses exactly one case (devops-v3 4b-ii-b): a desk bound to this task exists
+# on this machine and has uncommitted changes. The rule lives in
+# bin/lib/desk_claim.rb (DeskClaim.dirty_bound); this is only the I/O around it.
 #
-# It reads the task FRESH rather than trusting anything already in hand: the whole
-# question is whether somebody is working RIGHT NOW, and a stale record answers a
-# different one.
+# A read that blew up has told us nothing, and nothing must never authorize a
+# destructive act, so a failure refuses (and --force still overrides it).
 def enforce_archive_holder_gate!(slug, force:)
-  task = api(:get, "/api/v1/tasks/#{slug}")["data"]
-  devops = task.dig("metadata", "devops") || {}
-  claim = ClaimLease.from_devops(devops)
-  facts = archive_holder_facts(slug, task, devops, claim)
+  blockers =
+    begin
+      DeskClaim.dirty_bound_on_disk(slug, projects_dir: PROJECTS_DIR)
+    rescue StandardError => e
+      warn!("warning: #{slug}: could not read the desks bound to it (#{e.class}: #{e.message}) — withholding")
+      nil
+    end
+  return if blockers&.empty?
 
-  grade = ArchiveHolderGuard.decide(
-    stage: task["stage"], devops: devops,
-    claim_live: facts[:claim_live], abandoned: facts[:abandoned]
-  )
-  return if ArchiveHolderGuard.permitted?(grade)
-
-  # NAME WHAT IS BEING OVERRIDDEN. A --force that prints nothing turns the gate
-  # into a speed bump nobody remembers clearing; the operator (or the next reader
-  # of the log) must be able to see which proof was waived.
   if force
-    warn!("--force: archiving #{slug} anyway — the holder gate graded it #{grade.to_s.upcase} " \
-          "and could not prove the task free.")
+    warn!("--force: archiving #{slug} anyway — #{blockers ? "#{blockers.length} dirty desk(s) bound to it" : "its desks could not be read"}.")
     return
   end
 
-  warn!(ArchiveHolderGuard.refusal(
-          grade, slug: slug, stage: task["stage"], devops: devops, claim: claim,
-          channel: ArchiveHolderGuard.working_channel(facts[:channels])
-        ))
+  force_command = "#{ClaimHolder::TASK_COMMAND} move #{slug} archived --force"
+  if blockers
+    warn!(DeskClaim.archive_refusal(slug, blockers, force_command: force_command).join("\n"))
+  else
+    warn!("⚠  refusing to archive #{slug}: its desks could not be read. To archive anyway: #{force_command}")
+  end
   exit 1
-end
-
-# The liveness facts the gate decides on. I/O only — ClaimLease owns the
-# arithmetic, so the unit tier can drive every combination without a board or a
-# filesystem.
-#
-# THE CHANNELS ARE THE THREE THAT ATTEST WORK AT RISK, and the board-progress
-# channel this function used to gather is deliberately absent. Graded against the
-# live board on 2026-09-02 it held 31 of 34 tasks — 16 of them with no desk at all —
-# because Task#holder_liveness_seconds_ago degrades to the age of the task's own
-# CREATE where no holder owns an artifact, and because every `bin/task` write resets
-# it, so triaging a task armed this gate against archiving that same task. See
-# lib/archive_holder_guard.rb, "WHY BOARD PROGRESS IS NOT A CHANNEL HERE".
-#
-# A CHECK THAT BLEW UP HAS TOLD US NOTHING, and nothing must never authorize a
-# destructive act. So the rescue resolves to the PROTECTIVE direction — claim
-# assumed live, not abandoned, desk unknown — and the resulting refusal says
-# plainly that the check could not be completed: the unknown protects the holder.
-# It assumes the claim is live rather than merely declining to free it.
-def archive_holder_facts(slug, task, devops, claim)
-  channels = {
-    desk_touched: archive_desk_touched(devops),
-    gate_in_flight: holder_scoped(task, "holder_gate_in_flight", "gate_in_flight") ? true : false,
-    awaiting_approval: devops["approval_status"].to_s.strip == "waiting"
-  }
-  {
-    claim_live: ClaimLease.live?(claim),
-    abandoned: ArchiveHolderGuard.abandonable?(**channels),
-    channels: channels
-  }
-rescue StandardError => e
-  warn "warning: #{slug}: the holder check could not be completed (#{e.class}: #{e.message}) — withholding"
-  { claim_live: true, abandoned: false, channels: { desk_touched: nil } }
-end
-
-# Has anyone written into this task's desk lately? true / false / nil.
-#
-# THE DESK IS ASKED WHERE THE TASK SAYS IT IS, never where we happen to be standing.
-# An archive runs from the primary checkout, and
-# DeskActivity.desk_root refuses any directory not bound to the task, so a cwd-based
-# resolution here would answer nil every single time and the gate would refuse every
-# archive on the machine. A guard that refuses everything gets switched off, and then
-# it protects nothing.
-#
-# A task may name several repos, so every candidate desk is asked and the answers are
-# folded PROTECTIVELY: any desk being worked in wins, then any desk we could not read,
-# and only an all-quiet reading returns false.
-def archive_desk_touched(devops)
-  answers = archive_desk_dirs(devops).map do |dir|
-    ArchiveHolderGuard.desk_touched_for(
-      dir,
-      exists: File.directory?(dir),
-      reader: ->(root) { DeskActivity.touched_since?(root, Time.now - ClaimLease::DESK_IDLE_SECONDS) }
-    )
-  end
-  # No desk recorded at all is a REAL answer, not an unknown: a task with no worktree
-  # has no uncommitted work in one for an archive to destroy.
-  return false if answers.empty?
-  return true if answers.include?(true)
-
-  answers.include?(nil) ? nil : false
-end
-
-def archive_desk_dirs(devops)
-  worktree = devops["worktree_slug"].to_s.strip
-  return [] if worktree.empty?
-
-  Array(devops["repositories"]).map { |repo| repo.to_s.strip }.reject(&:empty?).map do |repo|
-    File.join(PROJECTS_DIR, repo, ".worktrees", worktree)
-  end
 end
 
 # --- the ARCHIVE open-PR gate --------------------------------------------------
@@ -763,8 +621,7 @@ end
 # The abandonment record has to SURVIVE the write. `abandoned_prs` must be a
 # storable name in Task::DEVOPS_LIST_KEYS; anything outside DEVOPS_KEYS is dropped
 # by normalize_devops_metadata and the caller still gets a 200. That silent
-# evaporation is exactly what `release_slug` cost and what `agent_slug` cost inside
-# ArchiveHolderGuard::PAINT_KEYS, so this reads the record back and fails LOUDLY
+# evaporation is exactly what `release_slug` cost, so this reads the record back and fails LOUDLY
 # rather than reporting an override that recorded nothing.
 #
 # The archive has ALREADY LANDED by the time this runs — the stage move and the
@@ -839,15 +696,6 @@ def archived_pr_index(tasks)
                                deliberate: OpenPrGuard.abandonment_recorded?(recorded, ref[:url]))
     end
   end
-end
-
-# A holder-scoped liveness fact, falling back to its task-wide twin when the board
-# does not publish one — see ClaimLease.holder_scoped for why the fallback is the
-# conservative direction. It lives in the shared module because bin/agent-worktree's
-# reclaim guard asks the same question of the same payload about a DIRECTORY, and
-# two spellings of "is the holder working" is how those two answers drift apart.
-def holder_scoped(task, holder_key, task_wide_key)
-  ClaimLease.holder_scoped(task, holder_key, task_wide_key)
 end
 
 SCALAR_FLAGS = {
@@ -1002,13 +850,6 @@ COMMA_FREE_LIST_FLAGS = %w[--repo --risk].freeze
 # Task#release_pr_urls — you do not repeat it here, and it WINS for the repo it
 # names (one repo, one authoritative PR).
 MAP_FLAGS = { "--pr-url-for" => "pr_urls" }.freeze
-# The `devops.fix_forward` entry meaning "a reviewer fix-forward happened here and
-# nobody can say whose commit it is". Deliberately NOT a soul slug: every reader
-# (ReviewerSelector#fix_forward_unnamed, Task#fix_forward_authors) sorts these
-# entries by asking `Task.soul?`, so the marker needs no shared constant to be
-# understood — only to be written and retired consistently, which is this file's job.
-FIX_FORWARD_UNNAMED = "unattributed"
-
 NOTE_FLAGS = {
   "--handoff" => "handoff",
   "--qa-feedback" => "qa_feedback",
@@ -1033,14 +874,9 @@ SOUL_SLUG = /\A[a-z]+(?:-[a-z]+)*\z/
 SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
 # Top-level Task columns parse_flags accepts alongside the devops flags.
 TOP_FLAGS = %w[--slug --title --description --agent --priority --stage].freeze
-# VALUELESS top-level boolean columns. `requires_migration` is the
-# `backend_migration` exclusive-lane flag (docs/agents/system/exclusive-lanes.md):
-# the SOP tells a backend Dev to SELF-FLAG the moment they discover they need a
-# migration, and until this flag existed there was no way to do it — the column
-# was writable only through the admin-gated /sizing editor, so the instruction
-# named a behaviour no agent could perform. Both polarities are explicit because
-# un-flagging matters too (a task that turns out NOT to need a migration should
-# hand the lane back and say so).
+# VALUELESS top-level boolean columns. `requires_migration` is a plain flag a
+# builder SELF-FLAGS the moment they discover they need a migration. Both
+# polarities are explicit because un-flagging matters too.
 BOOL_FLAGS = {
   "--requires-migration"    => ["requires_migration", true],
   "--no-requires-migration" => ["requires_migration", false]
@@ -1155,17 +991,9 @@ end
 EXIT_TASK_NOT_FOUND = 4
 
 # The two-bounce circuit breaker REFUSED this rework block (`bounces` reports the
-# same code when the breaker is tripped). Same "refused, do not retry-storm"
-# meaning `migration-lane` gives 10; distinct from 1 so a caller can tell "the
+# same code when the breaker is tripped). Distinct from 1 so a caller can tell "the
 # breaker says escalate" from "the read failed".
 EXIT_BREAKER_TRIPPED = 10
-
-# The caller is not the reviewer who OWNS this task's verdict, so its rework block
-# was refused before any write (lib/review_verdict_gate.rb). DISTINCT from 10 on
-# purpose: 10 means "the budget is spent, escalate", and this means "the budget is
-# not yours to spend" — a light that saw 10 would follow the breaker's escalation
-# recipe, which is the owner's move, not its own.
-EXIT_NOT_VERDICT_OWNER = 11
 
 # Page size `list --json` asks for. 100 is the index's own ceiling
 # (Api::Paginatable clamps per_page), so this is "as few round trips as the API
@@ -2089,30 +1917,6 @@ def default_block_actor(task, kind)
   nil
 end
 
-# ONLY THE VERDICT OWNER MAY SPEND THE BOUNCE. Refuses — exit 11 — a rework block
-# by a soul that is not the live review claim's holder, and writes NOTHING when it
-# does. It refuses; it does not warn and carry on.
-#
-# The rules, the tri-state, and the whole argument for keying this on the SOUL rather
-# than on the lease live in lib/review_verdict_gate.rb — including the measurement that
-# makes the lease unusable here (a light subagent shares its primary's session id AND
-# nonce, so a lease check grades it :same_instance and waves the incident through).
-# This function is only the I/O around that decision.
-#
-# It reads the claim FRESH: the question is who owns the verdict RIGHT NOW, and a
-# stale record answers a different one.
-def enforce_review_verdict_gate!(slug, kind:, actor:)
-  return unless ReviewVerdictGate::GATED_KINDS.include?(kind.to_s.strip)
-
-  holder = review_holder(slug)
-  verdict = ReviewVerdictGate.verdict(kind: kind, holder: holder, actor: actor)
-  return if ReviewVerdictGate.allowed?(verdict)
-
-  ReviewVerdictGate.refusal(verdict, slug: slug, actor: actor, holder: holder)
-                   .each_with_index { |line, i| warn!(i.zero? ? "block: #{line}" : line) }
-  exit EXIT_NOT_VERDICT_OWNER
-end
-
 # ---------------------------------------------------------------------------
 # Two-bounce circuit breaker — the READ (bin/lib/bounce_ledger.rb owns the rules).
 #
@@ -2659,8 +2463,7 @@ when "orphan-prs"
   #
   # WHY IT EXISTS SEPARATELY FROM THE GATE. `bin/release archive` flips shipped tasks
   # through Release::Conductor.archive_completed! — the MODEL path — which by design
-  # bypasses the CLI gate entirely (see lib/archive_holder_guard.rb, "THIS GATE IS
-  # THE CLI PATH, DELIBERATELY"). So the gate cannot be the only answer even in
+  # bypasses the CLI gate entirely. So the gate cannot be the only answer even in
   # principle, and it says nothing at all about the orphans already on the board:
   # studio-engine #245 sat open under an archived task for a month and surfaced only
   # because a human asked for a backlog audit.
@@ -2981,7 +2784,7 @@ when "move"
     when "--actor"      then event["actor"]      = ARGV.shift || die!("--actor needs a value")
     when "--dev-size"   then dev_size = ARGV.shift || die!("--dev-size needs a value"); validate_size!("--dev-size", dev_size)
     when "--steal"      then steal = true # override the build-claim gate (take a live foreign claim)
-    when "--force"      then force = true # override the ARCHIVE holder gate (see lib/archive_holder_guard.rb)
+    when "--force"      then force = true # override the ARCHIVE gates (see bin/lib/desk_claim.rb)
     else unknown_flag!(flag, valid: %w[--model --tokens-in --tokens-out --cost --actor --dev-size --steal --force], context: "move")
     end
   end
@@ -2989,9 +2792,6 @@ when "move"
   # tokens + cost) from the session transcript so a bare move still leaves a full
   # paper trail. Best-effort; a missing transcript leaves the event spine-only.
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
-  # ARCHIVE REFUSES WHAT IT CANNOT PROVE FREE. Runs BEFORE the PATCH, so a refusal
-  # leaves the task exactly where it was. lib/archive_holder_guard.rb owns the
-  # decision table and every refusal message.
   # BOTH ARCHIVE GATES, in order of what they protect. The holder gate guards
   # UNCOMMITTED work (irreversible if wrong); the open-PR gate guards a DURABLE PR
   # from going unwatched (recoverable, and bin/task orphan-prs is the recovery).
@@ -3090,40 +2890,26 @@ when "fix-forward"
   # reviewed). This posts one devops key and moves nothing.
   #
   # APPENDS. The list is read, unioned, and re-posted, so a second zap by a different
-  # soul cannot drop the first — and naming a soul CLEARS a prior --unnamed marker,
-  # which is the whole resolution path out of the refusal.
-  usage = "usage: #{$PROGRAM_NAME} fix-forward <slug> --agent <soul>[,<soul>] | --unnamed"
+  # soul cannot drop the first.
+  usage = "usage: #{$PROGRAM_NAME} fix-forward <slug> --agent <soul>[,<soul>]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   souls = []
-  unnamed = false
   while ARGV.any?
     case (flag = ARGV.shift)
-    when "--agent"   then souls.concat((ARGV.shift || die!("--agent needs a value")).split(/[,\s]+/))
-    when "--unnamed" then unnamed = true
-    else unknown_flag!(flag, valid: %w[--agent --unnamed], context: "fix-forward")
+    when "--agent" then souls.concat((ARGV.shift || die!("--agent needs a value")).split(/[,\s]+/))
+    else unknown_flag!(flag, valid: %w[--agent], context: "fix-forward")
     end
   end
   souls = souls.map { |soul| soul.to_s.strip }.reject(&:empty?).uniq
-  die!(usage) if souls.empty? && !unnamed
-  # OPPOSITE CLAIMS, so the line is refused rather than silently resolved one way.
-  # "steffon pushed it" and "nobody can say who pushed it" cannot both be asserted,
-  # and guessing which the caller meant is how a refusal gets lifted by accident.
-  die!("--agent and --unnamed are opposite claims — pass one: #{usage}") if souls.any? && unnamed
+  die!(usage) if souls.empty?
   # Handle SHAPE is checked here, not on the server: `--agent Steffon` or
-  # `--agent turf_monster` matches no soul, so it would land as an UNNAMED entry and
-  # read as "a zap nobody could attribute" — a typo silently becoming a refusal, with
-  # the value that caused it stored as if it were the marker.
+  # `--agent turf_monster` matches no soul, so it would join nobody.
   bad = souls.reject { |soul| soul.match?(/\A[a-z]+(?:-[a-z]+)*\z/) }
   die!("not soul slugs (lowercase, single hyphens): #{bad.join(", ")}") if bad.any?
 
   current = Array((api(:get, "/api/v1/tasks/#{slug}")["data"] || {}).dig("metadata", "devops", "fix_forward"))
              .map { |entry| entry.to_s.strip }.reject(&:empty?)
-  posted = if unnamed
-    (current + [FIX_FORWARD_UNNAMED]).uniq
-  else
-    # Naming an author RETIRES the marker: the fact it stood for is now on record.
-    (current.reject { |entry| entry == FIX_FORWARD_UNNAMED } + souls).uniq
-  end
+  posted = (current + souls).uniq
   api(:patch, "/api/v1/tasks/#{slug}", { "devops" => { "fix_forward" => posted } })
 
   # READ BACK. A 200 is not persistence, and this stamp's whole job is to be there
@@ -3139,18 +2925,13 @@ when "fix-forward"
     warn!("  if it recurs the board write is failing server-side — check ErrorLog.")
     exit 1
   end
-  if souls.any? && (short = souls - authors).any?
+  if (short = souls - authors).any?
     warn!("✗ fix-forward recorded on #{slug} but #{short.join(", ")} did NOT join the author set.")
     warn!("  devops.builders reads [#{authors.join(", ")}]. The record landed and the fold did")
     warn!("  not, so bin/reviewer-select would still seat them. Check Task#builder_roll_call.")
     exit 1
   end
-  if unnamed
-    puts "fix-forward recorded on #{slug}: UNNAMED — the author set is now INCOMPLETE and"
-    puts "  bin/reviewer-select will REFUSE until: #{SELF_CMD} fix-forward #{slug} --agent <soul>"
-  else
-    puts "fix-forward recorded on #{slug}: #{souls.join(", ")} (authors: #{authors.join(", ")})"
-  end
+  puts "fix-forward recorded on #{slug}: #{souls.join(", ")} (authors: #{authors.join(", ")})"
 when "intent"
   # Record an INTENT — an agent (or the two senior reviewers) STARTING a stage's
   # work, the moment it begins — so /deployments + the task timeline show who's on
@@ -3336,16 +3117,8 @@ when "block"
   # This read doubles as the existence check the breaker would otherwise repeat —
   # an unknown slug die!s here with EXIT_TASK_NOT_FOUND before anything else runs.
   current = api(:get, "/api/v1/tasks/#{slug}")["data"]
-  # WHO THIS BLOCK WOULD BE ATTRIBUTED TO, resolved BEFORE either gate rather than
-  # just before the write. The verdict-owner gate below compares this soul against
-  # the review claim's, so computing it late would leave the gate judging a caller
-  # it had not yet identified.
+  # WHO THIS BLOCK WOULD BE ATTRIBUTED TO — the breaker's recipes print it.
   blocker = resolved_block_actor(agent, current, kind: kind)
-  # THE VERDICT-OWNER GATE FIRES FIRST — before the breaker, because this is an
-  # AUTHORISATION question and the breaker is a BUDGET question. Asking the budget
-  # first would print escalation guidance to an agent with no standing to act on it,
-  # and — the actual defect — would let a non-owner reach the write at all.
-  enforce_review_verdict_gate!(slug, kind: kind, actor: blocker)
   # THE BREAKER FIRES HERE, before the block lands — a warning printed after the
   # bounce is recorded is a receipt, not a safety mechanism. Only `rework` is
   # gated: `dependency` IS the escalation this refusal routes you to, and
@@ -3381,8 +3154,7 @@ when "block"
       # no actor, no `by`. It leaves a block whose audit row names nobody. (It does not
       # poison `bin/reviewer-select`: `Task#block!` lands the task on `building` with
       # `blocked_at` set, which is neither a `build_claim_save?` nor a `submit_save?`,
-      # so `enforce_builder_stamp` writes no author. The author set is only reached
-      # second-hand, when the statusline later adopts the freed lease unnamed.)
+      # so `enforce_builder_stamp` writes no author.)
       warn!("    #{BlockRecipe.escalation(slug, agent: resolved_block_actor(agent, current, kind: "dependency"))}")
       warn!("")
       warn!("  If this bounce is MECHANICAL and not a disagreement (red CI, a merge conflict, a")
@@ -3393,8 +3165,7 @@ when "block"
       # run already resolved to is what it will ACTUALLY record, and printing it is how
       # a wrong one becomes VISIBLE rather than silent. (A pasted block does not run as
       # whoever pasted it: `resolved_block_actor` returns the literal "avi" for
-      # rework-on-submitted, so the bare remedy printed to the verdict owner was a
-      # command the verdict-owner gate then REFUSED him — exit 11, nothing written.)
+      # rework-on-submitted, so a bare remedy would record the wrong soul.)
       warn!("    #{BlockRecipe.breaker_ack(slug, agent: blocker)}")
       exit EXIT_BREAKER_TRIPPED
     end
@@ -3561,78 +3332,6 @@ when "claim-next-review"
   # a `--help` that fell through it once claimed a real task.
   require_relative "lib/review_claim_cli"
   exit(ReviewClaimCli.new.run(["claim-next", *ARGV]))
-when "migration-lane"
-  # The `backend_migration` exclusive lane (docs/agents/system/exclusive-lanes.md).
-  # Before `bin/rails g migration`, before creating a file in db/migrate/, before
-  # touching db/schema.rb — acquire. If the lane is held, queue and chat the holder.
-  #
-  # The lane is GLOBAL, so `acquire`/`release` take no slug of their own; the
-  # optional <task-slug> only RECORDS which task holds it, so a refused Dev is told
-  # who to ask. Exit codes: 0 acquired / lane reported · 10 refused (a live holder)
-  # · 1 error. 10 is distinct from 1 because "someone else is migrating" is a normal
-  # outcome a script should branch on, not a failure.
-  usage = "usage: #{$PROGRAM_NAME} migration-lane <acquire|release|status> [<task-slug>] [--label L] [--agent A]"
-  sub = positional!(ARGV.shift || die!(usage), usage)
-  die!(usage) unless %w[acquire release status].include?(sub)
-
-  lane_task = nil
-  lane_label = nil
-  lane_agent = nil
-  until ARGV.empty?
-    arg = ARGV.shift
-    case arg
-    when "--label" then lane_label = ARGV.shift || die!("--label needs a value")
-    when "--agent" then lane_agent = ARGV.shift || die!("--agent needs a value")
-    else
-      unknown_flag!(arg, valid: %w[--label --agent], context: "migration-lane") if arg.start_with?("-")
-      lane_task = arg
-    end
-  end
-
-  # `status` is a pure read, so it must work from a plain shell with no agent
-  # session. acquire/release cannot: a lease with no identity could never be
-  # renewed or released by its owner, and a lane holder nobody can name is exactly
-  # the wedged lane this build exists to prevent.
-  if sub == "status"
-    holder = api(:get, "/api/v1/migration_lane")["data"]["holder"]
-    if holder.nil? || !holder["live"]
-      puts "migration lane: FREE"
-      exit 0
-    end
-    puts "migration lane: HELD"
-    puts "  task:    #{holder["task_slug"] || "-"}"
-    puts "  agent:   #{holder["agent"] || "-"}"
-    puts "  label:   #{holder["label"] || "-"}"
-    puts "  since:   #{holder["acquired_at"] || "-"}"
-    puts "  expires: #{holder["expires_at"] || "-"}"
-    exit 0
-  end
-
-  session, = session_identity
-  die!("migration-lane #{sub} needs an agent session (CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID); `status` works without one") if session.nil?
-  nonce = claim_nonce
-
-  if sub == "acquire"
-    data = api(:post, "/api/v1/migration_lane", {
-      session: session, nonce: nonce, task_slug: lane_task, agent: lane_agent, label: lane_label
-    })["data"]
-    holder = data["holder"] || {}
-    if data["acquired"]
-      puts "migration lane ACQUIRED#{lane_task ? " for #{lane_task}" : ""} (expires #{holder["expires_at"]})"
-      puts "release it with: bin/task migration-lane release"
-      exit 0
-    end
-    warn "migration lane HELD by #{holder["agent"] || holder["label"] || holder["session"] || "another session"}" \
-         "#{holder["task_slug"] ? " (task #{holder["task_slug"]})" : ""} since #{holder["acquired_at"]}"
-    warn "queue: pick up a non-migration task and ask the holder for an ETA."
-    exit 10
-  end
-
-  data = api(:post, "/api/v1/migration_lane/release", { session: session, nonce: nonce })["data"]
-  # Releasing something you never held is a harmless no-op, not an error — the
-  # SOP's belt-and-suspenders release fires on every exit path.
-  puts data["released"] ? "migration lane RELEASED" : "migration lane not held by this session (no-op)"
-  exit 0
 else
   print_usage!
   exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)

@@ -80,13 +80,6 @@ module TaskAuthorFields
   # recorded as having built it" is a review blocker.
   UNASSIGNED_READS = "unassigned"
 
-  # Appended when the record holds an author it CANNOT NAME
-  # (`devops.builders_unattributed` — a session that claimed or shipped the task
-  # while naming no soul). The named authors are still true; the set is just not
-  # all of them, and a reader who takes a partial set for a complete one is
-  # exactly who this line is for.
-  INCOMPLETE_SUFFIX = " +1 UNNAMED"
-
   module_function
 
   # The devops hash of a fetched API record (`data`), never nil.
@@ -119,19 +112,12 @@ module TaskAuthorFields
       .uniq
   end
 
-  # The session that worked this task while naming no soul, or nil. Present
-  # means the author set is INCOMPLETE.
-  def unattributed(task)
-    devops(task).fetch("builders_unattributed", "").to_s.strip
-                .then { |value| value.empty? ? nil : value }
-  end
-
   # The rendered author set — never a bare "-".
   def read(task)
     named = names(task)
     return read_unstamped(task) if named.empty?
 
-    "#{named.join(", ")}#{unattributed(task) ? INCOMPLETE_SUFFIX : ""}"
+    named.join(", ")
   end
 
   # The empty case, which is two different empties. A record holding ONLY a
@@ -163,8 +149,7 @@ module TaskAuthorFields
     builders = Array(dv["builders"]).map { |slug| slug.to_s.strip }.reject(&:empty?)
     [
       "built_by: #{or_unstamped(dv["built_by"])}",
-      "builders: #{or_unstamped(builders.join(", "))}",
-      "unattributed: #{unattributed(task) || "none"}"
+      "builders: #{or_unstamped(builders.join(", "))}"
     ].join("   ")
   end
 

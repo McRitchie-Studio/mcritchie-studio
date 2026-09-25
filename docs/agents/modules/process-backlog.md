@@ -196,9 +196,9 @@ this rubric, in order, and **say the reason out loud** when you claim:
 
 ### The anti-rank — leave these for a dedicated sitting
 
-- **`requires_migration: true`** — the `backend_migration` lane is GLOBAL and
-  serializes every migration writer on the machine. One at a time, and never as
-  one of four.
+- **`requires_migration: true`** — two migrations in flight can collide, and the
+  duplicate-migration check refuses the second at ship. One at a time, and never
+  as one of four.
 - **`onchain` / `onchain-vertical` shapes** — operator/QA-stop verification.
 - **Acceptance you cannot restate in one sentence.** Ask Mr. McRitchie instead of
   guessing; a misread acceptance costs the whole build.

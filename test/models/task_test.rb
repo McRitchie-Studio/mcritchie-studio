@@ -749,25 +749,13 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal false, task.requires_migration
   end
 
-  # --- Migration lane ---
-  #
-  # Task once carried `try_acquire_migration_lane` / `release_migration_lane`
-  # (session advisory locks), "covered" here by a test that asserted only
-  # `assert_includes [true, false], acquired` — a tautology no implementation could
-  # fail, including the broken one it was guarding. Both helpers are gone; the lane
-  # is claimed through MigrationLaneClaim, whose exclusivity is proved against real
-  # concurrent connections in test/integration/migration_lane_exclusion_race_test.rb.
-  # Task keeps only the lane KEY.
+  # --- Migration lane (deleted, devops-v3 4b-ii-b) ---
 
-  test "[unit] the migration lane key is the one MigrationLaneClaim claims" do
-    assert_equal "backend_migration", Task::MIGRATION_LANE
-    assert_equal Task::MIGRATION_LANE, MigrationLaneClaim.new(lane: Task::MIGRATION_LANE).lane
-  end
-
-  test "[unit] the retired advisory-lock helpers are gone" do
-    refute Task.respond_to?(:try_acquire_migration_lane),
-           "a session advisory lock cannot back a lane bin/task reaches over HTTP"
-    refute Task.respond_to?(:release_migration_lane)
+  test "[unit] the migration lane is gone; requires_migration is a plain flag" do
+    refute defined?(Task::MIGRATION_LANE), "the exclusive lane key is deleted"
+    refute Object.const_defined?(:MigrationLaneClaim), "and so is the claim model"
+    refute ActiveRecord::Base.connection.table_exists?(:migration_lane_claims)
+    assert_includes Task.column_names, "requires_migration"
   end
 
   # --- DevOps metadata ---

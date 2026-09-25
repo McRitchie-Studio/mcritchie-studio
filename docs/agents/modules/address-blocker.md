@@ -140,10 +140,7 @@ bin/task block <slug> --kind <environment|rework|dependency> \
 ```
 
 Name yourself with `--agent`: a `--kind rework` block spends the task's bounce,
-and while a review claim is live only the soul that claim records as its holder
-may spend it — anyone else is REFUSED with **exit 11**
-(`lib/review_verdict_gate.rb`). If your own block is refused, the claim names a
-different soul or none; `bin/task review-claim status <slug>` says which.
+and the block is recorded against the soul you name.
 
 ## Step 5 — Modify and resubmit
 

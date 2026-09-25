@@ -106,17 +106,15 @@ class FixForwardAuthorApiTest < ActionDispatch::IntegrationTest
     assert_equal "https://github.com/o/r/pull/1321", devops["pr_url"]
   end
 
-  # The fail-closed half on the wire: an unattributable fix-forward is recorded as
-  # such, is NOT laundered into an author, and makes the selector refuse.
-  def test_an_unnamed_fix_forward_is_recorded_and_refuses
+  # An entry naming no soul (the legacy "unattributed" marker) is stored but never
+  # folded in as an author, and no longer makes the selector refuse.
+  def test_a_non_soul_fix_forward_entry_is_not_an_author
     task = submitted_task(builder: "shannon")
     fix_forward!(task.slug, "unattributed")
     devops = devops_of(task.slug)
 
-    assert_equal ["unattributed"], Array(devops["fix_forward"])
     assert_equal ["shannon"], Array(devops["builders"]),
                  "a marker names no soul and must never be folded in as an author"
-    refute ReviewerSelector.new(task.reload).decision["builder_known"],
-           "a fix-forward nobody can attribute leaves the author set INCOMPLETE"
+    assert ReviewerSelector.new(task.reload).decision["builder_known"]
   end
 end

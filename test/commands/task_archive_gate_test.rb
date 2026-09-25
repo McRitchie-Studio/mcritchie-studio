@@ -4,26 +4,19 @@ require "tmpdir"
 require "socket"
 require "json"
 require "time"
+require_relative "../support/fake_desk"
 
 # The ARCHIVE holder gate REFUSES. It does not warn and carry on.
 #
-# THE NEAR-MISS THIS EXISTS TO CATCH (2026-09-01, docs/agents/system/agent-presence.md,
-# cost #1). Mr. McRitchie asked that one session's work be HELD. That session could not
-# be identified from disk — its task record carried an app and a MASCOT and nothing
-# else — and it was resolved only by MESSAGING the peer session to ask who it was. Had
-# that session been idle, busy, or unreachable, the work would have been archived and
-# the operator's explicit exception would have protected nothing.
-#
-# `bin/task move <slug> archived` ran the stage move with NO holder check of any kind:
-# `enforce_claim_gate!` fires only on `stage == "building"`, so the one transition that
-# is TERMINAL and destroys UNCOMMITTED work was the one transition nothing guarded.
+# `archived` is terminal, and the one thing it can destroy is UNCOMMITTED work in a
+# desk. Since devops-v3 piece 4b-ii-b the gate refuses exactly that case: a desk bound
+# to the task on this machine has uncommitted changes (DeskClaim.dirty_bound). The
+# graded gate before it (held / working / unverifiable, keyed on mascots, leases and
+# board liveness) is deleted.
 #
 # THE ASSERTION THAT SEPARATES A GATE FROM A WARNING IS "NO WRITE". A path that warned
-# loudly and archived anyway would print the mascot, the missing identity keys, and the
-# --force hint — every message assertion below would pass on it. The only thing it does
-# that a refusing gate never does is send the PATCH. So the refusal is pinned on the
-# ABSENCE of the board write, and the messages are pinned separately as the evidence the
-# operator identifies the holder with.
+# loudly and archived anyway would pass every message assertion below; the only thing
+# it does that a refusing gate never does is send the PATCH.
 class TaskArchiveGateTest < ActiveSupport::TestCase
   BIN = Rails.root.join("bin/task").to_s
   SLUG = "probe-task".freeze
@@ -32,172 +25,61 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
   MOVER_NONCE   = "mover001".freeze
   HOLDER_SESSION = "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b".freeze
 
-  # THE NEAR-MISS RECORD, as it actually stood: an app and a mascot, and nothing that
-  # names a session. No worktree_slug either — the record simply did not say where the
-  # work was, which is the whole reason nobody could find its owner.
-  UNIDENTIFIABLE = {
+  # A record carrying only an app and a mascot — which the old gate refused as
+  # UNIDENTIFIABLE. With no dirty desk it now archives.
+  PAINTED = {
     kind: "bug", repositories: ["mcritchie-studio"],
     mascot: "omanyte", mascot_emoji: "🗿💧", app_color: "#B57EDC"
   }.freeze
 
-  # ── THE REFUSAL ─────────────────────────────────────────────────────────────
+  # ── THE REFUSAL: a dirty desk bound to the task ─────────────────────────────
 
-  test "[integration] archiving a task whose holder cannot be identified exits 1" do
-    result = archive(devops: UNIDENTIFIABLE)
-
-    assert_equal 1, result[:status].exitstatus,
-                 "the gate ends in `exit 1`; before this fix the move ran unguarded and exited 0"
-  end
-
-  # THE LOAD-BEARING ONE. Everything else here is also true of a path that only warns.
-  test "[integration] the refused archive sends NO write to the board" do
-    result = archive(devops: UNIDENTIFIABLE)
-
-    assert_empty result[:writes],
-                 "a PATCH on this path means the task was ARCHIVED — terminal, and destroying " \
-                 "uncommitted work whose owner we just admitted we cannot identify"
-  end
-
-  test "[integration] the refusal names what it could not verify" do
-    err = archive(devops: UNIDENTIFIABLE)[:err]
-
-    assert_includes err, "CANNOT BE IDENTIFIED", "the refusal must say what it is refusing on"
-    assert_includes err, "omanyte",
-                     "it must name the paint the record DOES carry — that mascot is the only " \
-                     "handle the operator has for going and finding the session"
-    assert_includes err, "session_id",
-                     "and the identity fact that was missing, or the reader cannot tell what " \
-                     "would have satisfied the gate"
-    assert_includes err, "bin/agent-presence",
-                     "a refusal must say HOW to identify the holder, not merely that one must"
-  end
-
-  test "[integration] the refusal offers a pasteable override" do
-    err = archive(devops: UNIDENTIFIABLE)[:err]
-
-    assert_includes err, "bin/task move #{SLUG} archived --force",
-                     "a refusal with no way forward is a dead end; --force is the human decision " \
-                     "seam, exactly as `remove <app> <task> --yes` is for a desk"
-  end
-
-  # ── THE OTHER SIDE OF THE SAME CONTRACT ─────────────────────────────────────
-  #
-  # A test that only proved the refusal would pass just as well against a gate that
-  # refuses UNCONDITIONALLY — which would wedge `bin/release archive`, Alex's clean-up
-  # SOP, and every honest archive on the board. These pin the gate open where it must
-  # be open.
-
-  test "[integration] --force archives anyway and names the grade it overrode" do
-    result = archive(devops: UNIDENTIFIABLE, flags: ["--force"])
-
-    assert_equal 0, result[:status].exitstatus, "--force must let the archive through"
-    refute_empty result[:writes], "and the stage move must actually land"
-    assert_equal "archived", result[:writes].last["stage"]
-    assert_includes result[:err], "UNVERIFIABLE",
-                     "an override that prints nothing turns the gate into a speed bump nobody " \
-                     "remembers clearing — it must name which proof was waived"
-  end
-
-  test "[integration] a shipped task archives without a holder check" do
-    result = archive(devops: UNIDENTIFIABLE, stage: "shipped")
-
-    assert_equal 0, result[:status].exitstatus,
-                 "shipped work is merged to `main` — there is no unmerged work left to destroy, " \
-                 "and a gate that blocked this would wedge the DevOps loop's conclusion"
-    refute_empty result[:writes]
-  end
-
-  test "[integration] a task nobody ever picked up archives" do
-    result = archive(devops: { kind: "bug", repositories: ["mcritchie-studio"] })
-
-    assert_equal 0, result[:status].exitstatus,
-                 "no session, no mascot, no claim — a gate that refused this would refuse every " \
-                 "legitimate archive of an unclaimed idea"
-    refute_empty result[:writes]
-  end
-
-  # THE REGRESSION FOR THE MEASURED DEFECT (review send-back 1, 2026-09-02). Graded
-  # against the live board, the first cut of this gate refused 31 of 34 live tasks;
-  # all 31 `:working` refusals were held by the board clock, and 16 of them had NO
-  # DESK — provably nothing uncommitted to protect. The fixture serves a board write
-  # 12 seconds old, which is the ordinary state of any task Alex's clean-up has just
-  # triaged, and is what `holder_liveness_seconds_ago` reports for a task whose only
-  # artifact is its own CREATE.
-  test "[integration] an identifiable, provably-abandoned holder archives" do
-    # A session we CAN check: named, its lease long lapsed, and no desk on this
-    # machine. Every channel that attests WORK AT RISK is silent — checked, and found
-    # gone — while the board clock reads fresh, as the board's does for every task.
-    devops = UNIDENTIFIABLE.merge(
-      session_id: HOLDER_SESSION,
-      claimed_session: HOLDER_SESSION,
-      claim_expires_at: (Time.now - 7200).utc.iso8601,
-      worktree_slug: "probe-task-no-such-desk"
-    )
-    result = archive(devops: devops)
-
-    assert_equal 0, result[:status].exitstatus,
-                 "this is exactly what the gate is supposed to let through: a holder we could " \
-                 "identify, went and checked, and proved had walked away. A fresh board " \
-                 "timestamp is not evidence of work at risk — it is the signal this very " \
-                 "verb writes, and holding on it refused 16 desk-less tasks"
-    refute_empty result[:writes]
-  end
-
-  # THE NARROWING IS NOT A GUTTING. The gate's remaining channels must still stop the
-  # archive cold, or this rework has traded one fatal failure for its twin.
-  test "[integration] a task whose gate is in flight is still refused" do
-    devops = UNIDENTIFIABLE.merge(
-      session_id: HOLDER_SESSION, claimed_session: HOLDER_SESSION,
-      claim_expires_at: (Time.now - 7200).utc.iso8601,
-      worktree_slug: "probe-task-no-such-desk"
-    )
-    result = archive(devops: devops, gate_in_flight: true)
-
-    assert_equal 1, result[:status].exitstatus,
-                 "a cert writes nothing into its desk for up to the measured 94-minute p99, " \
-                 "so a quiet desk mid-cert is a working one"
-    assert_empty result[:writes]
-    assert_includes result[:err], "gate", "and the refusal must name the channel that kept it"
-  end
-
-  test "[integration] a task parked on the operator is still refused" do
-    devops = UNIDENTIFIABLE.merge(
-      session_id: HOLDER_SESSION, claimed_session: HOLDER_SESSION,
-      claim_expires_at: (Time.now - 7200).utc.iso8601,
-      worktree_slug: "probe-task-no-such-desk", approval_status: "waiting"
-    )
-    result = archive(devops: devops)
-
-    assert_equal 1, result[:status].exitstatus,
-                 "a task waiting on Mr. McRitchie's local validation is blocked on a human, " \
-                 "not abandoned — and its work is sitting in front of him"
-    assert_empty result[:writes]
-    assert_includes result[:err], "approval"
-  end
-
-  # ── AND THE GATE MUST NOT LEAK ONTO OTHER TRANSITIONS ───────────────────────
-
-  test "[integration] a non-archive move is not subject to the holder gate" do
-    result = archive(devops: UNIDENTIFIABLE, stage: "submitted", to: "reviewed")
-
-    assert_equal 0, result[:status].exitstatus,
-                 "only `archived` is terminal and destructive; gating the whole ladder would " \
-                 "stall every review handoff on a missing mascot"
-    refute_empty result[:writes]
-  end
-
-  # ── THE HELD CASE ───────────────────────────────────────────────────────────
-
-  test "[integration] archiving a task a LIVE session holds is refused and names the session" do
-    devops = UNIDENTIFIABLE.merge(
-      session_id: HOLDER_SESSION, claimed_session: HOLDER_SESSION,
-      claim_nonce: "holder01", claim_expires_at: (Time.now + 90).utc.iso8601
-    )
-    result = archive(devops: devops)
+  test "[integration] a dirty bound desk refuses the archive and sends NO write" do
+    result = archive(devops: PAINTED, desk: :dirty)
 
     assert_equal 1, result[:status].exitstatus
-    assert_empty result[:writes], "a live holder's uncommitted work must never be archived out from under it"
-    assert_includes result[:err], HOLDER_SESSION[-4..], "the refusal must name WHO holds it"
+    assert_empty result[:writes], "a PATCH here would archive over uncommitted work"
+    assert_includes result[:err], "uncommitted changes"
+    assert_includes result[:err], ".worktrees/#{SLUG}", "the refusal names the desk"
+    assert_includes result[:err], "bin/task move #{SLUG} archived --force", "and the override"
+  end
+
+  test "[integration] a dirty bound desk refuses even a shipped task" do
+    result = archive(devops: PAINTED, stage: "shipped", desk: :dirty)
+
+    assert_equal 1, result[:status].exitstatus
+    assert_empty result[:writes]
+  end
+
+  test "[integration] --force archives over a dirty desk and says so" do
+    result = archive(devops: PAINTED, desk: :dirty, flags: ["--force"])
+
+    assert_equal 0, result[:status].exitstatus, result[:err]
+    refute_empty result[:writes]
+    assert_includes result[:err], "--force"
+  end
+
+  # ── THE GATE MUST ALSO OPEN ─────────────────────────────────────────────────
+
+  test "[integration] a clean bound desk archives" do
+    result = archive(devops: PAINTED, desk: :clean)
+
+    assert_equal 0, result[:status].exitstatus, result[:err]
+    refute_empty result[:writes]
+  end
+
+  test "[integration] a task with only a mascot and no desk archives" do
+    result = archive(devops: PAINTED)
+
+    assert_equal 0, result[:status].exitstatus, result[:err]
+    refute_empty result[:writes]
+  end
+
+  test "[integration] a non-archive move is not subject to the holder gate" do
+    result = archive(devops: PAINTED, stage: "submitted", to: "reviewed", desk: :dirty)
+
+    assert_equal 0, result[:status].exitstatus, result[:err]
+    refute_empty result[:writes]
   end
 
   private
@@ -213,12 +95,12 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
   # from a completely different refusal, which would make the two assertions this file
   # turns on pass for the wrong reason. The message assertions are the backstop.
   #
-  # CLAUDE_PROJECTS_DIR is pinned into the tmpdir too, so the desk-liveness channel
-  # resolves against an empty projects root rather than the developer's real one — a
-  # test that read the operator's live .worktrees/ would answer differently on every
-  # machine and every day.
-  def archive(devops:, stage: "designed", to: "archived", flags: [], gate_in_flight: false)
+  # CLAUDE_PROJECTS_DIR is pinned into the tmpdir too, so the desk read resolves
+  # against a projects root holding only the desk this test builds (`desk:` :dirty or
+  # :clean), never the developer's real .worktrees/.
+  def archive(devops:, stage: "designed", to: "archived", flags: [], gate_in_flight: false, desk: nil)
     Dir.mktmpdir do |dir|
+      FakeDesk.build(dir, task_slug: SLUG, session: HOLDER_SESSION, dirty: desk == :dirty) if desk
       writes = []
       err = status = nil
       env = SessionEnv.neutralized(

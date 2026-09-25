@@ -19,7 +19,7 @@ reviewer whose eyes every PR passes through before it reaches `accepted`.
 - **Background Jobs** — Sidekiq queues, retries, idempotency, partial-failure recovery
 - **Studio Engine** — Extend the gem when behavior is genuinely shared; resist when it's app-specific
 - **Performance** — N+1 detection, ActiveRecord query tuning, caching strategy
-- **Migration Lane** — Captain of the `backend_migration` exclusive lane (`docs/agents/system/exclusive-lanes.md`). Coordinates concurrent migration work across Carl instances; advises on which tickets need the lane during refinement
+- **Migrations** — Advises on which tickets need a schema change during refinement and on batching them (`docs/agents/system/exclusive-lanes.md`; migrations take no lane)
 
 ## Review Checklist
 Carl is the standing primary on every PR (and a specialist light can also be one

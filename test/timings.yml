@@ -50,7 +50,6 @@ test/controllers/api/v1/event_grades_controller_test.rb: 0.39
 test/controllers/api/v1/gate_runs_controller_test.rb: 0.44
 test/controllers/api/v1/github_webhooks_controller_test.rb: 0.11
 test/controllers/api/v1/insights_controller_test.rb: 0.17
-test/controllers/api/v1/migration_lane_claims_controller_test.rb: 0.22
 test/controllers/api/v1/release_conductor_claims_controller_test.rb: 0.5
 test/controllers/api/v1/release_events_controller_test.rb: 1.53
 test/controllers/api/v1/release_notes_controller_test.rb: 0.16
@@ -137,7 +136,6 @@ test/integration/heartbeat_feedback_test.rb: 0.75
 test/integration/heartbeat_grade_auth_test.rb: 0.23
 test/integration/last_release_fx_router_test.rb: 1.01
 test/integration/links_hub_test.rb: 0.28
-test/integration/migration_lane_exclusion_race_test.rb: 1.89
 test/integration/model_page_adoption_test.rb: 0.5
 test/integration/onboarding_first_name_test.rb: 0.44
 test/integration/qa_green_stamp_ordering_test.rb: 0.93
@@ -331,7 +329,6 @@ test/models/game_test.rb: 0.26
 test/models/gate_run_test.rb: 1.04
 test/models/github_commit_range_test.rb: 0.04
 test/models/has_key_method_test.rb: 0.08
-test/models/migration_lane_claim_test.rb: 0.23
 test/models/model_pricing_test.rb: 0.15
 test/models/model_rate_override_test.rb: 0.09
 test/models/news_test.rb: 0.43

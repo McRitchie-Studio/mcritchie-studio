@@ -12,7 +12,7 @@ require "time"
 # was being built. A claim is held by a LIVE INSTANCE, not a bare session id:
 #
 #   claimed_session  — the agent session that holds the claim (CLAUDE_CODE_SESSION_ID)
-#   claim_nonce      — a per-PROCESS-instance token (see bin/task#claim_nonce). Two
+#   claim_nonce      — a per-PROCESS-instance token (see bin/lib/session_identity.rb). Two
 #                      terminals running `claude --resume <same id>` share the
 #                      session id but are different OS processes → different nonce.
 #   claim_expires_at — an ISO8601 TTL lease, renewed on a timer (the build lane's
@@ -89,9 +89,8 @@ module ClaimLease
   # can pop the same PR. Measured 2026-09-08: two reviews ended with a `release` that
   # no-op'd because the holder had changed underneath them.
   #
-  # The precedent is MigrationLaneClaim, whose 4h TTL reasons explicitly about not
-  # yanking a lane out from under live work. The same reasoning applies here, and so
-  # does the asymmetry this file already states for desks: a lease that outlives a
+  # The reasoning is not yanking a lane out from under live work, and so does the
+  # asymmetry this file already states for desks: a lease that outlives a
   # DEAD holder costs a delay, while one that lapses under a LIVE holder costs the
   # work itself — a duplicated review, and a verdict stranded when the second
   # reviewer takes the task.
@@ -147,8 +146,7 @@ module ClaimLease
   # review claim does not block the pipeline — `Task.reviewable` skips it and the
   # sweep reviews something else — so the cost is one task missing a review wave,
   # against a duplicated review whose cost is the whole review plus a stranded
-  # verdict. The ~6.8h bound stays inside one working session, as MigrationLaneClaim's
-  # 4h does.
+  # verdict. The ~6.8h bound stays inside one working session.
   #
   # THE BEAT IS DELIBERATELY NOT RE-DERIVED FROM THIS. ShiftRenewer::INTERVAL_SECONDS
   # stays TTL/4 of the SHARED constant (30s). Re-deriving it here would beat once per
@@ -174,7 +172,7 @@ module ClaimLease
   #                    corruption; destroying a desk heals nothing.
   #   :same_instance — held by THIS live instance (session AND nonce match) → re-move is fine
   #   :held_by_other — held by a DIFFERENT, still-live instance → EVERY consumer
-  #                    REFUSES on it; not one proceeds. MigrationLaneClaim /
+  #                    REFUSES on it; not one proceeds.
   #                    DevopsShift / TaskReviewClaim / ReleaseConductorClaim
   #                    return a false Outcome. (The build gate no longer reads
   #                    this lease: the desk is the build claim.) This line is

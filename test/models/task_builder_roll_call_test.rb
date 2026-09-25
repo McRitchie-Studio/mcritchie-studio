@@ -11,9 +11,9 @@
 # the LIGHT on Xan's own diff (PR #1081).
 #
 # `builders` accumulates instead — append-only, SERVER-OWNED (absent from
-# DEVOPS_KEYS, so no client can write or shrink it). `builders_unattributed` is the
-# half that keeps it fail-CLOSED: accumulating only helps while every claim names a
-# soul, so the claim that named NOBODY has to be able to say so.
+# DEVOPS_KEYS, so no client can write or shrink it). A claim that names NOBODY adds
+# nobody: the UNNAMED marker (devops.builders_unattributed) was deleted in devops-v3
+# 4b-ii-b, because authors are also derived from git (Task#derived_authors).
 require "test_helper"
 
 class TaskBuilderRollCallTest < ActiveSupport::TestCase
@@ -63,7 +63,6 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
 
     assert_equal "xan", task.reload.devops["built_by"], "built_by still names the CURRENT builder"
     assert_equal %w[steffon xan], authors(task), "and the set remembers the one it replaced"
-    assert_nil unattributed(task), "both claims named a soul — nothing is missing"
   end
 
   test "the set is seeded from a built_by stamped before the accumulator existed" do
@@ -96,72 +95,22 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     assert_equal %w[steffon], authors(task)
   end
 
-  # --- FAIL CLOSED: the handoff that named nobody -----------------------------
+  # --- THE UNNAMED MARKER IS GONE -------------------------------------------
 
-  test "an anonymous claim by a DIFFERENT session marks the set incomplete" do
+  test "an anonymous claim by a DIFFERENT session adds nobody and marks nothing" do
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
 
     claim!(task, actor: nil, session: ALEX_SESSION)
 
     assert_equal %w[steffon], authors(task), "steffon is still the only name we have"
-    assert_equal ALEX_SESSION, unattributed(task),
-      "but the record now says another session worked this and went unnamed"
+    assert_nil unattributed(task), "the UNNAMED marker is deleted — nothing records the session"
   end
 
-  test "a statusline lease RENEWAL is not a handoff" do
-    # The heartbeat renews every few seconds with no actor. Treating that as an
-    # anonymous handoff would refuse every task in the fleet, and a guard that cries
-    # wolf gets routed around — which is worse than the bug.
-    task = new_task
-    claim!(task, actor: "steffon", session: STEFFON_SESSION)
-
-    5.times { claim!(task, actor: nil, session: STEFFON_SESSION) }
-
-    assert_nil unattributed(task), "the same party heartbeating is not a change of hands"
-    assert_equal %w[steffon], authors(task)
-  end
-
-  test "a second PROCESS of the same session is not a handoff either" do
-    # `claude --resume <id>` in a second terminal: same party, new nonce.
-    task = new_task
-    claim!(task, actor: "steffon", session: STEFFON_SESSION)
-
-    claim!(task, actor: nil, session: STEFFON_SESSION)
-
-    assert_nil unattributed(task), "the nonce distinguishes processes, not parties"
-  end
-
-  test "the unnamed session clears the gap by naming itself" do
-    task = new_task
-    claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: nil, session: ALEX_SESSION)
-    assert_equal ALEX_SESSION, unattributed(task)
-
-    claim!(task, actor: "xan", session: ALEX_SESSION)
-
-    assert_nil unattributed(task), "the session we could not name has named itself"
-    assert_equal %w[steffon xan], authors(task)
-  end
-
-  test "a THIRD soul claiming by name does NOT clear another session's gap" do
-    # Clearing on any named claim would hand the fail-open straight back: jasper
-    # saying who HE is says nothing about who the unnamed session was.
-    task = new_task
-    claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: nil, session: ALEX_SESSION)
-
-    claim!(task, actor: "jasper", session: "s3f2a4c5-6d7e-4f80-9b12-c3d4e5f6a7b8")
-
-    assert_equal ALEX_SESSION, unattributed(task), "the gap is still open"
-    assert_equal %w[steffon jasper], authors(task)
-  end
-
-  test "a FIRST claim that names nobody leaves no gap — a blank builder already refuses" do
+  test "a FIRST claim that names nobody stamps no author" do
     task = new_task
     claim!(task, actor: nil, session: STEFFON_SESSION)
 
-    assert_nil unattributed(task), "there was no author to mask"
     assert_nil authors(task)
     assert_nil task.reload.devops["built_by"]
   end
@@ -225,7 +174,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     assert_equal 2, seated.uniq.size, "a pair still forms"
   end
 
-  test "end to end: an unnamed handoff makes the reviewer selection REFUSE" do
+  test "end to end: an unnamed handoff still selects, excluding the named author" do
     task = new_task
     task.update!(metadata: { "devops" => task.devops.merge("shape" => "backend") })
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
@@ -233,9 +182,8 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
 
     decision = ReviewerSelector.explain(task.reload)
 
-    assert_equal false, decision["builder_known"],
-      "an author we cannot name is not an author we can exclude"
-    assert_equal ALEX_SESSION, decision["builders_unattributed"]
+    assert_equal true, decision["builder_known"], "a named author on record is a known set"
+    refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "steffon"
   end
 
   # --- THE AUTHOR WHO NEVER CLAIMED (the submit half) -------------------------
@@ -246,114 +194,40 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
   # set held only shannon, so the selector excluded a soul who wrote nothing and
   # left the real author in the pool at xan:0.9968, ranked 3rd.
 
-  test "shipping from a session that never claimed marks the set incomplete" do
-    # THE ACCEPTANCE CASE. Claim by soul A, ship from soul B's session. Before this
-    # change the record read complete and named only A.
+  test "shipping from a session that never claimed adds nobody" do
     task = new_task
     claim!(task, actor: "shannon", session: STEFFON_SESSION)
-    assert_nil unattributed(task), "one named claim leaves no gap"
 
     submit!(task, actor: ALEX_SESSION)
 
-    assert_equal %w[shannon], authors(task), "shannon is still the only NAME we have"
-    assert_equal ALEX_SESSION, unattributed(task),
-      "but another session shipped this, so the author set is INCOMPLETE"
+    assert_equal %w[shannon], authors(task), "a bare session names nobody"
+    assert_nil unattributed(task), "and the UNNAMED marker is not written"
   end
 
   test "an author who names themselves at submit joins the set" do
-    # Option 1's escape hatch, riding the flag that already exists — no new one to
-    # forget, and forgetting it fails CLOSED via the case above.
     task = new_task
     claim!(task, actor: "shannon", session: STEFFON_SESSION)
 
     submit!(task, actor: "xan")
 
     assert_equal %w[shannon xan], authors(task), "the soul who shipped it is an author too"
-    assert_nil unattributed(task), "nobody is missing — both are named"
     assert_equal "shannon", task.reload.devops["built_by"],
       "and built_by keeps its meaning: the soul who CLAIMED the desk"
   end
 
-  test "the claimer shipping their OWN work raises no flag" do
-    # The overwhelmingly common case. A guard that cries wolf here gets routed
-    # around, so the ordinary ship must be byte-identical to before.
-    task = new_task
-    claim!(task, actor: "shannon", session: STEFFON_SESSION)
-
-    submit!(task, actor: STEFFON_SESSION)
-
-    assert_equal %w[shannon], authors(task)
-    assert_nil unattributed(task), "same session claimed and shipped — no handover happened"
-  end
-
-  test "an operator moving the card on the board is not a shipping session" do
-    # TasksController sets the actor to current_user.email for a web move. Dragging
-    # a card to `submitted` says nothing about who wrote the diff, and refusing the
-    # review over it would be the wolf-crying that gets a guard disabled.
-    task = new_task
-    claim!(task, actor: "shannon", session: STEFFON_SESSION)
-
-    submit!(task, actor: "alex@mcritchie.studio")
-
-    assert_equal %w[shannon], authors(task)
-    assert_nil unattributed(task), "a board action carries no authorship claim"
-  end
-
-  test "a submit with no claim session on record leaves no gap" do
-    # Nothing to differ FROM. A claim that recorded no session (plain shell / CI) is
-    # already the degraded path; inferring a handover from its ABSENCE would flag
-    # every such task.
-    task = new_task
-    Current.task_event_actor = "shannon"
-    task.update!(stage: "building", metadata: { "devops" => {} })
-    Current.reset
-    assert_equal %w[shannon], authors(task)
-    assert_equal "", task.reload.devops["claimed_session"].to_s
-
-    submit!(task, actor: ALEX_SESSION)
-
-    assert_nil unattributed(task), "no claimed session means no handover to detect"
-  end
-
   test "a later write to an ALREADY submitted task is not an authorship moment" do
     # Keyed on the TRANSITION. `bin/task update --checks`, a pr_url stamp, and the
-    # review's own writes all touch a submitted task; treating those as handoffs
-    # would let any passing session stamp one.
-    #
-    # The claim lease is PUT BACK with update_columns on purpose, and without it this
-    # test proves nothing about the guard it names: #stamp_build_claim_session
-    # strips claimed_session on any non-`building` save, so after the submit the
-    # BLANK-claim guard already refuses and `submit_save?` is never consulted.
-    # Verified by mutation — dropping `will_save_change_to_stage?` left the original
-    # version of this test green. The coupling is exactly why submit_save? asks about
-    # the TRANSITION and not the stage: the day that invariant changes, a `--checks`
-    # write must still not stamp a handoff.
+    # review's own writes all touch a submitted task; a soul actor on one of them
+    # must not join the author set.
     task = new_task
     claim!(task, actor: "shannon", session: STEFFON_SESSION)
     submit!(task, actor: STEFFON_SESSION)
-    assert_nil unattributed(task)
-    task.update_columns(metadata: { "devops" => task.reload.devops.merge("claimed_session" => STEFFON_SESSION) })
 
-    Current.task_event_actor = ALEX_SESSION
+    Current.task_event_actor = "xan"
     task.reload.update!(metadata: { "devops" => task.reload.devops.merge("pr_url" => "https://example.test/pr/1") })
     Current.reset
 
-    assert_nil unattributed(task), "a stamp on a submitted task is not a handover"
-  end
-
-  test "end to end: the unnamed shipper makes the reviewer selection REFUSE" do
-    # PR #1094 replayed. Today the selector ran happily, excluded shannon, and left
-    # xan a live light candidate.
-    task = new_task
-    task.update!(metadata: { "devops" => task.devops.merge("shape" => "backend") })
-    claim!(task, actor: "shannon", session: STEFFON_SESSION)
-    submit!(task, actor: ALEX_SESSION)
-
-    decision = ReviewerSelector.explain(task.reload)
-
-    assert_equal false, decision["builder_known"],
-      "an author we cannot name is not an author we can exclude"
-    assert_equal ALEX_SESSION, decision["builders_unattributed"]
+    assert_equal %w[shannon], authors(task), "a stamp on a submitted task is not a handover"
   end
 
   test "end to end: an author named at submit is kept OUT of the pool" do

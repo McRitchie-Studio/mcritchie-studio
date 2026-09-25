@@ -154,15 +154,6 @@ class Task < ApplicationRecord
     }
   }.freeze
   REVIEW_STATUSES = %w[started completed failed info].freeze
-  # The `backend_migration` exclusive-lane key (docs/agents/system/exclusive-lanes.md).
-  # The lane is CLAIMED through MigrationLaneClaim, not here. Task once carried a
-  # `try_acquire_migration_lane` / `release_migration_lane` pair wrapping
-  # `pg_try_advisory_lock(hashtext(...))`; both are gone. A session advisory lock
-  # could not back this lane — bin/task is an HTTP client with no DB connection,
-  # and a lock taken in a web request rides the POOLED connection past the
-  # response, where it is re-entrant (two acquires on one pooled connection are
-  # BOTH granted). See MigrationLaneClaim for the durable, unique-indexed claim.
-  MIGRATION_LANE = "backend_migration".freeze
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
   # The only stages where a WAITING operator-approval request is meaningful: the
   # ones where the LOCAL DEMO the request points at is still servable, so somebody
@@ -347,11 +338,9 @@ class Task < ApplicationRecord
   #     later, written by exactly one internal path (OpenPrGuard#record) and never by
   #     a flag or a form. Splitting one would read as more abandonments than happened,
   #     the mirror of the newline hazard that writer already defends against.
-  #   fix_forward — identifier-shaped, and a split would be safe. Left alone anyway
-  #     because its joined entry fails CLOSED: ReviewerSelector#builder_known? needs
-  #     fix_forward_unnamed empty, so "carl,steffon" makes the selector REFUSE and a
-  #     human looks. Repairing it quietly would trade a loud stall for a silent
-  #     auto-correct on the no-self-review guarantee.
+  #   fix_forward — identifier-shaped, and a split would be safe. Left alone: a
+  #     joined "carl,steffon" entry names no soul and adds nobody, and bin/task
+  #     fix-forward already splits its --agent list before posting.
   # The rule is ASSERTED, not merely described here:
   # test/models/task_devops_identifier_lists_test.rb asks the prose question over the
   # COMPLEMENT of this constant, so a key wrongly added here fails there as well.
@@ -1153,15 +1142,6 @@ class Task < ApplicationRecord
     Array(devops["builders"]).map { |s| self.class.canonical_soul(s) }.select(&:present?).uniq
   end
 
-  # The claiming session that named NO soul while other authors were already on
-  # record — i.e. "someone else worked this task and the record cannot say who".
-  # Present ⇒ the author set is INCOMPLETE, ReviewerSelector reports the builder
-  # UNKNOWN, and `bin/reviewer-select` refuses rather than rolling a reviewer who
-  # might be that someone. Server-owned like #devops_builders.
-  def devops_builders_unattributed
-    devops.fetch("builders_unattributed", "").presence
-  end
-
   # WHO MOVED THE PR HEAD OUTSIDE THE BUILD CLAIM — the reviewer fix-forward (a
   # "zap"), recorded by `bin/task fix-forward` and posted by bin/pr-review at the
   # seam where it already PROVES the head moved during review.
@@ -1182,8 +1162,7 @@ class Task < ApplicationRecord
   # ENTRIES THAT NAME A SOUL join `builders` (never `built_by` — a reviewer
   # recorded as the CURRENT builder of the PR he reviewed is the same defect
   # inverted; the same rule #reviewer_taking_the_build? already enforces). Entries
-  # that name NO soul are the "we saw a fix-forward and cannot attribute it" marker
-  # — ReviewerSelector reads them as an INCOMPLETE author set and the CLI refuses.
+  # that name no soul add nobody.
   def devops_fix_forward
     Array(devops["fix_forward"]).map { |slug| self.class.canonical_soul(slug) }.reject(&:empty?)
   end
@@ -3210,12 +3189,11 @@ class Task < ApplicationRecord
     # a confidently-wrong author set is worse than a refusing one.
     soul = (named unless reviewer_taking_the_build?(named)) ||
            self.class.canonical_soul(prior_devops["built_by"]).presence
-    authors, unattributed = builder_roll_call(claim, named, soul)
+    authors = builder_roll_call(claim, named, soul)
 
-    return if soul.nil? && authors.empty? && unattributed.nil?
+    return if soul.nil? && authors.empty?
     return if metadata["devops"]["built_by"].to_s == soul.to_s &&
-              Array(metadata["devops"]["builders"]) == authors &&
-              metadata["devops"]["builders_unattributed"].to_s == unattributed.to_s
+              Array(metadata["devops"]["builders"]) == authors
 
     merged = metadata.deep_dup
     merged["devops"]["built_by"] = soul if soul
@@ -3224,15 +3202,10 @@ class Task < ApplicationRecord
     else
       merged["devops"].delete("builders")
     end
-    if unattributed
-      merged["devops"]["builders_unattributed"] = unattributed
-    else
-      merged["devops"].delete("builders_unattributed")
-    end
     self.metadata = merged
   end
 
-  # THE AUTHOR SET, and whether it is COMPLETE. Returns [authors, unattributed].
+  # THE AUTHOR SET. Returns the authors.
   #
   # `built_by` holds ONE soul, but a task can have SEVERAL authors: a session limit
   # kills a builder mid-work and another soul finishes the job. Rule 1 of
@@ -3253,19 +3226,10 @@ class Task < ApplicationRecord
   # client attempt to write it and this callback rebuilds it from the prior record
   # on every save. A client can no more shrink the author set than forge it.
   #
-  # `unattributed` is the half that keeps this FAIL-CLOSED. Accumulating only helps
-  # when each claim names a soul; the handoff that names NOBODY (a bare `bin/task
-  # move <slug> building`, actor a session UUID) would otherwise leave a set of one
-  # that READS complete — the original bug, one layer along. When a claim from a
-  # DIFFERENT live instance resolves no soul while authors are already on record, we
-  # record WHICH session we could not name. Present ⇒ "someone else worked this and
-  # we cannot say who" ⇒ ReviewerSelector reports the builder UNKNOWN and the CLI
-  # refuses. It clears when that same session finally identifies itself.
-  #
-  # Keyed on the claiming SESSION (claimed_session, #stamp_build_claim_session)
-  # rather than on the claim save alone, so a re-claim by the same session is not
-  # read as an anonymous handoff: a guard that cries wolf gets routed around. (The
-  # timer renewals this once had to tolerate are retired with the build lease.)
+  # A claim or submit that names NO soul adds nobody. The UNNAMED marker that once
+  # recorded such a session (devops.builders_unattributed) is deleted (devops-v3
+  # 4b-ii-b): authors are also derived from git (Task#derived_authors), so a
+  # session-only claim no longer makes the set unknowable.
   #
   # TWO authorship moments, not one. Accumulating on the CLAIM alone still misses the
   # author who never claimed — see the `submit_save?` branch below, which closes that
@@ -3282,19 +3246,9 @@ class Task < ApplicationRecord
               .map { |s| self.class.canonical_soul(s) }.select { |s| self.class.soul?(s) }.uniq
     soul = self.class.canonical_soul(soul) if soul
     authors |= [soul] if soul && self.class.soul?(soul)
-    unattributed = prior_devops["builders_unattributed"].to_s.strip.presence
 
     if claim
-      if named
-        authors |= [named]
-        # The session we could not name has now named itself — the gap it opened is
-        # closed. ONLY that session closes it: a THIRD soul claiming by name says
-        # nothing about who the second one was, and clearing on any named claim
-        # would hand the fail-open straight back.
-        unattributed = nil if unattributed == claiming_party_id
-      elsif authors.any? && claim_party_changed?
-        unattributed = claiming_party_id
-      end
+      authors |= [named] if named
     elsif submit_save?
       # THE AUTHOR IS NOT ALWAYS THE CLAIMER — the half the accumulator above cannot
       # see. Everything before this point keys on the CLAIM, so a soul who never
@@ -3310,25 +3264,10 @@ class Task < ApplicationRecord
       # human decides, while this one fails CONFIDENTLY WRONG. It is also the standard
       # shape of a session-limit handover, which happened FOUR times that day.
       #
-      # So the SUBMIT is an authorship moment too, and it is the right one: it is the
-      # save that turns a diff into a PR, so whoever drives it is the party handing
-      # over work. Two outcomes, mirroring the claim above:
-      #   NAMED — `--actor <soul>` on the submit ADDS that soul to the set. The
-      #     handover author can therefore declare themselves through the flag that
-      #     already exists, with no new one to remember.
-      #   UNNAMED — a bare submit carries the mover's SESSION as its actor. When that
-      #     session is provably not the one that claimed the task, an author worked
-      #     here whom the record cannot name, which is precisely what
-      #     `builders_unattributed` already means: ReviewerSelector reports the authors
-      #     UNKNOWN and the CLI refuses. Omitting the flag is therefore LOUD (a refusal
-      #     a human must clear) rather than silent, which is the failure mode that
-      #     produced /tasks/agent-flag-silently-drops.
+      # So the SUBMIT is an authorship moment too: `--actor <soul>` on the submit
+      # ADDS that soul to the set. A bare submit names nobody and adds nobody.
       actor = Current.task_event_actor.to_s.strip
-      if self.class.soul?(actor)
-        authors |= [actor]
-      elsif authors.any? && (shipper = handoff_shipping_party(actor))
-        unattributed = shipper
-      end
+      authors |= [actor] if self.class.soul?(actor)
     end
 
     # THE THIRD AUTHORSHIP MOMENT — the REVIEWER FIX-FORWARD (a "zap"), which is
@@ -3348,9 +3287,7 @@ class Task < ApplicationRecord
     # save, so re-folding it is idempotent and a task cannot lose its zap author to
     # an unrelated write. Entries that name no soul are deliberately dropped here and
     # read by ReviewerSelector instead — see #devops_fix_forward.
-    authors |= fix_forward_authors
-
-    [authors, unattributed]
+    authors | fix_forward_authors
   end
 
   # The souls named by `devops.fix_forward`, current save and prior record unioned.
@@ -3369,51 +3306,6 @@ class Task < ApplicationRecord
   # and treating them as such would let any passing session stamp a handoff.
   def submit_save?
     stage == "submitted" && will_save_change_to_stage?
-  end
-
-  # The SHIPPING session, when it is provably NOT the one holding the claim — the
-  # signature of an author who never claimed. nil (no signal, stay silent) unless
-  # every part of that is on record, because a guard that cries wolf gets routed
-  # around and this one has to survive the ordinary case untouched:
-  #   - a blank actor says nothing (a plain shell / CI submit stamps no actor);
-  #   - a soul actor is handled by the caller — it NAMES the author rather than
-  #     flagging one, so it never reaches here;
-  #   - an operator EMAIL is a board action, not a shipping session. Dragging a card
-  #     to `submitted` on the web is not evidence about who wrote the diff, and
-  #     stamping it would refuse reviews for a move that carries no authorship claim
-  #     at all (TasksController sets the actor to current_user.email there);
-  #   - a BLANK claimed_session leaves nothing to differ FROM. A claim that recorded
-  #     no session (plain shell / CI) is already the degraded path; inferring a
-  #     handover from its absence would flag every such task;
-  #   - and the common case by far — the claimer ships their OWN work, actor ==
-  #     claimed_session — must produce no signal whatsoever.
-  # What remains is the exact PR #1094 shape: session A claimed, session B shipped.
-  def handoff_shipping_party(actor)
-    return nil if actor.empty? || actor.include?("@")
-
-    claimed = prior_devops["claimed_session"].to_s.strip
-    return nil if claimed.empty? || actor == claimed
-
-    actor
-  end
-
-  # The party holding the claim — the agent SESSION (ClaimLease's `claimed_session`).
-  # Not the session+nonce pair: the nonce distinguishes two PROCESSES of one session
-  # (the operator's terminal-A/terminal-B case), which is the same party working, so
-  # keying on it would refuse to clear a gap the same soul had just closed from a
-  # restarted terminal. "unknown" when the claim names no session, so an
-  # unattributed handoff is still recorded (and still clearable) for want of an id.
-  def claiming_party_id
-    devops = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
-    devops["claimed_session"].to_s.strip.presence || "unknown"
-  end
-
-  # True when a DIFFERENT party is claiming than the one on record — a handoff, not
-  # a heartbeat. claim_expires_at moves on every statusline renewal by design and
-  # claim_nonce moves on every new process, so neither can mark a change of hands.
-  def claim_party_changed?
-    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
-    current["claimed_session"].to_s != prior_devops["claimed_session"].to_s
   end
 
   # True when THIS save is a build claim: the task lands (or sits) on `building`
@@ -3934,8 +3826,8 @@ class Task < ApplicationRecord
   # 120s lease it replaced (claimed_session + claim_nonce + claim_expires_at, renewed
   # by a detached renewer and the status line) is gone. ONE key survives, as an
   # attribution record rather than a lease: devops.claimed_session names the session
-  # that made the last build claim, which the author roll call (#builder_roll_call,
-  # #handoff_shipping_party) reads. Nothing expires or renews it.
+  # that made the last build claim, which the review-claim seam
+  # (#live_reviewing_party_claim) reads. Nothing expires or renews it.
   #
   #   - a BUILD CLAIM save stamps it from #claiming_session;
   #   - any other save on a `building` task keeps the stored value, so a client

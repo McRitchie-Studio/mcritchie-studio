@@ -174,8 +174,8 @@ Launcher: [`../agents/carl/HEARTBEAT.md`](../agents/carl/HEARTBEAT.md); SOPs
      `accepted`, `bin/task merged <task> accepted`, then `bin/task move <task>
      reviewed` (merge → stamp → move).
   4. **Problems** → Carl, who holds the review claim, blocks: `bin/task block
-     <task> --kind rework --feedback "…" --agent carl` (only the claim's holder may
-     spend the bounce; anyone else is refused with exit 11). The **two-bounce
+     <task> --kind rework --feedback "…" --agent carl` (only the claim's holder
+     spends the bounce). The **two-bounce
      circuit breaker** REFUSES a repeat send-back (exit 10) and names the
      `dependency` escalation instead; read it with `bin/task bounces <task>`. A
      MECHANICAL bounce (red CI, merge conflict) proceeds on `--breaker-ack "<reason>"`.

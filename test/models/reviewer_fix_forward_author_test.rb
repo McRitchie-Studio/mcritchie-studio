@@ -133,51 +133,29 @@ class ReviewerFixForwardAuthorTest < ActiveSupport::TestCase
     assert_equal %w[shannon steffon], task.devops_builders
   end
 
-  # --- THE FAIL-CLOSED HALF ----------------------------------------------------
+  # --- A FIX-FORWARD THAT NAMES NOBODY ---------------------------------------
+  #
+  # The UNNAMED marker (and the refusal it drove) was deleted in devops-v3 4b-ii-b:
+  # the pusher's commit carries its git author, which Task#derived_authors reads. An
+  # entry that names no soul — a legacy "unattributed" marker or a typo — adds nobody
+  # and never renders as an author.
+  def test_a_non_soul_fix_forward_entry_adds_nobody
+    %w[unattributed stefon].each do |entry|
+      task = fix_forward!(submitted_task(builder: "shannon"), entry)
+      decision = decide(task)
 
-  # A fix-forward nobody can attribute must REFUSE, not pass. "No fix-forward
-  # happened" and "one happened and we cannot name who" are opposite facts, and only
-  # the second has a commit in the diff whose author is somewhere in the pool.
-  def test_unnamed_fix_forward_makes_the_author_set_incomplete
-    task = fix_forward!(submitted_task(builder: "shannon"), "unattributed")
-    decision = decide(task)
-
-    refute decision["builder_known"],
-           "an unattributable fix-forward leaves the author set INCOMPLETE — the CLI must refuse"
-    assert_includes Array(decision["fix_forward_unnamed"]), "unattributed"
-    refute_includes Array(decision["builders"]), "unattributed",
-                    "a marker is not a soul and must never render as an author"
+      refute_includes task.devops_builders, entry
+      refute_includes Array(decision["builders"]), entry, "a non-soul is never an author"
+      assert decision["builder_known"], "the named builder still makes the set known"
+    end
   end
 
-  # And it CLEARS when the pusher is finally named — otherwise the refusal is a dead
-  # end and the only way past it is the lever that lifts the guard entirely.
-  def test_naming_the_pusher_clears_the_refusal
-    task = fix_forward!(submitted_task(builder: "shannon"), "unattributed")
-    refute decide(task)["builder_known"]
-
-    decision = decide(fix_forward!(task, "steffon"))
-
-    assert decision["builder_known"], "naming who pushed settles the question"
-    assert_includes Array(decision["excluded_builders"]), "steffon"
-  end
-
-  # The caller's explicit override stays authoritative over the record, exactly as it
-  # is for every other author source — the documented escape hatch out of a refusal.
-  def test_builder_override_outranks_an_unnamed_fix_forward
+  # The caller's explicit override stays authoritative over the record.
+  def test_builder_override_outranks_the_record
     task = fix_forward!(submitted_task(builder: "shannon"), "unattributed")
     decision = decide(task, builder: "shannon,steffon")
 
     assert decision["builder_known"]
     assert_equal %w[shannon steffon].sort, Array(decision["builders"]).sort
-  end
-
-  # A typo'd handle is not a soul, so it must not read as an author — it reads as the
-  # unnamed marker does, and refuses. An unrecognised slug must never do better than
-  # silence (the rule Task.soul? already enforces for --builder).
-  def test_a_non_soul_entry_never_becomes_an_author
-    task = fix_forward!(submitted_task(builder: "shannon"), "stefon")
-
-    refute_includes task.devops_builders, "stefon"
-    refute decide(task)["builder_known"], "a fix-forward naming nobody is still a fix-forward"
   end
 end

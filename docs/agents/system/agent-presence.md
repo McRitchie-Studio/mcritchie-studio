@@ -90,9 +90,9 @@ surface; the guard retired with the local certs (DevOps v3 phase 2b, 2026-09-24)
 and the rule now lives in `bin/lib/process_table.rb`. It is the entire answer to the constraint that makes or breaks this
 design, and it is why the design is not a heartbeat.
 
-**Why not a heartbeat or a TTL lease.** The house already has five TTL leases
-(`Task`, `DevopsShift`, `TaskReviewClaim`, `ReleaseConductorClaim`,
-`MigrationLaneClaim`),
+**Why not a heartbeat or a TTL lease.** The house had five TTL leases
+(`Task`, `DevopsShift`, `TaskReviewClaim`, `ReleaseConductorClaim`, and the since
+deleted `MigrationLaneClaim`),
 and they have already demonstrated the failure mode twice:
 
 - The shift lease was renewed by `bin/statusline` — i.e. by a *UI paint*, not by

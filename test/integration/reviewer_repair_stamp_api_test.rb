@@ -155,7 +155,6 @@ class ReviewerRepairStampApiTest < ActionDispatch::IntegrationTest
 
     devops = task.reload.metadata["devops"]
     assert_equal ["shannon"], devops["builders"], "a heartbeat names nobody and claims nothing"
-    assert_nil devops["builders_unattributed"]
     assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
   end
 end

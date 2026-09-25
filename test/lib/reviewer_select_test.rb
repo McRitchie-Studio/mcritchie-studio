@@ -907,31 +907,14 @@ class ReviewerSelectCliTest < Minitest::Test
     assert_match(/xan \(author/, out, "the co-author must appear on the excluded line too")
   end
 
-  def test_an_incomplete_author_set_REFUSES
-    # A claim that named nobody while another author was on record: the set READS
-    # complete (one soul, present) and is not. Exit 2, and nothing is recorded.
-    out, code = select_verbose({ "shape" => "backend", "built_by" => "steffon",
-                                 "builders" => %w[steffon],
-                                 "builders_unattributed" => "sess-xan-0001" }, "--no-record")
-    assert_equal 2, code, out
-    assert_match(/REFUSED/, out)
-    assert_match(/INCOMPLETE/, out, "the refusal must say WHY one name is not enough")
-    assert_match(/sess-xan-0001/, out, "and name the session it could not attribute")
-    refute_match(/^PRIMARY/, out, "a blind pair must never be printed")
-  end
-
-  def test_naming_every_author_lifts_the_refusal
-    # The escape hatch, stated as a fact rather than smuggled through --busy (which
-    # is what saved the live review, and says the wrong thing).
+  def test_a_legacy_unnamed_marker_no_longer_refuses
+    # devops.builders_unattributed was deleted in devops-v3 4b-ii-b; a record still
+    # carrying it selects on its named authors.
     out, code = select({ "shape" => "backend", "built_by" => "steffon",
                          "builders" => %w[steffon],
-                         "builders_unattributed" => "sess-xan-0001" },
-                       "--builder steffon,xan --json")
+                         "builders_unattributed" => "sess-xan-0001" }, "--json --no-record")
     assert_equal 0, code, out
-
     decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
-    assert_equal %w[steffon xan], decision["builders"]
-    refute_includes decision["candidates"], "xan"
     refute_includes decision["candidates"], "steffon"
   end
 
@@ -1093,39 +1076,14 @@ class ReviewerSelectCliTest < Minitest::Test
     refute_includes decision["reviewers"].map { |r| r["slug"] }, "steffon"
   end
 
-  # THE FAIL-CLOSED HALF. A fix-forward nobody could attribute is not "no
-  # fix-forward" — a commit is provably in the diff whose author is somewhere in the
-  # pool — so the pick must refuse rather than roll.
-  def test_refuses_when_a_fix_forward_author_is_unnamed
-    out, code = select_verbose({ "shape" => "backend", "built_by" => "shannon",
-                                 "fix_forward" => ["unattributed"] }, "--no-record")
-
-    assert_equal 2, code, out
-    assert_match(/A FIX-FORWARD AUTHOR IS UNNAMED/, out,
-                 "the headline must name the fact refused on — the authors here are KNOWN " \
-                 "and INCOMPLETE, which is a different remedy from an unstamped task")
-    assert_match(/bin\/task fix-forward/, out, "the refusal must print the durable remedy")
-  end
-
-  # `--builder none` asserts that NO soul built the task. Offering it here would hand
-  # the reader a lever that clears the refusal by DENYING its premise — a commit that
-  # demonstrably exists.
-  def test_the_unnamed_refusal_never_offers_builder_none
-    out, _code = select_verbose({ "shape" => "backend", "built_by" => "shannon",
-                                  "fix_forward" => ["unattributed"] }, "--no-record")
-
-    refute_match(/--builder none/, out)
-  end
-
-  # And the caller's explicit override still clears it — the escape hatch every other
-  # author refusal has, or this one gets routed around instead of answered.
-  def test_naming_every_author_clears_the_unnamed_fix_forward_refusal
+  # A non-soul fix-forward entry (the legacy "unattributed" marker) no longer
+  # refuses: the pick proceeds on the named authors.
+  def test_a_legacy_unnamed_fix_forward_no_longer_refuses
     out, code = select({ "shape" => "backend", "built_by" => "shannon",
-                         "fix_forward" => ["unattributed"] },
-                       "--json", "--no-record", "--builder", "shannon,steffon")
+                         "fix_forward" => ["unattributed"] }, "--json", "--no-record")
 
     assert_equal 0, code, out
     decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
-    assert_equal %w[shannon steffon].sort, decision["builders"].sort
+    assert_equal %w[shannon], decision["builders"]
   end
 end

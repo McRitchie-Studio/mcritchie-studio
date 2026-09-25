@@ -235,13 +235,8 @@ tasks. If anything is missing, note it as a finding; do not guess.
      (escalate); any other non-zero = a FAILED read or an unknown slug, never a
      zero. The block command runs the same check and REFUSES a second bounce.
 
-     **The bounce is YOURS, and only yours.** During your live review claim, a
-     `--kind rework` block by any soul other than the claim's holder is REFUSED
-     with **exit 11** and writes nothing, including one from the light you
-     summoned. Pass `--agent carl` so your block matches your claim. If YOUR block
-     is refused with exit 11, `bin/task review-claim status <task-slug>` says who
-     holds the claim, and `bin/task review-claim acquire <task-slug> --agent carl`
-     renews it in your name.
+     **The bounce is YOURS, and only yours** — not the light's you summoned.
+     Pass `--agent carl` so your block is attributed to you.
 
      On TRIPPED, escalate instead: `bin/task block <task-slug> --kind dependency
      --summary "Escalated: <4-6 word disagreement>" --feedback "<both positions,
