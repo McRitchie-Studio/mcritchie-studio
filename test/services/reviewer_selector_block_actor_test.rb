@@ -51,7 +51,7 @@ class ReviewerSelectorBlockActorTest < ActiveSupport::TestCase
 
   def strip_author_fields!(task)
     metadata = task.reload.metadata.deep_dup
-    metadata["devops"] = (metadata["devops"] || {}).except("built_by", "builders", "builders_unattributed")
+    metadata["devops"] = (metadata["devops"] || {}).except("built_by", "builders")
     task.update_column(:metadata, metadata)
     task.reload
   end

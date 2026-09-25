@@ -220,7 +220,7 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     handoff!(task, actor: "xan", session: ALEX_SESSION, at: 1.minute.from_now)
 
     patch "/api/v1/tasks/#{task.slug}",
-          params: { devops: { builders: ["shannon"], builders_unattributed: "" } },
+          params: { devops: { builders: ["shannon"] } },
           headers: { "Authorization" => "Bearer #{token}" }, as: :json
 
     assert_response :success
@@ -245,11 +245,10 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
 
   # --- THE AUTHOR WHO NEVER CLAIMED, over the API the CLI calls ---------------
 
-  test "shipping from a session that never claimed leaves the authors UNKNOWN" do
-    # PR #1094 driven through the real route: shannon's agent claims the desk and
-    # dies to a session limit; ALEX writes the diff and runs bin/ship. The board saw
-    # a complete author set naming shannon alone, and the selector duly excluded a
-    # soul who had written nothing.
+  test "shipping from a session that never claimed keeps the named author and selects" do
+    # The UNNAMED marker is deleted (devops-v3 4b-ii-b): a bare shipping session
+    # names nobody and adds nobody, and the selector proceeds on the set it has
+    # (plus the authors derived from git, empty in test).
     task = Task.create!(title: "Shipped By Another Soul", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
     claim_with_lease!(task, actor: "shannon", session: "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b")
@@ -260,10 +259,8 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     assert_response :success
     devops = task.reload.metadata["devops"]
     assert_equal %w[shannon], devops["builders"], "shannon is the only NAME on record"
-    assert_equal "02a41c7d-4b9e-84c2-af9c-041f22ac02c7", devops["builders_unattributed"],
-                 "and the session that shipped it is recorded as an author we cannot name"
-    assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"],
-                 "so the selector must refuse rather than seat a pool holding the author"
+    assert_nil devops["builders_unattributed"], "no UNNAMED marker is written"
+    assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"]
   end
 
   test "a soul named on the submit is recorded as an author over the API" do
@@ -276,33 +273,11 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     assert_response :success
     devops = task.reload.metadata["devops"]
     assert_equal %w[shannon xan], devops["builders"]
-    assert_nil devops["builders_unattributed"], "both authors are named — nothing is missing"
     refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "xan",
                     "and naming him actually keeps him off his own diff"
   end
 
-  test "a client cannot clear the unattributed flag by posting it blank" do
-    # SERVER-OWNED, like `builders` itself: the flag is the refusal, so a client that
-    # could drop it could lift the refusal on its own PR.
-    task = Task.create!(title: "Forge The Unattributed Flag", stage: "designed",
-                        metadata: { "devops" => { "shape" => "backend" } })
-    claim_with_lease!(task, actor: "shannon", session: "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b")
-    submit!(task, actor: "02a41c7d-4b9e-84c2-af9c-041f22ac02c7")
-    assert_equal "02a41c7d-4b9e-84c2-af9c-041f22ac02c7",
-                 task.reload.metadata.dig("devops", "builders_unattributed")
-
-    patch "/api/v1/tasks/#{task.slug}",
-          params: { devops: { "builders_unattributed" => "", "builders" => [] } },
-          headers: { "Authorization" => "Bearer #{token}" }, as: :json
-
-    assert_response :success
-    devops = task.reload.metadata["devops"]
-    assert_equal "02a41c7d-4b9e-84c2-af9c-041f22ac02c7", devops["builders_unattributed"],
-                 "the flag survives a client trying to post it away"
-    assert_equal %w[shannon], devops["builders"], "and so does the author set"
-  end
-
-  test "the claimer shipping their own work records no gap over the API" do
+  test "the claimer shipping their own work still selects over the API" do
     # The ordinary ship. It must reach `submitted` exactly as it did before.
     session = "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b"
     task = Task.create!(title: "Claimer Ships Own Work", stage: "designed",
@@ -314,7 +289,6 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     assert_response :success
     devops = task.reload.metadata["devops"]
     assert_equal %w[shannon], devops["builders"]
-    assert_nil devops["builders_unattributed"]
     assert_equal true, ReviewerSelector.explain(task.reload)["builder_known"],
                  "an ordinary ship still selects — the guard stays quiet"
   end

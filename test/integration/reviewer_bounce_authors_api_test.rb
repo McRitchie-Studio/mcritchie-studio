@@ -77,8 +77,6 @@ class ReviewerBounceAuthorsApiTest < ActionDispatch::IntegrationTest
     devops = task.reload.metadata["devops"]
     assert_equal "shannon", devops["built_by"]
     assert_equal ["shannon"], devops["builders"]
-    assert_nil devops["builders_unattributed"],
-               "the reviewer bounced this task; the record must not call that authorship"
   end
 
   test "reviewer selection still selects after the bounce" do
@@ -95,19 +93,5 @@ class ReviewerBounceAuthorsApiTest < ActionDispatch::IntegrationTest
     assert_equal ["shannon"], decision["builders"]
     refute_includes ReviewerSelector.select(task.reload).map { |r| r["slug"] }, "shannon",
                     "and the real author is still excluded from the seats"
-  end
-
-  test "an unnamed claim from a session that is NOT reviewing still refuses" do
-    # THE FAIL-CLOSED HALF, through the same door. The refusal exists for a real
-    # incomplete author set, and a fix that made selection always succeed would
-    # satisfy the bug report while destroying the property.
-    task = submitted_task("Bounce Failclosed Still Refuses")
-
-    block!(task, by: "carl")
-    heartbeat!(task, session: REVIEWER_SESSION)
-
-    assert_equal REVIEWER_SESSION, task.reload.metadata.dig("devops", "builders_unattributed"),
-                 "no review claim means an ordinary anonymous handoff"
-    assert_equal false, ReviewerSelector.explain(task.reload)["builder_known"]
   end
 end

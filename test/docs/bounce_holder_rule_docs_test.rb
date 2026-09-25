@@ -105,9 +105,7 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
     # `bin/task block` does NOT stamp the task's author set directly. `Task#block!`
     # sets `blocked_at`, which `build_claim_save?` rejects and `submit_save?` never
     # matches, so `enforce_builder_stamp` writes no author on the block PATCH at
-    # all. The author set is reached SECOND-HAND: the block lands the task back on
-    # `building`, the statusline heartbeat adopts the freed lease with no soul, and
-    # THAT stamps `builders_unattributed`. The harm is a MISATTRIBUTED AUDIT ROW —
+    # all. The harm is a MISATTRIBUTED AUDIT ROW —
     # real, and worth guarding, but not a disarmed no-self-review gate.
     #
     # PARSED, NOT LISTED, so a THIRD kind added later is covered the moment it
@@ -794,9 +792,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
   # So the kind this rule used to skip is the one that lands a send-back on the
   # record with nobody's name on it. The cost is a MISATTRIBUTED AUDIT ROW: the
   # block PATCH itself stamps no author (`Task#block!` sets `blocked_at`, which
-  # `build_claim_save?` rejects and `submit_save?` never matches), but it lands the
-  # task on `building`, and the statusline heartbeat then adopts the freed lease
-  # with no soul and stamps `builders_unattributed`. Second-order and real — not,
+  # `build_claim_save?` rejects and `submit_save?` never matches). Real — not,
   # as an earlier draft claimed, a disarmed no-self-review gate.
   #
   # A NOTE ON THE WORD "BOUNCE", which this heading used to carry. Only `--kind
@@ -876,7 +872,7 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
     { file: "docs/agents/archive/pr-review-2026-09-25.md", match: /therefore runs the breaker itself/,
       why: "prose describing what the command does, not an instruction to run it (frozen archive copy)" },
     { file: "docs/agents/modules/devops-task-board.md",
-      match: /lands the task back on building, and three readers/,
+      match: /lands the task back on building, and two readers/,
       why: "prose describing the stage effect on board readers" },
     { file: "docs/agents/modules/gates/g2-review.md", match: /exits 10\), re-run it/,
       why: "prose naming the breaker's exit code" },

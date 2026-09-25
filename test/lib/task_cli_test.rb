@@ -1244,20 +1244,18 @@ class TaskCliTest < Minitest::Test
     assert_match(/builders: NOT STAMPED/, line, "an assignee is not evidence that anyone built it")
   end
 
-  # `builders_unattributed` means a session worked this task while naming no soul,
-  # so the names on record are a SUBSET. Rendering a subset as the whole set is
-  # the failure that fails confidently rather than closed.
-  def test_show_marks_an_incomplete_author_set_as_incomplete
+  # The retired UNNAMED marker renders nothing: a legacy record carrying it reads
+  # exactly like one without it.
+  def test_show_ignores_the_retired_unnamed_marker
     stamped = { "kind" => "bug", "built_by" => "shannon", "builders" => ["shannon"] }
     _requests, complete_out, = run_task(["show", "demo-task"], stub_devops: stamped)
-    _requests, incomplete_out, _err, status = run_task(
+    _requests, legacy_out, _err, status = run_task(
       ["show", "demo-task"],
       stub_devops: stamped.merge("builders_unattributed" => "02a41c7d-4b9e-84c2-af9c-041f22ac02c7")
     )
     assert status.success?
-    assert_match(/UNNAMED/, summary_line(incomplete_out))
-    refute_equal summary_line(complete_out), summary_line(incomplete_out),
-                 "a complete author set and an incomplete one must not summarise alike"
+    refute_match(/UNNAMED/, summary_line(legacy_out))
+    assert_equal summary_line(complete_out), summary_line(legacy_out)
   end
 
   # A bare `bin/task move <slug> building` leaves the SESSION on the record. It is
@@ -1292,7 +1290,7 @@ class TaskCliTest < Minitest::Test
     sources, locator = lines[claim_at + 1], lines[claim_at + 2]
     assert_match(/built_by: xan/, sources)
     assert_match(/builders: shannon, xan/, sources)
-    assert_match(/unattributed: none/, sources)
+    refute_match(/unattributed/, sources)
     assert_match(/metadata\.devops\.builders/, locator)
     assert_match(/agent_slug/, locator)
   end

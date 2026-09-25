@@ -184,14 +184,12 @@
 #       on the accepted branch (the ladder's first rung); the sweep/ship stamp
 #       release/main. NOT a stage move, NOT event-recorded; read back to confirm it
 #       persisted so a dropped stamp never strands the task off every RC. )
-#   bin/task fix-forward <slug> --agent <soul>[,<soul>] | --unnamed
+#   bin/task fix-forward <slug> --agent <soul>[,<soul>]
 #     ( record a REVIEWER FIX-FORWARD (a zap): a soul who pushed a commit onto this
 #       task's PR branch WITHOUT holding the build. He is an author of the merged
 #       diff, so he joins the author set `bin/reviewer-select` excludes — but he
 #       makes no build claim, and the claim is the only thing that stamped it. Named
-#       souls join devops.builders (never built_by). --unnamed records a fix-forward
-#       nobody can attribute: the author set is then INCOMPLETE and reviewer-select
-#       REFUSES until a later --agent names who pushed. )
+#       souls join devops.builders (never built_by). )
 #   bin/task session-mascot [--persona SLUG|none] [--print]
 #     ( draw this Claude/Codex session's Pokémon marker before a task exists.
 #       --persona jasper temporarily shows a soul instead; --persona none reverts. )
@@ -969,13 +967,6 @@ COMMA_FREE_LIST_FLAGS = %w[--repo --risk].freeze
 # Task#release_pr_urls — you do not repeat it here, and it WINS for the repo it
 # names (one repo, one authoritative PR).
 MAP_FLAGS = { "--pr-url-for" => "pr_urls" }.freeze
-# The `devops.fix_forward` entry meaning "a reviewer fix-forward happened here and
-# nobody can say whose commit it is". Deliberately NOT a soul slug: every reader
-# (ReviewerSelector#fix_forward_unnamed, Task#fix_forward_authors) sorts these
-# entries by asking `Task.soul?`, so the marker needs no shared constant to be
-# understood — only to be written and retired consistently, which is this file's job.
-FIX_FORWARD_UNNAMED = "unattributed"
-
 NOTE_FLAGS = {
   "--handoff" => "handoff",
   "--qa-feedback" => "qa_feedback",
@@ -3026,40 +3017,26 @@ when "fix-forward"
   # reviewed). This posts one devops key and moves nothing.
   #
   # APPENDS. The list is read, unioned, and re-posted, so a second zap by a different
-  # soul cannot drop the first — and naming a soul CLEARS a prior --unnamed marker,
-  # which is the whole resolution path out of the refusal.
-  usage = "usage: #{$PROGRAM_NAME} fix-forward <slug> --agent <soul>[,<soul>] | --unnamed"
+  # soul cannot drop the first.
+  usage = "usage: #{$PROGRAM_NAME} fix-forward <slug> --agent <soul>[,<soul>]"
   slug = positional!(ARGV.shift || die!(usage), usage)
   souls = []
-  unnamed = false
   while ARGV.any?
     case (flag = ARGV.shift)
-    when "--agent"   then souls.concat((ARGV.shift || die!("--agent needs a value")).split(/[,\s]+/))
-    when "--unnamed" then unnamed = true
-    else unknown_flag!(flag, valid: %w[--agent --unnamed], context: "fix-forward")
+    when "--agent" then souls.concat((ARGV.shift || die!("--agent needs a value")).split(/[,\s]+/))
+    else unknown_flag!(flag, valid: %w[--agent], context: "fix-forward")
     end
   end
   souls = souls.map { |soul| soul.to_s.strip }.reject(&:empty?).uniq
-  die!(usage) if souls.empty? && !unnamed
-  # OPPOSITE CLAIMS, so the line is refused rather than silently resolved one way.
-  # "steffon pushed it" and "nobody can say who pushed it" cannot both be asserted,
-  # and guessing which the caller meant is how a refusal gets lifted by accident.
-  die!("--agent and --unnamed are opposite claims — pass one: #{usage}") if souls.any? && unnamed
+  die!(usage) if souls.empty?
   # Handle SHAPE is checked here, not on the server: `--agent Steffon` or
-  # `--agent turf_monster` matches no soul, so it would land as an UNNAMED entry and
-  # read as "a zap nobody could attribute" — a typo silently becoming a refusal, with
-  # the value that caused it stored as if it were the marker.
+  # `--agent turf_monster` matches no soul, so it would join nobody.
   bad = souls.reject { |soul| soul.match?(/\A[a-z]+(?:-[a-z]+)*\z/) }
   die!("not soul slugs (lowercase, single hyphens): #{bad.join(", ")}") if bad.any?
 
   current = Array((api(:get, "/api/v1/tasks/#{slug}")["data"] || {}).dig("metadata", "devops", "fix_forward"))
              .map { |entry| entry.to_s.strip }.reject(&:empty?)
-  posted = if unnamed
-    (current + [FIX_FORWARD_UNNAMED]).uniq
-  else
-    # Naming an author RETIRES the marker: the fact it stood for is now on record.
-    (current.reject { |entry| entry == FIX_FORWARD_UNNAMED } + souls).uniq
-  end
+  posted = (current + souls).uniq
   api(:patch, "/api/v1/tasks/#{slug}", { "devops" => { "fix_forward" => posted } })
 
   # READ BACK. A 200 is not persistence, and this stamp's whole job is to be there
@@ -3075,18 +3052,13 @@ when "fix-forward"
     warn!("  if it recurs the board write is failing server-side — check ErrorLog.")
     exit 1
   end
-  if souls.any? && (short = souls - authors).any?
+  if (short = souls - authors).any?
     warn!("✗ fix-forward recorded on #{slug} but #{short.join(", ")} did NOT join the author set.")
     warn!("  devops.builders reads [#{authors.join(", ")}]. The record landed and the fold did")
     warn!("  not, so bin/reviewer-select would still seat them. Check Task#builder_roll_call.")
     exit 1
   end
-  if unnamed
-    puts "fix-forward recorded on #{slug}: UNNAMED — the author set is now INCOMPLETE and"
-    puts "  bin/reviewer-select will REFUSE until: #{SELF_CMD} fix-forward #{slug} --agent <soul>"
-  else
-    puts "fix-forward recorded on #{slug}: #{souls.join(", ")} (authors: #{authors.join(", ")})"
-  end
+  puts "fix-forward recorded on #{slug}: #{souls.join(", ")} (authors: #{authors.join(", ")})"
 when "intent"
   # Record an INTENT — an agent (or the two senior reviewers) STARTING a stage's
   # work, the moment it begins — so /deployments + the task timeline show who's on
@@ -3309,8 +3281,7 @@ when "block"
       # no actor, no `by`. It leaves a block whose audit row names nobody. (It does not
       # poison `bin/reviewer-select`: `Task#block!` lands the task on `building` with
       # `blocked_at` set, which is neither a `build_claim_save?` nor a `submit_save?`,
-      # so `enforce_builder_stamp` writes no author. The author set is only reached
-      # second-hand, when the statusline later adopts the freed lease unnamed.)
+      # so `enforce_builder_stamp` writes no author.)
       warn!("    #{BlockRecipe.escalation(slug, agent: resolved_block_actor(agent, current, kind: "dependency"))}")
       warn!("")
       warn!("  If this bounce is MECHANICAL and not a disagreement (red CI, a merge conflict, a")

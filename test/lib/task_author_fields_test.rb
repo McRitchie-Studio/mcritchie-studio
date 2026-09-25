@@ -114,28 +114,14 @@ class TaskAuthorFieldsTest < Minitest::Test
                  "built_by says who worked it, not who it is assigned to"
   end
 
-  # ── [unit] THE INCOMPLETE SET ───────────────────────────────────────────────
+  # ── [unit] THE RETIRED UNNAMED MARKER ───────────────────────────────────────
 
-  # `builders_unattributed` means a session worked this task while naming no
-  # soul, so the names on record are a SUBSET. Rendering them as if they were the
-  # whole set is the failure that fails CONFIDENTLY rather than closed.
-  def test_unit_an_unattributed_author_marks_the_set_incomplete
+  def test_unit_a_legacy_unattributed_marker_renders_nothing
     task = record(built_by: "shannon", builders: ["shannon"],
                   builders_unattributed: "02a41c7d-4b9e-84c2-af9c-041f22ac02c7")
 
-    assert_equal "shannon +1 UNNAMED", TaskAuthorFields.read(task)
-    refute_equal TaskAuthorFields.read(record(built_by: "shannon", builders: ["shannon"])),
-                 TaskAuthorFields.read(task),
-                 "a complete set and an incomplete one must not render alike"
-  end
-
-  # A blank flag is not a flag. The board serves the key absent on most tasks and
-  # "" on some; both mean nothing is missing.
-  def test_unit_a_blank_unattributed_flag_does_not_mark_the_set_incomplete
-    task = record(built_by: "carl", builders: ["carl"], builders_unattributed: "  ")
-
-    assert_nil TaskAuthorFields.unattributed(task)
-    assert_equal "carl", TaskAuthorFields.read(task)
+    assert_equal "shannon", TaskAuthorFields.read(task)
+    refute_includes TaskAuthorFields.source_line(task), "unattributed"
   end
 
   # ── [unit] VALUES THAT ARE NOT SOULS ────────────────────────────────────────
@@ -174,22 +160,20 @@ class TaskAuthorFieldsTest < Minitest::Test
   # UNCONDITIONAL, and never a bare "-". This is the line an agent verifies a
   # stamp on; a field that disappears when empty reproduces the original
   # ambiguity ("no output" → "the write dropped") one surface over.
-  def test_unit_the_source_line_names_all_three_fields_even_when_empty
+  def test_unit_the_source_line_names_both_fields_even_when_empty
     line = TaskAuthorFields.source_line(record)
 
     assert_includes line, "built_by: NOT STAMPED"
     assert_includes line, "builders: NOT STAMPED"
-    assert_includes line, "unattributed: none"
   end
 
   def test_unit_the_source_line_reports_each_field_from_its_own_key
     line = TaskAuthorFields.source_line(
-      record(built_by: "xan", builders: %w[shannon xan], builders_unattributed: "sess-9")
+      record(built_by: "xan", builders: %w[shannon xan])
     )
 
     assert_includes line, "built_by: xan"
     assert_includes line, "builders: shannon, xan"
-    assert_includes line, "unattributed: sess-9"
   end
 
   # The locator is the sentence that would have saved both false alarms — the

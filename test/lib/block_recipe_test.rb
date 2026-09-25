@@ -20,9 +20,7 @@ require_relative "../../bin/lib/block_recipe"
 # task's AUTHOR SET and makes `bin/reviewer-select` refuse to pick. It does not.
 # `Task#block!` sets `blocked_at`, which `build_claim_save?` rejects and `submit_save?`
 # never matches, so `enforce_builder_stamp` writes no author on the block PATCH at all.
-# The chain is SECOND-ORDER: the block lands the task on `building`, the statusline
-# heartbeat adopts the freed lease with no soul, and THAT stamps
-# `builders_unattributed`. Misattributed audit row: real, and worth this file.
+# Misattributed audit row: real, and worth this file.
 # Disarmed no-self-review guard: not this seam.
 #
 # WHY THIS FILE ENUMERATES RATHER THAN NAMES. The ticket named ONE coordinate,

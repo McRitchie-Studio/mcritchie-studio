@@ -937,13 +937,10 @@ Neither empty prints `-` any more, because "nobody is assigned" is ordinary and
 
 ```bash
 bin/task show <slug>              # assignee: unassigned  builders: carl
-bin/task show <slug> --verbose    # built_by / builders / unattributed, + where each lives
+bin/task show <slug> --verbose    # built_by / builders, + where each lives
 bin/task move <slug> building --actor <soul>   # stamp an author, in place, at any time
 ```
 
-`builders: shannon +1 UNNAMED` means `devops.builders_unattributed` is set — a
-session worked the task while naming no soul, so the names shown are a SUBSET and
-`bin/reviewer-select` refuses rather than seating a pool that may hold an author.
 A value shown as `not a soul handle` is a session id or an email left on the
 record by a claim that ran without `--actor`: visible on purpose, because it is
 the tell for a stamp that never happened. The roster check itself lives in
@@ -951,13 +948,12 @@ the tell for a stamp that never happened. The roster check itself lives in
 never predicts the selector's verdict.
 
 **A REVIEWER IS NOT AN AUTHOR, and a bounce no longer says otherwise.** `bin/task
-block <slug> --kind rework` lands the task back on `building`, and three readers
+block <slug> --kind rework` lands the task back on `building`, and two readers
 used to take that for a build claim by the blocking session:
 
 | Reader | What it recorded | Now |
 |--------|------------------|-----|
 | the build-claim renewal (`bin/task heartbeat` from `bin/statusline`; the detached renewer on its own beat) | ADOPTED the free lease, so the reviewer held the desk | retired: the desk is the build claim, and nothing renews one |
-| `devops.builders_unattributed` | the reviewer's SESSION, so the author set read incomplete | a write from the session holding the task's live `TaskReviewClaim` is not a build claim |
 | `ReviewerSelector#builders` | the blocking SOUL, from the block's `→ building` event | a block's transition carries `blocked: true` and is skipped |
 
 Measured 2026-09-04: four bounced tasks in one review sitting, each needing a

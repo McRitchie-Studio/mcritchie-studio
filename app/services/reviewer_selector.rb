@@ -92,10 +92,10 @@
 # WHEN NO SOURCE NAMES A SOUL the authors are UNKNOWN, not absent, and the decision
 # says so via `builder_known` — the distinction this class did not draw until
 # 2026-08-13, when an empty exclusion list read as "nobody to exclude" and
-# `bin/reviewer-select` picked Carl to review Carl's own PR. `builder_known` is now
-# asked over the SET and over its COMPLETENESS: a claim that named nobody while
-# other authors were already on record stamps devops.builders_unattributed, and an
-# author list known to be missing someone is not a settled answer either. Selection
+# `bin/reviewer-select` picked Carl to review Carl's own PR. `builder_known` is
+# asked over the SET — stamped and derived from git together — and is false only
+# when that whole set is empty. (The UNNAMED marker that also made a set
+# "incomplete" was deleted in devops-v3 4b-ii-b.) Selection
 # still DEGRADES here (the reviewed-transition recorder must never break on a missing
 # stamp); it is the CLI that fails closed on the fact, and `builder: "none"`
 # (NO_BUILDER) is the caller's explicit "no soul built this" assertion.
@@ -168,7 +168,7 @@ class ReviewerSelector
   #
   # ⚠ IT IS THE ONE INPUT HERE THAT FAILS **OPEN**, so assert it only when it is
   # TRUE. Everything else in this class fails closed — a blank builder refuses, a
-  # typo refuses, an incomplete set refuses — precisely because an unnamed author
+  # typo refuses — precisely because an unnamed author
   # might be sitting in the pool. `none` lifts that refusal on the caller's word
   # alone, and nothing can check the word. MEASURED 2026-09-24 on
   # data-flow-doc-contradicts-code, a docs PR Xan wrote while the task carried no
@@ -386,20 +386,10 @@ class ReviewerSelector
       # `builders` is every soul who worked the task; `excluded_builders` is how
       # many of them the pool could actually drop; `kept_builders` is the residue
       # that MAY be seated on its own diff — a refusal, not a note.
-      # `builders_unattributed` names the claiming session the record could not
-      # attribute, which is what makes an incomplete set say so.
       "builders" => builders,
       "excluded_builders" => excluded_builders,
       "kept_builders" => kept_builders,
-      "builders_unattributed" => builders_unattributed,
-      # A recorded reviewer FIX-FORWARD that names no soul — "the PR head moved
-      # under a reviewer and we cannot say whose commit it is". Non-empty means the
-      # author set is INCOMPLETE for the same reason `builders_unattributed` means
-      # it, by a different route, so it refuses the same way. Kept a separate key
-      # because the two carry opposite remedies: that one wants the CLAIMING session
-      # named, this one wants the ZAPPER named.
       "fix_forward" => fix_forward,
-      "fix_forward_unnamed" => fix_forward_unnamed,
       # Entries of an explicit --builder list that named nobody. Non-empty means the
       # caller's stated fact was only partly understood — the CLI refuses on it.
       "builder_override_unresolved" => (@builder_override && !builder_asserted_none? ? override_unresolved : []),
@@ -662,18 +652,6 @@ class ReviewerSelector
     Array(task.devops_fix_forward).map { |slug| Task.canonical_soul(slug) }.reject(&:empty?)
   end
 
-  # Fix-forward entries that resolve to NO soul — the marker bin/pr-review records
-  # when it PROVES the head moved during a review but cannot attribute the commit.
-  #
-  # It has to be its own state rather than an empty list. "No fix-forward happened"
-  # and "a fix-forward happened and we cannot name who" are opposite facts, and the
-  # second is the one that must refuse: a commit is in the diff whose author is
-  # somewhere in the pool. Recording it as nothing is exactly the silent fail-OPEN
-  # this whole seam exists to close.
-  def fix_forward_unnamed
-    fix_forward.reject { |slug| soul?(slug) }
-  end
-
   # The caller's `--builder a,b` — a comma/space list, so naming several authors is
   # a FIRST-CLASS statement of the fact rather than the `--busy` abuse the live
   # incident had to resort to. Non-roster entries drop out; if that empties the
@@ -693,18 +671,6 @@ class ReviewerSelector
 
   def override_entries
     @override_entries ||= @builder_override.to_s.split(/[,\s]+/).map { |s| Task.canonical_soul(s) }.reject(&:empty?)
-  end
-
-  # The claiming session that named nobody while other authors were already on
-  # record — "someone else worked this and we cannot say who". Present ⇒ the author
-  # set is INCOMPLETE, so #builder_known? is false and the CLI refuses. An explicit
-  # override (or `none`) clears it: the caller has stated the fact, which is exactly
-  # the escape hatch the fail-closed guard is supposed to have.
-  def builders_unattributed
-    return nil if builder_asserted_none? || @builder_override
-    return nil unless task.respond_to?(:devops_builders_unattributed)
-
-    task.devops_builders_unattributed
   end
 
   # Names the RECORD carries that resolve to NO soul — a typo'd devops.built_by, or
@@ -739,16 +705,12 @@ class ReviewerSelector
   # Whether WHO BUILT THIS is a settled question. False means the record simply
   # does not say — the state in which a caller must refuse to auto-select rather
   # than roll a reviewer who may be the author.
-  # Asked over the SET, and over its completeness. A set of one that is merely the
-  # last claimant of several is not a settled answer, and reading it as one is what
-  # seated an author: accumulating authors only helps while every claim names a
-  # soul, so the claim that named NOBODY has to be able to say so
-  # (#builders_unattributed). Both halves must hold — someone is on record, and
-  # nobody is missing from it.
+  # Asked over the SET: every stamped source plus the authors derived from git
+  # (#pr_authors). Empty means nobody is on record, and the CLI refuses.
   def builder_known?
     return true if builder_asserted_none?
 
-    builders.any? && builders_unattributed.nil? && fix_forward_unnamed.empty?
+    builders.any?
   end
 
   # A soul who EXISTS — Task.soul? checks the roster, not merely the shape.
@@ -996,7 +958,6 @@ class ReviewerSelector
   # a DISABLED safety check has to read as disabled, not as a tidy empty field.
   def builder_log_token
     return "none(asserted)" if builder_asserted_none?
-    return "UNKNOWN(unattributed:#{builders_unattributed})" if builders_unattributed
     return "UNKNOWN(no-exclusion)" if builders.empty?
 
     builders.map do |soul|

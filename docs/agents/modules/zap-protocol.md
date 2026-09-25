@@ -329,12 +329,8 @@ builder* stamp and is the wrong instrument here twice over, because it drags a
 submitted task back onto `building` mid-review and re-points `built_by` at a
 reviewer. Your soul joins `devops.builders`; `built_by` is left alone.
 
-**A fix-forward nobody can name REFUSES.** Where the pusher cannot be
-attributed, the record carries `--unnamed` instead, `bin/reviewer-select` reports
-the author set INCOMPLETE and refuses to pick until someone runs the command
-above. That is the intended cost: a commit is provably in the diff whose author
-is somewhere in the pool, so a confident pick is the one answer that must not be
-available.
+Where the pusher cannot be attributed, nothing is recorded: the commit still
+carries its git author, which the author set derives from.
 
 **The gate now refuses a stale tree rather than grading one.** `--gate-role
 review` re-roots to the builder's desk, and on turf #519 that desk sat at

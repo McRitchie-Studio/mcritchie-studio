@@ -977,15 +977,16 @@ end
 #
 # Names the SEATED reviewers when they are known. When they are not — a resumed
 # supervisor, a hand-spawned review, a snapshot that lost the pair — it records
-# `--unnamed`, which makes the author set INCOMPLETE and makes reviewer-select
-# REFUSE until a human names the pusher. That asymmetry is the whole design: a
-# fix-forward we cannot attribute must fail CLOSED, because the alternative is the
-# populated-and-confident-but-short author set this seam exists to prevent.
+# nothing and says so: the pusher's commit still carries its git author, which
+# Task#derived_authors reads.
 def record_fix_forward(slug, reviewer_slugs)
   souls = Array(reviewer_slugs).map { |soul| soul.to_s.strip }.reject(&:empty?)
-  args = souls.empty? ? ["--unnamed"] : ["--agent", souls.join(",")]
-  ok = task_write(["fix-forward", slug, *args])
-  puts "  fix-forward: PR head moved under review — recorded #{souls.empty? ? "UNNAMED" : souls.join(" + ")} as author(s)" if ok
+  if souls.empty?
+    warn "  fix-forward: PR head moved under review on #{slug}, but no seated reviewer is known — nothing recorded"
+    return false
+  end
+  ok = task_write(["fix-forward", slug, "--agent", souls.join(",")])
+  puts "  fix-forward: PR head moved under review — recorded #{souls.join(" + ")} as author(s)" if ok
   warn "  fix-forward: FAILED to record the head move on #{slug} — reviewer-select may seat the pusher" unless ok
   ok
 end
