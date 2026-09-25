@@ -19,7 +19,7 @@ Reach for `process-backlog` instead when the designed column has gone crooked â€
 duplicates, work that already shipped â€” or when you have run out of your own
 tasks and want the whole board ranked.
 
-> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
 ## Status: Active
 

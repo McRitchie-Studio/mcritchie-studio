@@ -16,7 +16,7 @@ A blocker is not a scolding; it is a **claim of misalignment** — "the task ask
 for X, the PR delivers Y." Your job is to find that gap and close it, not to
 guess at a bigger rewrite.
 
-> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
 ## What a blocker is made of — the two-part record
 
