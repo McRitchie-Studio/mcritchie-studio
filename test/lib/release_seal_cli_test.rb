@@ -10,7 +10,7 @@
 # a false red from the primary's PRE-ship specs).
 #
 # A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is frozen at its size by
-# config/test_health.yml, so the seal's cases moved here, named for their concern.
+# the suite's test-health ratchet, so the seal's cases moved here, named for their concern.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
