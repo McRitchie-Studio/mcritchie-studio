@@ -2309,6 +2309,14 @@ def print_task_verbose(task)
   puts "  approval_status: #{dv["approval_status"] || "-"}   requested_by: #{dv["approval_requested_by"] || "-"}   " \
        "requested_at: #{dv["approval_requested_at"] || "-"}   dropped_at: #{dv["approval_request_dropped_at"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
+  # THE OPERATOR WINDOWS (devops-v3-design.md section 6), derived server-side and
+  # carried on the payload as `windows` — the same list `wait-window` polls. "-"
+  # when nothing waits on the operator; else each open window's kind, its mm:ss
+  # (or lapsed label) as the board painted it, and the ISO end it counts to.
+  if task.key?("windows")
+    windows = Array(task["windows"]).map { |w| "#{w["kind"]} #{w["label"]} (ends #{w["ends_at"]})" }
+    puts "  windows: #{windows.empty? ? "-" : windows.join(" · ")}"
+  end
   # ALWAYS emitted, "-" when empty — the same rule print_column_fields is built
   # on, for the same reason. This is the surface an operator confirms a
   # --pr-url-for write on, and a line that vanishes when the map is empty makes
