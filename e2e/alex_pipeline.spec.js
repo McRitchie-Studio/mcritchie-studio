@@ -1,15 +1,15 @@
 const { test, expect } = require("@playwright/test");
 
-// [e2e] The OPSD distillation pipeline (/alex/pipeline) — three columns, left→right:
-// Activities (narrated AgentActivity rows) → Insights (Alex's banked grades) →
+// [e2e] The OPSD distillation pipeline (/xan/pipeline) — three columns, left→right:
+// Activities (narrated AgentActivity rows) → Insights (Xan's banked grades) →
 // Confirmations (McRitchie's mcr grades). A public read surface; the happy path here
 // is the page rendering with all three columns and the nav's link out to the
 // cross-session All Activities view.
-test("alex pipeline renders the three distillation columns @qa-readonly", async ({ page }) => {
-  const res = await page.goto("/alex/pipeline");
+test("xan pipeline renders the three distillation columns @qa-readonly", async ({ page }) => {
+  const res = await page.goto("/xan/pipeline");
   expect(res.ok()).toBe(true);
 
-  const root = page.locator("[data-test='alex-pipeline']");
+  const root = page.locator("[data-test='xan-pipeline']");
   await expect(root).toBeVisible();
 
   // All three pipeline columns are present.
@@ -31,7 +31,7 @@ test("alex pipeline renders the three distillation columns @qa-readonly", async 
   // The nav's required link out to the cross-session All Activities view.
   const allActivities = page.locator("[data-test='hb-nav-all-spans']");
   await expect(allActivities).toBeVisible();
-  await expect(allActivities).toHaveAttribute("href", "/alex/heartbeat/activities");
+  await expect(allActivities).toHaveAttribute("href", "/xan/heartbeat/activities");
 });
 
 // [e2e] A2 happy path (seeded, local only — NOT @qa-readonly, since it asserts
@@ -39,8 +39,8 @@ test("alex pipeline renders the three distillation columns @qa-readonly", async 
 // pass and a fail pill, the phase/tier/host chips derived from the scope
 // registry, and a grade link; and a banked test-run grade surfaces as a Column-2
 // insight with an ACTION Confirm button (confirm-of-action parity).
-test("alex pipeline shows the gradeable test-runs band", async ({ page }) => {
-  const res = await page.goto("/alex/pipeline");
+test("xan pipeline shows the gradeable test-runs band", async ({ page }) => {
+  const res = await page.goto("/xan/pipeline");
   expect(res.ok()).toBe(true);
 
   const band = page.locator("[data-test='pl-test-runs']");
@@ -50,9 +50,11 @@ test("alex pipeline shows the gradeable test-runs band", async ({ page }) => {
   const passRun = page.locator("[data-test='pl-test-run'][data-scope='ship_test_gate']");
   await expect(passRun).toBeVisible();
   await expect(passRun.locator("[data-test='pl-test-verdict']")).toHaveText("pass");
+  // ship_test_gate is a READ of CI's verdict for the frozen tree (host: ci) — CI ran
+  // the full suite; this box only read the conclusion.
   await expect(passRun).toContainText("ship");
   await expect(passRun).toContainText("full");
-  await expect(passRun).toContainText("local");
+  await expect(passRun).toContainText("ci");
   await expect(passRun.locator("[data-test='pl-test-run-grade']")).toBeVisible();
 
   // The seeded failing verdict shows a fail pill.

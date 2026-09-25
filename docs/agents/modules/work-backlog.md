@@ -194,7 +194,7 @@ review sweep will not pop.
 As each builder returns and verifies, either claim the next of your tasks (clear
 presence read, no conflict) or stop cleanly. **Stopping is a fine outcome** — this
 is the casual cadence, not a drain-the-board mandate. If you want the board at
-zero, that is [`clean-up`](../agents/alex/sops/clean-up.md).
+zero, that is [`clean-up`](../agents/xan/sops/clean-up.md).
 
 ## Exit Seam
 
@@ -214,5 +214,5 @@ Report in the house two layers, then the in-flight roster:
 - [`../agents/carl/sops/pr-review.md`](../agents/carl/sops/pr-review.md) — the
   discretionary review.
 - [`zap-protocol.md`](zap-protocol.md) — a fix too small to earn a task.
-- [`../agents/alex/sops/clean-up.md`](../agents/alex/sops/clean-up.md) — board to
+- [`../agents/xan/sops/clean-up.md`](../agents/xan/sops/clean-up.md) — board to
   zero, ship-authority gated.

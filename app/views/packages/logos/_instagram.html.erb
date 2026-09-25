@@ -1,0 +1,17 @@
+<%# Instagram's glyph on its gradient tile. %>
+<% gradient_id = "ig-gradient-#{SecureRandom.hex(3)}" %>
+<svg viewBox="0 0 24 24" class="<%= local_assigns.fetch(:size, 'h-5 w-5') %>" role="img" aria-label="Instagram">
+  <defs>
+    <radialGradient id="<%= gradient_id %>" cx="30%" cy="107%" r="150%">
+      <stop offset="0" stop-color="#FDF497"/>
+      <stop offset="0.05" stop-color="#FDF497"/>
+      <stop offset="0.45" stop-color="#FD5949"/>
+      <stop offset="0.6" stop-color="#D6249F"/>
+      <stop offset="0.9" stop-color="#285AEB"/>
+    </radialGradient>
+  </defs>
+  <rect width="24" height="24" rx="6" fill="url(#<%= gradient_id %>)"/>
+  <rect x="5" y="5" width="14" height="14" rx="4" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
+  <circle cx="12" cy="12" r="3.3" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
+  <circle cx="16.3" cy="7.7" r="1" fill="#FFFFFF"/>
+</svg>

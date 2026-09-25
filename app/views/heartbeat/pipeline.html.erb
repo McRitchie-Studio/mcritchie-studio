@@ -1,86 +1,86 @@
-<% content_for(:title, "Distillation Pipeline · Alex Heartbeat") %>
+<% content_for(:title, "Distillation Pipeline · Xan Heartbeat") %>
 <% content_for(:full_width, true) %>
 
 <%# The OPSD distillation pipeline as three columns, left→right:
     1. ACTIVITIES    — recent narrated activities
-    2. INSIGHTS      — Alex's banked grades (the distilled lessons)
+    2. INSIGHTS      — Xan's banked grades (the distilled lessons)
     3. CONFIRMATIONS — Mr. McRitchie's mcr grades (the confirmed subset)
     Reuses the heartbeat surface (hb-* styles, category meta, agent cell). %>
 <%= render "heartbeat/styles" %>
 
 <style>
-  #alex-heartbeat { --hb-bg:#0d1117; --hb-panel:#161b22; --hb-line:#2a3240; --hb-txt:#e6edf3;
+  #xan-heartbeat { --hb-bg:#0d1117; --hb-panel:#161b22; --hb-line:#2a3240; --hb-txt:#e6edf3;
     --hb-muted:#8b949e; --hb-faint:#5c6573; --hb-accent:#58a6ff; --hb-good:#3fb950;
     --hb-not:#f85149; --hb-bank:#fbbf24; --hb-mcr:#a371f7;
     min-height:calc(100vh - var(--nav-h, 7rem)); background:var(--hb-bg); color:var(--hb-txt);
     padding:18px 22px 60px; font-size:13px; line-height:1.5; }
-  #alex-heartbeat .pl-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
-  #alex-heartbeat h1 { margin:0; font-size:19px; font-weight:700; }
-  #alex-heartbeat .pl-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:78ch; }
-  #alex-heartbeat .pl-nav { display:flex; gap:8px; flex-wrap:wrap; }
-  #alex-heartbeat .pl-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; align-items:start; }
-  @media (max-width:1000px) { #alex-heartbeat .pl-grid { grid-template-columns:1fr; } }
-  #alex-heartbeat .pl-col { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; }
-  #alex-heartbeat .pl-colhd { padding:12px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
-  #alex-heartbeat .pl-colhd .pl-step { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--hb-faint); }
-  #alex-heartbeat .pl-colhd h2 { margin:2px 0 0; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; }
-  #alex-heartbeat .pl-colhd .pl-count { color:var(--hb-faint); font-weight:500; font-size:12px; }
-  #alex-heartbeat .pl-list { max-height:calc(100vh - 230px); overflow-y:auto; }
-  #alex-heartbeat .pl-row { padding:11px 14px; border-bottom:1px solid var(--hb-line); }
-  #alex-heartbeat .pl-row:last-child { border-bottom:none; }
-  #alex-heartbeat .pl-row.is-not { box-shadow:inset 3px 0 0 var(--hb-not); }
+  #xan-heartbeat .pl-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
+  #xan-heartbeat h1 { margin:0; font-size:19px; font-weight:700; }
+  #xan-heartbeat .pl-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:78ch; }
+  #xan-heartbeat .pl-nav { display:flex; gap:8px; flex-wrap:wrap; }
+  #xan-heartbeat .pl-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; align-items:start; }
+  @media (max-width:1000px) { #xan-heartbeat .pl-grid { grid-template-columns:1fr; } }
+  #xan-heartbeat .pl-col { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; }
+  #xan-heartbeat .pl-colhd { padding:12px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
+  #xan-heartbeat .pl-colhd .pl-step { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--hb-faint); }
+  #xan-heartbeat .pl-colhd h2 { margin:2px 0 0; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  #xan-heartbeat .pl-colhd .pl-count { color:var(--hb-faint); font-weight:500; font-size:12px; }
+  #xan-heartbeat .pl-list { max-height:calc(100vh - 230px); overflow-y:auto; }
+  #xan-heartbeat .pl-row { padding:11px 14px; border-bottom:1px solid var(--hb-line); }
+  #xan-heartbeat .pl-row:last-child { border-bottom:none; }
+  #xan-heartbeat .pl-row.is-not { box-shadow:inset 3px 0 0 var(--hb-not); }
   /* top of the row: narration on the left, the agent cell aligned TOP-RIGHT */
-  #alex-heartbeat .pl-rowtop { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-  #alex-heartbeat .pl-main { flex:1; min-width:0; }
-  #alex-heartbeat .pl-agent { flex-shrink:0; }
-  #alex-heartbeat .pl-narr { font-weight:600; font-size:13px; margin:4px 0 0; }
-  #alex-heartbeat .pl-out { color:var(--hb-muted); font-size:12px; margin:2px 0 0; }
-  #alex-heartbeat .pl-out::before { content:"→ "; color:var(--hb-faint); }
-  #alex-heartbeat .pl-meta { display:flex; align-items:center; gap:10px; margin-top:8px; }
-  #alex-heartbeat .pl-cost { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; color:var(--hb-muted); }
-  #alex-heartbeat .pl-notpill { font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--hb-not); border:1px solid var(--hb-not); border-radius:5px; padding:1px 6px; }
+  #xan-heartbeat .pl-rowtop { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  #xan-heartbeat .pl-main { flex:1; min-width:0; }
+  #xan-heartbeat .pl-agent { flex-shrink:0; }
+  #xan-heartbeat .pl-narr { font-weight:600; font-size:13px; margin:4px 0 0; }
+  #xan-heartbeat .pl-out { color:var(--hb-muted); font-size:12px; margin:2px 0 0; }
+  #xan-heartbeat .pl-out::before { content:"→ "; color:var(--hb-faint); }
+  #xan-heartbeat .pl-meta { display:flex; align-items:center; gap:10px; margin-top:8px; }
+  #xan-heartbeat .pl-cost { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; color:var(--hb-muted); }
+  #xan-heartbeat .pl-notpill { font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--hb-not); border:1px solid var(--hb-not); border-radius:5px; padding:1px 6px; }
   /* the reused hb-* components (category badge, nav buttons, agent cell) are styled
-     by the shared _styles partial, which scopes every rule under #alex-heartbeat —
-     so this page's ROOT is #alex-heartbeat (below), giving all of them their real
+     by the shared _styles partial, which scopes every rule under #xan-heartbeat —
+     so this page's ROOT is #xan-heartbeat (below), giving all of them their real
      styling instead of re-scoping each rule by hand. */
-  #alex-heartbeat .pl-slug { font-weight:600; font-size:13.5px; }
-  #alex-heartbeat .pl-disp { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; margin-left:6px; }
-  #alex-heartbeat .pl-disp.good { color:var(--hb-good); } #alex-heartbeat .pl-disp.not { color:var(--hb-not); }
-  #alex-heartbeat .pl-long { color:var(--hb-muted); font-size:12px; margin:6px 0 0; white-space:pre-wrap; }
-  #alex-heartbeat .pl-from { color:var(--hb-faint); font-size:11px; margin-top:6px; }
-  #alex-heartbeat .pl-confirm { margin-top:9px; }
-  #alex-heartbeat .pl-confirm button { font:inherit; font-size:11.5px; font-weight:600; color:var(--hb-mcr); background:transparent; border:1px solid var(--hb-mcr); border-radius:7px; padding:4px 12px; cursor:pointer; }
-  #alex-heartbeat .pl-confirm button:hover { background:color-mix(in srgb, var(--hb-mcr) 16%, transparent); }
-  #alex-heartbeat .pl-confirmed { margin-top:8px; font-size:11px; color:var(--hb-mcr); font-weight:600; }
-  #alex-heartbeat .pl-confirmed::before { content:"✓ "; }
-  #alex-heartbeat .pl-empty { color:var(--hb-faint); font-size:12px; padding:26px 16px; text-align:center; }
-  #alex-heartbeat .pl-flash { margin-bottom:14px; padding:9px 14px; border-radius:9px; font-size:12.5px; border:1px solid var(--hb-line); background:var(--hb-panel); color:var(--hb-good); }
+  #xan-heartbeat .pl-slug { font-weight:600; font-size:13.5px; }
+  #xan-heartbeat .pl-disp { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; margin-left:6px; }
+  #xan-heartbeat .pl-disp.good { color:var(--hb-good); } #xan-heartbeat .pl-disp.not { color:var(--hb-not); }
+  #xan-heartbeat .pl-long { color:var(--hb-muted); font-size:12px; margin:6px 0 0; white-space:pre-wrap; }
+  #xan-heartbeat .pl-from { color:var(--hb-faint); font-size:11px; margin-top:6px; }
+  #xan-heartbeat .pl-confirm { margin-top:9px; }
+  #xan-heartbeat .pl-confirm button { font:inherit; font-size:11.5px; font-weight:600; color:var(--hb-mcr); background:transparent; border:1px solid var(--hb-mcr); border-radius:7px; padding:4px 12px; cursor:pointer; }
+  #xan-heartbeat .pl-confirm button:hover { background:color-mix(in srgb, var(--hb-mcr) 16%, transparent); }
+  #xan-heartbeat .pl-confirmed { margin-top:8px; font-size:11px; color:var(--hb-mcr); font-weight:600; }
+  #xan-heartbeat .pl-confirmed::before { content:"✓ "; }
+  #xan-heartbeat .pl-empty { color:var(--hb-faint); font-size:12px; padding:26px 16px; text-align:center; }
+  #xan-heartbeat .pl-flash { margin-bottom:14px; padding:9px 14px; border-radius:9px; font-size:12.5px; border:1px solid var(--hb-line); background:var(--hb-panel); color:var(--hb-good); }
   /* Candidates band — block-mined "not" grades awaiting promotion, sitting above the
      three-column loop as its newest raw material (a resolved QA block → a lesson). */
-  #alex-heartbeat .pl-cands { margin-bottom:18px; border:1px solid var(--hb-not); border-radius:12px; overflow:hidden; background:var(--hb-panel); }
-  #alex-heartbeat .pl-cands .pl-colhd { border-bottom:1px solid var(--hb-line); }
-  #alex-heartbeat .pl-cands .pl-colhd h2 { color:var(--hb-not); }
-  #alex-heartbeat .pl-cands .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:0; max-height:none; }
-  #alex-heartbeat .pl-cands .pl-row { border-right:1px solid var(--hb-line); box-shadow:inset 3px 0 0 var(--hb-not); }
+  #xan-heartbeat .pl-cands { margin-bottom:18px; border:1px solid var(--hb-not); border-radius:12px; overflow:hidden; background:var(--hb-panel); }
+  #xan-heartbeat .pl-cands .pl-colhd { border-bottom:1px solid var(--hb-line); }
+  #xan-heartbeat .pl-cands .pl-colhd h2 { color:var(--hb-not); }
+  #xan-heartbeat .pl-cands .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:0; max-height:none; }
+  #xan-heartbeat .pl-cands .pl-row { border-right:1px solid var(--hb-line); box-shadow:inset 3px 0 0 var(--hb-not); }
   /* Test runs band — recent release test-scope VERDICTS, each a gradeable unit.
      Mirrors the Candidates band's grid layout; sits above the loop as raw material
      that FEEDS it (a graded test run → a lesson). Neutral (blue) header, not the
-     red candidates edge; a per-row red inset appears only on an Alex "not" grade. */
-  #alex-heartbeat .pl-truns { margin-bottom:18px; border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; background:var(--hb-panel); }
-  #alex-heartbeat .pl-truns .pl-colhd h2 { color:var(--hb-accent); }
-  #alex-heartbeat .pl-truns .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:0; max-height:none; }
-  #alex-heartbeat .pl-truns .pl-row { border-right:1px solid var(--hb-line); }
-  #alex-heartbeat .pl-scope-meta { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
-  #alex-heartbeat .pl-tag { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.06em; color:var(--hb-faint); border:1px solid var(--hb-line); border-radius:5px; padding:1px 6px; }
-  #alex-heartbeat .pl-counts { color:var(--hb-muted); font-size:11.5px; font-family:ui-monospace,"SF Mono",Menlo,monospace; margin:7px 0 0; }
+     red candidates edge; a per-row red inset appears only on an Xan "not" grade. */
+  #xan-heartbeat .pl-truns { margin-bottom:18px; border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; background:var(--hb-panel); }
+  #xan-heartbeat .pl-truns .pl-colhd h2 { color:var(--hb-accent); }
+  #xan-heartbeat .pl-truns .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:0; max-height:none; }
+  #xan-heartbeat .pl-truns .pl-row { border-right:1px solid var(--hb-line); }
+  #xan-heartbeat .pl-scope-meta { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
+  #xan-heartbeat .pl-tag { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.06em; color:var(--hb-faint); border:1px solid var(--hb-line); border-radius:5px; padding:1px 6px; }
+  #xan-heartbeat .pl-counts { color:var(--hb-muted); font-size:11.5px; font-family:ui-monospace,"SF Mono",Menlo,monospace; margin:7px 0 0; }
 </style>
 
-<section id="alex-heartbeat" data-test="alex-pipeline">
+<section id="xan-heartbeat" data-test="xan-pipeline">
   <header class="pl-topbar">
     <div>
       <h1>&#127869;&#65039; Distillation Pipeline</h1>
       <p class="pl-sub">
-        The learning loop, left to right: narrated <strong>Activities</strong> &rarr; Alex's
+        The learning loop, left to right: narrated <strong>Activities</strong> &rarr; Xan's
         distilled <strong>Insights</strong> &rarr; the <strong>Confirmations</strong> you keep.
         Confirm an insight to promote it toward the docs.
       </p>
@@ -141,8 +141,8 @@
         <% end %>
         <% @activity_rows.each do |activity, actions| %>
           <% cat = heartbeat_category_meta(activity.category) %>
-          <% alex_grade = @activity_grades.dig(activity.id, "alex") %>
-          <% is_not = alex_grade&.not_good? %>
+          <% xan_grade = @activity_grades.dig(activity.id, "xan") %>
+          <% is_not = xan_grade&.not_good? %>
           <% totals = heartbeat_activity_totals(activity, actions) %>
           <% cost = totals[:cost] %>
           <div class="pl-row <%= "is-not" if is_not %>" data-test="pl-activity" data-activity-id="<%= activity.id %>">
@@ -160,7 +160,7 @@
               </div>
             </div>
             <div class="pl-meta">
-              <% if is_not %><span class="pl-notpill" data-test="pl-not" title="Alex graded this NOT">not</span><% end %>
+              <% if is_not %><span class="pl-notpill" data-test="pl-not" title="Xan graded this NOT">not</span><% end %>
               <span class="pl-cost"><%= cost.positive? ? number_to_currency(cost, precision: 4) : "—" %></span>
             </div>
           </div>
@@ -168,7 +168,7 @@
       </div>
     </div>
 
-    <%# ── Column 2 · Insights (Alex's banked grades) ─────────────────────── %>
+    <%# ── Column 2 · Insights (Xan's banked grades) ─────────────────────── %>
     <div class="pl-col" id="col-insights">
       <div class="pl-colhd">
         <div class="pl-step">Column 2</div>
@@ -176,7 +176,7 @@
       </div>
       <div class="pl-list">
         <% if @insights.empty? %>
-          <div class="pl-empty">No insights yet — Alex banks them with <code>grade-events</code>.</div>
+          <div class="pl-empty">No insights yet — Xan banks them with <code>grade-events</code>.</div>
         <% end %>
         <% @insights.each do |insight| %>
           <%# An insight targets EITHER an activity OR a raw action (the XOR) — the
@@ -198,14 +198,14 @@
               <div class="pl-confirmed" data-test="pl-insight-confirmed">Confirmed</div>
             <% elsif activity_id %>
               <div class="pl-confirm">
-                <%= button_to "Confirm", alex_pipeline_confirm_path(activity_id),
+                <%= button_to "Confirm", xan_pipeline_confirm_path(activity_id),
                       params: { slug: insight.slug }, data: { test: "pl-confirm-btn" } %>
               </div>
             <% elsif action_id %>
               <div class="pl-confirm">
                 <%# The route needs an :id segment; the controller keys the action
                     branch off the agent_action_id FORM param, so pass both. %>
-                <%= button_to "Confirm", alex_pipeline_confirm_path(action_id),
+                <%= button_to "Confirm", xan_pipeline_confirm_path(action_id),
                       params: { slug: insight.slug, agent_action_id: action_id },
                       data: { test: "pl-confirm-action-btn" } %>
               </div>

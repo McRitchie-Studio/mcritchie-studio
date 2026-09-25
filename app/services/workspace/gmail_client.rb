@@ -35,7 +35,9 @@ module Workspace
         require "google/apis/gmail_v1"
 
         ::Google::Apis::GmailV1::GmailService.new.tap do |svc|
-          svc.authorization = @credentials.authorizer_for(@subject)
+          # :mail admits an allow-listed mailbox (alex@) as well as the workspace
+          # subject — Gmail is the one surface a mailbox row opens.
+          svc.authorization = @credentials.authorizer_for(@subject, purpose: :mail)
         end
       end
     end

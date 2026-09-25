@@ -33,7 +33,7 @@ module DevopsKeySpread
       when "approval_status" then Task::OPERATOR_APPROVAL_NONE
       # Must name a REAL agent slug: Task#sync_persona_identity deletes an unknown
       # persona on save, which would quietly drop the key from a persisted spread.
-      when "persona" then "alex"
+      when "persona" then "xan"
       else "stored-#{key}"
       end
     end

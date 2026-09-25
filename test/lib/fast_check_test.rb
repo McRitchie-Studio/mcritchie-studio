@@ -1858,14 +1858,15 @@ class FastCheckTest < Minitest::Test
     end
   end
 
-  def test_fingerprint_matches_dor_check_view
-    # The writer and the reader must agree, or fast-cert evidence never validates.
+  def test_fingerprint_matches_the_shared_modules_recompute
+    # The writer stamps the hash FullSuiteGate computes for the tree it certified.
+    # (bin/dor-check no longer reads the fast-cert receipt —
+    # /tasks/dor-reads-settled-ci-verdict — and its `--suite-fingerprint` seam went
+    # with it; the control-stamp lane it still grades recomputes through this module.)
     with_repo do |dir, _|
       out, = run_check(dir)
       runner_fp = out[/@([0-9a-f]{7,64})[:\]]/, 1]
-      dor_fp = IO.popen(child_env("DOR_CHECK_DIFF_ROOT" => dir),
-                        "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
-      assert_equal dor_fp, runner_fp
+      assert_equal FullSuiteGate.fingerprint(dir), runner_fp
     end
   end
 

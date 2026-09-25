@@ -105,42 +105,27 @@ class DorCheckExemptCiTest < Minitest::Test
   # asks THIS instead of asking nothing, so the states it must refuse are asserted
   # here directly rather than inferred from a verdict's prose.
   #
-  # READ "ADVANCES" AT THIS GRAIN. Here it means CiGate returns no error, and green
-  # really is alone in that. It is NOT the same question as whether the REVIEW
-  # advances: the caller may waive a no-verdict refusal on a full cert. Driven
-  # through `bin/dor-check --gate-role review` on a task carrying a FULL cert,
-  # :none, :unverified and :unreadable each reach ready=true exit=0 ON THE GATED
-  # PATH — the wording bin/lib/ci_gate.rb's own allow-list note already uses. That
-  # is why the refusal PRINTED for an unclassified state says PASSING and not
-  # advances (/tasks/gate-prose-overclaims-again).
-  #
-  # THOSE FOUR WORDS ARE THE WHOLE SENTENCE, AND THIS IS THE FILE THAT OWES THEM
-  # (/tasks/exempt-path-claim-unqualified). The claim landed here UNQUALIFIED — in
-  # the EXEMPT path's own test file, where it is false. Driven the same way, same
-  # FULL cert, on a docs-KIND task with a doc-only diff, all three REFUSE:
-  #
-  #   injected      ci.state      gated            exempt
-  #   green         green         ready=true  0    ready=true   0
-  #   none          none          ready=true  0    ready=false  1
-  #   unverified    unverified    ready=true  0    ready=false  1
-  #   unreadable    unreadable    ready=true  0    ready=false  1
-  #
-  # The exempt caller passes `cert_route: false` (bin/dor-check's exempt branch), so
-  # tier 2 collapses into tier 3 and green is alone in ADVANCING here as well as in
-  # passing. The unqualified sentence read as true only because the clause before it
-  # said the caller MAY waive — conditionality smuggled in by a neighbour. That
-  # accidental rescue is what this prose family keeps living on; name the path
-  # instead.
+  # READ "ADVANCES" AT THIS GRAIN. Here it means CiGate returns no refusal, and green
+  # is alone in that IN BOTH ROLES: since /tasks/dor-reads-settled-ci-verdict no
+  # local cert stands in for a no-verdict state, so the table below has no "unless
+  # the task carries a FULL cert" column any more. The one role split left is
+  # :pending, which is a WAIT for the builder (still a refusal, worded as waiting)
+  # and a refusal for review.
 
-  def test_unit_green_is_the_only_state_that_advances_a_review
-    error, = CiGate.verdict({ state: :green }, review_role: true, pr_url: PR_URL, slug: "t")
-    assert_nil error, "green must advance"
+  def test_unit_green_is_the_only_state_that_advances
+    [true, false].each do |review_role|
+      error = CiGate.verdict({ state: :green }, review_role: review_role, pr_url: PR_URL, slug: "t")
+      assert_nil error, "green must advance (review_role: #{review_role})"
+    end
   end
 
-  def test_unit_every_non_green_state_refuses_a_review
+  def test_unit_every_non_green_state_refuses_in_both_roles
     %i[red pending conflicted ci_less closed merged none unreadable unverified no_pr].each do |state|
-      error, = CiGate.verdict({ state: state }, review_role: true, pr_url: PR_URL, slug: "t")
-      refute_nil error, "#{state} must refuse a review"
+      [true, false].each do |review_role|
+        error = CiGate.verdict({ state: state }, review_role: review_role, pr_url: PR_URL, slug: "t")
+        refute_nil error, "#{state} must refuse (review_role: #{review_role})"
+        refute_includes error, "certify in full", "#{state}: no refusal offers a cert"
+      end
     end
   end
 
@@ -148,29 +133,35 @@ class DorCheckExemptCiTest < Minitest::Test
   # heard of refuses too. Testing only the real tokens cannot tell an allow-list
   # from a deny-list, and the difference is a live false pass.
   def test_unit_an_unclassified_state_refuses_rather_than_falling_through
-    error, clears = CiGate.verdict({ state: :teal }, review_role: true, pr_url: PR_URL, slug: "t")
-    assert_includes error.to_s, "does not classify"
-    refute clears, "an unclassified state is not the no-verdict family and no cert clears it"
+    [true, false].each do |review_role|
+      error = CiGate.verdict({ state: :teal }, review_role: review_role, pr_url: PR_URL, slug: "t")
+      assert_includes error.to_s, "does not classify", "review_role: #{review_role}"
+    end
   end
 
-  def test_unit_a_blank_pr_url_refuses_and_no_cert_can_clear_it
-    error, clears = CiGate.verdict({ state: :no_pr }, review_role: true, pr_url: "", slug: "t")
-    assert_includes error.to_s, "BLANK"
-    refute clears, "the missing thing is the SUBJECT, not the evidence"
+  def test_unit_a_blank_pr_url_refuses_in_both_roles
+    review = CiGate.verdict({ state: :no_pr }, review_role: true, pr_url: "", slug: "t")
+    assert_includes review.to_s, "BLANK"
+    assert_includes review.to_s, "nothing to merge", "review's job is to merge a PR"
+
+    builder = CiGate.verdict({ state: :no_pr }, review_role: false, pr_url: "", slug: "t")
+    assert_includes builder.to_s, "BLANK"
+    assert_includes builder.to_s, "open the PR", "the builder's move is to open one"
   end
 
-  # The role split is load-bearing and must survive the extraction: the builder's
-  # submit-side run is provisional by construction, so a pending CI is a note there
-  # and a refusal in review.
-  def test_unit_a_pending_ci_notes_for_the_builder_and_refuses_for_review
-    error, _clears, notes = CiGate.verdict({ state: :pending, pending: ["ci"] },
-                                           review_role: false, pr_url: PR_URL, slug: "t")
-    assert_nil error
-    assert_includes notes.join(" "), "NO LONGER blocks"
+  # The role split that is left, and it must survive the extraction: a pending CI is
+  # a WAIT for the builder — still not ready, worded as waiting — and a refusal in
+  # review.
+  def test_unit_a_pending_ci_waits_for_the_builder_and_refuses_for_review
+    builder = CiGate.verdict({ state: :pending, pending: ["ci"] }, review_role: false, pr_url: PR_URL, slug: "t")
+    assert_includes builder.to_s, "WAITING for it to settle"
+    assert CiGate.waiting?({ state: :pending }, review_role: false)
 
-    review_error, = CiGate.verdict({ state: :pending, pending: ["ci"] },
-                                   review_role: true, pr_url: PR_URL, slug: "t")
-    assert_includes review_error.to_s, "still RUNNING"
+    review = CiGate.verdict({ state: :pending, pending: ["ci"] }, review_role: true, pr_url: PR_URL, slug: "t")
+    assert_includes review.to_s, "still RUNNING"
+    assert_includes review.to_s, "defer this review"
+    refute CiGate.waiting?({ state: :pending }, review_role: true)
+    refute CiGate.waiting?({ state: :green }, review_role: false)
   end
 
   def test_unit_gate_row_names_ci_as_the_failing_sop_when_ci_is_why_it_failed
@@ -180,11 +171,10 @@ class DorCheckExemptCiTest < Minitest::Test
     # anything at all on that path. It graded "pass" until 2026-09-07: the review
     # refused while the gates card recorded CI as passing.
     assert_equal "fail", CiGate.gate_row({ state: :green }, review_role: true, review_refused: true)
-    # …and the builder-side pending row, unchanged. NOTE it is pinned only for
-    # review_refused: false — the refused variant is unreachable (CiGate.verdict makes a
-    # builder-side :pending a NOTE, not a ci_error), so asserting one would pin a state
-    # no caller can construct.
+    # …and the builder-side pending row: a WAIT is in-flight whichever flag the caller
+    # passes, because the row is about the CI STATE and that state is still coming.
     assert_equal "pending", CiGate.gate_row({ state: :pending }, review_role: false, review_refused: false)
+    assert_equal "pending", CiGate.gate_row({ state: :pending }, review_role: false, review_refused: true)
     assert_equal "fail", CiGate.gate_row({ state: :red }, review_role: true, review_refused: true)
     assert_equal "fail", CiGate.gate_row({ state: :pending }, review_role: true, review_refused: true)
     assert_equal "pending", CiGate.gate_row({ state: :pending }, review_role: false, review_refused: false)
@@ -276,14 +266,18 @@ class DorCheckExemptCiTest < Minitest::Test
   # The builder's submit-side run stays provisional: review re-reads it, so a
   # pending CI is a note and a missing PR is silent. A fix that blocked BOTH roles
   # would stall every docs handoff on an hour-old token.
-  def test_the_builder_role_keeps_its_provisional_treatment
+  # The builder's submit-side run is no longer provisional: with the cert routes gone
+  # a pending CI is a WAIT (not ready, marked as waiting), a missing PR refuses (there
+  # is no verdict to read), and a RED CI blocks as it always did.
+  def test_the_builder_role_waits_on_pending_and_refuses_the_rest
     pending, code = check(devops, ci: "pending", role: "builder")
-    assert_equal 0, code, "submit-side pending must not block"
-    assert_includes Array(pending["suggestions"]).join(" "), "NO LONGER blocks"
+    assert_equal 1, code, "submit-side pending is not ready"
+    assert pending["ci_waiting"], "…but it is a WAIT, and the payload says so"
+    assert_includes errors_of(pending), "WAITING for it to settle"
 
     no_pr, no_pr_code = check(devops("pr_url" => ""), role: "builder")
-    assert_equal 0, no_pr_code, "submit-side runs before the PR exists"
-    assert_empty Array(no_pr["errors"])
+    assert_equal 1, no_pr_code, "with no PR there is no CI verdict to read"
+    assert_includes errors_of(no_pr), "devops.pr_url is BLANK"
 
     red, red_code = check(devops, ci: "red", role: "builder")
     assert_equal 1, red_code, "a RED CI blocks in BOTH roles"
@@ -541,48 +535,35 @@ class DorCheckExemptCiTest < Minitest::Test
     assert_nil verdict["ci"]
   end
 
-  # ══ THE GATE MUST HONOUR THE REMEDY IT PRINTS — ON BOTH PATHS ════════════════
+  # ══ NO VERDICT OFFERS A CERT, AND A RECORDED CERT CHANGES NOTHING ════════════
   #
-  # THE DEFECT (/tasks/exempt-refusal-prints-dead-remedy). The exempt path took the
-  # GATED path's refusal verbatim — "certify in full instead: `bin/full-suite-check
-  # <slug>`" — while bin/dor-check discarded the `cert_clears` flag that was the only
-  # thing able to honour it. Measured before the fix: adding that exact cert produced
-  # a BYTE-IDENTICAL refusal. The gate printed an instruction it could not honour, and
-  # an operator who followed it burned a full-suite run for nothing.
+  # THE HISTORY (/tasks/exempt-refusal-prints-dead-remedy). The exempt path once took
+  # the GATED path's refusal verbatim — "certify in full instead: `bin/full-suite-check
+  # <slug>`" — while bin/dor-check discarded the flag that was the only thing able to
+  # honour it: adding that exact cert produced a BYTE-IDENTICAL refusal. The pin that
+  # closed it READ THE PRINTED REFUSAL to decide what the gate promised, then executed
+  # the promise on both paths.
   #
-  # WHY A TEST AND NOT A CAREFUL COMMENT. This bug is a MESSAGE that outran its
-  # BEHAVIOUR, and the two live in different files. Nothing structural held them
-  # together, so they drifted the moment a second caller appeared — and the same class
-  # of drift produced five false comments in this ecosystem in one day, several
-  # written by people fixing false comments. Prose cannot hold prose honest.
-  #
-  # HOW THIS PIN WORKS, and why it is a PROPERTY rather than a pair of cases: it does
-  # not know which path offers a cert. It READS THE PRINTED REFUSAL, decides from that
-  # text alone what the gate promised, and then EXECUTES the promise:
-  #
-  #   promised a cert     → running with a FULL cert MUST advance (exit 0).
-  #   promised no cert    → running with a FULL cert MUST still refuse, and the
-  #                         refusal must be BYTE-IDENTICAL — which is the defect's own
-  #                         signature, asserted here as the PROOF that the denial is
-  #                         accurate rather than as the bug.
-  #
-  # So neither half can move alone. Re-arm the cert route on the exempt path without
-  # rewording, and the identical-refusal branch fails. Reword either message without
-  # moving the behaviour, and the executed-promise branch fails. Both are mutated
-  # separately in this file's sibling checks (see the task's mutation evidence).
+  # SINCE /tasks/dor-reads-settled-ci-verdict THERE IS NO PROMISE TO EXECUTE: the suite
+  # evidence is the PR's settled green CI, on every path and in every role, and the
+  # fingerprint receipts are not read. So the property is now one-directional and
+  # holds everywhere — every no-verdict refusal DENIES a cert, offers none, and a
+  # recorded full cert leaves the refusal byte-identical. The byte-identity that was
+  # the defect's signature is the proof that the denial is accurate.
 
   # THE CONTRACT CLAUSES. Each is spelled ONCE in the source (bin/lib/ci_gate.rb and
   # bin/lib/ci_status.rb) and read here to classify a refusal. They are deliberately
-  # the wording an operator acts on, not an internal token: the thing under test IS
-  # what the reader is told.
+  # the wording an operator acts on, not an internal token.
   OFFERS_CERT = "certify in full instead"
   DENIES_CERT = "no local cert stands in"
 
-  # The GATED twin of `devops` — a code diff under a shaped bug, which is the path
-  # where a full cert genuinely does stand in. Same states, same binary, opposite
-  # answer; that contrast is what makes the property meaningful rather than a
-  # restatement of the exempt path.
+  # The GATED twin of `devops` — a code diff under a shaped bug.
   GATED_CODE_DIFF = "app/models/thing.rb"
+
+  # What bin/full-suite-check records: a full cert at a fingerprint. Whatever the
+  # hash, the gate must not read it.
+  FULL_CERT_RECEIPTS = ["[full-suite@#{'a' * 40}] bin/rails test (11004 runs, 0 failures)",
+                        "[rubocop@#{'a' * 40}] bin/rubocop (clean)"].freeze
 
   def gated_devops(overrides = {})
     {
@@ -595,28 +576,15 @@ class DorCheckExemptCiTest < Minitest::Test
     }.merge(overrides)
   end
 
-  # Runs the REAL binary on either path with a stated suite-evidence world, and
-  # returns [stdout, exitcode]. `evidence` is named at every call site with no
-  # default, for the reason dor_check_test.rb states about its own `evidence:`:
-  # accidental coverage of the cert dimension is one refactor from vanishing, and the
-  # cert dimension is the entire subject here.
-  # `pr_files:` IS A SEPARATE DIMENSION FROM `ci:`, AND THAT IS THE WHOLE POINT.
-  # This helper used to pin DOR_CHECK_PR_FILES to the readable diff, which made
-  # pr_read_alert nil in every case the property ever saw — so the property could not
-  # observe the ONE state where the two halves of a verdict disagreed, and the gate
-  # shipped an exempt refusal that DENIED a cert in the CI error and OFFERED one four
-  # lines later in the PR-read suggestion. One stale token refuses BOTH reads, so
-  # :unreadable co-fires on the PR file list and the check list; a fixture that can
-  # only vary one of them cannot express the normal shape of the failure it is pinning
-  # (/tasks/exempt-refusal-prints-dead-remedy, bounce 1).
-  #
-  # DOR_CHECK_CHANGED_FILES stays set: it is what keeps an unreadable PR read on the
-  # EXEMPT branch. Without it a review-role run resolves diff_source :pr_unreadable,
-  # observes nothing, and refuses at the "could not be proven doc-only" branch instead
-  # — a different gate with a different contract, deliberately not this property's
-  # subject.
-  def refusal(path, ci:, evidence:, pr_files: :readable)
+  # Runs the REAL binary on either path, returns [stdout, exitcode]. `pr_files:` is a
+  # SEPARATE dimension from `ci:`: one stale App token refuses the PR file list and
+  # the check read together, so :unreadable co-fires on both, and a fixture that
+  # could only vary them together could not express the normal shape of the failure
+  # this section is about. DOR_CHECK_CHANGED_FILES stays set: it is what keeps an
+  # unreadable PR read on the EXEMPT branch.
+  def refusal(path, ci:, pr_files: :readable, receipts: [])
     payload, changed = path == :exempt ? [devops, DOC_DIFF] : [gated_devops, GATED_CODE_DIFF]
+    payload = payload.merge("checks_run" => Array(payload["checks_run"]) + receipts)
     injected_pr_files = pr_files == :readable ? changed : "unreadable"
     Dir.mktmpdir do |dir|
       file = File.join(dir, "task.json")
@@ -625,157 +593,66 @@ class DorCheckExemptCiTest < Minitest::Test
       env = OutboundSeams.env({
         "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
         "DOR_CHECK_CHANGED_FILES" => changed, "DOR_CHECK_PR_FILES" => injected_pr_files,
-        "DOR_CHECK_CI_STATUS" => ci, "DOR_CHECK_SUITE_EVIDENCE" => evidence
+        "DOR_CHECK_CI_STATUS" => ci
       })
       out = IO.popen(env, "#{BIN} remedy-task --file #{file} --gate-role review 2>/dev/null", &:read)
       [out, $?.exitstatus]
     end
   end
 
-  FULL_CERT = "ok"              # bin/full-suite-check — ci.yml's own command, locally
-  FAST_CERT_ONLY = "fast_fresh" # bin/fast-check — diff-mapped, not a stand-in for CI
-
-  # THE PROPERTY. Read the promise off the printed refusal, then execute it.
-  #
-  # RUN OVER BOTH PR-READ WORLDS ON THE EXEMPT PATH. `:readable` is the isolated case
-  # (only the check read was refused); `:unreadable` is the NORMAL one, where a single
-  # stale token refuses the PR file list and the CI in the same run, so a verdict
-  # carries the CI gate's refusal AND the PR-read alert together. The second world is
-  # what the first cut of this pin could not reach, and it is the world the defect
-  # lived in.
-  #
-  # THE GATED PATH IS RUN ON `:readable` ONLY, AND THE REASON IS A MEASUREMENT, NOT AN
-  # OVERSIGHT. Adding gated×:unreadable to this list fails TODAY, and it failed
-  # identically before this task touched anything: in the REVIEW role the PR-read alert
-  # is an ERROR (grading a substitute for a refused read is the false pass gate-zero
-  # exists to refuse), and no cert clears an error about the DIFF — so the verdict
-  # names `bin/full-suite-check`, the operator runs it, the CI half duly clears, and
-  # the run still exits 1 on the PR-read half. That is a real dead remedy, PRE-EXISTING
-  # and unchanged in exposure by this task, and it is not fixable by flipping this
-  # caller: `cert_route: false` prints the doc-only denial ("the shape/test-tier gate
-  # is already waived"), which is false on a code diff. It wants a THIRD route — "this
-  # refusal is not the suite gate's at all" — shared with bin/dor-check's "could not be
-  # proven doc-only" branch and bin/release.rb's G3 gate. That is its own task; this
-  # comment is the handle, and this line is where the pin extends to when it lands.
-  def test_every_no_verdict_refusal_is_honoured_exactly_as_printed
-    [%i[exempt readable], %i[exempt unreadable], %i[gated readable]].each do |path, pr_files|
+  # THE PROPERTY, over both paths and both PR-read worlds. The gated×unreadable cell
+  # used to be excluded because its PR-read half was an error no cert cleared while
+  # its CI half offered one — a dead remedy. With no offer anywhere, the cell is
+  # ordinary and the property covers it.
+  def test_every_no_verdict_refusal_denies_a_cert_and_a_recorded_cert_changes_nothing
+    [%i[exempt readable], %i[exempt unreadable], %i[gated readable], %i[gated unreadable]].each do |path, pr_files|
       %w[none unverified unreadable].each do |state|
         label = "#{path}/#{state}/pr_files:#{pr_files}"
-        refused, code = refusal(path, ci: state, evidence: FAST_CERT_ONLY, pr_files: pr_files)
-        assert_equal 1, code, "#{label} must refuse without a full cert:\n#{refused}"
+        refused, code = refusal(path, ci: state, pr_files: pr_files)
+        assert_equal 1, code, "#{label} must refuse:\n#{refused}"
+        assert_includes refused, DENIES_CERT, "#{label} must say plainly that no cert stands in:\n#{refused}"
+        refute_includes refused, OFFERS_CERT,
+                        "#{label}: NO printer in a verdict may name a route the gate cannot honour:\n#{refused}"
 
-        offered = refused.include?(OFFERS_CERT)
-        denied  = refused.include?(DENIES_CERT)
-        # THE ASSERTION THAT CAUGHT THIS. A verdict may promise a cert or deny one; a
-        # verdict that does BOTH has two printers disagreeing inside one refusal, and
-        # the operator acts on whichever they read first. That is exactly what an
-        # unreadable PR file list produced on the exempt path.
-        refute_equal offered, denied,
-                     "#{label} must either OFFER a cert or DENY one, never both or neither:\n#{refused}"
-
-        certified, cert_code = refusal(path, ci: state, evidence: FULL_CERT, pr_files: pr_files)
-
-        if offered
-          assert_equal 0, cert_code,
-                       "#{label} PRINTED #{OFFERS_CERT.inspect} — the gate must honour the remedy " \
-                       "it prints:\n#{certified}"
-          assert_match(/ready to advance/, certified)
-        else
-          assert_equal 1, cert_code,
-                       "#{label} PRINTED #{DENIES_CERT.inspect}, so a full cert must NOT advance " \
-                       "it:\n#{certified}"
-          # THE DEFECT'S OWN SIGNATURE, now the proof of honesty. Before the fix this
-          # sameness sat under a refusal that had just recommended the cert; the
-          # denial is only accurate if the cert truly changes nothing.
-          assert_equal refused, certified,
-                       "#{label} says a cert does not stand in — so adding one must change " \
-                       "NOTHING, byte for byte"
-        end
+        certified, cert_code = refusal(path, ci: state, pr_files: pr_files, receipts: FULL_CERT_RECEIPTS)
+        assert_equal 1, cert_code, "#{label}: a recorded full cert must NOT advance it:\n#{certified}"
+        # Byte-identical MINUS the suggestions: the base-movement audit names the per-run
+        # tmpdir it could not read a ref in, so two runs differ there by construction.
+        assert_equal verdict_lines(refused), verdict_lines(certified),
+                     "#{label} says a cert does not stand in — so adding one must change NOTHING, byte for byte"
       end
     end
   end
 
-  # THE DIRECTION, asserted separately. The property above would still hold if BOTH
-  # paths flipped together, which would be a deliberate policy change and must not
-  # pass silently. This is the policy: a doc-only diff has no suite left to
-  # substitute, so it gets no cert route; a code diff does.
-  #
-  # ALSO RUN WITH THE PR FILE LIST REFUSED, because that is where the direction was
-  # actually broken: the CI half denied the cert and the PR-read half offered it, in
-  # one verdict. `refute_includes … OFFERS_CERT` over the WHOLE exempt refusal is what
-  # states the property at verdict grain rather than per-printer — a second printer
-  # cannot reintroduce the offer without failing here.
-  def test_the_exempt_path_denies_the_cert_route_and_the_gated_path_offers_it
-    %i[readable unreadable].each do |pr_files|
-      %w[none unverified unreadable].each do |state|
-        label = "#{state}/pr_files:#{pr_files}"
-        exempt_refusal, = refusal(:exempt, ci: state, evidence: FAST_CERT_ONLY, pr_files: pr_files)
-        assert_includes exempt_refusal, DENIES_CERT,
-                        "the exempt refusal must say plainly that no cert stands in (#{label})"
-        refute_includes exempt_refusal, OFFERS_CERT,
-                        "NO printer in an exempt verdict may name a route it cannot honour (#{label}):\n" \
-                        "#{exempt_refusal}"
-
-        gated_refusal, = refusal(:gated, ci: state, evidence: FAST_CERT_ONLY, pr_files: pr_files)
-        assert_includes gated_refusal, OFFERS_CERT,
-                        "the gated refusal must still name the cert that clears its CI verdict (#{label})"
-        refute_includes gated_refusal, DENIES_CERT,
-                        "a full cert DOES stand in for the gated path's unread CI verdict; denying it " \
-                        "would be the mirror defect (#{label})"
-      end
-    end
+  def verdict_lines(out)
+    out.lines.reject { |l| l.include?("ⓘ suggestion:") }.join
   end
 
-  # THE CONTROL FOR THE VARIANT ABOVE: prove the new input actually reaches the path.
-  # A `pr_files: :unreadable` run that silently behaved like a readable one would make
-  # every assertion above pass while testing nothing — the fixture-cannot-express-the-
-  # bug failure. So assert the PR-read alert is PRESENT when the read is refused and
-  # ABSENT when it is not; that alert is the second printer, and its presence is the
-  # precondition for the offer/denial collision this task fixes.
+  # THE CONTROL FOR THE VARIANT ABOVE: prove the unreadable-PR input actually reaches
+  # the path. A `pr_files: :unreadable` run that silently behaved like a readable one
+  # would make every assertion above pass while testing nothing.
   ALERT_MARK = "so this verdict did NOT read the PR"
 
   def test_the_unreadable_pr_file_list_variant_actually_reaches_the_second_printer
-    with_alert, = refusal(:exempt, ci: "unreadable", evidence: FAST_CERT_ONLY, pr_files: :unreadable)
+    with_alert, = refusal(:exempt, ci: "unreadable", pr_files: :unreadable)
     assert_includes with_alert, ALERT_MARK,
                     "the pr_files: :unreadable world must actually fire pr_read_alert:\n#{with_alert}"
 
-    without_alert, = refusal(:exempt, ci: "unreadable", evidence: FAST_CERT_ONLY, pr_files: :readable)
+    without_alert, = refusal(:exempt, ci: "unreadable", pr_files: :readable)
     refute_includes without_alert, ALERT_MARK,
                     "the readable world must NOT fire it, or the two worlds are the same test"
   end
 
-  # ── [unit] the flag and the text come from ONE parameter ────────────────────
-  #
-  # The integration property above proves the two agree through the real binary. This
-  # proves they CANNOT disagree at the source: `cert_route` decides the returned
-  # `cert_clears` AND the wording, so there is no state in which a caller is handed a
-  # clearable refusal whose text denies the cert (or the reverse). That was exactly
-  # the defect's shape — bin/dor-check received `cert_clears = true`, discarded it,
-  # and printed the offer the discarded flag was the only thing able to honour.
-  def test_unit_cert_route_governs_the_flag_and_the_wording_together
+  # ── [unit] the denial at the source, in both roles ──────────────────────────
+  def test_unit_no_verdict_refusal_offers_a_cert_in_either_role
     %i[none unverified unreadable].each do |state|
       ci = { state: state, reason: "403", cause: :permissions }
-
-      offered, clears = CiGate.verdict(ci, review_role: true, pr_url: PR_URL, slug: "t", cert_route: true)
-      assert clears, "#{state}: the gated path's refusal must be clearable by a full cert"
-      assert_includes offered, OFFERS_CERT, "#{state}: a clearable refusal must name the route"
-      refute_includes offered, DENIES_CERT
-
-      denied, no_clears = CiGate.verdict(ci, review_role: true, pr_url: PR_URL, slug: "t", cert_route: false)
-      refute no_clears, "#{state}: the exempt path's refusal must NOT be clearable"
-      assert_includes denied, DENIES_CERT, "#{state}: an unclearable refusal must say so"
-      refute_includes denied, OFFERS_CERT, "#{state}: it must not name a route it cannot honour"
-    end
-  end
-
-  # The states OUTSIDE the no-verdict family never carried a cert route in either
-  # direction, and must not grow one from this change: `cert_route` is about which
-  # refusals a cert may clear, not about widening the family that may be cleared.
-  def test_unit_cert_route_does_not_widen_the_no_verdict_family
-    %i[red conflicted closed merged no_pr teal].each do |state|
-      _error, clears = CiGate.verdict({ state: state, failing: ["ci"] },
-                                      review_role: true, pr_url: PR_URL, slug: "t", cert_route: true)
-      refute clears, "#{state} is not the no-verdict family — no cert clears it, whatever cert_route says"
+      [true, false].each do |review_role|
+        message = CiGate.verdict(ci, review_role: review_role, pr_url: PR_URL, slug: "t")
+        refute_includes message, OFFERS_CERT, "#{state}/review_role:#{review_role}: the retired offer is back"
+        assert_includes message.downcase, DENIES_CERT.downcase,
+                        "#{state}/review_role:#{review_role}: the refusal must say nothing stands in:\n#{message}"
+      end
     end
   end
 
@@ -788,81 +665,52 @@ class DorCheckExemptCiTest < Minitest::Test
   # arrives that is :conflicted / :ci_less, each with its own remedy.
   def test_unit_the_no_verdict_refusal_no_longer_blames_a_repo_without_workflows
     %i[none unverified].each do |state|
-      message, = CiGate.verdict({ state: state }, review_role: true, pr_url: PR_URL, slug: "t",
-                                                  cert_route: true)
-      refute_match(/NO workflows at all/, message,
-                   "#{state}: every repo here ships a pull_request workflow — that premise is false")
-      refute_match(/no check will ever appear/i, message,
-                   "#{state}: 'never' is a property of the PR's merge state (:conflicted/:ci_less), not a repo")
+      [true, false].each do |review_role|
+        message = CiGate.verdict({ state: state }, review_role: review_role, pr_url: PR_URL, slug: "t")
+        refute_match(/NO workflows at all/, message,
+                     "#{state}: every repo here ships a pull_request workflow — that premise is false")
+        refute_match(/no check will ever appear/i, message,
+                     "#{state}: 'never' is a property of the PR's merge state (:conflicted/:ci_less), not a repo")
+      end
     end
   end
 
   # ── [unit] THE CALL-SITE REGISTRY — a comment that checks itself ────────────
   #
   # WHY THIS EXISTS. `CiStatus.unreadable_remedy` carries a comment naming every
-  # production caller and the route each is on. The first version of that comment said
-  # "every caller that predates the parameter is on the gated path", and it was FALSE
-  # at two callers on the day it was written — one of which (bin/dor-check's
-  # pr_read_alert on the exempt path) was the live defect that bounced this PR. Prose
-  # about call sites goes stale the moment someone adds a call site, and nothing in a
-  # code review reliably notices.
-  #
-  # So the list is pinned to the SOURCE. This does not judge whether a route is
-  # correct — that is the property test's job, above, which executes the printed
-  # promise. It judges only that the set of callers is the set the comment describes:
-  # add a caller, delete one, or flip one between "states its route" and "takes the
-  # default", and this fails and hands the author the comment to update.
+  # production caller and the route each is on. Prose about call sites goes stale the
+  # moment someone adds a call site, and nothing in a code review reliably notices.
+  # So the list is pinned to the SOURCE: add a caller, delete one, or flip one between
+  # "states its route" and "takes the default", and this fails and hands the author
+  # the comment to update.
   #
   # THE HASH IS KEYED BY FILE PATH, so on its own it can only ever audit the files
   # someone thought to type. The FILE SET is therefore globbed and asserted
-  # separately — see `bin_files` and the set test below, which is what makes "add a
-  # caller" true of a caller added in a FILE THIS HASH HAS NEVER HEARD OF.
+  # separately — see `bin_files` and the set test below.
   #
-  # NUMBERS, and the reason for each:
-  #   bin/lib/ci_gate.rb  1 stating / 0 default — unread_ci_refusal forwards its own
-  #                       cert_route:, and both CiGate.verdict callers state it.
-  #   bin/dor-check       1 stating / 3 default — the stating one is pr_read_alert,
-  #                       which FORWARDS its callers' route (see below); the three
-  #                       defaults are the suite gate's TWO unreadable-CI refusals —
-  #                       the FAST-cert branch and the DEFERRED one, each in its
-  #                       BUILDER half — plus the submit-side note, all on the GATED
-  #                       path where a cert genuinely clears. The deferred half joined
-  #                       them in /tasks/deferred-unreadable-skips-role-split: it had
-  #                       been pointing at a CI error only the REVIEW role raises, so
-  #                       submit-side it named a remedy that was not in the errors.
-  #   bin/pr-review       1 stating / 0 default — cert_route: !maybe_exempt.
-  #   bin/release.rb      1 stating / 0 default — the G3 pre-QA gate, which STATES
-  #                       cert_route: :retired since /tasks/release-offers-retired-cert.
-  #                       It is the one entry here that has MOVED: it was 0/1, and the
-  #                       pin at 1 default is what brought the fix back to this file.
-  #                       Totals went 3/3 → 4/2 in that one diff, and 4/2 → 4/3 when
-  #                       the deferred branch above gained its builder half — SEVEN
-  #                       callers over FOUR files as of 2026-09-06. This number has
-  #                       moved in three consecutive sittings: re-derive it with the
-  #                       scan below rather than trusting any figure written here.
+  # NUMBERS, and the reason for each (re-derive with the scan below rather than
+  # trusting any figure written here — this table has moved in four consecutive
+  # sittings):
+  #   bin/lib/ci_gate.rb  0 stating / 1 default — unread_ci_refusal's :unreadable arm,
+  #                       both roles. It stopped forwarding a route at
+  #                       /tasks/dor-reads-settled-ci-verdict: every task-grain route
+  #                       prints the same denial, so there is nothing to forward.
+  #   bin/dor-check       0 stating / 1 default — pr_read_alert, for the same reason;
+  #                       the suite gate's two builder-side unreadable-CI refusals
+  #                       retired with the cert lanes they argued from.
+  #   bin/pr-review       1 stating / 0 default — cert_route: !maybe_exempt, kept as a
+  #                       legal spelling (both values print the task-grain denial).
+  #   bin/release.rb      1 stating / 0 default — the G3 pre-QA gate, cert_route:
+  #                       :retired since /tasks/release-offers-retired-cert.
   UNREADABLE_REMEDY_CALL_SITES = {
-    "bin/lib/ci_gate.rb" => { states_route: 1, takes_default: 0 },
-    "bin/dor-check" => { states_route: 1, takes_default: 3 },
+    "bin/lib/ci_gate.rb" => { states_route: 0, takes_default: 1 },
+    "bin/dor-check" => { states_route: 0, takes_default: 1 },
     "bin/pr-review" => { states_route: 1, takes_default: 0 },
-    "bin/release.rb" => { states_route: 1, takes_default: 0 }
+    # G3's pre_qa_ci_abort and G4's ship_test_gate_ci_abort — both release-grain
+    # denials (:retired); the ship gate reads CI for the frozen tree exactly as G3
+    # reads it for the release tip, so its :unreadable branch carries the same remedy.
+    "bin/release.rb" => { states_route: 2, takes_default: 0 }
   }.freeze
-
-  # pr_read_alert's OWN callers, counted by route. It prints from six branches and is
-  # used as a predicate (`pr_read_alert ? …`) in three more where the string is
-  # discarded — the reason the method keeps a default at all.
-  #   5 printing callers pass true  — the gated path, the two "could not be proven
-  #                                   doc-only" branches, and the two :pr_incomplete
-  #                                   branches added by /tasks/dor-check-reads-one-pr
-  #                                   (the exempt preamble and the shape-claim refusal
-  #                                   for a multi-repo task with one PR unread). All
-  #                                   five REFUSE: nothing is waived on any of them, so
-  #                                   the exempt denial's premise — "the shape/test-tier
-  #                                   gate is already waived, so there is no suite left
-  #                                   to substitute" — would be false.
-  #   1 printing caller passes false — the EXEMPT path. This is the fix.
-  # It went 3 → 5 on 2026-09-07; re-derive it with the scan below rather than trusting
-  # the figure written here.
-  PR_READ_ALERT_CALL_SITES = { true => 5, false => 1, predicate: 3 }.freeze
 
   REPO_ROOT = File.expand_path("../..", __dir__)
 
@@ -980,28 +828,15 @@ class DorCheckExemptCiTest < Minitest::Test
     end
   end
 
-  def test_unit_every_printing_caller_of_pr_read_alert_states_its_route
+  # pr_read_alert used to forward its callers' cert route (five printing callers passed
+  # true, the exempt one false, three predicate uses discarded the string). It takes
+  # no route now, because none exists to forward — and a caller that grew one back
+  # would be re-arming an offer the gate cannot honour.
+  def test_unit_pr_read_alert_takes_no_route
     source = code_of("bin/dor-check")
-    # The definition is not a call site. Dropped ENTIRELY, not renamed: a rename that
-    # keeps the identifier as a prefix still matches the bare-use scan below, which is
-    # how the first cut of this counted four predicates where three exist.
-    source = source.sub(/^def pr_read_alert\(cert_route: true\)$/, "def PR_READ_ALERT_DEFINITION")
 
-    printing = calls_to(source, "pr_read_alert(")
-    assert_equal PR_READ_ALERT_CALL_SITES[true], printing.count { |arg| arg.include?("cert_route: true") },
-                 "printing callers on the GATED/enforced branches changed:\n#{printing.join("\n---\n")}"
-    assert_equal PR_READ_ALERT_CALL_SITES[false], printing.count { |arg| arg.include?("cert_route: false") },
-                 "the EXEMPT caller is the one that must pass false — that is this task's whole fix:\n" \
-                 "#{printing.join("\n---\n")}"
-    assert_equal printing.size, printing.count { |arg| arg.include?("cert_route:") },
-                 "a printing caller of pr_read_alert rode the default. That is exactly how the exempt path " \
-                 "came to print an offer it could not honour:\n#{printing.join("\n---\n")}"
-
-    # The predicate uses discard the string, so they are allowed to omit the keyword —
-    # counted, not merely tolerated, so that a printing caller can never hide among them.
-    predicates = source.scan(/pr_read_alert(?!\()/).size
-    assert_equal PR_READ_ALERT_CALL_SITES[:predicate], predicates,
-                 "bare `pr_read_alert` uses (predicate only — the string is discarded) changed to #{predicates}"
+    assert_match(/^def pr_read_alert$/, source, "pr_read_alert must take no parameters")
+    refute_includes source, "cert_route", "bin/dor-check must name no cert route anywhere — there is none"
   end
 
   # ── the closing line that outlived its truth ────────────────────────────────
@@ -1028,12 +863,6 @@ class DorCheckExemptCiTest < Minitest::Test
   # method under test would make the fence agree with any rewrite of that method,
   # which is the fence disarmed rather than the fence passing.
   GREEN_SUFFICIENT = "Fixing the credential is the only route — this gate advances on a GREEN CI and nothing else."
-  # The gated offer AS THESE CALLS PRINT IT — they pass no `task:`, which is the
-  # no-slug fallback (/tasks/builder-reads-remedy-twice). It reads this way, rather
-  # than "bin/full-suite-check <task>", because the placeholder was the one token the
-  # reader could not fill; a caller that HAS a slug names it instead, which the
-  # deferred-cert file asserts against a rendered verdict.
-  GATED_OFFER = "certify in full instead: bin/full-suite-check, run with this task's slug"
   CO_FIRE_CLAIM = "NECESSARY AND NOT SUFFICIENT"
   REMEDY_CAUSES = [:permissions, :credentials, :authentication, :rate_limit, :forbidden, nil].freeze
   REMEDY_REPO = "McRitchie-Studio/myapp"
@@ -1078,17 +907,18 @@ class DorCheckExemptCiTest < Minitest::Test
   # is about wording operators already know, and the gated route carries most of this
   # method's traffic — so the assertion is EQUALITY against the un-parameterised call,
   # not merely "still contains the offer".
-  def test_unit_the_gated_route_is_untouched_by_the_derivation
+  # THE OLD GATED ROUTE (`true`) IS THE SAME TASK-GRAIN DENIAL AS `false` — the two
+  # used to differ by the cert offer, and the offer is gone. Asserted as EQUALITY so a
+  # divergence between them (an offer creeping back on one) fails here.
+  def test_unit_the_true_route_is_the_same_task_grain_denial_as_false
     REMEDY_CAUSES.each do |cause|
-      plain = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, cert_route: true)
-      loaded = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, cert_route: true,
-                                          also_refused: ["something else refused too"])
+      offered = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, cert_route: true)
+      denied = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, cert_route: false)
 
-      assert_equal plain, loaded,
-                   "#{cause.inspect}: the GATED route must ignore also_refused entirely — its closing is " \
-                   "the cert offer, which no other refusal changes"
-      assert_includes plain, GATED_OFFER, "#{cause.inspect}: the gated offer is the wording being fenced"
-      refute_includes plain, CO_FIRE_CLAIM, "#{cause.inspect}: the derived clause must not leak here"
+      assert_equal denied, offered, "#{cause.inspect}: true and false must print one denial"
+      assert_includes offered, DENIES_CERT, "#{cause.inspect}: the denial carries the contract clause"
+      refute_includes offered, OFFERS_CERT, "#{cause.inspect}: the retired offer is back"
+      refute_includes offered, CO_FIRE_CLAIM, "#{cause.inspect}: the derived clause must not leak on an empty list"
     end
   end
 
@@ -1097,7 +927,7 @@ class DorCheckExemptCiTest < Minitest::Test
   # because the binary test above can only reach one cause.
   def test_unit_an_empty_also_refused_prints_the_original_exempt_closing
     REMEDY_CAUSES.each do |cause|
-      [false, nil].each do |route|
+      [true, false, nil].each do |route|
         remedy = CiStatus.unreadable_remedy(REMEDY_REPO, cause: cause, cert_route: route)
 
         assert remedy.end_with?(GREEN_SUFFICIENT),
@@ -1122,36 +952,26 @@ class DorCheckExemptCiTest < Minitest::Test
     end
 
     assert_includes error.message, ":retried", "the refusal must name the value it rejected"
-    refute_includes error.message, GATED_OFFER,
+    refute_includes error.message, OFFERS_CERT,
                     "the typo must not reach the gated branch even to quote it"
   end
 
-  # ONE FENCE, BOTH ENTRY POINTS. CiGate.unread_ci_refusal forwards this parameter on
-  # one branch and BRANCHES ON IT on another (:none/:unverified) that never reaches
-  # unreadable_remedy at all — so a fence living only downstream would leave that
-  # branch open to the same typo.
-  def test_unit_the_route_fence_is_shared_with_ci_gate
-    error = assert_raises(ArgumentError) do
-      CiGate.unread_ci_refusal({ state: :none }, PR_URL, "t", cert_route: :retried)
-    end
+  # ONE FENCE, ONE ENTRY POINT. CiGate.unread_ci_refusal used to forward this parameter
+  # and branch on it for :none/:unverified, so the fence had to live in both files;
+  # it takes no route now, and the :retired denial it could once be handed is the
+  # release gate's alone (test/lib/release_pre_qa_remedy_test.rb). What CiGate must
+  # still do is deny in every role without ever offering the cert it retired.
+  def test_unit_ci_gate_denies_the_cert_in_both_roles_for_every_no_verdict_state
+    %i[none unverified unreadable].each do |state|
+      [true, false].each do |review_role|
+        message = CiGate.unread_ci_refusal({ state: state, reason: "403", cause: :permissions }, PR_URL, "t",
+                                           review_role: review_role)
 
-    assert_includes error.message, ":retried"
-  end
-
-  # FINDING 2. bin/lib/ci_gate.rb branched on the TRUTHINESS of the route, and
-  # `:retired` is truthy — so a release-grain route reaching that branch would be
-  # offered `bin/full-suite-check` AND have its refusal marked cert-CLEARABLE, which
-  # is the dead-remedy defect twice over. Unreachable today (both CiGate.verdict
-  # callers pass literals), which is exactly when it is cheap to close.
-  def test_unit_a_retired_route_neither_offers_a_cert_nor_marks_it_clearable
-    %i[none unverified].each do |state|
-      message, clears = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: :retired)
-
-      refute clears, "#{state}: a retired route must never mark a refusal cert-clearable"
-      refute_includes message, "certify in full instead",
-                      "#{state}: :retired is truthy — a truthiness branch offers the cert it retired:\n#{message}"
-      assert_includes message, "no local cert stands in",
-                      "#{state}: the denial must carry the shared CONTRACT CLAUSE:\n#{message}"
+        refute_includes message, "certify in full instead",
+                        "#{state}/review_role:#{review_role}: an offer crept back:\n#{message}"
+        assert_includes message.downcase, "no local cert stands in",
+                        "#{state}/review_role:#{review_role}: the denial must carry the CONTRACT CLAUSE:\n#{message}"
+      end
     end
   end
 
@@ -1216,10 +1036,8 @@ class DorCheckExemptCiTest < Minitest::Test
   # this test goes red: the co-fire's closing must name what else is refusing.
   def test_unit_the_no_verdict_co_fire_closing_names_both_refusals
     NO_VERDICT_CLOSING_STATES.each do |state|
-      message, clears = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: false,
-                                                                                also_refused: [PR_READ_NOUN_PHRASE])
+      message = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", also_refused: [PR_READ_NOUN_PHRASE])
 
-      refute clears, "#{state}: the exempt route never marks a refusal cert-clearable"
       refute_includes message, NO_VERDICT_GREEN_SUFFICIENT,
                       "#{state}: THE DEFECT — the CI half still promises a green CI alone advances this " \
                       "gate, while the PR-read refusal on the same verdict says otherwise:\n#{message}"
@@ -1238,8 +1056,7 @@ class DorCheckExemptCiTest < Minitest::Test
   # reader, reached with a different CI state; written twice they drift, which is the
   # failure bin/lib/ci_status.rb's header names in so many words.
   def test_unit_both_co_fire_closings_end_with_the_same_independent_clause
-    gate, = CiGate.unread_ci_refusal({ state: :none }, PR_URL, "t", cert_route: false,
-                                                                    also_refused: [PR_READ_NOUN_PHRASE])
+    gate = CiGate.unread_ci_refusal({ state: :none }, PR_URL, "t", also_refused: [PR_READ_NOUN_PHRASE])
     status = CiStatus.unreadable_remedy(REMEDY_REPO, cause: :credentials, cert_route: false,
                                                      also_refused: [PR_READ_NOUN_PHRASE])
 
@@ -1253,32 +1070,12 @@ class DorCheckExemptCiTest < Minitest::Test
   # operator must read the sentence they have always read, TO THE BYTE.
   def test_unit_an_empty_also_refused_prints_the_original_no_verdict_closing
     NO_VERDICT_CLOSING_STATES.each do |state|
-      [false, nil].each do |route|
-        message, = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: route)
+      message = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t")
 
-        assert message.end_with?(NO_VERDICT_GREEN_SUFFICIENT),
-               "#{state}/#{route.inspect}: with nothing else refusing, the wording operators know must " \
-               "survive VERBATIM — an over-broad fix that reworded it here is what this catches:\n#{message}"
-        refute_includes message, CO_FIRE_CLAIM,
-                        "#{state}/#{route.inspect}: nothing is refusing this verdict besides CI:\n#{message}"
-      end
-    end
-  end
-
-  # [unit] AND THE GATED ROUTE IS INERT TO THE LIST, asserted as EQUALITY rather than
-  # "still contains the offer" — the gated call carries most of this branch's traffic,
-  # and `also_refused` must not leak a word into it. Its closing is the cert offer,
-  # which no other refusal changes.
-  def test_unit_the_gated_no_verdict_route_is_untouched_by_the_derivation
-    NO_VERDICT_CLOSING_STATES.each do |state|
-      plain, plain_clears = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: true)
-      loaded, loaded_clears = CiGate.unread_ci_refusal({ state: state }, PR_URL, "t", cert_route: true,
-                                                                                      also_refused: [PR_READ_NOUN_PHRASE])
-
-      assert_equal plain, loaded, "#{state}: the GATED route must ignore also_refused entirely"
-      assert_equal plain_clears, loaded_clears, "#{state}: nor may it move the cert_clears flag"
-      assert_includes plain, "certify in full instead", "#{state}: the gated offer is the wording being fenced"
-      refute_includes plain, CO_FIRE_CLAIM, "#{state}: the derived clause must not leak here"
+      assert message.end_with?(NO_VERDICT_GREEN_SUFFICIENT),
+             "#{state}: with nothing else refusing, the wording operators know must survive VERBATIM — an " \
+             "over-broad fix that reworded it here is what this catches:\n#{message}"
+      refute_includes message, CO_FIRE_CLAIM, "#{state}: nothing is refusing this verdict besides CI:\n#{message}"
     end
   end
 
@@ -1321,32 +1118,21 @@ class DorCheckExemptCiTest < Minitest::Test
   # unclassified-state branch borrowed the same words to justify its refusal — "the
   # review gate-zero advances on a GREEN CI and nothing else" — and there the claim was
   # doing NECESSITY work only: this state is not green, therefore refuse. That argument
-  # never needed sufficiency, so the sentence now says what the allow-list actually
-  # enforces. The branch consults nothing, so there is no derivation to fence: an
-  # unconditional string is pinned by pinning it, and the retired claim is refuted by
-  # name so it cannot drift back in as a "simplification".
-  #
-  # THE FIRST CORRECTION WAS NOT ENOUGH. It landed as "GREEN is the only CI state that
-  # advances a review", which is measurably false: driven through bin/dor-check
-  # --gate-role review with a FULL cert, :none, :unverified AND :unreadable each reach
-  # ready=true exit=0. THREE non-green states advance a review. Green is alone in
-  # PASSING, not in advancing — a cert can waive a refusal, so they are different
-  # predicates — and the sentence now borrows the word ci_gate.rb's own comment was
-  # already using. BOTH retired spellings are refuted below, because a correction that
-  # drops its predecessor's name is how the predecessor comes back.
+  # never needed sufficiency, so the sentence says what the allow-list actually
+  # enforces: green is alone in PASSING (the shape, tier and PR-read gates each refuse
+  # on a fully green CI, so "advances" would overclaim). BOTH retired spellings are
+  # refuted below, because a correction that drops its predecessor's name is how the
+  # predecessor comes back.
   def test_unit_the_unclassified_refusal_argues_from_necessity_not_sufficiency
-    message, clears = CiGate.unread_ci_refusal({ state: :surprise }, PR_URL, "t")
+    message = CiGate.unread_ci_refusal({ state: :surprise }, PR_URL, "t")
 
-    refute clears, "an unclassified state is not the no-verdict family; no cert clears it"
     assert_includes message, "GREEN is this gate's sole PASSING CI state",
                     "the refusal must argue from what the allow-list enforces:\n#{message}"
     refute_includes message, "advances on a GREEN CI and nothing else",
                     "THE FIRST RETIRED CLAIM: green advances the CI allow-list, not the gate — the shape, tier " \
                     "and PR-read gates all refuse on a fully green CI:\n#{message}"
     refute_includes message, "the only CI state that advances a review",
-                    "THE SECOND RETIRED CLAIM: three non-green states advance a review. :none, :unverified " \
-                    "and :unreadable each reach ready=true exit=0 when the task carries a FULL cert, so " \
-                    "GREEN is alone in PASSING and not in advancing:\n#{message}"
+                    "THE SECOND RETIRED CLAIM: advancing and passing are different predicates:\n#{message}"
   end
 
   # ── the supervisor's own copy of the sentence ───────────────────────────────

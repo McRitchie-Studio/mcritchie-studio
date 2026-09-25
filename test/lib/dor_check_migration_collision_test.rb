@@ -87,8 +87,7 @@ class DorCheckMigrationCollisionTest < Minitest::Test
         "DOR_CHECK_PR_MIGRATIONS" => records.join("\n"),
         "DOR_CHECK_SIBLING_PRS" => (siblings ? JSON.generate(siblings) : "[]"),
         "DOR_CHECK_PR_FILES" => (added + removed).join("\n"),
-        "DOR_CHECK_CI_STATUS" => "green",
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+        "DOR_CHECK_CI_STATUS" => "green"
       )
       out = IO.popen(env, "#{BIN} --file #{path} --json 2>/dev/null", &:read)
       [JSON.parse(out), $?.exitstatus]

@@ -11,7 +11,7 @@ class AgentsController < ApplicationController
   skip_before_action :require_authentication, only: %i[index show]
 
   # The shared activity-feed read layer (session lists, pokemon/soul/grade/transition
-  # bulk lookups) — the same queries the /alex/heartbeat surface uses.
+  # bulk lookups) — the same queries the /xan/heartbeat surface uses.
   include ActivityFeed
 
   # Page size for the cross-session activity feed, matched to the heartbeat's.

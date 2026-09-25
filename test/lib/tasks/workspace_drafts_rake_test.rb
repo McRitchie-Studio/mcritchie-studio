@@ -37,7 +37,7 @@ class WorkspaceDraftsRakeTest < ActiveSupport::TestCase
     refute_equal 0, status
     assert_match(/NOT severed/, output)
     assert_equal "active", @account.reload.status
-    assert WorkspaceAccount.impersonatable?("alex@acquired.test")
+    assert WorkspaceAccount.impersonatable?("alex@acquired.test", purpose: :mail)
   end
 
   test "sever REFUSES on a failure that does not prove the grant is gone" do
@@ -54,7 +54,7 @@ class WorkspaceDraftsRakeTest < ActiveSupport::TestCase
     assert_equal 0, status
     assert_match(/SEVERED/, output)
     assert_equal "severed", @account.reload.status
-    refute WorkspaceAccount.impersonatable?("alex@acquired.test")
+    refute WorkspaceAccount.impersonatable?("alex@acquired.test", purpose: :mail)
   end
 
   test "check_severed passes only on unauthorized_client" do

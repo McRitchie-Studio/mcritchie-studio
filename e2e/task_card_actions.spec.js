@@ -127,14 +127,14 @@ test("task card archive and delete buttons persist and use distinct exits", asyn
     title: "E2E archive action card",
     stage: "building",
     priority: 1,
-    agent_slug: "alex",
+    agent_slug: "xan",
   });
   await createTask(page, token, {
     slug: deleteSlug,
     title: "E2E delete action card",
     stage: "building",
     priority: 1,
-    agent_slug: "alex",
+    agent_slug: "xan",
   });
 
   await page.reload();

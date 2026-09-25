@@ -1,7 +1,7 @@
 <%# One banked lesson in the Insight Bank. Local: grade (a banked ActionGrade). The
     left border + disposition badge read the binary good/not signal; the meta line
-    traces it back to whatever it was mined from and whether it is Alex's grade or
-    the McRitchie audit of Alex.
+    traces it back to whatever it was mined from and whether it is Xan's grade or
+    the McRitchie audit of Xan.
 
     A grade targets EITHER a raw action OR a narrated activity (ActionGrade's XOR), so
     read the provenance from whichever is set — an activity grade has no agent_action
@@ -12,7 +12,7 @@
   <div class="hb-isl">
     <span><%= grade.slug %></span>
     <span class="hb-disp <%= grade.good? ? "good" : "not" %>"><%= grade.disposition.upcase %></span>
-    <span class="hb-grader"><%= grade.alex? ? "Alex" : "McR → Alex" %></span>
+    <span class="hb-grader"><%= grade.xan? ? "Xan" : "McR → Xan" %></span>
   </div>
   <%# The separator is LITERAL template markup, so the browser gets the entity while
       each interpolated value rides ERB's automatic output escaping. Both values are

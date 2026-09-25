@@ -301,8 +301,8 @@ class RemedyHintGuardTest < Minitest::Test
   # instead: bin/ship by test_ships_claim_refusal_prints_commands_that_resolve_on_disk
   # below, bin/task by test/lib/task_begin_test.rb's banner and resume assertions.)
   COMPOSED_REMEDY_CONSTANTS = {
-    "bin/lib/ci_gate.rb" => ["CiGate", %w[FULL_SUITE_CMD TASK_CMD]],
-    "bin/lib/ci_status.rb" => ["CiStatus", %w[FULL_SUITE_CMD]],
+    "bin/lib/ci_gate.rb" => ["CiGate", %w[TASK_CMD]],
+    "bin/lib/ci_status.rb" => ["CiStatus", %w[GH_AUTH_REFRESH_CMD]],
     "bin/lib/block_recipe.rb" => ["BlockRecipe", %w[TASK_CMD]],
     "lib/claim_holder.rb" => ["ClaimHolder", %w[TASK_COMMAND]]
   }.freeze

@@ -239,7 +239,11 @@
 # untouched at 10.
 # MEASURED with the lister on THIS tree, never by arithmetic:
 #   npx playwright test --list => 160
-total_specs: 160
+# 160 -> 161 on 2026-09-24: e2e/board_epic_chip.spec.js (/tasks/epic-slug-on-task-cards),
+# the card's epic chip filtering the board. Coverage ADDED; `quarantined` untouched at 10.
+# MEASURED with the lister on THIS tree, never by arithmetic:
+#   npx playwright test --list => 161
+total_specs: 161
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -272,7 +276,7 @@ total_specs: 160
 # so this un-tags rather than re-tags. Verified before lowering: --grep-invert @quarantine over
 # the file is 12/12 green, and the ONE remaining failure is the still-tagged review-ticker spec.
 # 12 -> 10 on 2026-08-21 (/tasks/clear-the-quarantine-backlog): two heartbeat_feedback specs
-# REPAIRED. Cause was not the specs' logic — they loaded the bare /alex/heartbeat and relied on
+# REPAIRED. Cause was not the specs' logic — they loaded the bare /xan/heartbeat and relied on
 # HeartbeatController#latest_session_id, i.e. whichever session owns the newest AgentAction. The
 # seed grew newer fixtures ('sess-test-runs'), which now win that default and render ZERO spans,
 # so every locator timed out on a page that never had the rows. Pinning
@@ -375,7 +379,14 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 160
 #   npx playwright test --list --grep-invert @quarantine => 150
-executed: 150
+# 150 -> 151 on 2026-09-24: e2e/board_epic_chip.spec.js pins the epic chip
+# (/tasks/epic-slug-on-task-cards) — a card with an epic wears the chip, one without
+# wears none, and clicking it narrows the board to that epic with a banner and a way
+# back. Coverage ADDED; `quarantined` untouched at 10.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 161
+#   npx playwright test --list --grep-invert @quarantine => 151
+executed: 151
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

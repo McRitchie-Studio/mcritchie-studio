@@ -26,6 +26,12 @@ module LinkTreeHelper
       ]
     end
 
+    # Public on purpose: the packages page is where customers compare Basic and
+    # Pro, so it is reachable without an account.
+    sections << { title: "Services", links: [
+      { label: "Packages", href: packages_path, emoji: "📦", hover_emoji: "🏢", desc: "Basic vs Pro workspace packages" },
+    ] }
+
     if defined?(Satellite) && Satellite.active.any?
       sections << {
         title: "Apps",

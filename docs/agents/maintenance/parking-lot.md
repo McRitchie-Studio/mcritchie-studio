@@ -9,7 +9,7 @@ and parked with its evidence intact.
 
 A task board is a **commitment** surface: everything on it is work we mean to do
 soon. A board that carries every good idea stops being a plan and becomes fog —
-and [`clean-up`](../agents/alex/sops/clean-up.md) exists to burn that fog off.
+and [`clean-up`](../agents/xan/sops/clean-up.md) exists to burn that fog off.
 
 But the opposite failure is worse, and we have now paid for it twice: **a fix that
 is written and then left unlanded does not stay written — it rots.** PR #361

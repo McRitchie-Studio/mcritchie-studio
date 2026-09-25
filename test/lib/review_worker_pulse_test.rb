@@ -458,7 +458,7 @@ class ReviewWorkerPulseTest < Minitest::Test
 
   def holder(seconds_left, session)
     {
-      "task_slug" => SLUG, "session" => session, "label" => "sudowoodo", "agent" => "alex",
+      "task_slug" => SLUG, "session" => session, "label" => "sudowoodo", "agent" => "xan",
       "acquired_at" => (START - (@acquired_age || 300)).utc.iso8601,
       "expires_at" => (START + seconds_left).utc.iso8601,
       "heartbeat_age" => 2, "live" => seconds_left.positive?

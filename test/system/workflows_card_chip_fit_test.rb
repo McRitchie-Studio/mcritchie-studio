@@ -35,7 +35,7 @@ require "application_system_test_case"
 # driver has to scroll, and a scroll collapses this app's sticky nav under the pointer.
 class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   setup do
-    %w[carl avi steffon alex].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.capitalize } }
+    %w[carl avi steffon xan].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.capitalize } }
     Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
   end
 

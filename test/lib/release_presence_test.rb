@@ -387,6 +387,10 @@ class ReleasePresenceClaimTest < Minitest::Test
     assert_equal ReleasePresence::WEIGHT_SUITE,
                  ReleasePresence.scope_weight("host" => "local", "tier" => "full"),
                  "a local suite is the whole reason this weight exists"
+    assert_equal ReleasePresence::WEIGHT_LIGHT,
+                 ReleasePresence.scope_weight("host" => "ci", "tier" => "full"),
+                 "a CI-hosted scope is a READ: a GitHub Actions runner ran the full suite and this " \
+                 "box only reads the verdict (the G3/G4 tree-verdict gates)"
     assert_equal ReleasePresence::WEIGHT_SUITE,
                  ReleasePresence.scope_weight("host" => "production", "tier" => "e2e"),
                  "`host` names the TARGET, not the payer: bin/prod-smoke drives playwright " \
@@ -410,10 +414,10 @@ class ReleasePresenceClaimTest < Minitest::Test
     scopes = YAML.load_file(File.expand_path("../../config/devops_test_suites.yml", __dir__))
                  .fetch("release_scopes")
     expected = {
-      "pre_qa_gate" => "suite",       # local integration tier
+      "pre_qa_gate" => "light",       # a READ of CI's verdict for the release tree; CI ran the suite
       "qa_up_smoke" => "light",       # curl poll, QA dyno boots
       "qa_post_deploy" => "light",    # heroku run, remote
-      "ship_test_gate" => "suite",    # the full local suite
+      "ship_test_gate" => "light",    # a READ of CI's verdict for the frozen tree; CI ran the suite
       "gem_release_check" => "suite", # syntax + unit + build, local
       "prod_up_smoke" => "light",     # curl poll
       "prod_post_deploy" => "light",  # heroku run, remote

@@ -13,6 +13,7 @@ require "socket"
 require_relative "../support/session_env"
 require_relative "../support/outbound_seams"
 require_relative "../../bin/lib/ci_status"
+require_relative "../../bin/lib/full_suite_gate"
 
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
@@ -31,7 +32,7 @@ class DorCheckTest < Minitest::Test
   # installation token. A plain `bin/rails test` minting production credentials is
   # not a failure mode any assertion in this file could ever have caught.
   #
-  # The sibling seams here — with_neutralized_pr_read, with_default_suite_evidence
+  # The sibling seams here — with_neutralized_pr_read, with_default_ci_verdict
   # — are per-CONCERN defaults in this test's own process ENV, and they were the
   # right shape for what they cover. The floor is the different thing: it seals the
   # CHILD'S REACH, so a call site nobody thought about (a new gh read, a board
@@ -52,7 +53,7 @@ class DorCheckTest < Minitest::Test
       # subprocess inherits bundler's env and emits rubygems "already
       # initialized constant" warnings to STDERR — merging them (2>&1) would
       # corrupt the JSON parse. Discarding stderr keeps the verdict clean.
-      with_default_suite_evidence do
+      with_default_ci_verdict do
         with_neutralized_pr_read do
           out = IO.popen(dor_env, "#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
           [out, $?.exitstatus]
@@ -61,19 +62,20 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  # The merge gate now also demands fingerprint-bound FULL-suite + rubocop evidence
-  # for a shaped feature (see "--- FULL-suite gate" tests below). Default it to
-  # fresh-green so the EXISTING shape/tier/post-deploy tests stay focused on THEIR
-  # subject. A test that exercises the full-suite gate itself sets
-  # DOR_CHECK_SUITE_EVIDENCE — to a token (ok|missing|stale|tests_stale|
-  # rubocop_stale|unverifiable), or to "" to take the REAL fingerprint path — and
-  # then this default steps aside (the key is already present on entry).
-  def with_default_suite_evidence
-    had = ENV.key?("DOR_CHECK_SUITE_EVIDENCE")
-    ENV["DOR_CHECK_SUITE_EVIDENCE"] = "ok" unless had
+  # The merge gate's suite evidence is the PR's SETTLED GREEN GitHub CI — the one
+  # form bin/dor-check credits since /tasks/dor-reads-settled-ci-verdict. Default it
+  # green so the EXISTING shape/tier/post-deploy tests stay focused on THEIR subject;
+  # CiStatus.evaluate honours an injected token before it looks for a pr_url, so the
+  # fixtures need none. A test that exercises the CI gate itself sets
+  # DOR_CHECK_CI_STATUS — to a state token, or to "" for the REAL (gh-free) path,
+  # which is :no_pr on a fixture with no pr_url — and then this default steps aside
+  # (the key is present on entry; nil would DELETE it and re-arm the default).
+  def with_default_ci_verdict
+    had = ENV.key?("DOR_CHECK_CI_STATUS")
+    ENV["DOR_CHECK_CI_STATUS"] = "green" unless had
     yield
   ensure
-    ENV.delete("DOR_CHECK_SUITE_EVIDENCE") unless had
+    ENV.delete("DOR_CHECK_CI_STATUS") unless had
   end
 
   # NEUTRALIZE THE PR FILE-LIST READ, for the same reason SessionEnv neutralizes the
@@ -173,13 +175,21 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  # The fingerprint dor-check resolves when run FROM `dir` with NO DOR_CHECK_DIFF_ROOT
-  # override — the cwd-default path (the satellite fix). Contrast suite_fingerprint(dir),
-  # which pins the root via the explicit override.
-  def fingerprint_running_in(dir)
-    IO.popen(dor_env("DOR_CHECK_DIFF_ROOT" => nil, "DOR_CHECK_SUITE_EVIDENCE" => nil,
-                     "DOR_CHECK_CHANGED_FILES" => nil),
-             [BIN, "--suite-fingerprint"], { chdir: dir, err: File::NULL }, &:read).to_s.strip
+  # The root dor-check resolves when run FROM `dir` with NO DOR_CHECK_DIFF_ROOT
+  # override — the cwd-default path (the satellite fix) — read off the --json
+  # verdict's `code_root`. (It used to be observed through `--suite-fingerprint`,
+  # a seam that retired with the cert fingerprint.)
+  def code_root_running_in(dir)
+    Dir.mktmpdir do |d|
+      path = File.join(d, "task.json")
+      File.write(path, JSON.generate(
+        "slug" => "task-test", "title" => "T", "metadata" => { "devops" => BACKEND_CONTRACT }
+      ))
+      out = IO.popen(dor_env("DOR_CHECK_DIFF_ROOT" => nil, "DOR_CHECK_CHANGED_FILES" => nil,
+                             "DOR_CHECK_CI_STATUS" => "green", "DOR_CHECK_PR_FILES" => ""),
+                     [BIN, "--file", path, "--json"], { chdir: dir, err: File::NULL }, &:read)
+      JSON.parse(out).fetch("code_root").to_s
+    end
   end
 
   # ==== THE HARNESS SELF-TESTS ======================================================
@@ -205,11 +215,15 @@ class DorCheckTest < Minitest::Test
   def test_integration_the_gh_seal_answers_the_ci_read
     OutboundSeams.reset!
 
-    check("shape" => "backend", "repositories" => ["mcritchie-studio"], "risk_tags" => ["ci"],
-          "acceptance" => ["The gate reads CI from a sealed binary"],
-          "test_plan" => ["unit"], "post_deploy_cmd" => "none",
-          "pr_url" => "https://github.com/o/r/pull/1",
-          "checks_run" => ["[unit] bin/rails test test/lib/dor_check_test.rb"])
+    # "" takes the REAL CI path (the green default would inject the verdict and the
+    # sealed stub would never be asked — the whole point of this receipt).
+    with_env("DOR_CHECK_CI_STATUS" => "") do
+      check("shape" => "backend", "repositories" => ["mcritchie-studio"], "risk_tags" => ["ci"],
+            "acceptance" => ["The gate reads CI from a sealed binary"],
+            "test_plan" => ["unit"], "post_deploy_cmd" => "none",
+            "pr_url" => "https://github.com/o/r/pull/1",
+            "checks_run" => ["[unit] bin/rails test test/lib/dor_check_test.rb"])
+    end
 
     reads = OutboundSeams.calls_to("gh")
     refute_empty reads,
@@ -358,15 +372,14 @@ class DorCheckTest < Minitest::Test
   def test_integration_diff_root_defaults_to_the_cwd_worktree
     with_git_repo(staged: ["app/x.rb"]) do |repo_a|
       with_git_repo(staged: ["app/y.rb"]) do |repo_b|
-        fp_a_cwd      = fingerprint_running_in(repo_a)  # override UNSET → cwd
-        fp_b_cwd      = fingerprint_running_in(repo_b)
-        fp_a_explicit = suite_fingerprint(repo_a)       # explicit override (existing helper)
+        root_a = code_root_running_in(repo_a) # override UNSET → cwd
+        root_b = code_root_running_in(repo_b)
 
-        refute_empty fp_a_cwd, "the cwd-rooted run produces a real fingerprint"
-        assert_equal fp_a_explicit, fp_a_cwd,
-                     "no override roots at cwd — same fingerprint as an explicit --diff-root"
-        refute_equal fp_a_cwd, fp_b_cwd,
-                     "the fingerprint follows the cwd worktree, not a repo fixed at the script's location"
+        refute_empty root_a, "the cwd-rooted run names a real root"
+        assert_equal File.realpath(repo_a), File.realpath(root_a),
+                     "no override roots at cwd — the same tree an explicit DOR_CHECK_DIFF_ROOT would name"
+        refute_equal File.realpath(root_a), File.realpath(root_b),
+                     "the root follows the cwd worktree, not a repo fixed at the script's location"
       end
     end
   end
@@ -724,7 +737,7 @@ class DorCheckTest < Minitest::Test
   def test_docs_only_sop_chore_stays_exempt
     # PR #513's exact diff — the legitimate skip. It must still pass cleanly.
     files = %w[
-      docs/agents/agents/alex/sops/full-cycle.md
+      docs/agents/agents/xan/sops/full-cycle.md
       docs/agents/agents/carl/sops/pr-review.md
       docs/agents/agents/avi/sops/qa-release.md
       docs/agents/modules/heartbeats.md
@@ -1322,16 +1335,17 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  # --- [unit] FULL-suite gate: fingerprint-bound evidence required at merge ------
-  # The headline retro fix (lines 54 + 58): the dor_tiers tags prove the agent
-  # WROTE unit/integration, but a tag is free text — running only the touched FILES
-  # satisfies it. The merge gate ALSO demands FRESH full-suite + full-rubocop
-  # evidence (bin/full-suite-check records it). These unit tests drive the verdict
-  # via the DOR_CHECK_SUITE_EVIDENCE seam; the [integration] block below exercises
-  # the REAL git fingerprint. The contract is otherwise complete so the suite gate
-  # is the sole variable — including post_deploy_cmd, so a branch whose own working
-  # tree happens to touch a seed/migration (this check() runs against the live tree)
-  # doesn't trip the post-deploy gate and leak into these suite-gate assertions.
+  # --- [unit] the suite gate: a SETTLED GREEN CI, and nothing else -----------------
+  # The headline retro fix (lines 54 + 58) was that a tier tag is free text — running
+  # only the touched FILES satisfies it — so the merge gate ALSO demands evidence that
+  # the FULL suite went green against the exact tree shipped. Since
+  # /tasks/dor-reads-settled-ci-verdict that evidence has ONE form: the PR's settled
+  # GREEN GitHub CI (bin/lib/ci_gate.rb). The fingerprint receipts bin/fast-check and
+  # bin/full-suite-check record are not read here any more — the tests below pin
+  # that they are INERT, in both directions. The contract is otherwise complete so
+  # the CI gate is the sole variable — including post_deploy_cmd, so a branch whose
+  # own working tree happens to touch a seed/migration (this check() runs against the
+  # live tree) doesn't trip the post-deploy gate and leak into these assertions.
   SUITE_CONTRACT = {
     "shape" => "backend", "repositories" => ["mcritchie-studio"],
     "risk_tags" => ["devops"], "acceptance" => ["enforce the full suite"],
@@ -1339,247 +1353,201 @@ class DorCheckTest < Minitest::Test
     "checks_run" => ["[unit] x", "[integration] y"]
   }.freeze
 
-  # Run check with the suite gate set to a specific state (token or "" for real).
-  def check_suite(devops, evidence, *args)
-    with_env("DOR_CHECK_SUITE_EVIDENCE" => evidence) { check(devops, *args) }
+  # Run check with the CI verdict set to a specific state (a token, or nil for the
+  # REAL gh-free :no_pr path).
+  def check_ci(devops, ci, *args)
+    with_changed_files("app/models/agent.rb") do
+      with_env("DOR_CHECK_CI_STATUS" => ci.nil? ? "" : ci) { check(devops, *args) }
+    end
   end
 
-  def test_full_suite_evidence_missing_refuses_merge_gate
-    # The touched-files-only PR: [unit]/[integration] tagged, but the FULL suite +
-    # rubocop were never certified → REFUSED. This is the whole point of the gate.
-    out, code = check_suite(SUITE_CONTRACT, "missing")
-    assert_equal 1, code, out
-    assert_match(/FULL suite \+ FULL rubocop are not certified/, out)
-    assert_match(/full-suite: MISSING/, out)
-    assert_match(/rubocop: MISSING/, out)
-    assert_match(%r{bin/full-suite-check}, out)
-  end
+  # A recorded full cert, at a fingerprint the gate would once have called FRESH for
+  # any tree it graded — the injected "ok" of the retired seam, spelled as receipts.
+  FULL_CERT_RECEIPTS = ["[full-suite@#{'a' * 40}] bin/rails test (11004 runs, 0 failures)",
+                        "[rubocop@#{'a' * 40}] bin/rubocop (clean)"].freeze
 
-  def test_full_suite_evidence_fresh_passes_merge_gate
-    out, code = check_suite(SUITE_CONTRACT, "ok")
+  def test_a_settled_green_ci_is_the_suite_evidence
+    out, code = check_ci(SUITE_CONTRACT, "green")
     assert_equal 0, code, out
     assert_match(/DoR-to-Merge met/, out)
+    assert_match(/GitHub CI green .*the settled verdict is the suite evidence/, out)
   end
 
-  def test_full_suite_evidence_stale_refuses
-    # Certified, then the code changed → STALE → REFUSED (can't certify a subset
-    # and keep editing).
-    out, code = check_suite(SUITE_CONTRACT, "stale")
-    assert_equal 1, code, out
-    assert_match(/full-suite: STALE/, out)
-    assert_match(/rubocop: STALE/, out)
-  end
-
-  def test_full_suite_rubocop_lane_failure_refuses
-    # The "fails full rubocop" outcome: tests certified, lint not → REFUSED.
-    out, code = check_suite(SUITE_CONTRACT, "rubocop_stale")
-    assert_equal 1, code, out
-    assert_match(/rubocop: STALE/, out)
-    refute_match(/full-suite: (STALE|MISSING)/, out)
-  end
-
-  def test_full_suite_unverifiable_refuses
-    # No git fingerprint computable → the gate REFUSES rather than waving through
-    # what it cannot confirm.
-    out, code = check_suite(SUITE_CONTRACT, "unverifiable")
-    assert_equal 1, code, out
-    assert_match(/unverifiable/, out)
-  end
-
-  def test_full_suite_bypass_record_passes_even_with_no_evidence
-    # The escape hatch is a RECORD (like post_deploy "none"): a reasoned
-    # [full-suite-bypass] line passes the gate even when evidence is MISSING — but
-    # it's flagged LOUDLY in the verdict, never silent.
-    devops = SUITE_CONTRACT.merge(
-      "checks_run" => SUITE_CONTRACT["checks_run"] + ["[full-suite-bypass] pre-existing mailer-host failure, tracked in task-x"]
-    )
-    out, code = check_suite(devops, "missing")
+  def test_a_green_ci_satisfies_both_roles
+    out, code = check_ci(SUITE_CONTRACT, "green", "--gate-role", "review")
     assert_equal 0, code, out
-    assert_match(/DoR-to-Merge met/, out)
-    assert_match(/FULL-SUITE GATE BYPASSED: pre-existing mailer-host failure/, out)
+    assert_match(/ready to advance/, out)
   end
 
-  def test_full_suite_bypass_needs_a_reason
-    # A bare [full-suite-bypass] with no reason is NOT honored — the hatch forces a
-    # conscious, recorded justification.
-    devops = SUITE_CONTRACT.merge(
-      "checks_run" => SUITE_CONTRACT["checks_run"] + ["[full-suite-bypass]"]
-    )
-    out, code = check_suite(devops, "missing")
+  def test_a_red_ci_refuses_in_both_roles
+    %w[builder review].each do |role|
+      out, code = check_ci(SUITE_CONTRACT, "red", "--gate-role", role)
+      assert_equal 1, code, "#{role}: #{out}"
+      assert_match(/GitHub CI is RED/, out)
+      assert_match(/not ready to advance/, out)
+    end
+  end
+
+  # THE WAIT. Builder-side a running CI used to credit a fast cert provisionally and
+  # pass; with no cert to credit it is NOT ready — but it is not failed either, and the
+  # headline says which. bin/ship reads exit 1 and does not move the task.
+  def test_a_pending_ci_is_a_wait_for_the_builder_not_a_failure
+    out, code = check_ci(SUITE_CONTRACT, "pending")
+    assert_equal 1, code, "a pending CI must not reach submitted: #{out}"
+    assert_match(/⏳ DoR-to-Merge WAITING on CI/, out)
+    assert_match(/WAITING for it to settle/, out)
+    assert_match(/not ready to advance .* YET; re-run once CI reports/, out)
+    refute_match(/NOT met/, out, "a wait is worded as a wait, never as a failure")
+    refute_match(/PROVISIONALLY/, out, "nothing is credited provisionally any more")
+  end
+
+  def test_a_pending_ci_refuses_the_review_gate_zero
+    out, code = check_ci(SUITE_CONTRACT, "pending", "--gate-role", "review")
     assert_equal 1, code, out
-    assert_match(/not certified/, out)
+    assert_match(/NOT met/, out, "review's gate-zero is the authoritative verdict — pending is a NO there")
+    assert_match(/defer this review until CI settles/, out)
+    refute_match(/WAITING on CI/, out)
   end
 
-  def test_full_suite_gate_skipped_on_build_gate
-    # No code yet at design time → the build gate never asks for suite evidence.
-    out, code = check_suite(
+  # The WAIT headline is reserved for the case where the pending CI is the ONLY thing
+  # standing: with another refusal beside it the verdict is NOT met, and both errors
+  # print, so a builder cannot mistake "come back later" for "fix nothing".
+  def test_a_pending_ci_beside_another_refusal_is_not_a_wait
+    out, code = check_ci(SUITE_CONTRACT.merge("checks_run" => ["[unit] x"]), "pending")
+    assert_equal 1, code, out
+    assert_match(/NOT met/, out)
+    refute_match(/WAITING on CI/, out)
+    assert_match(/still RUNNING/, out)
+    assert_match(/missing test tiers/, out)
+  end
+
+  def test_the_wait_surfaces_in_the_json_verdict
+    out, code = check_ci(SUITE_CONTRACT, "pending", "--json")
+    assert_equal 1, code, out
+    j = JSON.parse(out)
+    refute j["ready"]
+    assert j["ci_waiting"], "the builder's pending verdict must be marked as a WAIT"
+    assert_equal "pending", j.dig("suite_evidence", "state")
+    refute j.dig("suite_evidence", "satisfied")
+    assert_equal "pending", j["ci_gate_result"], "the gates card paints the wait as in-flight, not red"
+  end
+
+  def test_the_suite_evidence_surfaces_in_the_json_verdict
+    out, code = check_ci(SUITE_CONTRACT, "green", "--json")
+    assert_equal 0, code, out
+    j = JSON.parse(out)
+    assert j["ready"]
+    assert_equal CiGate::SUITE_EVIDENCE_FORM, j.dig("suite_evidence", "form")
+    assert j.dig("suite_evidence", "satisfied")
+    assert_equal "green", j.dig("suite_evidence", "state")
+    refute j["ci_waiting"]
+    refute j.key?("full_suite"), "the fingerprint block is gone with the receipts it described"
+  end
+
+  # ==== THE RECEIPTS ARE INERT — in both directions ===============================
+  # bin/fast-check and bin/full-suite-check still stamp their fingerprint lines (phase
+  # 2b removes them); this gate must neither credit nor refuse on them.
+
+  def test_a_recorded_full_cert_does_not_stand_in_for_a_red_ci
+    devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + FULL_CERT_RECEIPTS)
+    %w[builder review].each do |role|
+      out, code = check_ci(devops, "red", "--gate-role", role)
+      assert_equal 1, code, "#{role}: a full cert must not stand in for a red CI:\n#{out}"
+      assert_match(/GitHub CI is RED/, out)
+    end
+  end
+
+  def test_a_recorded_full_cert_does_not_stand_in_for_an_unread_ci
+    devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + FULL_CERT_RECEIPTS)
+    %w[none unverified unreadable].each do |state|
+      %w[builder review].each do |role|
+        out, code = check_ci(devops, state, "--gate-role", role)
+        assert_equal 1, code, "#{role}/#{state}: the retired stand-in must not clear an unread CI:\n#{out}"
+        refute_match(/advancing on the FULL local cert/, out)
+      end
+    end
+  end
+
+  def test_a_recorded_full_cert_does_not_turn_a_wait_into_a_pass
+    devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + FULL_CERT_RECEIPTS)
+    out, code = check_ci(devops, "pending")
+    assert_equal 1, code, out
+    assert_match(/WAITING on CI/, out)
+  end
+
+  def test_a_stale_or_missing_receipt_does_not_refuse_a_green_ci
+    # The other direction: the false STALE that stranded six tasks on 2026-07-14 cannot
+    # recur, because a receipt for some other tree is not read at all.
+    stale = ["[fast-cert@#{'b' * 40}] mapped+spine tests", "[full-suite@#{'c' * 40}] old"]
+    devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + stale)
+    out, code = check_ci(devops, "green")
+    assert_equal 0, code, out
+    refute_match(/STALE|MISSING/, out)
+    refute_match(/fast cert accepted|certified green at/, out, "no receipt is credited either")
+  end
+
+  def test_a_full_suite_bypass_is_inert
+    # The hatch is not read: it neither passes a red CI nor is flagged on a green one.
+    devops = SUITE_CONTRACT.merge(
+      "checks_run" => SUITE_CONTRACT["checks_run"] + ["[full-suite-bypass] pre-existing failure"]
+    )
+    out, code = check_ci(devops, "red")
+    assert_equal 1, code, "a bypass line must not stand in for a red CI:\n#{out}"
+    out, code = check_ci(devops, "green")
+    assert_equal 0, code, out
+    refute_match(/BYPASSED/, out)
+  end
+
+  def test_a_deferral_receipt_is_inert
+    devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + ["[cert-deferred@#{'d' * 40}] capped"])
+    out, code = check_ci(devops, "green")
+    assert_equal 0, code, out
+    refute_match(/DEFERRED/, out)
+    out, code = check_ci(devops, "none")
+    assert_equal 1, code, out
+    refute_match(/deferral/, out, "no refusal argues from a receipt it does not read")
+  end
+
+  def test_no_refusal_offers_a_local_cert
+    # The remedies that used to end "certify in full instead: bin/full-suite-check" —
+    # a ~30-minute command whose result this gate would then refuse. None survives.
+    %w[red pending none unverified unreadable conflicted].each do |state|
+      %w[builder review].each do |role|
+        out, = check_ci(SUITE_CONTRACT, state, "--gate-role", role)
+        refute_match(%r{bin/full-suite-check|bin/fast-check|certify in full}, out,
+                     "#{role}/#{state} still names a local cert route:\n#{out}")
+      end
+    end
+  end
+
+  def test_the_ci_gate_is_skipped_on_the_build_gate
+    # No code yet at design time → the build gate never reads CI.
+    out, code = check_ci(
       { "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["x"],
         "acceptance" => ["a"], "test_plan" => ["unit"], "checks_run" => [] },
-      "missing", "--gate", "build"
+      "red", "--gate", "build"
     )
     assert_equal 0, code, out
     assert_match(/DoR-to-Build met/, out)
   end
 
-  def test_full_suite_gate_not_required_for_exempt_no_code_chore
-    # An exempt DOC-ONLY chore short-circuits before the suite gate — a docs chore
-    # is never asked to certify the full suite. (It must SHOW the doc-only diff:
-    # an empty diff no longer earns the exemption — it fails closed.)
-    out, code = with_changed_files("docs/agents/note.md") { check_suite({ "kind" => "chore" }, "missing") }
+  def test_an_exempt_doc_only_chore_still_needs_the_green_ci
+    # An exempt DOC-ONLY chore skips the TIER gate, never the CI verdict: this repo's
+    # CI grades prose. Green passes, pending waits, red refuses.
+    exempt = ->(ci) { with_changed_files("docs/agents/note.md") { with_env("DOR_CHECK_CI_STATUS" => ci) { check({ "kind" => "chore" }) } } }
+
+    out, code = exempt.call("green")
     assert_equal 0, code, out
     assert_match(/DoR n\/a/, out)
-  end
+    assert_match(/GitHub CI: GREEN/, out)
 
-  def test_full_suite_gate_surfaces_in_json_verdict
-    out, code = check_suite(SUITE_CONTRACT, "missing", "--json")
+    out, code = exempt.call("pending")
     assert_equal 1, code, out
-    verdict = JSON.parse(out)
-    refute verdict["ready"]
-    refute verdict["full_suite"]["ok"]
-    assert_equal "missing", verdict["full_suite"]["lanes"]["full-suite"]
-    assert(verdict["errors"].any? { |e| e =~ /not certified/ })
-  end
+    assert_match(/WAITING on CI/, out)
 
-  def test_full_suite_bypass_surfaces_in_json_verdict
-    devops = SUITE_CONTRACT.merge(
-      "checks_run" => SUITE_CONTRACT["checks_run"] + ["[full-suite-bypass] env blocker, see task-x"]
-    )
-    out, code = check_suite(devops, "missing", "--json")
-    assert_equal 0, code, out
-    verdict = JSON.parse(out)
-    assert verdict["ready"]
-    assert verdict["full_suite"]["ok"]
-    assert_match(/env blocker/, verdict["full_suite"]["bypass"])
-  end
-
-  # --- [integration] FULL-suite gate over the REAL git fingerprint --------------
-  # No DOR_CHECK_SUITE_EVIDENCE seam: dor-check recomputes the code fingerprint
-  # (git tree hash) from a temp repo and grades the embedded evidence tags against
-  # it — the actual production path.
-
-  # A temp repo with one commit; yields [dir, fingerprint] for the CURRENT tree.
-  def with_suite_repo
-    Dir.mktmpdir do |dir|
-      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
-      File.write(File.join(dir, "app.rb"), "base\n")
-      git.call("init -q")
-      git.call("config user.email tester@example.com")
-      git.call("config user.name tester")
-      git.call("add -A")
-      git.call("commit -q -m init")
-      yield dir, suite_fingerprint(dir)
-    end
-  end
-
-  # The fingerprint dor-check would validate against for `dir` (its real resolver).
-  def suite_fingerprint(dir)
-    fp = nil
-    with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_SUITE_EVIDENCE" => nil, "DOR_CHECK_CHANGED_FILES" => nil) do
-      fp = IO.popen(dor_env, "#{BIN} --suite-fingerprint 2>/dev/null", &:read).strip
-    end
-    fp
-  end
-
-  # Run check on the REAL fingerprint path against `dir` (SUITE_EVIDENCE="" disables
-  # the default-ok seam so the git fingerprint is computed for real).
-  def check_real_suite(dir, devops, *args)
-    with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
-             "DOR_CHECK_SUITE_EVIDENCE" => "", "DOR_CHECK_CHANGED_FILES" => nil) do
-      check(devops, *args)
-    end
-  end
-
-  def suite_evidence(fp, lanes: %w[full-suite rubocop])
-    lanes.map { |lane| "[#{lane}@#{fp}] certified" }
-  end
-
-  def test_e2e_fresh_fingerprint_evidence_passes
-    with_suite_repo do |dir, fp|
-      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp))
-      out, code = check_real_suite(dir, devops)
-      assert_equal 0, code, out
-      assert_match(/DoR-to-Merge met/, out)
-      assert_match(/certified green at #{fp[0, 12]}/, out)
-    end
-  end
-
-  def test_e2e_evidence_goes_stale_after_an_edit
-    with_suite_repo do |dir, fp|
-      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp))
-      # Edit a tracked file: the fingerprint changes, the embedded evidence is now
-      # for older code → REFUSED.
-      File.write(File.join(dir, "app.rb"), "base\nedited\n")
-      out, code = check_real_suite(dir, devops)
-      assert_equal 1, code, out
-      assert_match(/STALE/, out)
-    end
-  end
-
-  def test_e2e_touched_files_only_pr_is_refused
-    # The retro case in the real path: [unit]/[integration] tagged, but NO
-    # full-suite/rubocop evidence at all → both lanes MISSING → REFUSED.
-    with_suite_repo do |dir, _fp|
-      out, code = check_real_suite(dir, SUITE_CONTRACT)
-      assert_equal 1, code, out
-      assert_match(/full-suite: MISSING/, out)
-      assert_match(/rubocop: MISSING/, out)
-    end
-  end
-
-  def test_e2e_partial_evidence_missing_rubocop_is_refused
-    # Tests certified but rubocop never run → rubocop MISSING → REFUSED.
-    with_suite_repo do |dir, fp|
-      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp, lanes: %w[full-suite]))
-      out, code = check_real_suite(dir, devops)
-      assert_equal 1, code, out
-      assert_match(/rubocop: MISSING/, out)
-      refute_match(/full-suite: (MISSING|STALE)/, out)
-    end
-  end
-
-  def test_e2e_fingerprint_is_stable_across_the_commit_boundary
-    # The checkout-independence property: certify on a DIRTY tree (the pre-commit
-    # SOP), then COMMIT the same change — the recomputed fingerprint is identical
-    # (a git tree hash is content-addressed), so the SAME evidence still validates.
-    # This is why a reviewer's checkout at the committed HEAD credits the evidence.
-    with_suite_repo do |dir, _committed_fp|
-      File.write(File.join(dir, "app.rb"), "base\nfeature change\n")
-      dirty_fp = suite_fingerprint(dir)
-      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(dirty_fp))
-
-      out, code = check_real_suite(dir, devops)
-      assert_equal 0, code, "pre-commit (dirty) should validate\n#{out}"
-
-      assert system("git -C #{dir} add -A >/dev/null 2>&1")
-      assert system("git -C #{dir} commit -q -m feature >/dev/null 2>&1")
-      assert_equal dirty_fp, suite_fingerprint(dir), "fingerprint must be stable across the commit"
-
-      out, code = check_real_suite(dir, devops)
-      assert_equal 0, code, "post-commit (clean) should still validate the same evidence\n#{out}"
-    end
-  end
-
-  def test_e2e_fingerprint_is_stable_across_the_commit_boundary_for_a_new_file
-    # Same checkout-independence property, but for a change that ADDS a file —
-    # the case `git stash create` silently dropped (the new file was absent from
-    # the pre-commit fingerprint, present in the committed tree → false STALE on
-    # the reviewer's checkout). Certify with a new untracked file present, commit
-    # it, and the SAME evidence must still validate at the committed HEAD.
-    with_suite_repo do |dir, _committed_fp|
-      File.write(File.join(dir, "added_feature.rb"), "brand new\n") # untracked
-      dirty_fp = suite_fingerprint(dir)
-      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(dirty_fp))
-
-      out, code = check_real_suite(dir, devops)
-      assert_equal 0, code, "pre-commit (new file untracked) should validate\n#{out}"
-
-      assert system("git -C #{dir} add -A >/dev/null 2>&1")
-      assert system("git -C #{dir} commit -q -m add-feature >/dev/null 2>&1")
-      assert_equal dirty_fp, suite_fingerprint(dir), "fingerprint must be stable across committing a new file"
-
-      out, code = check_real_suite(dir, devops)
-      assert_equal 0, code, "post-commit (clean) should still validate the same evidence\n#{out}"
-    end
+    out, code = exempt.call("red")
+    assert_equal 1, code, out
+    assert_match(/GitHub CI is RED/, out)
   end
 
   # --- canonical post_deploy_cmd SUGGESTION (warn, never reject) ----------------
@@ -1685,218 +1653,149 @@ class DorCheckTest < Minitest::Test
   # --- CI-status gate: the merge gate refuses a red / not-yet-green PR ----------
   # Closes the report's #1 blocker class — a PR green LOCALLY but red on GitHub CI,
   # because the local cert doesn't run the browser test:system lane. DOR_CHECK_CI_STATUS
-  # injects the verdict so these never shell out to gh (mirrors DOR_CHECK_SUITE_EVIDENCE).
+  # injects the verdict so these never shell out to gh.
   CI_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1").freeze
 
+  # nil → "" so a caller asking for the REAL (gh-free) path gets it rather than the
+  # green default with_default_ci_verdict would otherwise re-arm on a deleted key.
   def ci_check(state, devops = CI_PR, *args)
     with_changed_files("app/models/agent.rb") do
-      with_env("DOR_CHECK_CI_STATUS" => state) { check(devops, *args) }
+      with_env("DOR_CHECK_CI_STATUS" => state.nil? ? "" : state) { check(devops, *args) }
     end
   end
 
-  # --- the review gate-zero is an ALLOW-LIST -----------------------------------
-  # :green advances. Every other state refuses. Only the no-verdict family
-  # (:none/:unreadable/:unverified) can be cleared, and only by a FULL local cert.
-  #
-  # THE CERT DIMENSION IS EXPLICIT IN EVERY TEST BELOW, and that is deliberate. The
-  # shared `check` helper injects DOR_CHECK_SUITE_EVIDENCE="ok" whenever a test does
-  # not set it, so the first version of these tests was already exercising the
-  # full-cert path — the single behaviour they most needed to pin — without ever
-  # saying so. Coverage that is accidental is one refactor away from silently
-  # vanishing, so `review_ci_check` takes `evidence:` with NO default and every
-  # caller states which world it is in.
-  #
-  # Submit-side is unchanged throughout (ci_status.rb's BUILD-role reasoning): the
-  # two controls at the bottom redden if the guard is over-applied.
+  # --- the gate is an ALLOW-LIST, in BOTH roles ---------------------------------
+  # :green advances. Every other state refuses — including the no-verdict family
+  # (:none/:unreadable/:unverified), which a FULL local cert used to clear on the
+  # review side until /tasks/dor-reads-settled-ci-verdict retired every cert route.
+  # The one role split left is :pending, which the builder reads as a WAIT (its own
+  # section above) and review refuses outright.
 
-  FULL_CERT = "ok"              # bin/full-suite-check — ci.yml's own command, locally
-  FAST_CERT_ONLY = "fast_fresh" # bin/fast-check — diff-mapped, NOT a stand-in for CI
-
-  def review_ci_check(state, evidence:, devops: CI_PR)
-    with_env("DOR_CHECK_SUITE_EVIDENCE" => evidence) do
-      ci_check(state, devops, "--gate-role", "review")
-    end
+  def review_ci_check(state, devops: CI_PR)
+    ci_check(state, devops, "--gate-role", "review")
   end
 
   def test_review_role_advances_on_a_green_ci
-    out, code = review_ci_check("green", evidence: FULL_CERT)
+    out, code = review_ci_check("green")
 
     assert_equal 0, code, out
     assert_match(/ready to advance/, out)
   end
 
-  # The original defect. :pending already errored in this role because "the review
-  # gate-zero is the authoritative CI verdict"; :unreadable/:unverified/:none fell
-  # through with no case at all, so `ready` stayed true while a skimmable suggestion
-  # carried the only warning. Four reviewers hit this live on 2026-08-09 when the
-  # agent App token expired mid-cycle.
-  #
-  # ASSERT THE CI GATE'S OWN REFUSAL, by text unique to it. The exit code alone
-  # proves nothing here: with only a fast cert the SUITE gate refuses too, so a test
-  # that checks `1` passes with the CI allow-list ripped out entirely — which is
-  # exactly what the mutation run showed before these matchers were added. The two
-  # gates cannot be separated by construction (a cert good enough to silence the
-  # suite gate is a cert good enough to clear the CI one), so the text is the only
-  # honest discriminator.
-  def test_review_role_refuses_the_no_verdict_family_without_a_full_cert
+  # The original defect: :unreadable/:unverified/:none fell through with no case at
+  # all, so `ready` stayed true while a skimmable suggestion carried the only warning.
+  # Four reviewers hit this live on 2026-08-09 when the agent App token expired
+  # mid-cycle. ASSERT THE CI GATE'S OWN REFUSAL, by text unique to it.
+  def test_review_role_refuses_the_no_verdict_family
     {
       "unreadable" => /cannot be authoritative about a CI it could not read/,
       "unverified" => /GitHub CI has produced no verdict yet/,
       "none" => /GitHub CI has produced no verdict yet/
     }.each do |state, own_refusal|
-      out, code = review_ci_check(state, evidence: FAST_CERT_ONLY)
+      out, code = review_ci_check(state)
 
-      assert_equal 1, code, "#{state} must refuse without a full cert: #{out}"
-      assert_match own_refusal, out, "#{state} must carry the CI gate's OWN refusal, not just the suite gate's"
+      assert_equal 1, code, "#{state} must refuse: #{out}"
+      assert_match own_refusal, out, "#{state} must carry the CI gate's OWN refusal"
+      assert_match(/no local cert stands in/, out, "#{state}: the refusal says nothing stands in")
       assert_match(/not ready to advance/, out)
+    end
+  end
+
+  # ...AND SO DOES THE BUILDER, with its own wording. Submit-side these were notes
+  # beside a provisionally-credited fast cert; with no cert to credit, an unread CI
+  # is an unread suite verdict, and the remedies are the builder's moves.
+  def test_builder_role_refuses_the_no_verdict_family_with_its_own_remedies
+    {
+      "unreadable" => /token was REFUSED reading it/,
+      "unverified" => /check `gh pr checks` by hand/,
+      "none" => /Confirm the workflow triggered/
+    }.each do |state, own_remedy|
+      out, code = ci_check(state)
+
+      assert_equal 1, code, "submit-side #{state} must refuse now that nothing stands in: #{out}"
+      assert_match own_remedy, out, "#{state} must carry the builder's remedy"
+      assert_match(/ONLY suite evidence/, out)
+      refute_match(/WAITING on CI/, out, "#{state} is not a wait — the answer was never given")
     end
   end
 
   # The rolio lesson, and the hedge that came with it: :rate_limit ALSO produces
   # :unreadable, so "CREDENTIAL fault" alone sends a reader to rotate a credential
-  # that was fine. ci_status.rb calls unreadable_remedy THE ONE REMEDY STRING —
-  # re-writing its opening sentence here printed it twice and dropped "or API limit".
-  def test_the_unreadable_refusal_uses_the_one_remedy_string
-    out, = review_ci_check("unreadable", evidence: FAST_CERT_ONLY)
+  # that was fine. ci_status.rb calls unreadable_remedy THE ONE REMEDY STRING — and it
+  # must appear ONCE per verdict, in either role, now that the error carries it and
+  # no suggestion repeats it.
+  def test_the_unreadable_refusal_uses_the_one_remedy_string_once
+    %w[builder review].each do |role|
+      out, = ci_check("unreadable", CI_PR, "--gate-role", role)
 
-    # The CI gate's own refusal, not the suite gate's — /UNREADABLE/ alone appears in
-    # both, so it cannot tell them apart.
-    assert_match(/cannot be authoritative about a CI it could not read/, out)
-    assert_match(/CREDENTIAL fault or API limit/, out)
-    refute_match(/CREDENTIAL fault, NOT a missing CI/, out)
-    refute_match(/push the branch and open the PR/, out)
-    # ONCE, not three times. The CI refusal, the suite-evidence error and the
-    # non-blocking note all reach for the same paragraph, and they all fire together
-    # in this role — a reader who is shown the same 500 characters repeatedly learns
-    # to skim exactly the text the gate most needs them to read.
-    assert_equal 1, out.scan(/re-running will never clear it/).size,
-                 "THE ONE REMEDY STRING must appear once per verdict:\n#{out}"
-  end
-
-  # A READY verdict beside an UNVERIFIED CI is the presentation this whole task is
-  # about — four reviewers read "ready" next to a skimmable CI note and would have
-  # merged on a verdict nobody read. It is legal ONLY because a full cert stood in,
-  # so the verdict must say so rather than leaving the reader to infer it.
-  def test_advancing_on_a_cert_says_the_cert_is_why
-    out, code = review_ci_check("unreadable", evidence: FULL_CERT)
-
-    assert_equal 0, code, out
-    assert_match(/advancing on the FULL local cert/, out)
-    assert_match(/CI itself was NOT read/, out)
-  end
-
-  # BLOCKER 2 as a PROPERTY, not a case: a gate must honour the remedy it prints.
-  # The refusal's own tail names bin/full-suite-check as the route — and before this
-  # the gate then refused that exact cert, which is worse than a plain no: it teaches
-  # people the gate is noise, and an ignored gate is how a genuinely RED CI ships.
-  def test_the_gate_honours_the_remedy_it_prints
-    refused, code = review_ci_check("unreadable", evidence: FAST_CERT_ONLY)
-    assert_equal 1, code, refused
-    assert_match(%r{bin/full-suite-check}, refused, "the refusal must name the route out")
-
-    out, code = review_ci_check("unreadable", evidence: FULL_CERT)
-    assert_equal 0, code, "the gate must honour the cert it just told the reader to run: #{out}"
-    assert_match(/ready to advance/, out)
-  end
-
-  # BLOCKER 1. An unsettling :none/:unverified WEDGES review (PR-#509), so a full cert must
-  # be a live route out on the GATED path. Same test, corrected reason: its "zero workflows
-  # in solana-studio/turf-vault" premise was a FOURTH false copy (re-derived in ci_gate.rb).
-  def test_a_full_cert_clears_the_no_verdict_family_on_the_gated_path
-    %w[none unverified].each do |state|
-      out, code = review_ci_check(state, evidence: FULL_CERT)
-
-      assert_equal 0, code, "a full cert must clear #{state}: #{out}"
-      assert_match(/ready to advance/, out)
+      assert_match(/CREDENTIAL fault or API limit/, out)
+      refute_match(/CREDENTIAL fault, NOT a missing CI/, out)
+      refute_match(/push the branch and open the PR/, out)
+      assert_equal 1, out.scan(/re-running will never clear it/).size,
+                   "#{role}: THE ONE REMEDY STRING must appear once per verdict:\n#{out}"
     end
   end
 
-  # A "[full-suite-bypass]" is a declared hatch, not evidence. Crediting it against a
-  # CI nobody could read would leave the merge unverified from BOTH sides at once.
+  # A "[full-suite-bypass]" is a declared hatch, not evidence — and it is not read.
   def test_a_full_suite_bypass_does_not_stand_in_for_an_unread_ci
     bypassed = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[full-suite-bypass] deliberate"])
-    out, code = review_ci_check("unreadable", evidence: "", devops: bypassed)
+    out, code = review_ci_check("unreadable", devops: bypassed)
 
     assert_equal 1, code, "a bypass is not evidence: #{out}"
     assert_match(/UNREADABLE/, out)
   end
 
-  # BLOCKER 4, the root cause. A blank devops.pr_url resolves to :no_pr, which had no
-  # branch and no `else` — so --gate-role review exited 0 printing "ready to advance"
-  # with NO CI LINE AT ALL, strictly MORE silent than the bug this gate was written to
-  # close. A full cert does not clear it: what is missing is not the evidence, it is
-  # the PR — review's job is to merge one, and there is nothing to merge.
-  def test_review_role_refuses_a_blank_pr_url_even_with_a_full_cert
-    out, code = review_ci_check(nil, evidence: FULL_CERT, devops: BACKEND_CONTRACT)
-
+  # A blank devops.pr_url resolves to :no_pr, which had no branch and no `else` — so
+  # --gate-role review exited 0 printing "ready to advance" with NO CI LINE AT ALL.
+  # It refuses in review (nothing to merge) and, since the suite evidence is the CI
+  # verdict, in the builder role too (nothing to read a verdict from).
+  def test_a_blank_pr_url_refuses_in_both_roles
+    out, code = review_ci_check(nil, devops: BACKEND_CONTRACT)
     assert_equal 1, code, out
     assert_match(/pr_url is BLANK/, out)
-    assert_match(/not ready to advance/, out)
+    assert_match(/nothing to merge/, out)
+
+    out, code = ci_check(nil, BACKEND_CONTRACT)
+    assert_equal 1, code, "submit-side a blank pr_url has no CI verdict to read: #{out}"
+    assert_match(/pr_url is BLANK/, out)
+    assert_match(/open the PR/, out)
   end
 
   # THE ALLOW-LIST PROOF — the one test here that a LONGER DENY-LIST could not also
   # pass. A state that does not exist and never has: if ci_status.rb grows one
-  # tomorrow and nobody teaches this gate about it, review must REFUSE rather than
-  # wave it through. That default IS the difference between the two shapes, and it is
-  # not hypothetical — :no_pr above is precisely what a deny-list's default did.
-  # A full cert does not clear it either: an unclassified state is not the no-verdict
-  # family, it is an unread gate.
-  def test_review_role_refuses_a_ci_state_it_does_not_classify
-    out, code = review_ci_check("state:quantum_flux", evidence: FULL_CERT)
+  # tomorrow and nobody teaches this gate about it, BOTH roles must REFUSE rather
+  # than wave it through. That default IS the difference between the two shapes.
+  def test_an_unclassified_ci_state_refuses_in_both_roles
+    %w[builder review].each do |role|
+      out, code = ci_check("state:quantum_flux", CI_PR, "--gate-role", role)
 
-    assert_equal 1, code, out
-    assert_match(/QUANTUM_FLUX/, out)
-    assert_match(/does not classify/, out)
-    assert_match(/not ready to advance/, out)
+      assert_equal 1, code, "#{role}: #{out}"
+      assert_match(/QUANTUM_FLUX/, out)
+      assert_match(/does not classify/, out)
+      assert_match(/not ready to advance/, out)
+    end
   end
 
   # A FAILED dor_review must name CI as the failing SOP when CI is why it failed, under
-  # the name of the state it was actually in — every member of CI_NO_VERDICT_STATES now
-  # has one. Both old answers misled: "fail" wrote a red CI that never ran into the
-  # permanent record, and the flat "unverified" it fell back to is painted ✓. Full
-  # coverage: gate_record_unreadable_ci_test and gate_record_no_verdict_ci_test.
+  # the name of the state it was actually in. Full coverage:
+  # gate_record_unreadable_ci_test and gate_record_no_verdict_ci_test.
   def test_the_gates_card_names_ci_as_the_cause_when_ci_is_the_cause
-    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FAST_CERT_ONLY)
-    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FULL_CERT),
-                 "a cert standing in for an unread verdict is a NOTE — it must still say UNREADABLE"
-    assert_equal "fail", ci_gate_result("state:quantum_flux", evidence: FULL_CERT)
-    assert_equal "pass", ci_gate_result("green", evidence: FULL_CERT)
-    assert_equal "unreadable", ci_gate_result("unreadable", evidence: FULL_CERT, review: false)
+    assert_equal "unreadable", ci_gate_result("unreadable")
+    assert_equal "fail", ci_gate_result("state:quantum_flux")
+    assert_equal "pass", ci_gate_result("green")
+    assert_equal "unreadable", ci_gate_result("unreadable", review: false)
+    assert_equal "pending", ci_gate_result("pending", review: false), "the builder's wait is in-flight, not red"
+    assert_equal "fail", ci_gate_result("pending")
   end
 
   # The gates-card row this run WOULD write, read out of --json rather than off the
   # board: a probe that leaves a durable FAILED attempt on a real task is its own
   # hazard (--json and --file both skip the board write).
-  def ci_gate_result(state, evidence:, review: true, devops: CI_PR)
+  def ci_gate_result(state, review: true, devops: CI_PR)
     args = ["--json"]
     args += ["--gate-role", "review"] if review
-    out, = with_env("DOR_CHECK_SUITE_EVIDENCE" => evidence) { ci_check(state, devops, *args) }
+    out, = ci_check(state, devops, *args)
     JSON.parse(out)["ci_gate_result"]
-  end
-
-  # --- the split holds: submit-side is untouched -------------------------------
-  # If either control reddens, the fix has been over-applied and every submit now
-  # blocks on a flaky read — trading a flaky CI lane for a flaky gate, which
-  # ci_status.rb warns against by name.
-
-  def test_submit_role_still_hands_off_on_an_unread_ci
-    %w[unreadable unverified none].each do |state|
-      out, code = with_env("DOR_CHECK_SUITE_EVIDENCE" => FULL_CERT) { ci_check(state) }
-
-      assert_equal 0, code, "submit-side #{state} must not block: #{out}"
-      assert_match(/ready to advance/, out)
-    end
-  end
-
-  # The allow-list is REVIEW-ONLY. A blank pr_url stays silent submit-side (dor-check
-  # runs before the PR exists on the normal path), and an unclassified state must not
-  # block a builder either — the builder does not own ci_status.rb's vocabulary.
-  def test_submit_role_is_unchanged_by_the_allow_list
-    out, code = with_env("DOR_CHECK_SUITE_EVIDENCE" => FULL_CERT) { ci_check(nil, BACKEND_CONTRACT) }
-    assert_equal 0, code, "submit-side a blank pr_url must stay silent: #{out}"
-
-    out, code = with_env("DOR_CHECK_SUITE_EVIDENCE" => FULL_CERT) { ci_check("state:quantum_flux") }
-    assert_equal 0, code, "submit-side must not block on an unclassified state: #{out}"
   end
 
   def test_merge_gate_fails_when_github_ci_is_red
@@ -1906,16 +1805,15 @@ class DorCheckTest < Minitest::Test
     assert_match(/not ready to advance/, out)
   end
 
-  def test_pending_ci_is_a_loud_suggestion_not_a_block_at_submit
-    # ci-gate-review-handoff: the builder submits WITHOUT waiting for CI — the CI
-    # wait moved from the builder's wall-clock to the review handoff. Submit-side
-    # (--gate-role builder, the default), a still-running CI is a LOUD suggestion,
-    # never a block; pr-review's supervisor holds the authoritative verdict.
+  def test_pending_ci_is_a_wait_at_submit_that_names_where_the_verdict_lands
+    # gate-submit-on-green-ci: bin/ship holds at step 6/8 for exactly this, so the
+    # ordinary handoff never sees it; a hand-run verdict is told to come back, and told
+    # that ship resumes at this step.
     out, code = ci_check("pending")
-    assert_equal 0, code, out
-    assert_match(/DoR-to-Merge met/, out)
+    assert_equal 1, code, out
+    assert_match(/WAITING on CI/, out)
     assert_match(/still RUNNING/, out)
-    assert_match(/gate-zero/, out, "the suggestion names where the authoritative CI verdict now lives")
+    assert_match(/bin\/ship waits for exactly this/, out, "the wait names the wrapper that holds for it")
   end
 
   def test_review_gate_zero_still_blocks_pending_ci
@@ -1940,11 +1838,12 @@ class DorCheckTest < Minitest::Test
     assert_match(/GitHub CI green/, out)
   end
 
-  def test_gh_or_network_error_is_a_note_never_a_block
+  def test_gh_or_network_error_refuses_without_naming_a_credential
     out, code = ci_check("unverified")
-    assert_equal 0, code, out
-    assert_match(/DoR-to-Merge met/, out)
+    assert_equal 1, code, out
     assert_match(/UNVERIFIED/, out)
+    assert_match(/NOT a credential refusal/, out)
+    refute_match(/gh-auth-refresh/, out, "there is no credential to refresh on a transport fault")
   end
 
   def test_merge_gate_blocks_a_closed_pr
@@ -1990,12 +1889,12 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_conflicted_is_distinct_from_no_checks_yet
-    # :none stays a non-blocking note (CI genuinely still coming); :conflicted is
-    # the hard blocker. The distinction IS the bug fix — folding them together is
-    # what made the stall invisible.
+    # :none refuses too now, but as "confirm the run triggered" (CI genuinely still
+    # coming); :conflicted is the hard blocker whose CI is never coming. The distinction
+    # IS the bug fix — folding them together is what made the stall invisible.
     out, code = ci_check("none")
-    assert_equal 0, code, out
-    assert_match(/UNVERIFIED/, out)
+    assert_equal 1, code, out
+    assert_match(/no verdict yet \(none\)/, out)
     refute_match(/CONFLICTED/i, out)
   end
 
@@ -2079,11 +1978,12 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_ci_less_is_distinct_from_pending_and_from_no_checks_yet
-    # THE bug, at the CLI tier: pending/none are soft (CI is genuinely coming), while
-    # ci_less is hard. Folding ci_less into either is what made the stall invisible.
+    # THE bug, at the CLI tier: pending/none mean "CI is genuinely coming" (a wait, a
+    # confirm-the-run), while ci_less is hard. Folding ci_less into either is what made
+    # the stall invisible.
     %w[pending none].each do |soft|
       out, code = ci_check(soft)
-      assert_equal 0, code, out
+      assert_equal 1, code, out
       refute_match(/NO CI WILL RUN/i, out, "#{soft} must not be reported as ci-less")
     end
   end
@@ -2097,16 +1997,17 @@ class DorCheckTest < Minitest::Test
     assert(j["errors"].any? { |e| e.match?(/NO CI WILL RUN/i) }, out)
   end
 
-  def test_missing_pr_is_silent_and_stays_ready
-    # No PR yet + no injection → :no_pr via the real (gh-free) path. dor-check runs
-    # before the PR exists on the normal path, so the CI gate has nothing to verify:
-    # it stays SILENT (no note, no block, no shell-out to gh).
+  def test_missing_pr_refuses_because_there_is_no_verdict_to_read
+    # No PR yet + no injection → :no_pr via the real (gh-free) path. The suite evidence
+    # is the PR's CI verdict, so with no PR there is none: not ready, with "open the PR"
+    # as the move (bin/ship does that before it runs this verdict).
     out, code = with_changed_files("app/models/agent.rb") do
-      with_env("DOR_CHECK_CI_STATUS" => nil) { check(BACKEND_CONTRACT) }
+      with_env("DOR_CHECK_CI_STATUS" => "") { check(BACKEND_CONTRACT) }
     end
-    assert_equal 0, code, out
-    assert_match(/DoR-to-Merge met/, out)
-    refute_match(/GitHub CI|CI gate|UNVERIFIED/, out)
+    assert_equal 1, code, out
+    assert_match(/pr_url is BLANK/, out)
+    assert_match(/open the PR/, out)
+    refute_match(/gh-auth-refresh|UNREADABLE/, out, "a missing PR is not a failed read")
   end
 
   def test_build_gate_ignores_ci_status
@@ -2128,92 +2029,13 @@ class DorCheckTest < Minitest::Test
     assert(j["errors"].any? { |e| e.match?(/RED/) }, out)
   end
 
-  # --- FAST-cert route: fresh [fast-cert@<fp>] evidence + GREEN GitHub CI --------
-  # The 90/10 rethink: CI already runs the FULL suite + test:system per PR push and
-  # this gate blocks on CI green anyway, so a fresh bin/fast-check cert (diff-mapped
-  # tests + core spine + scoped rubocop) is accepted as the suite gate WHEN CI is
-  # green. Red/pending CI still blocks; a missing/unverified CI does NOT credit the
-  # fast cert (the full net hasn't provably run); full-suite evidence and the
-  # [full-suite-bypass] hatch keep working. Driven by the DOR_CHECK_SUITE_EVIDENCE
-  # fast_fresh/fast_stale tokens + DOR_CHECK_CI_STATUS (unit) and the REAL
-  # fingerprint path (integration).
-
-  def fast_check_ci(evidence, ci_state, devops = CI_PR, *args)
-    with_changed_files("app/models/agent.rb") do
-      with_env("DOR_CHECK_SUITE_EVIDENCE" => evidence, "DOR_CHECK_CI_STATUS" => ci_state) do
-        check(devops, *args)
-      end
-    end
-  end
-
-  def test_fresh_fast_cert_with_green_ci_passes_merge_gate
-    out, code = fast_check_ci("fast_fresh", "green")
-    assert_equal 0, code, out
-    assert_match(/DoR-to-Merge met/, out)
-    assert_match(/fast cert accepted/, out)
-    assert_match(/GitHub CI green/, out)
-  end
-
-  def test_fresh_fast_cert_with_unreported_ci_is_credited_provisionally_at_submit
-    # ci-gate-review-handoff: CI :none (an open PR whose checks haven't reported
-    # yet — the seconds after `gh pr ready`) gets the same PROVISIONAL credit as
-    # pending. The review gate-zero still demands the settled green.
-    out, code = fast_check_ci("fast_fresh", "none")
-    assert_equal 0, code, out
-    assert_match(/PROVISIONALLY/, out)
-  end
-
-  def test_fresh_fast_cert_with_red_ci_is_refused
-    out, code = fast_check_ci("fast_fresh", "red")
-    assert_equal 1, code, out
-    assert_match(/GitHub CI is RED/, out)
-    assert_match(/fast-cert evidence is FRESH/, out, "the suite gate refuses too — fast needs CI green")
-  end
-
-  # conflict-remedy-names-wrong-branch: the fresh-fast-cert path ALSO emits a conflict
-  # cure (suite_evidence_error), and it HARDCODED "merge release into the branch" —
-  # the reachable path both reviewers flagged, and the one untested CI state here. It
-  # must route through CiStatus.conflicted_remedy and never name a hardcoded release.
-  def test_fresh_fast_cert_with_conflicted_ci_names_the_base_not_release
-    out, code = fast_check_ci("fast_fresh", "conflicted")
-    assert_equal 1, code, out
-    assert_match(/CONFLICTED/i, out, "a conflicted PR on the fresh-cert path is refused, not credited")
-    assert_match(/resolve/i, out, "the guidance names the fix — resolve the conflicts")
-    refute_match(%r{merge\s+(?:origin/)?release\b}, out,
-                 "the cure must NOT hardcode release — feature PRs target accepted")
-  end
-
-  def test_fresh_fast_cert_with_pending_ci_is_credited_provisionally_at_submit
-    # ci-gate-review-handoff: submit-side, a fresh fast cert with CI still running
-    # is credited PROVISIONALLY — the builder hands off now, and the review-side
-    # gate-zero (strict) holds the authoritative CI verdict.
-    out, code = fast_check_ci("fast_fresh", "pending")
-    assert_equal 0, code, out
-    assert_match(/DoR-to-Merge met/, out)
-    assert_match(/fast cert accepted PROVISIONALLY/, out)
-    assert_match(/gate-zero/, out, "the provisional credit names the authoritative verdict's home")
-  end
-
-  def test_fresh_fast_cert_with_unverified_ci_is_refused_not_credited
-    # The provisional-credit set is EXACTLY {pending, none} — CI that is genuinely COMING.
-    # An :unverified reading is a gh/network error: absence of a verdict, NOT "coming soon",
-    # so it must never provisionally credit a fast cert (the same three-state discipline the
-    # CI fold preaches). Mutation evidence: widen `%i[pending none]` to include :unverified
-    # and, without this test, an unreadable-by-network CI silently credits provisional green.
-    out, code = fast_check_ci("fast_fresh", "unverified")
-    assert_equal 1, code, "an :unverified (network-error) CI must NOT credit a fast cert:\n#{out}"
-    assert_match(/fast-cert evidence is FRESH/, out, "the suite gate refuses — fast needs a READABLE green")
-    assert_match(/UNVERIFIED/, out, "the CI state is named as the reason it could not credit")
-  end
-
   # --- CI :unreadable — the gate names its own blindness ----------------------
   #
   # task dor-check-misses-rolio-ci (2026-07-13): a fine-grained PAT with no
   # `Checks: Read` on the PRIVATE rolio repo made `gh pr checks` 403, dor-check
-  # folded that into a bare UNVERIFIED, and every rolio task was quietly denied the
-  # fast-cert route — with a message telling the builder to "push the branch and open
-  # the PR" for a PR that was already open and already GREEN. The gate must instead
-  # say: this is a CREDENTIAL fault, on THIS repo, fixed by THIS grant.
+  # folded that into a bare UNVERIFIED, and the message told the builder to "push the
+  # branch and open the PR" for a PR that was already open and already GREEN. The gate
+  # must instead say: this is a CREDENTIAL fault, on THIS repo, fixed by THIS grant.
 
   ROLIO_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/McRitchie-Studio/rolio/pull/23").freeze
   ROLIO_CHECKS_403 = "GraphQL: Resource not accessible by personal access token".freeze
@@ -2227,31 +2049,21 @@ class DorCheckTest < Minitest::Test
     assert_match(/gh pr checks <pr> --repo/, out, "the VERIFY command is named")
   end
 
-  def test_unreadable_ci_does_NOT_unlock_the_fast_cert_route
-    # HONESTY, NOT LENIENCY. This is the whole discipline of the change: naming the
-    # blindness must not become an EXCUSE for it. A fast cert is only credited
-    # alongside a CI green we can actually READ — an unreadable CI is not a green,
-    # so it blocks exactly as hard as it did before this change. If this test ever
-    # goes green with exit 0, the gate has been made easier to pass.
-    out, code = fast_check_ci("fast_fresh", ROLIO_CHECKS_403, ROLIO_PR)
-    assert_equal 1, code, "an unreadable CI must NOT credit a fast cert:\n#{out}"
-    assert_match(/fast-cert evidence is FRESH/, out)
-    refute_match(/PROVISIONALLY/, out, "no provisional credit on a CI we cannot read")
-  end
-
-  def test_unreadable_ci_refuses_the_fast_cert_WITHOUT_the_re_run_lie
-    # The regression on the guidance TEXT. The old message sent the builder to
-    # "push the branch and open the PR, then re-run dor-check" — futile advice that
-    # is exactly how a gate teaches people to ignore it. It must now point at the
-    # token, and must NOT tell them to open a PR that already exists.
-    out, = fast_check_ci("fast_fresh", ROLIO_CHECKS_403, ROLIO_PR)
+  def test_unreadable_ci_refuses_WITHOUT_the_re_run_lie_and_names_no_cert_route
+    # The regression on the guidance TEXT. The old message sent the builder to "push
+    # the branch and open the PR, then re-run dor-check" — futile advice — and until
+    # /tasks/dor-reads-settled-ci-verdict it then named bin/full-suite-check as the
+    # route that "DOES work". It must point at the token and at nothing else.
+    out, code = ci_check(ROLIO_CHECKS_403, ROLIO_PR)
+    assert_equal 1, code, "an unreadable CI must refuse — nothing stands in:\n#{out}"
     refute_match(/push the branch and open the PR/, out, "the futile re-run advice must be gone")
     assert_match(/re-running will never clear it/i, out, "the gate says re-running cannot help")
-    assert_match(/bin\/full-suite-check/, out, "and names the route that DOES work today")
+    refute_match(%r{bin/full-suite-check}, out, "no cert route is offered")
+    assert_match(/no local cert stands in/, out, "and the refusal says so")
   end
 
   def test_unreadable_ci_still_blocks_at_the_review_gate_zero
-    out, code = fast_check_ci("fast_fresh", ROLIO_CHECKS_403, ROLIO_PR, "--gate-role", "review")
+    out, code = ci_check(ROLIO_CHECKS_403, ROLIO_PR, "--gate-role", "review")
     assert_equal 1, code, out
   end
 
@@ -2274,131 +2086,12 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_a_readable_but_unrun_ci_is_still_plain_none_not_unreadable
-    # Guard the boundary from the other side: the honest "no run yet" keeps its old
-    # meaning and its old PROVISIONAL credit. :unreadable must not swallow :none.
-    out, code = fast_check_ci("fast_fresh", "none", CI_PR)
-    assert_equal 0, code, out
-    assert_match(/PROVISIONALLY/, out)
+    # Guard the boundary from the other side: the honest "no run yet" keeps its own
+    # meaning and its own remedy. :unreadable must not swallow :none.
+    out, code = ci_check("none", CI_PR)
+    assert_equal 1, code, out
+    assert_match(/Confirm the workflow triggered/, out)
     refute_match(/CREDENTIAL fault/, out)
-  end
-
-  def test_review_gate_zero_refuses_a_fast_cert_until_ci_is_green
-    # The strict pairing survives on the review side: fresh fast evidence +
-    # pending CI is NOT credited at gate-zero — red/pending both block there.
-    out, code = fast_check_ci("fast_fresh", "pending", CI_PR, "--gate-role", "review")
-    assert_equal 1, code, out
-    assert_match(/fast-cert evidence is FRESH/, out)
-    assert_match(/still RUNNING/, out)
-  end
-
-  def test_fresh_fast_cert_without_a_pr_is_refused
-    # No pr_url + no injection → the real :no_pr path: CI is silent, but silent ≠
-    # green — the fast cert stays uncredited until the PR exists and CI passes.
-    out, code = with_changed_files("app/models/agent.rb") do
-      with_env("DOR_CHECK_SUITE_EVIDENCE" => "fast_fresh", "DOR_CHECK_CI_STATUS" => nil) do
-        check(BACKEND_CONTRACT)
-      end
-    end
-    assert_equal 1, code, out
-    assert_match(/fast-cert evidence is FRESH/, out)
-  end
-
-  def test_stale_fast_cert_is_refused_even_with_green_ci
-    out, code = fast_check_ci("fast_stale", "green")
-    assert_equal 1, code, out
-    assert_match(/fast-cert: STALE/, out)
-    refute_match(/DoR-to-Merge met/, out)
-  end
-
-  def test_full_evidence_still_passes_without_any_ci_pairing
-    # The FULL route is unchanged: full-suite + rubocop evidence needs no CI green
-    # (the CI gate itself still blocks red/pending independently — "none" doesn't).
-    out, code = fast_check_ci("ok", "none")
-    assert_equal 0, code, out
-    assert_match(/DoR-to-Merge met/, out)
-    refute_match(/fast cert accepted/, out)
-  end
-
-  def test_missing_evidence_refusal_offers_the_fast_route
-    out, code = fast_check_ci("missing", "green")
-    assert_equal 1, code, out
-    assert_match(%r{bin/fast-check}, out, "the refusal teaches both certification routes")
-    assert_match(%r{bin/full-suite-check}, out)
-  end
-
-  def test_fast_route_surfaces_in_the_json_verdict
-    out, code = fast_check_ci("fast_fresh", "green", CI_PR, "--json")
-    assert_equal 0, code, out
-    j = JSON.parse(out)
-    assert j["ready"]
-    assert_equal "fast", j.dig("full_suite", "route")
-    assert_equal "fresh", j.dig("full_suite", "lanes", "fast-cert")
-    refute j.dig("full_suite", "ok"), "ok stays the FULL-cert verdict; fast is a distinct route"
-  end
-
-  def test_full_route_surfaces_in_the_json_verdict
-    out, code = fast_check_ci("ok", "green", CI_PR, "--json")
-    assert_equal 0, code, out
-    j = JSON.parse(out)
-    assert_equal "full", j.dig("full_suite", "route")
-  end
-
-  def test_provisional_fast_route_surfaces_in_the_json_verdict
-    out, code = fast_check_ci("fast_fresh", "pending", CI_PR, "--json")
-    assert_equal 0, code, out
-    j = JSON.parse(out)
-    assert j["ready"]
-    assert_equal "fast-provisional", j.dig("full_suite", "route")
-    assert_equal "pending", j.dig("ci", "state")
-  end
-
-  def test_bypass_route_surfaces_in_the_json_verdict
-    devops = CI_PR.merge(
-      "checks_run" => CI_PR["checks_run"] + ["[full-suite-bypass] env blocker, tracked in task-x"]
-    )
-    out, code = fast_check_ci("missing", "green", devops, "--json")
-    assert_equal 0, code, out
-    j = JSON.parse(out)
-    assert_equal "bypass", j.dig("full_suite", "route")
-  end
-
-  # --- [integration] fast route over the REAL git fingerprint --------------------
-
-  def test_e2e_fresh_fast_cert_evidence_with_green_ci_passes
-    with_suite_repo do |dir, fp|
-      devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
-      out, code = with_env("DOR_CHECK_CI_STATUS" => "green") { check_real_suite(dir, devops) }
-      assert_equal 0, code, out
-      assert_match(/fast cert accepted at #{fp[0, 12]}/, out)
-    end
-  end
-
-  def test_e2e_fast_cert_evidence_goes_stale_after_an_edit
-    with_suite_repo do |dir, fp|
-      devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
-      File.write(File.join(dir, "app.rb"), "base\nedited\n")
-      out, code = with_env("DOR_CHECK_CI_STATUS" => "green") { check_real_suite(dir, devops) }
-      assert_equal 1, code, out
-      assert_match(/fast-cert: STALE/, out)
-    end
-  end
-
-  def test_e2e_fast_cert_evidence_with_unsettled_ci_is_provisional_at_submit
-    with_suite_repo do |dir, fp|
-      devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
-      out, code = with_env("DOR_CHECK_CI_STATUS" => "pending") { check_real_suite(dir, devops) }
-      assert_equal 0, code, out
-      assert_match(/fast cert accepted PROVISIONALLY at #{fp[0, 12]}/, out)
-    end
-  end
-
-  def test_e2e_fast_cert_evidence_without_green_ci_is_refused_at_review_gate_zero
-    with_suite_repo do |dir, fp|
-      devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
-      out, code = with_env("DOR_CHECK_CI_STATUS" => "none") { check_real_suite(dir, devops, "--gate-role", "review") }
-      assert_equal 1, code, out
-      assert_match(/fast-cert evidence is FRESH/, out)
-    end
   end
 
   # ==== [integration] the `test-only` shape ==========================================
@@ -2506,40 +2199,41 @@ class DorCheckTest < Minitest::Test
     assert_equal 0, code, out
   end
 
-  # ==== the zero-tier shape still owes the FULL-SUITE cert ============================
-  # THE HOLE THIS CLOSES, and the reason `full_suite_gate` is now an explicit shape
-  # key instead of an inference. The suite gate used to fire on `!dor_tiers.empty?`,
-  # which was correct for the only zero-tier shape that existed (`docs` ships prose)
-  # and silently coupled two unrelated questions. `test-only` has no tiers and ships
-  # EXECUTABLE CODE: under the old condition it would have inherited a full-suite
-  # exemption nobody chose, no reviewer would have seen it in the diff, and the
-  # shape would have shipped with no executed evidence whatsoever. Test code is the
-  # change most able to break the suite quietly, so this is exactly backwards.
-  def test_integration_test_only_still_owes_the_full_suite_cert
+  # ==== the zero-tier shape still owes the suite gate ================================
+  # THE HOLE THIS CLOSES, and the reason `full_suite_gate` became an explicit shape
+  # key rather than an inference from `dor_tiers` being empty: `test-only` has no tiers
+  # and ships EXECUTABLE CODE, and test code is the change most able to break the
+  # suite quietly. Since /tasks/dor-reads-settled-ci-verdict the suite gate is the
+  # PR's settled green CI for EVERY shape, so the question is asked of the CI verdict:
+  # a red CI refuses test-only exactly as it refuses a feature.
+  def test_integration_test_only_still_owes_the_suite_gate
     out, code = with_changed_files(TEST_ONLY_DIFF) do
-      check_suite(TEST_ONLY_CONTRACT, "missing")
+      with_env("DOR_CHECK_CI_STATUS" => "red") { check(TEST_ONLY_CONTRACT) }
     end
 
     refute_equal 0, code,
-                 "a zero-tier shape skipped the full-suite gate. `test-only` ships executable code and " \
-                 "must certify it exactly like a feature — see full_suite_gate in " \
-                 "config/feature_shapes.yml.\n#{out}"
-    assert_match(/full/i, out)
+                 "a zero-tier shape skipped the suite gate. `test-only` ships executable code and " \
+                 "must clear the CI verdict exactly like a feature.\n#{out}"
+    assert_match(/GitHub CI is RED/, out)
   end
 
-  def test_integration_docs_shape_still_skips_the_full_suite_cert
-    # The other side of the same change: `docs` declares `full_suite_gate: false`
-    # explicitly now, and its behavior must be IDENTICAL to what the inference gave
-    # it. A prose diff has no suite to certify, and making the key explicit was not
-    # licence to start demanding one.
+  def test_integration_docs_shape_owes_no_tier_and_no_local_cert_but_still_the_ci_verdict
+    # `docs` declares `full_suite_gate: false` — no local cert was ever owed — and
+    # certifies by review. It still does not escape the CI verdict: this repo's CI
+    # grades prose, and the exemption was never from CI.
     devops = { "shape" => "docs", "repositories" => ["mcritchie-studio"], "risk_tags" => ["docs"],
                "acceptance" => ["Runbook explains the new gate"], "post_deploy_cmd" => "none",
                "checks_run" => [] }
     out, code = with_changed_files("docs/agents/modules/testing.md") do
-      check_suite(devops, "missing")
+      with_env("DOR_CHECK_CI_STATUS" => "green") { check(devops) }
     end
+    assert_equal 0, code, "the docs shape certifies by review — no tier, no local cert\n#{out}"
+    assert_match(/no test tier required/, out)
 
-    assert_equal 0, code, "the docs shape must still certify by review, not by a suite lane\n#{out}"
+    out, code = with_changed_files("docs/agents/modules/testing.md") do
+      with_env("DOR_CHECK_CI_STATUS" => "red") { check(devops) }
+    end
+    assert_equal 1, code, "a red CI refuses a docs-shaped PR too\n#{out}"
   end
 
   def test_integration_test_only_at_the_build_gate_survives_an_empty_diff
@@ -2686,12 +2380,12 @@ class DorCheckTest < Minitest::Test
     # carrying the tree's ACTUAL fingerprint must grade fresh, or bin/control-check
     # would write evidence the gate cannot read.
     with_control_repo do |dir|
-      fingerprint = suite_fingerprint(dir)
+      fingerprint = FullSuiteGate.fingerprint(dir)
       refute_empty fingerprint.to_s, "could not compute the repo fingerprint"
       devops = TEST_ONLY_CONTRACT.merge(
         "checks_run" => ["[control@#{fingerprint}] NECESSARY — replayed test/models/a_test.rb"]
       )
-      out, code = control_check(devops, dir, env: { "DOR_CHECK_SUITE_EVIDENCE" => "ok" })
+      out, code = control_check(devops, dir)
 
       assert_equal 0, code, out
     end
@@ -2752,18 +2446,18 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_integration_a_full_suite_bypass_does_not_fabricate_an_executed_control
-    # REGRESSION, found while wiring this gate. FullSuiteGate#verdict DEFAULTS every
-    # evidence lane to :fresh when it short-circuits — which it does on a recorded
-    # `[full-suite-bypass]`. Reading the control's freshness off suite_eval[:lanes]
-    # therefore reported a control as EXECUTED that nothing ran: a gate synthesizing
-    # the exact fact it exists to establish. The control is graded against a real
-    # fingerprint or not at all.
+    # REGRESSION, found while wiring this gate. FullSuiteGate#verdict DEFAULTED every
+    # evidence lane to :fresh when it short-circuited on a recorded `[full-suite-bypass]`,
+    # and reading the control's freshness off that verdict reported a control as
+    # EXECUTED that nothing ran. The suite verdict is no longer computed at all, and the
+    # bypass line is not read: the control is graded against a real fingerprint or not
+    # at all, and a bypass line beside a prose control changes nothing.
     with_control_repo do |dir|
       devops = TEST_ONLY_CONTRACT.merge(
         "checks_run" => ["[full-suite-bypass] CI outage, ran locally",
                          "[control] pre-change a_test.rb → trust me"]
       )
-      out, code = control_check(devops, dir, env: { "DOR_CHECK_SUITE_EVIDENCE" => nil })
+      out, code = control_check(devops, dir)
 
       refute_equal 0, code, out
       assert_match(/requires an EXECUTED control/, out)

@@ -2,7 +2,7 @@ require "test_helper"
 
 # [integration] GET /agents/activities — the reimagined cross-session activity feed.
 # Every narrated AgentActivity across ALL sessions, newest-first, with its raw actions
-# (also newest-first) drilled down underneath and inline Alex/McRitchie grade cells on
+# (also newest-first) drilled down underneath and inline Xan/McRitchie grade cells on
 # BOTH. An optional ?sessions= (comma list) narrows to a multi-select of sessions. A
 # read-only meta surface BEHIND SIGN-IN, grading through the existing heartbeat endpoints.
 class AgentsActivitiesTest < ActionDispatch::IntegrationTest
@@ -196,21 +196,21 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     # activity-level grade forms post to the activity grade endpoint
-    assert_select "form[data-test=aa-activity-grade-form-alex][action=?]", heartbeat_activity_grade_path(ev)
+    assert_select "form[data-test=aa-activity-grade-form-xan][action=?]", heartbeat_activity_grade_path(ev)
     assert_select "form[data-test=aa-activity-grade-form-mcr][action=?]", heartbeat_activity_grade_path(ev)
     # action-level grade forms post to the action grade endpoint
-    assert_select "form[data-test=aa-action-grade-form-alex][action=?]", heartbeat_grade_path(act)
+    assert_select "form[data-test=aa-action-grade-form-xan][action=?]", heartbeat_grade_path(act)
     assert_select "form[data-test=aa-action-grade-form-mcr][action=?]", heartbeat_grade_path(act)
   end
 
   test "an existing activity grade renders its note slug server-side" do
     ev = activity(reason_slug: "already graded activity")
-    ActionGrade.create!(agent_activity: ev, grader: "alex", disposition: "good", slug: "solid narration here indeed")
+    ActionGrade.create!(agent_activity: ev, grader: "xan", disposition: "good", slug: "solid narration here indeed")
 
     get activities_agents_path
 
     assert_response :success
-    assert_select "[data-test=aa-activity-note-alex]", text: /solid narration here indeed/
+    assert_select "[data-test=aa-activity-note-xan]", text: /solid narration here indeed/
   end
 
   test "filters to a single session with ?sessions=" do
@@ -408,14 +408,14 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
   test "clears an action grade via intent=clear on the action grade endpoint" do
     ev = activity
     act = action(ev)
-    ActionGrade.create!(agent_action: act, grader: "alex", disposition: "not", slug: "needs a rethink here")
+    ActionGrade.create!(agent_action: act, grader: "xan", disposition: "not", slug: "needs a rethink here")
 
-    assert_equal 1, ActionGrade.for_action(act).by_grader("alex").count
+    assert_equal 1, ActionGrade.for_action(act).by_grader("xan").count
 
-    post heartbeat_grade_path(act), params: { grader: "alex", intent: "clear" }, as: :json
+    post heartbeat_grade_path(act), params: { grader: "xan", intent: "clear" }, as: :json
 
     assert_response :success
-    assert_equal 0, ActionGrade.for_action(act).by_grader("alex").count
+    assert_equal 0, ActionGrade.for_action(act).by_grader("xan").count
     assert JSON.parse(response.body)["cleared"]
   end
 

@@ -166,7 +166,6 @@ class DorCheckBaseMovementTest < Minitest::Test
         "DOR_CHECK_DIFF_ROOT" => root,
         "DOR_CHECK_DIFF_BASE" => "accepted",
         "DOR_CHECK_CHANGED_FILES" => "bin/widget-tool",
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok",
         "DOR_CHECK_PR_FILES" => "",
         "DOR_CHECK_CI_STATUS" => "green",
         "DOR_CHECK_CI_COMPLETED_AT" => ci_completed_at,

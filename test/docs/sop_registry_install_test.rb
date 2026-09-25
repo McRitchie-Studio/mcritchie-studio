@@ -51,12 +51,12 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
       agents_body = File.read(agents)
 
       # The registry row an agent resolves `clean-up` through must survive generation.
-      assert_match(/\|\s*`clean-up`\s*\|\s*Alex\s*\|.*alex\/sops\/clean-up\.md/, agents_body,
+      assert_match(/\|\s*`clean-up`\s*\|\s*Xan\s*\|.*xan\/sops\/clean-up\.md/, agents_body,
                    "the generated AGENTS.md carries no `clean-up` registry row — an agent told to run " \
                    "clean-up could not resolve the name")
 
       # And the file it points at must be reachable from the repo.
-      assert_path_exists Rails.root.join("docs/agents/agents/alex/sops/clean-up.md")
+      assert_path_exists Rails.root.join("docs/agents/agents/xan/sops/clean-up.md")
 
       # Claude Code auto-loads CLAUDE.md; if it never names the SOP, Claude is the
       # least likely of the two runtimes to resolve it.

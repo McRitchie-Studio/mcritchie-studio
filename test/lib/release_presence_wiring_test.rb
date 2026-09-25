@@ -107,8 +107,8 @@ class ReleasePresenceWiringTest < Minitest::Test
       def sh(*_a, **_k) = [observe, true]
     RUBY
     call = <<~RUBY
-      inside, _ok = run_test_scope("pre_qa_gate", "bin/rails", "test",
-                                   capture: true, repo: "mcritchie-studio")
+      inside, _ok = run_test_scope("gem_release_check", "bin/release-check", "--build",
+                                   capture: true, repo: "studio-engine")
       print("INSIDE=" + inside + " AFTER=" + observe)
     RUBY
     out = run_cli(setup: setup, call: call)
@@ -117,8 +117,8 @@ class ReleasePresenceWiringTest < Minitest::Test
                     "while a release gate's LOCAL suite is running, a peer must read only " \
                     "#{SUITE} suites of headroom. This is the phase that saturated the machine " \
                     "and killed a 45-minute run, and run_test_scope is the choke point every " \
-                    "conductor gate passes through, so one wrap covers the G3 pre-QA gate and " \
-                    "the ship's frozen-SHA gate alike"
+                    "locally-run release scope passes through (the gem release check here; the " \
+                    "G3/G4 tree-verdict gates are CI READS and never enter it)"
     assert_includes out, "AFTER=#{LIGHT}",
                     "and the machine must come back. A claim stranded at suite weight would " \
                     "wedge every peer for the rest of the sweep — the design tolerates a DEAD " \

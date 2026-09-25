@@ -146,8 +146,7 @@ class DorCheckPrFilesAuthTest < Minitest::Test
         # The REAL PR read is the subject — both injection seams stay OFF.
         "DOR_CHECK_CHANGED_FILES" => nil,
         "DOR_CHECK_PR_FILES" => nil,
-        "DOR_CHECK_CI_STATUS" => "green",
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+        "DOR_CHECK_CI_STATUS" => "green"
       ))
       out = IO.popen(env, "#{BIN} --file #{path} --json #{args.join(" ")} 2>/dev/null", &:read)
       [JSON.parse(out), $?.exitstatus]

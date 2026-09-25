@@ -53,9 +53,9 @@ User.create!(email: "newcomer-turbo@test.com", role: "viewer")
 User.create!(email: "newcomer-back@test.com", role: "viewer")
 
 # Agents
-alex = Agent.create!(
-  name: "Alex",
-  slug: "alex",
+xan = Agent.create!(
+  name: "Xan",
+  slug: "xan",
   status: "active",
   agent_type: "orchestrator",
   title: "Lead Orchestrator",
@@ -83,13 +83,13 @@ Agent.create!(name: "Avi", slug: "avi", status: "active", agent_type: "product",
 scraping = Skill.create!(name: "Web Scraping", slug: "web-scraping", category: "data", description: "Extract data from websites")
 rails_dev = Skill.create!(name: "Rails Development", slug: "rails-development", category: "development", description: "Build Rails applications")
 
-SkillAssignment.create!(agent_slug: "alex", skill_slug: "rails-development")
+SkillAssignment.create!(agent_slug: "xan", skill_slug: "rails-development")
 SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 
 # Tasks in different workflow stages
-Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "alex")
+Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "xan")
 Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", queued_at: 1.day.ago, started_at: 2.hours.ago)
-Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "alex", queued_at: 3.days.ago, started_at: 2.days.ago)
+Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "xan", queued_at: 3.days.ago, started_at: 2.days.ago)
 # A block is no longer a STAGE — it is an attribute of a `building` task (blocked_at
 # + blocked_from + blocked_by + block_kind), per the blocked-as-building collapse.
 # Seeding stage: "blocked" now fails validation and takes the whole e2e run down with
@@ -100,7 +100,7 @@ Task.create!(
   description: "Fixture for the production sidebar back-navigation regression.",
   stage: "building",
   priority: 1,
-  agent_slug: "alex",
+  agent_slug: "xan",
   started_at: 1.day.ago,
   blocked_at: 6.hours.ago,
   blocked_from: "submitted",
@@ -116,7 +116,7 @@ Task.create!(
   description: "Fixture for the session-resume board widget (last-4 + resume copy).",
   stage: "building",
   priority: 0,
-  agent_slug: "alex",
+  agent_slug: "xan",
   metadata: { "devops" => {
     "kind" => "feature",
     "repositories" => ["mcritchie-studio"],
@@ -126,7 +126,7 @@ Task.create!(
 )
 
 # Activities
-Activity.create!(agent_slug: "alex", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
+Activity.create!(agent_slug: "xan", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
 Activity.create!(agent_slug: "mack", activity_type: "task_started", description: "Started scraping odds data")
 
 coach_person = Person.create!(
@@ -186,7 +186,7 @@ timeline_task = Task.create!(
   description: "Fixture for the task Stage Timeline — genesis, transitions, durations, and reported model cost.",
   stage: "reviewed",
   priority: 1,
-  agent_slug: "alex",
+  agent_slug: "xan",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 timeline_task.task_events.delete_all # replace the auto-genesis with a curated, time-spaced sequence
@@ -215,7 +215,7 @@ intent_task = Task.create!(
   description: "Fixture for the agentic-intent live block — the senior pair reviewing now.",
   stage: "submitted",
   priority: 1,
-  agent_slug: "alex",
+  agent_slug: "xan",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 intent_task.record_intent_event(
@@ -315,6 +315,21 @@ cleared_block_task = Task.create!(
   priority: 1,
   agent_slug: "carl",
   metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
+)
+
+# Epic chip demo: a task that belongs to an epic (tasks.epic_slug) wears the violet
+# epic chip beside its slug, and clicking the chip filters the board to that epic
+# (/tasks?epic=devops-v3). Read-only against this fixture; every other seeded card
+# belongs to no epic, which is what makes the filtered board provably NARROWER.
+Task.create!(
+  title: "Epic chip demo",
+  slug: "e2e-epic-chip-demo",
+  description: "A task stamped with an epic, so the board card carries the epic chip.",
+  stage: "building",
+  priority: 1,
+  agent_slug: "mack",
+  epic_slug: "devops-v3",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 
 # --- Per-application RELEASE INCLUSION markers (Avi's qa-release disposition) ----
@@ -680,14 +695,14 @@ gate_now = Time.current
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
                success: false, source: "seed", actor: "steffon",
                metadata: { "reason" => "1 app(s) never returned /up 200" },
-               sops: [{ "sop" => "pre_qa_gate", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 412_000 },
+               sops: [{ "sop" => "pre_qa_gate", "cmd" => "GitHub CI GREEN @ e2edemo — the SHA's own run, polled to a settled conclusion (bin/rails test ran in CI, not here)", "result" => "pass", "duration_ms" => 412_000 },
                       { "sop" => "qa_up_smoke", "cmd" => "curl /up", "result" => "fail", "duration_ms" => 120_000 }],
                now: gate_now - 27.minutes)
 GateRun.open!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
               source: "seed", actor: "steffon", now: gate_now - 26.minutes)
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
                success: true, source: "seed", actor: "steffon",
-               sops: [{ "sop" => "pre_qa_gate", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 405_000 },
+               sops: [{ "sop" => "pre_qa_gate", "cmd" => "GitHub CI GREEN @ e2edemo — the SHA's own run, polled to a settled conclusion (bin/rails test ran in CI, not here)", "result" => "pass", "duration_ms" => 405_000 },
                       { "sop" => "qa_up_smoke", "cmd" => "curl /up", "result" => "pass", "duration_ms" => 8_000 },
                       { "sop" => "qa_post_deploy", "cmd" => "bin/rails db:seed:pokemon", "result" => "pass", "duration_ms" => 14_000 }],
                now: gate_now - 9.minutes)
@@ -696,7 +711,7 @@ GateRun.open!(subject_type: "release", subject_slug: shipped_release.slug, key: 
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g4_ship",
                success: true, source: "seed", actor: "avi",
                metadata: { "seal" => "green" },
-               sops: [{ "sop" => "ship_test_gate", "cmd" => "skipped — bin/rails test already green @ e2edemo at G3 (pre-QA gate, same SHA + command)", "result" => "pass" },
+               sops: [{ "sop" => "ship_test_gate", "cmd" => "GitHub CI GREEN @ e2edemo — credited — tree-identical promote — accepted head e2edemo concluded green and shares tree e2etree with release e2edemo (bin/rails test ran in CI, not here)", "result" => "pass" },
                       { "sop" => "deploy:mcritchie-studio", "cmd" => "git push heroku main", "result" => "pass", "duration_ms" => 95_000 },
                       { "sop" => "prod_up_smoke", "cmd" => "curl https://mcritchie.studio/up", "result" => "pass", "duration_ms" => 900 },
                       { "sop" => "prod_smoke_seal", "cmd" => "bin/prod-smoke mcritchie-studio", "result" => "pass", "duration_ms" => 41_000 }],
@@ -857,7 +872,7 @@ GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g2b_light", act
 # so materializing earlier would cache pre-evidence windows.
 Task::TestingPhases.backfill!
 
-# /alex/heartbeat demo: a representative agent-narrated EVENT trajectory so the
+# /xan/heartbeat demo: a representative agent-narrated EVENT trajectory so the
 # learning heartbeat renders spans in the e2e env (capture is forward-only, so it
 # is otherwise empty). Trimmed mirror of lib/tasks/atomic.rake's demo — a couple of
 # closed spans, a final OPEN span (renders "…in progress"), and one pre-narration
@@ -972,7 +987,7 @@ evolution_task.assemble!
 
 # ── Distillation pipeline · Test runs band + a gradeable test-run insight ──────
 # A couple of release test-scope VERDICTS (kind:test_scope with a pass|fail
-# result_slug) so the pipeline's "Test runs" band renders, plus a banked Alex
+# result_slug) so the pipeline's "Test runs" band renders, plus a banked Xan
 # grade on the passing one so it also surfaces as a Column-2 insight carrying an
 # ACTION Confirm button (the confirm-of-action path). The scope keys resolve to
 # phase/tier/host via config/devops_test_suites.yml at render.
@@ -987,7 +1002,7 @@ AgentAction.create!(
   result_slug: "fail", occurred_at: Time.current, duration_ms: 4_200,
   summary: "test scope qa_up_smoke FAILED · qa · fail · http 503 · 4.2s · /up poll"
 )
-ActionGrade.create!(agent_action: test_run_pass, grader: "alex", disposition: "good",
+ActionGrade.create!(agent_action: test_run_pass, grader: "xan", disposition: "good",
                     slug: "ship gate stayed green").bank!
 
 # Model-pricing demo: two REAL production sessions replayed verbatim (a pokedex

@@ -15,10 +15,18 @@ module Higgsfield
   # WHAT IS MEASURED AND WHAT IS NOT. Everything about the REQUEST side below
   # was measured against the live API on 2026-09-20 — host, auth header, paths,
   # and which fields are required (an empty POST returns a 422 naming them).
-  # The RESPONSE side is NOT measured: the account has no credits, so every
-  # well-formed request answers `not_enough_credits` and no successful payload
-  # was ever seen. Response parsing is therefore written tolerantly and marked
-  # UNVERIFIED. Confirm it against one real generation before trusting it.
+  # The RESPONSE side of the GENERATION endpoints is NOT measured: the account
+  # had no credits on that date, so every well-formed request answered
+  # `not_enough_credits` and no successful payload was ever seen. Their response
+  # parsing is therefore written tolerantly and marked UNVERIFIED. Confirm it
+  # against one real generation before trusting it.
+  #
+  # THE CHARACTER-IDENTITY ENDPOINTS ARE THE EXCEPTION, and the paragraph above
+  # must not be read over them. On 2026-09-24 one real custom reference was
+  # created against the live API and polled to rest, so their request AND
+  # response shapes are pinned from an observed 200 rather than written
+  # tolerantly. Nothing about that run says anything about the credit state of
+  # the generation endpoints — no generation was fired.
   class Client
     # VERIFIED: the current host. `api.higgsfield.ai`, not `platform.`.
     BASE_URL = "https://api.higgsfield.ai".freeze
@@ -43,6 +51,50 @@ module Higgsfield
     }.freeze
     STATUS_PATH = "/requests/%<id>s/status".freeze
     CANCEL_PATH = "/requests/%<id>s/cancel".freeze
+
+    # CHARACTER IDENTITY — the "custom reference". Post a set of reference
+    # photos once, get a UUID, then every generation that names that UUID renders
+    # the SAME face instead of re-inventing the person each call.
+    #
+    # MEASURED 2026-09-24 against the live API with the production credential,
+    # request AND response — unlike the generation endpoints above, this one has
+    # been driven to a 200 and its payload is pinned from the real answer:
+    #
+    #   POST /v1/custom-references
+    #     {"name": "...", "input_images": [{"type":"image_url","image_url":"https://..."}]}
+    #   -> 200 {"id":"1af15765-…","model_version":"v1","name":"…",
+    #           "status":"not_ready","thumbnail_url":null,
+    #           "created_at":"…","in_progress_at":null,"fail_reason":null}
+    #
+    # THE PUBLISHED SPEC DOES NOT LIST THIS PATH. docs.higgsfield.ai's
+    # openapi.json carries 8 paths and `/v1/custom-references` is not among them.
+    # The spec is incomplete; the endpoint is live. Do not delete this on the
+    # strength of the spec's silence — probe it.
+    CUSTOM_REFERENCE_PATH = "/v1/custom-references".freeze
+    CUSTOM_REFERENCE_READ_PATH = "/v1/custom-references/%<id>s".freeze
+
+    # The item wrapper is not decoration. A bare URL string answers 422
+    # `model_attributes_type`; an item missing `type` answers 422 `missing`; and
+    # `type` is a single-member literal — a wrong value answers
+    # `Input should be <InputImageType.IMAGE_URL: 'image_url'>`. All three
+    # measured 2026-09-24.
+    CUSTOM_REFERENCE_IMAGE_TYPE = "image_url".freeze
+
+    # `input_images` has min_length 1 — `[]` answers 422 `too_short`.
+    CUSTOM_REFERENCE_MIN_IMAGES = 1
+
+    # HOW HARD THE IDENTITY PULLS, and it is a FLOAT in 0..1, not a level.
+    # Measured 2026-09-24: 99 answers `less_than_equal` (ctx le 1.0), -5 answers
+    # `greater_than_equal` (ctx ge 0.0), and "banana" answers `float_parsing`.
+    # Worth pinning because "strength" invites an integer, and an integer above
+    # 1 is a paid round-trip to a 422.
+    CUSTOM_REFERENCE_STRENGTH_RANGE = (0.0..1.0).freeze
+
+    # The id Higgsfield mints is a UUID, and the generation endpoint VALIDATES it
+    # as one (a non-uuid answers 422 `uuid_parsing`, which is how we know the
+    # field is wired rather than silently ignored). Checking the shape here turns
+    # a paid 422 into a free local raise.
+    UUID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
 
     # 9:16 for TikTok and Reels. 1152x2048 is the exact 9:16 member of the size
     # set the API named when it rejected the old 1024x1792 — note that rejection
@@ -75,13 +127,57 @@ module Higgsfield
       raise GenerationError, "HIGGSFIELD_API_SECRET not set" if @api_secret.blank?
     end
 
-    def generate_image(prompt:, width_and_height: VERTICAL_9_16, quality: nil, enhance_prompt: nil)
+    def generate_image(prompt:, width_and_height: VERTICAL_9_16, quality: nil, enhance_prompt: nil,
+                       custom_reference_id: nil, custom_reference_strength: nil)
       body = { prompt: prompt }
       body[:width_and_height] = width_and_height if width_and_height.present?
       body[:quality] = quality if quality.present?
       body[:enhance_prompt] = enhance_prompt unless enhance_prompt.nil?
+      body.merge!(custom_reference_body(custom_reference_id, custom_reference_strength))
 
       post(IMAGE_PATH, body)
+    end
+
+    # CREATE A CHARACTER IDENTITY from a set of reference photos. Returns the
+    # UUID, which is the only part of the answer a caller needs to keep — pass it
+    # back to #generate_image as `custom_reference_id`.
+    #
+    # THE IDENTITY IS NOT USABLE THE MOMENT THIS RETURNS. The response's
+    # `status` is `not_ready`, and a read of #custom_reference walks it
+    # `queued` → `in_progress` (measured 2026-09-24). Pin a generation to a
+    # reference that is still training and you have paid for a face we did not
+    # wait for. The caller owns that wait; this method owns the create.
+    #
+    # EVERY IMAGE URL MUST BE PUBLICLY FETCHABLE BY HIGGSFIELD, not merely by us.
+    # They pull the bytes server-side and re-host them on their own CDN — a read
+    # of the created reference comes back with a `reference_media` array of
+    # `d3snorpfx4xhv8.cloudfront.net` URLs, which is the proof the fetch
+    # succeeded. A signed or private URL does not survive that hop.
+    def create_custom_reference(name:, image_urls:)
+      urls = Array(image_urls).map { |url| url.to_s.strip }.reject(&:empty?)
+      if urls.length < CUSTOM_REFERENCE_MIN_IMAGES
+        raise ArgumentError,
+              "a custom reference needs at least #{CUSTOM_REFERENCE_MIN_IMAGES} image URL " \
+              "(the API answers 422 too_short on an empty list); got #{urls.length}"
+      end
+
+      response = post(CUSTOM_REFERENCE_PATH, {
+        name: name.to_s,
+        input_images: urls.map { |url| { type: CUSTOM_REFERENCE_IMAGE_TYPE, image_url: url } }
+      })
+
+      custom_reference_id_from(response)
+    end
+
+    # READ ONE CHARACTER IDENTITY — the only read there is. `GET
+    # /v1/custom-references` (the collection) answers 405 Method Not Allowed, so
+    # there is no way to list what we have created: the id we store IS the
+    # record. Measured 2026-09-24, along with this path's 200.
+    #
+    # The payload carries `status`, `fail_reason`, `thumbnail_url` and
+    # `reference_media`.
+    def custom_reference(custom_reference_id)
+      get(format(CUSTOM_REFERENCE_READ_PATH, id: custom_reference_id))
     end
 
     def generate_video(image_url:, prompt:, model: nil, duration: nil)
@@ -113,9 +209,12 @@ module Higgsfield
       post(format(CANCEL_PATH, id: request_id), {})
     end
 
-    def generate_image_and_wait(prompt:, width_and_height: VERTICAL_9_16, quality: nil, enhance_prompt: nil)
+    def generate_image_and_wait(prompt:, width_and_height: VERTICAL_9_16, quality: nil, enhance_prompt: nil,
+                                custom_reference_id: nil, custom_reference_strength: nil)
       response = generate_image(prompt: prompt, width_and_height: width_and_height,
-                                quality: quality, enhance_prompt: enhance_prompt)
+                                quality: quality, enhance_prompt: enhance_prompt,
+                                custom_reference_id: custom_reference_id,
+                                custom_reference_strength: custom_reference_strength)
       await_result(request_id_from(response))
     end
 
@@ -147,6 +246,92 @@ module Higgsfield
     end
 
     private
+
+    # THE TWO CHARACTER-IDENTITY FIELDS, OR NOTHING AT ALL. Absent keys are not
+    # the same as null keys: a body carrying `"custom_reference_id": null` asks
+    # the validator a question it did not have to answer, so an unpinned
+    # generation sends neither key.
+    #
+    # `nil?` rather than `present?` on the strength because 0.0 is a LEGAL value
+    # with a meaning — pull the identity in as weakly as the API allows — and
+    # Ruby's falsiness is not involved: `0.0.present?` is true, so `present?`
+    # would happen to work here and would break the day this reads a plain
+    # `false`-ish sentinel. Say what is meant.
+    #
+    # A STRENGTH WITHOUT AN ID IS REFUSED rather than dropped, on the same rule
+    # #video_path_for follows: silently ignoring an argument converts a working
+    # knob into a no-op the caller cannot see. The API would ignore it too, which
+    # is precisely why we must not.
+    def custom_reference_body(custom_reference_id, custom_reference_strength)
+      if custom_reference_id.blank?
+        unless custom_reference_strength.nil?
+          raise ArgumentError,
+                "custom_reference_strength #{custom_reference_strength.inspect} was given with no " \
+                "custom_reference_id — the strength scales an identity, so with nothing to scale it " \
+                "does nothing; pass both or neither"
+        end
+
+        return {}
+      end
+
+      id = custom_reference_id.to_s
+      unless id.match?(UUID_FORMAT)
+        raise ArgumentError,
+              "custom_reference_id #{id.inspect} is not a UUID — the API validates it as one " \
+              "(422 uuid_parsing), so this would be a paid round-trip to a rejection"
+      end
+
+      body = { custom_reference_id: id }
+      body[:custom_reference_strength] = coerce_strength(custom_reference_strength) unless custom_reference_strength.nil?
+      body
+    end
+
+    # THE CONVERSION AND THE RANGE CHECK ARE SEPARATE STATEMENTS on purpose. A
+    # single `rescue ArgumentError` around both would swallow the range raise —
+    # it is an ArgumentError too — and report an out-of-range number as
+    # unparseable, which names the wrong defect to whoever reads the message.
+    def coerce_strength(value)
+      strength =
+        begin
+          Float(value)
+        rescue TypeError, ArgumentError
+          raise ArgumentError,
+                "custom_reference_strength must be a number (the API answers 422 float_parsing " \
+                "otherwise); got #{value.inspect}"
+        end
+
+      unless CUSTOM_REFERENCE_STRENGTH_RANGE.cover?(strength)
+        raise ArgumentError,
+              "custom_reference_strength must fall in #{CUSTOM_REFERENCE_STRENGTH_RANGE} — " \
+              "the API answers 422 (le 1.0 / ge 0.0) outside it; got #{value.inspect}"
+      end
+
+      strength
+    end
+
+    # VERIFIED against a real 200 on 2026-09-24: the create answers `{"id":
+    # "<uuid>", …}`. Pinned to the one key rather than walked tolerantly like the
+    # generation reads below, because this shape was MEASURED and guessing extra
+    # spellings would pretend otherwise.
+    #
+    # The UUID check is not belt-and-braces. The id's whole job is to be handed
+    # back to a generation that validates it as a UUID, so an id we cannot use is
+    # a failure at the create, not three steps later inside a paid call.
+    def custom_reference_id_from(response)
+      id = response["id"]
+      if id.blank?
+        raise GenerationError,
+              "no id in custom-reference response: #{response.inspect[0, 300]}"
+      end
+
+      unless id.to_s.match?(UUID_FORMAT)
+        raise GenerationError,
+              "custom-reference id #{id.inspect} is not a UUID, and only a UUID is accepted " \
+              "by the generation endpoint: #{response.inspect[0, 300]}"
+      end
+
+      id.to_s
+    end
 
     # UNVERIFIED, and given the SAME loud treatment as `extract_url` — the two
     # reads used to be asymmetric and it mattered. `payload["status"]` alone

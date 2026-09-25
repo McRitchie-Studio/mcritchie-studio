@@ -47,9 +47,9 @@
 # test/lib/devops_shift_argument_guard_test.rb (REAL_ARGV), including the renewer's own
 # line, captured from a live acquire rather than hand-copied.
 #
-# A LANE is a role/shift key — `avi`, `alex` (the `steffon` lane was RETIRED when the
+# A LANE is a role/shift key — `avi`, `xan` (the `steffon` lane was RETIRED when the
 # qa-release lock moved onto the release record; see LANES below). Two live instances of
-# the same lane contend; different lanes coexist (a clean-up vs an alex act). Identity is
+# the same lane contend; different lanes coexist (a clean-up vs a xan act). Identity is
 # the SAME live-instance identity the build claim uses (session id + per-process
 # nonce, SessionIdentity), so the heartbeat renews the right shift.
 #
@@ -92,7 +92,12 @@ class DevopsShiftCli
   # `steffon` RETIRED (release-conductor-claims): the qa-release lock moved onto the
   # release record (the `assembler` conductor claim, inside bin/release prepare), and
   # avi-ship onto the `deployer` claim. `avi` stays for `clean-up`'s board sweep.
-  LANES = %w[avi alex].freeze
+  LANES = %w[avi xan].freeze
+
+  # The `xan` lane was `alex` until 2026-09-24 (the seat was renamed; the human
+  # operator is Alex now). A lane typed by the old slug resolves here for one
+  # release — mirrors Task::SOUL_ALIASES, since this CLI runs without Rails.
+  SOUL_ALIASES = { "alex" => "xan" }.freeze
 
   # --help/-h from ANY position prints usage and mutates nothing. The same two
   # spellings bin/task, review_claim_cli, and release_claim_cli honor, because an agent
@@ -173,6 +178,7 @@ class DevopsShiftCli
     # shift on the lane "Mew", a lane nothing else contends, so the lease looked held
     # and protected nothing.
     lane = positionals(argv).first
+    lane = SOUL_ALIASES.fetch(lane, lane) if lane
     flags = parse_flags(argv)
 
     case command

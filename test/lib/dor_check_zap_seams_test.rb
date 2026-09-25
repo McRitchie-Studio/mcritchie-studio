@@ -131,7 +131,6 @@ class DorCheckZapSeamsTest < Minitest::Test
         "DOR_CHECK_DIFF_ROOT" => root,
         "DOR_CHECK_DIFF_BASE" => "accepted",
         "DOR_CHECK_CHANGED_FILES" => changed,
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok",
         "DOR_CHECK_PR_FILES" => "",
         "DOR_CHECK_CI_STATUS" => "green",
         "DOR_CHECK_PR_HEAD" => pr_head,
@@ -174,7 +173,7 @@ class DorCheckZapSeamsTest < Minitest::Test
       # THE REMEDY MUST NAME THE TREE IT ACTS ON (/tasks/remedy-command-lacks-directory).
       # This assertion used to accept a BARE `git fetch origin feat/x`, and once the
       # remedy grew a `git merge --ff-only` beside it that acceptance became a hazard:
-      # bin/dor-check:98-99#"reviewers run --gate-role review" says that lane runs from the
+      # bin/dor-check:1158#"reviewers run --gate-role review" says that lane runs from the
       # PRIMARY checkout, which sits on release or main by SOP, so an unscoped fast-forward
       # pasted from there moves THAT checkout onto the feature head — exit 0, and a
       # "Fast-forward" success message. Measured in test/docs/zap_cert_freshness_docs_test.rb.

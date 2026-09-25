@@ -28,12 +28,21 @@ self-closes its own `g1_cert` window, and CI stays a **handoff, not a gate**
 - The shape's **DoR test tiers** are present and green, tier-tagged in
   `devops.checks_run` (`[unit] …`, `[integration] …`, per
   `config/feature_shapes.yml`).
-- The **suite evidence** proves the tree being shipped is certified — a fresh
-  fast-cert or full-suite line, fingerprint-bound to the git TREE hash (see
-  [g1-cert.md](g1-cert.md) for the three routes). A diff no local lane could
-  certify at all (the mapped lane CAPPED over an empty spine) carries a
-  **`[cert-deferred@<fp>]` receipt** instead, credited **only** beside a GREEN
-  CI — never provisionally, because there is no local run underneath it.
+- The **suite evidence** proves the tree being shipped is certified. Since
+  2026-09-24 (`dor-reads-settled-ci-verdict`, phase 2a of DevOps v3) that
+  evidence has **one form**: the PR's **settled GREEN GitHub CI** for its current
+  head, read through `bin/lib/ci_status.rb` and decided in `bin/lib/ci_gate.rb`.
+  The fingerprint receipts `bin/fast-check` and `bin/full-suite-check` still
+  record — `[fast-cert@<fp>]`, `[full-suite@<fp>]`, `[rubocop@<fp>]`,
+  `[cert-deferred@<fp>]` — and the `[full-suite-bypass]` hatch are **not read**
+  by this gate any more; they are inert until phase 2b removes them. Green
+  passes in both roles; red, conflicted, ci-less, closed and merged refuse in
+  both; a **pending** CI is a **WAIT** for the builder (exit 1 under a `⏳ …
+  WAITING on CI` headline, `ci_waiting: true` in `--json`) and a refusal for
+  review; an unread verdict (`none` / `unverified` / `unreadable` / a blank
+  `pr_url`) refuses in both roles with its own remedy, and **no local cert
+  stands in** for any of them. The one fingerprint-bound line still graded is
+  the `test-only` shape's executed control (`[control@<fp>]`).
 - The task's **required metadata** is populated.
 - The PR's **live GitHub CI** is not failing (a red, closed/merged,
   merge-conflicted, or **ci-less** PR is refused — `mergeStateStatus DIRTY`
@@ -137,12 +146,13 @@ steps. `green` advances an exempt review; `red`, `pending`, `conflicted`,
 unclassified state all refuse, exactly as they do on the gated path. The verdict
 carries a `ci` field either way, and a `dor_review` attempt is recorded either way.
 
-**The one deliberate divergence: no cert clears an exempt refusal.** On the gated
-path the no-verdict family (`none` / `unreadable` / `unverified`) can be cleared by
-a FULL local cert, because the gate must honour the remedy it prints. That argument
-is a **substitution** of evidence, and an exempt task has none to substitute — it
-ran no suite. An unread CI over a prose diff therefore leaves the merge with no
-verdict from either side, which is the state a gate exists to refuse.
+**No cert clears a refusal, on either path.** Until 2026-09-24 the gated path's
+no-verdict family (`none` / `unreadable` / `unverified`) could be cleared by a FULL
+local cert, because the gate honoured the remedy it printed; the exempt path never
+could, having no suite to substitute. The cert route retired with the receipts, so
+the two paths no longer diverge: an unread CI leaves the merge with no verdict from
+either side, which is the state a gate exists to refuse, and every refusal now says
+so (`no local cert stands in`) instead of naming `bin/full-suite-check`.
 
 The **build** gate still reads no CI on an exempt task: it resolves no diff and must
 not shell `gh`. Leniency there disarms nothing — at design time no code exists yet
@@ -155,8 +165,11 @@ everyone".
 
 ## The gate grades the TASK's tree — never the one you stand in
 
-**Two** things root here — the suite **fingerprint** and the code **diff** — and
-they fail in opposite directions, which is why they were fixed a month apart.
+**Two** things rooted here — the suite **fingerprint** and the code **diff** — and
+they fail in opposite directions, which is why they were fixed a month apart. The
+cert fingerprint is no longer graded (2026-09-24); the history stays because the
+**diff** half is live, and because the `test-only` control stamp still takes the
+fingerprint rooting the cert used to (`control_fingerprint` in `bin/dor-check`).
 
 **The fingerprint: a false REFUSAL.** A cert's fingerprint is a git **TREE hash**
 (content-addressed), so a checkout that is not the task's tree can **never** match
@@ -192,15 +205,14 @@ dor-check was the one command in the family that never did) in **both gate
 roles**. When the root is not the task's tree it resolves in this order:
 
 1. a **validated** worktree is on disk and unambiguous → re-root the whole gate
-   there — **diff and fingerprint** — and **announce it on stderr** (naming both
-   roots: where you stood, where it went);
-2. else its **branch** resolves in this repo → root the *fingerprint* at that
-   branch's committed tree and the *diff* at that branch's committed diff
-   (`<base>...origin/feat/<slug>`), and **announce that on stderr** too. Both are
+   there — the **diff**, and the control stamp's tree — and **announce it on
+   stderr** (naming both roots: where you stood, where it went);
+2. else its **branch** resolves in this repo → root the *diff* at that branch's
+   committed diff (`<base>...origin/feat/<slug>`), and the control stamp at that
+   branch's committed tree, and **announce that on stderr** too. Both are
    content-addressed, so neither depends on what your checkout is carrying;
-3. else → **refuse**, naming the problem, instead of describing a foreign tree.
-   The cert half refuses in the suite-gate block; the diff half resolves
-   **`:indeterminate`**, which the exempt-kind gate already fails closed on.
+3. else → the diff resolves **`:indeterminate`**, which the exempt-kind and
+   `claimable_when` gates fail closed on, instead of describing a foreign tree.
 
 Remedy 2 carries its own repo condition, because **a branch name is not
 repo-scoped**. Reading `<base>...origin/feat/<slug>` out of a checkout that merely
@@ -251,32 +263,16 @@ prints `AMBIGUOUS TASK TREE`, lists them, and refuses to guess. Nothing assumes 
 rung — the diff base stays the per-root release-aware default, so a repo with no
 `accepted` (moms-app) still resolves its own base.
 
-**Every repo the task names gets its own CERT verdict.** A task that owes a cert in
-more than one repo — the ones it both names in `devops.repositories` **and** has a PR
-open in (`devops.pr_url` + the per-repo `devops.pr_urls` register) — is graded repo by
-repo: each repo's own tree is resolved (its desk in either layout, validated on
-both axes, else its primary checkout's branch tree), fingerprinted, and graded against
-the evidence scoped to it (`[lane@<fp>:<repo>]`, see `lib/cert_evidence.rb`). The
-verdict **names every repo it graded** — `full_suite.repos[]` in `--json`, a
-`cert graded per repo:` block in the human output — and a repo whose tree cannot be
-found on this machine **refuses**, because a repo that cannot be seen is exactly the
-repo that used to sail through ungated. A single-repo task takes the one-verdict path
-unchanged.
+**Every repo the task has a PR in gets its own CI verdict.** The per-repo CERT
+verdict that stood here — each repo's desk fingerprinted and graded against
+`[lane@<fp>:<repo>]` evidence, `full_suite.repos[]` in `--json`, a `cert graded per
+repo:` block — retired with the receipts on 2026-09-24. What remains is the multi-PR
+read below: a secondary repo is gated by its own PR's CI exactly as the primary is,
+and the verdict is the **worst** of them.
 
-Two limits, stated so nobody assumes otherwise:
+One limit, stated so nobody assumes otherwise:
 
-- **A secondary repo's bar is the FULL cert.** A fast cert only counts anywhere
-  alongside a GREEN CI on that repo's own PR. This gate now *does* read that PR's CI
-  (see below), but the bar has deliberately **not** been lowered to match: crediting a
-  secondary repo's fast cert is a relaxation, and a relaxation earns its own task and
-  its own proof rather than riding in as a side effect. So a secondary repo still needs
-  `bin/full-suite-check` in its own tree. The refusal reports what **is** recorded
-  across every evidence lane, not just the graded ones, and names the reason when a
-  fast cert is among them — so a fast cert sitting at the current fingerprint reads
-  as *rejected for its lane*, never as *absent*. It said "NOTHING is recorded" until
-  2026-09-01, and that sentence cost two `bin/fast-check` runs against an
-  already-certified tree.
-- **The DIFF and CI halves now read EVERY recorded PR** (2026-09-07,
+- **The DIFF and CI halves read EVERY recorded PR** (2026-09-07,
   `/tasks/dor-check-reads-one-pr`). Until then `devops.pr_url` — a single value — fed
   both the PR file list and the CI verdict, while the plural `devops.pr_urls` register
   fed only the cert list above. So on a two-repo task the shape/tier gate, the doc-only
@@ -352,33 +348,20 @@ the right code. But a *silent* chdir is its own hazard (a gate quietly judging a
 different tree than the one you are looking at is how you end up arguing with a
 verdict), so **both re-rooting arms announce both roots**.
 
-**A real STALE now names its cause** — and names it *accurately*. The refusal
-prints the fingerprint **delta**: what the evidence was certified for, and what
-the code is now. The invariant is that **the root it names is the root it
-hashed**, so recomputing the named root returns the printed hash:
+**The `STALE` delta retired with the cert lane** (2026-09-24). The refusal that
+named what the evidence was certified for against what the code is now, and the
+`--suite-fingerprint` seam that let a reader recompute it, described receipts this
+gate no longer reads. The one fingerprint-bound line still graded — the `test-only`
+control stamp — refuses as `the recorded control is STALE (it was run against
+different code)`, and in the review lane it is hashed from the task branch's
+committed tree (`origin/feat/<slug>^{tree}`), never from the reviewer's checkout,
+exactly as the cert was.
 
-| the gate hashed | it names | recompute it with |
-|---|---|---|
-| a **working tree** (the normal builder run) | that path | `bin/dor-check <task> --suite-fingerprint` |
-| a **branch tree** (the `--gate-role review` lane *always*; and remedy 2 above) | the ref expression, e.g. `origin/feat/<slug>^{tree}` | `git -C <repo> rev-parse origin/feat/<slug>^{tree}` |
-
-This distinction is load-bearing. Under an override, the checkout you are
-standing in **never produced the hash** and hashes to a different number
-entirely — so printing it beside the fingerprint (as the first cut of this
-message did) sends the reader to the wrong tree with the authority of a precise
-hash. A confident wrong root is worse than the opaque `STALE` it replaced. Note
-also that the working-tree fingerprint is the **as-if-committed** tree —
-uncommitted edits included, which is usually *why* it moved — so it is
-deliberately **not** called `HEAD`: `git rev-parse HEAD^{tree}` will not
-reproduce it.
-
-`--json` carries the same facts machine-readably: `code_root` (the checkout the
+`--json` carries the facts machine-readably: `code_root` (the checkout the
 **diff** was read from) and `diff_source` (`pr` | `git` | `branch` | `injected` |
-`pr_unreadable` | `indeterminate`) plus `changed_files`, then `full_suite.fingerprint`,
-`.fingerprint_root`, `.fingerprint_repo`, `.fingerprint_source` (`working-tree` |
-`branch-tree`), and `.recorded`. `code_root` is *not* the fingerprint's root under
-an override — that is precisely why the provenance travels with the fingerprint
-instead. **The checkable invariant is the PAIRING**: `diff_source: "git"` is a
+`pr_unreadable` | `indeterminate`) plus `changed_files`, then `suite_evidence`
+(`form: settled-green-ci`, `satisfied`, `state`, `head`, `waiting`) and
+`ci_waiting`. **The checkable invariant is the PAIRING**: `diff_source: "git"` is a
 correct answer only when `code_root` is the task's own tree; the same pair read
 from anywhere else is the 08-08 false pass.
 
@@ -457,8 +440,11 @@ verdict runs LAST — see [g1-cert.md](g1-cert.md) for the ordering rationale):
 bin/dor-check <task-slug>
 ```
 
-Exit 0 = ready to advance `submitted → reviewed` — **without waiting for CI**.
-The verdict opens+closes the `dor` gate with its evidence as SOPs.
+Exit 0 = ready to advance `submitted → reviewed`, which since 2026-09-24 means
+the PR's CI has **settled green**. A CI still running exits 1 under a `⏳ …
+WAITING on CI` headline — not a failure, a wait; `bin/ship` holds at step 6/8 for
+exactly this, so the ordinary handoff never sees it. The verdict opens+closes the
+`dor` gate with its evidence as SOPs.
 
 ### Review side (the `dor_review` gate)
 
@@ -474,14 +460,14 @@ what `--gate-role review` exists for.
 
 ## The CI seam — the gate never waits; the WRAPPER now does
 
-**Read this section as the gate's contract, which has not changed.** `bin/dor-check`
-still never waits for CI: it grades whatever state it finds, and the provisional
-credit below is still exactly how it treats a pending one. What changed
+**Read this section as the gate's contract.** `bin/dor-check` still never waits
+for CI: it grades whatever state it finds. What changed first
 (`gate-submit-on-green-ci`, 2026-08-16) is **when `bin/ship` calls it** — the
-wrapper now holds at step 6/8 until the PR's CI settles, so in the ordinary case
-this gate is handed a GREEN CI and the provisional path is no longer the happy
-path. It remains live, and is still what a hand-run `bin/task move` and every
-CI-less or timed-out ship falls through to.
+wrapper holds at step 6/8 until the PR's CI settles, so in the ordinary case this
+gate is handed a GREEN CI. What changed second (`dor-reads-settled-ci-verdict`,
+2026-09-24) is what a still-pending CI means when the wait times out: there is no
+provisional credit any more, so the builder-side verdict is a **WAIT** (exit 1) and
+`bin/ship` stops at 7/8 to be re-run once CI reports.
 
 That reversed a dated decision, which is worth stating rather than leaving to be
 rediscovered. The original reasoning (`ci-gate-review-handoff`, 2026-07-09) was
@@ -492,22 +478,15 @@ arithmetic: the builder nets ~20 min back, `submitted` gains a green-CI invarian
 and a red CI is caught by the session that still holds the worktree instead of
 bouncing into a cold one.
 
-The gate's own semantics, unchanged:
+The gate's own semantics:
 
-- **Builder side (`dor`, the default role):** a still-running CI is a **loud
-  suggestion**, never a block. A fresh fast cert is credited **provisionally**
-  while the open PR's CI is pending or not yet reported (the `ci` SOP records
-  `pending`, the `full-suite-evidence` SOP records `fast-cert@<fp12>+ci-pending`).
-  A **red** CI (or a closed/merged `pr_url`, or a merge-conflicted or
-  **ci-less** PR) still refuses, and a fast cert with
-  **no PR at all** is refused — the provisional credit is anchored to an open PR
-  whose CI will run.
-  **A DEFERRED cert has no provisional twin**, deliberately: a fast cert may be
-  credited against a pending CI because a real local run stands underneath it, so
-  for a deferral a pending CI, an **absent** CI (`:none`), an unread CI and a red
-  CI all refuse. That asymmetry is the fence — a capped diff that pushed, got no
-  CI at all, and submitted on nothing would recreate the fail-green
-  `capped-cert-reports-green` closed, one rung further along.
+- **Builder side (`dor`, the default role):** a still-running CI is a **WAIT** —
+  exit 1 under its own `⏳ … WAITING on CI` headline, the `ci` SOP recording
+  `pending` so the gates card paints it in-flight rather than red. A **red** CI
+  (or a closed/merged `pr_url`, or a merge-conflicted or **ci-less** PR) refuses,
+  and so does an unread verdict (`none` / `unverified` / `unreadable`) or a blank
+  `pr_url`, each with its own remedy. Nothing is credited provisionally: the
+  fast-cert and deferral receipts are not read.
 - **Review side (`dor_review`, the authoritative verdict):** the `pr-review`
   supervisor checks the PR's live CI **before spawning reviewers** — red bounces
   the task back naming the failing checks (recorded as a failed `dor_review`
@@ -518,8 +497,7 @@ The gate's own semantics, unchanged:
   primary's gate-zero
   (`--gate-role review`) keeps the strict semantics: it advances on **green and
   nothing else** (red and pending both block, and so does a verdict it could not
-  read), and fast evidence needs the settled green. The single escape is a full
-  cert — see the allow-list bullets below.
+  read). There is no escape — see the allow-list bullets below.
 
 Net effect: nothing reaches a reviewer (or a merge) without a green CI, but the
 builder never idles watching checks. Expect the bounce round-trip if you hand
@@ -533,15 +511,13 @@ attempt n+1.
 
 - The builder's verdict **opens then closes `dor`** with `success = ready`,
   attaching its evidence as SOPs: `dor-check`, `tiers` (the shape's tier list),
-  `full-suite-evidence` (`certified@<fp12>`, `fast-cert@<fp12>+ci-green`,
-  `cert-deferred@<fp12>+ci-green`, or the
-  provisional `fast-cert@<fp12>+ci-pending`), and `ci` (pass / fail / **pending**
-  / unverified / **unreadable**).
+  and `ci` (pass / fail / **pending** / unverified / **unreadable**). The `ci`
+  SOP *is* the suite evidence; the `full-suite-evidence` SOP that used to sit
+  beside it recorded the receipts and retired with them.
   - **`unreadable`** = the GitHub token was REFUSED (401/403) reading CI — as
     opposed to `unverified` (no `gh`, no network, a 404). It is **no more
-    lenient** than `unverified`: it unlocks nothing, and notably does **not**
-    credit a fast cert (a fast cert needs a CI green the gate can actually
-    *read*). It is only more **honest** — it names the repo and classifies the
+    lenient** than `unverified`: it unlocks nothing and credits nothing. It is
+    only more **honest** — it names the repo and classifies the
     denial as permissions, rejected credentials, missing authentication, rate
     limiting, or ambiguous forbidden access. The remedy matches that cause; it
     prescribes `Checks: Read` only for an actual permission denial. The CI SOP
@@ -559,20 +535,15 @@ attempt n+1.
     state that does not exist — the one test a longer deny-list could not pass.
     **The allow-list covers the exempt (doc-only) path too**, which it did not
     until 2026-09-05 — see *The exemption is from the TIER gate* above.
-  - **On the GATED path, one escape and only one: a FULL cert.** For the
-    no-verdict family (`none` / `unreadable` / `unverified`) a fresh
-    `bin/full-suite-check` cert stands in for the CI verdict, and the gate then
-    says so on the ready line (`advancing on the FULL local cert instead … CI
-    itself was NOT read`). Two reasons: the gate must **honour the remedy it
-    prints** — on **this** route, `cert_route: true`, `unreadable_remedy` ends by
-    naming that command (it does **not** on the others: the exempt route has
-    printed a denial since PR #1221, `:retired` names `bin/release prepare`
-    instead, and the exempt closing is now derived — so "always ends by naming
-    that command", which this line used to say, was false three times over) — and
-    the cert is no longer weaker evidence, because `bin/full-suite-check` now runs
-    `ci.yml`'s verbatim command, `test:system` included. A **fast** cert is not
-    enough, and a `[full-suite-bypass]` is a declared hatch rather than evidence,
-    so neither clears it.
+  - **On the GATED path there is no escape either** (since 2026-09-24). Until
+    then a fresh `bin/full-suite-check` cert stood in for the no-verdict family
+    (`none` / `unreadable` / `unverified`) and the gate said so on the ready line
+    (*advancing on the FULL local cert instead … CI itself was NOT read*), on the
+    argument that the gate must honour the remedy it prints and that the cert ran
+    `ci.yml`'s own command. Both halves retired with the receipts: the remedy is
+    no longer printed, and the cert is no longer read. An unread verdict refuses,
+    in both roles, and the refusal ends with the contract clause `no local cert
+    stands in`.
   - **On the EXEMPT (doc-only) path there is NO escape, and green alone no
     longer carries it.** A green CI is **necessary but not sufficient** here.
     Until 2026-09-05 it was both, and "green, or nothing" was the whole rule;
@@ -587,58 +558,36 @@ attempt n+1.
     could stand in.
     Accepting a cert would leave the merge with zero verification from either
     side, which is the state the gate exists to refuse.
-    **The refusal now says that** (`cert_route: false`, `bin/lib/ci_gate.rb`).
-    Until 2026-09-05 it printed the gated path's text verbatim — *"certify in full
-    instead: `bin/full-suite-check <slug>`"* — while `bin/dor-check` discarded the
-    only flag that could honour it, so adding the cert produced a **byte-identical
-    refusal** and an operator who followed the instruction burned a full-suite run
-    for nothing (`/tasks/exempt-refusal-prints-dead-remedy`). The message and the
-    behaviour now come from that ONE parameter, and
-    `test/lib/dor_check_exempt_ci_test.rb` re-derives the promise from the printed
-    refusal and then executes it in both paths — so a message that outruns its
-    behaviour reddens rather than shipping.
-  - **What a cert cannot clear**: `red`, `conflicted`, `ci_less`, `closed`,
-    `merged` (a verdict exists, or the PR is not a live review target); `pending`
-    (the verdict is genuinely coming — waiting is productive); `no_pr` (what is
-    missing is not the evidence but the PR: review's job is to merge one); any
-    unclassified state; and — whatever the state — **anything on the exempt
-    path**, per the bullet above.
-  - **…and the SUITE gate's refusal now agrees with that list, which it used to
-    contradict.** `suite_evidence_error`'s two CI-naming branches — a fresh FAST
-    cert, and a DEFERRAL receipt — each ended with a flat *"; or certify locally
-    in full: `bin/full-suite-check <slug>`"* on **every** state they could reach,
-    `red` among them. Measured 2026-09-22 against a code-shaped fixture, both
-    roles: a FULL cert against a RED CI is **NOT MET, exit 1**. So the gate asked
-    a builder for a ~30-minute suite run and then refused the result of running
-    it — the same shape as `/tasks/exempt-refusal-prints-dead-remedy`, surviving
-    on the red path (`/tasks/red-ci-offers-dead-remedy`), and printed by the gate
-    itself rather than by prose beside it. The clause is now conditioned on
-    `cert_route_open:`, which is the CI gate's **own** two return values
-    (`ci_error.nil? || ci_error_cert_clears`) handed down to the message — the
-    same one-parameter shape `cert_route:` uses next door, so the remedy the gate
-    PRINTS and the remedy it ACCEPTS cannot drift apart again. Where the route is
-    closed the refusal **says so** instead of falling silent: this escape was
-    printed for months, so a reader who merely stops seeing it assumes the gate
-    forgot and runs the suite anyway.
-    `test/lib/dor_check_remedy_honoured_test.rb` drives every (evidence × CI
-    state × role) cell, executes whatever remedy the refusal printed, and reds in
-    **both** directions — offering a dead remedy, and withholding a live one.
-  - **Two cells changed, and the second corrects the ticket that filed the
-    first.** `red` closes in BOTH roles. `pending` closes for **review** and stays
-    open for the **builder**: the ticket recorded that a local full cert satisfies
-    review on a pending CI, and it does not. The reason is structural rather than
-    incidental — `:pending` is deliberately NOT a member of
-    `CiGate::CI_NO_VERDICT_STATES` ("the answer is *coming*", not "the answer was
-    never *given*"), so review's allow-list refuses it with `cert_clears` false.
-    Submit-side there was never anything to buy there anyway: a fresh fast cert is
-    already credited provisionally on a pending CI (the `fast-provisional` route,
-    the one branch in the ladder testing `!review_role`).
-  - Submit-side the **strict review semantics** do not apply — the builder's
-    provisional handoff is untouched (see the state table above). The asymmetry is
-    deliberate: the review gate-zero *is* the authoritative CI verdict, while
-    blocking every submit on a flaky read would trade a flaky CI lane for a flaky
-    gate. Both directions are asserted, so the split cannot quietly collapse
-    either way.
+    **The refusal says that.** Until 2026-09-05 it printed the gated path's text
+    verbatim — *"certify in full instead: `bin/full-suite-check <slug>`"* — while
+    `bin/dor-check` discarded the only flag that could honour it, so adding the
+    cert produced a **byte-identical refusal** and an operator who followed the
+    instruction burned a full-suite run for nothing
+    (`/tasks/exempt-refusal-prints-dead-remedy`). The route parameter that split
+    the two paths (`cert_route:`) now prints one task-grain denial for every value,
+    and `test/lib/dor_check_exempt_ci_test.rb` reads the printed refusal, confirms
+    it denies rather than offers, and confirms a recorded full cert leaves it
+    byte-identical on both paths.
+  - **What clears a refusal is the state changing, never a cert**: `red`,
+    `conflicted`, `ci_less` (fix, or bring the base in), `closed` / `merged`
+    (reconcile `devops.pr_url`), `pending` (wait — the builder's verdict says so
+    under its own headline), `none` (confirm the workflow triggered), `unverified`
+    (re-read once `gh` answers), `unreadable` (refresh the credential), `no_pr`
+    (open the PR), and any unclassified state (classify it in
+    `bin/lib/ci_gate.rb`).
+  - **The suite gate's refusal cannot disagree with that list, because it IS
+    that list.** Until 2026-09-24 `suite_evidence_error` had its own branches — a
+    fresh FAST cert, a DEFERRAL receipt, the FULL-cert escape clause conditioned
+    on `cert_route_open:` — and a whole test file
+    (`dor_check_remedy_honoured_test.rb`) existed to keep the remedy it printed
+    equal to the remedy the gate accepted. That machinery, and the `red` /
+    `pending` cells it had to get right, retired with the receipts; the CI
+    verdict is the whole suite verdict and `test/lib/dor_check_test.rb` pins the
+    role table.
+  - **The builder side is no longer provisional.** The same allow-list runs in
+    both roles, with one difference: a pending CI is a WAIT for the builder (exit
+    1, `⏳ … WAITING on CI`, `ci_waiting: true`) and a refusal for review. Both
+    directions are asserted, so the split cannot quietly collapse either way.
     - **It is not "none of this applies", and on a docs task that difference is
       now visible.** The role asymmetry covers the *unread* family and `pending`;
       a **RED** CI has always blocked BOTH roles, and since the exempt path
@@ -648,12 +597,11 @@ attempt n+1.
       rather than sailing through. That is the correct direction — this repo's CI
       grades prose — and it was undocumented until now. Measured 2026-09-05
       against the exempt path in the builder role: `red` → exit 1, `green` and
-      `pending` → exit 0.
+      `pending` → exit 0; since 2026-09-24 `pending` → exit 1 as a WAIT.
   - The **remedies stay distinct**, because the fixes are: `unreadable` names the
     credential and says re-running is futile (a `conductor-review`, not a
     `request-changes` — the builder does not own the token); `none` /
-    `unverified` say the opposite — **wait, a check is coming** — with the FULL
-    cert above as the one standing escape.
+    `unverified` say the opposite — **wait, a check is coming**.
   - **"No check will ever appear" is never a property of a REPO.** Every repo in
     the ecosystem ships a `pull_request`-triggered workflow. `solana-studio`
     ships `.github/workflows/gem-ci.yml` (`name: Gem CI`; jobs `gem-suite`,
@@ -695,7 +643,7 @@ attempt n+1.
   `https://mcritchie.studio/tasks/<slug>` renders the **DoR (builder)** and
   **DoR (review)** chips between G1 Cert and the G2 lanes: latest attempt
   (`×n` retry badge), passed / failed / in-flight status, and the expandable SOP
-  list (`dor-check`, `tiers`, `full-suite-evidence`, `ci`).
+  list (`dor-check`, `tiers`, `ci`).
 - **CLI read:** `bin/gate show task <task-slug>` (add `--json` for the raw
   attempts).
 
@@ -703,13 +651,15 @@ attempt n+1.
 
 - The Option-B split rationale and the CI-status handoff:
   `docs/agents/system/devops-cycle-design.md` §3.3.
-- The verdict logic + evidence format: `bin/dor-check`,
-  `bin/lib/full_suite_gate.rb`.
+- The verdict logic: `bin/dor-check`, `bin/lib/ci_gate.rb`, `bin/lib/ci_status.rb`.
+- The receipt format the cert writers still record (inert here):
+  `bin/lib/full_suite_gate.rb`, `lib/cert_evidence.rb`.
 
 ## Related
 
-- [`g1-cert.md`](g1-cert.md) — the self-closing cert gate that precedes DoR and
-  produces the suite evidence this gate reads.
+- [`g1-cert.md`](g1-cert.md) — the self-closing cert gate that precedes DoR; its
+  receipts are no longer what this gate reads, but its lanes are still the
+  builder's local pre-flight.
 - [`g2-review.md`](g2-review.md) — the senior-review lanes that follow; the
   primary's gate-zero IS this gate's `dor_review` half.
 - [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write

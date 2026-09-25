@@ -506,51 +506,59 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # pinned in two spellings, bare and anchored — and one probe. Re-derive rather than
   # re-copy; the count that shipped here said five, and review counted six.
   MISPOINTED_CITATIONS = [
-    { as_written: "bin/dor-check:1176-1180", homes: nil, lanes: [:substance],
-      because: %(the range ENDS at line 1180 of bin/dor-check, a bare "end"),
+    # RE-DERIVED 2026-09-24 (/tasks/dor-reads-settled-ci-verdict cut ~1,100 lines out of
+    # bin/dor-check, and every row here is parsed against the REAL file). The shapes are
+    # the originals; the numbers and the method names are the current tree's.
+    { as_written: "bin/dor-check:1171-1175", homes: nil, lanes: [:substance],
+      because: %(the range ENDS at line 1175 of bin/dor-check, a bare "end"),
       claim: "reviewers run --gate-role review from the PRIMARY",
       seen_in: "test/docs/zap_cert_freshness_docs_test.rb and test/lib/dor_check_zap_seams_test.rb",
-      note: "the range ends on the bare `end` closing default_diff_base, a method the " \
-            "passage had never been part of. Lane 1 read only the FIRST line until this " \
-            "task, and :1176 is a `def` — substantive, and green for eleven days." },
+      note: "the range ends on the bare `end` closing review_fingerprint, whose BODY the " \
+            "passage has never been part of (it lives in the comment above, :1158). Lane 1 " \
+            "read only the FIRST line until this task, and :1171 is a `def` — substantive, " \
+            "and green for eleven days in its original spelling (:1176-1180 over " \
+            "default_diff_base)." },
 
-    { as_written: %(bin/dor-check:1176-1180#"reviewers run --gate-role review"), homes: [98],
-      because: %(the range ENDS at line 1180 of bin/dor-check, a bare "end"),
+    { as_written: %(bin/dor-check:1171-1175#"reviewers run --gate-role review"), homes: [1158],
+      because: %(the range ENDS at line 1175 of bin/dor-check, a bare "end"),
       lanes: %i[substance anchor], claim: "the same pair, spelled the way lane 5 now requires",
       seen_in: "the repair this task shipped",
-      note: "the span is default_diff_base and carries no such phrase. This is the row " \
-            "that matters most: it is the same defect caught by CONTENT rather than by " \
+      note: "the span is review_fingerprint's body and carries no such phrase. This is the " \
+            "row that matters most: it is the same defect caught by CONTENT rather than by " \
             "the luck of the range having landed on an `end`." },
 
-    { as_written: %(bin/dor-check:167#"Dor::Checks.load!"), homes: [171], lanes: [:anchor],
+    { as_written: %(bin/dor-check:143#"Dor::Checks.load!"), homes: [147], lanes: [:anchor],
       claim: "bin/dor-check calls Dor::Checks.load!, a directory glob",
       seen_in: "test/lib/feature_shapes_audit_test.rb, repaired at 3c0a1179",
-      note: ":167 is `require_relative \"lib/base_movement_audit\"` — substantive, one " \
-            "require away from the truth, and invisible to every resolution-only lane." },
+      note: ":143 is `require_relative \"lib/base_movement_audit\"` — substantive, four " \
+            "requires away from the truth, and invisible to every resolution-only lane." },
 
-    { as_written: %(bin/dor-check:2325#"required_meta ="), homes: [2972, 2975], lanes: [:anchor],
+    { as_written: %(bin/dor-check:1739#"required_meta ="), homes: [2355, 2358], lanes: [:anchor],
       claim: "`required_meta = ...` is what CI_SEAM_REQUIRE must not read as a require",
       seen_in: "test/lib/feature_shapes_audit_test.rb, repaired at 3c0a1179",
-      note: ":2325 is `@review_role = review_role` — a different assignment entirely, and " \
-            "647 lines from the one the sentence is about. THIS ROW IS ALSO THE LOOSE-ANCHOR " \
+      note: ":1739 is `@review_role = review_role` — a different assignment entirely, and " \
+            "616 lines from the one the sentence is about. THIS ROW IS ALSO THE LOOSE-ANCHOR " \
             "CASE: `required_meta =` is assigned twice in bin/dor-check, so the re-derivation " \
             "names both and the author is the one who has to choose. A tighter anchor is " \
             "always available (`required_meta = defaults`); the guard cannot pick it for you, " \
             "because it cannot tell a loose anchor from a file that legitimately repeats." },
 
-    { as_written: %(bin/dor-check:44-48#"FAST route"), homes: nil, lanes: [],
-      claim: "the FAST route satisfies the gate alongside a GREEN CI",
-      seen_in: "config/feature_shapes.yml, repaired in PR 1522",
-      note: "THE RANGE CITED ITS OWN COUNTEREXAMPLE: :44-47 is the FAST-route paragraph, " \
-            "and :48 opens the CI-seam paragraph granting the provisional credit the " \
-            "citing sentence denied. Nothing here can see it. The range ends SUBSTANTIVE, " \
-            "so lane 1 is silent; the anchor is inside the span, so lane 4 is silent. " \
-            "Catching it needs the citing PROSE to be read against the cited paragraph, " \
-            "which is limit A's rejected heuristic — measured at roughly a third false." },
+    { as_written: %(bin/dor-check:33-37#"THE SUITE GATE IS THE CI VERDICT"), homes: nil, lanes: [],
+      claim: "the suite gate is the settled green CI, for every shape",
+      seen_in: "config/feature_shapes.yml, repaired in PR 1522 (re-sited 2026-09-24)",
+      note: "DEFECT D's SHAPE, on the header that replaced the FAST-route paragraph it used " \
+            "to cite (the original :44-48 CITED ITS OWN COUNTEREXAMPLE — :44-47 was the " \
+            "FAST-route paragraph and :48 opened the CI-seam paragraph granting the " \
+            "provisional credit the citing sentence denied; both retired with the fast route). " \
+            "The range ends SUBSTANTIVE, so lane 1 is silent; the anchor is inside the span, " \
+            "so lane 4 is silent — and nothing here could see a citing sentence that " \
+            "contradicted the paragraph. Catching that needs the citing PROSE to be read " \
+            "against the cited paragraph, which is limit A's rejected heuristic — measured " \
+            "at roughly a third false." },
 
     # THE PROBE FOR THE ROW ABOVE. Not a citation anyone wrote — the SAME site with one
     # thing changed, and the only row here that exists to guard another row.
-    { as_written: %(bin/dor-check:44-99999#"FAST route"), homes: nil, lanes: [:substance],
+    { as_written: %(bin/dor-check:33-99999#"THE SUITE GATE IS THE CI VERDICT"), homes: nil, lanes: [:substance],
       because: "is outside bin/dor-check",
       claim: "THE PROBE, not a defect: the D site with its range end pushed off the file",
       seen_in: "control 5b of PR 1533's review — recorded in the report, never shipped until now",
@@ -618,7 +626,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       its `home` and its `note` — do not delete the row, and do not re-label a :nothing row
       as caught without saying which lane now catches it and why that lane is honest.
 
-      IF THE FAILING ROW IS THE PROBE (`:44-99999`), read it before anything else: it is
+      IF THE FAILING ROW IS THE PROBE (`:33-99999`), read it before anything else: it is
       not a defect, it is the reachability proof for the `lanes: []` row above it. A probe
       that stops firing means the row above has stopped being evidence — its green no
       longer distinguishes "the lanes are silent here" from "the lanes never ran".
@@ -657,14 +665,14 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
 
   def test_the_anchor_failure_names_the_right_line_rather_than_inviting_a_weaker_anchor
     target = target_lines("bin/dor-check")
-    m = LINE_CITATION.match(%(bin/dor-check:1176-1180#"reviewers run --gate-role review"))
+    m = LINE_CITATION.match(%(bin/dor-check:1171-1175#"reviewers run --gate-role review"))
     row = census_anchor("control", m[0], m[1], m[2], m[3], target, anchor_of(m))
 
-    refute anchor_in_span?(row), "this test is anchored on :1176-1180 NOT carrying the phrase"
+    refute anchor_in_span?(row), "this test is anchored on :1171-1175 NOT carrying the phrase"
 
     message = anchor_lane_message([anchor_offender(row)])
 
-    assert_includes message, "bin/dor-check:98",
+    assert_includes message, "bin/dor-check:1158",
                     "the failure must RE-DERIVE and name the line that actually carries the " \
                     "anchor — without it the only visible fix is to weaken the anchor"
     assert_includes message, "DO NOT EDIT THE ANCHOR TO MATCH THE LINE",

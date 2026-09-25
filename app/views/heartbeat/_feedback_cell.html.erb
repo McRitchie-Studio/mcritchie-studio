@@ -2,7 +2,7 @@
     set the disposition WITHOUT opening the drawer, persisting immediately via a
     turbo-stream form submit), the grade slug, and the long-form / bank / discard
     markers. Rendered as the full <td> so #grade's turbo_stream can replace it by id.
-    Locals: action, grader ("alex" | "mcr"), grade (ActionGrade | nil). %>
+    Locals: action, grader ("xan" | "mcr"), grade (ActionGrade | nil). %>
 <td id="fb-<%= grader %>-<%= action.id %>" class="hb-fbcell hb-fbcell-<%= grader %>">
   <div class="hb-fbinner">
     <%= form_with url: heartbeat_grade_path(action), method: :post, class: "hb-radioform", data: { turbo: true } do %>

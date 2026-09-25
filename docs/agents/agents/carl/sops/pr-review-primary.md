@@ -113,20 +113,20 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      <task-slug>` would stamp the builder's gate as if the builder ran it — and it
      keeps the **strict CI semantics**: the claim popped a green PR, but CI can
      flip mid-review, so YOUR run is the authoritative in-review CI verdict — red
-     and still-running both block, and fast-cert evidence needs the settled green.
+     and still-running both block, and no local cert stands in for the settled
+     green (since 2026-09-24 the gate reads no cert receipt at all).
      **The gate is an ALLOW-LIST: green advances, everything else refuses.** That
      includes states it has never heard of, and it includes an UNREAD verdict —
      `unreadable` (the token was refused), `unverified`, and `none` — because a
      gate cannot be the authoritative CI verdict for a CI it could not read. It
      also includes a blank `devops.pr_url`, which used to pass silently.
 
-     **On a PR that carries CODE, one escape and only one: a FULL cert.**
-     `bin/full-suite-check <task-slug>` runs `ci.yml`'s own command (`test:system`
-     included), so it is not weaker evidence than CI — it is the same suite, run
-     locally. When the task carries a fresh full cert, the gate advances on it and
-     says so; a *fast* cert is not enough, and neither is a `[full-suite-bypass]`.
-     This is why the refusal names that command: the gate honours the remedy it
-     prints.
+     **On a PR that carries CODE there is no escape either.** Until 2026-09-24 a
+     fresh `bin/full-suite-check` cert stood in for an unread verdict here and the
+     refusal named that command; both retired with the receipts
+     (`dor-reads-settled-ci-verdict`). Do not send the builder to
+     `bin/full-suite-check` on any refusal: the gate no longer reads what it
+     records, and the run would leave the refusal byte-identical.
 
      **On a DOC-ONLY PR there is no escape at all, and green is NECESSARY but
      not SUFFICIENT.** When the task's kind is `docs` / `chore` / `cleanup` *and*
@@ -156,19 +156,11 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      unread PR take different fixes, and only the credential half is cleared by
      `eval "$(bin/gh-auth-refresh --export)"`.
 
-     **In a GEM repo the escape is the same command with a different source.**
-     `studio-engine` and `solana-studio` have no `ci.yml` for the resolver to read
-     (their workflow is `engine-ci.yml` / `gem-ci.yml`), so the cert runs the
-     `release_check` their `config/release_repos.yml` row names —
-     `bin/release-check`, which is exactly what their CI runs. They also declare
-     `lint_lane: none`, so the cert owes only `[full-suite@<fp>]`; that is a
-     complete full cert there, not a partial one. Scope it the same way as
-     anywhere else: the cert stands in for CI's Ruby suite, so solana-studio's
-     `playwright` job — and the `bin/e2e-executed-set-check` step inside it —
-     remains CI's alone. Until 2026-08-31 this escape could not pass in
-     solana-studio at all — the lint lane shelled out to a `bin/rubocop` the repo
-     does not ship, and the red discarded the green suite lane with it, leaving a
-     reviewer here with no path.
+     **In a GEM repo the same is true.** `studio-engine` and `solana-studio` have
+     no `ci.yml` for the resolver to read (their workflow is `engine-ci.yml` /
+     `gem-ci.yml`), and their `bin/fast-check` runs the `release_check` their
+     `config/release_repos.yml` row names — as a pre-flight, not as evidence the
+     gate reads. Their PR's own CI is the suite verdict there as everywhere.
 
      **When it refuses on an unread verdict, that is a `conductor-review`, not a
      `request-changes`.** The builder does not own the credential. For

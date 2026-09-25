@@ -26,7 +26,7 @@
 #
 # It loads the Rails app and calls `ReviewerSelector` for the task. The PRIMARY is
 # always Carl; the LIGHT is a domain-fit pick from the specialist pool {shannon=UI
-# · jasper=Web3 · steffon=DevOps/Platform · alex=Documentation}, scored by the
+# · jasper=Web3 · steffon=DevOps/Platform · xan=Documentation}, scored by the
 # task's shape + repositories + risk tags vs each soul's Agent.metadata["domains"]
 # with a LOGGED, SEEDED-PER-TASK tiebreak (reproducible — not process-random). The
 # QA owner (avi by default — after the 2026-07-22 reslot he runs qa-release + the QA
@@ -72,7 +72,7 @@
 # An UNRECOGNISED soul cannot lift any of that. Every slug is checked against the
 # roster (Task.soul?), not merely a lowercase-word shape: `--builder stefon` names
 # nobody, where it once passed as a known builder who excluded no one. A PARTIAL
-# typo is the sharp case — `--builder steffon,alexx` yields a non-empty set, so the
+# typo is the sharp case — `--builder steffon,xanx` yields a non-empty set, so the
 # authors would read as KNOWN while the soul you meant to exclude never registered.
 # That refuses too (state 4), rather than honoring the half it understood.
 #
@@ -103,7 +103,7 @@
 #   bin/reviewer-select <task-slug> --json          # machine-readable decision
 #   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
 #   bin/reviewer-select <task-slug> --builder carl        # override the recorded author set
-#   bin/reviewer-select <task-slug> --builder steffon,alex # a task with TWO authors
+#   bin/reviewer-select <task-slug> --builder steffon,xan # a task with TWO authors
 #   bin/reviewer-select <task-slug> --builder none        # ASSERT no soul built it (lifts the refusal)
 #   bin/reviewer-select <task-slug> --busy a,b      # exclude busy souls (repeatable)
 #   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents mid-build or mid-review elsewhere
@@ -616,7 +616,17 @@ pr_url = devops["pr_url"].to_s.strip
 # it refuses BEFORE the intent write — a blind pair must never reach the board.
 # Two ways out, both stating a fact rather than omitting one:
 #   --builder <soul>  name who built it (also the after-the-fact correction)
-#   --builder none    assert NO soul built it (a Pokémon session, an operator)
+#   --builder none    assert NO soul built it (an operator-driven change)
+# PREFER NAMING THE BUILDER. `none` stopped covering a Pokémon build on 2026-09-24,
+# when `pokemon` joined the roster: a Pokémon build names `--builder pokemon` like
+# any other, and asserting `none` there states something false about the commonest
+# build path there is. It is also the ONLY input here that fails OPEN — nothing can
+# check the assertion, so a wrong one seats the author and still reports the
+# no-self-review property upheld. Measured 2026-09-24 on
+# data-flow-doc-contradicts-code (a docs PR Xan wrote, task unstamped):
+# `--builder none` seated xan as the light on Xan's own diff; `--builder xan` — and
+# `--builder alex`, via the retired-slug alias — excluded her and seated jasper.
+# See /tasks/builder-none-fails-open.
 # The durable fix is upstream: `bin/task move <slug> building --actor <soul>`
 # stamps devops.built_by on any build claim, re-claims included.
 # Prefer the positional slug, but fall back to the one the payload carries so

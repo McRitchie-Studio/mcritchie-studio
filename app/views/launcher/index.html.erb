@@ -22,7 +22,7 @@
         if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) return;
         if (e.key === '1') this.enter('session', null);
         else if (e.key === '2') this.enter('avi', null);
-        else if (e.key === '3') this.enter('alex', '<%= j alex_heartbeat_path %>');
+        else if (e.key === '3') this.enter('xan', '<%= j xan_heartbeat_path %>');
       }
     }"
     @keydown.window="key($event)"
@@ -76,17 +76,17 @@
           <span class="shrink-0 rounded-sm border border-[#3a4150] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#8b949e]">soon</span>
         </button>
 
-        <%# 3 · Alex — the active avenue. Real link to the learning heartbeat:
-            alex_heartbeat_path now renders the atomic trajectory table
+        <%# 3 · Xan — the active avenue. Real link to the learning heartbeat:
+            xan_heartbeat_path now renders the atomic trajectory table
             (HeartbeatController#show). data-avenue-target marks the wiring seam. %>
-        <%= link_to alex_heartbeat_path,
-              data: { avenue: "alex", avenue_target: "learning-heartbeat" },
-              "aria-label": "Enter as Alex — learning heartbeat",
-              "@click": "enter('alex', null)",
+        <%= link_to xan_heartbeat_path,
+              data: { avenue: "xan", avenue_target: "learning-heartbeat" },
+              "aria-label": "Enter as Xan — learning heartbeat",
+              "@click": "enter('xan', null)",
               class: "group flex items-center gap-3 rounded-lg border border-[#2a3240] bg-[#11161d] px-3 py-2.5 text-left transition hover:bg-[#141b24] hover:border-[#58a6ff] focus:outline-none focus-visible:border-[#58a6ff] sm:gap-4" do %>
           <span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[#0b0f14] font-bold text-[#58a6ff]">3</span>
           <span class="min-w-0 flex-1">
-            <span class="block font-bold">Alex</span>
+            <span class="block font-bold">Xan</span>
             <span class="block text-[12px] leading-snug text-[#8b949e]">Learning · distillation heartbeat — mine the trajectory for insights.</span>
           </span>
           <span class="shrink-0 rounded-sm border border-[#27c93f] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#27c93f]">enter ↵</span>
@@ -100,7 +100,7 @@
         class="mb-3 text-[12px] text-[#8b949e]"
       >
         <span x-text="stub === 'avi' ? 'Avi' : 'Session agent'"></span>
-        is coming soon — for now, enter as <span class="text-[#58a6ff]">Alex (3)</span>.
+        is coming soon — for now, enter as <span class="text-[#58a6ff]">Xan (3)</span>.
       </p>
 
       <p class="text-[#58a6ff]">› select 1–3 <span class="launcher-cursor">▋</span></p>

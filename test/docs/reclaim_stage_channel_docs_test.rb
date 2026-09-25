@@ -39,7 +39,7 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
     "modules/parallel-agent-devops.md",
     "agents/steffon/sops/clean-infra.md",
     "agents/steffon/sops/archive-shipped.md",
-    "agents/alex/sops/clean-up.md"
+    "agents/xan/sops/clean-up.md"
   ].freeze
 
   # Markdown-emphasis-insensitive read (the house pattern, mirrors

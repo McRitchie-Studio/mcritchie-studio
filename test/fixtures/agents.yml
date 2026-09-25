@@ -1,6 +1,6 @@
-alex_agent:
-  name: Alex
-  slug: alex
+xan_agent:
+  name: Xan
+  slug: xan
   status: active
   agent_type: orchestrator
   title: Lead Orchestrator

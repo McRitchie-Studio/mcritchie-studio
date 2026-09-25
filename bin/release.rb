@@ -203,10 +203,12 @@ require_relative "../app/models/release/seal_retry"
 # SealRun composes that retry with SmokeSeal into the recorded verdict (+ the
 # summary's retry note), so step 5c's behavior is testable on real objects.
 require_relative "../app/models/release/seal_run"
-# GateRuby pins the LOCAL pre-QA / ship test gates to CI's ruby (mise 3.3.11) so a
-# gate host whose shell `ruby` is brew's ruby@3.3 doesn't diverge from CI — the
-# gate suite (and the bin/release / bin/dor-check subprocesses its meta-tests
-# spawn) runs with mise's ruby bin dir leading PATH, so `env ruby` == CI's ruby.
+# GateRuby pins the SHIP WORKSPACE's own commands (bundle check/install, the DB
+# probe, db:test:prepare, and a repo_script deploy's pre-prod suite) to CI's ruby
+# (mise 3.3.11) so a host whose shell `ruby` is brew's ruby@3.3 doesn't diverge
+# from CI — they run with mise's ruby bin dir leading PATH, so `env ruby` == CI's
+# ruby. No release GATE runs a suite any more (G3 and G4 read CI's verdict for the
+# tree); the workspace serves the gem build and the repo_script deploys.
 # Rails-free → unit + integration tested.
 require_relative "../app/models/release/gate_ruby"
 require_relative "../app/models/release/gate_env"
@@ -469,9 +471,10 @@ end
 
 # Run a shell command. In dry-run, print it and skip. `chdir:` runs it in
 # another directory (used for gem-repo builds/tags). `env:` is an optional
-# environment overlay merged into the child — the gates pass it so the spawned
-# suite/bundle/probe resolve `env ruby` to mise, see NO agent session, and boot
-# against the gate's private test DB (see gate_env / Release::GateEnv). A nil
+# environment overlay merged into the child — the ship workspace passes it so the
+# spawned bundle/probe/deploy-suite resolve `env ruby` to mise, see NO agent
+# session, and boot against the workspace's private test DB (see gate_env /
+# Release::GateEnv). A nil
 # VALUE in that overlay UNSETS the key in the child (Process.spawn semantics) —
 # that is how the session scrub reaches every grandchild the suite spawns. A
 # blank/nil overlay leaves the argv exactly as-is. Returns [stdout, ok?].
@@ -1099,7 +1102,7 @@ end
 # (production_smoke_seal degrades it to a red seal) stay untouched.
 #
 # The VERDICT emit (COMPLETED/FAILED only — never START) is TAGGED to make the run
-# a first-class GRADEABLE unit in /alex/pipeline: kind="test_scope", event_slug=the
+# a first-class GRADEABLE unit in /xan/pipeline: kind="test_scope", event_slug=the
 # scope key, result_slug=pass|fail, duration_ms=the wall-clock. These ride the same
 # best-effort self-report path; a bare START stays untagged so the pipeline's
 # `kind:"test_scope" AND result_slug present` filter never surfaces it.
@@ -2131,11 +2134,11 @@ def batch_sweep_with_plan_ruby(slugs, release_slug = nil)
 end
 
 # The pre-QA gate command an app registers in config/release_repos.yml
-# (`qa_test_cmd`) — the tier prepare owns (Release::STEP_TEST_TIERS["prepare"]):
-# satellites register their integration subset; the HUB registers its FULL
-# suite (the G3 batch certification that lets ship's test_gate self-gate an
-# unchanged SHA). "" = not registered → the repo self-gates (its suite runs at
-# ship's test_cmd / its own deploy) and the gate skips it.
+# (`qa_test_cmd`) — the suite CI runs for the tier prepare owns
+# (Release::STEP_TEST_TIERS["prepare"]): satellites register their integration
+# subset; the HUB registers its FULL suite. The gate READS CI's verdict for it and
+# records the command on the release; nothing runs here. "" = not registered → the
+# repo self-gates (its own deploy runs its suite) and the gate skips it.
 def qa_gate_cmd(repo) = app_meta_for(repo)["qa_test_cmd"].to_s
 
 # Parse a registry test command (`test_cmd` / `qa_test_cmd`) into the argv `sh`
@@ -2222,13 +2225,12 @@ end
 # across pin → prepare → use. Per role because the DEPLOY must never queue behind a
 # concurrent conductor's G3 suite — or worse, reset the tree under it.
 #
-# PRECISELY (the ship is not wholly free of the gate lock, and the claim should not
-# be overstated — jasper, PR #517): the ship's own TEST GATE (test_gate) runs its
-# suite in the GATE workspace under the GATE lock, so it CAN queue behind a
-# concurrent conductor's G3 suite. That is correct and deliberate — it is the same
-# suite on the same tree, and it is pre-authority, so a wait costs nothing
-# irreversible. What must never queue is everything AFTER ship authority — the
-# re-pin, the deploys — and none of it touches the gate lock.
+# PRECISELY (jasper, PR #517, updated for the tree-verdict read): the ship's own
+# TEST GATE (test_gate) takes NO lock at all — it reads GitHub CI's verdict for the
+# frozen tree and runs nothing here — so nothing pre-authority queues behind a
+# concurrent conductor. What must never queue is everything AFTER ship authority —
+# the re-pin, the deploys — and none of it touches the gate-role lock either; the
+# `gate` role survives only as workspace vocabulary (paths, DB names, lock files).
 #
 # Deliberately NOT the primary-checkout lock: the primary must stay FREE (feature
 # sessions use it, and monopolising it for the length of a suite was half of what
@@ -2741,10 +2743,10 @@ end
 # pre-QA gate credit an existing conclusion: the release tip IS the accepted head
 # whose check-runs the PR/accepted seam already produced, so a green there proves
 # THIS tree. (The batch-PR promote mints a merge commit — a NEW SHA with fresh
-# check-runs — and never satisfies this.) The same-SHA discipline mirrors
-# Release::ShipSequence.ship_gate_skip?, which self-skips G4 only against G3's
-# record for the identical frozen SHA. An unresolvable accepted ref answers false
-# (no credit, normal poll) — never an abort.
+# check-runs — and never satisfies this.) The same read serves G4: the ship gate
+# resolves the FROZEN ship SHA through resolve_release_ci_verdict exactly as G3
+# resolves the release tip. An unresolvable accepted ref answers false (no credit,
+# normal poll) — never an abort.
 def fast_forward_promote?(path, release_sha)
   return false if release_sha.to_s.empty?
 
@@ -2854,25 +2856,34 @@ def ci_detail(ci)
   reason.empty? ? state : "#{state}: #{reason}"
 end
 
-# Stamp what the G3 pre-QA gate actually CERTIFIED for a repo: the SHA it ran on
-# and the command it ran. G4's ship gate skips its own suite ONLY against this
-# record (Release::ShipSequence.ship_gate_skip?) — never against the registry or
-# the deployed SHA, neither of which proves a suite ever ran.
+# The gate SOP line for a tree-verdict read — shared by G3 (pre_qa_gate) and G4
+# (test_gate), so both gate runs record the same shape: CI's state, the SHA, the
+# SOURCE of the verdict (a credited accepted head / tree, or the SHA's own polled
+# run), and the registered command CI ran. Nothing named here ran locally.
+def tree_verdict_sop(verdict, sha, cmd)
+  ci = verdict[:ci]
+  "GitHub CI #{ci[:state].to_s.upcase} @ #{short(sha)} — " \
+    "#{Release::ShipSequence.verdict_source(ci, credited: verdict[:credited])} (#{cmd} ran in CI, not here)"
+end
+
+# Stamp what the G3 pre-QA gate CERTIFIED for a repo — the SHA CI concluded on and
+# the registered command CI ran — as the release's AUDIT TRAIL. Nothing gates on
+# this record any more: G4 reads CI for the frozen ship SHA's tree itself
+# (test_gate → resolve_release_ci_verdict), so the record can neither skip nor arm
+# the ship gate. It is what an operator reads afterwards to see what G3 concluded.
 #
 # It also carries the CI verdict for the same SHA (`ci: {state, checks}`, plus
-# `count`/`reason` when GitHub gave them). Since DevOps v2 Phase 3 that verdict is no
-# longer a footnote beside a local suite — it is what `ok` was DERIVED from
-# (ci_pass?), so the pair is the whole audit: what CI concluded, and the gate result
-# it produced.
+# `count`/`reason`/`credited` when GitHub or a credit gave them). Since DevOps v2
+# Phase 3 that verdict is what `ok` was DERIVED from (ci_pass?), so the pair is the
+# whole audit: what CI concluded, and the gate result it produced.
 #
-# `ok` is now a PARAMETER (was hardcoded true): a GREEN CI records ok:true and lets
-# G4 self-skip (ship_gate_skip?); a non-green G3 records ok:FALSE — a red gate must
-# be recorded as failed, never silently un-stamped — and then aborts (fail-closed).
+# `ok` is a PARAMETER: a GREEN CI records ok:true; a non-green G3 records ok:FALSE
+# — a red gate must be recorded as failed, never silently un-stamped — and then
+# aborts (fail-closed).
 #
 # Best-effort like the other record steps: a board hiccup must not fail a GREEN
-# gate. A missing green record makes G4 re-derive the verdict from CI on the frozen
-# SHA (never a self-skip), so the worst case of a lost stamp is a redundant CI read,
-# never an unguarded ship.
+# gate. G4 never reads this record, so the worst case of a lost stamp is a gap in
+# the audit trail, never an unguarded ship.
 def record_qa_gate(rel_slug, repo, sha, cmd, ci = nil, ok = true)
   return if rel_slug.to_s.empty? || DRY
 
@@ -2884,8 +2895,8 @@ def record_qa_gate(rel_slug, repo, sha, cmd, ci = nil, ok = true)
     "puts({ qa_gate: #{repo.to_s.inspect} }.to_json)"
   )
 rescue SystemExit, StandardError => e
-  say("  ⚠ G3 certification not recorded for #{repo} (#{e.message}) — the ship gate will re-run the " \
-      "suite on the frozen SHA rather than skip it (fail-open)")
+  say("  ⚠ G3 verdict not recorded for #{repo} (#{e.message}) — audit trail only; G4 reads CI for the " \
+      "frozen tree itself")
 end
 
 # The G3 fail-closed abort text, chosen by the state the gate STOPPED on:
@@ -2969,18 +2980,23 @@ def poll_ci_verdict(repo, sha, deadline: monotonic_s + ci_poll_timeout)
   end
 end
 
-# Resolve GitHub CI's verdict for `repo`'s origin/#{RELEASE_BRANCH} `sha`,
-# applying the G3 dedupe credits (fast-forward / tree-identical) and otherwise
-# polling — the repo-generic core the APP and SELF-GATED-GEM gate lanes share.
+# Resolve GitHub CI's verdict for a `repo` `sha` — G3's origin/#{RELEASE_BRANCH}
+# tip, or G4's FROZEN ship SHA (test_gate) — applying the dedupe credits
+# (fast-forward / tree-identical) and otherwise polling: the repo-generic core the
+# APP and SELF-GATED-GEM G3 lanes and the G4 ship gate all share, so one tree earns
+# one verdict however many gates read it (devops-v3 §5).
 # It is repo-generic BY DESIGN, which is exactly why a self-gated gem can reuse
 # it: both an app and a gem promote accepted→release via a batch PR, and that
 # promote PR is a `pull_request` event that BOTH ci.yml (hub) and engine-ci.yml
 # (gem) run — so the accepted head carries a green, and the tree-identical credit
 # certifies the identical release tree the same way for either kind (there is no
 # `push:[release]` CI run for either; the credit is the whole mechanism).
-# Returns [ci_hash, credited_bool] — the caller runs ci_pass? on ci and prints
-# `(credited)` from the flag. Behavior-identical to the block it was lifted from,
-# so the app gate is byte-for-byte the same verdict.
+# Returns {ci:, credited:, diagnostic:, diverged:} — `ci` is the verdict Hash the
+# caller runs ci_pass? on; `credited` says a same-SHA / same-tree green vouched for
+# it; `diagnostic` is the one-line reason no credit fired (nil when one did); and
+# `diverged` is true when the SHA shares neither SHA nor tree with the accepted
+# head, so its verdict could only come from its own run. G4 classifies the four
+# through Release::ShipSequence.ship_gate_kind; G3 reads ci + credited as before.
 def resolve_release_ci_verdict(repo, path, sha)
   # ONE shared poll budget: the tree credit may spend part of it WAITING on the
   # in-flight accepted run, and a wait that times out then falls through must not
@@ -2988,6 +3004,7 @@ def resolve_release_ci_verdict(repo, path, sha)
   deadline = monotonic_s + ci_poll_timeout
   credit = nil
   diagnostic = nil
+  diverged = false
   if fast_forward_promote?(path, sha)
     credit = ci_credit_verdict(repo, sha)
     if credit
@@ -3008,6 +3025,7 @@ def resolve_release_ci_verdict(repo, path, sha)
     # nor a tree-identical promote of it (a diverged tree — e.g. a consumer lock-bump commit
     # riding #{RELEASE_BRANCH}). Say so, rather than falling through silently — every non-credit
     # now names its condition (a mismatch this gate used to leave to hand-forensics).
+    diverged = true
     diagnostic = "#{short(sha)} shares neither SHA nor tree with the #{ACCEPTED_BRANCH} head — no credit " \
                  "possible; polling its own run"
   end
@@ -3026,7 +3044,7 @@ def resolve_release_ci_verdict(repo, path, sha)
   # poll shares the gate's deadline (see above) so the tree-credit wait + this poll
   # never exceed one window together.
   ci = credit || poll_ci_verdict(repo, sha, deadline: deadline)
-  [ci, !credit.nil?]
+  { ci: ci, credited: !credit.nil?, diagnostic: (credit ? nil : diagnostic), diverged: diverged }
 end
 
 # The pre-QA gate (G3 candidate). `app_groups` gate on their registered
@@ -3041,7 +3059,8 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
   # The banner names what THIS step does now (DevOps v2 Phase 3): it reads GitHub
   # CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA. The local suite that
   # used to run in an isolated gate workspace is DEMOTED — CI is the verdict — so the
-  # registered qa_test_cmd is still RECORDED for the G4 drift check, just not executed.
+  # registered qa_test_cmd is still RECORDED on the release (the audit trail; G4 reads
+  # CI for the frozen tree itself), just not executed.
   step("pre-QA gate: GitHub CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA " \
        "(before any QA deploy)")
   app_groups.each do |group|
@@ -3052,12 +3071,12 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
       next
     end
     # Validate the registry command even though the suite is DEMOTED (Phase 3): a
-    # malformed value must still abort a preview, and it is recorded for the G4 drift
-    # check below, so it may not be garbage. test_cmd_argv aborts on an unbalanced quote.
+    # malformed value must still abort a preview, and it is recorded on the release
+    # below, so it may not be garbage. test_cmd_argv aborts on an unbalanced quote.
     test_cmd_argv(cmd)
     if DRY
       say("  [dry-run] pre-QA gate #{repo}: GitHub CI verdict for origin/#{RELEASE_BRANCH} " \
-          "(#{cmd} recorded for the G4 drift check, not run)")
+          "(#{cmd} ran in CI; recorded, not run)")
       next
     end
 
@@ -3079,14 +3098,19 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
     # verdict resolution below credits the IDENTICAL TREE already earned instead of
     # re-running it — fail-closed into the poll on any non-credit. Repo-generic; see
     # resolve_release_ci_verdict.
-    ci, credited = resolve_release_ci_verdict(repo, path, sha)
+    verdict  = resolve_release_ci_verdict(repo, path, sha)
+    ci       = verdict[:ci]
+    credited = verdict[:credited]
     ok = ci_pass?(ci)
     step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{credited ? ' (credited)' : ''} @ #{short(sha)} " \
-         "(#{cmd} recorded for the G4 drift check, not run here)")
+         "(#{cmd} ran in CI; recorded, not run here)")
+    # The G3 gate run's own SOP names the verdict's SOURCE (the credited accepted
+    # head / tree, or the SHA's own polled run) — the same line the G4 read records.
+    gate_sop("pre_qa_gate", tree_verdict_sop(verdict, sha, cmd), ok)
 
-    # Certify — the ONLY evidence G4 accepts for skipping its own gate. Recorded for
-    # GREEN and non-green alike: a red G3 records ok:FALSE (it must not silently skip
-    # recording), carrying CI's verdict for the audit trail.
+    # Record the verdict as the release's AUDIT TRAIL (nothing gates on it — G4 reads
+    # CI for the frozen tree itself). Recorded for GREEN and non-green alike: a red G3
+    # records ok:FALSE (it must not silently skip recording), carrying CI's verdict.
     record_qa_gate(rel_slug, repo, sha, cmd, ci, ok)
     next if ok
 
@@ -3128,10 +3152,13 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
       abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the pre-QA gate — fetch, then re-run") unless ok
       sha = out.strip
 
-      ci, credited = resolve_release_ci_verdict(repo, path, sha)
+      verdict  = resolve_release_ci_verdict(repo, path, sha)
+      ci       = verdict[:ci]
+      credited = verdict[:credited]
       ok = ci_pass?(ci)
       step("pre-QA gate #{repo} (self-gated gem): GitHub CI #{ci[:state].to_s.upcase}#{credited ? ' (credited)' : ''} " \
            "@ #{short(sha)} (#{cmd} greened the gem in its own CI)")
+      gate_sop("pre_qa_gate", tree_verdict_sop(verdict, sha, cmd), ok)
 
       record_qa_gate(rel_slug, repo, sha, cmd, ci, ok)
       next if ok
@@ -3314,7 +3341,7 @@ def prepare
     unless guard["clean"] || DRY
       abort!("--expedite refused: the ladder no longer carries only `#{task_slugs.first}` — " \
              "promoting now would ship the work listed above. NOTHING was promoted, recorded, or " \
-             "deployed. Ship the whole release instead: run the `Alex Heartbeat` `full-cycle` launcher.")
+             "deployed. Ship the whole release instead: run the `Xan Heartbeat` `full-cycle` launcher.")
     end
   end
 
@@ -5049,83 +5076,74 @@ rescue SystemExit, StandardError => e
   say("  ⚠ merged:main not recorded for #{slugs.join(', ')} (#{e.message}); deploy continues — ship! re-stamps it")
 end
 
-# The conductor's pre-prod test gate: run the registry `test_cmd` at the repo's
-# frozen SHA before the irreversible deploy; scoped-abort on red. repo_script
-# apps SELF-GATE (their own deploy runs tests) → no test_cmd → skipped.
+# The conductor's pre-prod gate — G4's tree-verdict READ. For each app carrying a
+# registry `test_cmd` (the suite CI runs for it; a repo_script app whose own deploy
+# runs its suite leaves it unset and SELF-GATES), read GitHub CI's SETTLED verdict
+# for the frozen ship SHA's TREE before the irreversible deploy, and abort on
+# anything but green. Nothing runs on this machine: the local suite was deleted at
+# G4 (DevOps v2 Phase 4), and with it the self-skip against G3's record
+# (Release::ShipSequence.ship_gate_skip?) that existed only to spare that suite.
+# One tree earns one verdict (devops-v3 §5): the frozen SHA is resolved through
+# resolve_release_ci_verdict EXACTLY as G3 resolves the release tip — its own run,
+# polled to a conclusion, or a same-SHA / same-tree green credited from the
+# accepted head — and the SOP records the verdict's SOURCE.
 #
-# G4 SELF-GATING (the 90/10 policy): the full suite runs ONCE per release batch,
-# at G3 — so this gate may skip, but ONLY on PROOF that G3 actually ran and
-# passed. That proof is G3's OWN RECORDED VERDICT,
-# release.metadata["qa_gates"][repo] = {sha, cmd, ok}, which pre_qa_gate writes
-# only after a green suite. Same command + same frozen SHA + green => skip.
+# The state table (Release::ShipSequence.ship_gate_kind, unit-tested):
+#   green / credited → PASS, the SOP names the source
+#   red → ABORT (a broken frozen commit) · unreadable → ABORT at once (a token
+#   fault; never polled) · diverged (no credit possible AND no green from its own
+#   run within the poll) → ABORT naming the divergence · held (pending / none /
+#   unverified past the bound) → ABORT, let CI conclude and re-run.
 #
-# It deliberately does NOT infer the proof from the registry + release.metadata
-# ["qa_shas"] (the old rule): qa_shas is stamped by the QA DEPLOY LOOP, so it
-# records what was DEPLOYED, never what was CERTIFIED — which let a SKIPPED G3
-# still satisfy the skip and silently disarm this gate. No record, a red record,
-# a different command, or a drifted/straggler SHA all FAIL OPEN and run the gate.
-# The skip is recorded as a visible SOP on the g4_ship gate run, never a silent
-# omission. (The pure decision lives in Release::ShipSequence.ship_gate_skip?,
-# unit-tested.)
-#
-# A G3 whose AUDITOR went RED also fails open — G3 called the SHA green, GitHub CI
-# called the SAME SHA broken, so the batch certification is exactly what must not
-# be trusted. Without this the skip would fire (the frozen SHA *is* the certified
-# SHA) and G3's alarm would be the ONLY thing between a CI-red commit and prod.
-# FAIL-OPEN ONLY: a red auditor causes MORE checking, never a block, and no-data
-# (none/pending/unverified) changes nothing.
-# The G4 fail-closed abort text. A RED CI is a broken frozen commit — it must not
-# ship. Any OTHER non-green (none/pending/unverified/unreadable) is CI without a
-# green verdict for the frozen SHA yet (a just-pushed re-pin may still be pending):
-# hold and re-run, or take the first-class --skip-test-gate override. Never a pass.
-def ship_test_gate_ci_abort(repo, frozen_sha, ci)
-  if ci[:state] == :red
+# It reads whatever `origin/#{ACCEPTED_BRANCH}` the last fetch left and does NOT
+# fetch: the ship path touches no ref before ship authority. A stale accepted ref
+# can only decline a credit (the SHA's own run is the fallback) or credit an OLDER
+# accepted head whose tree is identical — and a green for identical content IS a
+# verdict for this tree, which is the whole rule.
+
+# The G4 fail-closed abort text, chosen by what the gate READ (ship_gate_kind):
+#   :red        — a broken frozen commit: fix on `#{RELEASE_BRANCH}`, re-run.
+#   :unreadable — a token fault the gate did NOT poll (a refused token never heals
+#                 mid-ship): the credential remedy.
+#   :diverged   — no earlier green could vouch for this tree AND its own run gave
+#                 no green in the poll window: names both halves.
+#   :held       — pending/none/unverified past the poll bound (a just-pushed re-pin
+#                 may still be building): let CI conclude, re-run — or take the
+#                 first-class --skip-test-gate override. Never a pass.
+def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)
+  ci   = verdict[:ci]
+  read = ci_detail(ci)
+  override = "To ship past a verdict you believe is a false negative, use " \
+             "`bin/release ship --skip-test-gate --reason \"…\"` (records a RED gate)."
+  case kind
+  when :red
     named = Array(ci[:failing]).join(", ")
     "test gate FAILED for #{repo}: GitHub CI called frozen #{short(frozen_sha)} " \
       "RED#{named.empty? ? '' : " (#{named})"} — aborting BEFORE the irreversible prod deploy. A red frozen SHA " \
       "must not ship: read the failing check, fix on `#{RELEASE_BRANCH}` + re-run `bin/release ship`."
+  when :unreadable
+    "test gate FAILED for #{repo}: GitHub CI is UNREADABLE for frozen #{short(frozen_sha)} (#{read}). The ship " \
+      "gate is CI's verdict and FAILS CLOSED — an :unreadable verdict is a credential/token fault, NOT a missing " \
+      "or still-running CI, so the gate did NOT poll it (a refused token never heals mid-ship). " \
+      "#{CiStatus.unreadable_remedy(repo_name_with_owner(repo), cause: ci[:cause], cert_route: :retired)} #{override}"
+  when :diverged
+    "test gate HELD for #{repo}: frozen #{short(frozen_sha)} shares neither SHA nor tree with the " \
+      "#{ACCEPTED_BRANCH} head (#{verdict[:diagnostic]}), so no earlier green could vouch for its tree — and its " \
+      "OWN run has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after polling ~#{ci_poll_timeout}s. " \
+      "The ship gate FAILS CLOSED on anything but green. Let CI conclude on the frozen SHA (or widen " \
+      "RELEASE_CI_POLL_TIMEOUT), then re-run `bin/release ship`. #{override}"
   else
-    "test gate HELD for #{repo}: GitHub CI has NO green verdict for frozen #{short(frozen_sha)} (#{ci_detail(ci)}). " \
-      "The ship gate is CI now and FAILS CLOSED on anything but green — a just-pushed re-pin may still be PENDING, " \
-      "and an :unreadable state is a token fault. Wait for CI to conclude on the frozen SHA, then re-run " \
-      "`bin/release ship`. To ship past a verdict you believe is a false negative, use " \
-      "`bin/release ship --skip-test-gate --reason \"…\"` (records a RED gate)."
+    "test gate HELD for #{repo}: GitHub CI has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after " \
+      "polling ~#{ci_poll_timeout}s#{verdict[:diagnostic] ? " (#{verdict[:diagnostic]})" : ''}. The ship gate is " \
+      "CI's verdict and FAILS CLOSED on anything but green — a just-pushed re-pin may still be PENDING. Let CI " \
+      "conclude on the frozen SHA (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `bin/release ship`. #{override}"
   end
 end
 
-def test_gate(repo, frozen_sha: nil, qa_gate: nil)
+def test_gate(repo, frozen_sha:)
   cmd = app_meta_for(repo)["test_cmd"].to_s
   if cmd.empty?
     step("test gate: #{repo} self-gates (no conductor test_cmd; its deploy runs tests) — skip")
-    return
-  end
-
-  # Say WHY the batch certification is being ignored — a gate that silently
-  # re-derives teaches the operator nothing, and this is the one signal that says
-  # "G3's record and CI disagreed about this exact commit".
-  #
-  # DevOps v2 Phase 3: a red-auditor G3 record is now DEFENSIVE — G3 derives ok from CI
-  # (ci_pass?), so a red CI aborts prepare and never produces a green ok:true record.
-  # A stale or hand-built record can still carry this shape, and it must still be
-  # re-gated, never trusted. G4 re-derives the verdict from GitHub CI on the FROZEN SHA
-  # below — which, unlike the demoted local suite, CAN see every lane — and fails the
-  # ship CLOSED if that SHA is not green.
-  #
-  # Name the SHA G3's record CERTIFIED (record["sha"]), not the frozen ship SHA: when
-  # the RC was re-pinned the two differ, and "G3 certified <frozen_sha>" would be a
-  # second false claim printed by the very code that exists to kill one.
-  if Release::ShipSequence.auditor_red?(qa_gate)
-    audited_sha = (qa_gate["sha"] || qa_gate[:sha]).to_s
-    say("  ⚠ #{repo}: G3's record certified #{short(audited_sha)} GREEN but GitHub CI called that SHA RED — the " \
-        "batch certification is NOT trusted, so G4 does not self-skip on it. It RE-DERIVES the verdict from " \
-        "GitHub CI on frozen #{short(frozen_sha)} below, and CI fails this gate closed if that SHA is not green.")
-  end
-
-  if Release::ShipSequence.ship_gate_skip?(test_cmd: cmd, frozen_sha: frozen_sha, qa_gate: qa_gate)
-    step("test gate: #{repo} self-gates — `#{cmd}` already CERTIFIED green on frozen #{short(frozen_sha)} " \
-         "by the G3 pre-QA gate this run; skip (a drifted SHA, a G3 that never ran, or a RED CI auditor " \
-         "re-triggers)")
-    gate_sop("ship_test_gate", "skipped — #{cmd} certified green @ #{short(frozen_sha)} at G3 (recorded pre-QA verdict)", true)
     return
   end
 
@@ -5133,7 +5151,8 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
   #
   # The old way to ship past a gate you believed was a false negative was to blank
   # the registry's test_cmd/qa_test_cmd. That is now closed (it SILENTLY DISARMED
-  # this gate — see ship_gate_skip?), and closing it without a replacement would
+  # this gate — a blank test_cmd reads as "self-gates" and skips the read; the
+  # registry is the gate's switch, so guard it), and closing it without a replacement would
   # WEDGE the operator: a G4 false negative with no clean override, and a config
   # edit is not one (it is un-reviewed drift in the registry the gate reads). So the
   # override is
@@ -5144,37 +5163,35 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
     reason = opt_value("--reason").to_s.strip
     abort!("--skip-test-gate requires --reason \"…\" (it is recorded on the release as a red gate)") if reason.empty?
     unless confirm("⚠ SKIP the #{repo} ship test gate (`#{cmd}`) on frozen #{short(frozen_sha)}? " \
-                   "The suite will NOT run before the irreversible prod deploy. Reason: #{reason}")
+                   "CI's verdict for it will NOT be read before the irreversible prod deploy. Reason: #{reason}")
       abort!("ship aborted — test gate not skipped")
     end
     step("⚠ test gate: SKIPPED BY OPERATOR for #{repo} (--skip-test-gate) — #{reason}")
     gate_sop("ship_test_gate",
-             "⚠ SKIPPED BY OPERATOR (--skip-test-gate): #{reason} — `#{cmd}` did NOT run on #{short(frozen_sha)}",
+             "⚠ SKIPPED BY OPERATOR (--skip-test-gate): #{reason} — CI's verdict for `#{cmd}` was NOT read " \
+             "on #{short(frozen_sha)}",
              false)
     return
   end
 
-  # Validate the registry command even though the suite is DEMOTED (Phase 3): a
-  # malformed value must still abort a preview. test_cmd_argv aborts on an unbalanced quote.
+  # Validate the registry command even though nothing runs it here: a malformed
+  # value must still abort a preview, and the SOP names it. test_cmd_argv aborts on
+  # an unbalanced quote.
   test_cmd_argv(cmd)
   step("test gate: #{repo} — GitHub CI verdict for frozen #{short(frozen_sha)} " \
-       "(#{cmd} recorded, not run; before prod)")
+       "(#{cmd} ran in CI; read here, not run; before prod)")
   return if DRY
 
-  # DevOps v2 Phase 3+4: the frozen SHA's last gate before prod is GitHub CI's
-  # conclusion for that exact commit (ci_pass?), not a re-run of the local suite.
-
-  # THE VERDICT, fail-CLOSED before the irreversible prod deploy: ci_pass? passes on
-  # ONLY :green. A red (a broken frozen commit) and every no-data/pending state
-  # (none/pending/unverified/unreadable — e.g. a just-pushed re-pin whose CI has not
-  # concluded) all FAIL the gate. A false green is the one error that ships untested
-  # code to production. CI's conclusion is recorded as this gate's Tier-3 SOP.
-  ci = ci_verdict(repo, frozen_sha)
-  ok = ci_pass?(ci)
-  gate_sop("ship_test_gate",
-           "GitHub CI #{ci[:state].to_s.upcase} @ #{short(frozen_sha)} — #{cmd} " \
-           "(Tier-3 Actions conclusion; local suite demoted)", ok)
-  abort!(ship_test_gate_ci_abort(repo, frozen_sha, ci)) unless ok
+  # THE VERDICT, fail-CLOSED before the irreversible prod deploy — the same
+  # resolution G3 ran on the release tip (credit, else poll), now on the frozen
+  # ship SHA. Exactly two kinds pass (green, credited); everything else aborts,
+  # naming what was read. The SOP carries the verdict's source.
+  verdict = resolve_release_ci_verdict(repo, repo_path(repo), frozen_sha)
+  kind = Release::ShipSequence.ship_gate_kind(verdict[:ci], credited: verdict[:credited],
+                                                            diverged: verdict[:diverged])
+  ok = Release::ShipSequence.ship_gate_pass?(kind)
+  gate_sop("ship_test_gate", tree_verdict_sop(verdict, frozen_sha, cmd), ok)
+  abort!(ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)) unless ok
 end
 
 # `bundle lock --update <gem>` with a bounded retry/backoff for RubyGems
@@ -6855,31 +6872,25 @@ def whats_live(repos, qa_shas)
   end
 end
 
-# Steffon's ship gate: run each app's full local suite (registry `test_cmd` — the
-# full-suite tier, Release::STEP_TEST_TIERS["ship"]) on the FROZEN ship SHA —
-# the exact code that ships — BEFORE the ship-authority gate, so approval can
-# never authorize untested code (§1.2 "fixes shipped ≠ tested"). A red gate
+# Steffon's ship gate: READ GitHub CI's settled verdict for each app's FROZEN ship
+# SHA — the exact tree that ships — BEFORE the ship-authority gate, so approval can
+# never authorize an untested tree (§1.2 "fixes shipped ≠ tested"). A non-green read
 # scoped-aborts before the confirm. Satellites self-gate (their own deploy runs
-# their suite) → no `test_cmd` → skipped; a repo whose frozen SHA the G3 gate
-# already certified with the same command self-gates too (see test_gate),
-# recording the skip as a gate SOP.
+# their suite) → no `test_cmd` → skipped. Nothing runs here: the registry test_cmd
+# names the suite CI ran (see test_gate).
 #
 # IT MUTATES NOTHING. It used to fast-forward each app's `main` in the primary
-# first, so the suite could run on the frozen tree — but the suite MOVED to the
-# isolated gate workspace (pinned at the frozen SHA, its own test DB), which is a
-# strictly better tree to certify, so the ff became vestigial: it took the
-# primary-checkout lock, flipped a shared checkout, and no longer fed anything.
-# Dropping it means NOTHING in the ship — not a ref, not a checkout, not a lock —
-# is touched before ship authority. A red gate or a declined confirm now leaves
-# the entire machine exactly as it found it.
-def run_ship_gate(app_groups, ship_sha, qa_gates)
+# first, so a local suite could run on the frozen tree; that suite then moved to an
+# isolated workspace and was finally deleted for a CI read, so NOTHING in the ship
+# — not a ref, not a checkout, not a lock — is touched before ship authority. A red
+# gate or a declined confirm leaves the entire machine exactly as it found it.
+def run_ship_gate(app_groups, ship_sha)
   say("")
-  step("Steffon ship gate: full suite (registry test_cmd) on the FROZEN ship SHA " \
-       "(isolated workspace, before ship authority — nothing is mutated yet)")
+  step("Steffon ship gate: GitHub CI's settled verdict for each app's FROZEN ship SHA " \
+       "(read, not run — before ship authority; nothing is mutated yet)")
   app_groups.each do |group|
     repo = group["repo"]
-    test_gate(repo, frozen_sha: ship_sha[repo],
-                    qa_gate: Release::ShipSequence.qa_gate(qa_gates, repo))
+    test_gate(repo, frozen_sha: ship_sha[repo])
   end
 end
 
@@ -7430,10 +7441,11 @@ def ship
   say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
-  # LOCAL PRESENCE — see the twin in `prepare`. A ship runs its own test gate in the gate
-  # workspace and then deploys, so it saturates this machine exactly as a sweep does and
-  # publishes the same claim. Opened before the first read so it covers the whole run.
-  # Best-effort and non-fatal.
+  # LOCAL PRESENCE — see the twin in `prepare`. A ship reads CI for its gate (nothing
+  # runs here) and then deploys — a repo_script deploy runs that repo's own suite in
+  # the ship workspace, so the machine cost is real for that leg — and it publishes
+  # the same claim a sweep does. Opened before the first read so it covers the whole
+  # run. Best-effort and non-fatal.
   ReleasePresence.open!(kind: ReleasePresence::SHIP, root: File.expand_path("..", __dir__),
                         lane: "release:ship", session_id: conductor_session_id)
 
@@ -7473,17 +7485,13 @@ def ship
     "abort('no active release to ship') unless r.active? || unfinished.positive?; " \
     "puts({slug: r.slug, state: r.state, branch: r.branch, " \
     "resuming_member_ship: (!r.active? && unfinished.positive?), unfinished_members: unfinished, " \
-    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
-    "qa_gates: (r.metadata['qa_gates'] || {})}.to_json)",
+    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {})}.to_json)",
     read_only: true
   )
   abort!("no active release to ship") if result["slug"].to_s.empty?
   state    = result["state"]
   repos    = result["repos"] || []
   qa_shas  = result["qa_shas"] || {}
-  # What the G3 pre-QA gate CERTIFIED this run (repo => {sha, cmd, ok}) — the only
-  # grounds on which G4 may skip its own suite. See Release::ShipSequence.
-  qa_gates = result["qa_gates"] || {}
   resuming_member_ship = !!result["resuming_member_ship"]
   # Don't ship a candidate that hasn't been assembled + QA'd (the model would
   # otherwise allow assembling→shipped, bypassing the QA gate). The only
@@ -7515,12 +7523,12 @@ def ship
   #    ship authority — turf included (its bin/deploy keeps its own smoke + rollback).
   whats_live(repos, qa_shas)
 
-  # 2a. Steffon's ship gate (§1.2): run the FULL local suite (registry test_cmd) on
-  #     the FROZEN ship SHA — the exact prod code — BEFORE ship authority, so
-  #     "shipped" can never mean "untested". A red gate scoped-aborts here,
-  #     before the confirm and before any push, leaving origin untouched.
-  #     (Browser-level verification is the post-deploy prod smoke SEAL — the old
-  #     "full e2e" wording here overstated what test_cmd runs.)
+  # 2a. Steffon's ship gate (§1.2): READ GitHub CI's settled verdict for the FROZEN
+  #     ship SHA's tree — the exact prod code — BEFORE ship authority, so "shipped"
+  #     can never mean "untested". Nothing runs here: the local suite is gone, and
+  #     one tree earns one verdict (devops-v3 §5). A non-green read scoped-aborts
+  #     here, before the confirm and before any push, leaving origin untouched.
+  #     (Browser-level verification is the post-deploy prod smoke SEAL.)
   #
   #     G4 SHIP opens HERE, spanning the frozen-SHA gate, the prod deploys,
   #     /up smokes, post-deploy hooks, and the smoke seal; the ship_gate
@@ -7530,7 +7538,7 @@ def ship
   record_release_event(rel_slug, "ship_gate", "started", actor: by)
   record_gate_open(rel_slug, "g4_ship", actor: by)
   g4_gate = :open
-  run_ship_gate(app_groups, ship_sha, qa_gates)
+  run_ship_gate(app_groups, ship_sha)
   record_release_event(rel_slug, "ship_gate", "completed", actor: by)
 
   # 2a-bis. DEPLOY-TARGET PREFLIGHT — refuse BEFORE anything moves.

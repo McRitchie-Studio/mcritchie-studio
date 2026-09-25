@@ -20,20 +20,26 @@
 # Carl is the LEAD ARCHITECT and STANDING PRIMARY — the deep reviewer + OWNER on
 # EVERY PR (there is no Avi supervisor). He summons ONE domain LIGHT from the
 # specialist pool {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform ·
-# Alex=Documentation}. After the 2026-07-22 reslot **Avi** is the `qa_owner` (he runs
+# Xan=Documentation}. After the 2026-07-22 reslot **Avi** is the `qa_owner` (he runs
 # qa-release: the accepted→release sweep + QA), so he is kept out of the light pool —
 # no soul both reviews AND QAs the same change (no self-gating). Steffon moved to
 # production-deploy and rejoined the light specialist pool. See
 # docs/agents/agents/carl/sops/pr-review.md and app/services/reviewer_selector.rb.
+#
+# THE ORCHESTRATOR SEAT IS `xan` (renamed from `alex` on 2026-09-24 — the human
+# operator takes the name Alex, so a soul slug reading `alex` would name the
+# owner). The Solana signing identity `agent.xan.solana` already carried the name
+# and is unrelated to this row. The rename-in-place block below the roster keeps
+# the row's id and history; Task::SOUL_ALIASES reads `alex` as `xan` for one release.
 agents_data = [
   {
-    name: "Alex",
-    slug: "alex",
+    name: "Xan",
+    slug: "xan",
     status: "active",
     agent_type: "orchestrator",
     title: "Lead Orchestrator",
     description: "Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool's Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.",
-    avatar: "/agents/alex.webp",
+    avatar: "/agents/xan.webp",
     position: 0,
     metadata: {
       "review_role" => "reviewer",
@@ -166,6 +172,49 @@ agents_data = [
       "review_role" => nil,
       "reviewer" => false
     }
+  },
+  # The general BUILDER, and the ecosystem's most prolific author — the operating
+  # model routes every task through it. Seeded so the author set can name it:
+  # `--agent pokemon` used to pass the CLI's shape check and die at the roster,
+  # leaving the task `builders: NOT STAMPED` and `bin/reviewer-select` refusing.
+  # It is legion (each task wears its own mascot, recorded per-task in
+  # devops.mascot) but ONE soul, so the slug is stable and the costume is not.
+  # `reviewer => false` and absent from ReviewerSelector::POOL: it builds, it never
+  # reviews, so naming it as the author excludes nobody and frees no seat. It
+  # replaces the `--agent mack` placeholder, which borrowed a real soul's slug and
+  # made genuine Mack authorship indistinguishable from a Pokémon build.
+  {
+    name: "Pokémon",
+    slug: "pokemon",
+    status: "active",
+    agent_type: "worker",
+    title: "General Builder",
+    description: "The builder. Every task is built by one, and it is legion: each task gets its own mascot, and every mascot is the same soul. Builds whatever the task needs — UI, backend, Google Workspace, a shared gem, an on-chain instruction — to the standards the specialists review to. Builds; never reviews, releases, or deploys.",
+    avatar: nil,
+    position: 9,
+    metadata: {
+      "review_role" => nil,
+      "reviewer" => false
+    }
+  },
+  # The CMO. A launcher, a docs directory, a HEARTBEAT and two registered SOPs
+  # (constraint-diagnosis, content-sprint) — a fully established soul that was never
+  # on the register. Measured 2026-09-24: zero attributed rows, so this gap was
+  # LATENT rather than live; it would have fired silently the first time Rex
+  # authored anything, exactly as Pokémon's did. Non-reviewing, like Mason.
+  {
+    name: "Rex",
+    slug: "rex",
+    status: "active",
+    agent_type: "specialist",
+    title: "Chief Marketing Officer",
+    description: "Owns the demand side: diagnoses the one constraint limiting demand, designs and prices the offer, allocates channels, sets volume targets, and instruments a campaign so its result can be read. Advises the operator brand, Turf Monster, and McRitchie Industries. Strategy, not copy — brand voice and launch mechanics stay with Mason.",
+    avatar: nil,
+    position: 10,
+    metadata: {
+      "review_role" => nil,
+      "reviewer" => false
+    }
   }
 ]
 
@@ -174,15 +223,46 @@ agents_data = [
 # Agent#emoji / Agent#status_color. Explicit colors so two souls never collide on
 # the 8-bucket deterministic avatar palette (status_color falls back to it).
 AGENT_EMOJI = {
-  "alex" => "🧭", "avi" => "📋", "carl" => "🛠", "shannon" => "🎨",
+  "xan" => "🧭", "avi" => "📋", "carl" => "🛠", "shannon" => "🎨",
   "jasper" => "🧪", "steffon" => "🚀", "turf-monster" => "🐲",
-  "mack" => "📦", "mason" => "📣"
+  "mack" => "📦", "mason" => "📣", "pokemon" => "⚡", "rex" => "📈"
 }.freeze
 AGENT_COLOR = {
-  "alex" => "#818CF8", "avi" => "#FB7185", "carl" => "#F97316", "shannon" => "#EC4899",
+  "xan" => "#818CF8", "avi" => "#FB7185", "carl" => "#F97316", "shannon" => "#EC4899",
   "jasper" => "#9945FF", "steffon" => "#06B6D4", "turf-monster" => "#84CC16",
-  "mack" => "#9CA3AF", "mason" => "#EF4444"
+  "mack" => "#9CA3AF", "mason" => "#EF4444", "pokemon" => "#FACC15", "rex" => "#14B8A6"
 }.freeze
+
+# `alex` → `xan`, IN PLACE. db/migrate/20260924210000_rename_alex_soul_to_xan.rb
+# repoints the row and every stored soul-slug value at migrate time, and on a
+# deploy it has always run before this seed (release phase migrates; the seed
+# rides `rake apps:seed`). This is the seed's own idempotent half for a database
+# the migration has not reached — a desk seeded from an older tree — so the
+# upsert below FINDS `xan` instead of creating a second orchestrator. Never
+# `destroy` the old row: Agent has_many :activities dependent: :destroy, and the
+# seat's history hangs off it. Runs before the roster loop on purpose.
+if (legacy = Agent.find_by(slug: "alex"))
+  if Agent.exists?(slug: "xan")
+    # Both present: the migration owns the children; only an empty shell may go.
+    empty = legacy.activities.none? && legacy.usages.none? && legacy.skill_assignments.none? && legacy.tasks.none?
+    if empty
+      legacy.delete
+      puts "Agent: retired the duplicate alex row (xan already seeded)"
+    else
+      puts "Agent: alex row still has children — db:migrate (RenameAlexSoulToXan) retires it"
+    end
+  else
+    Agent.transaction do
+      # The by-slug children first, so the rename never strands them.
+      Activity.where(agent_slug: "alex").update_all(agent_slug: "xan")
+      Usage.where(agent_slug: "alex").update_all(agent_slug: "xan")
+      SkillAssignment.where(agent_slug: "alex").update_all(agent_slug: "xan")
+      Task.where(agent_slug: "alex").update_all(agent_slug: "xan")
+      legacy.update!(slug: "xan")
+    end
+    puts "Agent: renamed alex → xan in place (same row, history kept)"
+  end
+end
 
 agents_data.each do |data|
   agent = Agent.find_or_initialize_by(slug: data[:slug])
@@ -218,12 +298,13 @@ Agent.where.not(slug: "avi").find_each do |agent|
   puts "Agent: cleared stale qa_owner from #{agent.slug} (it moved to avi)"
 end
 
-# The Documentation reviewer used to be a separate `alex-docs` persona; it's now
-# folded into the single `alex` identity (orchestrator + the pool's docs seat).
-# Retire the old row so the board roster and the reviewer pool show one Alex.
-# Idempotent — a no-op once the row is gone. (Historical reviewer references in
-# TaskEvent/Task metadata are rewritten alex-docs→alex by the matching migration.)
+# The Documentation reviewer used to be a separate `alex-docs` persona; it was
+# folded into the single orchestrator identity (then `alex`, now `xan`) — the
+# orchestrator + the pool's docs seat. Retire the old row so the board roster and
+# the reviewer pool show one orchestrator. Idempotent — a no-op once the row is
+# gone. (Historical reviewer references in TaskEvent/Task metadata were rewritten
+# alex-docs→alex by the matching migration, and alex→xan by RenameAlexSoulToXan.)
 if (retired = Agent.find_by(slug: "alex-docs"))
   retired.destroy!
-  puts "Agent: retired alex-docs (folded into alex)"
+  puts "Agent: retired alex-docs (folded into xan)"
 end

@@ -70,13 +70,6 @@ require_relative "fast_lane"
 # release tip belongs to no PR). Both fold into the states above. See the
 # SHA-addressed section below.
 module CiStatus
-  # THE ABSOLUTE `bin/full-suite-check` THE UNREADABLE-CI REMEDY OFFERS. The gated route
-  # hands the reader a command to TYPE, and the bare form types only from a hub desk;
-  # this offer is read by a builder who is already blocked, which is the worst moment to
-  # hand back `No such file or directory`. Resolved from bin/ (this file's parent) once
-  # at load. Policy: FastLane.remedy_command; pinned by
-  # test/lib/remedy_hint_guard_test.rb on the FILESYSTEM, not on the text.
-  FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", File.expand_path("..", __dir__)).freeze
   # The credential fix these refusals prescribe. It is the most-pasted command in the
   # house and was the last bare one left in the swept set — the operand is a FLAG
   # (`--export`) rather than a slug, which is the shape the guard's original operand
@@ -531,40 +524,34 @@ module CiStatus
   # CREDENTIAL fault, (b) the repo, (c) the exact grant, and (d) the verify command —
   # otherwise the reader's only move is to re-run it, which can never help.
   #
-  # `cert_route:` PICKS THE LAST SENTENCE, and nothing else. The credential half of
-  # this string is identical everywhere; only the ROUTE OUT differs, because only
-  # some callers can honour a cert. It stays ONE string with a parameter rather than
-  # two strings, for the reason the header gives: a second copy is a second thing to
-  # forget, and the halves that must agree are then held apart by nothing.
+  # `cert_route:` PICKS THE LAST SENTENCE, and nothing else — and since
+  # /tasks/dor-reads-settled-ci-verdict EVERY ROUTE DENIES. There is no local cert
+  # that stands in for an unread CI verdict any more: bin/dor-check credits ONE form
+  # of suite evidence, a settled GREEN GitHub CI for the PR's current head, and it no
+  # longer reads the fingerprint receipts bin/fast-check and bin/full-suite-check
+  # record. So the offer this string used to end with on the gated path — "certify
+  # in full instead: bin/full-suite-check <slug>" — is gone from every route; what a
+  # route still picks is WHY nothing stands in, which differs by GRAIN:
   #
-  #   cert_route: true  — the GATED path. A fresh full cert stands in for the unread
-  #                       verdict, so naming bin/full-suite-check is an instruction
-  #                       the gate goes on to honour (bin/dor-check's
-  #                       full_cert_stands_in_for_ci?). It names `task:`'s SLUG; it
-  #                       used to print the literal `<task>`, which is the one thing
-  #                       the reader cannot type (/tasks/builder-reads-remedy-twice).
-  #   cert_route: false — the EXEMPT (doc-only) path, where nothing stands in. Saying
-  #                       "certify in full instead" there was a remedy the gate could
-  #                       not honour: adding the cert produced a BYTE-IDENTICAL
-  #                       refusal, so an operator who followed it burned a full-suite
-  #                       run for nothing (/tasks/exempt-refusal-prints-dead-remedy).
+  #   cert_route: true / false / nil
+  #                     — the TASK-grain gates: bin/dor-check in both roles, on the
+  #                       gated and the exempt path alike, and bin/pr-review's
+  #                       pre-review briefing. The denial says the only evidence is
+  #                       the CI verdict itself. `true` (the old OFFER) and `false`
+  #                       (the old doc-only denial) are both still legal spellings so
+  #                       no caller changes; they print the same sentence.
   #   cert_route: :retired
-  #                     — the RELEASE-grain path (G3), where the local-cert route was
-  #                       RETIRED rather than waived. It denies like `false` and for a
-  #                       DIFFERENT reason, which is why it is a third value and not a
-  #                       reuse: `false` says "the tier gate is already waived", true
-  #                       of a doc-only diff and false of a release SHA. It also names
-  #                       the command the operator re-runs instead of the `<task>`
-  #                       placeholder, which G3 has nothing to fill
-  #                       (/tasks/release-offers-retired-cert).
-  #                       ONE CALLER TODAY: bin/release.rb's G3 pre-QA gate. It is NOT
-  #                       the third route bin/dor-check's "could not be proven
-  #                       doc-only" branches want — theirs is "this refusal is not the
-  #                       suite gate's at all", a different sentence about a
-  #                       task-grain gate, still open and still unfixed here.
+  #                     — the RELEASE-grain path (G3), where a task-grain suite never
+  #                       existed to substitute. It names the command the operator
+  #                       re-runs (`bin/release prepare` / `bin/release ship`)
+  #                       instead of a `<task>` placeholder the gate has nothing to
+  #                       fill (/tasks/release-offers-retired-cert). TWO CALLERS
+  #                       TODAY, both in bin/release.rb: the G3 pre-QA gate and the
+  #                       G4 ship gate, which reads CI for the frozen tree exactly
+  #                       as G3 reads it for the release tip.
   #
-  # `also_refused:` KEEPS THE EXEMPT CLOSING LINE FROM OUTRUNNING THE GATE. That
-  # branch used to end flatly "this gate advances on a GREEN CI and nothing else."
+  # `also_refused:` KEEPS THE CLOSING LINE FROM OUTRUNNING THE GATE. The task-grain
+  # denial used to end flatly "this gate advances on a GREEN CI and nothing else."
   # True the day it was written, and FALSE since PR #1225
   # (/tasks/exempt-path-trusts-local-tree) taught the exempt REVIEW path to refuse on
   # an unread PR file list as well: green became NECESSARY there and stopped being
@@ -573,88 +560,29 @@ module CiStatus
   # which sends the reader to a fix that leaves the verdict exactly where it was.
   #
   # So the clause is DERIVED from the refusals actually standing on this verdict,
-  # never asserted. This is bin/dor-check's `refused_by` idiom (the closing line of
-  # the same exempt refusal, added by that same PR) reused deliberately rather than a
-  # second idiom invented next to it: pass the OTHER live refusals, each a noun
-  # phrase, and the sentence names them instead of denying they exist.
+  # never asserted: pass the OTHER live refusals, each a noun phrase, and the sentence
+  # names them instead of denying they exist. EMPTY IS THE COMMON CASE AND MUST STAY
+  # BYTE-IDENTICAL — the sentence operators already know is what an empty list still
+  # prints. Only the co-fire reads differently.
   #
-  # EMPTY IS THE COMMON CASE AND MUST STAY BYTE-IDENTICAL. The builder role never
-  # reaches this refusal (unread_ci_refusal is review-only) and a review with a
-  # readable PR file list passes nothing, so the sentence operators already know is
-  # what an empty list still prints, to the byte. Only the co-fire reads differently.
+  # THE CALL SITES, pinned by test/lib/dor_check_exempt_ci_test.rb's CALL-SITE
+  # REGISTRY, which reads the SOURCE of every production caller and fails when one
+  # appears, vanishes, or changes route:
   #
-  # WHY THE DEFAULT IS `true`, SAID ACCURATELY. The parameter was added for the
-  # CI-VERDICT callers, where a full cert has always stood in — so `true` preserves
-  # what every pre-existing caller already printed. It is NOT a claim that every such
-  # caller is on the gated path. The first draft of this comment said "every caller
-  # that predates the parameter is on the gated path", and that was FALSE at two of
-  # them on the day it was typed (bin/dor-check's pr_read_alert, which reached the
-  # exempt path, and bin/release.rb's G3 gate). In a change whose entire subject is a
-  # comment outrunning its behaviour, that was the same defect, newly written — so the
-  # replacement below is a list of FACTS, and it does not hold itself honest:
-  # test/lib/dor_check_exempt_ci_test.rb's CALL-SITE REGISTRY reads the SOURCE of every
-  # production caller and fails when one appears, vanishes, or changes route. Add a
-  # caller and the suite makes you classify it.
-  #
-  # THE CALL SITES AND THE ROUTE EACH IS ACTUALLY ON:
-  #
-  #   bin/lib/ci_gate.rb        FORWARDED — unread_ci_refusal's own cert_route:, which
-  #                                         BOTH CiGate.verdict callers state (neither
-  #                                         rides a default).
+  #   bin/lib/ci_gate.rb        default   — unread_ci_refusal, both roles, gated and
+  #                                         exempt alike (task grain).
   #   bin/dor-check pr_read_alert
-  #                             FORWARDED — four printing callers, each explicit, none
-  #                                         on the default: the EXEMPT path passes
-  #                                         false (nothing stands in once the tier gate
-  #                                         is waived — this task's fix); the gated
-  #                                         path and the two "could not be proven
-  #                                         doc-only" branches pass true. Those three
-  #                                         `true`s are ACCURATE ABOUT THE SUITE GATE
-  #                                         and stale about themselves: in the REVIEW
-  #                                         role a refused PR read is an ERROR no cert
-  #                                         clears, so the offer is not honoured on
-  #                                         those branches either. Pre-existing,
-  #                                         unchanged here, and not flippable — `false`
-  #                                         prints the doc-only denial, which is untrue
-  #                                         on a code diff. What it wants is a THIRD
-  #                                         route ("this refusal is not the suite
-  #                                         gate's"), still unwritten — NOT `:retired`,
-  #                                         whose note above says so in as many words.
-  #                                         Measured and left as a handle in
-  #                                         test/lib/dor_check_exempt_ci_test.rb's
-  #                                         honour-the-remedy property.
-  #   bin/dor-check suite gate  true      — TWO calls, one per cert route the gate can
-  #                                         refuse on an unreadable CI: the FAST-cert
-  #                                         branch and the DEFERRED one. Both print
-  #                                         only in the BUILDER role, where CiGate
-  #                                         raises no CI error to carry the remedy;
-  #                                         the review halves POINT at that error
-  #                                         instead and call nothing here. Gated path
-  #                                         in both — the cert each names is the cert
-  #                                         full_cert_stands_in_for_ci? then credits,
-  #                                         and a full cert really does clear a
-  #                                         deferral (it is what the deferral deferred).
-  #                                         The deferred call is newer than the fast
-  #                                         one: /tasks/deferred-unreadable-skips-role-split.
-  #   bin/dor-check submit note true      — gated path suggestion; suppressed when the
-  #                                         review allow-list already refused.
-  #   bin/pr-review             COMPUTED  — cert_route: !maybe_exempt, so the pre-review
-  #                                         banner promises about the CI VERDICT exactly
-  #                                         what the primary's gate-zero goes on to do
-  #                                         with a cert on that same PR.
-  #   bin/release.rb G3 pre-QA  :retired  — FIXED (/tasks/release-offers-retired-cert).
-  #                                         It took the default and so OFFERED a cert on
-  #                                         a gate that retired the route: re-derived at
-  #                                         source, bin/release.rb names no cert
-  #                                         mechanism anywhere and ci_pass? (:green) is
-  #                                         its ONLY pass, so `bin/full-suite-check`
-  #                                         could not advance it however faithfully it
-  #                                         was run. `false` was not the fix — its
-  #                                         doc-only premise is untrue of a release SHA
-  #                                         — so the denial it now prints is :retired's,
-  #                                         which also drops the unfillable `<task>`.
+  #                             default   — the PR file-list read, refused on a
+  #                                         credential (task grain).
+  #   bin/pr-review             COMPUTED  — cert_route: !maybe_exempt, kept as a legal
+  #                                         spelling; both values print the task-grain
+  #                                         denial.
+  #   bin/release.rb G3 pre-QA  :retired  — the release-grain denial.
+  #   bin/release.rb G4 ship    :retired  — the same denial for the frozen ship SHA
+  #                                         (ship_test_gate_ci_abort's :unreadable).
   #
-  # All three branches are pinned — a default that nobody asserts is how the wrong half
-  # goes quietly stale.
+  # A default that nobody asserts is how the wrong half goes quietly stale, so all of
+  # them are pinned.
 
   # THE LEGAL ROUTES, ENUMERATED — and the reason is that `case` FAILS OPEN.
   #
@@ -669,10 +597,10 @@ module CiStatus
   # misspelled VALUE still counts as a caller that states its route, and the suite
   # stays green.
   #
-  # SHARED WITH bin/lib/ci_gate.rb, not copied. `unread_ci_refusal` forwards this same
-  # parameter and branches on it for a state that never reaches this method
-  # (`:none`/`:unverified`), so a fence living only here would leave that branch open.
-  # One list, one raise, both entry points.
+  # ONE ENTRY POINT. bin/lib/ci_gate.rb used to forward this parameter and branch on it
+  # for a state that never reaches this method; since /tasks/dor-reads-settled-ci-verdict
+  # it takes no route at all (every task-grain refusal prints the same denial), so this
+  # list and this raise are the whole fence.
   CERT_ROUTES = [true, false, nil, :retired].freeze
 
   # FAIL CLOSED ON AN UNKNOWN ROUTE. An unclassified route is not evidence that the
@@ -696,9 +624,10 @@ module CiStatus
   UNREADABLE_REMEDY_HEADER =
     "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will never clear it."
 
-  # `task:` IS THE SLUG THE GATED OFFER NAMES. It has a default only because three
-  # callers are on routes that name no command at all (`false`/`nil`/`:retired`), and
-  # a required argument there would be a parameter about a sentence they never print.
+  # `task:` IS KEPT FOR THE CALLERS' SAKE and interpolated by no route: it named the
+  # slug in the gated OFFER this string used to end with, and that offer is retired
+  # (see the header). A parameter about a sentence nobody prints any more is cheaper
+  # to keep than to strip from four callers in one diff; phase 2b removes it.
   def self.unreadable_remedy(repo = nil, cause: nil, cert_route: true, also_refused: [], task: nil)
     validate_cert_route!(cert_route)
     where = repo.to_s.strip.empty? ? "this repo" : repo.to_s.strip
@@ -740,57 +669,29 @@ module CiStatus
           end
     route = case cert_route
             when :retired
-              # THE RETIRED ROUTE — a gate that never had a cert to substitute, as
-              # opposed to one whose cert was waived. Both DENY, and they deny for
-              # DIFFERENT REASONS, so they may not share a sentence: the exempt text
-              # below rests on "the shape/test-tier gate is already waived", which is
-              # false at a RELEASE-grain gate reading a diff nobody exempted. Handing
-              # `false` to a release gate would print a true verdict on a false
-              # premise, which is the same species of defect as the offer it replaces.
-              #
-              # NO `<task>` PLACEHOLDER, and that is the second half of the fix. At
-              # G3 there is no task to substitute at all — the subject is a release
-              # SHA carrying many tasks — so the placeholder was unfillable as well as
-              # unhonourable. The command named here is the one the operator actually
-              # re-runs, spelled as bin/release.rb's sibling abort branches spell it.
-              # The GATED route has since stopped printing `<task>` too, by naming
-              # `task:`'s slug (/tasks/builder-reads-remedy-twice) — so no route left
-              # in this method hands the reader a token they cannot fill.
-              #
-              # "no local cert stands in" is the CONTRACT CLAUSE, spelled identically
-              # in all three denying places (here, the exempt branch below, and
-              # ci_gate.rb's :none/:unverified branch), because
-              # test/lib/dor_check_exempt_ci_test.rb reads the printed refusal to
-              # decide what the gate PROMISED and then executes that promise.
+              # THE RETIRED ROUTE — a gate that never had a cert to substitute. It names
+              # the command the operator actually re-runs, spelled as bin/release.rb's
+              # sibling abort branches spell it, and NO `<task>` placeholder: at G3 there
+              # is no task to substitute at all — the subject is a release SHA carrying
+              # many tasks. "no local cert stands in" is the CONTRACT CLAUSE, spelled
+              # identically in every denying place (here, the task-grain branch below, and
+              # bin/lib/ci_gate.rb), because test/lib/dor_check_exempt_ci_test.rb reads
+              # the printed refusal to decide what the gate PROMISED and then executes
+              # that promise.
               "and no local cert stands in for it at the G3 pre-QA gate either: that gate is RELEASE-grain " \
                 "and SHA-addressed — it certifies origin/release's tip on GitHub's verdict alone, so there is " \
                 "no task-grain suite whose result could be substituted. Fixing the credential is the only " \
                 "route — this gate advances on a GREEN CI for that SHA and nothing else; re-run " \
                 "`bin/release prepare` once the read works."
-            when false, nil
-              # NO ROUTE IS NAMED because none exists here, and inventing one is the
-              # defect. On the exempt path the tier gate is ALREADY waived, so there
-              # is no suite whose result could be substituted for the verdict — the
-              # cert would certify nothing and clear nothing.
-              # "no local cert stands in" is the CONTRACT CLAUSE, spelled the same
-              # here and in ci_gate.rb's :none/:unverified branch, because
-              # test/lib/dor_check_exempt_ci_test.rb reads the printed refusal to
-              # decide what the gate PROMISED and then executes that promise. One
-              # spelling for one meaning is what lets the pin be a property instead
-              # of a list of cases.
+            else
+              # THE TASK-GRAIN DENIAL — true, false and nil alike (see the header). NO
+              # ROUTE IS NAMED because none exists: a settled green CI is the whole of the
+              # suite evidence, so a local suite run certifies nothing this gate reads.
               # THE CLOSING CLAUSE IS DERIVED, NOT ASSERTED — see `also_refused:` in the
-              # header. An EMPTY list means nothing else is refusing this verdict, and
-              # it prints the sentence operators already know, to the byte; the
-              # regression pins that equality rather than trusting the eye.
-              #
-              # WHY THE CO-FIRE WORDING SPLITS THE CLAIM IN TWO. "Fixing the credential"
-              # stays the route to a CI VERDICT — that half was never false, and one
-              # stale token really does refuse both reads, so the operator's next move
-              # is unchanged. What was false is the SUFFICIENCY: green no longer
-              # carries this path by itself. Saying "necessary and not sufficient" and
-              # then NAMING the other refusal is what stops a reader fixing the
-              # credential, re-running, and meeting a refusal the gate had told them
-              # could not happen.
+              # header. "Fixing the credential" stays the route to a CI VERDICT; what the
+              # co-fire wording withdraws is the SUFFICIENCY, and it NAMES the other
+              # refusal so the reader is not sent to fix a token and then met by a
+              # refusal the gate had told them could not happen.
               closing = if also_refused.empty?
                           "Fixing the credential is the only route — this gate advances on a GREEN CI and " \
                             "nothing else."
@@ -799,32 +700,12 @@ module CiStatus
                             "NECESSARY AND NOT SUFFICIENT here: this verdict is ALSO refused by " \
                             "#{also_refused.join(' AND ')}, and no CI result clears that."
                         end
-              "and no local cert stands in for it on a doc-only diff either: the shape/test-tier gate is " \
-                "already waived, so there is no suite left to substitute. #{closing}"
-            else
-              # NAME A COMMAND THE READER CAN TYPE (/tasks/builder-reads-remedy-twice).
-              # This branch ended "bin/full-suite-check <task>" — the LITERAL
-              # placeholder — on the one surface a builder reads while already blocked,
-              # and every gated caller has the slug in hand. Same defect class as
-              # /tasks/release-offers-retired-cert, which DELETED an unfillable `<task>`
-              # at G3; the difference here is that a task DOES exist, so the honest fix
-              # is to name it rather than to drop the offer.
-              #
-              # AND NO PLACEHOLDER IN THE FALLBACK EITHER. `bin/full-suite-check` with
-              # no slug runs the suite and records NOTHING on the task, so a bare
-              # command would be an offer this gate cannot honour — the failure
-              # `cert_route: false` exists to prevent, reintroduced through the back
-              # door. Say what the command needs instead of inventing a token.
-              cert_task = task.to_s.strip
-              if cert_task.empty?
-                "certify in full instead: bin/full-suite-check, run with this task's slug — the bare " \
-                  "command certifies the tree but records no evidence this gate can read."
-              else
-                "certify in full instead: #{FULL_SUITE_CMD} #{cert_task}."
-              end
+              "and no local cert stands in for it: a settled GREEN GitHub CI for the PR's current head is " \
+                "the ONLY suite evidence this gate credits, so a local suite run would leave this refusal " \
+                "unchanged. #{closing}"
             end
     "#{UNREADABLE_REMEDY_HEADER} #{fix} " \
-      "Until the check read works, the FAST-cert route cannot be credited on this repo (a fast cert needs a " \
+      "Until the check read works, no suite evidence can be credited on this repo (the only evidence is a " \
       "GREEN CI it can actually read) — #{route}"
   end
 

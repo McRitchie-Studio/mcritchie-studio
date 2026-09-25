@@ -3,7 +3,7 @@ require "test_helper"
 # [component] the pipeline "Test runs" band partial — each release test-scope
 # verdict renders as a gradeable row (scope-key headline, pass/fail pill,
 # phase/tier/host DERIVED from the scope registry, counts + duration, a grade
-# link to the action drawer); an Alex "not" grade paints the row rail; an empty
+# link to the action drawer); an Xan "not" grade paints the row rail; an empty
 # set renders nothing. Rendered in isolation so the band is proven without the
 # whole pipeline page.
 class PipelineTestRunsBandTest < ActionView::TestCase
@@ -31,10 +31,11 @@ class PipelineTestRunsBandTest < ActionView::TestCase
     assert_select "[data-test=pl-test-run]" do
       assert_select ".pl-slug", text: "ship_test_gate"
       assert_select "[data-test=pl-test-verdict].good", text: "pass"
-      # phase/tier/host DERIVED from the registry (ship_test_gate → ship/full/local)
+      # phase/tier/host DERIVED from the registry (ship_test_gate → ship/full/ci: the
+      # G4 gate READS CI's verdict for the frozen tree; CI ran the full suite)
       assert_select ".pl-tag", text: "ship"
       assert_select ".pl-tag", text: "full"
-      assert_select ".pl-tag", text: "local"
+      assert_select ".pl-tag", text: "ci"
       assert_select ".pl-counts", text: /141 runs/
     end
     assert_select "a[href=?]", heartbeat_feedback_path(run.id)
@@ -45,10 +46,10 @@ class PipelineTestRunsBandTest < ActionView::TestCase
     assert_select "[data-test=pl-test-verdict].not", text: "fail"
   end
 
-  test "an Alex 'not' grade paints the row rail" do
+  test "an Xan 'not' grade paints the row rail" do
     run = run_action(scope: "pre_qa_gate", result: "pass")
-    grade = ActionGrade.create!(agent_action: run, grader: "alex", disposition: "not", slug: "flaky gate")
-    render_band([run], { run.id => { "alex" => grade } })
+    grade = ActionGrade.create!(agent_action: run, grader: "xan", disposition: "not", slug: "flaky gate")
+    render_band([run], { run.id => { "xan" => grade } })
     assert_select "[data-test=pl-test-run].is-not", { count: 1 }
   end
 

@@ -40,7 +40,7 @@ require "test_helper"
 # no bringup scope and never should: modules/heartbeats.md and system/devops-cycle-design.md
 # describing the OWNED ship step, modules/testing.md on the ~/.zprofile PATH block,
 # modules/llm-adapters.md on what generates CLAUDE.md, system/atomic-capture-hook.md ×3 on
-# hook wiring, agents/alex/role.md, shared/insights.md, this repo's own docs-maintenance.md.
+# hook wiring, agents/xan/role.md, shared/insights.md, this repo's own docs-maintenance.md.
 # Requiring a scope statement near each would demand ~12 exemptions — "a guard that looks
 # tree-wide and holds an allowlist of whatever exists today", which is the design the other
 # file rejected in as many words. Asking instead whether the reader is handed a COMMAND

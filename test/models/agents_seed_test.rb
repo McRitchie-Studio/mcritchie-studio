@@ -84,7 +84,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
       "shannon" => "ui",
       "jasper"  => "web3",
       "steffon" => "devops",
-      "alex"    => "documentation"
+      "xan"    => "documentation"
     }.each do |slug, domain|
       agent = Agent.find_by!(slug: slug)
       assert agent.metadata["reviewer"], "#{slug} must be a light-pool specialist"
@@ -97,21 +97,44 @@ class AgentsSeedTest < ActiveSupport::TestCase
     end
   end
 
-  test "Alex is the single identity holding the documentation review seat" do
+  test "Xan is the single identity holding the documentation review seat" do
     run_seed
     docs = Agent.active.detect do |a|
       a.metadata["reviewer"] && Array(a.metadata["domains"]).include?("documentation")
     end
     assert docs, "a documentation-domain reviewer must resolve from the seed"
-    assert_equal "alex", docs.slug, "Alex holds the documentation seat (no separate persona)"
+    assert_equal "xan", docs.slug, "Xan holds the documentation seat (no separate persona)"
     assert_equal "Lead Orchestrator", docs.title, "still the orchestrator identity"
-    refute Agent.exists?(slug: "alex-docs"), "the separate alex-docs persona is retired (folded into alex)"
+    refute Agent.exists?(slug: "xan-docs"), "the separate xan-docs persona is retired (folded into xan)"
   end
 
-  test "every soul has an avatar path" do
+  # EVERY SOUL RENDERS A FACE — the property the board actually needs, which is not
+  # quite "every soul declares an avatar path". components/_agent_avatar always draws
+  # the deterministic initials bubble and lays the <img> over it only when `avatar` is
+  # present, removing it on a 404. So a soul with NO portrait renders exactly as one
+  # whose file is missing, and pokemon and rex ship without portraits on purpose —
+  # there is no artwork for them yet, and a path to a file that does not exist is a
+  # dead request on every board render plus a claim the next reader has to disprove.
+  #
+  # Asserting the path alone could not tell those two cases apart, so this asks for
+  # the rendering property instead and is STRICTLY STRONGER for it: a declared path
+  # must still live under /agents/ AND must now resolve to a file on disk — a typo'd
+  # or deleted portrait was invisible to the old assertion — while a soul with no
+  # path must still resolve the fallback the component falls back to.
+  test "every soul renders a face" do
     run_seed
     Agent.find_each do |agent|
-      assert agent.avatar.to_s.start_with?("/agents/"), "#{agent.slug} is missing an avatar path"
+      if agent.avatar.present?
+        assert agent.avatar.to_s.start_with?("/agents/"),
+          "#{agent.slug}: an avatar path must live under /agents/ (got #{agent.avatar.inspect})"
+        assert Rails.public_path.join(agent.avatar.to_s.delete_prefix("/")).file?,
+          "#{agent.slug}: avatar #{agent.avatar} does not exist in public/"
+      else
+        assert agent.avatar_initials.present?,
+          "#{agent.slug} has no portrait, so the initials fallback must render"
+        assert_match(/\A#\h{6}\z/, agent.avatar_color,
+          "#{agent.slug} has no portrait, so the fallback needs a deterministic hue")
+      end
     end
   end
 
@@ -120,7 +143,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
   # persona_identity). The seed owns each soul's emoji + an explicit color.
   test "each senior soul carries a status-line emoji and an explicit color" do
     run_seed
-    %w[alex avi carl shannon jasper steffon].each do |slug|
+    %w[xan avi carl shannon jasper steffon].each do |slug|
       agent = Agent.find_by!(slug: slug)
       assert agent.emoji.present?, "#{slug} must have a status-line emoji"
       assert_match(/\A#\h{6}\z/, agent.status_color, "#{slug} must carry an explicit hex color")

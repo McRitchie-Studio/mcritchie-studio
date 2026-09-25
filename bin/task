@@ -23,7 +23,7 @@
 # (default https://mcritchie.studio).
 #
 # Usage:
-#   bin/task list [--stage S] [--agent A] [--reviewable] [--json]
+#   bin/task list [--stage S] [--agent A] [--epic E] [--reviewable] [--json]
 #     ( --json prints the full fetched records as an array — the same payload
 #       `show --json` prints, for the whole page in ONE board read. )
 #   bin/task show <slug> [--json | --verbose|-v]
@@ -63,7 +63,7 @@
 #                   [--checks "..." ...] [--branch B] [--pr-url U] [--pr-url-for repo=U ...] [--local-url U] \
 #                   [--approval waiting|approved|changes_requested|none] \
 #                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim] \
-#                   [--depends-on task-slug ...]
+#                   [--depends-on task-slug ...] [--epic epic-slug]
 #   ( --pr-url-for <repo>=<url> records the PR for ONE repo, repeatable, merging
 #     per repo — so a task naming SEVERAL repos can record one PR per repo instead
 #     of the single --pr-url slot that used to leave the second repo's PR nowhere
@@ -105,6 +105,14 @@
 #     OUTSIDE the release is fine and simply does not hold this one back, but a
 #     slug naming NO task is refused — the ordering pass cannot tell that case
 #     from "no dependency", so it would go silently unenforced. )
+#   ( --epic <epic-slug>: the epic this task belongs to, a top-level Task column
+#     (tasks.epic_slug). The board card wears it as an epic chip beside the task
+#     slug, and clicking the chip filters the board to that epic
+#     (/tasks?epic=<slug>). Same charset as a task slug, lowercased on the way
+#     in; `--epic none` clears it. There is no Epic record to create first — the
+#     plan lives with the focus session (devops-v3-design.md §3), and the slug is
+#     simply the handle its tasks share. Read it back with
+#     `bin/task field <slug> epic_slug`; `show` prints `epic: <slug>` when set. )
 #   bin/task begin --title T [--repo APP] [--agent SOUL] [--steal] [same flags as create]
 #   bin/task begin <slug> [--agent SOUL] [--dev-size S] [--steal]   # resume a partial begin
 #     ( the fast-lane SESSION-START wrapper: create + agent-worktree new +
@@ -1479,6 +1487,22 @@ BOOL_FLAGS = {
 # indistinguishable from no dependency at all — forever, with the only evidence a
 # release that shipped in the wrong order.
 TOP_LIST_FLAGS = { "--depends-on" => "dependencies" }.freeze
+# Top-level SCALAR columns with a CLEAR token. One member: `--epic <epic-slug>`
+# writes `tasks.epic_slug`, the handle the board card's epic chip prints and
+# `/tasks?epic=<slug>` filters on (devops-v3-design.md §3).
+#
+# A fourth family rather than a TOP_FLAGS entry, because TOP_FLAGS stores the
+# value verbatim and this one has a CLEAR: `--epic none` must reach the wire as
+# JSON `null`, and a nil in `top` is falsy, so top_body has to presence-test the
+# KEY — the BOOL_FLAGS / TOP_LIST_FLAGS rule — which a plain TOP_FLAGS scalar
+# never needed. It lands in `top`, never in `scalars`: `scalars` is the DEVOPS
+# namespace, and metadata.devops.epic_slug is the shadow store
+# Task::DEVOPS_COLUMN_KEYS refuses (a value visible on the task page that no
+# chip and no filter would ever read).
+#
+# Validated for SLUG SHAPE here, where a human can still fix it, and lowercased
+# so the CLI and the model agree on the canonical form before the board sees it.
+TOP_SCALAR_FLAGS = { "--epic" => "epic_slug" }.freeze
 # A task slug, mirrored from Task::DEPENDENCY_SLUG (this CLI holds no Rails
 # constants — same posture as SOUL_SLUG and the PR-url pattern). Refused HERE so
 # `--depends-on "Adopt Modal Primitive"` dies where a human can still fix it,
@@ -1488,7 +1512,7 @@ DEPENDENCY_SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
 # Everything parse_flags (list/create/update) understands — the dictionary an
 # unknown flag is rejected against (and suggestion-matched, --pr → --pr-url).
 PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + MAP_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS +
-                    BOOL_FLAGS.keys + TOP_LIST_FLAGS.keys).freeze
+                    BOOL_FLAGS.keys + TOP_LIST_FLAGS.keys + TOP_SCALAR_FLAGS.keys).freeze
 HELP_FLAGS = %w[--help -h].freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
@@ -1521,6 +1545,9 @@ MAP_CLEAR_VALUES = PERSONA_CLEAR
 # this file is a script, so a constant referenced above its definition is a
 # load-time NameError that takes out every subcommand, not just the new flag.
 LIST_CLEAR_VALUES = PERSONA_CLEAR
+# The clear token for a TOP_SCALAR_FLAGS field (`--epic none`) — the same
+# vocabulary again, and defined here for the same load-order reason.
+EPIC_CLEAR_VALUES = PERSONA_CLEAR
 APPROVAL_STATUS_ALIASES = {
   "changes-requested" => "changes_requested",
   "change_requested" => "changes_requested",
@@ -2020,6 +2047,24 @@ def parse_flags(argv, context: nil)
         (top[column] ||= []) << value unless (top[column] || []).include?(value)
       end
       i += 2
+    elsif TOP_SCALAR_FLAGS.key?(arg)
+      # Top-level scalar column with a clear token (see TOP_SCALAR_FLAGS). Lands
+      # in `top` for the same reason TOP_LIST_FLAGS does: it is a COLUMN, and
+      # `lists`/`scalars` are the devops namespace. Two states, told apart by the
+      # KEY: absent = flag not passed (the column is untouched); present-and-nil =
+      # the clear token, which top_body sends as JSON null.
+      column = TOP_SCALAR_FLAGS[arg]
+      value = (argv[i + 1] || die!("#{arg} needs a value")).to_s.strip
+      if EPIC_CLEAR_VALUES.include?(value.downcase)
+        top[column] = nil
+      else
+        value = value.downcase
+        die!("#{arg} #{value.inspect} is not a slug — lowercase letters, digits and single " \
+             "separators (e.g. devops-v3). The board would refuse it with a 422; refusing it here " \
+             "keeps the message beside the flag that needs fixing.") unless value.match?(DEPENDENCY_SLUG)
+        top[column] = value
+      end
+      i += 2
     else
       # A dashed token here is an unrecognized flag. The old whitelist-and-skip
       # loop dropped it (and its value) into these ignored positionals and
@@ -2094,6 +2139,10 @@ def top_body(top)
   # drop the clear from the body, leaving the operator with a 200 for a write that
   # never happened. This is the one flag family where the empty value is the point.
   TOP_LIST_FLAGS.each_value { |col| body[col] = top[col] if top.key?(col) }
+  # Scalar-with-clear columns: presence-tested too. `nil` is the value
+  # `--epic none` asked for, and it must reach the wire as JSON null or the
+  # operator gets a 200 for a clear that never happened.
+  TOP_SCALAR_FLAGS.each_value { |col| body[col] = top[col] if top.key?(col) }
   body
 end
 
@@ -2128,6 +2177,10 @@ def print_task(task)
   puts "  #{TaskAuthorFields.assignee_pair(task)}  #{TaskAuthorFields.pair(task)}  " \
        "kind: #{dv["kind"] || "-"}  repos: #{Array(dv["repositories"]).join(", ")}"
   puts "  branch: #{dv["branch"] || "-"}  pr: #{dv["pr_url"] || "-"}"
+  # The epic, only when the task HAS one — most tasks belong to no epic, and the
+  # terse view stays terse. `--verbose` prints the column in all three states
+  # (print_column_fields), where "no epic" and UNREPORTED must stay distinct.
+  puts "  epic: #{task["epic_slug"]}" unless task["epic_slug"].to_s.strip.empty?
   # The per-repo register, only when there IS one — the terse view stays terse for
   # the single-repo task that is most of the board, and a multi-repo task's extra
   # PRs are visible without reaching for --verbose. --verbose prints it always.
@@ -2212,7 +2265,8 @@ def print_author_fields(task)
 end
 
 def print_column_fields(task)
-  puts "  #{TaskColumnFields.pair(task, "merged")}   #{TaskColumnFields.pair(task, "release_slug")}"
+  puts "  #{TaskColumnFields.pair(task, "merged")}   #{TaskColumnFields.pair(task, "release_slug")}   " \
+       "#{TaskColumnFields.pair(task, "epic_slug")}"
   # On its own line: the value is a list, so it is the one column here that can
   # grow past the width a shared line survives. Unconditional like its two
   # neighbours, and for the identical reason — a field printed only when set
@@ -2868,6 +2922,13 @@ when "list"
   q = []
   q << "stage=#{top["stage"]}" if top["stage"]
   q << "agent_slug=#{top["agent"]}" if top["agent"]
+  # `--epic <slug>` narrows to that epic's tasks (GET /api/v1/tasks?epic=). The
+  # clear token is meaningless as a filter — it would read as "everything" — so
+  # it dies here rather than silently listing the whole board.
+  if top.key?("epic_slug")
+    die!("list --epic needs an epic slug to filter on (the clear token is not a filter)") if top["epic_slug"].nil?
+    q << "epic=#{top["epic_slug"]}"
+  end
   q << "reviewable=1" if reviewable
   q += ["full=1", "per_page=#{LIST_JSON_PER_PAGE}"] if as_json
   path = "/api/v1/tasks#{q.empty? ? "" : "?#{q.join("&")}"}"

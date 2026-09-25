@@ -50,6 +50,7 @@ class WorkspaceAccount < ApplicationRecord
   validates :subject, presence: true, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
   validate :subject_belongs_to_this_domain
+  validate :severed_is_final
 
   before_validation :normalize
 
@@ -57,10 +58,27 @@ class WorkspaceAccount < ApplicationRecord
 
   def self.default_subject_for(domain) = "#{DEFAULT_LOCAL_PART}@#{domain.to_s.strip.downcase}"
 
-  # The one question Credentials asks before impersonating anyone: the
-  # workspace's own subject, or a named mailbox inside an active workspace.
-  def self.impersonatable?(subject)
-    active.exists?(subject: subject.to_s.strip.downcase) || WorkspaceMailbox.impersonatable?(subject)
+  # What an impersonation is FOR. The Google grant cannot tell these apart — one
+  # key holds Drive and Gmail scopes for every address — so the purpose is the
+  # boundary, checked here before any authorizer is built:
+  #
+  #   :workspace — the workspace's own subject only (team@). Drive walks and the
+  #                domain-level check run as this.
+  #   :mail      — the subject OR an allow-listed mailbox. Drafting, and reading
+  #                the one thread a draft answers, run as this.
+  #
+  # So a mailbox row (alex@) opens that address's MAIL and never its Drive.
+  PURPOSES = %i[workspace mail].freeze
+
+  # The one question Credentials asks before impersonating anyone. Defaults to
+  # the NARROW purpose, so a caller that forgets to say what it is for gets the
+  # workspace subject only.
+  def self.impersonatable?(subject, purpose: :workspace)
+    raise ArgumentError, "unknown purpose #{purpose.inspect} (#{PURPOSES.join(', ')})" unless PURPOSES.include?(purpose)
+
+    return true if active.exists?(subject: subject.to_s.strip.downcase)
+
+    purpose == :mail && WorkspaceMailbox.impersonatable?(subject)
   end
 
   # Registered at all — the gate #probe applies, so a check can prove a pending
@@ -129,8 +147,10 @@ class WorkspaceAccount < ApplicationRecord
   #
   # Like revoke!, this is the LOCAL half. The acquisition handoff runs in order:
   # export the rows, the client deletes our client id from their delegation page,
-  # workspace:check must then FAIL, and only then is the row severed — so the
-  # record says "cut" only after Google agrees.
+  # `workspace:check_severed` must then report CUT (Google answers
+  # unauthorized_client), and only then is the row severed — so the record says
+  # "cut" only after Google agrees. (`workspace:check` is not the proof: it skips
+  # shut rows without probing them.)
   def sever!(reason)
     raise ArgumentError, "severing needs a reason — it is final and the notes are the record" if reason.blank?
 
@@ -164,6 +184,15 @@ class WorkspaceAccount < ApplicationRecord
     self.domain = domain.to_s.strip.downcase.presence
     self.subject = (subject.presence || self.class.default_subject_for(domain)).to_s.strip.downcase
     self.name = name.presence || domain
+  end
+
+  # Every write path refuses to move a severed row — this is the backstop that
+  # holds even for a path that forgot to (update_column still bypasses it, as it
+  # bypasses every validation).
+  def severed_is_final
+    return unless status_changed? && status_was == "severed"
+
+    errors.add(:status, "is severed, which is final — it cannot become #{status}")
   end
 
   # The cross-tenant mistake, made structurally impossible: a row for one

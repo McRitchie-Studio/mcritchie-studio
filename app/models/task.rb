@@ -261,7 +261,13 @@ class Task < ApplicationRecord
     # the wrong store a 422 instead, and #shed_column_shadow_keys drops any value
     # a pre-wiring write already parked there.
     "dependencies" => "the tasks.dependencies column — set it with " \
-                      "`bin/task update <slug> --depends-on <task-slug>` (repeatable)"
+                      "`bin/task update <slug> --depends-on <task-slug>` (repeatable)",
+    # Listed the day the column was born, before any writer could park a shadow
+    # under it. The epic chip and the `?epic=` board filter both read the COLUMN,
+    # so a devops write to this name would be the release_slug incident again: a
+    # value visible on the task page that no chip and no filter ever sees.
+    "epic_slug" => "the tasks.epic_slug column — set it with " \
+                   "`bin/task update <slug> --epic <epic-slug>` (`--epic none` clears it)"
   }.freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url
@@ -384,6 +390,16 @@ class Task < ApplicationRecord
   # `task-<hex>` fallback. Used to validate `dependencies` entries — see
   # #dependencies_name_real_tasks.
   DEPENDENCY_SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
+  # An epic's slug wears the SAME charset as a task slug — it is the handle the
+  # card's epic chip prints and `/tasks?epic=<slug>` filters on, so it must be
+  # URL-safe and readable by the same rule. There is deliberately no Epic model
+  # behind it (devops-v3-design.md §3): the plan lives with the focus session,
+  # and the board carries only this one optional, indexed column.
+  EPIC_SLUG = DEPENDENCY_SLUG
+  # The value an API writer sends to CLEAR the epic without reaching for JSON
+  # `null` — the CLI's `--epic none` spelling, honoured at the model so every
+  # writer (API, form, console) agrees on what "none" means for this column.
+  EPIC_CLEAR_VALUE = "none"
 
   # Board rank read-model (studio-engine board primitive). Supplies `reposition!`
   # (the shared reorder write, driven by Studio::Board::Reorderable in the
@@ -437,6 +453,14 @@ class Task < ApplicationRecord
   # unsaveable because a dependency it declared last month has since been
   # archived away. Writing the field is what has to be right.
   validate :dependencies_name_real_tasks, if: :dependencies_changed?
+  # The epic handle, when present, must be a slug the chip can print and the
+  # `?epic=` filter can match — refused with a 422 through both API paths rather
+  # than stored in a shape the filter would never find again. Normalized
+  # (stripped, lowercased, blank → nil) in #normalize_epic_slug before this runs.
+  validates :epic_slug, format: { with: EPIC_SLUG,
+                                  message: "must be a slug — lowercase letters, digits and single " \
+                                           "separators (e.g. devops-v3)" },
+                        allow_nil: true
   validates :priority, inclusion: { in: [0, 1, 2] }
   validates :pm_size,     inclusion: { in: SIZES }, allow_nil: true
   validates :po_size,     inclusion: { in: SIZES }, allow_nil: true
@@ -450,6 +474,10 @@ class Task < ApplicationRecord
   # later, once the task it must wait on exists. Runs before the validation that
   # reads it, so the check and the stored value are the same list.
   before_validation :normalize_dependencies
+  # EVERY save, like dependencies: the epic is set and cleared after creation,
+  # and the filter compares the stored column byte-for-byte, so the value must
+  # be canonical before the format validation reads it.
+  before_validation :normalize_epic_slug
   before_validation :default_devops_handles_from_slug, on: :create
   # Persona BEFORE the Pokémon draw: when a session "acts as" a soul (devops.persona),
   # stamp the agent's name/color/emoji as the mascot and skip the Pokémon entirely.
@@ -603,6 +631,15 @@ class Task < ApplicationRecord
   # the `building` guard is what keeps the scope to CURRENTLY-blocked tasks.
   scope :blocked, -> { where(stage: "building").where.not(blocked_at: nil) }
   scope :recent, -> { order(created_at: :desc) }
+  # The epic filter both boards and the API index share (`?epic=<slug>`). The
+  # param is normalized through the SAME rule the column was written with, so
+  # `?epic=DevOps-V3` finds the tasks stamped `devops-v3` rather than nothing. A
+  # blank or unparseable value yields an EMPTY scope, never the whole board: an
+  # epic link that resolves to "everything" would read as a working filter.
+  scope :for_epic, ->(value) {
+    normalized = Task.normalize_epic_slug(value)
+    normalized ? where(epic_slug: normalized) : none
+  }
   # Board order: highest `position` first, so the freshest task in a column sits
   # on top. `position` is an event-driven RANK — a create or a stage move stamps
   # it to (column max + 100), floating that task to the top (see
@@ -1094,7 +1131,7 @@ class Task < ApplicationRecord
   # falls back to a soul actor on the `→ building` TaskEvent, and REFUSES to
   # auto-select while the answer stays unknown.
   def devops_built_by
-    devops.fetch("built_by", "").presence
+    self.class.canonical_soul(devops.fetch("built_by", "")).presence
   end
 
   # EVERY soul that WORKED this task, in the order recorded — the answer `built_by`
@@ -1106,7 +1143,7 @@ class Task < ApplicationRecord
   # excludes the whole set, so a handoff no longer leaves a co-author eligible to
   # review their own diff.
   def devops_builders
-    Array(devops["builders"]).map(&:to_s).select(&:present?)
+    Array(devops["builders"]).map { |s| self.class.canonical_soul(s) }.select(&:present?).uniq
   end
 
   # The claiming session that named NO soul while other authors were already on
@@ -1141,7 +1178,7 @@ class Task < ApplicationRecord
   # that name NO soul are the "we saw a fix-forward and cannot attribute it" marker
   # — ReviewerSelector reads them as an INCOMPLETE author set and the CLI refuses.
   def devops_fix_forward
-    Array(devops["fix_forward"]).map { |slug| slug.to_s.strip }.reject(&:empty?)
+    Array(devops["fix_forward"]).map { |slug| self.class.canonical_soul(slug) }.reject(&:empty?)
   end
 
   # --- Session resume (V1: store + display + copy; no enforcement gate) -------
@@ -2268,6 +2305,20 @@ class Task < ApplicationRecord
           "through review."
   end
 
+  # The ONE canonical form of an epic handle, shared by the write (the
+  # before_validation callback) and every read that must match it (the
+  # `for_epic` scope behind `?epic=`). Strips, lowercases, and turns blank or
+  # the clear token (`"none"`) into nil so a writer can clear the column without
+  # JSON null. Returns the lowercased string otherwise — VALIDATION, not this
+  # method, decides whether that string is a legal slug, so the refusal can
+  # quote what was sent.
+  def self.normalize_epic_slug(value)
+    text = value.to_s.strip.downcase
+    return nil if text.empty? || text == EPIC_CLEAR_VALUE
+
+    text
+  end
+
   def self.normalize_devops_metadata(raw)
     return {} if raw.blank?
 
@@ -2987,19 +3038,70 @@ class Task < ApplicationRecord
   # lifted by a value identifying no one. A blank builder fails closed and is safe;
   # a typo'd one failed open and was not.
   #
+  # IT REGISTERS IDENTITIES, NOT REVIEW SEATS. "Is this somebody" and "may this
+  # soul review" are different questions with different answers, and the second is
+  # asked elsewhere — ReviewerSelector::POOL, plus Agent.metadata["reviewer"]. Most
+  # of this list cannot review anything: turf-monster, mack, mason, pokemon and rex
+  # are all non-reviewing souls. Being here only makes a name ATTRIBUTABLE.
+  #
+  # Reading it as a review register is what kept POKEMON off it until 2026-09-24.
+  # Pokémon is the general builder the operating model routes every task through,
+  # so it is the most prolific author in the ecosystem — and `--agent pokemon` was
+  # accepted by the CLI's shape check and dropped here, silently, leaving the task
+  # `builders: NOT STAMPED` and `bin/reviewer-select` refusing to pick. Measured
+  # against prod that day: soul-character-reference-lane carries agent_slug
+  # "pokemon" with built_by nil and builders []. That refusal was FALSE — Pokémon
+  # is not in POOL, so naming it excludes nobody and no seat is at risk; the record
+  # simply had no word for the party that had plainly done the work.
+  #
+  # The legion objection ("every task gets a fresh mascot, so what does excluding
+  # Pokémon even mean?") argues FOR the entry, not against it. The mascot is
+  # per-task and already recorded separately (devops.mascot); the SOUL is constant.
+  # A per-mascot identity would make every task a brand-new unknown.
+  #
+  # It also retires a placeholder. `--agent mack` was the documented stand-in — a
+  # real soul's slug, borrowed so the selector had someone to exclude — which put
+  # untrue authorship on the record and left genuine Mack rows indistinguishable
+  # from Pokémon ones. `pokemon` produces the identical selection outcome (neither
+  # is in POOL) while recording what actually happened. None of this pre-empts
+  # deriving authors from git (v3 phase 4); it is strictly better until then.
+  #
   # The static list is the FLOOR, not the whole answer: .soul_roster unions the
   # seeded Agent slugs over it, so a newly seeded soul validates without a code
   # change. It is a floor rather than a plain DB read because ReviewerSelector
   # DEGRADES to built-in defaults with no Agent rows at all (see its header), and a
-  # roster that empties with the DB would turn every soul into an unknown. Keep it
-  # in lockstep with db/seeds/02_agents.rb — test/models/agents_seed_test.rb asserts
-  # every seeded slug appears here.
-  SOUL_ROSTER = %w[alex avi carl shannon jasper steffon turf-monster mack mason].freeze
+  # roster that empties with the DB would turn every soul into an unknown. A soul
+  # added HERE and not to the seed breaks that promise in the other direction, so
+  # keep the two in lockstep — test/models/agents_seed_test.rb asserts both ways.
+  SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason pokemon rex].freeze
+
+  # RETIRED SLUGS THAT STILL RESOLVE — a READ alias, one release wide. The
+  # orchestrator seat `alex` became `xan` on 2026-09-24 (the human operator takes
+  # the name Alex, so a soul slug reading `alex` would name the owner). The data
+  # migration RenameAlexSoulToXan repointed every STORED `alex` soul value, but a
+  # sticky heartbeat marker, a shell alias, or a `--actor alex` typed from memory
+  # still arrives for a while, and each must land on the seat rather than on
+  # "unknown" — an unknown builder refuses review, and a retired slug that reads
+  # as unknown would refuse it for the wrong reason. Read-only: nothing WRITES
+  # the legacy slug, because every stamp goes through .canonical_soul first.
+  # Retire the entry, and the alias with it, one release after the rename.
+  SOUL_ALIASES = { "alex" => "xan" }.freeze
+
+  # The slug a soul is recorded under today: a retired alias resolves to its
+  # successor, anything else passes through (stripped). Every writer that stamps
+  # a soul calls this, so the record never carries a retired slug twice.
+  def self.canonical_soul(slug)
+    value = slug.to_s.strip
+    SOUL_ALIASES.fetch(value, value)
+  end
 
   # Every soul slug this deployment recognises: the static floor plus whatever is
   # seeded. Any lookup error (no table yet, DB down, mid-migration) degrades to the
-  # floor — which still names all nine real souls, so degrading never turns a real
-  # soul into an unknown NOR an unknown into a soul.
+  # floor — which names every real soul on its own, so degrading never turns a real
+  # soul into an unknown NOR an unknown into a soul. That promise is why a new soul
+  # goes in SOUL_ROSTER and not only in the seed: a roster entry that exists only as
+  # an Agent row vanishes in exactly the degraded mode the floor exists for, and the
+  # sentence above would quietly stop being true for it.
   # Memoized per request/job (Current.soul_roster) — .soul? is asked once per
   # candidate on every build claim and every reviewer selection, and an unmemoized
   # roster re-SELECTs the agents table several times per save.
@@ -3015,8 +3117,10 @@ class Task < ApplicationRecord
   # authorship guards (who built this, who may not review it) ask this; the
   # session-vs-handle disambiguation in #disowned? still asks SOUL_SLUG alone,
   # because there a typo'd handle is correctly "not a session id".
+  # A retired alias (SOUL_ALIASES) counts as its successor, so `alex` is a soul
+  # for as long as the alias stands.
   def self.soul?(slug)
-    value = slug.to_s
+    value = canonical_soul(slug)
     value.match?(SOUL_SLUG) && soul_roster.include?(value)
   end
 
@@ -3066,7 +3170,7 @@ class Task < ApplicationRecord
     # as the builder of the PR he is reviewing is the same defect fully inverted, and
     # a confidently-wrong author set is worse than a refusing one.
     soul = (named unless reviewer_taking_the_build?(named)) ||
-           prior_devops["built_by"].to_s.strip.presence
+           self.class.canonical_soul(prior_devops["built_by"]).presence
     authors, unattributed = builder_roll_call(claim, named, soul)
 
     return if soul.nil? && authors.empty? && unattributed.nil?
@@ -3134,8 +3238,11 @@ class Task < ApplicationRecord
     # from it alone would drop the author already on record — the very overwrite this
     # exists to prevent, and the only thing a task stamped before `builders` existed
     # has to give.
+    # Read through the alias (canonical_soul) so a set stamped under a retired
+    # slug and a claim made under its successor dedupe to ONE author.
     authors = (Array(prior_devops["builders"]) + [prior_devops["built_by"]])
-              .map { |s| s.to_s.strip }.select { |s| self.class.soul?(s) }.uniq
+              .map { |s| self.class.canonical_soul(s) }.select { |s| self.class.soul?(s) }.uniq
+    soul = self.class.canonical_soul(soul) if soul
     authors |= [soul] if soul && self.class.soul?(soul)
     unattributed = prior_devops["builders_unattributed"].to_s.strip.presence
 
@@ -3527,9 +3634,11 @@ class Task < ApplicationRecord
   # stamping it named a builder that excluded nobody while reading as known. It now
   # falls through to the later rules, and if none resolve the builder stays blank —
   # UNKNOWN, which refuses. An unrecognised soul must never do better than silence.
+  # Whatever resolves is stamped CANONICAL (Task.canonical_soul): a claim made as
+  # a retired alias records the successor, so the alias stays read-only.
   def builder_to_stamp
     actor = Current.task_event_actor.presence
-    return actor if actor && self.class.soul?(actor)
+    return self.class.canonical_soul(actor) if actor && self.class.soul?(actor)
     # Rule 2 consults the STORED builder as well as the incoming one: a client that
     # posts built_by BLANK — or a raw whole-column `metadata:` write, which is
     # permitted wholesale and folds through nothing — leaves the incoming value
@@ -3538,6 +3647,7 @@ class Task < ApplicationRecord
     return nil if devops["built_by"].presence || prior_devops["built_by"].presence
 
     [devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
+                                            &.then { |slug| self.class.canonical_soul(slug) }
   end
 
   # `set_initial_position` (the `before_create` genesis seed above) now comes from
@@ -4221,6 +4331,15 @@ class Task < ApplicationRecord
       else Array(raw)
       end
     self.dependencies = list.flatten.map { |entry| entry.to_s.strip }.reject(&:empty?).uniq
+  end
+
+  # Canonicalize the epic handle at the one door every writer passes through
+  # (see Task.normalize_epic_slug). Runs on every save so an API `"none"`, a
+  # padded or upper-cased value, and an empty string all land as the same stored
+  # fact — nil or a lowercase slug — which is what lets the board filter compare
+  # the column directly.
+  def normalize_epic_slug
+    self.epic_slug = self.class.normalize_epic_slug(epic_slug)
   end
 
   # Every declared dependency must name a REAL, DIFFERENT task.

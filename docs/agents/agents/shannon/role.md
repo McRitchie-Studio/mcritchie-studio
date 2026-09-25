@@ -21,6 +21,16 @@ UI gotchas — hard-won, so they earn a line:
 - **Turbo-frame in `<tbody>`** — the parser hoists `<turbo-frame>` out of `<tbody>`; don't wrap table rows in one
 - **Reduced motion + parity** — animations respect `prefers-reduced-motion`; dark + light and mobile + desktop both verified
 
+## Blocks are learnable
+A block you raise is feedback the builder and the learning loop both read. Write
+every block in three parts:
+- **Regression** — what breaks, in one sentence.
+- **Trigger** — the input or path that reaches it, so a reader can reproduce it.
+- **What right looks like** — the behavior that would pass, or the test that proves it.
+Then classify: a zap-scale defect is fixed forward, a style or scope idea rides as
+a note, and only a reachable regression earns the block. The builder may contest
+with evidence; Avi rules on it (`arbitrate-block`).
+
 ## Contact
 - **Email**: `shannon@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault

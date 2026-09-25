@@ -38,7 +38,7 @@
 # Test-scope telemetry: each lane self-reports a kind=test_scope AgentAction
 # (event_slug=<lane key>, result_slug=pass|fail, duration_ms) through the SAME
 # `bin/agent-activity action` verb bin/release.rb's run_test_scope uses, so a
-# LOCAL cert run is a gradeable unit in /alex/pipeline like a release run. It is
+# LOCAL cert run is a gradeable unit in /xan/pipeline like a release run. It is
 # best-effort/non-fatal, gated on a live session, and inert when no activity is
 # open (the verb self-checks) — telemetry NEVER breaks or slows a cert. The lane
 # keys are registered under `full_suite_scopes:` in config/devops_test_suites.yml.
@@ -114,7 +114,7 @@ AGENT_ACTIVITY = ENV.fetch("FULL_SUITE_AGENT_ACTIVITY", File.expand_path("agent-
 
 # Stable test-scope key per cert lane — registered under `full_suite_scopes:` in
 # config/devops_test_suites.yml (which supplies each key's phase/tier/host chips
-# on the /alex/pipeline Test-runs band). NEVER rename a key casually: emitted
+# on the /xan/pipeline Test-runs band). NEVER rename a key casually: emitted
 # telemetry and grading key off it. A label absent from this map emits nothing.
 LANE_SCOPES = {
   "test-db-reset" => "full_suite_db_reset",
@@ -348,7 +348,7 @@ end
 # run_test_scope. Emits ONE kind=test_scope AgentAction per lane through the SAME
 # `bin/agent-activity action` verb release.rb self-reports through, tagged
 # event_slug=<scope key>, result_slug=pass|fail, duration_ms=<wall-clock>. So a
-# local `bin/full-suite-check` cert becomes a gradeable unit in /alex/pipeline
+# local `bin/full-suite-check` cert becomes a gradeable unit in /xan/pipeline
 # exactly like a release run.
 #
 # GUARDS mirror run_test_scope EXACTLY so telemetry NEVER breaks or slows a cert:

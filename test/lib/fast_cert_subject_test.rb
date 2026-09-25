@@ -576,7 +576,9 @@ class FastCertSubjectTest < Minitest::Test
       [path, tests.size] if FastCert.cap_decision(tests, {}, cap: FastCert::DEFAULT_MAPPED_CAP)[:approaching]
     end
 
-    expected = ["feature_shapes.yml (14)", "release_repos.yml (15)"]
+    # release_repos.yml went 15 → 13 on 2026-09-24: two cert-route test files that
+    # spelled its path retired with the routes (/tasks/dor-reads-settled-ci-verdict).
+    expected = ["feature_shapes.yml (14)", "release_repos.yml (13)"]
 
     # WHAT THE ASSERTION IS FOR is the LIST, exactly as the over-cap sweep above: a NEW
     # entry is the thing to act on, a number moving on an entry already here is

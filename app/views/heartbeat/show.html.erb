@@ -1,24 +1,24 @@
-<% content_for(:title, "Alex · Learning Heartbeat") %>
+<% content_for(:title, "Xan · Learning Heartbeat") %>
 <% content_for(:full_width, true) %>
 
-<%# Alex learning heartbeat — the agent-narrated activity table. Each row is an
+<%# Xan learning heartbeat — the agent-narrated activity table. Each row is an
     AgentActivity (category, reason -> result) with its measured span usage; expand an
     activity to drill into attributed raw actions read-only, or drop into the trailing
     "Unlabeled" group for the tool-calls the agent never narrated. A
     deliberate fixed-dark dashboard (like the launcher terminal, which stays dark on a
     light desktop) sitting on the theme-aware body. The palette mirrors the prototype;
     styles are scoped under the section id so they touch nothing else. The table is
-    read-only; clicking a drilled-down action opens the grading drawer, where Alex
-    grades the action and the McRitchie audit-of-Alex banks the keepers. %>
+    read-only; clicking a drilled-down action opens the grading drawer, where Xan
+    grades the action and the McRitchie audit-of-Xan banks the keepers. %>
 <%= render "heartbeat/styles" %>
 
 <%= render "heartbeat/scripts" %>
 
-<section id="alex-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
+<section id="xan-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
   <div class="hb-head">
     <header class="hb-topbar">
       <div class="hb-title">
-        <h1>Session Activities &middot; Alex Heartbeat</h1>
+        <h1>Session Activities &middot; Xan Heartbeat</h1>
         <p>
           The activities this session narrated, oldest &rarr; newest &mdash; each a category and a reason &rarr; result.
           Expand an activity to drill into the raw actions it framed; open one to grade it and its McRitchie audit.
@@ -38,7 +38,7 @@
 
     <div class="hb-toolbar">
       <% if @sessions.size > 1 %>
-        <%= form_with url: alex_heartbeat_path, method: :get, data: { turbo: false } do %>
+        <%= form_with url: xan_heartbeat_path, method: :get, data: { turbo: false } do %>
           <span class="hb-lab">Session</span>
           <%= select_tag :session_id,
                 options_for_select(@sessions, @session_id),

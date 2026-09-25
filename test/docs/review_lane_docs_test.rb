@@ -205,7 +205,7 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     "agents/shannon/role.md" => /space-separated/i,
     "agents/jasper/role.md" => /EXPECTED_IDL_HASH/i,
     "agents/steffon/role.md" => /SKIP_IDL_VERIFICATION/i,
-    "agents/alex/role.md" => /install-agent-docs/i
+    "agents/xan/role.md" => /install-agent-docs/i
   }.freeze
 
   test "[integration] each reviewer soul role.md carries a per-domain Review Checklist" do

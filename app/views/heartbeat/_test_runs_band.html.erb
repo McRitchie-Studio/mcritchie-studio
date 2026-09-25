@@ -16,7 +16,7 @@
       <% test_runs.each do |run| %>
         <% meta = heartbeat_release_scope_meta(run.event_slug) %>
         <% pass = run.result_slug == "pass" %>
-        <% is_not = test_run_grades.dig(run.id, ActionGrade::ALEX)&.not_good? %>
+        <% is_not = test_run_grades.dig(run.id, ActionGrade::XAN)&.not_good? %>
         <div class="pl-row <%= "is-not" if is_not %>" data-test="pl-test-run" data-scope="<%= run.event_slug %>">
           <div>
             <span class="pl-slug"><%= run.event_slug %></span>

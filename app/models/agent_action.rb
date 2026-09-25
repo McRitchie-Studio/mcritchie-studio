@@ -90,7 +90,7 @@ class AgentAction < ApplicationRecord
                             optional: true
   alias_attribute :atomic_event_id, :agent_activity_id
 
-  # The grading layer — Alex's grade and the McRitchie audit-of-Alex are two
+  # The grading layer — Xan's grade and the McRitchie audit-of-Xan are two
   # ActionGrade rows (distinguished by grader). The Insight Bank is the banked
   # subset. Destroyed with the action so grades never outlive what they grade.
   has_many :action_grades, dependent: :destroy, inverse_of: :agent_action
@@ -119,7 +119,7 @@ class AgentAction < ApplicationRecord
   # rode the feed as a full-text title tooltip and made the page weigh megabytes
   # (the 2026-08-09 outage page measured 1.8-5.4 MB). The feed's turn rows lead
   # with `summary` + `key_method` instead; only the drill-down DRAWER on
-  # /alex/heartbeat (heartbeat/_drawer, a full-record load) reads input/output.
+  # /xan/heartbeat (heartbeat/_drawer, a full-record load) reads input/output.
   FEED_OMITTED_COLUMNS = %w[input output].freeze
 
   # The narrowed column set the /agents/activities drill-down loads — every column

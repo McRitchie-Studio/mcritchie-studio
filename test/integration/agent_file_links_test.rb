@@ -9,8 +9,8 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
       agent.agent_type = "product"
     end
 
-    Agent.find_or_create_by!(slug: "alex") do |agent|
-      agent.name = "Alex"
+    Agent.find_or_create_by!(slug: "xan") do |agent|
+      agent.name = "Xan"
       agent.title = "Lead Orchestrator"
       agent.status = "active"
       agent.agent_type = "orchestrator"
@@ -53,12 +53,12 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
                     text: "deploy-with-task.md"
     end
 
-    assert_select "[data-test='agent-card'][data-agent='alex']" do
-      assert_select "[data-test='agent-file-link'][data-file='agents/alex/HEARTBEAT.md'][href=?]",
-                    doc_path("agents/alex/HEARTBEAT.md"),
+    assert_select "[data-test='agent-card'][data-agent='xan']" do
+      assert_select "[data-test='agent-file-link'][data-file='agents/xan/HEARTBEAT.md'][href=?]",
+                    doc_path("agents/xan/HEARTBEAT.md"),
                     text: "HEARTBEAT.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/alex/sops/full-cycle.md'][href=?]",
-                    doc_path("agents/alex/sops/full-cycle.md"),
+      assert_select "[data-test='agent-file-link'][data-file='agents/xan/sops/full-cycle.md'][href=?]",
+                    doc_path("agents/xan/sops/full-cycle.md"),
                     text: "full-cycle.md"
     end
 
@@ -97,7 +97,7 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
 
     assert_select ".prose-themed h1", text: "Production Deploy"
 
-    get doc_path("agents/alex/sops/full-cycle.md")
+    get doc_path("agents/xan/sops/full-cycle.md")
     assert_response :success
 
     assert_select ".prose-themed h1", text: "Full Cycle"

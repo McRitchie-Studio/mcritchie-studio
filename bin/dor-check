@@ -8,8 +8,8 @@
 #
 #   --gate merge (default) — DoR-to-Merge, at submitted → reviewed.
 #       Requires the shape's full required_metadata, its dor_tiers green (tagged
-#       in devops.checks_run, e.g. "[unit] ..."), AND — for a shaped code feature
-#       — FRESH full-suite + full-rubocop evidence (the FULL-suite gate below).
+#       in devops.checks_run, e.g. "[unit] ..."), AND a SETTLED GREEN GitHub CI for
+#       the PR's current head — the one form of suite evidence (the suite gate below).
 #       Two shapes ask for something a tier list cannot express, and both are
 #       checked against the OBSERVED DIFF rather than the label:
 #         claimable_when: test_only_diff — `test-only` is refused unless every
@@ -30,91 +30,67 @@
 #   * Feature agents run --gate build before coding, --gate merge before handoff.
 #   * The heartbeat DevOps agent re-runs --gate merge as gate-zero of review.
 #
-# FULL-suite gate (merge gate, shaped code feature): the dor_tiers tags prove the
-# agent WROTE the right tiers, but a tag is free text — an agent can satisfy a
-# tier by running only the FILES it touched, so the full suite or rubocop breaks
-# post-merge (devops retro, lines 54 + 58). So this gate ALSO demands fingerprint-
-# bound evidence that a FULL `bin/rails test` and a FULL `bin/rubocop` went green
-# against the EXACT code being shipped. bin/full-suite-check runs both lanes and
-# records "[full-suite@<fp>]" / "[rubocop@<fp>]" checks_run lines; here we re-grade
-# them against the local code fingerprint (a git tree hash, stable across the
-# commit boundary), so a STALE (post-edit) or PARTIAL (one-lane / touched-files)
-# record is REFUSED. Escape hatch = a RECORD, like the post_deploy "none" hatch: a
-# "[full-suite-bypass] <reason>" checks_run line is honored but flagged loudly.
-# FAST route: a FRESH "[fast-cert@<fp>]" line (bin/fast-check — diff-mapped tests
-# + core spine + rubocop on changed files, ~1 min) satisfies this gate too,
-# alongside a GREEN GitHub CI — CI runs the full suite + test:system on every
-# PR push, so the full net still runs; the fast cert buys local earliness.
-# CI seam (ci-gate-review-handoff): the CI WAIT lives on the REVIEW side, not the
-# builder's wall-clock. The builder's submit-side run (--gate-role builder, the
-# default) treats a still-running CI as a LOUD suggestion — and credits a fresh
-# fast cert PROVISIONALLY while CI is pending (or not yet reported) on an OPEN PR
-# — so the builder certs, opens the PR, and moves submitted immediately. RED CI
-# (and a closed/merged pr_url, and a merge-CONFLICTED PR — mergeStateStatus
-# DIRTY, whose CI never fires because GitHub can't compute the merge commit)
-# still blocks both roles. The AUTHORITATIVE CI
-# verdict is the review side: bin/pr-review's supervisor checks the live CI
-# before spawning reviewers, and the primary's gate-zero (--gate-role review)
-# keeps the strict semantics — an ALLOW-LIST: green advances and every other state
-# refuses, including one it could not read, with a FULL cert the single stand-in ON
-# THE GATED PATH (see "THE REVIEW GATE-ZERO IS AN ALLOW-LIST" in
-# bin/lib/ci_gate.rb, where that section now lives — it is no longer "below" in this
-# file). On the EXEMPT (doc-only) path there is no stand-in at all: the tier gate is
-# waived, so no suite remains to substitute, and the refusal there says so rather
-# than naming a cert (`cert_route: false`). Fast evidence needs the settled green.
-# Format + fingerprint live in bin/lib/full_suite_gate.rb.
+# THE SUITE GATE IS THE CI VERDICT (merge gate, every shape). The dor_tiers tags
+# prove the agent WROTE the right tiers, but a tag is free text — an agent can
+# satisfy a tier by running only the FILES it touched — so this gate ALSO demands
+# evidence that the FULL suite went green against the EXACT code being shipped.
+# Since /tasks/dor-reads-settled-ci-verdict that evidence has ONE form: a SETTLED
+# GREEN GitHub CI verdict for the PR's current head, read through
+# bin/lib/ci_status.rb and decided in bin/lib/ci_gate.rb (the allow-list — "THE
+# GATE IS AN ALLOW-LIST, IN BOTH ROLES" there). The fingerprint receipts
+# bin/fast-check and bin/full-suite-check record — "[fast-cert@<fp>]",
+# "[full-suite@<fp>]", "[rubocop@<fp>]", "[cert-deferred@<fp>]" — and the
+# "[full-suite-bypass]" hatch are NOT read here any more: they are inert until
+# phase 2b of DevOps v3 removes them (docs/agents/system/devops-v3-design.md).
+# The role table:
+#   green                                  → advances, both roles (review still
+#                                            refuses a green that predates a base
+#                                            move — the stale-green check below).
+#   red / conflicted / ci_less / closed /
+#   merged                                 → refuses, both roles.
+#   pending                                → builder: WAITING (exit 1, its own
+#                                            headline — bin/ship waits for CI at
+#                                            step 6/8, so this is the rare case);
+#                                            review: refuses (the authoritative
+#                                            verdict, "defer until CI settles").
+#   none / unverified / unreadable / no_pr
+#   / unclassified                         → refuses, both roles, with the state's
+#                                            own remedy; no local cert stands in.
+# The one fingerprint-bound line still graded here is the `test-only` shape's
+# EXECUTED CONTROL ("[control@<fp>]", bin/control-check) — it is required
+# evidence, not suite evidence, and it stays until phase 2b moves it to review.
 # ROOTING — the gate must judge the TASK's tree, not the checkout the caller happens
-# to stand in. TWO things root: the suite FINGERPRINT and the code DIFF. Both have
-# been bitten, and they fail in OPPOSITE directions, which is why the diff took a
-# second fix.
+# to stand in. The code DIFF roots here (2026-08-08, task dor-check-review-rooting;
+# hardened again by harden-dor-check-file-read), and it is the half that fails in
+# the DANGEROUS direction: the diff decides the `kind: chore/cleanup/docs`
+# exemption, i.e. whether the test gate applies at all. Read from a foreign checkout
+# it does not refuse — it AGREES, with someone else's files: the review gate-zero,
+# run from the hub PRIMARY exactly as pr-review-primary.md instructs, saw that
+# primary's ONE unrelated dirty .md and printed "✓ DoR-to-Merge n/a … doc-only diff
+# … → ready to advance" over a multi-file code PR. A FALSE PASS in the gate whose
+# entire job is refusing under-tested work, and the dirtier the checkout the more
+# confidently it lies. So the task-root guard (bin/lib/cert_root_guard.rb) runs in
+# BOTH gate roles and re-roots the DIFF; where it cannot, the local working tree is
+# refused as a diff source outright (untrusted_root?) and the gate falls back to
+# the task BRANCH's committed diff, else to :indeterminate → fail closed.
 #
-# DIFF rooting (2026-08-08, task dor-check-review-rooting). The diff decides the
-# `kind: chore/cleanup/docs` exemption, i.e. whether the test gate applies at all.
-# Read from a foreign checkout it does not refuse — it AGREES, with someone else's
-# files: the review gate-zero, run from the hub PRIMARY exactly as
-# pr-review-primary.md instructs, saw that primary's ONE unrelated dirty .md and
-# printed "✓ DoR-to-Merge n/a … doc-only diff … → ready to advance" over a
-# multi-file code PR. A FALSE PASS in the gate whose entire job is refusing
-# under-tested work, and the dirtier the checkout the more confidently it lies. So
-# the task-root guard now runs in BOTH gate roles and re-roots the DIFF as well as
-# the fingerprint; where it cannot, the local working tree is refused as a diff
-# source outright (untrusted_root?) and the gate falls back to the task BRANCH's
-# committed diff, else to :indeterminate → fail closed.
+# The PR read that should PRE-EMPT a local tree is classified, not assumed: App
+# installation tokens live ~1h, and a lapsed credential used to be indistinguishable
+# from a PR with no files, so the gate graded the working tree while printing a
+# verdict about "the PR". The read now shares bin/lib/ci_status.rb's authenticated
+# seam (gh_read_status — stderr preserved, one mint-and-retry) and a refusal that
+# survives it is CLASSIFIED: review REFUSES (:pr_unreadable), submit-side degrades
+# LOUDLY. See pr_file_read.
 #
-# Diff rooting, round 2 (task harden-dor-check-file-read): the same false pass, one
-# door out. Rooting decides which LOCAL tree may stand in — it never asked whether the
-# PR read that should have PRE-EMPTED a local tree had actually WORKED. It often had
-# not: App installation tokens live ~1h, and pr_changed_files discarded stderr and
-# returned nil on any failure, so a lapsed credential was indistinguishable from a PR
-# with no files. The gate then graded the working tree while printing a verdict about
-# "the PR", and nothing said so. The read now shares bin/lib/ci_status.rb's
-# authenticated seam (gh_read_status — stderr preserved, one mint-and-retry) and a
-# refusal that survives it is CLASSIFIED: review REFUSES (:pr_unreadable), submit-side
-# degrades LOUDLY. See pr_file_read.
-#
-# Fingerprint rooting — the same wrong tree, the opposite symptom. The fingerprint
-# is a git TREE hash, so a foreign root can NEVER match a recorded cert; it doesn't
-# read as "wrong root", it reads as "STALE". Both lanes were bitten by that:
-#   * REVIEW — reviewers run --gate-role review from the PRIMARY checkout (on
-#     release/main) by design, so it roots the suite fingerprint at the TASK
-#     BRANCH's committed tree (origin/feat/<slug>'s ^{tree}, content-addressed ==
-#     what the builder certified) via review_fingerprint/FullSuiteGate.fingerprint_of_ref.
-#   * BUILDER — a builder-lane run from the wrong checkout had NO such cure and
-#     false-read STALE for 6 of 6 tasks on 2026-07-14, including certs 90 seconds
-#     old. The task-root GUARD (bin/lib/cert_root_guard.rb — which both cert runners
-#     already required, and which dor-check alone never consulted) now catches it and
-#     RE-ROOTS at the task's tree, loudly. See the guard block below for refuse-vs-
-#     resolve and the exact scope.
-# And when a lane really IS stale, the refusal prints the fingerprint DELTA
-# (certified for @abc…, but <the tree it actually hashed> is @def…) — so "STALE"
-# names its cause instead of hiding it (stale_delta). The tree it names is the tree
-# it HASHED, always: recompute the root in the message and you get the hash in the
-# message. In the review lane that root is the task BRANCH's committed tree, never
-# the reviewer's checkout, and never HEAD (the working-tree fingerprint includes
-# uncommitted edits by design).
+# The suite FINGERPRINT used to root here too (the review lane at the task branch's
+# committed tree, the builder lane through the same guard), and its false-STALE
+# history — 6 of 6 tasks on 2026-07-14 — is why the guard exists in this file at
+# all. With the receipts no longer read, the only fingerprint-bound lane left is the
+# `test-only` control stamp, which still takes the branch-tree rooting in the review
+# lane (control_fingerprint) for the same reason the cert did.
 #
 # dor-check still does NOT run the suite itself — it stays a fast, deterministic
-# verdict; bin/full-suite-check is the (slower) runner that produces the evidence.
+# verdict; GitHub CI is the runner that produces the evidence.
 #
 # Non-code kinds (devops.kind chore/cleanup/docs) carry no shape and no test
 # tiers, so the shape gate does not apply: they PASS with a "DoR n/a" note.
@@ -172,28 +148,22 @@ Dor::Checks.load!
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (feature_shapes.yml) and the
 # token .env resolve from here and STAY here — the shape taxonomy is studio-owned.
-# The code DIFF roots at the agent's worktree (diff_root). The suite FINGERPRINT
-# usually does too — but not always: the review lane and the reclaimed-worktree
-# remedy hash a committed BRANCH TREE instead, so the fingerprint carries its own
-# provenance (full_suite.fingerprint_root/_repo/_source) rather than borrowing
-# diff_root's name.
+# The code DIFF roots at the agent's worktree (diff_root). The one fingerprint left
+# — the `test-only` control stamp's — usually does too, but not always: the review
+# lane and the reclaimed-worktree remedy hash a committed BRANCH TREE instead
+# (control_fingerprint).
 ROOT = File.expand_path("..", __dir__)
 CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
 # ── remedy forms of the scripts this gate NAMES in a refusal ──────────────────
-# Absolute and resolvable. bin/fast-check, bin/full-suite-check and bin/task live
-# in mcritchie-studio/bin ALONE, so a builder grading a turf-monster or rolio desk
+# Absolute and resolvable. bin/task and bin/gh-auth-refresh live in
+# mcritchie-studio/bin ALONE, so a builder grading a turf-monster or rolio desk
 # reached THIS gate through its absolute path and could not resolve the bare form
 # it printed back at them. Resolved from __dir__ — the very dor-check that is
 # speaking, and its siblings beside it. Deliberately NOT TASK_BIN below: that is
 # the ENV-redirected EXEC seam, while a remedy names the real script the reader is
-# sent to. Policy: FastLane.remedy_command.
-#
-# The two CROSS-TREE remedies here (the zap re-certify, and the second repo's cert
-# on a two-repo task) do NOT use these: they lead with a `cd` into another
-# checkout, so they resolve desk-first against THAT tree with the hub as fallback —
-# the same shape as FastLane.handoff_command.
-FAST_CHECK_CMD = FastLane.remedy_command("fast-check", __dir__)
-FULL_SUITE_CMD = FastLane.remedy_command("full-suite-check", __dir__)
+# sent to. Policy: FastLane.remedy_command. (bin/fast-check and bin/full-suite-check
+# used to be named here too; no refusal offers either since the receipts they
+# record stopped being evidence.)
 TASK_CMD = FastLane.remedy_command("task", __dir__)
 GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__)
 # The board CLI the task-root guard reads devops.branch/worktree_slug through when
@@ -257,7 +227,7 @@ def die!(msg)
   exit 1
 end
 
-options = { json: false, file: nil, gate: "merge", gate_role: "builder", diff_base: false, suite_fingerprint: false }
+options = { json: false, file: nil, gate: "merge", gate_role: "builder", diff_base: false }
 GATES = %w[merge build].freeze
 GATE_ROLES = %w[builder review].freeze
 
@@ -277,7 +247,7 @@ PR_READ_REFUSAL_PHRASE = "the PR's own file list going unread, so the doc-only e
 # written for the two places that name the PR read as SOMEONE ELSE'S co-refusal — the
 # exempt closing `refused_by` line and the CI refusal's `also_refused:` list. The
 # PR-read alert itself had no sentence of its own: on the exempt path it ended with
-# CiStatus.unreadable_remedy's cert_route:false closing, "this gate advances on a GREEN
+# CiStatus.unreadable_remedy's task-grain closing, "this gate advances on a GREEN
 # CI and nothing else", and BORROWED it.
 #
 # That sentence is falsest exactly where it printed. Driven through `bin/dor-check
@@ -305,7 +275,6 @@ OptionParser.new do |o|
                            "gate `dor`) or review (the primary reviewer's gate-zero; opens+closes `dor_review`)") { |v| options[:gate_role] = v }
   o.on("--json", "Emit a machine-readable verdict") { options[:json] = true }
   o.on("--diff-base", "Resolve and print the committed-diff base for this repo, then exit (debug/resolver seam)") { options[:diff_base] = true }
-  o.on("--suite-fingerprint", "Print the code fingerprint the full-suite gate would validate against, then exit (debug/resolver seam)") { options[:suite_fingerprint] = true }
   o.on("--file PATH", "Evaluate a local task JSON instead of fetching") { |v| options[:file] = v }
   o.on("-h", "--help", "Show this help") do
     puts o
@@ -406,22 +375,18 @@ end
 # Freshness of the EXECUTED control stamp, plus the verdict it recorded, as
 # [lane_status, verdict_token].
 #
-# Graded from the REAL fingerprint rather than read off suite_eval[:lanes], and
-# that is not a stylistic preference — it is the whole integrity of this gate.
-# FullSuiteGate#verdict DEFAULTS its lane hash to "every evidence lane :fresh"
-# whenever it short-circuits, which it does on three paths: an injected
-# DOR_CHECK_SUITE_EVIDENCE token (a test seam), an unverifiable tree, and — the one
-# that matters in production — a recorded `[full-suite-bypass]`. For the suite
-# lanes that default is the point. For the control it would SYNTHESIZE the exact
-# fact this gate exists to establish: a builder who recorded a suite bypass would
-# be told their control was executed when nothing ran it. That is a gate reporting
-# a declaration as verified evidence — the disease this whole cycle is about,
-# reproduced inside its own cure. So the control is graded against a fingerprint or
-# not graded at all.
+# Graded from a REAL fingerprint or not graded at all. `fingerprint` is the
+# caller's control_fingerprint — the task branch's committed tree in the review lane
+# (the reviewer's checkout is never the task's tree), the working tree otherwise —
+# and a nil fingerprint is :missing, never a synthesised :fresh. Until
+# /tasks/dor-reads-settled-ci-verdict this read the suite verdict's fingerprint and
+# had to defend against FullSuiteGate#verdict's "every lane :fresh" default on a
+# recorded `[full-suite-bypass]`; that verdict is no longer computed, so the only
+# way to a :fresh here is a stamp whose hash equals the tree's.
 #
 # DOR_CHECK_CONTROL_EVIDENCE is this lane's OWN injection seam (fresh:<VERDICT> |
-# stale | missing), deliberately separate from the suite's for the same reason.
-def control_evidence_status(checks, suite_eval)
+# stale | missing).
+def control_evidence_status(checks, fingerprint)
   injected = ENV["DOR_CHECK_CONTROL_EVIDENCE"].to_s.strip
   unless injected.empty?
     lane = if injected.start_with?("fresh") then :fresh
@@ -431,7 +396,6 @@ def control_evidence_status(checks, suite_eval)
     return [lane, ControlReplay::VERDICTS.find { |token| injected.include?(token) }]
   end
 
-  fingerprint = (suite_eval && suite_eval[:fingerprint]) || FullSuiteGate.fingerprint(diff_root)
   return [:missing, nil] if fingerprint.nil?
 
   lane = FullSuiteGate.lane_status(checks, ControlReplay::LANE, fingerprint)
@@ -485,7 +449,7 @@ end
 # that cannot see must not wave things through.
 # MEMOIZED, because the task-root guard below can RE-ROOT it: when the cwd turns out
 # not to be the task's tree, every later reader (the diff, the Gemfile pair, the
-# suite fingerprint) must see the SAME corrected root, resolved once.
+# control stamp's fingerprint) must see the SAME corrected root, resolved once.
 def diff_root
   @diff_root ||= RepoRoot.code_root(ENV["DOR_CHECK_DIFF_ROOT"], ROOT)
 end
@@ -566,10 +530,10 @@ end
 #                              is useless: a same-named branch in another repo is a
 #                              different project's work. The fix is to go to the PR's repo.
 #
-# Shared, because the two refusals that say this had DRIFTED: the suite gate's
+# Shared once between two refusals that had DRIFTED: the (since retired) suite gate's
 # remedy-3 flatly asserted "its branch <b> is not in this repo" and offered the fetch
 # — both false on the wrong-repo path — while its sibling in the exempt gate had
-# already been taught the difference. One source, so they cannot disagree again.
+# already been taught the difference. One source, so a second caller cannot disagree.
 def branch_unavailable(branch)
   if standing_repo_ok?
     ["its branch #{branch} is not in this repo",
@@ -1063,28 +1027,21 @@ end
 # The full alert: the headline, what it costs, and the remedy. The caller decides
 # whether it lands as an error (review) or a suggestion (submit-side).
 #
-# `cert_route:` IS FORWARDED, NOT DECIDED HERE — this alert is printed from four
-# different branches and only the CALLER knows whether a full cert stands in where it
-# lands. It used to take unreadable_remedy's `true` default for all four, which is how
-# the exempt path came to print a denial and an OFFER in the same verdict: one stale
-# token refuses the PR file-list read AND the CI read, so :unreadable co-fires on both
-# and the two halves of one verdict disagreed
-# (/tasks/exempt-refusal-prints-dead-remedy, bounce 1). EVERY printing caller now
-# states its route; the parameter has a default only because THREE callers use this
-# method as a PREDICATE (`pr_read_alert ? …` / `!pr_read_alert`) and discard the
-# string. Both counts are asserted, not asserted-in-prose:
-# test/lib/dor_check_exempt_ci_test.rb reads this file's source.
+# NO `cert_route:` ANY MORE. This alert used to forward its callers' route to
+# CiStatus.unreadable_remedy — `true` on the gated branches (a full cert could stand
+# in for the CI half), `false` on the exempt one (nothing could) — and the split was
+# what stopped the exempt path printing a denial and an OFFER in one verdict
+# (/tasks/exempt-refusal-prints-dead-remedy). Since /tasks/dor-reads-settled-ci-verdict
+# no route offers anything: the suite evidence is the CI verdict itself, so every
+# caller gets the same task-grain denial and there is nothing left to forward.
 #
 # THE CLOSING LINE IS DERIVED FROM WHETHER THIS ALERT REFUSES, and that is a fact about
 # the RUN, not about the branch calling in — which is why it is read here rather than
-# stated per caller like `cert_route:`. Both printing sites spell the same predicate
+# stated per caller. Both printing sites spell the same predicate
 # (`review_role && gate != "build"`): the alert lands as an ERROR in the review role at
 # the merge gate and as a SUGGESTION everywhere else, and a suggestion refuses nothing,
-# so the sentence operators already know stays true and prints to the BYTE. Reading it
-# once is also what keeps the alert's own sentence and its own severity from
-# disagreeing; two spellings of one role test is how the exempt path's two closings
-# drifted apart in the first place.
-def pr_read_alert(cert_route: true)
+# so the sentence operators already know stays true and prints to the BYTE.
+def pr_read_alert
   headline = pr_read_headline
   return nil unless headline
 
@@ -1107,7 +1064,7 @@ def pr_read_alert(cert_route: true)
     "#{headline}. The diff this gate judges (shape tiers, the doc-only exemption, migration detection) is the " \
       "PULL REQUEST's file list, and a refused read must never be quietly replaced by whatever tree this run is " \
       "standing in. " + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url),
-                                                   cause: pr_file_read[:cause], cert_route: cert_route,
+                                                   cause: pr_file_read[:cause],
                                                    also_refused: pr_read_refuses_verdict? ? [PR_READ_SELF_REFUSAL_PHRASE] : [],
                                                    task: @task_slug)
   else
@@ -1184,11 +1141,10 @@ rescue SystemCallError
 end
 
 # The task's feature branch — devops.branch when set, else feat/<worktree_slug or
-# slug>. Feeds the review-role suite fingerprint below so the reviewer grades the
-# builder's cert against the branch tree, not the primary checkout's tree. `devops`
-# is {} in the --suite-fingerprint debug seam (no task fetched there); it then
-# derives feat/<slug> from the positional arg — a fine offline approximation, since
-# a task branch is feat/<slug> unless explicitly overridden.
+# slug>. Feeds the review-role rooting of the control stamp (control_fingerprint) and
+# the reviewer-zap seams below, so the reviewer grades the task BRANCH's tree, not the
+# primary checkout's. With an empty `devops` it derives feat/<slug> from the slug — a
+# fine approximation, since a task branch is feat/<slug> unless explicitly overridden.
 def review_branch(devops, slug)
   branch = devops["branch"].to_s.strip
   return branch unless branch.empty?
@@ -1198,28 +1154,46 @@ def review_branch(devops, slug)
   base.empty? ? nil : "feat/#{base}"
 end
 
-# The fingerprint the REVIEW gate-zero must grade the suite cert against — the
-# TASK's tree, not the reviewer's cwd working tree. Reviewers run --gate-role
-# review from the PRIMARY checkout (on release/main by SOP), so fingerprinting the
-# working tree there reads a totally different tree and the cert false-reads STALE
-# (the bug both the guard-conductor-gate-checkout and resolve-flag-handoff-guard
-# reviewers hit tonight). A git tree hash is content-addressed, so the branch's
-# committed ^{tree} equals the working-tree fingerprint the builder certified
-# before pushing. Prefer origin/<branch> (what CI/QA graded), fall back to a local
-# <branch>.
+# The tree hash the REVIEW gate-zero grades the `[control@<fp>]` stamp against —
+# the TASK's tree, not the reviewer's cwd: reviewers run --gate-role review from
+# the PRIMARY checkout (on release/main by SOP), so fingerprinting the working tree
+# there reads a totally different tree and the stamp false-reads STALE
+# (the bug the cert lane hit first, from both sides, before the cert lane retired).
+# A git tree hash is content-addressed, so the branch's committed ^{tree} equals the
+# working-tree fingerprint the builder stamped before pushing. Prefer
+# origin/<branch> (what CI graded), fall back to a local <branch>.
 #
 # Returns { fingerprint:, ref:, root: } — the hash AND the ref expression that
 # produced it, in the repo it was resolved in — or nil when the branch isn't
 # resolvable locally (unfetched); the caller then falls back to the working-tree
-# fingerprint of diff_root (still honoring DOR_CHECK_DIFF_ROOT, the manual reviewer
-# workaround). The PROVENANCE rides along because every message that prints this
-# hash must name the tree that produced it: printing `root:` here — the reviewer's
-# primary checkout, which is never what an override hashed — is the exact bug this
-# now makes unrepresentable.
+# fingerprint of diff_root. The PROVENANCE rides along because a hash with no
+# origin is a number nobody can check.
 def review_fingerprint(root, branch)
   return nil if branch.to_s.strip.empty?
 
   FullSuiteGate.fingerprint_of_first_ref(root, "origin/#{branch}", branch)
+end
+
+# The tree hash the `[control@<fp>]` stamp is graded against — resolved ONCE, from
+# the same rooting the cert lane used before it retired:
+#   * review gate-zero → the task branch's committed tree (review_fingerprint) — the
+#     root guard has already re-rooted diff_root at the task's desk where it could;
+#   * a builder standing in a foreign root with no desk on disk → the branch tree the
+#     root guard resolved (remedy 2, @task_tree_override);
+#   * otherwise → the working tree at diff_root, uncommitted edits included.
+# nil when no tree can be hashed; control_evidence_status reads that as :missing.
+def control_fingerprint
+  return @control_fingerprint if defined?(@control_fingerprint)
+
+  @control_fingerprint = begin
+    override = nil
+    if @review_role
+      branch = review_branch(@devops || {}, @task_slug)
+      override = review_fingerprint(diff_root, branch)
+    end
+    override ||= @task_tree_override
+    override ? override[:fingerprint] : FullSuiteGate.fingerprint(diff_root)
+  end
 end
 
 # The REPO the PR under gate lives in, OWNER-QUALIFIED ("McRitchie-Studio/turf-monster")
@@ -1235,87 +1209,6 @@ end
 # degrades to the bare name on its own; that choice belongs to the guard, not here.
 def pr_repo_name(pr_url)
   CiStatus.repo_from_pr_url(pr_url).to_s
-end
-
-# ── THE REPOS A TASK NAMES, and which of them owe a CERT ──────────────────────
-#
-# `devops.repositories` is a LIST, and until this block existed nothing in this gate
-# read it: the whole repo identity came from three SINGULAR fields (pr_url, branch,
-# worktree_slug), so for a task naming N repos the gate inspected ONE and N-1 went
-# ungated while the verdict read as covering the task (found 2026-08-13 landing
-# land-rails-security-patch across two repos). These turn the list into the set of
-# repos this run must actually grade.
-
-# The bare repo slug of a slug, an owner-qualified name, or a URL fragment — the form
-# devops.repositories carries and the form cert lines are scoped to. NOT for paths:
-# a desk is …/<repo>/.worktrees/<slug>, whose last segment is the SLUG. Use
-# CertRootGuard.app_of for a path.
-def bare_repo_slug(value)
-  value.to_s.strip.split("/").last.to_s.strip
-end
-
-# The repos the task DECLARES.
-def declared_repos(devops)
-  Array(devops["repositories"]).map { |repo| bare_repo_slug(repo) }.reject(&:empty?).uniq
-end
-
-# The repos the task has actually OPENED a PR in — devops.pr_urls (the per-repo PR
-# register) plus the primary devops.pr_url. Read off the raw hash because this script
-# holds no AR models; it is the same evidence Task#pr_bearing_repositories and
-# Release::SweepPlan reason about.
-def pr_bearing_repos(devops)
-  map = devops["pr_urls"]
-  recorded = map.is_a?(Hash) ? map.reject { |_, url| url.to_s.strip.empty? }.keys : []
-  ([pr_repo_name(@pr_url)] + recorded).map { |repo| bare_repo_slug(repo) }.reject(&:empty?).uniq
-end
-
-# The repos this run must grade a cert for: the ones the task both NAMES and has a PR
-# open in.
-#
-# The INTERSECTION, not the declared list, and that is the load-bearing choice. A GEM
-# task legitimately names its CONSUMER repos so the gates can reason that the gem owes
-# the PR while the consumers do not — the gem-release path, and the case that refuted
-# forbidding multi-repo tasks outright — so demanding a cert for a repo this task
-# never diffs would refuse honest work. A repo with a recorded PR has a diff by
-# definition, so it owes evidence. Before any PR exists (the builder's pre-PR run)
-# this is empty and the single-root path is untouched; the gate moment that matters is
-# submit/review, with the PRs open.
-def cert_owing_repos(devops)
-  declared_repos(devops) & pr_bearing_repos(devops)
-end
-
-# Where the repo PRIMARIES live (…/<projects>/<repo>) — PROJECTS_DIR when the test
-# seam declares one, else ProjectsRoot's default.
-def projects_dir_for_repos
-  dir = PROJECTS_DIR.to_s.strip
-  dir.empty? ? ProjectsRoot.default_projects_dir : dir
-end
-
-# The TREE a secondary repo's cert must be graded against → { root:, override: }
-# (override is the { fingerprint:, ref:, root: } branch-tree form; nil means hash the
-# working tree at root), or nil when this machine cannot see that repo's code at all.
-#
-# Two places to look, in the order that keeps each role honest:
-#   * the repo's OWN DESK for this task (…/<repo>/.worktrees/<slug>) — a multi-repo
-#     task has one desk per repo, and this is the builder's tree. VALIDATED on both
-#     axes by CertRootGuard (right repo AND on the task's branch), never trusted for
-#     its directory name. In the review role its committed BRANCH tree is preferred,
-#     for the same reason the primary verdict prefers one: a reviewer grades what was
-#     pushed, not what is lying dirty in a desk.
-#   * the repo's PRIMARY checkout (…/<repo>), branch tree only — the REVIEWER's world,
-#     where a satellite has a clone but no desk for someone else's task.
-# nil is NOT benign, and the caller refuses on it: a repo whose code cannot be seen is
-# exactly the repo that used to sail through ungated.
-def repo_cert_tree(repo, worktree_slug, branch, review_role)
-  desk = CertRootGuard.eligible_worktrees(worktree_slug, branch, projects_dir: PROJECTS_DIR,
-                                          prefer_repo: repo).first
-  return { root: desk, override: (review_role ? review_fingerprint(desk, branch) : nil) } if desk
-
-  primary = File.join(projects_dir_for_repos, repo)
-  return nil unless File.directory?(primary)
-
-  override = review_fingerprint(primary, branch)
-  override ? { root: primary, override: override } : nil
 end
 
 # The files a RELEASE owns and a PR must never edit, drawn from the gem registry so
@@ -1505,127 +1398,6 @@ def bare_full_suite_seed?(cmd)
   BARE_SEED_TASK.match?(cmd.to_s)
 end
 
-# Human-readable refusal for the suite gate, from FullSuiteGate.evaluate's
-# verdict. Spells out which lane is stale/missing and how to fix it — and that the
-# fix REFUSES a touched-files subset or a lint-red tree, the whole point. `ci` is
-# the CI-status verdict: a FRESH fast cert refused here is refused for its CI
-# PAIRING (fast evidence only counts alongside a green GitHub CI — or, submit-side,
-# a pending one on an OPEN PR), and the message must say that instead of
-# pretending the evidence is bad. `review_role` picks the guidance: the review
-# gate-zero says "defer until CI settles"; the builder says "open the PR" — and a
-# CONFLICTED PR overrides both (its CI is never coming; "open the PR"/"defer"
-# would each be wrong advice — the fix is merge the PR's base in and resolve).
-
-# The STALE fingerprint DELTA: what the evidence was certified FOR, what the code IS
-# now, and WHERE "now" was read from.
-#
-# A bare "STALE (certified for older code)" states a verdict and hides its cause. It
-# reads as "you edited since certifying" — but the fingerprint is a git TREE hash, so
-# the SAME message appears when nothing was edited at all and the gate is simply
-# standing in a different checkout (the 2026-07-14 false STALE: a cert taken in the
-# task's worktree can never match a primary checkout's tree). The two causes want
-# OPPOSITE fixes — re-certify vs. re-root — and an agent that can't tell them apart
-# re-runs the cert, watches it go green, watches dor-check still say STALE, and
-# stops. Naming both hashes and the root makes them distinguishable at a glance.
-#
-# THE ROOT IT NAMES IS THE ROOT IT HASHED. That is the invariant, and it takes NO
-# `root` argument precisely so no caller can hand it a different one: the provenance
-# rides in the verdict (FullSuiteGate#provenance), which is the only thing that
-# actually knows. The first cut of this message printed dor-check's `diff_root`
-# unconditionally — so in the review lane, where the fingerprint ALWAYS comes from
-# the branch tree, it printed the reviewer's primary checkout beside a hash the
-# primary never produced, and recomputing the named root gave a THIRD number. A
-# precise-looking hash that sends the reader to the wrong tree is worse than the
-# opaque STALE this replaced: it is a lie with an air of authority.
-#
-# So the wording follows the SOURCE, and each form is recomputable by hand:
-#   working-tree → `bin/dor-check <slug> --suite-fingerprint` (or hash the path)
-#   branch-tree  → `git -C <repo> rev-parse <ref>^{tree}`
-# It is deliberately NOT called "HEAD": the working-tree fingerprint is the
-# as-if-committed tree INCLUDING uncommitted edits — which is usually the very
-# reason it moved — so an agent verifying it with `git rev-parse HEAD^{tree}` would
-# get a different hash and conclude the tool is broken.
-#
-# Falls back to the old wording when there is nothing to compare: the bypass /
-# injected / unverifiable verdicts carry no fingerprint, and so no provenance.
-def stale_delta(eval, lane)
-  recorded = Array(eval.dig(:recorded, lane)).reject { |fp| fp.to_s.strip.empty? }
-  current = eval[:fingerprint].to_s
-  return "certified for older code" if recorded.empty? || current.empty?
-
-  "certified for #{recorded.map { |fp| "@#{fp[0, 12]}" }.join(', ')}, " \
-    "but #{current_code_phrase(eval)} is @#{current[0, 12]}"
-end
-
-# WHAT the current fingerprint is a hash OF — named so it can be recomputed.
-def current_code_phrase(eval)
-  root = eval[:fingerprint_root].to_s
-  return "the code now" if root.empty?
-
-  if eval[:fingerprint_source] == FullSuiteGate::BRANCH_TREE_SOURCE
-    # The override lanes: the hash came from a COMMITTED ref, not from any working
-    # tree — least of all the one you are standing in. Name the ref and the repo it
-    # resolves in, which is the whole recompute command.
-    "the branch tree #{root} (in #{eval[:fingerprint_repo]}) — NOT this checkout —"
-  else
-    "the working tree at #{root} (as-if-committed, uncommitted edits included; not HEAD)"
-  end
-end
-
-# WHAT IS RECORDED for a secondary repo whose cert just refused — read across EVERY
-# fingerprint-bound lane, not only the graded ones.
-#
-# THE DEFECT (2026-09-01, raised off /tasks/port-script-comment-guard): this clause
-# was built from FullSuiteGate::LANES alone, so it announced "and NOTHING is recorded
-# for it" while a fast-cert sat recorded at the EXACT fingerprint the same sentence
-# had just printed. Literally true of the graded lanes; false in the English a reader
-# acts on — and the reader acts. Measured cost, same day: "nothing is recorded" reads
-# as "certify it", the fast route is the cheap way to (dor-check's own help documents
-# it, for the PRIMARY repo), and bin/fast-check was run TWICE against a repo whose
-# fast cert was already recorded and whose CI was already green.
-#
-# So the clause reads EVIDENCE_LANES and names each lane beside its fingerprints.
-#
-# AND IT NAMES WHY, whenever a fast-cert line exists at all. That half is the one that
-# actually stops the wasted run: a reader told only that the fast cert does not count
-# goes hunting for the threshold to nudge, and there is none to find. FAST_LANE is in
-# EVIDENCE_LANES and deliberately NOT in LANES (bin/lib/full_suite_gate.rb, "the fast
-# lane is deliberately NOT part of `ok`"), and `ok` is computed over required_lanes —
-# so NO CI state can make a secondary repo's verdict true. The staleness of that
-# fast-cert is beside the point, which is why the reason fires for a STALE one too:
-# re-running bin/fast-check produces a FRESH fast cert that still cannot satisfy this
-# bar, so the trap is identical one step later.
-#
-# THE GATE IS UNCHANGED — this builds a STRING and grades nothing. LANES is untouched,
-# `ok` is still computed where it always was, and a fast-cert-only secondary repo still
-# REFUSES. test/lib/dor_check_multi_repo_cert_test.rb asserts that refusal alongside
-# the wording, in that order, because a test pinning only the wording would keep
-# passing on a gate someone had loosened by folding FAST_LANE into LANES.
-def secondary_cert_evidence(eval)
-  recorded = FullSuiteGate::EVIDENCE_LANES.filter_map do |lane|
-    fps = Array(eval.dig(:recorded, lane)).reject { |fp| fp.to_s.strip.empty? }
-    next if fps.empty?
-
-    "#{lane} @#{fps.map { |fp| fp[0, 12] }.join(', @')}"
-  end
-  return " and NOTHING is recorded for it" if recorded.empty?
-
-  "; recorded for it: #{recorded.join('; ')}#{secondary_fast_cert_reason(eval)}"
-end
-
-# Why a recorded fast-cert does not clear a SECONDARY repo — appended only when one
-# exists, because the sentence is only worth its length to the reader holding one.
-def secondary_fast_cert_reason(eval)
-  return "" if Array(eval.dig(:recorded, FullSuiteGate::FAST_LANE)).reject { |fp| fp.to_s.strip.empty? }.empty?
-
-  fresh = eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh
-  " — that fast-cert is #{fresh ? 'FRESH for this exact code' : 'for OLDER code'}, and re-running " \
-    "bin/fast-check cannot clear this: a SECONDARY repo's bar is the FULL cert, structurally. The fast lane " \
-    "sits in FullSuiteGate::EVIDENCE_LANES and deliberately NOT in LANES, which is what `ok` is computed " \
-    "over, because a fast cert only counts beside that repo's OWN green CI and this gate reads one PR. No CI " \
-    "state clears it; the full cert does"
-end
-
 # ── THE ONE TRIGGER FACT, IN ONE PLACE (/tasks/audit-vanishes-when-git-fails) ────
 #
 # .github/workflows/ci.yml, `push: branches:`. `accepted` joined that list on 2026-08-14
@@ -1793,7 +1565,7 @@ def stale_green_refusal(movement, base_branch)
     "different sentences and only one of them is \"the merged tree is green\". Settle it by building the " \
     "merge preview and running that family (git merge-tree the PR head against origin/#{base_branch}, check " \
     "the result out, run the named tests), or update the branch (git rebase origin/#{base_branch}) and let " \
-    "CI re-run — then re-check. A local full cert does NOT clear this: it grades the desk tree, which is not " \
+    "CI re-run — then re-check. No local test run clears this: it grades the desk tree, which is not " \
     "the merged tree either."
 end
 
@@ -1871,333 +1643,6 @@ def base_audit_unobservable(movement, base_branch, branch, root)
     "origin/#{base_branch}) and run the tests that grade your changed files."
 end
 
-# WHICH LANES a refusing secondary repo's state phrase names — the ones that repo
-# actually OWES, read from the SAME list the verdict is computed over.
-#
-# THE DEFECT (2026-09-01, found by alex shipping /tasks/refusal-hides-recorded-fast-cert,
-# whose fix is the sibling clause of this very sentence): this phrase was built from
-# FullSuiteGate::LANES, while `ok` is computed over FullSuiteGate.required_lanes(repo)
-# — which SUBTRACTS the rubocop lane for a repo declaring `lint_lane: none` in
-# config/release_repos.yml, as studio-engine and solana-studio both do. The message and
-# the verdict therefore read two different lists, and a lint-waived repo was refused
-# with `rubocop: missing` printed for a lane the gate had ALREADY waived and would
-# never grade.
-#
-# THE READER ACTS ON IT, which is what makes it worth a fix rather than a shrug. Sent
-# after studio-engine's rubocop they find none — not in the Gemfile, not in the
-# gemspec, no .rubocop.yml, and `bundle exec rubocop` fails outright — so the ways out
-# are to conclude the gate is broken and escalate, or to point FULL_SUITE_RUBOCOP_CMD
-# at a no-op, recording a rubocop pass for a lint that never ran. That is precisely the
-# manufactured evidence the waiver exists to make unnecessary, and it was refused once
-# already (2026-08-24, /tasks/brand-the-current-wallet).
-#
-# WHY THE WAIVED LANE IS OMITTED RATHER THAN NAMED AS WAIVED. The sibling fix ADDED a
-# reason, because a reader holding a fast-cert was told it did not count and would go
-# hunting for a threshold to nudge that does not exist. There is no such dangling
-# thread here: this reader holds no rubocop evidence, and the remedy the sentence ends
-# with — `bin/full-suite-check <slug>` — is already the complete and correct
-# instruction for a waived repo. Naming a lane only to un-name it would add length
-# without closing a question. The waiver's own provenance is documented where it is
-# declared (config/release_repos.yml) and where it is read
-# (FullSuiteGate#required_lanes), which is where a reader checks it and where it gets
-# deleted if that repo ever gains a lint.
-#
-# THE GATE IS UNCHANGED — this builds a STRING and grades nothing. LANES is untouched,
-# required_lanes is untouched, `ok` is still computed exactly where it always was, and
-# a lint-waived repo lacking its FULL-SUITE cert still REFUSES.
-# test/lib/dor_check_multi_repo_cert_test.rb asserts that refusal FIRST and the wording
-# second — a test pinning only the wording would keep passing on a gate someone had
-# loosened into waiving the suite lane too — and a companion case asserts an UNWAIVED
-# repo is still told `rubocop: missing`, so dropping the lane globally fails there.
-def secondary_cert_lane_state(eval, repo)
-  FullSuiteGate.required_lanes(repo)
-               .map { |lane| "#{lane}: #{eval.dig(:lanes, lane) || :missing}" }
-               .join(", ")
-end
-
-# THE "OR CERTIFY LOCALLY IN FULL" ESCAPE — and whether this verdict may carry one.
-#
-# THE DEFECT (/tasks/red-ci-offers-dead-remedy). The two branches below that read the
-# CI STATE, name it ("...and it is currently RED"), and then offer this escape as the
-# alternative to the CI guidance they just gave, offered it UNCONDITIONALLY. On a RED
-# CI that is a ~30-minute command the gate then refuses the result of: the CI gate's
-# own :red refusal is not cert-clearable, so `bin/full-suite-check` produces a
-# BYTE-IDENTICAL verdict. Measured 2026-09-22 against a code-shaped fixture via
-# DOR_CHECK_SUITE_EVIDENCE=ok + DOR_CHECK_CI_STATUS, both roles: ready=false, exit 1.
-# It is the same shape as /tasks/exempt-refusal-prints-dead-remedy — fixed on the
-# exempt path, alive on the red one — and this one is printed by the GATE, which is
-# strictly more authoritative than the prose surfaces PR #1522 corrects.
-#
-# `open:` IS THE CI GATE'S OWN ANSWER, handed down from the call site as
-# `ci_error.nil? || ci_error_cert_clears` — literally the two values the run then acts
-# on (`if ci_error && !ci_error_cert_clears`). That is the fix, and it is the fix
-# rather than a wording change: the message and the behaviour now read ONE source, so
-# a state added to bin/lib/ci_status.rb or reclassified in bin/lib/ci_gate.rb moves
-# both together. Re-deriving the rule here would be a second copy of it, which is how
-# CiGate's own `cert_route:` header says this family of defect starts.
-#
-# MEASURED, the cells this opens and closes (FULL cert, every state CiStatus emits):
-#
-#   ci state    builder  review     ci state     builder  review
-#   green       OPEN     OPEN       unverified   OPEN     OPEN
-#   none        OPEN     OPEN       conflicted   closed   closed
-#   unreadable  OPEN     OPEN       ci_less      closed   closed
-#   pending     OPEN     CLOSED     closed       closed   closed
-#   red         CLOSED   CLOSED     merged       closed   closed
-#                                   no_pr        OPEN     closed
-#
-# TWO CELLS, NOT ONE. The red row is the filed defect. The `pending`/review cell is a
-# CORRECTION to the card that filed it, which recorded that a local full cert DOES
-# satisfy review on a pending CI: it does not, and the reason is structural rather
-# than incidental — :pending is deliberately NOT in CiGate::CI_NO_VERDICT_STATES (it
-# is "the answer is COMING", not "the answer was never GIVEN"), so review's allow-list
-# refuses it with cert_clears false. Re-measured before this change and after it.
-#
-# WHEN CLOSED, SAY SO — do not merely fall silent. The escape has been printed here
-# for months, so a reader who stops seeing it will assume the gate forgot rather than
-# that it cannot be honoured, and will run the suite anyway. This is CiGate's own
-# `cert_route: false` precedent ("NAME NO SECOND ROUTE... Say what does not work, so
-# nobody spends a full-suite run discovering it"), in the same words, one file over.
-#
-# SCOPE — the branches that do NOT get this, deliberately. The MISSING-cert branch at
-# the foot of this method and the STALE-deferral branch above it also name
-# `bin/full-suite-check`, and this does not touch either. They are a different claim:
-# they never read CI, and what they ask for is the gate's OWN missing evidence, which
-# the task owes whatever CI says — NECESSARY but not sufficient on a red CI. The two
-# branches below interpolate the CI state and then offer this as the alternative TO
-# the CI guidance, which is a claim that it CLEARS the verdict. That claim is the one
-# that can be false, so that claim is the one conditioned.
-def full_cert_escape(slug, ci, open:, deferral: false)
-  unless open
-    state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
-    return ". There is no local-cert route out of this one: what refuses this verdict is the CI STATE, not " \
-           "your evidence, so a FULL `#{FULL_SUITE_CMD} #{slug}` run while CI is #{state} still comes back " \
-           "NOT MET (exit 1) — it spends the suite and moves the verdict nowhere."
-  end
-
-  return "; or certify locally in full and stop depending on CI for this diff: #{FULL_SUITE_CMD} #{slug}." if deferral
-
-  "; or certify locally in full: #{FULL_SUITE_CMD} #{slug}."
-end
-
-def suite_evidence_error(eval, slug, ci, review_role, cert_route_open: true)
-  unless eval[:verifiable]
-    return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
-      "Run bin/full-suite-check (or bin/fast-check) from inside the repo so the evidence is fingerprint-bound."
-  end
-
-  lanes = eval[:lanes] || {}
-
-  # THE DEFERRED CASE FIRST, because its remedy is the one the generic text gets WRONG.
-  #
-  # A deferred diff has no full-suite lane and no fast lane — so without this branch the
-  # refusal below reads "full-suite: MISSING, rubocop: MISSING, run bin/full-suite-check".
-  # That is the ~30-minute command this whole change exists to stop charging for, and it
-  # would be offered as the FIRST remedy to the one builder we already know cannot afford
-  # it. Worse, it says nothing about the receipt that IS on the board, so re-running
-  # bin/fast-check (which defers again, correctly) reads as a loop with no exit.
-  #
-  # The honest sentence names what is missing — the GREEN CI — and orders the remedies by
-  # what the CI state actually is.
-  if lanes[FullSuiteGate::DEFER_LANE] == :fresh
-    state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
-    guidance =
-      case ci && ci[:state]
-      when :red
-        "CI is RED — fix the failing checks and push; the deferral stands and the next green settles it"
-      when :none
-        # THE FAILURE MODE THIS BRANCH EXISTS FOR: a capped diff that pushed, got no CI at
-        # all, and would otherwise submit on nothing. It refuses, and it refuses LOUDLY.
-        "there is NO CI on this PR, so there is NO evidence for this diff anywhere — a deferral is not a " \
-          "skip. Check the PR actually triggered a run (a stale base branch runs nothing: rebase onto " \
-          "origin/#{ci && !ci[:base].to_s.empty? ? ci[:base] : 'accepted'}), then re-run"
-      when :pending
-        "CI is still RUNNING — re-run once it reports (bin/ship waits for exactly this)"
-      when :conflicted then CiStatus.conflicted_remedy(ci)
-      when :ci_less then CiStatus.ci_less_remedy(ci)
-      when :unreadable
-        # SPLIT ON THE ROLE, because "the error beside this one" is only there in one of
-        # them. This branch shipped (2f8973a4) asserting the CI gate's :unreadable error
-        # is ALWAYS raised beside it; that is true for review and FALSE for the builder,
-        # and the builder is the role bin/ship runs — it shells dor-check with no
-        # --gate-role, so the "builder" default seeded above stands. The fast-cert branch
-        # below has carried BOTH halves since 2abcc093 (2026-08-14) — they landed in one
-        # commit, the one whose comment names the rolio bug — and this branch copied the
-        # review half only. Measured on one fixture, both roles, same tree: review puts
-        # the remedy in `errors`, builder in `suggestions` alone.
-        if review_role
-          # POINT AT IT, DO NOT RE-PRINT IT. A deferral can never clear an unread CI
-          # (that needs a FULL cert, which a deferral is by definition not), so review's
-          # allow-list refuses on this same state and its error is raised beside this one
-          # carrying the ~500-character token remedy in full. Printing it twice in a
-          # single verdict is precisely how a reader learns to skim the thing we most
-          # need them to read — the same call the fast-cert branch below makes for the
-          # same reason. Say what is specific to a deferral instead.
-          "the CI gate's error beside this one carries the credential remedy — refresh the token and re-read, " \
-            "because a deferral has NO local run underneath it to fall back on while the check read is refused"
-        else
-          # SUBMIT-SIDE THERE IS NOTHING BESIDE THIS ONE TO POINT AT. CiGate.verdict only
-          # reaches unread_ci_refusal when review_role (bin/lib/ci_gate.rb), so the
-          # builder's ci_error is nil for :unreadable and the remedy travels as a
-          # SUGGESTION — which is to say the one reader who is blocked here was being
-          # sent to an error that is not in their errors. The remedy was never dead, only
-          # mislabelled; a pointer to the wrong place still costs the reader the read.
-          #
-          # So print it inline, which is what the fast-cert branch below already does for
-          # this exact role and state: the reason it gives is that a builder facing a
-          # refused check read must be sent at the TOKEN, and that reason does not change
-          # because the cert deferred instead of running. ONE remedy string, not a
-          # deferral-flavoured variant of it — CiStatus calls this THE ONE REMEDY STRING
-          # and a second spelling is a second thing to keep true.
-          #
-          # IT IS ALSO IN `suggestions` IN THIS ROLE, and that is not an oversight to
-          # tidy away here. The suggestion below is suppressed only when the REVIEW
-          # allow-list refused, so submit-side both carry it — the fast-cert branch has
-          # read that way since the rolio fix. The duplication is the deliberate side of
-          # the trade: `suggestions` is advisory and prints under the refusals, so a
-          # builder who is BLOCKED and reads what blocked them has to find the remedy in
-          # the errors. Collapsing the pair means teaching the suggestion to know what an
-          # error already said, which is a change to the branch beside this one.
-          # (@pr_url, not the `devops` local — a top-level def cannot see top-level locals.)
-          "a deferral has NO local run underneath it to fall back on while the check read is refused, and " \
-            "submit-side there is no CI error beside this one to carry the credential remedy — so it is here. " \
-            "#{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: ci[:cause], task: slug)}"
-        end
-      else
-        "no green CI could be read for this PR, and a deferral has no local run underneath it to fall " \
-          "back on"
-      end
-    return "this diff's cert was DEFERRED to GitHub CI — bin/fast-check could execute ZERO test files " \
-      "(the mapped lane was CAPPED over a spine this checkout resolves none of), so it recorded a " \
-      "receipt instead of a cert and CI is the ONLY evidence there is. CI is currently #{state}. " \
-      "#{guidance}#{full_cert_escape(slug, ci, open: cert_route_open, deferral: true)}"
-  end
-
-  # A receipt for a DIFFERENT tree is not a receipt for this one. Called out separately
-  # because "STALE" against a lane the builder never ran by name is otherwise unreadable.
-  if lanes[FullSuiteGate::DEFER_LANE] == :stale
-    return "the cert DEFERRAL recorded for this task is STALE (#{stale_delta(eval, FullSuiteGate::DEFER_LANE)}) " \
-      "— the code moved after it was recorded, so the CI run it points at graded a tree that is not this one. " \
-      "Re-run #{FAST_CHECK_CMD} #{slug} (it re-defers in seconds if the diff is still capped), push, and let CI " \
-      "settle on the new tree; or certify locally in full: #{FULL_SUITE_CMD} #{slug}."
-  end
-
-  if lanes[FullSuiteGate::FAST_LANE] == :fresh
-    state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
-    guidance =
-      if ci && ci[:state] == :conflicted
-        # The PR's ACTUAL base, via the centralized remedy — the twin of the
-        # :ci_less case beside it (conflict-remedy-names-wrong-branch).
-        CiStatus.conflicted_remedy(ci)
-      elsif ci && ci[:state] == :ci_less
-        # A fast cert is credited against a GREEN CI, and here there is no CI to be
-        # green — waiting for one is the exact trap this state exists to break.
-        CiStatus.ci_less_remedy(ci)
-      elsif ci && ci[:state] == :red
-        # CI HAS ANSWERED, AND ITS ANSWER IS THE BLOCKER. This arm exists because RED
-        # used to fall through to the ROLE SPLIT at the foot of this chain, and that
-        # split is wrong for red in BOTH of its branches — which is what made the
-        # dead escape below survive so long: the sentence it trailed already read as
-        # a remedy, so nobody re-read the clause after it.
-        #   review  → "defer until CI finishes". CI HAS finished. There is nothing to
-        #             defer for; the settled answer is in hand and it is red.
-        #   builder → "push the branch and open the PR, then re-run dor-check". The PR
-        #             is open and its checks have reported — that is the only way this
-        #             arm can be reached at all. It is the rolio bug verbatim, one
-        #             state over: a remedy whose precondition is already satisfied, so
-        #             performing it changes nothing and teaches the reader the gate is
-        #             noise.
-        # POINT AT THE REMEDY, DO NOT REPRINT IT — the same call the two :unreadable
-        # arms below make, for the same reason. CiGate's :red refusal is raised beside
-        # this one in BOTH roles (measured 2026-09-22: it is errors[0] for builder and
-        # for review), and it already names the failing checks and says to fix, push
-        # and re-run. A second spelling here is a second thing to keep true.
-        "CI has REPORTED for this tree and the report is RED — there is nothing to wait for and no local " \
-          "evidence that changes it. The CI gate's error beside this one names the failing checks and " \
-          "carries the remedy; fixing them (or re-running a flaky one) and pushing is the whole move"
-      elsif ci && ci[:state] == :unreadable && review_role
-        # In THIS role the two gates always fail together — the CI allow-list refuses
-        # an unreadable verdict unless a FULL cert clears it, and a full cert would
-        # have satisfied this gate before we ever got here. So the CI error beside
-        # this one already carries THE ONE REMEDY STRING in full; printing that
-        # ~500-character paragraph twice in a single verdict is precisely how a reader
-        # learns to skim the thing we most need them to read.
-        "the CI gate's error beside this one carries the credential remedy — the fast route cannot be credited " \
-          "while the check read is refused"
-      elsif ci && ci[:state] == :unreadable
-        # The rolio bug, verbatim: the OLD text below told a builder whose PR was
-        # ALREADY open and ALREADY green to "push the branch and open the PR". They
-        # do, nothing changes, and they learn the gate is noise. The fast route is
-        # genuinely unavailable here — but the reason is a TOKEN, and the reader must
-        # be sent at the token, not at a re-run that cannot possibly help.
-        # (@pr_url, not the `devops` local — a top-level def cannot see top-level locals.)
-        CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: ci[:cause], task: slug)
-      elsif review_role
-        "The review gate-zero needs the SETTLED green — defer until CI finishes (red bounces the task back)"
-      else
-        "Submit-side, a fresh fast cert is credited PROVISIONALLY once an OPEN PR exists with CI pending — " \
-          "push the branch and open the PR, then re-run dor-check"
-      end
-    return "fast-cert evidence is FRESH for this exact code, but a fast cert only satisfies the suite gate " \
-      "alongside a GREEN GitHub CI — CI carries the FULL suite + test:system as the net, and it is currently " \
-      "#{state}. #{guidance}#{full_cert_escape(slug, ci, open: cert_route_open)}"
-  end
-
-  # THE LANES THIS REPO OWES, read from the SAME list the verdict is computed over.
-  # Built from FullSuiteGate::LANES, this printed `rubocop: MISSING` at a repo
-  # declaring `lint_lane: none` — a lane `ok` had already waived and would never
-  # grade. The sibling fix (#1150, secondary_cert_lane_state) closed the SECONDARY
-  # repo's half of this sentence; this is the PRIMARY half, and it is the refusal
-  # every builder in every repo reads. Detail on the waiver and why the lane is
-  # OMITTED rather than named-as-waived: secondary_cert_lane_state above.
-  #
-  # THE GATE IS UNCHANGED — this builds a STRING and grades nothing. LANES,
-  # required_lanes and eval[:ok] are all untouched, and a lint-waived repo lacking
-  # its FULL-SUITE cert still REFUSES.
-  owed = FullSuiteGate.required_lanes(eval[:repo])
-  lint_owed = owed.include?(FullSuiteGate::RUBOCOP_LANE)
-
-  parts = []
-  owed.each do |lane|
-    case lanes[lane]
-    when :stale
-      parts << "#{lane}: STALE (#{stale_delta(eval, lane)} — re-run after your latest edits, " \
-               "or re-run from the task's tree if those hashes differ only because you are standing elsewhere)"
-    when :missing
-      parts << "#{lane}: MISSING (never certified for this exact code)"
-    end
-  end
-  if lanes[FullSuiteGate::FAST_LANE] == :stale
-    parts << "fast-cert: STALE (#{stale_delta(eval, FullSuiteGate::FAST_LANE)} — re-run bin/fast-check " \
-             "after your latest edits, or re-run from the task's tree if those hashes differ only because you " \
-             "are standing elsewhere)"
-  end
-  # NAMED, so a multi-repo verdict is legible repo by repo: this message is the
-  # PRIMARY repo's refusal, and its secondary siblings are raised beside it. Silent
-  # about which repo is exactly how one graded tree read as "the task".
-  # The SUBJECT, the REMEDY's command list and its REFUSES clause all describe
-  # `bin/full-suite-check`, which SKIPS the rubocop lane for a declaring repo and
-  # records no rubocop evidence — so all three follow `owed` or they promise a
-  # reader evidence the writer will never produce.
-  #
-  # THE FAST ROUTE BELOW IS DELIBERATELY NOT CONDITIONED. It describes
-  # `bin/fast-check`, which carries NO lint-waiver branch: it omits rubocop on the
-  # GEM branch instead, and both declaring repos are gems today, so the two axes
-  # merely coincide. Keying this clause off the LINT waiver would describe that
-  # script by a predicate it does not read, and would go WRONG the day a non-gem
-  # repo declares `lint_lane: none` — the exact case bin/fast-check's own comment
-  # ("NO LINT-WAIVER BRANCH HERE, deliberately") reserves. That clause is a
-  # separate defect on the GEM axis, filed rather than folded in.
-  "#{lint_owed ? "the FULL suite + FULL rubocop are" : "the FULL suite is"} not certified green for " \
-    "this code#{eval[:repo].to_s.strip.empty? ? "" : " in #{eval[:repo]}"} — #{parts.join("; ")}. " \
-    "Run `#{FULL_SUITE_CMD} #{slug}` (runs `bin/rails test`#{lint_owed ? " + `bin/rubocop`" : ""} " \
-    "IN FULL and records fingerprint-bound evidence) — it REFUSES a touched-files subset" \
-    "#{lint_owed ? " or a lint-red tree" : ""}. Or take the FAST " \
-    "route: `#{FAST_CHECK_CMD} #{slug}` (diff-mapped tests + core spine + rubocop on changed files, ~1 min), " \
-    "accepted once the PR's GitHub CI is green. " \
-    "Conscious, justified skip? Record a bypass: #{TASK_CMD} update #{slug} --checks \"[full-suite-bypass] <why>\"."
-end
-
 # --- DoR gate-run emit (durable GateRun markers) ----------------------------
 # A REAL merge-gate verdict is the Definition-of-Ready gate — its OWN gate now,
 # distinct from G1 Cert (cert self-closes in full-suite-check). The builder's run
@@ -2231,20 +1676,6 @@ def gate_emission_enabled?(options, gate, slug)
 end
 
 
-# Does the task carry evidence that stands in for a CI verdict nobody could read?
-# Only for CI_NO_VERDICT_STATES; the caller owns that half.
-def full_cert_stands_in_for_ci?(suite_eval, shape_def)
-  # The shape declares it has NO suite to certify (`docs`: prose, no code). There is
-  # no cert to ask for, so demanding one would re-create the exact defect this change
-  # fixes — a gate whose only printed remedy it refuses to honour.
-  return true if shape_def && !shape_def.fetch("full_suite_gate", true)
-
-  # A REAL full cert, never a "[full-suite-bypass]". The bypass is a declared,
-  # loudly-flagged hatch, not evidence; pairing it with a CI nobody could read would
-  # leave the merge with no verification at all from either side.
-  !!(suite_eval && suite_eval[:ok] && !suite_eval[:bypass])
-end
-
 # The FRAGILE post_deploy_cmd shape: a rails runner that LOADs a seed file via
 # `Rails.root.join(...)`, e.g. `bin/rails runner "load Rails.root.join(%q(db/
 # seeds/54.rb)).to_s"`. It WORKS, but its parens + quotes are exactly what made
@@ -2274,23 +1705,6 @@ end
 # and exit, before any task fetch. Honors DOR_CHECK_DIFF_ROOT/_BASE like changed_files.
 if options[:diff_base]
   puts diff_base(diff_root)
-  exit 0
-end
-
-# Resolver/debug seam: print the code fingerprint the full-suite gate validates
-# against (a git tree hash), then exit. Honors DOR_CHECK_DIFF_ROOT like the gate.
-# --gate-role review prints the TASK BRANCH tree (feat/<slug> derived from the
-# positional slug offline), the same tree the review gate-zero grades against —
-# so a reviewer can eyeball it against a "[fast-cert@<fp>]" line. Falls back to the
-# working tree when the branch isn't resolvable locally.
-if options[:suite_fingerprint]
-  if options[:gate_role] == "review"
-    branch = review_branch({}, ARGV.first)
-    origin = review_fingerprint(diff_root, branch)
-    puts(origin ? origin[:fingerprint] : FullSuiteGate.fingerprint(diff_root))
-  else
-    puts FullSuiteGate.fingerprint(diff_root)
-  end
   exit 0
 end
 
@@ -2327,25 +1741,26 @@ review_role = options[:gate_role] == "review"
 # at the merge gate, and its closing line has to know that before it can name what is
 # refusing. Same reason, same place, same ordering rule.
 @build_gate = gate == "build"
-# ...and so does the SLUG, for the cert offer the PR-read alert's remedy ends with.
-# That offer names `bin/full-suite-check <slug>`, and it used to name the literal
-# `<task>` because pr_read_alert is a top-level def and could not see the local
-# (/tasks/builder-reads-remedy-twice). Same reason, same place, same ordering rule.
+# ...and so does the SLUG, for the task-naming remedies the PR-read alert prints —
+# it used to name the literal `<task>` because pr_read_alert is a top-level def and
+# could not see the local (/tasks/builder-reads-remedy-twice). Same reason, same
+# place, same ordering rule.
 @task_slug = task["slug"] || slug
+# ...and the devops hash itself, for the control stamp's branch resolution.
+@devops = devops
 
 # --- task-root guard (bin/lib/cert_root_guard.rb) -----------------------------
 #
 # EVERY check below describes SOME tree. diff_root decides which one, so diff_root
-# MUST BE the task's tree. It wasn't, and nothing checked:
-# run `bin/dor-check <task>` from the hub PRIMARY for a task whose code lives in a
-# worktree and it fingerprints the PRIMARY's tree, which is CONTENT-ADDRESSED and
-# therefore can never equal the tree the builder certified. A perfectly fresh cert
-# reads "STALE (certified for older code)". Live 2026-07-14: STALE for 6 of 6 tasks,
-# including ones certified green 90 seconds earlier — and an agent that hits an
-# unexplainable STALE stops, so this stranded finished tasks in `building` behind
-# green PRs nobody handed off. The guard already EXISTED for exactly this: both cert
-# runners require it (bin/fast-check, bin/full-suite-check). dor-check — the one
-# command in the family that READS the evidence — never consulted it.
+# MUST BE the task's tree. It wasn't, and nothing checked. THE FIRST HALF (2026-07-14)
+# was the cert fingerprint this gate used to grade: run `bin/dor-check <task>` from
+# the hub PRIMARY for a task whose code lived in a worktree and it hashed the
+# PRIMARY's tree, which is CONTENT-ADDRESSED and could never equal the tree the
+# builder certified, so a perfectly fresh cert read "STALE (certified for older
+# code)" — 6 of 6 tasks in one day, and an agent that hits an unexplainable STALE
+# stops. That lane retired with the receipts (/tasks/dor-reads-settled-ci-verdict);
+# the `test-only` control stamp still takes the same rooting (control_fingerprint),
+# and the guard already EXISTED for exactly this in both cert runners.
 #
 # THE SECOND HALF, 2026-08-08 (task dor-check-review-rooting). The 07-14 fix rooted
 # the FINGERPRINT and stopped at the builder lane, on the reasoning quoted below
@@ -2372,7 +1787,7 @@ review_role = options[:gate_role] == "review"
 # REFUSE vs RESOLVE. The cert writers REFUSE, and must: they stamp evidence about
 # the tree they stand in, so a chdir could green-cert a stale worktree while the
 # operator's real edits sat untested where they ran from. dor-check WRITES NO
-# EVIDENCE — it grades what is already recorded — so re-rooting cannot forge a cert.
+# EVIDENCE — it reads a diff and a CI verdict — so re-rooting can forge nothing.
 # It can only make the gate judge the RIGHT code. So dor-check RESOLVES. But
 # cert_root_guard.rb is explicit that a SILENT chdir is its own hazard, and it is
 # right: a gate that quietly judges a different tree than the one you are looking at
@@ -2381,16 +1796,16 @@ review_role = options[:gate_role] == "review"
 #
 # Remedies, in order, once the root is found foreign:
 #   1. the task's worktree is ON DISK and UNAMBIGUOUS → re-root the whole gate there
-#      (diff AND fingerprint). Its working tree is exactly what the builder
-#      certified, uncommitted edits included.
-#   2. else its BRANCH resolves in this repo → root the FINGERPRINT at that branch's
-#      committed tree, and the DIFF at that branch's committed diff. Both are
-#      content-addressed, so neither depends on what the caller's checkout happens
-#      to be carrying. This is the mechanism --gate-role review has used for the
-#      fingerprint since the reviewers hit this from the other side.
-#   3. else → no tree here can honestly show this task's code. Refuse: the suite gate
-#      refuses to grade a cert (below), and the diff resolves :indeterminate, which
-#      the exempt-kind gate already treats as fail-closed. NEVER read the local tree.
+#      (the diff, and the control stamp's tree). Its working tree is exactly what the
+#      builder pushed, uncommitted edits included.
+#   2. else its BRANCH resolves in this repo → root the DIFF at that branch's
+#      committed diff (and the control stamp at that branch's committed tree). Both
+#      are content-addressed, so neither depends on what the caller's checkout
+#      happens to be carrying. This is the mechanism --gate-role review has used
+#      since the reviewers hit this from the other side.
+#   3. else → no tree here can honestly show this task's code. The diff resolves
+#      :indeterminate, which the exempt-kind and claimable_when gates treat as
+#      fail-closed. NEVER read the local tree.
 #
 # AMBIGUITY IS ALSO A REFUSAL. The worktree glob spans every app, so a MULTI-REPO
 # task matches once per repo (live today: repair-moms-app-ci under BOTH moms-app and
@@ -2412,7 +1827,7 @@ review_role = options[:gate_role] == "review"
 #   * --file without DOR_CHECK_PROJECTS_DIR — the offline seam has no board and no
 #     on-disk tree relationship to assert (no production caller passes --file).
 foreign_root = nil
-task_fingerprint_override = nil
+task_tree_override = nil
 if gate != "build" && !slug.to_s.strip.empty? &&
    ENV["DOR_CHECK_DIFF_ROOT"].to_s.strip.empty? &&
    (options[:file].nil? || !PROJECTS_DIR.to_s.strip.empty?)
@@ -2444,10 +1859,9 @@ if foreign_root
     warn!("⚠ dor-check: RE-ROOTING. You are standing in #{standing} (branch #{standing_branch}), which is " \
           "NOT #{slug}'s tree — every check below would have described the wrong code. The DIFF would have " \
           "been THIS checkout's working tree, so one unrelated dirty .md here can hand a multi-file code PR a " \
-          "doc-only exemption; and the cert would have read STALE no matter how fresh it is (the fingerprint " \
-          "is a git TREE hash; a foreign checkout can never match one). Re-rooted at the task's worktree: " \
-          "#{picked}. dor-check READS evidence and never writes a cert, so it re-roots rather than refusing — " \
-          "but it will not do it silently: the verdict below is about THAT tree, not the one you are in.")
+          "doc-only exemption. Re-rooted at the task's worktree: #{picked}. dor-check READS and never " \
+          "writes, so it re-roots rather than refusing — but it will not do it silently: the verdict below " \
+          "is about THAT tree, not the one you are in.")
     @diff_root = picked
     foreign_root = nil # the root IS the task's tree now
   else
@@ -2473,7 +1887,8 @@ if foreign_root
     # A BRANCH-only mismatch is still fine: right repo, wrong branch checked out, refs
     # intact — which is precisely the reclaimed-worktree case remedy 2 exists for.
     @standing_repo_ok = foreign_root[:standing_repo_mismatch].nil?
-    task_fingerprint_override = (review_fingerprint(diff_root, foreign_root[:expected_branch]) if @standing_repo_ok)
+    task_tree_override = (review_fingerprint(diff_root, foreign_root[:expected_branch]) if @standing_repo_ok)
+    @task_tree_override = task_tree_override
     if ambiguous
       warn!("⚠ dor-check: AMBIGUOUS TASK TREE — refusing to guess. #{eligible.size} worktrees named " \
             "#{foreign_root[:worktree_slug]} are genuinely on #{foreign_root[:expected_branch]} " \
@@ -2497,14 +1912,12 @@ if foreign_root
             "#{foreign_root[:expected_branch]} in the right worktree, or declare the tree explicitly with " \
             "DOR_CHECK_DIFF_ROOT=<path>.")
     end
-    if task_fingerprint_override
-      warn!("⚠ dor-check: RE-ROOTING the cert fingerprint. You are standing in #{standing} (branch " \
+    if task_tree_override
+      warn!("⚠ dor-check: RE-ROOTING the diff. You are standing in #{standing} (branch " \
             "#{standing_branch}), which is NOT #{slug}'s tree#{ambiguous || rejected.any? ? "" : ", and no " \
-            "worktree .worktrees/#{foreign_root[:worktree_slug]} exists here"} — so the cert is graded against branch " \
-            "#{foreign_root[:expected_branch]}'s committed tree — #{task_fingerprint_override[:ref]} " \
-            "= @#{task_fingerprint_override[:fingerprint][0, 12]} — not against this checkout's, and the diff " \
-            "comes from that branch's committed history for the same reason. Announced, " \
-            "not silent, and NAMED so you can recompute it: the verdict below is about the BRANCH's code.")
+            "worktree .worktrees/#{foreign_root[:worktree_slug]} exists here"} — so the diff comes from branch " \
+            "#{foreign_root[:expected_branch]}'s committed history (#{task_tree_override[:ref]}), not from this " \
+            "checkout's working tree. Announced, not silent: the verdict below is about the BRANCH's code.")
     end
   end
 end
@@ -2586,26 +1999,18 @@ if EXEMPT_KINDS.include?(kind)
       # and the missing one is named. Sending this reader to their worktree would be
       # the worst possible instruction: the repo they are standing in is precisely
       # the one that DID read.
-      "kind: #{kind} could not be proven doc-only — #{pr_read_alert(cert_route: true)}"
+      "kind: #{kind} could not be proven doc-only — #{pr_read_alert}"
     elsif diff_source == :pr_unreadable
       # The refusal has its own voice: this run did not fail to FIND a diff, it
       # refused to accept a substitute for the one it was denied. Saying "no diff
       # could be observed" here would send the reader to their worktree, which is
       # exactly the wrong place — the fix is a credential.
       #
-      # `cert_route: true` HERE IS A DELIBERATE, DISCLOSED CHOICE, not a default.
       # This branch is NOT the exempt path: nothing is waived, the gate refuses on
-      # the DIFF (it could not prove doc-only) and exits before the suite gate is
-      # ever consulted. So `false`'s clause — "the shape/test-tier gate is already
-      # waived, so there is no suite left to substitute" — would be FALSE here, and
-      # swapping one untrue sentence for another is the defect this task is about.
-      # The trailing cert offer is not honoured on this branch either (measured
-      # 2026-09-05: `--gate-role review` + an unreadable PR file list refuses
-      # byte-identically with a FULL cert), but that is PRE-EXISTING and unchanged by
-      # the exempt fix — the same standing as bin/release.rb's G3 remedy. Both want a
-      # route sentence that can say "this refusal is not the suite gate's at all",
-      # which is a third state and its own task.
-      "kind: #{kind} could not be proven doc-only — #{pr_read_alert(cert_route: true)}"
+      # the DIFF (it could not prove doc-only) and exits before CI is ever consulted.
+      # The alert's closing names the PR read as what refused (pr_read_alert); no
+      # cert is offered anywhere any more, so there is no route sentence to get wrong.
+      "kind: #{kind} could not be proven doc-only — #{pr_read_alert}"
     elsif untrusted_root?
       # The false-PASS case, refused instead of granted. This is the state the old
       # code turned into "✓ n/a — doc-only diff": it stood in a checkout that is not
@@ -2632,7 +2037,7 @@ if EXEMPT_KINDS.include?(kind)
         "so the shape/test-tier gate is ENFORCED rather than skipped (fail-closed). Re-run " \
         "this from the task's worktree, or set devops.pr_url, so the gate can see the diff " \
         "it is meant to judge" \
-        "#{pr_read_alert ? ". The PR half of that: #{pr_read_alert(cert_route: true)}" : ""}"
+        "#{pr_read_alert ? ". The PR half of that: #{pr_read_alert}" : ""}"
     end
     if options[:json]
       puts JSON.pretty_generate(
@@ -2700,15 +2105,13 @@ if EXEMPT_KINDS.include?(kind)
     # alert rides on the verdict itself, not only in a suggestion, because this line
     # is the part that gets read.
     #
-    # `cert_route: false` FOR THE SAME REASON THE CI VERDICT BELOW PASSES IT. This
-    # alert lands on the EXEMPT path, where the tier gate is waived and no suite
-    # remains to substitute — so naming `bin/full-suite-check` here is a remedy this
-    # path cannot honour, exactly the defect the CI half of this branch fixes. And
-    # the two halves co-fire: one stale token refuses the PR file-list read AND the
-    # check read, so an exempt verdict printed the CI gate's correct DENIAL and this
-    # alert's OFFER four lines apart, and adding a full cert left the whole run
-    # byte-identical. Measured on this branch before the fix; the property test's
-    # `refute_equal offered, denied` names that state directly.
+    # NO CERT IS OFFERED HERE, and none is offered anywhere else either since
+    # /tasks/dor-reads-settled-ci-verdict. This alert used to carry `cert_route:
+    # false` so the exempt path printed a denial where the gated path printed an
+    # offer — the two halves co-fire (one stale token refuses the PR file-list read
+    # AND the check read), and an exempt verdict once printed the CI gate's correct
+    # DENIAL and this alert's OFFER four lines apart. With every route denying, the
+    # split has nothing left to guard.
     #
     # AND THE EXEMPTION MUST BE PROVEN AGAINST THE PR, NOT MERELY ANNOUNCED
     # (/tasks/exempt-path-trusts-local-tree). The alert above used to land in
@@ -2758,7 +2161,7 @@ if EXEMPT_KINDS.include?(kind)
     # closing line may keep promising that a green CI carries this path — and they must
     # never be two spellings of one role test. `exempt_also_refused` below learned the
     # same lesson from the other direction.
-    pr_read_refusal = pr_read_alert(cert_route: false)
+    pr_read_refusal = pr_read_alert
     exempt_alerts = []
     exempt_pr_read_errors = []
     if pr_read_refusal
@@ -2788,26 +2191,11 @@ if EXEMPT_KINDS.include?(kind)
     # So the tier gate stays waived and the CI verdict is asked HERE, through the
     # same CiGate.verdict the gated path calls, rather than by relocating a block.
     #
-    # NO CERT CLEARANCE ON THIS PATH, deliberately — the one place it diverges from
-    # the gated path. Down there, CI_NO_VERDICT_STATES (:none/:unreadable/:unverified)
-    # can be cleared by a FULL local cert, because the gate must honour its own
-    # printed remedy ("certify in full instead"). That argument is a SUBSTITUTION of
-    # evidence, and an exempt task has none to substitute: it ran no suite, and the
-    # shape whose `full_suite_gate: false` would excuse it is not the thing being
-    # judged here — the KIND is. An unread CI over an exempt diff therefore leaves
-    # the merge with no verdict from either side, which is the state a gate exists to
-    # refuse. Hence: in the review role, GREEN advances and nothing else does.
-    #
-    # `cert_route: false` IS THAT SENTENCE, SAID TO THE REFUSAL ITSELF
-    # (/tasks/exempt-refusal-prints-dead-remedy). The policy above was right from the
-    # first day; the MESSAGE was not. This path used to take the gated path's refusal
-    # verbatim — "certify in full instead: `bin/full-suite-check <slug>`" — and then
-    # DISCARD the cert_clears flag that was the only thing able to honour it. Adding
-    # the cert produced a byte-identical refusal, so the gate printed a remedy it
-    # could not honour and an operator who followed it burned a full-suite run for
-    # nothing. Passing the flag DOWN instead of dropping it on the floor makes the
-    # promise and the behaviour one decision: `exempt_cert_clears` is now false
-    # BECAUSE the text offers no cert, not merely alongside it.
+    # NO CERT CLEARS ANYTHING, on this path or the gated one. This path never had a
+    # suite to substitute (the tier gate is waived); the gated path lost its
+    # substitution when the receipts stopped being read
+    # (/tasks/dor-reads-settled-ci-verdict). In BOTH roles GREEN advances, a
+    # builder-side pending WAITS, and everything else refuses with its own remedy.
     exempt_ci = gate == "build" ? nil : task_ci_verdict(devops).first
     # WHAT ELSE IS ALREADY REFUSING THIS VERDICT, handed down so the CI refusal's own
     # closing line cannot promise that a green CI alone would carry this path. Read
@@ -2820,34 +2208,19 @@ if EXEMPT_KINDS.include?(kind)
     # nothing but CI is refusing and green really is sufficient — the remedy prints the
     # sentence it always printed, to the byte.
     exempt_also_refused = exempt_pr_read_errors.empty? ? [] : [PR_READ_REFUSAL_PHRASE]
-    exempt_ci_error, exempt_cert_clears, exempt_ci_notes =
-      if exempt_ci
-        CiGate.verdict(exempt_ci, review_role: review_role, pr_url: governing_ci_pr_url(devops),
-                                  slug: task["slug"] || slug, cert_route: false,
-                                  also_refused: exempt_also_refused)
-      else
-        [nil, false, []]
-      end
-    # NOT a discard and not decoration: this is the one line that would fail loudly if
-    # someone re-armed the cert route here without also re-reading the policy above.
-    # `cert_route: false` must yield a flag this path can honour by ignoring — which is
-    # only true while the flag is false. It FAILS CLOSED (abort → exit 1, so the gate
-    # refuses) because the failure it catches is a gate that has started offering a
-    # remedy it cannot honour, and passing that through is the whole defect.
-    if exempt_cert_clears
-      abort "bin/dor-check: the exempt (doc-only) path received a CLEARABLE CI refusal, which it cannot " \
-            "honour — the tier gate is already waived, so no suite remains to substitute. Whoever armed " \
-            "cert_route here must read the policy note above first (/tasks/exempt-refusal-prints-dead-remedy)."
-    end
-    exempt_alerts.concat(exempt_ci_notes)
+exempt_ci_error =
+  if exempt_ci
+    CiGate.verdict(exempt_ci, review_role: review_role, pr_url: governing_ci_pr_url(devops),
+                              slug: task["slug"] || slug, also_refused: exempt_also_refused)
+  end
+exempt_ci_waiting = CiGate.waiting?(exempt_ci, review_role: review_role)
     # CI FIRST, the PR-read refusal second: one fault hides both reads — a refused
     # token, or a `gh`/network failure — and when they co-fire the CI verdict is the
     # one that has always led this refusal.
     # Reordering it would change the headline of every existing exempt refusal.
     exempt_errors = [exempt_ci_error].compact + exempt_pr_read_errors
     exempt_ready = exempt_errors.empty?
-    exempt_ci_result = CiGate.gate_row(exempt_ci, review_role: review_role,
-                                             review_refused: review_role && !exempt_ready)
+    exempt_ci_result = CiGate.gate_row(exempt_ci, review_role: review_role, review_refused: !exempt_ready)
 
     note = if !exempt_ready
       exempt_errors.first
@@ -2870,6 +2243,7 @@ if EXEMPT_KINDS.include?(kind)
         # disagree (exempt: true, ready: false) exactly when CI refuses.
         ready: exempt_ready,
         exempt: true,
+        ci_waiting: exempt_ci_waiting,
         diff_source: diff_source.to_s,
         # The doc-only PASS — the exact verdict shape the 08-08 false pass wore. It
         # must say which tree it read, or the exemption cannot be audited after the
@@ -2912,6 +2286,15 @@ if EXEMPT_KINDS.include?(kind)
         # this pass, so the reader can tell a graded exemption from a blind one.
         puts "  → ready to advance #{boundary} (shape/test-tier gate skipped: the OBSERVED diff ships no " \
              "behavior#{exempt_ci ? "; GitHub CI: #{exempt_ci[:state].to_s.upcase}" : ""})"
+      elsif exempt_ci_waiting && exempt_errors == [exempt_ci_error]
+        # THE WAIT, on the exempt path: nothing refuses but an unsettled CI, and the
+        # headline says so rather than "NOT met" — bin/ship's step 7 reads exit 1 either
+        # way, so the wording is for the reader, and the reader's move is to come back.
+        puts "⏳ #{gate_label} WAITING on CI for #{title.inspect} — the OBSERVED diff ships no behavior; the CI " \
+             "verdict has not settled"
+        print_pr_coverage(gate)
+        puts "  - #{exempt_ci_error}"
+        puts "  → not ready to advance #{boundary} YET; re-run once CI reports"
       else
         puts "✗ #{gate_label} NOT met for #{title.inspect}"
         print_pr_coverage(gate)
@@ -3119,7 +2502,7 @@ if claim_rule
   elsif must_be && !proven && gate != "build" && diff_source == :pr_incomplete
     # Same distinction the exempt path draws: this run did not fail to FIND a diff, it
     # refused to grade an INCOMPLETE one. The alert names the repo it could not read.
-    errors << "shape #{shape.inspect} could not be proven #{proven_label} — #{pr_read_alert(cert_route: true)}"
+    errors << "shape #{shape.inspect} could not be proven #{proven_label} — #{pr_read_alert}"
   elsif must_be && !proven && gate != "build"
     errors << "shape #{shape.inspect} could not be proven #{proven_label} — NO diff could be observed " \
       "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), so the claim is " \
@@ -3182,18 +2565,14 @@ if present?(post_deploy_cmd) && bare_full_suite_seed?(post_deploy_cmd)
     "rake task (e.g. bin/rails pokemon:seed)"
 end
 
-# CI-status gate (merge gate only). Local certification proves the code is green on
-# THIS machine; this proves it's green on GITHUB — closing the gap where a PR passes
-# `bin/rails test` locally but fails the browser `test:system` lane CI also runs
-# (the report's #1 blocker class). BLOCKS on a failing PR in both roles; a
-# STILL-RUNNING CI is role-split (ci-gate-review-handoff): the builder's submit-side
-# run downgrades it to a LOUD suggestion — the CI wait moved to the review handoff,
-# where bin/pr-review's supervisor checks the live verdict before spawning reviewers
-# — while the review gate-zero (--gate-role review) keeps the strict block (it IS
-# the authoritative CI verdict). Submit-side, a missing PR / no checks / gh error
-# stays a non-blocking note (the gate re-runs at review); REVIEW-side it does not —
-# see the allow-list below.
-# Evaluated BEFORE the suite gate because the suite gate's fast route depends on it.
+# CI-status gate (merge gate only) — and since /tasks/dor-reads-settled-ci-verdict
+# THE SUITE GATE: the PR's settled GREEN GitHub CI is the one form of evidence that
+# the full suite (test:system included) went green against the exact tree being
+# shipped. It blocks on every non-green state in BOTH roles; builder-side a
+# still-RUNNING CI is a WAIT rather than a failure (bin/ship holds at step 6/8 for
+# exactly this, so the ordinary handoff never sees it). The review gate-zero
+# (--gate-role review) is the authoritative verdict and defers a pending one.
+# The allow-list lives in bin/lib/ci_gate.rb.
 # Non-blocking SUGGESTIONS collect here too (never affect `ready`); more join below.
 suggestions = []
 
@@ -3236,53 +2615,36 @@ end
 #             on an hour-old App token would buy nothing.
 # Not evaluated at the build gate, which resolves no diff and must not shell `gh`.
 #
-# `cert_route: true`, stated rather than defaulted — and stated with its LIMIT, since
-# an over-claiming comment is the defect this whole task is about. What is true: this
-# is the GATED path, where a full cert genuinely stands in for an unread CI verdict
-# (full_cert_stands_in_for_ci?), so the offer is live for the CI half of the run and
-# `false` would be a lie besides — that branch prints the doc-only denial ("the
-# shape/test-tier gate is already waived"), which is untrue on a code diff. What is
-# NOT true: that THIS alert is cleared by the cert it names. In the REVIEW role a
-# refused PR read is an ERROR no cert clears, so the cert duly clears the CI half and
-# the run still exits 1 on this one — measured 2026-09-05. That gap is PRE-EXISTING
-# (before this task the remedy had no cert_route at all and every caller printed the
-# offer), and it is shared with the "could not be proven doc-only" branch above and
-# bin/release.rb's G3 gate. All three want a THIRD route — "this refusal is not the
-# suite gate's at all" — which is its own task; the extension point is written down in
-# test/lib/dor_check_exempt_ci_test.rb's honour-the-remedy property. The exempt caller
-# passes false. No printing caller of pr_read_alert rides the default.
+# In the REVIEW role a refused PR read is an ERROR, and nothing clears it but a read
+# that works: the alert names its own refusal in its closing line (pr_read_alert), and
+# since /tasks/dor-reads-settled-ci-verdict no verdict offers a local cert for any
+# half of a run, so the alert carries no route and forwards none.
 # ONE FACT, READ ONCE. This site used to spell the role test inline while its twin on
 # the exempt path asked pr_read_refuses_verdict?, and two spellings of one predicate is
 # how the exempt path's two closings drifted apart in the first place. It is also now
 # load-bearing beyond the role: an :incomplete multi-repo read refuses in BOTH roles,
 # and an inline `review_role ?` here would file that refusal as a SUGGESTION — a
 # non-blocking note attached to a verdict that just failed closed.
-if gate != "build" && (alert = pr_read_alert(cert_route: true))
+if gate != "build" && (alert = pr_read_alert)
   pr_read_refuses_verdict? ? errors << alert : suggestions << alert
 end
 
 ci = nil
-ci_error = nil            # the CI refusal, if any
-ci_error_cert_clears = false # ...and whether a FULL local cert stands in for it
-ci_review_refused = false # resolved after the suite gate; feeds the gates-card row
+ci_error = nil      # the CI refusal, if any — the suite gate's whole verdict
+ci_waiting = false  # builder-side pending: a WAIT, printed under its own headline
+ci_refused = false  # resolved after the review-side checks below; feeds the gates-card row
 if gate != "build"
   ci = task_ci_verdict(devops).first
 
   # The case + the allow-list, both of them, live in CiGate.verdict — the exempt path
   # above asks the very same function, so neither can advance on a state the other
-  # refuses.
-  #
-  # `cert_route: true` is the ONE thing this call says differently, and it is stated
-  # rather than defaulted so the two call sites read as a pair. Here a full cert
-  # genuinely does stand in (full_cert_stands_in_for_ci? below), so the refusal is
-  # allowed to name `bin/full-suite-check` — and this is the path that then HONOURS
-  # it. The exempt caller passes false and gets a refusal that offers nothing instead.
-  ci_error, ci_error_cert_clears, ci_notes =
-    CiGate.verdict(ci, review_role: review_role, pr_url: governing_ci_pr_url(devops),
-                       slug: task["slug"] || slug, cert_route: true)
-  suggestions.concat(ci_notes)
+  # refuses. It returns the refusal or nil; there is no cert-clearable second value
+  # any more, because nothing clears a CI refusal but CI.
+  ci_error = CiGate.verdict(ci, review_role: review_role, pr_url: governing_ci_pr_url(devops),
+                                slug: task["slug"] || slug)
+  ci_waiting = CiGate.waiting?(ci, review_role: review_role)
 
-  # ==== TIER 1 HAS A PRECONDITION: THE GREEN MUST STILL BE ABOUT THIS MERGE ====
+  # ==== THE GREEN MUST STILL BE ABOUT THIS MERGE (review role) ====================
   #
   # `gh pr checks` answers for the HEAD COMMIT, and ci.yml triggers on pull_request
   # and on pushes to main, release AND `accepted` — so a merge into `accepted` DOES
@@ -3340,23 +2702,17 @@ if gate != "build"
   # SEAM 1 — REFUSES, because the gate would otherwise describe a tree that is not
   # the one merging. `--gate-role review` re-roots to the BUILDER'S DESK, which sits
   # wherever the builder left it; measured on turf #519, that was 262059b while the
-  # merged commit was 9137d57. The cert fingerprint catches this ONLY when the desk's
-  # ref has seen the push — and DISTANCE IS NOT THE TEST, REF SHARING IS. A zap pushed
+  # merged commit was 9137d57. DISTANCE IS NOT THE TEST, REF SHARING IS: a zap pushed
   # from a SIBLING WORKTREE moves origin/<branch> (every worktree of a repo shares one
-  # ref store), so the cert goes STALE unaided and this check stays quiet. A zap pushed
-  # from INDEPENDENT refs — a separate clone, another machine, GitHub's Update-branch
-  # button — does not move it, so on a ref nothing else has touched the cert reads FRESH
-  # and this check is the only thing that asks. Measured 2026-09-09 in the real house
-  # geometry and pinned by test/docs/zap_cert_freshness_docs_test.rb.
-  #
-  # BUT :mismatch DOES NOT DETERMINE THE LANE — which is why the refusal below states no
-  # lane verdict at all. Both pushes can land in sequence: the protocol's own throwaway
-  # zap desk, then Update-branch (which the base report below recommends by name). The
-  # cert is then STALE while this check reads :mismatch, and a refusal claiming FRESH
-  # there would contradict the `full-suite: STALE` error raised into the SAME errors
-  # array. Naming a state this check has not established is this task's own defect one
-  # notch down, so the message describes THIS ref and lets the cert lane speak for
-  # itself. Pinned by the compound case in zap_cert_freshness_docs_test.rb.
+  # ref store), so the desk's ref follows the push and this check stays quiet; a zap
+  # pushed from INDEPENDENT refs — a separate clone, another machine, GitHub's
+  # Update-branch button — does not move it, and this check is the only thing that
+  # asks. Measured 2026-09-09 in the real house geometry and pinned by
+  # test/docs/zap_cert_freshness_docs_test.rb. (The cert fingerprint used to be the
+  # other reader of this ref: it caught the sibling-worktree case by going STALE and
+  # read FRESH over a separate-clone push, which only this check catches — and it
+  # retired with the receipts; the CI verdict is read for the PR head wherever it is,
+  # so this check is now what ties the graded DIFF to that head.)
   #
   # A mismatch can only ever be a FALSE REFUSAL (an unfetched desk), never a false
   # pass, and the remedy for the harmless case is the same `git fetch` that fixes the
@@ -3365,56 +2721,32 @@ if gate != "build"
     root: diff_root, branch: zap_branch,
     pr_head: ENV["DOR_CHECK_PR_HEAD"] || (ci && ci[:head_oid])
   )
-  if review_role && head_check[:state] == :mismatch
-    # THE RE-CERTIFY COMMAND, resolved desk-first against the GRADED checkout (the tree
-    # every -C command in this refusal acts on) with the hub as fallback — a reviewer
-    # standing at a satellite\'s primary cannot run a bare `bin/full-suite-check`.
-    #
-    # NAMED, not inlined, so the ORDER guard in test/docs/zap_cert_freshness_docs_test.rb
-    # can still find it: that guard reads this refusal\'s SOURCE and asserts the last
-    # mention of the re-cert falls AFTER the command that moves the checkout. The path is
-    # now computed at runtime, so the literal `bin/full-suite-check` it used to index on is
-    # no longer in the source; `recert_command` is the marker that replaces it.
-    recert_command = FastLane.remedy_command("full-suite-check",
-                                             [File.join(diff_root.to_s, "bin"), __dir__],
-                                             task["slug"] || slug)
-    errors << "the tree this review gate graded is NOT the PR head — #{head_check[:ref]} in #{diff_root} is at " \
-      "#{head_check[:local_sha][0, 12]} while the PR head is #{head_check[:pr_head][0, 12]}. Somebody pushed " \
-      "(a reviewer zap is the usual cause) and this checkout has not seen it, so the DIFF, the file contents " \
-      "and the cert fingerprint all describe a tree that is not the one merging — while the CI verdict beside " \
-      "them describes the PR head. The cert fingerprint cannot see THIS push: it hashes #{head_check[:ref]}, " \
-      "and that ref did not follow the push. So the cert lane beside this line, whichever way it fell, " \
-      "grades #{head_check[:ref]} and NOT the PR head — asking whether those are the same commit is what " \
-      "this check is for. REF SHARING decides which pushes reach origin/#{zap_branch} at all: one from a " \
-      "SIBLING WORKTREE does (worktrees share one ref store), one from INDEPENDENT refs — a separate " \
-      "clone, another machine, GitHub's Update-branch button — does not. Fetch the branch " \
-      "(git -C #{diff_root} fetch origin #{zap_branch}) and re-run — that alone clears THIS refusal, " \
-      "and the cert lane then grades the fetched head instead of the tree it was grading. KEEP THE -C: " \
-      "this gate re-roots to the graded checkout, so a reviewer running it from the repo's primary is " \
-      "standing somewhere else, and a bare `git merge` pasted there fast-forwards whatever the primary " \
-      "has checked out — release or main by SOP — with exit 0 and a success message. Re-certifying " \
-      "straight after the fetch would re-stamp the tree that checkout already has: bin/full-suite-check " \
-      "hashes the WORKING tree, while this gate hashes #{head_check[:ref]}. So if the zap was yours, " \
-      "move the graded checkout onto the fetched head first " \
-      "(git -C #{diff_root} merge --ff-only origin/#{zap_branch}), then re-certify " \
-      "(#{recert_command}) so the cert describes what will merge. IF THAT " \
-      "MERGE REFUSES (`Not possible to fast-forward`), #{diff_root} carries a commit " \
-      "origin/#{zap_branch} does not, and NEITHER hint git prints there ends the job: --no-ff SUCCEEDS " \
-      "and leaves a tree still holding what the PR head lacks, and `git rebase` alone leaves that " \
-      "commit on top — both would certify a tree that never merges. Read what is at stake " \
-      "(git -C #{diff_root} log --oneline origin/#{zap_branch}..HEAD): if that commit belongs on this " \
-      "PR, land it as a zap (rebase onto origin/#{zap_branch}, then push) so it BECOMES the head and " \
-      "this merge succeeds; if it does not and the desk is yours, git -C #{diff_root} reset --hard " \
-      "origin/#{zap_branch} DISCARDS it. If the desk is NOT yours, discard nothing — grade on the CI " \
-      "green for this exact head and say so in your report."
+if review_role && head_check[:state] == :mismatch
+  errors << "the tree this review gate graded is NOT the PR head — #{head_check[:ref]} in #{diff_root} is at " \
+    "#{head_check[:local_sha][0, 12]} while the PR head is #{head_check[:pr_head][0, 12]}. Somebody pushed " \
+    "(a reviewer zap is the usual cause) and this checkout has not seen it, so the DIFF and the file contents " \
+    "this gate read describe a tree that is not the one merging — while the CI verdict beside them describes " \
+    "the PR head, which is the tree the suite evidence is about. REF SHARING decides which pushes reach " \
+    "origin/#{zap_branch} here at all: one from a SIBLING WORKTREE does (worktrees share one ref store), one " \
+    "from INDEPENDENT refs — a separate clone, another machine, GitHub's Update-branch button — does not. " \
+    "Fetch the branch (git -C #{diff_root} fetch origin #{zap_branch}) and re-run — that alone clears THIS " \
+    "refusal. KEEP THE -C: this gate re-roots to the graded checkout, so a reviewer running it from the " \
+    "repo's primary is standing somewhere else, and a bare `git merge` pasted there fast-forwards whatever " \
+    "the primary has checked out — release or main by SOP — with exit 0 and a success message. If the " \
+    "desk is yours and you want it ON the pushed head, git -C #{diff_root} merge --ff-only " \
+    "origin/#{zap_branch}; IF THAT MERGE REFUSES (`Not possible to fast-forward`), #{diff_root} carries a " \
+    "commit origin/#{zap_branch} does not — read what is at stake (git -C #{diff_root} log --oneline " \
+    "origin/#{zap_branch}..HEAD): if that commit belongs on this PR, land it as a zap (rebase onto " \
+    "origin/#{zap_branch}, then push) so it BECOMES the head; if it does not and the desk is yours, " \
+    "git -C #{diff_root} reset --hard origin/#{zap_branch} DISCARDS it. If the desk is NOT yours, discard " \
+    "nothing — grade on the CI green for this exact head and say so in your report."
   elsif review_role && head_check[:state] == :unobservable && head_check[:reason] == :no_pr_head
     # NOT a refusal: with no head from GitHub the question could not be asked, and the
     # CI gate above already owns "we could not read this PR". Say which check went
     # unmade rather than letting its silence read as a pass.
     suggestions << "could not confirm the graded tree IS the PR head — GitHub returned no headRefOid, so the " \
-      "zap check (is this verdict about the commit that will merge?) did not run. The cert fingerprint is the " \
-      "only thing still standing between a post-zap push and this verdict, and it catches one only when this " \
-      "checkout has fetched the push."
+      "zap check (is this verdict about the commit that will merge?) did not run. The CI verdict is read for " \
+      "the PR head wherever it is; this check is what ties the DIFF this gate graded to that same head."
   end
 
   # SEAM 2 — REPORTS, and deliberately does not refuse. `accepted` moves constantly;
@@ -3531,354 +2863,46 @@ if gate != "build"
   end
 
   # THE REFUSAL. Green CI, and the base gained — after the run finished — a change to a
-  # test that grades this PR's own code. Not cert-clearable: a local full cert grades the
-  # DESK tree, which is not the merged tree either, so it answers a different question
-  # than the one being refused.
+  # test that grades this PR's own code. No local run clears it: it grades the DESK
+  # tree, which is not the merged tree either, so it answers a different question than
+  # the one being refused.
   if review_role && ci_error.nil? && ci[:state] == :green && movement[:state] == :moved &&
      movement[:guards].any?
     errors << stale_green_refusal(movement, base_branch)
-    ci_review_refused = true
+    ci_refused = true
   end
 
-  # A refusal a cert can clear is DEFERRED past the suite gate below, which is
-  # where suite_eval becomes known (this block runs first on purpose — the suite
-  # gate's fast route reads `ci`). Everything else lands now, so error ORDER is
-  # unchanged for every state that already blocked.
-  if ci_error && !ci_error_cert_clears
+  # Everything the CI gate refuses lands NOW, in error order, in both roles. The
+  # deferral this used to carry — a no-verdict refusal held back until the suite
+  # gate could say whether a FULL cert stood in for it — is gone with the cert.
+  if ci_error
     errors << ci_error
-    ci_review_refused = review_role
+    ci_refused = true
   end
 end
 
-# Suite gate (merge gate, shaped code feature only). The dor_tiers tags above
-# prove the agent WROTE the right tiers; this proves the code being shipped is
-# CERTIFIED — the retro gap where a touched-FILES subset passed but the full
-# suite/lint broke post-merge (lines 54 + 58). Two evidence routes, both
-# fingerprint-bound so a stale (post-edit) or partial record is REFUSED:
-#   * FULL  — bin/full-suite-check's "[full-suite@<fp>]" + "[rubocop@<fp>]" lines
-#     (the whole suite + full rubocop ran locally). Accepted on its own.
-#   * FAST  — bin/fast-check's "[fast-cert@<fp>]" line (diff-mapped tests + core
-#     spine + rubocop on changed files, ~1 min). Accepted alongside a GREEN
-#     GitHub CI — CI runs the full suite + test:system on every PR push, so the
-#     full net still runs; the fast cert buys the local earliness. Submit-side
-#     (builder role) it is ALSO credited PROVISIONALLY while an OPEN PR's CI is
-#     still pending / not yet reported — the review gate-zero enforces the
-#     settled green (strict), so the net still closes before merge. A red,
-#     closed/merged, unverified, or missing-PR CI never credits a fast cert.
-# The "[full-suite-bypass] <reason>" hatch keeps working (loudly flagged).
-# Skips the build gate (no code yet) and unshaped tasks (already errored above).
-# DOR_CHECK_SUITE_EVIDENCE injects the verdict for tests (see the script header).
+# ==== THE SUITE EVIDENCE, IN ITS ONE FORM ======================================
 #
-# WHICH SHAPES THIS GATE APPLIES TO is now the shape's OWN declaration
-# (`full_suite_gate`, default TRUE), not an inference from `dor_tiers` being empty.
-# The inference was correct for the one zero-tier shape that existed — `docs`
-# ships prose, so there is no suite to certify — but it silently coupled two
-# unrelated questions, and the coupling was a trap for the NEXT zero-tier shape:
-# `test-only` has no tiers and ships executable code, and would have inherited a
-# suite-gate exemption nobody chose and no reviewer would have seen in the diff.
-# Test code is the change most able to break the suite quietly, so it is exactly
-# the shape that must not skip it. Default-true keeps every existing shape's
-# behavior identical and fails closed for shapes not yet written;
-# test/lib/feature_shape_tiers_test.rb makes a zero-tier shape declare the key.
-suite_eval = nil
-suite_route = nil # "full" | "fast" | "deferred" | "fast-provisional" | "bypass" when satisfied
-if gate != "build" && shape_def && shape_def.fetch("full_suite_gate", true)
-  if foreign_root && task_fingerprint_override.nil?
-    # Root guard, remedy 3 (see the guard block above). The root is NOT the task's
-    # tree, its worktree isn't on disk, and its branch isn't in this repo — so there
-    # is no tree here that can honestly grade this cert. Grading the checkout we
-    # happen to stand in is precisely the bug: it would report a FRESH cert as STALE.
-    # Refuse, and say which of the three fixes to reach for. This is a TRUTHFUL exit
-    # 1 replacing a LYING one — the old code exited 1 here too, just with "STALE".
-    unreachable_tree =
-      if Array(foreign_root[:eligible_roots]).size > 1
-        # The multi-repo tie the PR could not break — several worktrees really are on
-        # the task's branch and nothing says which one this PR is about.
-        "#{Array(foreign_root[:eligible_roots]).size} worktrees named " \
-          "#{foreign_root[:worktree_slug]} are on #{foreign_root[:expected_branch]} and none is provably this PR's"
-      elsif Array(foreign_root[:rejected_roots]).any?
-        # B1/B2: they exist on disk and none of them IS the task's tree.
-        "the director#{Array(foreign_root[:rejected_roots]).size == 1 ? 'y' : 'ies'} named " \
-          "#{foreign_root[:worktree_slug]} here " \
-          "#{Array(foreign_root[:rejected_roots]).map { |path, why| "#{path} #{why}" }.join('; ')}"
-      else
-        "its worktree (.worktrees/#{foreign_root[:worktree_slug]}) is not on disk"
-      end
-    branch_reason, branch_remedy = branch_unavailable(foreign_root[:expected_branch])
-    errors << "root guard: this run roots at #{diff_root} (branch " \
-      "#{foreign_root[:actual_branch] || 'unknown'}), which is NOT #{task["slug"] || slug}'s tree — " \
-      "#{unreachable_tree} and #{branch_reason}, so NO tree here can grade its cert. The cert " \
-      "fingerprint is a git TREE hash: grading the checkout you are standing in would report a perfectly " \
-      "FRESH cert as STALE (the false STALE that stranded six tasks on 2026-07-14), so this refuses instead " \
-      "of lying. Fix it one of three ways: run dor-check from the task's worktree; or #{branch_remedy}; " \
-      "or declare the root explicitly with DOR_CHECK_DIFF_ROOT=<path to the task's checkout>."
-  else
-    # Root the suite fingerprint at the TASK's tree, not at whatever checkout the
-    # caller stands in. Two overrides feed the same seam:
-    #   * review gate-zero — the reviewer runs from the PRIMARY (on release/main) BY
-    #     DESIGN, so fingerprinting their cwd grades the wrong tree; root at the task
-    #     BRANCH's committed tree instead (content-addressed == what was certified).
-    #   * builder from a foreign root with no worktree on disk — the root guard's
-    #     remedy 2, the same branch-tree rooting, announced above.
-    # Both nil (the normal builder run, already standing in the task's tree) → the
-    # working-tree fingerprint of diff_root, unchanged.
-    #
-    # Whichever fires, the override travels as { fingerprint:, ref:, root: } — the
-    # hash AND the ref that produced it — and evaluate REFUSES a hash with no origin.
-    # The verdict therefore always knows what it hashed, so the STALE message can
-    # name it instead of naming diff_root, which in the review lane is the reviewer's
-    # primary checkout and was never hashed at all.
-    review_branch_ref = review_role ? review_branch(devops, task["slug"] || slug) : nil
-    review_fp = review_branch_ref ? review_fingerprint(diff_root, review_branch_ref) : nil
-
-    # CROSS-REPO rooting. The same-repo fix roots the fingerprint at the branch tree,
-    # which works when the reviewer stands in the TASK'S repo. But `pr-review` directs
-    # reviewers to run from the mcritchie-studio primary while most PRs live in
-    # turf-monster / studio-engine — and a satellite branch resolves in NEITHER this
-    # repo's refs nor its remotes. review_fingerprint then returns nil and the gate
-    # falls back to hashing the HUB's working tree, which can never equal a
-    # satellite's certified tree: a perfectly fresh cert reads STALE. (Observed
-    # 2026-07-28; it burned a gate attempt and left a real dor_review FAILED row.)
-    #
-    # So resolve the task's OWN tree with the same worktree glob CertRootGuard uses,
-    # and fingerprint there. Announced on stderr, never silent: a gate that quietly
-    # hashes a different tree than the one you are standing in is how you argue with
-    # a verdict instead of reading it.
-    #
-    # SECOND-LINE now, not first: since 2026-08-08 the task-root guard above runs in
-    # BOTH roles and re-roots diff_root itself, so an implicit-root review run has
-    # normally already landed on the task's tree before reaching here. What still
-    # arrives is the EXPLICIT-root case (DOR_CHECK_DIFF_ROOT declared at a checkout
-    # that isn't the task's) — the caller declared a root, so the guard stood down,
-    # but the fingerprint can still be rooted honestly.
-    if review_role && review_branch_ref && review_fp.nil?
-      # The RESOLVED slug, not the positional one — in the --file seam the positional
-      # is empty, and CertRootGuard.assess returns nil on a blank slug.
-      cross_repo = CertRootGuard.assess(
-        task_bin: TASK_BIN, slug: task["slug"] || slug, root: diff_root,
-        devops: devops, projects_dir: PROJECTS_DIR, prefer_repo: pr_repo_name(@pr_url)
-      )
-      alt_root = cross_repo && cross_repo[:resolved_root]
-      if alt_root && (alt_fp = review_fingerprint(alt_root, review_branch_ref))
-        review_fp = alt_fp
-        warn!("⚠ dor-check: CROSS-REPO ROOTING. Branch #{review_branch_ref.inspect} does not resolve in " \
-              "#{diff_root} (the checkout you are standing in), so the suite fingerprint was rooted at the " \
-              "task's own tree instead: #{alt_root}. Without this the gate would have hashed THIS repo's " \
-              "working tree and called a fresh cert STALE. The verdict below describes the task's tree.")
-      end
-    end
-
-    override = review_fp || task_fingerprint_override
-    suite_eval = FullSuiteGate.evaluate(
-      checks: checks,
-      root: diff_root,
-      injected: ENV["DOR_CHECK_SUITE_EVIDENCE"],
-      fingerprint_override: override && override[:fingerprint],
-      fingerprint_origin: override,
-      # WHICH repo this verdict is about — read off the tree that is actually going to
-      # be hashed, never off the task record, so the evidence read is narrowed to THAT
-      # repo's certs and the verdict can say which repo it graded. The SAME derivation
-      # the cert writers stamp with (CertRootGuard#repo_of_checkout), or reader and
-      # writer would disagree about a tree's identity and a real cert would read
-      # MISSING. A cert recorded before evidence carried a repo is unscoped and still
-      # answers here (CertEvidence#scoped_to?).
-      repo: CertRootGuard.repo_of_checkout(override ? override[:root] : diff_root)
-    )
-    if review_role && review_branch_ref && review_fp.nil? && ENV["DOR_CHECK_SUITE_EVIDENCE"].to_s.empty?
-      suggestions << "review gate-zero: couldn't resolve branch #{review_branch_ref.inspect} locally to root the " \
-        "suite fingerprint at the PR tree, so it fell back to the cwd working tree — which reads STALE from a " \
-        "primary checkout. Fetch the branch (git fetch origin #{review_branch_ref}) or set " \
-        "DOR_CHECK_DIFF_ROOT=<task worktree>, then re-run."
-    end
-    fast_fresh = suite_eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh
-    defer_fresh = suite_eval.dig(:lanes, FullSuiteGate::DEFER_LANE) == :fresh
-    if suite_eval[:ok]
-      suite_route = suite_eval[:bypass] ? "bypass" : "full"
-    elsif fast_fresh && ci && ci[:state] == :green
-      suite_route = "fast"
-    elsif defer_fresh && ci && ci[:state] == :green
-      # THE DEFERRED ROUTE (capped-cert-blocks-the-pr) — the fence the whole change
-      # turns on, and it is deliberately the STRICTEST route on this ladder.
-      #
-      # bin/fast-check recorded a "[cert-deferred@<fp>]" receipt because NO local lane
-      # could certify this tree: the mapped lane was CAPPED (more mapped tests than the
-      # cap, not fewer) over a spine this checkout resolves none of. Every one of those
-      # mapped tests runs on CI, on this exact tree, in the run the PR was going to
-      # trigger anyway — so a GREEN CI is not a substitute for the missing local cert,
-      # it is the same suite run somewhere cheaper.
-      #
-      # WHAT MAKES IT A FENCE AND NOT A HOLE, in one line each:
-      #   * GREEN ONLY. There is no provisional twin below, and that asymmetry is the
-      #     point. A fast cert may be credited against a pending CI because a real local
-      #     run stands underneath it; a deferral has NOTHING underneath it, so pending,
-      #     absent (:none), unread and red all fall through to the refusal.
-      #   * FINGERPRINT-BOUND. The receipt is a tree hash, so an edit after the deferral
-      #     goes :stale and lands here as no route at all.
-      #   * ROLE-INDEPENDENT, exactly like the fast route: review's gate-zero enforces
-      #     the same settled green, so a deferred task is graded by the same evidence at
-      #     submit and at review.
-      suite_route = "deferred"
-    elsif fast_fresh && !review_role && ci && %i[pending none].include?(ci[:state])
-      # ci-gate-review-handoff: the builder submits without the CI wait. The PR is
-      # OPEN and its CI will settle; review's gate-zero holds the strict verdict.
-      suite_route = "fast-provisional"
-    else
-      # `cert_route_open:` — WHETHER THE REFUSAL MAY OFFER `bin/full-suite-check`, and
-      # it is the CI gate's OWN answer, not a second derivation of it. These are the
-      # very two values the merge gate above acts on (`if ci_error &&
-      # !ci_error_cert_clears` → the verdict fails), so the remedy this refusal PRINTS
-      # and the remedy the gate ACCEPTS cannot disagree: a full cert clears the CI half
-      # exactly when the CI gate raised no refusal, or raised one it marked
-      # cert-clearable. Hand-writing the state list here instead would be the second
-      # copy that /tasks/red-ci-offers-dead-remedy is a case of.
-      #
-      # BOTH ARE ASSIGNED IN THE SAME `gate != "build"` BLOCK that reads `ci`, and this
-      # branch sits inside another one — so `ci_error.nil?` here means "CI was read and
-      # it did not refuse", never "no CI was read".
-      errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci, review_role,
-                                     cert_route_open: ci_error.nil? || ci_error_cert_clears)
-    end
-  end
-end
-
-# ==== EVERY REPO THE TASK NAMES GETS ITS OWN CERT VERDICT ======================
-#
-# THE DEFECT (2026-08-13, landing land-rails-security-patch across two repos): this
-# gate re-roots to ONE worktree and grades ONE fingerprint, so on a task naming N
-# repos it inspected one and N-1 went ungated — while the verdict read as covering
-# the task. Its twin lived in the cert WRITER: the evidence slot was keyed by LANE
-# alone, so certifying the second repo silently erased the first's line and this gate
-# then called it STALE. The writer half is fixed in lib/cert_evidence.rb (evidence is
-# now scoped `[lane@<fp>:<repo>]`); this is the reader half — the list is read, and
-# each repo that owes a cert is graded against ITS OWN tree.
-#
-# `suite_eval` above stays the PRIMARY verdict (the tree we stand in / the PR's repo),
-# untouched: a single-repo task takes exactly the path it always did, because `owed`
-# then holds at most the primary and this loop runs zero times.
-#
-# THE BAR FOR A SECONDARY REPO IS THE FULL CERT, and it STAYS the full cert. A fast
-# cert is diff-mapped, and the only thing that makes it sufficient anywhere is a GREEN
-# CI on that repo's own PR.
-#
-# The parenthetical that used to stand here — "it reads one PR, the known gap in
-# gates/dor.md" — is RETIRED: /tasks/dor-check-reads-one-pr closed that gap, and this
-# gate now reads every recorded PR (task_ci_reads) and folds them worst-of. What did
-# NOT change is this bar. Crediting a secondary repo's fast cert against its own
-# now-readable CI is a RELAXATION, and relaxing a gate is nobody's side effect: it
-# wants its own task, its own argument, and its own mutation. So the secondary bar
-# remains the one piece of evidence that is self-sufficient on its own — the full
-# local suite + rubocop.
-cert_repo_verdicts = []
-if suite_eval && gate != "build" && !suite_eval[:bypass] && suite_eval[:verifiable] &&
-   ENV["DOR_CHECK_SUITE_EVIDENCE"].to_s.strip.empty?
-  # WHICH repo the primary verdict describes — carried ON the verdict, derived from
-  # the tree it actually hashed, so this cannot claim a repo it did not grade.
-  primary_cert_repo = suite_eval[:repo].to_s.strip
-  primary_cert_repo = CertRootGuard.repo_of_checkout(diff_root) if primary_cert_repo.empty?
-  cert_repo_verdicts << { repo: primary_cert_repo, role: "primary", ok: suite_eval[:ok],
-                          fingerprint: suite_eval[:fingerprint], lanes: suite_eval[:lanes],
-                          fingerprint_root: suite_eval[:fingerprint_root],
-                          fingerprint_source: suite_eval[:fingerprint_source] }
-
-  # ONLY a task that owes a cert in MORE THAN ONE repo hunts for a second tree. With
-  # one owed repo the primary verdict IS the task's cert by construction (the root
-  # guard above already established that we are standing in the task's tree), and
-  # asking "does the standing tree's NAME match the declared repo?" would refuse
-  # honest work whenever a checkout's directory is named something else — the very
-  # trap CertRootGuard#repo_mismatch documents ("never on absent information").
-  owed = cert_owing_repos(devops)
-  secondary = owed.size > 1 ? owed.reject { |repo| repo.casecmp?(primary_cert_repo.to_s) } : []
-  wt_slug = devops["worktree_slug"].to_s.strip.empty? ? (task["slug"] || slug).to_s : devops["worktree_slug"].to_s
-  cert_branch = review_branch(devops, task["slug"] || slug)
-
-  secondary.each do |repo|
-    tree = repo_cert_tree(repo, wt_slug, cert_branch, review_role)
-    if tree.nil?
-      cert_repo_verdicts << { repo: repo, role: "secondary", ok: false, status: "tree-not-found" }
-      errors << "cert gate: #{repo} is named by this task AND has a PR open, but no tree for it was found " \
-                "on this machine (no .worktrees/#{wt_slug} under #{repo} on branch #{cert_branch}, and no " \
-                "#{File.join(projects_dir_for_repos, repo)} checkout carrying that branch) — so its code is " \
-                "UNGATED. This verdict covers #{primary_cert_repo} only. Fix it: run the gate where that " \
-                "repo's tree is, or fetch the branch into #{repo}'s checkout."
-      next
-    end
-
-    repo_eval = FullSuiteGate.evaluate(
-      checks: checks, root: tree[:root], repo: repo,
-      fingerprint_override: tree[:override] && tree[:override][:fingerprint],
-      fingerprint_origin: tree[:override]
-    )
-    cert_repo_verdicts << { repo: repo, role: "secondary", ok: repo_eval[:ok],
-                            fingerprint: repo_eval[:fingerprint], lanes: repo_eval[:lanes],
-                            fingerprint_root: repo_eval[:fingerprint_root],
-                            fingerprint_source: repo_eval[:fingerprint_source] }
-    next if repo_eval[:ok]
-
-    state = secondary_cert_lane_state(repo_eval, repo)
-    errors << "cert gate: #{repo} is not certified for the code under review (#{state}). Its tree is " \
-              "#{tree[:root]}#{tree[:override] ? " at #{tree[:override][:ref]}" : ""} = " \
-              "@#{repo_eval[:fingerprint].to_s[0, 12]}#{secondary_cert_evidence(repo_eval)}. A task that names " \
-              "two repos owes a cert in EACH — certify it there: cd #{tree[:root]} && " \
-              "#{FastLane.remedy_command('full-suite-check', [File.join(tree[:root].to_s, 'bin'), __dir__], task['slug'] || slug)}."
-  end
-
-  # DECLARED but PR-less repos are NOT gated (see cert_owing_repos — the gem-release
-  # case). Said out loud rather than left silent, because "the verdict reads as
-  # covering the task" is half of the defect this block closes.
-  ungated = declared_repos(devops) - owed - [primary_cert_repo]
-  # Only worth saying on a task that names SEVERAL repos. On a single-repo task the
-  # primary verdict already covers the one repo, and announcing it as "not gated"
-  # whenever the checkout's directory happens to be named something else would be
-  # noise contradicting the verdict directly above it.
-  if declared_repos(devops).size > 1 && !ungated.empty?
-    suggestions << "cert scope: this task also names #{ungated.join(', ')}, which recorded no PR, so " \
-                   "#{ungated.size == 1 ? 'it was' : 'they were'} NOT cert-gated. That is correct for a gem " \
-                   "task naming its consumers; if code changed there, record the PR " \
-                   "(#{TASK_CMD} update #{task['slug'] || slug} --pr-url-for <repo>=<url>) so the gate can see it."
-  end
-end
-
-# ==== A FULL CERT SATISFIES THE REVIEW GATE ON A CI THAT CANNOT SPEAK ==========
-#
-# Deferred from the CI gate above, because THIS is the first point where suite_eval
-# exists (that block runs first on purpose: the suite gate's fast route reads `ci`).
-#
-# The rule: for CI_NO_VERDICT_STATES only, a FULL local cert stands in for the CI
-# verdict. Two independent reasons, and either one alone would be enough:
-#
-#   * THE GATE MUST HONOUR ITS OWN REMEDY. On THIS route — `cert_route: true`, the
-#     gated one — unreadable_remedy ends by naming the full cert, "certify in full
-#     instead: bin/full-suite-check <the task's slug>" (the LITERAL `<task>` until
-#     /tasks/builder-reads-remedy-twice), and bin/full-suite-check calls itself the
-#     ONLY route available for a repo whose CI dor-check cannot read. "ALWAYS ends by
-#     naming that command" is what this bullet used to say, and it has been false
-#     since PR #1221 gave the EXEMPT route a denial instead of an offer; PR #1235's
-#     `:retired` route made it false a second time, and this task's derived exempt
-#     closing a third. The scope clause is the whole correction: the promise is the
-#     GATED route's, and only there is it honoured below.
-#
-#     Refusing that cert made the gate hand the reader an instruction it would then
-#     reject, which is worse than a plain no: it teaches people the gate is noise,
-#     and an ignored gate is how a genuinely RED CI ships.
-#
-#   * THE EVIDENCE IS NO LONGER WEAKER. The historical reason to prefer CI was that a
-#     local cert ran `bin/rails test` while CI also ran the browser test:system lane.
-#     bin/full-suite-check now runs ci.yml's VERBATIM command, test:system included —
-#     so a full cert is not a lesser substitute for CI, it is the same suite, run
-#     locally. A fast cert is still NOT enough (it is diff-mapped, not the full net),
-#     and the suite gate above independently refuses one without a green CI.
-#
-# This is not leniency: the refusal stands for every state that HAS a verdict, for a
-# missing PR, for a bypass hatch, and for any state this gate cannot classify.
-if ci_error && ci_error_cert_clears && !full_cert_stands_in_for_ci?(suite_eval, shape_def)
-  errors << ci_error
-  ci_review_refused = true
+# Recorded for the --json payload and the human ready line, so a monitor can ask
+# "what carried the suite half of this verdict?" and get one answer: the CI state,
+# the head it was read for, and whether it satisfied the gate. `satisfied` is
+# GREEN *and* unrefused — review's stale-green check can refuse a green, and a
+# refused green is not evidence.
+suite_evidence = nil
+if gate != "build" && ci
+  suite_evidence = {
+    form: CiGate::SUITE_EVIDENCE_FORM,
+    satisfied: ci_error.nil? && ci[:state] == :green,
+    state: ci[:state],
+    head: ci[:head_oid],
+    waiting: ci_waiting
+  }.compact
 end
 
 # The CI row the gates card shows, resolved ONCE here so the durable GateRun sop and
 # the --json payload cannot disagree — and so it is observable (and testable) without
 # a board write, which --json and --file both skip by design.
-ci_gate_result = CiGate.gate_row(ci, review_role: review_role, review_refused: ci_review_refused)
+ci_gate_result = CiGate.gate_row(ci, review_role: review_role, review_refused: ci_refused)
 
 # ==== `required_evidence: [control]` — the question a tier list cannot ask ======
 #
@@ -3925,12 +2949,11 @@ ci_gate_result = CiGate.gate_row(ci, review_role: review_role, review_refused: c
 if gate != "build" && Array(shape_def && shape_def["required_evidence"]).include?("control")
   control_lines = checks.select { |line| line.to_s =~ /\A\s*\[\s*control\s*[\]:]/i }
   observed = changed_files
-  # The machine's stamp, graded by the SAME fingerprint machinery as the certs —
-  # so in the review lane it grades against the branch tree, not the reviewer's
-  # checkout (FullSuiteGate's override seam), for free. Never read off
-  # suite_eval[:lanes]: see control_evidence_status for why a recorded suite bypass
-  # would otherwise fabricate a control nobody ran.
-  control_lane, verdict = control_evidence_status(checks, suite_eval)
+  # The machine's stamp, graded by the fingerprint machinery the certs used to share
+  # — so in the review lane it grades against the task BRANCH's committed tree, not
+  # the reviewer's checkout (control_fingerprint), and a tree nobody can hash is
+  # :missing rather than a synthesised :fresh.
+  control_lane, verdict = control_evidence_status(checks, control_fingerprint)
   replayable = control_replayable_files(observed)
 
   if replayable.any? && control_lane != :fresh
@@ -4009,7 +3032,7 @@ end
 # That three-way split IS the answer to "can it tell no-evidence from no-surface".
 # It never demands a spec it cannot name a reason for, and the reason is printed.
 #
-# THE ESCAPE HATCH IS A RECORD, exactly like [full-suite-bypass]: a
+# THE ESCAPE HATCH IS A RECORD, like the post_deploy "none" hatch: a
 # "[browser-bypass] <reason>" line in checks_run is honored and flagged loudly. A
 # gate with no hatch gets routed around silently; a gate whose hatch is a visible,
 # reviewable line gets routed around ON PURPOSE, in front of a reviewer.
@@ -4101,81 +3124,16 @@ if present?(post_deploy_cmd) && fragile_runner_load?(post_deploy_cmd)
     "the current command is valid and not blocking."
 end
 
-# A PR that EXISTS but whose CI couldn't be confirmed green is flagged (non-blocking):
-# it never lowers `ready` (blocking on infra flakiness would be its own churn), but it
-# says loudly that CI is unverified so the handoff isn't blind. A task with NO PR yet
-# is SILENT — dor-check runs before the PR exists on the normal path, so there's
-# nothing to verify and no note to make.
-#
-# SUPPRESSED when the review allow-list already REFUSED on this same state. The
-# refusal carries the same remedy, and ci_status.rb calls that THE ONE REMEDY STRING
-# — printing it twice in one run is how a reader learns to skim it, which is the
-# failure this whole gate is about.
-#
-# `ci_review_refused` IS A ROLE-SHAPED PROXY FOR "AN ERROR ALREADY SAID THIS", and on
-# the :unreadable branch below it is the WRONG question (/tasks/builder-reads-remedy-
-# twice). CiGate.verdict only reaches unread_ci_refusal when review_role, so submit-side
-# this flag is false — while the suite gate's own unreadable-CI refusals DO carry the
-# remedy inline, in that same role, since /tasks/deferred-unreadable-skips-role-split.
-# So the builder, the one reader bin/ship's verdict is written for, read the
-# ~500-character paragraph TWICE while already blocked. That branch now asks the FACT
-# instead: does an error in THIS verdict carry it? The proxy stays for :none and
-# :unverified, whose suggestions are different facts that no remedy stands in for.
-case ci_review_refused ? nil : ci && ci[:state]
-when :none
-  suggestions << "CI gate: the PR reports no GitHub checks yet — CI is UNVERIFIED. Confirm the workflow triggered " \
-    "before handing off."
-when :unreadable
-  # NOT the same fact as :unverified, and the difference is the whole point: the CI
-  # may well be GREEN — this token simply may not read it. Saying "check `gh pr
-  # checks` manually" here would send the reader to the command that just failed.
-  #
-  # THE HEADLINE ALWAYS PRINTS; only the REMEDY is deduplicated. `ci[:reason]` — the
-  # first line of GitHub's own denial — appears nowhere else in the verdict, so
-  # dropping the whole note to kill a duplicate paragraph would trade a noisy correct
-  # message for a missing fact. And the branch is keyed on what is RENDERED, matched
-  # against the one constant that builds it: errors print ABOVE suggestions on the
-  # refusal path (see print_suggestions), so "in the refusal above" is a claim about
-  # this verdict's own output rather than about a role.
-  ci_note = "CI gate: the token was REFUSED when reading GitHub CI (#{ci[:reason]}) — status UNREADABLE, " \
-            "which is NOT the same as no-CI. "
-  suggestions << if errors.any? { |error| error.to_s.include?(CiStatus::UNREADABLE_REMEDY_HEADER) }
-                   "#{ci_note}The credential remedy is in the refusal above — the SAME fault refuses both, " \
-                     "and one token refresh clears them together."
-                 else
-                   ci_note + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(governing_ci_pr_url(devops)),
-                                                        cause: ci[:cause], task: task["slug"] || slug)
-                 end
-when :unverified
-  suggestions << "CI gate: couldn't read GitHub CI (#{ci[:reason]}) — status UNVERIFIED. Check `gh pr checks` " \
-    "manually before the handoff."
-end
-
 if gate_emission_enabled?(options, gate, slug)
   gate_sops = [{ "sop" => "dor-check", "cmd" => "bin/dor-check #{slug} --gate #{gate}", "result" => ready ? "pass" : "fail" }]
   unless dor_tiers.empty?
     gate_sops << { "sop" => "tiers", "tier" => dor_tiers.join("+"), "result" => missing_tiers.empty? ? "pass" : "fail" }
   end
-  if suite_eval
-    entry = { "sop" => "full-suite-evidence", "result" => suite_route ? "pass" : "fail" }
-    if suite_eval[:fingerprint]
-      fp12 = suite_eval[:fingerprint][0, 12]
-      entry["cmd"] =
-        case suite_route
-        when "fast" then "fast-cert@#{fp12}+ci-green"
-        when "deferred" then "cert-deferred@#{fp12}+ci-green"
-        when "fast-provisional" then "fast-cert@#{fp12}+ci-pending"
-        else "certified@#{fp12}"
-        end
-    end
-    gate_sops << entry
-  end
   if ci
-    # DoR-close semantics (ci-gate-review-handoff): the builder's verdict closes
-    # the `dor` gate at submit — a not-yet-settled CI records as "pending"
-    # (provisional, never a fail), and the AUTHORITATIVE ci verdict lands on
-    # `dor_review` via the review gate-zero. One verdict per gate; no DoR row
-    # lingers in flight waiting on CI.
+    # The `ci` sop IS the suite evidence now. A builder-side WAIT closes the attempt
+    # `--failed` with this row reading "pending" (GateRun's in-flight glyph), so the
+    # card shows a wait, not a red; the AUTHORITATIVE verdict lands on `dor_review`
+    # via the review gate-zero. One verdict per gate; no DoR row lingers in flight.
     repo = CiStatus.repo_from_pr_url(governing_ci_pr_url(devops))
     gate_sops << { "sop" => "ci", "result" => ci_gate_result }.merge(CiStatus.gate_evidence(ci, repo: repo))
   end
@@ -4195,12 +3153,10 @@ if options[:json]
     missing_metadata: missing_meta,
     missing_tiers: missing_tiers,
     # The checkout the DIFF was read from (after the root guard's re-root) — the ONE
-    # fact that made the false STALE unreadable when it was absent. It is NOT
-    # necessarily what the suite fingerprint was hashed from: when an override is in
-    # play (the review lane ALWAYS, and the reclaimed-worktree remedy) the hash comes
-    # from a committed BRANCH TREE, and saying otherwise here is how a confident,
-    # wrong root label gets born. The fingerprint's own provenance therefore travels
-    # WITH the fingerprint, in full_suite below.
+    # fact that made the 2026-07-14 false STALE unreadable when it was absent. The
+    # `test-only` control stamp may be graded against a committed BRANCH TREE instead
+    # (the review lane, and the reclaimed-worktree remedy — control_fingerprint), so
+    # this root is the diff's, not necessarily the stamp's.
     code_root: diff_root,
     # WHICH TREE the diff above was actually read from — the fact that made the
     # 2026-08-08 false pass invisible while it was happening. "git working tree" from
@@ -4225,33 +3181,13 @@ if options[:json]
     # so "what the card will say" is inspectable and testable without a durable
     # attempt row — a probe that leaves a FAILED row on a real task is its own hazard.
     ci_gate_result: ci_gate_result,
-    full_suite: suite_eval && {
-      ok: suite_eval[:ok],
-      route: suite_route,
-      bypass: suite_eval[:bypass],
-      verifiable: suite_eval[:verifiable],
-      fingerprint: suite_eval[:fingerprint],
-      # WHAT was hashed to produce `fingerprint` — the invariant a monitor can CHECK:
-      #   fingerprint_source "working-tree" → fingerprint_root is a PATH; recompute by
-      #     hashing that tree (bin/dor-check <slug> --suite-fingerprint).
-      #   fingerprint_source "branch-tree"  → fingerprint_root is a REF EXPRESSION;
-      #     recompute: git -C <fingerprint_repo> rev-parse <fingerprint_root>.
-      # Either way, recomputing the root NAMED here returns the fingerprint printed
-      # here. There is no third number.
-      fingerprint_root: suite_eval[:fingerprint_root],
-      fingerprint_repo: suite_eval[:fingerprint_repo],
-      fingerprint_source: suite_eval[:fingerprint_source],
-      lanes: suite_eval[:lanes],
-      # What each lane's evidence was certified FOR — the machine-readable half of
-      # the STALE delta (fingerprint is what the code IS now).
-      recorded: suite_eval[:recorded],
-      # ONE ENTRY PER REPO THIS RUN GRADED — the primary (the fields above, repeated
-      # under its repo name) plus every secondary repo the task names and has a PR in.
-      # A multi-repo verdict is only trustworthy if it can be read repo by repo: the
-      # defect this closes was a single verdict that LOOKED like it covered the task.
-      repos: cert_repo_verdicts
-    }
-  )
+  # THE SUITE HALF OF THE VERDICT, in its one form (CiGate::SUITE_EVIDENCE_FORM):
+  # the CI state, the head it was read for, and whether it satisfied the gate. The
+  # `full_suite` block that stood here — fingerprint, lanes, route, per-repo cert
+  # verdicts — described receipts this gate no longer reads.
+  suite_evidence: suite_evidence,
+  ci_waiting: ci_waiting
+)
   exit(ready ? 0 : 1)
 end
 
@@ -4282,7 +3218,6 @@ if ready
   if gate != "build"
     waived = []
     waived << "no test tier required" if dor_tiers.empty?
-    waived << "full-suite cert waived" if shape_def && !shape_def.fetch("full_suite_gate", true)
     unless waived.empty?
       claim = shape_def && shape_def["claimable_when"]
       puts "  ⓘ shape #{shape}: #{waived.join(" · ")} — " +
@@ -4291,65 +3226,33 @@ if ready
                   : "nothing verified this claim against the diff")
     end
   end
-  if suite_eval && suite_eval[:bypass]
-    puts "  ⚠ FULL-SUITE GATE BYPASSED: #{suite_eval[:bypass]}"
-  elsif suite_route == "fast"
-    fp = suite_eval[:fingerprint]
-    puts "  fast cert accepted#{fp ? " at #{fp[0, 12]}" : ""} (GitHub CI green carries the full suite)"
-  elsif suite_route == "deferred"
-    # SAY WHAT IS CARRYING THE VERDICT. There is no local cert here at all, and a reader
-    # who cannot tell that from a normal fast cert cannot weigh this verdict. The waiver
-    # rule of this file applies to evidence as much as to tiers: name it, or it reads
-    # exactly like a gate that enforced one.
-    fp = suite_eval[:fingerprint]
-    puts "  cert DEFERRED to CI#{fp ? " at #{fp[0, 12]}" : ""} — no local lane could certify this diff " \
-         "(mapped lane CAPPED over an empty spine), so the GREEN GitHub CI below IS the cert"
-  elsif suite_route == "fast-provisional"
-    fp = suite_eval[:fingerprint]
-    puts "  ⚠ fast cert accepted PROVISIONALLY#{fp ? " at #{fp[0, 12]}" : ""} — CI hasn't settled; " \
-         "the review gate-zero enforces the green"
-  elsif suite_eval && suite_eval[:fingerprint]
-    puts "  full suite + rubocop certified green at #{suite_eval[:fingerprint][0, 12]}"
-  end
-  # NAME EVERY REPO GRADED. On a single-repo task the primary lines above already say
-  # it; from two repos up, a verdict that does not name them is the defect (one repo
-  # inspected, the verdict reading as covering the task).
-  if cert_repo_verdicts.size > 1
-    puts "  cert graded per repo:"
-    cert_repo_verdicts.each do |v|
-      puts "    - #{v[:repo]}: #{v[:ok] ? 'certified' : 'NOT certified'}" \
-           "#{v[:fingerprint] ? " @#{v[:fingerprint][0, 12]}" : ''} (#{v[:role]})"
-    end
-  end
-  if ci && ci[:state] == :green
-    puts "  GitHub CI green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
-  elsif ci && ci[:state] == :pending
-    puts "  ⚠ GitHub CI still RUNNING — handoff is provisional; see the suggestion below"
-  elsif ci && ci[:state] == :conflicted
-    # Defensive: :conflicted always lands in `errors` above, so a ready verdict
-    # shouldn't reach here — but if a future reordering ever lets it, say it loudly.
-    puts "  ⚠ PR merge-CONFLICTED (mergeStateStatus DIRTY) — CI never fires; merge #{ci[:base].to_s.empty? ? "the PR's base" : "origin/#{ci[:base]}"} in and resolve"
-  elsif ci && ci[:state] == :ci_less
-    # Defensive, like :conflicted above — :ci_less always lands in `errors`.
-    puts "  ⚠ NO CI WILL RUN (stale base) — rebase onto #{ci[:base].to_s.empty? ? "the base branch" : ci[:base]}"
-  elsif ci && %i[none unverified unreadable].include?(ci[:state])
-    # A READY verdict beside an UNVERIFIED CI is the exact presentation this gate was
-    # written about: four reviewers read "ready" next to a skimmable CI note and
-    # would have merged on a verdict nobody read. So in the review role — where that
-    # pairing is only legal at all because a FULL cert stood in for the unread CI —
-    # name the evidence that is carrying the verdict, rather than leaving the reader
-    # to infer it from an absence. Submit-side the pairing is the documented
-    # provisional handoff, and its existing wording stays.
-    if review_role
-      puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — advancing on the FULL local cert instead, which runs " \
-           "ci.yml's own command (test:system included). CI itself was NOT read; see the suggestion below"
-    else
-      puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
-    end
-  end
+# THE SUITE LINE. A ready verdict is only reachable on a GREEN CI now, so this is
+# the one form the evidence line takes; the defensive else says out loud that a
+# future reordering let something else through.
+if suite_evidence && suite_evidence[:satisfied]
+  head = ci[:head_oid].to_s
+  puts "  GitHub CI green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}#{head.empty? ? "" : " for head #{head[0, 12]}"} — " \
+       "the settled verdict is the suite evidence"
+elsif ci
+  puts "  ⚠ GitHub CI #{ci[:state].to_s.upcase} — a ready verdict reached this line without a settled green; " \
+       "read the CI gate before trusting it"
+end
   puts "  → ready to advance #{boundary}"
   print_suggestions.call
   exit 0
+end
+
+# THE WAIT has its own headline: nothing refuses but an unsettled CI, so "NOT met"
+# would send the reader hunting for a defect. bin/ship's step 7 reads exit 1 either
+# way; the wording is for the reader, whose move is to come back once CI reports.
+waiting_only = ci_waiting && errors == [ci_error] && missing_meta.empty? && missing_tiers.empty?
+if waiting_only
+  puts "⏳ #{gate_label} WAITING on CI for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"
+  print_pr_coverage(gate)
+  puts "  - #{ci_error}"
+  puts "  → not ready to advance #{boundary} YET; re-run once CI reports"
+  print_suggestions.call
+  exit 1
 end
 
 puts "✗ #{gate_label} NOT met for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"

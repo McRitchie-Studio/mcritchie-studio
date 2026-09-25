@@ -813,8 +813,8 @@ end
 
 # --- 6/8 CI settle wait (bin/lib/ci_wait.rb) ---------------------------------
 # Hold the handoff while the PR's CI is still RUNNING, so the DoR verdict below
-# grades a REAL CI state instead of crediting a fast cert provisionally against a
-# pending one. This step decides NOTHING: whatever state the wait settles on,
+# grades a REAL CI state instead of a WAITING verdict on a pending one. This step
+# decides NOTHING: whatever state the wait settles on,
 # dor-check runs next and owns the verdict exactly as it always has. A red CI
 # stops the handoff because dor-check refuses it — not because this step did.
 #
@@ -887,8 +887,7 @@ unless system(DOR_CHECK_BIN, slug, chdir: root)
     die!("bin/dor-check refused — and this diff's cert was DEFERRED to CI at step 2, so a GREEN CI is " \
          "the ONLY thing that can satisfy the suite gate for it. Read what it flagged above: a RED CI " \
          "means fix the failure and push; NO CI / a CI still running means re-run #{SHIP_CMD} #{slug} once " \
-         "it reports; an edit since the deferral means re-run #{FAST_CHECK_CMD} #{slug} first (the receipt is " \
-         "tree-bound). To settle it locally instead: #{FULL_SUITE_CMD} #{slug}.")
+         "it reports. No local run stands in for it (dor-check reads the CI verdict alone).")
   end
   die!("bin/dor-check refused — fix everything it flagged, then re-run #{SHIP_CMD} #{slug} (it resumes here).")
 end

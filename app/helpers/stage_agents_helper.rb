@@ -127,7 +127,7 @@ module StageAgentsHelper
   def resolve_actor_agent(actor, agents_by_slug)
     return nil if actor.blank?
 
-    key = actor.to_s.strip.downcase
+    key = Task.canonical_soul(actor.to_s.strip.downcase)
     agents_by_slug[key] || agents_by_slug[key.split("@").first]
   end
 

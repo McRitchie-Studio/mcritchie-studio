@@ -2,13 +2,13 @@
 <% content_for(:full_width, true) %>
 
 <%# /agents/activities — the reimagined cross-session activity feed: every narrated
-    AgentActivity newest-first with its drilled-down raw actions, inline Alex + McRitchie
+    AgentActivity newest-first with its drilled-down raw actions, inline Xan + McRitchie
     grades on both, and a slide-in Pokémon-session filter that combines the old
     cross-session table and the per-session view into one URL-driven surface. It renders
-    inside #alex-heartbeat so it inherits the shared component styles (avatar, chips,
+    inside #xan-heartbeat so it inherits the shared component styles (avatar, chips,
     key-method, grade radios) and the dark palette of its heartbeat sibling; the aa-*
     layer adds the 7-column x 3-sub-row grid, the sidebar, and mobile priority-columns. %>
-<%# Reuse the heartbeat component styles (the #alex-heartbeat base + palette, avatar,
+<%# Reuse the heartbeat component styles (the #xan-heartbeat base + palette, avatar,
     chips, key-method chip, buttons, scroll box) then layer the aa-* grid on top. %>
 <%= render "heartbeat/styles" %>
 <%= render "agents/activities_styles" %>
@@ -23,7 +23,7 @@
 
 <% active_sessions = @active_session_chips %>
 
-<section id="alex-heartbeat" class="aa-page" data-test="agents-activities"
+<section id="xan-heartbeat" class="aa-page" data-test="agents-activities"
          x-data="agentsActivities()" @keydown.escape.window="closeFilter()">
   <%# The whole feed (stats, active-filters, table, pager, sidebar) lives in a turbo-frame
       so a filter / pager click fetches the filtered data in the BACKGROUND and swaps just

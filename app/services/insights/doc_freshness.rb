@@ -32,7 +32,7 @@ module Insights
     # rerunning the generator wherever you happen to be standing — is the bug.
     REGENERATE = "Regenerate against the BOARD's database (a desk or CI database is " \
                  "empty and would write a false \"0 banked insights\"): see " \
-                 "docs/agents/agents/alex/sops/share-insights.md.".freeze
+                 "docs/agents/agents/xan/sops/share-insights.md.".freeze
 
     # A verdict. `stale?` is the question the job asks; `status` and `message` are
     # what the receipt carries.
