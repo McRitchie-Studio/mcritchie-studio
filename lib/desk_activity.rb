@@ -5,8 +5,10 @@ require "json"
 
 # DESK ACTIVITY — the liveness signal that survives the status-line problem.
 #
-# The build claim's lease (lib/claim_lease.rb) is renewed on a timer for as long as
-# the builder's run is alive — by the detached renewer (bin/lib/build_claim_renewer.rb)
+# (devops-v3: the build lease and its renewer are retired — the desk is the build
+# claim, bin/lib/desk_claim.rb. This module still serves the archive holder guard
+# and the reclaim guard.) The build claim's lease was renewed on a timer for as long as
+# the builder's run was alive — by a detached renewer
 # on a 30s beat, and redundantly by bin/statusline whenever a terminal happens to be
 # painting. Neither asks whether an agent is doing anything. So the lease attests
 # "the run is still here", and a live run is not a worker: on 2026-08-13 a

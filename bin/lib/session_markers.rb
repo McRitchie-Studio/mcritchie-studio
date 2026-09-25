@@ -16,10 +16,7 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.task-review-claim-<slug>          a held per-task review claim (bin/task review-claim)
 #   <projects>/.agents/sessions/<id>.task-review-beat-<slug>           a foreground BEAT on that review (bin/lib/review_worker_pulse.rb)
 #   <projects>/.agents/sessions/<id>.task-review-claim-renewer-<slug>  its detached renewer's pid (ditto)
-#   <projects>/.agents/sessions/<id>build-claim-renewer-<slug>   a build claim's detached renewer: pid, nonce, desk (bin/task)
-#                                             ^ NO DOT. Deliberate; see THE ONE MARKER WITHOUT A DOT below.
 #   <projects>/.agents/sessions/<id>.presence-<kind>-<pid> a HEAVY-WORK claim (bin/lib/presence_claim.rb)
-#   <projects>/.agents/sessions/<id>.heartbeat            statusline's claim throttle (bash)
 #   <projects>/.agents/sessions/<id>.shift-heartbeat      statusline's shift-renew throttle (bash)
 #   <projects>/.agents/sessions/<id>.mascot-heal          statusline's mascot self-heal throttle (bash)
 #
@@ -28,34 +25,6 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/.<marker>.<pid>.tmp       a publish in flight (write + rename)
 #
 # It is dot-prefixed so this store's default globs skip it — the argument is in +write+.
-#
-# ═══ THE ONE MARKER WITHOUT A DOT, AND WHY IT KEEPS ITS NAME ═══
-#
-# bin/task#build_claim_renewer_marker returns "build-claim-renewer-<slug>" with no
-# leading dot, while every sibling carries one (".task-review-claim-<slug>",
-# ".devops-shift-renewer"). This file documented it WITH a dot until 2026-09-22.
-# Measured on the live store 2026-09-22: 244 files match `<id>build-claim-renewer-*`
-# (254 on 2026-09-23 — it grows; re-derive rather than re-copy)
-# and ZERO match `<id>.build-claim-renewer-*`.
-#
-# THE CONSEQUENCE IS NOT COSMETIC. +last_signal_at+ selects on the stem "<id>."
-# (see its body), so a name beginning "<id>b" can never be in its population. The
-# missing dot is therefore what keeps this family OUT of the liveness read.
-#
-# AND THAT IS THE OUTCOME WE WANT, which is the whole reason this note exists
-# instead of a tidy-up commit. The marker is written by the CLAIMING process at
-# claim time and never rewritten, so its mtime is the moment a claim was taken.
-# Adding the dot would hand +last_signal_at+ a 244-file family whose freshness
-# says only "this session claimed something", making a build claim partly
-# self-vouching — the same shape as the renewer-writes-its-own-evidence failure
-# bin/lib/anchor_heartbeat.rb's header rules out by name.
-#
-# So the NAME is load-bearing and stays. If a future change wants the dot for
-# consistency, it owes a matching entry in the liveness exclusion below FIRST, and
-# it must migrate or orphan every live marker — bin/task READS this name to find a
-# running renewer, so renaming it mid-flight makes those renewers invisible to the
-# lane that owns them. test/lib/session_markers_test.rb pins both halves (this named a
-# session_markers_liveness_test.rb that has never existed on any branch).
 #
 # It began as the shared READS bin/atomic-event and bin/atomic-capture-hook each
 # carried a byte-for-byte copy of. It now owns the WRITES too, because the copies
