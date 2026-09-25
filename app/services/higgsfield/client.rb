@@ -15,10 +15,18 @@ module Higgsfield
   # WHAT IS MEASURED AND WHAT IS NOT. Everything about the REQUEST side below
   # was measured against the live API on 2026-09-20 — host, auth header, paths,
   # and which fields are required (an empty POST returns a 422 naming them).
-  # The RESPONSE side is NOT measured: the account has no credits, so every
-  # well-formed request answers `not_enough_credits` and no successful payload
-  # was ever seen. Response parsing is therefore written tolerantly and marked
-  # UNVERIFIED. Confirm it against one real generation before trusting it.
+  # The RESPONSE side of the GENERATION endpoints is NOT measured: the account
+  # had no credits on that date, so every well-formed request answered
+  # `not_enough_credits` and no successful payload was ever seen. Their response
+  # parsing is therefore written tolerantly and marked UNVERIFIED. Confirm it
+  # against one real generation before trusting it.
+  #
+  # THE CHARACTER-IDENTITY ENDPOINTS ARE THE EXCEPTION, and the paragraph above
+  # must not be read over them. On 2026-09-24 one real custom reference was
+  # created against the live API and polled to rest, so their request AND
+  # response shapes are pinned from an observed 200 rather than written
+  # tolerantly. Nothing about that run says anything about the credit state of
+  # the generation endpoints — no generation was fired.
   class Client
     # VERIFIED: the current host. `api.higgsfield.ai`, not `platform.`.
     BASE_URL = "https://api.higgsfield.ai".freeze
