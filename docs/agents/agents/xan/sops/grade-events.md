@@ -1,6 +1,10 @@
 # Grade Events
 
-## Status: Active
+## Status: Optional — not a heartbeat act since 2026-09-25
+
+Every task is now graded once when it ships (`Insights::TaskGrader`; thresholds in
+`config/learning_loop.yml`), so this manual act runs only when Mr. McRitchie asks
+for it by name.
 
 This is Xan's `grade-events` SOP. It grades recent resolved trajectory activities so
 useful agent behavior can become reusable memory.
