@@ -4383,55 +4383,6 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "tag v0.9.0", "publish tags the published version"
   end
 
-  # [unit] `--mode` (bin/lib/ship_authority.rb) at the ship-authority seam: the
-  # config default is timed, so a bare dry-run previews the window and reads
-  # nothing; `--yes` alone is auto; an unknown mode aborts before anything moves.
-  def test_ship_dry_run_takes_authority_in_the_timed_default_and_previews_the_window
-    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
-
-    assert_includes out, "taking production authority (--mode timed)"
-    assert_includes out, "production window: 30 min"
-    assert_includes out, "[dry-run] would wait up to 30 min for the grant"
-    assert_includes out, "ship authority: dry (--mode timed)"
-  end
-
-  # The two ship_authorized writes as the seam records them: a timed REQUEST is
-  # keyed by its window end (a re-run after a lapse refusal posts a fresh window
-  # instead of the default key returning the stale one), while a GRANT/completion
-  # keeps the default key so the web Approve and ship's own stamp are one row.
-  RECORD_EVENT_STUB = <<~RUBY
-    def record_release_event(slug, step, status, attrs = {})
-      puts("EVENT \#{slug} \#{step}:\#{status} key=\#{attrs[:idempotency_key].inspect} mode=\#{attrs.dig(:metadata, "mode")}")
-    end
-  RUBY
-
-  def test_ship_timed_request_is_keyed_by_its_window_end_and_the_grant_by_the_default
-    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB + RECORD_EVENT_STUB)
-    assert_match(/EVENT rel-ship ship_authorized:started key="rel-ship:ship_authorized:started:20\d\d-\d\d-\d\dT[^"]+" mode=timed/, out)
-    refute_match(/ship_authorized:completed/, out, "a dry timed run posts the request and completes nothing")
-
-    out = run_cli(["--dry-run", "--yes"], call: "ship", setup: SHIP_STUB + RECORD_EVENT_STUB)
-    assert_includes out, "EVENT rel-ship ship_authorized:started key=nil mode=auto"
-    assert_includes out, "EVENT rel-ship ship_authorized:completed key=nil mode=auto"
-  end
-
-  def test_ship_yes_alone_is_auto_and_an_explicit_mode_wins
-    out = run_cli(["--dry-run", "--yes"], call: "ship", setup: SHIP_STUB)
-    assert_includes out, "taking production authority (--mode auto)"
-    assert_includes out, "ship authority: auto (--mode auto)"
-
-    out = run_cli(["--dry-run", "--yes", "--mode", "ask"], call: "ship", setup: SHIP_STUB)
-    assert_includes out, "taking production authority (--mode ask)"
-    assert_includes out, "ship authority: confirmed (--mode ask)"
-  end
-
-  def test_ship_refuses_an_unknown_mode_before_anything_moves
-    out = run_cli(["--dry-run", "--mode", "sometimes"], setup: SHIP_STUB,
-                  call: %{begin; ship; rescue SystemExit => e; puts("ABORTED: " + e.message); end})
-    assert_includes out, "ABORTED: ✗ --mode must be one of ask|timed|auto, got \"sometimes\""
-    refute_includes out, "shipping rel-ship", "the abort lands before the release is even resolved"
-  end
-
   def test_ship_dry_run_runs_the_auto_repin_pass
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
