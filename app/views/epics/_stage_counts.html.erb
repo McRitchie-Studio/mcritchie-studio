@@ -1,0 +1,11 @@
+<%# locals: (epic:) %>
+<%# One pill per stage the epic has tasks in, in board order, wearing the same stage
+    tones as the board's count badges (task_stage_count_classes). %>
+<div class="flex flex-wrap items-center gap-1.5" data-test="epic-stage-counts">
+  <% epic.stage_counts.each do |stage, count| %>
+    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold leading-none <%= task_stage_count_classes(stage) %>"
+          data-test="epic-stage-count" data-stage="<%= stage %>" title="<%= count %> <%= Task::STAGE_LABELS.fetch(stage).downcase %>">
+      <%= Task::STAGE_LABELS.fetch(stage) %> <span class="tabular-nums"><%= count %></span>
+    </span>
+  <% end %>
+</div>

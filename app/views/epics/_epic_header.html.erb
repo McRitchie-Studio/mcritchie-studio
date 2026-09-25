@@ -1,0 +1,29 @@
+<%# locals: (epic:, drawn_count: nil) %>
+<%# The /epics/<slug> header: the epic's handle, its counts by stage, the done bar,
+    and its span so far — first task created to last task shipped (EpicSummary#
+    elapsed_seconds; "nothing shipped yet" until one has). Links out to both boards
+    filtered to this epic, which is where the cards can be dragged. %>
+<% elapsed = epic.elapsed_seconds %>
+<header class="space-y-3" data-test="epic-header" data-epic="<%= epic.slug %>">
+  <div class="flex flex-wrap items-center gap-3">
+    <span class="text-[11px] uppercase tracking-wider font-semibold text-muted">Epic</span>
+    <h1 class="text-2xl md:text-3xl font-bold text-heading break-all"><%= epic.slug %></h1>
+  </div>
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-secondary">
+    <span data-test="epic-header-total"><%= pluralize(epic.total, "task") %></span>
+    <span data-test="epic-header-elapsed" title="First task created to last task shipped">
+      <% if elapsed %>
+        <%= humanize_stage_duration(elapsed.to_i) %> from first task to last ship
+      <% else %>
+        nothing shipped yet · started <%= compact_time_ago(epic.first_created_at) %>
+      <% end %>
+    </span>
+    <%= link_to "Tasks board", tasks_path(epic: epic.slug), class: "text-primary hover:underline" %>
+    <%= link_to "Deployments board", deployments_path(epic: epic.slug), class: "text-primary hover:underline" %>
+  </div>
+  <div class="max-w-xl"><%= render "epics/progress_bar", epic: epic %></div>
+  <%= render "epics/stage_counts", epic: epic %>
+  <% if drawn_count && drawn_count < epic.total %>
+    <p class="text-xs text-muted" data-test="epic-header-capped">Showing the <%= drawn_count %> most recently updated of <%= epic.total %> tasks.</p>
+  <% end %>
+</header>

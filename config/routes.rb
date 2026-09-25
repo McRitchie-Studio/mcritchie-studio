@@ -45,6 +45,10 @@ Rails.application.routes.draw do
   post "triage/:slug/promote", to: "triage#promote", as: :promote_triage_finding
   post "triage/:slug/dismiss", to: "triage#dismiss", as: :dismiss_triage_finding
   get "deployments", to: "tasks#deployments", as: :deployments
+  # The epic view: every epic with its progress by stage, and one epic's tasks
+  # grouped by stage on the board's own card (EpicsController, public-read).
+  get "epics", to: "epics#index", as: :epics
+  get "epics/:slug", to: "epics#show", as: :epic
   get "deployments/all", to: "releases#index", as: :all_deployments
   get "deployments/:slug", to: "releases#show", as: :deployment
   # The operator's production-authority GRANT (design section 6): the Approve
