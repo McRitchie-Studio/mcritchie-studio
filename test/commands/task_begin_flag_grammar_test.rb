@@ -53,9 +53,12 @@ class TaskBeginFlagGrammarTest < ActiveSupport::TestCase
   # probe line again without matching anything bin/task legitimately contains.
   MULTIBYTE_PROBE = "multibyte_probe"
 
-  # The canonical sources. The projects-root CLAUDE.md / AGENTS.md are GENERATED
-  # from these two, so a correction lands here or it does not land at all.
-  ENTRY_DOCS = %w[docs/agents/claude.md docs/agents/index.md].freeze
+  # The canonical source of the fast-lane rules. Until 2026-09-24 these lived in the
+  # two entry docs (claude.md and index.md, the sources of CLAUDE.md / AGENTS.md).
+  # agents-map-two-hundred-lines cut those to a map and moved the fast-lane section
+  # verbatim to modules/fast-lane.md, which both entry docs link, so the guard
+  # follows the paragraphs it reads.
+  ENTRY_DOCS = %w[docs/agents/modules/fast-lane.md].freeze
   FLAG_COUNT_WORDS = { 5 => "FIVE", 6 => "SIX", 7 => "SEVEN", 8 => "EIGHT" }.freeze
 
   test "a create flag on the resume form is refused, not dropped" do

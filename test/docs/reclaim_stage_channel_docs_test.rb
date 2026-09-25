@@ -33,8 +33,12 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
 
   # Every doc that describes the reclaim gate's withholding rules. A claim about
   # WHEN a desk is taken belongs on this list; a passing mention does not.
+  #
+  # index.md left this list on 2026-09-24 (agents-map-two-hundred-lines): the map no
+  # longer describes the reclaim gate, so keeping it here would pass on the bare
+  # stage words in its pipeline section and prove nothing. modules/worktrees.md,
+  # which the map links for desks, carries the rules and stays guarded.
   RECLAIM_DOCS = [
-    "index.md",
     "modules/worktrees.md",
     "modules/parallel-agent-devops.md",
     "agents/steffon/sops/clean-infra.md",
