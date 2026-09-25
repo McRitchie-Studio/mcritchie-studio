@@ -163,6 +163,19 @@ class Insights::TaskGraderTest < ActiveSupport::TestCase
     assert_in_delta 4.0, baseline.percentile("cost"), 0.001
   end
 
+  test "[unit] an archived task that shipped still counts as shipped; one never shipped does not" do
+    swept = shipped_task("grade-swept")
+    swept.update!(stage: "archived")
+    abandoned = Task.create!(title: "grade abandoned task", slug: "grade-abandoned")
+    abandoned.update!(stage: "archived")
+
+    slugs = Insights::TaskGrader.shipped_tasks.pluck(:slug)
+    assert_includes slugs, "grade-swept", "archive-shipped sweeps shipped tasks into archived"
+    assert_not_includes slugs, "grade-abandoned", "an abandoned task never shipped"
+    assert Insights::TaskGrader.grade!("grade-swept", pr_reader: NoLines.new(nil))
+    assert_nil Insights::TaskGrader.grade!("grade-abandoned")
+  end
+
   test "[unit] grade! is once per task: a second call returns the first grade" do
     task = shipped_task("grade-once")
     first = Insights::TaskGrader.grade!(task.slug, pr_reader: NoLines.new(nil))

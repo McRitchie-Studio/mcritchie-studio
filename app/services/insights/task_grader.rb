@@ -45,6 +45,15 @@ module Insights
       end
     end
 
+    # Every task that SHIPPED: `shipped`, plus `archived` rows that carry a ship stamp
+    # (completed_at is written only on the move into `shipped`), because
+    # archive-shipped sweeps shipped tasks into `archived` — on 2026-09-25 one of the
+    # last 100 shipped tasks still read `shipped`. A window of `stage: "shipped"` alone
+    # would measure almost nothing.
+    def self.shipped_tasks
+      Task.where(stage: %w[shipped archived]).where.not(completed_at: nil)
+    end
+
     def self.config(path = CONFIG_PATH)
       @config ||= {}
       @config[path.to_s] ||= (YAML.safe_load_file(path) || {})
@@ -55,10 +64,10 @@ module Insights
     end
 
     # Grade one task by slug and persist the result. Returns the TaskGrade, or nil
-    # when the task is not shipped. Idempotent: an existing grade is returned as-is.
+    # when the task never shipped. Idempotent: an existing grade is returned as-is.
     def self.grade!(task_slug, baseline: nil, pr_reader: nil)
-      task = Task.find_by(slug: task_slug)
-      return nil unless task&.stage == "shipped"
+      task = shipped_tasks.find_by(slug: task_slug)
+      return nil unless task
 
       existing = TaskGrade.find_by(task_slug: task.slug)
       return existing if existing
@@ -272,7 +281,7 @@ module Insights
 
       def self.build(exclude: nil, config: TaskGrader.config, before: nil)
         window = config.fetch("trailing_window", 100).to_i
-        scope = Task.where(stage: "shipped").where.not(completed_at: nil)
+        scope = TaskGrader.shipped_tasks
         scope = scope.where.not(slug: exclude) if exclude
         scope = scope.where(completed_at: ...before) if before
         slugs = scope.order(completed_at: :desc).limit(window).pluck(:slug)
@@ -369,8 +378,7 @@ module Insights
       # Returns the per-task rows ({slug:, assessment:, graded:}) it printed.
       def run
         baseline = Baseline.build
-        tasks = Task.where(stage: "shipped").where.not(completed_at: nil)
-                    .order(completed_at: :desc).limit(@limit).to_a
+        tasks = TaskGrader.shipped_tasks.order(completed_at: :desc).limit(@limit).to_a
         @io.puts "learning_loop:backfill — #{@live ? "LIVE" : "DRY RUN (nothing written)"} · " \
                  "last #{tasks.size} shipped · baseline #{baseline_label(baseline)}"
         @io.puts header
