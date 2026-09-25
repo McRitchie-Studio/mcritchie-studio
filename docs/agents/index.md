@@ -17,39 +17,52 @@ Mr. McRitchie for the owner; read both names as him.
 | Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` | `docs/agents/agents/pokemon/` |
 | Xan | Orchestrator; runs focus sessions; the documentation reviewer | `docs/agents/agents/xan/` |
 | Carl | Lead Architect; primary reviewer of code PRs; merges into `accepted` | `docs/agents/agents/carl/` |
-| Shannon · Jasper · Steffon | Review lights for UI · on-chain · infrastructure | `docs/agents/agents/<soul>/` |
+| Shannon · Jasper | Review lights for UI · on-chain | `docs/agents/agents/<soul>/` |
 | Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
-| Steffon | Infrastructure; runs `production-deploy`, credentials, desks | `docs/agents/agents/steffon/` |
+| Steffon | Infrastructure light; runs `production-deploy`, credentials, desks | `docs/agents/agents/steffon/` |
 | Turf Monster | The Turf Monster app's operator: scores, contests, markets | `docs/agents/agents/turf_monster/` |
 | Rex · Mason | Marketing strategy (CMO) · brand voice and launches | `docs/agents/agents/<soul>/` |
 | Mack | General worker: scraping, data, integrations | `docs/agents/agents/mack/` |
 
+## SOP Invocation Standard
+
+SOPs are first-class registered commands in this workspace. The set is finite,
+the names are stable, and every SOP name maps to a repo file. Do not treat an SOP
+name as ordinary prose, generic GitHub triage, or a broad workflow request.
+McRitchie operating procedures are normal repo docs, not installed skills.
+
+- Heartbeats live at `mcritchie-studio/docs/agents/agents/<agent>/HEARTBEAT.md`.
+- Agent-specific SOPs live at `mcritchie-studio/docs/agents/agents/<agent>/sops/<sop>.md`.
+- Shared primitives live under `mcritchie-studio/docs/agents/modules/`.
+
+When Alex names one (`pr-review`, `qa-release`, `production-deploy`, `focus-session`,
+`clean-up`, …), open your activity, resolve it in the registry tables at the end of
+this map, and read the mapped HEARTBEAT.md or SOP file before queue inspection,
+`--help` probing, GitHub PR discovery, or tool/plugin selection. Then execute it.
+Each SOP stands alone; a design doc is background, never an execution path.
+
 ## The pipeline
 
 ```text
-Alex + focus session ──files a startable task──▶ Pokémon builder ──PR green──▶ reviewer
-  (holds the epic plan)                          desk · build · ship           Carl for code,
-                                                      ▲                         Xan for prose
-                                                      └──────── blocker ───────────┘
-                                                                                   │ merge
-                                                                                   ▼
-                                                                              (accepted)
-                                                      Avi runs qa-release ────────┤
-                                                                                   ▼
-                                                                         release → QA green
-                                                      Steffon runs production-deploy │ Alex's 30-min window
-                                                                                   ▼
-                                                                            (main · shipped)
+Alex + focus session ──files a task──▶ Pokémon builder ──PR green──▶ reviewer: Carl for code,
+  (holds the epic plan)                desk · build · ship            Xan alone for prose
+                                             ▲                              │
+                                             └────────── blocker ───────────┤ merge
+                                                                            ▼
+                                                    (accepted) ── Avi runs qa-release
+                                                                            ▼
+                                                                  release → QA green
+                                                                            │ Steffon runs production-deploy
+                                                                            ▼ (Alex's 30-minute window)
+                                                                     (main · shipped)
 ```
 
 - Task stages: **Build** `designed → building → submitted` (the builder), then
   **Deploy** `submitted → reviewed → assembled → shipped`. `blocked` needs
-  attention; `archived` is terminal.
-- Code walks `accepted` → `release` → `main`. Feature PRs target `accepted`.
-- Alex's operator windows: 10 min for a UI approval, 20 min for an escalation, 30
-  min for production authority (`config/release_builder.yml`).
-- Detail: `docs/agents/system/devops-v3-design.md` (v3) and
-  `docs/agents/system/devops-cycle-design.md` (the two workflows).
+  attention; `archived` is terminal. Code walks `accepted` → `release` → `main`.
+- Alex's operator windows: 10 min for a UI approval, 20 for an escalation, 30 for
+  production authority (`config/release_builder.yml`).
+- Detail: `docs/agents/system/devops-v3-design.md` and `docs/agents/system/devops-cycle-design.md`.
 
 ## The commands that matter
 
@@ -59,27 +72,29 @@ the SCRIPT, the cwd picks the TREE**: name the hub's script, stand in the desk.
 | Command | What it does |
 |---------|--------------|
 | `bin/task begin --title "Three To Five Words" --agent <soul> --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, claims it, preflights |
-| `bin/ship-wait <task-slug> --launch -m "Commit message"` | Runs `bin/ship` in the background and waits (~12 min): commit, push, PR into `accepted`, wait for CI, `bin/dor-check`, move `submitted` |
+| `bin/ship-wait <task-slug> --launch -m "Commit message"` | Runs `bin/ship` and waits: commit, push, PR into `accepted`, CI, `bin/dor-check`, `submitted` |
 | `bin/task show <slug> -v` · `bin/task list --stage <stage>` | Read one task · read the board |
 | `bin/release status` | Where the current release stands |
 | `bin/agent-activity start\|next\|end` | Narrate your work (rule 1 below) |
-| `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` | Mint a fresh GitHub token |
 
-Full fast-lane mechanics, the long form, and the satellite-desk table:
-`docs/agents/modules/devops-task-board.md` and `docs/agents/modules/building-sop.md`.
+A cold ship takes about 12 minutes, so run it in the background with `bin/ship-wait`;
+do not hand-roll a pgrep watcher. `bin/fast-check` is an optional one-minute
+pre-flight, and the cert gate (test-only included) reads only the PR's settled green CI.
+Where each command may run, the author set, and the long form:
+`docs/agents/modules/fast-lane.md`.
 
-## The rules that are rules
+## First Rules
 
 1. **Narrate.** Open a `bin/agent-activity` Explore activity before your first tool call; keep one per unit of work. Detail: `docs/agents/modules/heartbeats.md`.
 2. **Task before code.** Any diff, even a small one, starts with `bin/task begin`; there is no size exemption. Detail: `docs/agents/modules/building-sop.md`.
 3. **Desks, not primaries.** Edit only in your task's worktree; primary checkouts are for reading and deploys. Detail: `docs/agents/modules/worktrees.md`.
-4. **GitHub auth is self-service.** On a 401 or `Bad credentials`, run `bin/gh-auth-refresh --export` yourself; never ask Alex to run `gh auth login`. Detail: `docs/agents/modules/source-control.md`, then `docs/agents/modules/token-session.md`.
+4. **GitHub auth is self-service.** On a 401, run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"`; never ask Alex for `gh auth login`. Detail: `docs/agents/modules/token-session.md`.
 5. **Never merge, deploy, or push `main`** unless Alex assigned you that lane in this session. `bin/ship` stops at `submitted`.
 6. **Concurrency cap: 5 at a time.** At most five agents, dynos, or board-writing commands in flight; the board database has 20 connections.
 7. **No secrets in output.** Use named 1Password references and purpose-built scripts. Detail: `docs/agents/modules/credentials.md`.
 8. **No terminal chores for Alex.** Run safe commands yourself; ask him only for approvals, product judgment, or a credential only he holds.
 
-Namespace every scratch write by task slug (`ship-<task-slug>.log`); sibling agents share one scratchpad.
+Namespace scratch writes by task slug (`ship-<task-slug>.log`); sibling agents share one scratchpad.
 Correct Alex's spelling and grammar as you transcribe, by *The Elements of Style*.
 
 ## Talking to Alex
@@ -92,15 +107,37 @@ Correct Alex's spelling and grammar as you transcribe, by *The Elements of Style
 
 Detail: `docs/agents/modules/communication-style.md`.
 
-## SOP Invocation Standard
+## Repos
 
-An SOP name is a registered command, not prose. When Alex names one (`pr-review`,
-`qa-release`, `production-deploy`, `clean-up`, `process-backlog`, `work-backlog`,
-`focus-session`, `arbitrate-block`, `full-cycle`, and the rest below), resolve it in
-this registry, read the mapped file first, then execute it. Heartbeats live at
-`docs/agents/agents/<agent>/HEARTBEAT.md`, soul SOPs at
-`docs/agents/agents/<agent>/sops/<sop>.md`, shared ones under `docs/agents/modules/`.
-Each SOP stands alone; a design doc is background, never an execution path.
+| Repo | Role | Local port |
+|------|------|------------|
+| `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
+| `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
+| `rolio` | Release-managed standalone with reserved satellite range | 3300 |
+| `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3400 |
+| `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
+| `solana-studio` | Ruby Solana primitives | none |
+| `turf-vault` | Anchor smart contract | none |
+
+Desk ports come from managed ranges (hub `3000-3099`, Turf Monster `3100-3199`).
+Detail: `docs/agents/modules/ports-and-processes.md`.
+
+## Where to drill in
+
+| When your work touches | Read |
+|------------------------|------|
+| Every doc, by topic (the full index) | `docs/agents/start-here.md` |
+| The ecosystem | `docs/ECOSYSTEM.md` |
+| Building a task | `docs/agents/modules/building-sop.md`, `docs/agents/modules/fast-lane.md` |
+| Holding an epic | `docs/agents/modules/focus-session.md` |
+| The board | `docs/agents/modules/devops-task-board.md` |
+| Reviewing a PR | `docs/agents/modules/pr-review-sop.md` |
+| Release and deploys | `docs/agents/modules/deployment.md`, `docs/agents/modules/gates/` |
+| Desks and worktrees | `docs/agents/modules/worktrees.md` |
+| Tests | `docs/agents/modules/testing.md` |
+| Credentials and GitHub | `docs/agents/modules/credentials.md`, `docs/agents/modules/source-control.md` |
+
+## SOP Invocation Table
 
 | Invocation | Owner | Read first |
 |------------|-------|------------|
@@ -157,43 +194,10 @@ Each SOP stands alone; a design doc is background, never an execution path.
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
-## Repos
-
-| Repo | Role | Local port |
-|------|------|------------|
-| `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
-| `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
-| `rolio` | Release-managed standalone with reserved satellite range | 3300 |
-| `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3400 |
-| `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
-| `solana-studio` | Ruby Solana primitives | none |
-| `turf-vault` | Anchor smart contract | none |
-
-Desk ports come from managed ranges: hub `3000-3099`, Turf Monster `3100-3199`,
-Rolio `3300-3399`. Detail: `docs/agents/modules/ports-and-processes.md`.
-
-## Where to drill in
-
-| When your work touches | Read |
-|------------------------|------|
-| Every doc, by topic (the full index) | `docs/agents/start-here.md` |
-| The ecosystem | `docs/ECOSYSTEM.md` |
-| Building a task | `docs/agents/modules/building-sop.md`, `docs/agents/agents/pokemon/role.md` |
-| Holding an epic | `docs/agents/modules/focus-session.md` |
-| The board and the fast lane | `docs/agents/modules/devops-task-board.md` |
-| Reviewing a PR | `docs/agents/modules/pr-review-sop.md` |
-| Release and deploys | `docs/agents/modules/deployment.md`, `docs/agents/modules/gates/` |
-| Desks and worktrees | `docs/agents/modules/worktrees.md` |
-| Tests | `docs/agents/modules/testing.md` |
-| Credentials | `docs/agents/modules/credentials.md` |
-| GitHub | `docs/agents/modules/source-control.md` |
-| Keeping docs clean | `docs/agents/modules/docs-maintenance.md` |
-
 ## SOP Registry
 
-This table repeats the registry above for agents that jump to the reference
-section. A heartbeat may set attribution and act order; the SOP files do not
-depend on it.
+The same registry again, for agents that jump to the reference section. A
+heartbeat may set attribution and act order; the SOP files do not depend on it.
 
 | Invocation | Owner | Read |
 |------------|-------|------|
