@@ -46,7 +46,7 @@
 # (bin/dor-check#ci_gate_result and bin/dor-check#exempt_ci_result), so a nil persists `"result":null`, and `nil.to_s` is
 # "" — which falls to the gates card's ✓ DEFAULT, i.e. the omission route's failure mode
 # IS the inversion trap; (2) an absent ci row already MEANS something else — `--gate
-# build` writes none (bin/dor-check:3185#"CI-status gate (merge gate only)"); (3) omitting
+# build` writes none (bin/dor-check:2568#"CI-status gate (merge gate only)"); (3) omitting
 # would make the fleet's most common gate run indistinguishable from a build gate and from
 # a run that aborted early.
 #
@@ -116,16 +116,19 @@ class GateRecordNoPrCiTest < Minitest::Test
   end
 
   # THE RULING'S OTHER HALF, and the assertion that stops this fix from becoming a far
-  # worse bug. The row is amber, but the REFUSAL is still uncertifiable: :no_pr must
-  # stay OUT of the family a full local cert stands in for, or a task with no PR at all
-  # would advance a review on tier 2 of the allow-list.
+  # worse bug. The row is amber, but the REFUSAL is still a refusal: :no_pr must stay
+  # OUT of the no-verdict family (which is about a READ that failed, not a PR that does
+  # not exist), and no verdict offers a cert for it — or for anything else, since
+  # /tasks/dor-reads-settled-ci-verdict.
   def test_unit_a_missing_pr_is_still_not_something_a_cert_can_clear
     refute_includes CiGate::CI_NO_VERDICT_STATES, :no_pr,
                     "a cert may stand in for missing EVIDENCE about a PR, never for a missing PR"
 
-    _message, cert_clears = CiGate.unread_ci_refusal({ state: :no_pr }, "", "probe", cert_route: true)
+    message = CiGate.unread_ci_refusal({ state: :no_pr }, "", "probe")
 
-    refute cert_clears, "review's job is to merge a PR; the missing thing is the SUBJECT, not the evidence"
+    assert_includes message, "pr_url is BLANK",
+                    "review's job is to merge a PR; the missing thing is the SUBJECT, not the evidence"
+    refute_includes message, "certify in full", "no cert is offered for a missing PR — or for anything else"
   end
 
   # ── [integration] what actually lands in the record ─────────────────────────

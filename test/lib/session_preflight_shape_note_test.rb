@@ -106,17 +106,18 @@ class SessionPreflightShapeNoteTest < Minitest::Test
                  "ALONGSIDE A SETTLED GREEN CI, which is what the REVIEW gate-zero requires — it is an " \
                  "allow-list, so red, pending and unreadable all refuse there.\n#{output}")
 
-    # The other half of the same rule, and the half this note is read at. The
-    # builder's own run credits that fast cert PROVISIONALLY on a pending CI
-    # (bin/dor-check#suite_evidence_error; `fast-provisional` is the one branch
-    # testing !review_role), so a note that stops at the green sends a builder to
-    # a suite the gate has already waved through. Measured at 91e634d3: fast cert
-    # only + pending CI = DoR MET, exit 0, for the builder.
-    assert_match(/provisional/i, output,
-                 "the note states the green condition but not the ROLE split, which is the half a BUILDER " \
-                 "needs: at submit a fresh fast cert is credited PROVISIONALLY while CI is still pending, " \
-                 "so a pending CI owes no local run. Stopping at the green is how the correction to the " \
-                 "over-strict wording reproduced its cost one cell over.\n#{output}")
+    # The other half of the same rule, and the half this note is read at: a CI
+    # still running is a WAIT for the builder (bin/ship holds for it), never a
+    # reason to run a local suite. Until /tasks/dor-reads-settled-ci-verdict this
+    # asserted the PROVISIONAL fast-cert credit; that route is gone, and a note that
+    # still promised it would send a builder to a hatch the gate no longer reads.
+    assert_match(/WAITING/, output,
+                 "the note states the green condition but not what a builder sees on a PENDING CI: " \
+                 "a WAIT, held by bin/ship, owing no local run. Stopping at the green is how the " \
+                 "correction to the over-strict wording reproduced its cost one cell over.\n#{output}")
+    refute_match(/provisional/i, output,
+                 "the note still promises the PROVISIONAL fast-cert credit, a route bin/dor-check no " \
+                 "longer has.\n#{output}")
   end
 
   # RESTRAINT: the note is scoped to the shape that earns it. A shape whose

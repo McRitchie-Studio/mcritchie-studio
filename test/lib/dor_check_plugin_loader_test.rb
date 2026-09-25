@@ -209,7 +209,7 @@ class DorCheckPluginLoaderTest < Minitest::Test
         "DOR_CHECK_CHANGED_FILES" => "app/models/thing.rb",
         "DOR_CHECK_PR_FILES" => "app/models/thing.rb",
         "DOR_CHECK_PR_MIGRATIONS" => "", "DOR_CHECK_SIBLING_PRS" => "[]",
-        "DOR_CHECK_CI_STATUS" => "green", "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+        "DOR_CHECK_CI_STATUS" => "green"
       }.merge(checks_dir ? { "DOR_CHECKS_DIR" => checks_dir } : {}))
       out = IO.popen(env, "#{BIN} --file #{path} --json 2>/dev/null", &:read)
       [JSON.parse(out), $?.exitstatus]

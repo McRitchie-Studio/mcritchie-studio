@@ -267,7 +267,7 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   #
   # THE CORPUS IS THE GATE'S WHOLE LOADED SOURCE, NOT bin/dor-check ALONE. The first version of
   # this guard read that one file, and the fix it watches for would never have touched it.
-  # bin/dor-check:171#"Dor::Checks.load!" is a DIRECTORY GLOB over bin/lib/dor/checks/*.rb
+  # bin/dor-check:147#"Dor::Checks.load!" is a DIRECTORY GLOB over bin/lib/dor/checks/*.rb
   # (bin/lib/dor/checks.rb#load!), and that file states the architecture in capitals in its header —
   # "A DIRECTORY GLOB HAS NO MERGE CONFLICT, A LIST OF REQUIRES DOES ... adding a check is a
   # PURE FILE ADD - no registry line, no require line, no hook." So the per-repo check, built
@@ -304,7 +304,7 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   # style, so widening the corpus without widening the spelling would have left two more holes:
   # the parenthesised form, and the `require Rails.root.join(...)` form live at
   # test/models/release/repos_test.rb:6. The `[\s(]` after the keyword is what stops
-  # `required_meta = ...` (bin/dor-check:2972) from reading as a require.
+  # `required_meta = ...` (bin/dor-check:2355) from reading as a require.
   CI_SEAM_REQUIRE = /^\s*require(?:_relative)?[\s(].*ci_test_command/
 
   # Every spelling must be exercised, for the same reason DEFERRAL_MARKERS are: an alternative

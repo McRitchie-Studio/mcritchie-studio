@@ -186,7 +186,6 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
         "DOR_CHECK_DIFF_BASE" => nil, # exercise the real release-aware base resolver
         "DOR_CHECK_PR_FILES" => pr_files,
         "DOR_CHECK_CI_STATUS" => "green",
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok",
         "DOR_CHECK_PROJECTS_DIR" => projects
       )
       out = IO.popen(env, "#{BIN} #{task['slug']} --file #{path} --json #{args.join(' ')} 2>#{err}",
@@ -804,39 +803,10 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     end
   end
 
-  # A SHAPED code task, so the suite gate actually runs — the exempt-kind fixtures
-  # above short-circuit before it and cannot see the cert fingerprint at all.
-  def backend_task(repo:, fp:)
-    task = chore_task(repo: repo)
-    task["metadata"]["devops"].merge!(
-      "kind" => "bug", "shape" => "backend",
-      "checks_run" => ["[unit] u", "[integration] i",
-                       "[full-suite@#{fp}] bin/rails test", "[rubocop@#{fp}] bin/rubocop"]
-    )
-    task
-  end
-
-  def test_integration_a_foreign_repos_branch_tree_is_never_offered_as_this_certs_fingerprint
-    # The fingerprint twin of the branch-diff vector. Reading a same-named branch out
-    # of the WRONG repo produces a precise, confident, wrong hash — and this file's own
-    # provenance invariant says that is worse than an opaque refusal, because it sends
-    # the reader to a tree that graded nothing. The wrong direction is survivable here
-    # (a false STALE is loud); being confidently wrong about WHICH tree is not.
-    with_branch_name_collision do |projects, hub|
-      hub_branch_tree = IO.popen(["git", "-C", hub, "rev-parse", "feat/#{SLUG}^{tree}"], &:read).strip
-      refute_empty hub_branch_tree
-
-      verdict, code, = dor_check(backend_task(repo: "turf-monster", fp: "a" * 40), hub, projects,
-                                 "--gate-role", "review")
-
-      assert_equal 1, code
-      blame = "#{verdict['errors'].join(' ')} #{verdict.dig('full_suite', 'fingerprint')}"
-      refute_includes blame, hub_branch_tree[0, 12],
-                      "the hub's branch tree graded nothing and must not appear as this task's fingerprint"
-      assert_match(/root guard/i, verdict["errors"].join(" "),
-                   "with no honest tree available it must refuse, not grade a foreign one")
-    end
-  end
+  # (A cert-fingerprint twin of the branch-diff vector stood here until
+  # /tasks/dor-reads-settled-ci-verdict: with no receipt read, a foreign repo's branch
+  # tree has no fingerprint left to be offered as, and the DIFF half above is the
+  # whole vector.)
 
   def test_integration_the_branch_source_still_works_inside_the_prs_own_repo
     # The other direction: remedy 2 must keep working where it is honest. Right repo,

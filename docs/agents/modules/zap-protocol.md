@@ -272,6 +272,16 @@ without you —
 
 ### After a reviewer zap — what re-checks itself, and what does not
 
+**Since 2026-09-24 `bin/dor-check` reads no cert receipt** (`dor-reads-settled-ci-verdict`,
+phase 2a of DevOps v3): the suite evidence is the PR's settled GREEN CI for its
+current head, which re-runs on the zapped head by itself. So the cert paragraphs
+below no longer describe a gate refusal — a `[fast-cert@<fp>]` gone STALE is
+invisible to the verdict — and re-certifying after a zap is a courtesy to the next
+reader of `checks_run`, not a step the gate demands. What still bites is the
+**head check** (the graded tree must be the PR head) and, on a `test-only` PR,
+the **`[control@<fp>]` stamp**, which is still fingerprint-graded exactly as
+described. The paragraphs stay until phase 2b removes the receipts.
+
 Pushing a zap moves the PR head. Some of the machinery around the review notices
 and some of it does not, and the difference used to be invisible. Measured on
 2026-09-02 across three reviewers in one afternoon; two got the right answer only
@@ -281,7 +291,7 @@ because they happened to re-verify by hand.
 |---|---|
 | GitHub CI verdict | **Yes** — checks re-run on the new head. |
 | The tree `bin/dor-check --gate-role review` grades | **Now guarded.** It re-roots to the *builder's desk*, which sits wherever the builder left it. It refuses when that tree is not the PR head. |
-| The full-suite cert fingerprint | **From a worktree yes; from a separate clone no** — see below. |
+| The full-suite cert fingerprint | **No longer graded** (2026-09-24). It still moves as described below — from a worktree yes; from a separate clone no — but the verdict does not read it. |
 | The `[control@<fp>]` stamp (`test-only` PRs only) | **Same trigger as the cert, same two cases** — it is graded by the same fingerprint machinery. Clearing it is a SECOND command, `bin/control-check`; re-certifying does not touch it. See below. |
 | The e2e declared-vs-executed set | **No** — it ran once, against the base as it was then. |
 | The PR's AUTHOR SET (who may review it next) | **Yes, since 2026-09-09** — `bin/pr-review` records the head move as a fix-forward. Before that it did **not**, and the gap seated a reviewer on his own commit. See below. |

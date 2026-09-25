@@ -19,30 +19,25 @@ The gate flow order: **G1 Cert** (this doc) → [DoR](dor.md) →
 
 - The shape's **DoR test tiers** are green, tier-tagged in `devops.checks_run`
   (`[unit] …`, `[integration] …`, per `config/feature_shapes.yml`).
-- The **suite evidence** proves the tree being shipped is certified, via one of
-  three routes (all fingerprint-bound to a git TREE hash, so a stale or partial
-  record is refused):
-  - **fast** (the builder default) — a fresh `[fast-cert@<fp>]` line from
-    `bin/fast-check`, credited alongside a **GREEN GitHub CI** (CI runs the
-    full suite + `test:system` on every PR push, so the full net still runs).
-    Submit-side it is also credited **PROVISIONALLY** while the open PR's CI is
-    still pending / not yet reported — see "The CI seam" below.
-  - **full** — fresh `[full-suite@<fp>]` + `[rubocop@<fp>]` lines from
-    `bin/full-suite-check`. Accepted on its own, CI-independent.
-    A repo that DECLARES `lint_lane: none` in `config/release_repos.yml`
-    (today: `studio-engine` and `solana-studio`, neither of which ships
-    rubocop at all) owes only the `[full-suite@<fp>]` line — the waiver is
-    declared, never inferred from a missing binary. See
-    `FullSuiteGate.required_lanes`. The REFUSAL names only the lanes that
-    repo owes: it is built from `required_lanes`, not the full `LANES`, in
-    both the primary refusal (`suite_evidence_error`) and the secondary one
-    (`secondary_cert_lane_state`), so a waived repo is never sent after a
-    rubocop it does not ship.
-  - **bypass** — a `[full-suite-bypass] <reason>` checks_run line. Honored but
-    flagged loudly; a conscious, justified skip only.
+- The **local cert** — a fast, honest pre-flight that the builder runs before the
+  push. Since 2026-09-24 (`dor-reads-settled-ci-verdict`) it is **not evidence the
+  DoR verdict reads**: `bin/dor-check` credits one form of suite evidence, the PR's
+  settled GREEN GitHub CI, and the receipts below are inert to it until phase 2b of
+  DevOps v3 removes them. The lanes still run, still refuse a red tree, and still
+  record what they ran:
+  - **fast** (the builder default) — `bin/fast-check`: diff-mapped tests + core
+    spine + rubocop on changed files, ~1 min, stamping a `[fast-cert@<fp>]` line.
+  - **full** — `bin/full-suite-check`: `ci.yml`'s own command locally, stamping
+    `[full-suite@<fp>]` + `[rubocop@<fp>]`. A repo that DECLARES `lint_lane: none`
+    in `config/release_repos.yml` (today: `studio-engine` and `solana-studio`,
+    neither of which ships rubocop at all) records only the `[full-suite@<fp>]`
+    line — the waiver is declared, never inferred from a missing binary. See
+    `FullSuiteGate.required_lanes`.
+  - **bypass** — a `[full-suite-bypass] <reason>` checks_run line. Recorded, and
+    read by nothing.
 
-The suite evidence, required metadata, and the PR's GitHub CI are checked by the
-`dor-check` **verdict** — but that verdict now closes the separate **DoR** gate
+The shape tiers, required metadata, and the PR's GitHub CI — the suite evidence —
+are checked by the `dor-check` **verdict**, which closes the separate **DoR** gate
 ([`dor.md`](dor.md)), not this one. G1 Cert is purely the local cert lanes.
 
 ## Who runs it
@@ -55,10 +50,9 @@ the [DoR review](dor.md) gate `dor_review`, not here.)
 ## Procedure
 
 Run everything from the task worktree. Order matters: **final commit → cert →
-push → open the PR → dor-check → submit** (the cert fingerprint is a tree
-hash; committing after the cert makes it stale — and the fast route's
-provisional credit needs the PR open, so the verdict runs last, with **no CI
-wait** before `submitted`).
+push → open the PR → (CI settles) → dor-check → submit**. The verdict reads the
+PR's CI, so it runs after the PR is open; `bin/ship` holds at step 6/8 for the CI
+to settle before it, and a still-pending CI reads as a WAIT there, not a pass.
 
 The worktree rooting is **enforced**: given a task slug, both cert runners
 verify the cwd's checkout IS the task's tree (its branch, or its desk in
@@ -218,7 +212,11 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      **CAPPED at 15 files** after the spine dedupe — and `bin/dor-check`'s family
      was fifteen, which was the cap EXACTLY. (A family grows with its tool: the
      same family measures **18** at 2026-09-08, so `bin/dor-check` now exceeds
-     the cap on its own. Re-derive the number rather than reading it here.) Read
+     the cap on its own. Re-measured 2026-09-24, after `dor-reads-settled-ci-verdict`
+     retired five of the family's tests: **14** alone and **15** with
+     `bin/lib/ci_status.rb` — at the cap, not over it; that PR's own three-file diff,
+     adding `bin/lib/ci_gate.rb`, is 24. Re-derive the number rather than reading it
+     here.) Read
      those two numbers together —
      this doc printed them six lines apart without drawing the conclusion (the cap
      landed `96dcae17`, 2026-08-18; the family count `2b310c08`, 2026-09-06):
@@ -448,13 +446,12 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    A capped diff mapped to MORE relevant tests than the cap, not fewer, and CI
    runs every one of them on this exact tree in the run the PR triggers anyway;
    only the RUNNER was wrong, and we chose that ourselves for a budget reason. So
-   the cert authority moves to CI, and `bin/dor-check` credits the receipt **only
-   alongside a GREEN CI — never provisionally**, unlike the fast lane (a fast cert
-   has a real local run underneath it; a deferral has nothing). A red CI, an
-   ABSENT CI (`:none`), a CI nobody could read, and a receipt gone STALE under a
-   later edit all still refuse the submit. Exit `2` is deliberately non-zero so
-   every `system(...)` caller that has not been taught about deferral keeps
-   reading it as "not certified".
+   the cert authority moves to CI. (Since 2026-09-24 that is true of every diff,
+   not only a capped one: `bin/dor-check` reads the CI verdict and no receipt, so
+   a deferral simply means no local pre-flight ran.) A red CI, an ABSENT CI
+   (`:none`), and a CI nobody could read all still refuse the submit. Exit `2` is
+   deliberately non-zero so every `system(...)` caller that has not been taught
+   about deferral keeps reading it as "not certified".
 
    Why it moved at all: `bin/fast-check` runs at **ship step 2 of 8 — before the
    push, before the PR, before any CI exists**, so a refusal left the builder with
@@ -557,10 +554,11 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    Until then solana-studio declared nothing, so this route COULD NOT PASS there:
    the lane shelled out to a `bin/rubocop` the repo does not ship, came back
    `COULD NOT RUN`, and the writer exits before recording — **discarding the GREEN
-   suite lane with it** (`no evidence recorded for the red lane(s)`). That is not
-   cosmetic. `agents/carl/sops/pr-review-primary.md` names this command as THE
-   escape when a PR's CI verdict is red, pending or unreadable, so a reviewer
-   following the SOP in that repo had no path at all.
+   suite lane with it** (`no evidence recorded for the red lane(s)`). That was not
+   cosmetic at the time: `agents/carl/sops/pr-review-primary.md` then named this
+   command as THE escape when a PR's CI verdict was unreadable, so a reviewer
+   following the SOP in that repo had no path at all. (That escape retired on
+   2026-09-24; the cert is a pre-flight now, in every repo.)
 
    **ABSENT vs BROKEN — the pair of rules that keeps them apart.** A missing lint
    toolchain and a broken one want opposite treatments, and the waiver is only safe
@@ -592,10 +590,10 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    CI-INDEPENDENCE — **it may never run less of CI's Ruby suite than CI does**.
    (It once did: it ran `bin/rails test`, which **skips `test/system`**, so a
    builder could take the CI-independent route, go green, and have zero system
-   coverage.) Scope it exactly: the cert stands in for CI's **`test` job**, not for
-   all of CI — `scan_ruby` (brakeman), `scan_js` (importmap audit) and
-   turf-monster's `playwright` e2e job are CI's alone, which is why review's
-   gate-zero still holds the authoritative CI verdict. The cert keeps that claim by
+   coverage.) Scope it exactly: the cert covers CI's **`test` job**, not all of CI
+   — `scan_ruby` (brakeman), `scan_js` (importmap audit) and turf-monster's
+   `playwright` e2e job are CI's alone, which is one reason the DoR verdict reads
+   CI and not the cert. The cert keeps that claim by
    **refusing whatever it cannot SEE or cannot RUN**, across the repo's **PR-gating
    workflows**: CI's Ruby suite split across steps, across **jobs**, or across
    **workflow files**; a suite it can see but cannot run verbatim (a multi-line
@@ -633,17 +631,15 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      drop those: any lane your update does not itself supply is carried forward,
      by the CLI and by the board (`lib/cert_evidence.rb`). Recording your test
      plan after certifying used to wipe the cert and make `bin/dor-check` report
-     `full-suite: MISSING` on freshly certified code — it no longer can.
+     `full-suite: MISSING` on freshly certified code — it no longer can, and since
+     2026-09-24 `bin/dor-check` reads none of these lines anyway.
 
    A lane is superseded only by a line FOR that lane **in that repo**, which is what
    a re-cert writes. The `:<repo>` scope is why a task naming two repos keeps a cert
-   for EACH: certifying the second repo used to erase the first's line silently, and
-   the false STALE surfaced much later on a repo you had already certified green.
-   Certify each repo in its own tree (`cd <that repo's desk> && bin/full-suite-check
-   <task>`); `bin/dor-check` grades every repo the task names and has a PR in, and
-   names each one in its verdict. Never hand-write a `[<lane>@<fingerprint>]` line:
-   that forges a certification, and the fingerprint exists to make the cert mean
-   something.
+   for EACH. `bin/dor-check` gates every repo the task has a PR in by that PR's own
+   CI, and names each one in its verdict. Never hand-write a `[<lane>@<fingerprint>]`
+   line: that forges a certification, and the fingerprint exists to make the cert
+   mean something.
 
 4. **Verdict — the DoR gate** (its own gate; closes `dor`, not `g1_cert`):
 
@@ -651,13 +647,12 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    bin/dor-check <task-slug>
    ```
 
-   Deterministic, no judgment: shape tiers, required metadata, suite evidence
-   (fast/full/bypass), post-deploy nudges, and the PR's real GitHub CI. Exit 0
-   = ready to advance `submitted → reviewed` — **without waiting for CI**: a
-   fresh fast cert with CI still pending on the open PR is credited
-   provisionally (a red CI still refuses; a fast cert with NO open PR is
-   refused — push and open the PR first, then run the verdict). Full mechanics:
-   [`dor.md`](dor.md).
+   Deterministic, no judgment: shape tiers, required metadata, post-deploy
+   nudges, and the PR's real GitHub CI — which is the suite evidence. Exit 0 =
+   ready to advance `submitted → reviewed` on a settled GREEN CI; a CI still
+   running is a WAIT (exit 1, its own headline; `bin/ship` holds for it at 6/8),
+   and a task with NO open PR has no verdict to read — push and open the PR
+   first, then run the verdict. Full mechanics: [`dor.md`](dor.md).
 
 ## Success, failure, and attempt semantics
 
@@ -689,9 +684,8 @@ window.
   a board blip never changes a verdict or an exit code.
 
 The Definition-of-Ready verdict semantics — the `dor` / `dor_review` attempts,
-their `dor-check` / `tiers` / `full-suite-evidence` / `ci` SOPs, the
-submit-before-CI-settles credit, and the `--gate-role` split — now live in
-their own gate doc: [`dor.md`](dor.md).
+their `dor-check` / `tiers` / `ci` SOPs, the builder-side WAIT on a pending CI,
+and the `--gate-role` split — now live in their own gate doc: [`dor.md`](dor.md).
 
 ## The CI seam — the cert is CI-independent either way
 
@@ -703,10 +697,9 @@ CI is green, red, or unborn changes nothing about `bin/fast-check` or
 What sits downstream of it did change (`gate-submit-on-green-ci`, 2026-08-16):
 `bin/ship` now holds between opening the PR and running the DoR verdict, until the
 PR's CI settles — so the builder certs (this gate), opens the PR, **waits**, runs
-the dor-check verdict (the DoR gate), and moves the task `submitted` on a green CI
-rather than a provisional one. Full CI-seam mechanics — the provisional fast-cert
-credit that remains the fallback, the review-side gate-zero, and the bounce
-round-trip — are in [`dor.md`](dor.md).
+the dor-check verdict (the DoR gate), and moves the task `submitted` on a green CI.
+Full CI-seam mechanics — the builder-side WAIT when the settle times out, the
+review-side gate-zero, and the bounce round-trip — are in [`dor.md`](dor.md).
 
 ## UI surfaces
 

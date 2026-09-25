@@ -143,7 +143,7 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
         "slug" => "task-test", "title" => "T", "metadata" => { "devops" => devops }
       ))
       env = board_pinned_env(
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok",
+        "DOR_CHECK_CI_STATUS" => "green",
         "DOR_CHECK_DIFF_ROOT" => dir,
         "DOR_CHECK_DIFF_BASE" => "base-ref",
         "DOR_CHECK_CHANGED_FILES" => changed
@@ -449,7 +449,7 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
           "slug" => "t", "title" => "T", "metadata" => { "devops" => contract }
         ))
         env = SessionEnv.neutralized.merge(
-          "DOR_CHECK_SUITE_EVIDENCE" => "ok", "DOR_CHECK_DIFF_ROOT" => dir,
+          "DOR_CHECK_CI_STATUS" => "green", "DOR_CHECK_DIFF_ROOT" => dir,
           "DOR_CHECK_DIFF_BASE" => "base-ref", "DOR_CHECK_CHANGED_FILES" => PARTIAL
         )
         out = IO.popen(env, "#{BIN} --file #{path} --gate build 2>/dev/null", &:read)

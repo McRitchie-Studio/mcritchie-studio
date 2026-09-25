@@ -88,8 +88,7 @@ class DorCheckStaleCiTest < Minitest::Test
         "DOR_CHECK_CHANGED_FILES" => CODE,
         "DOR_CHECK_PR_FILES" => CODE,
         "DOR_CHECK_CI_STATUS" => ci,
-        "DOR_CHECK_CI_BASE_DRIFT" => drift,
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+        "DOR_CHECK_CI_BASE_DRIFT" => drift
       }.merge(base ? { "DOR_BASE_BRANCH" => base } : {}))
       out = IO.popen(env, "#{BIN} --file #{path} --json --gate-role #{role} 2>/dev/null", &:read)
       [JSON.parse(out), $?.exitstatus]

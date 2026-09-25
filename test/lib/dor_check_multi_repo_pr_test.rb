@@ -76,8 +76,7 @@ class DorCheckMultiRepoPrTest < Minitest::Test
       seams = {
         "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
         "DOR_CHECK_PR_FILES_BY_REPO" => JSON.generate(files),
-        "DOR_CHECK_CI_STATUS_BY_REPO" => JSON.generate(ci),
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+        "DOR_CHECK_CI_STATUS_BY_REPO" => JSON.generate(ci)
       }
       seams["DOR_CHECK_CHANGED_FILES"] = changed_files if changed_files
       seams.merge!(extra_seams)
@@ -98,8 +97,7 @@ class DorCheckMultiRepoPrTest < Minitest::Test
                                      "metadata" => { "devops" => single }))
       seams = {
         "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
-        "DOR_CHECK_PR_FILES" => pr_files, "DOR_CHECK_CI_STATUS" => ci,
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+        "DOR_CHECK_PR_FILES" => pr_files, "DOR_CHECK_CI_STATUS" => ci
       }
       seams["DOR_CHECK_CHANGED_FILES"] = changed_files if changed_files
       out = IO.popen(OutboundSeams.env(seams),
@@ -414,8 +412,7 @@ class DorCheckMultiRepoPrTest < Minitest::Test
       out = IO.popen(OutboundSeams.env({
                        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
                        "DOR_CHECK_PR_FILES_BY_REPO" => JSON.generate(HUB => HUB_DOC),
-                       "DOR_CHECK_CI_STATUS_BY_REPO" => JSON.generate(HUB => "green", SAT => "green"),
-                       "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+                       "DOR_CHECK_CI_STATUS_BY_REPO" => JSON.generate(HUB => "green", SAT => "green")
                      }),
                      "#{BIN} multi-repo-task --file #{path} --json --gate-role review 2>/dev/null", &:read)
       refute_empty out.to_s.strip, "the gate produced no JSON at all"
@@ -444,8 +441,7 @@ class DorCheckMultiRepoPrTest < Minitest::Test
       out = IO.popen(OutboundSeams.env({
                        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
                        "DOR_CHECK_PR_FILES_BY_REPO" => JSON.generate(files),
-                       "DOR_CHECK_CI_STATUS_BY_REPO" => JSON.generate(ci),
-                       "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+                       "DOR_CHECK_CI_STATUS_BY_REPO" => JSON.generate(ci)
                      }),
                      "#{BIN} multi-repo-task --file #{path} --gate-role #{role} 2>&1", &:read)
       refute_empty out.to_s.strip, "the gate printed nothing at all"

@@ -56,7 +56,7 @@ class DorCheckDocsShapeTest < Minitest::Test
       File.write(path, JSON.generate(
         "slug" => "task-test", "title" => "T", "metadata" => { "devops" => devops }
       ))
-      with_default_suite_evidence do
+      with_default_ci_verdict do
         with_neutralized_pr_read do
           out = IO.popen(dor_env, "#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
           [out, $?.exitstatus]
@@ -65,14 +65,14 @@ class DorCheckDocsShapeTest < Minitest::Test
     end
   end
 
-  # The merge gate demands fingerprint-bound full-suite evidence for a shaped feature.
-  # Default it fresh-green so these tests stay about the CLAIM guard, not the cert.
-  def with_default_suite_evidence
-    had = ENV.key?("DOR_CHECK_SUITE_EVIDENCE")
-    ENV["DOR_CHECK_SUITE_EVIDENCE"] = "ok" unless had
+  # The merge gate demands a settled GREEN CI for a shaped feature. Default it green
+  # so these tests stay about the CLAIM guard, not the CI verdict.
+  def with_default_ci_verdict
+    had = ENV.key?("DOR_CHECK_CI_STATUS")
+    ENV["DOR_CHECK_CI_STATUS"] = "green" unless had
     yield
   ensure
-    ENV.delete("DOR_CHECK_SUITE_EVIDENCE") unless had
+    ENV.delete("DOR_CHECK_CI_STATUS") unless had
   end
 
   # "" is the seam's "the PR listed no files" — so the LOCAL diff path is what these
@@ -299,14 +299,19 @@ class DorCheckDocsShapeTest < Minitest::Test
   # "✓ DoR-to-Merge met (shape: docs)" and a blank line where the tier line goes.
   # Nothing said a tier was skipped, nothing said the cert was waived, and nothing
   # said whether the shape had been checked against the diff at all.
-  def test_integration_a_waived_tier_and_cert_are_named_in_the_verdict
+  def test_integration_a_waived_tier_is_named_beside_the_evidence_that_carried_the_pass
     out, code = with_changed_files("docs/agents/note.md") { check(DOCS_CONTRACT) }
 
     assert_equal 0, code, out
     assert_match(/no test tier required/, out,
                  "a skipped tier requirement must NAME itself; silence is what let the docs hole survive " \
                  "every reader who had already seen this output")
-    assert_match(/full-suite cert waived/, out)
+    # No shape owes a local cert since /tasks/dor-reads-settled-ci-verdict, so there is
+    # no cert waiver to announce — announcing one would claim a distinction the gate no
+    # longer draws. What stands behind the pass is the CI verdict, and the line says so.
+    refute_match(/full-suite cert waived/, out)
+    assert_match(/GitHub CI green .*the settled verdict is the suite evidence/, out,
+                 "the docs pass must name the CI verdict that carried it, not read as a blind exemption")
     assert_match(/claim verified against the OBSERVED diff \(docs_with_guards_diff/, out,
                  "the reader's question is 'was this checked?' — only a printed answer distinguishes " \
                  "'verified against the diff' from 'nobody asked'")

@@ -86,7 +86,7 @@ class DorCheckPrReadClosingTest < Minitest::Test
   # Drives the REAL gate. DOR_CHECK_PR_FILES injects at the PR file read and
   # DOR_CHECK_CI_STATUS at CiStatus.evaluate — both replace a `gh` call, neither
   # replaces the alert under measurement.
-  def drive(ci:, role: "review", pr_files: "unreadable", diff: DOC_DIFF, cert: "ok")
+  def drive(ci:, role: "review", pr_files: "unreadable", diff: DOC_DIFF)
     Dir.mktmpdir do |dir|
       path = File.join(dir, "task.json")
       File.write(path, JSON.generate("slug" => "pr-read-task", "title" => "T",
@@ -94,7 +94,7 @@ class DorCheckPrReadClosingTest < Minitest::Test
       env = OutboundSeams.env({
         "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
         "DOR_CHECK_CHANGED_FILES" => diff, "DOR_CHECK_PR_FILES" => pr_files,
-        "DOR_CHECK_CI_STATUS" => ci, "DOR_CHECK_SUITE_EVIDENCE" => cert
+        "DOR_CHECK_CI_STATUS" => ci
       })
       out = IO.popen(env, "#{BIN} pr-read-task --file #{path} --json --gate-role #{role} 2>/dev/null", &:read)
       code = $?.exitstatus
@@ -113,8 +113,7 @@ class DorCheckPrReadClosingTest < Minitest::Test
                                      "metadata" => { "devops" => devops }))
       env = OutboundSeams.env({
         "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
-        "DOR_CHECK_CHANGED_FILES" => DOC_DIFF, "DOR_CHECK_PR_FILES" => "unreadable",
-        "DOR_CHECK_SUITE_EVIDENCE" => "ok"
+        "DOR_CHECK_CHANGED_FILES" => DOC_DIFF, "DOR_CHECK_PR_FILES" => "unreadable"
       })
       out = IO.popen(env, "#{BIN} pr-read-task --file #{path} --json --gate build " \
                           "--gate-role review 2>/dev/null", &:read)
