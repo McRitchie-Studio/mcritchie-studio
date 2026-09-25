@@ -158,7 +158,7 @@ module FastLane
   #   the hub and points at the desk it just made), so it passes the desk's bin dir
   #   FIRST and the hub's second — desk-first, hub-fallback. Desk-first is not
   #   cosmetic there: bin/ship resolves its GATES from its own __dir__ (TASK_BIN /
-  #   FAST_CHECK_BIN / DOR_CHECK_BIN, bin/ship:100-102), so always-hub would silently
+  #   FAST_CHECK_BIN / DOR_CHECK_BIN, bin/ship:101-103), so always-hub would silently
   #   re-point every HUB task's gate lane at the primary checkout, which routinely
   #   lags `accepted`. That is a gate-selection change wearing a hint fix's clothes.
   #
