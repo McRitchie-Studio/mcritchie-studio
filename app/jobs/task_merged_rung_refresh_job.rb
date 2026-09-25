@@ -17,6 +17,7 @@ class TaskMergedRungRefreshJob < ApplicationJob
     task.refresh_merged_rung!(derivation: derivation || Github::TaskDerivation.new)
   rescue StandardError => e
     log = ErrorLog.capture!(e)
+    log.target = task if task
     log.target_name = slug.to_s
     log.save!
   end

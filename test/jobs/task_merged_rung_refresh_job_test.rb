@@ -46,6 +46,8 @@ class TaskMergedRungRefreshJobTest < ActiveJob::TestCase
     with_github(boom) { TaskMergedRungRefreshJob.perform_now(t.slug) }
 
     assert_equal "accepted", t.reload.merged
+    log = ErrorLog.order(:id).last
+    assert_equal ["Task", t.id], [log.target_type, log.target_id], "the ErrorLog must be findable by its task"
   end
 
   test "[unit] a missing task is a no-op" do
@@ -126,5 +128,50 @@ class GithubPullRequestWebhookTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     assert_equal "accepted", t.reload.merged
+  end
+end
+
+# The background half of tasks#show (task-show-never-waits-github): the request
+# serves the stamp and queues this job, which derives and caches a blank pr_url.
+class TaskPrUrlCacheJobTest < ActiveJob::TestCase
+  HUB = "mcritchie-studio"
+  PR_URL = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/991"
+
+  def task(stage: "building", devops: {})
+    Task.create!(title: "pr url cache sample task", stage: stage,
+                 metadata: { "devops" => { "shape" => "backend", "repositories" => [HUB] }.merge(devops) })
+  end
+
+  test "[unit] the job caches the derived PR url into a blank column" do
+    t = task
+    fake = FakeTaskDerivation.new(branches: { [HUB, "feat/#{t.slug}"] => PR_URL })
+
+    TaskPrUrlCacheJob.perform_now(t.slug, derivation: fake)
+
+    assert_equal PR_URL, t.reload.devops_url("pr")
+  end
+
+  test "[unit] an unreadable GitHub leaves the column blank and raises nothing" do
+    t = task
+    fake = FakeTaskDerivation.new(branches: { [HUB, "feat/#{t.slug}"] => :unreadable })
+
+    TaskPrUrlCacheJob.perform_now(t.slug, derivation: fake)
+
+    assert_nil t.reload.devops_url("pr")
+  end
+
+  test "[unit] a failure is swallowed into an ErrorLog that targets the task" do
+    t = task
+    boom = Object.new
+    def boom.pr_url_for_branch(*, **) = raise(ArgumentError, "boom")
+
+    TaskPrUrlCacheJob.perform_now(t.slug, derivation: boom)
+
+    log = ErrorLog.order(:id).last
+    assert_equal ["Task", t.id], [log.target_type, log.target_id]
+  end
+
+  test "[unit] a missing task is a no-op" do
+    assert_nil TaskPrUrlCacheJob.perform_now("no-such-task-slug")
   end
 end

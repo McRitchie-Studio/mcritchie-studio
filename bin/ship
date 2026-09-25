@@ -716,10 +716,11 @@ if MigrationCollision.blocking?(collisions)
 end
 
 # --- 5/8 record pr_url -------------------------------------------------------
-# THE BOARD DERIVES IT NOW (devops-v3 4c-i). A fresh show makes the board look up
-# the PR on the task branch and cache it into a blank `devops.pr_url`
-# (Task#cache_derived_pr_url!), serving it as `pr_url_or_derived`. When that names
-# the PR this run opened there is nothing to write. Ship still writes when the
+# THE BOARD DERIVES IT NOW (devops-v3 4c-i). A show of a task with a blank
+# `devops.pr_url` queues a background lookup of the PR on the task branch
+# (TaskPrUrlCacheJob → Task#cache_derived_pr_url!); the request itself never waits
+# on GitHub. A later show serves the cached url as `pr_url_or_derived`. When that
+# names the PR this run opened there is nothing to write. Ship still writes when the
 # board names a DIFFERENT PR (a stale or foreign url) or could not answer — the
 # read-back at 8/8 pins the exact URL either way.
 presence!(:record)

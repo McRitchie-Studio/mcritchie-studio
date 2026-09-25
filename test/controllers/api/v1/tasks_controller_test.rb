@@ -18,10 +18,11 @@ module Api
         }
       end
 
-      # [integration] devops-v3 4c-i: show serves the PR url the board DERIVES, and
-      # caches it into a blank `devops.pr_url`, so bin/ship can skip its write and
-      # its read-back still pins the exact PR. The index stays derivation-free.
-      test "show serves and caches the derived PR url; the index asks GitHub nothing" do
+      # [integration] devops-v3 4c-i: the board DERIVES the PR url and caches it into
+      # a blank `devops.pr_url`, so bin/ship can skip its write and its read-back still
+      # pins the exact PR. The derivation runs in TaskPrUrlCacheJob, never in the
+      # request; the index queues nothing.
+      test "show queues the PR url fill and the next show serves the cached url" do
         task = tasks(:in_progress_task)
         task.update_columns(stage: "building", metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
         url = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/4242"
@@ -30,9 +31,15 @@ module Api
         Github::TaskDerivation.reset_shared!
         TaskDerivedFacts.stub(:enabled?, true) do
           Github::TaskDerivation.stub(:new, fake) do
-            get api_v1_tasks_path(full: 1), headers: @headers
+            assert_no_enqueued_jobs(only: TaskPrUrlCacheJob) do
+              get api_v1_tasks_path(full: 1), headers: @headers
+            end
             assert_response :success
-            assert_empty fake.calls, "a full index page must not derive per row"
+
+            perform_enqueued_jobs(only: TaskPrUrlCacheJob) do
+              get api_v1_task_path(task.slug), headers: @headers
+            end
+            assert_equal url, task.reload.devops_url("pr"), "the job cached what it derived"
 
             get api_v1_task_path(task.slug), headers: @headers
           end
@@ -42,7 +49,53 @@ module Api
         body = response.parsed_body["data"]
         assert_equal url, body["pr_url_or_derived"]
         assert_equal url, body.dig("metadata", "devops", "pr_url"), "the served record carries the cached url"
-        assert_equal url, task.reload.devops_url("pr"), "the board cached what it derived"
+      ensure
+        Github::TaskDerivation.reset_shared!
+      end
+
+      # A GitHub client whose every read hangs past the request budget, as during a
+      # rate limit or an outage (the H12 case: Heroku's router cuts a request at 30s).
+      class HangingGithubClient
+        attr_reader :calls
+
+        def initialize(seconds) = (@seconds = seconds; @calls = 0)
+
+        def get(*, **)
+          @calls += 1
+          sleep(@seconds)
+          []
+        end
+
+        def paginate(*, **) = get
+      end
+
+      SHOW_BUDGET_SECONDS = 2
+
+      # [integration] Regression (task-show-never-waits-github): show asked GitHub for
+      # the branch's PR INSIDE the request, so a hung GitHub hung the request. Show now
+      # serves the stamped column, never waits on GitHub, and queues the lookup.
+      test "show never waits on a hanging GitHub and serves the stamped value" do
+        task = tasks(:in_progress_task)
+        task.update_columns(stage: "building", metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+        client = HangingGithubClient.new(SHOW_BUDGET_SECONDS + 2)
+
+        Github::TaskDerivation.reset_shared!
+        TaskDerivedFacts.stub(:enabled?, true) do
+          Github::TaskDerivation.stub(:new, Github::TaskDerivation.new(client: client)) do
+            started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            get api_v1_task_path(task.slug), headers: @headers
+            elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+            assert_operator elapsed, :<, SHOW_BUDGET_SECONDS, "show waited #{elapsed.round(2)}s on GitHub"
+          end
+        end
+
+        assert_response :success
+        assert_equal 0, client.calls, "the request path must not ask GitHub at all"
+        body = response.parsed_body["data"]
+        assert_nil body["pr_url_or_derived"], "a blank stamp serves blank, not a guess"
+        assert_nil task.reload.devops_url("pr")
+        assert_enqueued_with(job: TaskPrUrlCacheJob, args: [task.slug])
       ensure
         Github::TaskDerivation.reset_shared!
       end

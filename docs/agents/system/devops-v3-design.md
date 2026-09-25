@@ -410,9 +410,11 @@ rung when a task lands on `reviewed` and when GitHub delivers a merged
 `Release#add` and `Conductor.record_merged!` keep their own write and then refresh
 advance-only, so a lagging read never pulls the column down. Review drops its
 `bin/task merged` line, and the command now prints "no longer needed" and still
-writes, as an override. `tasks#show` fills a blank `devops.pr_url` from the task
-branch and serves `pr_url_or_derived`, so `bin/ship` skips its write when that
-names the PR it opened and its read-back verifies the derived value. `--agent` is
+writes, as an override. `tasks#show` never waits on GitHub: it serves the recorded
+`devops.pr_url` as `pr_url_or_derived`, and a blank one queues `TaskPrUrlCacheJob`
+to fill it from the task branch, so a later show serves the derived value. `bin/ship`
+skips its write when that names the PR it opened, writes it otherwise, and its
+read-back verifies the url either way. `--agent` is
 optional: review excludes the souls on the PR's commits, union any stamps.
 
 **Where it stands, 2026-09-25.** Every piece below is merged to `accepted`; none
