@@ -130,7 +130,9 @@ module AgentWorktreeFixture
     # Mirror the real repo's .gitignore: /.worktrees/ is ignored so the parent
     # checkout reads CLEAN with a feature worktree provisioned under it (otherwise
     # `git status` in @hub_dir flags .worktrees/ as untracked → "dirty").
-    File.write(File.join(@hub_dir, ".gitignore"), ".env.agent-stack\n.agent-context.json\n/.worktrees/\n")
+    # /.env* as the real repos have it: `new`/bind-task also write .env.development.local
+    # (and .env.test.local), which must not read as uncommitted work either.
+    File.write(File.join(@hub_dir, ".gitignore"), "/.env*\n.agent-context.json\n/.worktrees/\n")
     git!(@hub_dir, "add", ".gitignore")
     git!(@hub_dir, "commit", "-m", "Ignore agent stack files")
     # SSH-form origin so github_repo_slug still resolves "McRitchie-Studio/mcritchie-studio",

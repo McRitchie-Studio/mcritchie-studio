@@ -311,6 +311,21 @@ class GateRun < ApplicationRecord
     run
   end
 
+  # Re-stamp a shipped release's G4 seal (`bin/release reseal`). The ship closes G4
+  # with metadata.seal; a re-seal that overwrote only the release's smoke seal left
+  # the G4 column showing the verdict it had just replaced. Updates the NEWEST g4_ship
+  # attempt's seal (+ resealed_at) and nothing else — the seal is non-blocking, so
+  # success is never touched. nil when the release has no G4 attempt.
+  def self.restamp_seal!(subject_slug:, seal:, now: Time.current)
+    run = for_subject("release", subject_slug).where(key: "g4_ship").order(:attempt, :id).last
+    return nil unless run
+
+    run.with_lock do
+      run.update!(metadata: run.metadata.merge("seal" => seal.to_s, "resealed_at" => now.iso8601))
+    end
+    run
+  end
+
   # ---- reads -----------------------------------------------------------------
 
   # The newest attempt per gate key — what the UI chips render.

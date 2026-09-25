@@ -122,6 +122,7 @@ class ReleaseSealCliTest < Minitest::Test
     setup = SEAL_STUB + SEAL_TREE_STUB + <<~'RUBY'
       def record_release_event(slug, step, status, attrs = {})
         $stdout.puts("EVENT #{step}:#{status} #{attrs[:message]}")
+        $stdout.puts("EVENT-METADATA #{attrs[:metadata].inspect}")
       end
       def sh(*a, capture: false, chdir: nil)
         raise Errno::ENOENT, "bin/prod-smoke" if a[0] == "bin/prod-smoke"
@@ -133,13 +134,36 @@ class ReleaseSealCliTest < Minitest::Test
 
     refute_includes out, "RAISED:", "the seal is non-blocking by contract — no uncaught SystemCallError"
     assert_includes out, %("unsealed"), "the seal returns unsealed for the G4 gate"
-    assert_includes out, "EVENT prod_smoke:failed unsealed: could not run the shipped specs",
+    # An unsealed run is COMPLETED with seal: unsealed, never FAILED: the board and the
+    # duration readers count a failed prod_smoke as a failure, and nothing failed.
+    assert_includes out, "EVENT prod_smoke:completed unsealed: could not run the shipped specs",
                     "the release event records WHY it is unsealed"
+    assert_match(/EVENT-METADATA \{"seal"\s*=>\s*"unsealed"\}/, out) # Hash#inspect spacing varies by ruby
+    refute_includes out, "EVENT prod_smoke:failed", "an unsealed run is not a failed one"
     refute(out.lines.any? { |l| l.start_with?("SEAL-WRITE") && l.include?("record_smoke_seal!") },
            "no red seal is written for specs that never ran")
     refute_includes out, "PRODUCTION SMOKE SEAL FAILED"
     refute_includes out, "heroku rollback", "nothing says prod is broken, so no rollback prompt"
     assert_includes out, "bin/release reseal rel-seal", "the operator is handed the re-seal"
+  end
+
+  # [integration] Through the REAL record_release_event: the conductor snippet it
+  # builds records a completed prod_smoke event carrying metadata seal: unsealed.
+  def test_unsealed_event_reaches_the_conductor_as_completed_with_its_seal
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        $stdout.puts("SEAL-WRITE " + ruby.gsub("\n", " "))
+        {}
+      end
+      def with_ship_workspace(_repo) = yield
+      def resolve_seal_tree(_frozen) = Release::SealTree.refuse("the ship workspace is missing")
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{SEAL_ARGS}))")
+
+    event = out.lines.find { |l| l.start_with?("SEAL-WRITE") && l.include?("rel-seal:prod_smoke:unsealed") }
+    assert event, "the unsealed event is written:\n#{out}"
+    assert_includes event, %(step: "prod_smoke", status: "completed")
+    assert_match(/metadata: \{"seal"\s*=>\s*"unsealed"\}/, event)
   end
 
   def test_seal_green_run_records_green_and_prints_no_rollback
@@ -408,6 +432,42 @@ class ReleaseSealCliTest < Minitest::Test
     end
   end
 
+  # The timeout must kill npm's whole PROCESS GROUP. npm ci runs node children; a
+  # kill aimed at the npm pid alone leaves them running in the ship workspace,
+  # holding the lock's tree and the output pipe (Carl, review of PR #1605: every
+  # other seal test passed with `Process.kill("TERM", pid)` in place of `-pid`).
+  # The fake npm spawns a child that spawns a sleeper — the grandchild a
+  # pid-only kill orphans — and records the sleeper's pid.
+  def test_npm_ci_timeout_kills_the_whole_process_group_not_just_npm
+    Dir.mktmpdir do |dir|
+      sleeper_pid = File.join(dir, "sleeper.pid")
+      npm = fake_npm(dir, %(sh -c 'sleep 30 & echo $! > #{sleeper_pid}; wait' &\nwait))
+      call = <<~RUBY
+        _out, ok, timed_out = sh_bounded(#{npm.inspect}, chdir: #{dir.inspect}, timeout: 1)
+        puts("TIMED-OUT " + timed_out.inspect + " OK " + ok.inspect)
+        pid = File.read(#{sleeper_pid.inspect}).to_i
+        alive = true
+        20.times do
+          begin
+            Process.kill(0, pid)
+          rescue Errno::ESRCH
+            alive = false
+            break
+          end
+          sleep 0.1
+        end
+        puts(alive ? "ORPHAN-ALIVE " + pid.to_s : "ORPHAN-DEAD")
+      RUBY
+      out = run_cli(["--yes"], call: call)
+
+      assert_includes out, "TIMED-OUT true OK false"
+      assert_includes out, "ORPHAN-DEAD", "the timeout must signal npm's process GROUP, not only npm's pid:\n#{out}"
+    ensure
+      pid = File.read(sleeper_pid).to_i if sleeper_pid && File.exist?(sleeper_pid)
+      Process.kill("KILL", pid) if pid&.positive? rescue Errno::ESRCH
+    end
+  end
+
   # --- bin/release reseal: re-seal an already-shipped release ------------------
   # [integration] The false-red release (rel-20260925-3b1f5c) was sealed from the
   # primary's pre-ship specs. `bin/release reseal <slug>` reads the release, pins
@@ -448,6 +508,33 @@ class ReleaseSealCliTest < Minitest::Test
       refute_includes out, "EVENT prod_smoke:started", "a re-seal does not re-open the ship's seal step"
       assert_includes out, "rel-old re-sealed: green"
       assert_equal old_sha, `git -C #{hub} rev-parse HEAD`.strip, "the primary is never touched"
+    end
+  end
+
+  # [integration] The ship closed G4 with metadata.seal; a re-seal re-stamps it, or
+  # the /deployments G4 column keeps the verdict the re-seal just replaced.
+  def test_reseal_restamps_the_g4_gates_seal
+    Dir.mktmpdir do |dir|
+      hub, _old, new_sha = seal_git_fixture(dir)
+      out = run_cli(["--yes"], setup: reseal_stub(hub, sha: new_sha), call: %(reseal("rel-old")))
+
+      gate_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") && l.include?("GateRun.restamp_seal!") }
+      assert gate_write, "the re-seal re-stamps G4's seal:\n#{out}"
+      assert_includes gate_write, %(subject_slug: "rel-old")
+      assert_includes gate_write, %(seal: "green")
+    end
+  end
+
+  # [integration] A re-seal that could not run leaves G4's seal as it was — the same
+  # rule the release's own recorded seal follows.
+  def test_an_unsealed_reseal_leaves_the_g4_seal_alone
+    Dir.mktmpdir do |dir|
+      hub, = seal_git_fixture(dir)
+      gone = seal_fixture_commit(hub, "bin/prod-smoke")
+      out = run_cli(["--yes"], setup: reseal_stub(hub, sha: gone), call: %(reseal("rel-old")))
+
+      assert_includes out, "re-sealed: unsealed"
+      refute_includes out, "GateRun.restamp_seal!", "nothing was judged, so nothing is re-stamped"
     end
   end
 
