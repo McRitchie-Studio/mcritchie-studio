@@ -47,6 +47,53 @@ module Api
         Github::TaskDerivation.reset_shared!
       end
 
+      # A GitHub client whose every read hangs past the request budget, as during a
+      # rate limit or an outage (the H12 case: Heroku's router cuts a request at 30s).
+      class HangingGithubClient
+        attr_reader :calls
+
+        def initialize(seconds) = (@seconds = seconds; @calls = 0)
+
+        def get(*, **)
+          @calls += 1
+          sleep(@seconds)
+          []
+        end
+
+        def paginate(*, **) = get
+      end
+
+      SHOW_BUDGET_SECONDS = 2
+
+      # [integration] Regression (task-show-never-waits-github): show asked GitHub for
+      # the branch's PR INSIDE the request, so a hung GitHub hung the request. Show now
+      # serves the stamped column, never waits on GitHub, and queues the lookup.
+      test "show never waits on a hanging GitHub and serves the stamped value" do
+        task = tasks(:in_progress_task)
+        task.update_columns(stage: "building", metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+        client = HangingGithubClient.new(SHOW_BUDGET_SECONDS + 2)
+
+        Github::TaskDerivation.reset_shared!
+        TaskDerivedFacts.stub(:enabled?, true) do
+          Github::TaskDerivation.stub(:new, Github::TaskDerivation.new(client: client)) do
+            started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            get api_v1_task_path(task.slug), headers: @headers
+            elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+            assert_operator elapsed, :<, SHOW_BUDGET_SECONDS, "show waited #{elapsed.round(2)}s on GitHub"
+          end
+        end
+
+        assert_response :success
+        assert_equal 0, client.calls, "the request path must not ask GitHub at all"
+        body = response.parsed_body["data"]
+        assert_nil body["pr_url_or_derived"], "a blank stamp serves blank, not a guess"
+        assert_nil task.reload.devops_url("pr")
+        assert_enqueued_with(job: TaskPrUrlCacheJob, args: [task.slug])
+      ensure
+        Github::TaskDerivation.reset_shared!
+      end
+
       # [integration] With derivation off (the test default) show still serves the
       # recorded url under the derived name, so an older ship reading either agrees.
       test "show serves the recorded url as pr_url_or_derived when derivation is off" do
