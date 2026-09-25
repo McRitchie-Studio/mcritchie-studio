@@ -237,4 +237,215 @@ class Higgsfield::ClientTest < ActiveSupport::TestCase
     assert_match "no recognisable status key", error.message
     assert_match "phase", error.message, "the payload must be printed so the true shape is learned"
   end
+
+  # --- character identity (custom references) -----------------------------
+  #
+  # UNLIKE EVERY OTHER RESPONSE ASSERTION IN THIS FILE, these pin a shape that
+  # was MEASURED. On 2026-09-24 one real create was made against the live API
+  # with the production credential and driven to rest:
+  #
+  #   POST /v1/custom-references
+  #     {"name":"mcritchie-probe-alec-anderson",
+  #      "input_images":[{"type":"image_url","image_url":"https://turf-monster-production.s3…/400.png"}]}
+  #   -> 200 {"id":"1af15765-27b3-461a-8804-b2de098c72c3","model_version":"v1",
+  #           "name":"…","status":"not_ready","thumbnail_url":null,
+  #           "created_at":"2026-09-25T02:03:42.811608Z","in_progress_at":null,
+  #           "fail_reason":null}
+  #
+  # and a poll of GET /v1/custom-references/<id> walked
+  # not_ready -> queued -> in_progress -> completed.
+  #
+  # Nothing below touches the network. Every call to this API costs money, so
+  # the suite drives the recorded `perform` and asserts what would have gone out.
+
+  test "a custom reference wraps each URL in the object the API demands" do
+    c = client
+    calls = recording(c, response: { "id" => "1af15765-27b3-461a-8804-b2de098c72c3" })
+
+    c.create_custom_reference(name: "Josh Allen home", image_urls: ["https://example.com/a.png"])
+
+    assert_equal 1, calls.length
+    assert_equal Net::HTTP::Post, calls.first[:verb]
+    assert_equal "/v1/custom-references", calls.first[:path]
+    assert_equal "Josh Allen home", calls.first[:body]["name"]
+    assert_equal [{ "type" => "image_url", "image_url" => "https://example.com/a.png" }],
+                 calls.first[:body]["input_images"],
+                 "a bare URL string answers 422 model_attributes_type — the item MUST be an object"
+  end
+
+  test "every reference image is wrapped, not just the first" do
+    c = client
+    calls = recording(c, response: { "id" => "1af15765-27b3-461a-8804-b2de098c72c3" })
+
+    c.create_custom_reference(name: "sheet", image_urls: %w[https://e.com/1.png https://e.com/2.png https://e.com/3.png])
+
+    types = calls.first[:body]["input_images"].map { |i| i["type"] }
+    urls  = calls.first[:body]["input_images"].map { |i| i["image_url"] }
+    assert_equal %w[image_url image_url image_url], types
+    assert_equal %w[https://e.com/1.png https://e.com/2.png https://e.com/3.png], urls
+  end
+
+  test "the created reference returns its uuid" do
+    c = client
+    recording(c, response: { "id" => "1af15765-27b3-461a-8804-b2de098c72c3", "status" => "not_ready" })
+
+    assert_equal "1af15765-27b3-461a-8804-b2de098c72c3",
+                 c.create_custom_reference(name: "x", image_urls: ["https://e.com/1.png"])
+  end
+
+  # The API answers 422 too_short on an empty list. Refusing locally is the
+  # difference between a free raise and a paid rejection.
+  test "an empty reference list is refused before it reaches the wire" do
+    c = client
+    c.define_singleton_method(:perform) { |*| flunk("nothing should have been sent") }
+
+    assert_raises(ArgumentError) { c.create_custom_reference(name: "x", image_urls: []) }
+    assert_raises(ArgumentError) { c.create_custom_reference(name: "x", image_urls: [nil, "", "  "]) }
+  end
+
+  test "an id that is not a uuid fails at the create, not inside a paid generation" do
+    c = client
+    recording(c, response: { "id" => "reference_1234" })
+
+    error = assert_raises(Higgsfield::Client::GenerationError) do
+      c.create_custom_reference(name: "x", image_urls: ["https://e.com/1.png"])
+    end
+    assert_match "not a UUID", error.message
+  end
+
+  test "a create with no id in the answer raises with the payload" do
+    c = client
+    recording(c, response: { "status" => "not_ready" })
+
+    error = assert_raises(Higgsfield::Client::GenerationError) do
+      c.create_custom_reference(name: "x", image_urls: ["https://e.com/1.png"])
+    end
+    assert_match "no id in custom-reference response", error.message
+    assert_match "not_ready", error.message, "the payload must be printed so the true shape is learned"
+  end
+
+  test "one reference is read by id, because the collection cannot be listed" do
+    c = client
+    calls = recording(c, response: { "status" => "completed" })
+
+    c.custom_reference("1af15765-27b3-461a-8804-b2de098c72c3")
+
+    assert_equal Net::HTTP::Get, calls.first[:verb]
+    assert_equal "/v1/custom-references/1af15765-27b3-461a-8804-b2de098c72c3", calls.first[:path]
+  end
+
+  # --- pinning a generation to an identity --------------------------------
+
+  test "a generation pinned to an identity carries both fields" do
+    c = client
+    calls = recording(c)
+
+    c.generate_image(prompt: "a stadium at dusk",
+                     custom_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3",
+                     custom_reference_strength: 0.8)
+
+    assert_equal "1af15765-27b3-461a-8804-b2de098c72c3", calls.first[:body]["custom_reference_id"]
+    assert_in_delta 0.8, calls.first[:body]["custom_reference_strength"], 0.0001
+  end
+
+  # Absent is not null. A body carrying an explicit null asks the validator a
+  # question an unpinned generation never had to ask.
+  test "an unpinned generation sends neither key, not null ones" do
+    c = client
+    calls = recording(c)
+
+    c.generate_image(prompt: "x")
+
+    assert_not_includes calls.first[:body].keys, "custom_reference_id"
+    assert_not_includes calls.first[:body].keys, "custom_reference_strength"
+  end
+
+  test "an identity may be pinned without naming a strength" do
+    c = client
+    calls = recording(c)
+
+    c.generate_image(prompt: "x", custom_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3")
+
+    assert_equal "1af15765-27b3-461a-8804-b2de098c72c3", calls.first[:body]["custom_reference_id"]
+    assert_not_includes calls.first[:body].keys, "custom_reference_strength"
+  end
+
+  # 0.0 is a legal value with a meaning, and it is the one a `present?` guard
+  # would be most likely to swallow.
+  test "a strength of zero is sent, not dropped as blank" do
+    c = client
+    calls = recording(c)
+
+    c.generate_image(prompt: "x", custom_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3",
+                     custom_reference_strength: 0)
+
+    assert_equal 0.0, calls.first[:body]["custom_reference_strength"]
+  end
+
+  # Measured: 99 answers less_than_equal (le 1.0), -5 answers greater_than_equal
+  # (ge 0.0), "banana" answers float_parsing. Each is a paid round-trip.
+  test "a strength outside nought-to-one is refused locally" do
+    c = client
+    c.define_singleton_method(:perform) { |*| flunk("nothing should have been sent") }
+
+    %w[1.0 0.0].each do |ok|
+      # sanity: the ends of the range are legal, so the guard is not off-by-one
+      inner = client
+      calls = recording(inner)
+      inner.generate_image(prompt: "x", custom_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3",
+                           custom_reference_strength: ok.to_f)
+      assert_equal ok.to_f, calls.first[:body]["custom_reference_strength"]
+    end
+
+    [99, -5, 1.01].each do |bad|
+      error = assert_raises(ArgumentError) do
+        c.generate_image(prompt: "x", custom_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3",
+                         custom_reference_strength: bad)
+      end
+      assert_match "must fall in", error.message, "an out-of-range value must not be reported as unparseable"
+    end
+  end
+
+  test "an unparseable strength names parsing, not range" do
+    c = client
+    c.define_singleton_method(:perform) { |*| flunk("nothing should have been sent") }
+
+    error = assert_raises(ArgumentError) do
+      c.generate_image(prompt: "x", custom_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3",
+                       custom_reference_strength: "banana")
+    end
+    assert_match "must be a number", error.message
+  end
+
+  test "a non-uuid identity is refused before it costs a 422" do
+    c = client
+    c.define_singleton_method(:perform) { |*| flunk("nothing should have been sent") }
+
+    error = assert_raises(ArgumentError) { c.generate_image(prompt: "x", custom_reference_id: "reference_1") }
+    assert_match "not a UUID", error.message
+  end
+
+  # The same rule #video_path_for follows: an argument that would be silently
+  # ignored is a knob the caller thinks they turned.
+  test "a strength with no identity is refused rather than dropped" do
+    c = client
+    c.define_singleton_method(:perform) { |*| flunk("nothing should have been sent") }
+
+    error = assert_raises(ArgumentError) { c.generate_image(prompt: "x", custom_reference_strength: 0.8) }
+    assert_match "no custom_reference_id", error.message
+  end
+
+  test "the waiting form forwards the identity too" do
+    c = client
+    calls = recording(c, response: { "id" => "req-1" })
+    c.define_singleton_method(:await_result) { |id, **| "url-for-#{id}" }
+
+    c.generate_image_and_wait(prompt: "x",
+                              custom_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3",
+                              custom_reference_strength: 0.5)
+
+    assert_equal "1af15765-27b3-461a-8804-b2de098c72c3", calls.first[:body]["custom_reference_id"],
+                 "the wait wrapper must not drop what generate_image accepts"
+    assert_in_delta 0.5, calls.first[:body]["custom_reference_strength"], 0.0001
+  end
 end

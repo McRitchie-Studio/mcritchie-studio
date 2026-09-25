@@ -60,4 +60,38 @@ class AthleteTest < ActiveSupport::TestCase
     athlete = Athlete.create!(person_slug: person.slug, sport: "football", position: "QB", team_slug: "buffalo-bills")
     assert_equal teams(:buffalo_bills), athlete.team
   end
+
+  # --- the physical brief -------------------------------------------------
+  #
+  # These three fields were spelled out at TWO call sites with the same labels —
+  # Appearance#generation_brief and Content::AssetsAgent#build_image_prompt — and
+  # only one of them reached Higgsfield. One expression now serves both.
+
+  test "the physical brief names each field that is filled in" do
+    person = Person.create!(first_name: "Brief", last_name: "Subject", athlete: true)
+    athlete = Athlete.create!(person_slug: person.slug, sport: "football",
+                              build: "6ft5 athletic", skin_tone: "light", hair_description: "long blond")
+
+    brief = athlete.physical_brief
+
+    assert_match "Build: 6ft5 athletic", brief
+    assert_match "Skin tone: light", brief
+    assert_match "Hair: long blond", brief
+  end
+
+  # Blank rather than "Build: . Skin tone: ." so a caller can compact it away
+  # instead of testing each field itself.
+  test "an athlete with no physical fields briefs as blank" do
+    person = Person.create!(first_name: "Blank", last_name: "Subject", athlete: true)
+    athlete = Athlete.create!(person_slug: person.slug, sport: "football")
+
+    assert_predicate athlete.physical_brief, :blank?
+  end
+
+  test "a partly filled athlete names only what is known" do
+    person = Person.create!(first_name: "Partial", last_name: "Subject", athlete: true)
+    athlete = Athlete.create!(person_slug: person.slug, sport: "football", build: "6ft2 wiry")
+
+    assert_equal "Build: 6ft2 wiry", athlete.physical_brief
+  end
 end

@@ -316,4 +316,82 @@ class AppearanceTest < ActiveSupport::TestCase
     assert_equal "_", look.colorway
     assert_predicate look.descriptor, :present?
   end
+
+  # --- the Higgsfield character identity ----------------------------------
+  #
+  # Measured 2026-09-24 by creating a real reference and polling it to rest:
+  # not_ready -> queued -> in_progress -> completed. The create answers
+  # `not_ready`, so an identity is NEVER usable at the moment it is recorded,
+  # and every pin costs money.
+
+  test "a look with no identity is neither ready nor pending" do
+    look = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+
+    assert_not look.higgsfield_reference_ready?
+    assert_not look.higgsfield_reference_pending?
+  end
+
+  test "only the observed success state unlocks a pin" do
+    look = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white",
+                              higgsfield_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3",
+                              higgsfield_reference_status: "completed")
+
+    assert look.higgsfield_reference_ready?
+    assert_not look.higgsfield_reference_pending?
+  end
+
+  test "every state on the way there reads as pending, not ready" do
+    look = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white",
+                              higgsfield_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3")
+
+    %w[not_ready queued in_progress].each do |state|
+      look.update!(higgsfield_reference_status: state)
+
+      assert look.higgsfield_reference_pending?, "#{state} is on the way"
+      assert_not look.higgsfield_reference_ready?, "#{state} must not unlock a paid generation"
+    end
+  end
+
+  # The tempting inverse — "not one of the pending words" — reads every status we
+  # have never seen, including whatever the API says when a reference FAILS, as
+  # ready.
+  test "a state nobody has seen is not read as ready" do
+    look = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white",
+                              higgsfield_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3",
+                              higgsfield_reference_status: "exploded")
+
+    assert_not look.higgsfield_reference_ready?
+    assert_not look.higgsfield_reference_pending?
+  end
+
+  # A status with no id is a half-written row, and the id is what a generation
+  # would actually send.
+  test "a status without an id cannot be ready" do
+    look = Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white",
+                              higgsfield_reference_status: "completed")
+
+    assert_not look.higgsfield_reference_ready?
+  end
+
+  # One vendor identity belongs to exactly one look: sharing an id would mean an
+  # edit to one silently repoints the other.
+  test "two looks cannot claim the same identity" do
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white",
+                       higgsfield_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3")
+
+    assert_raises ActiveRecord::RecordNotUnique do
+      Appearance.create!(person_slug: @chase.slug, descriptor: "Bengals white",
+                         higgsfield_reference_id: "1af15765-27b3-461a-8804-b2de098c72c3")
+    end
+  end
+
+  # The partial index is what lets the overwhelming majority of looks — which
+  # have no identity — coexist on NULL.
+  test "looks without an identity do not collide on null" do
+    Appearance.create!(person_slug: @burrow.slug, descriptor: "Bengals white")
+
+    assert_nothing_raised do
+      Appearance.create!(person_slug: @chase.slug, descriptor: "Bengals white")
+    end
+  end
 end
