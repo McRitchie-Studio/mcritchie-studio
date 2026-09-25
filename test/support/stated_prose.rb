@@ -2,28 +2,16 @@
 
 # StatedProse — every place this repo STATES something a reader may act on.
 #
-# WHY THIS EXISTS. Two `test/docs` guards shipped on the same day (2026-09-22) with
-# the same structural hole: each globbed a DIRECTORY and therefore could not see a
-# site making the very claim it polices from OUTSIDE that directory.
+# WHY THIS EXISTS. A `test/docs` guard that globs a DIRECTORY cannot see a site
+# making the very claim it polices from OUTSIDE that directory. The reviewer-select
+# preview guard (review_lane_docs_test) globbed docs/agents/**/*.md and missed the
+# bare invocation in app/services/reviewer_selector.rb, the feature's OWN service.
+# Prose is not a directory.
 #
-#   guard                                  its glob                  the site it missed
-#   review_lane_docs_test (preview)        docs/agents/**/*.md       app/services/reviewer_selector.rb
-#   turf_vault_lane_figure_docs_test       docs/**/*.md              the release-repo registry
-#
-# Both misses are the SAME defect, and both were found by different reviewers on
-# different PRs the same day. The properties those guards enforce are about PROSE —
-# "a preview invocation shows `--no-record`", "a measured figure carries its
-# re-derivation" — and prose is not a directory. The service comment that told a
-# reader to preview with a bare invocation is the feature's OWN service; the registry
-# comment that stated turf-vault's lane count is where the lane is DECLARED. Those are
-# the two most authoritative sites for their claims, and both sat outside the glob.
-#
-# WHY ONE MODULE AND NOT TWO WIDER GLOBS. Widening a guard's glob changes the
-# population every future author is measured against — repo-wide blast radius. Two
-# builders answering that separately produce two globs and two exemption conventions,
-# which is the two-authorities-disagreeing failure this board hit four times on
-# 2026-09-22. So the population is decided ONCE, here, and both guards read it.
-# `test/docs/guard_population_test.rb` fails if a guard stops doing so.
+# WHY ONE MODULE AND NOT WIDER GLOBS. Widening a guard's glob changes the population
+# every future author is measured against. Two builders answering that separately
+# produce two globs and two exemption conventions. So the population is decided ONCE,
+# here, and every guard over stated prose reads it.
 #
 # COMMENTS ONLY, OUTSIDE MARKDOWN — and the omission is measured, not assumed. In a
 # non-markdown file this module blanks every line that is not a comment (see #prose).

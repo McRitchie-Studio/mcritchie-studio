@@ -45,7 +45,8 @@
 # ── THE EXEMPTIONS ARE KEYED ON CONTENT, NEVER ON A LINE NUMBER ──────────────
 #
 # MEASURED ON PR #1341 (the second trap): a 15-line doc insert silently shifted a
-# LINE-KEYED exemption registry in test/docs/bounce_holder_rule_docs_test.rb
+# LINE-KEYED exemption registry in test/docs/bounce_holder_rule_docs_test.rb (since
+# deleted)
 # (`line: 836` → 849) and reddened two tests that had nothing to do with the
 # change. A registry keyed on line numbers is a registry that breaks on every
 # insertion above it, so every entry here carries a `match:` regex read against

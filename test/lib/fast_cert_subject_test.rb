@@ -613,10 +613,9 @@ class FastCertSubjectTest < Minitest::Test
   # WHAT A CAP TRIP OWES ITS FINDER: the token that reached the subject, every test
   # file that answers to it, and the one edit that takes a file back out of the set.
   #
-  # THE REMEDY IS MEASURED, not read off the mapper's source: test/docs/
-  # guard_population_test.rb names the release registry through
-  # Release::Repos::CONFIG_PATH and is NOT among the files that config maps to, while
-  # every file that spells the path is.
+  # THE REMEDY IS MEASURED, not read off the mapper's source: a test that names the
+  # release registry through Release::Repos::CONFIG_PATH is NOT among the files that
+  # config maps to, while every file that spells the path is.
   def spelling_diagnosis(path)
     lines = ["#{path} — the spellings that reach it:"]
     FastCert.spelling_breakdown(REPO_ROOT, path).each do |token, hits|

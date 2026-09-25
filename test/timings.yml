@@ -89,11 +89,7 @@ test/controllers/team_grades_controller_test.rb: 1.03
 test/controllers/triage_controller_test.rb: 0.89
 test/controllers/unsubscribes_controller_test.rb: 0.14
 test/db/timeline_views_test.rb: 0.09
-test/docs/bar_stack_recipe_docs_test.rb: 0.03
-test/docs/doc_owner_prose_guard_test.rb: 1.88
-test/docs/review_comment_taxonomy_docs_test.rb: 0.02
 test/docs/review_lane_docs_test.rb: 0.21
-test/docs/seal_retry_docs_test.rb: 0.04
 test/docs/ship_docs_sync_docs_test.rb: 0.06
 test/docs/sop_registry_docs_test.rb: 0.07
 test/docs/sop_registry_install_test.rb: 1.64

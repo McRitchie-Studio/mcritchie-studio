@@ -446,10 +446,8 @@ buys a slot only until the next release.** Every CLOSE below is paired with eith
 ## What this record cannot tell you
 
 It is a snapshot, and the tally moved twice while it was being written. Nothing in
-CI re-measures GitHub for you. `test/docs/dependency_decisions_docs_test.rb`
-guards the record's internal consistency and pins its two repo-local premises —
-no `ignore:` block in `.github/dependabot.yml`, and the Gemfile's minitest and
-redis pins — so acting on this record's own advice turns that test
-red and forces a refresh — but a PR merged, closed, or rebased on GitHub changes
-none of those files and will go unnoticed. **Re-run the commands at the top before
+CI re-measures GitHub for you, and no test holds the record's tallies or its two
+repo-local premises (no `ignore:` block in `.github/dependabot.yml`; the Gemfile's
+minitest and redis pins) against the tree. A PR merged, closed, or rebased on GitHub
+goes unnoticed here. **Re-run the commands at the top before
 trusting a count.**

@@ -29,8 +29,8 @@ require "test_helper"
 #     a backticked invocation in column 1, so the two-column Start Here rows are
 #     invisible to it. It pins that the PATHS exist and that the two registry
 #     tables agree; it never reads a prose label.
-#   · doc_owner_prose_guard_test.rb — ACT_OWNER pairs an act with a SOUL. It has
-#     no opinion about whether a label spells the act correctly.
+#   · sop_registry_docs_test.rb's owner check pairs a registry row with the SOUL
+#     whose directory holds the file. It has no opinion about a Start Here label.
 #
 # ── Why this anchors on the PATH ──────────────────────────────────────────────
 #
