@@ -40,15 +40,33 @@ class Appearance < ApplicationRecord
   # the only source, which is why they live here rather than on Person — the
   # same face in two eras is two looks, not one.
   def generation_brief
-    athlete = person&.athlete_profile
-    parts = [descriptor]
-    if athlete
-      parts << "Build: #{athlete.build}" if athlete.build.present?
-      parts << "Skin tone: #{athlete.skin_tone}" if athlete.skin_tone.present?
-      parts << "Hair: #{athlete.hair_description}" if athlete.hair_description.present?
-    end
-    parts << generation_notes if generation_notes.present?
-    parts.compact_blank.join("\n")
+    [descriptor, person&.athlete_profile&.physical_brief, generation_notes]
+      .compact_blank.join("\n")
+  end
+
+  # MAY A GENERATION NAME THIS LOOK'S HIGGSFIELD IDENTITY YET?
+  #
+  # An identity is minted `not_ready` and walks `queued` → `in_progress` →
+  # `completed` (measured 2026-09-24 by creating a real one and polling it to
+  # rest). Pinning a generation to one that is still training spends money on a
+  # face nobody waited for, so the question has to be asked before every pin.
+  #
+  # POSITIVE FORM DELIBERATELY: this is true only for the one status we have
+  # OBSERVED to mean success. The tempting inverse — "not one of the pending
+  # words" — reads every status we have never seen, including whatever the API
+  # says when the reference FAILS, as ready. `fail_reason` is a second signal
+  # and this needs neither of them: an unrecognised word is not a yes.
+  def higgsfield_reference_ready?
+    higgsfield_reference_id.present? &&
+      higgsfield_reference_status == Appearances::CreateCharacterReference::READY_STATUS
+  end
+
+  # Still becoming one. Distinct from "never asked for" (no id at all) and from
+  # "the vendor said something we do not recognise", because only this state is
+  # worth polling again.
+  def higgsfield_reference_pending?
+    higgsfield_reference_id.present? &&
+      Appearances::CreateCharacterReference::PENDING_STATUSES.include?(higgsfield_reference_status)
   end
 
   def display_label
