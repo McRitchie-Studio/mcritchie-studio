@@ -8805,8 +8805,26 @@ def reseal(slug = nil)
   abort!("aborted — re-seal not confirmed") unless confirm("Re-seal #{rel_slug} — run its shipped specs against #{PROD_URL} and overwrite its seal?")
 
   status = production_smoke_seal([plan.group], { APP => plan.frozen_sha }, rel_slug, reseal: plan.note)
+  restamp_g4_seal(rel_slug, status)
   say("")
   say("✓ #{rel_slug} re-sealed: #{status || 'nothing to seal'}")
+end
+
+# The ship closed G4 with metadata.seal; a re-seal re-stamps it so the /deployments
+# G4 column shows the verdict the re-seal recorded. Only a JUDGED verdict (green/red)
+# replaces it: an unsealed re-seal ran nothing, and leaves G4's seal as it was — the
+# same rule record_unsealed_seal follows for the release's own seal. Best-effort, like
+# the seal write: a board blip warns and the re-seal stands.
+def restamp_g4_seal(rel_slug, status)
+  return unless %w[green red].include?(status.to_s)
+
+  conductor(
+    "run = GateRun.restamp_seal!(subject_slug: #{rel_slug.inspect}, seal: #{status.to_s.inspect}); " \
+    "puts({ gate: run&.key, seal: run&.metadata&.dig('seal') }.to_json)"
+  )
+  say("  G4 gate seal re-stamped: #{status}")
+rescue SystemExit, StandardError => e
+  say("  ⚠ G4 gate seal not re-stamped — board write failed (#{e.message})")
 end
 
 # `bin/release notes <release> [--post] [--force]` — re-post a shipped release's

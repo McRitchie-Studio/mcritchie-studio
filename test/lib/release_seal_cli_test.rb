@@ -475,6 +475,33 @@ class ReleaseSealCliTest < Minitest::Test
     end
   end
 
+  # [integration] The ship closed G4 with metadata.seal; a re-seal re-stamps it, or
+  # the /deployments G4 column keeps the verdict the re-seal just replaced.
+  def test_reseal_restamps_the_g4_gates_seal
+    Dir.mktmpdir do |dir|
+      hub, _old, new_sha = seal_git_fixture(dir)
+      out = run_cli(["--yes"], setup: reseal_stub(hub, sha: new_sha), call: %(reseal("rel-old")))
+
+      gate_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") && l.include?("GateRun.restamp_seal!") }
+      assert gate_write, "the re-seal re-stamps G4's seal:\n#{out}"
+      assert_includes gate_write, %(subject_slug: "rel-old")
+      assert_includes gate_write, %(seal: "green")
+    end
+  end
+
+  # [integration] A re-seal that could not run leaves G4's seal as it was — the same
+  # rule the release's own recorded seal follows.
+  def test_an_unsealed_reseal_leaves_the_g4_seal_alone
+    Dir.mktmpdir do |dir|
+      hub, = seal_git_fixture(dir)
+      gone = seal_fixture_commit(hub, "bin/prod-smoke")
+      out = run_cli(["--yes"], setup: reseal_stub(hub, sha: gone), call: %(reseal("rel-old")))
+
+      assert_includes out, "re-sealed: unsealed"
+      refute_includes out, "GateRun.restamp_seal!", "nothing was judged, so nothing is re-stamped"
+    end
+  end
+
   def test_reseal_refuses_a_release_that_has_not_shipped
     Dir.mktmpdir do |dir|
       hub, _old, new_sha = seal_git_fixture(dir)

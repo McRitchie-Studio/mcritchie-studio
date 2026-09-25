@@ -73,7 +73,10 @@ The gate window spans the whole irreversible half of the ship:
   (`--dry-run` to preview). It pins the ship workspace at that release's
   frozen hub SHA, runs its specs against prod, and overwrites the recorded
   seal; the summary says it was re-sealed, and names the later release when
-  prod has since moved on. It deploys nothing and flips no task.
+  prod has since moved on. A green or red re-seal also re-stamps the G4 gate's
+  `metadata.seal` (with `resealed_at`), so the /deployments G4 column matches; an
+  unsealed re-seal leaves both seals as they were. It deploys nothing and flips
+  no task.
 
 ## The tree-verdict read (one tree, one verdict)
 
