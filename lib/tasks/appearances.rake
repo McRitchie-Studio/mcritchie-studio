@@ -8,7 +8,9 @@ namespace :appearances do
   task character_reference: :environment do
     slug = ENV["SLUG"].presence or raise "SLUG=look-xxx is required (this spends money; it will not guess)"
     look = Appearance.find_by!(slug: slug)
-    force = ENV["FORCE"].present?
+    # EXACTLY "1". `FORCE=0` is a refusal, and `.present?` granted it — buying a
+    # second identity and orphaning the first beyond recall (there is no list).
+    force = ENV["FORCE"] == "1"
 
     # Printed BEFORE the call, because after it the money is gone. The operator
     # sees exactly which photographs the identity would be built from.

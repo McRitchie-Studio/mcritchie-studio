@@ -159,6 +159,25 @@ class CharacterReferenceLaneTest < ActionDispatch::IntegrationTest
     held.nil? ? ENV.delete("SLUG") : ENV["SLUG"] = held
   end
 
+  # `FORCE=0` is what an operator types to say NO, and `.present?` granted it —
+  # buying a second identity and orphaning the first beyond recall.
+  test "only FORCE=1 rebuilds an identity" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("appearances:character_reference")
+    task = Rake::Task["appearances:character_reference"]
+    ENV["SLUG"] = @look.slug
+    mint = -> { Higgsfield::Client.stub(:new, @vendor) { task.tap(&:reenable).invoke } }
+    mint.call
+    ENV["FORCE"] = "0"
+    mint.call
+    assert_equal 1, @vendor.creates.length, "FORCE=0 means no — it must not buy another identity"
+    ENV["FORCE"] = "1"
+    mint.call
+    assert_equal 2, @vendor.creates.length, "the deliberate rebuild still works"
+  ensure
+    ENV.delete("SLUG")
+    ENV.delete("FORCE")
+  end
+
   # The sweep is what keeps the stored status honest across many looks.
   test "the refresh sweep moves every pending identity and leaves the rest alone" do
     Appearances::CreateCharacterReference.new(@look, client: @vendor).call
