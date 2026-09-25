@@ -323,6 +323,17 @@ class TasksController < ApplicationController
     base = Task.all
     agent_filter = params[:agent_slug].presence || params[:agent].presence
     base = base.where(agent_slug: agent_filter) if agent_filter
+    # `?epic=<slug>` — where the card's epic chip links. Narrowed in SQL through the
+    # same Task.for_epic scope the API index uses, so both boards and the API
+    # agree on an epic's members; @epic_filter feeds the banner that says what the
+    # board is filtered by (tasks/_epic_filter). An unparseable value narrows to
+    # nothing rather than to everything: a filter that shows the whole board reads
+    # as a working filter.
+    epic_filter = params[:epic].presence
+    if epic_filter
+      @epic_filter = Task.normalize_epic_slug(epic_filter) || epic_filter.to_s.strip
+      base = base.for_epic(epic_filter)
+    end
     # :gate_runs rides along with :task_events because the claim chip reads BOTH for
     # its progress fact (last durable artifact + is a gate in flight) — preloading
     # only the events would leave the chip issuing a fresh gate query per live card.

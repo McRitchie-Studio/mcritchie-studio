@@ -1,0 +1,19 @@
+<%# locals: (epic_slug:, clear_path:) %>
+<%#
+  The "you are looking at one epic" banner. Both boards render it above the
+  app-filter row whenever ?epic=<slug> narrowed the load (TasksController#
+  load_board), so a filtered board says what it is filtered BY and offers the
+  way back — otherwise a board with three cards on it reads as three cards of
+  work, not as one epic of a larger board. The chip inside is the same epic
+  chip the cards wear, so the handle looks the same everywhere it appears.
+%>
+<% epic_slug = local_assigns.fetch(:epic_slug).to_s %>
+<% clear_path = local_assigns.fetch(:clear_path) %>
+<% if epic_slug.present? %>
+  <div class="flex flex-wrap items-center gap-2 mb-3 text-xs" data-test="board-epic-filter" data-epic="<%= epic_slug %>">
+    <span class="font-semibold uppercase tracking-wider text-muted">Epic</span>
+    <%= render "tasks/epic_chip", epic_slug: epic_slug %>
+    <a href="<%= clear_path %>" data-test="board-epic-filter-clear"
+       class="text-muted hover:text-heading transition underline-offset-2 hover:underline">show every task</a>
+  </div>
+<% end %>
