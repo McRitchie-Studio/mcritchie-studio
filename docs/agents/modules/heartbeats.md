@@ -20,7 +20,7 @@ three ordered release actions, a themed glyph on the rest):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task`
   - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
-  - **Xan** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
+  - **Xan** → `🧑🏻‍🏫 grade-events` (optional: every task is graded at ship) · `📡 share-insights` · `🌎 full-cycle`
   - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal`
 
   `archive-shipped` is deliberately NOT a chip: `production-deploy` runs it as its
@@ -80,7 +80,7 @@ cross-soul map.
 | **Carl** (`carl`) | `Carl Heartbeat` | `pr-review`, `pr-review-slow` | submitted PRs waiting for review | each PR `reviewed` (merged into `accepted`) or `blocked` |
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only), `arbitrate-block` (registered, not a chip — a builder contests a review block and the session that spawned it invokes Avi) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
-| **Xan** (`xan`) | `Xan Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
+| **Xan** (`xan`) | `Xan Heartbeat` | `share-insights`, `full-cycle`; `grade-events` is optional (every task is graded at ship) and runs only when named | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
 | **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP), `market-refresh` (registered, not a chip — weekly, but the moment is read off the schedule), `content-build` (registered, not a chip — queue-shaped; it runs when games finalise) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
@@ -140,7 +140,7 @@ The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 | **Carl** | `pr-review` → `pr-review-slow` | per `submitted` PR (waves ≤5): `bin/task claim-next-review` → spin one Carl → the [review-one primitive](pr-review-sop.md) → on a merge-ready verdict `gh pr merge` into `accepted` + `bin/task move <task> reviewed` |
 | **Avi** | `qa-release` | `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` (stages 1–3, members `assembled` on QA-green) |
 | **Steffon** | `production-deploy` → `archive-shipped` | `bin/release status` → **if** QA-green: `bin/release ship --yes` (stages 4–5); then `bin/release archive --yes` (preview `--dry-run`) |
-| **Xan** | `grade-events` · `share-insights` · `full-cycle` | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
+| **Xan** | `share-insights` · `full-cycle` · `grade-events` (optional, only when named) | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
 
 > **Script-assisted review.** `bin/pr-review` is a codex-based review loop that
 > composes `bin/devops-cycle`, `bin/reviewer-select`, and codex reviewer

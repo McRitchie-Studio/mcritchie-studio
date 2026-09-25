@@ -43,11 +43,13 @@ Each SOP stands alone; a design doc is background, never an execution path.
 
 ```text
 Alex + focus session ──▶ Pokémon builder ──PR green──▶ reviewer ──merge──▶ (accepted)
-  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code, Xan alone for prose
+  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Xan for prose*
 (accepted) ──Avi runs qa-release──▶ release, QA green ──Steffon runs production-deploy──▶ (main)
                                                          within Alex's 30-minute window
 ```
 
+- \* Xan alone reviews prose only on the focus-session path. The `pr-review` sweep
+  still runs Carl plus a light on every PR.
 - Task stages: **Build** `designed → building → submitted` (the builder), then
   **Deploy** `submitted → reviewed → assembled → shipped`. `blocked` needs
   attention; `archived` is terminal. Code walks `accepted` → `release` → `main`.
@@ -184,6 +186,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
+
 ## SOP Registry
 
 The same registry again, for agents that jump to the reference section. A
@@ -244,6 +247,7 @@ heartbeat may set attribution and act order; the SOP files do not depend on it.
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
+
 ## LLM Adapters
 
 Claude Code auto-loads `CLAUDE.md`, a thin adapter: the DevOps gate, then `@AGENTS.md`.

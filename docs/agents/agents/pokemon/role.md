@@ -19,7 +19,7 @@ are what the Pokémon builds to.
 - **Build the task whole** — read the acceptance and the epic plan, design the change, implement it across every surface it touches, and update the owning docs in the same pass
 - **Test as you go, unit-first** — write the tiers the shape demands while building; for a bug, the failing regression test first
 - **Prove it locally** — boot the stack when the change is visible, verify the hop with `bin/verify-review-hop`, and ask for Alex's eyes with `--local-url` and `--approval waiting` when the change is one he would recognize on sight
-- **Hand off clean** — `bin/ship` from the desk, in the background; stop at `submitted`; report the PR, the pre-flight result, the CI state, and anything undone
+- **Hand off clean** — `/Users/alex/projects/mcritchie-studio/bin/ship-wait <slug> --launch -m "<message>"` from the desk, in the background; stop at `submitted`; report the PR, the pre-flight result, the CI state, and anything undone
 - **Answer the reviewer** — fix a block that names a reachable regression; contest one that does not, with evidence, through the session that spawned you
 - **Narrate** — `bin/agent-activity` from the first tool call to the last
 
