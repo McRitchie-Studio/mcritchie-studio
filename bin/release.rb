@@ -1641,11 +1641,16 @@ end
 # assembler claim on the SAME slug `prepare` would, BEFORE its promote — the real
 # rel_slug isn't known until sweep! records. (A comment must NOT interrupt the
 # backslash-continued string literal below, or only the last fragment survives.)
+# DERIVED, NOT STAMPED (devops-v3 piece 4a): `merged` is Task#merged_rung — the
+# rung GitHub places the PR's merge commit on, falling back to the stamp — and
+# `pr_url`/`pr_urls` fill an unrecorded PR from the task branch. Each read is
+# guarded by respond_to? because the snippet runs on the DEPLOYED conductor, which
+# may predate the derived readers; there it reads the stamps exactly as before.
 def batch_resolve_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
   "rows = slugs.map { |s| t = Task.find_by(slug: s); " \
-  "t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage, " \
-  "merged: t.merged.to_s, kind: t.release_kind.to_s, repos: t.release_repos, pr_urls: t.release_pr_urls } " \
+  "t ? { slug: t.slug, pr_url: (t.respond_to?(:pr_url_or_derived) ? t.pr_url_or_derived : t.devops_url('pr')).to_s, repo: t.release_repo.to_s, stage: t.stage, " \
+  "merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, kind: t.release_kind.to_s, repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls) } " \
   ": { slug: s, missing: true } }; " \
   "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
   "cur = Release.current; " \
@@ -2145,15 +2150,20 @@ end
 # on the DEPLOYED conductor, and a conductor older than the "parked" key still
 # lists those tasks under "reviewed" — where SweepPlan holds them all the same,
 # because the CLI judges the ladder from its OWN registry (RELEASE_REPOS).
+# DERIVED, NOT STAMPED (devops-v3 piece 4a): `merged` is Task#merged_rung — the
+# rung GitHub places the PR's merge commit on, falling back to the stamp — and
+# `pr_url`/`pr_urls` fill an unrecorded PR from the task branch. Each read is
+# guarded by respond_to? because the snippet runs on the DEPLOYED conductor, which
+# may predate the derived readers; there it reads the stamps exactly as before.
 def sweep_detect_ruby(only_slugs)
   only = only_slugs.empty? ? "nil" : only_slugs.inspect
   "only = #{only}; " \
   "c = Release::Conductor.sweep_candidates; " \
   "tasks = c['reviewed'] + c['stragglers'] + (c['parked'] || []); " \
   "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
-  "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: t.merged.to_s, " \
-  "pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, kind: t.release_kind.to_s, " \
-  "repos: t.release_repos, pr_urls: t.release_pr_urls } }; " \
+  "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, " \
+  "pr_url: (t.respond_to?(:pr_url_or_derived) ? t.pr_url_or_derived : t.devops_url('pr')).to_s, repo: t.release_repo.to_s, kind: t.release_kind.to_s, " \
+  "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls) } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
   "r = Release.current; " \
   "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen }.to_json)"
@@ -4379,6 +4389,11 @@ end
 # A failed read returns {} rather than raising: attribution is a DIAGNOSTIC
 # nicety and must never turn a clear refusal into a crash. With {} the abort
 # prints exactly what it printed before.
+# DERIVED, NOT STAMPED (devops-v3 piece 4a): `merged` is Task#merged_rung — the
+# rung GitHub places the PR's merge commit on, falling back to the stamp — and
+# `pr_url`/`pr_urls` fill an unrecorded PR from the task branch. Each read is
+# guarded by respond_to? because the snippet runs on the DEPLOYED conductor, which
+# may predate the derived readers; there it reads the stamps exactly as before.
 def stranded_task_index(stranded)
   slugs = Release::MergeSubject.slugs_from_commits(stranded)
   return {} if slugs.empty?
@@ -4386,7 +4401,7 @@ def stranded_task_index(stranded)
   rows = conductor(
     "slugs = #{slugs.inspect}; " \
     "rows = Task.where(slug: slugs).map { |t| [t.slug, { 'stage' => t.stage, " \
-    "'merged' => t.merged.to_s }] }.to_h; " \
+    "'merged' => (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s }] }.to_h; " \
     "puts({ tasks: rows }.to_json)",
     read_only: true
   )

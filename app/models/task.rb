@@ -410,6 +410,7 @@ class Task < ApplicationRecord
   # priority clause, and `set_stage_timestamp` re-ranks a card to the top of its new
   # column on a stage move — both are Task-specific and stay here.
   include Studio::Board::Rankable
+  include TaskDerivedFacts
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
