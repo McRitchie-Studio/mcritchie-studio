@@ -79,7 +79,9 @@ module TaskDerivedFacts
   def derived_pr_url(derivation: github_derivation, repo: release_repo)
     return nil unless derivation
 
-    derived_memo([:pr_url, repo.to_s], derivation) do
+    # Keyed on the branch and the abandoned list too: abandoning a PR or renaming
+    # the branch must not be answered from the memo.
+    derived_memo([:pr_url, repo.to_s, derived_head_branch, devops_abandoned_prs], derivation) do
       derivation.pr_url_for_branch(repo, derived_head_branch, exclude: devops_abandoned_prs)
     end
   end

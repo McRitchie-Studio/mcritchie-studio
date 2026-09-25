@@ -144,6 +144,18 @@ class TaskDerivedFactsTest < ActiveSupport::TestCase
     assert_equal 1, fake.calls.count { |c| c.first == :merged_rung }
   end
 
+  test "[unit] the derived PR memo is keyed on the abandoned list and the branch" do
+    t = task
+    fake = FakeTaskDerivation.new(branches: { [HUB, "feat/#{t.slug}"] => HUB_PR, [HUB, "feat/renamed"] => TURF_PR })
+    assert_equal HUB_PR, t.derived_pr_url(derivation: fake)
+
+    t.metadata["devops"]["abandoned_prs"] = ["#{HUB_PR} superseded"]
+    assert_nil t.derived_pr_url(derivation: fake), "a newly abandoned PR is not served from the memo"
+
+    t.metadata["devops"]["branch"] = "feat/renamed"
+    assert_equal TURF_PR, t.derived_pr_url(derivation: fake), "a changed branch is not served from the memo"
+  end
+
   test "[unit] every task in a process shares the default derivation" do
     Github::TaskDerivation.reset_shared!
     TaskDerivedFacts.stub(:enabled?, true) do

@@ -155,6 +155,42 @@ class Github::TaskDerivationTest < ActiveSupport::TestCase
     assert_equal "accepted", subject.merged_rung(PR)
   end
 
+  # --- derivation-404s-and-list-totals ------------------------------------------------
+
+  test "[unit] a PR that 404s is a per-PR answer: unreadable for that PR, but the breaker stays open" do
+    other = PR.sub("42", "43")
+    script = { "/repos/#{NWO}/pulls/42" => Github::Client::HttpError.new("GitHub API HTTP 404: Not Found"),
+               "/repos/#{NWO}/pulls/43" => pull }.merge([compare("main", "behind")].to_h)
+    subject, client = derivation(script)
+
+    assert_raises(Github::TaskDerivation::Unreadable) { subject.merged_rung(PR) }
+    assert_equal "main", subject.merged_rung(other), "one missing PR must not blind every other task"
+    assert_raises(Github::TaskDerivation::NoSuchPr) { subject.merged_rung(PR) }
+    assert_equal 1, client.paths.count("/repos/#{NWO}/pulls/42"), "the 'no such PR' answer is cached for that url"
+  end
+
+  test "[unit] a 422 on a PR read is per-PR too, and a 404 on its commits does not trip the breaker" do
+    script = { "/repos/#{NWO}/pulls/42" => Github::Client::HttpError.new("GitHub API HTTP 422: Unprocessable"),
+               "/repos/#{NWO}/pulls/43/commits" => Github::Client::HttpError.new("GitHub API HTTP 404: Not Found"),
+               "/repos/#{NWO}/pulls/44" => pull }.merge([compare("main", "behind")].to_h)
+    subject, = derivation(script)
+
+    assert_raises(Github::TaskDerivation::NoSuchPr) { subject.merged_rung(PR) }
+    assert_raises(Github::TaskDerivation::NoSuchPr) { subject.authors(PR.sub("42", "43")) }
+    assert_equal "main", subject.merged_rung(PR.sub("42", "44"))
+  end
+
+  test "[unit] a 401 on a PR read still trips the shared breaker" do
+    script = { "/repos/#{NWO}/pulls/42" => Github::Client::HttpError.new("GitHub API HTTP 401: Bad credentials"),
+               "/repos/#{NWO}/pulls/43" => pull }
+    subject, client = derivation(script)
+
+    assert_raises(Github::TaskDerivation::Unreadable) { subject.merged_rung(PR) }
+    error = assert_raises(Github::TaskDerivation::Unreadable) { subject.merged_rung(PR.sub("42", "43")) }
+    refute_kind_of Github::TaskDerivation::NoSuchPr, error
+    refute_includes client.paths, "/repos/#{NWO}/pulls/43"
+  end
+
   test "[unit] the shared derivation is one instance per process until it expires or resets" do
     Github::TaskDerivation.reset_shared!
     first = Github::TaskDerivation.shared

@@ -19,11 +19,20 @@ module Github
   # BOUNDED. Every answer (PR, branch lookup, compare) is cached on the instance,
   # and the FIRST failed read trips a breaker: every later read raises Unreadable
   # without asking GitHub, so a rate limit or outage costs one timeout per sweep,
-  # not one per call. Tasks share one instance per process (.shared) for
+  # not one per call. A 404 or 422 on a PR read is the exception: it is an answer
+  # about THAT PR (deleted, transferred, wrong number), so it is cached per url as
+  # NoSuchPr and never trips the shared breaker. Only transport errors, 5xx,
+  # 401/403 and rate limits do. Tasks share one instance per process (.shared) for
   # SHARED_TTL, so a sweep over N tasks asks each question once and a tripped
   # breaker heals within the TTL.
   class TaskDerivation
     class Unreadable < StandardError; end
+    # A per-PR answer (404/422): unreadable for that PR only. Still an Unreadable,
+    # so every caller falls back to its stamp exactly as before.
+    class NoSuchPr < Unreadable; end
+
+    # A PR read answering one of these names that PR, not GitHub's health.
+    PER_PR_STATUSES = [404, 422].freeze
 
     # Highest rung first: a commit on `main` is also on `release` and `accepted`,
     # so the first branch that contains it is the task's rung.
@@ -93,6 +102,7 @@ module Github
       @pulls = {}
       @branch_prs = {}
       @compares = {}
+      @missing = {}
       @failure = nil
     end
 
@@ -129,7 +139,7 @@ module Github
     # Every soul who authored a commit on the PR, or opened it. Raises Unreadable.
     def authors(pr_url)
       nwo, number = parse!(pr_url)
-      commits = read { client.paginate("/repos/#{nwo}/pulls/#{number}/commits") }
+      commits = read_pr(pr_url) { client.paginate("/repos/#{nwo}/pulls/#{number}/commits") }
       souls = Array(commits).flat_map do |entry|
         commit = entry.is_a?(Hash) ? (entry["commit"] || {}) : {}
         [self.class.soul_from_email(commit.dig("author", "email")),
@@ -154,7 +164,7 @@ module Github
     def pull(pr_url)
       @pulls[pr_url] ||= begin
         nwo, number = parse!(pr_url)
-        read { client.get("/repos/#{nwo}/pulls/#{number}") }
+        read_pr(pr_url) { client.get("/repos/#{nwo}/pulls/#{number}") }
       end
     end
 
@@ -186,6 +196,25 @@ module Github
       raise
     rescue StandardError => e
       fail!("#{e.class}: #{e.message}")
+    end
+
+    # #read for a single PR: a 404/422 is cached as that url's NoSuchPr and leaves
+    # the breaker alone; every other failure trips it as #read does.
+    def read_pr(pr_url)
+      raise @missing[pr_url] if @missing.key?(pr_url)
+
+      read do
+        yield
+      rescue Github::Client::HttpError => e
+        raise e unless per_pr_status?(e)
+
+        raise(@missing[pr_url] = NoSuchPr.new("no such PR #{pr_url}: #{e.message}"))
+      end
+    end
+
+    def per_pr_status?(error)
+      status = error.message[/\AGitHub API HTTP (\d{3})/, 1].to_i
+      PER_PR_STATUSES.include?(status)
     end
 
     # The breaker: once one read has failed, later reads fail fast.
