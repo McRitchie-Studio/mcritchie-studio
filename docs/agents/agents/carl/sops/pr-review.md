@@ -179,7 +179,6 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
   ```bash
   gh api user   # WHO am I about to merge as? 403 "not accessible by integration" = the App. STOP on a 200.
   gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget ONLY a base PROVEN unclaimed — at a merge anything unproven REFUSES, all five arms; see the merge-ready bullet)
-  bin/task merged <task> accepted      # stamp the git-location BEFORE the stage move
   bin/task move <task> reviewed
   bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
   ```
@@ -197,9 +196,10 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
   itself (`bin/lib/acting_identity.rb`). Do NOT substitute a permissions probe:
   the deployer App and a personal `repo` scope both pass it.
 
-  Order matters: merge → stamp → move, so the task is `reviewed` **iff** its code
-  is on `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`). If the `gh pr
-  merge` FAILS, leave the task `submitted` and UNSTAMPED (never move to
+  Order matters: merge → move, so the task is `reviewed` **iff** its code is on
+  `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`); the board derives
+  `merged`, so there is no stamp. If the `gh pr merge` FAILS, leave the task
+  `submitted` (never move to
   `reviewed`) — resolve the conflict/checks on GitHub, then re-review. A mis-based
   feat PR (base ≠ `accepted`) self-heals ONLY when the guard can PROVE the base is
   unclaimed: retarget it to `accepted`, then merge. **At a merge, anything unproven

@@ -166,7 +166,6 @@ tasks. If anything is missing, note it as a finding; do not guess.
      gh pr view <feat-pr> --json baseRefName --jq .baseRefName   # base ≠ accepted? PROBE before you touch it
      gh pr list --repo <owner/repo> --head <that-base> --state open --json number,url   # ANY hit = a STACK: do NOT retarget, do NOT merge
      gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget ONLY a base PROVEN unclaimed — at a merge anything unproven REFUSES, all five arms; see below)
-     bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
      bin/task move <task-slug> reviewed
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
      ```
@@ -188,11 +187,14 @@ tasks. If anything is missing, note it as a finding; do not guess.
        base read failed, the probe could not be read, the base came back EMPTY,
        or you cannot tell which repo to probe, REFUSE. Five conditions refuse and
        only a proven-unclaimed base retargets (`bin/lib/stacked_pr.rb`).
-     - **Order matters: merge → stamp → move**, so the task is `reviewed` **iff**
-       its code is on `accepted`. If `gh pr merge` FAILS, leave the task
-       `submitted` and UNSTAMPED, resolve it on GitHub, and re-review.
-     - `bin/task merged` verifies its own write. To double-check, read the
-       **top-level** field, never `.metadata.devops.merged` (always `null`):
+     - **Order matters: merge → move**, so the task is `reviewed` **iff** its
+       code is on `accepted`. If `gh pr merge` FAILS, leave the task `submitted`,
+       resolve it on GitHub, and re-review.
+     - **No `merged` stamp.** The board derives the rung from GitHub and
+       refreshes its `merged` column when the task lands on `reviewed`.
+       `bin/task merged` is only a manual override for a PR GitHub cannot place.
+       To check, read the **top-level** field, never `.metadata.devops.merged`
+       (always `null`):
 
        ```bash
        bin/task show <task-slug> --verbose | grep merged   # or: bin/task field <task-slug> merged

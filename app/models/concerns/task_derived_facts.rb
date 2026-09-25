@@ -18,11 +18,27 @@
 # and it is explicit, so a read-only release snippet (sweep_detect_ruby previews
 # under --dry-run) stays read-only.
 #
+# NOBODY HAND-STAMPS NOW (piece 4c-i). The `merged` column is a CACHE the board
+# refreshes itself, from three places: TaskMergedRungRefreshJob, enqueued when a
+# task lands on `reviewed` (review's merge has just happened) and when GitHub
+# delivers a merged `pull_request` event; and the release record steps, which
+# refresh advance-only after their own write. `bin/task merged` stays as a manual
+# override for a PR GitHub cannot place, and says it is no longer needed.
+#
 # SWITCH. `config.x.derive_from_github = false` (set in test) disables the DEFAULT
 # derivation, so a test that never asked for GitHub never reaches it. A caller that
 # passes `derivation:` explicitly is always served.
 module TaskDerivedFacts
   extend ActiveSupport::Concern
+
+  included do
+    # Review merges the PR, then moves the task `reviewed`. The move is the board's
+    # cue that a merge just happened, so it refreshes the cache itself instead of
+    # asking review to stamp it. Only when derivation is on: with it off (test)
+    # the refresh could only ever read the stamp back, so there is nothing to do.
+    after_commit :enqueue_merged_rung_refresh, on: :update,
+                                               if: -> { saved_change_to_stage? && stage == "reviewed" && TaskDerivedFacts.enabled? }
+  end
 
   def self.enabled?
     Rails.configuration.x.derive_from_github != false
@@ -69,10 +85,26 @@ module TaskDerivedFacts
   # Writes the derived rung into the `merged` column when they differ — the column
   # is now a CACHE of #merged_rung. Returns the rung. Never clears a stamp: a nil
   # derivation leaves the column alone.
-  def refresh_merged_rung!(derivation: github_derivation)
+  #
+  # `advance_only: true` is for a caller that has just written the column from a
+  # fact it performed itself (the release record steps): the refresh may carry the
+  # column UP the ladder (a straggler GitHub already places on `main`) but never
+  # down, because a derivation read moments after a promote can lag the promote.
+  def refresh_merged_rung!(derivation: github_derivation, advance_only: false)
     rung = merged_rung(derivation: derivation)
-    update!(merged: rung) if rung.present? && rung != merged
+    return rung if rung.blank? || rung == merged
+    return merged if advance_only && !TaskDerivedFacts.higher_rung?(rung, merged)
+
+    update!(merged: rung)
     rung
+  end
+
+  # True when `rung` sits above `than` on accepted → release → main. Anything
+  # beats a blank column.
+  def self.higher_rung?(rung, than)
+    return true if than.blank?
+
+    Github::TaskDerivation::RUNGS.index(rung.to_s).to_i < Github::TaskDerivation::RUNGS.index(than.to_s).to_i
   end
 
   # The PR whose head is this task's branch, in its primary repo — or nil.
@@ -91,6 +123,33 @@ module TaskDerivedFacts
   rescue Github::TaskDerivation::Unreadable => e
     Rails.logger.warn("[task-derivation] #{slug}: PR url unreadable: #{e.message}")
     nil
+  end
+
+  # Stages whose task can have a PR. A `designed` card has none yet, and an
+  # archived one is done asking, so neither costs a GitHub read on a show.
+  PR_CACHE_STAGES = %w[building submitted reviewed assembled shipped].freeze
+
+  # Fills a BLANK `devops.pr_url` with the derived one and returns the task's PR
+  # url — the self-healing read tasks#show runs (the same shape as its gates
+  # projection). This is what lets bin/ship skip its `--pr-url` write: the board
+  # finds the PR on the task branch and caches it, so every reader that still
+  # keys on `devops.pr_url` (dor-check, the review gate, the CI meter) sees it.
+  # Never overwrites a recorded url, and never raises: an unreadable GitHub
+  # leaves the column as it was and answers with what is recorded.
+  def cache_derived_pr_url!(derivation: github_derivation)
+    recorded = devops_url("pr")
+    return recorded if recorded.present? || !PR_CACHE_STAGES.include?(stage.to_s)
+
+    url = derived_pr_url(derivation: derivation)
+    return nil if url.blank?
+
+    fresh = metadata.deep_dup
+    (fresh["devops"] ||= {})["pr_url"] = url
+    update!(metadata: fresh)
+    url
+  rescue Github::TaskDerivation::Unreadable, ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn("[task-derivation] #{slug}: PR url not cached: #{e.class}: #{e.message}")
+    recorded
   end
 
   # #release_pr_urls plus a derived PR for every repo the task names that carries
@@ -125,6 +184,12 @@ module TaskDerivedFacts
   end
 
   private
+
+  def enqueue_merged_rung_refresh
+    TaskMergedRungRefreshJob.perform_later(slug)
+  rescue StandardError => e
+    Rails.logger.warn("[task-derivation] #{slug}: merged refresh not enqueued: #{e.class}: #{e.message}")
+  end
 
   # Per-instance memo keyed by the derivation, so one sweep row asks GitHub each
   # question once however many readers it runs. A raise (Unreadable) is NOT

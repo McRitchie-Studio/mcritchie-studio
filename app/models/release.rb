@@ -1,4 +1,14 @@
 class Release < ApplicationRecord
+  # Best-effort, advance-only refresh of a member's `merged` cache after a record
+  # step wrote it (Task#refresh_merged_rung!). A failed read changes nothing: the
+  # record step's own write already stands.
+  def self.refresh_merged_cache(task)
+    task.refresh_merged_rung!(advance_only: true)
+  rescue StandardError => e
+    Rails.logger.warn("[release] #{task.slug}: merged cache refresh skipped: #{e.class}: #{e.message}")
+    nil
+  end
+
   # Workflow 2 — Deploy. A Release is a singleton: at most one is active
   # (assembling/assembled) at a time. It carries `reviewed` tasks onto a
   # disposable release branch, through QA, and to production.
@@ -864,6 +874,9 @@ class Release < ApplicationRecord
       stamp = task.merged == Task::MERGED_MAIN ? Task::MERGED_MAIN : Task::MERGED_RELEASE
       task.update!(release_slug: slug, merged: stamp)
     end
+    # The column is a cache of the derived rung (devops-v3 4c-i): let GitHub carry
+    # it further UP the ladder if it already places the merge there, never down.
+    Release.refresh_merged_cache(task)
     task
   end
 

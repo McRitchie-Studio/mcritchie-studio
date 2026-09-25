@@ -171,8 +171,8 @@ Launcher: [`../agents/carl/HEARTBEAT.md`](../agents/carl/HEARTBEAT.md); SOPs
      [`pr-review-light.md`](../agents/carl/sops/pr-review-light.md). Each reviewer
      narrates **as its soul** (`--agent`).
   3. **Merge-ready** → Carl revalidates the head, `gh pr merge` the feat PR into
-     `accepted`, `bin/task merged <task> accepted`, then `bin/task move <task>
-     reviewed` (merge → stamp → move).
+     `accepted`, then `bin/task move <task> reviewed` (merge → move; the board
+     derives `merged`, nobody stamps it).
   4. **Problems** → Carl, who holds the review claim, blocks: `bin/task block
      <task> --kind rework --feedback "…" --agent carl` (only the claim's holder
      spends the bounce). The **two-bounce

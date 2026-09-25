@@ -1,5 +1,6 @@
 require "test_helper"
 require_relative "../../../support/devops_key_spread"
+require_relative "../../../support/fake_task_derivation"
 
 module Api
   module V1
@@ -15,6 +16,47 @@ module Api
         @headers = {
           "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)}"
         }
+      end
+
+      # [integration] devops-v3 4c-i: show serves the PR url the board DERIVES, and
+      # caches it into a blank `devops.pr_url`, so bin/ship can skip its write and
+      # its read-back still pins the exact PR. The index stays derivation-free.
+      test "show serves and caches the derived PR url; the index asks GitHub nothing" do
+        task = tasks(:in_progress_task)
+        task.update_columns(stage: "building", metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+        url = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/4242"
+        fake = FakeTaskDerivation.new(branches: { [task.release_repo, "feat/#{task.slug}"] => url })
+
+        Github::TaskDerivation.reset_shared!
+        TaskDerivedFacts.stub(:enabled?, true) do
+          Github::TaskDerivation.stub(:new, fake) do
+            get api_v1_tasks_path(full: 1), headers: @headers
+            assert_response :success
+            assert_empty fake.calls, "a full index page must not derive per row"
+
+            get api_v1_task_path(task.slug), headers: @headers
+          end
+        end
+
+        assert_response :success
+        body = response.parsed_body["data"]
+        assert_equal url, body["pr_url_or_derived"]
+        assert_equal url, body.dig("metadata", "devops", "pr_url"), "the served record carries the cached url"
+        assert_equal url, task.reload.devops_url("pr"), "the board cached what it derived"
+      ensure
+        Github::TaskDerivation.reset_shared!
+      end
+
+      # [integration] With derivation off (the test default) show still serves the
+      # recorded url under the derived name, so an older ship reading either agrees.
+      test "show serves the recorded url as pr_url_or_derived when derivation is off" do
+        url = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/77"
+        task = tasks(:in_progress_task)
+        task.update_columns(metadata: { "devops" => { "pr_url" => url } })
+
+        get api_v1_task_path(task.slug), headers: @headers
+
+        assert_equal url, response.parsed_body.dig("data", "pr_url_or_derived")
       end
 
       # [integration] The show projection carries the PROGRESS fact beside the claim.

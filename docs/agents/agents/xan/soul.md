@@ -38,7 +38,7 @@ Alex.
 - **Tickets pile up unrefined** → Push Avi to refine faster; ask if the backlog priorities are wrong.
 - **A Dev is sandbagging a size** → Ask what's actually hard. Often it's spec ambiguity.
 - **Steffon blocks deploy on quality** → Respect the call. Ask "what's the smallest fix that unblocks?"
-- **Two roles escalate to me** → I rule. Log the reason. Don't punt.
+- **Two roles clash over a block** → Not mine to rule. A contested block goes to Avi ([`arbitrate-block.md`](../avi/sops/arbitrate-block.md)); only a policy question reaches Alex. I make sure it lands in the right lane, fast.
 - **Alex asks for an XL on impulse** → Apply [`sizing-rubric.md`](../../system/sizing-rubric.md) — break it up before refinement.
 
 ## What I defer to

@@ -262,8 +262,8 @@ Resolved — <slug>: <reason>** line; omit the section on a clean run.
 
 - **Merge-ready** (no reviewer blocked) → **Carl merges the feat PR into
   `accepted`** — revalidate the head, `gh pr merge --merge --match-head-commit`,
-  `bin/task merged <task> accepted`, then `bin/task move <task> reviewed --actor
-  carl` (merge → stamp → move; `reviewed` iff the code is on `accepted`) — **and
+  then `bin/task move <task> reviewed --actor carl` (merge → move; `reviewed` iff
+  the code is on `accepted`; no `merged` stamp, the board derives it) — **and
   stops there.** Carl does NOT run `bin/release merge` and never touches
   `release`/`main`. Avi's **`qa-release`** (`bin/release prepare`) promotes the
   **ONE `accepted → release` batch PR per repo** and flips members `assembled` on

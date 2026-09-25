@@ -10,7 +10,8 @@ require "test_helper"
 #   bin/ship <slug> -m "..."
 #
 # ...and `bin/ship`'s step 8/8 — which is literally `bin/task move <slug>
-# submitted`, bin/ship:807 — settled the request to "none" on the way through. Ship
+# submitted`, the `--- 8/8 submit` block of bin/ship — settled the request to
+# "none" on the way through. Ship
 # said so out loud (the drop warning added on 2026-09-08), so this was never a
 # silence bug. It was the two halves of the fast lane disagreeing: the documented
 # flow says ASK BEFORE THE PR, and the documented handoff threw the request away.
