@@ -158,6 +158,11 @@ class Release
         consequence: "the release was not finalized and no task was flipped",
         bool: [], value: ["--by", "--slug"], allow_positional: true
       },
+      "reseal" => {
+        synopsis: "bin/release reseal <release> [--slug REL]",
+        consequence: "no smoke ran and the release's recorded seal is unchanged",
+        bool: [], value: ["--slug"], allow_positional: true
+      },
       "status" => {
         synopsis: "bin/release status [--clean-only] [--task SLUG]",
         # The sharpest one in the table. `status --clean-only` exits 0 to MEAN
@@ -184,7 +189,7 @@ class Release
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
-            "ship [--finalize-only [<release>]]|finalize [<release>]|status|archive|retro} " \
+            "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|status|archive|retro} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto] [--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
 

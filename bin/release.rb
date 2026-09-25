@@ -7400,8 +7400,8 @@ end
 # red. The seal now runs from the ship workspace pinned at ship_sha[APP], under the
 # ship-workspace lock so no concurrent conductor can reset the tree mid-smoke, and
 # never from the primary. When it cannot run those specs it records UNSEALED, not
-# red — see Release::SealTree. `reseal: true` is `bin/release reseal`: the same run
-# against an already-shipped release, overwriting its recorded seal.
+# red — see Release::SealTree. `reseal:` (the note string) is `bin/release reseal`:
+# the same run against an already-shipped release, overwriting its recorded seal.
 def production_smoke_seal(app_groups, ship_sha, rel_slug, reseal: false)
   step("production smoke seal: bin/prod-smoke #{APP} (@qa-readonly vs prod) from the shipped tree — post-ship SEAL, non-blocking")
 
@@ -7515,7 +7515,7 @@ def run_seal_smoke(root, ship_sha, rel_slug, reseal: false)
   ok      = result.ok
   seal    = result.seal
   summary = seal.summary
-  summary = "#{summary} (re-sealed from the shipped tree)" if reseal
+  summary = "#{summary} (#{reseal})" if reseal.is_a?(String)
   smoke_status = ok ? "completed" : "failed"
 
   # Record the seal on prod (best-effort). conductor() abort!s on a heroku-run
@@ -8687,6 +8687,62 @@ def retro
   say("✓ Retro for #{resolved} written to #{path}. NON-BLOCKING — `bin/release archive` is unaffected.")
 end
 
+# --- reseal (re-run the post-ship seal for an already-shipped release) --------
+# `bin/release reseal <release>`.
+#
+# WHY (rel-20260925-3b1f5c): the seal ran the primary's PRE-ship specs and
+# recorded a false red on a healthy ship. Fixing the seal step does not fix a seal
+# already on the board, and finalize will not touch a release that is already
+# sealed. This re-runs production_smoke_seal for ONE shipped release, from ITS
+# shipped tree (the ship workspace pinned at its frozen hub SHA), and overwrites
+# the recorded seal. It deploys nothing, flips no task, and posts no notes.
+#
+# A release that prod has since MOVED PAST is still re-sealable — that is the
+# normal case, since the fix reaches the conductor only in a later release — but
+# the recorded summary says so: the verdict is "this release's specs vs the prod
+# of today", and the board should not let it read as anything more.
+def reseal(slug = nil)
+  say("Re-seal a shipped release (the post-ship smoke seal, from its shipped tree)#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  warn_local!
+
+  slug = slug.to_s.strip
+  slug = opt_value("--slug").to_s.strip if slug.empty?
+  abort!("reseal needs a release: bin/release reseal <release-slug>") if slug.empty?
+
+  step("record (read-only): the release's state, repo plan, frozen SHAs, and current seal")
+  result = conductor(
+    "r = Release.find_by(slug: #{slug.inspect}); " \
+    "abort('no release #{slug}') unless r; " \
+    "later = Release.where(state: 'shipped').where.not(slug: r.slug)" \
+    ".where('shipped_at > ?', r.shipped_at || Time.current).order(:shipped_at).last; " \
+    "puts({slug: r.slug, state: r.state, deployed_sha: r.deployed_sha, " \
+    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
+    "seal: r.smoke_seal&.verdict_line, superseded_by: later&.slug}.to_json)",
+    read_only: true
+  )
+  rel_slug = result["slug"].to_s
+  abort!("no release #{slug}") if rel_slug.empty?
+  plan = Release::SealTree.reseal_plan(
+    state: result["state"], repos: result["repos"], qa_shas: result["qa_shas"],
+    deployed_sha: result["deployed_sha"], app: APP, superseded_by: result["superseded_by"]
+  )
+  abort!("refusing to re-seal #{rel_slug}: #{plan.refusal}") if plan.refusal
+
+  say("  current seal: #{result['seal'] || '(unsealed)'}")
+  say("  re-seal from the #{APP} ship workspace at #{short(plan.frozen_sha)}")
+  say("  ⚠ prod has moved past this release (#{result['superseded_by']}): the seal judges this release's specs against today's prod") if result["superseded_by"]
+  if DRY
+    say("")
+    say("✓ Re-seal previewed (DRY RUN — nothing run or recorded).")
+    return
+  end
+  abort!("aborted — re-seal not confirmed") unless confirm("Re-seal #{rel_slug} — run its shipped specs against #{PROD_URL} and overwrite its seal?")
+
+  status = production_smoke_seal([plan.group], { APP => plan.frozen_sha }, rel_slug, reseal: plan.note)
+  say("")
+  say("✓ #{rel_slug} re-sealed: #{status || 'nothing to seal'}")
+end
+
 # Guarded so the file can be `require`d (helper coverage) without dispatching.
 if __FILE__ == $PROGRAM_NAME
   # BEFORE the dispatcher, always. Every mutation this CLI can perform is reached
@@ -8702,6 +8758,7 @@ if __FILE__ == $PROGRAM_NAME
   when "eject"    then eject
   when "ship"     then ship
   when "finalize" then finalize(Release::Cli.positional_slugs(ARGV).first)
+  when "reseal"   then reseal(Release::Cli.positional_slugs(ARGV).first)
   when "status"   then status
   when "archive"  then archive
   when "retro"    then retro

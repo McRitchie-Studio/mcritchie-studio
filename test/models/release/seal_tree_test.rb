@@ -91,5 +91,40 @@ class Release
       refute SealTree.same_commit?("", "")
       refute SealTree.same_commit?(FROZEN, "deadbeef")
     end
+    # --- reseal_plan (bin/release reseal) ------------------------------------
+    HUB_GROUP = { "repo" => "mcritchie-studio", "kind" => "app" }.freeze
+
+    def plan(**overrides)
+      SealTree.reseal_plan(**{ state: "shipped", repos: [HUB_GROUP], qa_shas: { "mcritchie-studio" => FROZEN },
+                               deployed_sha: "deadbeef", app: "mcritchie-studio" }.merge(overrides))
+    end
+
+    test "[unit] a shipped hub release re-seals at its QA-frozen SHA" do
+      p = plan
+      assert_nil p.refusal
+      assert_equal FROZEN, p.frozen_sha, "the QA-frozen SHA wins over deployed_sha"
+      assert_equal HUB_GROUP, p.group
+      assert_equal "re-sealed from the shipped tree", p.note
+    end
+
+    test "[unit] reseal falls back to deployed_sha, never to a moving branch" do
+      assert_equal "deadbeef", plan(qa_shas: {}).frozen_sha
+      assert_includes plan(qa_shas: nil, deployed_sha: nil).refusal, "no frozen mcritchie-studio SHA"
+    end
+
+    test "[unit] reseal refuses a release that is not shipped" do
+      assert_includes plan(state: "assembled").refusal, "not shipped"
+    end
+
+    test "[unit] reseal refuses a release that did not deploy the hub" do
+      assert_includes plan(repos: [{ "repo" => "turf-monster", "kind" => "app" }]).refusal, "nothing to seal"
+      assert_includes plan(repos: [{ "repo" => "mcritchie-studio", "kind" => "gem" }]).refusal, "nothing to seal"
+    end
+
+    test "[unit] a superseded release still re-seals, and its note says prod moved" do
+      p = plan(superseded_by: "rel-20260926-abc123")
+      assert_nil p.refusal
+      assert_equal "re-sealed from the shipped tree; prod has since moved to rel-20260926-abc123", p.note
+    end
   end
 end

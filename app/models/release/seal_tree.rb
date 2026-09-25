@@ -69,6 +69,36 @@ class Release
       "#{UNSEALED}: could not run the shipped specs — #{reason}"
     end
 
+    # --- reseal (bin/release reseal <release>) --------------------------------
+    # `group` is the hub's repo_plan group to seal; `frozen_sha` is the hub SHA
+    # that shipped; `note` rides the recorded summary; `refusal` is why the
+    # release cannot be re-sealed (nil when it can).
+    ResealPlan = Struct.new(:group, :frozen_sha, :note, :refusal, keyword_init: true)
+
+    # PURE. Can this release be re-sealed, and from which SHA? Only a SHIPPED
+    # release: one still in flight is sealed by its own ship or by finalize. The
+    # SHA is the QA-frozen one the ship deployed (qa_shas), else the recorded
+    # deployed_sha — never origin/release, which has moved on since.
+    def reseal_plan(state:, repos:, qa_shas:, deployed_sha:, app:, superseded_by: nil)
+      unless state.to_s == "shipped"
+        return ResealPlan.new(refusal: "it is '#{state}', not shipped — a release in flight is sealed by " \
+                                       "`bin/release ship` or `bin/release finalize`")
+      end
+
+      group = Array(repos).find { |g| g.is_a?(Hash) && g["repo"] == app && g["kind"].to_s == "app" }
+      return ResealPlan.new(refusal: "#{app} was not deployed in it, so there is nothing to seal") unless group
+
+      shas   = qa_shas.is_a?(Hash) ? qa_shas : {}
+      frozen = shas[app].to_s.strip
+      frozen = deployed_sha.to_s.strip if frozen.empty?
+      return ResealPlan.new(refusal: "no frozen #{app} SHA is recorded on it (qa_shas or deployed_sha)") if frozen.empty?
+
+      later = superseded_by.to_s.strip
+      note  = "re-sealed from the shipped tree"
+      note += "; prod has since moved to #{later}" unless later.empty?
+      ResealPlan.new(group: group, frozen_sha: frozen, note: note, refusal: nil)
+    end
+
     # A full SHA and an abbreviation of it name the same commit; two different
     # full SHAs do not. Case-insensitive, and a blank never matches.
     def same_commit?(a, b)

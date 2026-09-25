@@ -7403,6 +7403,80 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- bin/release reseal: re-seal an already-shipped release ------------------
+  # [integration] The false-red release (rel-20260925-3b1f5c) was sealed from the
+  # primary's pre-ship specs. `bin/release reseal <slug>` reads the release, pins
+  # the ship workspace at ITS frozen hub SHA, runs those specs, and overwrites the
+  # recorded seal — with a summary that says it was re-sealed.
+  def reseal_stub(hub, state: "shipped", sha:, superseded_by: nil)
+    release = { "slug" => "rel-old", "state" => state, "deployed_sha" => sha,
+                "repos" => [{ "repo" => "mcritchie-studio", "kind" => "app" }],
+                "qa_shas" => { "mcritchie-studio" => sha },
+                "seal" => "🔴 Production smoke seal: FAILED — see ship log", "superseded_by" => superseded_by }
+    <<~RUBY
+      def repo_path(_repo) = #{hub.inspect}
+      def record_release_event(slug, step, status, attrs = {})
+        $stdout.puts("EVENT \#{step}:\#{status}")
+      end
+      def conductor(ruby, read_only: false)
+        return JSON.parse(#{release.to_json.inspect}) if read_only
+        $stdout.puts("SEAL-WRITE " + ruby.gsub("\n", " "))
+        {}
+      end
+    RUBY
+  end
+
+  def test_reseal_runs_the_releases_shipped_specs_and_overwrites_its_seal
+    Dir.mktmpdir do |dir|
+      hub, old_sha, new_sha = seal_git_fixture(dir)
+      out = run_cli(["--yes"], setup: reseal_stub(hub, sha: new_sha, superseded_by: "rel-new"),
+                    call: %(Dir.chdir(#{dir.inspect}); ARGV.replace(["rel-old"]); reseal(Release::Cli.positional_slugs(ARGV).first)))
+
+      assert_includes out, "current seal: 🔴", "the operator sees the seal being replaced"
+      assert_includes out, "SPECS-NEW", "the release's own shipped specs ran"
+      refute_includes out, "SPECS-OLD"
+      seal_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") && l.include?("record_smoke_seal!") }
+      assert seal_write, "the re-seal overwrites the recorded seal"
+      assert_includes seal_write, %(Release.find_by!(slug: "rel-old"))
+      assert_includes seal_write, "passed: true"
+      assert_includes seal_write, "re-sealed from the shipped tree; prod has since moved to rel-new"
+      refute_includes out, "EVENT prod_smoke:started", "a re-seal does not re-open the ship's seal step"
+      assert_includes out, "rel-old re-sealed: green"
+      assert_equal old_sha, `git -C #{hub} rev-parse HEAD`.strip, "the primary is never touched"
+    end
+  end
+
+  def test_reseal_refuses_a_release_that_has_not_shipped
+    Dir.mktmpdir do |dir|
+      hub, _old, new_sha = seal_git_fixture(dir)
+      out = run_cli(["--yes"], setup: reseal_stub(hub, state: "assembled", sha: new_sha),
+                    call: %(begin; reseal("rel-old"); rescue SystemExit => e; puts("ABORTED: " + e.message); end))
+
+      assert_includes out, "ABORTED"
+      assert_includes out, "not shipped"
+      refute_includes out, "SPECS-", "nothing ran"
+      refute_includes out, "SEAL-WRITE"
+    end
+  end
+
+  def test_reseal_needs_a_release_slug
+    out = run_cli(["--yes"], call: %(begin; reseal(nil); rescue SystemExit => e; puts("ABORTED: " + e.message); end))
+    assert_includes out, "ABORTED"
+    assert_includes out, "bin/release reseal <release-slug>"
+  end
+
+  def test_reseal_dry_run_previews_without_running_or_recording
+    Dir.mktmpdir do |dir|
+      hub, _old, new_sha = seal_git_fixture(dir)
+      out = run_cli(["--dry-run"], setup: reseal_stub(hub, sha: new_sha), call: %(reseal("rel-old")))
+
+      assert_includes out, "re-seal from the mcritchie-studio ship workspace at #{new_sha[0, 7]}"
+      assert_includes out, "DRY RUN"
+      refute_includes out, "SPECS-"
+      refute_includes out, "SEAL-WRITE"
+    end
+  end
+
   # --- regression: the silent swallowed-subprocess flake ------------------------
   #
   # A subprocess that EXITS NONZERO must fail LOUD with its stderr surfaced — it
