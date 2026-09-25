@@ -23,6 +23,12 @@ class ProjectsRootTest < Minitest::Test
                  "a worktree run shares the primary's .agents/ state"
   end
 
+  def test_unit_fixed_path_tooling_climbs_out_to_the_projects_dir
+    assert_equal "/Users/x/projects",
+                 ProjectsRoot.default_projects_dir("/Users/x/projects/.agents/tooling/0123abc"),
+                 "the installed fast-lane tooling shares the same .agents/ state as the hub"
+  end
+
   def test_unit_repo_root_anchors_at_this_repo
     assert_equal File.expand_path("../..", __dir__), ProjectsRoot::REPO_ROOT
   end
