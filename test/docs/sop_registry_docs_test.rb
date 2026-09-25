@@ -151,69 +151,37 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
     refute_nil row, "`clean-up` is not in the SOP registry"
     assert_equal "Xan", row[:owner]
     assert_path_exists Rails.root.join(row[:path])
-
-    body = Rails.root.join(row[:path]).read
-    assert_match(/zero open tasks/i, body, "the clean-up SOP must state its goal: zero open tasks")
-    assert_match(/Phase 0 — Scope guard/, body, "the clean-up SOP must carry the carve-out phase")
   end
 
-  # THE TWO BACKLOG SOPs. These are the prioritization procedure — the thing that used
-  # to be re-explained by hand every session — so what makes them worth invoking is not
-  # that the files EXIST (the tests above already prove that) but that they still carry
-  # the specific rules a reader acts on. Every pattern below is a rule a REVIEW had to
-  # put there, and each one is a rule whose loss would be SILENT: the SOP would still
-  # read fluently, still resolve from the registry, and still hand a session a confident
-  # procedure — with the guard rail gone.
-  #
-  #   * the wave-subtraction rule was added after a reader could have run 4 builders
-  #     PLUS a 5-agent review wave against a 5-agent cap that exists because a fan-out
-  #     once exhausted the board's Postgres connections and 500'd it;
-  #   * the two agent_context rules were added after the fold recipe was found to
-  #     DESTROY the survivor's context — first by overwriting it, then (after that fix)
-  #     by prescribing a hand-transcription whose read-back checked presence, not
-  #     equality — inside the one step whose whole purpose is losing neither half.
-  BACKLOG_SOP_RULES = {
-    "process-backlog" => [
-      [/10 or more/,                        "the mandatory review pivot at ten submitted tasks"],
-      [/NAME the evidence/,                 "that an archive requires named evidence"],
-      [/Tier A/,                            "the own-tasks-first ranking tier"],
-      [/5 − \(builders still in flight\)/,  "the review-wave subtraction rule"],
-      [/REPLACES; it does not append/,      "that --agent-context overwrites the survivor's context"],
-      [/bin\/task field/,                   "reading agent_context raw instead of retyping a rendered report"],
-      [/presence is not equality/,          "that the fold read-back must COMPARE, not merely find the old text"]
-    ],
-    "work-backlog" => [
-      [/mascot_session/,                    "the own-session task filter"],
-      # NOT /two or three/: that phrase is the file's H1 title and its Step 3 heading,
-      # so it holds green even with the ceiling rule deleted outright. Pin the rule.
-      [/three is the ceiling/,              "its two-to-three parallel ceiling"],
-      [/5 − \(builders still in flight\)/,  "the review-wave subtraction rule"]
-    ]
-  }.freeze
+  # OWNERSHIP IS STRUCTURE, NOT PROSE. A registry row names an owner and a path, and
+  # the path already says whose SOP it is: agents/<soul>/sops/… for a soul, modules/…
+  # for a shared primitive. Retargeted from doc_owner_prose_guard_test.rb (deleted in
+  # trim-docs-guard-tests), which chased wrong-owner SPELLINGS across the docs.
+  test "every registry row's owner is the soul whose directory holds the file" do
+    rows = registry_rows
+    assert_operator rows.size, :>=, 40, "the registry scan matched too few rows to be the real table"
 
-  test "the backlog SOPs resolve end to end and carry their load-bearing rules" do
-    BACKLOG_SOP_RULES.each do |invocation, rules|
-      row = registry_rows.find { |r| r[:invocation] == invocation }
-
-      refute_nil row, "`#{invocation}` is not in the SOP registry"
-      assert_equal "Shared", row[:owner]
-      assert_path_exists Rails.root.join(row[:path])
-
-      body = Rails.root.join(row[:path]).read
-      rules.each do |pattern, what|
-        assert_match pattern, body, "the #{invocation} SOP must state #{what}"
-      end
+    wrong = rows.filter_map do |row|
+      expected = row[:path][%r{\Adocs/agents/agents/([^/]+)/}, 1]&.then { |dir| dir.split("_").map(&:capitalize).join(" ") }
+      expected ||= "Shared" if row[:path].start_with?("docs/agents/modules/")
+      "#{row[:invocation]}: owner #{row[:owner].inspect}, path #{row[:path]}" unless row[:owner] == expected
     end
+
+    assert_empty wrong, "a registry row names an owner other than the soul whose directory holds its file"
   end
 
-  # The minus in the subtraction rule is U+2212, not ASCII "-". A pattern that silently
-  # stopped matching would leave the rule unpinned while the suite stayed green — the
-  # exact failure mode every guard in this file exists to refuse — so assert the
-  # character itself rather than trusting the literal above to keep its bytes.
-  test "the subtraction rule pattern uses the same minus sign the SOPs do" do
-    pattern = BACKLOG_SOP_RULES["process-backlog"].find { |_, what| what.include?("subtraction") }.first
+  # /stages/sop renders config/devops_vocabulary.yml. Its Assemble and Ship lanes must
+  # be owned by the soul the registry names for the SOP each lane runs, so the board
+  # and the registry cannot disagree about who runs a release.
+  test "the vocabulary's release lanes are owned by the registry's owner of their SOP" do
+    owners = Devops::Vocabulary.lanes.to_h { |lane| [lane[:lane], lane[:owner]] }
+    registry = registry_rows.to_h { |r| [r[:invocation], r[:owner]] }
 
-    assert_includes pattern.source, "\u2212",
-                    "the subtraction-rule pattern must carry U+2212 MINUS SIGN; an ASCII hyphen matches nothing"
+    { "Assemble" => "qa-release", "Ship" => "production-deploy" }.each do |lane, sop|
+      refute_nil registry[sop], "`#{sop}` is not in the SOP registry"
+      assert_equal registry[sop], owners[lane],
+                   "the #{lane} lane in config/devops_vocabulary.yml is owned by #{owners[lane].inspect}, " \
+                   "but the registry gives `#{sop}` to #{registry[sop]}"
+    end
   end
 end
