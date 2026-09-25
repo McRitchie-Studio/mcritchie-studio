@@ -9,6 +9,11 @@
 #                                            folds a SHA's checks into a LIVE progress
 #                                            bar (v1.1). Only "CI"-workflow jobs are
 #                                            recorded — the table exists for that bar.
+#   * `pull_request` (closed + merged)     — refreshes the merged column of the
+#                                            task(s) that PR belongs to (devops-v3
+#                                            4c-i: the board derives `merged`, no
+#                                            agent stamps it). Every other action
+#                                            is ignored.
 #
 # IDEMPOTENT + MONOTONIC by design. GitHub delivers webhooks AT-LEAST-ONCE and
 # OUT OF ORDER, so this job:
@@ -35,6 +40,8 @@ class GithubWorkflowRunIngestJob < ApplicationJob
       ingest_workflow_run(payload)
     when "workflow_job"
       ingest_workflow_job(payload)
+    when "pull_request"
+      ingest_pull_request(payload)
     else
       Rails.logger.info("[GithubWorkflowRunIngestJob] ignoring event=#{event_name.inspect}")
     end
@@ -193,6 +200,41 @@ class GithubWorkflowRunIngestJob < ApplicationJob
 
       record.save!
     end
+  end
+
+  # ── pull_request merged → refresh the merged cache ──────────────────────
+  # A merged PR is the moment a task's code lands on a rung. Match the task by the
+  # PR url it recorded, then by the head branch (`feat/<slug>`, or a recorded
+  # `devops.branch`), so a task that never stamped its pr_url is found too, and
+  # refresh each match inline — this job is already off the request path.
+  def ingest_pull_request(payload)
+    pr = payload["pull_request"] || {}
+    return unless payload["action"].to_s == "closed" && pr["merged"]
+
+    url = Github::TaskDerivation.normalize_url(pr["html_url"])
+    branch = pr.dig("head", "ref").to_s
+    return if url.blank? && branch.blank?
+
+    tasks_for_pull_request(url, branch).each do |task|
+      TaskMergedRungRefreshJob.perform_now(task.slug)
+    end
+  end
+
+  def tasks_for_pull_request(url, branch)
+    scopes = []
+    if url.present?
+      scopes << Task.where("metadata->'devops'->>'pr_url' = ?", url)
+      # `pr_urls` is a repo-keyed map (Task::DEVOPS_MAP_KEYS). The CASE (not an
+      # AND, which Postgres may reorder) keeps a malformed non-object value from
+      # raising inside jsonb_each_text.
+      scopes << Task.where("EXISTS (SELECT 1 FROM jsonb_each_text(CASE WHEN jsonb_typeof(metadata->'devops'->'pr_urls') = " \
+                           "'object' THEN metadata->'devops'->'pr_urls' ELSE '{}'::jsonb END) AS e(k, v) WHERE e.v = ?)", url)
+    end
+    if branch.present?
+      scopes << Task.where("metadata->'devops'->>'branch' = ?", branch)
+      scopes << Task.where(slug: branch.delete_prefix("feat/")) if branch.start_with?("feat/")
+    end
+    scopes.flat_map(&:to_a).uniq(&:id)
   end
 
   # ── shared helpers ────────────────────────────────────────────────────────
