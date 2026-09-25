@@ -19,3 +19,28 @@ auto_qa:
 production_ship:
   operator_gated: true
   autonomous_kickoff: "full-cycle"
+  # How `bin/release ship` takes production authority when no --mode is passed
+  # (devops-v3-design.md section 6, decision 2). One of:
+  #   ask   — the interactive confirm prompt; holds until a human answers.
+  #   timed — posts a ship_authorization request on the release, waits up to
+  #           operator_windows.production_minutes for an operator grant (the
+  #           Approve button on /deployments), and on lapse proceeds when G3 is
+  #           green and no member carries an open escalation.
+  #   auto  — ships on green with no prompt (`--yes` semantics).
+  # `bin/release ship --yes` with no --mode is `auto`; an explicit --mode wins.
+  mode: timed
+
+# The three operator windows (devops-v3-design.md section 6). Read by
+# Devops::Windows; every countdown on the board derives from these minutes plus
+# a timestamp the task or release already carries — no window column anywhere.
+#   approval   — devops.approval_requested_at + approval_minutes while
+#                approval_status is `waiting`; on lapse review proceeds as today.
+#   escalation — blocked_at + escalation_minutes on a dependency block whose
+#                summary leads `Escalated:`; on lapse Avi's recommendation stands.
+#   production — the ship_authorization request + production_minutes; on lapse
+#                a timed ship proceeds on green with no open escalation.
+# Alex changes these numbers here; nothing else needs to move.
+operator_windows:
+  approval_minutes: 10
+  escalation_minutes: 20
+  production_minutes: 30
