@@ -221,7 +221,7 @@ fi
 TOOLING_ROOT="$PROJECTS_DIR/.agents/tooling"
 TOOLING_LINK="$PROJECTS_DIR/.agents/bin"
 TOOLING_PATHS=(bin lib config app/models/release app/models/devops .ruby-version)
-TOOLING_KEEP="${AGENT_TOOLING_KEEP:-3}"
+TOOLING_KEEP=3
 
 tooling_sha() {
   git -C "$ROOT" rev-parse --verify --quiet HEAD 2>/dev/null
