@@ -22,6 +22,12 @@
 # completion share the conductor's idempotency key, so a grant that lands during
 # the wait and the completion ship records afterwards are ONE row.
 #
+# A timed run's three rows each key on the WINDOW they belong to
+# (idempotency_key below): a re-run posts a fresh request, and its grant can
+# never be answered by the previous run's row. A LAPSE is keyed apart from a
+# grant and flagged `lapsed`, so Release#ship_authorization_granted? never reads
+# a lapse — least of all an earlier run's — as the operator's grant.
+#
 # Rails-free, with every side effect injected (recorder / reader / confirmer /
 # say / clock / sleeper), so each firing condition is unit-tested without a
 # release, a prod board, or a wall clock (test/lib/ship_authority_test.rb).
@@ -40,6 +46,19 @@ module ShipAuthority
   POLL_INTERVAL_S = 45
 
   module_function
+
+  # The conductor's idempotency key for a timed run's event, scoped to the window
+  # it belongs to; nil (the caller's default key) for an ask/auto event, which
+  # carries no window. Release#grant_ship_authorization! derives the SAME grant
+  # key from the latest request, so the web Approve and ship's own completion
+  # stay one row per run.
+  def idempotency_key(release_slug, status, metadata)
+    ends_at = metadata.to_h["window_ends_at"].to_s
+    return nil if ends_at.empty?
+
+    lapse = status.to_s == "completed" && metadata.to_h["lapsed"] ? "lapsed:" : ""
+    "#{release_slug}:#{STEP}:#{status}:#{lapse}#{ends_at}"
+  end
 
   # explicit `--mode` wins; else `--yes` alone means auto; else the config default.
   # `config_mode` may be a callable so the YAML is read only when it decides.
@@ -97,23 +116,25 @@ module ShipAuthority
       if state.is_a?(Hash) && state["granted"]
         via = state["granted_via"].to_s.empty? ? "grant" : state["granted_via"]
         say.call("  ✓ production authority granted by #{state['granted_by'].to_s.empty? ? 'the operator' : state['granted_by']} (#{via})")
-        recorder.call("completed", { "mode" => "timed", "granted_via" => via })
+        recorder.call("completed", { "mode" => "timed", "granted_via" => via, "window_ends_at" => ends_at.utc.iso8601 })
         return :granted
       end
 
       if lapsed
         # The one read that decides. Unreadable is a refusal, never a proceed.
         raise Refused, "production window lapsed at #{ends_at.utc.iso8601} and the release could not be read at the window end — " \
-                       "nothing deployed. Re-run to ask again, or grant with Approve on /deployments." unless state.is_a?(Hash)
+                       "nothing deployed. Re-run to open a fresh window, then grant with Approve on /deployments while it waits." unless state.is_a?(Hash)
 
         blockers = Array(state["blockers"])
         if blockers.empty?
           say.call("  production window lapsed at #{ends_at.utc.iso8601} with no answer — G3 green, no open escalation: proceeding on the timed default")
-          recorder.call("completed", { "mode" => "timed", "lapsed" => true, "granted_via" => "window-lapse" })
+          recorder.call("completed", { "mode" => "timed", "lapsed" => true, "granted_via" => "window-lapse",
+                                       "window_ends_at" => ends_at.utc.iso8601 })
           return :lapsed_proceed
         end
         raise Refused, "production window lapsed at #{ends_at.utc.iso8601} but the ship may not proceed on its own: " \
-                       "#{blockers.join('; ')}. Nothing deployed. Grant with Approve on /deployments and re-run, or re-run with --mode ask."
+                       "#{blockers.join('; ')}. Nothing deployed. Re-run, then grant with Approve on /deployments while the new window is open " \
+                       "(a grant made before the re-run answers the old request, not the new one), or re-run with --mode ask."
       end
 
       left = (ends_at - now).ceil

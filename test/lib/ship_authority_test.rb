@@ -94,7 +94,7 @@ class ShipAuthorityTest < Minitest::Test
     assert_equal "timed", started.last["mode"]
     assert_equal 30, started.last["window_minutes"]
     assert_equal "2026-09-24T20:30:00Z", started.last["window_ends_at"]
-    assert_equal ["completed", { "mode" => "timed", "granted_via" => "web" }], h.events.last
+    assert_equal ["completed", { "mode" => "timed", "granted_via" => "web", "window_ends_at" => "2026-09-24T20:30:00Z" }], h.events.last
     assert_equal [45], h.sleeps, "one poll interval between the two reads"
     assert_equal [false, false], h.reads, "blockers are not computed before the lapse"
     assert h.said.any? { |l| l.include?("granted by alex@example.com (web)") }
@@ -107,7 +107,31 @@ class ShipAuthorityTest < Minitest::Test
     assert_equal NOW + 120, h.now, "the loop reads the lapse exactly at the window end"
     assert_equal [45, 45, 30], h.sleeps, "the last sleep is trimmed to the window end"
     assert_equal [false, false, false, true], h.reads, "blockers are read on the lapse read only"
-    assert_equal ["completed", { "mode" => "timed", "lapsed" => true, "granted_via" => "window-lapse" }], h.events.last
+    assert_equal ["completed", { "mode" => "timed", "lapsed" => true, "granted_via" => "window-lapse",
+                                 "window_ends_at" => "2026-09-24T20:02:00Z" }], h.events.last
+  end
+
+  # --- idempotency keys: each timed run owns its rows -----------------------------
+
+  def test_the_timed_request_grant_and_lapse_each_key_on_the_window_they_belong_to
+    ends = "2026-09-24T20:30:00Z"
+    assert_equal "rel-demo:ship_authorized:started:#{ends}",
+                 ShipAuthority.idempotency_key("rel-demo", "started", { "mode" => "timed", "window_ends_at" => ends })
+    assert_equal "rel-demo:ship_authorized:completed:#{ends}",
+                 ShipAuthority.idempotency_key("rel-demo", "completed", { "mode" => "timed", "granted_via" => "web", "window_ends_at" => ends })
+    assert_equal "rel-demo:ship_authorized:completed:lapsed:#{ends}",
+                 ShipAuthority.idempotency_key("rel-demo", "completed", { "mode" => "timed", "lapsed" => true, "window_ends_at" => ends })
+  end
+
+  def test_a_re_run_after_a_lapse_gets_a_fresh_grant_key_not_the_lapse_row
+    first = ShipAuthority.idempotency_key("rel-demo", "completed", { "lapsed" => true, "window_ends_at" => "2026-09-24T20:30:00Z" })
+    rerun = ShipAuthority.idempotency_key("rel-demo", "completed", { "granted_via" => "web", "window_ends_at" => "2026-09-24T21:30:00Z" })
+    refute_equal first, rerun
+  end
+
+  def test_ask_and_auto_carry_no_window_and_keep_the_default_key
+    assert_nil ShipAuthority.idempotency_key("rel-demo", "started", { "mode" => "ask" })
+    assert_nil ShipAuthority.idempotency_key("rel-demo", "completed", { "mode" => "auto", "granted_via" => "auto" })
   end
 
   def test_timed_lapse_refuses_and_names_the_blockers

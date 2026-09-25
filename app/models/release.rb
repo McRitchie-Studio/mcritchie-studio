@@ -684,8 +684,14 @@ class Release < ApplicationRecord
   # on /deployments (ReleasesController#authorize_ship) or the events API, which
   # records the ONE `ship_authorized completed` event under the conductor's own
   # idempotency key — so the grant and ship's own completion stamp are the same
-  # row, never two. Everything below is DERIVED from those two events
+  # row, never two. Everything below is DERIVED from those events
   # (Devops::Windows, design section 6): no column, nothing to keep in step.
+  #
+  # Both answers are SCOPED TO THE LATEST REQUEST. A completion recorded before
+  # it belongs to an earlier run and authorizes nothing now; and a timed LAPSE
+  # (`completed` flagged `lapsed`, keyed apart by bin/lib/ship_authority.rb) is
+  # never a grant. Without both, a re-run ship read the previous run's lapse as
+  # the operator's grant and skipped its fresh escalation check.
   SHIP_AUTHORIZATION_STEP = "ship_authorized"
 
   # The latest ship-authority request, or nil before ship asks.
@@ -693,8 +699,15 @@ class Release < ApplicationRecord
     release_events.for_step(SHIP_AUTHORIZATION_STEP).started.order(occurred_at: :desc, id: :desc).first
   end
 
+  # The operator's (or ask/auto's own) grant for the LATEST request; nil when
+  # that request is unanswered, answered only by a lapse, or when none exists.
   def ship_authorization_grant
-    release_events.for_step(SHIP_AUTHORIZATION_STEP).completed.order(occurred_at: :desc, id: :desc).first
+    ship_authorization_answers.reject { |event| ship_authorization_lapse?(event) }.first
+  end
+
+  # The timed-window lapse that answered the LATEST request, if any.
+  def ship_authorization_lapse
+    ship_authorization_answers.find { |event| ship_authorization_lapse?(event) }
   end
 
   def ship_authorization_granted?
@@ -706,7 +719,7 @@ class Release < ApplicationRecord
   # a granted one, and before any request — the card then wears no clock.
   def ship_authorization_window
     request = ship_authorization_request
-    return nil unless request && !ship_authorization_granted?
+    return nil unless request && ship_authorization_answers(request).empty?
 
     ends_at = request.metadata.to_h["window_ends_at"]
     return nil if ends_at.blank?
@@ -722,11 +735,17 @@ class Release < ApplicationRecord
   # The ONE grant write, shared by the web Approve button and any scripted grant.
   # Idempotent under the conductor's key, so a second click, or ship's own
   # completion stamp after a grant, returns the existing row rather than a twin.
+  # A timed request's key carries its window end (ShipAuthority.idempotency_key
+  # derives the same string), so a re-run's grant is a fresh row rather than the
+  # previous run's, which would sit before the new request and grant nothing.
   def grant_ship_authorization!(actor:, source: "web", metadata: {})
+    ends_at = ship_authorization_request&.metadata.to_h&.dig("window_ends_at").to_s
+    key = "#{slug}:#{SHIP_AUTHORIZATION_STEP}:completed"
+    key = "#{key}:#{ends_at}" if ends_at.present?
     record_event!(
       step: SHIP_AUTHORIZATION_STEP, status: "completed",
       actor: actor.to_s.strip.presence, source: source,
-      idempotency_key: "#{slug}:#{SHIP_AUTHORIZATION_STEP}:completed",
+      idempotency_key: key,
       metadata: metadata.to_h.merge("granted_via" => source)
     )
   end
@@ -764,8 +783,23 @@ class Release < ApplicationRecord
       "granted" => grant.present?,
       "granted_by" => grant&.actor,
       "granted_at" => grant&.occurred_at&.utc&.iso8601,
-      "granted_via" => grant&.metadata.to_h["granted_via"]
+      "granted_via" => grant&.metadata.to_h["granted_via"],
+      "lapsed" => grant.nil? && ship_authorization_lapse.present?
     }
+  end
+
+  # Completions RECORDED after the latest request (a later id: the request row
+  # always exists before its answer), newest first. Empty with no request.
+  def ship_authorization_answers(request = ship_authorization_request)
+    return [] unless request
+
+    release_events.for_step(SHIP_AUTHORIZATION_STEP).completed
+                  .where("release_events.id > ?", request.id)
+                  .order(occurred_at: :desc, id: :desc).to_a
+  end
+
+  def ship_authorization_lapse?(event)
+    ActiveModel::Type::Boolean.new.cast(event.metadata.to_h["lapsed"]) == true
   end
 
   # Attach (SWEEP) a task onto this (assembling) release: set its `release_slug`

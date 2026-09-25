@@ -336,9 +336,11 @@ prompt later. It skips nothing else: the preflight, frozen-SHA test gate,
 gem-publish ordering, deploy smoke, release notes, and partial-ship recovery all
 still run. **The authority step is the only human gate** — the ship no longer
 blocks on a GitHub approval (see below). A timed ship that refused at the lapse
-is re-run the same way once the blocker is cleared or Mr. McRitchie has
-approved; the re-run posts a fresh window (its own request event, keyed by its
-end), and the grant stays one row however it lands.
+is re-run the same way once the blocker is cleared, or re-run and approved
+while its NEW window is open. The re-run posts a fresh window (its own request
+event, keyed by its end), and a grant counts only for the latest request — an
+Approve clicked before the re-run answers the old request and authorizes
+nothing. The grant stays one row per window however it lands.
 
 **A GEM-ONLY release ships too** (gem-only-deployments). A release whose every
 member is a self-gated gem (no app member — `Release#gem_only?`) reaches you
