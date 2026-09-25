@@ -1,9 +1,8 @@
 # McRitchie Agent Entry
 
-This is the map every session loads. It installs as `/Users/alex/projects/AGENTS.md`
-from `mcritchie-studio/docs/agents/index.md`. Read it once, then drill into the
-page your work needs; each rule below is one line with a link to its detail. The
-long form this map replaced is kept verbatim in
+The map every session loads (source: `mcritchie-studio/docs/agents/index.md`). Read
+it once, then drill into the page your work needs; each rule is one line with a link
+to its detail. The long form it replaced is frozen verbatim in
 `mcritchie-studio/docs/agents/archive/entry-docs-2026-09-24.md`.
 
 ## Who is who
@@ -21,8 +20,7 @@ Mr. McRitchie for the owner; read both names as him.
 | Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
 | Steffon | Infrastructure light; runs `production-deploy`, credentials, desks | `docs/agents/agents/steffon/` |
 | Turf Monster | The Turf Monster app's operator: scores, contests, markets | `docs/agents/agents/turf_monster/` |
-| Rex · Mason | Marketing strategy (CMO) · brand voice and launches | `docs/agents/agents/<soul>/` |
-| Mack | General worker: scraping, data, integrations | `docs/agents/agents/mack/` |
+| Rex · Mason · Mack | Marketing strategy (CMO) · brand voice and launches · general worker | `docs/agents/agents/<soul>/` |
 
 ## SOP Invocation Standard
 
@@ -44,17 +42,10 @@ Each SOP stands alone; a design doc is background, never an execution path.
 ## The pipeline
 
 ```text
-Alex + focus session ──files a task──▶ Pokémon builder ──PR green──▶ reviewer: Carl for code,
-  (holds the epic plan)                desk · build · ship            Xan alone for prose
-                                             ▲                              │
-                                             └────────── blocker ───────────┤ merge
-                                                                            ▼
-                                                    (accepted) ── Avi runs qa-release
-                                                                            ▼
-                                                                  release → QA green
-                                                                            │ Steffon runs production-deploy
-                                                                            ▼ (Alex's 30-minute window)
-                                                                     (main · shipped)
+Alex + focus session ──▶ Pokémon builder ──PR green──▶ reviewer ──merge──▶ (accepted)
+  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code, Xan alone for prose
+(accepted) ──Avi runs qa-release──▶ release, QA green ──Steffon runs production-deploy──▶ (main)
+                                                         within Alex's 30-minute window
 ```
 
 - Task stages: **Build** `designed → building → submitted` (the builder), then
@@ -119,8 +110,7 @@ Detail: `docs/agents/modules/communication-style.md`.
 | `solana-studio` | Ruby Solana primitives | none |
 | `turf-vault` | Anchor smart contract | none |
 
-Desk ports come from managed ranges (hub `3000-3099`, Turf Monster `3100-3199`).
-Detail: `docs/agents/modules/ports-and-processes.md`.
+Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/ports-and-processes.md`.
 
 ## Where to drill in
 
@@ -256,7 +246,6 @@ heartbeat may set attribution and act order; the SOP files do not depend on it.
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 ## LLM Adapters
 
-Claude Code auto-loads `CLAUDE.md`, not `AGENTS.md`, so a thin generated
-`CLAUDE.md` adapter carries the DevOps gate and then `@AGENTS.md`. Do not create
-a root `CODEX.md`; Codex reads `AGENTS.md` natively. Detail:
+Claude Code auto-loads `CLAUDE.md`, a thin adapter: the DevOps gate, then `@AGENTS.md`.
+Codex reads `AGENTS.md` natively; do not create a root `CODEX.md`. Detail:
 `docs/agents/modules/llm-adapters.md`.

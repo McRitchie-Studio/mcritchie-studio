@@ -83,6 +83,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Rex content sprint SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane (`bin/task begin` / `bin/ship`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
+| Fast lane entry rules (where each command runs, author set, ship-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
