@@ -78,8 +78,10 @@ Carl** (Agent tool, `subagent_type: carl`) as the **review OWNER**. Carl:
    `devops.builders` (stamped on every build claim AND on the submit), unioned with
    `built_by` and every `→ building` event actor **that is a build claim**. A soul
    who picked the work up mid-flight names itself on the submit: `bin/task move
-   <task> submitted --actor <soul>`. A bare submit from a session that never
-   claimed the task stamps `builders_unattributed`, so forgetting is LOUD.
+   <task> submitted --actor <soul>`. The set also unions the souls DERIVED from
+   the PR itself (commit author `<soul>@mcritchie.studio`, a soul `Co-Authored-By`
+   trailer, the PR author), so a claim that named no soul still leaves its commits
+   on record.
 
    **A FIX-FORWARD MAKES YOU AN AUTHOR.** A zap puts your commit in the merged
    diff but makes no build claim. `devops.fix_forward` carries that fact:
@@ -87,15 +89,13 @@ Carl** (Agent tool, `subagent_type: carl`) as the **review OWNER**. Carl:
    OUTSIDE a supervised review is recorded by hand with `bin/task fix-forward
    <task> --agent <soul>`.
 
-   **It REFUSES (exit 2) in five states**, because an empty exclusion list is not
+   **It REFUSES (exit 2) in three states**, because an empty exclusion list is not
    the same answer as "nobody to exclude":
 
    | Refusal | What it means |
    |---------|---------------|
    | AN AUTHOR NAMED NOBODY | a `--builder` entry matches no roster soul, including a PARTIAL typo (`--builder steffon,alexx`) |
-   | authors unknown | no *soul* is named: `built_by` blank or off-roster, and no soul on a `→ building` **build claim** |
-   | author set INCOMPLETE | another session claimed **or shipped** the task and named no soul (`devops.builders_unattributed`), never YOUR OWN bounce |
-   | A FIX-FORWARD AUTHOR IS UNNAMED | the PR head moved under a review and the pusher could not be attributed. Clear it with `bin/task fix-forward <task> --agent <soul>`; **`--builder none` is not a remedy here** |
+   | authors unknown | no *soul* is named: `built_by` blank or off-roster, no soul on a `→ building` **build claim**, and none derived from the PR's commits |
    | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
 
    Say which it is: `--builder <soul>[,<soul>]` names the authors, `--builder none`
@@ -234,11 +234,9 @@ bin/task block <task> --kind rework --summary "<4-6 word headline>" --feedback "
 ```
 
 **Any reviewer may RAISE a blocking finding; only the claim's holder may SPEND
-the bounce** — and that is ENFORCED. While a review claim is live, a `--kind
-rework` block by any soul other than the claim's holder is REFUSED with **exit
-11** and writes nothing (`lib/review_verdict_gate.rb`). `--kind dependency` and
-`--kind environment` spend no bounce and are not gated. So a **LIGHT reports** a
-defect up as a scout report (`--outcome request-changes`) and the primary decides.
+the bounce.** `--kind dependency` and `--kind environment` spend no bounce. So a
+**LIGHT reports** a defect up as a scout report (`--outcome request-changes`) and
+the primary decides.
 Either reviewer records a finding **without** spending the bounce:
 
 ```bash
