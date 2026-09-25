@@ -432,6 +432,42 @@ class ReleaseSealCliTest < Minitest::Test
     end
   end
 
+  # The timeout must kill npm's whole PROCESS GROUP. npm ci runs node children; a
+  # kill aimed at the npm pid alone leaves them running in the ship workspace,
+  # holding the lock's tree and the output pipe (Carl, review of PR #1605: every
+  # other seal test passed with `Process.kill("TERM", pid)` in place of `-pid`).
+  # The fake npm spawns a child that spawns a sleeper — the grandchild a
+  # pid-only kill orphans — and records the sleeper's pid.
+  def test_npm_ci_timeout_kills_the_whole_process_group_not_just_npm
+    Dir.mktmpdir do |dir|
+      sleeper_pid = File.join(dir, "sleeper.pid")
+      npm = fake_npm(dir, %(sh -c 'sleep 30 & echo $! > #{sleeper_pid}; wait' &\nwait))
+      call = <<~RUBY
+        _out, ok, timed_out = sh_bounded(#{npm.inspect}, chdir: #{dir.inspect}, timeout: 1)
+        puts("TIMED-OUT " + timed_out.inspect + " OK " + ok.inspect)
+        pid = File.read(#{sleeper_pid.inspect}).to_i
+        alive = true
+        20.times do
+          begin
+            Process.kill(0, pid)
+          rescue Errno::ESRCH
+            alive = false
+            break
+          end
+          sleep 0.1
+        end
+        puts(alive ? "ORPHAN-ALIVE " + pid.to_s : "ORPHAN-DEAD")
+      RUBY
+      out = run_cli(["--yes"], call: call)
+
+      assert_includes out, "TIMED-OUT true OK false"
+      assert_includes out, "ORPHAN-DEAD", "the timeout must signal npm's process GROUP, not only npm's pid:\n#{out}"
+    ensure
+      pid = File.read(sleeper_pid).to_i if sleeper_pid && File.exist?(sleeper_pid)
+      Process.kill("KILL", pid) if pid&.positive? rescue Errno::ESRCH
+    end
+  end
+
   # --- bin/release reseal: re-seal an already-shipped release ------------------
   # [integration] The false-red release (rel-20260925-3b1f5c) was sealed from the
   # primary's pre-ship specs. `bin/release reseal <slug>` reads the release, pins
