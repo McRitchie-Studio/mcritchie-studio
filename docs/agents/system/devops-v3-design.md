@@ -381,6 +381,17 @@ from day 4.
 Collision points: the card partial (epic chip and countdown) and `dor-check`
 (2a and 4a), each serialized inside its lane.
 
+**4a as built.** `Github::TaskDerivation` reads GitHub's API, never a checkout,
+because the board runs on Heroku. `Task#merged_rung` names the highest of `main`,
+`release` and `accepted` that contains the PR's merge commit. It falls back to the
+`merged` stamp when GitHub cannot place the commit, so `bin/task merged` still
+overrides. `Task#pr_url_or_derived` finds the PR headed by the task branch.
+`Task#derived_authors` maps `<soul>@mcritchie.studio` commit emails and
+Co-Authored-By trailers to souls. `ReviewerSelector` and the review-claim backstop
+union those authors with the stamps. `bin/release`'s detection, resolve and
+stranded-commit snippets, and the multi-repo record check, read the derived values.
+Every stamp and guard stays until 4b.
+
 ## 11. Decisions recorded on 2026-09-24
 
 1. **Xan** is the agent's name; Alex is the human.
