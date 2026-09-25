@@ -117,4 +117,19 @@ class DerivedTaskFactsIntegrationTest < ActiveSupport::TestCase
       assert TaskReviewClaim.self_review?(t.slug, "mack"), "the stamp still counts"
     end
   end
+
+  test "[integration] prepare's detection snippet asks GitHub once per task fact, not once per reader" do
+    snippet = release_snippet("sweep_detect_ruby([])")
+    t = Task.create!(title: "derived bounded calls task", stage: "reviewed", merged: nil,
+                     metadata: { "devops" => { "shape" => "backend", "repositories" => [HUB] } })
+    fake = FakeTaskDerivation.new(branches: { [HUB, "feat/#{t.slug}"] => HUB_PR }, rungs: { HUB_PR => "accepted" })
+
+    row = with_derivation(fake) { eval_rows(snippet)["tasks"] }.find { |r| r["slug"] == t.slug }
+    assert_equal "accepted", row["merged"]
+    assert_equal HUB_PR, row["pr_url"]
+
+    mine = fake.calls.select { |c| c.include?("feat/#{t.slug}") || c.include?(HUB_PR) }
+    assert_equal 1, mine.count { |c| c.first == :pr_url_for_branch }, "the branch lookup is asked once"
+    assert_equal 1, mine.count { |c| c.first == :merged_rung }, "the rung is asked once"
+  end
 end
