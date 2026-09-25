@@ -134,6 +134,31 @@ class CharacterReferenceLaneTest < ActionDispatch::IntegrationTest
     assert_empty @vendor.creates
   end
 
+  # THE MONEY GUARD ON THE ONE COMMAND THAT SPENDS. A mistyped invocation must
+  # not become a purchase, so the task refuses to guess a subject. The refusal
+  # was in the code from the first commit but nothing held it there: removing it
+  # left the whole suite green (measured in review, 2026-09-24).
+  test "the minting task refuses to guess a look, and spends nothing when it does" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("appearances:character_reference")
+    task = Rake::Task["appearances:character_reference"]
+    held = ENV.delete("SLUG")
+    ENV.delete("FORCE")
+
+    error = assert_raises(RuntimeError) { Higgsfield::Client.stub(:new, @vendor) { task.tap(&:reenable).invoke } }
+    assert_match "SLUG", error.message
+    assert_empty @vendor.creates, "a task that will not name its subject must not reach the vendor"
+
+    # THE CONTROL: a task broken for any other reason would pass the two
+    # assertions above and leave the guard itself unproven.
+    ENV["SLUG"] = @look.slug
+    Higgsfield::Client.stub(:new, @vendor) { task.tap(&:reenable).invoke }
+
+    assert_equal 1, @vendor.creates.length, "named a look, it mints exactly one identity"
+    assert_equal IDENTITY, @look.reload.higgsfield_reference_id
+  ensure
+    held.nil? ? ENV.delete("SLUG") : ENV["SLUG"] = held
+  end
+
   # The sweep is what keeps the stored status honest across many looks.
   test "the refresh sweep moves every pending identity and leaves the rest alone" do
     Appearances::CreateCharacterReference.new(@look, client: @vendor).call
