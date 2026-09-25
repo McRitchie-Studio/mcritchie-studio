@@ -678,6 +678,13 @@ class Release < ApplicationRecord
     release_events.for_step(step).started.exists?
   end
 
+  # Did Discord take this release's notes? Read off the completed release_notes
+  # event (Release::Conductor records metadata.delivered). An event that predates
+  # the flag reads false: unknown is not delivered, so a repost stays possible.
+  def release_notes_delivered?
+    release_events.for_step("release_notes").completed.chronological.last&.metadata&.dig("delivered") == true
+  end
+
   # --- Production authority: the ship_authorization window ---------------------
   # `bin/release ship --mode timed` posts ONE `ship_authorized started` event whose
   # metadata carries the window end; the operator grants with the Approve button

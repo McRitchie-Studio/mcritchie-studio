@@ -8804,34 +8804,46 @@ def reseal(slug = nil)
   say("✓ #{rel_slug} re-sealed: #{status || 'nothing to seal'}")
 end
 
-# `bin/release notes <release> [--post]` — re-post a shipped release's notes to
-# Discord, e.g. after the ship's own delivery failed. A DRY RUN by default: it
-# prints the notes and the planned message split (each message measured against
-# Discord's limits) and sends nothing — only `--post` delivers. Writes no release
-# event either way; the ship already recorded its release_notes step.
-def release_notes_ruby(slug, post:)
+# `bin/release notes <release> [--post] [--force]` — re-post a shipped release's
+# notes to Discord, e.g. after the ship's own delivery failed. A DRY RUN by default:
+# it prints the notes and the planned message split (each message measured against
+# Discord's limits) and sends nothing — only `--post` delivers. Writes no new
+# release event; a delivery is recorded on the ship's release_notes event.
+#
+# Notes that event says were ALREADY DELIVERED are not posted again without
+# `--force`: the repost is for a delivery that failed, and a second post of a good
+# one duplicates it in the channel.
+def release_notes_ruby(slug, post:, force: false)
   "r = Release.find_by!(slug: #{slug.inspect}); " \
-  "n = Release::Conductor.repost_release_notes(release: r, dry_run: #{!post}); " \
+  "n = Release::Conductor.repost_release_notes(release: r, dry_run: #{!post}, force: #{force ? 'true' : 'false'}); " \
   "puts({slug: r.slug, message: n[:message], messages: n[:messages], notes_delivered: n[:delivered], " \
-  "notes_error: n[:error], notes_messages: n[:messages].size}.to_json)"
+  "notes_error: n[:error], notes_messages: n[:messages].size, " \
+  "notes_already_delivered: n[:already_delivered], notes_refused: n[:refused]}.to_json)"
 end
 
 def notes
   post = Release::Cli.take_flag(ARGV, "--post")
+  force = Release::Cli.take_flag(ARGV, "--force")
   slug = Release::Cli.positional_slugs(ARGV).first
-  abort!("usage: bin/release notes <release> [--post]") if slug.to_s.empty?
+  abort!("usage: bin/release notes <release> [--post] [--force]") if slug.to_s.empty?
 
   sending = post && !DRY
   say("Release notes #{slug}#{PROD ? ' (PROD board)' : ' (local)'} — #{sending ? 'POSTING to Discord' : 'DRY RUN (pass --post to send)'}")
   warn_local!
   step("#{sending ? 'post' : 'preview (read-only)'}: Release::Conductor.repost_release_notes")
-  result = conductor(release_notes_ruby(slug, post: sending), read_only: !sending)
+  result = conductor(release_notes_ruby(slug, post: sending, force: force), read_only: !sending)
   return if result.empty? # global --dry-run with --post: conductor printed the snippet
 
   Array(result["messages"]).each_with_index do |m, i|
     say("  message #{i + 1}: #{m['content_chars']} content chars (limit 2000), #{m['embeds']} embeds (limit 10), " \
         "#{m['embed_chars']} embed chars (limit 6000)")
   end
+  if result["notes_refused"]
+    say("  ⚠ #{slug}'s release notes were already delivered — nothing posted.")
+    say("  post them again anyway with: bin/release notes #{slug} --post --force")
+    exit 1
+  end
+  say("  ⚠ #{slug}'s release notes were already delivered#{force ? ' — posting again (--force)' : ''}.") if result["notes_already_delivered"]
   if sending
     say(Release::Cli.release_notes_line(result, slug))
     exit 1 unless result["notes_delivered"]
