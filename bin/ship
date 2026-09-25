@@ -716,10 +716,30 @@ if MigrationCollision.blocking?(collisions)
 end
 
 # --- 5/8 record pr_url -------------------------------------------------------
+# THE BOARD DERIVES IT NOW (devops-v3 4c-i). A fresh show makes the board look up
+# the PR on the task branch and cache it into a blank `devops.pr_url`
+# (Task#cache_derived_pr_url!), serving it as `pr_url_or_derived`. When that names
+# the PR this run opened there is nothing to write. Ship still writes when the
+# board names a DIFFERENT PR (a stale or foreign url) or could not answer — the
+# read-back at 8/8 pins the exact URL either way.
 presence!(:record)
+
+# The board's answer, or "" when the show fails or predates the field: a failed
+# read here only means ship writes the url itself, as it always did.
+def board_pr_url(slug)
+  out = IO.popen([TASK_BIN, "show", slug, "--json"], err: File::NULL, &:read)
+  return "" unless $?.success?
+
+  data = JSON.parse(out)
+  data["pr_url_or_derived"].to_s.empty? ? data.dig("metadata", "devops", "pr_url").to_s : data["pr_url_or_derived"].to_s
+rescue JSON::ParserError, SystemCallError
+  ""
+end
 
 if devops["pr_url"].to_s == pr_url
   say "5/8 record — pr_url already recorded."
+elsif board_pr_url(slug) == pr_url
+  say "5/8 record — skipped: the board derives pr_url #{pr_url} from the branch."
 else
   say "5/8 record — bin/task update #{slug} --pr-url #{pr_url}"
   die!("recording the PR URL failed (#{TASK_BIN} update)") unless system(TASK_BIN, "update", slug, "--pr-url", pr_url)
@@ -809,7 +829,10 @@ end
 
 final = fetch_task!(slug)
 final_stage = final["stage"].to_s
-final_pr = final.dig("metadata", "devops", "pr_url").to_s
+# The derived value when the board serves one (it is the recorded url when one is
+# recorded), else the raw column — an older board has no `pr_url_or_derived`.
+final_pr = final["pr_url_or_derived"].to_s
+final_pr = final.dig("metadata", "devops", "pr_url").to_s if final_pr.empty?
 unless final_stage == "submitted"
   die!("read-back verify FAILED: the board shows [#{final_stage}], not [submitted]. Do not hand off; " \
        "re-run #{SHIP_CMD} #{slug} (if it recurs the board write is failing server-side — check ErrorLog).")
