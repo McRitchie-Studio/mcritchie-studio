@@ -24,7 +24,7 @@ module Api
       test "show projects the progress fact alongside the live claim" do
         now = Time.current
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         # to_stage IS the checkpoint's name (record_checkpoint_event writes it there).
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 3.minutes,
@@ -45,7 +45,7 @@ module Api
       test "show names a review check-in by its own lane, not as a cert" do
         now = Time.current
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 3.minutes,
                           from_stage: "building", to_stage: "review_primary_complete",
@@ -62,7 +62,7 @@ module Api
       test "show reports a quiet claim without touching the lease" do
         now = Time.current
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         silence = ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - silence,
@@ -80,7 +80,7 @@ module Api
       # Fail safe: a task with no durable artifact reads UNKNOWN, never quiet.
       test "show reports unknown progress for a task that has produced nothing" do
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A") })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A") })
         TaskEvent.where(task_slug: task.slug).delete_all
 
         get api_v1_task_path(task.slug), headers: @headers
@@ -111,7 +111,7 @@ module Api
         # "sess-challenger" would take that branch and stop testing this one.
         holder = "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6"
         challenger = "s3f2a4c5-6d7e-4f80-9b12-c3d4e5f6a7b8"
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: holder, nonce: "inst-A", now: now) })
+        task.update_columns(metadata: { "devops" => ClaimLease.renewed(session: holder, nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         GateRun.where(subject_slug: task.slug).delete_all
         # The holder's last sign of life is older than the idle window.

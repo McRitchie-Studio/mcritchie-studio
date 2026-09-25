@@ -493,7 +493,8 @@ bin/agent-worktree scale status
     `doctor` and the registry snapshot — because populating it in the reclaim sweep alone
     left the other three nominating desks the sweep refuses.
   - **The CLAIM channel** asks the board who holds the task: the **live build-claim
-    lease** (`ClaimLease`, renewed by the builder's status line under a 120s TTL). A
+    lease** (`ClaimLease`). New claims no longer write one — the desk is the build
+    claim — so only an old row can still answer here. A
     confirmed hold names the builder's heartbeat age, so the hold is checkable. The
     board read is genuinely bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it
     kills the child — a hung or black-holed board cannot stall a sweep.
@@ -581,7 +582,7 @@ bin/agent-worktree scale status
     narrower guard, it is a guard that is absent half the time.
   - **A QUIET desk is still a HELD desk — quiet never makes it reclaimable.** The
     board also reports a task's last *durable* progress beside its liveness (see
-    [`devops-task-board.md`](devops-task-board.md#the-build-claim-liveness-and-progress-are-two-facts)),
+    [`devops-task-board.md`](devops-task-board.md#the-build-claim-the-desk-is-the-claim)),
     and a live claim that has landed nothing in hours reads `quiet`. That is
     **informational**: `quiet` is not an input to `reclaim_verdict` at all, and every
     channel it does read can only ADD a hold — none can free a desk another channel
@@ -879,26 +880,17 @@ ruby -I lib -r desk_activity \
 
 What each one is worth:
 
-- **The claim** is authoritative for the *task* and renews on the status line's
-  45s-throttled heartbeat under a 120s TTL, so a live holder is unambiguous. It prints with its
-  **verdict already worked out** — `LIVE · lapses in 47s` or `EXPIRED · lapsed 2m
-  ago … free to claim` — because the line used to print a bare `expires <ts>` and
-  a lapsed lease looked exactly like a live one (measured 2026-09-02: `expires
-  04:12:26Z` shown at 04:14:28Z, read as live twice in a row).
-  `bin/task move … building` on a task another live instance holds **refuses** —
-  `exit 1`, naming the holder, **the holder's ROLE**, the lease freshness, and the
-  last durable progress (`enforce_claim_gate!` in `bin/task`, wired at both the
-  `move` and the `begin`-resume call site; the decision table is
-  `lib/claim_holder.rb`).
-- **The refusal routes on the ROLE, and so should you.** A **builder** is taken
-  over with `--steal`, which is what that flag was written for. A **reviewer** is
-  **asked to release** (`bin/task review-claim release <slug>`, run by *them*) —
-  never stolen: taking a task over mid-review voids the no-self-review guarantee
-  for that review and strands the reviewer's verdict, neither recoverable nor
-  visible afterwards. When the board cannot establish the role, the refusal says
-  so and sends you to `review-claim status` first. `--steal` still overrides
-  everything, and over a live review it prints what it is waiving before it
-  proceeds.
+- **The build claim is the desk** (`bin/lib/desk_claim.rb`): a desk bound to the
+  task on this machine. `bin/task show <slug>` prints each one as `claim: desk
+  <path> · <GRADE> · session …`. `bin/task move … building`, `bin/task begin` and
+  `bin/ship` **refuse** — `exit 1`, naming the desk — only when a different live
+  session's desk is bound to the task **and** has uncommitted changes
+  (`enforce_claim_gate!` in `bin/task`, wired at both the `move` and the
+  `begin`-resume call site). `--steal` claims over it and leaves its files on disk.
+- **A REVIEWER is still asked, never stolen from.** The review claim is a separate
+  lease (`TaskReviewClaim`): a reviewer is **asked to release** (`bin/task
+  review-claim release <slug>`, run by *them*), because taking a task over
+  mid-review voids the no-self-review guarantee for that review.
 - **`bin/task review-claim status <slug>` OBSERVES the lease**; it does not print
   a timestamp for you to difference by hand. It watches whether
   `claim_expires_at` **moves** (a holder is renewing → alive), **never moves**

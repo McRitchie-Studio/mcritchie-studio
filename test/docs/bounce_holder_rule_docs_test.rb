@@ -447,9 +447,11 @@ class BounceHolderRuleDocsTest < ActiveSupport::TestCase
   test "[unit] the run extractor finds real block invocations in both a bare script and a markdown doc" do
     corpus = self.class.corpus
 
-    script_runs = block_runs(corpus.fetch("bin/task"))
+    # bin/pr-review, not bin/task: bin/task's one comment run left with the build-claim
+    # heartbeat (devops-v3: the desk is the build claim).
+    script_runs = block_runs(corpus.fetch("bin/pr-review"))
     assert_operator script_runs.size, :>=, 1,
-      "extracted no `bin/task block` runs from bin/task — the extractor is blind to extensionless scripts, " \
+      "extracted no `bin/task block` runs from bin/pr-review — the extractor is blind to extensionless scripts, " \
       "which is the exact failure this guard exists to prevent"
 
     doc_runs = block_runs(corpus.fetch("docs/agents/modules/pr-review-sop.md"))
@@ -906,8 +908,6 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "comment explaining the feature-marker repoint" },
     { file: "bin/pr-review", match: /with the failing checks named/,
       why: "header comment narrating the gate-zero flow" },
-    { file: "bin/task", match: /lands the task back on building and ends with write_feature_marker/,
-      why: "comment explaining the feature-marker repoint" },
     { file: "docs/agents/agents/carl/sops/pr-review-light.md", match: /on its own initiative/,
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
     { file: "docs/agents/agents/carl/sops/pr-review.md", match: /therefore runs the breaker itself/,

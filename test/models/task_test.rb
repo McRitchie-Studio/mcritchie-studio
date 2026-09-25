@@ -432,10 +432,9 @@ class TaskTest < ActiveSupport::TestCase
     assert_nil task.reload.devops_built_by, "guards the setup: the first claim named no soul"
 
     Current.task_event_actor = "carl"
-    task.update!(metadata: task.metadata.deep_merge("devops" => {
-      "claimed_session" => "sess-reclaim", "claim_nonce" => "n1",
-      "claim_expires_at" => 10.minutes.from_now.iso8601
-    }))
+    Current.task_build_claim = true # the PATCH names `stage: building`
+    Current.task_event_session = "sess-reclaim"
+    task.update!(stage: "building")
 
     assert_equal "carl", task.reload.devops_built_by,
       "a re-claim while already building stamps the builder"
@@ -932,20 +931,16 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "2026-06-23T12:02:00Z", metadata["claim_expires_at"]
   end
 
-  # `building`, explicitly: the build claim is a BUILD-STAGE lease, and
-  # Task#enforce_build_claim_invariant sheds the keys from any other stage (a
-  # claim on a `designed` task is the phantom the heartbeat already refuses to
-  # forge). The stage was incidental to this case before that invariant existed.
-  test "claim_live? and heartbeat age reflect a non-expired lease" do
+  # An OLD ROW (written before the desk became the build claim) still reads: the
+  # lease readers are the one-release tolerance. Seeded with update_columns because
+  # a save now sheds the retired lease keys (Task#stamp_build_claim_session).
+  test "claim_live? and heartbeat age reflect a non-expired lease on an old row" do
     now = Time.utc(2026, 6, 23, 12, 0, 0)
-    task = Task.create!(
-      title: "Claimed build task",
-      stage: "building",
-      metadata: { "devops" => {
-        "claimed_session" => "sess-1", "claim_nonce" => "inst-A",
-        "claim_expires_at" => (now + 90).utc.iso8601
-      } }
-    )
+    task = Task.create!(title: "Claimed build task", stage: "building")
+    task.update_columns(metadata: { "devops" => {
+      "claimed_session" => "sess-1", "claim_nonce" => "inst-A",
+      "claim_expires_at" => (now + 90).utc.iso8601
+    } })
 
     assert task.claim_live?(now: now)
     assert_equal "sess-1", task.claimed_session_id

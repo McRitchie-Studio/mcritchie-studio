@@ -46,7 +46,7 @@ and each answers a question adjacent to the one an agent actually asks.**
 | Surface | Where | Answers | Liveness model |
 |---------|-------|---------|----------------|
 | Cert runlock `cert-run.json` | local, in each desk's **git dir** | is a suite running against *this desk's* test DB | **OS identity** (pid + start time) — exact, no timeout |
-| Build claim (`claimed_session`/`claim_nonce`/`claim_expires_at`) | board | who holds this task | TTL 120s + renewer, fail-open |
+| Build claim (the desk bound to the task, `bin/lib/desk_claim.rb`) | local, `.agent-context.json` | who holds this task | the desk's anchor process; refuses only a foreign live desk with uncommitted changes |
 | Devops shift lease | board | who holds this *role lane* | TTL 120s + anchor renewer |
 | Review claim | board | who is reviewing this task | TTL 3h25m + anchor renewer |
 | Release conductor claim (`assembler`/`deployer`) | board | is a release live | TTL 120s + anchor renewer |

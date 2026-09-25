@@ -137,7 +137,7 @@ writes two independent facts, and only one of them is what review reads:
   resume branch builds no `top_body`, so `--agent` reaches the claim as
   `--actor` and never lands on the column. That is a property of the code
   path, not a policy of sparing top-level columns — the same resume PATCH
-  writes `dev_size` (`bin/task#renewal`, the PATCH body it builds).
+  writes `dev_size` (`bin/task#resume_claim`, the PATCH body it builds).
 
 Measured 2026-09-08 on throwaway tasks — no single write sets both:
 
@@ -243,11 +243,11 @@ the clock at the last proof of life.
   verdict; the wrappers only sequence the steps.
 - `bin/ship` **stops at `submitted`**. It never merges, never deploys, never
   touches `release`/`main`.
-- `bin/ship` has **no `--steal`**. Take a **builder**-held task over with
-  `bin/task begin <task-slug> --steal`, then ship. A **reviewer**-held task is
-  ASKED to release (`bin/task review-claim release <task-slug>`, run by them) and
-  never stolen — a takeover mid-review voids the no-self-review guarantee for that
-  review and strands its verdict. The refusal names which holder you have.
+- `bin/ship` has **no `--steal`**. The desk is the build claim: ship refuses only
+  when another live session's desk is bound to the task with uncommitted changes,
+  and names that desk. Claim over it with `bin/task begin <task-slug> --steal`,
+  then ship. Your own desk never refuses you, so `--steal` is never needed on your
+  own task.
 - **You still write the tests** (step 4). Neither wrapper invents test tiers.
 - `bin/ship` is **not** `bin/release ship`. `bin/release ship` is the **G4
   production deploy** (`release → main`, ship-authority only); `bin/ship` pins

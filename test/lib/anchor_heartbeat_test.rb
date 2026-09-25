@@ -315,18 +315,6 @@ class AnchorHeartbeatTest < Minitest::Test
     assert_match(/not required for this run to be correct/, notice)
   end
 
-  def test_unit_only_the_build_lane_may_name_a_status_line_fallback
-    # A headless agent shell PAINTS NOTHING, which is the whole reason the detached
-    # renewer exists. Naming the status line in a lane that has no other renewer
-    # would be a false reassurance, so the clause is opt-in per lane.
-    bare = AnchorHeartbeat.unanchored_notice(subject: "review", ttl_seconds: 120)
-    with_fallback = AnchorHeartbeat.unanchored_notice(subject: "build claim", ttl_seconds: 120,
-                                                      fallback: "a PAINTING session's status line")
-
-    refute_match(/status line/, bare)
-    assert_match(/Only a PAINTING session's status line can renew it now/, with_fallback)
-  end
-
   # --- The seam must STAY a seam --------------------------------------------
 
   def test_unit_every_renewing_lane_asks_the_seam_and_not_the_bare_process_probe
@@ -336,7 +324,6 @@ class AnchorHeartbeatTest < Minitest::Test
     # inherited the defect. A fifth lane copied from any of them would do it again.
     root = File.expand_path("../..", __dir__)
     lanes = {
-      "bin/task" => "the BUILD claim",
       "bin/lib/review_claim_cli.rb" => "the REVIEW claim",
       "bin/lib/release_claim_cli.rb" => "the RELEASE conductor claim",
       "bin/devops-shift" => "the DEVOPS SHIFT lease"

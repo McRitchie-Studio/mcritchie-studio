@@ -550,14 +550,13 @@ class Task < ApplicationRecord
   # board UI form, a raw API call, the console — lands here, so the guard is on
   # the model rather than in any one caller. See #preserve_cert_evidence.
   before_save :preserve_cert_evidence
-  # The build claim is a BUILD-STAGE lease, re-asserted as an INVARIANT on every
-  # save rather than handled at any one transition. It both RELEASES the claim
-  # once the task leaves `building` and DEFENDS it from a client write that blanks
-  # or bypasses the keys while it is there. See #enforce_build_claim_invariant.
-  before_save :enforce_build_claim_invariant
+  # WHO CLAIMED THE BUILD — devops.claimed_session, a server-owned attribution
+  # record (no lease: the desk is the build claim). Stamped on a claim, defended
+  # otherwise, cleared on leaving `building`. See #stamp_build_claim_session.
+  before_save :stamp_build_claim_session
   # WHO BUILT THIS is a property of the build CLAIM, not of the transition into
-  # `building`. Registered AFTER enforce_build_claim_invariant so it reads the
-  # restored claim (that guard decides what counts as a claim write) — and, like
+  # `building`. Registered AFTER stamp_build_claim_session so it reads the
+  # stamped claimer — and, like
   # its five siblings above, it re-asserts a server-owned devops key on every save
   # so a client cannot clear it by posting it blank. See #enforce_builder_stamp.
   before_save :enforce_builder_stamp
@@ -3198,7 +3197,7 @@ class Task < ApplicationRecord
   def enforce_builder_stamp
     # An explicit devops teardown (the whole hash removed) is left alone — this
     # guard defends the builder key, not the existence of devops. Same posture as
-    # #enforce_build_claim_invariant.
+    # #stamp_build_claim_session.
     return unless metadata.is_a?(Hash) && metadata["devops"].is_a?(Hash)
 
     claim = build_claim_save?
@@ -3262,11 +3261,10 @@ class Task < ApplicationRecord
   # we cannot say who" ⇒ ReviewerSelector reports the builder UNKNOWN and the CLI
   # refuses. It clears when that same session finally identifies itself.
   #
-  # Keyed on the live INSTANCE (claimed_session + claim_nonce, ClaimLease's identity)
-  # rather than on the claim save, because the lease is renewed on a timer with no
-  # actor (the detached build-claim renewer every 30s, bin/statusline's heartbeat every
-  # 45s): treating a renewal as an anonymous handoff would refuse every task in the
-  # fleet, and a guard that cries wolf gets routed around.
+  # Keyed on the claiming SESSION (claimed_session, #stamp_build_claim_session)
+  # rather than on the claim save alone, so a re-claim by the same session is not
+  # read as an anonymous handoff: a guard that cries wolf gets routed around. (The
+  # timer renewals this once had to tolerate are retired with the build lease.)
   #
   # TWO authorship moments, not one. Accumulating on the CLAIM alone still misses the
   # author who never claimed — see the `submit_save?` branch below, which closes that
@@ -3418,8 +3416,10 @@ class Task < ApplicationRecord
   end
 
   # True when THIS save is a build claim: the task lands (or sits) on `building`
-  # and the save either moves it there or (re)writes the claim lease — the two
-  # shapes `bin/task move <slug> building` takes, whether or not the stage changes.
+  # and the save either moves it there or is a PATCH naming `stage: building`
+  # (Current.task_build_claim) — the two shapes `bin/task move <slug> building`
+  # takes, whether or not the stage changes. There is no lease to rewrite any more:
+  # the desk is the build claim (bin/lib/desk_claim.rb).
   # A block! lands on `building` too but is NOT a build claim: the blocker is not
   # the builder (detected by blocked_at being set in this same save).
   #
@@ -3432,7 +3432,7 @@ class Task < ApplicationRecord
     return false if reviewing_party_renewal?
     return true if will_save_change_to_stage?
 
-    claim_lease_rewritten?
+    Current.task_build_claim ? true : false
   end
 
   # The reviewing session's write that CLAIMS NOTHING — the only one this seam may
@@ -3472,14 +3472,14 @@ class Task < ApplicationRecord
   # Nothing used to distinguish the two. A build claim is an assertion of
   # authorship (`bin/task move <slug> building`); a lease renewal is a liveness
   # ping. Both arrive as one shape — a devops PATCH that rewrites ClaimLease's
-  # keys — so #claim_lease_rewritten? read them identically, and any session whose
+  # keys — so the old lease-rewrite test read them identically, and any session whose
   # status line happened to be pointed at a `building` task became a recorded
   # (unnamed) worker on it.
   #
   # That is not hypothetical. `bin/task block <slug> --kind rework` lands the task
   # back on `building` and repoints the BLOCKING session's feature marker at it, so
   # bin/statusline fires that session's build-claim heartbeat seconds later. The
-  # claim keys were stripped at `submitted` (#enforce_build_claim_invariant), so the
+  # claim keys were stripped at `submitted`, so the
   # heartbeat adopted the free lease, the write named no soul, and #builder_roll_call
   # stamped `devops.builders_unattributed` with the REVIEWER's session id. The author
   # set then reads INCOMPLETE and `bin/reviewer-select` refuses the next round —
@@ -3537,8 +3537,7 @@ class Task < ApplicationRecord
   # method makes read 2. Perf-trivial on a unique index; stated because a comment that
   # says "never" is a thing the next caller builds on.
   def live_reviewing_party_claim
-    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
-    session = current["claimed_session"].to_s.strip
+    session = claiming_session.to_s.strip
     return nil if session.empty?
 
     review = TaskReviewClaim.find_by(task_slug: slug)
@@ -3638,14 +3637,18 @@ class Task < ApplicationRecord
     true
   end
 
-  # True when this save writes a claim lease that differs from the stored one — a
-  # re-claim or a renewal. Compared AFTER enforce_build_claim_invariant, so a write
-  # that simply omitted the claim — a raw whole-column `metadata:` assignment, or a
-  # key posted blank — reads as unchanged once that guard restores the keys from the
-  # prior record, and is correctly not a claim.
-  def claim_lease_rewritten?
-    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
-    ClaimLease::CLAIM_KEYS.any? { |key| current[key].to_s != prior_devops[key].to_s }
+  # The session making THIS build claim: the claiming PATCH's event session (bin/task
+  # sends it on every `move building` and `begin` claim), else the event actor when
+  # that is a session id rather than a soul or an operator email (an older CLI's
+  # bare move). nil when the write names no session.
+  def claiming_session
+    session = Current.task_event_session.to_s.strip
+    return session if session.present?
+
+    actor = Current.task_event_actor.to_s.strip
+    return nil if actor.empty? || actor.include?("@") || self.class.soul?(actor)
+
+    actor
   end
 
   # The soul to record as the builder, or nil to leave built_by as-is. Precedence:
@@ -3926,77 +3929,34 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # The build claim exists only while the task is BUILDING, and while it is
-  # building it survives a client PATCH that forgot to mention it. One invariant,
-  # two failures it retires.
+  # THE BUILD CLAIM IS THE DESK (devops-v3 piece 4b-i; bin/lib/desk_claim.rb). The
+  # 120s lease it replaced (claimed_session + claim_nonce + claim_expires_at, renewed
+  # by a detached renewer and the status line) is gone. ONE key survives, as an
+  # attribution record rather than a lease: devops.claimed_session names the session
+  # that made the last build claim, which the author roll call (#builder_roll_call,
+  # #handoff_shipping_party) reads. Nothing expires or renews it.
   #
-  # RELEASE. Every other lease in this codebase has an explicit release that nils
-  # its columns — DevopsShift, TaskReviewClaim, ReleaseConductorClaim,
-  # MigrationLaneClaim all do. The devops build claim was the one lease with NO
-  # release path at all: `bin/task move <slug> submitted` sends no devops, nothing
-  # server-side cleared the keys, and the normalizer silently drops blanks
-  # (`next if normalized_value.blank?`) so a client could not clear them even on
-  # purpose. Sessions therefore stopped heartbeating and walked away, leaving a
-  # stale holder on the row forever. Stating it as an invariant rather than
-  # hanging it off the submitted transition means it also heals the rows already
-  # carrying a dead claim, and it cannot be escaped by a path that moves the stage
-  # some other way.
+  #   - a BUILD CLAIM save stamps it from #claiming_session;
+  #   - any other save on a `building` task keeps the stored value, so a client
+  #     cannot re-point or erase who claimed (only a claim may);
+  #   - leaving `building` clears it, as the lease's release did.
   #
-  # PRESERVE. This USED TO BE the whole story: Api::V1::TasksController#task_params
-  # assigned metadata WHOLESALE, so every PATCH carrying `devops` REPLACED the
-  # subhash and deleted any key the client did not echo. The board's own edit form
-  # permits no claim keys at all (app/controllers/tasks_controller.rb), so opening a
-  # task on the board and saving it silently destroyed a LIVE claim — and a destroyed
-  # claim reads as unclaimed, which lets a second agent take a desk someone is working
-  # at. Both paths now fold through Task.merge_devops_into_metadata since
-  # `api-devops-patch-replaces`, so a merely OMITTED claim key survives on its own.
-  # Two doors still reach this guard: a key posted BLANK (the fold keys on the
-  # posted names and the normalizer drops blanks, so a blank claim key IS a delete),
-  # and a raw whole-column `metadata:` write, which is permitted wholesale and folds
-  # through nothing. That is also why `bin/task show --json` and `bin/task begin`
-  # disagreed about the same lease 20 seconds apart: not two readers of one fact,
-  # but one fact being erased and rewritten underneath them. This is the same
-  # self-healing shape as #restore_mascot_identity and #preserve_cert_evidence,
-  # applied to the keys that decide who owns a desk.
-  #
-  # Note what is NOT here: nothing expires a lease. Expiry stays where it belongs,
-  # on the TTL clock in ClaimLease — restoring an omitted key preserves a lease
-  # that is still lapsing on its own schedule, it does not extend it.
-  def enforce_build_claim_invariant
+  # RETIRED_LEASE_KEYS are dropped on every save — the one-release tolerance for rows
+  # an older CLI wrote. Readers already treat a missing expiry as unclaimed.
+  RETIRED_LEASE_KEYS = %w[claim_nonce claim_expires_at].freeze
+
+  def stamp_build_claim_session
     devops = metadata.is_a?(Hash) ? metadata["devops"] : nil
-    # An explicit devops teardown (the whole hash removed) is left alone — this
-    # guard defends the claim namespace, not the existence of devops.
+    # An explicit devops teardown (the whole hash removed) is left alone.
     return unless devops.is_a?(Hash)
 
-    updated = devops.dup
-    if stage == "building"
-      return if new_record?
-
-      # Fill in ONLY for the holder already on the row. A payload naming a
-      # DIFFERENT session is a re-claim or a steal and stands entirely on its own:
-      # inheriting the previous holder's nonce would staple one instance's
-      # identity to another instance's claim — the rule ClaimLease.renewed states
-      # for itself as "a DIFFERENT session's nonce is never inherited".
-      #
-      # Reachable, not theoretical. SessionIdentity.nonce degrades to "" whenever
-      # the agent process cannot be resolved (the detached case), and
-      # normalize_devops_metadata drops blank values, so a real steal arrives
-      # naming a NEW claimed_session with NO claim_nonce at all — precisely the
-      # shape this guard has to refuse to complete from the old record.
-      #
-      # A payload naming NO session is not talking about the claim (the blank-post
-      # and raw-metadata-write cases this method exists for), and there the stored
-      # claim is restored whole.
-      incoming_session = updated["claimed_session"].to_s
-      return unless incoming_session.empty? || incoming_session == prior_devops["claimed_session"].to_s
-
-      ClaimLease::CLAIM_KEYS.each do |key|
-        next if updated[key].present? || prior_devops[key].blank?
-
-        updated[key] = prior_devops[key]
-      end
+    updated = devops.except(*RETIRED_LEASE_KEYS)
+    claimer = claiming_session if stage == "building" && build_claim_save?
+    kept = stage == "building" ? (claimer || prior_devops["claimed_session"].presence) : nil
+    if kept
+      updated["claimed_session"] = kept
     else
-      ClaimLease::CLAIM_KEYS.each { |key| updated.delete(key) }
+      updated.delete("claimed_session")
     end
     return if updated == devops
 
