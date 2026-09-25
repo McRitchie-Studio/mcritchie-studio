@@ -7,7 +7,7 @@
 # `building` and repoints the BLOCKING session's feature marker at it. bin/statusline
 # reads that marker, sees `building`, and fires that session's build-claim heartbeat
 # — from a session that never built anything. The claim keys were stripped when the
-# task moved to `submitted` (Task#enforce_build_claim_invariant), so the lease read
+# task moved to `submitted` (the retired lease invariant), so the lease read
 # :unclaimed, the heartbeat ADOPTED it, and the resulting PATCH named the reviewer's
 # session. Server-side that is indistinguishable from a handoff: the lease was
 # rewritten, the write named no soul, and #builder_roll_call stamped

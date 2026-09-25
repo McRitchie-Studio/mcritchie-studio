@@ -321,8 +321,8 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     # would let any passing session stamp one.
     #
     # The claim lease is PUT BACK with update_columns on purpose, and without it this
-    # test proves nothing about the guard it names: #enforce_build_claim_invariant
-    # strips every claim key on any non-`building` save, so after the submit the
+    # test proves nothing about the guard it names: #stamp_build_claim_session
+    # strips claimed_session on any non-`building` save, so after the submit the
     # BLANK-claim guard already refuses and `submit_save?` is never consulted.
     # Verified by mutation — dropping `will_save_change_to_stage?` left the original
     # version of this test green. The coupling is exactly why submit_save? asks about

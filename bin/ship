@@ -31,8 +31,12 @@
 #     past the claim/dev-size/baseline stamps the building move records.
 #   * HOLDER OWNERSHIP — the same desk rule the build gate enforces
 #     (bin/lib/desk_claim.rb): a task bound to a DIFFERENT live session's desk that
-#     has uncommitted changes refuses, naming the desk. Nothing else does.
-#     Session-less runs degrade claim-free, exactly as `move`/`begin` do.
+#     has uncommitted changes refuses, naming the desk. Nothing else does: there is
+#     no lease to read, and a reviewer's hold is the separate review claim, which
+#     ship does not take. The takeover line names `bin/task begin <slug> --steal`,
+#     because ship has no --steal of its own and handing off work is never the
+#     moment to seize it. Session-less runs degrade claim-free, exactly as
+#     `move`/`begin` do.
 #
 # Ship sequences the rest, and skips a step whose OUTCOME is already durably
 # recorded — which is exactly what makes a rerun after a partial failure
