@@ -65,8 +65,10 @@ The two exports are NOT interchangeable:
 **`bin/release ship` takes the per-release `deployer` claim for you** before any deploy
 mutation. There is **no `bin/devops-shift acquire avi` step for the ship any more.**
 
-- **Stand down** — `🛑 <release> deployer already held — STAND DOWN` names the holder
-  and **aborts before any deploy**. Announce it and STOP (a dead holder lapses in ~120s).
+- **Stand down** — `release-claim: 🛑 <release> deployer already held — STAND DOWN.`
+  names the holder, then the ship **aborts before any deploy** with `deployer claim for
+  <release> is held by another live release conductor — standing down (see the holder
+  above).` Announce it and STOP (a dead holder lapses in ~120s).
 - **Resume** — re-running your own interrupted ship re-acquires the same claim.
 - **Fail-open** — a claim-transport hiccup never wedges the ship.
 

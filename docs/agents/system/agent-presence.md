@@ -50,7 +50,6 @@ and each answers a question adjacent to the one an agent actually asks.**
 | Devops shift lease | board | who holds this *role lane* | TTL 120s + anchor renewer |
 | Review claim | board | who is reviewing this task | TTL 3h25m + anchor renewer |
 | Release conductor claim (`assembler`/`deployer`) | board | is a release live | TTL 120s + anchor renewer |
-| Migration lane claim | board | who holds the migration lane | TTL 4h, **no renewer** — the TTL is the whole working window |
 | Session markers `.agents/sessions/<id>.*` | local | what the statusline should display — **stops naming the task once the session moves to a desk** | **none** |
 | Desk context `<desk>/.agent-context.json` | local, per-desk | what this desk holds — **but never whose session it is** | none |
 | Worktree registry | local | what desks exist | none — a manual snapshot |

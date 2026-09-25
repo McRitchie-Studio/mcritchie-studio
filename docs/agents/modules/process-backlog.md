@@ -237,7 +237,7 @@ Do not force work together that will not go. Two tasks conflict — and must be
 **serialized**, not paired — when any of these holds:
 
 - Same repo **and** overlapping files (an SOP edit and a rewrite of the same SOP).
-- Both need the migration lane.
+- Both add a migration (the collision check in `bin/dor-check` and `bin/ship` would refuse the second).
 - One's acceptance depends on the other's merge (a stack). Build the parent,
   merge it, then start the child. Never arm autopilot on a stack.
 
