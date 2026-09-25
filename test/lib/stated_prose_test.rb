@@ -1,14 +1,13 @@
 # frozen_string_literal: true
 
-# Tests for test/support/stated_prose.rb — the population both non-docs guards read.
+# Tests for test/support/stated_prose.rb — the population guards over stated prose read.
 #
 #   ruby -Itest test/lib/stated_prose_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 #
-# WHY THE POPULATION GETS ITS OWN TEST. test/docs/guard_population_test.rb grades this
-# against the LIVE tree, which answers "does it reach config/ and app/ today". It
-# cannot answer "would it still find anything if the reader were broken", because a
-# reader that returns nothing and a tree with no defects are the same green.
+# WHY THE POPULATION GETS ITS OWN TEST. A grade against the LIVE tree answers "does it
+# reach config/ and app/ today". It cannot answer "would it still find anything if the
+# reader were broken", because a reader that returns nothing and a tree with no defects are the same green.
 #
 # THAT IS NOT HYPOTHETICAL — it is what happened. The first draft matched comment
 # lines with `/\A\s*#\s?(.*)\z/` against a line that still had its newline. `.` never

@@ -17,16 +17,11 @@
 #       The local cert lane has since retired (DevOps v3 phase 2b); the control is
 #       the fingerprint-bound lane that remains, graded through CertEvidence.
 #
-#   (2) THE RE-CERT DOES NOT HAVE TO BE THE FULL SUITE. bin/dor-check's route ladder
-#       has no `test-only` branch and the FAST route has no `review_role` condition,
-#       so a fast cert plus a settled green CI is accepted in the review lane exactly
-#       as at submit. Three agent docs read stricter than that and said `test-only`
-#       "still owes the full-suite cert"; on 2026-09-21 a builder read one of them
-#       and ran 11,004 tests the gate never wanted. The docs are now corrected to
-#       "owes the cert gate" (i.e. is not exempt, unlike `docs`), and the tests below
-#       pin BOTH halves — the gate's behaviour, and the prose that describes it —
-#       because correcting one and not the other is how the claim in the sibling
-#       file survived its first pass.
+#   (2) THE SUITE EVIDENCE IS THE SETTLED GREEN CI. bin/dor-check reads the PR's CI
+#       verdict in both roles; a pending CI is a WAIT for the builder and a refusal
+#       for review. The prose tests that once held seven surfaces to the retired
+#       full-suite wording were deleted in trim-docs-guard-tests (2026-09-25): the
+#       local full suite is gone, and the gate states its own rule.
 #
 # EVERY ASSERTION READS SOURCE TEXT, never a loaded constant: these are claims ABOUT
 # files, and a guard that imports the thing it is guarding drifts with it.
@@ -188,130 +183,5 @@ class ZapControlLaneDocsTest < Minitest::Test
     assert CiGate.waiting?({ state: :pending }, review_role: false), "a builder-side pending CI is a WAIT"
     refute CiGate.waiting?({ state: :pending }, review_role: true), "review's gate-zero refuses a pending CI"
     refute CiGate.waiting?({ state: :green }, review_role: false)
-  end
-
-  # EVERY SURFACE THAT STATES THE RULE — and this list IS the guard's scope.
-  # Its first version named four agent docs, which is what a doc-shaped correction
-  # could reach. Two ENFORCEMENT surfaces state the same rule and were not on it:
-  # `config/feature_shapes.yml`, the shape contract itself, and
-  # `bin/session-preflight`, which prints this sentence at the moment a builder is
-  # deciding what to run — the costliest place to be wrong. The SCRIPT was covered
-  # (test/commands/session_preflight_test.rb, 36 cases); this SENTENCE was read by
-  # no test until 2026-09-22, which is the gap that let it go stale.
-  FAST_OR_FULL_SURFACES = %w[
-    docs/agents/claude.md
-    docs/agents/index.md
-    docs/agents/modules/fast-lane.md
-    docs/agents/system/devops-cycle-design.md
-    docs/agents/modules/building-sop.md
-    config/feature_shapes.yml
-    bin/session-preflight
-  ].freeze
-
-  # WHY COLLAPSED. Every file here wraps its prose, so a literal-space regex reads
-  # clean over text that is plainly present — the phrase simply straddles a line
-  # break. The previous guard matched `/owes the\s+full-suite cert/i`, which pins
-  # ONE of the two gaps and leaves "owes<NEWLINE>the" through. A repo-wide scan on
-  # collapsed text is what found the `bin/session-preflight` site.
-  def flat(rel) = source(rel).gsub(/\s+/, " ")
-
-  # The prose half. The falsified wording, refuted on every surface that carried
-  # it. This constrains nothing about how the correction is phrased.
-  def test_no_surface_says_test_only_owes_the_full_suite_outright
-    FAST_OR_FULL_SURFACES.each do |rel|
-      body = flat(rel)
-
-      refute_match(/owes\s+the\s+full-?suite\s+cert/i, body,
-                   "#{rel}: still says test-only \"owes the full-suite cert\". Measured on the ladder above, " \
-                   "the gate accepts a fast cert plus a green CI for this shape exactly as for a feature. A " \
-                   "builder who read this on 2026-09-21 ran 11,004 tests the gate never asked for — say " \
-                   "\"owes the cert gate\" (not exempt), or name the local full suite as the CI-independent " \
-                   "option it is")
-
-      # The same claim wearing the shape contract's own words. `full_suite_gate: true`
-      # is NOT EXEMPT; rendering it as "the full-suite evidence is required exactly as
-      # for a feature" reads as "run it locally" to everyone who stops before the
-      # trailing clause, which is how this file briefed the 11,004-test run.
-      refute_match(/full-?suite[^.]{0,80}required\s+exactly\s+as\s+for\s+a\s+feature/i, body,
-                   "#{rel}: states the cert gate as full-suite evidence \"required exactly as for a " \
-                   "feature\". What a feature owes is the GATE, satisfied by a full cert OR a fast cert " \
-                   "alongside a settled green CI — say which, because the lead clause is where readers stop")
-    end
-  end
-
-  # THE OPPOSITE MISREADING, which costs a merge rather than a suite. Strip the
-  # green-CI conjunct and "a fast cert satisfies it" becomes false exactly when it
-  # matters — the review gate-zero is an allow-list, so a pending, red or unreadable
-  # CI refuses and only a FULL cert stands in. A surface that grants the fast route
-  # without naming its condition has traded one wrong brief for another.
-  FAST_ROUTE = /fast[-\s]?(?:cert|check)/i
-  GREEN_CI   = /green[^.]{0,30}\bCI\b|\bCI\b[^.]{0,15}green/i
-  # The sentence must be ABOUT this gate. Without this clause the assertion passed
-  # on `docs/agents/index.md` for the wrong reason entirely — it matched the
-  # SUBMIT-SIDE provisional-credit paragraph ("a fast cert is credited
-  # provisionally... a red CI still blocks"), which is a different rule in a
-  # different section, while that file's real grant says `bin/fast-check` and would
-  # not have matched a /fast cert/ pattern at all. A whole-file regex cannot tell
-  # those apart; asking one SENTENCE to carry route + condition + subject can.
-  CERT_GATE_SUBJECT = /test-?only|full_suite_gate|cert gate|exempt/i
-
-  def test_every_surface_states_the_green_ci_condition
-    FAST_OR_FULL_SURFACES.each do |rel|
-      qualifying = flat(rel).split(/(?<=[.!?])\s+/).select do |sentence|
-        sentence.match?(FAST_ROUTE) && sentence.match?(GREEN_CI) && sentence.match?(CERT_GATE_SUBJECT)
-      end
-
-      refute_empty qualifying,
-                   "#{rel}: names the fast route for this gate without naming its CONDITION in the " \
-                   "same sentence. Since /tasks/dor-reads-settled-ci-verdict the cert gate is satisfied " \
-                   "by a SETTLED GREEN CI for the PR's head and by nothing else (bin/lib/ci_gate.rb#verdict); " \
-                   "bin/fast-check is an optional pre-flight, not evidence the gate reads. Say the green " \
-                   "beside the fast route, and say which condition differs between the lanes: the ROLE — " \
-                   "review's gate-zero refuses a pending CI, the BUILDER reads it as a WAIT (CiGate.waiting?)"
-    end
-  end
-
-  # THE ANTI-PERMISSIVE CLAUSE IS ITS OWN DEFECT, and this exists because the
-  # first correction of the over-strict wording shipped one (review of PR 1522,
-  # 2026-09-22). Refuting "test-only owes the full suite" invites the opposite
-  # overshoot — naming the LOCAL full suite as what to reach for when CI is not
-  # green — and that is false in the cell that costs the most.
-  #
-  # MEASURED at 91e634d3 against a test-only fixture carrying a real
-  # [fast-cert@<tree>], both roles, via DOR_CHECK_SUITE_EVIDENCE + DOR_CHECK_CI_STATUS:
-  #
-  #   evidence        CI         builder              review
-  #   fast cert only  green      met                  met
-  #   fast cert only  PENDING    MET (exit 0)         not met
-  #   fast cert only  none       MET (exit 0)         not met
-  #   fast cert only  red        not met              not met
-  #   FULL cert       RED        NOT MET (exit 1)     —
-  #
-  # So a local full suite is the answer in exactly ONE cell — an UNREADABLE
-  # verdict. On PENDING the builder is already satisfied by the fast cert
-  # (the `fast-provisional` route), so a full run there is the 11,004-test waste this file
-  # exists to prevent; and on RED it does not help at all, because red is fixed
-  # by fixing CI. This asserts the NEGATIVE only — it constrains nothing about how
-  # a surface phrases the provisional credit, it just refuses the one claim that
-  # sends a builder to the suite when the gate has already passed.
-  LOCAL_FULL_SUITE = /local full[-\s]?suite|full[-\s]?suite\s+(?:cert|run)|certif\w*\s+(?:locally|in full)/i
-  PENDING_CELL     = /\bpending\b/i
-
-  def test_no_surface_offers_the_local_full_suite_for_a_pending_ci
-    FAST_OR_FULL_SURFACES.each do |rel|
-      offenders = flat(rel).split(/(?<=[.!?])\s+/).select do |sentence|
-        sentence.match?(LOCAL_FULL_SUITE) && sentence.match?(PENDING_CELL)
-      end
-
-      assert_empty offenders,
-                   "#{rel}: names the LOCAL full suite in the same sentence as a PENDING CI. At submit a " \
-                   "fresh fast cert is ALREADY credited provisionally on a pending CI " \
-                   "(bin/dor-check's `fast-provisional` route), so the gate has passed and the local " \
-                   "run buys nothing — that is the same waste as the over-strict wording this file " \
-                   "refutes, one cell over. The local full suite is for an UNREADABLE verdict; a RED CI " \
-                   "is fixed by fixing CI, not by certifying locally (a FULL cert against a red CI is " \
-                   "NOT MET, exit 1). If you are describing this defect rather than committing it, keep " \
-                   "the two clauses in separate sentences."
-    end
   end
 end

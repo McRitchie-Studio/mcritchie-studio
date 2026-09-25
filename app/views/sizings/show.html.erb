@@ -37,7 +37,7 @@
 
       <div class="flex items-center gap-2 mb-6 pt-4 border-t border-subtle">
         <%= f.check_box :requires_migration, class: "rounded border-strong" %>
-        <%= f.label :requires_migration, "Requires migration (acquires the backend_migration lane)", class: "text-sm text-body" %>
+        <%= f.label :requires_migration, "Requires migration (a flag; it claims no lane)", class: "text-sm text-body" %>
       </div>
 
       <% if logged_in? %>

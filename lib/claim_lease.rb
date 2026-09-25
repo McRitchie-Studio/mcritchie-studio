@@ -6,7 +6,7 @@ require "time"
 # (bin/lib/desk_claim.rb), so bin/task and bin/ship no longer write or read this
 # lease, and a build task's claim keys are absent. Readers treat absent as
 # unclaimed. This module stays for the leases that still use it (review, release
-# conductor, migration lane, devops shift) and for the archive holder guard.
+# conductor, devops shift) and for the archive holder guard.
 #
 # The build-stage claim lease — the math that decided who owned a task while it
 # was being built. A claim is held by a LIVE INSTANCE, not a bare session id:

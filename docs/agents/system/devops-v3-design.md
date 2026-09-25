@@ -250,15 +250,15 @@ window with a clock.
 | Soul slug validation | Refuses `--agent Steffon` | A stamp that matches nothing | Added after four silent drops | derive: normalize, never refuse |
 | Author set + reviewer exclusion | Stamps builders; keeps them off their own review | Self-review | Six blank stamps in one sitting; roster exhaustion when Carl builds | derive: authors from git; the Pokémon builds, specialists review |
 | Acting identity (`gh api user` must 403) | Before a merge | Merging as Alex's personal account | Two such merges on 2026-08-29 | keep, inside the merge primitive |
-| UNNAMED builders | Session-only claims count as unattributed | An incomplete author set | Frequent refusals | delete with derivation |
+| UNNAMED builders | Session-only claims count as unattributed | An incomplete author set | Frequent refusals | **done:** deleted in PR 1601 |
 
 ### Claims and leases
 
 | Guard | What it does | Prevented | Outcome so far | v3 |
 |---|---|---|---|---|
-| Build claim lease | 120 s TTL, detached renewer, `--steal`, holder progress, 1h29m desk idle | Two agents on one desk | Headless agents never renewed; ghost renewals; orphan watcher shells | delete: the desk is the claim |
+| Build claim lease | 120 s TTL, detached renewer, `--steal`, holder progress, 1h29m desk idle | Two agents on one desk | Headless agents never renewed; ghost renewals; orphan watcher shells | **done:** deleted in PR 1596; the desk is the claim |
 | Review claim lease | 3h25m TTL, atomic pop, renew beat | Two sessions reviewing one PR | 1,232 claims; lapses; the pop withheld green tasks | derive: a `reviewing_by` marker for the orphan sweep only |
-| Migration lane | Global exclusive lease | Duplicate migrations | unmeasured | delete: the collision detector covers it |
+| Migration lane | Global exclusive lease | Duplicate migrations | unmeasured | **done:** deleted in PR 1601; the collision detector covers it |
 | Release conductor claim + presence claims | One assembler per release; a local sweep marker | Two sweeps racing; a cert killed by a sweep | A 45-minute suite killed at 11% | keep as one lock on the release |
 | Agent presence | Reads machine load | Load 355, swap 98% | Measured once | keep |
 
@@ -267,10 +267,10 @@ window with a clock.
 | Guard | What it does | Prevented | Outcome so far | v3 |
 |---|---|---|---|---|
 | `fast-check` | Mapped tests, spine, scoped rubocop; stamps a receipt | Shipping an obvious break | 3,314 runs, 10% red, p50 1 min | keep as an optional pre-flight; no receipt |
-| `full-suite-check` + fingerprint evidence | Local full suite; DoR re-grades the tree hash | A stale or partial cert | The top DoR failure: 439 + 337 refusals | delete: the CI tree verdict replaces it |
-| Cert root, tree and orphan guards | Refuse the wrong or dirty tree; reap zombie certs | Certifying someone else's code | False STALE 6 of 6 once; the reaper once killed an innocent process | delete with the evidence system |
+| `full-suite-check` + fingerprint evidence | Local full suite; DoR re-grades the tree hash | A stale or partial cert | The top DoR failure: 439 + 337 refusals | **done:** deleted in PR 1589; the CI tree verdict replaces it |
+| Cert root, tree and orphan guards | Refuse the wrong or dirty tree; reap zombie certs | Certifying someone else's code | False STALE 6 of 6 once; the reaper once killed an innocent process | **done:** deleted with the evidence system in PR 1589 |
 | `control-check` | Replays pre-change tests for test-only diffs | A silently deleted assertion | Builders produced it unprompted | keep as a review lane |
-| Bypass and deferral receipts | the full-suite bypass hatch and the cert-deferred receipt | A cert that could not run | unmeasured | delete |
+| Bypass and deferral receipts | the full-suite bypass hatch and the cert-deferred receipt | A cert that could not run | unmeasured | **done:** deleted in PR 1589 |
 
 ### Definition of Ready
 
@@ -291,7 +291,7 @@ window with a clock.
 | Guard | What it does | Prevented | Outcome so far | v3 |
 |---|---|---|---|---|
 | Two-bounce breaker | Refuses a second send-back; escalates | Five-round ping-pong | 55 escalations; trips on the first send-back | derive: Avi arbitration, then the 20-minute window |
-| Verdict-owner gate (exit 11) | Only the claim holder spends the bounce | A light spending the bounce | One incident | delete: one owner by construction |
+| Verdict-owner gate (exit 11) | Only the claim holder spends the bounce | A light spending the bounce | One incident | **done:** deleted in PR 1601; one owner by construction |
 | Head revalidation, `--match-head-commit` | Merge only the reviewed head | Merging a moved head | works | keep |
 | Stacked-PR refusal | Never retarget a PR based on another open PR | Dragging a parent's work | unmeasured | keep |
 | Autopilot arm | Board merges when CI turns green | A reviewer waiting on CI | 74 transitions | promote to the default merge path |
@@ -402,6 +402,25 @@ stranded-commit snippets, and the multi-repo record check, read the derived valu
 Tasks share one derivation per process for a minute: each GitHub answer is cached,
 and the first failed read stops the rest, so an outage costs one timeout per sweep.
 Every stamp and guard stays until 4b.
+
+**Where it stands, 2026-09-25.** Every piece below is merged to `accepted`; none
+has reached `main`, because the v3 batch still waits on Alex's ship authority.
+
+| Phase | Landed on `accepted` (PR) |
+|---|---|
+| 0 | design 1577 · Xan rename 1579 |
+| 1 | focus-session SOP and souls 1578 · `epic_slug` and the chip 1580 |
+| 2 | `dor-check` reads the CI verdict 1582 · evidence system deleted 1589 · G4 reads the tree verdict 1584 |
+| 3 | operator windows 1586 · ship grant scoped to its request 1591 |
+| 4 | derived `merged`, PR and authors 1592 · hardened reads 1594 · desk is the build claim 1596 · derivation 404s and list totals 1599 · verdict-owner gate, UNNAMED builders and migration lane deleted 1601 |
+| 5 | AGENTS.md map 1593 · capability pages 1598 · long pages cut 1600 · docs guard tests trimmed to the live facts (trim-docs-guard-tests) |
+| 6 | auto-grade at ship, actor and cost 1595 |
+| 7 | epic view and release notes 1597 |
+
+**Waits on a production ship (4c).** The derived readers must run live for one
+release before the stamps they replace can go: remove `merged`, `built_by` and
+`builders`, and `pr_url`, then install the fast-lane tooling at a fixed path
+outside any checkout. 4c starts after the v3 batch reaches `main`.
 
 ## 11. Decisions recorded on 2026-09-24
 

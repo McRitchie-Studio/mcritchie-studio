@@ -523,11 +523,8 @@ apps:
     # direction. That guard is pure node:test, so it runs inside turf-vault's own
     # `guards` job on every push and PR — a real gate, where the hub-side tripwire it
     # replaces could only fire for someone with turf-vault checked out beside this
-    # repo. test/docs/cert_label_vocabulary_test.rb keeps the hub's end honest: the
-    # declaration must stay a repo-owned script rather than a chain, this prose must
-    # name it, and — when a sibling turf-vault checkout is on disk — that script and
-    # that guard must both really be there, so the hub cannot go on believing parity
-    # is enforced somewhere it no longer is.
+    # repo. test/lib/release_registry_test.rb pins the hub's end: turf-vault is
+    # registry-gated and declares this repo-owned script.
     release_check: bin/release-check
     #
     # AND THE LINT LANE IS DECLARED ABSENT. bin/fast-check omits rubocop on this
@@ -559,8 +556,7 @@ apps:
     # NOT A BYPASS. The full-suite bypass hatch — an author's reasoned checks_run
     # line that bin/dor-check once honoured — retired with the local certs on
     # 2026-09-24, and this entry must not describe the declared lane as one: it did
-    # until 2026-09-08, naming the wrong receipt AND the wrong mechanism. Guarded
-    # by test/docs/cert_label_vocabulary_test.rb.
+    # until 2026-09-08, naming the wrong receipt AND the wrong mechanism.
   rolio:
     # DORMANT — parked 2026-07 (satellites.yml carries status: reserved) and its
     # GitHub remote no longer resolves for the agent identity, so a sweep that
