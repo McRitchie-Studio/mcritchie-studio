@@ -910,8 +910,10 @@ test "[unit] the extractor reads the two multi-line shapes this corpus actually 
       why: "header comment narrating the gate-zero flow" },
     { file: "docs/agents/agents/carl/sops/pr-review-light.md", match: /on its own initiative/,
       why: "cautionary account of turf-monster PR 594, the incident that motivated the gate" },
-    { file: "docs/agents/agents/carl/sops/pr-review.md", match: /therefore runs the breaker itself/,
-      why: "prose describing what the command does, not an instruction to run it" },
+    # Retargeted 2026-09-25 (capability-pages-under-three-hundred): the live pr-review.md no
+    # longer carries this prose; its verbatim pre-cut copy lives in the archive.
+    { file: "docs/agents/archive/pr-review-2026-09-25.md", match: /therefore runs the breaker itself/,
+      why: "prose describing what the command does, not an instruction to run it (frozen archive copy)" },
     { file: "docs/agents/modules/devops-task-board.md",
       match: /lands the task back on building, and three readers/,
       why: "prose describing the stage effect on board readers" },

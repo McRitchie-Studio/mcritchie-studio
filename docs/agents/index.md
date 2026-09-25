@@ -43,11 +43,13 @@ Each SOP stands alone; a design doc is background, never an execution path.
 
 ```text
 Alex + focus session ──▶ Pokémon builder ──PR green──▶ reviewer ──merge──▶ (accepted)
-  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code, Xan alone for prose
+  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Xan for prose*
 (accepted) ──Avi runs qa-release──▶ release, QA green ──Steffon runs production-deploy──▶ (main)
                                                          within Alex's 30-minute window
 ```
 
+- \* Xan alone reviews prose only on the focus-session path. The `pr-review` sweep
+  still runs Carl plus a light on every PR.
 - Task stages: **Build** `designed → building → submitted` (the builder), then
   **Deploy** `submitted → reviewed → assembled → shipped`. `blocked` needs
   attention; `archived` is terminal. Code walks `accepted` → `release` → `main`.
@@ -118,14 +120,17 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 |------------------------|------|
 | Every doc, by topic (the full index) | `docs/agents/start-here.md` |
 | The ecosystem | `docs/ECOSYSTEM.md` |
-| Building a task | `docs/agents/modules/building-sop.md`, `docs/agents/modules/fast-lane.md` |
+| **Build**: a task, from claim to `submitted` | `docs/agents/modules/building-sop.md`; command rules in `docs/agents/modules/fast-lane.md` |
 | Holding an epic | `docs/agents/modules/focus-session.md` |
 | The board | `docs/agents/modules/devops-task-board.md` |
-| Reviewing a PR | `docs/agents/modules/pr-review-sop.md` |
-| Release and deploys | `docs/agents/modules/deployment.md`, `docs/agents/modules/gates/` |
-| Desks and worktrees | `docs/agents/modules/worktrees.md` |
+| **Review**: a PR, from claim to merge | `docs/agents/agents/carl/sops/pr-review.md`; the reviewer's own steps in `docs/agents/agents/carl/sops/pr-review-primary.md` |
+| **Release**: `accepted` → QA → production | `docs/agents/agents/avi/sops/qa-release.md`, `docs/agents/agents/steffon/sops/production-deploy.md`, `docs/agents/modules/gates/` |
+| **Desks and infra** | `docs/agents/modules/worktrees.md` |
 | Tests | `docs/agents/modules/testing.md` |
-| Credentials and GitHub | `docs/agents/modules/credentials.md`, `docs/agents/modules/source-control.md` |
+| **Credentials** and GitHub auth | `docs/agents/modules/token-session.md` (a broken session), `docs/agents/modules/source-control.md` (how auth works), `docs/agents/modules/credentials.md` (1Password) |
+| **Communication**: reporting to Alex | `docs/agents/modules/communication-style.md` |
+| **Learning**: grades and insights | `docs/agents/agents/xan/sops/grade-events.md` |
+| History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
 
 ## SOP Invocation Table
 
@@ -184,6 +189,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
+
 ## SOP Registry
 
 The same registry again, for agents that jump to the reference section. A
@@ -244,6 +250,7 @@ heartbeat may set attribution and act order; the SOP files do not depend on it.
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
+
 ## LLM Adapters
 
 Claude Code auto-loads `CLAUDE.md`, a thin adapter: the DevOps gate, then `@AGENTS.md`.
