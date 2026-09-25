@@ -122,6 +122,7 @@ class ReleaseSealCliTest < Minitest::Test
     setup = SEAL_STUB + SEAL_TREE_STUB + <<~'RUBY'
       def record_release_event(slug, step, status, attrs = {})
         $stdout.puts("EVENT #{step}:#{status} #{attrs[:message]}")
+        $stdout.puts("EVENT-METADATA #{attrs[:metadata].inspect}")
       end
       def sh(*a, capture: false, chdir: nil)
         raise Errno::ENOENT, "bin/prod-smoke" if a[0] == "bin/prod-smoke"
@@ -133,13 +134,36 @@ class ReleaseSealCliTest < Minitest::Test
 
     refute_includes out, "RAISED:", "the seal is non-blocking by contract — no uncaught SystemCallError"
     assert_includes out, %("unsealed"), "the seal returns unsealed for the G4 gate"
-    assert_includes out, "EVENT prod_smoke:failed unsealed: could not run the shipped specs",
+    # An unsealed run is COMPLETED with seal: unsealed, never FAILED: the board and the
+    # duration readers count a failed prod_smoke as a failure, and nothing failed.
+    assert_includes out, "EVENT prod_smoke:completed unsealed: could not run the shipped specs",
                     "the release event records WHY it is unsealed"
+    assert_match(/EVENT-METADATA \{"seal"\s*=>\s*"unsealed"\}/, out) # Hash#inspect spacing varies by ruby
+    refute_includes out, "EVENT prod_smoke:failed", "an unsealed run is not a failed one"
     refute(out.lines.any? { |l| l.start_with?("SEAL-WRITE") && l.include?("record_smoke_seal!") },
            "no red seal is written for specs that never ran")
     refute_includes out, "PRODUCTION SMOKE SEAL FAILED"
     refute_includes out, "heroku rollback", "nothing says prod is broken, so no rollback prompt"
     assert_includes out, "bin/release reseal rel-seal", "the operator is handed the re-seal"
+  end
+
+  # [integration] Through the REAL record_release_event: the conductor snippet it
+  # builds records a completed prod_smoke event carrying metadata seal: unsealed.
+  def test_unsealed_event_reaches_the_conductor_as_completed_with_its_seal
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        $stdout.puts("SEAL-WRITE " + ruby.gsub("\n", " "))
+        {}
+      end
+      def with_ship_workspace(_repo) = yield
+      def resolve_seal_tree(_frozen) = Release::SealTree.refuse("the ship workspace is missing")
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{SEAL_ARGS}))")
+
+    event = out.lines.find { |l| l.start_with?("SEAL-WRITE") && l.include?("rel-seal:prod_smoke:unsealed") }
+    assert event, "the unsealed event is written:\n#{out}"
+    assert_includes event, %(step: "prod_smoke", status: "completed")
+    assert_match(/metadata: \{"seal"\s*=>\s*"unsealed"\}/, event)
   end
 
   def test_seal_green_run_records_green_and_prints_no_rollback

@@ -64,9 +64,11 @@ The gate window spans the whole irreversible half of the ship:
   the SHA does not match, `bin/prod-smoke` or playwright is missing, the deps
   do not match the shipped lockfile, `npm ci` times out, or the script cannot
   execute), the seal records **unsealed**: no seal is written,
-  the `prod_smoke` event carries `unsealed: could not run the shipped specs —
-  <reason>`, and no rollback prints. A red seal means the shipped specs RAN
-  and failed.
+  the `prod_smoke` event is `completed` with `metadata.seal: "unsealed"` and
+  the message `unsealed: could not run the shipped specs — <reason>`, and no
+  rollback prints. It is never `failed`, so the board and the duration readers
+  do not count it as a failure. A red seal means the shipped specs RAN and
+  failed.
 - **Re-seal a shipped release** with `bin/release reseal <release-slug>`
   (`--dry-run` to preview). It pins the ship workspace at that release's
   frozen hub SHA, runs its specs against prod, and overwrites the recorded

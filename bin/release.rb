@@ -7526,10 +7526,15 @@ end
 # seal is what the board, the notes, and finalize already read as unsealed. A
 # prior seal (a reseal that could not run) is left as it was. No rollback guidance:
 # nothing says prod is broken.
+#
+# The event is COMPLETED with metadata seal: "unsealed", never FAILED: the board and
+# the duration readers count a failed prod_smoke as a failure, and nothing failed —
+# the seal step finished without judging anything.
 def record_unsealed_seal(rel_slug, reason)
   summary = Release::SealTree.summary(reason)
-  record_release_event(rel_slug, "prod_smoke", "failed",
-                       message: summary, idempotency_key: "#{rel_slug}:prod_smoke:unsealed")
+  record_release_event(rel_slug, "prod_smoke", "completed",
+                       message: summary, metadata: { "seal" => Release::SealTree::UNSEALED },
+                       idempotency_key: "#{rel_slug}:prod_smoke:unsealed")
   say("")
   say("⚪ PRODUCTION SMOKE SEAL NOT RECORDED — #{summary}")
   say("   This is NOT a red seal: the shipped specs never ran, so nothing was judged.")
