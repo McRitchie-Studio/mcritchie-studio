@@ -388,8 +388,8 @@ one half of the answer, and neither carries the other's key:
 | `.agents/sessions/<id>.json` | yes — it is keyed by session id | **stops recording it** once the session moves to a desk |
 | `<desk>/.agent-context.json` | **no — it has no session field at all** | yes, and it is refreshed on `new` / `up` / `status` / `bind-task` |
 
-`bin/task:1160` is `return if Dir.pwd.include?("/.worktrees/")` — and it is
-deliberate, not a bug: the comment says a worktree session overrides the marker
+`bin/task#write_feature_marker` opens with `return if Dir.pwd.include?("/.worktrees/")`
+— and it is deliberate, not a bug: the comment says a worktree session overrides the marker
 with its own `.agent-context.json`. That reasoning is sound for the statusline,
 which only ever asks about *itself*. It fails completely for a peer asking about
 *someone else*, because the desk context has no session id to hand back. Verified

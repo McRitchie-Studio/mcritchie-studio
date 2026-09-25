@@ -948,6 +948,9 @@ module ApplicationHelper
       release.slug, release.state,
       release.stage_reached?("confirming"), release.stage_reached?("shipped"),
       release.mascot&.signature_color, release.qa_url, release.production_url, release.deployed_sha,
+      # The production window: a ship request posting or a grant landing moves the
+      # card (the countdown chip appears / drops), so the live push must flash it.
+      release.ship_authorization_window&.ends_at&.to_i, release.ship_authorization_granted?,
       release.tasks.order(:position).pluck(:slug, :stage)
     ].flatten.join("|")
   end

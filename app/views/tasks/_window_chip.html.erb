@@ -1,0 +1,56 @@
+<%# locals: (window:, now: nil) %>
+<%#
+  THE WINDOW CHIP — the live countdown for an OPERATOR WINDOW (Devops::Windows,
+  devops-v3-design.md section 6). Its own small partial, rendered beside the
+  epic chip on the task card and in the Next Release card's badge cluster; it
+  renders NOTHING for a nil window, so a card with no clock carries no slot.
+
+  One chip, three kinds, told apart by tone and data-window-kind:
+    approval    amber   devops.approval_requested_at + approval_minutes
+    escalation  red     blocked_at + escalation_minutes on an `Escalated:` block
+    production  sky     the release's ship_authorization request + production_minutes
+
+  The clock is server-painted ("mm:ss", or the kind's lapsed label) and then
+  advanced by the install-once ticker in tasks/_release_ticker (data-mode
+  "window"), which re-queries the DOM each tick — so a Turbo-Streamed card swap
+  keeps ticking with no re-wiring, and the page render and the live push paint
+  the same markup. On lapse the ticker writes the lapsed label and flips
+  data-window-state to "lapsed", which dims the chip; in the last minute it sets
+  data-window-urgent, which pulses ONLY under motion-safe — a reduced-motion
+  viewer sees the text change and nothing move.
+
+  Colour pairs: one class per theme for bg/text/border (the epic chip's idiom),
+  so the chip clears contrast on both surfaces and stays distinct from the mono
+  slug beside it.
+%>
+<% window = local_assigns.fetch(:window) %>
+<% if window %>
+  <% now ||= Time.current %>
+  <% tones = {
+       "approval"   => "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700/60",
+       "escalation" => "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60",
+       "production" => "bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-700/60"
+     } %>
+  <% glyphs = { "approval" => "👀", "escalation" => "⚖️", "production" => "🚀" } %>
+  <% names = { "approval" => "UI approval", "escalation" => "Escalation", "production" => "Production authority" } %>
+  <% lapsed = window.lapsed?(now) %>
+  <% urgent = !lapsed && window.remaining_seconds(now) <= 60 %>
+  <% title = "#{names.fetch(window.kind)} window: #{window.minutes} min from #{window.opened_at.utc.iso8601}" \
+             " — #{lapsed ? window.lapsed_label : "#{window.clock(now)} left; on lapse: #{window.lapsed_label}"}" %>
+  <span data-test="task-window-chip"
+        data-window-kind="<%= window.kind %>"
+        data-window-ends-at="<%= window.ends_at.to_i %>"
+        data-window-state="<%= lapsed ? "lapsed" : "open" %>"
+        <% if urgent %>data-window-urgent="true"<% end %>
+        title="<%= title %>"
+        aria-label="<%= title %>"
+        class="inline-flex items-center gap-1 shrink-0 max-w-[11rem] px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none tabular-nums border <%= tones.fetch(window.kind) %> data-[window-state=lapsed]:opacity-70 data-[window-urgent=true]:motion-safe:animate-pulse">
+    <span aria-hidden="true" class="text-[9px] leading-none"><%= glyphs.fetch(window.kind) %></span>
+    <span class="truncate"
+          data-test="task-window-clock"
+          data-release-ticker
+          data-mode="window"
+          data-ends-at="<%= window.ends_at.to_i %>"
+          data-lapsed-label="<%= window.lapsed_label %>"><%= window.label(now) %></span>
+  </span>
+<% end %>

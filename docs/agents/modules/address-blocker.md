@@ -44,7 +44,13 @@ of misalignment before you read a word of prose:
   **Exception — a summary leading `Escalated:` is the OPERATOR's blocker**, the
   review rubric's two-bounce circuit breaker parking a review deadlock for Mr.
   McRitchie's call. Do not resolve, rework, or resubmit it — leave it held and
-  surface it in your handoff.
+  surface it in your handoff. **An escalation carries a window**: 20 minutes
+  from `blocked_at` (`operator_windows.escalation_minutes` in
+  `config/release_builder.yml`), shown as a countdown chip on the card. The
+  session that raised it waits with `bin/task wait-window <slug>` (exit `0`
+  answered, `2` lapsed); on lapse the recommendation the block's feedback
+  carries stands, labeled `auto-decision`, and the task keeps the open question.
+  See `devops-task-board.md`, "Operator windows".
 
 (A **legacy** blocker raised before the two-part split has no stored summary; the
 header derives a 6-word headline from the first line of the details. Read the

@@ -6,6 +6,11 @@
     with data-mode="ago" ticks the OTHER direction of the same math — time since a
     tracker stage STARTED ("4m ago"). data-mode="countdown" uses the same elapsed
     seconds against a stage-average target and flips to negative after overrun.
+    data-mode="window" is the OPERATOR-WINDOW countdown (tasks/_window_chip): it
+    reads data-ends-at (epoch) instead of data-since, paints "mm:ss" until the
+    end, then the chip's data-lapsed-label, and flips the enclosing chip's
+    data-window-state to "lapsed" (dims it) / data-window-urgent inside the last
+    minute (a motion-safe pulse only).
     It re-queries the DOM each tick, so a Turbo-Streamed card swap
     (DeploymentsBroadcaster → LiveBoardFx) is picked up automatically with no
     re-wiring. Installed once and survives Turbo navigations. fmt() MUST match
@@ -34,6 +39,36 @@
       if (m < 60) return m + "m";
       var h = Math.floor(m / 60), mm = m % 60;
       return h + "h " + String(mm).padStart(2, "0") + "m";
+    }
+
+    // The operator-window clock: "mm:ss" to the end, zero-padded both sides. MUST
+    // match Devops::Windows.format_clock, or the server paint and the first tick
+    // disagree by a digit.
+    function windowFmt(secs) {
+      var m = Math.floor(secs / 60), s = secs % 60;
+      return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }
+
+    // One operator-window chip's tick. Owns its own end time (data-ends-at), so it
+    // runs BEFORE the data-since guard below — a window carries no "since".
+    function tickWindow(el, now) {
+      var endsAt = parseInt(el.dataset.endsAt || "0", 10);
+      if (!endsAt) return;
+      var chip = el.closest("[data-window-state]");
+      var left = endsAt - now;
+      if (left <= 0) {
+        el.textContent = el.dataset.lapsedLabel || "lapsed";
+        if (chip) {
+          chip.dataset.windowState = "lapsed";
+          delete chip.dataset.windowUrgent;
+        }
+        return;
+      }
+      el.textContent = windowFmt(left);
+      if (!chip) return;
+      chip.dataset.windowState = "open";
+      if (left <= 60) chip.dataset.windowUrgent = "true";
+      else delete chip.dataset.windowUrgent;
     }
 
     function agoFmt(secs) {
@@ -88,6 +123,7 @@
       var now = Math.floor(Date.now() / 1000);
       document.querySelectorAll("[data-release-ticker]").forEach(function (el) {
         if (stallQuietLocalCheck(el, now)) return;
+        if (el.dataset.mode === "window") return tickWindow(el, now);
         var since = parseInt(el.dataset.since || "0", 10);
         if (!since) return;
         var secs = Math.max(0, now - since);

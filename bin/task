@@ -212,6 +212,13 @@
 #       --actor for a single owner (Avi QA → assembled, Steffon ship → shipped);
 #       repeat --reviewer for the senior pair (the review pair is normally recorded
 #       automatically by bin/reviewer-select, which records by default). )
+#   bin/task wait-window <slug> [--interval SECONDS] [--grace SECONDS] [--json]
+#     ( blocks until the task's OPEN operator window is answered — the `Escalated:`
+#       dependency block cleared, or the approval request out of `waiting` — or it
+#       lapses. Exit 0 answered · 2 lapsed (the window end + --grace passed with it
+#       still open: proceed on the default the design names) · 1 the board could
+#       not be read · 3 usage. Reads the task API's DERIVED `windows` list, so the
+#       board's clock and config/release_builder.yml decide; nothing here does. )
 #   bin/task bounces <slug>
 #     ( THE TWO-BOUNCE CIRCUIT BREAKER's read — run it BEFORE a rework block.
 #       Counts the task's prior send-backs from its durable qa_feedback activity
@@ -2302,6 +2309,14 @@ def print_task_verbose(task)
   puts "  approval_status: #{dv["approval_status"] || "-"}   requested_by: #{dv["approval_requested_by"] || "-"}   " \
        "requested_at: #{dv["approval_requested_at"] || "-"}   dropped_at: #{dv["approval_request_dropped_at"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
+  # THE OPERATOR WINDOWS (devops-v3-design.md section 6), derived server-side and
+  # carried on the payload as `windows` — the same list `wait-window` polls. "-"
+  # when nothing waits on the operator; else each open window's kind, its mm:ss
+  # (or lapsed label) as the board painted it, and the ISO end it counts to.
+  if task.key?("windows")
+    windows = Array(task["windows"]).map { |w| "#{w["kind"]} #{w["label"]} (ends #{w["ends_at"]})" }
+    puts "  windows: #{windows.empty? ? "-" : windows.join(" · ")}"
+  end
   # ALWAYS emitted, "-" when empty — the same rule print_column_fields is built
   # on, for the same reason. This is the surface an operator confirms a
   # --pr-url-for write on, and a line that vanishes when the map is empty makes
@@ -4026,6 +4041,36 @@ when "usage-audit"
     end
   end
   usage_audit!(dir)
+when "wait-window"
+  # THE OPERATOR-WINDOW WAIT (devops-v3-design.md section 6): block until the
+  # task's open window is answered — the `Escalated:` block cleared, or the
+  # approval request answered — or it lapses. Reads the DERIVED `windows` list the
+  # task API carries (Task#operator_windows), so this CLI holds no window math and
+  # reads no YAML: the board's clock decides. Bounded by construction — the loop's
+  # deadline is the latest open end plus the grace — so it can never wait forever
+  # on a task nobody answers. Exit codes and the loop: bin/lib/wait_window.rb.
+  require_relative "lib/wait_window"
+  begin
+    window_opts = WaitWindow.parse_args(ARGV)
+  rescue WaitWindow::UsageError => e
+    warn e.message
+    exit WaitWindow::EXIT_USAGE
+  end
+  # A read that fails is NOT an empty window list: nil here is counted by the
+  # loop, and only the board's own "task not found" ends the wait at once.
+  window_reader = lambda do
+    res = TaskBoard.request(:get, "/api/v1/tasks/#{window_opts.slug}", base_url: BASE_URL, token: token)
+    parsed = TaskBoard.parse_body(res)
+    next :not_found if task_not_found_response?(res, parsed)
+    next nil unless res.code.to_i.between?(200, 299)
+
+    parsed["data"].is_a?(Hash) ? parsed["data"] : nil
+  rescue StandardError
+    nil
+  end
+  exit WaitWindow.run(slug: window_opts.slug, reader: window_reader, sleeper: ->(seconds) { sleep(seconds) },
+                      clock: -> { Time.now }, interval: window_opts.interval, grace: window_opts.grace,
+                      out: $stdout, err: $stderr, json: window_opts.json)
 when "review-claim"
   # The per-TASK REVIEW claim (per-task-pr-review-claim) — the review LANE's per-task
   # lease, so MANY pr-review sessions run in parallel and each SKIPS a task already

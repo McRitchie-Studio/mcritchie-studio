@@ -134,13 +134,19 @@ module Api
       end
 
       def task_json(task)
+        unresolved = task.unresolved_feedback_activity
         task.as_json.merge(
           # Override the raw gates column with the self-healing read — a stale
           # version (or a pre-backfill row) rebuilds live from gate_runs instead
           # of serving `{}`. Index keeps the raw column (no per-row rebuild cost).
           "gates" => Task::GatesProjection.cached_or_built(task),
           "latest_activity" => latest_activity_json(task),
-          "unresolved_feedback" => activity_json(task.unresolved_feedback_activity),
+          "unresolved_feedback" => activity_json(unresolved),
+          # THE OPERATOR WINDOWS, derived (Task#operator_windows): each open
+          # approval/escalation clock with its ISO end, remaining seconds and a
+          # `lapsed` flag, escalation first. `bin/task wait-window` polls this;
+          # an empty list means nothing is waiting on the operator.
+          "windows" => task.operator_windows(unresolved: unresolved).map(&:to_h),
           # FRESH BUILD OR RESUBMISSION — beside `unresolved_feedback`, deliberately,
           # because that field is what a reader reaches for and it answers a DIFFERENT
           # question: it holds the TEXT of a send-back and is cleared only by an

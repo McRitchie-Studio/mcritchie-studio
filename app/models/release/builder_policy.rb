@@ -10,7 +10,7 @@ class Release
 
     Decision = Struct.new(
       :action, :reason, :task_slugs, :repositories, :risk_tags, :operator_gated_ship,
-      :autonomous_ship_kickoff,
+      :autonomous_ship_kickoff, :production_ship_mode,
       keyword_init: true
     ) do
       def auto_qa?
@@ -33,7 +33,8 @@ class Release
           "repositories" => repositories,
           "risk_tags" => risk_tags,
           "operator_gated_ship" => operator_gated_ship?,
-          "autonomous_ship_kickoff" => autonomous_ship_kickoff
+          "autonomous_ship_kickoff" => autonomous_ship_kickoff,
+          "production_ship_mode" => production_ship_mode
         }
       end
     end
@@ -62,7 +63,8 @@ class Release
         repositories: repos,
         risk_tags: risk_tags,
         operator_gated_ship: production_ship_operator_gated?,
-        autonomous_ship_kickoff: production_ship_autonomous_kickoff
+        autonomous_ship_kickoff: production_ship_autonomous_kickoff,
+        production_ship_mode: production_ship_mode
       )
     end
 
@@ -101,6 +103,14 @@ class Release
 
     def production_ship_autonomous_kickoff
       production_ship_config.fetch("autonomous_kickoff", nil).presence
+    end
+
+    # How `bin/release ship` takes production authority when no --mode is passed
+    # — `ask`, `timed` (the default) or `auto`. The parse and its refusal live in
+    # Devops::Windows, which bin/release reads without Rails; this is the same
+    # answer through the policy's own config load, so the two cannot drift.
+    def production_ship_mode
+      Devops::Windows.production_ship_mode(config)
     end
 
     def production_ship_config

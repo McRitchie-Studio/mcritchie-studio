@@ -4269,7 +4269,7 @@ class ReleaseCliTest < Minitest::Test
 
     gate_at   = out.index("Steffon ship gate")
     e2e_at    = out.index(HUB_GATE_CMD)                # the hub's highest-tier run on the frozen SHA
-    ship_at   = out.index("confirming production deploy") # the ship-authority step (unique marker)
+    ship_at   = out.index("taking production authority") # the ship-authority step (unique marker; --mode ask|timed|auto)
     deploy_at = out.index("push heroku bbbbbbb:refs/heads/main")
 
     assert gate_at && e2e_at && ship_at && deploy_at, "gate, e2e, ship authority, and a deploy must all appear"
