@@ -4395,6 +4395,26 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "ship authority: dry (--mode timed)"
   end
 
+  # The two ship_authorized writes as the seam records them: a timed REQUEST is
+  # keyed by its window end (a re-run after a lapse refusal posts a fresh window
+  # instead of the default key returning the stale one), while a GRANT/completion
+  # keeps the default key so the web Approve and ship's own stamp are one row.
+  RECORD_EVENT_STUB = <<~RUBY
+    def record_release_event(slug, step, status, attrs = {})
+      puts("EVENT \#{slug} \#{step}:\#{status} key=\#{attrs[:idempotency_key].inspect} mode=\#{attrs.dig(:metadata, "mode")}")
+    end
+  RUBY
+
+  def test_ship_timed_request_is_keyed_by_its_window_end_and_the_grant_by_the_default
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB + RECORD_EVENT_STUB)
+    assert_match(/EVENT rel-ship ship_authorized:started key="rel-ship:ship_authorized:started:20\d\d-\d\d-\d\dT[^"]+" mode=timed/, out)
+    refute_match(/ship_authorized:completed/, out, "a dry timed run posts the request and completes nothing")
+
+    out = run_cli(["--dry-run", "--yes"], call: "ship", setup: SHIP_STUB + RECORD_EVENT_STUB)
+    assert_includes out, "EVENT rel-ship ship_authorized:started key=nil mode=auto"
+    assert_includes out, "EVENT rel-ship ship_authorized:completed key=nil mode=auto"
+  end
+
   def test_ship_yes_alone_is_auto_and_an_explicit_mode_wins
     out = run_cli(["--dry-run", "--yes"], call: "ship", setup: SHIP_STUB)
     assert_includes out, "taking production authority (--mode auto)"

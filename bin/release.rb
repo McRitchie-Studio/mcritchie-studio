@@ -1379,10 +1379,19 @@ def ship_authority!(rel_slug, by, mode)
     say("  ⚠ ship-authority read failed (#{e.message}); retrying")
     nil
   end
+  # A timed REQUEST is keyed by its window end, so a re-run after a lapse refusal
+  # posts a FRESH window the card can show, instead of the default key silently
+  # returning the old, already-lapsed request. The GRANT keeps the default key —
+  # that is what makes the web Approve and ship's own completion one row.
+  recorder = lambda do |status, metadata|
+    attrs = { actor: by, metadata: metadata }
+    ends_at = metadata["window_ends_at"]
+    attrs[:idempotency_key] = "#{rel_slug}:#{ShipAuthority::STEP}:#{status}:#{ends_at}" if status == "started" && ends_at
+    record_release_event(rel_slug, ShipAuthority::STEP, status, attrs)
+  end
   result = ShipAuthority.take!(
     mode: mode, release_slug: rel_slug, minutes: Devops::Windows.minutes("production"), dry: DRY,
-    recorder: ->(status, metadata) { record_release_event(rel_slug, ShipAuthority::STEP, status, actor: by, metadata: metadata) },
-    reader: reader, confirmer: ->(prompt) { confirm(prompt) }, say: ->(line) { say(line) }
+    recorder: recorder, reader: reader, confirmer: ->(prompt) { confirm(prompt) }, say: ->(line) { say(line) }
   )
   say("  ship authority: #{result} (--mode #{mode})")
 rescue ShipAuthority::Refused => e
