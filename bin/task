@@ -2821,8 +2821,8 @@ when "begin"
   # `move`'s plain-shell degrade.
   mover_session = session_identity.first
   if stage == "building" && !mover_session.nil?
-    enforce_claim_gate!(slug, mover_session, steal: steal,
-                        steal_hint: "#{ClaimHolder::TASK_COMMAND} begin #{slug} --steal")
+    hint = "#{ClaimHolder::TASK_COMMAND} begin #{slug} --steal"
+    enforce_claim_gate!(slug, mover_session, steal: steal, steal_hint: hint)
   end
 
   # Open the session's ORIENT activity now — after the claim gate admits this
