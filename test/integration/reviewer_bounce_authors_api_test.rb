@@ -36,8 +36,7 @@ class ReviewerBounceAuthorsApiTest < ActionDispatch::IntegrationTest
   # `bin/task move <slug> building` — the actor names the builder, the devops slice
   # carries the lease that records WHICH session holds the desk.
   def claim!(task, actor:, session:)
-    patch_task(task.slug, stage: "building", event: { actor: actor },
-                          devops: ClaimLease.renewed(session: session, nonce: "inst-B"))
+    patch_task(task.slug, stage: "building", event: { actor: actor, session: session })
   end
 
   # `bin/task move <slug> submitted` — the mover's session is the default actor.
@@ -53,13 +52,10 @@ class ReviewerBounceAuthorsApiTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  # `bin/task heartbeat <slug>` — a devops PATCH carrying a fresh lease and NO
-  # event at all. That is the whole shape of it: a heartbeat names nobody.
+  # An UNNAMED claim (`bin/task move <slug> building`, no --actor) — the shape the
+  # retired status-line heartbeat used to send: it names nobody.
   def heartbeat!(task, session:)
-    devops = task.reload.metadata["devops"] || {}
-    patch_task(task.slug, devops: devops.merge(
-      ClaimLease.renewed(session: session, nonce: "inst-R", prior: devops)
-    ))
+    patch_task(task.slug, stage: "building", event: { session: session })
   end
 
   def submitted_task(title)

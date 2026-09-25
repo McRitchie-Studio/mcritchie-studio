@@ -2,16 +2,21 @@
 
 require "time"
 
-# The build-stage claim lease — the math that decides who owns a task while it's
-# being built. A claim is held by a LIVE INSTANCE, not a bare session id:
+# RETIRED FOR THE BUILD CLAIM (devops-v3 piece 4b-i): the desk is the build claim
+# (bin/lib/desk_claim.rb), so bin/task and bin/ship no longer write or read this
+# lease, and a build task's claim keys are absent. Readers treat absent as
+# unclaimed. This module stays for the leases that still use it (review, release
+# conductor, migration lane, devops shift) and for the archive holder guard.
+#
+# The build-stage claim lease — the math that decided who owned a task while it
+# was being built. A claim is held by a LIVE INSTANCE, not a bare session id:
 #
 #   claimed_session  — the agent session that holds the claim (CLAUDE_CODE_SESSION_ID)
 #   claim_nonce      — a per-PROCESS-instance token (see bin/task#claim_nonce). Two
 #                      terminals running `claude --resume <same id>` share the
 #                      session id but are different OS processes → different nonce.
-#   claim_expires_at — an ISO8601 TTL lease, renewed on a timer by the detached
-#                      renewer the claim starts (bin/lib/build_claim_renewer.rb) and
-#                      redundantly by bin/statusline's heartbeat — in both cases ONLY
+#   claim_expires_at — an ISO8601 TTL lease, renewed on a timer (the build lane's
+#                      detached renewer and status-line heartbeat are retired) ONLY
 #                      while the holder can be shown to be working (see
 #                      `abandoned?` below). No renewal for > TTL ⇒ the lease lapses
 #                      ⇒ the task is reclaimable. The renewal used to be
@@ -45,7 +50,7 @@ module ClaimLease
   # (gate-submit-on-green-ci waits for CI). Measured that night: one task lapsed ~2
   # minutes after `begin`, was adopted by a second session, and its builder had to
   # `--steal` his own task back; another was found lapsed 8.6 HOURS while its PR sat
-  # open and green. The fix was a renewer (bin/lib/build_claim_renewer.rb), NOT a
+  # open and green. The fix was a renewer (since retired with the build lease), NOT a
   # bigger number — raising the TTL buys the live holder coverage only by stranding a
   # DEAD holder's task for the same span, and this constant is what makes a crash cost
   # two minutes.
@@ -169,14 +174,13 @@ module ClaimLease
   #                    corruption; destroying a desk heals nothing.
   #   :same_instance — held by THIS live instance (session AND nonce match) → re-move is fine
   #   :held_by_other — held by a DIFFERENT, still-live instance → EVERY consumer
-  #                    REFUSES on it; not one proceeds. bin/task's build gate and
-  #                    bin/ship's ownership guard exit nonzero without writing,
-  #                    bin/task's heartbeat declines to renew, and
-  #                    MigrationLaneClaim / DevopsShift / TaskReviewClaim /
-  #                    ReleaseConductorClaim return a false Outcome. The refusal
-  #                    is pinned by test/commands/task_claim_gate_test.rb, which
-  #                    also guards this line — it offered a second reading for one
-  #                    release, and two files were written to that reading.
+  #                    REFUSES on it; not one proceeds. MigrationLaneClaim /
+  #                    DevopsShift / TaskReviewClaim / ReleaseConductorClaim
+  #                    return a false Outcome. (The build gate no longer reads
+  #                    this lease: the desk is the build claim.) This line is
+  #                    guarded by test/commands/task_claim_gate_test.rb — it
+  #                    offered a second reading for one release, and two files
+  #                    were written to that reading.
   #
   # Like :expired, :corrupt is a lease-level disposition and outranks identity:
   # even the holder reads its own garbled lease as :corrupt (its next claim/
@@ -386,8 +390,8 @@ module ClaimLease
   # been open for days. A heartbeat proves a TERMINAL IS OPEN. Nothing more.
   #
   # THIS GATE IS NOW MORE LOAD-BEARING, NOT LESS. Since 2026-09-09 the build claim
-  # is also renewed by a DETACHED renewer anchored to that same long-lived `claude`
-  # process (bin/lib/build_claim_renewer.rb), which renews whether or not anyone
+  # was also renewed by a DETACHED renewer (retired with the build lease in
+  # devops-v3) anchored to that same long-lived `claude` process, which renewed whether or not anyone
   # is working for as long as the process lives. It runs THIS predicate on every
   # beat, and this predicate is the only thing that stops an open-for-days session
   # from holding a desk it walked away from. Loosen it and the renewer becomes the

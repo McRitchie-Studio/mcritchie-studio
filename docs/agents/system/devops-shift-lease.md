@@ -189,12 +189,11 @@ deliberately NOT re-derived from it: `ShiftRenewer::INTERVAL_SECONDS` stays 30s,
 a 51-minute beat would blind `review-claim status`, whose whole instrument is watching
 the expiry move.
 
-The build claim and the two role leases keep `DEFAULT_TTL_SECONDS` (120s), and since
-2026-09-09 every one of them is renewed by a **detached renewer** on the same 30s beat
-— the build claim's is `bin/lib/build_claim_renewer.rb`, started by the claim itself.
-So 120s is now the **dead-holder bound**, not the live holder's coverage: a headless
-build holds its task for a whole ~12-minute ship, and a crash still frees it in two
-minutes. **`bin/statusline` has never renewed a review claim**; the comment that once
+The two role leases keep `DEFAULT_TTL_SECONDS` (120s), and since 2026-09-09 each is
+renewed by a **detached renewer** on a 30s beat. (The build claim no longer has a
+lease: the desk is the build claim, `bin/lib/desk_claim.rb`.)
+So 120s is now the **dead-holder bound**, not the live holder's coverage: a crash
+frees a lease in two minutes. **`bin/statusline` has never renewed a review claim**; the comment that once
 justified sharing the number described a "~5s render cadence" that renews nothing on
 any lane, and its last copies were swept alongside the build renewer.
 

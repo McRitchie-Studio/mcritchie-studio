@@ -459,64 +459,6 @@ class SessionMarkersTest < Minitest::Test
   end
 
 
-  # --- THE ONE MARKER WITHOUT A DOT ------------------------------------------
-  #
-  # bin/task#build_claim_renewer_marker returns "build-claim-renewer-<slug>", no
-  # leading dot, while every sibling in this store carries one. This file's header
-  # documented it WITH a dot until 2026-09-22; measured on the live store that day,
-  # 244 files matched `<id>build-claim-renewer-*` and ZERO matched the dotted form.
-  #
-  # The name is LOAD-BEARING, not sloppy: last_signal_at selects on the stem
-  # "<id>.", so the dotless family is outside the liveness population — and it must
-  # stay outside, because the marker is stamped by the CLAIMING process at claim
-  # time, so counting it would let a build claim vouch for its own holder.
-  #
-  # These pin the mechanism rather than the prose, so a later "consistency" rename
-  # reddens here instead of silently enlarging what counts as a sign of life.
-
-  def test_unit_the_build_claim_renewer_marker_carries_no_leading_dot
-    prefix = build_claim_renewer_prefix
-
-    refute prefix.start_with?("."),
-           "adding a dot here is a LIVENESS change (see last_signal_at), not a naming tidy"
-    assert_equal "build-claim-renewer-", prefix
-  end
-
-  def test_unit_the_dotless_renewer_marker_is_invisible_to_last_signal_at
-    Dir.mktmpdir("marker-dot") do |root|
-      session = "abc-123"
-      write_raw_marker(root, "#{session}#{build_claim_renewer_prefix}a-task")
-
-      assert_nil SessionMarkers.last_signal_at(session, root),
-                 "a claim-time marker must not read as a sign of life"
-    end
-  end
-
-  # THE CONTROL for the case above, and the reason it is not vacuous: the SAME
-  # marker under a dot IS seen. Without this, "returns nil" could just as easily
-  # mean the fixture never landed.
-  def test_unit_the_same_marker_under_a_dot_would_count_as_liveness
-    Dir.mktmpdir("marker-dot") do |root|
-      session = "abc-123"
-      write_raw_marker(root, "#{session}.#{build_claim_renewer_prefix}a-task")
-
-      refute_nil SessionMarkers.last_signal_at(session, root),
-                 "the dotted form IS in the liveness population — which is why the dot is refused"
-    end
-  end
-
-  # The header above is the only place the name is written down for a reader. A
-  # doc that disagrees with the builder is how the wrong one got believed for
-  # months, so the two are compared rather than trusted.
-  def test_unit_the_documented_marker_name_matches_the_one_bin_task_builds
-    documented = File.read(File.expand_path("../../bin/lib/session_markers.rb", __dir__))[
-      %r{^#\s+<projects>/\.agents/sessions/<id>(\S*build-claim-renewer-)<slug>}, 1
-    ]
-
-    refute_nil documented, "this store's header must still document the renewer marker"
-    assert_equal build_claim_renewer_prefix, documented
-  end
-
   private
 
   # `abort` raises SystemExit — NOT a StandardError — which is precisely why the
@@ -534,25 +476,6 @@ class SessionMarkersTest < Minitest::Test
     $stderr.string
   ensure
     $stderr = original
-  end
-
-  # bin/task's builder, read from source rather than re-spelled here — a copy of
-  # the name in the test would agree with itself while the real one drifted. Only
-  # the LITERAL head is needed (the tail is the interpolated slug), and taking it
-  # up to `#{` keeps this indifferent to how the slug is sanitised.
-  def build_claim_renewer_prefix
-    src = File.read(File.expand_path("../../bin/task", __dir__))
-    body = src[/def build_claim_renewer_marker\(slug\)\n(.*?)\n^end/m, 1]
-    refute_nil body, "bin/task must still define build_claim_renewer_marker"
-    prefix = body[/"([^"\#]*)\#\{/, 1]
-    refute_nil prefix, "the marker name must still be a literal head plus the slug"
-    prefix
-  end
-
-  def write_raw_marker(projects_dir, name)
-    dir = File.join(projects_dir, ".agents", "sessions")
-    FileUtils.mkdir_p(dir)
-    File.write(File.join(dir, name), "{}")
   end
 
   def write_session_marker(projects_dir, session_id, attrs)

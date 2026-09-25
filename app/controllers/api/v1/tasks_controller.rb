@@ -271,7 +271,12 @@ module Api
         # before_action — so treat anything that isn't Parameters as "no payload".
         event = nil unless event.is_a?(ActionController::Parameters)
         Current.task_event_source = sanitized_task_event_source(event)
+        # A PATCH naming `stage: building` is a BUILD CLAIM even when the task is
+        # already building (a re-claim or a handoff) — Task#build_claim_save?.
+        Current.task_build_claim = params[:stage].to_s == "building"
         return if event.blank?
+
+        Current.task_event_session = event[:session].presence
 
         Current.task_event_actor      = event[:actor].presence
         Current.task_event_model      = event[:model].presence

@@ -44,8 +44,7 @@ class FixForwardAuthorApiTest < ActionDispatch::IntegrationTest
                         metadata: { "devops" => { "shape" => "backend",
                                                   "repositories" => ["mcritchie-studio"],
                                                   "pr_url" => "https://github.com/o/r/pull/1321" } })
-    patch_task(task.slug, stage: "building", event: { actor: builder },
-                          devops: ClaimLease.renewed(session: BUILDER_SESSION, nonce: "inst-B"))
+    patch_task(task.slug, stage: "building", event: { actor: builder, session: BUILDER_SESSION })
     patch_task(task.slug, stage: "submitted", event: { actor: BUILDER_SESSION })
     task.reload
   end
