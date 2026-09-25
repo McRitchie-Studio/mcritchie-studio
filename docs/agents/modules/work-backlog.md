@@ -106,7 +106,7 @@ read. **Never let more than two be certifying at once** — three certifying age
 has driven this box to load 355 with a 154s lane timing out at 903s.
 
 **Do not pair tasks that fight.** Serialize instead when two of yours share a repo
-and overlapping files, both need the `backend_migration` lane (it is global), or
+and overlapping files, both add migrations (they can collide), or
 one's acceptance waits on the other's merge. Two clean tasks beat three that
 collide.
 

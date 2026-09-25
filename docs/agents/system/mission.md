@@ -25,7 +25,7 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
 - **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), controls release candidates. In the Deploy flow he owns the **assembly + QA step** — the self-healing **`qa-release` sweep** (`bin/release prepare`): promote **ONE `accepted → release` batch PR per repo** onto the release candidate, run the pre-QA gate, deploy QA, and flip members `assembled` only on **QA-green** — then hand the QA-green candidate to Steffon. He does not review PRs (Carl owns review) and does not ship production (Steffon owns the ship).
 
 ### Dev specialists
-- **Carl** — Lead Architect / Backend. Controllers, models, migrations, jobs, studio-engine internals. Captain of the `backend_migration` exclusive lane. **Owner of PR review** — the standing primary on every PR: the review session spins one Carl per PR who runs the deep review, summons a domain light at his discretion, and merges approved work into `accepted` (review-only). There is no Avi supervisor.
+- **Carl** — Lead Architect / Backend. Controllers, models, migrations, jobs, studio-engine internals. Advises on migrations and batching them. **Owner of PR review** — the standing primary on every PR: the review session spins one Carl per PR who runs the deep review, summons a domain light at his discretion, and merges approved work into `accepted` (review-only). There is no Avi supervisor.
 - **Shannon** — UI. ERB views, Tailwind, Alpine.js, theme system, studio-engine UI primitives. Senior **reviewer** for UI PRs.
 - **Jasper** — Blockchain. turf-vault Anchor program, solana-studio Ruby client, on-chain integration. Senior **reviewer** for Web3 / on-chain PRs.
 

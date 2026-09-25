@@ -12,7 +12,7 @@ require "time"
 # was being built. A claim is held by a LIVE INSTANCE, not a bare session id:
 #
 #   claimed_session  — the agent session that holds the claim (CLAUDE_CODE_SESSION_ID)
-#   claim_nonce      — a per-PROCESS-instance token (see bin/task#claim_nonce). Two
+#   claim_nonce      — a per-PROCESS-instance token (see bin/lib/session_identity.rb). Two
 #                      terminals running `claude --resume <same id>` share the
 #                      session id but are different OS processes → different nonce.
 #   claim_expires_at — an ISO8601 TTL lease, renewed on a timer (the build lane's

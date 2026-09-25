@@ -118,13 +118,13 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
   # acquire in test_the_detached_renewers_own_argv_survives_the_guard_it_reenters,
   # because a hand copy proves the transcription, not the code.
   REAL_ARGV = [
-    { source: "docs/agents/agents/xan/sops/clean-up.md:274 — clean-up takes the avi shift",
+    { source: "docs/agents/agents/xan/sops/clean-up.md:436 — clean-up takes the avi shift",
       argv: %w[acquire avi],
       command: "acquire", lane: "avi", flags: {} },
-    { source: "docs/agents/agents/xan/sops/clean-up.md:353 — clean-up drops it when the wave ends",
+    { source: "docs/agents/agents/xan/sops/clean-up.md:515 — clean-up drops it when the wave ends",
       argv: %w[release avi],
       command: "release", lane: "avi", flags: {} },
-    { source: "docs/agents/agents/xan/sops/clean-up.md:319 + system/devops-shift-lease.md:87 — the bare read",
+    { source: "docs/agents/agents/xan/sops/clean-up.md:481 + system/devops-shift-lease.md:87 — the bare read",
       argv: %w[status],
       command: "status", lane: nil, flags: {} },
     { source: "bin/statusline#heartbeat_shift — the render-time heartbeat (the second renewer)",

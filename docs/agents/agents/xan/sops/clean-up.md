@@ -282,10 +282,8 @@ map — and refuses, naming each PR and its state.
 | **any still OPEN** | **REFUSES**, names every PR and its state |
 | a state that could not be read | proceeds, with a **warning** naming the PR |
 
-**`shipped` IS NOT EXEMPT HERE**, and that is the one row that differs from the
-holder gate's table above. That gate reads `shipped`/`archived` as `concluded`
-because merged code leaves nothing uncommitted to destroy — true, and about a
-different question. It says nothing about whether **every** PR the task named
+**`shipped` IS NOT EXEMPT HERE.** Merged code may leave nothing uncommitted to
+destroy, but that says nothing about whether **every** PR the task named
 actually landed: the `merged` stamp is per-**TASK** while PRs are per-**REPO**, so a
 multi-repo task reaches `shipped` on its primary while a sibling repo's PR is still
 open. That is the population this gate most exists for — `move-web3-modals-to-solana`

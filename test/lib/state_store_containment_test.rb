@@ -192,7 +192,7 @@ class StateStoreContainmentTest < Minitest::Test
     },
     "bin/task" => {
       "feature_marker_path" => "BUILDER — write_feature_marker launders it at the write seam",
-      "usage_audit!" => "READ — TaskUsageAudit.report only reports; it never purges (bin/task:1250)",
+      "usage_audit!" => "READ — TaskUsageAudit.report only reports; it never purges (bin/task#usage_audit!)",
       "session_marker_persona" => "READ — reads the marker to pick the session's mascot"
     },
     "bin/release.rb" => {
