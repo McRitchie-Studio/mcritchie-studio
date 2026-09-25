@@ -173,12 +173,34 @@ module FastLane
   # one seam that speaks BEFORE rooting — bin/ship's claim refusal — is safe for the
   # same reason from the other side: ship RE-ROOTS to the task's desk rather than
   # refusing, and says so.
+  #
+  # A dir inside the FIXED-PATH TOOLING install is named by its stable link instead
+  # (see stable_bin_dir): a pasted remedy must not pin one SHA the next ship prunes.
   def resolve_bin(script, *bin_dirs)
     dirs = bin_dirs.flatten.compact.map(&:to_s).reject { |dir| dir.strip.empty? }
     return script.to_s if dirs.empty?
 
+    dirs = dirs.map { |dir| stable_bin_dir(dir) }
+
     candidates = dirs.map { |dir| File.expand_path(script.to_s, dir) }
     candidates.find { |path| File.executable?(path) } || candidates.last
+  end
+
+  # bin/install-agent-docs installs the tooling at <state>/tooling/<sha>/ (stamped
+  # `.complete`) and points the symlink <state>/bin at <sha>/bin. A script running from
+  # there sees its own __dir__ as the SHA-pinned path; when the link currently resolves
+  # to that same directory, name the link. Any other dir, or a link that has moved on,
+  # is returned unchanged. It only READS (a realpath comparison) to word a hint.
+  def stable_bin_dir(dir)
+    tree = File.dirname(dir)
+    tooling = File.dirname(tree)
+    return dir unless File.basename(dir) == "bin" && File.basename(tooling) == "tooling"
+    return dir unless File.file?(File.join(tree, ".complete"))
+
+    link = File.join(File.dirname(tooling), "bin")
+    File.symlink?(link) && File.realpath(link) == File.realpath(dir) ? link : dir
+  rescue SystemCallError
+    dir
   end
 
   # The remedy line itself: an absolute, resolvable script followed by the operands

@@ -271,6 +271,9 @@ install_fast_lane_tooling() {
     rm -rf "$dest"
     mv "$stage" "$dest"
   fi
+  # Prune ranks by mtime, so a REinstall of a SHA already on disk (a rollback) must
+  # freshen it — otherwise the tree the link is about to name could rank oldest.
+  touch "$dest"
 
   # A pre-existing REAL directory at .agents/bin (a hand-made one predates this) is
   # moved aside, never deleted: its contents are not ours to judge.
@@ -292,10 +295,14 @@ install_fast_lane_tooling() {
 # Keep the current SHA plus the newest (TOOLING_KEEP - 1) others; drop the rest, and
 # any staging dir a killed install left more than an hour ago.
 prune_fast_lane_tooling() {
-  local current="$1" kept=0 dir
+  local current="$1" kept=0 dir linked
+  # Whatever the link names right now is never pruned, even if a concurrent install
+  # swapped it to a SHA other than ours.
+  linked="$(readlink "$TOOLING_LINK" 2>/dev/null | sed -E 's:^tooling/([^/]+)/bin$:\1:')"
   while IFS= read -r dir; do
     [ -n "$dir" ] || continue
     [ "$(basename "$dir")" = "$current" ] && continue
+    [ -n "$linked" ] && [ "$(basename "$dir")" = "$linked" ] && continue
     kept=$((kept + 1))
     [ "$kept" -lt "$TOOLING_KEEP" ] && continue
     rm -rf "$dir"

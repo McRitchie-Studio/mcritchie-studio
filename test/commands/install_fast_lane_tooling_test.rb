@@ -146,6 +146,20 @@ class InstallFastLaneToolingTest < Minitest::Test
     refute Dir.exist?(olds.last)
   end
 
+  # A rollback reinstalls a SHA already on disk. It must be freshened, or the tree the
+  # link now names could rank oldest and be pruned out from under it.
+  def test_integration_a_reinstalled_old_sha_is_freshened_before_pruning
+    install!
+    tree = File.join(tooling_root, @sha)
+    File.utime(Time.now - 86_400, Time.now - 86_400, tree)
+    (1..3).each { |i| FileUtils.mkdir_p(File.join(tooling_root, i.to_s * 40)) }
+
+    install!
+
+    assert Dir.exist?(tree), "the reinstalled SHA survives its own prune"
+    assert_operator File.mtime(tree), :>, Time.now - 60
+  end
+
   def test_unit_check_reports_the_install_without_calling_it_drift
     out, = run_installer("check")
     assert_includes out, "NOTE: #{link} is not installed yet"
