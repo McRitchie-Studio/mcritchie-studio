@@ -120,14 +120,17 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 |------------------------|------|
 | Every doc, by topic (the full index) | `docs/agents/start-here.md` |
 | The ecosystem | `docs/ECOSYSTEM.md` |
-| Building a task | `docs/agents/modules/building-sop.md`, `docs/agents/modules/fast-lane.md` |
+| **Build**: a task, from claim to `submitted` | `docs/agents/modules/building-sop.md`; command rules in `docs/agents/modules/fast-lane.md` |
 | Holding an epic | `docs/agents/modules/focus-session.md` |
 | The board | `docs/agents/modules/devops-task-board.md` |
-| Reviewing a PR | `docs/agents/modules/pr-review-sop.md` |
-| Release and deploys | `docs/agents/modules/deployment.md`, `docs/agents/modules/gates/` |
-| Desks and worktrees | `docs/agents/modules/worktrees.md` |
+| **Review**: a PR, from claim to merge | `docs/agents/agents/carl/sops/pr-review.md`; the reviewer's own steps in `docs/agents/agents/carl/sops/pr-review-primary.md` |
+| **Release**: `accepted` → QA → production | `docs/agents/agents/avi/sops/qa-release.md`, `docs/agents/agents/steffon/sops/production-deploy.md`, `docs/agents/modules/gates/` |
+| **Desks and infra** | `docs/agents/modules/worktrees.md` |
 | Tests | `docs/agents/modules/testing.md` |
-| Credentials and GitHub | `docs/agents/modules/credentials.md`, `docs/agents/modules/source-control.md` |
+| **Credentials** and GitHub auth | `docs/agents/modules/token-session.md` (a broken session), `docs/agents/modules/source-control.md` (how auth works), `docs/agents/modules/credentials.md` (1Password) |
+| **Communication**: reporting to Alex | `docs/agents/modules/communication-style.md` |
+| **Learning**: grades and insights | `docs/agents/agents/xan/sops/grade-events.md` |
+| History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
 
 ## SOP Invocation Table
 
