@@ -586,6 +586,15 @@ links tasks to their production McRitchie Studio task pages. Production uses
 `DISCORD_RELEASE_NOTES_WEBHOOK_URL`, with `DISCORD_DEPLOY_WEBHOOK_URL` as a
 compatibility fallback. Never commit webhook URLs.
 
+`bin/release ship` posts these notes itself. A message over Discord's limits
+(2000 content chars, 10 embeds, 6000 embed chars) is sent as several messages, and
+a failed delivery prints Discord's own error. To re-post a shipped release's notes:
+
+```bash
+bin/release notes <release-slug>          # dry run: the notes + the measured message split
+bin/release notes <release-slug> --post   # send them
+```
+
 Current intended QA apps:
 
 | App | QA Heroku app | QA URL | Safety profile |

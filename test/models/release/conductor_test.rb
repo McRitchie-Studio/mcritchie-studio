@@ -1165,6 +1165,50 @@ class Release::ConductorTest < ActiveSupport::TestCase
     end
   end
 
+  test "[integration] post_release_notes returns the real delivery error, not a guess" do
+    rel = shipped_release
+    raiser = lambda do |content: nil, embeds: nil|
+      raise ReleaseNotes::DiscordClient::DeliveryError,
+            'Discord release notes notification failed: HTTP 400 {"content": ["Must be 2000 or fewer in length."]}'
+    end
+    ReleaseNotes::DiscordClient.stub(:deliver, raiser) do
+      result = Release::Conductor.post_release_notes(release: rel)
+      assert_not result[:delivered]
+      assert_includes result[:error], "DeliveryError: "
+      assert_includes result[:error], "HTTP 400"
+      assert_includes result[:error], "Must be 2000 or fewer in length."
+    end
+  end
+
+  test "[integration] post_release_notes reports the planned message split" do
+    rel = shipped_release
+    result = Release::Conductor.post_release_notes(release: rel, dry_run: true)
+
+    assert_equal 1, result[:messages].size
+    assert_equal 1, result[:messages].first[:embeds]
+    assert_nil result[:error]
+  end
+
+  test "[integration] repost_release_notes defaults to a dry run and writes no release event" do
+    rel = shipped_release
+    Release::Conductor.post_release_notes(release: rel, dry_run: true)
+    called = false
+    events_before = rel.release_events.count
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { called = true }) do
+      result = Release::Conductor.repost_release_notes(release: rel)
+      assert_not result[:delivered]
+      assert result[:message].present?
+    end
+    assert_not called, "the default must not post"
+    assert_equal events_before, rel.release_events.count
+
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { called = true }) do
+      assert Release::Conductor.repost_release_notes(release: rel, dry_run: false)[:delivered]
+    end
+    assert called
+    assert_equal events_before, rel.release_events.count, "a repost only talks to Discord"
+  end
+
   test "[integration] post_release_notes carries the recorded smoke seal verdict into the notes + Discord" do
     rel = shipped_release
     rel.record_smoke_seal!(Release::SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs prod"))

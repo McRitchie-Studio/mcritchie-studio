@@ -183,15 +183,40 @@ class Release
                   "[--followup \"…\"] [--file-tasks]",
         consequence: "no retro was written and no follow-up was filed",
         bool: ["--file-tasks"], value: ["--worked", "--friction", "--followup"], allow_positional: true
+      },
+      # Re-post a shipped release's notes to Discord. A DRY RUN unless --post: it
+      # prints the notes and the planned message split, and sends nothing.
+      "notes" => {
+        synopsis: "bin/release notes <release> [--post]",
+        consequence: "nothing was posted to Discord",
+        bool: ["--post"], value: [], allow_positional: true
       }
     }.freeze
 
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
-            "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|status|archive|retro} " \
+            "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|status|archive|retro|notes <release> [--post]} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto] [--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
+
+    # The line bin/release prints after a ship (or finalize) posts release notes,
+    # from the conductor's { notes_delivered, notes_error, notes_messages } JSON.
+    # It prints the REAL delivery error — rel-20260925-3b1f5c printed a guessed
+    # "webhook unset?" for what was an HTTP 400 on an over-long message — and the
+    # command that re-posts.
+    def release_notes_line(result, release_slug)
+      result ||= {}
+      if result["notes_delivered"]
+        count = result["notes_messages"].to_i
+        return "  release notes: posted#{count > 1 ? " (#{count} messages)" : ''}"
+      end
+
+      error = result["notes_error"].to_s.strip
+      error = "no error was reported" if error.empty?
+      "  release notes: NOT delivered — #{error}\n" \
+        "  re-post with: bin/release notes #{release_slug} --post"
+    end
 
     # The global flags, consumed before the dispatcher — named in every
     # per-subcommand help so the guard's silence about them is not read as
