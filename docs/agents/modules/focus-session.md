@@ -24,7 +24,7 @@ spawn are Pokémon too ([`../agents/pokemon/role.md`](../agents/pokemon/role.md)
 one general builder soul, legion. The reviewers you spawn are the specialists:
 Carl, Shannon, Jasper, Steffon, or Xan for prose.
 
-> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
 ## Step 0 — Orient
 
