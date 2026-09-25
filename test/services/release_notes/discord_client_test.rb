@@ -180,7 +180,7 @@ module ReleaseNotes
     end
 
     # Serve the given responses, one per POST, in order.
-    def with_responses(responses, sleeper: ->(_s) {})
+    def with_responses(responses, sleeper: ->(_s) { })
       client = DiscordClient.new("https://discord.test/webhook", sleeper: sleeper)
       queue = responses.dup
       http = Object.new

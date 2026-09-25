@@ -7507,7 +7507,7 @@ class ReleaseCliTest < Minitest::Test
   # rel-20260925-3b1f5c printed "not delivered (webhook unset?)" for what was an
   # HTTP 400 on a 2790-char message. The command must print the conductor's error.
   # argv is what `notes` sees AFTER the dispatcher shifted the subcommand off.
-  NOTES_ERROR = 'DeliveryError: Discord release notes notification failed: HTTP 400 ' \
+  NOTES_ERROR = "DeliveryError: Discord release notes notification failed: HTTP 400 " \
                 '{"content": ["Must be 2000 or fewer in length."]}'
 
   def notes_stub(delivered:, error: nil)
