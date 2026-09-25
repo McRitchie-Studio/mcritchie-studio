@@ -41,6 +41,19 @@ class TaskEvent < ApplicationRecord
     "light_review" => "light"
   }.freeze
 
+  # The actor a TRANSITION records when no caller named one (Task#write_stage_event):
+  # a model method, the conductor, a job. It says "the system moved this", which is
+  # true, and keeps the column never-blank; it is NOT a soul or a session, so every
+  # authorship reader filters it out through .named_actor.
+  SYSTEM_ACTOR = "system"
+
+  # The actor as an identity — nil for a blank or the SYSTEM_ACTOR placeholder, so
+  # readers asking "who did this" keep answering "the record does not say".
+  def self.named_actor(value)
+    actor = value.to_s.strip
+    actor.empty? || actor == SYSTEM_ACTOR ? nil : actor
+  end
+
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug, optional: true, inverse_of: :task_events
 
   validates :to_stage, presence: true

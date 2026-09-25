@@ -848,7 +848,7 @@ class ReviewerSelector
   def building_claim_events
     return [] unless task.respond_to?(:task_events) && task.try(:persisted?)
 
-    task.task_events.where(to_stage: "building").where.not(actor: [nil, ""])
+    task.task_events.where(to_stage: "building").where.not(actor: [nil, "", TaskEvent::SYSTEM_ACTOR])
         .order(:occurred_at, :id).reject(&:block_transition?)
   rescue StandardError
     []

@@ -1,0 +1,32 @@
+# The learning loop's thresholds (devops-v3 piece 6; design §9). Read by
+# Insights::TaskGrader when a task ships. A shipped task is graded ONCE from facts
+# already on the board; a learning is written only when one of these trips, and
+# never more than one per task. Change a number here, not in code.
+
+# A task bounced back to its builder this many times or more (rework or
+# unclassified qa_feedback rows — BounceLedger's countable kinds).
+bounces: 2
+
+# Any single gate (GateRun key) that failed this many times or more.
+gate_failures: 3
+
+# Cost and cycle time trip when they sit ABOVE this percentile of the trailing
+# window of shipped tasks.
+percentile: 90
+trailing_window: 100
+
+# A percentile needs a real sample behind it. Below this many non-zero values in
+# the window, the cost/cycle threshold is SKIPPED rather than tripped: a window
+# of zeros makes every positive value an outlier (on 2026-09-25 the last 100
+# shipped tasks all carried $0 because Opus 5 was unpriced).
+min_samples: 20
+
+# The order a tripped threshold claims the ONE learning line. Earlier wins; the
+# rest are still recorded on the grade's `tripped` list.
+priority:
+  - escalation
+  - bounces
+  - gate_failures
+  - cost
+  - build_cycle
+  - review_cycle

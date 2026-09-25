@@ -415,6 +415,9 @@ class Task < ApplicationRecord
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
+  # Xan's one ship-time grade (Insights::TaskGrader). Destroyed with the task: the
+  # learning it banked lives on as an ActionGrade, so the lesson outlives the grade.
+  has_one :task_grade, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_transitions, foreign_key: :task_slug, primary_key: :slug,
                               inverse_of: :task, dependent: :destroy
@@ -569,6 +572,10 @@ class Task < ApplicationRecord
   # #autoderive_actual_size — it only fills a BLANK actual_size (never clobbers a
   # manual size) and never unwinds the ship if derivation fails.
   after_update :autoderive_actual_size, if: :saved_change_to_stage?
+  # ...and once the ship COMMITS, grade it (the learning loop, devops-v3 §9). After
+  # commit so the job reads the committed ship and its actual_size; enqueue only, so
+  # grading can never slow or roll back a ship. See #enqueue_task_grading.
+  after_commit :enqueue_task_grading, on: :update, if: -> { saved_change_to_stage? && stage == "shipped" }
   after_commit :refresh_duration_metrics_for_release_changes, on: %i[create update destroy]
   after_commit :refresh_testing_phases_after_change, on: %i[create update]
   # Avi auto shirt-sizes a task the instant it enters `designed` WITHOUT a po_size
@@ -2645,7 +2652,7 @@ class Task < ApplicationRecord
   # a block fills with a soul slug. nil when the row names nobody, and nil must
   # stay nil: a guessed owner is exactly the failure this exists to end.
   def progress_actor(row)
-    row.metadata.to_h["session"].presence || row.actor.presence
+    row.metadata.to_h["session"].presence || TaskEvent.named_actor(row.actor)
   end
 
   # The newest artifact produced BY a given session. Filtered in Ruby over the
@@ -2849,6 +2856,19 @@ class Task < ApplicationRecord
     log.save!
   end
 
+  # after_commit trigger: grade the task the moment it lands in `shipped`
+  # (TaskGradingJob → Insights::TaskGrader). Best-effort like its sibling below: an
+  # enqueue failure is logged, never raised, and the grader is idempotent, so the
+  # learning_loop:backfill task picks up anything a dropped enqueue missed.
+  def enqueue_task_grading
+    TaskGradingJob.perform_later(slug)
+  rescue StandardError => e
+    log = ErrorLog.capture!(e)
+    log.target = self
+    log.target_name = slug
+    log.save!
+  end
+
   # after_commit trigger: fire Avi's async shirt-sizer the moment a task ENTERS
   # `designed` with a blank po_size — a fresh create (the birth stage) or a move
   # back INTO designed that's still unsized. Enqueue only (AviSizingJob owns the
@@ -2913,7 +2933,11 @@ class Task < ApplicationRecord
       occurred_at: occurred,
       seconds_in_from: previous && (occurred - previous.occurred_at).round,
       source: Current.task_event_source,
-      actor: Current.task_event_actor.presence,
+      # NEVER blank (devops-v3 §9: 43% of transitions carried no actor). A move with
+      # no caller attribution — a model method, the conductor, a job — is recorded
+      # as TaskEvent::SYSTEM_ACTOR, which authorship readers skip (see
+      # TaskEvent.named_actor) so "system" is never mistaken for a builder or owner.
+      actor: Current.task_event_actor.to_s.strip.presence || TaskEvent::SYSTEM_ACTOR,
       **task_event_usage_attrs,
       # Merge the review-bypass marker (set only by Conductor.sweep!(override:true)
       # for `bin/release merge --override`) onto THIS transition, so the review-gate
