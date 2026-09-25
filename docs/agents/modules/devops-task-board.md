@@ -206,6 +206,47 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    refused (a 422 naming the stage and the value). This is the same remedy `bin/task
    move` prints when it announces a discarded request.
 
+## Operator windows
+
+Three clocks give Mr. McRitchie a bounded time to answer, and name what happens
+when he does not (design: `docs/agents/system/devops-v3-design.md`, section 6).
+Every window is **derived** — a timestamp the task or release already carries
+plus a length from `config/release_builder.yml` (`operator_windows:`) — so there
+is no window column, and changing a length moves every countdown at once.
+
+| Window | Opens from | Default | While it runs | On lapse |
+|---|---|---|---|---|
+| UI approval | `devops.approval_requested_at`, while `approval_status` is `waiting` | 10 min | the card's countdown chip beside the WAITING APPROVAL bar | review proceeds as today; the chip reads `unanswered, proceeding`; a later answer is still recorded |
+| Escalation | `blocked_at` on a `dependency` block whose summary leads `Escalated:` | 20 min | the countdown chip on the card | the session applies the recommendation the block's feedback carries, labeled `auto-decision` |
+| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why |
+
+The chip (`tasks/_window_chip`) sits beside the epic chip on the card and in the
+Next Release card's badge cluster, ticks `mm:ss` from the server-painted value,
+and renders identically on the page and on the live push. The task API carries
+the same facts under `windows` (kind, `ends_at`, `remaining_seconds`, `lapsed`,
+`label`), escalation first.
+
+**Wait on a window from a session:**
+
+```bash
+bin/task wait-window <slug> [--interval 15] [--grace 60] [--json]
+```
+
+It polls the board until the open window is **answered** (the `Escalated:`
+block cleared, or the approval request out of `waiting`) or **lapses**, and
+prints what it saw. Exit `0` answered · `2` lapsed (the window end plus the
+grace passed with it still open — proceed on the default above) · `1` the board
+could not be read · `3` usage. It is bounded by construction: the loop's deadline
+is the latest open end plus the grace, recomputed on every read.
+
+**Grant production authority:** the Approve button on `/deployments` (admin)
+posts `POST /deployments/<release>/ship_authorization`, which records the one
+`ship_authorized completed` event under the conductor's own idempotency key —
+so a grant and the ship's own completion stamp are one row. `bin/release ship
+--mode ask|timed|auto` picks how authority is taken (default `timed`, from
+`production_ship.mode`); `--yes` alone is `auto`; the recipe lives in Steffon's
+`production-deploy` SOP.
+
 ## Task Conversation and QA Feedback
 
 The task board owns the durable conversation for an increment. `/tasks` cards

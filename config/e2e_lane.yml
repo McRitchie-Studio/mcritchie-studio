@@ -386,7 +386,15 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 161
 #   npx playwright test --list --grep-invert @quarantine => 151
-executed: 151
+# 151 -> 153 on 2026-09-24: the two e2e/board_window_chip.spec.js specs pin the
+# operator-window countdown (/tasks/operator-windows-on-board) — a waiting approval's
+# card wears a ticking mm:ss chip, an hour-old one reads the lapsed label, an
+# `Escalated:` block wears the escalation chip, and a quiet card wears none.
+# Coverage ADDED; `quarantined` untouched at 10.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 163
+#   npx playwright test --list --grep-invert @quarantine => 153
+executed: 153
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

@@ -312,19 +312,33 @@ safe no-op. (If you skip this and go straight to `bin/release ship`, its
 `ship_gate started` checkpoint stamps `confirming` then — but only at ship time,
 which under-reports your confirmation work; post the start when the work starts.)
 
-Run ship only when status shows a ready QA-green release:
+Run ship only when status shows a ready QA-green release, naming the
+production-authority mode:
 
 ```bash
-bin/release ship --yes
+bin/release ship --mode timed --yes
 ```
 
-Ship from the primary checkout, not a feature worktree. `--yes` answers one
-local guard — the pre-dispatch `confirm("Deploy this release to production?")`
-that runs before any deploy — so a hands-off run opts in instead of hanging on a
-prompt. It skips nothing else: the preflight, frozen-SHA test gate, gem-publish
-ordering, deploy smoke, release notes, and partial-ship recovery all still run.
-**That local confirm is now the only human gate** — the ship no longer blocks on
-a GitHub approval (see below).
+Ship from the primary checkout, not a feature worktree. **`--mode` is how
+production authority is taken** (`docs/agents/modules/devops-task-board.md`,
+"Operator windows"):
+
+| Mode | What happens at the authority step |
+|---|---|
+| `timed` (the config default, `production_ship.mode` in `config/release_builder.yml`) | posts the `ship_authorized` request on the release, shows a 30-minute countdown with an **Approve** button on the Next Release card, and waits. A grant deploys at once. On lapse it deploys only if G3 Candidate is green and no member carries an open escalation; otherwise it refuses, names why, and deploys nothing. |
+| `ask` | the interactive `confirm("Deploy this release to production?")` prompt — holds until a human answers (needs a TTY, or `--yes`). |
+| `auto` | proceeds on green with no prompt. `bin/release ship --yes` with no `--mode` is `auto`. |
+
+`--yes` still answers the OTHER local confirms (the finalize step, a
+`--skip-test-gate`), which is why the recipe carries both flags: `--mode timed`
+keeps the operator window, `--yes` keeps a hands-off run from hanging on a
+prompt later. It skips nothing else: the preflight, frozen-SHA test gate,
+gem-publish ordering, deploy smoke, release notes, and partial-ship recovery all
+still run. **The authority step is the only human gate** — the ship no longer
+blocks on a GitHub approval (see below). A timed ship that refused at the lapse
+is re-run the same way once the blocker is cleared or Mr. McRitchie has
+approved; the request and grant events are idempotent, so a re-run never
+double-records.
 
 **A GEM-ONLY release ships too** (gem-only-deployments). A release whose every
 member is a self-gated gem (no app member — `Release#gem_only?`) reaches you

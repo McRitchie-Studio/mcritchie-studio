@@ -4383,6 +4383,34 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "tag v0.9.0", "publish tags the published version"
   end
 
+  # [unit] `--mode` (bin/lib/ship_authority.rb) at the ship-authority seam: the
+  # config default is timed, so a bare dry-run previews the window and reads
+  # nothing; `--yes` alone is auto; an unknown mode aborts before anything moves.
+  def test_ship_dry_run_takes_authority_in_the_timed_default_and_previews_the_window
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    assert_includes out, "taking production authority (--mode timed)"
+    assert_includes out, "production window: 30 min"
+    assert_includes out, "[dry-run] would wait up to 30 min for the grant"
+    assert_includes out, "ship authority: dry (--mode timed)"
+  end
+
+  def test_ship_yes_alone_is_auto_and_an_explicit_mode_wins
+    out = run_cli(["--dry-run", "--yes"], call: "ship", setup: SHIP_STUB)
+    assert_includes out, "taking production authority (--mode auto)"
+    assert_includes out, "ship authority: auto (--mode auto)"
+
+    out = run_cli(["--dry-run", "--yes", "--mode", "ask"], call: "ship", setup: SHIP_STUB)
+    assert_includes out, "taking production authority (--mode ask)"
+    assert_includes out, "ship authority: confirmed (--mode ask)"
+  end
+
+  def test_ship_refuses_an_unknown_mode_before_anything_moves
+    out = run_cli(["--dry-run", "--mode", "sometimes"], call: "ship", setup: SHIP_STUB)
+    assert_includes out, "--mode must be one of ask|timed|auto"
+    refute_includes out, "shipping rel-ship", "the abort lands before the release is even resolved"
+  end
+
   def test_ship_dry_run_runs_the_auto_repin_pass
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 

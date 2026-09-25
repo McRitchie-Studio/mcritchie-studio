@@ -163,6 +163,10 @@ require_relative "../app/models/release/merge_plan"
 require_relative "../app/models/release/sweep_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
+# Production authority (`ship --mode ask|timed|auto`) and the operator windows
+# it reads its default and its length from — both Rails-free, like Cli.
+require_relative "../app/models/devops/windows"
+require_relative "lib/ship_authority"
 # CleanCheck is the pure verdict behind the `deploy-with-task` clean-LADDER GUARD
 # (`bin/release status --clean-only`): given BOTH rungs the expedite walks — work
 # riding `release` (board + release-ahead-of-main git count) and work parked on
@@ -1353,6 +1357,36 @@ def confirm(prompt)
   # fold it into a false that a caller mistakes for a deliberate "no".
   abort!("EOF on stdin — pass --yes to run this non-interactively") if answer.nil?
   answer.strip.casecmp("y").zero?
+end
+
+# THE SHIP-AUTHORITY SEAM — how `ship` takes production authority, in the mode the
+# launch chose (ShipAuthority; bin/lib/ship_authority.rb). `ask` is the confirm
+# prompt above, `timed` (the config default) posts the request on the release and
+# waits on the operator window, `auto` (`--yes` alone) proceeds on green. Every
+# mode records the same two ship_authorized events, so the tracker's Confirming →
+# Confirmed stamps and the /deployments Approve button see one shape. The reader
+# is one prod-board read per poll, BEST-EFFORT on the way (a blip retries) and
+# FAIL-CLOSED at the lapse (an unreadable release at the window end refuses).
+def ship_authority!(rel_slug, by, mode)
+  reader = lambda do |blockers:|
+    conductor(
+      "r = Release.find_by!(slug: #{rel_slug.inspect}); s = r.ship_authorization_state; " \
+      "puts(s.slice('granted', 'granted_by', 'granted_via')" \
+      ".merge('blockers' => (#{blockers ? 'true' : 'false'} && !s['granted'] ? r.ship_window_lapse_blockers : [])).to_json)",
+      read_only: true
+    )
+  rescue SystemExit, StandardError => e
+    say("  ⚠ ship-authority read failed (#{e.message}); retrying")
+    nil
+  end
+  result = ShipAuthority.take!(
+    mode: mode, release_slug: rel_slug, minutes: Devops::Windows.minutes("production"), dry: DRY,
+    recorder: ->(status, metadata) { record_release_event(rel_slug, ShipAuthority::STEP, status, actor: by, metadata: metadata) },
+    reader: reader, confirmer: ->(prompt) { confirm(prompt) }, say: ->(line) { say(line) }
+  )
+  say("  ship authority: #{result} (--mode #{mode})")
+rescue ShipAuthority::Refused => e
+  abort!(e.message)
 end
 
 # Poll <url>/up until it returns 200 (the dyno booted) or the attempts run out,
@@ -7423,6 +7457,15 @@ def ship
   return finalize(Release::Cli.positional_slugs(ARGV).first) if Release::Cli.take_flag(ARGV, "--finalize-only")
 
   by = opt_value("--by") || ENV["USER"] || "operator"
+  # The production-authority MODE, resolved before anything moves so a bad --mode
+  # or a bad config default aborts here: explicit --mode > `--yes` (auto) > the
+  # config default (config/release_builder.yml production_ship.mode, `timed`).
+  ship_mode = begin
+    ShipAuthority.resolve_mode(explicit: opt_value("--mode"), assume_yes: ASSUME_YES,
+                               config_mode: -> { Devops::Windows.production_ship_mode })
+  rescue ArgumentError => e
+    abort!(e.message)
+  end
   @ship_live = [] # the "what's live this run" trail for the partial-ship report
   steffon_span = false # set once the Steffon deploy-lane activity opens (gates its close)
   g4_gate = nil    # :open once the G4 Ship gate opens; :closed once a verdict lands
@@ -7566,11 +7609,11 @@ def ship
   end
 
   # 2b. The ship-authority gate — explicit, AFTER Steffon's test confirmation and
-  #     BEFORE any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
-  step("ship authority: Steffon's ship gate passed on the frozen SHA — confirming production deploy")
-  record_release_event(rel_slug, "ship_authorized", "started", actor: by)
-  abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
-  record_release_event(rel_slug, "ship_authorized", "completed", actor: by)
+  #     BEFORE any deploy. `--mode ask|timed|auto` decides HOW (ship_authority!):
+  #     ask is the confirm prompt (honours --yes + --dry-run as before), timed posts
+  #     the request and waits on the operator window, auto proceeds on green.
+  step("ship authority: Steffon's ship gate passed on the frozen SHA — taking production authority (--mode #{ship_mode})")
+  ship_authority!(rel_slug, by, ship_mode)
 
   # Deploy-lane narration: the ship is authorized — Steffon is shipping to prod. Open a
   # role activity (best-effort) so the heartbeat attributes the deploy to him, matching

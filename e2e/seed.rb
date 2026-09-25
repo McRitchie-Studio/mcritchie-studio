@@ -332,6 +332,53 @@ Task.create!(
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 
+# Operator-window demos (devops-v3-design.md section 6): three cards whose clocks
+# DERIVE from a timestamp plus config/release_builder.yml — no window column.
+#   · e2e-window-approval-demo    a waiting approval posted at seed time, so its
+#                                 chip is a live mm:ss countdown (or, on a slow
+#                                 lane, the lapsed label — the spec accepts both).
+#   · e2e-window-lapsed-demo      a waiting approval posted an hour ago, so its
+#                                 chip reads "unanswered, proceeding" DETERMINISTICALLY.
+#   · e2e-window-escalation-demo  an `Escalated:` dependency block five minutes
+#                                 old, so the card wears the red escalation chip.
+# None carries an epic (the epic-chip spec counts the devops-v3 filter to ONE card)
+# and none carries a local_url (the WAITING APPROVAL bar stays a static notice).
+Task.create!(
+  title: "Window approval demo",
+  slug: "e2e-window-approval-demo",
+  description: "A waiting UI-approval request, so the card carries the live approval countdown.",
+  stage: "building",
+  priority: 1,
+  agent_slug: "mack",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"],
+                            "approval_status" => "waiting", "approval_requested_at" => Time.current.iso8601 } }
+)
+Task.create!(
+  title: "Window lapsed demo",
+  slug: "e2e-window-lapsed-demo",
+  description: "A UI-approval request an hour old, so the card's window reads lapsed.",
+  stage: "building",
+  priority: 1,
+  agent_slug: "mack",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"],
+                            "approval_status" => "waiting", "approval_requested_at" => 1.hour.ago.iso8601 } }
+)
+escalated = Task.create!(
+  title: "Window escalation demo",
+  slug: "e2e-window-escalation-demo",
+  description: "An Escalated dependency block, so the card carries the escalation countdown.",
+  stage: "submitted",
+  priority: 1,
+  agent_slug: "mack",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+escalated.block!(by: "avi", kind: "dependency")
+escalated.update_columns(blocked_at: 5.minutes.ago)
+Activity.create!(task_slug: escalated.slug, activity_type: "qa_feedback", agent_slug: "avi",
+                 description: "POLICY QUESTION for Alex. Reviewer: keep the chip amber. Builder: match the bar. " \
+                              "Avi's recommendation: amber. Window: 20 min; on lapse the recommendation stands.",
+                 metadata: { "summary" => "Escalated: chip colour default", "kind" => "dependency" })
+
 # --- Per-application RELEASE INCLUSION markers (Avi's qa-release disposition) ----
 # Two REVIEWED cards on the Deploy board: the default ships and carries NO marker
 # (shipping every reviewed task is the default), while an app Avi held back for
