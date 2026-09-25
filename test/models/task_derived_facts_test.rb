@@ -6,6 +6,7 @@ require_relative "../support/fake_task_derivation"
 # TaskDerivedFacts (devops-v3 piece 4a): the merged rung, PR url and author set
 # derived from GitHub, each falling back to its hand-written stamp for one release.
 class TaskDerivedFactsTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
   HUB = "mcritchie-studio"
   TURF = "turf-monster"
   HUB_PR = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/101"
@@ -163,5 +164,73 @@ class TaskDerivedFactsTest < ActiveSupport::TestCase
     end
   ensure
     Github::TaskDerivation.reset_shared!
+  end
+
+  # --- 4c-i: the board keeps its own caches ----------------------------------------
+
+  test "[unit] an advance-only refresh carries the column up the ladder, never down" do
+    t = task(merged: Task::MERGED_RELEASE, devops: { "pr_url" => HUB_PR })
+
+    lagging = FakeTaskDerivation.new(rungs: { HUB_PR => "accepted" })
+    assert_equal "release", t.refresh_merged_rung!(derivation: lagging, advance_only: true)
+    assert_equal "release", t.reload.merged, "a lagging read must not undo the release record's own write"
+
+    ahead = FakeTaskDerivation.new(rungs: { HUB_PR => "main" })
+    assert_equal "main", t.refresh_merged_rung!(derivation: ahead, advance_only: true)
+    assert_equal "main", t.reload.merged
+
+    blank = task(devops: { "pr_url" => HUB_PR })
+    assert_equal "accepted", blank.refresh_merged_rung!(derivation: lagging, advance_only: true),
+                 "anything beats a blank column"
+  end
+
+  test "[unit] a plain refresh still lets the derived rung win over a stale stamp" do
+    t = task(merged: Task::MERGED_RELEASE, devops: { "pr_url" => HUB_PR })
+    assert_equal "accepted", t.refresh_merged_rung!(derivation: FakeTaskDerivation.new(rungs: { HUB_PR => "accepted" }))
+    assert_equal "accepted", t.reload.merged
+  end
+
+  test "[unit] cache_derived_pr_url! fills a blank pr_url from the task branch" do
+    t = task
+    t.update!(stage: "building")
+    fake = FakeTaskDerivation.new(branches: { [HUB, "feat/#{t.slug}"] => HUB_PR })
+
+    assert_equal HUB_PR, t.cache_derived_pr_url!(derivation: fake)
+    assert_equal HUB_PR, t.reload.devops_url("pr"), "the board caches what it derived"
+  end
+
+  test "[unit] cache_derived_pr_url! never overwrites a recorded url and never asks for one" do
+    t = task(devops: { "pr_url" => TURF_PR })
+    fake = FakeTaskDerivation.new(branches: { [HUB, "feat/#{t.slug}"] => HUB_PR })
+
+    assert_equal TURF_PR, t.cache_derived_pr_url!(derivation: fake)
+    assert_empty fake.calls, "a recorded url answers without GitHub"
+    assert_equal TURF_PR, t.reload.devops_url("pr")
+  end
+
+  test "[unit] cache_derived_pr_url! skips a designed card and survives an unreadable GitHub" do
+    designed = task
+    designed.update!(stage: "designed")
+    fake = FakeTaskDerivation.new(branches: { [HUB, "feat/#{designed.slug}"] => HUB_PR })
+    assert_nil designed.cache_derived_pr_url!(derivation: fake)
+    assert_empty fake.calls, "a designed card has no PR to look for"
+
+    building = task
+    building.update!(stage: "building")
+    broken = FakeTaskDerivation.new(branches: { [HUB, "feat/#{building.slug}"] => :unreadable })
+    assert_nil building.cache_derived_pr_url!(derivation: broken)
+    assert_nil building.reload.devops_url("pr")
+  end
+
+  test "[unit] landing on reviewed enqueues a merged refresh only while derivation is on" do
+    t = task
+    t.update!(stage: "submitted")
+
+    assert_no_enqueued_jobs(only: TaskMergedRungRefreshJob) { t.update!(stage: "reviewed") }
+
+    t.update!(stage: "submitted")
+    TaskDerivedFacts.stub(:enabled?, true) do
+      assert_enqueued_with(job: TaskMergedRungRefreshJob, args: [t.slug]) { t.update!(stage: "reviewed") }
+    end
   end
 end
