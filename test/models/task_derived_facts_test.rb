@@ -233,4 +233,29 @@ class TaskDerivedFactsTest < ActiveSupport::TestCase
       assert_enqueued_with(job: TaskMergedRungRefreshJob, args: [t.slug]) { t.update!(stage: "reviewed") }
     end
   end
+
+  test "[unit] the release record refresh is advance-only and never raises" do
+    t = task(merged: Task::MERGED_RELEASE, devops: { "pr_url" => HUB_PR })
+    Github::TaskDerivation.reset_shared!
+    TaskDerivedFacts.stub(:enabled?, true) do
+      Github::TaskDerivation.stub(:new, FakeTaskDerivation.new(rungs: { HUB_PR => "accepted" })) do
+        Release.refresh_merged_cache(t)
+      end
+      assert_equal "release", t.reload.merged, "a lagging read must not undo the release record"
+
+      Github::TaskDerivation.reset_shared!
+      t.instance_variable_set(:@derived_memo, nil)
+      t.remove_instance_variable(:@github_derivation) if t.instance_variable_defined?(:@github_derivation)
+      Github::TaskDerivation.stub(:new, FakeTaskDerivation.new(rungs: { HUB_PR => "main" })) do
+        Release.refresh_merged_cache(t)
+      end
+      assert_equal "main", t.reload.merged
+    end
+
+    t.stub(:refresh_merged_rung!, ->(**) { raise ArgumentError, "boom" }) do
+      assert_nil Release.refresh_merged_cache(t)
+    end
+  ensure
+    Github::TaskDerivation.reset_shared!
+  end
 end
