@@ -3,7 +3,7 @@
 # [unit] tests for bin/lib/ci_test_command.rb — "what does CI actually run?",
 # resolved from the repo's OWN .github/workflows/ci.yml so a cert lane cannot
 # silently test less than CI. Pure parsing; no processes are spawned. The
-# ORCHESTRATION (which lane uses it) is covered by test/lib/full_suite_check_test.rb.
+# ORCHESTRATION (which lane uses it) is covered by bin/release.rb's gate tests.
 # Run directly:
 #   ruby -Itest test/lib/ci_test_command_test.rb
 # Also picked up by the normal `bin/rails test` sweep.

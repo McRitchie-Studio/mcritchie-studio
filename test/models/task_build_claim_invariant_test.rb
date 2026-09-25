@@ -151,7 +151,7 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
                     created_at: at, updated_at: at)
   end
 
-  # THE CIRCULAR REFUSAL, at its source. A challenger's own full-suite-check lands
+  # THE CIRCULAR REFUSAL, at its source. A challenger's own local cert (since retired) lands
   # a g1_cert on a task it does not hold; the holder has produced nothing. The
   # holder-scoped fact must stay EMPTY rather than absorb the challenger's work.
   test "a challengers cert is not counted as the holders progress" do
@@ -236,7 +236,7 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   end
 
   # THE REGRESSION. The holder is long gone; a queued challenger runs its own
-  # full-suite-check on the held slug, landing a checkpoint AND opening a g1_cert.
+  # the local cert on the held slug, landing a checkpoint AND opening a g1_cert.
   # Task-wide both signals now say "busy", and reading them renewed the dead lease
   # for another 1h29m. The lease must still reap.
   test "a challengers own cert does not revive an abandoned lease" do

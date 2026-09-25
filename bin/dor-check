@@ -38,10 +38,10 @@
 # GREEN GitHub CI verdict for the PR's current head, read through
 # bin/lib/ci_status.rb and decided in bin/lib/ci_gate.rb (the allow-list — "THE
 # GATE IS AN ALLOW-LIST, IN BOTH ROLES" there). The fingerprint receipts the
-# local certs used to record — "[fast-cert@<fp>]", "[full-suite@<fp>]",
-# "[rubocop@<fp>]", "[cert-deferred@<fp>]" — and the "[full-suite-bypass]" hatch
-# are gone with the certs (/tasks/retire-local-cert-evidence, DevOps v3 phase 2b);
-# a leftover line in an old task's checks_run is author prose to this gate.
+# local certs used to record (the fast-cert, full-suite, rubocop and cert-deferred
+# lanes) and the full-suite-bypass hatch are gone with the certs
+# (/tasks/retire-local-cert-evidence, DevOps v3 phase 2b); a leftover line in an
+# old task's checks_run is author prose to this gate.
 # The role table:
 #   green                                  → advances, both roles (review still
 #                                            refuses a green that predates a base
@@ -380,7 +380,7 @@ end
 # and a nil fingerprint is :missing, never a synthesised :fresh. Until
 # /tasks/dor-reads-settled-ci-verdict this read the suite verdict's fingerprint and
 # had to defend against the retired suite verdict's "every lane :fresh" default on a
-# recorded `[full-suite-bypass]`; that verdict is no longer computed, so the only
+# recorded bypass hatch; that verdict is no longer computed, so the only
 # way to a :fresh here is a stamp whose hash equals the tree's.
 #
 # DOR_CHECK_CONTROL_EVIDENCE is this lane's OWN injection seam (fresh:<VERDICT> |

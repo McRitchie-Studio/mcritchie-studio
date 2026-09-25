@@ -16,8 +16,8 @@
 # control line against the task tree's fingerprint (bin/lib/tree_fingerprint.rb).
 #
 # ONE LANE IS LEFT. Until DevOps v3 phase 2b this namespace also carried the local
-# cert receipts — `[full-suite@fp]`, `[rubocop@fp]`, `[fast-cert@fp]`,
-# `[cert-deferred@fp]` — and the `[full-suite-bypass]` hatch. The PR's settled
+# cert receipts (the full-suite, rubocop, fast-cert and cert-deferred lanes) and
+# the full-suite-bypass author hatch. The PR's settled
 # green GitHub CI is now the only suite evidence bin/dor-check reads, so the
 # writers that stamped those lines are gone and the lines are author prose to
 # this module. What stays is the `test-only` shape's executed CONTROL, which

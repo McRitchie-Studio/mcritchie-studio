@@ -276,7 +276,7 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
   end
 
   # Drive the REAL write paths a producer uses — stage transitions, cert checkpoints
-  # (record_checkpoint_event, what the API + bin/full-suite-check call), the review
+  # (record_checkpoint_event, what the API called, and the retired local cert), the review
   # intent (bin/reviewer-select), and the G2 gate run (the review supervisor) — and
   # confirm they flow through build + the persisted projection.
   test "[integration] real write paths populate the projection through the database" do

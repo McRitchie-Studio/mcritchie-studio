@@ -98,7 +98,7 @@ class SessionPreflightShapeNoteTest < Minitest::Test
 
     assert_match(/not exempt/i, output,
                  "the note no longer says test-only is NOT EXEMPT from the cert gate. That half is TRUE and " \
-                 "load-bearing — `full_suite_gate: true` really does mean the gate applies, unlike `docs`, " \
+                 "load-bearing — test-only really is NOT exempt from the CI gate, unlike `docs`, " \
                  "which waives it. Dropping it trades one wrong briefing for the opposite one.\n#{output}")
 
     assert_match(/green[^.]{0,30}\bCI\b/i, output,

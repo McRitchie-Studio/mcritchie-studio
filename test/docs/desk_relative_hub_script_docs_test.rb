@@ -20,7 +20,7 @@ class DeskRelativeHubScriptDocsTest < ActiveSupport::TestCase
 
   # Scripts only the hub carries. Each must really be an executable in THIS repo's bin/
   # (asserted below), so the list cannot drift into naming phantoms.
-  HUB_ONLY = %w[ship ship-wait fast-check full-suite-check dor-check task].freeze
+  HUB_ONLY = %w[ship ship-wait fast-check dor-check task].freeze
 
   # Longest-first so `ship` never shadows `ship-wait` in the alternation.
   DESK_BIN = %r{<(?:desk|worktree)>/bin/(#{Regexp.union(HUB_ONLY.sort_by { |s| -s.size })})(?![\w-])}

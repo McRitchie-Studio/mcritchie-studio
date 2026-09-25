@@ -56,7 +56,7 @@ require "test_helper"
 # are loaded, and we simply read the result.
 #
 # COMPLETE UNDER A FULL-SUITE RUN. Reflection sees a class only once it is loaded. A
-# full run — CI, `bin/rails test`, `bin/full-suite-check` — requires every `*_test.rb`
+# full run — CI, `bin/rails test` — requires every `*_test.rb`
 # before running any test, so by the time this guard executes, EVERY test class is
 # present in `Minitest::Runnable.runnables` and the sweep is exhaustive. (Running this
 # one file in isolation only reflects over what that invocation loaded; it cannot

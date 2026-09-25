@@ -48,17 +48,16 @@ require "test_helper"
 # path picks the SCRIPT, the cwd picks the TREE it acts on. THE TWO WRITERS DIFFER ON
 # WHAT A WRONG CWD COSTS, and conflating them is a real defect this file shipped once:
 #
-#   * THE CERT WRITERS REFUSE. bin/fast-check and bin/full-suite-check root at the cwd's
-#     git toplevel and take CertRootGuard#refusal — the only two callers of it — so from
-#     the hub against a satellite task they exit 1: "this run roots at
-#     …/mcritchie-studio (branch main), which is not <slug>'s tree — refusing to certify
-#     it."
-#   * bin/ship RE-ROOTS, LOUDLY. It reads CertRootGuard.assess directly because it wants
+#   * THE PRE-FLIGHT REFUSES. bin/fast-check roots at the cwd's git toplevel and takes
+#     TaskTree#refusal — its only caller — so from the hub against a satellite task it
+#     exits 1: "this run roots at …/mcritchie-studio (branch main), which is not
+#     <slug>'s tree — refusing to run against it."
+#   * bin/ship RE-ROOTS, LOUDLY. It reads TaskTree.assess directly because it wants
 #     :resolved_root, prints "re-rooting at the task worktree <desk> (you ran from
 #     <cwd>)" and carries on there; it die!s only when resolved_root is nil (no desk on
 #     disk, or a multi-repo tie). Its own comment says so: ship "re-roots rather than
 #     refuses when the task's worktree exists on disk — loudly". The first draft of this
-#     header attached the cert writers' verbatim refusal to bin/ship, which is the
+#     header attached the pre-flight's verbatim refusal to bin/ship, which is the
 #     highest-credibility claim form in this house pointed at the wrong command.
 #
 # Either way a `cd <hub>` earlier in the block does NOT excuse a bare form for any
@@ -125,7 +124,7 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # resolves its helper from its own __dir__, so the hub-absolute form works from any cwd.
   # It is usually wrapped — eval "$(bin/gh-auth-refresh --export)" — and BARE is not
   # anchored to the line start, so the wrapper does not hide it.
-  DESK_RUN = %w[ship-wait ship fast-check full-suite-check dor-check gh-auth-refresh].freeze
+  DESK_RUN = %w[ship-wait ship fast-check dor-check gh-auth-refresh].freeze
 
   # The info-string token that excuses a fence from the pasteable scan. See the header.
   NOT_PASTEABLE = "not-pasteable"
