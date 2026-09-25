@@ -1,0 +1,72 @@
+<%# /epics/<slug> — one epic's tasks grouped by stage, drawn with the board's own
+    card (tasks/_task_card) and the same batched per-card locals the boards pass
+    (TaskCardPreloads), so the epic chip, the window countdown, the CI meter and
+    the mascot all render here as they do on the board.
+
+    The card reads four helpers from its board's Alpine scope — matchesFilter,
+    appVisible, archiveTask, deleteTask. This page has no filters, so the first two
+    always pass; the footer actions PATCH or DELETE the task like the board's and
+    drop the card on success. %>
+<% content_for(:title, "Epic #{@epic.slug}") %>
+<%= render "tasks/release_ticker" %>
+<%= render "components/elapsed_label_script" %>
+<% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
+<% type_enumerals = Pokemon.type_enumerals %>
+<script>
+  window.epicCards = window.epicCards || function () {
+    const send = async (slug, method, body) => {
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+      return fetch('/tasks/' + slug + '.json', {
+        method,
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': csrf },
+        credentials: 'same-origin',
+        body: body ? JSON.stringify(body) : undefined
+      });
+    };
+    return {
+      matchesFilter() { return true; },
+      appVisible() { return true; },
+      async archiveTask(slug) {
+        const res = await send(slug, 'PATCH', { task: { stage: 'archived' } });
+        if (res.ok) { window.location.reload(); } else { alert('Archive failed (' + res.status + ')'); }
+      },
+      async deleteTask(slug) {
+        if (!confirm('Delete this task?')) return;
+        const res = await send(slug, 'DELETE');
+        if (res.status === 204) { document.getElementById('card-' + slug)?.remove(); } else { alert('Delete failed (' + res.status + ')'); }
+      }
+    };
+  };
+</script>
+<section class="space-y-6" data-test="epic-page" x-data="epicCards()">
+  <div>
+    <nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Epics">
+      <%= link_to "← Epics", epics_path, class: "text-muted hover:text-heading transition", data: { test: "epic-back" } %>
+    </nav>
+    <%= render "epics/epic_header", epic: @epic, drawn_count: @drawn_count %>
+  </div>
+  <% Task::STAGES.each do |stage| %>
+    <% stage_tasks = @tasks_by_stage[stage] %>
+    <% next if stage_tasks.blank? %>
+    <section class="space-y-2" data-test="epic-stage" data-stage="<%= stage %>">
+      <h2 class="flex items-center gap-2 text-sm font-semibold text-heading">
+        <%= Task::STAGE_LABELS.fetch(stage) %>
+        <span class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none <%= task_stage_count_classes(stage) %>"><%= stage_tasks.size %></span>
+      </h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
+        <% stage_tasks.each do |task| %>
+          <%= render "tasks/task_card", task: task, agents: @agents,
+                mascot: pokemon_by_slug[task.devops_field("mascot")], type_enumerals: type_enumerals,
+                latest_activity: @latest_task_activities[task.slug],
+                activity_count: @task_activity_counts[task.slug].to_i,
+                unresolved_feedback: @unresolved_feedback_activities[task.slug],
+                resubmission: @resubmissions&.fetch(task.slug, nil),
+                ever_blocked: @ever_blocked_slugs&.include?(task.slug),
+                ci_progress: @ci_progress_by_slug&.fetch(task.slug, nil),
+                local_check: @local_check_by_slug&.fetch(task.slug, nil),
+                review_in_progress: task.review_in_progress?(events: task.task_events.to_a) %>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+</section>

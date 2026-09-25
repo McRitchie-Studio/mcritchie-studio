@@ -175,7 +175,7 @@ module Review
       # `archived`, so excluding them would empty four of five cards outright.
 
       # Which of these tasks ever carried a QA block. One indexed query, mirroring
-      # TasksController#load_board_task_conversation.
+      # TaskCardPreloads#load_board_task_conversation.
       def ever_blocked_slugs(slugs)
         return Set.new if slugs.blank?
 

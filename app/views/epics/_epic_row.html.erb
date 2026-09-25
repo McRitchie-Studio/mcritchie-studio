@@ -1,0 +1,22 @@
+<%# locals: (epic:) %>
+<%# ONE epic on /epics: its handle (links to /epics/<slug>), how many tasks it holds
+    and where they sit by stage, the done bar, and when it started and last moved.
+    Stacks on a phone; a four-part row from md up. %>
+<li class="rounded-xl border border-subtle bg-surface p-4 hover:border-primary/40 transition"
+    data-test="epic-row" data-epic="<%= epic.slug %>">
+  <div class="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,14rem)] md:items-center md:gap-4">
+    <div class="min-w-0">
+      <%= link_to epic.slug, epic_path(epic.slug),
+            data: { test: "epic-row-link" },
+            class: "block truncate font-semibold text-heading hover:text-primary transition" %>
+      <p class="text-xs text-muted"><%= pluralize(epic.total, "task") %></p>
+    </div>
+    <%= render "epics/stage_counts", epic: epic %>
+    <div class="min-w-0 space-y-1">
+      <%= render "epics/progress_bar", epic: epic %>
+      <p class="text-[11px] text-muted" data-test="epic-row-activity">
+        started <%= compact_time_ago(epic.first_created_at) %> · last activity <%= compact_time_ago(epic.last_activity_at) %>
+      </p>
+    </div>
+  </div>
+</li>

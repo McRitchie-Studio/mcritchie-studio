@@ -1052,7 +1052,27 @@ Three rules, all of them the column-not-devops rule in different clothes:
   quoting the rule, so a handle the chip cannot print and the filter cannot match
   is never stored.
 - A `begin` **resume** refuses `--epic` like every other create flag and names
-  the `update` remedy — set it on the existing task instead.
+the `update` remedy — set it on the existing task instead.
+
+### The epic view
+
+An epic has its own pages, reached from the **Epics** link above every board:
+
+- **`/epics`** lists every epic, newest activity first. Each row shows the task
+  count by stage, a done bar, when the epic started and when it last moved.
+  **Done** means the task reached production: `shipped`, or `archived` after it
+  shipped. A task archived without shipping counts toward the total only.
+- **`/epics/<slug>`** shows that epic's tasks grouped by stage, on the board's own
+  card. The header gives the counts, the done bar, and the span from the first
+  task created to the last task shipped, with links to both boards filtered to the
+  epic.
+- **Release notes** group each app's tasks under their epic, loose tasks first.
+  The Discord header lists the release's epics, and each task card names its
+  epic in the footer. The release card on `/deployments` shows the same epics as
+  chips.
+
+Both pages read `EpicSummary`, which folds one grouped query over `tasks`. There
+is no epic table: an epic exists while a task carries its slug.
 
 ## Cleanup Tasks
 
@@ -1116,7 +1136,8 @@ Do not hand-format the Discord post when the API is available.
 
 Call the API with the accepted production task slugs, release metadata, URL, and
 verification checks. The API groups linked task titles by application in the
-standard ecosystem order and points every task link at the production task read
+standard ecosystem order, nests each group's tasks under their epic when they
+carry one, and points every task link at the production task read
 page on McRitchie Studio.
 
 Run a dry-run first:

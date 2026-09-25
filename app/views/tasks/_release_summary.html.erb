@@ -136,6 +136,20 @@
           <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
         <% end %>
       </div>
+    <%# The EPICS this release carries — one epic chip (tasks/_epic_chip, the card's
+        own) per distinct tasks.epic_slug among its members, so the operator reads a
+        release as the epics it moves, not only as a pile of tasks. Renders nothing
+        when no member belongs to an epic. Server-rendered from the members already
+        loaded above, so the live broadcast re-render draws the same row. %>
+    <% release_epics = members.filter_map { |t| t.epic_slug.presence }.uniq %>
+    <% if release_epics.any? %>
+      <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs" data-test="release-epics">
+        <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Epics</span>
+        <% release_epics.each do |epic_slug| %>
+          <%= render "tasks/epic_chip", epic_slug: epic_slug %>
+        <% end %>
+      </div>
+    <% end %>
     <% if members.any? || trailing %>
       <%# Member pills on the left; optional trailing chip (e.g. the kickoff chip)
           inline on the right of the same row. Last Release pills stay on one
