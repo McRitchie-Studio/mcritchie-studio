@@ -1863,13 +1863,13 @@ class ReleaseCliTest < Minitest::Test
 
     # DevOps v2 Phase 3: the banner names what the step does now — read GitHub CI's
     # verdict for each app's origin/release SHA. The registered qa_test_cmd is still
-    # RECORDED for the G4 drift check, just no longer executed in a local workspace.
+    # RECORDED on the release (the audit trail), just no longer executed anywhere local.
     assert_includes out, "pre-QA gate: GitHub CI's verdict for each app's origin/release SHA " \
                          "(before any QA deploy)"
     # The preview states the CI verdict is the gate and the command is RECORDED (not
     # run) — the plan matches what a real run executes.
     assert_includes out, "[dry-run] pre-QA gate mcritchie-studio: GitHub CI verdict for origin/release " \
-                         "(bin/rails test:integration recorded for the G4 drift check, not run)"
+                         "(bin/rails test:integration ran in CI; recorded, not run)"
     assert_includes out, "turf-monster: no qa_test_cmd registered", "an unregistered app self-gates (skip)"
   end
 
@@ -2012,7 +2012,7 @@ class ReleaseCliTest < Minitest::Test
 
   # [integration] GREEN CI certifies: the gate passes on a green CI verdict for the
   # SHA under test, states that verdict, and records ok:true WITH CI's verdict for the
-  # audit trail (record_qa_gate — the ONLY evidence G4 accepts for skipping its gate).
+  # audit trail (record_qa_gate — nothing gates on it; G4 reads CI for the frozen tree).
   def test_pre_qa_gate_records_a_green_ci_verdict_as_the_certification
     Dir.mktmpdir do |dir|
       out = run_cli(["--yes"], setup: ci_gate_stub(dir, "green"),
@@ -2166,7 +2166,7 @@ class ReleaseCliTest < Minitest::Test
   # an already-green SHA passes the gate WITHOUT polling out the duplicate run
   # (timeout 0: a poll would have failed closed), states the credit, and records
   # the credited source in the gate note (record_qa_gate's ci half) with ok:true
-  # so G4 still self-skips against the same record.
+  # for the release's audit trail.
   def test_pre_qa_gate_credits_an_existing_green_conclusion_on_a_fast_forward_promote
     Dir.mktmpdir do |dir|
       out = run_cli(["--yes"], setup: ci_gate_stub(dir, CREDIT_PAYLOAD),
@@ -2179,17 +2179,36 @@ class ReleaseCliTest < Minitest::Test
                       "the gate line marks the credited verdict apart from a polled one"
       record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
       assert record, "a credited gate still certifies through record_qa_gate: #{out}"
-      assert_includes record, "ok: true", "a credited green records ok:true so G4 may self-skip"
+      assert_includes record, "ok: true", "a credited green records ok:true"
       assert_match(/"credited"\s*=>/, record, "the gate note records the credited source")
       assert_includes record, "fast-forward promote", "…naming WHY the credit applied"
       assert_includes out, "PASSED", "the gate passes on the credit — no duplicate suite run awaited"
     end
   end
 
+  # [unit] The G3 gate run records its OWN SOP per app — CI's state, the SHA and the
+  # verdict's SOURCE — the same line the G4 read records, so both gate runs read alike
+  # on the release. (Outside a gate window $gate_sops is nil and the hook is a no-op.)
+  def test_pre_qa_gate_records_a_pre_qa_gate_sop_naming_the_verdict_source
+    Dir.mktmpdir do |dir|
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, CREDIT_PAYLOAD),
+                    call: %{$gate_sops = []; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("SOPS " + $gate_sops.inspect); puts("PASSED")})
+
+      sops = out.lines.find { |l| l.start_with?("SOPS") }
+      assert sops, "the G3 read must record a gate SOP: #{out}"
+      assert_includes sops, %("sop"=>"pre_qa_gate")
+      assert_includes sops, %("result"=>"pass")
+      assert_includes sops, "GitHub CI GREEN @ #{GATE_SHA[0, 7]} — credited — ", "the SOP names the verdict's SOURCE"
+      assert_includes sops, "fast-forward promote"
+      assert_includes sops, "bin/suite ran in CI, not here"
+      assert_includes out, "PASSED"
+    end
+  end
+
   # [integration] NO FAST-FORWARD, NO SAME-SHA CREDIT — and diverged TREES refuse
   # the tree credit too. The promote here minted a merge commit (origin/release !=
   # origin/accepted) whose tree ALSO differs from accepted's, so NEITHER credit may
-  # engage: not the same-SHA one (ship_gate_skip?'s discipline) and not the
+  # engage: not the same-SHA one (the fast-forward discipline) and not the
   # tree one (a different tree is different content — nothing vouches for it).
   # With the poll window collapsed, the pending duplicates fail closed exactly as
   # before the credit existed. (The diverged-SHA-but-IDENTICAL-tree shape credits —
@@ -2569,17 +2588,17 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
-  # --- G3 certification: the ONLY evidence G4 accepts for skipping its gate ------
+  # --- G3 certification: the release's AUDIT TRAIL of what CI concluded ---------
   #
   # A GREEN CI verdict stamps release.metadata["qa_gates"][repo] = {sha, cmd, ok:true}.
   # A RED CI verdict stamps the SAME shape with ok:FALSE — an honest failed record, not
   # a silent omission (record_qa_gate's caveat). A skipped/absent gate leaves NOTHING.
-  # Only a green ok:true record lets G4 self-skip (ship_gate_skip?); ok:false AND an
-  # absent record both make G4 re-derive the verdict from CI on the frozen SHA. The cmd
-  # is recorded in every case so the G4 drift assertion (certified_cmd == cmd) can hold.
+  # Nothing gates on the record: G4 reads CI for the frozen ship SHA's tree itself, so
+  # a record can neither skip nor arm it. The cmd is recorded in every case so the
+  # trail names the suite CI ran.
 
   # [unit] A GREEN CI verdict records what it CERTIFIED: this repo, this SHA, this cmd,
-  # ok:true. The cmd is RECORDED (not run), which is what keeps the G4 drift check valid.
+  # ok:true. The cmd is RECORDED (not run) — it names the suite CI ran.
   def test_pre_qa_gate_records_the_g3_certification_on_a_green_ci_verdict
     Dir.mktmpdir do |dir|
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -2612,8 +2631,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   # [unit] A RED CI verdict RECORDS ok:false — it must NOT silently un-stamp (the
-  # record_qa_gate caveat). ok:false is not a green record, so G4's ship_gate_skip? still
-  # runs the gate; the honest failed stamp is what the release audit trail reads.
+  # record_qa_gate caveat); the honest failed stamp is what the release audit trail reads.
   def test_pre_qa_gate_records_ok_false_when_ci_is_red
     Dir.mktmpdir do |dir|
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -3747,7 +3765,7 @@ class ReleaseCliTest < Minitest::Test
         end
       RUBY
       out = run_cli(["--yes"], setup: setup,
-                    call: %{run_ship_gate([{ "repo" => "x" }], { "x" => #{GATE_SHA.inspect} }, {}); puts("PASSED")})
+                    call: %{run_ship_gate([{ "repo" => "x" }], { "x" => #{GATE_SHA.inspect} }); puts("PASSED")})
 
       # DevOps v2 Phase 3: the gate READS GitHub CI's verdict for the frozen SHA — the
       # local suite is demoted — but the invariant this test pins is unchanged: the gate
@@ -3762,188 +3780,212 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
-  # --- G4 self-gating: the ship gate skips ONLY on G3's OWN recorded verdict -----
+  # --- G4 ship gate: the tree-verdict READ on the FROZEN SHA (devops-v3 §5) --------
   #
-  # REGRESSION (the DISARM bug this change closes): the old skip predicate compared
-  # the REGISTRY (test_cmd == qa_test_cmd) and the frozen SHA against
-  # release.metadata["qa_shas"] — but qa_shas is stamped by the QA DEPLOY LOOP, not
-  # by the gate. So a G3 that never ran (no qa_test_cmd registered), or that was
-  # misconfigured, still produced a matching pair — and G4 SILENTLY SKIPPED the last
-  # suite before an irreversible prod deploy. The ONLY evidence that may disarm G4
-  # is now G3's own recorded verdict: release.metadata["qa_gates"][repo] =
-  # {sha, cmd, ok: true}. Anything else FAILS OPEN (the suite runs).
+  # One tree earns one verdict. test_gate resolves the frozen ship SHA through the SAME
+  # credit-or-poll path G3 runs on the release tip (resolve_release_ci_verdict) and
+  # classifies what it read (Release::ShipSequence.ship_gate_kind — the pure state table
+  # is unit-tested there; THIS is the wiring). These drive the REAL test_gate with
+  # injected verdicts and a stubbed git, one case per row: green (its own run), credited
+  # same-SHA, credited same-tree, red, held past the poll bound (pending / none /
+  # unverified), unreadable, diverged. In EVERY row the local suite never runs, and no
+  # G3 record is consulted — the self-skip against release.metadata["qa_gates"]
+  # (ship_gate_skip?) went with the local suite it used to spare.
   #
-  # The pure predicate is unit-tested in Release::ShipSequence.ship_gate_skip?; this
-  # is the WIRING — that test_gate consults it with the RIGHT record and honours
-  # both verdicts.
-
-  # The G4 skip matrix, driven through the real test_gate. Each case names the
-  # qa_gates record present on the release when the ship gate runs.
-  SHIP_GATE_SKIP_CASES = {
-    "a matching green record" =>
-      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true }, :skip],
-    "no record at all (G3 never ran / was skipped)" =>
-      [nil, :run],
-    "a record for a DIFFERENT sha (a straggler / re-pinned RC)" =>
-      [{ "sha" => "0" * 40, "cmd" => "bin/suite", "ok" => true }, :run],
-    "a record for a DIFFERENT command (G3 certified a narrower tier)" =>
-      [{ "sha" => GATE_SHA, "cmd" => "bin/rails test test/integration", "ok" => true }, :run],
-    "a RED record (the gate ran and failed)" =>
-      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => false }, :run],
-    # The AUDITOR arms this gate (fail-open only). A green G3 whose CI cross-check
-    # went RED for the SAME SHA is a certification GitHub CONTRADICTS: without this
-    # the skip fired (frozen SHA == certified SHA) and G3's alarm was the ONLY thing
-    # between a CI-red commit and prod — while the alarm claimed G4 would re-gate it.
-    "a green record whose AUDITOR (GitHub CI) called that SHA red" =>
-      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true,
-         "ci" => { "state" => "red", "checks" => ["test:system"] } }, :run],
-    # …and NO-DATA never arms it: silence is not a red, or every ship would pay for
-    # a verdict nobody gave.
-    "a green record whose auditor had NO DATA (no CI run for the SHA)" =>
-      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true, "ci" => { "state" => "none" } }, :skip],
-    "a green record whose auditor was still PENDING" =>
-      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true, "ci" => { "state" => "pending" } }, :skip],
-    "a green record whose auditor AGREED (CI green)" =>
-      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true,
-         "ci" => { "state" => "green", "count" => 4 } }, :skip]
-  }.freeze
-
-  # [unit] test_gate SKIPS only against a matching GREEN G3 record; in every other case
-  # — absent, red, different SHA, different command — it RE-DERIVES the verdict from
-  # GitHub CI on the frozen SHA (green injected here so a re-gate passes) instead of the
-  # demoted local suite. The skip/run decision is UNCHANGED (ship_gate_skip?); what a
-  # "run" means is now a CI read, not a suite run — so the local suite NEVER executes.
-  def test_ship_test_gate_skips_only_against_a_matching_green_g3_record
-    Dir.mktmpdir do |dir|
-      SHIP_GATE_SKIP_CASES.each do |label, (record, expected)|
-        setup = %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
-                %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
-          def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
-          def sh(*a, **k)
-            $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
-            g = gate_git(a, k)
-            return g if g
-            ["", true]
-          end
-        RUBY
-        out = run_cli(["--yes"], setup: setup,
-                      call: %{test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: #{record.inspect}); puts("PASSED")})
-
-        if expected == :skip
-          assert_includes out, "already CERTIFIED green", "#{label}: the skip is a VISIBLE SOP, never silent"
-          refute_includes out, "GitHub CI verdict for frozen", "#{label}: a self-skip does not re-read CI"
-        else
-          assert_includes out, "GitHub CI verdict for frozen",
-                          "#{label}: G4 must NOT self-skip — it re-derives the verdict from CI on the frozen SHA " \
-                          "(a skip here disarms the last gate before an irreversible prod deploy)"
-          refute_includes out, "already CERTIFIED green", "#{label}: a re-gate is not a skip"
-        end
-        refute_includes out, "SUITE-RAN", "#{label}: the demoted local suite NEVER runs — CI is the verdict"
-        assert_includes out, "PASSED", "#{label}: green CI (injected) → the gate passes either way"
-      end
-    end
+  # `accepted:` is what `git rev-parse origin/accepted` answers (GATE_SHA = the frozen
+  # SHA IS the accepted head, a fast-forward; ACC_SHA = a distinct head); the two
+  # `*_tree:` values decide tree identity; `verdicts` maps a SHA to the ci_verdict Hash
+  # it answers, and `ci_status` injects RELEASE_CI_STATUS (a token, or the same-SHA
+  # credit payload). The poll window is collapsed to ONE read, so a pass on a pending
+  # own-run can ONLY come from a credit.
+  def ship_read_stub(dir, accepted: GATE_SHA, accepted_tree: SHARED_TREE, frozen_tree: SHARED_TREE,
+                     ci_status: nil, verdicts: nil)
+    env = ci_status ? %(ENV["RELEASE_CI_STATUS"] = #{ci_status.inspect}\n) : ""
+    verdict_def = verdicts ? %(def ci_verdict(_repo, sha) = #{verdicts.inspect}.fetch(sha) { { state: :none } }\n) : ""
+    env +
+      %(ENV["RELEASE_CI_POLL_TIMEOUT"] = "0"\nENV["RELEASE_CI_POLL_INTERVAL"] = "0"\n) +
+      %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB +
+      %(ACC_SHA = #{ACC_SHA.inspect}\n) +
+      %(def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }\n) +
+      verdict_def +
+      %(def sh(*a, **k)\n) +
+      %(  $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"\n) +
+      %(  $stdout.puts("WORKSPACE \#{a[3]}") if a[0] == "git" && %w[worktree reset clean].include?(a[3].to_s)\n) +
+      %(  return [#{accepted.inspect}, true] if a.include?("origin/accepted")\n) +
+      %(  return [#{frozen_tree.inspect}, true] if a.last.to_s == GATE_SHA + "^{tree}"\n) +
+      %(  return [#{accepted_tree.inspect}, true] if a.last.to_s == ACC_SHA + "^{tree}"\n) +
+      %(  g = gate_git(a, k)\n  return g if g\n  ["", true]\nend\n)
   end
 
-  # [integration] A G3 record whose recorded auditor went RED is a certification GitHub
-  # CONTRADICTS, so G4 does NOT self-skip on it — it RE-DERIVES the verdict from GitHub
-  # CI on the frozen SHA (which, unlike the demoted local suite, CAN see every lane). In
-  # Phase 3 a red G3 auditor aborts prepare, so this record is DEFENSIVE — a stale or
-  # hand-built record must still be re-gated, never trusted.
-  def test_ship_test_gate_re_derives_from_ci_when_the_recorded_auditor_is_red
-    Dir.mktmpdir do |dir|
-      setup = %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
-              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
-        def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
-        def sh(*a, **k)
-          $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
-          g = gate_git(a, k)
-          return g if g
-          ["", true]
-        end
-      RUBY
-      record = { "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true,
-                 "ci" => { "state" => "red", "checks" => ["test:system"] } }
-      out = run_cli(["--yes"], setup: setup,
-                    call: %{test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: #{record.inspect}); puts("PASSED")})
-
-      assert_includes out, "GitHub CI called that SHA RED", "the ship NAMES why it distrusts the record"
-      assert_includes out, "RE-DERIVES the verdict from", "…and re-reads CI rather than self-skipping on it"
-      assert_includes out, "GitHub CI verdict for frozen", "the re-derivation reads CI on the frozen SHA"
-      refute_includes out, "SUITE-RAN", "the local suite is demoted — the re-derivation is a CI read, not a suite run"
-      assert_includes out, "PASSED", "the re-derived CI verdict here is green → the gate passes"
-    end
+  # Drive the real test_gate on the frozen GATE_SHA, printing the SOP buffer and either
+  # PASSED or the abort text.
+  def run_ship_read(setup)
+    run_cli(["--yes"], setup: setup,
+                       call: %{$gate_sops = []; begin; test_gate("x", frozen_sha: #{GATE_SHA.inspect}); puts("PASSED"); } +
+                             %{rescue SystemExit => e; puts("ABORTED: " + e.message); end; puts("SOPS " + $gate_sops.inspect)})
   end
 
-  # --- G4 ship gate: GitHub CI is the verdict on the FROZEN SHA (DevOps v2 Phase 3) ---
-  #
-  # With no matching green G3 record to self-skip on (a straggler, a re-pin, or plain
-  # drift), test_gate re-derives the verdict from GitHub CI for the FROZEN ship SHA —
-  # ci_pass?, fail-closed — instead of re-running the demoted local suite. qa_gate: nil
-  # forces the non-skip path so these exercise the CI verdict directly.
-  def ship_ci_gate_stub(dir, ci_status)
-    %(ENV["RELEASE_CI_STATUS"] = #{ci_status.inspect}\n) +
-      %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
-        def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
-        def sh(*a, **k)
-          $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
-          g = gate_git(a, k)
-          return g if g
-          ["", true]
-        end
-      RUBY
+  def ship_read_sops(out)
+    out.lines.find { |l| l.start_with?("SOPS") } || flunk("the gate must record a SOP either way: #{out}")
   end
 
-  # [integration] GREEN CI on the frozen SHA PASSES the ship gate, records the CI
-  # conclusion as the ship_test_gate SOP, and NEVER runs the local suite.
-  def test_ship_test_gate_passes_and_records_on_a_green_ci_verdict
+  # [integration] GREEN, ITS OWN RUN: the frozen tree shares nothing with the accepted
+  # head (no credit possible), so the verdict is the SHA's own run — read green, the gate
+  # PASSES, and the SOP names that source. Nothing ran here.
+  def test_ship_test_gate_passes_on_the_frozen_shas_own_green_run
     Dir.mktmpdir do |dir|
-      out = run_cli(["--yes"], setup: ship_ci_gate_stub(dir, "green"),
-                    call: %{$gate_sops = []; test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: nil); puts("SOPS " + $gate_sops.inspect); puts("PASSED")})
+      out = run_ship_read(ship_read_stub(dir, accepted: ACC_SHA, accepted_tree: "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+                                              frozen_tree: "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+                                              verdicts: { GATE_SHA => { state: :green, count: 8 } }))
 
       assert_includes out, "GitHub CI verdict for frozen #{GATE_SHA[0, 7]}", "the gate reads CI for the frozen SHA"
-      refute_includes out, "SUITE-RAN", "the local suite is demoted — a green CI ships without it"
-      sops = out.lines.find { |l| l.start_with?("SOPS") }
-      assert sops, "the CI conclusion must be recorded as the gate SOP: #{out}"
+      assert_includes out, "shares neither SHA nor tree", "the non-credit is NAMED before the own run is polled"
+      sops = ship_read_sops(out)
       assert_includes sops, %("sop"=>"ship_test_gate")
       assert_includes sops, %("result"=>"pass")
-      assert_includes sops, "GitHub CI GREEN", "…naming the Tier-3 Actions conclusion"
+      assert_includes sops, "GitHub CI GREEN @ #{GATE_SHA[0, 7]}"
+      assert_includes sops, "the SHA's own run, polled to a settled conclusion", "…naming the verdict's SOURCE"
+      assert_includes sops, "bin/suite ran in CI, not here", "…and the suite CI ran"
+      refute_includes out, "SUITE-RAN", "the local suite never runs — CI is the verdict"
+      refute_includes out, "WORKSPACE", "the read pins no workspace"
       assert_includes out, "PASSED"
     end
   end
 
-  # [integration] RED CI on the frozen SHA FAILS the ship gate CLOSED — a red frozen
-  # commit must not reach the irreversible prod deploy — and records a RED SOP.
+  # [integration] CREDITED, SAME SHA: the frozen SHA IS the accepted head (a fast-forward
+  # promote) and already carries completed greens that cover the pending duplicates —
+  # exactly G3's same-SHA credit (CiStatus.credit_for_sha). With the poll collapsed, a
+  # PASS can only come from that credit, and the SOP names it as the source.
+  def test_ship_test_gate_credits_the_frozen_shas_own_completed_greens_on_a_fast_forward
+    Dir.mktmpdir do |dir|
+      out = run_ship_read(ship_read_stub(dir, accepted: GATE_SHA, ci_status: CREDIT_PAYLOAD))
+
+      assert_includes out, "crediting the existing green conclusion for #{GATE_SHA[0, 7]}"
+      sops = ship_read_sops(out)
+      assert_includes sops, %("result"=>"pass")
+      assert_includes sops, "GitHub CI GREEN @ #{GATE_SHA[0, 7]} — credited — ", "the SOP names a CREDITED source"
+      assert_includes sops, "completed check-run", "…the completed runs that covered the duplicates"
+      assert_includes sops, "fast-forward promote", "…and why the credit applied"
+      refute_includes out, "SUITE-RAN"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [integration] CREDITED, SAME TREE: the frozen SHA is a batch-PR merge commit whose
+  # tree equals the accepted head's, and the accepted head's own run is green — G3's
+  # tree credit (tree_identical_ci_outcome), now vouching for the frozen tree at ship.
+  # The frozen SHA's own run reads PENDING and the poll is collapsed, so the credit is
+  # the only way to pass; the SOP names both SHAs and the shared tree.
+  def test_ship_test_gate_credits_the_accepted_heads_green_for_an_identical_frozen_tree
+    Dir.mktmpdir do |dir|
+      out = run_ship_read(ship_read_stub(dir, accepted: ACC_SHA, accepted_tree: SHARED_TREE, frozen_tree: SHARED_TREE,
+                                              verdicts: { ACC_SHA => { state: :green, count: 8 },
+                                                          GATE_SHA => { state: :pending } }))
+
+      assert_includes out, "crediting the existing green conclusion for #{GATE_SHA[0, 7]}"
+      sops = ship_read_sops(out)
+      assert_includes sops, %("result"=>"pass")
+      assert_includes sops, "credited — tree-identical promote", "the SOP names the tree credit as the source"
+      assert_includes sops, ACC_SHA, "…the accepted head that vouched"
+      assert_includes sops, SHARED_TREE, "…and the shared tree"
+      refute_includes out, "SUITE-RAN"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [integration] RED FAILS CLOSED: a failed check on the frozen SHA aborts BEFORE the
+  # irreversible prod deploy, names the red, and records a RED SOP.
   def test_ship_test_gate_fails_closed_on_a_red_ci_verdict
     Dir.mktmpdir do |dir|
-      out = run_cli(["--yes"], setup: ship_ci_gate_stub(dir, "red"),
-                    call: %{$gate_sops = []; begin; test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: nil); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end; puts("SOPS " + $gate_sops.inspect)})
+      out = run_ship_read(ship_read_stub(dir, ci_status: "red"))
 
       assert_includes out, "ABORTED", "a red frozen SHA must abort BEFORE the prod deploy"
-      assert_includes out, "RED", "…naming CI's red verdict"
+      assert_includes out, "called frozen #{GATE_SHA[0, 7]} RED", "…naming CI's red verdict for the frozen SHA"
       assert_includes out, "must not ship"
-      refute_includes out, "SUITE-RAN", "no local suite runs — CI is the verdict"
-      sops = out.lines.find { |l| l.start_with?("SOPS") }
-      assert_includes sops, %("result"=>"fail"), "the red gate is recorded as a failed SOP"
+      assert_includes ship_read_sops(out), %("result"=>"fail"), "the red gate is recorded as a failed SOP"
+      refute_includes out, "SUITE-RAN"
       refute_includes out, "PASSED"
     end
   end
 
-  # [integration] NO GREEN VERDICT FAILS CLOSED at G4 too: a pending/no-data verdict for
-  # the frozen SHA (e.g. a just-pushed re-pin whose CI has not concluded) HOLDS the ship,
-  # points at the --skip-test-gate override, and never reads as a pass.
-  def test_ship_test_gate_fails_closed_on_a_pending_or_no_data_verdict
-    %w[pending none unverified unreadable].each do |state|
+  # [integration] HELD PAST THE POLL BOUND: a pending / absent / unverified verdict for
+  # the frozen SHA is polled (here: bound 0, one read) and then fails CLOSED — it HOLDS
+  # the ship, names what it read and how long it polled, points at the override, and
+  # never reads as a pass. (A red-CI abort names "RED"; these must not.)
+  def test_ship_test_gate_holds_on_a_verdict_that_never_settled_within_the_poll_bound
+    %w[pending none unverified].each do |state|
       Dir.mktmpdir do |dir|
-        out = run_cli(["--yes"], setup: ship_ci_gate_stub(dir, state),
-                      call: %{begin; test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: nil); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+        out = run_ship_read(ship_read_stub(dir, ci_status: state))
 
-        assert_includes out, "ABORTED", "#{state}: an absent/unknown CI verdict must fail the ship gate closed"
-        assert_includes out, "NO green verdict for frozen", "#{state}: names what it could not certify"
+        assert_includes out, "ABORTED", "#{state}: an absent/unsettled CI verdict must fail the ship gate closed"
+        assert_includes out, "test gate HELD", "#{state}: a hold, not a red"
+        assert_includes out, "NO green verdict for frozen #{GATE_SHA[0, 7]} (#{state}", "#{state}: names what it read"
+        assert_includes out, "after polling ~0s", "#{state}: …and that it polled to the bound"
         assert_includes out, "FAILS CLOSED", "#{state}: says why it held"
         assert_includes out, "--skip-test-gate", "#{state}: points at the first-class override"
+        assert_includes ship_read_sops(out), %("result"=>"fail"), "#{state}: a hold is recorded as a failed SOP"
         refute_includes out, "SUITE-RAN", "#{state}: no local suite runs"
         refute_includes out, "PASSED"
       end
+    end
+  end
+
+  # [integration] UNREADABLE aborts AT ONCE: a refused read (401/403) is a token fault
+  # polling cannot heal, so the gate does not poll it — it names the fault and the
+  # credential remedy, and never trades the silence for a green.
+  def test_ship_test_gate_aborts_at_once_on_an_unreadable_ci_verdict
+    Dir.mktmpdir do |dir|
+      out = run_ship_read(ship_read_stub(dir, ci_status: "unreadable"))
+
+      assert_includes out, "ABORTED"
+      assert_includes out, "GitHub CI is UNREADABLE for frozen #{GATE_SHA[0, 7]}", "names the fault, not a hold"
+      assert_includes out, "did NOT poll it", "a refused token is not waited on"
+      assert_includes out, "credential/token fault"
+      assert_includes out, "--skip-test-gate"
+      refute_includes out, "test gate HELD", "unreadable is not the pending class"
+      assert_includes ship_read_sops(out), %("result"=>"fail")
+      refute_includes out, "SUITE-RAN"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [integration] DIVERGED: the frozen tree shares neither SHA nor tree with the accepted
+  # head (a consumer lock-bump commit, or accepted has moved on), so no earlier green can
+  # vouch for it — AND its own run gave no green within the bound. The abort names BOTH
+  # halves, so the operator knows why no credit applied and what the own run read.
+  def test_ship_test_gate_names_a_diverged_tree_whose_own_run_never_went_green
+    Dir.mktmpdir do |dir|
+      out = run_ship_read(ship_read_stub(dir, accepted: ACC_SHA, accepted_tree: "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+                                              frozen_tree: "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+                                              verdicts: { GATE_SHA => { state: :pending } }))
+
+      assert_includes out, "ABORTED"
+      assert_includes out, "shares neither SHA nor tree with the accepted head", "names why no credit applied"
+      assert_includes out, "no earlier green could vouch for its tree"
+      assert_includes out, "OWN run has NO green verdict for frozen #{GATE_SHA[0, 7]} (pending)", "…and what the own run read"
+      assert_includes out, "FAILS CLOSED"
+      assert_includes out, "--skip-test-gate"
+      refute_includes out, "crediting", "a diverged tree credits nothing"
+      assert_includes ship_read_sops(out), %("result"=>"fail")
+      refute_includes out, "SUITE-RAN"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [integration] The read consults NO G3 record. A release whose qa_gates carry a green,
+  # matching certification used to make G4 self-skip; now the frozen SHA's own CI verdict
+  # decides regardless — a RED frozen SHA aborts even beside a "certified green" record,
+  # because the record is an audit trail, not a verdict.
+  def test_ship_test_gate_ignores_the_g3_record_and_reads_ci_for_the_frozen_tree
+    Dir.mktmpdir do |dir|
+      setup = ship_read_stub(dir, ci_status: "red") +
+              %(\ndef conductor(_ruby, read_only: false) = { "qa_gates" => { "x" => { "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true } } }\n)
+      out = run_ship_read(setup)
+
+      assert_includes out, "ABORTED", "a green G3 record cannot pass a frozen SHA CI calls red"
+      assert_includes out, "called frozen #{GATE_SHA[0, 7]} RED"
+      refute_includes out, "already CERTIFIED", "there is no self-skip to print"
+      refute_includes out, "PASSED"
     end
   end
 
@@ -4010,7 +4052,7 @@ class ReleaseCliTest < Minitest::Test
                       "RED — a gate that did NOT run is not a green gate; this is the record the old " \
                       "registry-blanking trick never left"
       assert_includes sops, "SKIPPED BY OPERATOR (--skip-test-gate): gate host postgres is down"
-      assert_includes sops, %(did NOT run on #{GATE_SHA[0, 7]}), "…naming the SHA that ships uncertified"
+      assert_includes sops, %(was NOT read on #{GATE_SHA[0, 7]}), "…naming the SHA that ships uncertified"
 
       refute_includes out, "SUITE", "the suite must NOT run — that is what was asked for"
       refute_includes out, "DB-PREPARE", "…and nothing prepares a workspace that will never be used"

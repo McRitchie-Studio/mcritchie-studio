@@ -85,10 +85,11 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=pl-test-run]" do
       assert_select ".pl-slug", text: "ship_test_gate"
       assert_select "[data-test=pl-test-verdict].good", text: "pass"
-      # phase/tier/host DERIVED from the scope registry (ship_test_gate → ship/full/local)
+      # phase/tier/host DERIVED from the scope registry (ship_test_gate → ship/full/ci:
+      # the G4 gate READS CI's verdict for the frozen tree; CI ran the full suite)
       assert_select ".pl-tag", text: "ship"
       assert_select ".pl-tag", text: "full"
-      assert_select ".pl-tag", text: "local"
+      assert_select ".pl-tag", text: "ci"
       # counts re-parsed from the summary; duration from the stored duration_ms
       assert_select ".pl-counts", text: /141 runs/
     end

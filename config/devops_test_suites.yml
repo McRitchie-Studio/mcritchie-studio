@@ -230,10 +230,15 @@ apps:
 # `npx playwright test` on THIS box against a production URL.
 release_scopes:
   pre_qa_gate:
-    description: Per-app integration tier on origin/release before any QA deploy (release_repos.yml qa_test_cmd)
+    # Presence: light — a READ. GitHub CI's settled verdict for each app's
+    # origin/release tree (a same-SHA / same-tree green credited from the accepted
+    # head, else the tip's own run polled to a conclusion), recorded with its
+    # source before any QA deploy. The registered qa_test_cmd names the suite CI
+    # ran; nothing runs on this box (devops-v3 §5, one tree earns one verdict).
+    description: G3 pre-QA gate — GitHub CI's settled verdict for each app's origin/release tree, read before any QA deploy (release_repos.yml qa_test_cmd names the suite CI ran)
     phase: qa
-    tier: integration
-    host: local
+    tier: full
+    host: ci
     blocks: blocking
     mutates: false
   qa_up_smoke:
@@ -253,10 +258,13 @@ release_scopes:
     blocks: blocking
     mutates: true
   ship_test_gate:
-    description: Steffon ship gate — per-app registry test_cmd on the FROZEN ship SHA before ship authority (release_repos.yml test_cmd)
+    # Presence: light — a READ, resolved exactly as pre_qa_gate is, for the FROZEN
+    # ship SHA's tree before ship authority. The registered test_cmd names the
+    # suite CI ran; nothing runs on this box.
+    description: G4 ship gate — GitHub CI's settled verdict for each app's FROZEN ship SHA tree, read before ship authority (release_repos.yml test_cmd names the suite CI ran)
     phase: ship
     tier: full
-    host: local
+    host: ci
     blocks: blocking
     mutates: false
   gem_release_check:

@@ -757,10 +757,10 @@ class Release
     # completed runs that covered the pending duplicates), or the SHA's own run.
     # Never blank, so a SOP always says where its green came from.
     def verdict_source(ci, credited: false)
-      note = ci.is_a?(Hash) ? ci[:credited].to_s.strip : ""
-      return "credited — #{note}" if credited && !note.empty?
+      return "the SHA's own run, polled to a settled conclusion" unless credited
 
-      "the SHA's own run, polled to a settled conclusion"
+      note = ci.is_a?(Hash) ? ci[:credited].to_s.strip : ""
+      "credited — #{note.empty? ? 'source not recorded' : note}"
     end
 
     # --- resuming a KILLED ship: is the frozen SHA ALREADY live on prod? --------
