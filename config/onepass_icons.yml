@@ -1,0 +1,33 @@
+# 1Password vault icons — the workspace scopes bin/onepass-icon can badge.
+#
+# Each scope is one client workspace. `badge` is the logo drawn in the corner
+# disc (a repo path; omit it and the CLI demands --badge). `accent` is the ring
+# colour as #rrggbb; omit it and the ring takes the badge logo's own average
+# colour. `vaults` names the 1Password vaults that wear this icon, which is
+# what the credential_vaults rows' icon_scope points back at.
+#
+# This repo is PUBLIC. A logo and a vault name belong here; an email address,
+# an item id or anything secret does not.
+#
+# SOP: docs/agents/agents/steffon/sops/onepass-icon.md
+
+logo: lib/onepass_icons/1password.png
+
+workspaces:
+  studio:
+    name: McRitchie Studio
+    vaults: [studio-agents, studio-agents-admin, studio-applications]
+  industries:
+    name: McRitchie Industries
+    vaults: [industries-agents]
+  family:
+    name: McRitchie Family
+    vaults: [family-agents]
+  commercial-welding:
+    name: Commercial Welding
+    vaults: [Commercial Welding]
+  treasure:
+    name: Treasure (reference badge)
+    badge: lib/onepass_icons/badges/treasure-chest.png
+    accent: "#8E83FC"
+    vaults: []
