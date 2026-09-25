@@ -22,6 +22,14 @@ class CredentialRecord < ApplicationRecord
 
   TEXT_COLUMNS = %w[title service url used_by scope_summary notes].freeze
 
+  # How a service slug reads as a row label. Unlisted slugs are titleized.
+  SERVICE_LABELS = {
+    "aws" => "AWS", "github" => "GitHub", "heroku" => "Heroku", "higgsfield" => "Higgsfield",
+    "slack" => "Slack", "coinbase" => "Coinbase", "google" => "Google Workspace"
+  }.freeze
+
+  def self.service_label(service) = SERVICE_LABELS.fetch(service.to_s) { service.to_s.titleize }
+
   # <service>.<entity>.<lane> — the credential-filing convention.
   CONVENTION = /\A[a-z0-9-]+\.[a-z0-9-]+\.(?:agents|admin|applications)\z/
 
