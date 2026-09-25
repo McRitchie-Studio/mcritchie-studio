@@ -413,7 +413,7 @@ has reached `main`, because the v3 batch still waits on Alex's ship authority.
 | 2 | `dor-check` reads the CI verdict 1582 · evidence system deleted 1589 · G4 reads the tree verdict 1584 |
 | 3 | operator windows 1586 · ship grant scoped to its request 1591 |
 | 4 | derived `merged`, PR and authors 1592 · hardened reads 1594 · desk is the build claim 1596 · derivation 404s and list totals 1599 · verdict-owner gate, UNNAMED builders and migration lane deleted 1601 |
-| 5 | AGENTS.md map 1593 · capability pages 1598 · long pages cut 1600 · docs guard tests trimmed to the live facts (this change) |
+| 5 | AGENTS.md map 1593 · capability pages 1598 · long pages cut 1600 · docs guard tests trimmed to the live facts (trim-docs-guard-tests) |
 | 6 | auto-grade at ship, actor and cost 1595 |
 | 7 | epic view and release notes 1597 |
 
