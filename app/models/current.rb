@@ -22,6 +22,11 @@ class Current < ActiveSupport::CurrentAttributes
   # Task#write_stage_event can re-derive the event's cost SERVER-side (honoring an
   # operator rate override the no-ActiveRecord CLI could never see).
   attribute :task_event_cache_creation_tokens, :task_event_cache_read_tokens
+  # THE BUILD CLAIM (devops-v3: the desk is the build claim). A PATCH that names
+  # `stage: building` is a claim whether or not the stage changes, and the session
+  # that made it rides on the event. Task#build_claim_save? and
+  # Task#stamp_build_claim_session read these; nothing else does.
+  attribute :task_build_claim, :task_event_session
   # Request-scoped memo of the model_rate_overrides table (UsagePricing.db_rates).
   # price() is on the hot capture path; without this it re-SELECTs on every call.
   # ModelRateOverride expires it on write, so a freshly-saved rate is never stale.
