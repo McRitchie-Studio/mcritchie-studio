@@ -646,6 +646,27 @@ apps:
       remote: https://git.heroku.com/mcritchie-industries.git
       branch: main
       smoke_url: https://www.mcritchie.industries
+  cyvasse:
+    ladder: three-rung
+    # Managed studio-engine satellite (epic cyvasse-revival, registered
+    # 2026-09-25): Alex's first app (2014-15), rebuilt fresh on Rails 8.1.
+    # McRitchie-Studio/cyvasse was created with main + accepted + release, so it
+    # is three-rung from birth and the rung guard holds it to that.
+    #
+    # NO prod_deploy, NO test_cmd, NO qa_test_cmd, NO qa_environments entry —
+    # DELIBERATE, and each one owes its own arrival:
+    #   * prod_deploy: the Heroku app `cyvasse` does not exist yet (epic piece 8).
+    #     An app with no target is a first-class case — ship advances main and
+    #     records "no production deploy target". Do NOT declare a git_push_heroku
+    #     adapter before the app is provisioned; declare it WITH piece 8.
+    #   * test_cmd / qa_test_cmd: the repo has no ci.yml yet (piece 1 scaffolds
+    #     it). When it lands, register CI's full suite verbatim at BOTH gates, as
+    #     mcritchie-industries does — git_push_heroku runs no test step, so the
+    #     registered command IS the last gate before prod.
+    #   * qa_evidence stays REQUIRED (the default). With no QA environment a
+    #     cyvasse member cannot earn QA evidence, so a sweep holds it at the QA
+    #     stamp until piece 8 wires `cyvasse-qa`. That hold is the honest state;
+    #     do not declare it exempt — it will be QA-deployable.
   tax-studio:
     # PLANNED — no repo yet. The guard asserts no checkout exists, so this
     # exemption expires the day one does.

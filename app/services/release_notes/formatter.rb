@@ -9,7 +9,8 @@ module ReleaseNotes
       { key: "solana-studio", label: "Solana Studio", emoji: "🧱", aliases: ["solana-studio"] },
       { key: "rolio", label: "Rolio", emoji: "📇", aliases: ["rolio"] },
       { key: "mcritchie-industries", label: "McRitchie Industries", emoji: "📐",
-        aliases: ["mcritchie-industries"] }
+        aliases: ["mcritchie-industries"] },
+      { key: "cyvasse", label: "Cyvasse", emoji: "🐉", aliases: ["cyvasse"] }
     ].freeze
 
     # Discord caps a single message at 10 embeds. The deploy header now rides in the

@@ -10,6 +10,22 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", dashboard_path, count: 0
   end
 
+  # A `planned` satellite holds its port range and registry row but is not live,
+  # so the public Apps section must not link to it. cyvasse is registered planned
+  # (epic cyvasse-revival) before its Heroku app exists; linking it would send a
+  # visitor to a host that does not answer.
+  test "[integration] a planned satellite stays off the public Apps section" do
+    cyvasse = Satellite.find("cyvasse")
+    assert cyvasse, "precondition: cyvasse is registered in config/satellites.yml"
+    assert_equal "planned", cyvasse.status
+
+    get links_path
+    assert_response :success
+    assert_match "Turf Monster", response.body, "control: an active satellite does render"
+    assert_no_match "Cyvasse", response.body
+    assert_select "a[href^=?]", cyvasse.production_url, count: 0
+  end
+
   test "anonymous link sidebar exposes only the public Apps section" do
     get links_path
     assert_response :success
