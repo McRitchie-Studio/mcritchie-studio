@@ -34,7 +34,7 @@ durable handoff records. If an agent records task metadata outside production
 while implementing, the agent must backfill or update the production task before
 PR handoff.
 
-If Mr. McRitchie starts work in chat and no task exists yet, the feature agent
+If Alex starts work in chat and no task exists yet, the feature agent
 creates a flat production task from the ask before allocating a worktree or
 editing files. If a task already exists, the agent updates that task instead of
 creating a duplicate.
@@ -62,7 +62,7 @@ directory** — so `docs/agents/setup.sh` gates like any other script, while
 [gates/dor.md](gates/dor.md).
 
 Feature agents should first identify the feature and accumulate acceptance
-criteria until the agent and Mr. McRitchie are aligned on the goal. The task is
+criteria until the agent and Alex are aligned on the goal. The task is
 the durable version of that alignment. Exceptions are narrow conductor sessions
 such as Avi running the DevOps/QA cycle, pure read-only audits, and explicit
 release/deploy lanes; those sessions still update tasks when they change
@@ -82,7 +82,7 @@ Minimum task setup before implementation:
   `Task.slug` remains the immutable production task id.
 - `repositories` lists every repo expected to change.
 - `acceptance` records concrete acceptance criteria. If the ask is ambiguous,
-  confirm criteria with Mr. McRitchie before building.
+  confirm criteria with Alex before building.
 - `risk_tags` captures likely risk such as `auth`, `email`, `solana`,
   `payment`, `migration`, `ui`, `provider`, `docs`, or `deploy`.
 - `test_plan` records the checks the agent expects to run.
@@ -98,7 +98,7 @@ Stage movement:
 2. Move to `building` when an agent claims the task and creates or enters the
    worktree.
 3. Before opening the PR, use the Operator Validation Gate when the work has a
-   local UI or inspectable workflow Mr. McRitchie should approve.
+   local UI or inspectable workflow Alex should approve.
 4. Move to `submitted` only after the branch is pushed, the PR exists, the
    local URL is recorded when applicable, and `checks_run` records actual
    feature-agent verification.
@@ -131,7 +131,7 @@ Handoff connections:
 
 ## Operator Validation Gate
 
-Use this gate when a feature agent has built enough for Mr. McRitchie to inspect
+Use this gate when a feature agent has built enough for Alex to inspect
 locally. Ask BEFORE opening the PR — that is still the flow — but a request you
 set at `building` now SURVIVES the handoff and keeps pulsing while the task sits
 in review, so a ship no longer costs you the request (fixed 2026-09-09).
@@ -156,11 +156,11 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
 4. The board treats `devops.approval_status=waiting` as an attention state: the
    card ranks above its stage peers, pulses, and flashes a card-width **WAITING
    APPROVAL** bar. Clicking that bar bounces to the LOCAL stack's dev-only mint
-   endpoint (`/_studio/local_review`, studio-engine >= 0.19), which signs Mr.
-   McRitchie in on THAT server and lands him on the page under review — the
+   endpoint (`/_studio/local_review`, studio-engine >= 0.19), which signs
+   Alex in on THAT server and lands him on the page under review — the
    board itself cannot mint a session for another server, which is why it hands
    off instead of minting. It refuses any `local_url` that is not loopback.
-5. If Mr. McRitchie approves, finish DoR, commit, push, open the PR, and hand off.
+5. If Alex approves, finish DoR, commit, push, open the PR, and hand off.
    If he has not answered yet, hand off anyway — `bin/ship` carries the request
    into `submitted` and the card keeps pulsing in the review column.
 6. If changes are requested, set `--approval changes_requested` and keep the task
@@ -187,7 +187,7 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    and the documented `bin/ship` then discarded the request on its move to
    `submitted` — measured three times in one night, on turf PRs 644, 647 and 653.
    Following the docs produced the discard every time, and the pulse is the only
-   mechanism that asks for Mr. McRitchie's attention at all.
+   mechanism that asks for Alex's attention at all.
 
 8. **Already past `reviewed`? Record his answer where you stand — never move the
    task back.** From `reviewed` on, the code is on `accepted`: moving the task back
@@ -208,7 +208,7 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
 
 ## Operator windows
 
-Three clocks give Mr. McRitchie a bounded time to answer, and name what happens
+Three clocks give Alex a bounded time to answer, and name what happens
 when he does not (design: `docs/agents/system/devops-v3-design.md`, section 6).
 Every window is **derived** — a timestamp the task or release already carries
 plus a length from `config/release_builder.yml` (`operator_windows:`) — so there
@@ -275,8 +275,8 @@ which both review role SOPs run
 `wait-for-ci`, `request-changes`, and `conductor-review`.
 
 A report is evidence; the **primary** owns the verdict and acts on it. On
-`merge-ready` it merges the feat PR into `accepted` (`gh pr merge --merge`), stamps
-`bin/task merged <slug> accepted`, and moves the task to `reviewed`. On
+`merge-ready` it merges the feat PR into `accepted` (`gh pr merge --merge`) and moves
+the task to `reviewed`; the board derives `merged` from GitHub, so nobody stamps it. On
 `request-changes` it blocks the task back to the builder with `bin/task block
 <slug> --kind rework --feedback "…" --agent carl`, which posts the `qa_feedback` the builder
 reads — plus a PR comment when the feedback is tied to changed code or CI. Nobody
@@ -377,7 +377,7 @@ tell you nothing is wrong:
 answered "no block" while `bin/task bounces` read `BREAKER: TRIPPED` and the PR head
 had not moved since the send-back. The task was promoted to `submitted` and a
 reviewer briefed that a merge-ready verdict was on record — one step from a correct
-verdict becoming send-back 2 of 2, which escalates to Mr. McRitchie over a
+verdict becoming send-back 2 of 2, which escalates to Alex over a
 resubmission that never happened.
 
 **Ask the tree instead.** The board now serves a `resubmission` verdict on every task
@@ -686,7 +686,7 @@ the hub's.
 `bin/ship` pushes, opens the PR, and polls `gh pr checks`; `begin`'s preflight
 reads PR state. When one of those refuses — `Bad credentials`, a 401/403, an
 unreadable CI, a `gh auth login` prompt — it is **yours to fix, and NOT an
-escalation to Mr. McRitchie**: run `eval "$(bin/gh-auth-refresh --export)"`, read
+escalation to Alex**: run `eval "$(bin/gh-auth-refresh --export)"`, read
 its **stderr** (`eval` reports the `export` builtin's status, so it hides the
 command's exit code), then re-run the wrapper — **it resumes**, so a stale token
 costs you the refresh and nothing else. Never fall back to `gh auth login`: `gh`
@@ -773,33 +773,22 @@ bin/ship-wait <task-slug>                                # attach to one already
 bin/ship-wait <task-slug> --log <path> --pid <pid>       # attach to one you launched yourself
 ```
 
-**Run the DESK's copy, not the hub primary's.** The bare form above already does
-that from a hub desk, and `bin/task begin` prints the desk's absolute path in its
-`next:` line. Reaching for the hub's absolute path instead
-(`/Users/alex/projects/mcritchie-studio/bin/ship-wait`) puts the script in a
-checkout that OTHER PROCESSES MOVE: `git checkout` unlinks each file and
-recreates it, so a tracked file is absent for ~0.4-0.7s of every checkout
-(measured 2026-09-13, ~68% of the operation), and a command starting in that
-window dies with `cannot load such file` or exit 127. That is four measured
-failures on 2026-09-10 alone. `bin/ship` and `bin/ship-wait` now HAND OFF to the
-desk's own copy when you invoke the hub's — they announce it on stderr, and
-`MCR_SKIP_DESK_HANDOFF=1` opts out — but the handoff cannot save you if the hub's
-copy is itself mid-rewrite when the shell goes to exec it. Naming the desk path
-can.
+**Run the fixed-path copy, not the hub primary's.** The hub primary is a checkout
+that OTHER PROCESSES MOVE: `git checkout` unlinks each file and recreates it, so a
+tracked file is absent for ~0.4-0.7s of every checkout (measured 2026-09-13), and a
+command starting in that window died with `cannot load such file` or exit 127 —
+four measured failures on 2026-09-10 alone, and every satellite desk was exposed,
+because only `mcritchie-studio` carries these scripts.
 
-**It does not cover a satellite.** Only `mcritchie-studio` ships these scripts
-(verified 2026-09-13: `bin/ship` present in 31/32 hub desks, **0/32 turf desks**),
-so a turf-monster, rolio or gem desk has no copy to hand off to and every one of
-its ships runs the hub's script. Those runs stay exposed; what they get instead
-is the diagnosis below.
-
-**When it does bite, the error now says so.** A `cannot load such file` from a
-moved checkout prints `THE HUB CHECKOUT MOVED UNDER THIS COMMAND`, the file, the
-repo's last HEAD move from the reflog, and the remedy — **re-run it**. There is
-no retry anywhere in this path, deliberately: a retry cannot tell a checkout
-window from a genuinely missing file, and the diagnosis stays SILENT for a file
-that was never in `HEAD` so a typo is never dressed up as a moved tree. Owned by
-`bin/lib/hub_move_diagnosis.rb`.
+The cause is now removed rather than patched. `bin/install-agent-docs`, which the
+production ship runs from the tree it just shipped, installs the fast-lane tooling
+to `/Users/alex/projects/.agents/tooling/<sha>/` and atomically swaps the symlink
+`/Users/alex/projects/.agents/bin` onto it. Nothing checks that directory out, and
+the installed scripts still act on the desk you stand in. So name
+`/Users/alex/projects/.agents/bin/ship-wait`, from any desk, hub or satellite. The
+hub's absolute path stays a working fallback for one release. The desk-handoff
+re-exec (`MCR_SKIP_DESK_HANDOFF`) and the hub-move diagnosis that used to paper over
+the window are deleted.
 
 **Exit codes — branch on these, never re-parse the log:**
 
@@ -898,7 +887,7 @@ procedure lives:
 | QA release | Avi | [`qa-release`](../agents/avi/sops/qa-release.md) | promotes all of `accepted` onto `release` (one batch PR per repo), deploys QA, flips members to `assembled` only on QA-green |
 | Production | Steffon | [`production-deploy`](../agents/steffon/sops/production-deploy.md) | fast-forwards `release → main`, stamps `merged: main`, moves members to `shipped` |
 
-Production stays gated until Mr. McRitchie explicitly approves release work.
+Production stays gated until Alex explicitly approves release work.
 
 **What review reads besides the diff.** `devops.post_deploy_cmd` runs verbatim
 against production on ship: reject a bare `db:seed` and require a narrow, idempotent

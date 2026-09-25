@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-Steffon owns this module. Mr. McRitchie approved the rules on 2026-09-01 and
+Steffon owns this module. Alex approved the rules on 2026-09-01 and
 handed maintenance to Steffon's role: rule changes ride normal doc tasks under
 his name, and `bucket-provision`
 ([`../agents/steffon/sops/bucket-provision.md`](../agents/steffon/sops/bucket-provision.md))
@@ -30,7 +30,7 @@ is the act that applies them to a new app.
 
 | Tier | Identity | Holds | Store |
 |---|---|---|---|
-| 1 | `alex-admin` / root | Mr. McRitchie only | his private vault |
+| 1 | `alex-admin` / root | Alex only | his private vault |
 | 2 | `studio-agents-admin` | Steffon's provisioning lane: `s3:*`, mint/rotate `/mcr/*` users, account read-only | item `AWS`, vault `studio-agents-admin` (admin op lane only) |
 | 3 | `agent-studio` | day-to-day agent object surgery across the fleet; no IAM, no bucket create/delete | **design pending** — nothing mints it yet, `bucket-provision` included; until it exists, use tier 2 or the app's tier-4 key |
 | 4 | `mcr-<app>-prod` / `mcr-<app>-dev` | one app's buckets, exactly | Heroku config vars + 1Password record |

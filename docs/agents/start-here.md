@@ -100,7 +100,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
 | Memory maintenance | `mcritchie-studio/docs/agents/modules/memory-maintenance.md` |
 | Result distillation (findings not raw ops) | `mcritchie-studio/docs/agents/modules/result-distillation.md` |
-| Communication style (reporting to Mr. McRitchie) | `mcritchie-studio/docs/agents/modules/communication-style.md` |
+| Communication style (reporting to Alex) | `mcritchie-studio/docs/agents/modules/communication-style.md` |
 | Audit playbook | `mcritchie-studio/docs/agents/modules/audit-playbook.md` |
 | Shared SES production proof | `mcritchie-studio/docs/agents/audits/ses-production-proof-2026-06-14.md` |
 | Current final closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-17.md` |

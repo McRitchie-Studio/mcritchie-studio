@@ -185,18 +185,19 @@ class Release
         bool: ["--file-tasks"], value: ["--worked", "--friction", "--followup"], allow_positional: true
       },
       # Re-post a shipped release's notes to Discord. A DRY RUN unless --post: it
-      # prints the notes and the planned message split, and sends nothing.
+      # prints the notes and the planned message split, and sends nothing. Notes
+      # already delivered need --force to post again.
       "notes" => {
-        synopsis: "bin/release notes <release> [--post]",
+        synopsis: "bin/release notes <release> [--post] [--force]",
         consequence: "nothing was posted to Discord",
-        bool: ["--post"], value: [], allow_positional: true
+        bool: ["--post", "--force"], value: [], allow_positional: true
       }
     }.freeze
 
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
-            "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|status|archive|retro|notes <release> [--post]} " \
+            "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|status|archive|retro|notes <release> [--post] [--force]} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto] [--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
 

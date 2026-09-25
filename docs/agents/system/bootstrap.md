@@ -13,7 +13,7 @@ bin/rails db:create db:migrate db:seed
 bin/rails server
 ```
 
-Visit `http://localhost:3000` — dashboard shows the 9 agents (Alex, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason), task pipeline, activity feed.
+Visit `http://localhost:3000` — dashboard shows the 9 agents (Xan, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason), task pipeline, activity feed.
 
 ## Agent docs + user-global skills
 

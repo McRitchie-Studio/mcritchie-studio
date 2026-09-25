@@ -143,6 +143,10 @@ class StateStoreContainmentTest < Minitest::Test
                               "the cache holds a live credential, so a sandboxed run must abort rather " \
                               "than write one into the operator's real .agents"],
     "bin/statusline" => [:bash, "BASH heartbeat throttles — LAYER 2 cannot read it; LAYER 3 executes it"],
+    "bin/install-agent-docs" => [:bash, "BASH fast-lane tooling install into .agents/tooling + the .agents/bin " \
+                                        "symlink — LAYER 2 cannot read it. It carries the two enforce! rules in " \
+                                        "bash, and test/commands/install_fast_lane_tooling_test.rb EXECUTES it " \
+                                        "armed and unpinned (LAYER 3's receipt) and pinned into a sandbox"],
     "bin/lib/op_meter.rb" => [:ruby, "1Password read-attribution log: append is the ONE write seam and it " \
                                      "enforce!s; log_path is private so no caller can take the raw path"],
     "bin/lib/op-meter.sh" => [:bash, "BASH `op` wrapper, sourced by bin/secret, bin/gh-app-git-credential, " \

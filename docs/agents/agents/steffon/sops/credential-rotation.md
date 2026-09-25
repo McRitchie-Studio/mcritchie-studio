@@ -20,7 +20,7 @@ run on the admin lane, which you are expected to hold — so an admin token that
 absent or refused here is a setup gap on THIS MACHINE, not a lane closed to you.
 `source ~/.zprofile.admin` when the file is on disk but missing from this shell;
 `bin/setup-1pass-token --admin`, once, when the machine has no such file at all —
-only that second one is Mr. McRitchie's. Source it **without a pipe**: a pipeline
+only that second one is Alex's. Source it **without a pipe**: a pipeline
 runs `source` in a subshell, so the token lands in a child that exits and the
 lane reads ABSENT while fully present.
 
@@ -114,7 +114,7 @@ grep -m1 '^<VAR>=' <file> | sed -E 's/^[^=]+=//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'
 alone does. That is the line.
 
 **Whose shell holds `$NEW`.** One shell owns it: **the shell that runs Phases 4
-and 5**, set in 4.1 and unset in Phase 6. When the value starts in Mr. McRitchie's
+and 5**, set in 4.1 and unset in Phase 6. When the value starts in Alex's
 hands he holds it as `$T` in HIS terminal (`credential-filing` §5), and that is a
 DIFFERENT shell — so either he runs Phases 4 and 5 himself against `$T`, or he
 `read -rs NEW`s it into the rotating shell. What must never happen is one shell
@@ -194,7 +194,7 @@ Two rules while triaging:
 - **A pushed value is published, and a force-push does not retract it.** The
   orphaned commit stays fetchable by SHA (`gh api
   "repos/<owner>/<repo>/contents/<path>?ref=<orphaned-sha>"`). Removing it needs a
-  GitHub Support purge, which is Mr. McRitchie's call — say so plainly rather than
+  GitHub Support purge, which is Alex's call — say so plainly rather than
   implying the exposure is closed.
 
 ---
@@ -255,7 +255,7 @@ Actions is **not** in Dependabot; `studio-engine`'s `consumer-ci.yml` consumes
 PR runs that workflow with the Dependabot copy.
 
 So the GitHub store is an **operator step**, and it is the one that will stall you
-if you discover it at the end. Plan it into Phase 4: Mr. McRitchie updates it at
+if you discover it at the end. Plan it into Phase 4: Alex updates it at
 `Settings → Secrets and variables → Actions`, then the `Dependabot` tab of the same
 page, per repo. Give him the repo list and the secret names — never the value in
 chat; hand it over per `credential-filing` §5 (`read -rs`, clipboard, cleared after).
@@ -335,7 +335,7 @@ The three that cost something, concretely:
 - **`SECRET_KEY_BASE` invalidates artefacts.** Every signed or encrypted cookie,
   session, and signed URL derived from it stops verifying the moment the new value
   is live — users are logged out and outstanding magic links (`Studio::Link`) die.
-  Pick a low-traffic window, tell Mr. McRitchie people will be logged out, and do
+  Pick a low-traffic window, tell Alex people will be logged out, and do
   not schedule anything whose verification needs a logged-in session in the same
   window.
 - **`MANAGED_WALLET_ENCRYPTION_KEY` is a migration behind a deploy gate.** Every
@@ -465,7 +465,7 @@ rotation does NOT do: it re-seals the envelope, never a wallet's private key. Ev
 ciphertext sealed under the old key stays openable with it forever — in a Postgres
 backup, a fork, a follower, or a dump. So a COMPROMISED key is an incident, not a
 rotation: rotate, move funds to fresh wallets, destroy the pre-rotation backups, and
-escalate to Mr. McRitchie.
+escalate to Alex.
 
 ---
 
@@ -529,7 +529,7 @@ the key you just rotated out:
 |---|---|---|
 | turf-vault `VaultState.signers` — contest/treasury 2-of-3 | `update_signers` (on-chain, 2-of-3) | `turf-monster/docs/SOLANA.md` signer list |
 | turf-vault **Squads V4 — PROGRAM UPGRADE AUTHORITY, one multisig PER CLUSTER** | a **Squads config transaction**, at `app.squads.so` | the live multisig account, read with `squads_members` below — `turf-vault/scripts/squad.json` → `members.alex_bot` is provenance only |
-| `scripts/squad-upgrade.js`, which signs DEVNET upgrades with this key as its `xan` seat (one of three agent approvals; the mainnet roster does not list it) | a turf-vault PR to that seat's `pubkey` in `scripts/lib/squad-clusters.js` — the script REFUSES a loaded key that does not derive to the roster's pubkey, and drops a roster seat the chain no longer seats. The bot key is read per `--send` run from the `SQUAD_KEY_XAN` override, never a stored config var: the script's own 1Password read looks in `studio-agents`, and this key's item (`agent.xan.solana`) lives in `studio-agents-admin`, so fill the override from an admin-lane read (`credential-inventory.md`); Mr. McRitchie's key (`7ZDJ…`) is a Phantom export with no filed item at all, and the script never signs as it | `squad-clusters.js` `AGENT_SEATS.devnet` role `xan`; `squad-upgrade.js:194-224` `loadSeatKeypair` |
+| `scripts/squad-upgrade.js`, which signs DEVNET upgrades with this key as its `xan` seat (one of three agent approvals; the mainnet roster does not list it) | a turf-vault PR to that seat's `pubkey` in `scripts/lib/squad-clusters.js` — the script REFUSES a loaded key that does not derive to the roster's pubkey, and drops a roster seat the chain no longer seats. The bot key is read per `--send` run from the `SQUAD_KEY_XAN` override, never a stored config var: the script's own 1Password read looks in `studio-agents`, and this key's item (`agent.xan.solana`) lives in `studio-agents-admin`, so fill the override from an admin-lane read (`credential-inventory.md`); Alex's key (`7ZDJ…`) is a Phantom export with no filed item at all, and the script never signs as it | `squad-clusters.js` `AGENT_SEATS.devnet` role `xan`; `squad-upgrade.js:194-224` `loadSeatKeypair` |
 
 **`update_signers` does not touch Squads membership.** They are separate systems
 that happen to share a pubkey: one is turf-vault's own in-program multisig, the
@@ -605,7 +605,7 @@ against 2.1.4, the version turf-vault pins. Grant anything narrower than what th
 script uses and the rotation still "succeeds" — the break lands at the NEXT
 upgrade, in whichever call lost its bit, weeks later and far from this SOP.
 
-**NARROWING THE BOT WAS PROPOSED AND DECLINED** (Mr. McRitchie, 2026-09-14), so
+**NARROWING THE BOT WAS PROPOSED AND DECLINED** (Alex, 2026-09-14), so
 7 is not a number in transition — it is the answer, for a reason worth keeping
 here. Squads validates the threshold against the members holding **Vote**, so
 approvals count only from voters. On that day's Squads shape — three members at
@@ -692,7 +692,7 @@ Now the on-chain signer half. Read the program, not the intuition
 > eviction trips 6017 and fails loudly, **or** it succeeds having evicted the only
 > other slot — a signer who did nothing wrong — and left the compromised key in
 > place. You would read that transaction as a completed rotation. The two signers
-> who stay cosign an eviction (Mr. McRitchie and Mason, from Phantom); the
+> who stay cosign an eviction (Alex and Mason, from Phantom); the
 > compromised key stays out of it. Same rule at Squads: approve the config
 > transaction with clean members only, enough to reach the threshold, never with
 > the member being removed.
@@ -930,7 +930,7 @@ read -rs NEW     # paste the value; the screen stays blank
 printf '%s' "$NEW" | digest    # non-EMPTY, and matches the provider's copy
 ```
 
-**If the value starts in Mr. McRitchie's hands**, `credential-filing` §5 has him
+**If the value starts in Alex's hands**, `credential-filing` §5 has him
 `read -rs T` in HIS terminal. That is a different shell, and `$NEW` is empty in
 yours. Pick one of exactly two shapes and say which you picked, out loud:
 
@@ -968,7 +968,7 @@ op item get "<item>" --vault <vault> --fields label="<field>" --reveal | digest
 printf '%s' "$NEW" | digest      # the two must match, and NEITHER may print EMPTY
 ```
 
-Whoever held the source value runs the comparison; if that is Mr. McRitchie, he
+Whoever held the source value runs the comparison; if that is Alex, he
 runs both lines in his terminal against his `$T` and `unset T` only after they
 match. A shell that has already forgotten the value digests nothing — which the
 helper refuses, rather than reporting a match against an empty vault field.
@@ -1020,8 +1020,8 @@ processes for the life of the call — acceptable on this single-operator machin
 stated so the recipe is not mistaken for airtight. `config:set` restarts the app's
 dynos; a worker mid-job may still finish under the old value.
 
-**GitHub Actions and Dependabot.** The operator step from Phase 1.2. Give Mr.
-McRitchie the repo list and the secret names, hand the value over off-transcript,
+**GitHub Actions and Dependabot.** The operator step from Phase 1.2. Give
+Alex the repo list and the secret names, hand the value over off-transcript,
 and confirm BOTH tabs. A rotation that updates Actions and forgets Dependabot goes
 green on every push and red only on the next Dependabot PR, days later, in a
 workflow nobody is watching.
@@ -1164,7 +1164,7 @@ confirmed normal operation first.
 
 | Source | Revoke with |
 |---|---|
-| Heroku authorization | **operator step.** `heroku authorizations` fails under the agent lane — measured 2026-09-09: `Error: The scope of this OAuth authorization does not allow access to this resource.` Mr. McRitchie revokes at https://dashboard.heroku.com/account/applications, matching the row by its **description**, which is the only human-readable handle an authorization has. Never revoke the one the current session is authenticating with; if you cannot tell them apart, mint the replacement first, prove it works, and revoke the row that is then unused. |
+| Heroku authorization | **operator step.** `heroku authorizations` fails under the agent lane — measured 2026-09-09: `Error: The scope of this OAuth authorization does not allow access to this resource.` Alex revokes at https://dashboard.heroku.com/account/applications, matching the row by its **description**, which is the only human-readable handle an authorization has. Never revoke the one the current session is authenticating with; if you cannot tell them apart, mint the replacement first, prove it works, and revoke the row that is then unused. |
 | AWS access key | delete the old access key for that IAM user in the console or CLI |
 | Provider API key | the provider's console — "revoke", not "hide" |
 | On-chain signer (`VaultState`) | **already done in 4.3** — the whole-set `update_signers` evicted the old pubkey in the same transaction. There is no second eviction. Reversible only by another 2-of-3 `update_signers`, so keep the old secret filed until Phase 5 passes. |
@@ -1172,7 +1172,7 @@ confirmed normal operation first.
 | 1Password field | already overwritten in 4.2 — **still recoverable via item history**, so this is not the point of no return |
 | `MANAGED_WALLET_ENCRYPTION_KEY` (the old value) | after Phase 5 passed AND 24-48 hours of normal operation: `heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS --app <app>`, then the verifier again — it must still read `VERIFIED -- T of T`, now with no old key to lean on. Keep the `previous encryption key` field for as long as a pre-rotation Postgres backup could be restored: a restored backup brings back rows sealed under the old key, and the only way back from that is this procedure again, with the old key as `…_PREVIOUS`. |
 
-Then clear the shell: `unset NEW` (and `unset T` if Mr. McRitchie still holds one).
+Then clear the shell: `unset NEW` (and `unset T` if Alex still holds one).
 
 ---
 

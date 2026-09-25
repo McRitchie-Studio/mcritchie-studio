@@ -167,6 +167,7 @@ require_relative "../app/models/release/cli"
 # it reads its default and its length from — both Rails-free, like Cli.
 require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
+require_relative "lib/projects_root"
 # CleanCheck is the pure verdict behind the `deploy-with-task` clean-LADDER GUARD
 # (`bin/release status --clean-only`): given BOTH rungs the expedite walks — work
 # riding `release` (board + release-ahead-of-main git count) and work parked on
@@ -282,7 +283,7 @@ AGENT_ACTIVITY = File.expand_path("agent-activity", __dir__)
 RELEASE_BRANCH = "release"
 
 # The accepted-ladder's first rung (same name in every repo). Review MERGES each
-# feat PR into `accepted` and stamps merged:"accepted"; the sweep then promotes ALL
+# feat PR into `accepted` (the board derives merged:"accepted"); the sweep then promotes ALL
 # of `accepted` onto `release` via ONE batch PR per repo (promote_accepted_to_release!
 # uses this as the `--head`). KEPT — the batch PR's head needs the branch name.
 # (Phase 3 Slice 4 retired the release→accepted base-retarget stopgap that used to
@@ -331,15 +332,18 @@ RELEASE_REPOS =
 # both checkout shapes); it defaults to this script's own app root. A PROJECTS_DIR
 # env override wins (mirrors bin/qa-server) so a non-default checkout layout can
 # point the sibling-repo resolution at the right root.
+#
+# The climb itself is ProjectsRoot's (bin/lib/projects_root.rb), the one resolver the
+# whole bin/ stack shares. This used to carry its own copy, which knew the primary and
+# the .worktrees layouts but not the FIXED-PATH TOOLING install
+# (<projects>/.agents/tooling/<sha>/, bin/install-agent-docs): run from there it
+# resolved <projects>/.agents/tooling as the projects root, so every sibling repo, the
+# release lock dir and the task-usage store pointed at directories that do not exist —
+# and a release run from the fixed path could not see one run from the hub.
 def projects_root(app_root = File.expand_path("..", __dir__))
   return File.expand_path(ENV["PROJECTS_DIR"]) if ENV["PROJECTS_DIR"].to_s != ""
 
-  parent = File.expand_path("..", app_root)
-  # A worktree's app root sits under <hub>/.worktrees/<wt>; climb out of
-  # .worktrees/<wt> back to the real projects root that holds the siblings.
-  return File.expand_path("../..", parent) if File.basename(parent) == ".worktrees"
-
-  parent
+  ProjectsRoot.default_projects_dir(app_root)
 end
 
 # The sibling CHECKOUT PATH for any ecosystem repo (a gem, an app, or the hub).
@@ -3255,7 +3259,7 @@ def prepare
   # full-suite run SIGTERMed at its 2700s ceiling, 11% complete, killed by a sweep no
   # status command reported. Opened HERE — before the first gh/git/board call — so the
   # claim covers the WHOLE run, not just its suite. Best-effort and non-fatal.
-  ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: File.expand_path("..", __dir__),
+  ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: repo_path(APP),
                         lane: "release:prepare", session_id: conductor_session_id)
   # On the prod default a non-dry prepare fires a REAL accepted→release batch merge +
   # a REAL `bin/qa-server deploy`, so gate it like `ship` does. confirm returns true
@@ -7526,10 +7530,15 @@ end
 # seal is what the board, the notes, and finalize already read as unsealed. A
 # prior seal (a reseal that could not run) is left as it was. No rollback guidance:
 # nothing says prod is broken.
+#
+# The event is COMPLETED with metadata seal: "unsealed", never FAILED: the board and
+# the duration readers count a failed prod_smoke as a failure, and nothing failed —
+# the seal step finished without judging anything.
 def record_unsealed_seal(rel_slug, reason)
   summary = Release::SealTree.summary(reason)
-  record_release_event(rel_slug, "prod_smoke", "failed",
-                       message: summary, idempotency_key: "#{rel_slug}:prod_smoke:unsealed")
+  record_release_event(rel_slug, "prod_smoke", "completed",
+                       message: summary, metadata: { "seal" => Release::SealTree::UNSEALED },
+                       idempotency_key: "#{rel_slug}:prod_smoke:unsealed")
   say("")
   say("⚪ PRODUCTION SMOKE SEAL NOT RECORDED — #{summary}")
   say("   This is NOT a red seal: the shipped specs never ran, so nothing was judged.")
@@ -7637,7 +7646,7 @@ def ship
   # the ship workspace, so the machine cost is real for that leg — and it publishes
   # the same claim a sweep does. Opened before the first read so it covers the whole
   # run. Best-effort and non-fatal.
-  ReleasePresence.open!(kind: ReleasePresence::SHIP, root: File.expand_path("..", __dir__),
+  ReleasePresence.open!(kind: ReleasePresence::SHIP, root: repo_path(APP),
                         lane: "release:ship", session_id: conductor_session_id)
 
   # 1a. MINIMAL, STABLE read — resolve WHICH release ships + its slug, BEFORE the claim.
@@ -8800,38 +8809,68 @@ def reseal(slug = nil)
   abort!("aborted — re-seal not confirmed") unless confirm("Re-seal #{rel_slug} — run its shipped specs against #{PROD_URL} and overwrite its seal?")
 
   status = production_smoke_seal([plan.group], { APP => plan.frozen_sha }, rel_slug, reseal: plan.note)
+  restamp_g4_seal(rel_slug, status)
   say("")
   say("✓ #{rel_slug} re-sealed: #{status || 'nothing to seal'}")
 end
 
-# `bin/release notes <release> [--post]` — re-post a shipped release's notes to
-# Discord, e.g. after the ship's own delivery failed. A DRY RUN by default: it
-# prints the notes and the planned message split (each message measured against
-# Discord's limits) and sends nothing — only `--post` delivers. Writes no release
-# event either way; the ship already recorded its release_notes step.
-def release_notes_ruby(slug, post:)
+# The ship closed G4 with metadata.seal; a re-seal re-stamps it so the /deployments
+# G4 column shows the verdict the re-seal recorded. Only a JUDGED verdict (green/red)
+# replaces it: an unsealed re-seal ran nothing, and leaves G4's seal as it was — the
+# same rule record_unsealed_seal follows for the release's own seal. Best-effort, like
+# the seal write: a board blip warns and the re-seal stands.
+def restamp_g4_seal(rel_slug, status)
+  return unless %w[green red].include?(status.to_s)
+
+  conductor(
+    "run = GateRun.restamp_seal!(subject_slug: #{rel_slug.inspect}, seal: #{status.to_s.inspect}); " \
+    "puts({ gate: run&.key, seal: run&.metadata&.dig('seal') }.to_json)"
+  )
+  say("  G4 gate seal re-stamped: #{status}")
+rescue SystemExit, StandardError => e
+  say("  ⚠ G4 gate seal not re-stamped — board write failed (#{e.message})")
+end
+
+# `bin/release notes <release> [--post] [--force]` — re-post a shipped release's
+# notes to Discord, e.g. after the ship's own delivery failed. A DRY RUN by default:
+# it prints the notes and the planned message split (each message measured against
+# Discord's limits) and sends nothing — only `--post` delivers. Writes no new
+# release event; a delivery is recorded on the ship's release_notes event.
+#
+# Notes that event says were ALREADY DELIVERED are not posted again without
+# `--force`: the repost is for a delivery that failed, and a second post of a good
+# one duplicates it in the channel.
+def release_notes_ruby(slug, post:, force: false)
   "r = Release.find_by!(slug: #{slug.inspect}); " \
-  "n = Release::Conductor.repost_release_notes(release: r, dry_run: #{!post}); " \
+  "n = Release::Conductor.repost_release_notes(release: r, dry_run: #{!post}, force: #{force ? 'true' : 'false'}); " \
   "puts({slug: r.slug, message: n[:message], messages: n[:messages], notes_delivered: n[:delivered], " \
-  "notes_error: n[:error], notes_messages: n[:messages].size}.to_json)"
+  "notes_error: n[:error], notes_messages: n[:messages].size, " \
+  "notes_already_delivered: n[:already_delivered], notes_refused: n[:refused]}.to_json)"
 end
 
 def notes
   post = Release::Cli.take_flag(ARGV, "--post")
+  force = Release::Cli.take_flag(ARGV, "--force")
   slug = Release::Cli.positional_slugs(ARGV).first
-  abort!("usage: bin/release notes <release> [--post]") if slug.to_s.empty?
+  abort!("usage: bin/release notes <release> [--post] [--force]") if slug.to_s.empty?
 
   sending = post && !DRY
   say("Release notes #{slug}#{PROD ? ' (PROD board)' : ' (local)'} — #{sending ? 'POSTING to Discord' : 'DRY RUN (pass --post to send)'}")
   warn_local!
   step("#{sending ? 'post' : 'preview (read-only)'}: Release::Conductor.repost_release_notes")
-  result = conductor(release_notes_ruby(slug, post: sending), read_only: !sending)
+  result = conductor(release_notes_ruby(slug, post: sending, force: force), read_only: !sending)
   return if result.empty? # global --dry-run with --post: conductor printed the snippet
 
   Array(result["messages"]).each_with_index do |m, i|
     say("  message #{i + 1}: #{m['content_chars']} content chars (limit 2000), #{m['embeds']} embeds (limit 10), " \
         "#{m['embed_chars']} embed chars (limit 6000)")
   end
+  if result["notes_refused"]
+    say("  ⚠ #{slug}'s release notes were already delivered — nothing posted.")
+    say("  post them again anyway with: bin/release notes #{slug} --post --force")
+    exit 1
+  end
+  say("  ⚠ #{slug}'s release notes were already delivered#{force ? ' — posting again (--force)' : ''}.") if result["notes_already_delivered"]
   if sending
     say(Release::Cli.release_notes_line(result, slug))
     exit 1 unless result["notes_delivered"]

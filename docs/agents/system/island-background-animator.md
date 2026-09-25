@@ -93,6 +93,6 @@ dependency doctor against the runner's FFmpeg installation.
 - An existing target is never overwritten; choose a new directory or inspect the
   existing job.
 - Generated jobs belong under the repository's ignored `tmp/` directory unless
-  Mr. McRitchie selects another workspace.
+  Alex selects another workspace.
 - To roll back this milestone, revert its tool, wrapper, CI lane, and this document.
   No database or production cleanup is required.

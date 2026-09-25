@@ -20,14 +20,27 @@ Two wrappers collapse the cycle's bookends into one command each. Reach for
 them first; the long form below is the fallback.
 
 ```bash
-/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
+/Users/alex/projects/.agents/bin/task begin --title "Three To Five Words" \
   --repo <app> --kind <kind> \
   --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
 
 cd <desk>   #   ... the worktree begin printed; build there ...
 
-/Users/alex/projects/mcritchie-studio/bin/ship <task-slug> -m "Commit message"
+/Users/alex/projects/.agents/bin/ship <task-slug> -m "Commit message"
 ```
+
+**Run the tooling from its fixed path.** `bin/install-agent-docs`, which the
+production ship runs from the tree it just shipped, installs the fast-lane scripts
+(and the `bin/lib/**`, `config/` and pure `app/models/` files they load) to
+`/Users/alex/projects/.agents/tooling/<sha>/`, and atomically swaps the symlink
+`/Users/alex/projects/.agents/bin` onto it. Nothing checks that directory out, so a
+command can no longer die with `cannot load such file` because another session ran
+`git checkout` in the hub primary — the cause the old desk-handoff re-exec and
+hub-move diagnosis only patched, and which are now deleted. The installed scripts
+still act on the tree you stand in (they root at the cwd), and they read the hub's
+`.env` through a symlink. The hub path `/Users/alex/projects/mcritchie-studio/bin/…`
+stays a working fallback for one release, and wherever this page says
+"hub-absolute", the fixed path works too.
 
 **Name the hub's script; stand in the desk.** Every fast-lane command —
 `bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/dor-check` —
@@ -76,14 +89,30 @@ count. Read the script from `origin/accepted`, never the local primary:
 `git -C /Users/alex/projects/turf-vault fetch origin && git show
 origin/accepted:bin/release-check`.
 
+### The board derives; nobody stamps
+
+Three facts are no longer hand-written (devops-v3 piece 4c-i). The board derives
+each from GitHub and keeps its old column as a cache:
+
+| Fact | Derived from | Cache refreshed by |
+|------|--------------|--------------------|
+| `merged` | the rung that contains the PR's merge commit (`Task#merged_rung`) | the move to `reviewed`, a merged-PR webhook, the release record steps |
+| `pr_url` | the PR whose head is the task branch (`Task#pr_url_or_derived`) | `bin/task show` of a building-or-later task queues `TaskPrUrlCacheJob` to fill a blank one; the request never waits on GitHub |
+| authors | the PR's commits: `<soul>@mcritchie.studio` emails and soul `Co-Authored-By` trailers (`Task#derived_authors`) | read live on every review |
+
+So review does not run `bin/task merged` (it remains a manual override for a PR
+GitHub cannot place, and prints "no longer needed"), `bin/ship` writes `pr_url`
+only when the board names a different PR, and `bin/reviewer-select` plus the
+review-claim backstop exclude the derived authors UNION any stamps.
+
 ### The author set
 
-**Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
-the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
-`bin/reviewer-select` reads to keep a soul off its own PR. Omit it and the
-selector fails CLOSED: it refuses to pick, and the reviewer chooses by hand.
-**If a second soul finishes the task, claim it again** (`bin/task move <task>
-building --actor <soul>`): the set accumulates, so both authors are excluded.
+**`--agent <soul>` is optional.** Review excludes the souls on the PR's commits,
+so the thing that keeps you off your own review is the desk's commit identity:
+`begin --agent <soul>` sets it, and so does `bin/agent-worktree identity <repo>
+<slug> <soul>`. A desk that commits under no soul yields no derived author, and
+with no stamp either the selector still fails CLOSED. `--agent` also stamps
+`devops.built_by` + `devops.builders`, which review unions with the derived set.
 
 **THE BUILD CLAIM STAMPS THE AUTHOR SET — a create alone does not.** `--agent`
 writes two independent facts, and only one of them is what review reads:
@@ -142,7 +171,8 @@ re-running the create line resumes cleanly, and only the OTHER create flags on i
 `move building` → `session-preflight`) and prints the worktree path, port, and
 task URL. `bin/ship` — the HUB's script, run with that worktree as the cwd —
 runs steps 5-6 (commit → optional `bin/fast-check` pre-flight → push →
-**non-draft** PR into `accepted` led by the task URL → record `pr_url` → **wait
+**non-draft** PR into `accepted` led by the task URL → record `pr_url` (skipped
+when the board already derives it) → **wait
 for CI to settle** → `bin/dor-check` → `move submitted` → read-back verify).
 Re-running either after a failure **resumes** — each skips the steps already
 durably recorded. Resume `begin` **by slug** (`bin/task begin <task-slug>`).
@@ -161,8 +191,8 @@ for it with `bin/ship-wait`**:
 
 ```bash
 cd <desk>   #   ... the worktree begin printed; ship-wait roots the ship at the cwd ...
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug> --launch -m "Commit message"
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug>   # attach to one already running
+/Users/alex/projects/.agents/bin/ship-wait <task-slug> --launch -m "Commit message"
+/Users/alex/projects/.agents/bin/ship-wait <task-slug>   # attach to one already running
 ```
 
 It exits **0 succeeded · 1 failed · 2 still running at the timeout**, returns
@@ -249,12 +279,12 @@ Before handoff:
 
 ### A good session prompt
 
-For a new feature session, Mr. McRitchie should only need to say the target app
+For a new feature session, Alex should only need to say the target app
 and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
+Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
 --risk <tag> --accept "<criterion>" --test "<tier>". It creates the task,
 allocates the isolated worktree on an allocated port, claims the task, and

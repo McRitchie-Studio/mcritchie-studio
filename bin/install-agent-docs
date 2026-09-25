@@ -7,6 +7,9 @@
 #   docs/agents/skills/<name>/  -> $HOME/.claude/skills/<name>/   (user-global Claude Code skills)
 #   docs/agents/skills/<name>/  -> $HOME/.codex/skills/<name>/    (user-global Codex skills)
 #   retired managed skills      -> removed from the same runtime skill dirs
+#   bin/ lib/ config/ + the pure app/models/{release,devops} the scripts load
+#                               -> $PROJECTS_DIR/.agents/tooling/<sha>/   (fast-lane tooling)
+#                               -> $PROJECTS_DIR/.agents/bin              (symlink, atomically swapped)
 #
 # Claude Code auto-loads CLAUDE.md (and its @imports) but NOT AGENTS.md, so both
 # files are required to give every agent the same operating model. This keeps the
@@ -36,7 +39,11 @@ runtime_root() {
     *) printf '%s\n' "$ROOT" ;;
   esac
 }
-PROJECTS_DIR="${PROJECTS_DIR:-$(default_projects_dir)}"
+# Captured BEFORE the default fills it: the sandbox guard below needs to know whether
+# the CALLER pinned the projects root, not whether it ended up set.
+PROJECTS_DIR_PINNED="${PROJECTS_DIR:+pinned}"
+REAL_PROJECTS_DIR="$(default_projects_dir)"
+PROJECTS_DIR="${PROJECTS_DIR:-$REAL_PROJECTS_DIR}"
 RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
 CODEX_REQUIREMENTS_PATH="${CODEX_REQUIREMENTS_PATH:-/etc/codex/requirements.toml}"
 RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
@@ -86,7 +93,9 @@ usage() {
 Usage: bin/install-agent-docs [install|check|manifest]
 
 install  Copy the agent entrypoints to \$PROJECTS_DIR (AGENTS.md + CLAUDE.md),
-         mirror user-global skills, and prune retired managed skills.
+         mirror user-global skills, prune retired managed skills, and install
+         the fast-lane tooling at \$PROJECTS_DIR/.agents/tooling/<sha> behind the
+         atomically swapped symlink \$PROJECTS_DIR/.agents/bin.
 check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md plus ~/.claude/skills and
          ~/.codex/skills match the tracked sources, with retired skills absent.
 manifest DRY RUN: write NOTHING; print every absolute path install WOULD write,
@@ -190,6 +199,130 @@ if [ "$#" -gt 1 ]; then
   exit 2
 fi
 
+# ── FAST-LANE TOOLING AT A FIXED PATH ─────────────────────────────────────────
+#
+# THE CAUSE THIS REMOVES. The fast-lane scripts (bin/task, bin/ship, bin/ship-wait,
+# bin/fast-check, bin/dor-check, bin/release, bin/agent-worktree, bin/agent-activity,
+# bin/gh-auth-refresh and bin/lib/**) used to run only from the hub PRIMARY checkout,
+# which other sessions move with `git checkout`. A tracked file is absent for
+# ~0.4-0.7s of every checkout, and a command starting in that window died with
+# `cannot load such file` (four measured casualties on 2026-09-10). The desk-handoff
+# re-exec and the hub-move diagnosis were patches over that; this deletes the cause.
+#
+# WHAT IS INSTALLED: `git archive` of THIS tree's HEAD — bin/, lib/, config/, and the
+# pure app/models/{release,devops} the scripts require_relative — into
+# $PROJECTS_DIR/.agents/tooling/<sha>/, a directory nothing ever checks out. The
+# scripts resolve the tree they ACT on from the cwd (RepoRoot.code_root), so the
+# installed copy still certifies and ships the desk you stand in. The one untracked
+# file they read beside themselves, the hub's .env (the board secret), is a symlink
+# to the runtime hub's own .env, never a copy.
+#
+# ATOMIC: the tree is staged under a scratch name and renamed into place, then
+# $PROJECTS_DIR/.agents/bin is swapped with rename(2) onto a fresh symlink — a reader
+# sees the old tooling or the new, never half of either. Idempotent per SHA (a
+# `.complete` marker), and the two newest previous SHAs are kept, because a command
+# that started a moment ago may still be loading from one.
+TOOLING_ROOT="$PROJECTS_DIR/.agents/tooling"
+TOOLING_LINK="$PROJECTS_DIR/.agents/bin"
+TOOLING_PATHS=(bin lib config app/models/release app/models/devops .ruby-version)
+TOOLING_KEEP=3
+
+tooling_sha() {
+  git -C "$ROOT" rev-parse --verify --quiet HEAD 2>/dev/null
+}
+
+install_fast_lane_tooling() {
+  local sha dest stage link_tmp aside paths=() rel
+  if ! sha="$(tooling_sha)" || [ -z "$sha" ]; then
+    echo "  (skipped fast-lane tooling: $ROOT is not a git checkout with a HEAD)"
+    return 0
+  fi
+  dest="$TOOLING_ROOT/$sha"
+  note_write "$dest"
+  note_write "$TOOLING_LINK"
+  [ "$MODE" = "manifest" ] && return 0
+
+  # THE SANDBOX GUARD, in bash: the same two rules TaskUsageSandbox.enforce! applies
+  # to the Ruby writers of <projects>/.agents (lib/task_usage_sandbox.rb). Under an
+  # armed TASK_USAGE_SANDBOX a run must PIN PROJECTS_DIR (rule 1), and the pin must
+  # not point back at the real projects root (rule 2) — otherwise a test would swap
+  # the operator's live /Users/alex/projects/.agents/bin. Refuses; never degrades.
+  case "$(printf '%s' "${TASK_USAGE_SANDBOX:-}" | tr '[:upper:]' '[:lower:]')" in
+    ''|0|false|no|off) ;;
+    *)
+      if [ -z "$PROJECTS_DIR_PINNED" ] || [ "$(cd "$PROJECTS_DIR" 2>/dev/null && pwd -P)" = "$(cd "$REAL_PROJECTS_DIR" 2>/dev/null && pwd -P)" ]; then
+        echo "ERROR: TASK_USAGE_SANDBOX is armed and PROJECTS_DIR is not pinned away from $REAL_PROJECTS_DIR; refusing to install fast-lane tooling into the real .agents" >&2
+        exit 3
+      fi
+      ;;
+  esac
+
+  mkdir -p "$TOOLING_ROOT"
+  if [ ! -f "$dest/.complete" ]; then
+    for rel in "${TOOLING_PATHS[@]}"; do
+      git -C "$ROOT" cat-file -e "HEAD:$rel" 2>/dev/null && paths+=("$rel")
+    done
+    stage="$TOOLING_ROOT/.staging-$sha-$$"
+    rm -rf "$stage"
+    mkdir -p "$stage"
+    git -C "$ROOT" archive --format=tar HEAD -- "${paths[@]}" | tar -x -C "$stage"
+    ln -s "$RUNTIME_ROOT/.env" "$stage/.env"
+    printf '%s\n' "$sha" > "$stage/.complete"
+    rm -rf "$dest"
+    mv "$stage" "$dest"
+  fi
+  # Prune ranks by mtime, so a REinstall of a SHA already on disk (a rollback) must
+  # freshen it — otherwise the tree the link is about to name could rank oldest.
+  touch "$dest"
+
+  # A pre-existing REAL directory at .agents/bin (a hand-made one predates this) is
+  # moved aside, never deleted: its contents are not ours to judge.
+  if [ -d "$TOOLING_LINK" ] && [ ! -L "$TOOLING_LINK" ]; then
+    aside="$TOOLING_LINK.pre-tooling-$(date +%Y%m%d%H%M%S)"
+    mv "$TOOLING_LINK" "$aside"
+    echo "  moved the existing directory $TOOLING_LINK aside to $aside"
+  fi
+  link_tmp="$PROJECTS_DIR/.agents/.bin.swap-$$"
+  rm -f "$link_tmp"
+  ln -s "tooling/$sha/bin" "$link_tmp"
+  # rename(2) replaces the old symlink itself in one step; `mv` would descend into it.
+  ruby -e 'File.rename(ARGV[0], ARGV[1])' "$link_tmp" "$TOOLING_LINK"
+  echo "  $TOOLING_LINK -> tooling/$sha/bin (fast-lane tooling at $sha)"
+
+  prune_fast_lane_tooling "$sha"
+}
+
+# Keep the current SHA plus the newest (TOOLING_KEEP - 1) others; drop the rest, and
+# any staging dir a killed install left more than an hour ago.
+prune_fast_lane_tooling() {
+  local current="$1" kept=0 dir linked
+  # Whatever the link names right now is never pruned, even if a concurrent install
+  # swapped it to a SHA other than ours.
+  linked="$(readlink "$TOOLING_LINK" 2>/dev/null | sed -E 's:^tooling/([^/]+)/bin$:\1:')"
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    [ "$(basename "$dir")" = "$current" ] && continue
+    [ -n "$linked" ] && [ "$(basename "$dir")" = "$linked" ] && continue
+    kept=$((kept + 1))
+    [ "$kept" -lt "$TOOLING_KEEP" ] && continue
+    rm -rf "$dir"
+  done < <(ls -1dt "$TOOLING_ROOT"/*/ 2>/dev/null | sed 's:/$::')
+  find "$TOOLING_ROOT" -maxdepth 1 -name '.staging-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+}
+
+# Check mode: is the fixed path installed and intact? A report, never drift — the
+# installed SHA is the last SHIPPED one, so it differs from every desk's HEAD by
+# design, and a missing install means only that no ship has run the installer yet.
+check_fast_lane_tooling() {
+  local target
+  if [ -L "$TOOLING_LINK" ] && [ -x "$TOOLING_LINK/ship" ] && [ -f "$TOOLING_LINK/../.complete" ]; then
+    target="$(readlink "$TOOLING_LINK")"
+    echo "OK: $TOOLING_LINK -> $target (fast-lane tooling installed)"
+  else
+    echo "NOTE: $TOOLING_LINK is not installed yet; the next production ship installs it. The hub path $RUNTIME_ROOT/bin still works."
+  fi
+}
+
 case "$MODE" in
   install|check|manifest) ;;
   # The bare `help` WORD, kept working. It exits 1 for the same reason --help does.
@@ -232,6 +365,7 @@ if [ "$MODE" = "check" ]; then
       fi
     done
   done
+  check_fast_lane_tooling
   if [ "$status" -ne 0 ]; then
     # DRIFT IS NOT A CHORE THE READER OWES. Measured 2026-09-07: three separate
     # agents in one night read this FAIL as personal work, and two proposed acting
@@ -288,6 +422,7 @@ for pair in "${ALL_PAIRS[@]}"; do
   install_pair "$src" "$tgt"
   [ "$MODE" = "manifest" ] || echo "  $tgt (from $src)"
 done
+install_fast_lane_tooling
 
 ensure_codex_tui_config() {
   local config="$1"

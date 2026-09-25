@@ -194,7 +194,7 @@ firing on healthy work. Then the first question will be "where did 7500 come fro
 
 ## Parked — devnet on-chain CI
 
-Parked by Mr. McRitchie on 2026-07-14. **These two remain live board tasks** by his
+Parked by Alex on 2026-07-14. **These two remain live board tasks** by his
 explicit decision — the only parked items that do — because they may belong to a
 concurrent CI/CD session.
 
@@ -213,8 +213,8 @@ concurrent CI/CD session.
   specs therefore run **nowhere.**
 
 **The decision they wait on is not technical:** either fund a devnet bot key so the
-lane is real, or delete the workflow so its absence is honest. That is Mr.
-McRitchie's call, and it costs money either way.
+lane is real, or delete the workflow so its absence is honest. That is
+Alex's call, and it costs money either way.
 
 ---
 
@@ -232,7 +232,7 @@ SOP's "stale unmerged desks" protocol.
 
 ## Parked — the `.studio-team-glow` specimen demos a card effect at chip scale
 
-Parked by Mr. McRitchie on 2026-08-08, found while building
+Parked by Alex on 2026-08-08, found while building
 [`glow-changed-release-meter`](https://mcritchie.studio/tasks/glow-changed-release-meter).
 **Repo: `studio-engine`** (`app/views/style/_tricks.html.erb`), shape `library`.
 

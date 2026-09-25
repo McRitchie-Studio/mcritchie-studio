@@ -94,17 +94,14 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent 
   --agent-context "epic: <epic-slug> · piece <n> · <what the builder must know>"
 ```
 
-- **`--agent pokemon`.** The builder is the Pokémon and the task's mascot is its
-  crew member, so the stamp names the Pokémon itself. It keeps every specialist
-  eligible to review — `pokemon` is on `Task::SOUL_ROSTER` but not in
-  `ReviewerSelector::POOL`, so naming it excludes nobody and frees no seat — and it
-  goes away when authors are derived from git (v3 phase 4). **It replaced `--agent
-  mack` on 2026-09-24**, when `pokemon` joined the roster; until then the flag was
-  silently dropped, leaving the task `builders: NOT STAMPED` and
-  `bin/reviewer-select` refusing to pick. If you see `mack` in an older recipe, it
-  is that placeholder: it selected identically but put untrue authorship on the
-  record, which made genuine Mack rows unreadable. Until the `--epic` flag lands
-  with the board's `epic_slug`, the first words of `--agent-context` carry the epic.
+- **`--agent pokemon` now only names the desk's commit identity.** Review derives
+  authors from the PR's commits (devops-v3 piece 4c-i), so no builder stamp is
+  needed for the selector to exclude the builder; it needs the commits to name a
+  soul, and `--agent` is what stamps the desk to commit as one. `pokemon` is on
+  `Task::SOUL_ROSTER` but not in `ReviewerSelector::POOL`, so it excludes nobody
+  and frees no seat. The older `--agent mack` placeholder put untrue authorship on
+  the record; do not revive it. Until the `--epic` flag lands with the board's
+  `epic_slug`, the first words of `--agent-context` carry the epic.
 - **Title 3 to 5 words; acceptance bullets 5 to 12 words.** Everything longer
   goes in `--agent-context`, including the piece number and the plan path.
 - Record the task slug in the plan's Pieces table the moment `begin` returns.
@@ -138,7 +135,7 @@ Desk: <the path bin/task begin printed> (already created; do not run bin/task be
 
 Read docs/agents/agents/pokemon/role.md, then docs/agents/modules/building-sop.md, and follow it.
 Write the test tiers your shape requires. Commit in the desk early and often.
-Hand off from the desk, in the background, with the hub's script: /Users/alex/projects/mcritchie-studio/bin/ship-wait <slug> --launch -m "<message>" (about 12 minutes; a satellite desk carries no copy of it).
+Hand off from the desk, in the background, with the fixed-path script: /Users/alex/projects/.agents/bin/ship-wait <slug> --launch -m "<message>" (about 12 minutes; if that path is missing, /Users/alex/projects/mcritchie-studio/bin/ship-wait runs the same script).
 STOP at submitted. Do not merge, deploy, or touch release/main.
 Narrate with bin/agent-activity. Report back: the PR URL, the pre-flight result, the CI state, anything undone.
 ```

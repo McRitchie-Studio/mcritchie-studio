@@ -55,7 +55,7 @@ CANNOT: <the acts the scope refuses, one line>
 
 - **`read -rs VALUE` is one way in, not the only one.** When the agent
   generated the credential itself, assign `VALUE` from the command that
-  produced it and keep the refusal below it. When Mr. McRitchie holds the
+  produced it and keep the refusal below it. When Alex holds the
   secret, he runs section 5 in HIS terminal and the variable is `$T` — the
   agent never holds that one at all.
 - **The refusal is not ceremony.** An unset `VALUE` does not abort the
@@ -91,7 +91,7 @@ Filing is **admin work**: the writing lane below is one you are expected to hold
 so an admin token that is absent or refused here is a setup gap on THIS MACHINE,
 not a lane closed to you. `source ~/.zprofile.admin` when the file is on disk but
 missing from this shell; `bin/setup-1pass-token --admin`, once, when the machine
-has no such file at all — only that second one is Mr. McRitchie's. Source it
+has no such file at all — only that second one is Alex's. Source it
 **without a pipe**: a pipeline runs `source` in a subshell, so the token lands in
 a child that exits and the lane reads ABSENT while fully present.
 
@@ -142,12 +142,12 @@ missing grant; then confirm the assignment above actually ran (`(101)` under
 the ambient agent token is this SOP's most common failure); then switch
 lanes. If this machine has no `~/.zprofile.admin` at all, the one-time install
 is his — `bin/setup-1pass-token --admin` — but check the file's absence before
-saying so. Escalate to Mr. McRitchie only when no lane has the grant, naming the
+saying so. Escalate to Alex only when no lane has the grant, naming the
 vault and the missing grant.
 
 ## 5. Operator-supplied secrets never touch chat
 
-A secret that starts in Mr. McRitchie's hands (a fresh service-account
+A secret that starts in Alex's hands (a fresh service-account
 token, a console-only key) must not be pasted into a session transcript —
 transcripts are durable. Hand him this two-step for HIS terminal:
 
@@ -182,7 +182,7 @@ clipboard — `printf '%s' "$VALUE" | pbcopy` — and clear the clipboard after
    printf '%s' "$VALUE" | shasum -a 256    # the two digests must match
    ```
 
-   For an operator-supplied secret the agent never held, Mr. McRitchie runs the
+   For an operator-supplied secret the agent never held, Alex runs the
    pair in HIS terminal against the variable HE has — section 5 had him
    `read -rs T`, so it is `$T`, not the agent's `$VALUE`:
 

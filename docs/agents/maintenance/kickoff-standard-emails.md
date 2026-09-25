@@ -38,7 +38,7 @@ sidebar. It replaces today's `/admin/email_images`.
 **mostly symbolic of the workflow** — the only real asset is the image.
 
 - **Engine + McRitchie Studio ship exactly two:** `magic_link` and
-  `email_change_confirmation`. Mr. McRitchie will supply the artwork later; build
+  `email_change_confirmation`. Alex will supply the artwork later; build
   against placeholders.
 - **Every app inherits those two** — MS, Turf Monster, moms-app, McRitchie
   Industries.
@@ -109,7 +109,7 @@ first boot.
 | **moms-app** | **not set** |
 
 Setting the prefix is a one-line initializer change, but the `<prefix>-dev` and
-`<prefix>-production` buckets must also exist. Confirm with Mr. McRitchie whether
+`<prefix>-production` buckets must also exist. Confirm with Alex whether
 to create them or point the satellites at an existing bucket under a per-app key
 prefix. Until this is resolved, MI can render an inherited default but cannot
 accept an upload — so the page must degrade honestly rather than 500.
@@ -182,4 +182,4 @@ one task spanning both repos.
 
 Read `mcritchie-studio/docs/agents/modules/building-sop.md` before writing code,
 and mark the local review with `bin/task update <task> --local-url … --approval
-waiting` so Mr. McRitchie can look at the page before the PR.
+waiting` so Alex can look at the page before the PR.

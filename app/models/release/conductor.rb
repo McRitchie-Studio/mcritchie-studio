@@ -219,7 +219,10 @@ class Release
     # Task's `merged` inclusion — an unknown location raises. Returns the slugs.
     def record_merged!(slugs:, merged:)
       list = Array(slugs)
-      Task.where(slug: list).find_each { |task| task.update!(merged: merged) }
+      Task.where(slug: list).find_each do |task|
+        task.update!(merged: merged)
+        Release.refresh_merged_cache(task)
+      end
       list
     end
 
@@ -889,18 +892,54 @@ class Release
         step: "release_notes",
         status: "completed",
         source: "conductor",
-        idempotency_key: "#{release.slug}:release_notes:completed"
+        idempotency_key: "#{release.slug}:release_notes:completed",
+        metadata: notes_delivery_metadata(result)
       )
+      # A retried post (finalize) finds the completed event already written; its
+      # delivery still has to land on it.
+      record_notes_delivery!(release, result)
 
       result
     end
 
     # Re-post a release's notes on demand (`bin/release notes <release> --post`),
-    # e.g. after a delivery failed. Writes NO release event — the ship's own
-    # release_notes step already completed; this only talks to Discord. dry_run
-    # (the CLI default) builds and measures the split without sending.
-    def repost_release_notes(release:, app: "mcritchie-studio", environment: "production", dry_run: true)
-      deliver_release_notes(release: release, app: app, environment: environment, dry_run: dry_run)
+    # e.g. after a delivery failed. Writes NO new release event — the ship's own
+    # release_notes step already completed; a delivery here is recorded ON that
+    # event (metadata.delivered). dry_run (the CLI default) builds and measures the
+    # split without sending.
+    #
+    # REFUSES a repost over notes already delivered unless force: — the repost exists
+    # for a delivery that FAILED, and a second post of a good one is a duplicate in
+    # the channel. The refusal is a result, not a raise: { refused: true, … }.
+    # already_delivered: rides back either way, so a preview can say so.
+    def repost_release_notes(release:, app: "mcritchie-studio", environment: "production", dry_run: true, force: false)
+      already = release.release_notes_delivered?
+      refused = already && !dry_run && !force
+      result = deliver_release_notes(release: release, app: app, environment: environment, dry_run: dry_run || refused)
+      record_notes_delivery!(release, result) if result[:delivered]
+      result.merge(already_delivered: already, refused: refused)
+    end
+
+    def notes_delivery_metadata(result)
+      { "delivered" => result[:delivered] ? true : false, "messages" => Array(result[:messages]).size }
+    end
+
+    # Record a delivery on the release's completed release_notes event. A delivered
+    # true is never downgraded — a later failed or dry run does not un-deliver notes
+    # Discord already took. With no completed event yet (a repost on a release whose
+    # ship never reached the notes step) the delivery gets one, so it is not lost.
+    def record_notes_delivery!(release, result)
+      event = release.release_events.for_step("release_notes").completed.chronological.last
+      return if event && event.metadata["delivered"] == true && !result[:delivered]
+
+      meta = notes_delivery_metadata(result)
+      meta["delivered_at"] = Time.current.iso8601 if result[:delivered]
+      if event
+        event.update!(metadata: event.metadata.merge(meta))
+      else
+        record_event!(release: release, step: "release_notes", status: "completed", source: "conductor",
+                      idempotency_key: "#{release.slug}:release_notes:completed", metadata: meta)
+      end
     end
 
     # The messages a delivery would POST, measured against Discord's limits — one

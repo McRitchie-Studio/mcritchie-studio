@@ -6,7 +6,7 @@ This is Steffon's `domain-purchase` SOP: buy a new domain on Squarespace
 Domains and prove it is ours. Step 1 of
 [`workspace-launch`](./workspace-launch.md); runnable on its own.
 
-**The purchase is always Mr. McRitchie's click.** It spends money on his card,
+**The purchase is always Alex's click.** It spends money on his card,
 and Squarespace offers no purchase API. Steffon checks availability before and
 ownership after.
 
@@ -25,7 +25,7 @@ No NS records and a `No match` / empty whois means likely free. A registrar line
 means it is taken — stop and ask for another name. (whois is a hint, not a
 promise; Squarespace's search is the authority.)
 
-## 2. Buy it — Mr. McRitchie
+## 2. Buy it — Alex
 
 ```not-pasteable
 🙋 YOUR TURN — buy the domain on Squarespace

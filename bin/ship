@@ -82,66 +82,6 @@ require "json"
 require "open3"
 require "optparse"
 
-# ── DESK HANDOFF — runs BEFORE the first require_relative, on purpose ─────────
-#
-# This script loads its libraries from the checkout it LIVES IN. Invoked by its
-# hub-primary absolute path, that is a checkout other processes move: a tracked
-# file is absent for ~0.4-0.7s of every checkout (measured 2026-09-13), and a
-# command that starts inside that window dies with `cannot load such file`.
-# Measured four times on 2026-09-10 across three sessions.
-#
-# A desk does not have that problem — it is pinned to its own branch and nobody
-# moves it under you — and a HUB desk carries its own bin/ship. So when cwd sits
-# in a checkout that has its own copy, hand off to it. This is not a new policy:
-# FastLane.handoff_command (bin/lib/fast_lane.rb:115) already resolves the same
-# way, by existence. This only makes the choice hold no matter how the script
-# was reached.
-#
-# IT ANNOUNCES ITSELF. Handing off changes WHICH code runs — the desk's copy is
-# its branch's, not the hub's — so a silent switch could run stale tooling. The
-# warning line is the whole mitigation; MCR_SKIP_DESK_HANDOFF=1 opts out.
-#
-# IT DOES NOT HELP A SATELLITE. Only mcritchie-studio ships bin/ship, so a
-# turf-monster, rolio or gem desk finds no copy to hand off to (verified
-# 2026-09-13: present in 31/32 hub desks, 0/32 turf desks). Those runs stay on
-# the hub script and are covered by the LOAD GUARD below, not by this.
-if ENV["MCR_SKIP_DESK_HANDOFF"].to_s.strip.empty?
-  begin
-    own_path = File.realpath(__FILE__)
-    script_name = File.basename(__FILE__)
-    search = Dir.pwd
-    local_copy = nil
-    loop do
-      candidate = File.join(search, "bin", script_name)
-      if File.executable?(candidate)
-        local_copy = candidate
-        break
-      end
-      parent = File.dirname(search)
-      break if parent == search
-
-      search = parent
-    end
-    if local_copy && File.realpath(local_copy) != own_path
-      warn "#{script_name}: handing off to this checkout's own copy (#{local_copy}) — the hub primary " \
-           "moves under running commands. Set MCR_SKIP_DESK_HANDOFF=1 to run #{own_path} instead."
-      exec(local_copy, *ARGV)
-    end
-  rescue StandardError
-    # A handoff that cannot be decided must never block the command it exists to
-    # protect. Fall through and load from here.
-    nil
-  end
-end
-
-# ── LOAD GUARD — say WHOSE bug a `cannot load such file` is ───────────────────
-# Diagnosis only, never a retry: a retry cannot tell a checkout window from a
-# genuinely missing file. Loaded FIRST so it is armed before the requires it
-# explains, and it swallows nothing — the original LoadError still prints and
-# the process still fails. See bin/lib/hub_move_diagnosis.rb.
-require_relative "lib/hub_move_diagnosis"
-HubMoveDiagnosis.install!(root: File.expand_path("..", __dir__), command: File.basename(__FILE__))
-
 require_relative "lib/repo_root"
 require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
@@ -716,10 +656,31 @@ if MigrationCollision.blocking?(collisions)
 end
 
 # --- 5/8 record pr_url -------------------------------------------------------
+# THE BOARD DERIVES IT NOW (devops-v3 4c-i). A show of a task with a blank
+# `devops.pr_url` queues a background lookup of the PR on the task branch
+# (TaskPrUrlCacheJob → Task#cache_derived_pr_url!); the request itself never waits
+# on GitHub. A later show serves the cached url as `pr_url_or_derived`. When that
+# names the PR this run opened there is nothing to write. Ship still writes when the
+# board names a DIFFERENT PR (a stale or foreign url) or could not answer — the
+# read-back at 8/8 pins the exact URL either way.
 presence!(:record)
+
+# The board's answer, or "" when the show fails or predates the field: a failed
+# read here only means ship writes the url itself, as it always did.
+def board_pr_url(slug)
+  out = IO.popen([TASK_BIN, "show", slug, "--json"], err: File::NULL, &:read)
+  return "" unless $?.success?
+
+  data = JSON.parse(out)
+  data["pr_url_or_derived"].to_s.empty? ? data.dig("metadata", "devops", "pr_url").to_s : data["pr_url_or_derived"].to_s
+rescue JSON::ParserError, SystemCallError
+  ""
+end
 
 if devops["pr_url"].to_s == pr_url
   say "5/8 record — pr_url already recorded."
+elsif board_pr_url(slug) == pr_url
+  say "5/8 record — skipped: the board derives pr_url #{pr_url} from the branch."
 else
   say "5/8 record — bin/task update #{slug} --pr-url #{pr_url}"
   die!("recording the PR URL failed (#{TASK_BIN} update)") unless system(TASK_BIN, "update", slug, "--pr-url", pr_url)
@@ -809,7 +770,10 @@ end
 
 final = fetch_task!(slug)
 final_stage = final["stage"].to_s
-final_pr = final.dig("metadata", "devops", "pr_url").to_s
+# The derived value when the board serves one (it is the recorded url when one is
+# recorded), else the raw column — an older board has no `pr_url_or_derived`.
+final_pr = final["pr_url_or_derived"].to_s
+final_pr = final.dig("metadata", "devops", "pr_url").to_s if final_pr.empty?
 unless final_stage == "submitted"
   die!("read-back verify FAILED: the board shows [#{final_stage}], not [submitted]. Do not hand off; " \
        "re-run #{SHIP_CMD} #{slug} (if it recurs the board write is failing server-side — check ErrorLog).")

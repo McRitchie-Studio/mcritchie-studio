@@ -4,7 +4,7 @@
 
 This is Steffon's `bucket-provision` SOP. It stands up **object storage for one
 app**: the dev/production bucket pair, their safety posture, and the two
-per-app IAM users — in one sitting, to the standards Mr. McRitchie approved
+per-app IAM users — in one sitting, to the standards Alex approved
 2026-09-01. The conventions themselves live in
 [`../../../modules/object-storage.md`](../../../modules/object-storage.md);
 this file is the act that applies them.
@@ -28,7 +28,7 @@ bin/agent-activity start --category Workflow --reason "bucket-provision <app>"
 ```
 
 Inputs: the app slug (e.g. `rolio`), its entity tag (e.g. `mcritchie-studio`),
-and Mr. McRitchie's yes to provisioning (the onboarding prompt, or his direct
+and Alex's yes to provisioning (the onboarding prompt, or his direct
 ask).
 
 ## 1. Open the lane
@@ -37,7 +37,7 @@ Provisioning is **admin work** — the lane below is one you are expected to hol
 so an admin token that is absent or refused here is a setup gap on THIS MACHINE,
 not a lane closed to you. `source ~/.zprofile.admin` when the file is on disk but
 missing from this shell; `bin/setup-1pass-token --admin`, once, when the machine
-has no such file at all — only that second one is Mr. McRitchie's.
+has no such file at all — only that second one is Alex's.
 
 ```bash
 source ~/.zprofile.admin

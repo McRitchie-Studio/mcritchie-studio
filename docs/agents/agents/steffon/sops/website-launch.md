@@ -11,16 +11,16 @@ on the package, and the customer never needs to know which:
 
 | Package | What the customer gets | What runs it |
 |---------|------------------------|--------------|
-| Basic | 1 domain · standard hosting | A **Squarespace site** on the domain, in Mr. McRitchie's Squarespace account |
+| Basic | 1 domain · standard hosting | A **Squarespace site** on the domain, in Alex's Squarespace account |
 | Pro | 1 domain · more power + database space | **Our app**: a standalone Rails app on Heroku with its own Postgres database |
 
-Decided by Mr. McRitchie, 2026-09-24: "App we host. Behind the scenes it could
+Decided by Alex, 2026-09-24: "App we host. Behind the scenes it could
 be Squarespace."
 
 ## What this act is NOT
 
 - **It never spends money on its own.** A Squarespace site plan and a Heroku
-  app plus database are recurring costs, so each is Mr. McRitchie's approval.
+  app plus database are recurring costs, so each is Alex's approval.
 - **It never touches the mail records.** A website needs only `@`/`www` web
   records. MX, SPF, DKIM and DMARC from [`domain-dns`](./domain-dns.md) stay
   exactly as they are, and the last step re-checks them.
@@ -36,7 +36,7 @@ prove the site did not disturb it.
 
 ## Basic — a Squarespace site behind the scenes
 
-### 1. Create the site — Mr. McRitchie
+### 1. Create the site — Alex
 
 ```not-pasteable
 🙋 YOUR TURN — create the website on Squarespace
@@ -62,7 +62,7 @@ Green when both answer `200` over HTTPS. Then run the last step.
 
 ## Pro — our hosted app with a database
 
-### 1. Approve the cost — Mr. McRitchie
+### 1. Approve the cost — Alex
 
 ```not-pasteable
 🙋 YOUR TURN — approve the hosting cost
@@ -88,7 +88,7 @@ heroku certs:auto:enable -a <app-name>
 Deploy the app, and confirm `https://<app-name>.herokuapp.com/up` answers `200`
 before touching DNS. Then run step 3 and step 4, then the last step.
 
-### 3. Point the domain at it — Mr. McRitchie
+### 3. Point the domain at it — Alex
 
 Squarespace DNS does offer an ALIAS record at `@`, but only with DNSSEC switched
 off (Squarespace Help, "DNS records for web hosting"). This SOP leaves DNSSEC

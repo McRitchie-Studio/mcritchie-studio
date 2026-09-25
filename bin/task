@@ -172,11 +172,12 @@
 #       purpose from one that was forgotten. `show <slug> --verbose` prints the
 #       receipt back. See lib/open_pr_guard.rb. )
 #   bin/task merged <slug> <accepted|release|main>
-#     ( set the git-location crash-recovery signal (Task::MERGED_STATES) — where the
-#       task's code physically is. Review stamps `accepted` when it lands a feat PR
-#       on the accepted branch (the ladder's first rung); the sweep/ship stamp
-#       release/main. NOT a stage move, NOT event-recorded; read back to confirm it
-#       persisted so a dropped stamp never strands the task off every RC. )
+#     ( MANUAL OVERRIDE ONLY — no longer needed: the board derives the rung from
+#       GitHub and refreshes the column itself (on `reviewed`, on a merged-PR
+#       webhook, at the release record steps). Kept for a PR GitHub cannot place;
+#       it prints that notice and still writes the git-location crash-recovery
+#       signal (Task::MERGED_STATES). NOT a stage move, NOT event-recorded; read
+#       back to confirm it persisted. )
 #   bin/task fix-forward <slug> --agent <soul>[,<soul>]
 #     ( record a REVIEWER FIX-FORWARD (a zap): a soul who pushed a commit onto this
 #       task's PR branch WITHOUT holding the build. He is an author of the merged
@@ -2191,6 +2192,10 @@ end
 #   --steal    consumed before parse_flags, then forwarded to the claim gate
 # If you add a flag here, WIRE IT FIRST — an advertised flag no branch reads is
 # the silent drop this whole guard exists to remove.
+# Printed by `bin/task merged`: the board derives the rung now, so the stamp is an
+# override for a PR GitHub cannot place, never a required step.
+MERGED_NOT_NEEDED_NOTICE = "no longer needed: the board derives this (Task#merged_rung, from GitHub)."
+
 BEGIN_RESUME_FLAGS = %w[--slug --repo --agent --dev-size --steal].freeze
 
 # REFUSE — never drop — a create flag on a path that cannot honour it.
@@ -2852,12 +2857,15 @@ when "move"
   write_feature_marker(task)
   print_task(task)
 when "merged"
-  # Set the git-location crash-recovery signal (Task::MERGED_STATES). Review stamps
-  # `accepted` the moment it lands a feat PR on the accepted branch — the ladder's
-  # first rung — so an interrupted sweep can promote accepted→release WITHOUT
-  # re-reviewing (Release#add later downgrades it to "release" at sweep). NOT a
-  # stage move and NOT event-recorded: it's the durable "where is the code" fact
-  # the deploy heartbeats read. Set through the same one-path PATCH update as
+  # A MANUAL OVERRIDE, no longer a step (devops-v3 4c-i). The board derives the
+  # merged rung from GitHub (Task#merged_rung) and refreshes this column itself —
+  # when a task lands on `reviewed`, when GitHub reports a merged PR, and at the
+  # release record steps — so review no longer stamps it. The command stays for a
+  # PR GitHub cannot place, says so, and still writes.
+  #
+  # Set the git-location crash-recovery signal (Task::MERGED_STATES). NOT a stage
+  # move and NOT event-recorded: it's the durable "where is the code" fact the
+  # deploy heartbeats read. Set through the same one-path PATCH update as
   # `move` (config/routes.rb: no named-transition endpoint), then read back to
   # confirm it persisted — a 200 is not persistence, and a dropped stamp would
   # strand the task off every RC (the sweep leaves a merged:"" `reviewed` member
@@ -2868,6 +2876,7 @@ when "merged"
   valid = %w[accepted release main]
   die!("merged must be one of #{valid.join(", ")} (got #{state.inspect})") unless valid.include?(state)
   die!(usage) unless ARGV.empty?
+  warn "#{MERGED_NOT_NEEDED_NOTICE} Writing merged:#{state} as a manual override anyway."
   task = api(:patch, "/api/v1/tasks/#{slug}", { "merged" => state })["data"]
   verify_merged_persisted!(slug, state)
   puts "merged set on #{slug}: #{state}"

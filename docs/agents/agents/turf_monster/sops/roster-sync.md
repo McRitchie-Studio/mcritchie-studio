@@ -268,7 +268,7 @@ nothing errors. That is why this step is not optional.
 
 ## Handoff
 
-Report to Mr. McRitchie with both counts, step 2's `status` and the cursor's
+Report to Alex with both counts, step 2's `status` and the cursor's
 `last_status` (they are different fields — see step 3), whether a full rebuild
 was needed, any collision named, and anything in step 3 that did not reconcile. If everything
 was clean, say so in one line — a clean sync does not need a paragraph.

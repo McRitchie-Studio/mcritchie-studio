@@ -18,14 +18,14 @@ by name — see below):
 
 **`workspace-launch` is Steffon's other job, and it is NOT part of the
 heartbeat.** It stands up a brand-new company workspace — domain, Google
-Workspace, DNS, agentic drafting access — and walks Mr. McRitchie through every
+Workspace, DNS, agentic drafting access — and walks Alex through every
 step that needs him. It runs only when he names it (the `/deployments` Workflows
 card carries a chip for it). Master SOP: [`workspace-launch`](sops/workspace-launch.md);
 its steps are the sub-SOPs [`domain-purchase`](sops/domain-purchase.md),
 [`workspace-signup`](sops/workspace-signup.md), [`domain-dns`](sops/domain-dns.md),
 [`website-launch`](sops/website-launch.md) and [`workspace-provision`](sops/workspace-provision.md).
 
-Use this file when Mr. McRitchie invokes `Steffon Heartbeat`. When he invokes a
+Use this file when Alex invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
 
 **Two kinds of cleaning, on purpose.** `archive-shipped` is the NATURAL beat — it
@@ -52,7 +52,7 @@ Steffon is the downstream bookend — the ship + archive end of the pipeline:
 
 Avi's `qa-release` sweep owns merging reviewed PRs onto `release`, deploying QA,
 and flipping members `assembled`. Do not run `bin/release prepare` or a QA deploy
-from Steffon's heartbeat unless Mr. McRitchie explicitly assigns a separate
+from Steffon's heartbeat unless Alex explicitly assigns a separate
 conductor lane in the same session. Review is Carl's.
 
 ## Entry
@@ -83,7 +83,7 @@ Run Steffon's heartbeat composition downstream-first:
 2. [`clean-infra`](sops/clean-infra.md) - sweep the machine: reclaim finished
    desks, contract the Redis band, sweep regenerable disk.
 
-When Mr. McRitchie launches `Steffon Heartbeat`, run both acts in that order.
+When Alex launches `Steffon Heartbeat`, run both acts in that order.
 When an act is invoked directly, run only that act.
 
 **Nothing ready to ship?** `production-deploy` is an idempotent no-op that reports

@@ -235,6 +235,9 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
       # pin it into the sandbox too so those transient writes can't land on the real
       # machine, and so the manifest's `${TMPDIR:-/tmp}` destination proves out inside.
       "TMPDIR" => File.join(sandbox, "tmp"),
+      # Armed, so the installer's own bash sandbox guard on the fast-lane tooling write
+      # is live here too — PROJECTS_DIR above is the pin it demands.
+      "TASK_USAGE_SANDBOX" => "1",
       # Never let a test inherit the live session's identity or board.
       "AGENT_SESSION_ID" => nil,
       "ATOMIC_CAPTURE_URL" => nil,

@@ -362,7 +362,9 @@ class ShipTest < Minitest::Test
       # the same-file OVERLAP ADVISORY's own `pr list` — asked after the PR exists so
       # it can exclude this one, and before the DoR verdict so the builder reads it
       # while a deliberate choice is still cheap. See bin/lib/pr_overlap.rb.
-      assert_equal ["TASK show", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK update", "DOR #{SLUG}",
+      # The second `TASK show` is 5/8 asking the board whether it already derives the
+      # PR url; this board (the stub) predates the field, so ship writes it itself.
+      assert_equal ["TASK show", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK show", "TASK update", "DOR #{SLUG}",
                     "TASK move", "TASK show"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
 
@@ -866,6 +868,69 @@ class ShipTest < Minitest::Test
       assert_includes err, PR_URL, "the refusal must name the URL this run recorded"
       assert(lines.any? { |l| l[0, 2] == %w[TASK update] }, "the record step must have been attempted")
       refute_includes out, "PR: #{stale}", "the summary must never print the wrong PR as shipped"
+    end
+  end
+
+  # --- 5/8 record: the board derives the PR url (devops-v3 4c-i) ---------------
+
+  # A record whose board serves `pr_url_or_derived` — the recorded url when there is
+  # one, else the PR the board found on the task branch (and cached).
+  def derived_record(stage:, derived:, recorded: nil)
+    record = JSON.parse(task_record(stage: stage, pr_url: recorded))
+    record["pr_url_or_derived"] = derived
+    JSON.generate(record)
+  end
+
+  # [integration] The board already names the PR ship opened, so ship writes nothing
+  # at 5/8 — and the read-back at 8/8 passes on the DERIVED value, with the raw
+  # `devops.pr_url` still blank.
+  def test_record_skips_the_write_when_the_board_derives_the_same_pr
+    with_repo do |dir|
+      out, err, status, lines = run_ship(
+        dir,
+        show_json: derived_record(stage: "building", derived: PR_URL),
+        moved_json: derived_record(stage: "submitted", derived: PR_URL)
+      )
+
+      assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
+      refute(lines.any? { |l| l[0, 2] == %w[TASK update] }, "a pr_url the board derives must not be written")
+      assert_includes out + err, "5/8 record — skipped: the board derives pr_url #{PR_URL}"
+      assert_includes out, "PR: #{PR_URL}"
+      assert_includes out, "stage: submitted (read back verified)"
+    end
+  end
+
+  # [integration] The counterpart, so the skip above is not unconditional: a board
+  # deriving a DIFFERENT PR (an older one on the same branch) is not the PR this run
+  # opened, so ship records its own.
+  def test_record_still_writes_when_the_board_derives_a_different_pr
+    with_repo do |dir|
+      other = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/42"
+      out, err, status, lines = run_ship(
+        dir,
+        show_json: derived_record(stage: "building", derived: other),
+        moved_json: derived_record(stage: "submitted", derived: PR_URL, recorded: PR_URL)
+      )
+
+      assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
+      assert_equal [SLUG, "--pr-url", PR_URL], lines.find { |l| l[0, 2] == %w[TASK update] }[2, 3]
+    end
+  end
+
+  # [integration] The read-back still pins the EXACT url when it is derived: a board
+  # serving a different derived PR after the move fails the verify.
+  def test_read_back_refuses_a_derived_pr_that_is_not_this_runs
+    with_repo do |dir|
+      other = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/42"
+      _out, err, status, = run_ship(
+        dir,
+        show_json: derived_record(stage: "building", derived: PR_URL),
+        moved_json: derived_record(stage: "submitted", derived: other)
+      )
+
+      refute status.success?, "a derived pr_url that is not this run's PR must fail the read-back"
+      assert_includes err, "read-back verify FAILED"
+      assert_includes err, other
     end
   end
 

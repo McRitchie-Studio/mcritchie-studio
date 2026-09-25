@@ -10,7 +10,7 @@ orphaned PRs, no half-built desks, no tmp residue.
 
 ## Why this exists
 
-Mr. McRitchie thinks more clearly about high-level strategy against a clean
+Alex thinks more clearly about high-level strategy against a clean
 DevOps slate. A board carrying sixteen half-states is not a backlog — it is fog.
 
 The failure this SOP treats is **not** that agents build too slowly. It is that
@@ -30,7 +30,7 @@ infrastructure. **Ship-authority gated** — see Preconditions.
 
 ## Preconditions
 
-1. **Mr. McRitchie has explicitly assigned the ship lane this session.** This SOP
+1. **Alex has explicitly assigned the ship lane this session.** This SOP
    merges to `release` and fast-forwards `main`. Without that assignment, run
    Phases 0-2 and 5 only, and stop at `reviewed`.
 2. Run from the McRitchie Studio primary checkout:
@@ -43,7 +43,7 @@ infrastructure. **Ship-authority gated** — see Preconditions.
 
 ## Phase 0 — Scope guard (the carve-out)
 
-Mr. McRitchie often runs a second session **while this one works**. Anything that
+Alex often runs a second session **while this one works**. Anything that
 session touches is invisible to this SOP: do not archive its tasks, reclaim its
 worktrees, or review its PRs.
 
@@ -167,7 +167,7 @@ below). Each returns exactly one disposition:
 | **SHIP** | Built; PR green + mergeable. | Nothing to decide. Press the button. |
 | **BUILD** | Not built, but earns its keep today. | It is an **active hazard**, or a **cheap port of a fix that already shipped elsewhere**. |
 | **ARCHIVE** | Off the board, no code. | See the rubric. |
-| **PARK** | Stays open by explicit operator decision. | Only Mr. McRitchie may park. Record the reason. |
+| **PARK** | Stays open by explicit operator decision. | Only Alex may park. Record the reason. |
 | **HAND OFF** | Belongs to a carved-out session. | Report it; do not file it. |
 
 ### Archive when ANY of these holds
@@ -235,7 +235,7 @@ below). Each returns exactly one disposition:
   refuses this case itself (see below) — but the refusal is a backstop for the
   judgement, not a replacement for it.
 
-Put every judgement to Mr. McRitchie as a table with a recommendation per row. He
+Put every judgement to Alex as a table with a recommendation per row. He
 overrides freely; his overrides are the point.
 
 ### The archive verb refuses what it cannot prove free
@@ -264,7 +264,7 @@ protects nothing.
 
 The gate is the **CLI path** by design. `Task#archive!`, the board's Archive buttons,
 and a raw API PATCH all bypass it: it exists to stop an *agent* archiving work it
-never looked at, and Mr. McRitchie clicking Archive on a task page he is reading is
+never looked at, and Alex clicking Archive on a task page he is reading is
 already the deliberate decision `--force` represents.
 
 ### And it refuses what would leave a PR open
@@ -588,7 +588,7 @@ They are restated here only because getting them wrong destroys work:
   2026-08-13 that destroyed a live builder's desk mid-task. Expect a bound desk to
   stand until its task reaches `shipped` or `archived` — a full release cycle;
   1h29m is only the floor, and the whole wait only for an unbound desk.
-- **Trust the safety gate over the description.** If Mr. McRitchie says "three
+- **Trust the safety gate over the description.** If Alex says "three
   worktrees" and the dry run finds seventeen, surface the discrepancy — and
   believe the gate.
 
@@ -675,7 +675,7 @@ gh pr list --limit 50
 > Read the board back before you claim a number. A move that printed fine and did
 > not land strands the task — and the next session misreads it as a rival claim.
 
-Report to Mr. McRitchie:
+Report to Alex:
 
 - **The number** — open tasks before → after, and every parked task with its reason.
 - **What shipped**, with the production URL.

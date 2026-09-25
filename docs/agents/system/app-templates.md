@@ -1,6 +1,6 @@
 # App Templates — the base app and the web3 bolt-on
 
-**Decided by Mr. McRitchie, 2026-08-31.** Every McRitchie app is built from one
+**Decided by Alex, 2026-08-31.** Every McRitchie app is built from one
 template. A Solana app adds a second on top. This file records the decision *and
 the argument behind it*, because a rule stated without its reasoning gets
 relitigated the first time someone finds it inconvenient.
@@ -89,7 +89,7 @@ the console's keyless property is **structural** — there is no key there to
 steal. Move it to turf and that same property becomes merely **conventional**:
 true only as long as nobody wires the two together.
 
-**Mr. McRitchie overruled it**, and the reasoning is sound: the real opsec vector
+**Alex overruled it**, and the reasoning is sound: the real opsec vector
 is **session management**. An application boundary that a stolen session walks
 straight past is not a security control. Splitting the console from the wallet
 app buys a property that reads well on an architecture diagram and stops nothing
@@ -107,7 +107,7 @@ an actual attacker would do. Anything wallet-based belongs in the wallet app.
 
 **Frozen, not removed.** The code stayed exactly where it was, in the hub, and
 kept working. Nothing about the console was deprecated or scheduled for deletion.
-Mr. McRitchie: *"if it comes up for a purpose we can pick it up then."* The
+Alex: *"if it comes up for a purpose we can pick it up then."* The
 console's own doc, `docs/SIGNING_CONSOLE_V2.md`, carried the full note beside the
 code; it was deleted with the console on 2026-09-04 and survives in git history.
 
@@ -153,7 +153,7 @@ signer-set change, not after.
 
 ### 2b. …and then it was REMOVED — 2026-09-04, and this is the live state
 
-**Deleted, not frozen.** Mr. McRitchie: *"Remove it all. Turf Monster should be
+**Deleted, not frozen.** Alex: *"Remove it all. Turf Monster should be
 the hub for all our Solana / Web3 logic."* The console, its two tables, the
 `solana-studio` dependency and the boundary exemption all left the hub together
 in [`retire-signing-console`](https://mcritchie.studio/tasks/retire-signing-console).
@@ -169,7 +169,7 @@ keys. On **mainnet** (program `DaFv83yo…`) it is
 `EQGFJAcA…`) it is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`. The signer
 set is a different authority entirely: three individual wallets. Two are the
 hub's own parked admin identities (Xan `8K81w4e6…`, Mason `CytJS23p…`); the
-third, `7ZDJ…`, is Mr. McRitchie's personal Phantom wallet, filed in no vault.
+third, `7ZDJ…`, is Alex's personal Phantom wallet, filed in no vault.
 Two different authorities, two different transactions.
 
 **Those signer addresses are the MAINNET set, and

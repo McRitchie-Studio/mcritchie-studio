@@ -32,7 +32,7 @@ resume with `bin/task begin <task-slug>`). Steps 4-9 apply either way.
 
 Without the fast lane: agree acceptance criteria; create the production task; `bin/agent-worktree
 plan <app> <task-slug>`; `new`; `bind-task`; move the task to `building`; `up` when a URL is
-needed; edit only inside the desk. When the local behavior is ready for Mr. McRitchie:
+needed; edit only inside the desk. When the local behavior is ready for Alex:
 
 ```bash
 bin/task update <task-slug> --local-url http://localhost:<port>/<path> --approval waiting
@@ -255,7 +255,7 @@ keep both blocks at a CSS end-of-file conflict; merge sequentially, suite green 
 ## Handoff Contract
 
 Task URL first; then branch, desk path, local URLs, PR URL, `checks_run` and readiness.
-Never leave Mr. McRitchie with "run these commands."
+Never leave Alex with "run these commands."
 
 ## Terminal Context
 
@@ -269,6 +269,14 @@ Each stack gets its own port ([`ports-and-processes.md`](ports-and-processes.md)
 dev and test databases, cookie key, `APP_PORT`, and `LOCAL_EMAIL_CAPTURE=1` (set `0` only to
 test real delivery). Never let two Sidekiq processes share a Redis DB. Callback-heavy flows
 (Stripe, OAuth, webhooks) stay on the primary port unless configured for the desk's.
+
+Every write of `.env.agent-stack` (`new`, `bind-task`) also writes `.env.development.local`
+with the desk's `DATABASE_URL`, `REDIS_URL` and `PORT`. dotenv loads it for the development
+env, so a bare `bin/rails db:prepare` or `bin/rails runner` in a hub desk reaches the desk's
+own database whether or not the stack was ever booted. A hub desk WITHOUT that pointer is
+refused by `config/initializers/desk_database_guard.rb` rather than handed the shared
+`mcritchie_studio_development`; the refusal prints the fix, `bin/agent-worktree new
+mcritchie-studio <slug>`. `ALLOW_SHARED_DEV_DB=1` overrides it when you mean the shared DB.
 
 ## Running tests
 

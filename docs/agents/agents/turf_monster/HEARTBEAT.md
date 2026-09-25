@@ -11,8 +11,8 @@ attribution and routes to its act SOPs:
 - [`contest-rehearsal`](sops/contest-rehearsal.md) - run a whole contest
   lifecycle on QA devnet end to end: create, enter, replay a played week, settle
   on-chain, close.
-- [`sleeper-auction-watch`](sops/sleeper-auction-watch.md) - sit beside Mr.
-  McRitchie through a live Sleeper auction draft: value every player under the
+- [`sleeper-auction-watch`](sops/sleeper-auction-watch.md) - sit beside
+  Alex through a live Sleeper auction draft: value every player under the
   league's own scoring, then call a max bid as each one comes up.
 - [`entry-forfeit`](sops/entry-forfeit.md) - withdraw one entrant from one
   contest at their own request, forfeiting the entry fee: one status flip before
@@ -25,7 +25,7 @@ attribution and routes to its act SOPs:
   the scene list in your own voice, take Mason's pass on the line, and write it
   back.
 
-Use this file when Mr. McRitchie invokes `Turf Monster Heartbeat`. When he
+Use this file when Alex invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
 
 `content-build` is not a chip either, for a fifth reason: it is QUEUE-shaped.
@@ -40,7 +40,7 @@ down so this stays a decision rather than an oversight.
 
 `market-refresh` is not a chip either, for a fourth reason: it is CALENDAR-shaped
 but not calendar-bound. It wants running after a week concludes and before the
-next span locks — weekly through the season, at a moment Mr. McRitchie picks
+next span locks — weekly through the season, at a moment Alex picks
 around the schedule and the contests actually open. Nothing here can compute that
 moment, so nothing here should schedule it. It stays a registered invocation by
 name, owned here and in the prose guard's `ACT_OWNER`.
@@ -61,7 +61,7 @@ direct-invoke has never been what keeps an act off the card.
 
 The auction watch is deliberately NOT a chip, and two separate reasons hold it
 there. The product reason is this file's and it is settled: the watch is
-calendar-bound, useful on one evening a year with Mr. McRitchie in the chair, so
+calendar-bound, useful on one evening a year with Alex in the chair, so
 nothing should schedule it. The card's reason is its own and it is measured: at
 21 characters the slug needs 114px against a 99px chip text area, so it clips
 (2026-09-09, held by `test/system/workflows_card_chip_fit_test.rb`). It is not
@@ -89,7 +89,7 @@ ask for a sports-domain judgement:
 It ships nothing and holds **no release lane**. `contest-rehearsal` writes only
 to `turf-monster-qa` and the devnet program; `live-score-watch` writes `Goal`
 rows; `sleeper-auction-watch` writes nothing at all — it reads a public API and
-advises, and Mr. McRitchie clicks every button. None of them promotes, deploys,
+advises, and Alex clicks every button. None of them promotes, deploys,
 or settles a production contest, and this heartbeat never reviews a PR, never
 merges, and never promotes
 `accepted → release`. Review is Carl's, the sweep is Avi's, the ship is
@@ -120,7 +120,7 @@ Run Turf Monster's heartbeat as a live-slot watch:
 1. [`live-score-watch`](sops/live-score-watch.md) - watch the slot, record the
    scoring plays, report each change.
 
-When Mr. McRitchie launches `Turf Monster Heartbeat`, run `live-score-watch`
+When Alex launches `Turf Monster Heartbeat`, run `live-score-watch`
 until the window closes or the slot is final. When an act is invoked directly,
 run only that act.
 
