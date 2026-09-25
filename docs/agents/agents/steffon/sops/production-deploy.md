@@ -201,13 +201,13 @@ its cost by declaring the metadata it must declare anyway.
 at once; the marker is keyed per process, so both publish and a peer sees the
 machine's real combined cost.
 
-**It changes nothing about certs.** The claim lives in the session-marker
-namespace, which `bin/agent-presence` reads and `CertOrphanGuard.preflight`
-never touches — *read here, reaped nowhere*. So a live conductor cannot refuse
-a `bin/fast-check` / `bin/full-suite-check`, cannot have a reaper pointed at
-its process group, and cannot make a cert print a `kill -TERM` line naming a
-production deploy. Certifying from a primary checkout during a sweep behaves
-exactly as it did before this existed.
+**It changes nothing about the pre-flight.** The claim lives in the
+session-marker namespace, which `bin/agent-presence` reads and nothing reaps —
+*read here, reaped nowhere* (the cert orphan guard that once reaped on a
+runlock retired with the local certs on 2026-09-24). So a live conductor cannot
+refuse a `bin/fast-check` and cannot have anything pointed at its process group.
+Running the pre-flight from a primary checkout during a sweep behaves exactly as
+it did before this existed.
 
 ## Preconditions
 

@@ -182,14 +182,7 @@ test/lib/bounce_check_cli_test.rb: 8.96
 test/lib/bounce_ledger_test.rb: 0.12
 test/lib/cert_database_reaper_integration_test.rb: 1.27
 test/lib/cert_database_reaper_test.rb: 0.13
-test/lib/cert_emission_test.rb: 0.09
 test/lib/cert_evidence_test.rb: 0.14
-test/lib/cert_orphan_guard_reaper_test.rb: 3.52
-test/lib/cert_orphan_guard_test.rb: 0.66
-test/lib/cert_process_test.rb: 0.96
-test/lib/cert_root_guard_test.rb: 4.93
-test/lib/cert_runlock_test.rb: 0.62
-test/lib/cert_tree_guard_test.rb: 0.3
 test/lib/ci_apt_step_timeout_test.rb: 5.29
 test/lib/ci_bundle_retry_test.rb: 0.02
 test/lib/ci_job_timeout_test.rb: 0.02
@@ -231,7 +224,6 @@ test/lib/fast_lane_test.rb: 0.08
 test/lib/feature_marker_test.rb: 0.04
 test/lib/feature_shape_tiers_test.rb: 0.08
 test/lib/feature_shapes_audit_test.rb: 0.03
-test/lib/full_suite_check_test.rb: 61.72
 test/lib/gate_cli_test.rb: 1.66
 test/lib/gh_auth_retry_test.rb: 0.1
 test/lib/gh_identity_test.rb: 0.05

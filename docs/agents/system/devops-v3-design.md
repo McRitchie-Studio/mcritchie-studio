@@ -264,7 +264,7 @@ window with a clock.
 | `full-suite-check` + fingerprint evidence | Local full suite; DoR re-grades the tree hash | A stale or partial cert | The top DoR failure: 439 + 337 refusals | delete: the CI tree verdict replaces it |
 | Cert root, tree and orphan guards | Refuse the wrong or dirty tree; reap zombie certs | Certifying someone else's code | False STALE 6 of 6 once; the reaper once killed an innocent process | delete with the evidence system |
 | `control-check` | Replays pre-change tests for test-only diffs | A silently deleted assertion | Builders produced it unprompted | keep as a review lane |
-| Bypass and deferral receipts | `[full-suite-bypass]`, `[cert-deferred]` | A cert that could not run | unmeasured | delete |
+| Bypass and deferral receipts | the full-suite bypass hatch and the cert-deferred receipt | A cert that could not run | unmeasured | delete |
 
 ### Definition of Ready
 

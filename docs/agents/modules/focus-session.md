@@ -137,7 +137,7 @@ Read docs/agents/agents/pokemon/role.md, then docs/agents/modules/building-sop.m
 Write the test tiers your shape requires. Commit in the desk early and often.
 Hand off from the desk, in the background, with the hub's script: /Users/alex/projects/mcritchie-studio/bin/ship-wait <slug> --launch -m "<message>" (about 12 minutes; a satellite desk carries no copy of it).
 STOP at submitted. Do not merge, deploy, or touch release/main.
-Narrate with bin/agent-activity. Report back: the PR URL, the cert verdict, the CI state, anything undone.
+Narrate with bin/agent-activity. Report back: the PR URL, the pre-flight result, the CI state, anything undone.
 ```
 
 **Their reports are testimony.** Before you count a task as submitted, check:

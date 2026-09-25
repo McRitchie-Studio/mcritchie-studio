@@ -21,11 +21,11 @@
 #
 # `[control]` is NOT a tier and is not credited as one — it is the `test-only`
 # shape's required evidence, and the tier-tag parser ignores it exactly as it
-# ignores the `[full-suite@…]` / `[rubocop@…]` stamps below:
+# ignores the fingerprint-bound `[control@…]` stamp:
 #   [control] pre-change test/integration/hub_test.rb at HEAD → 1 failure, line 42
 # It must name a path that is in the diff, so it is about the change in hand.
 # Its EXECUTED form is stamped by `bin/control-check <task>` and lives in the
-# machine-owned namespace beside the certs (the `@<fp>` is the tell):
+# machine-owned namespace (the `@<fp>` is the tell):
 #   [control@<git-tree-hash>] NECESSARY — replayed test/models/x_test.rb …
 # Where the diff has a replayable file, that stamp is REQUIRED and the prose form
 # no longer suffices; where it does not, the prose form is still the whole of it.
@@ -33,8 +33,8 @@
 #
 # EVERY TIER HERE IS RUN BY A LANE **IN THIS REPO** — enforced, not promised.
 # test/lib/feature_shape_tiers_test.rb asserts that every tier any shape below demands
-# is EXECUTED by a real runner (.github/workflows/ci.yml, bin/fast-check,
-# bin/full-suite-check). Add a tier to a shape with no lane behind it and that guard
+# is EXECUTED by a real runner (.github/workflows/ci.yml, bin/fast-check). Add a
+# tier to a shape with no lane behind it and that guard
 # goes red. This is not decoration: until 2026-07-13 this file demanded `e2e` and
 # `e2e_onchain` and NOTHING RAN EITHER — the tags were credited by bin/dor-check purely
 # because a builder typed them into checks_run, so the gate demanded evidence it never
@@ -101,7 +101,7 @@
 #
 # It does NOT cover a per-repo check built WITHOUT that seam, and there is a live route:
 # config/release_repos.yml is already a per-repo lane registry of exactly this kind
-# (`lint_lane: none` at :240 and :283, rationale at :202-209), and bin/lib/full_suite_gate.rb:352
+# (`lint_lane: none` rows, rationale in its `cert fields` note), and bin/lib/release_registry.rb
 # already reads it — so an `e2e_lane:` key declared there would close this blind spot without
 # ever opening a ci.yml. Read the guard green as "the seam route is still unbuilt", never as
 # "no per-repo check exists". If you close it the declared way, rewrite this paragraph BY HAND;
@@ -139,19 +139,14 @@
 # test/lib/feature_shape_tiers_test.rb enforces the order — restore the tier before a runner
 # executes it and the primary guard goes red.
 #
-# SEPARATE from these tier tags, the merge gate also requires FULL-suite + FULL-
-# rubocop evidence, recorded as fingerprint-bound checks_run lines the tier-tag
-# parser deliberately ignores (the `@<fingerprint>` is the tell):
-#   [full-suite@<git-tree-hash>] bin/rails db:test:prepare test test:system green
-#   [rubocop@<git-tree-hash>]    bin/rubocop clean
-# `bin/full-suite-check <task>` runs both lanes IN FULL and stamps them; bin/dor-
-# check re-grades them against the current code fingerprint so a touched-files
-# subset or a since-edited tree is refused. See bin/lib/full_suite_gate.rb. The
-# full-suite lane runs WHAT CI RUNS, verbatim (read from the repo's own ci.yml —
-# bin/lib/ci_test_command.rb), so the CI-independent cert can never test LESS than
-# CI; it used to run `bin/rails test`, which SKIPS the system tier.
+# SEPARATE from these tier tags, the merge gate requires SUITE EVIDENCE, and since
+# 2026-09-24 that has ONE form for every shape: the PR's settled GREEN GitHub CI
+# for its current head (bin/lib/ci_gate.rb). The fingerprint-bound local cert
+# receipts that used to stand beside the tier tags retired with the scripts that
+# wrote them (DevOps v3 phase 2b); bin/fast-check is the builder's optional
+# pre-flight and records nothing.
 #
-# THE OTHER TWO CONTRACT KEYS — `dor_tiers` is not the only thing a shape can ask
+# THE OTHER CONTRACT KEYS — `dor_tiers` is not the only thing a shape can ask
 # for, and two shapes now ask for something a tier list cannot express:
 #
 #   claimable_when: test_only_diff | docs_with_guards_diff
@@ -178,21 +173,6 @@
 #     A `claimable_when` value bin/dor-check does not implement REFUSES the claim
 #     rather than falling through — an unrecognized guard must not be a free pass.
 #
-#   full_suite_gate: true|false
-#     Whether the merge gate demands fingerprint-bound FULL-suite + rubocop
-#     evidence (see the block below) — and, since 2026-09-07, whether the LOCAL
-#     cert is owed at all: bin/fast-check reads this key too (via
-#     bin/lib/shape_contract.rb) and WAIVES its zero-evidence refusal for a shape
-#     that owes no suite over a diff it OBSERVES to ship no behaviour. TWO
-#     READERS, ONE KEY, which is the point — they used to disagree. See the `docs`
-#     shape's notes for what that disagreement cost. Until 2026-08-11 this was INFERRED from
-#     `dor_tiers` being empty, so the only zero-tier shape (`docs`) silently
-#     skipped the suite gate too — correct for prose, and a trap for any future
-#     zero-tier shape, which would have inherited a suite-gate exemption nobody
-#     chose. `test-only` is exactly that shape. The key is now explicit and
-#     DEFAULTS TO TRUE (fail-closed), and test/lib/feature_shape_tiers_test.rb
-#     requires any shape with no tiers to declare it, so the choice is made on
-#     purpose and reviewed, rather than inherited from an unrelated field.
 #
 # This file is the single source of "how much testing is enough" per change
 # shape. Tune it here; bin/dor-check and the heartbeat agent pick it up with no
@@ -260,15 +240,13 @@ shapes:
   docs:
     description: Documentation change — SOP, runbook, agent-operating-model, or README — optionally shipping the registry-guard tests that pin it (test/docs/*_test.rb). No other code, no persistence.
     dor_tiers: []
-    full_suite_gate: false
     claimable_when: docs_with_guards_diff
     required_metadata: [acceptance, repositories, risk_tags]
     notes: >-
       No code tiers: a doc change certifies by REVIEW, not a test lane — so
-      dor_tiers is empty (nothing to fabricate) and the full-suite merge gate is
-      skipped. `full_suite_gate: false` says that OUT LOUD; it used to be
-      inferred from the empty tier list, which quietly made "no tiers" mean "no
-      suite either" for every future shape. It routes to the documentation seat
+      dor_tiers is empty (nothing to fabricate). The CI gate still applies to it
+      as to every shape (a settled green CI on the PR); what a doc change is
+      spared is the tier contract. It routes to the documentation seat
       (Alex) in ReviewerSelector's SHAPE_DOMAINS. test_plan is dropped from
       required_metadata for the same reason there is nothing to plan; prose
       acceptance is the reviewer's and the operator's at the QA stop, not a
@@ -282,7 +260,7 @@ shapes:
       the guard or mislabel the shape. The rule is deliberately type AND
       location together, never a bare directory allowlist (a helper.rb under
       test/docs/ still disqualifies), and a diff of guard tests with NO prose
-      still refuses — that is test-only's stricter contract (full-suite cert +
+      still refuses — that is test-only's stricter contract (the CI gate plus a
       [control] line), which must not be dodged through a tierless docs claim.
       CI's full suite remains the net that actually RUNS the guard.
 
@@ -320,41 +298,13 @@ shapes:
       an UNOBSERVABLE diff (an empty view is the absence of evidence, not proof
       of prose) — except at the build gate, where no code exists yet.
 
-      NOT the alternative fix, and this is deliberate: `full_suite_gate` stays
-      FALSE. Making every doc change pay a full suite would undo the cheap prose
-      pass this shape exists to provide, and push people to mislabel shapes,
-      which is strictly worse than the hole. Gate the CLAIM, not the cost.
-
-      bin/fast-check NOW READS THIS STANZA TOO (2026-09-07,
-      /tasks/fast-check-ignores-docs-shape). It did not, and the two halves of
-      one gate held opposite answers to one question: bin/dor-check waived the
-      suite here while the G1 cert runner REFUSED a one-file markdown diff in a
-      satellite checkout — where the hub-anchored spine resolves nothing — and
-      named bin/full-suite-check as the remedy. MEASURED 2026-09-07 on
-      /tasks/wallet-transport-architecture-doc (2026-09-07): a ~31-minute
-      turf-monster suite run to certify 316 lines of prose that cannot reach a
-      single test. The
-      cert's zero-evidence reasoning was never the defect and is UNCHANGED for
-      every diff that ships behaviour; what it lacked was the prior question,
-      "was a suite owed at all?".
-
-      THE WAIVER IS NOT UNLOCKED BY THIS LABEL, which is the only reason it is
-      safe to state here. It needs BOTH this declaration AND an OBSERVATION —
-      CodeDiff.doc_only? over the rename-aware path view, the same classifier
-      claimable_when runs, and the STRICTER of the two (a docs+guards diff
-      normally runs its guard test and never reaches the guard; the one way it
-      does is a guard test that was DELETED, which needs a suite). A
-      `docs`-shaped diff carrying app/models/task.rb is refused by the cert
-      exactly as PR #1172 should have been refused by dor-check. Nothing is
-      recorded on the waived path: dor-check re-derives the same waiver from
-      this key at the verdict, so a receipt would be a line nothing grades.
-      Full case split: bin/lib/shape_contract.rb and
-      docs/agents/modules/gates/g1-cert.md.
+      bin/fast-check, the builder's optional pre-flight, needs no stanza here:
+      it records nothing, and a prose diff that maps to no test simply runs no
+      test lane (it says so) — CI runs the suite on the PR either way.
 
   test-only:
     description: A change whose entire content is test code — a fixed, deleted, added, or re-diagnosed test. No production diff.
     dor_tiers: []
-    full_suite_gate: true
     claimable_when: test_only_diff
     required_evidence: [control]
     required_metadata: [acceptance, repositories, risk_tags, test_plan]
@@ -386,8 +336,8 @@ shapes:
       shape every under-tested change claims, and this file's entire subject is
       what happens when a gate accepts a self-declaration.
 
-      (2) THE CERT GATE STILL APPLIES (`full_suite_gate: true`, unlike `docs`).
-      Test code IS code: it runs, it can be broken, and a test-only diff is the
+      (2) THE CI GATE STILL APPLIES. Test code IS code: it runs, it can be
+      broken, and a test-only diff is the
       change most able to break the suite silently. So this shape is NOT EXEMPT
       from the suite gate — and since 2026-09-24 (`dor-reads-settled-ci-verdict`)
       the suite gate has ONE form of evidence for every shape: the PR's SETTLED
@@ -397,10 +347,10 @@ shapes:
       evidence the gate reads. That is this shape's EXECUTED evidence, and it is
       the reason the empty tier list costs nothing.
 
-      READ THE CONDITION, NOT JUST THE PERMISSION. `full_suite_gate: true`
-      means NOT EXEMPT; it has never meant "run the full suite locally", and
-      `bin/dor-check` has no `test-only` branch at all — the CI verdict it reads
-      here is the one a feature is read by, in both roles.
+      READ THE CONDITION, NOT JUST THE PERMISSION. "Not exempt" has never
+      meant "run the full suite locally", and `bin/dor-check` has no `test-only`
+      branch at all — the CI verdict it reads here is the one a feature is read
+      by, in both roles.
 
       THE CONDITION THAT DIFFERS IS THE ROLE, NOT THE GREEN. Both roles are
       worded in `bin/lib/ci_gate.rb#verdict`: review's gate-zero refuses a

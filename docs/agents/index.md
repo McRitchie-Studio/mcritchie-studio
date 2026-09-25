@@ -314,8 +314,8 @@ cd <desk>   #   ... the worktree begin printed; build there ...
 ```
 
 **Name the hub's script; stand in the desk.** Every fast-lane command —
-`bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/full-suite-check`,
-`bin/dor-check` — lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A
+`bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/dor-check` —
+lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A
 **satellite** desk (the table below names all five) carries none of them, so the bare
 `bin/ship` dies there as `nohup: bin/ship: No such file or directory` — instantly,
 and looking like a broken install rather than a wrong path. Only a **hub** desk
@@ -326,35 +326,35 @@ different questions: **the path picks the SCRIPT, the cwd picks the TREE it acts
 on.** Both halves are load-bearing, so state both — and know that the fast lane's
 two writers disagree about what a wrong cwd costs you:
 
-- **The cert writers REFUSE.** `bin/fast-check` and `bin/full-suite-check` root at
-  the cwd's git toplevel and take `CertRootGuard#refusal`
-  (`bin/lib/cert_root_guard.rb`), so from the hub against a satellite task they
-  exit 1 — measured: *"this run roots at /Users/alex/projects/mcritchie-studio
-  (branch main), which is not <slug>'s tree — refusing to certify it."*
+- **The pre-flight REFUSES.** `bin/fast-check` roots at the cwd's git toplevel
+  and takes `TaskTree#refusal` (`bin/lib/task_tree.rb`), so from the hub against a
+  satellite task it exits 1: *"this run roots at
+  /Users/alex/projects/mcritchie-studio (branch main), which is not <slug>'s tree —
+  refusing to run against it."*
 - **`bin/ship` RE-ROOTS — loudly, not silently.** It reads the same assessment but
   wants `:resolved_root` rather than the refusal, so when the task's desk is on
   disk it prints `re-rooting at the task worktree <desk> (you ran from <cwd>)` and
   carries on THERE. It dies only when no desk resolves — absent from disk, or a
   multi-repo tie. Every gate it then runs re-verifies the root from its own cwd, so
-  a wrong re-root cannot survive to a recorded verdict. Do not read the cert
-  writers' refusal as ship's behaviour: ship's own comment says it "re-roots rather
-  than refuses when the task's worktree exists on disk — loudly."
+  a wrong re-root cannot survive to a recorded verdict. Do not read the
+  pre-flight's refusal as ship's behaviour: ship's own comment says it "re-roots
+  rather than refuses when the task's worktree exists on disk — loudly."
 
 | Desk | Fast lane from that desk |
 |------|--------------------------|
 | `mcritchie-studio` | Hub-absolute **or** bare `bin/…` — a hub desk checks the scripts out, so both resolve |
 | `turf-monster` · `rolio` · `mcritchie-industries` · `tax-studio` · `chain-ops` | **Hub-absolute only.** The desk has no fast-lane scripts; only the cwd is the desk's |
-| `studio-engine` · `solana-studio` · `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add` at `<repo>/.worktrees/<slug>`, stamp it with hub-absolute `bin/agent-worktree identity <repo> <slug> <soul>` (a hand-cut desk gets no stamp and no `UNSTAMPED` warning), and run the handoff steps by hand. All three still get a cert; see below |
+| `studio-engine` · `solana-studio` · `turf-vault` | **No `begin`, no `ship`.** `bin/task begin` answers `unknown app` (measured 2026-09-09) — create with `bin/task create`, make the desk with a plain `git worktree add` at `<repo>/.worktrees/<slug>`, stamp it with hub-absolute `bin/agent-worktree identity <repo> <slug> <soul>` (a hand-cut desk gets no stamp and no `UNSTAMPED` warning), and run the handoff steps by hand. All three still get the pre-flight; see below |
 
 Row 2 is the REGISTRY, not the machine: it names every satellite in
 `config/satellites.yml`, including `tax-studio`, which has no checkout yet. It is
 listed because the rule is about where the scripts live, and it will hold the day
 the repo lands.
 
-**Row 3 is a missing WORKTREE lane — NOT a missing cert lane. All three of these
-repos can be certified today.** `bin/task begin` cannot desk any of the three, so
-none of them gets `begin` or `ship`. But `bin/fast-check` carries a REGISTRY-GATE
-branch (`FullSuiteGate.registry_gated?` + `FullSuiteGate.release_check_cmd`): from a
+**Row 3 is a missing WORKTREE lane — NOT a missing test lane. All three of these
+repos can run the pre-flight today.** `bin/task begin` cannot desk any of the three,
+so none of them gets `begin` or `ship`. But `bin/fast-check` carries a REGISTRY-GATE
+branch (`ReleaseRegistry.registry_gated?` + `ReleaseRegistry.release_check_cmd`): from a
 plain `git worktree add` desk, hub-absolute `bin/fast-check <task>` runs the repo's
 DECLARED gate as the whole mapped lane, skipping the Rails prepare lane that does not
 apply. Three repos declare one in `config/release_repos.yml`, and all three name the SAME
@@ -482,14 +482,12 @@ it in silence is how a task ends up shaped wrong. Mechanics:
 `docs/agents/modules/devops-task-board.md`.
 
 **`bin/ship` waits for CI before the verdict** (`gate-submit-on-green-ci`). The
-builder no longer pays for a local FULL suite — measured at ~31 min against CI's
-~9 for the identical command — so the wall-clock that justified submitting before
-CI settled is gone. The trade: ~20 min back to the builder, `submitted` carrying a
-GREEN CI instead of a provisional one, and a red CI caught by the session that
-still has the worktree warm rather than bounced into a cold one. The wait decides
-nothing — `bin/dor-check` runs next and owns the verdict — and it is bounded at
-both ends, falling through to the old provisional path when a run never appears or
-never finishes. `SHIP_CI_WAIT=off` disarms it.
+builder pays for no local full suite — CI runs it in ~9 min on the PR — so the
+handoff holds for that settle: `submitted` carries a settled GREEN CI, and a red CI
+is caught by the session that still has the worktree warm rather than bounced into
+a cold one. The wait decides nothing — `bin/dor-check` runs next and owns the
+verdict — and it is bounded at both ends: a run that never appears or never
+finishes reaches the verdict as a WAIT. `SHIP_CI_WAIT=off` disarms it.
 
 **Budget for it: a cold `bin/ship` now runs ~12 minutes**, not ~3. That exceeds
 what some agent harnesses allow one foreground command, so **run it in the
@@ -558,13 +556,13 @@ Before editing a single file:
    (prose only) · `test-only` (the diff is 100% `test/`, `tests/`, `e2e/`).
    The last two carry **no tiers** — and `test-only` is not a lighter contract:
    it is claimable **only** on a diff dor-check OBSERVES to be all test code, it
-   still owes the **cert gate**, and it owes a `[control]` line naming a file
+   still owes the **CI gate**, and it owes a `[control]` line naming a file
    in the diff, because the question a test-only change must answer is *does the
-   changed test still bite?* The cert gate it owes is the ORDINARY one
-   (`full_suite_gate: true`, unlike `docs`, which waives it), so
-   **`bin/fast-check` plus a green CI satisfies it** — `bin/dor-check`'s route
-   ladder has no `test-only` branch. Read "owes the cert gate" as "is not
-   exempt", never as "must run the full suite locally".
+   changed test still bite?* The CI gate it owes is the ORDINARY one, and
+   test-only is not exempt from it: the PR's settled green GitHub CI is the one
+   verdict, exactly as for a feature, and `bin/fast-check` is the optional
+   pre-flight before it, never evidence the gate reads. Read "owes the CI gate"
+   as "is not exempt", never as "must run the full suite locally".
 2. **Allocate an isolated worktree** (`bin/agent-worktree new <app> <task>`) on
    an allocated port. Do not edit on a primary checkout.
 3. **Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task> --root <desk>`** before editing —
@@ -584,21 +582,20 @@ While building:
 
 Before handoff:
 
-5. Certify — the task's **G1 Cert** gate
+5. Pre-flight — the task's **G1** step, optional
    (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): commit, then run
-   `bin/fast-check <task>` (the builder default — diff-mapped tests + core
-   spine + rubocop on changed files, ~1 min) or `bin/full-suite-check <task>`
-   (CI-independent). These are hub scripts too: from a satellite desk name
-   them `/Users/alex/projects/mcritchie-studio/bin/…`, still standing in the desk.
+   `bin/fast-check <task>` (diff-mapped tests + core spine + rubocop on changed
+   files, ~1 min). It records nothing; the PR's settled green CI is the verdict.
+   It is a hub script too: from a satellite desk name it
+   `/Users/alex/projects/mcritchie-studio/bin/…`, still standing in the desk.
 6. Push, open a PR **into `accepted`** (base `accepted`, not `release`/`main`)
    whose body **leads with the task URL**, then verdict: run **`bin/dor-check
    <task>`** and fix whatever it flags — it refuses an under-tested PR and its
-   verdict closes the gate. Then `bin/task move <task> submitted` **without
-   waiting for CI**: a pending CI is a loud suggestion (the fast cert is credited
-   provisionally), a red CI still blocks, and the authoritative CI verdict is
-   review's gate-zero — the `pr-review` session only pops green-CI PRs, and a CI
-   that flips red mid-review is bounced back by Carl's gate-zero with the failing
-   checks named.
+   verdict closes the gate. Then `bin/task move <task> submitted`: a pending CI
+   is a WAIT for the builder (re-run once it settles), a red CI blocks, and the
+   authoritative CI verdict is review's gate-zero — the `pr-review` session only
+   pops green-CI PRs, and a CI that flips red mid-review is bounced back by
+   Carl's gate-zero with the failing checks named.
 
 The task lifecycle is two workflows (full spec:
 `docs/agents/system/devops-cycle-design.md`), and the code walks a three-rung

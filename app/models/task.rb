@@ -1255,7 +1255,7 @@ class Task < ApplicationRecord
   #
   # The fields above answer "what has landed on this task". They do NOT answer
   # "is the holder alive", and on 2026-08-13 the claim gate treated them as if
-  # they did: a challenger ran `bin/full-suite-check`, the cert landed a g1_cert
+  # they did: a challenger ran the (since retired) local cert, which landed a g1_cert
   # gate row on the task, and the gate refused that same challenger with "last
   # durable progress ~2m ago (g1_cert passed)" — the challenger's OWN work, quoted
   # back as proof the holder was working. Unowned progress gets credited to

@@ -207,8 +207,9 @@ BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 # task's DoR gate — `dor` (builder) or `dor_review` (review gate-zero) — see the
 # emit at the bottom; fire-and-forget.
 #
-# DOR_CHECK_GATE_BIN redirects that CLI (the tests point it at a stub). It exists
-# because "was an attempt RECORDED?" is otherwise unobservable: --json
+# DOR_CHECK_GATE_BIN redirects that CLI — the tests point it at a stub, the same
+# seam shape DOR_CHECK_CONTROL_EVIDENCE has for the control lane.
+# It exists because "was an attempt RECORDED?" is otherwise unobservable: --json
 # and --file both skip the board write by design, so a verdict that records
 # NOTHING — which is exactly what an exempt run did until this task — reads
 # identically to one that recorded a pass. Overriding it is also what lets a
@@ -2384,7 +2385,7 @@ missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
 # THIS EXACT QUESTION, AND ALREADY REFUSES. A `kind: docs` task shipping
 # app/models/task.rb loses its exemption up there (gated_code_files is non-empty)
 # and falls through to the shape contract — which was `shape: docs`: zero tiers,
-# full_suite_gate false, "✓ DoR-to-Merge met". The kind gate's own FALL-THROUGH was
+# no suite gate, "✓ DoR-to-Merge met". The kind gate's own FALL-THROUGH was
 # the hole: one observation, asked twice, answered two opposite ways.
 #
 # MEASURED on PR #1172 (shape docs, carrying test/integration/

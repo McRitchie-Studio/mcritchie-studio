@@ -91,9 +91,9 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent 
   behavior for a tier to be evidence of, but it is **not** the easy option: it is
   claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`, `tests/`
   or `e2e/` (one non-test file and the claim is refused), it is **not exempt
-  from the cert gate** (`full_suite_gate: true`, unlike `docs`), which the fast
-  cert plus a green CI satisfies exactly as for a feature; and it owes a
-  **control** — the evidence that the changed test
+  from the CI gate** (unlike `docs`): the PR's settled green CI satisfies it
+  exactly as for a feature, with `bin/fast-check` as the optional pre-flight
+  before it; and it owes a **control** — the evidence that the changed test
   **still bites**. Run `bin/control-check <task>`: it replays the pre-change
   version of the changed test files against current production code and stamps
   the evidence. Where a changed file has no pre-change version (an added test) or
@@ -338,22 +338,23 @@ say so to him directly; the pipeline will not hold the work for it.
 **If no**, skip straight to Step 5. Do not set a `local_url` you will not stand
 behind.
 
-## Step 5 — Certify (G1)
+## Step 5 — Pre-flight (G1, optional)
 
-Commit, then run the builder certification — the task's **G1 Cert** gate:
+Commit, then run the builder's local pre-flight — the task's **G1** step
+([`gates/g1-cert.md`](gates/g1-cert.md)):
 
 ```bash
-bin/fast-check <slug>          # builder default: diff-mapped tests + core spine + rubocop, ~1 min
-# or, CI-independent, the full local suite:
-bin/full-suite-check <slug>
+bin/fast-check <slug>          # diff-mapped tests + core spine + rubocop on changed files, ~1 min
 ```
 
-Certify **after your final commit** — the cert is fingerprinted to the git tree,
-so an uncommitted change makes it stale. Fix any red before moving on.
+It records nothing on the task; the PR's settled green CI is the verdict. A red
+lane here almost always means a red CI ten minutes later, so fix it before you
+ship — but it is information, not a gate, and `bin/ship` runs it for you at step
+2/8 and carries on whatever it says.
 
 ## Step 6 — Ship to the seam (stops at `submitted`)
 
-One command commits, certifies, pushes, opens the **non-draft** PR into
+One command commits, pre-flights, pushes, opens the **non-draft** PR into
 **`accepted`** led by the task URL, records `pr_url`, **waits for the PR's CI to
 settle**, runs `bin/dor-check`, and moves the task to `submitted`:
 
@@ -371,15 +372,14 @@ bin/ship <slug> -m "<commit message>"
   PR. Resolve it (the owning task keeps the copy, the other drops it) and re-run;
   ship resumes.
 - **Ship waits for CI before the verdict** (`gate-submit-on-green-ci`), so
-  `submitted` normally carries a GREEN CI rather than a fast cert credited
-  provisionally against a pending one — and a red CI reaches you while the
+  `submitted` carries a settled GREEN CI — and a red CI reaches you while the
   worktree is still warm, instead of bouncing back into a cold session. The wait
   decides nothing: a red CI stops the handoff because **`bin/dor-check` refuses
-  it**, exactly as before. It is bounded at both ends — a run that never appears,
-  or never finishes, falls through to the verdict and the old provisional path,
-  and says which of the two happened. `SHIP_CI_WAIT=off` disarms it.
+  it**. It is bounded at both ends — a run that never appears, or never finishes,
+  falls through to the verdict, which reads it as a WAIT, and says which of the
+  two happened. `SHIP_CI_WAIT=off` disarms it.
 - **Budget the wall-clock, or background the call.** With the wait armed, a cold
-  `bin/ship` is a **~12-minute** command (cert ~2 min, then the CI wait — this
+  `bin/ship` is a **~12-minute** command (pre-flight ~2 min, then the CI wait — this
   repo's `ci.yml` runs ~9.5 min at p50), where it used to return in ~3. That is
   longer than some agent harnesses allow a single foreground command to run, and a
   harness that kills the call mid-wait leaves the task in `building` with the PR

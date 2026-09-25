@@ -237,7 +237,7 @@ class ZapCertFreshnessDocsTest < Minitest::Test
 
     refute_nil body, "bin/dor-check no longer defines review_fingerprint(root, branch) — the doc's " \
                      "description of WHAT the gate hashes must be re-verified before this guard is edited"
-    assert_match(/fingerprint_of_first_ref\(root, "origin\/#\{branch\}", branch\)/, body,
+    assert_match(/of_first_ref\(root, "origin\/#\{branch\}", branch\)/, body,
                  "the doc says the gate hashes origin/<branch> in the desk (falling back to the local " \
                  "branch). If that preference changes, the cert paragraph is wrong again.")
   end
@@ -509,11 +509,10 @@ class ZapCertFreshnessDocsTest < Minitest::Test
   #   after fetch + re-certify      lane=stale  head=match      ...and LOOPS
   #   after fetch + MOVE + re-cert  lane=fresh  head=match      cleared
   #
-  # The loop is not a gate bug. bin/full-suite-check fingerprints the WORKING tree
-  # (its own dirty-tree guard says so at bin/full-suite-check:221) while
-  # review_fingerprint hashes origin/<branch>, and a bare fetch moves the second and
-  # not the first. So a remedy that steps straight from `git fetch` to
-  # `bin/full-suite-check` hands the operator back the verdict they started with.
+  # The loop is not a gate bug. bin/control-check fingerprints the WORKING tree
+  # while review_fingerprint hashes origin/<branch>, and a bare fetch moves the
+  # second and not the first. So a remedy that steps straight from `git fetch` to
+  # `bin/control-check` hands the operator back the verdict they started with.
   #
   # This pins the COMMANDS and their ORDER, never the sentences around them. Reword the
   # remedy however you like; drop the step that moves this checkout onto the fetched
@@ -614,31 +613,31 @@ class ZapCertFreshnessDocsTest < Minitest::Test
     refute_nil move,
                "the remedy names no DIRECTORY-SCOPED command that MOVES the graded checkout onto the fetched " \
                "head. Measured directly " \
-               "above: fetch-then-re-certify leaves the lane STALE, because bin/full-suite-check hashes the " \
+               "above: fetch-then-re-stamp leaves the lane STALE, because bin/control-check hashes the " \
                "WORKING tree and a fetch does not move it. A remedy that loops is the same defect as a " \
                "diagnosis that lies — the operator trusts it once and then stops trusting the gate."
-    # EITHER SPELLING. The re-cert used to be the literal `bin/full-suite-check <slug>`;
+    # EITHER SPELLING. The re-run used to be the literal `bin/full-suite-check <slug>`;
     # remedy-hints-print-bare-paths made it an ABSOLUTE, desk-first path computed at
     # runtime (a reviewer at a satellite primary cannot run the bare form), so the source
     # now carries `#{recert_command}` where the literal used to be. Indexing on the
     # literal alone silently found the PROSE mention earlier in the paragraph instead —
     # green in the wrong place, then red for the wrong reason. What this guard is ABOUT
     # is the ORDER, so it matches whichever spelling names the command.
-    recert = remedy.rindex(/bin\/full-suite-check \S|recert_command/)
+    recert = remedy.rindex(/bin\/control-check \S|recert_command/)
     assert recert.nil? || move < recert,
-           "the remedy's LAST word on bin/full-suite-check comes BEFORE the command that moves this checkout. " \
+           "the remedy's LAST word on bin/control-check comes BEFORE the command that moves this checkout. " \
            "Measured above, a cert taken in that order stamps the tree the operator already had."
 
     # AND THE DOC'S COPY OF THE SAME REMEDY, both bullets. Correcting the gate and not
     # the protocol leaves two authorities disagreeing about one measured fact, and an
     # operator who reads the doc first never sees the correction. That split is how this
     # claim survived its first pass; it does not get to be how the remedy survives.
-    paragraph = File.read(DOC)[/\*\*Expect the cert to go STALE.*?(?=\n\*\*A base that moves)/m]
-    refute_nil paragraph, "the cert-freshness paragraph is gone or renamed — re-point this guard; the remedy " \
+    paragraph = File.read(DOC)[/\*\*Expect the control stamp to go STALE.*?(?=\n\*\*A base that moves)/m]
+    refute_nil paragraph, "the control-freshness paragraph is gone or renamed — re-point this guard; the remedy " \
                           "it carries is measured directly above and is still live"
 
-    bullets = paragraph.split(/^- /).drop(1).select { |b| b.include?("bin/full-suite-check") }
-    refute_empty bullets, "neither case's bullet tells the reader how to re-certify any more — re-point this pin"
+    bullets = paragraph.split(/^- /).drop(1).select { |b| b.include?("bin/control-check") }
+    refute_empty bullets, "neither case's bullet tells the reader how to re-stamp any more — re-point this pin"
     bullets.each do |bullet|
       lead = bullet[/\A\*\*(.+?)\*\*/m, 1].to_s.gsub(/\s+/, " ")[0, 60]
       # Flattened for the same reason head_refusal_text is: markdown re-wraps, and a
@@ -651,9 +650,9 @@ class ZapCertFreshnessDocsTest < Minitest::Test
                    "PRIMARY. The gate and this doc are the two authorities on one remedy — correcting only " \
                    "one is how the false claim in this same passage survived its first pass."
       moved = flat.index(/git -C <\w+> (?:merge --ff-only|pull|reset --hard|checkout)/)
-      certified = flat.rindex("bin/full-suite-check")
+      certified = flat.rindex("bin/control-check")
       refute_nil moved,
-                 "zap-protocol.md, bullet «#{lead}»: sends the reader to bin/full-suite-check with no command " \
+                 "zap-protocol.md, bullet «#{lead}»: sends the reader to bin/control-check with no command " \
                  "that moves their checkout onto the pushed head. Measured above, in BOTH cases, that cert " \
                  "re-stamps the tree already there and the lane stays STALE — the doc would be walking them " \
                  "into the loop bin/dor-check's refusal now steers them out of."
@@ -732,8 +731,8 @@ class ZapCertFreshnessDocsTest < Minitest::Test
 
     # The doc's copy of the same two claims. Two authorities, one remedy — and this
     # passage is where a correction applied to only one of them last time.
-    paragraph = File.read(DOC)[/\*\*Expect the cert to go STALE.*?(?=\n\*\*A base that moves)/m]
-    refute_nil paragraph, "the cert-freshness paragraph is gone or renamed — re-point this guard"
+    paragraph = File.read(DOC)[/\*\*Expect the control stamp to go STALE.*?(?=\n\*\*A base that moves)/m]
+    refute_nil paragraph, "the control-freshness paragraph is gone or renamed — re-point this guard"
     flat = paragraph.gsub(/\s+/, " ")
     refute_match(/git (?:-C <\w+> )?merge --no-ff/, flat,
                  "zap-protocol.md prints the --no-ff hint as a command to run — measured above, it lands the " \

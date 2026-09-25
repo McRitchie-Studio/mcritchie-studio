@@ -395,13 +395,16 @@ thing about an unchecked repo.
 ### 3a. Re-certify — expect every stranded cert to be STALE
 
 A task that sat in `building` with an open PR has almost certainly gone stale:
-`release` moved under it. Re-certify each **from its own worktree**.
+`release` moved under it. Re-run the pre-flight and the verdict for each **from
+its own worktree**.
 
 > ### ⛔ `dor-check` reports a FALSE "STALE" from the wrong directory
-> The cert fingerprint is a **git TREE hash** (`[full-suite@<git-tree-hash>]`, see
-> `config/feature_shapes.yml`). Run `bin/dor-check <task>` from the **primary
-> checkout** for a task whose code lives in a worktree and the trees can never
-> match — it reports `STALE` for a perfectly good cert, naming the cwd nowhere.
+> On a `test-only` task the control stamp is bound to a **git TREE hash**
+> (`[control@<git-tree-hash>]`, see `config/feature_shapes.yml`). Run
+> `bin/dor-check <task>` from the **primary checkout** for a task whose code lives
+> in a worktree and the trees can never match — it reports `STALE` for a perfectly
+> good control, naming the cwd nowhere. (Until 2026-09-24 the same was true of
+> every local cert; those receipts retired.)
 >
 > In the founding run this reported STALE for **six of six** tasks — including ones
 > certified green ninety seconds earlier. It is very likely the trap that stranded

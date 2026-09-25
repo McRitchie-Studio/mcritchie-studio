@@ -108,10 +108,10 @@ A task whose CI flips red or conflicts AFTER the claim is caught inside the
 review: Carl's gate-zero (`bin/dor-check <task> --gate-role review`) blocks it
 back. That gate is an **allow-list** — `green` advances and every other state
 refuses, including a verdict it could not read (`unreadable` / `unverified` /
-`none`) and a blank `devops.pr_url`. The one escape is a fresh **full** cert
-(`bin/full-suite-check`, which runs `ci.yml`'s own command), which stands in for
-the unread verdict; a refusal with no such cert is a `conductor-review`, since the
-credential is not the builder's to fix. See `../../../modules/gates/dor.md`.
+`none`) and a blank `devops.pr_url`. No local cert stands in for an unread
+verdict (the local full-suite cert retired on 2026-09-24); such a refusal is a
+`conductor-review`, since the credential is not the builder's to fix. See
+`../../../modules/gates/dor.md`.
 
 Release the claim on the verdict (a crash frees it via the TTL, within 3h25m):
 

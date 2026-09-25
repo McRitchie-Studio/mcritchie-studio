@@ -544,7 +544,7 @@ when it ships. **Bias to action: green tests = go**, because both `accepted` and
 
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
-| **→ submitted** (task, entry) | Feature agent | Feature agent | certify — `bin/fast-check` (~1 min; credited once the PR's GitHub CI is green) or `bin/full-suite-check` (CI-independent) → pass `bin/dor-check`, record `checks_run`, open PR (base `accepted`), move in | self-gate — **G1 Cert** (the cert self-opens+closes its `g1_cert` attempt) → **DoR** (the `bin/dor-check` verdict opens+closes the `dor` gate) |
+| **→ submitted** (task, entry) | Feature agent | Feature agent | optional pre-flight — `bin/fast-check` (~1 min, records nothing) → open PR (base `accepted`), let CI settle, pass `bin/dor-check` (the PR's settled green CI is the suite evidence), record `checks_run`, move in | self-gate — **G1** (the optional pre-flight; since 2026-09-24 it writes no gate) → **DoR** (the `bin/dor-check` verdict opens+closes the `dor` gate) |
 | **submitted** (task) — REVIEW | **Carl** (standing primary + owner) + a domain LIGHT | Session Pokémon spins **one Carl per PR** → Carl summons **one LIGHT** at his discretion | The review session claims a green-CI PR (`bin/task claim-next-review`) and spins **one Carl** — the standing primary AND owner; **there is no Avi supervisor**. Carl does the deep review, owns the gates, and **summons one domain LIGHT** for a focused second read — the domain pick from {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform · Xan=Documentation}, previewed by **`bin/reviewer-select <task> --no-record`** (`ReviewerSelector` — a bare run RECORDS the pair and takes the task's review claim, so a preview always carries `--no-record`; excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`), else `devops.persona`, else the task's assigned `agent_slug`**; **busy souls** come from `--busy a,b,c` and/or `--busy-auto`; **KEEP fallback:** when the exclusions would leave too few, the least-bad are kept; the primary Carl + domain light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Carl and the light confirm DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker → **Carl merges the feat PR into `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed` ✅, then STOPS — review never touches `release`/`main` and never deploys; the `accepted → release` promotion (next row) is Avi's; a blocker → `blocked` (rework, with `qa_feedback`) | **G2 Review** (lanes `g2a_primary` + `g2b_light`; Carl's gate-zero = `bin/dor-check <task> --gate-role review`, recorded on the separate `dor_review` gate) — merge-ready primary + light reads (Carl = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — SWEEP (task) | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`) | `bin/release prepare` DETECTS every `reviewed` task + any `assembled` straggler off the current RC, ensures a candidate (`Release.current_or_open!`), and PROMOTES **ONE `accepted → release` batch PR per repo** — not N per-task `feat → release` merges (review already landed each feat PR on `accepted`); the promote is SKIPPED for a repo already level, or for a task already stamped `merged: release/main` (interrupted-run recovery). Then record membership + `merged: "release"` (`Release::Conductor.sweep!`) — **stage stays `reviewed`**. Honors `dependencies` + producer-first. Nothing detected + nothing active → idempotent no-op. **Bias to action: green tests = go** (`release` reverts cleanly) | deterministic sweep (conflicts surface at PR-merge; a conflicted PR is swept PAST — block-and-move); review gate: only `reviewed`/`assembled` tasks sweep (`--override` = audited `review_bypassed`) |
 | **assembled** (release) — QA | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`, same run) | After the sweep, the **stale-tree gate** (`Release::StaleTreeCheck`) re-reads `origin/release..origin/accepted` for every three-rung repo in the deploy plan and REFUSES unless `release` already carries `accepted` — asserting the promote's EFFECT, because the promote picks its repos from board stamps and so cannot see a commit with no task behind it (that gap once printed `✓ Assembled` over a tree missing the fix). Then the **pre-QA gate** runs the **next tier — integration + an e2e smoke** (registry `qa_test_cmd`) on `origin/release` BEFORE deploying; green → `prepare` deploys it to QA → **Discord QA-deployment note** → on **QA-green** `Release::Conductor.qa_green!` flips swept members `reviewed → assembled` (merged stays `release`) + release `assembled` | **G3 Candidate** (release-grain; spans pre-QA suite → QA boot smokes → post-deploy hooks; closes with the QA-green flip) — deterministic suite; ⛔ regression → **eject the offender** (`bin/release eject <task>` = detach + block + merged cleared; revert its merge commit) — the REST rides the re-run. **`prepare` waits-for-boot** (`/up`-smoke race) and **defers the flip** until QA returns 200 — a failure leaves members `reviewed` for the next self-healing run |
@@ -1439,7 +1439,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
 | **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
 | **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose, optionally with its own registry-guard tests** — `*_test.rb` under `test/docs/`, nothing else (`claimable_when: docs_with_guards_diff`) — which is what makes the empty column safe |
-| **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and is **not exempt from the cert gate** (`full_suite_gate: true`, unlike `docs`) — which the fast cert plus a green CI satisfies, exactly as for a feature |
+| **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and is **not exempt from the CI gate** (unlike `docs`): the PR's settled green CI satisfies it exactly as for a feature, with `bin/fast-check` as the optional pre-flight before it |
 
 **The backticked tier names are load-bearing, not formatting.** They are the
 canonical `dor_tiers` from `config/feature_shapes.yml`, and
@@ -1482,9 +1482,9 @@ back apart.
 `.rdoc`, inert media, LICENSE-class basenames). A test file is not doc-only; a
 comment-only edit to a `.yml` or an `.rb` is not doc-only (the granularity is the
 FILE, never the hunk); and location buys nothing (`docs/agents/setup.sh` is mode
-100755). The fix deliberately did **not** set `full_suite_gate: true` on `docs` —
-making every prose correction pay a full suite would undo the cheap single-pass
-doc change and push people to mislabel shapes, which is worse than the hole.
+100755). The fix deliberately did **not** make `docs` pay a local full suite —
+making every prose correction pay one would undo the cheap single-pass doc change
+and push people to mislabel shapes, which is worse than the hole.
 **Gate the claim, not the cost.**
 
 **A waived requirement now names itself.** When a shape skips a tier or the
@@ -1509,7 +1509,7 @@ enforced by `bin/dor-check`:
 | It requires | How it is checked |
 |---|---|
 | the diff is **100% test code** (`test/`, `tests/`, `e2e/`) | **verified from the observed diff**, never from the label — an unrecognized file *blocks* the claim, and so does a diff the gate cannot observe (`bin/lib/test_only_diff.rb`, an allowlist) |
-| the **full-suite + rubocop** cert, exactly as a feature | the existing fingerprint-bound `[full-suite@<fp>]` / `[rubocop@<fp>]` evidence — test code is code, and this shape is the one most able to break the suite quietly, so `full_suite_gate: true` |
+| the **CI gate**, exactly as a feature | the PR's settled green GitHub CI (`bin/lib/ci_gate.rb`) — test code is code, and this shape is the one most able to break the suite quietly, so it is not exempt |
 | a **control** | **EXECUTED** where the diff has a replayable file — `bin/control-check <task>` replays the pre-change test files against current production code and stamps a fingerprint-bound `[control@<fp>]` line the gate re-grades. Where it does not, a `[control]` prose line that **names a file in the diff** — a control that could have been written before the change was made is a sentence, not a result |
 
 The control is the artifact both builders produced unprompted: run the pre-change
@@ -1543,46 +1543,26 @@ the per-task judgment call that currently lets thin PRs through.
 A task **may not advance `submitted → reviewed`** unless, for its shape:
 
 - every required tier is present and green, recorded in `checks_run`;
-- the **FULL test suite and a FULL `rubocop`** are certified green against the
-  *exact code being shipped* — not the touched-file subset. The shape's tier tags
-  prove the agent *wrote* unit/integration; they do not prove nothing *else*
-  broke. `bin/full-suite-check <task>` runs **what CI runs, verbatim** — read from
-  the repo's own `.github/workflows/ci.yml`, today `bin/rails db:test:prepare test
-  test:system` (base **and** system tiers) — plus `bin/rubocop` in full, and stamps
-  fingerprint-bound `[full-suite@<fp>]` / `[rubocop@<fp>]`
-  `checks_run` lines; `bin/dor-check` re-grades them against the current code
-  fingerprint (a git tree hash — content-addressed, so it is **stable across the
-  pre-commit→commit boundary** and identical in a reviewer's fresh checkout of the
-  same tree), so a **stale** (edited-since) or **partial** (one-lane / touched-files)
-  record is **refused**. Both gates root the CODE they run + fingerprint at the
-  **current worktree** (the cwd's git toplevel), so a **satellite** task (turf-monster,
-  rolio) certifies its OWN repo even though it runs the hub's gate script — while the
-  shape config (`feature_shapes.yml`) stays resolved from the studio. Run
-  `bin/full-suite-check` **from the worktree** — a cert *writer* refuses a foreign
-  root outright, because it stamps evidence about the tree it stands in.
-  `bin/dor-check` **self-roots** at the task's tree from anywhere (it only *reads*
-  evidence) and announces the re-root on stderr; see
+- the **suite evidence** is the PR's **settled GREEN GitHub CI** for its current
+  head (`bin/lib/ci_status.rb` → `bin/lib/ci_gate.rb`), in both roles — the one
+  verdict per tree. The shape's tier tags prove the agent *wrote* unit/integration;
+  CI's full run (`bin/rails db:test:prepare test test:system` and the rest of
+  `ci.yml`) proves nothing *else* broke. Until 2026-09-24 this bullet described a
+  local certification — `bin/full-suite-check` and `bin/fast-check` stamping
+  fingerprint-bound receipts that `bin/dor-check` re-graded against the tree
+  hash, plus a bypass hatch and a deferral receipt. Phase 2a of DevOps v3 made the
+  gate read only CI; phase 2b (`retire-local-cert-evidence`) removed the receipts
+  and the scripts that wrote them. What remains locally is the **optional
+  pre-flight**: `bin/fast-check <task>` runs the tests the branch diff **maps to**
+  (path convention, a tool's test family, a subject-identity grep) **plus** the
+  curated core spine (`config/fast_cert_spine.yml`) and `rubocop` on the
+  **changed files only**, in about a minute, and records nothing. It refuses a
+  foreign root (`bin/lib/task_tree.rb`) because a pre-flight of the wrong tree
+  reads as green; `bin/dor-check` **self-roots** at the task's tree from anywhere
+  and announces the re-root on stderr; see
   [the DoR gate](../modules/gates/dor.md#the-gate-grades-the-tasks-tree--never-the-one-you-stand-in).
-  (The `FULL_SUITE_ROOT` / `DOR_CHECK_DIFF_ROOT` envs override the root; they are a
-  CI/test seam, not for routine use.) Escape hatch — a *record*, exactly like `post_deploy_cmd: none`: a
-  reasoned `[full-suite-bypass] <why>` `checks_run` line passes the gate but is
-  flagged **loudly** in the verdict (use it for a pre-existing, unrelated red
-  tracked elsewhere — never to wave through your own break).
-  **Fast route (the builder default — the 90/10 rethink):** GitHub CI already
-  runs the FULL suite + `test:system` on every PR push and the merge gate blocks
-  on CI green anyway, so a ~6-minute local full suite bought *earliness*, not
-  coverage. `bin/fast-check <task>` keeps the earliness at ~1/6 the cost: it runs
-  the tests the branch diff **maps to** (path convention — `app/models/x.rb` →
-  `test/models/x_test.rb`, views → their controller test, `bin/tool` →
-  `test/lib/tool_test.rb` — with a class-name grep fallback) **plus** the curated
-  core spine (`config/fast_cert_spine.yml`) and `rubocop` on the **changed files
-  only**, stamping a fingerprint-bound `[fast-cert@<fp>]` line (or, when the diff is
-  too wide for the mapped lane's cap and the spine is empty, a `[cert-deferred@<fp>]`
-  receipt that defers the cert to a GREEN CI). `bin/dor-check`
-  credits a FRESH fast cert **only alongside a green GitHub CI** — a red,
-  pending, missing, or unverified CI does not credit it. `bin/full-suite-check`
-  stays unchanged as the CI-independent local cert and the release-verification
-  tool;
+  (`FAST_CHECK_ROOT` / `DOR_CHECK_DIFF_ROOT` override the root; they are a CI/test
+  seam, not for routine use.)
 - required `metadata["devops"]` fields are populated (existing contract);
 - a local proof URL exists when the shape touches UI;
 - if the branch diff touches a **seed or data-migration** (`db/seeds`,
@@ -1609,8 +1589,8 @@ This is **deterministic** — a `bin/` gate (`bin/dor-check <task>`, default
 `--gate merge`), not a judgment call. There is also a lighter `--gate build`
 (spec-complete, no tiers) for the `designed → building` entry. The feature agent
 runs it before handoff; the heartbeat agent re-runs `--gate merge` as gate zero
-of review (the fingerprint-bound full-suite evidence is checkout-independent, so
-gate-zero credits the same evidence the feature agent recorded). A failed DoR is
+of review (the CI verdict is read for the PR head, so gate-zero reads the same
+verdict the feature agent's run did). A failed DoR is
 an *immediate, cheap* send-back that never consumes review-judgment tokens. This
 is the structural fix for the review ping-pong: most "PR not ready" churn becomes
 a pre-PR mechanical check.
@@ -1621,12 +1601,9 @@ verdict by `bin/lib/ci_status.rb`): a **failing**, **still-running**, or
 **closed/merged** PR is refused — a closed PR's green checks are *historical*, not
 a live target, so a stale `pr_url` never passes as green — an **all-green open** PR
 passes, and a task with **no PR yet** stays silent (nothing to verify). This closes the blocker-analysis
-**#1 class** — a PR green *locally* but red on CI, because the **fast** local cert
-(`bin/fast-check`, the builder default) runs only the diff-mapped tests + the core
-spine, and **not** the browser `test:system` lane GitHub also runs. (The *full*
-cert no longer has this gap: `bin/full-suite-check` runs CI's own command verbatim,
-`test:system` included — which is why `dor-check` credits it without CI's verdict,
-and credits the fast cert only once CI is green.) It
+**#1 class** — a PR green *locally* but red on CI, because the local pre-flight
+(`bin/fast-check`) runs only the diff-mapped tests + the core spine, and **not**
+the browser `test:system` lane GitHub also runs. It
 rides the existing gate-zero re-run: the feature agent's pre-PR run is silent on
 CI, but the heartbeat's `--gate merge` gate zero runs **after** the PR is up and
 refuses a red (or not-yet-green) PR before any review-judgment tokens are spent. A
@@ -1634,25 +1611,17 @@ refuses a red (or not-yet-green) PR before any review-judgment tokens are spent.
 — we don't trade a flaky CI lane for a flaky gate.
 
 `bin/dor-check` itself stays a **fast, deterministic verdict** — it does *not*
-run the suite; `bin/full-suite-check` is the (slower, run-once-before-handoff)
-runner that produces the evidence (format + fingerprint live in
-`bin/lib/full_suite_gate.rb`). It closes the retro gap where a build passed only
-the **files it touched** while the full suite or `rubocop` broke post-merge. For
-those who want the lanes wired locally, `bin/full-suite-check --install-hook`
-installs an **opt-in pre-push** hook (off by default; runs the gate before each
-push, blocks a red push; remove with `--uninstall-hook`) — pre-push, not
-pre-commit, because a full suite on every commit is untenable. But the
-**authoritative** gate is `bin/dor-check` validating the recorded evidence: the
-hook is a convenience, and evidence on the task record survives a fresh checkout
-where a local hook artifact would not.
+run the suite; GitHub CI is the runner that produces the evidence, once per tree,
+and the verdict on the task record survives a fresh checkout where a local
+artifact would not.
 
 The §3.3 sequence is recorded as **two branded gates** (attempt-aware `GateRun`
 rows; "Option B" split, 2026-07-11):
 
-- **G1 Cert** (`g1_cert`) — the **self-closing cert**: the cert tools
-  (`bin/fast-check` / `bin/full-suite-check`) OPEN the attempt, append one SOP
-  per lane, and CLOSE it themselves — `success` on all-green, `failed` on a red
-  lane (the re-run opens attempt n+1). `dor-check` no longer touches `g1_cert`.
+- **G1** (`g1_cert`) — until 2026-09-24 the **self-closing cert**: the cert
+  tools opened the attempt, appended one SOP per lane, and closed it themselves.
+  The pre-flight that replaced them writes no gate; the key stays on the board
+  for the historical rows.
 - **DoR** — the Definition-of-Ready **verdict**, its own gate now, split by
   role: the builder's `bin/dor-check <task>` opens+closes **`dor`**, and the
   reviewer's gate-zero `bin/dor-check <task> --gate-role review` opens+closes
@@ -1672,8 +1641,7 @@ conductor-recorded).
 | Component | Feature agent | Before `submitted` |
 | Integration | Feature agent | Before `submitted` (mandatory for any `migration`/`solana`/`payment`/`auth` risk tag) |
 | E2E (happy path) | Feature agent | Before `submitted` for ui+db / vertical shapes |
-| **Fast cert (builder default)** | Feature agent | Before `submitted` — `bin/fast-check <task>` runs diff-mapped tests + the core spine + rubocop on changed files (~1 min); its fingerprint-bound evidence is credited by `bin/dor-check` once the PR's GitHub CI (the full net) is green |
-| **Full suite + rubocop** | Feature agent | Before `submitted` when CI can't vouch (or for release verification) — `bin/full-suite-check <task>` certifies the WHOLE suite + lint (not the touched-file subset); records fingerprint-bound evidence `bin/dor-check` re-grades |
+| **Pre-flight (optional)** | Feature agent | Before `submitted` — `bin/fast-check <task>` runs diff-mapped tests + the core spine + rubocop on changed files (~1 min) and records nothing; the PR's settled green GitHub CI is the verdict `bin/dor-check` reads |
 | E2E (edge/regression) | QA lane (Avi/Steffon) | May add during review; becomes a follow-up task if large |
 | Manual | **Mr. McRitchie** | At the release QA stop (this *is* the manual tier) |
 

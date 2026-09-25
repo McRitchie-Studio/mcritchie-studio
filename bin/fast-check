@@ -15,7 +15,7 @@
 # and carries on to the PR whatever it said.
 #
 # Until DevOps v3 phase 2b (/tasks/retire-local-cert-evidence) this was the G1
-# fast CERT: it fingerprinted the tree, stamped a `[fast-cert@<fp>]` receipt on
+# fast CERT: it fingerprinted the tree, stamped a fast-cert receipt on
 # the task, opened and closed a g1_cert GateRun, and refused a wrong, dirty or
 # orphan-holding tree so the receipt could be trusted. The receipts were inert to
 # every reader by then (439 builder-side and 337 review-side DoR refusals came

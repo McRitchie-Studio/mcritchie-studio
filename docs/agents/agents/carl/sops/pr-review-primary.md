@@ -122,11 +122,10 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      also includes a blank `devops.pr_url`, which used to pass silently.
 
      **On a PR that carries CODE there is no escape either.** Until 2026-09-24 a
-     fresh `bin/full-suite-check` cert stood in for an unread verdict here and the
+     fresh local full-suite cert stood in for an unread verdict here and the
      refusal named that command; both retired with the receipts
-     (`dor-reads-settled-ci-verdict`). Do not send the builder to
-     `bin/full-suite-check` on any refusal: the gate no longer reads what it
-     records, and the run would leave the refusal byte-identical.
+     (`dor-reads-settled-ci-verdict`), and the script itself retired the same day
+     (`retire-local-cert-evidence`). There is no local cert to send the builder to.
 
      **On a DOC-ONLY PR there is no escape at all, and green is NECESSARY but
      not SUFFICIENT.** When the task's kind is `docs` / `chore` / `cleanup` *and*
@@ -134,8 +133,7 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      shape/test-tier gate is waived, and because it is waived there is no suite
      left whose result could stand in for the CI verdict. So a full cert changes
      nothing there, and **the refusal no longer offers one** — it says plainly
-     that a local cert does not stand in. Do not send the builder to
-     `bin/full-suite-check` on a doc-only refusal; it is a wasted run.
+     that a local cert does not stand in.
 
      Until 2026-09-05 this SOP promised the opposite, and so did the gate: it
      printed the code-path remedy and then refused the exact cert it had just

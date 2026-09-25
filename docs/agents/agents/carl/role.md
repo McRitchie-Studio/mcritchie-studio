@@ -57,5 +57,5 @@ with evidence; Avi rules on it (`arbitrate-block`).
 1. Read the existing model + controller before writing new ones — patterns matter
 2. Migration + seed update + test in the same commit, every time
 3. `rescue_and_log` with target/parent on every write action — no exceptions
-4. Certify before handoff — `bin/fast-check <task>` (diff-mapped tests + core spine + scoped rubocop, ~1 min; `bin/dor-check` credits it once the PR's GitHub CI is green) or `bin/full-suite-check <task>` (FULL suite + rubocop, CI-independent); opt into a pre-push run with `bin/full-suite-check --install-hook`
+4. Pre-flight before handoff — `bin/fast-check <task>` (diff-mapped tests + core spine + scoped rubocop, ~1 min; optional, records nothing — the PR's settled green CI is the verdict `bin/dor-check` reads)
 5. Hand off to Avi when the feature is green
