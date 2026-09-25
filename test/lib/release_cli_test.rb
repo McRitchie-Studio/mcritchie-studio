@@ -7501,4 +7501,58 @@ class ReleaseCliTest < Minitest::Test
     assert_includes msg, "NOT forcing"
     assert_match(/may be the wrong errand/, msg)
   end
+
+  # --- release notes: the real error, and the repost command ------------------
+
+  # rel-20260925-3b1f5c printed "not delivered (webhook unset?)" for what was an
+  # HTTP 400 on a 2790-char message. The command must print the conductor's error.
+  # argv is what `notes` sees AFTER the dispatcher shifted the subcommand off.
+  NOTES_ERROR = 'DeliveryError: Discord release notes notification failed: HTTP 400 ' \
+                '{"content": ["Must be 2000 or fewer in length."]}'
+
+  def notes_stub(delivered:, error: nil)
+    <<~RUBY
+      $snippets = []
+      def conductor(ruby, read_only: false)
+        $snippets << [ruby, read_only]
+        { "slug" => "rel-x", "message" => "the notes body", "notes_delivered" => #{delivered},
+          "notes_error" => #{error.inspect}, "notes_messages" => 2,
+          "messages" => [{ "content_chars" => 1990, "embeds" => 0, "embed_chars" => 0 },
+                         { "content_chars" => 800, "embeds" => 0, "embed_chars" => 0 }] }
+      end
+      def warn_local!; end
+    RUBY
+  end
+
+  def test_notes_defaults_to_a_read_only_dry_run_that_posts_nothing
+    out = run_cli(["rel-x"], setup: notes_stub(delivered: false),
+                  call: "notes; puts; puts $snippets.to_json")
+    snippet, read_only = JSON.parse(out.lines.last).first
+
+    assert read_only, "the default must be a read — nothing is sent"
+    assert_includes snippet, "dry_run: true"
+    assert_includes out, "DRY RUN (pass --post to send)"
+    assert_includes out, "message 1: 1990 content chars (limit 2000)"
+    assert_includes out, "the notes body"
+    assert_includes snippet, 'slug: "rel-x"'
+  end
+
+  def test_notes_post_sends_and_prints_the_real_error_on_failure
+    out = run_cli(["rel-x", "--post"], setup: notes_stub(delivered: false, error: NOTES_ERROR),
+                  call: "begin; notes; rescue SystemExit => e; puts \"EXIT=\#{e.status}\"; end; puts $snippets.to_json")
+    snippet, read_only = JSON.parse(out.lines.last).first
+
+    refute read_only
+    assert_includes snippet, "dry_run: false"
+    assert_includes out, "release notes: NOT delivered — #{NOTES_ERROR}"
+    refute_includes out, "webhook unset?"
+    assert_includes out, "EXIT=1", "a failed post must not exit 0"
+  end
+
+  def test_notes_without_a_release_refuses
+    out = run_cli([], setup: notes_stub(delivered: false),
+                  call: "begin; notes; rescue SystemExit => e; puts \"EXIT=\#{e.status}\"; end")
+
+    assert_includes out, "EXIT=1"
+  end
 end

@@ -7738,12 +7738,13 @@ def ship
     "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}, member_pause: #{BOARD_FLIP_CADENCE}); " \
     "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
-    "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered]}.to_json)"
+    "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered], " \
+    "notes_error: notes[:error], notes_messages: notes[:messages].size}.to_json)"
   )
 
   say("")
   say("🚀 Shipped #{rel_slug} → production#{DRY ? ' (DRY RUN — nothing executed)' : " (#{short(deployed_sha)})"}.")
-  say("  release notes: #{shipped['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}") unless DRY
+  say(Release::Cli.release_notes_line(shipped, rel_slug)) unless DRY
 
   # 7. Restore each app's PRIMARY checkout to a clean `main`, now fast-forwarded to
   #    what shipped — the COMPLEMENT of ship_preflight's ADVISORY. The ship itself
@@ -7979,9 +7980,9 @@ def finalize(slug = nil)
       notes = conductor(
         "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
         "n = Release::Conductor.post_release_notes(release: r); " \
-        "puts({notes_delivered: n[:delivered]}.to_json)"
+        "puts({notes_delivered: n[:delivered], notes_error: n[:error], notes_messages: n[:messages].size}.to_json)"
       )
-      say("  release notes: #{notes['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}")
+      say(Release::Cli.release_notes_line(notes, rel_slug))
     end
 
     # 7. The idempotent tail: restore each app primary to a clean `main`, then sync
@@ -8624,6 +8625,45 @@ def retro
   say("✓ Retro for #{resolved} written to #{path}. NON-BLOCKING — `bin/release archive` is unaffected.")
 end
 
+# `bin/release notes <release> [--post]` — re-post a shipped release's notes to
+# Discord, e.g. after the ship's own delivery failed. A DRY RUN by default: it
+# prints the notes and the planned message split (each message measured against
+# Discord's limits) and sends nothing — only `--post` delivers. Writes no release
+# event either way; the ship already recorded its release_notes step.
+def release_notes_ruby(slug, post:)
+  "r = Release.find_by!(slug: #{slug.inspect}); " \
+  "n = Release::Conductor.repost_release_notes(release: r, dry_run: #{!post}); " \
+  "puts({slug: r.slug, message: n[:message], messages: n[:messages], notes_delivered: n[:delivered], " \
+  "notes_error: n[:error], notes_messages: n[:messages].size}.to_json)"
+end
+
+def notes
+  post = Release::Cli.take_flag(ARGV, "--post")
+  slug = Release::Cli.positional_slugs(ARGV).first
+  abort!("usage: bin/release notes <release> [--post]") if slug.to_s.empty?
+
+  sending = post && !DRY
+  say("Release notes #{slug}#{PROD ? ' (PROD board)' : ' (local)'} — #{sending ? 'POSTING to Discord' : 'DRY RUN (pass --post to send)'}")
+  warn_local!
+  step("#{sending ? 'post' : 'preview (read-only)'}: Release::Conductor.repost_release_notes")
+  result = conductor(release_notes_ruby(slug, post: sending), read_only: !sending)
+  return if result.empty? # global --dry-run with --post: conductor printed the snippet
+
+  Array(result["messages"]).each_with_index do |m, i|
+    say("  message #{i + 1}: #{m['content_chars']} content chars (limit 2000), #{m['embeds']} embeds (limit 10), " \
+        "#{m['embed_chars']} embed chars (limit 6000)")
+  end
+  if sending
+    say(Release::Cli.release_notes_line(result, slug))
+    exit 1 unless result["notes_delivered"]
+  else
+    say("")
+    say(result["message"].to_s)
+    say("")
+    say("✓ Previewed #{slug} — nothing posted. Send it with: bin/release notes #{slug} --post")
+  end
+end
+
 # Guarded so the file can be `require`d (helper coverage) without dispatching.
 if __FILE__ == $PROGRAM_NAME
   # BEFORE the dispatcher, always. Every mutation this CLI can perform is reached
@@ -8642,6 +8682,7 @@ if __FILE__ == $PROGRAM_NAME
   when "status"   then status
   when "archive"  then archive
   when "retro"    then retro
+  when "notes"    then notes
   else
     # The usage string moved to Release::Cli::USAGE so the guard's per-subcommand
     # help and this fall-through print the SAME text from one place.
