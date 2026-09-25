@@ -71,14 +71,16 @@
 # case above: that one fails CLOSED and a human decides, while this one failed OPEN —
 # populated, confident, and short by one, so nothing looked wrong.
 #
-# AND IT CANNOT BE DERIVED FROM THE PR. Deriving authorship from the commits was the
-# obvious alternative and it is not available here: a commit carries no soul. 214 of
-# the last 400 commits on `accepted` are authored `Alex McRitchie
-# <amcritchie@gmail.com>` — the operator's own git identity, which every agent
-# inherits by default — and BOTH measured zap commits are among them, so a
-# commit-author derive would have caught neither. It would also collide the operator
-# with the `alex` soul. The fact has to be RECORDED, which is what devops.fix_forward
-# is; #fix_forward_unnamed is the fail-closed half for when it cannot be attributed.
+# THE FIFTH SOURCE: THE PR ITSELF (devops-v3 piece 4a). Agent commits now carry
+# `<soul>@mcritchie.studio` as their author email, so the PR's commits name souls
+# directly — Task#derived_authors reads them (plus a soul Co-Authored-By trailer
+# and the PR author's login) through Github::TaskDerivation, and #builders UNIONS
+# them with the four recorded sources. A union can only ADD exclusions: a commit
+# under the operator's own identity (`amcritchie@gmail.com`) or the App bot names
+# nobody, so it takes nothing away, and devops.fix_forward stays the record for a
+# zap under such an identity. Callers may inject the set as `pr_authors:`; when
+# they do not, it is derived from the task (empty in test, where
+# config.x.derive_from_github is false, and on any failed read).
 #
 # An author who isn't a specialist (Carl, a non-pool soul, or the QA owner) excludes
 # nobody from the light pool. If excluding them all would leave too few light
@@ -323,8 +325,9 @@ class ReviewerSelector
   # list — pass true; the default is false because a caller that says nothing did
   # not ask.
   def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, busy: [], busy_asked: false,
-                 logger: nil, random: nil)
+                 logger: nil, random: nil, pr_authors: nil)
     @task = task
+    @pr_authors = pr_authors
     @qa_owner = qa_owner.to_s
     @builder_override = builder.to_s.strip.presence
     # Every soul read here goes through Task.canonical_soul, so `--busy alex` or a
@@ -622,9 +625,28 @@ class ReviewerSelector
       elsif @builder_override
         override_builders
       else
-        ([devops_built_by] + task_devops_builders + building_event_actors + fix_forward)
+        ([devops_built_by] + task_devops_builders + building_event_actors + fix_forward + pr_authors)
           .map { |s| Task.canonical_soul(s) }.select { |s| soul?(s) }.uniq
       end
+  end
+
+  # The souls on the task's PR (see THE FIFTH SOURCE in the header): the injected
+  # `pr_authors:`, else Task#derived_authors. Never raises — a failed derivation
+  # leaves the recorded sources standing alone, exactly as before.
+  def pr_authors
+    return @pr_authors_resolved if defined?(@pr_authors_resolved)
+
+    @pr_authors_resolved =
+      if !@pr_authors.nil?
+        Array(@pr_authors)
+      elsif task.respond_to?(:derived_authors)
+        Array(task.derived_authors)
+      else
+        []
+      end
+  rescue StandardError => e
+    @logger&.warn("[reviewer-selector] PR author derivation failed (non-fatal): #{e.class}: #{e.message}")
+    @pr_authors_resolved = []
   end
 
   # `devops.fix_forward` — the souls recorded as having moved the PR head OUTSIDE a

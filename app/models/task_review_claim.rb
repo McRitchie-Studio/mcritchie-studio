@@ -114,7 +114,11 @@ class TaskReviewClaim < ApplicationRecord
     task = Task.find_by(slug: task_slug.to_s.strip)
     return false if task.nil?
 
-    ([task.devops_built_by] + task.devops_builders).map { |s| s.to_s.strip }.include?(slug)
+    # The PR's own commit authors (Task#derived_authors, devops-v3 piece 4a) join
+    # the stamps, so a soul whose commits are on the PR is refused even when no
+    # claim ever named them.
+    authors = [task.devops_built_by] + task.devops_builders + task.derived_authors
+    authors.map { |s| Task.canonical_soul(s) }.include?(Task.canonical_soul(slug))
   rescue StandardError => e
     Rails.logger.warn("[review-claim] self-review check failed for #{task_slug}: #{e.class}: #{e.message}")
     false
