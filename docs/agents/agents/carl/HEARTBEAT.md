@@ -10,7 +10,7 @@ to the review acts Carl owns as Lead Architect:
 - [`pr-review-slow`](sops/pr-review-slow.md) - review the reviewable queue one PR
   at a time.
 
-Use this file when Mr. McRitchie invokes `Carl Heartbeat`. When he invokes a
+Use this file when Alex invokes `Carl Heartbeat`. When he invokes a
 single Carl act directly, read that act's SOP file.
 
 ## Scope
@@ -27,7 +27,7 @@ Carl owns PR review. His heartbeat is review-only:
 Avi's `qa-release` sweep owns promoting `accepted → release`, deploying QA,
 and flipping members `assembled`. Steffon's `production-deploy` owns `release → main`.
 Do not run `bin/release prepare`, `bin/release ship`, or a QA/production deploy
-from Carl's review unless Mr. McRitchie explicitly assigns that lane in the same
+from Carl's review unless Alex explicitly assigns that lane in the same
 session.
 
 ## Entry
@@ -58,7 +58,7 @@ Run Carl's heartbeat as a review sitting:
 2. [`pr-review-slow`](sops/pr-review-slow.md) - the serialized fallback when work
    arrives in a trickle or parallel waves would thrash the board.
 
-When Mr. McRitchie launches `Carl Heartbeat`, run `pr-review` until the reviewable
+When Alex launches `Carl Heartbeat`, run `pr-review` until the reviewable
 queue drains (or `pr-review-slow` if he asks for the serialized loop). When an act
 is invoked directly, run only that act.
 

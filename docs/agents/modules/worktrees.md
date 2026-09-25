@@ -32,7 +32,7 @@ resume with `bin/task begin <task-slug>`). Steps 4-9 apply either way.
 
 Without the fast lane: agree acceptance criteria; create the production task; `bin/agent-worktree
 plan <app> <task-slug>`; `new`; `bind-task`; move the task to `building`; `up` when a URL is
-needed; edit only inside the desk. When the local behavior is ready for Mr. McRitchie:
+needed; edit only inside the desk. When the local behavior is ready for Alex:
 
 ```bash
 bin/task update <task-slug> --local-url http://localhost:<port>/<path> --approval waiting
@@ -255,7 +255,7 @@ keep both blocks at a CSS end-of-file conflict; merge sequentially, suite green 
 ## Handoff Contract
 
 Task URL first; then branch, desk path, local URLs, PR URL, `checks_run` and readiness.
-Never leave Mr. McRitchie with "run these commands."
+Never leave Alex with "run these commands."
 
 ## Terminal Context
 

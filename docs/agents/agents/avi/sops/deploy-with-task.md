@@ -16,7 +16,7 @@ before promising the operator a number.
 ## Ask First
 
 This SOP is interactive. If the launch phrase did not name a task, your FIRST
-action is to ask Mr. McRitchie:
+action is to ask Alex:
 
 > What task?
 
@@ -31,7 +31,7 @@ freshly-submitted task all the way to prod, skipping the full-queue drain — fo
 when one fix must ship now and nothing else is waiting.
 
 It does not drain the review queue, batch multiple tasks into a release, or
-archive shipped work. For the whole pipeline, use Alex's `full-cycle`.
+archive shipped work. For the whole pipeline, use Xan's `full-cycle`.
 
 ## Entry
 

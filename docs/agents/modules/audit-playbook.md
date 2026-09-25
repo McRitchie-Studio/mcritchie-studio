@@ -1,6 +1,6 @@
 # Audit Playbook
 
-Use this when Mr. McRitchie asks for an ecosystem, repo, architecture, docs,
+Use this when Alex asks for an ecosystem, repo, architecture, docs,
 security, or readiness audit.
 
 ## Operating Rules
@@ -12,8 +12,8 @@ security, or readiness audit.
    - relevant current modules in `mcritchie-studio/docs/agents/modules/`
 3. Treat dated audits, prompt artifacts, and `CLAUDE.md` files as historical
    context only unless a current doc points to them as active procedure.
-4. During a pure audit phase, stay read-only until Mr. McRitchie approves changes.
-5. When Mr. McRitchie asks to execute cleanup, update the owning current doc
+4. During a pure audit phase, stay read-only until Alex approves changes.
+5. When Alex asks to execute cleanup, update the owning current doc
    instead of adding a new one-off note.
 
 ## Audit Shape
@@ -39,7 +39,7 @@ references, rank by severity, and separate:
 
 ## Deliverable
 
-Use this structure unless Mr. McRitchie asks for something narrower:
+Use this structure unless Alex asks for something narrower:
 
 ```text
 # <Audit Name>
@@ -70,6 +70,6 @@ the closeout state changes.
 - Do not treat old prompt files as reusable instructions.
 - Do not copy stale ports, program IDs, sender domains, or credential values
   from historical docs.
-- Do not ask Mr. McRitchie to run terminal commands for audit proof the agent can
+- Do not ask Alex to run terminal commands for audit proof the agent can
   gather directly.
 - Do not mark an external/provider blocker complete until it is actually proven.

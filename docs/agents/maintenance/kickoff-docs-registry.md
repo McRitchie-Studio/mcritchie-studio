@@ -38,7 +38,7 @@ proven pattern, not to invent a convention.
 
 ## The organizing principle
 
-Mr. McRitchie's rule, and it should decide every judgment call here:
+Alex's rule, and it should decide every judgment call here:
 
 > All important documentation should always be working its way toward a specific
 > SOP, for standardization.

@@ -5,7 +5,7 @@ number is worse than no number, because it gets acted on.
 
 Last reviewed: **2026-09-20**
 
-## The brief, settled by Mr. McRitchie 2026-09-20
+## The brief, settled by Alex 2026-09-20
 
 - **Positioning: "NFL pick'em."** Not a season-agnostic engine. Every headline,
   bio and the README inherit this.

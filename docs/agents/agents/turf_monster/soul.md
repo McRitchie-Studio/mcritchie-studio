@@ -74,8 +74,8 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   lifecycle end to end on QA devnet: create, enter, replay a played week, settle
   on-chain, close. Direct-invocation only, and its guard refuses any stack but
   `turf-monster-qa`; judging whether the board moved the way the games did is mine
-- [`sops/sleeper-auction-watch.md`](sops/sleeper-auction-watch.md) — sit beside Mr.
-  McRitchie through a live Sleeper auction draft: value every player under the
+- [`sops/sleeper-auction-watch.md`](sops/sleeper-auction-watch.md) — sit beside
+  Alex through a live Sleeper auction draft: value every player under the
   league's own scoring, then call a max bid as each one comes up. Direct-invocation
   only and deliberately off the launcher card, for two separate reasons: it is
   calendar-bound, one evening a year, so nothing should schedule it, and at 21
@@ -93,7 +93,7 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   moment it wants running is read off the schedule and the open contests, which
   nothing here can compute. Judging whether a line move is the market learning
   something or a bad feed is mine; whether a contest that already took money may be
-  repriced is Mr. McRitchie's, and the SOP says what to bring him
+  repriced is Alex's, and the SOP says what to bring him
 - [`sops/content-build.md`](sops/content-build.md) — drain the content idea
   queue: claim a finished game's card, judge whether it is worth posting, write
   the take and the scene list, take Mason's pass on the line, write it back.

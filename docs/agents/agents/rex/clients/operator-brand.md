@@ -34,7 +34,7 @@ not a detail. Candidates:
 - Software work, sold to people who trust how it gets built
 - Nothing, deliberately — a brand that makes the other two businesses easier
 
-**Rex cannot allocate a channel until Mr. McRitchie picks one.** Publishing into
+**Rex cannot allocate a channel until Alex picks one.** Publishing into
 an undecided offer is how a year of content produces an audience that cannot be
 sold to.
 

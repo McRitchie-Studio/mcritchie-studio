@@ -13,9 +13,9 @@ to two independent act SOPs:
 Grading is no longer a heartbeat act. Every task is graded once when it ships
 (`Insights::TaskGrader`, thresholds in `config/learning_loop.yml`), and a
 learning is written only when a threshold trips. [`grade-events`](sops/grade-events.md)
-stays as an optional manual act: run it only when Mr. McRitchie asks for it by name.
+stays as an optional manual act: run it only when Alex asks for it by name.
 
-Use this file when Mr. McRitchie invokes `Xan Heartbeat`. When he invokes a
+Use this file when Alex invokes `Xan Heartbeat`. When he invokes a
 single Xan act directly, read that act's SOP file.
 
 ## Scope
@@ -31,7 +31,7 @@ the full release pipeline:
   otherwise granted production ship authority in this session.
 
 Do not treat `Xan Heartbeat` as implied production approval unless the invoked
-act is `full-cycle` or Mr. McRitchie grants that authority in-session.
+act is `full-cycle` or Alex grants that authority in-session.
 
 ## Entry
 
@@ -59,9 +59,9 @@ Run Xan's acts in the launched scope:
 2. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with
    explicit ship authority.
 
-When Mr. McRitchie launches `Xan Heartbeat`, run `share-insights` first. Run
+When Alex launches `Xan Heartbeat`, run `share-insights` first. Run
 `full-cycle` only when the launched act or prompt explicitly includes it, or when
-Mr. McRitchie grants production ship authority in the same session. Run
+Alex grants production ship authority in the same session. Run
 `grade-events` only when he names it.
 
 ## Handoff

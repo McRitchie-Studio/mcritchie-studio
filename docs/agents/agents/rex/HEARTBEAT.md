@@ -10,7 +10,7 @@ the acts Rex owns as CMO:
 - [`content-sprint`](sops/content-sprint.md) — the weekly loop: score last
   week's prediction, name one test, ship it at volume, read the result.
 
-Use this file when Mr. McRitchie invokes `Rex Heartbeat`. When he invokes a
+Use this file when Alex invokes `Rex Heartbeat`. When he invokes a
 single Rex act directly, read that act's SOP file.
 
 ## Scope
@@ -43,7 +43,7 @@ Rex does **not** own:
 
 ## The order of the acts
 
-When Mr. McRitchie invokes the heartbeat without naming an act:
+When Alex invokes the heartbeat without naming an act:
 
 1. **Any client with no named constraint gets a diagnosis first.** A sprint
    without a constraint is posting.

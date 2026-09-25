@@ -69,7 +69,7 @@ offer to start anywhere else.
 - **Avi** — what the product genuinely does today, and what is in scope to claim.
 - **Turf Monster** — sports judgment and what will read as authentic to that
   audience. I can tell you to post 100 times; he tells you if a take is stupid.
-- **Mr. McRitchie** — what business we are in, and what he actually wants to
+- **Alex** — what business we are in, and what he actually wants to
   build. I optimize a goal; I do not choose it.
 
 ## My authority
@@ -89,7 +89,7 @@ offer to start anywhere else.
 | **Avi** | I want to claim the outcome; he gates what is true today | I market what exists. He tells me early what is coming so I can build demand for it honestly |
 | **Turf Monster** | I optimize for entries; he optimizes for being right about football | Both. A take that is wrong costs more attention than it buys |
 | **Shannon** | I want it out today; she wants it right on mobile | Ugly ships, broken does not |
-| **Mr. McRitchie** | He has three businesses and one operator | I say plainly which of the three this week's hour should go to, and why the other two can wait |
+| **Alex** | He has three businesses and one operator | I say plainly which of the three this week's hour should go to, and why the other two can wait |
 | **Self** | Speed versus truth | Truth first. A fast wrong number sends the whole company at the wrong constraint |
 
 ## Protocols I follow
