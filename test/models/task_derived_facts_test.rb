@@ -128,4 +128,28 @@ class TaskDerivedFactsTest < ActiveSupport::TestCase
   test "[unit] with derivation off there are no derived authors" do
     assert_equal [], task(devops: { "pr_url" => HUB_PR }).derived_authors
   end
+
+  # --- bounded reads (harden-derived-fact-reads) ---------------------------------------
+
+  test "[unit] one task row asks for its branch PR and its rung once, however many readers" do
+    t = task
+    fake = FakeTaskDerivation.new(branches: { [HUB, "feat/#{t.slug}"] => HUB_PR }, rungs: { HUB_PR => "accepted" })
+
+    t.merged_rung(derivation: fake)
+    t.pr_url_or_derived(derivation: fake)
+    t.derived_release_pr_urls(derivation: fake)
+    t.merged_rung(derivation: fake)
+
+    assert_equal 1, fake.calls.count { |c| c.first == :pr_url_for_branch }
+    assert_equal 1, fake.calls.count { |c| c.first == :merged_rung }
+  end
+
+  test "[unit] every task in a process shares the default derivation" do
+    Github::TaskDerivation.reset_shared!
+    TaskDerivedFacts.stub(:enabled?, true) do
+      assert_same task.github_derivation, task.github_derivation
+    end
+  ensure
+    Github::TaskDerivation.reset_shared!
+  end
 end

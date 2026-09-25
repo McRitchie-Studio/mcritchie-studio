@@ -15,6 +15,13 @@ module Github
   # Every read is a GET. A read that fails raises Unreadable, and the CALLER (Task)
   # falls back to the stamp — an unmeasurable rung and "not merged" are different
   # answers, and collapsing them is how a guard goes quietly blind.
+  #
+  # BOUNDED. Every answer (PR, branch lookup, compare) is cached on the instance,
+  # and the FIRST failed read trips a breaker: every later read raises Unreadable
+  # without asking GitHub, so a rate limit or outage costs one timeout per sweep,
+  # not one per call. Tasks share one instance per process (.shared) for
+  # SHARED_TTL, so a sweep over N tasks asks each question once and a tripped
+  # breaker heals within the TTL.
   class TaskDerivation
     class Unreadable < StandardError; end
 
@@ -31,6 +38,35 @@ module Github
     SOUL_EMAIL = /\A([a-z0-9][a-z0-9-]*)@mcritchie\.studio\z/i
     CO_AUTHOR_TRAILER = /^co-authored-by:.*<([^>]+)>\s*$/i
     PR_URL = %r{\Ahttps://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)}
+
+    SHARED_TTL = 60.seconds
+    SHARED_LOCK = Mutex.new
+
+    # The per-process derivation every Task reads by default, rebuilt after
+    # SHARED_TTL so its caches and breaker never outlive a sweep by much.
+    def self.shared
+      SHARED_LOCK.synchronize do
+        if @shared.nil? || @shared_at.nil? || Time.current - @shared_at > SHARED_TTL
+          @shared = new
+          @shared_at = Time.current
+        end
+        @shared
+      end
+    end
+
+    def self.reset_shared!
+      SHARED_LOCK.synchronize { @shared = @shared_at = nil }
+    end
+
+    # The PR urls a free-form abandoned-PR note names, normalized, so a match is
+    # exact: an abandoned #159 never excludes #15.
+    def self.pr_urls_in(text)
+      text.to_s.scan(%r{https://github\.com/[^/\s]+/[^/\s]+/pull/\d+}).map { |url| normalize_url(url) }
+    end
+
+    def self.normalize_url(url)
+      url.to_s.strip.sub(%r{/+\z}, "")
+    end
 
     def self.parse_pr_url(url)
       match = url.to_s.strip.match(PR_URL)
@@ -55,6 +91,9 @@ module Github
       @client = client
       @owner = owner
       @pulls = {}
+      @branch_prs = {}
+      @compares = {}
+      @failure = nil
     end
 
     # "main" / "release" / "accepted", or nil when the PR is not merged (or its
@@ -76,9 +115,11 @@ module Github
 
       nwo = repo.to_s.include?("/") ? repo.to_s : "#{@owner}/#{repo}"
       owner = nwo.split("/").first
-      pulls = read { client.get("/repos/#{nwo}/pulls", params: { head: "#{owner}:#{branch}", state: "all", per_page: 30 }) }
+      pulls = @branch_prs[[nwo, branch.to_s]] ||=
+        read { client.get("/repos/#{nwo}/pulls", params: { head: "#{owner}:#{branch}", state: "all", per_page: 30 }) }
+      gone = Array(exclude).flat_map { |note| self.class.pr_urls_in(note) }
       candidates = Array(pulls).select { |pr| pr.is_a?(Hash) && pr["html_url"].present? }
-      candidates = candidates.reject { |pr| exclude.any? { |gone| gone.to_s.include?(pr["html_url"]) } }
+      candidates = candidates.reject { |pr| gone.include?(self.class.normalize_url(pr["html_url"])) }
       best = candidates.max_by do |pr|
         [pr["merged_at"].present? ? 2 : (pr["state"] == "open" ? 1 : 0), pr["number"].to_i]
       end
@@ -121,22 +162,40 @@ module Github
     # 404, which is "does not contain", not a failed read. Anything else that is
     # not a 2xx is unreadable.
     def contains?(nwo, rung, sha)
-      body = client.get("/repos/#{nwo}/compare/#{rung}...#{sha}")
-      CONTAINED_STATUSES.include?(body["status"].to_s)
-    rescue Github::Client::HttpError => e
-      return false if e.message.start_with?("GitHub API HTTP 404")
+      key = [nwo, rung, sha]
+      return @compares[key] if @compares.key?(key)
 
-      raise Unreadable, "compare #{nwo} #{rung}...#{sha}: #{e.message}"
+      @compares[key] = begin
+        tripped!
+        CONTAINED_STATUSES.include?(client.get("/repos/#{nwo}/compare/#{rung}...#{sha}")["status"].to_s)
+      rescue Github::Client::HttpError => e
+        raise e unless e.message.start_with?("GitHub API HTTP 404")
+
+        false
+      end
+    rescue Unreadable
+      raise
     rescue StandardError => e
-      raise Unreadable, "compare #{nwo} #{rung}...#{sha}: #{e.class}: #{e.message}"
+      fail!("compare #{nwo} #{rung}...#{sha}: #{e.class}: #{e.message}")
     end
 
     def read
+      tripped!
       yield
     rescue Unreadable
       raise
     rescue StandardError => e
-      raise Unreadable, "#{e.class}: #{e.message}"
+      fail!("#{e.class}: #{e.message}")
+    end
+
+    # The breaker: once one read has failed, later reads fail fast.
+    def tripped!
+      raise Unreadable, "skipped: an earlier GitHub read failed (#{@failure})" if @failure
+    end
+
+    def fail!(message)
+      @failure = message
+      raise Unreadable, message
     end
   end
 end

@@ -114,4 +114,53 @@ class Github::TaskDerivationTest < ActiveSupport::TestCase
     assert_equal %w[mack steffon xan carl].sort, derivation(script).first.authors(PR).sort,
                  "alex resolves to xan; the operator, the bot and a non-roster local part name nobody"
   end
+
+  # --- harden-derived-fact-reads -------------------------------------------------------
+
+  test "[unit] an abandoned PR #159 does not exclude PR #15 (exact url match)" do
+    list = [{ "number" => 15, "html_url" => PR.sub("42", "15"), "state" => "open", "merged_at" => nil }]
+    subject = Github::TaskDerivation.new(client: ScriptedClient.new("/repos/#{NWO}/pulls" => list))
+
+    assert_equal PR.sub("42", "15"),
+                 subject.pr_url_for_branch("mcritchie-studio", "feat/x", exclude: ["#{PR.sub('42', '159')} superseded"])
+    assert_nil subject.pr_url_for_branch("mcritchie-studio", "feat/y", exclude: ["#{PR.sub('42', '15')}/ superseded"]),
+               "a trailing slash on the abandoned url still names #15"
+  end
+
+  test "[unit] a branch lookup and a compare are each asked once per derivation" do
+    list = [{ "number" => 11, "html_url" => PR.sub("42", "11"), "state" => "open", "merged_at" => nil }]
+    script = { "/repos/#{NWO}/pulls" => list, "/repos/#{NWO}/pulls/42" => pull }.merge([compare("main", "behind")].to_h)
+    subject, client = derivation(script)
+
+    2.times { subject.pr_url_for_branch("mcritchie-studio", "feat/x") }
+    2.times { subject.merged_rung(PR) }
+    assert_equal 1, client.paths.count("/repos/#{NWO}/pulls"), "the branch lookup is cached"
+    assert_equal 1, client.paths.count("/repos/#{NWO}/compare/main...#{SHA}"), "the compare is cached"
+  end
+
+  test "[unit] after the first failed read the derivation stops asking GitHub" do
+    script = { "/repos/#{NWO}/pulls/42" => Github::Client::HttpError.new("GitHub API HTTP 403: rate limit") }
+    subject, client = derivation(script)
+
+    assert_raises(Github::TaskDerivation::Unreadable) { subject.merged_rung(PR) }
+    assert_raises(Github::TaskDerivation::Unreadable) { subject.authors(PR.sub("42", "43")) }
+    assert_raises(Github::TaskDerivation::Unreadable) { subject.pr_url_for_branch("mcritchie-studio", "feat/x") }
+    assert_equal ["/repos/#{NWO}/pulls/42"], client.paths, "one failed read, then no more calls"
+  end
+
+  test "[unit] a missing branch (404 compare) does not trip the breaker" do
+    script = { "/repos/#{NWO}/pulls/42" => pull }.merge([compare("accepted", "behind")].to_h)
+    subject, = derivation(script)
+    assert_equal "accepted", subject.merged_rung(PR)
+    assert_equal "accepted", subject.merged_rung(PR)
+  end
+
+  test "[unit] the shared derivation is one instance per process until it expires or resets" do
+    Github::TaskDerivation.reset_shared!
+    first = Github::TaskDerivation.shared
+    assert_same first, Github::TaskDerivation.shared
+    travel(Github::TaskDerivation::SHARED_TTL + 1.second) { refute_same first, Github::TaskDerivation.shared }
+  ensure
+    Github::TaskDerivation.reset_shared!
+  end
 end

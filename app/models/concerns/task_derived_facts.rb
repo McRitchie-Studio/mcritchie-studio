@@ -28,12 +28,13 @@ module TaskDerivedFacts
     Rails.configuration.x.derive_from_github != false
   end
 
-  # The default derivation, or nil when switched off. Memoized per task instance
-  # so one sweep row asks GitHub about its PR once.
+  # The default derivation, or nil when switched off: the per-process shared one
+  # (Github::TaskDerivation.shared), so every task in a sweep shares its caches and
+  # its failure breaker. Memoized per task instance.
   def github_derivation
     return @github_derivation if defined?(@github_derivation)
 
-    @github_derivation = TaskDerivedFacts.enabled? ? Github::TaskDerivation.new : nil
+    @github_derivation = TaskDerivedFacts.enabled? ? Github::TaskDerivation.shared : nil
   end
 
   # The rung the task's PR merge commit sits on — "main", "release", "accepted" —
@@ -44,13 +45,15 @@ module TaskDerivedFacts
   def derived_merged_rung(derivation: github_derivation)
     return nil unless derivation
 
-    urls = derived_release_pr_urls(derivation: derivation).values
-    return nil if urls.empty?
+    derived_memo(:merged_rung, derivation) do
+      urls = derived_release_pr_urls(derivation: derivation).values
+      next nil if urls.empty?
 
-    rungs = urls.map { |url| derivation.merged_rung(url) }
-    return nil if rungs.any?(&:nil?)
+      rungs = urls.map { |url| derivation.merged_rung(url) }
+      next nil if rungs.any?(&:nil?)
 
-    rungs.max_by { |rung| Github::TaskDerivation::RUNGS.index(rung) }
+      rungs.max_by { |rung| Github::TaskDerivation::RUNGS.index(rung) }
+    end
   end
 
   # The rung every release guard reads: derived when GitHub places the merge
@@ -76,7 +79,9 @@ module TaskDerivedFacts
   def derived_pr_url(derivation: github_derivation, repo: release_repo)
     return nil unless derivation
 
-    derivation.pr_url_for_branch(repo, derived_head_branch, exclude: devops_abandoned_prs)
+    derived_memo([:pr_url, repo.to_s], derivation) do
+      derivation.pr_url_for_branch(repo, derived_head_branch, exclude: devops_abandoned_prs)
+    end
   end
 
   def pr_url_or_derived(derivation: github_derivation)
@@ -107,17 +112,28 @@ module TaskDerivedFacts
   def derived_authors(derivation: github_derivation)
     return [] unless derivation
 
-    @derived_authors ||= {}
-    @derived_authors[derivation.object_id] ||=
+    derived_memo(:authors, derivation) do
       derived_release_pr_urls(derivation: derivation).values.flat_map do |url|
         derivation.authors(url)
       rescue Github::TaskDerivation::Unreadable => e
         Rails.logger.warn("[task-derivation] #{slug}: authors unreadable for #{url}: #{e.message}")
         []
       end.uniq
+    end
   end
 
   private
+
+  # Per-instance memo keyed by the derivation, so one sweep row asks GitHub each
+  # question once however many readers it runs. A raise (Unreadable) is NOT
+  # memoized; the derivation's own breaker makes the retry free.
+  def derived_memo(key, derivation)
+    @derived_memo ||= {}
+    memo_key = [key, derivation.object_id]
+    return @derived_memo[memo_key] if @derived_memo.key?(memo_key)
+
+    @derived_memo[memo_key] = yield
+  end
 
   # The branch the task's PR is headed from: the recorded branch, else the slug
   # trickle-down (`feat/<worktree_slug or slug>`).

@@ -421,4 +421,23 @@ class TaskReviewClaimCrewSeatTest < ActiveSupport::TestCase
 
     assert outcome.acquired, "jasper wrote none of this diff"
   end
+
+  test "[unit] a derivation that raises cannot discard the stamped author check" do
+    # harden-derived-fact-reads: the stamps are asked FIRST, so an exception inside
+    # derivation (anything other than Unreadable) cannot turn a stamped builder into
+    # a clean reviewer.
+    task = Task.create!(title: "Raising Derivation Claim Probe", stage: "submitted",
+                        metadata: { "devops" => { "built_by" => "steffon", "builders" => %w[steffon],
+                                                  "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/7" } })
+    exploding = Object.new
+    def exploding.authors(_url) = raise("derivation bug")
+    def exploding.pr_url_for_branch(*, **) = raise("derivation bug")
+
+    TaskDerivedFacts.stub(:enabled?, true) do
+      Github::TaskDerivation.stub(:new, exploding) do
+        assert TaskReviewClaim.self_review?(task.slug, "steffon"), "the stamp still refuses"
+        refute TaskReviewClaim.self_review?(task.slug, "jasper"), "a failed derivation adds nobody"
+      end
+    end
+  end
 end
