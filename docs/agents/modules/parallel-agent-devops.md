@@ -270,7 +270,7 @@ LIGHT    alex       matched: docs, documentation  fit 2  (top domain fit; roll 0
 **A light out-fitting the primary is normal, not a defect.** Carl is seated by
 ROLE on every PR — he is never ranked against the pool and never rolled — while the
 light is the best DOMAIN FIT left after the exclusions. On a docs PR that reads
-exactly as above, and it is correct: Carl owns the deep read, Alex brings the lens.
+exactly as above, and it is correct: Carl owns the deep read, Xan brings the lens.
 Fit reaches the primary seat only when Carl YIELDS (he is an author, or the named
 QA owner), and then both seats come from the one ranked list and the domain-matched
 soul takes primary. Until 2026-09-22 the primary line inferred its explanation from

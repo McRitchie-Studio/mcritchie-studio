@@ -17,9 +17,9 @@ Every ticket is sized by three roles (PM, PO, Dev) using a t-shirt scale, sealed
 
 ```
 1. Ticket opened with problem/goal
-2. Alex submits pm_size      (gut from business value)
+2. Xan submits pm_size       (gut from business value)
 3. Avi refines spec + acceptance criteria
-4. Avi submits po_size       (informed by spec, blind to Alex's)
+4. Avi submits po_size       (informed by spec, blind to Xan's)
 5. Avi assigns to a Dev
 6. Dev submits dev_size      (informed by spec, blind to both)
 7. All three revealed simultaneously, locked

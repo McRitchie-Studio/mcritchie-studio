@@ -79,7 +79,7 @@ feed the learning loop.
 raw tool result        (DATA — auto-captured, one row per tool call)
   └─ action finding     (DATA + judgment — bin/agent-activity action --finding --summary)
        └─ activity verdict   (the --outcome that synthesizes the findings)
-            └─ learning-loop insight   (Alex heartbeat distills verdicts → banked insight)
+            └─ learning-loop insight   (Xan heartbeat distills verdicts → banked insight)
 ```
 
 Reading up the ladder recovers *why*; reading down recovers *what*. The policy

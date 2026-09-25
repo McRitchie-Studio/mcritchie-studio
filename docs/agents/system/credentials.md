@@ -38,7 +38,7 @@ note under the table):
 
 | Agent | Email | Purpose |
 |-------|-------|---------|
-| Alex | `admin@mcritchie.studio` | Orchestrator, admin notifications |
+| Xan | `admin@mcritchie.studio` | Orchestrator, admin notifications |
 | Avi | `avi@mcritchie.studio` | Product Owner — PR review, release sign-off, ticket grooming |
 | Carl | `carl@mcritchie.studio` | Dev Backend Expert — Rails, ActiveRecord, jobs |
 | Shannon | `shannon@mcritchie.studio` | Dev UI Expert — frontend, Tailwind, Alpine, theme |
@@ -61,7 +61,7 @@ note under the table):
 >
 > These addresses are also seeded as app accounts — `User::PARKED_IDENTITIES` in
 > mcritchie-studio and turf-monster is the source of truth for which of them hold `admin`.
-> `admin@mcritchie.studio` is the super-admin seat shared by Alex and Steffon, and carries no
+> `admin@mcritchie.studio` is the super-admin seat shared by Xan and Steffon, and carries no
 > Solana wallet on purpose.
 >
 > **Editing that list does not change an account that already exists.** The roster is read

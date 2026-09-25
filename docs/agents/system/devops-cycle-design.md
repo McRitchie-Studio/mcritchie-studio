@@ -46,7 +46,7 @@
 > It lands via three build tasks: `deploy-flow-heartbeat-tooling` (planner/tooling + the
 > `prepare` retry/wait-for-boot fix), `stages-page-step-outlines` (the per-step
 > `/stages` outlines), and `seed-souls-prod-qa` (the reviewer souls, incl. a new
-> **Alex Documentation** reviewer persona distinct from the orchestrator seat).
+> **Xan Documentation** reviewer persona distinct from the orchestrator seat).
 >
 > Operator companion: the board stage guide at
 > [`/stages`](https://mcritchie.studio/stages), and the rendered **SOP
@@ -524,8 +524,8 @@ by **Avi** (Product Owner) via the self-healing `qa-release` sweep; and
 **`shipped`** is owned by **Steffon** (Platform Engineer, who runs the full e2e
 on the frozen ship SHA) ahead of explicit ship authority. The senior reviewer
 pool is **{Shannon = UI · Carl = backend · Jasper = Web3 · Steffon =
-DevOps/Platform · Alex = Documentation}** (Carl is the standing primary on every
-PR; Alex is both the orchestrator and the pool's launchable Documentation review
+DevOps/Platform · Xan = Documentation}** (Carl is the standing primary on every
+PR; Xan is both the orchestrator and the pool's launchable Documentation review
 seat — one identity). Carl previews the domain light with **`bin/reviewer-select
 <task> --no-record`** (wraps `ReviewerSelector`) — a bare run RECORDS the pair and
 takes the task's review claim, so a preview always carries `--no-record`.
@@ -548,7 +548,7 @@ when it ships. **Bias to action: green tests = go**, because both `accepted` and
 | **submitted** (task) — REVIEW | **Carl** (standing primary + owner) + a domain LIGHT | Session Pokémon spins **one Carl per PR** → Carl summons **one LIGHT** at his discretion | The review session claims a green-CI PR (`bin/task claim-next-review`) and spins **one Carl** — the standing primary AND owner; **there is no Avi supervisor**. Carl does the deep review, owns the gates, and **summons one domain LIGHT** for a focused second read — the domain pick from {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform · Xan=Documentation}, previewed by **`bin/reviewer-select <task> --no-record`** (`ReviewerSelector` — a bare run RECORDS the pair and takes the task's review claim, so a preview always carries `--no-record`; excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`), else `devops.persona`, else the task's assigned `agent_slug`**; **busy souls** come from `--busy a,b,c` and/or `--busy-auto`; **KEEP fallback:** when the exclusions would leave too few, the least-bad are kept; the primary Carl + domain light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Carl and the light confirm DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker → **Carl merges the feat PR into `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed` ✅, then STOPS — review never touches `release`/`main` and never deploys; the `accepted → release` promotion (next row) is Avi's; a blocker → `blocked` (rework, with `qa_feedback`) | **G2 Review** (lanes `g2a_primary` + `g2b_light`; Carl's gate-zero = `bin/dor-check <task> --gate-role review`, recorded on the separate `dor_review` gate) — merge-ready primary + light reads (Carl = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — SWEEP (task) | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`) | `bin/release prepare` DETECTS every `reviewed` task + any `assembled` straggler off the current RC, ensures a candidate (`Release.current_or_open!`), and PROMOTES **ONE `accepted → release` batch PR per repo** — not N per-task `feat → release` merges (review already landed each feat PR on `accepted`); the promote is SKIPPED for a repo already level, or for a task already stamped `merged: release/main` (interrupted-run recovery). Then record membership + `merged: "release"` (`Release::Conductor.sweep!`) — **stage stays `reviewed`**. Honors `dependencies` + producer-first. Nothing detected + nothing active → idempotent no-op. **Bias to action: green tests = go** (`release` reverts cleanly) | deterministic sweep (conflicts surface at PR-merge; a conflicted PR is swept PAST — block-and-move); review gate: only `reviewed`/`assembled` tasks sweep (`--override` = audited `review_bypassed`) |
 | **assembled** (release) — QA | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`, same run) | After the sweep, the **stale-tree gate** (`Release::StaleTreeCheck`) re-reads `origin/release..origin/accepted` for every three-rung repo in the deploy plan and REFUSES unless `release` already carries `accepted` — asserting the promote's EFFECT, because the promote picks its repos from board stamps and so cannot see a commit with no task behind it (that gap once printed `✓ Assembled` over a tree missing the fix). Then the **pre-QA gate** runs the **next tier — integration + an e2e smoke** (registry `qa_test_cmd`) on `origin/release` BEFORE deploying; green → `prepare` deploys it to QA → **Discord QA-deployment note** → on **QA-green** `Release::Conductor.qa_green!` flips swept members `reviewed → assembled` (merged stays `release`) + release `assembled` | **G3 Candidate** (release-grain; spans pre-QA suite → QA boot smokes → post-deploy hooks; closes with the QA-green flip) — deterministic suite; ⛔ regression → **eject the offender** (`bin/release eject <task>` = detach + block + merged cleared; revert its merge commit) — the REST rides the re-run. **`prepare` waits-for-boot** (`/up`-smoke race) and **defers the flip** until QA returns 200 — a failure leaves members `reviewed` for the next self-healing run |
-| **→ shipped** (release) | **Steffon**, then ship authority | Steffon tests; operator or autonomous kickoff authorizes; conductor deploys | Steffon's gate **reads GitHub CI's settled verdict for the FROZEN ship SHA's tree** (the exact prod code — fixes "shipped ≠ tested"; the same credit-or-poll read G3 ran on the release tip; nothing runs locally and no G3 record is consulted). A QA-only run (`pr-review` → Avi's `qa-release`) stops here for the operator; Steffon's **`production-deploy`** act ships a QA-green release, and Alex's **`full-cycle`** continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo (stamping members **`merged: "main"`** as each ff lands — the interrupted-ship skip signal), deploys → `production_smoke` → **Discord release notes** → members `shipped` (merged stays `main`) | **G4 Ship** (release-grain; spans the frozen-SHA gate → prod deploys → `/up` smokes → hooks → the non-blocking smoke seal, which retries once after 30s through the dyno boot window before recording red) — 🔒 explicit ship authority — after Steffon's test confirmation, before deploy; rollback on smoke fail |
+| **→ shipped** (release) | **Steffon**, then ship authority | Steffon tests; operator or autonomous kickoff authorizes; conductor deploys | Steffon's gate **reads GitHub CI's settled verdict for the FROZEN ship SHA's tree** (the exact prod code — fixes "shipped ≠ tested"; the same credit-or-poll read G3 ran on the release tip; nothing runs locally and no G3 record is consulted). A QA-only run (`pr-review` → Avi's `qa-release`) stops here for the operator; Steffon's **`production-deploy`** act ships a QA-green release, and Xan's **`full-cycle`** continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo (stamping members **`merged: "main"`** as each ff lands — the interrupted-ship skip signal), deploys → `production_smoke` → **Discord release notes** → members `shipped` (merged stays `main`) | **G4 Ship** (release-grain; spans the frozen-SHA gate → prod deploys → `/up` smokes → hooks → the non-blocking smoke seal, which retries once after 30s through the dyno boot window before recording red) — 🔒 explicit ship authority — after Steffon's test confirmation, before deploy; rollback on smoke fail |
 
 Clarifications:
 
@@ -606,11 +606,11 @@ Clarifications:
   who QAs the assembled RC) from the light pool, so one soul never both reviews
   and QAs the same change. (That soul remains a valid reviewer for **other**
   PRs.)
-- **Alex is the Documentation reviewer.** The `alex` seat is the orchestrator who
+- **Xan is the Documentation reviewer.** The `xan` seat is the orchestrator who
   **also** holds the **Documentation** domain review seat — one identity (seeded in
   `db/seeds/02_agents.rb`, a launchable review agent). `ReviewerSelector` /
-  `bin/reviewer-select` pick `alex` for docs-shaped PRs (the QA-owner and
-  builder exclusions still apply, so Alex never reviews a change he built).
+  `bin/reviewer-select` pick `xan` for docs-shaped PRs (the QA-owner and
+  builder exclusions still apply, so Xan never reviews a change he built).
 - **There is no per-task QA stage.** Avi owns the QA deploy, the QA tier
   (integration + e2e-smoke), and Steffon owns the prod mechanics — but there is no separate
   approval ceremony; the suite is a green/red *signal* and the operator OK at
@@ -654,7 +654,7 @@ tunable config file, `config/release_builder.yml`, read by
   but waits before changing release state.
 - Production ship remains **operator-gated by default**
   (`production_ship.operator_gated` is `true`) for a QA-only run (`pr-review` →
-  Avi's `qa-release`). Alex's **`full-cycle`** launcher is the explicit
+  Avi's `qa-release`). Xan's **`full-cycle`** launcher is the explicit
   autonomous production authorization; it uses the same frozen-SHA/test/smoke
   gates, then passes `--yes` to the production ship command.
 
@@ -729,7 +729,7 @@ or the `review-one` SOP; none is a new command to build):
 > Slow`, `Avi Heartbeat Fast`, `Build and Deploy QA Release`, `Merge, Assemble,
 > Deploy` — were removed from the UI and relocated into the soul heartbeat acts:
 > serialized review is now Carl's **`pr-review-slow`** act, QA-only is `pr-review` →
-> Avi's **`qa-release`**, and the full autonomous run is Alex's **`full-cycle`**
+> Avi's **`qa-release`**, and the full autonomous run is Xan's **`full-cycle`**
 > act. (2026-07-03: the acts went back to **review-only** — the accepted→release
 > merge lives in Avi's self-healing `qa-release` sweep.) The `bin/pr-review` review-only
 > loop still exists but is no longer a card chip.
@@ -760,7 +760,7 @@ with the souls:
 [`Carl`](../agents/carl/HEARTBEAT.md),
 [`Avi`](../agents/avi/HEARTBEAT.md),
 [`Steffon`](../agents/steffon/HEARTBEAT.md),
-[`Alex`](../agents/xan/HEARTBEAT.md), and
+[`Xan`](../agents/xan/HEARTBEAT.md), and
 [`Turf Monster`](../agents/turf_monster/HEARTBEAT.md).
 
 It is titled **Workflows**, not Heartbeats, because every row is a flow the
@@ -1447,7 +1447,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | **library** | studio-engine change | `unit` `integration` — in the engine, plus consumer-CI in *both* apps |
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
 | **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
-| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose, optionally with its own registry-guard tests** — `*_test.rb` under `test/docs/`, nothing else (`claimable_when: docs_with_guards_diff`) — which is what makes the empty column safe |
+| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Xan) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose, optionally with its own registry-guard tests** — `*_test.rb` under `test/docs/`, nothing else (`claimable_when: docs_with_guards_diff`) — which is what makes the empty column safe |
 | **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and is **not exempt from the CI gate** (unlike `docs`): the PR's settled green CI satisfies it exactly as for a feature, with `bin/fast-check` as the optional pre-flight before it |
 
 **The backticked tier names are load-bearing, not formatting.** They are the

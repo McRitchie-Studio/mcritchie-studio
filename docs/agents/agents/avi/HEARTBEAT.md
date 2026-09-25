@@ -34,7 +34,7 @@ Avi owns the middle of the release pipeline — assembly + QA:
   Steffon's `production-deploy` act.
 
 Do not ship production from Avi's heartbeat. Stages 4-5 belong to Steffon's
-`production-deploy`, or to Alex's `full-cycle` only when Mr. McRitchie launched
+`production-deploy`, or to Xan's `full-cycle` only when Mr. McRitchie launched
 that ship-authorized act. Review is Carl's — do not run `pr-review` or merge feat
 PRs from Avi's heartbeat.
 

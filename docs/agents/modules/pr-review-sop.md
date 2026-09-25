@@ -45,9 +45,9 @@ take a worktree, or write feature code.
 | UI — ERB, Tailwind, Alpine, theme | **Shannon** | `shannon` |
 | On-chain / Solana — turf-vault, `Solana::*`, wallets | **Jasper** | `jasper` |
 | Infra / deploy — Heroku, CI, env, buildpacks | **Steffon** | `steffon` |
-| Docs / operating-model — agent docs, runbooks, README | **Alex** | `alex` |
+| Docs / operating-model — agent docs, runbooks, README | **Xan** | `xan` |
 
-Alex is also the pool's Documentation seat. Each review names **one PRIMARY** (Carl) and **one LIGHT**.
+Xan is also the pool's Documentation seat. Each review names **one PRIMARY** (Carl) and **one LIGHT**.
 
 ## Step 1 — the session spins one Carl; Carl's gate-zero
 

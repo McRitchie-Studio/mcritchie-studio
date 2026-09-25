@@ -5,7 +5,7 @@
 ## Status: Active
 
 This is the **light reviewer role SOP** — the focused second read one domain
-specialist (Shannon · Jasper · Steffon · Alex) runs when **Carl** (the standing
+specialist (Shannon · Jasper · Steffon · Xan) runs when **Carl** (the standing
 primary and review OWNER) summons it as the **LIGHT** for a submitted PR.
 
 You are a **domain specialist reviewer**, summoned by Carl as his second set of

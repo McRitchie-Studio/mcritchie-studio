@@ -17,7 +17,7 @@ Agents are autonomous but accountable. Every action is logged, every task is tra
 Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry is seeded from `db/seeds/02_agents.rb` and skills from `db/seeds/03_skills.rb`.
 
 ### Leadership
-- **Alex** — Lead orchestrator (PM). Coordinates agents, manages priorities,
+- **Xan** — Lead orchestrator (PM). Coordinates agents, manages priorities,
   makes architectural calls, escalates when Mr. McRitchie's judgment is needed.
   Also the **Documentation** domain expert and a senior **reviewer** in the
   Deploy-flow review pool — via a dedicated reviewer persona distinct from the
@@ -40,7 +40,7 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
 ## Agent stack flow
 
 ```
-Alex (PM)
+Xan (PM)
   ↔  Avi (PO) ── refine + assign ──> Devs (Carl, Shannon, Jasper)
                                           │ open PR (base accepted)
                                           ▼
@@ -71,7 +71,7 @@ The `submitted → shipped` half of the Deploy workflow was re-homed by role
 - **Carl** owns **review** — the standing primary + owner. The review session
   spins **one Carl per PR** (there is no Avi supervisor); Carl runs the deep
   review, owns the gates, and **summons one domain light** at his discretion from
-  the pool {Shannon = UI · Jasper = Web3 · Steffon = DevOps/Platform · Alex =
+  the pool {Shannon = UI · Jasper = Web3 · Steffon = DevOps/Platform · Xan =
   Documentation} by **domain fit + a logged, seeded-per-task tiebreak**. The seed
   makes the pick reproducible — `bin/reviewer-select`'s preview matches the pair
   recorded on the `submitted→reviewed` event. On a merge-ready verdict Carl
@@ -87,13 +87,13 @@ The `submitted → shipped` half of the Deploy workflow was re-homed by role
 - **Steffon** (**Platform Engineer**) runs the **full e2e + highest tier on the
   frozen ship SHA**, then ships a QA-green release with his **`production-deploy`**
   act (`bin/release ship` fast-forwards `release → main`, stamping members
-  `merged: "main"`). Alex's **`full-cycle`** launcher runs the whole cycle —
+  `merged: "main"`). Xan's **`full-cycle`** launcher runs the whole cycle —
   review → QA → prod — under full ship authority.
 
 Lands via three build tasks: **`deploy-flow-heartbeat-tooling`** (planner +
 tooling, incl. the `prepare` retry/wait-for-boot fix), **`stages-page-step-outlines`**
 (per-step `/stages` outlines), and **`seed-souls-prod-qa`** (the reviewer souls,
-incl. a dedicated **Alex Documentation** reviewer persona distinct from the
+incl. a dedicated **Xan Documentation** reviewer persona distinct from the
 orchestrator seat).
 
 ## System protocols
