@@ -10,7 +10,7 @@ Credential docs are split into two layers:
 - Never print secrets into the terminal or transcript.
 - Use `/opt/homebrew/bin/op` directly for targeted reads.
 - Prefer repo scripts that write or consume secrets without echoing them.
-- Do not scan vaults broadly unless Mr. McRitchie explicitly asks.
+- Do not scan vaults broadly unless Alex explicitly asks.
 - Do not edit agent tool permissions or `.claude/settings*.json` to gain credential access.
 - If a permission is missing, report the exact vault, item, and operation needed instead of inventing a workaround.
 
@@ -96,13 +96,13 @@ lane is closed to you.** WHICH gap decides who closes it, and
 | State of the machine | Remedy | Whose |
 |---|---|---|
 | `~/.zprofile.admin` on disk, absent from THIS shell | `source ~/.zprofile.admin`, then retry | **yours** |
-| no `~/.zprofile.admin` at all — never provisioned | `bin/setup-1pass-token --admin`, once | **Mr. McRitchie's** — the install reads the token off his clipboard |
+| no `~/.zprofile.admin` at all — never provisioned | `bin/setup-1pass-token --admin`, once | **Alex's** — the install reads the token off his clipboard |
 
 The second row is the **only** credential step on either lane that is his
 ([`token-session.md`](token-session.md) → *The one honest escalation*). Never
 reach for it without testing the first. On 2026-08-30 an agent read a deployer
-refusal as the never-provisioned case and put a repeated hand-mint chore on Mr.
-McRitchie while a production deploy waited; the token had been on disk for two
+refusal as the never-provisioned case and put a repeated hand-mint chore on
+Alex while a production deploy waited; the token had been on disk for two
 days and sourcing it worked on the first try. Handing a deploy back to him
 because a credential failed is the operator toil `AGENTS.md` forbids.
 
@@ -197,8 +197,8 @@ Default access is the AGENT vault (`studio-agents`). The ADMIN vault (`studio-ag
 > [`source-control.md`](source-control.md).** This section keeps only what is
 > 1Password-shaped: the items, their fields, and how to wire them.
 >
-> **Blocked on a credential right now?** It is yours to fix, not Mr.
-> McRitchie's: `eval "$(bin/gh-auth-refresh --export)"`
+> **Blocked on a credential right now?** It is yours to fix, not
+> Alex's: `eval "$(bin/gh-auth-refresh --export)"`
 
 Since the 2026-07-29 org migration every repo lives under the **McRitchie-Studio**
 org, and `git`/`gh` authenticate as one of **two GitHub App** installations

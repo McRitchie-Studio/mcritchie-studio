@@ -13,7 +13,7 @@ already given.
 
 This dossier is therefore **marketing-only** and deliberately carries no
 financials, no counterparties, no terms and no dates from the transaction. If
-Rex needs a number from that side, he asks Mr. McRitchie for that number, for
+Rex needs a number from that side, he asks Alex for that number, for
 that decision, once — he does not go reading the deal room to do marketing.
 
 ## The business
@@ -71,7 +71,7 @@ for a referral on purpose.
 
 ## The handoff constraint nobody should forget
 
-This client's marketing capacity is not Mr. McRitchie's attention — it is the
+This client's marketing capacity is not Alex's attention — it is the
 shop's. A plan that requires the owner-operator to produce content weekly will
 not survive contact with a busy fabrication floor. **Prescribe things that run
 without the shop's daily involvement**, or prescribe nothing.

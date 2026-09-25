@@ -392,7 +392,7 @@ child transcripts, so reconcile is a no-op and never disturbs its live measureme
 
 ## Retention: rows live 45 days
 
-Capture only ever adds rows, so the table is pruned on a schedule. Mr. McRitchie
+Capture only ever adds rows, so the table is pruned on a schedule. Alex
 set the rule on 2026-09-16: delete `agent_actions` rows **older than 45 days**,
 and never touch a row 45 days old or newer.
 

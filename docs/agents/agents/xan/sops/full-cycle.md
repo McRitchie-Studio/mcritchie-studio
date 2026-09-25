@@ -15,7 +15,7 @@ deploy with explicit ship authority.
 2. Avi's self-healing `qa-release`.
 3. Steffon's `production-deploy`.
 
-This SOP crosses the production gate. Use it only when Mr. McRitchie launched
+This SOP crosses the production gate. Use it only when Alex launched
 `full-cycle` or otherwise granted production ship authority in this session.
 
 ## Entry

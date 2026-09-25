@@ -16,7 +16,7 @@ before promising the operator a number.
 ## Ask First
 
 This SOP is interactive. If the launch phrase did not name a task, your FIRST
-action is to ask Mr. McRitchie:
+action is to ask Alex:
 
 > What task?
 

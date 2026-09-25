@@ -10,7 +10,7 @@ History cut from this page:
 
 Steffon owns stages 4-5 (Confirming, Deploying) as the **deployer**
 (`ReleaseConductorClaim` role `deployer`). This crosses the production gate: run it only
-when Mr. McRitchie launched `production-deploy` or granted ship authority in-session.
+when Alex launched `production-deploy` or granted ship authority in-session.
 
 ## Entry
 
@@ -24,7 +24,7 @@ QA lane holds:
 
 You are **expected to hold both**; an absent one is this machine's setup gap. Remedy:
 **`source ~/.zprofile.admin`** (yours), or, on a machine that never had one,
-**`bin/setup-1pass-token --admin`** once (Mr. McRitchie's: it reads his clipboard).
+**`bin/setup-1pass-token --admin`** once (Alex's: it reads his clipboard).
 
 Run from the McRitchie Studio primary checkout, **under the deployer identity**:
 

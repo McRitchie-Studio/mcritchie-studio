@@ -18,7 +18,7 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
 
 ### Leadership
 - **Xan** — Lead orchestrator (PM). Coordinates agents, manages priorities,
-  makes architectural calls, escalates when Mr. McRitchie's judgment is needed.
+  makes architectural calls, escalates when Alex's judgment is needed.
   Also the **Documentation** domain expert and a senior **reviewer** in the
   Deploy-flow review pool — via a dedicated reviewer persona distinct from the
   orchestrator seat (tracked in `seed-souls-prod-qa`).

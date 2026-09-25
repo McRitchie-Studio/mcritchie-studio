@@ -249,7 +249,7 @@ Before handoff:
 
 ### A good session prompt
 
-For a new feature session, Mr. McRitchie should only need to say the target app
+For a new feature session, Alex should only need to say the target app
 and the feature. A good prompt is:
 
 ```text

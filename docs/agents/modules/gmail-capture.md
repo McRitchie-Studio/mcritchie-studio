@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-The standing procedure for turning mail that arrives in Mr. McRitchie's own
+The standing procedure for turning mail that arrives in Alex's own
 mailbox into filed knowledge, without him forwarding each message by hand. It
 is the sixth mouth of the funnel in
 [`knowledge-capture.md`](knowledge-capture.md), which owns the intake protocol
@@ -12,7 +12,7 @@ It feeds the EXISTING desk queue — the same `DeskCaptureItem` rows, the same
 `/admin/desk` page, the same sweep — so nothing downstream has a second code
 path to learn.
 
-Designed and approved 2026-09-17. Mr. McRitchie chose the narrowest of the
+Designed and approved 2026-09-17. Alex chose the narrowest of the
 three identities on offer and declined the draft capability; **Decisions** below
 records what was rejected and why, because that is the part a later session is
 most likely to undo by accident.
@@ -27,7 +27,7 @@ in an agent-readable vault.
 | It cannot | Because |
 |---|---|
 | Send, reply, or forward | The grant is one scope, `gmail.readonly`. Sending needs `gmail.send`, `gmail.compose`, `gmail.modify` or `mail.google.com` — none is requested, and `Gmail::Client::SCOPES` is a frozen one-entry array the suite asserts |
-| Create or edit drafts | Same. **There is no draft-only Gmail scope** — `gmail.compose` covers drafts AND send, so "can draft, can never send" could only ever be a property of our code. Mr. McRitchie declined that trade for this reader. Drafting lives in the separate Workspace service-account lane — see `workspace:draft` in [`workspace-provision`](../agents/steffon/sops/workspace-provision.md) |
+| Create or edit drafts | Same. **There is no draft-only Gmail scope** — `gmail.compose` covers drafts AND send, so "can draft, can never send" could only ever be a property of our code. Alex declined that trade for this reader. Drafting lives in the separate Workspace service-account lane — see `workspace:draft` in [`workspace-provision`](../agents/steffon/sops/workspace-provision.md) |
 | Archive, label, star, or mark read | Needs `gmail.modify`, which also permits send. The ingest deliberately leaves the mailbox untouched and tracks its position in OUR database (`desk_capture_items.history_id`) |
 | Delete anything | Needs `gmail.modify` (trash) or `mail.google.com` (permanent). Neither is requested |
 | Read mail outside the configured query | `GMAIL_CAPTURE_QUERY` goes into `messages.list` as `q`, so a non-matching message is **never downloaded**. There is no post-filter to get wrong. A blank query REFUSES rather than defaulting to the whole mailbox |
@@ -66,7 +66,7 @@ Gmail credential to the app's login secret so rotating one forces the other.
 
 ### Mint the refresh token
 
-Once, at Mr. McRitchie's desk, signed in as the mailbox owner:
+Once, at Alex's desk, signed in as the mailbox owner:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -99,8 +99,8 @@ which: [`credential-inventory.md`](credential-inventory.md).
 
 The agent service account **cannot create or edit 1Password items**. Steffon
 prepares the item under the admin writing lane per
-[`credential-filing`](../agents/steffon/sops/credential-filing.md); Mr.
-McRitchie pastes the secret.
+[`credential-filing`](../agents/steffon/sops/credential-filing.md);
+Alex pastes the secret.
 
 Leave the field **empty** until the real values exist. This lane distinguishes
 the two states on purpose — empty reads as "not configured yet" and skips
@@ -193,7 +193,7 @@ each new item on `/admin/desk`. Gmail differs from the team@ mouth in three ways
 
 **1. The sender is a counterparty, and that is expected.** The team@ door
 quarantines an unknown `From:` because that address is public and guessable. A
-Gmail arrival came from Mr. McRitchie's own mailbox, selected by a query we
+Gmail arrival came from Alex's own mailbox, selected by a query we
 control, so its `From:` is the subject of the correspondence rather than a red
 flag. `source` on the row tells the two apart — check it before reading a
 `received` status as an allowlist decision.
@@ -243,7 +243,7 @@ would arrive at the team@ door as the counterparty, fail
 attachments never extracted. Sealed raw in a bucket is not knowledge. The two
 ways out are worse: widening `DESK_ALLOWED_SENDERS` to third-party addresses on
 a **public** address, or trusting a forgeable `X-Forwarded-For`. Note the irony
-— hand-forwarding works *because* it makes a new message from Mr. McRitchie, so
+— hand-forwarding works *because* it makes a new message from Alex, so
 automating it breaks the property that made it work.
 
 **A service account with domain-wide delegation — rejected.** DWD **cannot be
@@ -266,7 +266,7 @@ profile means it is DWD wearing a nicer hat; a `403 unauthorized_client` means
 it is genuinely narrowed and worth revisiting.
 
 **Drafts in Gmail — declined for THIS lane; built in the Workspace lane
-(2026-09-23).** Mr. McRitchie later chose real Gmail drafts, and they were built
+(2026-09-23).** Alex later chose real Gmail drafts, and they were built
 on the separate service-account lane that already held `gmail.compose` — not by
 widening this reader. See **7. Drafting mailboxes** in
 [`workspace-provision`](../agents/steffon/sops/workspace-provision.md). This
@@ -275,7 +275,7 @@ lane stays `gmail.readonly`, and the reasoning below still holds for it.
 draft-only scope exists, so a "never sends" guarantee could only be code-deep.
 This pipeline's whole job is to read attacker-influenced text from
 counterparties; pairing that corpus with an outbound channel in one app is the
-trade Mr. McRitchie declined for this lane. The `.eml`-file alternative first
+trade Alex declined for this lane. The `.eml`-file alternative first
 proposed here was never built; the Workspace lane replaced it.
 
 **Pub/Sub push — rejected for now.** `users.watch` must be re-called at least
@@ -292,9 +292,9 @@ sweep that is run by hand.
   artifact**, never a public store. This repo is public — the deal cast lives in
   Heroku config, and the tests use synthetic addresses on purpose.
 - Read-only, always. No scope in this SOP lets an agent send, draft, label or
-  delete, and none should be added without Mr. McRitchie's explicit decision —
+  delete, and none should be added without Alex's explicit decision —
   recorded as its own task, with its own credential, so revoking a writer can
   never touch this reader.
 - Capture never merges, deploys, or touches the release ladder.
-- This is Mr. McRitchie's personal mailbox. Read it for the deal record, not to
+- This is Alex's personal mailbox. Read it for the deal record, not to
   mine it; the query is the boundary, and narrowing it is always allowed.

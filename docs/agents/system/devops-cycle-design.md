@@ -816,7 +816,7 @@ composition write-ups that lived here — `Avi Heartbeat Slow`/`Fast`,
 >   run `bin/release prepare --yes` for the approved QA deploy step.
 > - **`ship`** *aborts loudly* without confirmation — that is intentional. Do not
 >   pass `--yes` unless the session launched a ship-authority SOP
->   (`production-deploy`, `full-cycle`, `deploy-with-task`) or Mr. McRitchie
+>   (`production-deploy`, `full-cycle`, `deploy-with-task`) or Alex
 >   explicitly gives the production ship go in this session.
 > - **`status`** is a read-only report (no confirm); `--clean-only` makes it a
 >   GATE that exits non-zero when the `accepted → release → main` ladder is
@@ -1328,7 +1328,7 @@ Routing lives in `AGENTS.md` (see §6) so an agent self-loads the right one.
 ### Feature SOP
 
 1. **Classify the shape** (see §3) — this selects the test contract.
-2. Accumulate acceptance criteria with Mr. McRitchie until aligned (existing rule).
+2. Accumulate acceptance criteria with Alex until aligned (existing rule).
 3. Set `test_plan` = the shape's required tiers.
 4. Build **and write the tests at each required tier as you go** — unit first.
    This is the lever for the real complaint: *bugs that reach PR are bugs unit
@@ -1652,7 +1652,7 @@ conductor-recorded).
 | E2E (happy path) | Feature agent | Before `submitted` for ui+db / vertical shapes |
 | **Pre-flight (optional)** | Feature agent | Before `submitted` — `bin/fast-check <task>` runs diff-mapped tests + the core spine + rubocop on changed files (~1 min) and records nothing; the PR's settled green GitHub CI is the verdict `bin/dor-check` reads |
 | E2E (edge/regression) | QA lane (Avi/Steffon) | May add during review; becomes a follow-up task if large |
-| Manual | **Mr. McRitchie** | At the release QA stop (this *is* the manual tier) |
+| Manual | **Alex** | At the release QA stop (this *is* the manual tier) |
 
 ### 3.5 Test pruning — *when and how we keep tests effective*
 
@@ -1802,7 +1802,7 @@ surfaces.
 | Release-notes formatting | deterministic | `POST /api/v1/release_notes` | none |
 | Release-notes highlights prose | light judgment | small model | Haiku |
 | Discord digest / event messages | deterministic templates | script | none |
-| Production ship authority | **human** | `production-deploy` launch + `--yes` | Mr. McRitchie |
+| Production ship authority | **human** | `production-deploy` launch + `--yes` | Alex |
 
 ---
 

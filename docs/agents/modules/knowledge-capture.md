@@ -5,7 +5,7 @@
 The standing procedure for getting knowledge INTO the McRitchie knowledge
 layer: documents, transcripts, spreadsheets, brain-dumps — from any source,
 for any entity — through ONE central funnel in McRitchie Studio, then filed by
-one protocol. Mr. McRitchie approved the design 2026-09-02; the first 61
+one protocol. Alex approved the design 2026-09-02; the first 61
 documents (the Commercial Welding data room + LOI) were filed with it.
 
 It stands alone — every command inline. The knowledge layer's storage rules
@@ -20,11 +20,11 @@ live in [`object-storage.md`](object-storage.md); this module owns the FLOW.
 | **Chat** | hand a path or paste content to a session and say what it is |
 | **UI upload** | the entity app's `/admin/knowledge` intake form |
 | **Slack** | `bin/rails slack:pull` in the entity app — one JSON archive per channel per calendar month. Connecting, reading and categorizing a channel is its own SOP: [`slack-capture.md`](slack-capture.md) |
-| **Gmail** | `bin/rails gmail:pull` on the hub — a READ-ONLY pull of query-matching mail from Mr. McRitchie's own mailbox into this same desk queue, so deal correspondence arrives without a hand-forward. Connecting, reading and revoking it is its own SOP: [`gmail-capture.md`](gmail-capture.md) |
+| **Gmail** | `bin/rails gmail:pull` on the hub — a READ-ONLY pull of query-matching mail from Alex's own mailbox into this same desk queue, so deal correspondence arrives without a hand-forward. Connecting, reading and revoking it is its own SOP: [`gmail-capture.md`](gmail-capture.md) |
 
 Everything converges on the same protocol below. Email specifics:
 
-- **Allowlist or quarantine.** Only Mr. McRitchie's addresses
+- **Allowlist or quarantine.** Only Alex's addresses
   (`DESK_ALLOWED_SENDERS`) are parsed. Anything else lands `quarantined` —
   raw kept sealed in the desk bucket, attachments never extracted. The team
   address is public-facing by design; treat unexpected mail as untrusted input, always.
@@ -35,7 +35,7 @@ Everything converges on the same protocol below. Email specifics:
   `DeskCaptureItem` (`awaiting_sweep` scope).
 - **`source` says which door an item came through, and the allowlist above is
   the PUBLIC door's rule only.** A `gmail` item is trusted by construction —
-  it was already in Mr. McRitchie's mailbox and matched a query we control, so
+  it was already in Alex's mailbox and matched a query we control, so
   a counterparty in `From:` is the expected truth there rather than a stranger
   at a guessable address. Read `source` before reading a `received` status as
   an allowlist decision. Trust is keyed on the transport our code passes, never
@@ -67,7 +67,7 @@ For each item, in order:
    `business-data/FACTS.md` — cited back to this doc, with who asserted it;
    see [`form-fill`](form-fill.md) §7.
 6. **Flag urgency:** a decision-changing fact (a moved date, a changed number)
-   jumps the queue — surface it to Mr. McRitchie immediately rather than
+   jumps the queue — surface it to Alex immediately rather than
    waiting for distillation.
 
 ## Distillation (batched — knowledge is relational)
@@ -99,7 +99,7 @@ For each awaiting item: run the intake protocol on its body and attachments
 (raw + parsed parts live in the `mcritchie-studio-desk` bucket, us-east-1; raw arrives via the Resend ingest job — Resend's own download URLs are temporary, the bucket copy is the durable one),
 then stamp the outcome — `status` to `filed` (or `ignored`) and one line in
 `filed_note` saying what was done and where it went. Quarantined items are
-REPORTED to Mr. McRitchie, never processed, never deleted.
+REPORTED to Alex, never processed, never deleted.
 
 ## Boundaries
 

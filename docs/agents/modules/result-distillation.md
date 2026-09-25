@@ -19,7 +19,7 @@ one result at a time, live, by the agent producing the result.
   needs no agent effort.
 - A distilled finding answers *"what did I learn, and what does it change?"* It
   exists **only** if the agent writes it. A raw re-read left as the record forces
-  the next reader (another agent, Mr. McRitchie, the learning loop) to re-derive
+  the next reader (another agent, Alex, the learning loop) to re-derive
   the judgment the agent already made.
 - So: when a result **decides** something, the agent records the decision — the
   finding — not just the operation that produced it.

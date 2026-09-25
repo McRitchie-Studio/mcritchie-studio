@@ -608,7 +608,7 @@ Desk paths **recycle** — `_ship` is torn down every release cycle at the same 
 <!-- agent-worktree remove 2026-08-08 -->
 
 ## 2026-08-08 — stale unmerged desk sweep (content-on-release guard overridden, 14 desks)
-Side quest with Mr. McRitchie: 14 clean-but-UNMERGED desks pinned the Redis band.
+Side quest with Alex: 14 clean-but-UNMERGED desks pinned the Redis band.
 `bin/agent-worktree remove` refuses unmerged content and `--force` clears only the
 merged-PR case, so these were removed manually AFTER preservation. All 14 tasks were
 `[archived]` (or had no task); no live session desks touched.

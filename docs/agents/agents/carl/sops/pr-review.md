@@ -102,7 +102,7 @@ returns `none`, report "no reviewable PRs" and stop, UNLESS it prints one of two
 warnings:
 
 - `no CI is ingested for <repo>` is a WIRING gap: the board receives no Actions
-  deliveries for that repo. Report the repos to Mr. McRitchie (recipe:
+  deliveries for that repo. Report the repos to Alex (recipe:
   `../../../modules/deployment.md`, "Wiring a repo's Actions webhook").
 - `the board's OWN ingested CI is what this refusal read` is an INGESTION gap on
   ONE HEAD: the board holds no run for this PR's tip while GitHub says green.
@@ -260,7 +260,7 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
     --feedback "<builder's position vs review's position, in brief>" --agent carl
   ```
 
-  and surface it to Mr. McRitchie in the wave report as an **⚠ Escalated** line.
+  and surface it to Alex in the wave report as an **⚠ Escalated** line.
 
   If the bounce is **mechanical** — red CI, a merge conflict, a dirty base;
   nothing for the operator to arbitrate — say so and the block proceeds, with the

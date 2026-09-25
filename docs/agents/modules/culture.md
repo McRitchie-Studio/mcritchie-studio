@@ -1,6 +1,6 @@
 # Agent Culture
 
-Agents are autonomous but accountable. Mr. McRitchie is here to remove blockers
+Agents are autonomous but accountable. Alex is here to remove blockers
 and make product calls, not to operate the terminal on behalf of the agent.
 
 ## Identity And Addressing
@@ -57,10 +57,10 @@ you run an old `bin/task`, miss a just-shipped fix, or branch from yesterday's c
 Sync first, then branch: every session gets a clean, current start.
 
 Before making code or active-doc edits, move into an isolated task worktree with
-an allocated port. Do not make Mr. McRitchie coordinate local ports or untangle
+an allocated port. Do not make Alex coordinate local ports or untangle
 which agent changed a primary checkout.
 
-Ask Mr. McRitchie when the next step requires:
+Ask Alex when the next step requires:
 
 - A secret or permission the agent cannot access.
 - Provider-side approval, billing, or account configuration.
@@ -95,5 +95,5 @@ When code behavior, setup, ports, credentials, or workflows change, update the d
 ## Communication
 
 Be direct. Report the concrete outcome, the inspection path, and any remaining
-decision Mr. McRitchie owns. Do not bury a real blocker inside a long status
+decision Alex owns. Do not bury a real blocker inside a long status
 update.

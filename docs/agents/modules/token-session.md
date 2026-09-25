@@ -7,7 +7,7 @@ Run this when a lane cannot reach GitHub: `Bad credentials`, a 401 or 403, a
 push that is refused on auth.
 
 It is **self-service**. Fixing it is yours, in one command, and then you keep
-going. Do not hand it to Mr. McRitchie — with one honest exception, named at the
+going. Do not hand it to Alex — with one honest exception, named at the
 bottom.
 
 ---
@@ -55,7 +55,7 @@ lanes are rare, so the cost is one extra mint. Do not "fix" this.
 | **Token rejected (401) on `gh` or an API call** | nothing retires it — it is served until it ages out | **you** — step 1 |
 | **1Password unreachable / quota spent** | `op` cannot serve the key, so `bin/gh-token` cannot mint — but you can, from the recorded app id plus a local `.pem` | **you** — *When 1Password itself is down* |
 | **Deployer token needed, admin token absent, machine provisioned** | `source ~/.zprofile.admin` in this shell, then retry | **you** |
-| **Deployer token needed, and this machine has no `~/.zprofile.admin`** | install it once — `bin/setup-1pass-token --admin` | **Mr. McRitchie** |
+| **Deployer token needed, and this machine has no `~/.zprofile.admin`** | install it once — `bin/setup-1pass-token --admin` | **Alex** |
 
 The 401 rungs are worth understanding, and **only the git one self-heals**. A
 credential helper never sees the 401 — git does. Git then calls the helper a
@@ -150,7 +150,7 @@ takes its two halves from the environment and never touches 1Password:
 
 | Half | Where it is when 1Password is down |
 |---|---|
-| `GH_APP_ID` — the numeric app id | `credential-inventory.md` → **GitHub App IDs**: agent **`4431410`**, deployer **`4431542`**. Also at `~/.config/mcritchie/app-ids.json` on Mr. McRitchie's Mac, but nothing creates that file — on a rebuilt machine, read the doc. |
+| `GH_APP_ID` — the numeric app id | `credential-inventory.md` → **GitHub App IDs**: agent **`4431410`**, deployer **`4431542`**. Also at `~/.config/mcritchie/app-ids.json` on Alex's Mac, but nothing creates that file — on a rebuilt machine, read the doc. |
 | `GH_APP_PEM` — the private key | the `.pem` as last downloaded: `~/Downloads/mcritchie-{agent,deployer}.*.private-key.pem`. **Never** in the repo. |
 
 ```bash
@@ -194,7 +194,7 @@ identity claim, not a credential, which is why it may live in the repo:
 **An empty token is not an absent one.** `GH_TOKEN="$(bin/gh-token)"` sets
 `GH_TOKEN` to the empty string when the mint fails, and `gh` treats empty as
 "not set" — so it silently falls back to the keyring, where a **personal**
-account may be signed in. On 2026-08-29 two merges landed under Mr. McRitchie's
+account may be signed in. On 2026-08-29 two merges landed under Alex's
 own account this way, with every agent having been told not to use it. Check the
 value before exporting it, or let the command fail loudly.
 
@@ -247,11 +247,11 @@ does it name the install.
 ### The one honest escalation
 
 **A 1Password outage is not it.** Whatever `op` is doing, the hand-mint above
-needs neither the broker nor Mr. McRitchie, as long as the `.pem` is on this
+needs neither the broker nor Alex, as long as the `.pem` is on this
 machine. Reach for it before you decide the night is over.
 
 A machine that has **never been given** an admin token — no `~/.zprofile.admin`
-on disk at all — genuinely needs Mr. McRitchie, once, to run
+on disk at all — genuinely needs Alex, once, to run
 `bin/setup-1pass-token --admin`. That is the only credential step on either lane
 that is his. Everything else here, both lanes included, is yours.
 

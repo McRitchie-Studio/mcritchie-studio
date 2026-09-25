@@ -20,7 +20,7 @@ heartbeat still belongs on the card when the operator invokes it by name.
 - [`deploy-with-task`](sops/deploy-with-task.md) - expedite ONE named task to
   production behind the clean-ladder guard (interactive: it asks "What task?").
 
-Use this file when Mr. McRitchie invokes `Avi Heartbeat`. When he invokes a
+Use this file when Alex invokes `Avi Heartbeat`. When he invokes a
 single Avi act directly, read that act's SOP file.
 
 ## Scope
@@ -34,7 +34,7 @@ Avi owns the middle of the release pipeline — assembly + QA:
   Steffon's `production-deploy` act.
 
 Do not ship production from Avi's heartbeat. Stages 4-5 belong to Steffon's
-`production-deploy`, or to Xan's `full-cycle` only when Mr. McRitchie launched
+`production-deploy`, or to Xan's `full-cycle` only when Alex launched
 that ship-authorized act. Review is Carl's — do not run `pr-review` or merge feat
 PRs from Avi's heartbeat.
 
@@ -63,7 +63,7 @@ Run Avi's heartbeat as a QA-release sitting:
 1. [`qa-release`](sops/qa-release.md) - sweep the reviewed queue through release
    assembly and QA (stages 1-3), stopping at Live on QA.
 
-When Mr. McRitchie launches `Avi Heartbeat`, run `qa-release` until the reviewed
+When Alex launches `Avi Heartbeat`, run `qa-release` until the reviewed
 queue is swept and the candidate is on QA. When an act is invoked directly, run
 only that act.
 

@@ -4,7 +4,7 @@
 
 This is Steffon's `workspace-launch` SOP — the MASTER walk-through for standing
 up a brand-new company workspace, from buying the domain to the first agentic
-draft. Mr. McRitchie does not need to remember the steps: **Steffon does.** He
+draft. Alex does not need to remember the steps: **Steffon does.** He
 runs each step in order, does every step that a machine can do, and stops at
 each step that needs a human with an exact instruction — "now buy the domain on
 Squarespace", "now approve our key" — then verifies the result before moving on.
@@ -17,12 +17,12 @@ changes, change that file and this file together.
 ## What this act is NOT
 
 - **It never spends money on its own.** Buying the domain and the Google
-  Workspace subscription are always Mr. McRitchie's clicks, on his card.
+  Workspace subscription are always Alex's clicks, on his card.
 - **It never types a password or secret into chat.** Passwords go straight into
   1Password per [`credential-filing`](./credential-filing.md).
 - **It never widens the Google key's scopes.** Four scopes, fixed in
   `Workspace::Credentials::SCOPES`. No user-administration scope: Steffon does
-  not create Google users — Mr. McRitchie does, in the Admin console.
+  not create Google users — Alex does, in the Admin console.
 - **It never skips a verification.** A step is done when its check passes, not
   when someone says it is done.
 
@@ -65,15 +65,15 @@ bin/agent-activity heartbeat steffon
 | # | Step | SOP | Who acts | Package |
 |---|------|-----|----------|---------|
 | 0 | Open the launch task | this file | Steffon | basic |
-| 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Mr. McRitchie** buys · Steffon checks | basic |
-| 2 | Sign up for Google Workspace, create `alex@` + `team@` (Pro: up to 10 users) | [`workspace-signup`](./workspace-signup.md) | **Mr. McRitchie** · Steffon checks | basic |
-| 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC) | [`domain-dns`](./domain-dns.md) | Steffon writes records · **Mr. McRitchie** pastes · Steffon checks | basic |
-| 4 | Launch the hosted website (Basic: Squarespace site · Pro: our app + database) | [`website-launch`](./website-launch.md) | **Mr. McRitchie** approves cost · Steffon builds and checks | basic |
-| 5 | Agentic control: approve our key, register, prove mailboxes | [`workspace-provision`](./workspace-provision.md) §1-3 and §7 | **Mr. McRitchie** approves · Steffon does the rest | basic |
-| 6 | File the new logins in 1Password | [`credential-filing`](./credential-filing.md) | Steffon prepares · **Mr. McRitchie** pastes passwords | basic |
+| 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Alex** buys · Steffon checks | basic |
+| 2 | Sign up for Google Workspace, create `alex@` + `team@` (Pro: up to 10 users) | [`workspace-signup`](./workspace-signup.md) | **Alex** · Steffon checks | basic |
+| 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC) | [`domain-dns`](./domain-dns.md) | Steffon writes records · **Alex** pastes · Steffon checks | basic |
+| 4 | Launch the hosted website (Basic: Squarespace site · Pro: our app + database) | [`website-launch`](./website-launch.md) | **Alex** approves cost · Steffon builds and checks | basic |
+| 5 | Agentic control: approve our key, register, prove mailboxes | [`workspace-provision`](./workspace-provision.md) §1-3 and §7 | **Alex** approves · Steffon does the rest | basic |
+| 6 | File the new logins in 1Password | [`credential-filing`](./credential-filing.md) | Steffon prepares · **Alex** pastes passwords | basic |
 | 7 | Add a Chrome profile for the new identity | [`chrome-profiles`](./chrome-profiles.md) | Steffon | basic |
 | 8 | First draft — a test draft to `alex@` | [`workspace-provision`](./workspace-provision.md) §7 | Steffon | basic |
-| 9 | Knowledge base — attach and walk Drive folders | [`workspace-provision`](./workspace-provision.md) §4-5 | Steffon · **Mr. McRitchie** names the folders | pro |
+| 9 | Knowledge base — attach and walk Drive folders | [`workspace-provision`](./workspace-provision.md) §4-5 | Steffon · **Alex** names the folders | pro |
 | 10 | File storage bucket | [`bucket-provision`](./bucket-provision.md) | Steffon | pro |
 | 11 | Close out: report, record, close the task | this file | Steffon | basic |
 
@@ -106,7 +106,7 @@ use the YOUR TURN block for every hand-off. Order matters in three places:
 
 ### Step 11 — Close out
 
-Report to Mr. McRitchie in the house style:
+Report to Alex in the house style:
 
 - one line: the domain is live, which package, first draft link;
 - a table of every step with its check result;

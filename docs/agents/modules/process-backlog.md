@@ -200,7 +200,7 @@ this rubric, in order, and **say the reason out loud** when you claim:
   duplicate-migration check refuses the second at ship. One at a time, and never
   as one of four.
 - **`onchain` / `onchain-vertical` shapes** — operator/QA-stop verification.
-- **Acceptance you cannot restate in one sentence.** Ask Mr. McRitchie instead of
+- **Acceptance you cannot restate in one sentence.** Ask Alex instead of
   guessing; a misread acceptance costs the whole build.
 - **A task whose files overlap an in-flight PR.** `bin/session-preflight` reports
   the overlap, but you can see it in Phase 3's pairing check before you spend a
@@ -276,7 +276,7 @@ two writers on one desk is how uncommitted work is lost.
 
 A subagent's report is a CLAIM about what it did. A fabricated submit lands in
 your context identically to a real one. So before you count a task as submitted
-or relay its PR to Mr. McRitchie, **check the facts yourself**:
+or relay its PR to Alex, **check the facts yourself**:
 
 ```bash
 bin/task show <slug> -v          # stage must actually read `submitted`; note pr_url
@@ -350,7 +350,7 @@ Report in the house two layers, then the in-flight roster:
 - **Not started** — what you ranked but had no slot for, and what you dropped
   from the four because it conflicted.
 - **Review** — whether the pivot fired, how deep the queue was, what it drained to.
-- **For Mr. McRitchie** — any acceptance you could not restate, and any archive
+- **For Alex** — any acceptance you could not restate, and any archive
   you judged too close to call.
 
 ## Related

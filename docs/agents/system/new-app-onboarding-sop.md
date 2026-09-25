@@ -77,7 +77,7 @@ will never sign a transaction. Most apps are web2. See
 | Auth | engine passwordless + hub SSO | own auth (the app's call) |
 | DB | Postgres | **SQLite is fine for a demo**; Postgres when it matters |
 | External adapters (AI, payments, …) | mock-first behind a swappable adapter | same — mock-first behind a swappable adapter |
-| Object storage | **prompt Mr. McRitchie: provision buckets, y/n?** | same prompt — a silly little app says no |
+| Object storage | **prompt Alex: provision buckets, y/n?** | same prompt — a silly little app says no |
 
 On a **yes**, run Steffon's
 [`bucket-provision`](../agents/steffon/sops/bucket-provision.md) (as a subagent
