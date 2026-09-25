@@ -20,14 +20,27 @@ Two wrappers collapse the cycle's bookends into one command each. Reach for
 them first; the long form below is the fallback.
 
 ```bash
-/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --agent <soul> \
+/Users/alex/projects/.agents/bin/task begin --title "Three To Five Words" --agent <soul> \
   --repo <app> --kind <kind> \
   --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
 
 cd <desk>   #   ... the worktree begin printed; build there ...
 
-/Users/alex/projects/mcritchie-studio/bin/ship <task-slug> -m "Commit message"
+/Users/alex/projects/.agents/bin/ship <task-slug> -m "Commit message"
 ```
+
+**Run the tooling from its fixed path.** `bin/install-agent-docs`, which the
+production ship runs from the tree it just shipped, installs the fast-lane scripts
+(and the `bin/lib/**`, `config/` and pure `app/models/` files they load) to
+`/Users/alex/projects/.agents/tooling/<sha>/`, and atomically swaps the symlink
+`/Users/alex/projects/.agents/bin` onto it. Nothing checks that directory out, so a
+command can no longer die with `cannot load such file` because another session ran
+`git checkout` in the hub primary — the cause the old desk-handoff re-exec and
+hub-move diagnosis only patched, and which are now deleted. The installed scripts
+still act on the tree you stand in (they root at the cwd), and they read the hub's
+`.env` through a symlink. The hub path `/Users/alex/projects/mcritchie-studio/bin/…`
+stays a working fallback for one release, and wherever this page says
+"hub-absolute", the fixed path works too.
 
 **Name the hub's script; stand in the desk.** Every fast-lane command —
 `bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/dor-check` —
@@ -161,8 +174,8 @@ for it with `bin/ship-wait`**:
 
 ```bash
 cd <desk>   #   ... the worktree begin printed; ship-wait roots the ship at the cwd ...
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug> --launch -m "Commit message"
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug>   # attach to one already running
+/Users/alex/projects/.agents/bin/ship-wait <task-slug> --launch -m "Commit message"
+/Users/alex/projects/.agents/bin/ship-wait <task-slug>   # attach to one already running
 ```
 
 It exits **0 succeeded · 1 failed · 2 still running at the timeout**, returns
