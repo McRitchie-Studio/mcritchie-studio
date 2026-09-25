@@ -101,8 +101,8 @@ class Release::ReposTest < ActiveSupport::TestCase
   # --- apps as a hash: app_meta / prod_deploy / qa_app ---
 
   test "app_repos lists the registry's app hash keys" do
-    assert_equal %w[mcritchie-studio turf-monster turf-vault mcritchie-industries rolio tax-studio
-                    chain-ops].sort,
+    assert_equal %w[mcritchie-studio turf-monster turf-vault mcritchie-industries cyvasse rolio
+                    tax-studio chain-ops].sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -113,6 +113,21 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert Release::Repos.app?("chain-ops")
     assert_not Release::Repos.app?("studio-engine") # a gem
     assert_not Release::Repos.app?("not-a-real-repo")
+  end
+
+  # cyvasse (epic cyvasse-revival) was registered before its Heroku app existed.
+  # Its repo was born with both rungs, so it is three-rung; it declares no deploy
+  # target and no gate command until hosting lands, because a declared adapter is
+  # a promise ship acts on and the app it would name does not exist yet.
+  test "[unit] cyvasse is three-rung and declares no deploy target before hosting" do
+    assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder("cyvasse")
+    assert_includes Release::Ladder.sweepable(Release::Repos.config), "cyvasse"
+    assert_nil Release::Repos.prod_deploy("cyvasse"),
+               "no Heroku app `cyvasse` exists yet; declare prod_deploy with the hosting piece"
+    assert_nil Release::Repos.test_cmd("cyvasse")
+    assert_nil Release::Repos.qa_test_cmd("cyvasse")
+    assert_not Release::Repos.qa_evidence_exempt?("cyvasse"),
+               "cyvasse will have a QA app; it must earn QA evidence, never be declared exempt"
   end
 
   test "app_meta returns the app's registry metadata" do
