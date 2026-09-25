@@ -179,7 +179,6 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
   ```bash
   gh api user   # WHO am I about to merge as? 403 "not accessible by integration" = the App. STOP on a 200.
   gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget ONLY a base PROVEN unclaimed — at a merge anything unproven REFUSES, all five arms; see the merge-ready bullet)
-  bin/task merged <task> accepted      # stamp the git-location BEFORE the stage move
   bin/task move <task> reviewed
   bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
   ```

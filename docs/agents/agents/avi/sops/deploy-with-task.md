@@ -138,8 +138,8 @@ Use the production board by default. Do not add `--local`.
    and drives the verdict.
 
    On a merge-ready verdict **Carl merges the feat PR into `accepted`** (`gh pr
-   merge --merge --match-head-commit` → `bin/task merged <task> accepted` →
-   `bin/task move <task> reviewed --actor carl`) and **stops there** — review
+   merge --merge --match-head-commit` → `bin/task move <task> reviewed --actor
+   carl`; the board derives `merged`) and **stops there** — review
    never touches `release`/`main` and never deploys. Any block ends the
    expedite: fix, resubmit, re-run this SOP.
 

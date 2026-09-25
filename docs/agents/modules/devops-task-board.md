@@ -275,8 +275,8 @@ which both review role SOPs run
 `wait-for-ci`, `request-changes`, and `conductor-review`.
 
 A report is evidence; the **primary** owns the verdict and acts on it. On
-`merge-ready` it merges the feat PR into `accepted` (`gh pr merge --merge`), stamps
-`bin/task merged <slug> accepted`, and moves the task to `reviewed`. On
+`merge-ready` it merges the feat PR into `accepted` (`gh pr merge --merge`) and moves
+the task to `reviewed`; the board derives `merged` from GitHub, so nobody stamps it. On
 `request-changes` it blocks the task back to the builder with `bin/task block
 <slug> --kind rework --feedback "…" --agent carl`, which posts the `qa_feedback` the builder
 reads — plus a PR comment when the feedback is tied to changed code or CI. Nobody
