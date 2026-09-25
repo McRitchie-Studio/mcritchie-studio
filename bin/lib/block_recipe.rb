@@ -49,16 +49,8 @@ module BlockRecipe
   UNKNOWN_SOUL = "<your-soul>"
 
   # `<slug>` and `<agent>` are substituted; every other `<…>` is a placeholder the
-  # reader fills in, and is left exactly as written. The angle-bracket spelling is
-  # deliberate — it is the shape test/docs/bounce_holder_rule_docs_test.rb's command
-  # walk reads as an argument, so these recipes stay INSIDE that guard's sweep instead
-  # of disappearing from it behind a `%<…>s` format token it cannot parse.
-  #
-  # BOTH rows are only actually swept as of /tasks/guard-every-block-kind. That guard
-  # extracted `--kind rework` alone, so it saw `breaker_ack` and was blind to
-  # `escalation` — the `--kind dependency` row, and the only one that can write a block
-  # naming nobody. It now reads the kind list out of `bin/task`'s own `BLOCK_KINDS`, so
-  # a row added here with any accepted kind is swept the moment it exists.
+  # reader fills in, and is left exactly as written. The angle-bracket spelling keeps
+  # each recipe readable as a pasteable command rather than a `%<…>s` format token.
   # THE ABSOLUTE `bin/task` EVERY RECIPE OPENS WITH. These are COPY-PASTEABLE commands
   # by construction — the whole point of the file — and the bare form pastes only from a
   # hub desk. The reader here is a reviewer or builder mid-bounce, who may well be on a
@@ -66,11 +58,6 @@ module BlockRecipe
   # checkout cannot execute is the defect remedy-hints-print-bare-paths closed
   # everywhere else. Resolved from bin/ (this file's parent) once at load; policy:
   # FastLane.remedy_command.
-  #
-  # THE ANGLE-BRACKET SPELLING ABOVE IS UNAFFECTED, and so is the docs walk: the
-  # `BLOCK_CMD = "bin/task block"` that test/docs/bounce_holder_rule_docs_test.rb
-  # indexes on is a SUBSTRING of the absolute path, so these recipes stay inside that
-  # guard's sweep exactly as they were.
   TASK_CMD = FastLane.remedy_command("task", File.expand_path("..", __dir__)).freeze
 
   TEMPLATES = {

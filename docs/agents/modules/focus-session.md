@@ -125,8 +125,8 @@ Launch one builder per startable task, as many as the machine can carry:
   launches so their certs do not land together.
 - The session cap is **five** concurrent agents, builders and reviewers
   together. A reviewer plus its light is two.
-- Do not pair tasks that fight: same repo and overlapping files, both needing
-  the migration lane, or one whose acceptance waits on the other's merge.
+- Do not pair tasks that fight: same repo and overlapping files, both adding
+  a migration, or one whose acceptance waits on the other's merge.
   Serialize those; say which you held and why.
 
 Spawn each builder as a `pokemon` subagent with this brief, filled in:

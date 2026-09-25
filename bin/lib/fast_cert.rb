@@ -534,8 +534,8 @@ module FastCert
   # reading the mapper; the TOKEN plus the matching files sends them to the one line in
   # their own diff that spells it, and the remedy is to cite the constant that names
   # the path (Release::Repos::CONFIG_PATH, say) instead of spelling the path — measured
-  # to work: test/docs/guard_population_test.rb cites exactly that and is NOT among the
-  # 15 files config/release_repos.yml maps to.
+  # to work on 2026-09-22: a docs guard (since deleted) that cited exactly that was NOT
+  # among the 15 files config/release_repos.yml mapped to.
   #
   # STATED LIMIT — THE GREP RUNG ONLY. #mapping tries convention targets and the harness
   # family FIRST, so for a source with either of those the union is wider than anything

@@ -119,8 +119,7 @@ line number still points where a reader can open it.
 **Why one population and not two wider globs.** A glob decides what every future
 author is measured against. Two builders answering that question separately produce
 two globs and two exemption conventions — which is how a repo ends up with two
-authorities disagreeing. `test/docs/guard_population_test.rb` fails if either guard
-stops reading the shared one.
+authorities disagreeing. Any new guard over stated prose reads this population.
 
 **The exemptions are load-bearing, not tidiness:** frozen records (an explicit
 `ARCHIVE-ONLY` banner, never the task stage word `archived`), `/archive/` and

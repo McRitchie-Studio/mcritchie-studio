@@ -94,6 +94,11 @@ bin/agent-worktree scale --provision         # INFRA LANE: raises the Redis ceil
                                              # bounces every running stack
 ```
 
+The reclaim withholds any desk bound to a task the board does not yet show as
+`shipped` or `archived`, so a band full of merged-but-unshipped desks reclaims
+nothing. Free one of those by hand, once you know its work is safe on `accepted`:
+`bin/agent-worktree remove <app> <task-slug> --yes`.
+
 ## Lifecycle
 
 - `list` shows health, URL, branch, dirty/merge state, database, Redis DB and pidfile.

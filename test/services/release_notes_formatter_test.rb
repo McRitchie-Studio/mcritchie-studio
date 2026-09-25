@@ -298,5 +298,60 @@ module ReleaseNotes
       assert_equal({ text: "🧩 devops-v3" }, formatter.embeds.first[:footer])
       assert_nil formatter.embeds.last[:footer], "a loose card wears no footer"
     end
+
+    # rel-20260925-3b1f5c, faithfully: its 27 tasks (slug, title, repo) as read from
+    # production. Over the 9-card cap, so the payload is the plain-text layout — a
+    # 2790-character `content` that Discord refused (limit 2000). No task carried an
+    # epic, so the epic grouping was not the cause.
+    REL_20260925_TASKS = [
+      ["delete-last-review-guards", "Delete Last Review Guards", "mcritchie-studio"],
+      ["cut-release-and-desk-pages", "Cut Release And Desk Pages", "mcritchie-studio"],
+      ["derivation-404s-and-list-totals", "Derivation 404s And List Totals", "mcritchie-studio"],
+      ["capability-pages-under-three-hundred", "Capability Pages Under Three Hundred", "mcritchie-studio"],
+      ["epic-view-and-notes", "Epic View And Notes", "mcritchie-studio"],
+      ["desk-is-the-build-claim", "Desk Is The Build Claim", "mcritchie-studio"],
+      ["auto-grade-at-ship", "Auto Grade At Ship", "mcritchie-studio"],
+      ["harden-derived-fact-reads", "Harden Derived Fact Reads", "mcritchie-studio"],
+      ["agents-map-two-hundred-lines", "AGENTS Map Two Hundred Lines", "mcritchie-studio"],
+      ["derive-merge-rung-and-authors", "Derive Merge Rung And Authors", "mcritchie-studio"],
+      ["scope-ship-grant-to-request", "Scope Ship Grant To Request", "mcritchie-studio"],
+      ["retire-local-cert-evidence", "Retire Local Cert Evidence", "mcritchie-studio"],
+      ["operator-windows-on-board", "Operator Windows On Board", "mcritchie-studio"],
+      ["ship-gate-reads-tree-verdict", "Ship Gate Reads Tree Verdict", "mcritchie-studio"],
+      ["roster-misses-pokemon-and-xan", "Roster Misses Pokemon And Xan", "mcritchie-studio"],
+      ["soul-character-reference-lane", "Soul Character Reference Lane", "mcritchie-studio"],
+      ["data-flow-doc-contradicts-code", "Data Flow Doc Contradicts Code", "mcritchie-studio"],
+      ["sync-reports-its-refusals", "Sync Reports Its Refusals", "turf-monster"],
+      ["epic-slug-on-task-cards", "Epic Slug On Task Cards", "mcritchie-studio"],
+      ["dor-reads-settled-ci-verdict", "DoR Reads Settled CI Verdict", "mcritchie-studio"],
+      ["harden-drafting-mailbox-lane", "Harden Drafting Mailbox Lane", "mcritchie-studio"],
+      ["rename-alex-agent-to-xan", "Rename Alex Agent To Xan", "mcritchie-studio"],
+      ["packages-polish-and-hosting", "Packages Polish And Hosting", "mcritchie-studio"],
+      ["focus-session-build-sop", "Focus Session Build SOP", "mcritchie-studio"],
+      ["workspace-launch-and-packages", "Workspace Launch And Packages", "mcritchie-studio"],
+      ["land-devops-v3-design", "Land DevOps V3 Design", "mcritchie-studio"],
+      ["document-studio-turf-data-flow", "Document Studio Turf Data Flow", "mcritchie-studio"],
+    ].freeze
+
+    test "[unit] the 27-task release that Discord refused now splits into messages that each fit" do
+      tasks = REL_20260925_TASKS.map do |slug, title, repo|
+        Task.new(slug: slug, title: title, metadata: { "devops" => { "repositories" => [repo] } })
+      end
+      formatter = Formatter.new(app: "mcritchie-studio", environment: "production", release: "rel-20260925-3b1f5c",
+                                sha: "6d1522a9abed3dd0499d282d06a9b132d22ac51e", url: "https://mcritchie.studio",
+                                tasks: tasks)
+      payload = formatter.discord_payload
+
+      assert_not formatter.embeddable?
+      assert_operator DiscordClient.discord_length(payload[:content]), :>, DiscordClient::CONTENT_LIMIT,
+                      "the reproduction: one message breaks Discord's content cap"
+
+      bodies = DiscordClient.messages(**payload)
+      assert_equal 2, bodies.size
+      bodies.each { |body| assert_operator DiscordClient.discord_length(body[:content]), :<=, DiscordClient::CONTENT_LIMIT }
+      REL_20260925_TASKS.each do |slug, _title, _repo|
+        assert_equal 1, bodies.count { |body| body[:content].include?("/tasks/#{slug})") }, "#{slug} posts exactly once"
+      end
+    end
   end
 end

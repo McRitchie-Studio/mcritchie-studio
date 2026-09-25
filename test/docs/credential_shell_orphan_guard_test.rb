@@ -19,7 +19,7 @@ require "test_helper"
 #
 # THE POPULATION IS DERIVED, NOT ENUMERATED. A hard-coded list of "credential
 # SOPs" is the fix that covers the file we already know about and misses the one
-# written tomorrow — the same hole `guard_population_test.rb` was written to close.
+# written tomorrow — the same hole test/support/stated_prose.rb was written to close.
 # Every soul's SOP directory is in scope, because a credential reaches a shell in
 # whichever SOP happens to handle one.
 #

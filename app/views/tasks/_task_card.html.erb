@@ -266,7 +266,7 @@
   <% if task.requires_migration || task.requires_release_conductor? %>
     <div class="flex items-center justify-end gap-1 mb-1">
       <% if task.requires_migration %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires backend_migration lane">MIG</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires a migration">MIG</span>
       <% end %>
       <% if task.requires_release_conductor? %>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release conductor lane">REL</span>

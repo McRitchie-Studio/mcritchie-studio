@@ -88,6 +88,8 @@ class SealRetryWiringTest < ActionDispatch::IntegrationTest
       require_relative "#{Rails.root.join('app/models/release/smoke_seal')}"
       require_relative "#{Rails.root.join('app/models/release/seal_retry')}"
       require_relative "#{Rails.root.join('app/models/release/seal_run')}"
+      require_relative "#{Rails.root.join('app/models/release/seal_tree')}"
+      raise "SealTree" unless Release::SealTree::UNSEALED == "unsealed"
       attempts = 0
       r = Release::SealRun.call(host: "https://example.test", sleeper: ->(_s) {}) do |_a|
         attempts += 1
@@ -105,9 +107,13 @@ class SealRetryWiringTest < ActionDispatch::IntegrationTest
     # Supplementary tripwire ONLY — the behavior above is the proof. This guards
     # the one seam a unit test cannot see: that the SCRIPT actually calls the
     # composition, and that the retry never leaked into the standalone tool.
-    body = File.read(RELEASE_SRC)[/^def production_smoke_seal.*?(?=^def )/m]
+    src  = File.read(RELEASE_SRC)
+    body = src[/^def production_smoke_seal.*?(?=^def )/m]
     assert body, "bin/release.rb defines production_smoke_seal (step 5c)"
-    assert_includes body, "Release::SealRun.call", "step 5c runs the smoke through the retrying composition"
+    assert_includes body, "run_seal_smoke(", "step 5c runs the smoke once it has the shipped tree"
+    run = src[/^def run_seal_smoke.*?(?=^def )/m]
+    assert run, "bin/release.rb defines run_seal_smoke"
+    assert_includes run, "Release::SealRun.call", "step 5c runs the smoke through the retrying composition"
 
     smoke = File.read(SMOKE_SRC)
     assert_no_match(/SealRetry|SealRun/, smoke, "the retry is caller-side; the tool stays single-shot")

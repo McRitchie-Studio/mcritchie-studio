@@ -1154,7 +1154,12 @@ resumes (the command is expected idempotent). On success it stamps `deployed_sha
 flips the RC + its members to `shipped` (`Release::Conductor.ship!`), and
 **auto-posts release notes**
 (`Release::Conductor.post_release_notes` → the same Formatter/Discord path as
-`POST /api/v1/release_notes`; non-fatal if the webhook is unset). After a ship,
+`POST /api/v1/release_notes`; non-fatal on any delivery failure, and the ship
+prints Discord's real error rather than a guess). A payload over Discord's
+per-message limits (2000 content chars, 10 embeds, 6000 embed chars) is split
+across as many messages as it needs. To re-post a release's notes, run
+`bin/release notes <release>` (a dry run that prints the notes and the measured
+split) and then `bin/release notes <release> --post`. After a ship,
 each repo's `release` equals `main` and re-accumulates the next candidate. Run
 `ship` from a **primary checkout** (not a worktree): the gem repos are resolved
 as siblings at the projects root.

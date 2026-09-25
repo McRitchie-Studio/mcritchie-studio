@@ -228,7 +228,7 @@ op whoami                                   # is 1Password unlocked?
 
 Do not install the deployer into `gh` with `bin/gh-auth-refresh --identity
 deployer`: the script accepts the flag, but the deployer App has no
-`pull_requests` grant and `bin/release` calls `gh pr`, so the next PR call fails.
+`pull_requests` grant and `bin/release` calls `gh pr` (prepare's promote), so the next PR call fails.
 The two ship-lane lines above are the whole deployer fix
 ([`token-session.md`](token-session.md#the-deployer-lane--self-service-on-a-provisioned-machine)).
 

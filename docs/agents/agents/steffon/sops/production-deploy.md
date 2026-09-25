@@ -65,8 +65,10 @@ The two exports are NOT interchangeable:
 **`bin/release ship` takes the per-release `deployer` claim for you** before any deploy
 mutation. There is **no `bin/devops-shift acquire avi` step for the ship any more.**
 
-- **Stand down** — `🛑 <release> deployer already held — STAND DOWN` names the holder
-  and **aborts before any deploy**. Announce it and STOP (a dead holder lapses in ~120s).
+- **Stand down** — `release-claim: 🛑 <release> deployer already held — STAND DOWN.`
+  names the holder, then the ship **aborts before any deploy** with `deployer claim for
+  <release> is held by another live release conductor — standing down (see the holder
+  above).` Announce it and STOP (a dead holder lapses in ~120s).
 - **Resume** — re-running your own interrupted ship re-acquires the same claim.
 - **Fail-open** — a claim-transport hiccup never wedges the ship.
 
@@ -251,6 +253,12 @@ production. Details: [`../../../modules/gates/g4-ship.md`](../../../modules/gate
 (`🔁 first smoke attempt failed — waiting 30s …`); do not interrupt it. **Green with
 "retried once after 30s boot-window wait"** is healthy; **Red** persisted through the
 retry. The seal never auto-rolls-back: the rollback commands print and you decide.
+
+**The seal runs the shipped tree's specs** (the hub's ship workspace at the frozen SHA,
+never the primary). **⚪ unsealed** means those specs could not run, and says why; it
+is not a red seal and prints no rollback. Fix the cause, then re-seal:
+`bin/release reseal <release-slug>` (it overwrites the recorded seal and deploys
+nothing). Use the same command to correct a seal recorded wrongly.
 
 `ship` records the **G4 Ship gate** (a red seal never flips its success) and moves
 members to `shipped` itself: never hand-run a bulk `bin/task move`.
