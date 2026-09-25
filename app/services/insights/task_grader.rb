@@ -418,7 +418,14 @@ module Insights
       end
 
       def baseline_label(baseline)
-        baseline.to_h.map { |k, v| "#{k} n=#{v["n"]} p90=#{v.values.last.nil? ? "skip" : v.values.last.round(2)}" }.join(", ")
+        baseline.to_h.map do |key, stats|
+          ceiling = stats.values.last
+          shown = if ceiling.nil? then "skip"
+                  elsif key == "cost" then format("$%.2f", ceiling)
+                  else hours(ceiling)
+                  end
+          "#{key} n=#{stats["n"]} #{stats.keys.last}=#{shown}"
+        end.join(", ")
       end
     end
 
