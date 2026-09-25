@@ -247,5 +247,56 @@ module ReleaseNotes
       assert_equal ten.message, fallback[:content], "an over-cap release falls back to the plain-text message"
       refute fallback.key?(:embeds), "the text fallback prepends no embeds"
     end
+
+    # --- epic grouping ------------------------------------------------------
+
+    def epic_task(title, repo, epic)
+      Task.create!(title: title, epic_slug: epic, metadata: { "devops" => { "repositories" => [repo] } })
+    end
+
+    test "[integration] each app group nests its tasks under their epic, loose tasks first" do
+      loose = epic_task("Loose studio fix task", "mcritchie-studio", nil)
+      epic_a = epic_task("Epic index page task", "mcritchie-studio", "devops-v3")
+      polish = epic_task("Board polish sweep task", "mcritchie-studio", "board-polish")
+      epic_b = epic_task("Epic release notes task", "mcritchie-studio", "devops-v3")
+      turf = epic_task("Turf epic contest task", "turf-monster", "devops-v3")
+
+      message = formatter_for(epic_a, loose, polish, epic_b, turf).message
+
+      studio = message[/🪎 McRitchie Studio\n(.*?)\n\n/m, 1]
+      assert_equal [
+        "• [Loose studio fix task](https://mcritchie.studio/tasks/#{loose.slug})",
+        "🧩 devops-v3",
+        "  • [Epic index page task](https://mcritchie.studio/tasks/#{epic_a.slug})",
+        "  • [Epic release notes task](https://mcritchie.studio/tasks/#{epic_b.slug})",
+        "🧩 board-polish",
+        "  • [Board polish sweep task](https://mcritchie.studio/tasks/#{polish.slug})"
+      ], studio.split("\n")
+      assert_includes message, "🐊 Turf Monster\n🧩 devops-v3\n  • [Turf epic contest task]",
+                      "the app stays the outer level; the epic nests inside each app"
+    end
+
+    test "[unit] a release with no epics renders its bullets flat, as before" do
+      task = epic_task("Plain flat bullet task", "mcritchie-studio", nil)
+      message = formatter_for(task).message
+
+      assert_includes message, "🪎 McRitchie Studio\n• [Plain flat bullet task]"
+      assert_not_includes message, "🧩"
+      assert_not_includes formatter_for(task).discord_payload[:content], "🧩"
+    end
+
+    test "[unit] the Discord header lists the epics and each card names its epic, grouped together" do
+      first = epic_task("Epic card first task", "mcritchie-studio", "devops-v3")
+      loose = epic_task("Loose card middle task", "mcritchie-studio", nil)
+      second = epic_task("Epic card second task", "mcritchie-studio", "devops-v3")
+      formatter = formatter_for(first, loose, second)
+
+      assert_equal ["devops-v3"], formatter.epic_slugs
+      assert_includes formatter.discord_payload[:content], "\n🧩 devops-v3"
+      assert_equal [first.title, second.title, loose.title], formatter.embeds.map { |embed| embed[:title] },
+                   "an epic's cards sit together at its first card's place"
+      assert_equal({ text: "🧩 devops-v3" }, formatter.embeds.first[:footer])
+      assert_nil formatter.embeds.last[:footer], "a loose card wears no footer"
+    end
   end
 end
