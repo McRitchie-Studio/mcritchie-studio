@@ -31,16 +31,6 @@ require "socket"
 require "time"
 require "yaml"
 
-# ── LOAD GUARD, armed before every other require ──────────────────────────────
-# This script is one of the four measured casualties of the hub primary moving
-# mid-command — `cannot load such file -- bin/lib/desk_ledger`, then again for
-# `lib/desk_activity` — and it is the case with NO WAY OUT: it runs from the hub
-# by necessity, because `bin/task begin` calls it to CREATE the desk that would
-# otherwise carry a private copy. So there is no handoff to make here, only a
-# diagnosis worth reading. Never a retry. See bin/lib/hub_move_diagnosis.rb.
-require_relative "lib/hub_move_diagnosis"
-HubMoveDiagnosis.install!(root: File.expand_path("..", __dir__), command: File.basename(__FILE__))
-
 # The fail-closed guard on the operator's real <projects>/.agents state — this
 # script writes the worktree registry there (run_snapshot).
 require_relative "../lib/task_usage_sandbox"

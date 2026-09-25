@@ -82,66 +82,6 @@ require "json"
 require "open3"
 require "optparse"
 
-# ── DESK HANDOFF — runs BEFORE the first require_relative, on purpose ─────────
-#
-# This script loads its libraries from the checkout it LIVES IN. Invoked by its
-# hub-primary absolute path, that is a checkout other processes move: a tracked
-# file is absent for ~0.4-0.7s of every checkout (measured 2026-09-13), and a
-# command that starts inside that window dies with `cannot load such file`.
-# Measured four times on 2026-09-10 across three sessions.
-#
-# A desk does not have that problem — it is pinned to its own branch and nobody
-# moves it under you — and a HUB desk carries its own bin/ship. So when cwd sits
-# in a checkout that has its own copy, hand off to it. This is not a new policy:
-# FastLane.handoff_command (bin/lib/fast_lane.rb:115) already resolves the same
-# way, by existence. This only makes the choice hold no matter how the script
-# was reached.
-#
-# IT ANNOUNCES ITSELF. Handing off changes WHICH code runs — the desk's copy is
-# its branch's, not the hub's — so a silent switch could run stale tooling. The
-# warning line is the whole mitigation; MCR_SKIP_DESK_HANDOFF=1 opts out.
-#
-# IT DOES NOT HELP A SATELLITE. Only mcritchie-studio ships bin/ship, so a
-# turf-monster, rolio or gem desk finds no copy to hand off to (verified
-# 2026-09-13: present in 31/32 hub desks, 0/32 turf desks). Those runs stay on
-# the hub script and are covered by the LOAD GUARD below, not by this.
-if ENV["MCR_SKIP_DESK_HANDOFF"].to_s.strip.empty?
-  begin
-    own_path = File.realpath(__FILE__)
-    script_name = File.basename(__FILE__)
-    search = Dir.pwd
-    local_copy = nil
-    loop do
-      candidate = File.join(search, "bin", script_name)
-      if File.executable?(candidate)
-        local_copy = candidate
-        break
-      end
-      parent = File.dirname(search)
-      break if parent == search
-
-      search = parent
-    end
-    if local_copy && File.realpath(local_copy) != own_path
-      warn "#{script_name}: handing off to this checkout's own copy (#{local_copy}) — the hub primary " \
-           "moves under running commands. Set MCR_SKIP_DESK_HANDOFF=1 to run #{own_path} instead."
-      exec(local_copy, *ARGV)
-    end
-  rescue StandardError
-    # A handoff that cannot be decided must never block the command it exists to
-    # protect. Fall through and load from here.
-    nil
-  end
-end
-
-# ── LOAD GUARD — say WHOSE bug a `cannot load such file` is ───────────────────
-# Diagnosis only, never a retry: a retry cannot tell a checkout window from a
-# genuinely missing file. Loaded FIRST so it is armed before the requires it
-# explains, and it swallows nothing — the original LoadError still prints and
-# the process still fails. See bin/lib/hub_move_diagnosis.rb.
-require_relative "lib/hub_move_diagnosis"
-HubMoveDiagnosis.install!(root: File.expand_path("..", __dir__), command: File.basename(__FILE__))
-
 require_relative "lib/repo_root"
 require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
