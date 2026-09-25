@@ -34,8 +34,8 @@ require_relative "test_database_purge"
 # kill leaves both. This reaper acts ONLY on databases named in a lease WE wrote —
 # a worktree DB is never leased, so it is never a candidate. That is the closed set.
 #
-# WHY BARE PID-LIVENESS IS SAFE HERE (it is NOT safe in CertOrphanGuard, on purpose).
-# CertOrphanGuard KILLS processes, so a recycled PID would kill a bystander — it must
+# WHY BARE PID-LIVENESS IS SAFE HERE (it was NOT safe in the retired cert orphan guard).
+# That guard KILLED processes, so a recycled PID would kill a bystander — it had to
 # prove (pid, start-time) identity. This reaper DROPS a per-run-UNIQUE database. A PID
 # is only ever reused AFTER its original owner exits, so `Process.kill(0, pid)`:
 #   * succeeds  -> SOME process holds the pid: either our still-running mint (correct

@@ -2,7 +2,7 @@
 
 # RepoRoot — resolve the CODE root a gate should test / fingerprint / diff.
 #
-# The gate scripts (bin/full-suite-check, bin/dor-check) live in the hub
+# The gate scripts (bin/fast-check, bin/dor-check) live in the hub
 # (mcritchie-studio), but satellites (turf-monster, rolio, …) ship no gate
 # scripts, so a satellite task runs the HUB's gate. If the gate rooted at the
 # script's own repo it would run the suite + fingerprint the HUB — certifying a

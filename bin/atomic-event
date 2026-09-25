@@ -105,7 +105,7 @@ class AgentActivityCli
   # nothing and returned success. bin/agent-activity is an 8-line shim that `load`s
   # this file and calls the same `run`, so it carried the identical exposure — and
   # it is shelled by the SessionEnd hook and by bin/task, bin/ship, bin/release,
-  # bin/full-suite-check and bin/ci-scope-capture, many times per session.
+  # and bin/ci-scope-capture, many times per session.
   #
   # WHY THE DICTIONARY LIVES HERE rather than in bin/lib/ like its three siblings
   # (Release::Cli::COMMANDS, QaServerCli::COMMANDS, AgentWorktreeCli::COMMANDS).
@@ -149,7 +149,6 @@ class AgentActivityCli
   #   bin/task#narrate                      system(ACTIVITY_BIN, *args, out: NULL, err: NULL)  discarded
   #   bin/ship#narrate                      system(ACTIVITY_BIN, *args, out: NULL, err: NULL)  discarded
   #   bin/release.rb#agent_activity         system(AGENT_ACTIVITY, *args, …)  "always exits 0"
-  #   bin/full-suite-check#emit_test_scope  system(AGENT_ACTIVITY, "action", …)  "the verb always exits 0"
   #   bin/ci-scope-capture#emit_ci_scope    system(*argv, …)  "there is no caller to fail"
   #   ~/.claude/settings.json   SessionEnd hook: `bin/agent-activity close-open`
   #

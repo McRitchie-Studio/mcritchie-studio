@@ -3,14 +3,12 @@
 require "json"
 require_relative "projects_root"
 
-# CertRootGuard — is this resolved CODE root the task's tree, and if not, what now?
+# TaskTree — is this resolved CODE root the task's tree, and if not, what now?
 #
-# The G1 gates root at the cwd's git toplevel (RepoRoot.code_root), so a run from
-# the WRONG checkout — e.g. the hub primary on main — roots at whatever tree it
-# stands in. Because a cert's fingerprint is a git TREE hash, a foreign root is
-# never harmlessly wrong; it is wrong in a direction, and the direction depends on
-# whether the caller WRITES evidence or READS it. So the guard answers one question
-# — "is `root` the task's tree?" — and the caller picks the remedy.
+# The build-lane scripts root at the cwd's git toplevel (RepoRoot.code_root), so a
+# run from the WRONG checkout — e.g. the hub primary on main — roots at whatever
+# tree it stands in. The guard answers one question — "is `root` the task's
+# tree?" — and the caller picks the remedy.
 #
 # A root is accepted as the task's tree when EITHER:
 #   - its checked-out branch is the task's branch (board metadata.devops.branch,
@@ -21,45 +19,33 @@ require_relative "projects_root"
 #
 # THE TWO REMEDIES
 #
-#   * A cert WRITER — bin/fast-check, bin/full-suite-check — REFUSES (#refusal).
-#     It STAMPS "[…@<fp>]" evidence about the tree it stands in, so from the wrong
-#     checkout it green-certified code the task never touched: a fail-GREEN, hit
-#     live 2026-07-12, caught only downstream by bin/dor-check's staleness. And it
-#     must not silently chdir into the task worktree instead — that could green-cert
-#     a STALE worktree while the operator's real edits sat untested in the checkout
-#     they ran from, trading one fail-GREEN for another. Fail closed, say where to
-#     run.
+#   * bin/fast-check REFUSES (#refusal). It is the optional local pre-flight, and a
+#     pre-flight run against an unrelated tree tells the builder nothing about their
+#     diff — worse, it reads as green. It must not silently chdir into the task
+#     worktree instead: that could run a STALE worktree while the operator's real
+#     edits sat untested in the checkout they ran from. Fail closed, say where to run.
 #
-#   * The READER — bin/dor-check — RE-ROOTS (#assess → :resolved_root). It writes
-#     no evidence, so re-rooting cannot forge a cert; it can only make the gate
-#     grade the RIGHT tree instead of a foreign one. Refusing to read is the
-#     costlier failure: because the fingerprint is content-addressed, a cert taken
-#     in the task's worktree can NEVER match a primary checkout's tree, so
-#     dor-check from the primary reported "STALE (certified for older code)" for
-#     certs that were perfectly fresh — 6 of 6 tasks on 2026-07-14, including ones
-#     certified green 90 seconds earlier. An agent that hits an unexplainable STALE
-#     stops working, so the false STALE stranded finished tasks in `building`.
-#     The re-root is LOUD by contract: the hazard of resolving is doing it
-#     SILENTLY, which leaves the tool and the operator believing different things
-#     about which code was judged.
-#
-#     The reader roots its DIFF here too, not just its fingerprint — and that half
-#     fails in the opposite, worse direction. A foreign fingerprint can only read
-#     STALE (a false REFUSAL, loud). A foreign DIFF reads as a real diff: run the
-#     review gate-zero from a primary checkout carrying one unrelated dirty .md and
-#     the gate observes a doc-only change, grants the `kind: chore` exemption, and
-#     waves through a multi-file code PR. Same wrong tree, but a false PASS in the
-#     gate whose whole job is refusing under-tested work (observed 2026-08-08,
-#     task dor-check-review-rooting).
+#   * bin/ship and bin/dor-check RE-ROOT (#assess → :resolved_root), loudly. ship
+#     commits, so it wants the task's desk when one resolves; dor-check grades the
+#     DIFF, and a foreign diff reads as a real diff: run the review gate-zero from a
+#     primary checkout carrying one unrelated dirty .md and the gate observes a
+#     doc-only change, grants the `kind: chore` exemption, and waves through a
+#     multi-file code PR (observed 2026-08-08, task dor-check-review-rooting). The
+#     re-root is LOUD by contract: the hazard of resolving is doing it SILENTLY,
+#     which leaves the tool and the operator believing different things about which
+#     code was judged.
 #
 # The guard applies only to the IMPLICIT root (cwd-resolved). An EXPLICIT override
-# (FULL_SUITE_ROOT / FAST_CHECK_ROOT / DOR_CHECK_DIFF_ROOT) bypasses it at the call
-# site: the caller declared that root deliberately (the CI/test seam).
+# (FAST_CHECK_ROOT / SHIP_ROOT / DOR_CHECK_DIFF_ROOT) bypasses it at the call site:
+# the caller declared that root deliberately (the CI/test seam).
 #
 # Board reads are best-effort: an unreachable board falls back to the naming
 # conventions, so the hub-primary-on-main case still refuses offline. A caller that
 # already holds the task passes `devops:` and skips the board read entirely.
-module CertRootGuard
+#
+# Until DevOps v3 phase 2b this was bin/lib/cert_root_guard.rb, the cert writers'
+# root guard; the certs retired, the rooting question did not.
+module TaskTree
   # The two on-disk desk layouts, BOTH in active use on this machine:
   #
   #   <projects>/<repo>/.worktrees/<slug>   the MANAGED layout bin/agent-worktree builds
@@ -75,16 +61,16 @@ module CertRootGuard
 
   module_function
 
-  # nil when `root` is `slug`'s tree (the cert may proceed); else the refusal
-  # message. A blank slug (standalone --print / hook runs) never refuses —
-  # there is no task to root at. The cert WRITERS' entry point.
+  # nil when `root` is `slug`'s tree (the run may proceed); else the refusal
+  # message. A blank slug (a standalone --print run) never refuses — there is no
+  # task to root at. bin/fast-check's entry point.
   def refusal(task_bin:, slug:, root:, devops: nil, projects_dir: nil, prefer_repo: nil)
     found = assess(task_bin: task_bin, slug: slug, root: root, devops: devops,
                    projects_dir: projects_dir, prefer_repo: prefer_repo)
     return nil if found.nil?
-    # The WRITER's half of the desk vouch (see #assess): standing physically at the
-    # task's desk in the right repo still certifies, detached HEAD and all. The READER
-    # deliberately does not honor this — same fact, opposite correct answer.
+    # The desk vouch (see #assess): standing physically at the task's desk in the
+    # right repo still runs, detached HEAD and all. dor-check deliberately does not
+    # honor this — same fact, opposite correct answer.
     return nil if found[:standing_in_task_desk]
 
     found[:message]
@@ -147,23 +133,20 @@ module CertRootGuard
     # rather than a short-circuit, because the two consumers want opposite answers
     # (the REFUSE-vs-RESOLVE split at the top of this file):
     #
-    #   a WRITER (bin/fast-check, bin/full-suite-check) accepts it — the operator is
-    #     physically working at the task's desk, and a cert stamped mid-rebase is
-    #     content-addressed, so it can only later read STALE: loud and self-correcting.
-    #   the READER (bin/dor-check) must NOT: a detached HEAD is not the PR's state, and
-    #     a diff read from it is graded as though it were. That direction fails SILENT
-    #     and passing, which is the whole subject of this task.
+    #   bin/fast-check and bin/ship accept it — the operator is physically working at
+    #     the task's desk, and a pre-flight run mid-rebase costs nothing durable.
+    #   bin/dor-check must NOT: a detached HEAD is not the PR's state, and a diff read
+    #     from it is graded as though it were. That direction fails SILENT and passing.
     #
     # #refusal honors it; dor-check ignores it deliberately.
     #
     # Branch-forgiving and deliberately REPO-BLIND. The first cut also required the
     # repo axis here, which mutation-testing exposed as dead code: only #refusal reads
-    # this, and the cert writers pass no `prefer_repo`. The fix is NOT to feed them one
+    # this, and bin/fast-check passes no `prefer_repo`. The fix is NOT to feed it one
     # — `devops.pr_url` is a SINGLE value (the known gap in gates/dor.md), so on a
-    # multi-repo task it names one repo while the builder may legitimately be
-    # certifying in another. Enforcing it here would refuse honest work, which is the
-    # one thing a cert writer must not do casually. The wrong-repo desk is closed for
-    # the READER by `standing_mismatch` above, where failing closed is safe.
+    # multi-repo task it names one repo while the builder may legitimately be working
+    # in another. Enforcing it here would refuse honest work. The wrong-repo desk is
+    # closed for dor-check by `standing_mismatch` above, where failing closed is safe.
     standing_in_task_desk = worktree_dir?(root, worktree_slug)
 
     candidates = worktree_candidates(worktree_slug, projects_dir)
@@ -199,10 +182,10 @@ module CertRootGuard
     }
   end
 
-  # The root guard's refusal text: where you ARE, where the task's tree IS, and the
-  # concrete `cd` that fixes it when the worktree is on disk. The cert writers die! with
-  # it on ANY foreign root; bin/ship dies with it only when no desk resolves (otherwise
-  # it re-roots) — the three callers #desk_advice names below.
+  # The refusal text: where you ARE, where the task's tree IS, and the concrete `cd`
+  # that fixes it when the worktree is on disk. bin/fast-check dies with it on ANY
+  # foreign root; bin/ship dies with it only when no desk resolves (otherwise it
+  # re-roots).
   #
   # `resolved` is the VALIDATED destination when the caller already computed one. It
   # matters because the `cd` line is advice someone will follow: pointing it at a
@@ -214,7 +197,7 @@ module CertRootGuard
   def refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir = nil,
                       resolved: nil, prefer_repo: nil, candidates: nil, eligible: nil)
     message = "this run roots at #{root} (branch #{actual_branch || 'unknown'}), " \
-              "which is not #{slug}'s tree — refusing to certify it.\n" \
+              "which is not #{slug}'s tree — refusing to run against it.\n" \
               "Expected branch #{expected_branch} or the task's desk " \
               "(#{desk_path_forms(worktree_slug)})."
     advice = desk_advice(worktree_slug, expected_branch, projects_dir, resolved: resolved,
@@ -238,9 +221,9 @@ module CertRootGuard
   # the standing DOR_CHECK_DIFF_ROOT override, and an overridden guard guards nothing.
   #
   # `prefer_repo` threads through every branch because this text is advice someone
-  # FOLLOWS, and it is what bin/ship, bin/fast-check and bin/full-suite-check all die!
-  # with — dropping the repo filter here sent four callers to a validated-but-wrong-repo
-  # desk while claiming the tie was broken.
+  # FOLLOWS, and it is what bin/ship and bin/fast-check die! with — dropping the repo
+  # filter here sent callers to a validated-but-wrong-repo desk while claiming the tie
+  # was broken.
   def desk_advice(worktree_slug, expected_branch, projects_dir,
                   resolved: nil, prefer_repo: nil, candidates: nil, eligible: nil)
     return cd_advice(resolved) if resolved
@@ -259,7 +242,7 @@ module CertRootGuard
 
   # The desk EXISTS and is validated: the one situation where a `cd` is safe advice.
   def cd_advice(path)
-    "Run the cert from the task's desk: cd #{path}"
+    "Run from the task's desk: cd #{path}"
   end
 
   # No desk anywhere. The action is to CREATE one; naming both searched layouts, and
@@ -268,7 +251,7 @@ module CertRootGuard
   def no_desk_advice(worktree_slug, projects_dir)
     base = projects_dir.to_s.strip.empty? ? ProjectsRoot.default_projects_dir : projects_dir.to_s
     "No desk for #{worktree_slug} exists under #{base} in either layout " \
-      "(#{desk_path_forms(worktree_slug)}), so there is no tree to certify yet — " \
+      "(#{desk_path_forms(worktree_slug)}), so there is no tree to run against yet — " \
       "create the desk rather than looking for a missing one."
   end
 
@@ -313,10 +296,10 @@ module CertRootGuard
     {}
   end
 
-  # True when `dir` IS this task's desk, under EITHER layout. The cert WRITERS'
-  # physical vouch (#assess's `standing_in_task_desk`), so a builder standing in a
-  # SIBLING-tree desk mid-rebase used to be refused for the one reason that cannot be
-  # true: that they were not at the task's desk. They were standing in it.
+  # True when `dir` IS this task's desk, under EITHER layout. The physical vouch
+  # (#assess's `standing_in_task_desk`), so a builder standing in a SIBLING-tree desk
+  # mid-rebase used to be refused for the one reason that cannot be true: that they
+  # were not at the task's desk. They were standing in it.
   def worktree_dir?(dir, worktree_slug)
     File.basename(dir.to_s.chomp("/")) == worktree_slug && !desk_repo_root(dir).nil?
   end
@@ -406,10 +389,11 @@ module CertRootGuard
   # precedence #repo_mismatch uses, minus the owner: this is an IDENTITY, not a
   # contradiction check.
   #
-  # ONE definition on purpose. It is what the cert WRITERS stamp their evidence with
-  # (`[lane@<fp>:<repo>]`) and what bin/dor-check filters that evidence BY, so writer
-  # and reader cannot drift into disagreeing about which repo a tree is — a drift
-  # whose only symptom would be a cert reading MISSING for code that was certified.
+  # ONE definition on purpose. It is what bin/control-check stamps its evidence with
+  # (`[control@<fp>:<repo>]`) and what bin/dor-check filters that evidence BY, so
+  # writer and reader cannot drift into disagreeing about which repo a tree is — a
+  # drift whose only symptom would be a stamp reading MISSING for code that was
+  # replayed.
   def repo_of_checkout(path)
     bare = remote_slug(path).to_s.split("/").last.to_s.strip
     bare.empty? ? app_of(path) : bare
@@ -430,7 +414,7 @@ module CertRootGuard
   #            would refuse every legitimate pre-PR re-root. Each axis is enforced
   #            whenever it is determinable.
   #   branch — always. A tree that is not on the task's branch cannot be the tree the
-  #            builder certified, whatever it is called on disk. A detached HEAD reads
+  #            builder shipped, whatever it is called on disk. A detached HEAD reads
   #            as "HEAD" and is refused too: fail closed on the destination, and let
   #            the caller declare an explicit root if they really mean it.
   def worktree_mismatch(path, expected_branch:, prefer_repo: nil)

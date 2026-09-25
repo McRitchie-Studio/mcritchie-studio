@@ -86,9 +86,9 @@
 #     actual_size is auto-derived from measured usage at ship. )
 #   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ...".
 #     It REPLACES your tier tags (pass every one you want kept) but can NOT drop the
-#     cert evidence bin/fast-check / bin/full-suite-check stamp — "[full-suite@<fp>]"
-#     lines are machine-owned and carried forward. Record checks before or after you
-#     certify; both orders are safe. See lib/cert_evidence.rb. )
+#     control stamp bin/control-check records — a "[control@<fp>]" line is
+#     machine-owned and carried forward. Record checks before or after the control;
+#     both orders are safe. See lib/cert_evidence.rb. )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
 #   ( --requires-migration / --no-requires-migration: the `backend_migration`
@@ -321,7 +321,7 @@ require_relative "lib/task_author_fields"
 require_relative "lib/session_identity"
 require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
-require_relative "lib/cert_root_guard"
+require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
 # The desk's git identity: the soul `bin/ship` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
@@ -901,8 +901,8 @@ end
 #
 # AND NEVER CREDIT THE HOLDER WITH WORK IT DID NOT DO. This line is the evidence a
 # second agent decides `--steal` on, and on 2026-08-13 it manufactured that
-# evidence: the refused agent had just run `bin/full-suite-check`, its cert landed
-# a g1_cert row on the task, and this line reported "last durable progress ~2m ago
+# evidence: the refused agent had just run the local cert (retired since), its cert
+# landed a g1_cert row on the task, and this line reported "last durable progress ~2m ago
 # (g1_cert passed)" as the holder's. The gate credited the challenger's own work to
 # the holder and cited it as grounds to keep the challenger out — a claim that
 # generates its own justification, which is unfalsifiable rather than merely wrong.
@@ -957,8 +957,8 @@ end
 #
 # THE BOARD CHANNELS ARE HOLDER-SCOPED, and that is the difference between fixing
 # this and half-fixing it. Both remaining channels used to read the TASK-WIDE fact,
-# so a queued challenger running `bin/full-suite-check` on the held slug landed a
-# checkpoint and opened a g1_cert on someone else's task — and the abandoned holder
+# so a queued challenger running the (since retired) local cert on the held slug
+# landed a checkpoint and opened a g1_cert on someone else's task — and the abandoned holder
 # renewed for another 1h29m on the strength of the challenger's own work. That is
 # the incident this gate exists to end, one indirection over from where it was
 # fixed in the refusal message.
@@ -2060,12 +2060,12 @@ def build_devops(base, scalars, lists)
   end
   lists.each { |k, v| devops[k] = v unless v.empty? }
   # checks_run is TWO namespaces in one list. The author owns the tier tags
-  # ("[unit] ...") and --checks REPLACES those, as documented. The cert writers
-  # (bin/fast-check, bin/full-suite-check) own the fingerprint-bound evidence
-  # ("[full-suite@<fp>] ..."), and --checks must NOT be able to replace THAT: an
-  # agent recording its test plan after certifying used to wipe its own cert, and
-  # bin/dor-check then called freshly certified code "full-suite: MISSING" (a
-  # false negative in the G1 gate whose only visible remedy was another suite
+  # ("[unit] ...") and --checks REPLACES those, as documented. bin/control-check
+  # owns the fingerprint-bound control stamp ("[control@<fp>] ..."), and --checks
+  # must NOT be able to replace THAT: an agent recording its test plan after the
+  # local cert used to wipe the cert's line, and bin/dor-check then called freshly
+  # certified code "full-suite: MISSING" (a false negative whose only visible
+  # remedy was another suite
   # run). Carry every evidence lane the caller did not itself supply. The board
   # enforces the same rule (Task#preserve_cert_evidence) for every other writer;
   # doing it here too means an agent is protected the moment it pulls this branch,
@@ -3268,7 +3268,7 @@ when "begin"
 
   reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped: builder.empty? ? nil : builder)
 
-  worktree_dir = CertRootGuard.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
+  worktree_dir = TaskTree.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
   die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
   preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
   # Pin the inspected root to the worktree. session-preflight resolves its own
@@ -3563,8 +3563,8 @@ when "intent"
   print_task(task) if task
 when "checkpoint"
   # Emit a CHECKPOINT event — a named moment WITHIN the current stage that does not
-  # move it. bin/full-suite-check bookends the local-certification testing phase with
-  # `checkpoint <slug> cert --status started` then `--status completed`. POSTs to the
+  # move it. (The retired local cert bookended its testing phase with
+  # `checkpoint <slug> cert --status started` then `--status completed`.) POSTs to the
   # same events/<name>/{start,complete} endpoints the API checkpoint path uses;
   # source defaults to "system" so it skips the usage gate (a marker, not agent work).
   usage = "usage: #{$PROGRAM_NAME} checkpoint <slug> <name> --status started|completed [--source S] [--message M]"

@@ -17,9 +17,9 @@ require_relative "../../app/models/release/gate_workspace"
 # database at bringup. When it does not, RAILS_ENV=test does not fail — it QUIETLY JOINS
 # the SHARED `<app>_test` that the primary checkout, CI, and the release gate workspaces
 # use. Cross-suite pollution, PG::ObjectInUse on purge, order-dependent phantom failures
-# — and a cert lane's FIRST act is `db:test:purge`, so the desk does not merely read that
-# database, it DESTROYS it, mid-suite, under every concurrent run. Nothing about the
-# directory announces any of this.
+# — and a test-prepare lane resets that database, so the desk does not merely read it,
+# it DESTROYS it, mid-suite, under every concurrent run. Nothing about the directory
+# announces any of this.
 #
 # ═══ WHY THIS ASKS THE BOOTED APP, AND WHY THE FIRST CUT WAS WORSE THAN NOTHING ═══
 #
@@ -72,10 +72,9 @@ require_relative "../../app/models/release/gate_workspace"
 # RESIDUAL 2, same shape, also stated rather than hidden: `refusal` defaults to `env: ENV`,
 # so a TEST_DATABASE_URL INHERITED from another desk's shell resolves to a database that is
 # private — but private to SOMEBODY ELSE — and is admitted, because it is not the shared one.
-# full-suite-check's `db:test:purge` would then destroy that OTHER desk's database. Bringup
-# scrubs both DB vars for exactly this reason (desk_probe_env); the cert lanes deliberately
-# do not, because they must prove THE RUN THEY ARE ABOUT TO DO, inherited env and all. Not
-# closed here.
+# a test-prepare lane would then reset that OTHER desk's database. Bringup scrubs both DB
+# vars for exactly this reason (desk_probe_env); the pre-flight deliberately does not,
+# because it must prove THE RUN IT IS ABOUT TO DO, inherited env and all. Not closed here.
 #
 # ═══ WHERE IT APPLIES ═══
 #
@@ -113,8 +112,8 @@ module DeskGuard
   # `<app>_test` IS the correct database there — and is never even booted, so the probe's
   # cost lands only where the hazard does.
   #
-  # `env:` is the env the LANE will run under (bin/fast-check and bin/full-suite-check both
-  # `system(cmd, chdir: root)`, so the lane inherits the ambient ENV) — the probe therefore
+  # `env:` is the env the LANE will run under (bin/fast-check spawns each lane with the
+  # ambient ENV) — the probe therefore
   # boots what the lane boots, including a DATABASE_URL the caller happens to export. Prove
   # the run you are about to do, not a tidier one. `resolver:` is the seam the unit tests
   # drive instead of a real Rails boot.

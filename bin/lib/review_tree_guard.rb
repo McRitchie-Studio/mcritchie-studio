@@ -105,7 +105,7 @@
 # enumerated stage-writers found while looking. An honest gap beats a tidy wrong story.
 module ReviewTreeGuard
   # The first of `refs` that resolves here, as { sha:, ref: } — or nil when none does.
-  # Mirrors FullSuiteGate.fingerprint_of_first_ref's shape (hash WITH its provenance)
+  # Mirrors TreeFingerprint.of_first_ref's shape (hash WITH its provenance)
   # for the same reason: a SHA whose origin the verdict cannot name is a number nobody
   # can re-derive, and this gate exists to be re-derivable by hand.
   def self.commit_of_first_ref(root, *refs)

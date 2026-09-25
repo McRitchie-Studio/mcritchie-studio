@@ -3,7 +3,7 @@
 require "json"
 require "set"
 require "time"
-require_relative "cert_orphan_guard"
+require_relative "process_table"
 
 # AgentPresence — the surface an agent reads BEFORE it starts something expensive.
 #
@@ -12,17 +12,17 @@ require_relative "cert_orphan_guard"
 # timidity, it is the design's central safety argument: zero new markers means zero
 # new ways to wedge a peer, so the worst case of this slice is *no change*.
 #
-# WHAT IT READS, AND WHY THAT IS ENOUGH TODAY. `CertProcess.run_bounded` writes the
-# cert runlock at the instant a lane is SPAWNED (bin/lib/cert_process.rb:183) and
-# `settle` clears it once that lane's process group is provably gone. So the
-# runlock's lifetime ALREADY equals the window in which a suite is consuming this
-# machine — the phase fact exists, carries full identity, and was designed from the
-# start to survive a SIGKILL. It is simply unreadable across desks, because it lives
-# inside each desk's git dir where `git status` cannot see it. This module is that
-# read: one glob, one `ps`, and the grader below.
+# WHAT IT READS. The supervisor claims bin/lib/presence_claim.rb writes for
+# `bin/ship` and `bin/release` (the session-marker namespace), plus any cert
+# runlock (`cert-run.json`) an older desk still carries: until DevOps v3 phase 2b
+# the local certs wrote one at the instant a lane was spawned and cleared it once
+# the lane's process group was provably gone. Nothing writes that file any more
+# (/tasks/retire-local-cert-evidence), so the glob only ever reads a leftover —
+# and grades it against the process table like any other claim, which is why a
+# stranded one still tells the truth. One glob, one `ps`, and the grader below.
 #
 # ------------------------------------------------------------------------------
-# THE GOVERNING RULE, INHERITED FROM bin/lib/cert_orphan_guard.rb
+# THE GOVERNING RULE, INHERITED FROM the retired cert orphan guard
 # ------------------------------------------------------------------------------
 # NO CLAIM ASSERTS ITS OWN LIVENESS. Every claim carries the OS's `(pid, lstart)`
 # identity proof and THE READER DECIDES. A killed writer leaves its file behind —
@@ -34,7 +34,8 @@ require_relative "cert_orphan_guard"
 # lease renewed by a UI paint reported a lane FREE while its holder worked; a
 # renewer that outlived its work spent the account-wide 1Password cap).
 #
-# REUSED AS-IS from CertOrphanGuard — not reimplemented, not forked:
+# READ THROUGH bin/lib/process_table.rb — the process-table half of that guard,
+# kept when its reaping half retired:
 #   process_table / parse_ps_line  one `ps`, so every claim is graded against a
 #                                  CONSISTENT world (two calls could straddle an exit)
 #   identity_of                    the (pid, lstart) proof, compared as an opaque
@@ -42,21 +43,17 @@ require_relative "cert_orphan_guard"
 #   live_process / group_members   liveness with zombies excluded
 #   coerce_pid                     a pid out of JSON is whatever was on disk
 #
-# DELIBERATELY NOT REUSED: `signalable?`, `reap_group`, and everything downstream of
-# them. Those answer "may I KILL this?", and this module never signals anything. A
-# pgid that is unsafe to signal is still perfectly safe to READ, so inheriting that
-# refusal here would blind the reader to real load for a reason that does not apply.
+# This module never signals anything: a pgid that is unsafe to signal is still
+# perfectly safe to READ.
 #
 # ------------------------------------------------------------------------------
 # WHY THIS READER UNLINKS NOTHING, THOUGH THE DESIGN PERMITS IT
 # ------------------------------------------------------------------------------
 # §6 of the design lists "unlink a proven corpse" among the reader's verbs. This
-# slice declines it, and the reason is concrete rather than cautious: CertOrphanGuard
-# KEEPS a lock on purpose when a reap is REFUSED, because at that moment the lock is
-# the only record naming the survivor. A reader that unlinked corpses on its own
-# schedule would race that decision and could destroy the one artefact identifying a
-# live orphan — turning a read-only surface into a way to lose evidence. Unlinking is
-# a permitted verb, not a required one; reaping stays exactly where it is.
+# slice declines it: a claim file is the only record naming a survivor, and a
+# reader that unlinked corpses on its own schedule could destroy the one artefact
+# identifying a live orphan — turning a read-only surface into a way to lose
+# evidence. Unlinking is a permitted verb, not a required one.
 module AgentPresence
   SCHEMA_VERSION = 1
 
@@ -120,7 +117,7 @@ module AgentPresence
   # something heavy I cannot name" instead of to silence.
   HEAVY_PATTERNS = [
     [:suite,   /\b(bin\/)?rails\s+test\b/],
-    [:cert,    /\bbin\/(fast-check|full-suite-check|dor-check)\b/],
+    [:cert,    /\bbin\/(fast-check|dor-check)\b/],
     [:ship,    /\bbin\/ship\b/],
     [:sweep,   /\bbin\/release(\.rb)?\b/],
     [:suite,   /\brspec\b/],
@@ -154,11 +151,10 @@ module AgentPresence
     return [] if base.empty?
 
     # AND the SUPERVISOR claims (bin/lib/presence_claim.rb), which live in the
-    # session-marker namespace rather than in a runlock slot. That separation is
-    # load-bearing, not filing preference: CertOrphanGuard.preflight REAPS — it
-    # SIGKILLs the group a `cert-run.json` names — so a non-cert claim written into
-    # one would be a loaded gun aimed at a process no cert spawned. Read here,
-    # reaped nowhere.
+    # session-marker namespace rather than in a runlock slot. That separation was
+    # load-bearing while the cert orphan guard REAPED the group a `cert-run.json`
+    # named; the reaper is gone, and the namespace stays because one file per
+    # PROCESS has no shared slot to contend for. Read here, reaped nowhere.
     #
     # The store name is spelled HERE, inside this one private method, rather than in
     # a top-level constant, and that is the shape SessionMarkers#marker_path already
@@ -225,12 +221,12 @@ module AgentPresence
   # itself. Everything else — `pgid`, `pgid_started_at`, `started_at` — is already
   # spelled the same in both, so this pair is the whole translation, and it happens
   # at the reader's boundary rather than in anybody's file.
-  def supervisor_pid(lock) = CertOrphanGuard.coerce_pid(lock["cert_pid"] || lock["pid"])
+  def supervisor_pid(lock) = ProcessTable.coerce_pid(lock["cert_pid"] || lock["pid"])
   def supervisor_started_at(lock) = lock["cert_started_at"] || lock["pid_started_at"]
 
   def grade(lock:, table:)
     cert_pid = supervisor_pid(lock)
-    pgid     = CertOrphanGuard.coerce_pid(lock["pgid"])
+    pgid     = ProcessTable.coerce_pid(lock["pgid"])
 
     detail = {
       cert_pid: cert_pid, pgid: pgid, lane: lock["lane"], db: lock["db"],
@@ -239,19 +235,19 @@ module AgentPresence
     }
     return [:malformed, detail] if cert_pid.nil? && pgid.nil?
 
-    members = pgid ? CertOrphanGuard.group_members(table, pgid) : []
+    members = pgid ? ProcessTable.group_members(table, pgid) : []
     subjects = []
     subjects << [:cert, cert_pid, supervisor_started_at(lock), false] if cert_pid
     subjects << [:lane, pgid, lock["pgid_started_at"], members.any?] if pgid
 
     graded = subjects.map do |name, pid, recorded, group_alive|
-      process = CertOrphanGuard.live_process(table, pid)
+      process = ProcessTable.live_process(table, pid)
       {
         subject: name, pid: pid, process: process,
         # The lane leader can exit while its children live on; the group is still
         # burning the machine, so the subject is still ALIVE for capacity purposes.
         alive: !process.nil? || group_alive,
-        identity: CertOrphanGuard.identity_of(process, recorded)
+        identity: ProcessTable.identity_of(process, recorded)
       }
     end
     detail[:members] = members.size
@@ -394,11 +390,11 @@ module AgentPresence
   end
 
   # The process group a claim's work is ACTUALLY running in — resolved from the live
-  # table, never from the recorded pgid alone. A cert spawns each lane into a NEW
-  # group, so a runlock's own `pgid` names the lane and says nothing about the group
-  # its supervisor (and therefore the ship around it) runs in.
+  # table, never from the recorded pgid alone. The pre-flight spawns each lane into a
+  # NEW group, so a claim's own `pgid` can name the lane and say nothing about the
+  # group its supervisor (and therefore the ship around it) runs in.
   def resolved_group(claim, table)
-    process = CertOrphanGuard.live_process(table, claim[:cert_pid])
+    process = ProcessTable.live_process(table, claim[:cert_pid])
     process ? process[:pgid] : nil
   end
 
@@ -426,7 +422,7 @@ module AgentPresence
     # and without this it was reported as UNATTRIBUTED beside the very claim that names
     # its child. Resolving each claimed cert to its live row and taking THAT pgid folds
     # the wrapper — and the `bin/ship` in the same group — back onto the claim covering it.
-    counted.filter_map { |c| CertOrphanGuard.live_process(table, c[:cert_pid]) }
+    counted.filter_map { |c| ProcessTable.live_process(table, c[:cert_pid]) }
            .each { |process| known_pgids << process[:pgid] }
 
     table.filter_map do |process|
@@ -492,7 +488,7 @@ module AgentPresence
 
   def snapshot(root:, table: nil, env: ENV, now: Time.now, load: :read, ps: nil)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    table ||= CertOrphanGuard.process_table(ps: ps || CertOrphanGuard.ps_bin(env))
+    table ||= ProcessTable.process_table(ps: ps || ProcessTable.ps_bin(env))
     degraded = table.empty?
 
     found = claims(root: root, table: table, now: now)

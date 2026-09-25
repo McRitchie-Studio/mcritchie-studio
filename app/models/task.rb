@@ -3769,15 +3769,15 @@ class Task < ApplicationRecord
 
   # devops.checks_run carries TWO namespaces. The AUTHOR owns the tier tags
   # ("[unit] bin/rails test ..."), and a checks update REPLACES those — that is the
-  # documented contract. The CERT WRITERS (bin/fast-check, bin/full-suite-check)
-  # own the fingerprint-bound evidence ("[full-suite@<tree-hash>] ..."), which
-  # bin/dor-check reads to decide whether this exact code is certified. A write
-  # may supersede an evidence LANE only by SUPPLYING evidence for it; every lane
-  # the incoming list does not address is carried forward. The rule is symmetric
-  # (reverse regression 2026-07-20, fast-check-preserves-checks): a PURE-EVIDENCE
-  # write — every incoming line `[lane@fp]`, what a cert writer sends when its own
-  # read of checks_run came back stale or empty — supplies no author line and so
-  # cannot supersede the author namespace; the tier tags are carried forward too.
+  # documented contract. bin/control-check owns the fingerprint-bound control stamp
+  # ("[control@<tree-hash>] ..."), which bin/dor-check grades for the test-only
+  # shape. A write may supersede an evidence LANE only by SUPPLYING evidence for
+  # it; every lane the incoming list does not address is carried forward. The rule
+  # is symmetric (reverse regression 2026-07-20, fast-check-preserves-checks): a
+  # PURE-EVIDENCE write — every incoming line `[lane@fp]` — supplies no author line
+  # and so cannot supersede the author namespace; the tier tags are carried forward
+  # too. (The local cert receipts this rule was written for retired in DevOps v3
+  # phase 2b; the control stamp is the lane that remains.)
   #
   # Regression (2026-07-12, hit twice in one session): `bin/task update --checks`
   # replaced the whole array, so an agent recording its tier-tagged test plan
