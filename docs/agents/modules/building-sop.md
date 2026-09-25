@@ -106,11 +106,15 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --agent 
 every session — `<app-slug> · <feature-slug> · <task URL>` — so the active
 feature is visible in any tool.
 
-Taking over a held or blocked task instead of creating one:
+Resuming a held or blocked task instead of creating one:
 
 ```bash
-bin/task begin <slug> --steal      # re-creates/rebinds the desk, moves to building, preflights
+bin/task begin <slug>              # re-creates/rebinds the desk, moves to building, preflights
 ```
+
+The desk is the build claim: `begin` refuses only when another live session's
+desk is bound to the task with uncommitted changes, and names it. Add `--steal`
+only for that case.
 
 **Read the preflight output and fix what it flags before writing code** — branch
 drift vs `accepted`, latest blocker feedback, same-file PR overlap, duplicate
@@ -416,10 +420,10 @@ bin/ship <slug> -m "<commit message>"
 - Running the long form by hand (`bin/task move <slug> submitted`) still does
   **not** wait — the wait lives in `bin/ship`, not in the gate.
 - Re-run `bin/ship` after a failure and it **resumes** (each step already durably
-  recorded is skipped). It has no `--steal`; take a **builder**-held task with
-  `bin/task begin <slug> --steal`, then ship. A **reviewer**-held task is asked to
-  release (`bin/task review-claim release <slug>`, run by them), never stolen —
-  ship's refusal names which of the two you are looking at.
+  recorded is skipped). It has no `--steal`. It refuses only when another live
+  session's desk is bound to the task with uncommitted changes, and names that
+  desk; claim over it with `bin/task begin <slug> --steal`, then ship. Your own
+  desk never refuses you.
 
 Keep the worktree and branch until review confirms the PR merged or was
 intentionally abandoned. A pushed branch preserves code; `main` is for shipped

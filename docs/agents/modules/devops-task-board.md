@@ -650,8 +650,8 @@ bullet into fragments, which is a worse defect than the one the guard fixes.
 The slug is derived from the title client-side and passed explicitly, so the
 same `begin` rerun finds the task it created. A resume of an already-`building`
 task runs the **same build-claim gate** as `bin/task move building`, before any
-worktree step: a task a different live instance holds refuses loudly with the
-holder named; `bin/task begin <task-slug> --steal` takes it over, and on the
+worktree step: another live session's desk with uncommitted changes refuses, with
+the desk named; `bin/task begin <task-slug> --steal` claims over it, and on the
 fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fast-check`
 → push → **non-draft** PR into `accepted` whose body leads with the task URL →
 record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
@@ -699,15 +699,10 @@ Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
 loudly). Before its first side effect it enforces the two handoff-seam guards
 the child gates don't own: the task must be `building` (or `submitted` — a
 resume; a `designed` task is sent back through `bin/task begin`), and the
-build claim must not belong to a **different live instance**. That refusal
-**names the holder's ROLE and routes on it**: a **builder** is taken over with
-`bin/task begin <task-slug> --steal` first, then ship; a **reviewer** is
-**asked to release** (`bin/task review-claim release <task-slug>`, run by
-them) and never stolen, because a takeover mid-review voids the no-self-review
-guarantee for that review and strands its verdict. When the board cannot
-establish the role it says so and sends you to `bin/task review-claim status
-<task-slug>`, which OBSERVES the lease rather than printing a timestamp to
-difference by hand. Its
+task must not be bound to **another live session's desk with uncommitted
+changes** — the build claim's one refusal ([the desk is the
+claim](#the-build-claim-the-desk-is-the-claim)). The refusal names the desk;
+`bin/task begin <task-slug> --steal` claims over it, then ship. Its
 read-back pins the exact `pr_url` it recorded — a stale/foreign URL on the
 board fails the verify. It repairs an existing PR in place — `gh pr ready` for
 a draft, `gh pr edit --base accepted` for a mis-based one — and never
@@ -961,7 +956,7 @@ used to take that for a build claim by the blocking session:
 
 | Reader | What it recorded | Now |
 |--------|------------------|-----|
-| the build-claim renewal (`bin/task heartbeat` from `bin/statusline`; the detached renewer on its own beat) | ADOPTED the free lease, so the reviewer held the desk | renews a lease this session already holds; only a bound DESK may adopt a free one |
+| the build-claim renewal (`bin/task heartbeat` from `bin/statusline`; the detached renewer on its own beat) | ADOPTED the free lease, so the reviewer held the desk | retired: the desk is the build claim, and nothing renews one |
 | `devops.builders_unattributed` | the reviewer's SESSION, so the author set read incomplete | a write from the session holding the task's live `TaskReviewClaim` is not a build claim |
 | `ReviewerSelector#builders` | the blocking SOUL, from the block's `→ building` event | a block's transition carries `blocked: true` and is skipped |
 
@@ -1145,159 +1140,21 @@ After confirming the rendered `message`, repeat the same request without
 `DISCORD_DEPLOY_WEBHOOK_URL` retained as a fallback for older environments.
 Never commit webhook URLs.
 
-## The build claim: liveness and progress are two facts
+## The build claim: the desk is the claim
 
-Unsupervised task claiming arrived, so the lease fields this section once
-deferred now ship. They live in `metadata.devops` and the math is `ClaimLease`
-(`lib/claim_lease.rb`), shared verbatim by the `bin/task` CLI and the Task model:
-
-- `claimed_session` — the agent session holding the desk
-- `claim_nonce` — a per-PROCESS token (two terminals resuming one session id are
-  two instances)
-- `claim_expires_at` — a 120s TTL, renewed on a 30s beat by the **detached renewer**
-  the claim starts (`bin/lib/build_claim_renewer.rb`) — and redundantly by the
-  heartbeat in `bin/statusline` when a terminal happens to be painting — and
-  **declined once the holder can be shown to have gone** (see "A lease is
-  renewed by work" below)
-
-**The lease attests that the builder's run is still here, and that nothing has shown
-the holder to be gone.** It does NOT attest that someone is working — the rule is
-negative on purpose, because every unknown keeps the desk. Renewal moved off the
-status line on 2026-09-09: a headless agent shell paints nothing, so a headless build
-renewed nothing and ran unclaimed from two minutes in, while a cold `bin/ship` takes
-~12 minutes by design. The declining half arrived on 2026-08-13; before it, the
-status-line heartbeat (throttled to 45s) renewed the claim unconditionally, so the lease stayed green through a
-wedged agent — on 2026-07-13 a session held a perfectly healthy-looking lease for
-35 minutes while producing nothing, and the board's green dot was read as
-progress. It never meant that.
-
-**A claim is released when the task leaves `building`.** The build claim is a
-build-stage lease, re-asserted as an invariant on every save
-(`Task#enforce_build_claim_invariant`), so `submitted`/`blocked`/`reviewed`/… all
-drop the keys. The same invariant carries a live claim through a PATCH that omits
-it: the API used to replace `metadata["devops"]` wholesale (it merges since
-`api-devops-patch-replaces`), and the board's own edit form permits no claim keys,
-so before this a board save silently destroyed a live claim — which then read as
-*unclaimed* and invited a second agent onto an occupied desk. The invariant stays:
-it is what defends the claim against a caller that posts the keys BLANK, which the
-merge honors as a deliberate clear.
-
-So the board carries a **second, independent fact** beside it — the task's last
-**durable artifact**, derived (never declared) from evidence we already write:
-
-- **TaskEvents** — stage moves, intents, and cert checkpoints
-- **GateRuns** — a gate opening, recording a lane, or closing
-
-`Task#last_progress_at` / `#last_progress_label` / `#progress_seconds_ago` expose
-it; the API projects it on the task; the card and the claim gate state it in words
-("last durable progress ~2.5h ago · g1_cert failed"). A wedged agent cannot fake
-these, because they exist only when work actually landed.
-
-**There is deliberately no STALLED verdict, and you should not add one.** Measured
-over 243 real building windows (prod, 14 days): the median HEALTHY window already
-contains a **26-minute** board-write silence (p90 66m, p99 125m), and legitimate
-certs run to **94 minutes** at p99. A "no durable write in 15m ⇒ stalled" rule —
-the obvious design — flags **79% of healthy desks**, and still misses the wedge
-that motivated it (its failing certs wrote no gate rows at all). Silence is not
-evidence of a wedge: agents think, run long certs, and wait on the operator. A
-chip that cries wolf on four of five healthy desks is the same lying gate with its
-polarity flipped, and it trains every reader to ignore it.
-
-What ships instead is honest and quiet about its limits:
-
-- the **age** is always shown for a live claim — a fact, not a verdict;
-- a conservative `quiet` note, **derived from the measurements above rather than
-  chosen**: `ClaimLease::PROGRESS_QUIET_SECONDS` = the worst measured healthy
-  window (the 125m p99) × 1.5 = **3h07m**. It carries a margin because at n=243
-  that p99 rests on two or three tail observations — a point estimate the corpus
-  cannot pin down — and a threshold parked ON it would flag healthy desks whenever
-  the tail breathed. It is suppressed while a gate is in flight, and reads
-  **healthy whenever the fact is unknown**. Re-measure the corpus and the
-  threshold moves with it; the guard test asserts the property (no measured
-  healthy window may ever render quiet), never the literal;
-- **nothing is destructive.** Quiet reclaims no desk, blocks no move, and never
-  touches the lease. A quiet desk is still a HELD desk.
-
-### Progress belongs to whoever produced it
-
-A durable artifact records **who** made it — the session, stamped in
-`metadata["session"]` by `bin/task checkpoint` and `bin/gate`, or already carried
-in `task_events.actor` on a CLI stage move. Unattributed progress used to be
-credited to whoever held the claim, which let a lease manufacture its own
-evidence: on 2026-08-13 a challenger ran the local cert (since retired), which landed a
-`g1_cert` row on a task it did **not** hold, and the claim gate refused that same
-challenger with *"last durable progress ~2m ago (g1_cert passed)"* — the
-challenger's own work, quoted back as proof the holder was alive.
-
-So the gate reports `holder_progress_*` (the newest artifact the **holder**
-produced) and names the remainder honestly — "THIS session's own work", "belongs
-to …abcd", or "has no recorded owner". An unowned row stays unowned; a guessed
-owner is the failure this exists to end.
-
-### A lease is renewed by work, not by a status line
-
-Both renewers — the detached `claim-renew-loop` the claim starts (every 30s) and
-`bin/statusline`'s `bin/task heartbeat <slug> --desk <desk>` (every ~45s, when a
-terminal is painting) — call the same renewal, `renew_build_claim` in `bin/task`.
-It renews only when it cannot show the holder has gone; it declines when
-**every** channel has been silent past `ClaimLease::DESK_IDLE_SECONDS`:
-
-- **desk mtimes** (`DeskActivity`) — authored files under the holder's own desk,
-  pruned of machine churn (`.git`, `log`, `tmp`, `node_modules`, build output). A
-  running server or a `git status` from the status line is not a worker.
-- **a gate in flight** — a cert writes nothing into the desk for up to 94 minutes.
-- **operator approval** — a task parked on Mr. McRitchie is not abandoned.
-- **durable board progress** — a holder working through the API still reads alive.
-
-**The two board channels are holder-scoped**, and that is the difference between
-fixing this and half-fixing it. Both once read the *task-wide* fact, so a queued
-challenger running the local cert (since retired) on a held slug landed a checkpoint and
-opened a `g1_cert` on someone else's task — and the abandoned holder renewed for
-another 1h29m on the strength of the challenger's own work. The heartbeat reads
-`holder_liveness_seconds_ago` and `holder_gate_in_flight` instead. The gate
-channel is **filtered, never dropped**: a holder mid-cert still needs it, so a
-gate opened *by the holder* protects the holder and one opened by a challenger
-does not.
-
-**Every unknown keeps the desk.** No desk bound to the task, an unreadable root, a
-walk over budget, an exception, an artifact **nobody signed**, or a board too old
-to publish the holder-scoped field all resolve to "not abandoned", because freeing
-a desk too late costs waiting while freeing it too early costs the work. So an
-unsigned gate run still protects its holder — nobody is not "somebody else", and
-reading a missing field as proof of absence would evict a live worker on a schema
-gap. The desk must be bound to *this* task (`.agent-context.json`); a primary
-checkout is written by every agent on the machine, so judging a claim there would
-renew it forever — the same bug one indirection out.
-
-The same rule runs in **both directions**, which is why the refusal message and
-the reaping decision disagree about an unsigned row on purpose. The message
-argues the holder is *alive*, so it may never cite a row nobody signed
-(`holder_progress_*`, strict). The heartbeat argues the holder is *gone*, so it
-may never reap on one (`holder_liveness_*`, permissive). Both refuse to invent
-evidence; they are asserting opposite propositions.
-
-`DESK_IDLE_SECONDS` is **derived, not chosen**: 341 desk-edit gaps measured across
-37 real worktrees split into a working band and an abandoned (left-overnight) one,
-with no samples in the 3556s–3895s gutter between them. The threshold is the worst
-**working** gap × 1.5 = **1h29m**. Deriving it from the pooled p99 (6.4h) would be
-circular — that tail *is* the bug. The guard test asserts both sides: no measured
-working gap may read as abandoned, and the median abandoned gap must still be
-caught.
-
-Nothing here reclaims a desk. The renewal simply declines, the TTL lapses, and the
-ordinary claim gate admits the next claimant — and if the call was wrong, the
-holder's next beat re-claims the task, so the mistake heals itself.
-
-**And a renewal never ACQUIRES a lease it does not hold.** Everything above is
-about *keeping* a claim; this is the other end. A claim is made deliberately
-(`bin/task move <slug> building`), never inferred from the fact that a terminal is
-painting — so an `:unclaimed` or `:expired` lease is not adopted just because a
-session's marker points at the task. The one exception is a bound DESK: a worktree
-whose `.agent-context.json` names *this* task is evidence the session is at its
-workbench, which is how a builder whose lease lapsed re-adopts it. A reviewer's
-primary checkout can never produce that evidence, which is the point — `bin/task
-block` repoints the blocking session's marker at the task it just bounced, and the
-heartbeat that followed used to take the desk and the authorship with it.
+A task is claimed while a desk bound to it exists on this machine: a worktree
+whose `.agent-context.json` names the task (`bin/agent-worktree holder <slug>`
+lists them). There is no lease, no TTL and no renewer. `bin/task move <slug>
+building`, `bin/task begin <slug>` and `bin/ship` refuse in exactly one case: a
+**different live session's** desk is bound to the task **and** has uncommitted
+changes. The refusal names that desk; `--steal` on `move` or `begin` claims over it
+and leaves its files on disk. Every other case claims freely, and the focus session
+arbitrates its own builders. The board records who made the last claim in
+`devops.claimed_session` (server-stamped from the claim PATCH, cleared when the task
+leaves `building`), which the author roll call reads. The 120s lease this replaced
+(`claim_nonce`, `claim_expires_at`, the detached renewer, the status-line heartbeat)
+is gone: headless agents never renewed it, and its refusals sent builders to
+`--steal` on their own tasks. Code: `bin/lib/desk_claim.rb`.
 
 ## The release owns the gem version — builders never write one
 
