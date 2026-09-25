@@ -20,17 +20,22 @@ with `bin/pr-review --help`, `bin/qa-intake`, or GitHub PR discovery.
 ## ⛔ STOP — before writing ANY code
 
 Any diff (feature, bug, or chore, however small) runs the DevOps cycle. There is
-no size exemption. Name the hub's script and stand in the desk:
+no size exemption. Name the fixed-path script and stand in the desk:
 
 ```bash
-/Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" \
+/Users/alex/projects/.agents/bin/task begin --title "Three To Five Words" \
   --repo <app> --kind <kind> \
   --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
 
 cd <desk>   #   ... the worktree begin printed; build there ...
 
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug> --launch -m "Commit message"
+/Users/alex/projects/.agents/bin/ship-wait <task-slug> --launch -m "Commit message"
 ```
+
+`/Users/alex/projects/.agents/bin` is the fast-lane tooling installed at a fixed
+path that no `git checkout` can move (the production ship installs it). Until it
+exists, or if it is ever missing, the hub path `/Users/alex/projects/mcritchie-studio/bin/…`
+runs the same scripts.
 
 - Write the test tiers your shape requires as you go, unit-first.
 - Nobody hand-stamps `merged`, `pr_url` or the author set: the board derives

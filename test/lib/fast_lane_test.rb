@@ -174,4 +174,27 @@ class FastLaneTest < Minitest::Test
       assert File.executable?(ship), "the fallback must be a runnable script"
     end
   end
+
+  # A remedy printed by the FIXED-PATH TOOLING names the stable link, not the SHA dir
+  # the next ship may prune; a moved link or an ordinary dir is left alone.
+  def test_resolve_bin_names_the_stable_tooling_link
+    Dir.mktmpdir do |root|
+      state = File.join(root, "state")
+      sha_bin = File.join(state, "tooling", "abc123", "bin")
+      FileUtils.mkdir_p(sha_bin)
+      File.write(File.join(state, "tooling", "abc123", ".complete"), "abc123\n")
+      script = File.join(sha_bin, "ship")
+      File.write(script, "#!/bin/sh\n")
+      File.chmod(0o755, script)
+      File.symlink("tooling/abc123/bin", File.join(state, "bin"))
+
+      assert_equal File.join(state, "bin", "ship"), FastLane.resolve_bin("ship", sha_bin)
+
+      File.unlink(File.join(state, "bin"))
+      other = File.join(state, "tooling", "def456", "bin")
+      FileUtils.mkdir_p(other)
+      File.symlink("tooling/def456/bin", File.join(state, "bin"))
+      assert_equal script, FastLane.resolve_bin("ship", sha_bin), "a link that moved on is not this tree's name"
+    end
+  end
 end

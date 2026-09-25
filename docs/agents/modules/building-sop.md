@@ -229,17 +229,20 @@ usually means a red CI later, so fix it first. `bin/ship` runs it for you at ste
 
 A cold ship takes **~12 minutes**, longer than some harnesses allow one foreground
 command. So **run it in the background, and wait for it with `bin/ship-wait`**,
-naming the hub's script and standing in the desk:
+naming the fixed-path script and standing in the desk:
 
 ```bash
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
-/Users/alex/projects/mcritchie-studio/bin/ship-wait <task-slug>                                # attach to one already running
+/Users/alex/projects/.agents/bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
+/Users/alex/projects/.agents/bin/ship-wait <task-slug>                                # attach to one already running
 ```
 
 The ship commits, runs the pre-flight, pushes, opens the **non-draft** PR into
 **`accepted`** led by the task URL, records `pr_url`, **waits for CI to settle**,
 runs `bin/dor-check`, and moves the task to `submitted`.
 
+- `/Users/alex/projects/.agents/bin` is the fast-lane tooling at a fixed path that
+  no `git checkout` can move. If it is missing, the hub's
+  `/Users/alex/projects/mcritchie-studio/bin/ship-wait` runs the same script.
 - `bin/ship-wait` exits **0 succeeded · 1 failed · 2 still running at the
   timeout · 3 usage · 4 nothing to watch**. It returns at once when the ship has
   finished, and takes its verdict from the ship's LOG, because `bin/ship` can

@@ -57,8 +57,10 @@ Alex + focus session ──▶ Pokémon builder ──PR green──▶ reviewer
 
 ## The commands that matter
 
-All live in the hub, `/Users/alex/projects/mcritchie-studio/bin`. **The path picks
-the SCRIPT, the cwd picks the TREE**: name the hub's script, stand in the desk.
+All are installed at a fixed path, `/Users/alex/projects/.agents/bin`: a copy of
+the last shipped hub tooling that no `git checkout` can move. The hub's
+`/Users/alex/projects/mcritchie-studio/bin` still works as the fallback. **The path
+picks the SCRIPT, the cwd picks the TREE**: name the fixed-path script, stand in the desk.
 
 | Command | What it does |
 |---------|--------------|

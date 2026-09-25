@@ -31,16 +31,6 @@ require "socket"
 require "time"
 require "yaml"
 
-# ── LOAD GUARD, armed before every other require ──────────────────────────────
-# This script is one of the four measured casualties of the hub primary moving
-# mid-command — `cannot load such file -- bin/lib/desk_ledger`, then again for
-# `lib/desk_activity` — and it is the case with NO WAY OUT: it runs from the hub
-# by necessity, because `bin/task begin` calls it to CREATE the desk that would
-# otherwise carry a private copy. So there is no handoff to make here, only a
-# diagnosis worth reading. Never a retry. See bin/lib/hub_move_diagnosis.rb.
-require_relative "lib/hub_move_diagnosis"
-HubMoveDiagnosis.install!(root: File.expand_path("..", __dir__), command: File.basename(__FILE__))
-
 # The fail-closed guard on the operator's real <projects>/.agents state — this
 # script writes the worktree registry there (run_snapshot).
 require_relative "../lib/task_usage_sandbox"
@@ -2826,12 +2816,16 @@ def port_range_issue(app_config, port)
   "APP_PORT #{port} outside #{range_start}-#{range_end}"
 end
 
-def doctor_issues(app = nil)
+# `records:` lets a caller that has already walked the desks (snapshot_payload) hand
+# them over instead of paying for a second walk; it must be the same set
+# stack_records(app) would return, or the doctor judges a different population.
+def doctor_issues(app = nil, records: nil)
   # Read-only, so announce: false — but it still routes through reclaim_hold, and a
   # doctor that reported a retired repo's desk as reclaimable would contradict the
   # sweep that refuses it.
   refresh_origin_reachability!(app, announce: false)
-  records = stack_records(app)
+  records ||= stack_records(app)
+  prefetch_task_records!(records)
   issues = []
   port_dupes = duplicate_values(records, :port)
   redis_dupes = duplicate_values(records, :redis_db)
@@ -2917,8 +2911,8 @@ def run_doctor(app = nil)
   end
 end
 
-def doctor_issues_by_label(app = nil)
-  doctor_issues(app).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(label, message), grouped|
+def doctor_issues_by_label(app = nil, records: nil)
+  doctor_issues(app, records: records).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(label, message), grouped|
     grouped[label] << message
   end
 end
@@ -3045,8 +3039,13 @@ def snapshot_payload(app = nil)
   # sweep would refuse — the exact invariant the comment on reclaim_verdict claims.
   refresh_origin_reachability!(app, announce: false)
   selected_apps = app ? [app] : apps.values
+  # ONE pass over the desks and ONE board read for the whole registry. The doctor pass
+  # used to re-walk stack_records (≈20 git spawns a desk, twice over), and neither pass
+  # prefetched, so every git-eligible bound desk cost its own `bin/task show` — on
+  # EVERY `remove`, because each removal ends in this snapshot.
   records = stack_records(app)
-  issues_by_label = doctor_issues_by_label(app)
+  prefetch_task_records!(records)
+  issues_by_label = doctor_issues_by_label(app, records: records)
   # Build the per-worktree snapshots ONCE and DERIVE the summary count from them, so the
   # registry field and the summary can never drift apart (they were two separate
   # `cleanup_ready?` calls before, which is how the summary kept counting desks the sweep
@@ -3783,19 +3782,44 @@ end
 # an unreadable board means withheld. Absence here is never evidence of anything, which
 # matters because a list read can legitimately omit a task (archived, filtered, paged),
 # and turning that omission into "no claim" would destroy a live builder's desk.
+#
+# ONCE PER COMMAND, not once per call. The list read returns the WHOLE board, so a
+# second prefetch in the same process learns nothing a first one did not already
+# fetch. `remove` and `cleanup --reclaim --yes` each end in an UNSCOPED registry
+# snapshot, and a scoped sweep's prefetch plus that snapshot's used to be two list
+# reads — and before snapshot_payload prefetched at all, the snapshot fell through to
+# one `bin/task show` per eligible desk, on every removal: N removals x N desks, the
+# 2026-09-25 teardown that took ~3h for 30 desks. The batch (or its failure) is
+# memoized in @task_batch; a failed read is not retried within the command, and the
+# per-desk reads classify exactly as they did before.
+# Measured 2026-09-25: one index page (100 show-shaped rows) ~2.5s, one `bin/task show`
+# ~0.6s. So a batch pays for itself from about four slugs; below that it is slower.
+TASK_BATCH_MIN_SLUGS = 4
+
+# Would the verdict chain reach the board for this desk? Only a BOUND desk that is
+# git-eligible (cleanup_ready?) and whose origin was reachable gets past the checks
+# that run before claim_hold — every other desk is decided without a board read, so
+# prefetching its record is pure cost. Prefetching every bound desk (the earlier cut)
+# spent a batch on desks that were never going to ask.
+def asks_the_board?(record)
+  return false unless task_record_slug(record[:env] || {})
+
+  cleanup_ready?(record) && origin_hold(record).nil?
+end
+
 def prefetch_task_records!(records)
   return unless ENV["AGENT_WORKTREE_TASK_JSON"].to_s.strip.empty?
 
   @task_record_cache ||= {}
-  bound = records.select { |record| task_record_slug(record[:env] || {}) }
-  wanted = bound.map { |record| task_record_slug(record[:env] || {}) }.uniq - @task_record_cache.keys
-  # One desk costs one read either way, and the batch would be the slower of the two.
-  return if wanted.size <= 1
+  wanted = records.select { |record| asks_the_board?(record) }
+                  .map { |record| task_record_slug(record[:env] || {}) }.uniq - @task_record_cache.keys
+  # Below this the per-desk reads are the cheaper of the two (see TASK_BATCH_MIN_SLUGS).
+  return if wanted.size < TASK_BATCH_MIN_SLUGS
 
-  batch = fetch_task_records_batch(bound.first)
-  return unless batch # unreadable: say nothing, and let the per-desk reads classify
+  @task_batch = fetch_task_records_batch(wanted) unless defined?(@task_batch)
+  return unless @task_batch # unreadable: say nothing, and let the per-desk reads classify
 
-  batch.each { |slug, task_record| @task_record_cache[slug] = task_record if wanted.include?(slug) }
+  @task_batch.each { |slug, task_record| @task_record_cache[slug] = task_record if wanted.include?(slug) }
 end
 
 # THE FIELDS A CACHED RECORD MUST CARRY BEFORE IT MAY ANSWER A HOLD QUESTION.
@@ -3841,33 +3865,74 @@ def batch_record_complete?(task_record)
   BATCH_REQUIRED_FIELDS.all? { |field| task_record.key?(field) }
 end
 
-# One `bin/task list --json` — the same board read `list` already performs, printing the
-# full fetched records instead of three columns. Returns slug => record, or nil when the
-# read failed at all (transport, auth, 5xx, malformed) so the caller stays silent.
+# THE BATCH READ: the board index, newest-created first, show-shaped (full=1), walked
+# a page at a time and STOPPED as soon as every wanted slug has been seen.
+#
+# WHY NOT `bin/task list --json`, which this used to shell. That walks EVERY page, and
+# the board is almost all archive: measured 2026-09-25, 2311 tasks (2274 archived),
+# 24 pages, 54s — against a TASK_READ_TIMEOUT of 10s. So the batch timed out on every
+# sweep, spent its ten seconds for nothing, and every desk fell through to its own
+# `bin/task show` anyway. Desks are recent work, and the index is newest-first, so the
+# slugs a sweep wants sit on the first page or two; the walk stops there.
+#
+# BOUNDED at TASK_BATCH_MAX_PAGES. A slug the walk does not reach — a desk bound to an
+# old task — is simply absent from the result, and absence is never evidence (see
+# prefetch_task_records!): it falls through to the per-desk show read. Returns
+# slug => record, or nil when the FIRST page could not be read. A later page that fails
+# keeps what earlier pages positively read, and the rest fall through.
 #
 # Only records that pass batch_record_complete? are returned. An incomplete row is
 # dropped rather than downgraded, because there is no safe way to answer a hold
 # question from a record that cannot carry the answer.
-def fetch_task_records_batch(record)
-  task_bin = File.join(record[:dir], "bin", "task")
-  task_bin = File.join(HUB_DIR, "bin", "task") unless File.exist?(task_bin)
-  return nil unless File.exist?(task_bin)
-
-  ok, out, = capture_status(task_bin, "list", "--json", chdir: record[:dir],
-                                                        env: command_env(record[:app], record[:env]),
-                                                        timeout: TASK_READ_TIMEOUT)
-  return nil unless ok
-
-  parsed = JSON.parse(out.to_s)
-  return nil unless parsed.is_a?(Array)
-
-  parsed.each_with_object({}) do |task_record, acc|
-    next unless batch_record_complete?(task_record)
-
-    slug = task_record["slug"].to_s
-    acc[slug] = task_record unless slug.empty?
+TASK_BATCH_PER_PAGE = 100
+TASK_BATCH_MAX_PAGES =
+  begin
+    [Integer(ENV.fetch("AGENT_WORKTREE_BATCH_PAGES", "5")), 1].max
+  rescue ArgumentError, TypeError
+    5
   end
-rescue JSON::ParserError
+
+def fetch_task_records_batch(wanted)
+  acc = {}
+  seen = []
+  (1..TASK_BATCH_MAX_PAGES).each do |page|
+    rows = board_index_page(page)
+    if rows.nil?
+      return nil if page == 1
+
+      break
+    end
+
+    rows.each do |task_record|
+      next unless task_record.is_a?(Hash)
+
+      slug = task_record["slug"].to_s
+      next if slug.empty?
+
+      seen << slug
+      acc[slug] = task_record if batch_record_complete?(task_record)
+    end
+    break if rows.size < TASK_BATCH_PER_PAGE
+    break if (wanted - seen).empty?
+  end
+  acc
+end
+
+# ONE page of GET /api/v1/tasks?full=1 as an Array, or nil on any failure (auth,
+# transport, non-2xx, a body that is not a page of rows). Authenticates the way the
+# desk-ledger sync already does, against the same TASK_API_BASE bin/task reads.
+def board_index_page(page)
+  tok = DeskLedger.token(dotenv: File.join(HUB_DIR, ".env"))
+  return nil unless tok[:token]
+
+  path = "/api/v1/tasks?full=1&per_page=#{TASK_BATCH_PER_PAGE}&page=#{page}"
+  res = TaskBoard.request(:get, path, base_url: DeskLedger.base_url, token: tok[:token],
+                                      read_timeout: TASK_READ_TIMEOUT)
+  return nil unless res.code.to_i.between?(200, 299)
+
+  rows = TaskBoard.parse_body(res)["data"]
+  rows.is_a?(Array) ? rows : nil
+rescue StandardError
   nil
 end
 

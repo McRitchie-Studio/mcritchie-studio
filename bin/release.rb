@@ -167,6 +167,7 @@ require_relative "../app/models/release/cli"
 # it reads its default and its length from — both Rails-free, like Cli.
 require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
+require_relative "lib/projects_root"
 # CleanCheck is the pure verdict behind the `deploy-with-task` clean-LADDER GUARD
 # (`bin/release status --clean-only`): given BOTH rungs the expedite walks — work
 # riding `release` (board + release-ahead-of-main git count) and work parked on
@@ -331,15 +332,18 @@ RELEASE_REPOS =
 # both checkout shapes); it defaults to this script's own app root. A PROJECTS_DIR
 # env override wins (mirrors bin/qa-server) so a non-default checkout layout can
 # point the sibling-repo resolution at the right root.
+#
+# The climb itself is ProjectsRoot's (bin/lib/projects_root.rb), the one resolver the
+# whole bin/ stack shares. This used to carry its own copy, which knew the primary and
+# the .worktrees layouts but not the FIXED-PATH TOOLING install
+# (<projects>/.agents/tooling/<sha>/, bin/install-agent-docs): run from there it
+# resolved <projects>/.agents/tooling as the projects root, so every sibling repo, the
+# release lock dir and the task-usage store pointed at directories that do not exist —
+# and a release run from the fixed path could not see one run from the hub.
 def projects_root(app_root = File.expand_path("..", __dir__))
   return File.expand_path(ENV["PROJECTS_DIR"]) if ENV["PROJECTS_DIR"].to_s != ""
 
-  parent = File.expand_path("..", app_root)
-  # A worktree's app root sits under <hub>/.worktrees/<wt>; climb out of
-  # .worktrees/<wt> back to the real projects root that holds the siblings.
-  return File.expand_path("../..", parent) if File.basename(parent) == ".worktrees"
-
-  parent
+  ProjectsRoot.default_projects_dir(app_root)
 end
 
 # The sibling CHECKOUT PATH for any ecosystem repo (a gem, an app, or the hub).
@@ -3255,7 +3259,7 @@ def prepare
   # full-suite run SIGTERMed at its 2700s ceiling, 11% complete, killed by a sweep no
   # status command reported. Opened HERE — before the first gh/git/board call — so the
   # claim covers the WHOLE run, not just its suite. Best-effort and non-fatal.
-  ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: File.expand_path("..", __dir__),
+  ReleasePresence.open!(kind: ReleasePresence::SWEEP, root: repo_path(APP),
                         lane: "release:prepare", session_id: conductor_session_id)
   # On the prod default a non-dry prepare fires a REAL accepted→release batch merge +
   # a REAL `bin/qa-server deploy`, so gate it like `ship` does. confirm returns true
@@ -7642,7 +7646,7 @@ def ship
   # the ship workspace, so the machine cost is real for that leg — and it publishes
   # the same claim a sweep does. Opened before the first read so it covers the whole
   # run. Best-effort and non-fatal.
-  ReleasePresence.open!(kind: ReleasePresence::SHIP, root: File.expand_path("..", __dir__),
+  ReleasePresence.open!(kind: ReleasePresence::SHIP, root: repo_path(APP),
                         lane: "release:ship", session_id: conductor_session_id)
 
   # 1a. MINIMAL, STABLE read — resolve WHICH release ships + its slug, BEFORE the claim.

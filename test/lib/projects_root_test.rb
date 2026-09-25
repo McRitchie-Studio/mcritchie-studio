@@ -8,6 +8,8 @@
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
+require "fileutils"
+require "tmpdir"
 
 require File.expand_path("../../bin/lib/projects_root", __dir__)
 
@@ -21,6 +23,24 @@ class ProjectsRootTest < Minitest::Test
     assert_equal "/Users/x/projects",
                  ProjectsRoot.default_projects_dir("/Users/x/projects/mcritchie-studio/.worktrees/my-task"),
                  "a worktree run shares the primary's .agents/ state"
+  end
+
+  def test_unit_fixed_path_tooling_climbs_out_to_the_projects_dir
+    Dir.mktmpdir do |projects|
+      tree = File.join(projects, ".agents", "tooling", "0123abc")
+      FileUtils.mkdir_p(tree)
+      File.write(File.join(tree, ".complete"), "0123abc\n")
+      assert_equal projects, ProjectsRoot.default_projects_dir(tree),
+                   "the installed fast-lane tooling shares the same .agents/ state as the hub"
+    end
+  end
+
+  def test_unit_a_dir_named_tooling_without_the_install_marker_is_an_ordinary_repo
+    Dir.mktmpdir do |projects|
+      repo = File.join(projects, "tooling", "some-repo")
+      FileUtils.mkdir_p(repo)
+      assert_equal File.join(projects, "tooling"), ProjectsRoot.default_projects_dir(repo)
+    end
   end
 
   def test_unit_repo_root_anchors_at_this_repo
