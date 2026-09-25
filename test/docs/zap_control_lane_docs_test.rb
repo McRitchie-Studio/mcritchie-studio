@@ -201,6 +201,7 @@ class ZapControlLaneDocsTest < Minitest::Test
   FAST_OR_FULL_SURFACES = %w[
     docs/agents/claude.md
     docs/agents/index.md
+    docs/agents/modules/fast-lane.md
     docs/agents/system/devops-cycle-design.md
     docs/agents/modules/building-sop.md
     config/feature_shapes.yml
