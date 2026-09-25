@@ -47,6 +47,11 @@ Rails.application.routes.draw do
   get "deployments", to: "tasks#deployments", as: :deployments
   get "deployments/all", to: "releases#index", as: :all_deployments
   get "deployments/:slug", to: "releases#show", as: :deployment
+  # The operator's production-authority GRANT (design section 6): the Approve
+  # button on the Next Release card posts here while a timed `bin/release ship`
+  # waits on its window. Admin-gated in ReleasesController; records the one
+  # `ship_authorized completed` event through Release#grant_ship_authorization!.
+  post "deployments/:slug/ship_authorization", to: "releases#authorize_ship", as: :authorize_ship_deployment
   get "review_events", to: "tasks#review_events_hub", as: :review_events_hub
   get "stages", to: "tasks#stages", as: :stages
   # /stages/sop — the operator's DevOps SOP as an accountability-swimlane infographic.

@@ -1439,6 +1439,20 @@ class Task < ApplicationRecord
     approval_status == OPERATOR_APPROVAL_WAITING
   end
 
+  # The OPERATOR WINDOWS this task carries right now (Devops::Windows, design
+  # section 6) — DERIVED, escalation first: the approval clock from
+  # devops.approval_requested_at while the request is `waiting`, and the
+  # escalation clock from blocked_at on a live dependency block whose summary
+  # leads `Escalated:`. Nothing is stored; the card, the task API and
+  # `bin/task wait-window` all read this one method. `unresolved` is the open
+  # block Activity the board and the API already preload (the summary lives on
+  # it); left nil, a live block looks it up itself — one query, only when there
+  # is a block to read.
+  def operator_windows(unresolved: nil)
+    unresolved = unresolved_feedback_activity if unresolved.nil? && blocked?
+    Devops::Windows.for_task(self, unresolved: unresolved)
+  end
+
   def unresolved_feedback_activity
     self.class.unresolved_feedback_by_slug([slug])[slug]
   end
