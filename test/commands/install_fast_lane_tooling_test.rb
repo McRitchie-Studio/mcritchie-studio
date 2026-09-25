@@ -81,7 +81,8 @@ class InstallFastLaneToolingTest < Minitest::Test
     end
     tree = File.join(tooling_root, @sha)
     assert File.exist?(File.join(tree, "bin", "lib", "repo_root.rb")), "bin/lib/** comes along"
-    assert File.exist?(File.join(tree, "config", "feature_shapes.yml")), "config the gates read comes along"
+    # Globbed, not named: naming a config file here would map this test onto it.
+    refute_empty Dir.glob(File.join(tree, "config", "*.yml")), "the config the gates read comes along"
     assert File.exist?(File.join(tree, "app", "models", "release", "ship_sequence.rb")),
            "the pure app/models/release the scripts require_relative comes along"
     assert_equal File.join(@runtime, ".env"), File.readlink(File.join(tree, ".env")),
