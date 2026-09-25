@@ -37,7 +37,7 @@ The gate window spans the whole irreversible half of the ship:
   is compared verbatim.
 - **The smoke seal** (`prod_smoke_seal` SOP) — the read-only `@qa-readonly`
   suite against prod. A SEAL, not a blocker: its verdict rides the gate
-  (`metadata.seal: passed|failed`) but a red seal never flips the gate's
+  (`metadata.seal: green|red|unsealed`) but a red seal never flips the gate's
   success and never aborts the ship — the deploy already landed; the operator
   stays the gate on rollback.
   - **It retries once through the boot window.** The seal fires seconds after
@@ -52,6 +52,23 @@ The gate window spans the whole irreversible half of the ship:
     PERSISTED through the retry**: a confirmed failure, not a timing blip, so
     treat it with more weight than before. The seal's contract is otherwise
     unchanged — still non-blocking, still never auto-rolls-back.
+- **It runs the SHIPPED tree's specs.** The seal runs `bin/prod-smoke` from
+  the hub's ship workspace (`mcritchie-studio/.worktrees/_ship`), pinned at
+  the frozen ship SHA under the ship-workspace lock, and never from the
+  primary. rel-20260925-3b1f5c sealed a false red because the seal ran the
+  primary's PRE-ship specs against the new prod. A virgin workspace gets its
+  node deps from `npm ci`.
+- **Unsealed is not red.** When the shipped specs cannot run (the pin fails,
+  the SHA does not match, `bin/prod-smoke` or playwright is missing, or the
+  script cannot execute), the seal records **unsealed**: no seal is written,
+  the `prod_smoke` event carries `unsealed: could not run the shipped specs —
+  <reason>`, and no rollback prints. A red seal means the shipped specs RAN
+  and failed.
+- **Re-seal a shipped release** with `bin/release reseal <release-slug>`
+  (`--dry-run` to preview). It pins the ship workspace at that release's
+  frozen hub SHA, runs its specs against prod, and overwrites the recorded
+  seal; the summary says it was re-sealed, and names the later release when
+  prod has since moved on. It deploys nothing and flips no task.
 
 ## The tree-verdict read (one tree, one verdict)
 
@@ -267,8 +284,8 @@ The conductor records the gate for you:
 3. **Close** —
    - **`success`** after every repo deployed, `/up` came back green, the
      post-deploy hooks passed, and the seal recorded — with
-     `metadata.seal: passed|failed` (a red seal alerts + prints the exact
-     rollback but does not flip success).
+     `metadata.seal: green|red|unsealed` (a red seal alerts + prints the exact
+     rollback but does not flip success; unsealed prints the re-seal command).
    - **`failed` with `metadata.aborted: true`** on any abort inside the
      window — a red frozen-SHA gate, a failed deploy or `/up` smoke, a
      post-deploy hook failure. The close never masks the abort; the
