@@ -135,6 +135,7 @@ require "optparse"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "lib/task_board"
+require_relative "lib/projects_root"
 require_relative "lib/session_identity"
 
 ROOT = File.expand_path("..", __dir__)
@@ -150,7 +151,7 @@ def seed_review_usage_baseline(slug)
   session, provider = agent_session_identity
   return if session.empty? || slug.to_s.strip.empty?
 
-  projects = (d = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? File.expand_path("../..", __dir__) : File.expand_path(d)
+  projects = (d = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? ProjectsRoot.default_projects_dir : File.expand_path(d)
   pinned = ENV["TASK_USAGE_DIR"].to_s.strip
   # Same live-store fallback bin/task carries, so it takes the same fail-closed
   # sandbox guard: under TASK_USAGE_SANDBOX an unpinned run aborts rather than

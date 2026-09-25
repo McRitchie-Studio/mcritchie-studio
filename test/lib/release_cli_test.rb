@@ -402,6 +402,20 @@ class ReleaseCliTest < Minitest::Test
                  eval_helper(%(projects_root("/srv/projects/mcritchie-studio/.worktrees/feat-x")))
   end
 
+  # The FIXED-PATH TOOLING install (<projects>/.agents/tooling/<sha>/, stamped
+  # `.complete` by bin/install-agent-docs). bin/release used to carry its own climb,
+  # which read this layout's projects root as <projects>/.agents/tooling — so the
+  # siblings, the release lock dir and the task-usage store all pointed nowhere, and a
+  # release run from /Users/alex/projects/.agents/bin could not see one from the hub.
+  def test_projects_root_climbs_out_of_the_fixed_path_tooling_install
+    Dir.mktmpdir do |projects|
+      tree = File.join(projects, ".agents", "tooling", "0123abc")
+      FileUtils.mkdir_p(tree)
+      File.write(File.join(tree, ".complete"), "0123abc\n")
+      assert_equal File.realpath(projects), File.realpath(eval_helper(%(projects_root(#{tree.inspect}))))
+    end
+  end
+
   # --- target flags: production is the DEFAULT; --local opts out ---
 
   def test_prod_is_the_default_target

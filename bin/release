@@ -1,7 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
-script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+# `pwd -P`: reached through the fixed-path symlink (<projects>/.agents/bin/release),
+# a logical pwd names the symlink's directory, which has no ../.ruby-version beside
+# it, and the Ruby pin below would silently drop.
+script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
 app_root=$(CDPATH= cd "$script_dir/.." && pwd)
 ruby_version_file="$app_root/.ruby-version"
 ruby_version=""

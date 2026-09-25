@@ -12,17 +12,14 @@
 require "json"
 require "open3"
 require "optparse"
+require_relative "lib/projects_root"
 
 ROOT = File.expand_path("..", __dir__)
 SHINY_EMOJI = "✨"
 
+# ProjectsRoot's climb (primary, .worktrees desk, or the fixed-path tooling install).
 def default_projects_dir
-  candidate = File.expand_path("../..", __dir__)
-  if File.basename(candidate) == ".worktrees"
-    File.expand_path("../..", candidate)
-  else
-    candidate
-  end
+  ProjectsRoot.default_projects_dir(ROOT)
 end
 
 def usage
