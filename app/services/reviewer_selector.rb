@@ -153,7 +153,16 @@ class ReviewerSelector
   # merely not saying). It is the caller's stated fact, and the only thing other
   # than a real soul that satisfies #builder_known? — so the fail-closed guard in
   # `bin/reviewer-select` has an explicit, auditable escape instead of being
-  # routed around when a Pokémon session (no soul) genuinely did the build.
+  # routed around.
+  #
+  # IT IS NO LONGER THE POKÉMON ESCAPE. This line read "when a Pokémon session (no
+  # soul) genuinely did the build" until 2026-09-24, when `pokemon` joined
+  # Task::SOUL_ROSTER. A Pokémon build now names its author like any other, so
+  # reaching for `none` there would assert something false about the commonest
+  # build path in the ecosystem — and a hand-passed escape on nearly every PR is a
+  # ritual, not an audit. What is left for `none` is the genuinely unattributed
+  # build: a change driven straight from the operator's own hands, or a lane that
+  # provably has no soul behind it.
   NO_BUILDER = "none"
 
   # The two reviewer-role NAMES, sourced from the single vocabulary

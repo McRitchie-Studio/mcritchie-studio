@@ -616,7 +616,10 @@ pr_url = devops["pr_url"].to_s.strip
 # it refuses BEFORE the intent write — a blind pair must never reach the board.
 # Two ways out, both stating a fact rather than omitting one:
 #   --builder <soul>  name who built it (also the after-the-fact correction)
-#   --builder none    assert NO soul built it (a Pokémon session, an operator)
+#   --builder none    assert NO soul built it (an operator-driven change)
+# `none` stopped covering a Pokémon build on 2026-09-24, when `pokemon` joined the
+# roster: a Pokémon build names `--builder pokemon` like any other, and asserting
+# `none` there would state something false about the commonest build path there is.
 # The durable fix is upstream: `bin/task move <slug> building --actor <soul>`
 # stamps devops.built_by on any build claim, re-claims included.
 # Prefer the positional slug, but fall back to the one the payload carries so
