@@ -11,9 +11,7 @@
 #
 # This is the command config/devops_test_suites.yml's `production_smoke` lane
 # declares for mcritchie-studio, and the seal `bin/release ship` records post-ship
-# (step 5c) AFTER the existing `/up` hard-gate. The seal runs THIS script from the
-# hub's ship workspace pinned at the frozen ship SHA, so the specs it runs (ROOT's
-# e2e/) are the ones that shipped; run by hand, it smokes whatever tree it sits in. It is a SEAL, not a gate: a red run
+# (step 5c) AFTER the existing `/up` hard-gate. It is a SEAL, not a gate: a red run
 # exits non-zero so the conductor records a 🔴 seal + surfaces a rollback, but the
 # ship is NOT aborted (the deploy already happened).
 #

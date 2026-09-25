@@ -7334,7 +7334,7 @@ class ReleaseCliTest < Minitest::Test
 
       assert_includes out, "SPECS-NEW", "the seal must run the specs of the tree that SHIPPED"
       refute_includes out, "SPECS-OLD", "never the primary's pre-ship specs (the false red of rel-20260925-3b1f5c)"
-      assert_equal new_sha, `git -C #{File.join(hub, '.worktrees', '_ship')} rev-parse HEAD`.strip,
+      assert_equal new_sha, `git -C #{File.join(hub, ".worktrees", "_ship")} rev-parse HEAD`.strip,
                    "the specs ran from the ship workspace pinned at the frozen SHA"
       assert_equal old_sha, `git -C #{hub} rev-parse HEAD`.strip, "the primary is never touched"
       seal_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") && l.include?("record_smoke_seal!") }
