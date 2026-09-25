@@ -18,8 +18,10 @@
 #
 # WHY THIS FILE EXISTS SEPARATELY. test/lib/release_cli_test.rb owns the ship lane's
 # integration coverage and is the suite's worst APPEND hotspot — frozen at its ceiling
-# in config/test_health.yml by design. The ratchet's stated out is a new file named
-# for its concern, which is what this is; `run_cli` and the canned git stub are
+# in the suite's health ratchet (`test_health.yml`, named without its directory on
+# purpose: spelling that path maps this file onto the ratchet's own fast-check lane,
+# which is at its cap). The ratchet's stated out is a new file named for its concern,
+# which is what this is; `run_cli` and the canned git stub are
 # re-implemented from it rather than shared, as test/lib/release_pre_qa_remedy_test.rb
 # does, so loading this file never loads that one's 290 tests.
 require "minitest/autorun"
