@@ -1440,39 +1440,150 @@ class AgentWorktreeTest < Minitest::Test
       "progress_seconds_ago" => 30, "holder_liveness_seconds_ago" => 30 }
   end
 
+  # A git-eligible, bound desk record — the only kind the verdict chain asks the board
+  # about (asks_the_board?), so the only kind a prefetch spends a read on.
+  def self.eligible_desk_rb(count)
+    "(1..#{count}).map { |i| { env: { 'TASK_RECORD_SLUG' => 'task-' + i.to_s }, dir: '/tmp/desk-' + i.to_s, " \
+      "app: { 'slug' => 'mcritchie-studio', 'repo' => '/tmp/no-repo' }, dirty: false, merged: true, " \
+      "equivalent_to_main: false } }"
+  end
+
   def test_board_reads_do_not_scale_with_desk_count
     out = run_in_script(<<~RUBY)
-      # Count at the SUBPROCESS boundary, not at any helper's name: every board round
-      # trip is one capture_status spawn, so this stays true if the mechanism changes.
+      # Count at the BOARD boundary: every index page is one round trip, and a per-desk
+      # show is one capture_status spawn. Both are counted, so this stays true if the
+      # mechanism changes.
       #
       # The payload is SHOW-shaped on purpose. An earlier cut of this check stubbed
       # {slug, stage} and asserted only the spawn count — which passes just as
       # happily when the cached record cannot answer a single hold question. Proving
       # "one read" while the record is useless is how the blind-guard defect shipped.
-      SPAWNS = []
-      def capture_status(*cmd, **_kw)
-        SPAWNS << cmd.last(2).join(" ")
-        payload = (1..5).map do |i|
+      READS = []
+      def board_index_page(page)
+        READS << "page \#{page}"
+        (1..5).map do |i|
           { "slug" => "task-\#{i}", "stage" => "building", "metadata" => {}, "merged" => nil,
             "review_in_progress" => false, "gate_in_flight" => nil, "holder_gate_in_flight" => nil,
             "progress_seconds_ago" => 30, "holder_liveness_seconds_ago" => 30 }
         end
-        [true, JSON.generate(payload), "", 0]
       end
+      def capture_status(*cmd, **_kw); READS << cmd.last(2).join(" "); [false, "", "", 1]; end
       def command_env(_app, _env); {}; end
-      def File.exist?(path); path.to_s.end_with?("bin/task") || super; end
 
-      records = (1..5).map do |i|
-        { env: { "TASK_RECORD_SLUG" => "task-\#{i}" }, dir: "/tmp/desk-\#{i}", app: { "slug" => "mcritchie-studio" } }
-      end
+      records = #{self.class.eligible_desk_rb(5)}
       prefetch_task_records!(records)
       records.each { |record| task_record_for_pr(record) }
-      print SPAWNS.size
+      print READS.inspect
     RUBY
 
-    assert_equal "1", out,
-                 "five bound desks must cost ONE board read, not five — the per-desk read is what " \
+    assert_equal '["page 1"]', out,
+                 "five eligible desks must cost ONE board read, not five — the per-desk read is what " \
                  "made the full-suite sweep unusable at 141 desks"
+  end
+
+  # THE 2026-09-25 TEARDOWN (30 removals, ~3h). Every `remove` and every batch reclaim
+  # ends in an UNSCOPED registry snapshot, which judges every desk again. A scoped
+  # sweep's prefetch plus the snapshot's must not be two board reads: the batch is the
+  # whole board's newest page(s), so a second prefetch in the same command reuses it.
+  def test_a_second_prefetch_in_one_command_reuses_the_batch
+    out = run_in_script(<<~RUBY)
+      READS = []
+      def board_index_page(page)
+        READS << page
+        (1..10).map do |i|
+          { "slug" => "task-\#{i}", "stage" => "shipped", "metadata" => {}, "merged" => nil,
+            "review_in_progress" => false, "gate_in_flight" => nil, "holder_gate_in_flight" => nil,
+            "progress_seconds_ago" => 30, "holder_liveness_seconds_ago" => 30 }
+        end
+      end
+      def command_env(_app, _env); {}; end
+
+      all = #{self.class.eligible_desk_rb(10)}
+      prefetch_task_records!(all.first(5))   # the scoped sweep
+      prefetch_task_records!(all)            # the unscoped snapshot that follows it
+      print [READS.size, @task_record_cache.keys.size].inspect
+    RUBY
+
+    assert_equal "[1, 10]", out,
+                 "a second prefetch in the same command must reuse the batch it already read " \
+                 "and still cache every slug it asks for"
+  end
+
+  # The walk is newest-first and STOPS once every wanted slug is seen: the board is
+  # almost all archive (2311 tasks, 2274 archived, 54s to walk on 2026-09-25), and the
+  # old full walk timed out at 10s on every sweep, so the batch never helped at all.
+  def test_the_batch_walk_stops_once_every_wanted_slug_is_seen
+    out = run_in_script(<<~RUBY)
+      PAGES = []
+      def board_index_page(page)
+        PAGES << page
+        (1..TASK_BATCH_PER_PAGE).map do |i|
+          n = ((page - 1) * TASK_BATCH_PER_PAGE) + i
+          { "slug" => "task-\#{n}", "stage" => "archived", "metadata" => {}, "merged" => nil,
+            "review_in_progress" => false, "gate_in_flight" => nil, "holder_gate_in_flight" => nil,
+            "progress_seconds_ago" => 30, "holder_liveness_seconds_ago" => 30 }
+        end
+      end
+      batch = fetch_task_records_batch(%w[task-3 task-150])
+      print [PAGES, batch.key?("task-150")].inspect
+    RUBY
+
+    assert_equal "[[1, 2], true]", out, "the walk reads page 2 for task-150 and no further"
+  end
+
+  # Bounded: a slug the walk never reaches is left ABSENT (so it falls through to its
+  # own show read), and the walk does not read the whole board looking for it.
+  def test_the_batch_walk_is_bounded_and_leaves_an_unreached_slug_absent
+    out = run_in_script(<<~RUBY, env: { "AGENT_WORKTREE_BATCH_PAGES" => "2" })
+      PAGES = []
+      def board_index_page(page)
+        PAGES << page
+        (1..TASK_BATCH_PER_PAGE).map do |i|
+          { "slug" => "p\#{page}-\#{i}", "stage" => "archived", "metadata" => {}, "merged" => nil,
+            "review_in_progress" => false, "gate_in_flight" => nil, "holder_gate_in_flight" => nil,
+            "progress_seconds_ago" => 30, "holder_liveness_seconds_ago" => 30 }
+        end
+      end
+      batch = fetch_task_records_batch(%w[p1-1 very-old-task])
+      print [PAGES, batch.key?("very-old-task"), batch.key?("p1-1")].inspect
+    RUBY
+
+    assert_equal "[[1, 2], false, true]", out
+  end
+
+  # A failed FIRST page is an unreadable board (nil: say nothing); a later failure keeps
+  # what the earlier pages positively read.
+  def test_a_failed_page_keeps_only_what_was_positively_read
+    out = run_in_script(<<~RUBY)
+      def board_index_page(page)
+        return nil if page == 2
+
+        (1..TASK_BATCH_PER_PAGE).map do |i|
+          { "slug" => "task-\#{i}", "stage" => "archived", "metadata" => {}, "merged" => nil,
+            "review_in_progress" => false, "gate_in_flight" => nil, "holder_gate_in_flight" => nil,
+            "progress_seconds_ago" => 30, "holder_liveness_seconds_ago" => 30 }
+        end
+      end
+      partial = fetch_task_records_batch(%w[task-1 task-999])
+      define_method(:board_index_page) { |_page| nil }
+      print [partial.keys.size, fetch_task_records_batch(%w[task-1]).inspect].inspect
+    RUBY
+
+    assert_equal '[100, "nil"]', out
+  end
+
+  # Only a desk the verdict chain would actually ask the board about is prefetched: a
+  # dirty or unmerged desk is decided on git alone, so batching its record is pure cost.
+  def test_prefetch_skips_desks_that_never_ask_the_board
+    out = run_in_script(<<~RUBY)
+      READS = []
+      def board_index_page(page); READS << page; []; end
+      records = #{self.class.eligible_desk_rb(5)}.map { |record| record.merge(dirty: true) }
+      prefetch_task_records!(records)
+      print READS.size
+    RUBY
+
+    assert_equal "0", out, "five dirty desks never reach claim_hold, so they must cost no board read"
   end
 
   # --- the batch must never blind a hold channel -------------------------------
@@ -1493,14 +1604,11 @@ class AgentWorktreeTest < Minitest::Test
   def test_batch_refuses_to_cache_a_record_missing_a_guard_field
     out = run_in_script(<<~RUBY)
       # EXACTLY what the raw index returns: a real row, derived fields absent.
-      RAW = (1..3).map { |i| { "slug" => "task-\#{i}", "stage" => "building", "metadata" => {}, "merged" => nil } }
-      def capture_status(*_cmd, **_kw); [true, JSON.generate(RAW), "", 0]; end
+      RAW = (1..5).map { |i| { "slug" => "task-\#{i}", "stage" => "building", "metadata" => {}, "merged" => nil } }
+      def board_index_page(_page); RAW; end
       def command_env(_app, _env); {}; end
-      def File.exist?(path); path.to_s.end_with?("bin/task") || super; end
 
-      records = (1..3).map do |i|
-        { env: { "TASK_RECORD_SLUG" => "task-\#{i}" }, dir: "/tmp/desk-\#{i}", app: { "slug" => "mcritchie-studio" } }
-      end
+      records = #{self.class.eligible_desk_rb(5)}
       prefetch_task_records!(records)
       print (@task_record_cache || {}).keys.inspect
     RUBY
@@ -1513,22 +1621,19 @@ class AgentWorktreeTest < Minitest::Test
   # The positive half — otherwise the check above is satisfied by a batch that
   # caches nothing at all, and the speed-up could quietly disappear.
   def test_batch_caches_a_record_that_carries_every_guard_field
-    payload = JSON.generate((1..3).map { |i| self.class.show_shaped("task-#{i}") })
+    payload = JSON.generate((1..5).map { |i| self.class.show_shaped("task-#{i}") })
 
     out = run_in_script(<<~RUBY)
-      FULL = #{payload.inspect}
-      def capture_status(*_cmd, **_kw); [true, FULL, "", 0]; end
+      FULL = JSON.parse(#{payload.inspect})
+      def board_index_page(_page); FULL; end
       def command_env(_app, _env); {}; end
-      def File.exist?(path); path.to_s.end_with?("bin/task") || super; end
 
-      records = (1..3).map do |i|
-        { env: { "TASK_RECORD_SLUG" => "task-\#{i}" }, dir: "/tmp/desk-\#{i}", app: { "slug" => "mcritchie-studio" } }
-      end
+      records = #{self.class.eligible_desk_rb(5)}
       prefetch_task_records!(records)
       print (@task_record_cache || {}).keys.sort.inspect
     RUBY
 
-    assert_equal '["task-1", "task-2", "task-3"]', out,
+    assert_equal '["task-1", "task-2", "task-3", "task-4", "task-5"]', out,
                  "a show-shaped record carries every guard field, so it is safe to cache — this is " \
                  "what makes the batch self-activating once the board serves full=1"
   end
