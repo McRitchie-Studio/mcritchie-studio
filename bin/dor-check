@@ -69,7 +69,7 @@
 # primary's ONE unrelated dirty .md and printed "✓ DoR-to-Merge n/a … doc-only diff
 # … → ready to advance" over a multi-file code PR. A FALSE PASS in the gate whose
 # entire job is refusing under-tested work, and the dirtier the checkout the more
-# confidently it lies. So the task-root guard (bin/lib/cert_root_guard.rb) runs in
+# confidently it lies. So the task-root guard (bin/lib/task_tree.rb) runs in
 # BOTH gate roles and re-roots the DIFF; where it cannot, the local working tree is
 # refused as a diff source outright (untrusted_root?) and the gate falls back to
 # the task BRANCH's committed diff, else to :indeterminate → fail closed.
@@ -1749,7 +1749,7 @@ review_role = options[:gate_role] == "review"
 # ...and the devops hash itself, for the control stamp's branch resolution.
 @devops = devops
 
-# --- task-root guard (bin/lib/cert_root_guard.rb) -----------------------------
+# --- task-root guard (bin/lib/task_tree.rb) ------------------------------------
 #
 # EVERY check below describes SOME tree. diff_root decides which one, so diff_root
 # MUST BE the task's tree. It wasn't, and nothing checked. THE FIRST HALF (2026-07-14)
@@ -1789,7 +1789,7 @@ review_role = options[:gate_role] == "review"
 # operator's real edits sat untested where they ran from. dor-check WRITES NO
 # EVIDENCE — it reads a diff and a CI verdict — so re-rooting can forge nothing.
 # It can only make the gate judge the RIGHT code. So dor-check RESOLVES. But
-# cert_root_guard.rb is explicit that a SILENT chdir is its own hazard, and it is
+# task_tree.rb is explicit that a SILENT chdir is its own hazard, and it is
 # right: a gate that quietly judges a different tree than the one you are looking at
 # is how you end up arguing with a verdict instead of reading it. Every re-root
 # below therefore ANNOUNCES itself on stderr, naming both roots.
