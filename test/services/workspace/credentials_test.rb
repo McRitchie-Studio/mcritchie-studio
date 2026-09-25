@@ -352,4 +352,32 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
       assert_equal expected, slug
     end
   end
+
+  test "a mailbox row opens MAIL only: Gmail may impersonate it, Drive may not" do
+    # The grant is domain-wide and cannot say "Gmail for alex@, Drive for team@".
+    # The purpose is the boundary, and it has to hold at the one place an
+    # authorizer is built — not just in the callers that happen to check.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    account = WorkspaceAccount.create!(domain: "mail.test")
+    account.mark_verified!
+    account.workspace_mailboxes.create!(address: "alex@mail.test").mark_verified!
+
+    assert_equal "alex@mail.test", Workspace::Credentials.authorizer_for("alex@mail.test", purpose: :mail).sub
+    error = assert_raises(Workspace::Credentials::UnregisteredSubject) do
+      Workspace::Credentials.authorizer_for("alex@mail.test")
+    end
+    assert_includes error.message, "for workspace"
+    assert Workspace::Credentials.authorizer_for("team@mail.test"), "the workspace subject still opens Drive"
+  end
+
+  test "GmailClient asks for :mail and DriveClient for the narrow default" do
+    calls = []
+    recorder = Object.new
+    recorder.define_singleton_method(:authorizer_for) { |subject, **opts| calls << [ subject, opts ]; "bearer" }
+
+    Workspace::GmailClient.new(subject: "alex@mail.test", credentials: recorder).service
+    Workspace::DriveClient.new(subject: "team@mail.test", credentials: recorder).service
+
+    assert_equal [ [ "alex@mail.test", { purpose: :mail } ], [ "team@mail.test", {} ] ], calls
+  end
 end
