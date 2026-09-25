@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -563,6 +563,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_120000) do
     t.index ["person_slug"], name: "index_contracts_on_person_slug"
     t.index ["slug"], name: "index_contracts_on_slug", unique: true
     t.index ["team_slug"], name: "index_contracts_on_team_slug"
+  end
+
+  create_table "credential_records", force: :cascade do |t|
+    t.string "category"
+    t.datetime "created_at", null: false
+    t.string "credential_vault_slug", null: false
+    t.text "notes"
+    t.text "scope_summary"
+    t.string "service", null: false
+    t.string "status", default: "filed", null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.string "url"
+    t.string "used_by"
+    t.index ["credential_vault_slug", "title"], name: "index_credential_records_on_credential_vault_slug_and_title", unique: true
+    t.index ["status"], name: "index_credential_records_on_status"
+  end
+
+  create_table "credential_vaults", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "entity", null: false
+    t.string "icon_scope"
+    t.string "lane", null: false
+    t.string "name", null: false
+    t.text "purpose"
+    t.string "slug", null: false
+    t.string "status", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.string "workspace_domain"
+    t.index ["slug"], name: "index_credential_vaults_on_slug", unique: true
+    t.index ["workspace_domain"], name: "index_credential_vaults_on_workspace_domain"
   end
 
   create_table "depth_chart_entries", force: :cascade do |t|
