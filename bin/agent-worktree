@@ -4129,8 +4129,8 @@ def claim_hold(record, fresh: false, announce: false)
   # so it never goes quietly.
   if slug.nil?
     if announce
-      warn "note: #{worktree_label(record)} has no bound task, so no desk claims one " \
-           "(bin/lib/desk_claim.rb); treating it as free"
+      warn "note: #{worktree_label(record)} has no bound task, so no build lease can be checked; " \
+           "treating it as free"
     end
     return nil
   end
@@ -4152,9 +4152,9 @@ def claim_hold(record, fresh: false, announce: false)
   if task_record.nil?
     if announce
       warn "warning: #{worktree_label(record)} is bound to task #{slug}, but its board record could " \
-           "not be read, so the build claim could not be checked. Withholding it."
+           "not be read, so the build lease could not be checked. Withholding it."
     end
-    return "bound to task #{slug}, but the board record could not be read, so the build claim " \
+    return "bound to task #{slug}, but the board record could not be read, so the build lease " \
            "could not be checked; withholding rather than nominating a desk we cannot verify " \
            "(re-run once the board is reachable)"
   end
@@ -4172,20 +4172,21 @@ def claim_hold(record, fresh: false, announce: false)
   # ("heartbeat  s ago"), because heartbeat_age has no parseable lease to derive from.
   # ClaimLease.corrupt_expiry? exists precisely to split this out.
   if ClaimLease.corrupt_expiry?(claim)
-    return "claim expiry unverifiable (#{slug}) — the build claim's lease timestamp is present " \
-           "but unparseable, so the builder's liveness cannot be checked; withholding rather " \
+    return "claim expiry unverifiable (#{slug}) — the legacy build lease's timestamp is present " \
+           "but unparseable, so its liveness cannot be checked; withholding rather " \
            "than nominating a desk we cannot verify — inspect task #{slug}"
   end
 
   age = ClaimLease.heartbeat_age(claim)
-  "held by a live builder claim (#{slug}) — builder heartbeat #{age}s ago " \
-    "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)"
+  "held by a legacy build lease (#{slug}) — lease renewed #{age}s ago " \
+    "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s); nothing writes these leases since the desk " \
+    "became the build claim, so it lapses on its own"
 rescue StandardError => e
   # Always log — a guard that disables itself in silence is worse than no guard, and on the
   # quiet (doctor/registry) lane an unexpected error would otherwise nominate a held desk
   # with no trace, which is the one contract this guard exists to protect.
-  warn "warning: #{worktree_label(record)}: could not check the build claim (#{e.class}: #{e.message})"
-  "the build claim could not be checked (#{e.class}); withholding rather than nominating a desk " \
+  warn "warning: #{worktree_label(record)}: could not check the build lease (#{e.class}: #{e.message})"
+  "the build lease could not be checked (#{e.class}); withholding rather than nominating a desk " \
     "we cannot verify"
 end
 
@@ -4634,13 +4635,9 @@ def claim_clearance(record)
   return "no live release conductor claim (#{RELEASE_CLAIM_ROLES.join("/")})" if ship_workspace_record?(record)
 
   slug = task_record_slug(record[:env] || {})
-  return "no bound task, so no desk claims one" unless slug
+  return "no bound task, so no build lease to hold it" unless slug
 
-  # THE DESK IS THE BUILD CLAIM (bin/lib/desk_claim.rb): there is no lease on the
-  # board to read any more, so "no live build claim" printed on every desk. Say
-  # what is actually true — the desk channel is what judges whether anyone is here.
-  "the build claim for #{slug} is its desk (bin/lib/desk_claim.rb); no lease to read, " \
-    "so the desk channel decides"
+  "no legacy build lease on #{slug} (nothing writes leases now; the desk itself is the build claim)"
 end
 
 # What the BOARD-STAGE channel observed. The whole point of the channel is that the

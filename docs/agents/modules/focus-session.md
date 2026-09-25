@@ -24,9 +24,7 @@ spawn are Pokémon too ([`../agents/pokemon/role.md`](../agents/pokemon/role.md)
 one general builder soul, legion. The reviewers you spawn are the specialists:
 Carl, Shannon, Jasper, Steffon, or Xan for prose.
 
-> **Stale GitHub credential? Fix it yourself.** On `Bad credentials`, a 401, or
-> an unreadable CI, run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"`
-> in the same shell command as the retry and keep going. Never ask for `gh auth login`.
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
 ## Step 0 — Orient
 
@@ -165,7 +163,7 @@ Pick the tier from what the diff actually changed, plus the task's risk tags:
 
 | Tier | The change | Spawn |
 |---|---|---|
-| A | only prose: markdown, inert media, docs-guard tests | one `alex` (Xan, the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent alex` and merges on merge-ready |
+| A | only prose: markdown, inert media, docs-guard tests | one `xan` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent xan` and merges on merge-ready |
 | B | code, under 400 insertions, one repo, no risk tag | one `carl` on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md); a light at his discretion |
 | C | any of `payment` `solana` `auth` `migration`, or over 400 insertions, or two repos, or a schema change | `carl` on the primary SOP with the domain light mandatory, strongest model |
 
@@ -178,7 +176,7 @@ Spawn the reviewer with this brief, filled in:
 Review PR <url> for task <slug> (https://mcritchie.studio/tasks/<slug>), base accepted.
 Run docs/agents/agents/carl/sops/pr-review-primary.md end to end, as the soul named here.
 Claim by slug, naming that soul:
-  bin/task review-claim acquire <slug> --agent <alex for tier A | carl for tiers B and C>
+  bin/task review-claim acquire <slug> --agent <xan for tier A | carl for tiers B and C>
 Recorded head: <sha>. Tier <A|B|C>: <A: single read, summon no light | B: light at your discretion | C: light mandatory>.
 The builder is the task's Pokémon, so no specialist is an author.
 Acceptance is in the task AND in the epic plan at /Users/alex/projects/.agents/epics/<epic-slug>.md, piece <n>; read both.
