@@ -10,6 +10,7 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 | Rolio | 3300 | 3300-3399 reserved |
 | Chain Ops | 3400 | 3400-3499 |
 | McRitchie Industries | 3500 | 3500-3599 (3510 reserved) |
+| Cyvasse | 3600 | 3600-3699 |
 
 The durable app registry decision surface is
 `mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
@@ -21,7 +22,8 @@ Acquisition Studio prototype, which previously held this range.
 Caution: the unmanaged MSAA client workspace informally parks a dev app on
 `3510` inside this band — the worktree launcher excludes it
 (`reserved_ports` in `bin/agent-worktree`), and no McRitchie Industries side
-stack should sit on it until MSAA moves.
+stack should sit on it until MSAA moves. Cyvasse is a planned managed satellite (`planned`
+in `config/satellites.yml`), the revival of Alex's first app.
 
 ## Primary Ports
 
@@ -58,8 +60,8 @@ bin/agent-worktree up turf-monster task-slug
 Keep callback-heavy flows on the primary stack unless the external provider has been configured for the alternate port.
 
 For parallel work, primary ports (`3000`, `3100`, `3200`, `3300`, `3400`,
-`3500`) are stable review and callback lanes. Worktree ports (`3001+`, `3101+`,
-`3201+`, `3301+`, `3401+`, `3501+`) are isolated desks
+`3500`, `3600`) are stable review and callback lanes. Worktree ports (`3001+`, `3101+`,
+`3201+`, `3301+`, `3401+`, `3501+`, `3601+`) are isolated desks
 for agents to build, test, and hand back URLs without moving another agent's
 ground.
 
