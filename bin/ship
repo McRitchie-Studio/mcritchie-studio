@@ -63,6 +63,7 @@
 # Test seams (the house pattern — each defaults to the real sibling tool):
 #   SHIP_TASK_BIN         board CLI (default bin/task)
 #   SHIP_FAST_CHECK_BIN   pre-flight runner (default bin/fast-check)
+#   SHIP_PREFLIGHT        `off` skips the optional pre-flight at 2/8 (default: run it)
 #   SHIP_DOR_CHECK_BIN    DoR gate (default bin/dor-check)
 #   SHIP_GH_BIN           GitHub CLI (default gh)
 #   SHIP_ROOT             explicit code root — bypasses the root guard (CI/tests)
@@ -145,7 +146,6 @@ require_relative "lib/repo_root"
 require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
 require_relative "lib/stacked_pr"
-require_relative "lib/fast_cert"
 require_relative "lib/gh_auth_retry"
 require_relative "lib/pr_overlap"
 require_relative "lib/migration_collision"
@@ -347,7 +347,7 @@ end
 # An explicit SHIP_ROOT is the deliberate CI/test seam (bypasses the guard, same
 # contract as FAST_CHECK_ROOT). Otherwise root at the cwd's git toplevel and ask
 # the root guard whether that IS the task's tree; ship WRITES (a commit), but
-# unlike a cert writer it re-roots rather than refuses when the task's worktree
+# unlike the pre-flight it re-roots rather than refuses when the task's worktree
 # exists on disk — loudly, and every gate it then runs re-verifies the root from
 # its own cwd, so a wrong re-root cannot survive to a recorded verdict.
 root = ENV["SHIP_ROOT"].to_s.strip
