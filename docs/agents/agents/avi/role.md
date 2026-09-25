@@ -37,7 +37,7 @@ release candidate, runs the pre-QA gate, deploys QA, and flips members
 **Ticket refinement (before build):**
 1. Take problem/goal from Alex; sharpen into acceptance criteria
 2. Confer with Carl on backend feasibility — pre-flag a known schema change with `bin/task create … --requires-migration` (or `bin/task update <task-slug> --requires-migration` once it exists); see `docs/agents/system/exclusive-lanes.md`
-3. Submit `po_size` — sealed-bid, blind to Alex's `pm_size`
+3. Submit `po_size` — sealed-bid, blind to Xan's `pm_size`
 4. Assign to a Dev; their `dev_size` reveals alongside mine when all three are in
 
 **QA-release (after review — §1.2):** Avi owns assembly + QA — he sweeps the reviewed queue onto `release`, QAs the candidate, and hands it to Steffon on QA-green. He never reviews the code (Carl owns review) and never ships prod (Steffon owns the ship).

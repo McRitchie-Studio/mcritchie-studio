@@ -274,7 +274,7 @@ read as a clean one.
 Two things rotation can never reach are **reported and never deleted**: scratch
 validator ledgers (`*/test-ledger`) and stray files at the projects root.
 Removing a whole data directory is a different risk class from truncating a log,
-so that call stays with Mr. McRitchie.
+so that call stays with Alex.
 
 ### Step 5 — Contract the band, then check the machine
 

@@ -72,7 +72,7 @@ every run.
 | Calling ESPN, reading DraftKings' lines | Choosing the span and the weeks |
 | Deriving team points from total + spread | Judging whether a line move is real |
 | Ranking on points per game | Deciding to reprice a contest that has paid entries |
-| Pricing each line (full-span and bye) | Escalating that decision to Mr. McRitchie |
+| Pricing each line (full-span and bye) | Escalating that decision to Alex |
 | Refusing a started slate, a gap, drift | Reading the refusal and choosing the remedy |
 
 If you find yourself reasoning about **what a team's multiplier should be**,
@@ -85,7 +85,7 @@ and on what a refusal means.
 - You know its slug (`nfl-2026-weeks-4-6`) and the weeks it holds (4, 5, 6).
 - The turf-monster release carrying `market:pull` / `market:refresh` is deployed
   to the environment you are running against.
-- For a **production** run: you have Mr. McRitchie's answer on paid picks (below)
+- For a **production** run: you have Alex's answer on paid picks (below)
   before you pass `APPLY=1`.
 
 ## Steps
@@ -123,7 +123,7 @@ If the reprice block reports **0 paid picks**, skip this step.
 
 If it reports any, the dry run will end in a refusal, and that is the design: a
 paid pick was bought at the price it was shown. Repricing it is
-**Mr. McRitchie's decision, not yours.** Bring him these four facts:
+**Alex's decision, not yours.** Bring him these four facts:
 
 - which teams the paid entries hold, and what each one's price would become;
 - how many entries are affected (an abandoned or cart entry is not one);
@@ -161,7 +161,7 @@ heroku run --no-tty --exit-code -a turf-monster-mainnet \
 
 **This is the whole command for the ordinary case.** It carries no paid-pick
 override, and it must not: that flag disarms the one guard this SOP calls
-Mr. McRitchie's decision. Add it only through step 2, and only with his answer in
+Alex's decision. Add it only through step 2, and only with his answer in
 hand.
 
 **`-e` is not decoration, and a shell-style prefix is the trap.** `heroku run
@@ -239,7 +239,7 @@ would otherwise price off stale lines.
 
 ## Escalate rather than improvise when
 
-- the paid-pick override would be needed and Mr. McRitchie has not answered;
+- the paid-pick override would be needed and Alex has not answered;
 - the pull reports moves on nearly every game, or a total moves by more than ~5;
 - a refusal repeats after its remedy;
 - the span you were asked to refresh has already kicked off.

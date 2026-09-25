@@ -12,10 +12,10 @@ an epic runs [`focus-session.md`](focus-session.md), spawns you per task, and
 spawns your reviewer when you report `submitted`.
 
 **Exit.** The task is on `submitted`, with a PR into `accepted` led by the task URL.
-You never merge, deploy, or touch `release`/`main` unless Mr. McRitchie assigns you
+You never merge, deploy, or touch `release`/`main` unless Alex assigns you
 that lane in this session.
 
-The one judgment call is **Step 4**: does the change earn Mr. McRitchie's local
+The one judgment call is **Step 4**: does the change earn Alex's local
 review? Everything else is sequencing. The command-by-command rules (where each
 script runs, the author set, the long form) are in [`fast-lane.md`](fast-lane.md).
 The rationale and history this page no longer carries are frozen verbatim in
@@ -131,7 +131,7 @@ bin/task update <slug> --checks "[unit] ..." --checks "[integration] ..."
 
 ## Step 4 — Decide: does this change earn a LOCAL REVIEW?
 
-Ask: *would Mr. McRitchie want to see this running before it rides the pipeline?*
+Ask: *would Alex want to see this running before it rides the pipeline?*
 
 - **Yes** when the change is **visual, UX, workflow, or copy**: a board card, a
   form, a page, an email, anything he would recognize on sight.
@@ -160,7 +160,7 @@ bin/verify-review-hop <slug>
 
 It walks the five legs the WAITING APPROVAL button walks: the board CTA → the
 local mint → the confirm page → the consume POST → the landing. Exit `0` means
-the button lands Mr. McRitchie **on the page under review**, signed in. `--json`
+the button lands Alex **on the page under review**, signed in. `--json`
 gives a machine-readable verdict. It mints its own token, so it burns nothing you
 are about to hand over. Do not mark a task waiting without a green run.
 
@@ -187,7 +187,7 @@ are about to hand over. Do not mark a task waiting without a green run.
 
 On the board, a `--local-url` + `--approval waiting` task floats to the top of its
 stage, pulses, and grows a **WAITING APPROVAL** CTA. Each click mints a FRESH
-single-use `Studio::Link` and lands Mr. McRitchie signed in on the local page
+single-use `Studio::Link` and lands Alex signed in on the local page
 (`GET /tasks/:slug/local_review`).
 
 In chat, return the review handoff with exact top-level labels (recipe:

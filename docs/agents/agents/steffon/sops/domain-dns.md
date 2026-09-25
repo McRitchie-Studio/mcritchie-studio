@@ -7,7 +7,7 @@ domain receive mail through Google Workspace and send it without landing in
 spam. Step 3 of [`workspace-launch`](./workspace-launch.md); runnable on its
 own.
 
-**Steffon writes every record; Mr. McRitchie pastes them.** Squarespace DNS has
+**Steffon writes every record; Alex pastes them.** Squarespace DNS has
 no API, so the paste is his. Steffon then checks each record from the public
 internet — a record is published when `dig` sees it, not when the console shows
 it.
@@ -33,7 +33,7 @@ Remove any **other MX** records; keep the rest unless they conflict.
 If the domain will also send app mail through Amazon SES (Pro), the SPF value
 gains `include:amazonses.com` — SPF must stay ONE TXT record.
 
-## 2. Generate the DKIM key — Mr. McRitchie
+## 2. Generate the DKIM key — Alex
 
 ```not-pasteable
 🙋 YOUR TURN — generate the DKIM key
@@ -44,7 +44,7 @@ gains `include:amazonses.com` — SPF must stay ONE TXT record.
    Then paste it here (it is public, not a secret).
 ```
 
-## 3. Paste the records — Mr. McRitchie
+## 3. Paste the records — Alex
 
 ```not-pasteable
 🙋 YOUR TURN — add the DNS records

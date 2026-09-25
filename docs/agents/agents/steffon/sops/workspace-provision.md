@@ -28,7 +28,7 @@ remove.
 - **It never edits a file we do not own.** `drive.readonly` plus `drive.file`;
   never plain `drive`.
 - **It never creates the 1Password item.** The agent service account is
-  READ-ONLY, measured. Mr. McRitchie files credentials; see
+  READ-ONLY, measured. Alex files credentials; see
   [`./credential-filing.md`](./credential-filing.md).
 - **It never impersonates a subject that is not on the allow-list.** Delegation
   cannot be narrowed at the grant — it authorizes *any* user in the domain and
@@ -422,7 +422,7 @@ Stop, and say so plainly, when:
 - There is no `team@` user. Ask them to create one; do not substitute a person's
   mailbox, which would put one employee's mail behind an agent's read.
 - The client wants us to send or edit rather than read. That is a different
-  grant and a different decision, and it is Mr. McRitchie's to make.
+  grant and a different decision, and it is Alex's to make.
 
 ## Background — not needed to execute
 

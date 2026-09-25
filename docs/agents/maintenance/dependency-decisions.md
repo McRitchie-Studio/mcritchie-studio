@@ -402,8 +402,8 @@ Latest version is 7
 Pull request #2 already exists for actions/upload-artifact with latest version 7
 ```
 
-**PR #2 (upload-artifact 4 → 7) was closed, unmerged, on 2026-05-24** with Mr.
-McRitchie's reason on the thread ("workflow action bumps not prioritized right
+**PR #2 (upload-artifact 4 → 7) was closed, unmerged, on 2026-05-24** with
+Alex's reason on the thread ("workflow action bumps not prioritized right
 now"), and Dependabot replied that it would not notify again "about this release,
 but will get in touch when a new version is available." Both apps keep
 `actions/upload-artifact@v4` in four steps each until v8 ships. It is not

@@ -160,7 +160,7 @@ deploys through `config/release_repos.yml` and `config/qa_environments.yml`;
 that release metadata does not make it an active Studio Engine satellite.
 Rolio has been **dormant** since the 2026-07-03 audit: its 44 board tasks are
 archived, dependabot config is removed, and its Heroku dynos (`rolio-prod`,
-`rolio-qa`) remain up pending the operator-reserved scale-down — Mr. McRitchie
+`rolio-qa`) remain up pending the operator-reserved scale-down — Alex
 runs `heroku ps:scale web=0` on both apps himself. Nothing needs draining or
 backup first: neither app has Heroku add-ons or API keys in config vars, and
 the SQLite demo data reseeds on boot. To wake rolio up: scale web dynos back

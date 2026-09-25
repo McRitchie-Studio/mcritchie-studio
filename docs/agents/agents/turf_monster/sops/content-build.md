@@ -246,7 +246,7 @@ invisible for 30 minutes.
 
 ## Handoff
 
-Report to Mr. McRitchie with the slug list, how many you wrote, how many you
+Report to Alex with the slug list, how many you wrote, how many you
 skipped and why, and the board URL. The cards now sit at `script` waiting on
 rendering — which needs Higgsfield credits, and is not this SOP's act.
 

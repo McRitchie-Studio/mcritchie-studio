@@ -65,7 +65,7 @@ Feature agents push only their own branch. `main` is not a backup target.
 Avi can merge low-risk docs/tooling/copy PRs alone. Risky code, migrations,
 auth, payments, email, Solana, provider config, or deployment changes get
 Steffon QA. Disagreement between Avi and Steffon escalates to Alex the
-orchestrator, and to Mr. McRitchie when product or external-account judgment is
+orchestrator, and to Alex when product or external-account judgment is
 needed.
 
 ## Send-back format (rejected PR)

@@ -3,7 +3,7 @@
 ## Status: Optional — not a heartbeat act since 2026-09-25
 
 Every task is now graded once when it ships (`Insights::TaskGrader`; thresholds in
-`config/learning_loop.yml`), so this manual act runs only when Mr. McRitchie asks
+`config/learning_loop.yml`), so this manual act runs only when Alex asks
 for it by name.
 
 ## The learning loop, in three parts
@@ -63,7 +63,7 @@ Bank only insights that make the next agent smarter. Discard generic narration,
 routine success, and anything that should not become instruction.
 
 The browser path at `/xan/heartbeat` is the operator/admin equivalent. The CLI
-grades as Xan; Mr. McRitchie's confirmation lane remains in the browser
+grades as Xan; Alex's confirmation lane remains in the browser
 pipeline.
 
 ## Exit Seam

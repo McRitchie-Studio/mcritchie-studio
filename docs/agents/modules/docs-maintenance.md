@@ -51,7 +51,7 @@ counted; it does. The test is the MACHINE, not the app count: no roots installed
 and no ship to wait for. That is the whole of it — an app cloned onto a machine
 that already has roots is not bringup, and neither is a drift report.
 
-**Exactly those two — the list is closed.** Alex's `share-insights` act used to
+**Exactly those two — the list is closed.** Xan's `share-insights` act used to
 run the installer as a third; it no longer does, and must not again. Its output
 is the tracked lessons doc [`../shared/insights.md`](../shared/insights.md),
 which this installer has never published, and a fresh session reads insights from
@@ -223,8 +223,8 @@ When finishing a meaningful feature:
 1. Search docs for the changed route, env var, port, provider, model, or workflow.
 2. Update the canonical doc.
 3. While editing active docs, fix nearby ambiguous owner/orchestrator language:
-   use **Alex** for the Alex agent/orchestrator and **Mr. McRitchie** for
-   Alexander Ray McRitchie, the owner/operator.
+   use **Alex** for Alexander Ray McRitchie, the owner/operator, and **Xan**
+   for the orchestrator agent.
 4. If an old doc is superseded but not safe to delete yet, add it to [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
 5. Prefer deleting stale docs over preserving contradictory context.
 
@@ -278,7 +278,7 @@ Old Claude memory under `/Users/alex/.claude/` can contain useful history, but i
 
 Imported lessons from the first cleanup pass:
 
-- Give Mr. McRitchie something inspectable, usually a local URL, screenshot, or test result summary.
+- Give Alex something inspectable, usually a local URL, screenshot, or test result summary.
 - Leave documentation cleaner than you found it.
 - Use targeted 1Password reads; never print secrets.
 - Treat old `3001` and `turf.mcritchie.studio` references as stale unless the

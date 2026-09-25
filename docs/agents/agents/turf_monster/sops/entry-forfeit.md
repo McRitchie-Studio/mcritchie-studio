@@ -81,7 +81,7 @@ This is the whole gate. `grade!` is what makes the flip meaningful:
 |-----------------|----------------|
 | `grade!` ranks only `status: [:active, :complete]`, so an abandoned entry gets no rank and no `payout_cents` | The entry is already `complete` with a rank, a `payout_cents`, and a payout `TransactionLog` credit |
 | `settle_onchain!` builds its winners from `entries.complete.where("payout_cents > 0")`, so the entry is not in the settlement | The on-chain settle may already have paid out |
-| Fully reversible with one line | Not reversible by this SOP — escalate to Mr. McRitchie |
+| Fully reversible with one line | Not reversible by this SOP — escalate to Alex |
 
 Check `contest.status` first, every time. `settled` means you are too late.
 
@@ -288,7 +288,7 @@ Stated so nobody stretches this SOP past its edges:
 - **Cancelling a whole contest.** That is `cancel_contest`, 2-of-3 multisig,
   and it refunds the pool to the creator — a separate act, not a loop over this
   one.
-- **A settled contest.** Escalate to Mr. McRitchie.
+- **A settled contest.** Escalate to Alex.
 - **Any UI.** There is no admin button for this and this SOP does not add one.
   Every step is the production console.
 

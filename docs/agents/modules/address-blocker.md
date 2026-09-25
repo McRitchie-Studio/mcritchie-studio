@@ -35,8 +35,8 @@ of misalignment before you read a word of prose:
 - **`environment`** — the desk, tooling, creds, or QA env — not your diff. Often cleared out-of-band, not by a code change.
 - **`dependency`** — waiting on another task, gem, or PR to land first. Resolve the upstream, then resubmit.
   **Exception — a summary leading `Escalated:` is the OPERATOR's blocker**, the
-  review rubric's two-bounce circuit breaker parking a review deadlock for Mr.
-  McRitchie's call. Do not resolve, rework, or resubmit it — leave it held and
+  review rubric's two-bounce circuit breaker parking a review deadlock for
+  Alex's call. Do not resolve, rework, or resubmit it — leave it held and
   surface it in your handoff. **An escalation carries a window**: 20 minutes
   from `blocked_at` (`operator_windows.escalation_minutes` in
   `config/release_builder.yml`), shown as a countdown chip on the card. The

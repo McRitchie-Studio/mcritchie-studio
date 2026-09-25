@@ -90,7 +90,7 @@ Approved work merges into the **persistent per-repo `release` branch**, not
 `main`. Only the Release lane advances `release → main` — a fast-forward at ship
 (`bin/release ship`). The "Never push to `main`" rule still stands.
 
-One session can wear multiple hats only when Mr. McRitchie explicitly says so.
+One session can wear multiple hats only when Alex explicitly says so.
 Default feature sessions are Feature lane only.
 
 ## Feature Branch Lifecycle
@@ -100,7 +100,7 @@ Default feature sessions are Feature lane only.
 3. **Create or update** the production McRitchie Studio task-board item with a
    human-readable `devops.worktree_slug`, affected repos, acceptance criteria,
    risk tags, and expected checks. A feature agent should accumulate acceptance
-   criteria with Mr. McRitchie until the goal is aligned before implementation.
+   criteria with Alex until the goal is aligned before implementation.
    Use
    [`devops-task-board.md`](devops-task-board.md) for the required metadata
    contract. This task is mandatory for feature, bug, QA, release, cleanup, and
@@ -270,7 +270,7 @@ LIGHT    alex       matched: docs, documentation  fit 2  (top domain fit; roll 0
 **A light out-fitting the primary is normal, not a defect.** Carl is seated by
 ROLE on every PR — he is never ranked against the pool and never rolled — while the
 light is the best DOMAIN FIT left after the exclusions. On a docs PR that reads
-exactly as above, and it is correct: Carl owns the deep read, Alex brings the lens.
+exactly as above, and it is correct: Carl owns the deep read, Xan brings the lens.
 Fit reaches the primary seat only when Carl YIELDS (he is an author, or the named
 QA owner), and then both seats come from the one ranked list and the domain-matched
 soul takes primary. Until 2026-09-22 the primary line inferred its explanation from
@@ -451,7 +451,7 @@ joins each task to latest task conversation notes, and attaches matching
 DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
 before reviewing individual diffs. It is read-only by default.
 
-Use `bin/pr-review --run --codex-workdir "$PWD"` when Mr. McRitchie wants
+Use `bin/pr-review --run --codex-workdir "$PWD"` when Alex wants
 Carl to review submitted PRs unattended for hours without assembling a release
 (full flags in the
 [`../agents/carl/sops/pr-review.md`](../agents/carl/sops/pr-review.md) SOP). That is the
@@ -599,7 +599,7 @@ state with open GitHub PRs, and prints an Avi-ready queue. Add apps to
 `--apps` as new satellites are promoted. Use `--json` when a supervisor script
 or dashboard should consume the same queue. Every printed queue item includes an
 `action:` line. Treat that action as the next owner handoff unless new evidence
-from the diff, tests, or Mr. McRitchie changes the call.
+from the diff, tests, or Alex changes the call.
 
 Under the persistent-`release` model the merge target is `release`, so a PR's
 freshness should be reckoned against `origin/release` (the branch it merges into),
@@ -651,7 +651,7 @@ Action lines mean:
   decision.
 - `recreate a local worktree...`: the machine cannot inspect the branch safely;
   fetch/recreate it or ask the branch owner for a handoff. If another active
-  agent owns the PR, do not take it over unless Mr. McRitchie assigns that lane.
+  agent owns the PR, do not take it over unless Alex assigns that lane.
 - `open a draft PR...`: run the printed finish command from the worktree owner
   lane, then let Avi review.
 
@@ -711,7 +711,7 @@ Rules:
 - The conductor pulls latest `main` in every affected repo before release work.
 - Engine changes use their own release slug: source commit, version bump,
   release check, gem publish, consumer lockfile updates, app verification.
-- Deploys require explicit approval from Mr. McRitchie unless the prompt already
+- Deploys require explicit approval from Alex unless the prompt already
   included production rollout.
 - The conductor reports production URLs and verification results before cleanup.
 
@@ -763,8 +763,8 @@ The intended cycle is:
    which runs this for every app member).
 6. Avi moves the task to `assembled` and records the QA URL,
    deployed SHA, release-slug tag when present, and QA checks run.
-7. Mr. McRitchie reviews the QA URL.
-8. Production deploy happens only after Mr. McRitchie explicitly approves it.
+7. Alex reviews the QA URL.
+8. Production deploy happens only after Alex explicitly approves it.
 9. Verified production work moves to `shipped`.
 
 QA servers are tracked in `config/qa_environments.yml` and operated through
@@ -773,11 +773,11 @@ target the QA Heroku app, never the production app. Turf Monster QA must stay on
 devnet with `PAYMENT_PROVIDER=none`. The intended stable review URLs are
 `https://qa.mcritchie.studio` and `https://qa.turfmonster.media`; use
 `bin/qa-server status <app>` to confirm the Heroku app, DNS target, and `/up`
-checks before asking Mr. McRitchie to review.
+checks before asking Alex to review.
 
 ## Recurring QA Intake Prompt
 
-Use this prompt when Mr. McRitchie wants a session to run the PR review, merge,
+Use this prompt when Alex wants a session to run the PR review, merge,
 and QA deployment cycle:
 
 ```text
@@ -797,17 +797,17 @@ Run the parallel-agent DevOps cycle:
   `release`); leave task `qa_feedback` and PR comments on PRs that need changes
 - after merging, deploy origin/release to the relevant QA app with bin/qa-server deploy <app> origin/release --yes
 - move merged tasks to assembled and update task-board metadata with QA URL, release slug, deployed SHA, and checks_run
-- run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
+- run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Alex should review
 
-Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.
+Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Alex explicitly authorizes that lane in this session.
 ```
 
-This cycle ends at QA. Mr. McRitchie reviews the QA URL and then gives a
+This cycle ends at QA. Alex reviews the QA URL and then gives a
 separate production instruction if the release should go live.
 
 ## Recurring Production Release Prompt
 
-Use this only after QA has passed and Mr. McRitchie asks for production rollout:
+Use this only after QA has passed and Alex asks for production rollout:
 
 ```text
 Work from /Users/alex/projects as the Release lane.

@@ -230,7 +230,7 @@ result from this host is evidence about DNS, never about Turf Monster. Smoke-tes
 the canonical host, which is what `config/qa_environments.yml`, `bin/prod-smoke`,
 and `config/satellites.yml` already record.
 
-**Decided 2026-09-02: retired.** Mr. McRitchie retired `turf.mcritchie.studio`
+**Decided 2026-09-02: retired.** Alex retired `turf.mcritchie.studio`
 rather than repoint it at the live app, closing the question this section
 previously left open (https://mcritchie.studio/tasks/runbook-names-dead-host).
 No vanity host replaces it. `turfmonster.media` is canonical, and nothing should
@@ -286,8 +286,8 @@ Cutover sequence:
 
 Deploys, gem publishes, provider changes, and production env-var changes are
 Release-lane work. A feature agent can recommend deploy, but only the designated
-release conductor should run it after explicit approval from Mr. McRitchie or an
-already-approved rollout prompt. Alex's `full-cycle` launcher, Steffon's
+release conductor should run it after explicit approval from Alex or an
+already-approved rollout prompt. Xan's `full-cycle` launcher, Steffon's
 `production-deploy`, and Avi's `deploy-with-task` acts are such pre-approved
 production prompts; `pr-review` and Avi's `qa-release` sweep are not — they stop
 before prod.
@@ -558,7 +558,7 @@ would hand the release sweep a green QA deploy it never performed.
 
 QA deploys are external writes, but they are not production deploys. They should
 use QA Heroku apps only, with production-like Rails boot and QA-safe config.
-Production deploy remains a separate, explicit ship decision Mr. McRitchie makes
+Production deploy remains a separate, explicit ship decision Alex makes
 after he reviews the QA URL — a human gate in the pipeline (ship-authority), not
 an automated GitHub Environment reviewer rule. That automated rule and its in-app
 approval subsystem were removed 2026-07-20 (see the GitHub Actions panel section).

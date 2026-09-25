@@ -7,9 +7,7 @@ to its detail. The long form it replaced is frozen verbatim in
 
 ## Who is who
 
-**Alex** (Mr. McRitchie) is the human owner. **Xan** (slug `xan`) is the
-orchestrator agent; the seat was slugged `alex` until 2026-09-24. Older docs say
-Mr. McRitchie for the owner; read both names as him.
+Alex is the human owner. Xan is the orchestrator agent.
 
 | Soul | Seat | Soul docs |
 |------|------|-----------|
