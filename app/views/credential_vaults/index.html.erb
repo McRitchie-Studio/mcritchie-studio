@@ -15,7 +15,7 @@
     <table class="w-full min-w-[720px] text-sm border-collapse">
       <thead>
         <tr class="border-b border-subtle">
-          <th scope="col" class="sticky left-0 z-10 bg-surface text-left align-bottom px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted w-40">Software</th>
+          <th scope="col" class="sticky left-0 z-10 bg-surface text-left align-bottom px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted w-28 sm:w-40">Software</th>
           <% @entities.each do |entity| %>
             <% workspace = @workspaces.fetch(entity, {}) %>
             <% icon = "#{CredentialVault::ICON_DIR}/#{entity}.png" %>
