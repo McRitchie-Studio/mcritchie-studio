@@ -171,4 +171,31 @@ class InstallFastLaneToolingTest < Minitest::Test
     assert_includes text, File.join(File.realpath(desk), "tmp", "ship-wait"),
                     "the installed script roots at the cwd's desk"
   end
+
+  # LAYER 3 receipt for the bash writer (test/lib/state_store_containment_test.rb):
+  # armed and UNPINNED, the install refuses before it writes. Run from a COPY whose
+  # default projects root is inside the sandbox, so even a broken guard could only
+  # write there, never to the operator's real .agents.
+  def test_integration_an_armed_unpinned_install_refuses_the_tooling_write
+    fake_projects = File.join(@sandbox, "fake-projects")
+    copy_root = File.join(fake_projects, "mcritchie-studio")
+    FileUtils.mkdir_p(File.join(copy_root, "bin"))
+    FileUtils.cp(SCRIPT, File.join(copy_root, "bin", "install-agent-docs"))
+    FileUtils.cp_r(File.join(ROOT, "docs"), copy_root)
+    system("git", "-C", copy_root, "init", "-q", exception: true)
+    system("git", "-C", copy_root, "-c", "user.email=t@t", "-c", "user.name=t", "add", "bin", exception: true)
+    system("git", "-C", copy_root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed",
+           exception: true)
+
+    env = SessionEnv.neutralized({
+      "HOME" => @home, "TASK_USAGE_SANDBOX" => "1", "AGENT_DOCS_RUNTIME_ROOT" => @runtime,
+      "CODEX_REQUIREMENTS_PATH" => File.join(@sandbox, "codex-requirements.toml"),
+      "AGENT_RUNTIME_ZPROFILE" => File.join(@home, ".zprofile")
+    }).merge("PROJECTS_DIR" => nil)
+    _out, err, status = Open3.capture3(env, File.join(copy_root, "bin", "install-agent-docs"), "install")
+
+    assert_equal 3, status.exitstatus, err
+    assert_includes err, "refusing to install fast-lane tooling"
+    refute File.exist?(File.join(fake_projects, ".agents", "tooling")), "nothing was written"
+  end
 end

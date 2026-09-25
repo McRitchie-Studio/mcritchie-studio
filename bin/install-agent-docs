@@ -39,7 +39,11 @@ runtime_root() {
     *) printf '%s\n' "$ROOT" ;;
   esac
 }
-PROJECTS_DIR="${PROJECTS_DIR:-$(default_projects_dir)}"
+# Captured BEFORE the default fills it: the sandbox guard below needs to know whether
+# the CALLER pinned the projects root, not whether it ended up set.
+PROJECTS_DIR_PINNED="${PROJECTS_DIR:+pinned}"
+REAL_PROJECTS_DIR="$(default_projects_dir)"
+PROJECTS_DIR="${PROJECTS_DIR:-$REAL_PROJECTS_DIR}"
 RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
 CODEX_REQUIREMENTS_PATH="${CODEX_REQUIREMENTS_PATH:-/etc/codex/requirements.toml}"
 RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
@@ -237,6 +241,21 @@ install_fast_lane_tooling() {
   note_write "$dest"
   note_write "$TOOLING_LINK"
   [ "$MODE" = "manifest" ] && return 0
+
+  # THE SANDBOX GUARD, in bash: the same two rules TaskUsageSandbox.enforce! applies
+  # to the Ruby writers of <projects>/.agents (lib/task_usage_sandbox.rb). Under an
+  # armed TASK_USAGE_SANDBOX a run must PIN PROJECTS_DIR (rule 1), and the pin must
+  # not point back at the real projects root (rule 2) — otherwise a test would swap
+  # the operator's live /Users/alex/projects/.agents/bin. Refuses; never degrades.
+  case "$(printf '%s' "${TASK_USAGE_SANDBOX:-}" | tr '[:upper:]' '[:lower:]')" in
+    ''|0|false|no|off) ;;
+    *)
+      if [ -z "$PROJECTS_DIR_PINNED" ] || [ "$(cd "$PROJECTS_DIR" 2>/dev/null && pwd -P)" = "$(cd "$REAL_PROJECTS_DIR" 2>/dev/null && pwd -P)" ]; then
+        echo "ERROR: TASK_USAGE_SANDBOX is armed and PROJECTS_DIR is not pinned away from $REAL_PROJECTS_DIR; refusing to install fast-lane tooling into the real .agents" >&2
+        exit 3
+      fi
+      ;;
+  esac
 
   mkdir -p "$TOOLING_ROOT"
   if [ ! -f "$dest/.complete" ]; then
