@@ -147,6 +147,24 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
       "and nothing is kept back, so bin/reviewer-select has nothing to refuse on"
   end
 
+  # ONE IDENTITY MUST NOT HOLD TWO SEATS. test/models/soul_alias_test.rb proves the
+  # alias at the MODEL layer (canonical_soul, soul?, the stamp); nothing proved it
+  # where it actually matters — the pool. A roster entry and a pool entry that drift
+  # apart for one soul is a live no-self-review violation, not a cosmetic one: the
+  # author is excluded under a name the pool does not carry, so nobody is removed.
+  # Pinned here because this file is what widens the roster, and the next widening
+  # is exactly when a split identity gets introduced by accident.
+  test "a task stamped under the RETIRED slug still excludes the seat it names" do
+    task = new_task("shape" => "docs", "built_by" => "alex")
+
+    decision = ReviewerSelector.explain(task.reload)
+    assert_equal true, decision["builder_known"], "the retired slug still names somebody"
+    assert_equal %w[xan], decision["builders"], "and it resolves to the one identity"
+    refute_includes decision["candidates"], "xan",
+      "a historical alex stamp must keep xan out of the pool — same soul, other name"
+    assert_empty Array(decision["kept_builders"])
+  end
+
   test "a Pokemon build leaves every specialist eligible for the light seat" do
     # The reason naming Pokémon is free: it frees no seat and costs none. This is the
     # same outcome the `--agent mack` placeholder bought, without putting untrue
