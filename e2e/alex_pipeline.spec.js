@@ -50,9 +50,11 @@ test("xan pipeline shows the gradeable test-runs band", async ({ page }) => {
   const passRun = page.locator("[data-test='pl-test-run'][data-scope='ship_test_gate']");
   await expect(passRun).toBeVisible();
   await expect(passRun.locator("[data-test='pl-test-verdict']")).toHaveText("pass");
+  // ship_test_gate is a READ of CI's verdict for the frozen tree (host: ci) — CI ran
+  // the full suite; this box only read the conclusion.
   await expect(passRun).toContainText("ship");
   await expect(passRun).toContainText("full");
-  await expect(passRun).toContainText("local");
+  await expect(passRun).toContainText("ci");
   await expect(passRun.locator("[data-test='pl-test-run-grade']")).toBeVisible();
 
   // The seeded failing verdict shows a fail pill.

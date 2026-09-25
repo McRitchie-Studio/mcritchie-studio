@@ -680,14 +680,14 @@ gate_now = Time.current
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
                success: false, source: "seed", actor: "steffon",
                metadata: { "reason" => "1 app(s) never returned /up 200" },
-               sops: [{ "sop" => "pre_qa_gate", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 412_000 },
+               sops: [{ "sop" => "pre_qa_gate", "cmd" => "GitHub CI GREEN @ e2edemo — the SHA's own run, polled to a settled conclusion (bin/rails test ran in CI, not here)", "result" => "pass", "duration_ms" => 412_000 },
                       { "sop" => "qa_up_smoke", "cmd" => "curl /up", "result" => "fail", "duration_ms" => 120_000 }],
                now: gate_now - 27.minutes)
 GateRun.open!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
               source: "seed", actor: "steffon", now: gate_now - 26.minutes)
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
                success: true, source: "seed", actor: "steffon",
-               sops: [{ "sop" => "pre_qa_gate", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 405_000 },
+               sops: [{ "sop" => "pre_qa_gate", "cmd" => "GitHub CI GREEN @ e2edemo — the SHA's own run, polled to a settled conclusion (bin/rails test ran in CI, not here)", "result" => "pass", "duration_ms" => 405_000 },
                       { "sop" => "qa_up_smoke", "cmd" => "curl /up", "result" => "pass", "duration_ms" => 8_000 },
                       { "sop" => "qa_post_deploy", "cmd" => "bin/rails db:seed:pokemon", "result" => "pass", "duration_ms" => 14_000 }],
                now: gate_now - 9.minutes)
@@ -696,7 +696,7 @@ GateRun.open!(subject_type: "release", subject_slug: shipped_release.slug, key: 
 GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g4_ship",
                success: true, source: "seed", actor: "avi",
                metadata: { "seal" => "green" },
-               sops: [{ "sop" => "ship_test_gate", "cmd" => "skipped — bin/rails test already green @ e2edemo at G3 (pre-QA gate, same SHA + command)", "result" => "pass" },
+               sops: [{ "sop" => "ship_test_gate", "cmd" => "GitHub CI GREEN @ e2edemo — credited — tree-identical promote — accepted head e2edemo concluded green and shares tree e2etree with release e2edemo (bin/rails test ran in CI, not here)", "result" => "pass" },
                       { "sop" => "deploy:mcritchie-studio", "cmd" => "git push heroku main", "result" => "pass", "duration_ms" => 95_000 },
                       { "sop" => "prod_up_smoke", "cmd" => "curl https://mcritchie.studio/up", "result" => "pass", "duration_ms" => 900 },
                       { "sop" => "prod_smoke_seal", "cmd" => "bin/prod-smoke mcritchie-studio", "result" => "pass", "duration_ms" => 41_000 }],
