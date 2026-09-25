@@ -241,41 +241,15 @@ overrides freely; his overrides are the point.
 ### The archive verb refuses what it cannot prove free
 
 `bin/task move <slug> archived` runs a holder gate before the write. It exits 1
-**without touching the board** when it cannot prove the task holds no **work at
-risk**, and names what it could not verify:
+**without touching the board** in exactly one case: a desk bound to the task on
+this machine has **uncommitted changes** (or its git status cannot be read). The
+refusal names each such desk. Nothing else holds it — not a mascot, a builder, a
+lease or board activity — because uncommitted work in a desk is the only thing an
+archive can destroy; everything else survives it and reads back afterwards. (The
+older graded gate — `held`, `working`, `unverifiable` — was deleted in devops-v3
+piece 4b-ii-b.)
 
-| Grade | What it means | Archive |
-|---|---|---|
-| `concluded` | `shipped`/`archived` — the code is on `main` | proceeds |
-| | *(the open-PR gate below reads `shipped` differently — see it)* | |
-| `unheld` | no session, no mascot, no claim: nobody picked it up | proceeds |
-| `abandoned` | a session we could check, checked, and found gone | proceeds |
-| `held` | a live claim lease | **REFUSES**, names the session |
-| `working` | a desk written into, a cert running, or an operator parked | **REFUSES**, names the channel |
-| `unverifiable` | a mascot or a builder, but **no session to ask** | **REFUSES**, names the paint it has |
-
-**Work at risk is UNCOMMITTED state, which lives in a DESK.** Board activity is not
-work at risk — a commit, a PR, a task note, a stage move all survive the archive and
-read back afterwards — so a fresh board timestamp never holds this gate. That is
-deliberate and it was measured: an earlier cut counted board activity as a channel
-and refused **31 of 34** live tasks, 16 of them with no desk at all, because
-`holder_liveness_seconds_ago` reports the age of a task's own CREATE when no holder
-owns an artifact — and because every `bin/task` write resets it, so **triaging a task
-in Phase 2 would arm the gate against archiving it in Phase 5**. Steffon's
-`archive-shipped` SOP documents the same trap for the worktree reclaim.
-
-So expect `working` refusals to name a **desk**. If one names something else, read it
-— it is telling you a cert is running or Mr. McRitchie is parked in front of the work.
-
-`unverifiable` is the one worth knowing by name, because it is the carve-out's
-failure mode made mechanical. On 2026-09-01 Mr. McRitchie asked that one session's
-work be held; the record carried an app and a mascot and nothing else, and the
-holder was found only by messaging the peer session. Had that session been idle or
-unreachable, live work would have been archived and the exception would have
-protected nothing. A mascot means *somebody was here and we cannot tell who* —
-which is the opposite of *nobody was here*, not a synonym for it.
-
-`--force` is the override, and it names the grade it waived:
+`--force` is the override, and it names what it waived:
 
 ```bash
 bin/agent-presence                       # who is live on this machine right now

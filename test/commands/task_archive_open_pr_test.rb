@@ -37,8 +37,7 @@ class TaskArchiveOpenPrTest < ActiveSupport::TestCase
   ENGINE_PR = "https://github.com/McRitchie-Studio/studio-engine/pull/245".freeze
   SOLANA_PR = "https://github.com/McRitchie-Studio/solana-studio/pull/9".freeze
 
-  # A record the HOLDER gate lets straight through — no session, no mascot, no claim,
-  # no desk. `ArchiveHolderGuard.decide` grades it `:unheld` and permits it. That
+  # A record the HOLDER gate lets straight through — no desk bound to it. That
   # isolation is deliberate: every refusal below is then attributable to the open-PR
   # gate alone, and a test that accidentally tripped the holder gate would prove
   # nothing about this one.
@@ -120,7 +119,7 @@ class TaskArchiveOpenPrTest < ActiveSupport::TestCase
   # ── THE GATE MUST ALSO OPEN ─────────────────────────────────────────────────
   #
   # A suite that only proved the refusal would pass against a gate that refuses
-  # UNCONDITIONALLY — and lib/archive_holder_guard.rb has the measurement for what
+  # UNCONDITIONALLY — and the archive holder guard has the measurement for what
   # that costs: its first cut refused 31 of 34 live tasks, after which --force is
   # muscle memory and the gate protects nothing.
 
@@ -256,9 +255,8 @@ class TaskArchiveOpenPrTest < ActiveSupport::TestCase
 
   # THE SILENT-EVAPORATION REGRESSION. `abandoned_prs` has to be a storable name in
   # Task::DEVOPS_LIST_KEYS; `normalize_devops_metadata` drops anything outside
-  # DEVOPS_KEYS and the caller still gets a 200. That is precisely how `agent_slug`
-  # sat dead inside ArchiveHolderGuard::PAINT_KEYS for a whole review — a key list
-  # nobody can populate is a promise the gate cannot keep. So the CLI reads the
+  # DEVOPS_KEYS and the caller still gets a 200 — a key list nobody can populate is
+  # a promise the gate cannot keep. So the CLI reads the
   # record BACK, and a board that drops it must fail LOUDLY rather than report a
   # recorded abandonment that does not exist.
   test "[integration] a board that silently drops the record fails loudly" do

@@ -67,6 +67,29 @@ module DeskClaim
     blocking(slug, desks: desks, session: session, dirty: method(:dirty?))
   end
 
+  # THE ARCHIVE HOLDER GUARD (devops-v3 4b-ii-b). `archived` is terminal and what
+  # it can lose is uncommitted work in a desk. So it refuses exactly one case: a desk
+  # bound to `slug` on this machine has uncommitted changes (or git could not say —
+  # nil counts as dirty). Liveness and ownership do not matter here: an archive by
+  # the desk's own session loses the same files. Pure over its inputs, like
+  # #blocking.
+  def dirty_bound(slug, desks:, dirty:)
+    DeskContext.holders_of(slug, desks: desks).reject { |desk| dirty.call(path(desk)) == false }
+  end
+
+  def dirty_bound_on_disk(slug, projects_dir:)
+    desks = DeskContext.desks(root: projects_dir, table: ProcessTable.process_table)
+    dirty_bound(slug, desks: desks, dirty: method(:dirty?))
+  end
+
+  def archive_refusal(slug, blockers, force_command:)
+    lines = ["⚠  refusing to archive #{slug}: a desk bound to it has uncommitted changes:"]
+    blockers.each { |desk| lines << "     #{path(desk)}  (session #{short_session(desk)})" }
+    lines << "   Archiving is terminal. Commit or discard that work, then re-run."
+    lines << "   To archive anyway (the desk's files stay on disk): #{force_command}"
+    lines
+  end
+
   def refusal(slug, blockers, steal_command:, retry_command: nil)
     lines = ["⚠  #{slug} is bound to another live session's desk, and that desk has uncommitted changes:"]
     blockers.each { |desk| lines << "     #{path(desk)}  (session #{short_session(desk)})" }
