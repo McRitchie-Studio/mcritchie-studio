@@ -136,11 +136,12 @@
 #     github_actions — its workflow only pushes + smokes) — the registered command
 #     IS the last gate before prod and must be
 #     CI's FULL suite, VERBATIM (`bin/rails db:test:prepare test test:system`), at
-#     BOTH gates. The 90/10 policy certifies the whole release batch ONCE at G3, and
-#     ship's test_gate self-gates when the frozen SHA matches that certified run, so
-#     the suite still runs once per batch; a drifted/straggler SHA re-triggers it at
-#     ship. Registering the SUBSET for one of these leaves prod ungated for every
-#     tier the subset skips — exactly how rolio's system tier went uncovered.
+#     BOTH gates. CI runs that suite ONCE per tree; G3 reads its verdict for the
+#     release tip and G4 reads it again for the frozen ship SHA (credited from the
+#     accepted head when the tree is identical, else the SHA's own run), so the
+#     suite never runs twice and never runs here. Registering the SUBSET for one of
+#     these leaves prod ungated for every tier the subset skips — exactly how
+#     rolio's system tier went uncovered.
 #
 # THESE GATES INCLUDE THE SYSTEM TIER, and the exact SHAPE is load-bearing.
 # `bin/rails test` alone SKIPS test/system — so a system-test regression used to
@@ -636,8 +637,8 @@ apps:
     #     Actions runner always has Chrome; no local browserless pre-check is needed.
     #
     # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry), and
-    # keep test_cmd and qa_test_cmd the SAME STRING or ship_gate_skip? can never
-    # credit G3's certified run and the suite runs twice every ship.
+    # keep test_cmd and qa_test_cmd the SAME STRING so both gates' SOPs name the
+    # one suite CI ran (no skip compares them; repos_test.rb pins the equality).
     test_cmd: bin/rails db:test:prepare test test:system
     qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:
@@ -660,8 +661,8 @@ apps:
     # while these two strings stayed on plain `test`).
     #
     # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry),
-    # and keep test_cmd and qa_test_cmd the SAME STRING so G4's
-    # ship_gate_skip? can credit G3's certified run.
+    # and keep test_cmd and qa_test_cmd the SAME STRING so both gates' SOPs
+    # name the one suite CI ran (no skip compares them).
     test_cmd: bin/rails db:test:prepare test test:system
     qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:

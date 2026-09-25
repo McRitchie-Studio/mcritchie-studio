@@ -422,8 +422,7 @@ checkout starts with no built CSS. Put those two facts together:
 |---|---|---|---|
 | GitHub CI | **sharded**: `bin/ci-shard --shard=i/4` × 4 (`rails`) + `bin/rails db:test:prepare test:system` (`system`), audited by `bin/rails-executed-set-check` (`rails_executed_set`) | yes | green |
 | `bin/full-suite-check` | the single command whose scope is CI's Ruby suite — today `bin/rails db:test:prepare test test:system` (rake-routed; resolved by `bin/lib/ci_test_command.rb`, which tolerates the sharded split because the shards ∪ `system` are a subset of it) | yes | green |
-| Release gate workspace — **hub** | `bin/rails db:test:prepare test test:system` (the hub's registry `test_cmd`/`qa_test_cmd` — rake-routed, and rake's `test` shells an **argless** `rails test`) | yes | green |
-| Release gate workspace — **satellites** | `bin/rails test test/integration` (`qa_test_cmd`, `config/release_repos.yml`) | **no** | green — the gate preps the env itself (PR #522) |
+| Ship workspace — **`repo_script` satellites** (turf-monster's own `bin/deploy` suite; the G3/G4 gates themselves READ CI's verdict and run nothing here) | `bin/rails test` as the repo's deploy runs it, in `<repo>/.worktrees/_ship` | **no** | green — the ship preps the env itself (PR #522) |
 | **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |
 | **Playwright `webServer`** — the `e2e` lane | `bin/rails db:test:prepare && … && bin/rails server -e test` (`playwright.config.js`) | **no** | **was red** — green since PR #543 added an explicit `bin/rails tailwindcss:build` to the chain |
 | A hand-run single file | `bin/rails test test/x_test.rb` | **no** | **was red** |
@@ -445,12 +444,14 @@ to do with CSS. `db:test:prepare` alone does **not** build the bundle; only
 test` that would have gotten it for free. Hence the explicit `bin/rails
 tailwindcss:build` in the chain — ~0.4s, and load-bearing.
 
-**The release gate workspace was fixed the same way** (task
+**The release ship workspace was fixed the same way** (task
 `gate-workspace-skips-test-prepare`, PR #522, shipped): `prepare_gate_workspace!`
-(`bin/release.rb`) now runs `bin/rails db:test:prepare test:prepare` before both
-the G3 and G4 lanes, so a `.worktrees/_gate` — created virgin by
-`git worktree add --detach` — has its bundled assets built whatever shape the
-registered command takes, the satellites' path-arg `qa_test_cmd` included.
+(`bin/release.rb`) runs `bin/rails db:test:prepare test:prepare` before a
+`repo_script` satellite's own deploy suite in the ship workspace
+(`.worktrees/_ship`, created virgin by `git worktree add --detach`), so its
+bundled assets are built whatever shape that deploy's suite takes. (It once ran
+before the G3 and G4 gate lanes too; those gates now read CI's verdict for the
+tree and run nothing locally.)
 (turf-monster was the live exposure: `tailwindcss-rails`, gitignored
 `app/assets/builds/*`, `stylesheet_link_tag "tailwind"` via studio-engine's head
 partial — its G3 gate took exactly this false red before #522.) With the prep in

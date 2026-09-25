@@ -1985,7 +1985,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   # [unit] fast_forward_promote? — the SAME-SHA precondition for the G3 credit
-  # (task dedupe-hub-release-suite), mirroring ship_gate_skip?'s discipline: the
+  # (task dedupe-hub-release-suite), the same-SHA discipline G4's read shares: the
   # credit may engage ONLY when origin/release IS the accepted head CI already
   # built. A diverged tip (the batch-PR merge commit), an unresolvable accepted
   # ref, and a blank release SHA all answer false — no credit, normal poll, never
@@ -2022,7 +2022,7 @@ class ReleaseCliTest < Minitest::Test
       record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
       assert record, "a green gate records its certification: #{out}"
       assert_includes record, "record_qa_gate", "…through the same conductor write as before"
-      assert_includes record, "ok: true", "a green CI records ok:true so G4 may self-skip"
+      assert_includes record, "ok: true", "a green CI records ok:true"
       assert_match(/ci:\s*\{/, record, "…carrying CI's verdict for the same SHA")
       assert_match(/"state"\s*=>\s*"green"/, record)
       assert_includes out, "PASSED"
@@ -2095,7 +2095,7 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "GitHub CI GREEN @ #{GATE_SHA[0, 7]}", "the concluded verdict is the one it gates on"
       record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
       assert record, "the green conclusion is certified: #{out}"
-      assert_includes record, "ok: true", "a polled-to-green CI records ok:true so G4 may self-skip"
+      assert_includes record, "ok: true", "a polled-to-green CI records ok:true"
       assert_includes out, "PASSED", "the gate passes once CI concludes green"
     end
   end
@@ -2324,7 +2324,7 @@ class ReleaseCliTest < Minitest::Test
                       "the gate line marks the credited verdict apart from a polled one"
       record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
       assert record, "a tree-credited gate still certifies through record_qa_gate: #{out}"
-      assert_includes record, "ok: true", "a tree-credited green records ok:true so G4 may self-skip"
+      assert_includes record, "ok: true", "a tree-credited green records ok:true"
       assert_includes record, "tree-identical promote", "the note names WHY the credit applied"
       assert_includes record, ACC_SHA, "…and the accepted head whose run vouched (full SHA)"
       assert_includes record, GATE_SHA, "…and the release merge commit it vouched for (full SHA)"
@@ -2624,7 +2624,7 @@ class ReleaseCliTest < Minitest::Test
       assert_includes cert, %(slug: "rel-cert")
       assert_includes cert, %(repo: "sibling")
       assert_includes cert, %(sha: "#{GATE_SHA}"), "it certifies the SHA CI gave a verdict on"
-      assert_includes cert, %(cmd: "bin/suite"), "…and RECORDS the command (for the G4 drift check), never runs it"
+      assert_includes cert, %(cmd: "bin/suite"), "…and RECORDS the command (the audit trail names the suite CI ran), never runs it"
       assert_includes cert, "ok: true"
       assert_includes out, "PASSED"
     end

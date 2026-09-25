@@ -477,9 +477,11 @@ bin/release prepare --yes
    tree** (the live batch-PR merge re-runs a tree the accepted seam already
    greened); a credited pass names its source in the gate note and changes
    nothing else — red, pending-evidence, and diverged trees (a gem sweep's
-   lock-bump commit from step 4d) poll exactly as always. On green it RECORDS
-   what it certified (SHA + command + CI verdict), which is the only thing the
-   G4 ship gate will accept as grounds to skip its own gate. The gate reads the
+   lock-bump commit from step 4d) poll exactly as always. On every verdict it
+   RECORDS what it read (SHA + command + CI verdict, with the credit's source) as
+   the release's audit trail and a `pre_qa_gate` SOP naming that source; the G4
+   ship gate runs the **same read on the frozen SHA** itself and never consults
+   that record. The gate reads the
    same CI the app path does for a **self-gated gem in a gem-only release**
    (gem-only-deployments): its `accepted→release` promote PR is a `pull_request`
    run engine-ci greened, so the gem's release SHA earns the identical-tree

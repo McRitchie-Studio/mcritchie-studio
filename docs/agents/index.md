@@ -637,7 +637,7 @@ green-CI-only claim pop plus the primary + light review lanes; the
 primary's gate-zero is `bin/dor-check <task> --gate-role review`, strict on
 red/pending CI) → **G3 Candidate** (Avi's pre-QA suite + QA deploy,
 release-grain) → **G4 Ship** (Steffon's frozen-SHA gate + prod deploy,
-release-grain, self-gated against G3). Task gates render on the task's gates
+release-grain, the same tree-verdict read on the frozen SHA). Task gates render on the task's gates
 card; release gates as the /deployments G3/G4 columns. Each gate's standalone
 SOP lives in `mcritchie-studio/docs/agents/modules/gates/`.
 

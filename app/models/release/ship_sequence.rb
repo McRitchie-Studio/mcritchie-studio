@@ -716,7 +716,7 @@ class Release
     #
     # One tree earns one verdict. G4 runs nothing and consults no record of its own:
     # it READS GitHub CI's settled verdict for the frozen ship SHA's TREE, resolved
-    # exactly as G3 resolves the release tip's (bin/release#resolve_release_ci_verdict):
+    # exactly as G3 resolves the release tip's (bin/release.rb#resolve_release_ci_verdict):
     # the SHA's own run, polled to a conclusion, or a same-SHA / same-tree green
     # credited from the accepted head. The I/O stays in bin/release; these two pure
     # helpers classify what was read, so the gate's SOP names the verdict's SOURCE
