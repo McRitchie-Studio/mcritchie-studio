@@ -1,4 +1,5 @@
 require "test_helper"
+require Rails.root.join("bin/lib/ship_authority").to_s
 
 # [unit] Release's production-authority window (design section 6): derived from
 # the ship_authorized request/grant events alone, the one idempotent grant
@@ -41,11 +42,13 @@ class ReleaseShipAuthorizationTest < ActiveSupport::TestCase
   end
 
   test "[unit] the grant closes the window and is idempotent under the conductor's key" do
-    request!
+    ends_at = 30.minutes.from_now.change(usec: 0)
+    request!(ends_at: ends_at)
     first = @rel.grant_ship_authorization!(actor: "alex@example.com", source: "web")
     again = @rel.grant_ship_authorization!(actor: "someone-else", source: "web")
+    # The key bin/release records ship's own completion under (ShipAuthority.idempotency_key).
     conductor_stamp = @rel.record_event!(step: "ship_authorized", status: "completed", source: "conductor",
-                                         idempotency_key: "#{@rel.slug}:ship_authorized:completed")
+                                         idempotency_key: "#{@rel.slug}:ship_authorized:completed:#{ends_at.utc.iso8601}")
 
     assert_equal first.id, again.id, "a second click returns the same row"
     assert_equal first.id, conductor_stamp.id, "ship's own completion stamp after a grant is the same row"
@@ -105,6 +108,50 @@ class ReleaseShipAuthorizationTest < ActiveSupport::TestCase
     @rel.grant_ship_authorization!(actor: "alex@example.com")
     request!
     refute @rel.reload.ship_authorization_granted?
+  end
+
+  # Drives the real ShipAuthority timed loop against this release: the recorder
+  # writes through the model under the key bin/release uses, the reader is the
+  # one bin/release polls (ship_authorization_state + the lapse blockers).
+  def timed_ship!(start:, minutes: 1)
+    now = start
+    recorder = lambda do |status, metadata|
+      @rel.record_event!(step: "ship_authorized", status: status, source: "conductor", actor: "steffon", occurred_at: now,
+                         idempotency_key: ShipAuthority.idempotency_key(@rel.slug, status, metadata) ||
+                                          "#{@rel.slug}:ship_authorized:#{status}",
+                         metadata: metadata)
+    end
+    reader = lambda do |blockers:|
+      state = @rel.reload.ship_authorization_state
+      state.slice("granted", "granted_by", "granted_via")
+           .merge("blockers" => blockers && !state["granted"] ? @rel.ship_window_lapse_blockers : [])
+    end
+    ShipAuthority.take!(mode: "timed", release_slug: @rel.slug, minutes: minutes, recorder: recorder, reader: reader,
+                        confirmer: ->(_) { true }, say: ->(_) {}, clock: -> { now },
+                        sleeper: ->(seconds) { now += seconds }, interval: 60)
+  end
+
+  test "[integration] a timed re-run after a lapse re-reads the escalations instead of the old lapse" do
+    g3_verdict!(true)
+    assert_equal :lapsed_proceed, timed_ship!(start: 2.hours.ago), "run 1: green, no escalation, the lapse proceeds"
+
+    member = Task.create!(title: "Escalated between ship runs", stage: "reviewed", release_slug: @rel.slug)
+    member.block!(by: "avi", kind: "dependency")
+    Activity.create!(task_slug: member.slug, activity_type: "qa_feedback", agent_slug: "avi",
+                     description: "POLICY QUESTION", metadata: { "summary" => "Escalated: chip default", "kind" => "dependency" })
+
+    error = assert_raises(ShipAuthority::Refused) { timed_ship!(start: 1.hour.ago) }
+    assert_match(/#{member.slug} carries an open escalation/, error.message,
+                 "run 2 must not read run 1's lapse as a grant and skip the fresh escalation check")
+  end
+
+  test "[integration] the web grant and a timed ship's own completion are one row" do
+    started_at = Time.current
+    request!(ends_at: started_at + 30.minutes)
+    grant = @rel.grant_ship_authorization!(actor: "alex@example.com")
+    ends_at = (started_at + 30.minutes).utc.iso8601
+    assert_equal ShipAuthority.idempotency_key(@rel.slug, "completed", { "granted_via" => "web", "window_ends_at" => ends_at }),
+                 grant.idempotency_key, "the model and bin/release must derive the same grant key"
   end
 
   test "[unit] lapse blockers name a missing or red G3 and an open escalation on a member" do
