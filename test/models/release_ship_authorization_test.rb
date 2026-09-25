@@ -127,7 +127,7 @@ class ReleaseShipAuthorizationTest < ActiveSupport::TestCase
            .merge("blockers" => blockers && !state["granted"] ? @rel.ship_window_lapse_blockers : [])
     end
     ShipAuthority.take!(mode: "timed", release_slug: @rel.slug, minutes: minutes, recorder: recorder, reader: reader,
-                        confirmer: ->(_) { true }, say: ->(_) {}, clock: -> { now },
+                        confirmer: ->(_) { true }, say: ->(_) { }, clock: -> { now },
                         sleeper: ->(seconds) { now += seconds }, interval: 60)
   end
 
