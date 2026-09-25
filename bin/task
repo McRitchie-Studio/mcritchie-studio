@@ -504,7 +504,8 @@ def enforce_claim_gate!(slug, mover_session, steal:, steal_hint: nil)
   end
 
   takeover = steal_hint || "#{ClaimHolder::TASK_COMMAND} move #{slug} building --steal"
-  warn!(DeskClaim.refusal(slug, blockers, steal_command: takeover).join("\n"))
+  warn!(DeskClaim.refusal(slug, blockers, steal_command: takeover,
+                                        retry_command: takeover.sub(" --steal", "")).join("\n"))
   exit 1
 end
 

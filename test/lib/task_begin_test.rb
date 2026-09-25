@@ -21,6 +21,7 @@ require "tmpdir"
 require "fileutils"
 require "rbconfig"
 require_relative "../support/session_env"
+require_relative "../support/fake_desk"
 
 class TaskBeginTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
@@ -162,11 +163,10 @@ class TaskBeginTest < Minitest::Test
       "metadata" => { "devops" => devops } }
   end
 
-  # A build-claim devops slice with a lease `expires_in` seconds out — the shape
-  # `move building` writes (see test/lib/task_cli_test.rb's twin).
-  def claim_of(session:, nonce:, expires_in: 300)
-    { "claimed_session" => session, "claim_nonce" => nonce,
-      "claim_expires_at" => (Time.now + expires_in).utc.iso8601 }
+  # A desk bound to SLUG under the projects root the child process reads
+  # (CLAUDE_PROJECTS_DIR, via TaskUsageSandboxEnv.child_env).
+  def foreign_desk!(dirty: true, session: FOREIGN_SESSION)
+    FakeDesk.build(File.join(sandbox_root, "projects"), task_slug: SLUG, session: session, dirty: dirty)
   end
 
   def patches_of(requests)
@@ -312,87 +312,77 @@ class TaskBeginTest < Minitest::Test
 
   # --- the resume claim gate ---------------------------------------------------
   # A resume of an already-`building` task skips the child `move building`, so it
-  # must run the SAME build-claim gate inline (the review-blocked ownership hole:
-  # a bare resume once continued a task another live instance owned).
+  # runs the SAME desk rule inline (bin/lib/desk_claim.rb): refuse only a foreign
+  # live desk with uncommitted changes, before any worktree step.
 
-  def test_begin_resume_with_own_live_claim_proceeds_and_renews
+  def test_begin_resume_claims_with_the_session_and_no_lease
     requests, _out, err, status, lines = run_begin(
-      [SLUG],
-      existing: building_task(claim: claim_of(session: SESSION, nonce: "inst-default")),
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+      [SLUG], existing: building_task, env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
     )
 
-    assert status.success?, "resuming a task THIS instance holds must proceed, got:\n#{err}"
-    renewal = patches_of(requests).last
-    assert renewal, "the resume must renew the claim it already holds"
-    body = JSON.parse(renewal[:body])
-    refute body.key?("stage"), "an already-building task must not be re-moved"
-    assert_equal SESSION, body.dig("devops", "claimed_session")
-    assert_equal "inst-default", body.dig("devops", "claim_nonce")
+    assert status.success?, "resuming with no foreign desk must proceed, got:\n#{err}"
+    body = JSON.parse(patches_of(requests).last[:body])
+    assert_equal "building", body["stage"], "the claim names stage: building (unchanged, so no event)"
+    assert_equal SESSION, body.dig("event", "session"), "and the session making it"
+    %w[claimed_session claim_nonce claim_expires_at].each do |key|
+      refute body.fetch("devops").key?(key), "the resume writes no lease key (#{key})"
+    end
     steps = lines.map(&:first)
     assert_includes steps, "WORKTREE"
     assert_includes steps, "PREFLIGHT"
   end
 
-  def test_begin_resume_refuses_a_live_foreign_claim
+  def test_begin_resume_refuses_a_foreign_desk_with_uncommitted_work
+    desk = foreign_desk!
     requests, _out, err, status, lines = run_begin(
-      [SLUG],
-      existing: building_task(claim: claim_of(session: FOREIGN_SESSION, nonce: "inst-A")),
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+      [SLUG], existing: building_task, env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
     )
 
-    refute status.success?, "a resume against a live FOREIGN claim must refuse (non-zero exit)"
-    assert_match(/different live instance/i, err, "the refusal must say who holds it")
-    assert_match(/…#{FOREIGN_SESSION[-4..]}/, err, "the refusal must name the holder")
-    assert_includes err, "bin/task begin #{SLUG} --steal",
+    refute status.success?, "a resume over another live session's dirty desk must refuse"
+    assert_includes err, desk, "the refusal must name the desk"
+    assert_includes err, "uncommitted changes"
+    assert_includes err, "begin #{SLUG} --steal",
                     "the steal hint must name begin's OWN resume command, not the move's"
     assert_empty patches_of(requests), "a refused resume must write NOTHING to the board"
-    assert_empty lines, "the gate must refuse BEFORE any worktree/preflight step touches the holder's desk"
+    assert_empty lines, "the gate must refuse BEFORE any worktree/preflight step"
   end
 
-  def test_begin_resume_with_steal_takes_the_claim
+  def test_begin_resume_with_steal_claims_over_the_foreign_desk
+    foreign_desk!
     requests, _out, err, status, lines = run_begin(
-      [SLUG, "--steal"],
-      existing: building_task(claim: claim_of(session: FOREIGN_SESSION, nonce: "inst-A")),
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+      [SLUG, "--steal"], existing: building_task, env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
     )
 
     assert status.success?, "--steal must let the resume through, got:\n#{err}"
+    assert_match(/--steal: claiming #{SLUG} over 1 foreign desk/, err, "the override names what it waives")
     body = JSON.parse(patches_of(requests).last[:body])
-    assert_equal SESSION, body.dig("devops", "claimed_session"),
-                 "the steal must durably TRANSFER the claim to the stealer's instance"
-    assert_equal "inst-default", body.dig("devops", "claim_nonce")
-    refute_nil Time.parse(body.dig("devops", "claim_expires_at")), "a fresh lease is written"
+    assert_equal SESSION, body.dig("event", "session")
     assert_includes lines.map(&:first), "PREFLIGHT"
   end
 
-  def test_begin_resume_reclaims_an_expired_foreign_lease
-    # Fail-open parity with the move's gate: an expired (dead-session) lease is
-    # adopted silently — no --steal, no refusal.
-    requests, _out, err, status, = run_begin(
-      [SLUG],
-      existing: building_task(claim: claim_of(session: FOREIGN_SESSION, nonce: "inst-A", expires_in: -30)),
-      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+  def test_begin_resume_proceeds_over_a_clean_foreign_desk
+    foreign_desk!(dirty: false)
+    _requests, _out, err, status, = run_begin(
+      [SLUG], existing: building_task, env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
     )
 
-    assert status.success?, "an expired lease is silently reclaimable on resume, got:\n#{err}"
-    body = JSON.parse(patches_of(requests).last[:body])
-    assert_equal SESSION, body.dig("devops", "claimed_session")
+    assert status.success?, "a clean foreign desk holds no work to lose, got:\n#{err}"
   end
 
   def test_begin_forwards_steal_to_the_child_move
     # A DESIGNED task's claim gate rides the child `move building`; begin must
     # forward --steal so the one flag overrides the gate on BOTH paths.
+    foreign_desk!
     requests, _out, err, status, = run_begin(
       [SLUG, "--steal"],
-      existing: building_task(stage: "designed", claim: claim_of(session: FOREIGN_SESSION, nonce: "inst-A")),
+      existing: building_task(stage: "designed"),
       env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
     )
 
     assert status.success?, "begin --steal must ride into the child move's gate, got:\n#{err}"
     move = patches_of(requests).find { |r| JSON.parse(r[:body])["stage"] == "building" }
     assert move, "the child move must have claimed the task"
-    assert_equal SESSION, JSON.parse(move[:body]).dig("devops", "claimed_session")
+    assert_equal SESSION, JSON.parse(move[:body]).dig("event", "session")
   end
 
   # --- the desk's git identity (turf-monster-git-identity-wrong) ----------------

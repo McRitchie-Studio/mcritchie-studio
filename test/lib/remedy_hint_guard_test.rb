@@ -59,6 +59,7 @@ require "tmpdir"
 require "fileutils"
 require "time"
 require_relative "../support/session_env"
+require_relative "../support/fake_desk"
 require_relative "../../bin/lib/fast_lane"
 
 class RemedyHintGuardTest < Minitest::Test
@@ -460,7 +461,7 @@ class RemedyHintGuardTest < Minitest::Test
   # The claim refusal is the highest-traffic remedy in the house and the one that
   # fires EARLIEST — before ship has rooted — so its reader is the most likely to
   # be standing somewhere the bare form cannot resolve. It is also reachable from
-  # a test without a board: a task whose lease names another session.
+  # a test without a board: a task bound to another session's dirty desk.
   #
   # The assertion is deliberately not a substring match. It splits the printed
   # command, takes the script, and asks the DISK.
@@ -469,6 +470,7 @@ class RemedyHintGuardTest < Minitest::Test
       work = File.join(root, "work")
       FileUtils.mkdir_p(work)
       task_bin = write_task_stub(root)
+      FakeDesk.build(root, task_slug: "held-task", session: "sess-rival-9999", dirty: true)
 
       out, err, status = Open3.capture3(
         ship_env(root, task_bin), File.join(BIN, "ship"), "held-task", chdir: work
@@ -504,16 +506,13 @@ class RemedyHintGuardTest < Minitest::Test
         .map(&:strip).uniq
   end
 
-  # A board CLI stub serving one task: [building], claimed by ANOTHER session with
-  # a live lease. That is the state ship's claim gate refuses on.
+  # A board CLI stub serving one task: [building]. The desk FakeDesk builds beside it
+  # (another session's, with uncommitted work) is what ship's claim gate refuses on.
   def write_task_stub(root)
     path = File.join(root, "task-stub")
     payload = {
       "slug" => "held-task", "stage" => "building", "review_in_progress" => false,
-      "metadata" => { "devops" => {
-        "claimed_session" => "sess-rival-9999", "claim_nonce" => "inst-A",
-        "claim_expires_at" => (Time.now + 300).utc.iso8601
-      } }
+      "metadata" => { "devops" => {} }
     }
     File.write(path, <<~SH)
       #!/bin/sh

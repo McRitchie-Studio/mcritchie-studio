@@ -4,41 +4,25 @@ require "tmpdir"
 require "socket"
 require "json"
 require "time"
+require_relative "../support/fake_desk"
 
 # The build-claim gate REFUSES. It does not warn and carry on.
 #
-# THE DEFECT THIS EXISTS TO CATCH is a comment, not a branch — and that is
-# exactly why it needed a test. `bin/task`'s header above `enforce_claim_gate!`
-# read "Loud (not a hard block): it prints WHO holds it + how to override." The
-# author meant "overridable by --steal". It READ as warns-and-proceeds, and a
-# reader carried that reading into docs/agents/modules/worktrees.md as "warns and
-# proceeds — it is loud, not blocking", which would have had the next agent
-# pre-arm --steal against a live builder's desk: the exact fail-open the gate
-# exists to close. That doc was corrected first and reads "refuses — exit 1"
-# today; `lib/claim_lease.rb`'s disposition legend carried the same error one
-# word wide ("the gate warns/refuses") and is corrected here.
+# THE DESK IS THE BUILD CLAIM (bin/lib/desk_claim.rb). The gate refuses in ONE case:
+# a DIFFERENT live session's desk is bound to the task AND has uncommitted changes.
+# `--steal` is the override for that case. Every other case claims freely.
 #
-# The code was never wrong. `enforce_claim_gate!` has ended in `exit 1` the whole
-# time, and nothing in the tree exercised that fact, so the prose was free to
-# drift away from it in two files without a single test going red.
-#
-# THE ASSERTION THAT SEPARATES THE TWO READINGS IS "NO WRITE". A gate that warns
-# and proceeds also prints the holder, the heartbeat age, and the --steal hint —
-# every message assertion below would pass on it. The only thing it does that a
-# refusing gate never does is send the PATCH. So the refusal is pinned on the
-# absence of the board write, and the messages are pinned separately as the
-# evidence the operator decides `--steal` on.
+# THE ASSERTION THAT SEPARATES "REFUSES" FROM "WARNS" IS "NO WRITE". A gate that
+# warns and proceeds also prints the desk and the --steal hint — every message
+# assertion below would pass on it. The only thing it does that a refusing gate
+# never does is send the PATCH. So the refusal is pinned on the absence of the board
+# write, and the messages are pinned separately.
 class TaskClaimGateTest < ActiveSupport::TestCase
   BIN = Rails.root.join("bin/task").to_s
   SLUG = "probe-task".freeze
 
-  # Two distinct live instances. The nonce is injected through TASK_CLAIM_NONCE
-  # (SessionIdentity's documented test seam) so the identity under test is data
-  # rather than whatever process tree the suite happens to run under.
   HOLDER_SESSION = "019f3b0c-3a8d-73b1-9e8b-f380e11fb91b".freeze
-  HOLDER_NONCE   = "holder01".freeze
   MOVER_SESSION  = "019f4c1d-7b2e-74a2-8f19-2c7d90ab3311".freeze
-  MOVER_NONCE    = "mover001".freeze
 
   # The wording this file exists to keep buried, kept verbatim so the guard below
   # can be run against it. A guard that has never been shown to fail on the real
@@ -58,59 +42,69 @@ class TaskClaimGateTest < ActiveSupport::TestCase
 
   # ── THE REFUSAL ─────────────────────────────────────────────────────────────
 
-  test "[integration] a move onto a live foreign claim exits 1" do
-    result = move_against_foreign_claim
+  test "[integration] a move onto a foreign live desk with uncommitted work exits 1" do
+    result = move_with_desk(dirty: true)
 
-    assert_equal 1, result[:status].exitstatus,
-                 "the gate ends in `exit 1`; a warns-and-proceeds gate would exit 0 " \
-                 "and the prose that described it as one would be right"
+    assert_equal 1, result[:status].exitstatus, "the gate ends in `exit 1`"
   end
 
-  # THE LOAD-BEARING ONE. Everything else here is also true of a gate that only
-  # warns; this is not.
+  # THE LOAD-BEARING ONE. Everything else here is also true of a gate that only warns.
   test "[integration] the refused move sends NO write to the board" do
-    result = move_against_foreign_claim
+    result = move_with_desk(dirty: true)
 
     assert_empty result[:writes],
                  "the gate refused and must have stopped there — a PATCH on this path " \
-                 "means it warned and carried on, claiming another live instance's task"
+                 "means it warned and carried on over another session's uncommitted work"
   end
 
-  test "[integration] the refusal names the holder, its heartbeat, and the override" do
-    err = move_against_foreign_claim[:err]
+  test "[integration] the refusal names the desk and the override" do
+    result = move_with_desk(dirty: true)
 
-    assert_includes err, "claimed by a DIFFERENT live instance",
-                     "the refusal must say what it is refusing on"
-    assert_includes err, HOLDER_SESSION[-4..],
-                     "it must name WHO holds it — the operator cannot weigh --steal otherwise"
-    assert_includes err, "last heartbeat",
-                     "and how stale that holder's liveness signal is"
-    assert_includes err, "bin/task move #{SLUG} building --steal",
-                     "a refusal with no way forward is a dead end; the override must be pasteable"
+    assert_includes result[:err], result[:desk], "it must name WHERE the work at risk is"
+    assert_includes result[:err], "uncommitted changes", "and why that desk blocks the claim"
+    assert_includes result[:err], "#{SLUG} building --steal",
+                    "a refusal with no way forward is a dead end; the override must be pasteable"
   end
 
-  # THE OTHER SIDE OF THE SAME CONTRACT. `--steal` is the ONLY way past the gate,
-  # so a test that only proved the refusal would pass just as well against a gate
-  # that refuses unconditionally — which would wedge every legitimate takeover.
-  test "[integration] --steal takes the claim over and writes" do
-    result = move_against_foreign_claim("--steal")
+  # THE OTHER SIDE OF THE SAME CONTRACT. A test that only proved the refusal would
+  # pass just as well against a gate that refuses unconditionally.
+  test "[integration] --steal claims over the foreign desk and writes" do
+    result = move_with_desk("--steal", dirty: true)
 
     assert_equal 0, result[:status].exitstatus, "--steal must let the move through"
-    claim = result[:writes].last&.dig("devops") || {}
-    assert_equal MOVER_SESSION, claim["claimed_session"],
-                 "the takeover must durably TRANSFER the lease to the stealing instance, " \
-                 "not merely skip the check and leave the holder on the record"
+    assert_match(/--steal: claiming #{SLUG} over 1 foreign desk/, result[:err],
+                 "the override names the desk it is claiming over")
+    assert_equal MOVER_SESSION, result[:writes].last&.dig("event", "session")
   end
 
-  # AND THE GATE MUST NOT FIRE ON ITS OWN HOLDER. Session AND nonce match, so this
-  # is :same_instance — the ordinary re-move a builder does all day.
-  test "[integration] the holder's own re-move is not refused" do
-    result = move_against_foreign_claim(session: HOLDER_SESSION, nonce: HOLDER_NONCE)
+  # ONLY UNCOMMITTED WORK REFUSES. A clean foreign desk has nothing to lose.
+  test "[integration] a clean foreign desk does not refuse" do
+    result = move_with_desk(dirty: false)
 
-    assert_equal 0, result[:status].exitstatus,
-                 "a gate that refused the holder's own instance would block every legitimate " \
-                 "re-claim; :same_instance claims freely"
-    refute_empty result[:writes], "and the claim renewal must still land"
+    assert_equal 0, result[:status].exitstatus, "a clean desk holds no work at risk:\n#{result[:err]}"
+    refute_empty result[:writes]
+  end
+
+  # AND THE GATE MUST NOT FIRE ON ITS OWN DESK.
+  test "[integration] the desk's own session is not refused" do
+    result = move_with_desk(dirty: true, holder: MOVER_SESSION)
+
+    assert_equal 0, result[:status].exitstatus, "a builder re-claiming from its own dirty desk:\n#{result[:err]}"
+    refute_empty result[:writes]
+  end
+
+  # A spawned builder's desk names its focus session as the parent: one party.
+  test "[integration] the parent session of a desk is not refused" do
+    result = move_with_desk(dirty: true, holder: HOLDER_SESSION, parent: MOVER_SESSION)
+
+    assert_equal 0, result[:status].exitstatus, result[:err]
+  end
+
+  # A desk whose holder is gone (dead anchor) is nobody's.
+  test "[integration] a desk whose holder is gone does not refuse" do
+    result = move_with_desk(dirty: true, anchor_pid: 999_999_9)
+
+    assert_equal 0, result[:status].exitstatus, result[:err]
   end
 
   # ── THE COMMENT MUST NAME WHAT THE CODE DOES ────────────────────────────────
@@ -213,44 +207,40 @@ class TaskClaimGateTest < ActiveSupport::TestCase
 
   # ── DRIVING THE REAL BINARY ─────────────────────────────────────────────────
 
-  # Run `bin/task move <slug> building` against a board holding a LIVE claim from
-  # HOLDER_SESSION, and return the exit status, stderr, and every write the CLI
-  # sent. The mover defaults to a different live instance (:held_by_other).
-  # The child env goes through BOTH sandboxes on purpose. SessionEnv.neutralized
-  # scrubs the operator's ambient session before opting this run in to a fake one,
-  # and TaskUsageSandboxEnv.child_env pins the usage store, the transcript root,
-  # and HOME inside a tmpdir. Skipping the second is not a style lapse: the suite
-  # arms TASK_USAGE_SANDBOX process-wide, so an unpinned child ABORTS before it
-  # reaches the gate — and the first draft of this file did exactly that. Two
-  # tests passed anyway, on an exit 1 and an empty write log produced by a
-  # completely different refusal. The message assertions are what caught it.
-  def move_against_foreign_claim(*flags, session: MOVER_SESSION, nonce: MOVER_NONCE)
+  # Run `bin/task move <slug> building` against a stub board, with ONE desk bound to
+  # SLUG under the child's projects root. Returns the exit status, stderr, every
+  # PATCH body the CLI sent, and the desk path.
+  def move_with_desk(*flags, dirty:, holder: HOLDER_SESSION, parent: nil, anchor_pid: nil)
     Dir.mktmpdir do |dir|
       writes = []
       err = status = nil
       env = SessionEnv.neutralized(
         TaskUsageSandboxEnv.child_env(dir).merge(
           "AGENT_API_SECRET" => "not-a-real-secret", "TASK_SKIP_MARKER" => "1",
-          "CLAUDE_CODE_SESSION_ID" => session, "TASK_CLAIM_NONCE" => nonce
+          "CLAUDE_CODE_SESSION_ID" => MOVER_SESSION
         )
       )
+      desk = FakeDesk.build(File.join(dir, "projects"), task_slug: SLUG, session: holder,
+                                                          dirty: dirty, parent: parent)
+      if anchor_pid
+        ctx = File.join(desk, ".agent-context.json")
+        File.write(ctx, JSON.generate(JSON.parse(File.read(ctx)).merge("anchor_pid" => anchor_pid)))
+      end
 
       with_board_sink(writes) do |base|
         _out, err, status = Open3.capture3(env.merge("TASK_API_BASE" => base),
                                            BIN, "move", SLUG, "building", *flags)
       end
 
-      { status: status, err: err, writes: writes.filter_map { |w| JSON.parse(w) rescue nil } }
+      { status: status, err: err, desk: desk,
+        writes: writes.filter_map { |w| JSON.parse(w) rescue nil } }
     end
   end
 
-  # A board answering the calls `move` makes: the bearer exchange (POST /auth),
-  # the task read the gate judges, and — only if the gate lets it through — the
-  # PATCH. ROUTING BY PATH MATTERS: a sink returning one body for every request
-  # answers /auth with a task and bin/task dies on a missing "token".
-  #
-  # ONLY PATCH BODIES ARE RECORDED. The auth POST happens on every run, refused
-  # or not, so counting it would make the "no write" assertion unfalsifiable.
+  # A board answering the calls `move` makes: the bearer exchange (POST /auth), the
+  # task read, and — only if the gate lets it through — the PATCH. ONLY PATCH BODIES
+  # ARE RECORDED: the auth POST happens on every run, so counting it would make the
+  # "no write" assertion unfalsifiable.
   def with_board_sink(writes)
     server = TCPServer.new("127.0.0.1", 0)
     auth = { token: "sink-bearer" }.to_json
@@ -278,18 +268,9 @@ class TaskClaimGateTest < ActiveSupport::TestCase
     thread&.kill
   end
 
-  # The task as the board serves it: already `building` (so the post-PATCH
-  # read-back verify agrees on the runs that get that far) and carrying a lease
-  # HOLDER_SESSION renewed moments ago. 90s of headroom on a 120s TTL keeps it
-  # unambiguously live without pinning the test to the suite's wall clock.
+  # Already `building`, so the post-PATCH read-back verify agrees.
   def task_body
     { data: { slug: SLUG, stage: "building", title: "Probe Task",
-              metadata: { devops: {
-                kind: "bug", repositories: ["mcritchie-studio"],
-                worktree_slug: SLUG,
-                claimed_session: HOLDER_SESSION,
-                claim_nonce: HOLDER_NONCE,
-                claim_expires_at: (Time.now + 90).utc.iso8601
-              } } } }.to_json
+              metadata: { devops: { kind: "bug", repositories: ["mcritchie-studio"], worktree_slug: SLUG } } } }.to_json
   end
 end

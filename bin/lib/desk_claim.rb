@@ -67,10 +67,11 @@ module DeskClaim
     blocking(slug, desks: desks, session: session, dirty: method(:dirty?))
   end
 
-  def refusal(slug, blockers, steal_command:)
+  def refusal(slug, blockers, steal_command:, retry_command: nil)
     lines = ["⚠  #{slug} is bound to another live session's desk, and that desk has uncommitted changes:"]
     blockers.each { |desk| lines << "     #{path(desk)}  (session #{short_session(desk)})" }
-    lines << "   Claiming it now could lose that work. Ask that session to commit, then re-run."
+    lines << "   Claiming it now could lose that work. Ask that session to commit, then re-run" \
+             "#{retry_command ? ": #{retry_command}" : "."}"
     lines << "   To take the task anyway (that desk's files stay on disk): #{steal_command}"
     lines
   end

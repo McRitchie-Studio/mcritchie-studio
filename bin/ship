@@ -276,11 +276,12 @@ end
 # `bin/task begin <slug> --steal`. A session-less run degrades claim-free.
 mover_session = SessionIdentity.identity.first
 unless mover_session.nil?
-  projects_dir = ENV["SHIP_PROJECTS_DIR"].to_s.strip
-  projects_dir = ProjectsRoot.default_projects_dir if projects_dir.empty?
+  projects_dir = [ENV["SHIP_PROJECTS_DIR"], ENV["CLAUDE_PROJECTS_DIR"]].map { |v| v.to_s.strip }.find { |v| !v.empty? }
+  projects_dir ||= ProjectsRoot.default_projects_dir
   blockers = DeskClaim.blocking_on_disk(slug, session: mover_session, projects_dir: projects_dir)
   unless blockers.empty?
-    warn "ship: " + DeskClaim.refusal(slug, blockers, steal_command: "#{TASK_CMD} begin #{slug} --steal").join("\n")
+    warn "ship: " + DeskClaim.refusal(slug, blockers, steal_command: "#{TASK_CMD} begin #{slug} --steal",
+                                                    retry_command: "#{SHIP_CMD} #{slug}").join("\n")
     exit 1
   end
 end
