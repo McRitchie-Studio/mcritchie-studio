@@ -4129,8 +4129,8 @@ def claim_hold(record, fresh: false, announce: false)
   # so it never goes quietly.
   if slug.nil?
     if announce
-      warn "note: #{worktree_label(record)} has no bound task, so no build claim can be checked; " \
-           "treating it as free"
+      warn "note: #{worktree_label(record)} has no bound task, so no desk claims one " \
+           "(bin/lib/desk_claim.rb); treating it as free"
     end
     return nil
   end
@@ -4634,9 +4634,13 @@ def claim_clearance(record)
   return "no live release conductor claim (#{RELEASE_CLAIM_ROLES.join("/")})" if ship_workspace_record?(record)
 
   slug = task_record_slug(record[:env] || {})
-  return "no bound task, so no build claim to hold it" unless slug
+  return "no bound task, so no desk claims one" unless slug
 
-  "no live build claim on #{slug}"
+  # THE DESK IS THE BUILD CLAIM (bin/lib/desk_claim.rb): there is no lease on the
+  # board to read any more, so "no live build claim" printed on every desk. Say
+  # what is actually true — the desk channel is what judges whether anyone is here.
+  "the build claim for #{slug} is its desk (bin/lib/desk_claim.rb); no lease to read, " \
+    "so the desk channel decides"
 end
 
 # What the BOARD-STAGE channel observed. The whole point of the channel is that the

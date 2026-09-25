@@ -988,7 +988,9 @@ class AgentWorktreeTest < Minitest::Test
 
     assert_match(/merged into origin\/accepted, tree clean/, out, "the git fact")
     assert_match(/no open PR for feat\/t \(GitHub asked\)/, out, "the PR channel, and that it was actually asked")
-    assert_match(/no live build claim on t/, out, "the claim channel")
+    assert_match(/the build claim for t is its desk \(bin\/lib\/desk_claim\.rb\); no lease to read/, out,
+                 "the claim channel names the desk rule, not a lease that no longer exists")
+    refute_match(/no live build claim/, out, "the lease wording printed on every desk once the lease was gone")
     assert_match(/board stage `shipped`/, out, "the board-stage channel")
     assert_match(/no review in progress/, out, "the review channel")
     assert_match(/desk idle/, out, "the desk channel")

@@ -756,7 +756,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: {})
 
     assert status.success?, err
-    assert_match(/has no bound task, so no build claim can be checked/, err,
+    assert_match(/has no bound task, so no desk claims one/, err,
                  "the desk we actually lost must not fail open in silence")
     refute_includes out, "cleanup candidates:",
                     "a desk with no claim to check is the one the sweep ate — the desk channel " \
