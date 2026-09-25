@@ -366,8 +366,9 @@ class ReleaseTest < ActiveSupport::TestCase
   test "the tier→step map matches the redesign: base@review, integration+e2e-smoke@prepare, full-suite@ship" do
     assert_equal %w[base], Release.test_tiers_for("review")
     assert_equal %w[integration e2e-smoke], Release.test_tiers_for("prepare")
-    # The honest relabel: ship's gate runs the registry test_cmd — the repo's
-    # full LOCAL suite, never a browser e2e run (that's the prod smoke seal).
+    # The honest relabel: ship's gate READS CI's verdict for the registry test_cmd —
+    # the repo's full suite as CI runs it, never a browser e2e run (that's the prod
+    # smoke seal) and never a local run (one tree earns one verdict).
     assert_equal %w[full-suite], Release.test_tiers_for("ship")
     assert_equal [], Release.test_tiers_for("nope"), "an unknown step owns no tiers"
   end

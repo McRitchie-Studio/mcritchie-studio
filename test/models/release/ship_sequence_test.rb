@@ -642,171 +642,95 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_no_match(/rescue\//, cmds[0], "nothing to rescue — there is no uncommitted work")
   end
 
-  # --- ship_gate_skip?: G4 self-gating against the G3 batch certification ----
+  # --- G4: the tree-verdict READ — classify what the ship gate read --------------
   #
-  # G4 may skip its suite ONLY against G3's OWN recorded verdict
-  # (release.metadata["qa_gates"][repo]), never against the registry or the
-  # deployed SHA. See ship_gate_skip? for the disarm bug that rule closes.
+  # One tree earns one verdict (devops-v3 §5). G4 runs nothing and consults no G3
+  # record: it reads GitHub CI's settled verdict for the frozen ship SHA's tree,
+  # resolved as G3 resolves the release tip (bin/release resolve_release_ci_verdict),
+  # and ship_gate_kind names what came back. Exactly two kinds pass; every other
+  # kind — including every NO-DATA state — fails closed, because a false green here
+  # ships an untested tree to production. The self-skip against G3's qa_gates
+  # record (ship_gate_skip? / auditor_red? / qa_gate) went with the local suite it
+  # spared — see the wiring in test/lib/release_cli_test.rb (test_ship_test_gate_*).
 
-  # The shape pre_qa_gate records after a GREEN suite.
-  def certified(sha: "abc123", cmd: "bin/rails test", ok: true)
-    { "sha" => sha, "cmd" => cmd, "ok" => ok }
-  end
+  # label => [ci read, options, kind, passes?]
+  SHIP_GATE_KINDS = {
+    "the SHA's own run concluded green" =>
+      [{ state: :green, count: 8 }, {}, :green, true],
+    "a same-SHA / same-tree green was credited" =>
+      [{ state: :green, count: 8, credited: "tree-identical promote — accepted head …" },
+       { credited: true }, :credited, true],
+    "a check failed" =>
+      [{ state: :red, failing: ["test:system"] }, {}, :red, false],
+    "a check failed on a diverged tree (red outranks the divergence)" =>
+      [{ state: :red }, { diverged: true }, :red, false],
+    "the API refused the read" =>
+      [{ state: :unreadable, reason: "401 Bad credentials" }, {}, :unreadable, false],
+    "the API refused the read on a diverged tree (the token fault outranks it)" =>
+      [{ state: :unreadable }, { diverged: true }, :unreadable, false],
+    "still pending past the poll bound" =>
+      [{ state: :pending }, {}, :held, false],
+    "no run registered past the poll bound" =>
+      [{ state: :none }, {}, :held, false],
+    "a transient read miss past the poll bound" =>
+      [{ state: :unverified }, {}, :held, false],
+    "no credit possible AND its own run never went green" =>
+      [{ state: :pending }, { diverged: true }, :diverged, false],
+    "no credit possible AND no run registered" =>
+      [{ state: :none }, { diverged: true }, :diverged, false],
+    "nothing read at all" =>
+      [nil, {}, :held, false],
+    "a stateless hash" =>
+      [{}, {}, :held, false]
+  }.freeze
 
-  test "[unit] ship_gate_skip? skips when G3 certified this exact command on this exact SHA" do
-    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
-                             qa_gate: certified),
-           "G3 recorded a green run of the same command on the same SHA — re-running proves nothing"
-  end
-
-  # --- the SAFETY REGRESSION: a G3 that never ran must not certify anything ---
-  #
-  # THIS IS THE BUG. The old predicate compared the REGISTRY (test_cmd ==
-  # qa_test_cmd) against the DEPLOYED sha (qa_shas) — and `qa_shas` is stamped by
-  # the QA deploy loop, not by the gate. So the documented gate-skip recipe
-  # (comment out qa_test_cmd so G3 skips → restore the file before ship, because
-  # ship's preflight refuses a dirty primary) left the registry reading equal
-  # again at ship, the deployed SHA matching, and G4 SKIPPING a suite that NOTHING
-  # ever ran. Skipping G3 silently disarmed the production gate.
-  #
-  # Under the new contract there is no record, so G4 fails open and runs.
-  test "[unit] ship_gate_skip? does NOT skip when G3 never recorded a verdict (the disarm bug)" do
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: nil),
-               "no G3 record = no certification: skipping here would disarm the production gate"
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: {}),
-               "an empty record certifies nothing — the gate must run"
-  end
-
-  test "[unit] ship_gate_skip? does NOT skip on a RED recorded G3 verdict" do
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
-                                 qa_gate: certified(ok: false)),
-               "G3 went red — that is the opposite of a certification"
-  end
-
-  # --- the AUDITOR arms G4, in the FAIL-OPEN direction only --------------------
-  #
-  # THE HOLE THIS CLOSES: on a green G3 the frozen ship SHA *is* the certified SHA,
-  # so ship_gate_skip? matched and G4 SKIPPED its suite — meaning in the gate-GREEN
-  # + CI-RED direction (the dangerous one the cross-check exists for) the G3 alarm
-  # was the ONLY thing between that commit and production, while the alarm text
-  # told the operator G4 would re-gate it. A gate system that claims a backstop it
-  # does not have makes its own alarm dismissible. Now a red auditor DISTRUSTS the
-  # certification and the suite genuinely re-runs on the frozen SHA.
-  #
-  # FAIL-OPEN ONLY: the auditor may cause MORE checking, NEVER a block. Only the
-  # literal "red" arms it; every no-data state changes nothing.
-  test "[unit] ship_gate_skip? does NOT skip when the AUDITOR called the certified SHA red" do
-    audited = certified.merge("ci" => { "state" => "red", "checks" => ["test:system"] })
-
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: audited),
-               "G3 said green, GitHub CI said RED for that SAME SHA — the batch certification is exactly " \
-               "what must not be trusted, so G4 fails open and re-runs the suite"
-    assert S.auditor_red?(audited)
-  end
-
-  test "[unit] NO-DATA from the auditor never arms G4 — silence is not a red" do
-    # none/pending/unverified = GitHub had nothing to say (today ci.yml doesn't even
-    # build `release`). If any of these re-triggered the gate, the cross-check would
-    # tax every ship with a redundant suite for a verdict nobody gave.
-    %w[none pending unverified].each do |state|
-      audited = certified.merge("ci" => { "state" => state })
-
-      assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: audited),
-             "a #{state} auditor is NO DATA — it must not change the skip decision"
-      assert_not S.auditor_red?(audited)
+  test "[unit] ship_gate_kind classifies every state the tree-verdict read can return" do
+    SHIP_GATE_KINDS.each do |label, (ci, opts, kind, passes)|
+      got = S.ship_gate_kind(ci, **opts)
+      assert_equal kind, got, label
+      assert_equal passes, S.ship_gate_pass?(got), "#{label}: pass? must be #{passes}"
     end
-
-    green = certified.merge("ci" => { "state" => "green", "count" => 4 })
-    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: green),
-           "both verdicts agree green — nothing to re-check"
   end
 
-  test "[unit] auditor_red? is false for a record with no auditor at all (pre-cross-check releases)" do
-    # Every release recorded before the cross-check landed has a ci-less gate record.
-    # It must keep self-gating exactly as before — a missing auditor is not a red one.
-    assert_not S.auditor_red?(certified)
-    assert_not S.auditor_red?(certified.merge("ci" => nil))
-    assert_not S.auditor_red?(nil)
-    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: certified)
+  test "[unit] exactly two kinds pass — green and credited — and every other kind fails closed" do
+    passing = SHIP_GATE_KINDS.values.select { |(_ci, _opts, _kind, ok)| ok }
+                             .map { |(_ci, _opts, kind, _ok)| kind }.uniq.sort
+    assert_equal %i[credited green], passing, "a third passing kind would be a new way to ship an untested tree"
+    %i[red unreadable held diverged].each do |kind|
+      assert_not S.ship_gate_pass?(kind), "#{kind} must never pass the ship gate"
+    end
   end
 
-  test "[unit] a CREDITED G3 record self-skips and never arms the disagree path" do
-    # task dedupe-hub-release-suite: on a fast-forwarded promote the G3 gate may
-    # credit the SHA's existing green conclusion, recording the credited source in
-    # the gate note ("credited"). That is still a GREEN certification of the same
-    # command on the same SHA — G4 self-skips against it exactly as against a
-    # polled one, and the extra key must neither break the skip nor read as a
-    # DISAGREE (auditor_red? stays literal-"red"-only).
-    credited = certified.merge("ci" => { "state" => "green", "count" => 2,
-                                         "credited" => "2 completed check-runs already green; fast-forward promote" })
-
-    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: credited),
-           "a credited green record is the same proof ship_gate_skip? already accepts"
-    assert_not S.auditor_red?(credited), "a credited green must never arm the disagree/re-gate path"
+  test "[unit] a STRING state is not the symbol the read returns — it fails closed" do
+    # ci_verdict returns symbols; a hand-built or JSON-round-tripped record carrying
+    # "green" is not a verdict this gate has read, so it is held, never passed.
+    kind = S.ship_gate_kind({ state: "green" })
+    assert_equal :held, kind
+    assert_not S.ship_gate_pass?(kind)
   end
 
-  test "[unit] a TREE-credited G3 record self-skips and never arms the disagree path" do
-    # task dedupe-hub-release-suite round 2: the LIVE batch-PR promote mints a NEW
-    # merge SHA, so the credit's evidence is the ACCEPTED head's green vouching for
-    # the IDENTICAL TREE (bin/release's tree_identical_ci_outcome), recorded with both
-    # SHAs + the shared tree in the note. The record still certifies THIS repo,
-    # THIS cmd, THIS (release) SHA with a green ci.state — G4 self-skips against
-    # it exactly as against a polled or same-SHA-credited one, and the richer
-    # credited prose must neither break the skip nor read as a DISAGREE.
-    tree_credited = certified.merge(
-      "ci" => { "state" => "green", "count" => 8,
-                "credited" => "tree-identical promote — accepted head 5b10402d… concluded green and " \
-                              "shares tree 5b1c78e0… with release abc123" }
-    )
-
-    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: tree_credited),
-           "a tree-credited green record is the same proof ship_gate_skip? already accepts"
-    assert_not S.auditor_red?(tree_credited), "a tree-credited green must never arm the disagree/re-gate path"
+  test "[unit] credited: names the source of a GREEN only — a credit flag on a non-green read changes nothing" do
+    green = { state: :green, count: 8 }
+    assert_equal :green, S.ship_gate_kind(green, credited: false)
+    assert_equal :credited, S.ship_gate_kind(green, credited: true)
+    assert_equal :red, S.ship_gate_kind({ state: :red }, credited: true), "a credit is a green by construction"
+    assert_equal :held, S.ship_gate_kind({ state: :pending }, credited: true)
   end
 
-  # NOTE — the other half of the fail-open contract ("a red auditor can never BLOCK
-  # a ship, it only makes the gate RUN") is not assertable here: ship_gate_skip? is
-  # a pure run/skip decision and has no way to express an abort. It is proven where
-  # it actually lives — test/lib/release_cli_test.rb's
-  # test_ship_test_gate_names_the_red_auditor_as_the_reason_it_is_re_running, which
-  # drives the REAL test_gate with a red-auditor record and asserts the suite RAN
-  # and the gate still PASSED. (A unit test named for that property here would only
-  # re-assert `skip? == false` under a grander name — a test whose name claims more
-  # than it checks is its own small lying gate.)
+  test "[unit] verdict_source names the credit note for a credited read, else the SHA's own run" do
+    note = "tree-identical promote — accepted head acce97ed… concluded green and shares tree 5b1c78e0… with release f00dcafe…"
+    own  = "the SHA's own run, polled to a settled conclusion"
 
-  test "[unit] ship_gate_skip? re-triggers on SHA drift (straggler / re-pin)" do
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
-                                 qa_gate: certified(sha: "def456")),
-               "G3 certified a DIFFERENT commit — the frozen ship SHA is uncertified"
+    assert_equal "credited — #{note}", S.verdict_source({ state: :green, credited: note }, credited: true)
+    assert_equal own, S.verdict_source({ state: :green, count: 8 }, credited: false)
+    assert_equal own, S.verdict_source({ state: :green, credited: note }),
+                 "the flag, not the note, says whether a credit fired — a polled green may carry no note"
+    assert_equal own, S.verdict_source(nil)
+    # A credited read that recorded no note still says it was credited rather than
+    # claiming a run it never polled.
+    assert_equal "credited — source not recorded", S.verdict_source({ state: :green, credited: "  " }, credited: true)
   end
 
-  test "[unit] ship_gate_skip? re-triggers when G3 ran a narrower command" do
-    # A satellite whose G3 ran only the integration subset still gets its full
-    # suite at ship — a subset run certifies nothing about the full test_cmd.
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
-                                 qa_gate: certified(cmd: "bin/rails test test/integration"))
-  end
-
-  test "[unit] ship_gate_skip? never skips on blank inputs (fail open: run the gate)" do
-    assert_not S.ship_gate_skip?(test_cmd: "", frozen_sha: "abc", qa_gate: certified(sha: "abc", cmd: ""))
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "", qa_gate: certified(sha: ""))
-    assert_not S.ship_gate_skip?(test_cmd: nil, frozen_sha: nil, qa_gate: nil)
-  end
-
-  # --- qa_gate: pluck a repo's recorded G3 verdict --------------------------
-
-  test "[unit] qa_gate reads a repo's recorded G3 verdict, string or symbol keyed" do
-    gates = { "mcritchie-studio" => certified }
-    assert_equal certified, S.qa_gate(gates, "mcritchie-studio")
-    assert_equal certified, S.qa_gate(gates.symbolize_keys, :"mcritchie-studio")
-  end
-
-  test "[unit] qa_gate returns nil for a repo G3 never certified" do
-    assert_nil S.qa_gate({ "mcritchie-studio" => certified }, "turf-monster")
-    assert_nil S.qa_gate(nil, "mcritchie-studio")
-    assert_nil S.qa_gate({ "mcritchie-studio" => "green" }, "mcritchie-studio"),
-               "a non-Hash record is not a verdict"
-  end
   # --- resumable_repin?: idempotency BY IDENTITY (the partial-ship retry) -----
   #
   # A ship that published the gems, pushed the re-pin, then died leaves

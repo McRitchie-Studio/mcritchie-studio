@@ -89,54 +89,41 @@
 # Optional per-app `qa_deploy: { app: <qa-server-key> }` overrides the qa-server
 # target; absent, `Release::Repos.qa_app` defaults the key to the repo slug.
 #
-# Optional per-app `test_cmd` is the conductor's pre-prod gate (G4 Ship):
-# `bin/release ship` runs it (cwd = the repo's ISOLATED GATE WORKSPACE, at its
-# QA-frozen SHA) right before the irreversible prod deploy and scoped-aborts on
-# red. DOUBLE-TEST CAVEAT: only set it where the repo's own deploy does NOT
-# already run the suite. The hub deploys via github_actions (a workflow that runs
-# NO test step, just the Heroku push + smoke), so it carries
-# `test_cmd: bin/rails db:test:prepare test test:system` (any command SHAPE
-# works here — argless or path-arg — because `prepare_gate_workspace!` runs
-# `bin/rails db:test:prepare test:prepare` in the gate workspace first, building the
-# gitignored app/assets/builds/tailwind.css whatever the registered line looks like;
-# gate-workspace-skips-test-prepare, PR #522. See
-# docs/agents/modules/testing.md). The `repo_script` satellites SELF-GATE —
-# their bin/deploy runs their own tests — so they leave `test_cmd` UNSET to avoid
-# running the whole suite twice per ship. G4 ALSO self-gates against G3, but ONLY
-# against the verdict G3 RECORDED (metadata["qa_gates"][repo] = {sha, cmd, ok},
-# written only on a green pre-QA suite): same command + same frozen SHA + green
-# => the ship gate records a skip SOP instead of re-running. No record, a red
-# record, a different command, or a drifted SHA all FAIL OPEN and run the gate
-# (bin/release test_gate / Release::ShipSequence.ship_gate_skip?).
+# Optional per-app `test_cmd` is the conductor's pre-prod gate SWITCH (G4 Ship):
+# when set, `bin/release ship` READS GitHub CI's settled verdict for the app's
+# QA-frozen SHA's tree right before the irreversible prod deploy — the SHA's own
+# run polled to a conclusion, or a same-SHA / same-tree green credited from the
+# accepted head, exactly as the G3 gate resolves the release tip — and
+# scoped-aborts on anything but green. NOTHING RUNS ON THE CONDUCTOR'S MACHINE:
+# the command names the suite CI ran and is recorded on the gate SOP beside the
+# verdict's source (devops-v3 §5, one tree earns one verdict). Set it where the
+# repo's own deploy does NOT run the suite: the hub deploys via github_actions (a
+# workflow that runs NO test step, just the Heroku push + smoke), so it carries
+# `test_cmd: bin/rails db:test:prepare test test:system`. The `repo_script`
+# satellites SELF-GATE — their bin/deploy runs their own tests, in the ship
+# workspace — so they leave `test_cmd` UNSET, which makes the ship gate skip them.
+# There is no self-skip against G3's record any more (that spared a local suite
+# nothing re-runs); the read is the verdict.
 #
-# DO NOT blank `qa_test_cmd` to bypass a red G3. That was a documented recipe and
-# it is now a closed foot-gun: it used to make G4 skip a suite NOTHING had run
-# (the old skip rule compared registry strings against the DEPLOYED sha), which
-# silently disarmed the last gate before production.
+# DO NOT blank `test_cmd`/`qa_test_cmd` to bypass a red gate. A blank reads as
+# "self-gates" and skips the READ — it silently disarms the last gate before
+# production. The supported override is ship-side and loud:
+# `bin/release ship --skip-test-gate --reason "…"` (records a RED gate SOP).
 #
 # Optional per-app `qa_test_cmd` is Avi's PRE-QA gate (G3 Candidate):
-# `bin/release prepare` runs it BEFORE any QA deploy — the tier prepare owns
-# (Release::STEP_TEST_TIERS). A red gate aborts prepare with eject guidance while
-# every swept member is still `reviewed` (nothing flipped, nothing deployed).
-# UNSET = the repo self-gates at ship/its own deploy and the gate skips it.
+# `bin/release prepare` reads GitHub CI's verdict for it on origin/release BEFORE
+# any QA deploy — the tier prepare owns (Release::STEP_TEST_TIERS). A red gate
+# aborts prepare with eject guidance while every swept member is still `reviewed`
+# (nothing flipped, nothing deployed). UNSET = the repo self-gates at its own
+# deploy and the gate skips it. Nothing runs locally here either.
 #
-# WHERE it runs: the repo's ISOLATED GATE WORKSPACE (Release::GateWorkspace) — a
-# private detached worktree pinned at the origin/release SHA, under a dedicated
-# gate lock, with a test DB the gate PROVES is private before it runs (it boots
-# the app and reads back the resolved connection, and REFUSES a shared DB) — NOT
-# the shared primary checkout, which stays on a clean `main`. A suite that lazily
-# autoloads over minutes cannot be trusted against a tree a concurrent session can
-# `git checkout` out from under it; that is what made the gate false-fail on green
-# code. See docs/agents/modules/gates/g3-candidate.md.
-#
-# ANY COMMAND SHAPE IS SAFE HERE. The gate PREPARES the test env in its workspace
-# (`bin/rails db:test:prepare test:prepare`, one boot) before running your command,
-# so a PATH-ARG lane works. It must: Rails runs `test:prepare` — the hook that BUILDS
-# gitignored assets like app/assets/builds/tailwind.css — only when NO argument looks
-# like a path, and the workspace is a `--detach` worktree, which does NOT copy
-# gitignored files. Before the gate prepared the env, the satellites' path-arg lanes
-# rendered views with NO stylesheet and the gate went RED on GREEN code (2026-07-12).
-# Do not "fix" that class of failure by reshaping a command here — the gate owns it.
+# THE SHIP WORKSPACE (Release::GateWorkspace, role `ship`) still exists — a private
+# detached worktree pinned at the frozen SHA, under its own lock, with a test DB the
+# conductor PROVES is private before `db:test:prepare` — but it serves the gem
+# build, the consumer lock bump / re-pin, and a `repo_script` satellite's own deploy
+# (turf's bin/deploy runs its suite there), never a gate. Its env is prepared
+# (`bin/rails db:test:prepare test:prepare`, one boot) so that deploy suite runs
+# with its assets built whatever shape the repo's deploy takes.
 #
 # WHAT to register as qa_test_cmd — the question is NOT "hub or satellite", it is
 # "does this repo's DEPLOY run the suite?":
@@ -149,11 +136,12 @@
 #     github_actions — its workflow only pushes + smokes) — the registered command
 #     IS the last gate before prod and must be
 #     CI's FULL suite, VERBATIM (`bin/rails db:test:prepare test test:system`), at
-#     BOTH gates. The 90/10 policy certifies the whole release batch ONCE at G3, and
-#     ship's test_gate self-gates when the frozen SHA matches that certified run, so
-#     the suite still runs once per batch; a drifted/straggler SHA re-triggers it at
-#     ship. Registering the SUBSET for one of these leaves prod ungated for every
-#     tier the subset skips — exactly how rolio's system tier went uncovered.
+#     BOTH gates. CI runs that suite ONCE per tree; G3 reads its verdict for the
+#     release tip and G4 reads it again for the frozen ship SHA (credited from the
+#     accepted head when the tree is identical, else the SHA's own run), so the
+#     suite never runs twice and never runs here. Registering the SUBSET for one of
+#     these leaves prod ungated for every tier the subset skips — exactly how
+#     rolio's system tier went uncovered.
 #
 # THESE GATES INCLUDE THE SYSTEM TIER, and the exact SHAPE is load-bearing.
 # `bin/rails test` alone SKIPS test/system — so a system-test regression used to
@@ -325,12 +313,10 @@ apps:
   mcritchie-studio:
     ladder: three-rung
     # Hub: github_actions deploys via a workflow that runs NO test step (just the
-    # Heroku push + /up smoke), so gate prod on the suite here — same as the old
-    # git_push_heroku mechanic did.
-    # (Ship's gate SELF-GATES when the frozen SHA is exactly what the G3 pre-QA
-    # gate below already certified this run — full suite runs once per batch.
-    # test_cmd and qa_test_cmd must stay the SAME STRING or that skip misses and
-    # the suite runs twice: ship_gate_skip? compares the commands verbatim.)
+    # Heroku push + /up smoke), so gate prod here — the G4 ship gate READS CI's
+    # settled verdict for the frozen tree (the suite this command names ran in
+    # CI; nothing runs locally). Kept equal to qa_test_cmd so the two gates name
+    # the same suite CI ran, not because any skip compares them.
     test_cmd: bin/rails db:test:prepare test test:system
     # Pre-QA gate (G3): the hub certifies CI's FULL suite — the base tier AND the
     # SYSTEM tier — on the release batch. This string is ci.yml's `test` job
@@ -651,8 +637,8 @@ apps:
     #     Actions runner always has Chrome; no local browserless pre-check is needed.
     #
     # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry), and
-    # keep test_cmd and qa_test_cmd the SAME STRING or ship_gate_skip? can never
-    # credit G3's certified run and the suite runs twice every ship.
+    # keep test_cmd and qa_test_cmd the SAME STRING so both gates' SOPs name the
+    # one suite CI ran (no skip compares them; repos_test.rb pins the equality).
     test_cmd: bin/rails db:test:prepare test test:system
     qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:
@@ -675,8 +661,8 @@ apps:
     # while these two strings stayed on plain `test`).
     #
     # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry),
-    # and keep test_cmd and qa_test_cmd the SAME STRING so G4's
-    # ship_gate_skip? can credit G3's certified run.
+    # and keep test_cmd and qa_test_cmd the SAME STRING so both gates' SOPs
+    # name the one suite CI ran (no skip compares them).
     test_cmd: bin/rails db:test:prepare test test:system
     qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:

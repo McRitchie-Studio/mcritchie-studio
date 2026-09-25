@@ -425,10 +425,10 @@ class Release::ReposTest < ActiveSupport::TestCase
     end
   end
 
-  test "rolio's ship gate matches its pre-QA gate so G4 can self-gate" do
-    # Release::ShipSequence.ship_gate_skip? compares the command STRINGS verbatim
-    # against what G3 recorded. If test_cmd drifts from qa_test_cmd, G4 can never
-    # credit G3's certified run and the full suite runs a second time every ship.
+  test "rolio's ship gate names the same suite as its pre-QA gate" do
+    # Both gates READ CI's verdict for the one suite CI ran; the command is recorded
+    # on each gate's SOP. If test_cmd drifts from qa_test_cmd, one gate's SOP names
+    # a suite CI never ran for that tree. (No skip compares the two any more.)
     assert_equal Release::Repos.qa_test_cmd("rolio"), Release::Repos.test_cmd("rolio"),
                  "rolio's G4 test_cmd and G3 qa_test_cmd must be the same string"
   end
@@ -650,10 +650,10 @@ class Release::ReposTest < ActiveSupport::TestCase
                  "the hub's G3 gate must run CI's full suite (base + system tiers), verbatim"
   end
 
-  test "the hub's ship gate matches its pre-QA gate so G4 can self-gate" do
-    # Release::ShipSequence.ship_gate_skip? compares the command STRINGS verbatim
-    # against what G3 recorded. If test_cmd drifts from qa_test_cmd, G4 can never
-    # credit G3's certified run and the full suite runs a second time every ship.
+  test "the hub's ship gate names the same suite as its pre-QA gate" do
+    # Both gates READ CI's verdict for the one suite CI ran; the command is recorded
+    # on each gate's SOP. If test_cmd drifts from qa_test_cmd, one gate's SOP names
+    # a suite CI never ran for that tree. (No skip compares the two any more.)
     assert_equal Release::Repos.qa_test_cmd("mcritchie-studio"),
                  Release::Repos.test_cmd("mcritchie-studio"),
                  "G4's test_cmd and G3's qa_test_cmd must be the same string"

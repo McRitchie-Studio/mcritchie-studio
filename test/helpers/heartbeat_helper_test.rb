@@ -25,10 +25,12 @@ class HeartbeatHelperTest < ActionView::TestCase
   end
 
   test "release scope meta derives phase/tier/host for a registered scope key" do
+    # ship_test_gate is a READ of CI's verdict for the frozen tree: CI (host ci) ran
+    # the full suite; the conductor only read the conclusion.
     meta = heartbeat_release_scope_meta("ship_test_gate")
     assert_equal "ship", meta["phase"]
     assert_equal "full", meta["tier"]
-    assert_equal "local", meta["host"]
+    assert_equal "ci", meta["host"]
   end
 
   test "release scope meta is an empty hash for an unregistered scope key" do
