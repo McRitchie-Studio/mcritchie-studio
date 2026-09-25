@@ -56,11 +56,14 @@ The gate window spans the whole irreversible half of the ship:
   the hub's ship workspace (`mcritchie-studio/.worktrees/_ship`), pinned at
   the frozen ship SHA under the ship-workspace lock, and never from the
   primary. rel-20260925-3b1f5c sealed a false red because the seal ran the
-  primary's PRE-ship specs against the new prod. A virgin workspace gets its
-  node deps from `npm ci`.
+  primary's PRE-ship specs against the new prod. The workspace gets its node
+  deps from `npm ci`, re-run whenever the shipped `package-lock.json` differs
+  from the one last installed (so a Playwright bump never runs on stale deps),
+  and bounded at 600s so a hung install cannot stall the ship.
 - **Unsealed is not red.** When the shipped specs cannot run (the pin fails,
-  the SHA does not match, `bin/prod-smoke` or playwright is missing, or the
-  script cannot execute), the seal records **unsealed**: no seal is written,
+  the SHA does not match, `bin/prod-smoke` or playwright is missing, the deps
+  do not match the shipped lockfile, `npm ci` times out, or the script cannot
+  execute), the seal records **unsealed**: no seal is written,
   the `prod_smoke` event carries `unsealed: could not run the shipped specs —
   <reason>`, and no rollback prints. A red seal means the shipped specs RAN
   and failed.

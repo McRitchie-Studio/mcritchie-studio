@@ -1,3 +1,5 @@
+require "digest"
+
 class Release
   # WHERE the post-ship smoke seal runs its specs, and whether it can run them at
   # all (bin/release step 5c, production_smoke_seal; also `bin/release reseal`).
@@ -31,6 +33,21 @@ class Release
     # The script the seal runs, and the runner it needs, relative to the tree.
     SCRIPT     = File.join("bin", "prod-smoke").freeze
     PLAYWRIGHT = File.join("node_modules", ".bin", "playwright").freeze
+    
+    # STALE DEPS ARE A FALSE RED (review of PR #1605). node_modules is gitignored,
+    # so the workspace's `git clean -fd` keeps it across ships — which is the point
+    # (warm), and the trap: a ship that bumps @playwright/test would run the shipped
+    # specs on the OLD runner and seal red on a healthy prod. So the seal stamps the
+    # sha256 of the package-lock.json it installed from, and re-runs `npm ci` when
+    # the shipped lockfile no longer matches the stamp.
+    LOCKFILE   = "package-lock.json".freeze
+    DEPS_STAMP = File.join("node_modules", ".seal-package-lock.sha256").freeze
+    
+    # `npm ci` runs AFTER prod deployed, holding the ship-workspace lock that
+    # `prepare` also waits on — so a hung install must not stall the ship. Bounded;
+    # a timeout records unsealed. The env override exists for tests.
+    NPM_CI_TIMEOUT_SECONDS = 600
+    NPM_CI_TIMEOUT_ENV = "SEAL_NPM_CI_TIMEOUT_SECONDS".freeze
 
     # `root` is the tree to run the seal from; `reason` is nil when it can run,
     # else why it cannot (the unsealed summary carries it).
@@ -54,8 +71,40 @@ class Release
       end
       return refuse("the shipped tree has no #{SCRIPT}") unless File.executable?(File.join(root, SCRIPT))
       return refuse("playwright is not installed in the ship workspace") unless File.executable?(File.join(root, PLAYWRIGHT))
+      return refuse("the ship workspace's node deps do not match the shipped #{LOCKFILE}") unless deps_current?(root)
 
       Verdict.new(root: root, reason: nil)
+    end
+
+    # The seconds `npm ci` may run before the seal gives up and records unsealed.
+    def npm_ci_timeout
+      override = ENV[NPM_CI_TIMEOUT_ENV].to_s.strip
+      override.empty? ? NPM_CI_TIMEOUT_SECONDS : override.to_f
+    end
+
+    # sha256 of the tree's package-lock.json, or nil when it has none.
+    def lock_digest(root)
+      file = File.join(root.to_s, LOCKFILE)
+      File.file?(file) ? Digest::SHA256.file(file).hexdigest : nil
+    end
+
+    # Are the workspace's installed deps the ones the shipped lockfile names? True
+    # only when playwright is installed AND the stamp matches the lockfile's hash.
+    # No lockfile, no stamp, or a different stamp → not current (reinstall).
+    def deps_current?(root)
+      return false unless File.executable?(File.join(root.to_s, PLAYWRIGHT))
+
+      digest = lock_digest(root)
+      stamp  = File.join(root.to_s, DEPS_STAMP)
+      !digest.nil? && File.file?(stamp) && File.read(stamp).strip == digest
+    end
+
+    # Record the lockfile a successful `npm ci` installed from.
+    def stamp_deps!(root)
+      digest = lock_digest(root)
+      return unless digest
+
+      File.write(File.join(root.to_s, DEPS_STAMP), "#{digest}\n")
     end
 
     # A caller that could not even gather the facts (the pin aborted, git raised)

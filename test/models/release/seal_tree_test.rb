@@ -24,6 +24,8 @@ class Release
           File.write(File.join(dir, SealTree::PLAYWRIGHT), "#!/bin/sh\n")
           File.chmod(0o755, File.join(dir, SealTree::PLAYWRIGHT))
         end
+        File.write(File.join(dir, SealTree::LOCKFILE), "{}\n")
+        SealTree.stamp_deps!(dir) if playwright
         yield dir
       end
     end
@@ -125,6 +127,39 @@ class Release
       p = plan(superseded_by: "rel-20260926-abc123")
       assert_nil p.refusal
       assert_equal "re-sealed from the shipped tree; prod has since moved to rel-20260926-abc123", p.note
+    end
+
+    # --- the node-deps stamp (stale deps are a false red) ----------------------
+    test "[unit] deps are current only when the stamp names the shipped lockfile" do
+      with_workspace do |dir|
+        assert SealTree.deps_current?(dir)
+        File.write(File.join(dir, SealTree::LOCKFILE), %({"playwright":"2"}\n))
+        refute SealTree.deps_current?(dir), "a bumped lockfile makes the installed deps stale"
+        verdict = SealTree.resolve(workspace: dir, frozen_sha: FROZEN, head_sha: FROZEN)
+        assert_includes verdict.reason, "node deps do not match the shipped package-lock.json"
+        SealTree.stamp_deps!(dir)
+        assert SealTree.deps_current?(dir), "a successful reinstall re-stamps"
+      end
+    end
+
+    test "[unit] no stamp, no lockfile, or no playwright means reinstall" do
+      with_workspace do |dir|
+        File.delete(File.join(dir, SealTree::DEPS_STAMP))
+        refute SealTree.deps_current?(dir), "deps installed by something other than the seal are not trusted"
+      end
+      with_workspace do |dir|
+        File.delete(File.join(dir, SealTree::LOCKFILE))
+        refute SealTree.deps_current?(dir)
+      end
+      with_workspace(playwright: false) { |dir| refute SealTree.deps_current?(dir) }
+    end
+
+    test "[unit] npm ci is bounded at 600s unless overridden" do
+      assert_equal 600, SealTree::NPM_CI_TIMEOUT_SECONDS
+      ENV[SealTree::NPM_CI_TIMEOUT_ENV] = "2"
+      assert_in_delta 2.0, SealTree.npm_ci_timeout
+    ensure
+      ENV.delete(SealTree::NPM_CI_TIMEOUT_ENV)
     end
   end
 end

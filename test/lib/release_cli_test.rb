@@ -22,6 +22,7 @@ require "tmpdir"
 # json-requiring test errored with `uninitialized constant JSON`.
 require "json"
 require "base64"
+require "digest"
 require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
 require "English"   # $CHILD_STATUS — the gate-lock queue test reaps its own child
 require_relative "release_cli_stubs"
@@ -7312,6 +7313,9 @@ class ReleaseCliTest < Minitest::Test
     playwright = File.join(hub, "node_modules", ".bin", "playwright")
     File.write(playwright, "#!/usr/bin/env sh\nexit 0\n")
     File.chmod(0o755, playwright)
+    # Deps already installed from THIS lockfile: the stamp matches, so no npm ci.
+    File.write(File.join(hub, "package-lock.json"), "{}\n")
+    File.write(File.join(hub, "node_modules", ".seal-package-lock.sha256"), "#{Digest::SHA256.hexdigest("{}\n")}\n")
     script = File.join(hub, "bin", "prod-smoke")
     shas = %w[OLD NEW].map do |label|
       File.write(script, "#!/usr/bin/env sh\necho SPECS-#{label}\nexit #{label == 'OLD' ? 1 : 0}\n")
@@ -7400,6 +7404,103 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "playwright is not installed in the ship workspace"
       refute_includes out, "SPECS-", "the smoke never ran without its runner"
       refute_includes out, "PRODUCTION SMOKE SEAL FAILED"
+    end
+  end
+
+  # --- the seal's npm ci: skipped when current, re-run on a new lockfile, bounded
+  # Review of PR #1605: node_modules survives the workspace's `git clean -fd`, so
+  # a ship that bumps @playwright/test would run on stale deps and seal a false
+  # red; and an unbounded npm ci would stall the ship after prod deployed. A fake
+  # npm stands in for the real one (seal_npm_ci_cmd is the seam).
+  def fake_npm(dir, body)
+    path = File.join(dir, "fake-npm")
+    File.write(path, "#!/usr/bin/env sh\n#{body}\n")
+    File.chmod(0o755, path)
+    path
+  end
+
+  def test_seal_skips_npm_ci_when_the_installed_deps_match_the_shipped_lockfile
+    Dir.mktmpdir do |dir|
+      hub, _old, new_sha = seal_git_fixture(dir)
+      ran = File.join(dir, "npm-ran")
+      npm = fake_npm(dir, "touch #{ran}")
+      setup = SEAL_STUB + %(def repo_path(_repo) = #{hub.inspect}\ndef seal_npm_ci_cmd = [#{npm.inspect}]\n)
+      args = %([{ "repo" => "mcritchie-studio" }], { "mcritchie-studio" => #{new_sha.inspect} }, "rel-seal")
+      out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{args}))")
+
+      refute File.exist?(ran), "current deps are reused — the warm workspace stays warm"
+      refute_includes out, "installing the shipped tree's node deps"
+      assert_includes out, "SPECS-NEW"
+      assert_includes out, %("green")
+    end
+  end
+
+  def test_seal_reinstalls_deps_when_the_shipped_lockfile_changed
+    Dir.mktmpdir do |dir|
+      hub, = seal_git_fixture(dir)
+      # The ship bumps the lockfile (a Playwright upgrade); the stamp still names the old one.
+      system("git", "-C", hub, "checkout", "-q", "main", out: File::NULL, err: File::NULL) || flunk("checkout")
+      File.write(File.join(hub, "package-lock.json"), %({"playwright":"2"}\n))
+      system("git", "-C", hub, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "bump",
+             out: File::NULL, err: File::NULL) || flunk("commit")
+      bumped = `git -C #{hub} rev-parse HEAD`.strip
+      ran = File.join(dir, "npm-ran")
+      npm = fake_npm(dir, "pwd > #{ran}")
+      setup = SEAL_STUB + %(def repo_path(_repo) = #{hub.inspect}\ndef seal_npm_ci_cmd = [#{npm.inspect}]\n)
+      args = %([{ "repo" => "mcritchie-studio" }], { "mcritchie-studio" => #{bumped.inspect} }, "rel-seal")
+      out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{args}))")
+
+      ship = File.realpath(File.join(hub, ".worktrees", "_ship"))
+      assert File.exist?(ran), "a changed lockfile re-runs npm ci"
+      assert_equal ship, File.realpath(File.read(ran).strip), "…in the ship workspace"
+      assert_includes out, "installing the shipped tree's node deps"
+      assert_includes out, "SPECS-NEW", "…and then the shipped specs run"
+      assert_includes out, %("green")
+      assert_equal Digest::SHA256.hexdigest(%({"playwright":"2"}\n)),
+                   File.read(File.join(ship, "node_modules", ".seal-package-lock.sha256")).strip,
+                   "the stamp now names the lockfile it installed from"
+    end
+  end
+
+  def test_seal_failed_reinstall_is_unsealed_not_a_stale_red
+    Dir.mktmpdir do |dir|
+      hub, = seal_git_fixture(dir)
+      system("git", "-C", hub, "checkout", "-q", "main", out: File::NULL, err: File::NULL) || flunk("checkout")
+      File.write(File.join(hub, "package-lock.json"), %({"playwright":"2"}\n))
+      system("git", "-C", hub, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "bump",
+             out: File::NULL, err: File::NULL) || flunk("commit")
+      bumped = `git -C #{hub} rev-parse HEAD`.strip
+      npm = fake_npm(dir, "echo offline; exit 1")
+      setup = SEAL_STUB + %(def repo_path(_repo) = #{hub.inspect}\ndef seal_npm_ci_cmd = [#{npm.inspect}]\n)
+      args = %([{ "repo" => "mcritchie-studio" }], { "mcritchie-studio" => #{bumped.inspect} }, "rel-seal")
+      out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{args}))")
+
+      refute_includes out, "SPECS-", "the specs never run on deps that do not match the shipped lockfile"
+      assert_includes out, "node deps do not match the shipped package-lock.json"
+      assert_includes out, %("unsealed")
+    end
+  end
+
+  def test_seal_npm_ci_that_hangs_times_out_and_records_unsealed
+    Dir.mktmpdir do |dir|
+      hub, = seal_git_fixture(dir)
+      system("git", "-C", hub, "checkout", "-q", "main", out: File::NULL, err: File::NULL) || flunk("checkout")
+      File.write(File.join(hub, "package-lock.json"), %({"playwright":"2"}\n))
+      system("git", "-C", hub, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "bump",
+             out: File::NULL, err: File::NULL) || flunk("commit")
+      bumped = `git -C #{hub} rev-parse HEAD`.strip
+      npm = fake_npm(dir, "sleep 30")
+      setup = SEAL_STUB + %(ENV["SEAL_NPM_CI_TIMEOUT_SECONDS"] = "1"\n) +
+              %(def repo_path(_repo) = #{hub.inspect}\ndef seal_npm_ci_cmd = [#{npm.inspect}]\n)
+      args = %([{ "repo" => "mcritchie-studio" }], { "mcritchie-studio" => #{bumped.inspect} }, "rel-seal")
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{args}))")
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_operator elapsed, :<, 20, "the hung install is killed at the limit, not waited out"
+      assert_includes out, "unsealed: could not run the shipped specs — npm ci timed out after 1s in the ship workspace"
+      refute_includes out, "SPECS-"
+      assert_includes out, %("unsealed")
     end
   end
 

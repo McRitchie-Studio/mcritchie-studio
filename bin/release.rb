@@ -7443,7 +7443,9 @@ def resolve_seal_tree(frozen)
   return Release::SealTree.refuse("no frozen ship SHA was recorded for the hub") if frozen.empty?
 
   path = ship_workspace!(APP, frozen)
-  ensure_seal_playwright!(path)
+  deps_failure = ensure_seal_playwright!(path)
+  return Release::SealTree.refuse(deps_failure) if deps_failure
+
   head, = git_capture("-C", path, "rev-parse", "HEAD")
   Release::SealTree.resolve(workspace: path, frozen_sha: frozen, head_sha: head)
 rescue SystemExit, StandardError => e
@@ -7453,13 +7455,71 @@ end
 # The ship workspace is a bare checkout: node_modules is gitignored, so a virgin
 # workspace has no playwright. Install the SHIPPED lockfile's deps there (npm ci
 # is lockfile-exact; the workspace's `git clean -fd` keeps the result warm across
-# ships). Best-effort: a failure leaves playwright absent and SealTree refuses.
+# ships) — and RE-install when the shipped package-lock.json differs from the one
+# last installed (Release::SealTree.deps_current?), so a Playwright bump never
+# runs on stale deps. Bounded by SealTree.npm_ci_timeout: this runs after prod
+# deployed, holding the ship-workspace lock. Returns nil, or the reason the seal
+# must record unsealed (a timeout). A plain failure returns nil too: the deps are
+# then not current, and SealTree.resolve refuses with its own reason.
 def ensure_seal_playwright!(path)
-  return if File.executable?(File.join(path, Release::SealTree::PLAYWRIGHT))
+  return nil if Release::SealTree.deps_current?(path)
 
-  say("  installing the shipped tree's node deps in the ship workspace (npm ci)")
-  out, ok = sh("npm", "ci", "--no-audit", "--no-fund", capture: true, chdir: path)
-  say("  ⚠ npm ci failed in #{path}:\n#{out}") unless ok
+  timeout = Release::SealTree.npm_ci_timeout
+  say("  installing the shipped tree's node deps in the ship workspace (npm ci, #{timeout.to_i}s limit)")
+  FileUtils.rm_f(File.join(path, Release::SealTree::DEPS_STAMP))
+  out, ok, timed_out = sh_bounded(*seal_npm_ci_cmd, chdir: path, timeout: timeout)
+  return "npm ci timed out after #{timeout.to_i}s in the ship workspace" if timed_out
+
+  if ok
+    Release::SealTree.stamp_deps!(path)
+  else
+    say("  ⚠ npm ci failed in #{path}:\n#{out}")
+  end
+  nil
+end
+
+# The install command — a seam so the tests can stand in a fake npm.
+def seal_npm_ci_cmd = %w[npm ci --no-audit --no-fund]
+
+# Run a command with a wall-clock limit. Returns [output, ok, timed_out]. The
+# child runs in its own process group, so a timeout kills npm AND the node
+# processes it spawned (TERM, then KILL after 5s).
+def sh_bounded(*cmd, chdir:, timeout:)
+  reader, writer = IO.pipe
+  pid = Process.spawn(*cmd, chdir: chdir, out: writer, err: writer, pgroup: true)
+  writer.close
+  out = +""
+  drain = Thread.new { out << reader.read.to_s }
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout.to_f
+  status = nil
+  loop do
+    _, status = Process.waitpid2(pid, Process::WNOHANG)
+    break if status
+    if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      kill_group(pid)
+      drain.join(1)
+      return [out, false, true]
+    end
+    sleep 0.2
+  end
+  drain.join
+  [out, status.success?, false]
+rescue SystemCallError => e
+  [e.message, false, false]
+ensure
+  reader&.close unless reader&.closed?
+end
+
+def kill_group(pid)
+  Process.kill("TERM", -pid)
+  5.times do
+    return if Process.waitpid(pid, Process::WNOHANG)
+    sleep 1
+  end
+  Process.kill("KILL", -pid)
+  Process.waitpid(pid)
+rescue SystemCallError
+  nil
 end
 
 # Record UNSEALED: the release event names why, and NO seal is written — an absent
