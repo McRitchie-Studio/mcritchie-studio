@@ -62,6 +62,7 @@ module ActiveSupport
         mod.op_reader = ->(_item) { nil }
       end
       start_fake_op_log
+      Github::TaskDerivation.reset_shared!
     end
 
     teardown do

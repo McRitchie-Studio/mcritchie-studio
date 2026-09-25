@@ -24,7 +24,8 @@ class FakeTaskDerivation
   def pr_url_for_branch(repo, branch, exclude: [])
     @calls << [:pr_url_for_branch, repo, branch]
     url = answer(@branches[[repo, branch]])
-    exclude.any? { |gone| gone.to_s.include?(url.to_s) } && url ? nil : url
+    gone = Array(exclude).flat_map { |note| Github::TaskDerivation.pr_urls_in(note) }
+    url && gone.include?(Github::TaskDerivation.normalize_url(url)) ? nil : url
   end
 
   def authors(pr_url)

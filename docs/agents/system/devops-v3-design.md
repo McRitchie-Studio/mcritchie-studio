@@ -384,12 +384,17 @@ Collision points: the card partial (epic chip and countdown) and `dor-check`
 **4a as built.** `Github::TaskDerivation` reads GitHub's API, never a checkout,
 because the board runs on Heroku. `Task#merged_rung` names the highest of `main`,
 `release` and `accepted` that contains the PR's merge commit. It falls back to the
-`merged` stamp when GitHub cannot place the commit, so `bin/task merged` still
-overrides. `Task#pr_url_or_derived` finds the PR headed by the task branch.
+`merged` stamp only when GitHub finds no merge, so `bin/task merged` overrides
+only then; when GitHub places the commit, the derived rung wins. A compare cannot
+see a revert, so a reverted merge still reads as merged; the rework path repoints
+the task at a new PR. `Task#pr_url_or_derived` finds the PR headed by the task
+branch, skipping any PR whose exact url the task lists as abandoned.
 `Task#derived_authors` maps `<soul>@mcritchie.studio` commit emails and
 Co-Authored-By trailers to souls. `ReviewerSelector` and the review-claim backstop
 union those authors with the stamps. `bin/release`'s detection, resolve and
 stranded-commit snippets, and the multi-repo record check, read the derived values.
+Tasks share one derivation per process for a minute: each GitHub answer is cached,
+and the first failed read stops the rest, so an outage costs one timeout per sweep.
 Every stamp and guard stays until 4b.
 
 ## 11. Decisions recorded on 2026-09-24
