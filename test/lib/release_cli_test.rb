@@ -7316,6 +7316,53 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- REGRESSION (rel-20260925-3b1f5c): the seal ran the PRE-ship specs --------
+  # The seal ran bin/prod-smoke from the hub PRIMARY, which still held the
+  # pre-ship tree, so it smoked the OLD e2e specs against the NEW prod and
+  # recorded a false red. The seal must run the FROZEN ship tree — the ship
+  # workspace pinned at ship_sha[APP] — never the primary.
+  #
+  # A real git fixture: the primary sits at OLD, the frozen ship SHA is NEW, and
+  # each commit's bin/prod-smoke prints which specs it is.
+  def seal_git_fixture(dir)
+    hub = File.join(dir, "mcritchie-studio")
+    git = ->(*a) { system("git", "-C", hub, "-c", "user.email=t@t", "-c", "user.name=t", *a, out: File::NULL, err: File::NULL) || flunk("git #{a.join(' ')} failed") }
+    FileUtils.mkdir_p(File.join(hub, "bin"))
+    FileUtils.mkdir_p(File.join(hub, "node_modules", ".bin"))
+    system("git", "init", "-q", "-b", "main", hub, out: File::NULL, err: File::NULL) || flunk("git init failed")
+    playwright = File.join(hub, "node_modules", ".bin", "playwright")
+    File.write(playwright, "#!/usr/bin/env sh\nexit 0\n")
+    File.chmod(0o755, playwright)
+    script = File.join(hub, "bin", "prod-smoke")
+    shas = %w[OLD NEW].map do |label|
+      File.write(script, "#!/usr/bin/env sh\necho SPECS-#{label}\nexit #{label == 'OLD' ? 1 : 0}\n")
+      File.chmod(0o755, script)
+      git.call("add", "-A")
+      git.call("commit", "-q", "-m", label)
+      `git -C #{hub} rev-parse HEAD`.strip
+    end
+    git.call("checkout", "-q", shas.first) # the primary still holds the PRE-ship tree
+    [hub, shas.first, shas.last]
+  end
+
+  def test_seal_runs_the_frozen_ship_trees_specs_not_the_primarys
+    Dir.mktmpdir do |dir|
+      hub, old_sha, new_sha = seal_git_fixture(dir)
+      setup = SEAL_STUB + %(def repo_path(_repo) = #{hub.inspect}\n)
+      args = %([{ "repo" => "mcritchie-studio" }], { "mcritchie-studio" => #{new_sha.inspect} }, "rel-seal")
+      out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{args}))")
+
+      assert_includes out, "SPECS-NEW", "the seal must run the specs of the tree that SHIPPED"
+      refute_includes out, "SPECS-OLD", "never the primary's pre-ship specs (the false red of rel-20260925-3b1f5c)"
+      assert_equal new_sha, `git -C #{File.join(hub, '.worktrees', '_ship')} rev-parse HEAD`.strip,
+                   "the specs ran from the ship workspace pinned at the frozen SHA"
+      assert_equal old_sha, `git -C #{hub} rev-parse HEAD`.strip, "the primary is never touched"
+      seal_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") && l.include?("record_smoke_seal!") }
+      assert seal_write, "the green verdict is recorded"
+      assert_includes seal_write, "passed: true"
+    end
+  end
+
   # --- regression: the silent swallowed-subprocess flake ------------------------
   #
   # A subprocess that EXITS NONZERO must fail LOUD with its stderr surfaced — it
