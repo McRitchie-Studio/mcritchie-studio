@@ -4406,8 +4406,9 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_ship_refuses_an_unknown_mode_before_anything_moves
-    out = run_cli(["--dry-run", "--mode", "sometimes"], call: "ship", setup: SHIP_STUB)
-    assert_includes out, "--mode must be one of ask|timed|auto"
+    out = run_cli(["--dry-run", "--mode", "sometimes"], setup: SHIP_STUB,
+                  call: %{begin; ship; rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+    assert_includes out, "ABORTED: ✗ --mode must be one of ask|timed|auto, got \"sometimes\""
     refute_includes out, "shipping rel-ship", "the abort lands before the release is even resolved"
   end
 

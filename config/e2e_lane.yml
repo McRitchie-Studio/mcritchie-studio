@@ -243,7 +243,12 @@
 # the card's epic chip filtering the board. Coverage ADDED; `quarantined` untouched at 10.
 # MEASURED with the lister on THIS tree, never by arithmetic:
 #   npx playwright test --list => 161
-total_specs: 161
+# 161 -> 163 on 2026-09-24: the two e2e/board_window_chip.spec.js specs
+# (/tasks/operator-windows-on-board), the operator-window countdown on the card.
+# Coverage ADDED; `quarantined` untouched at 10.
+# MEASURED with the lister on THIS tree, never by arithmetic:
+#   npx playwright test --list => 163
+total_specs: 163
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
