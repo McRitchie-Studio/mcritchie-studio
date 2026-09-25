@@ -23,7 +23,7 @@
 # (default https://mcritchie.studio).
 #
 # Usage:
-#   bin/task list [--stage S] [--agent A] [--epic E] [--reviewable] [--json]
+#   bin/task list [--stage S] [--agent A] [--epic E] [--reviewable] [--all] [--json]
 #     ( --json prints the full fetched records as an array — the same payload
 #       `show --json` prints, for the whole page in ONE board read. )
 #   bin/task show <slug> [--json | --verbose|-v]
@@ -2501,6 +2501,9 @@ when "list"
   # reclaim sweep resolved a build claim per desk, and at 141 desks that serialised
   # into a sweep that never finished.
   as_json = !ARGV.delete("--json").nil?
+  # --all walks every page (as --json does) but keeps the three-column rendering.
+  # Without it a bare list shows one page of 20 and says so in its total line.
+  every_page = as_json | !ARGV.delete("--all").nil?
   # --json is for callers that DECIDE on the record, so it asks the index for the
   # show-shaped row (full=1) and for every page, not the default 20. A batch that
   # silently carried the raw row would answer review_in_progress/gate_in_flight
@@ -2517,7 +2520,8 @@ when "list"
     q << "epic=#{top["epic_slug"]}"
   end
   q << "reviewable=1" if reviewable
-  q += ["full=1", "per_page=#{LIST_JSON_PER_PAGE}"] if as_json
+  q << "full=1" if as_json
+  q << "per_page=#{LIST_JSON_PER_PAGE}" if every_page
   path = "/api/v1/tasks#{q.empty? ? "" : "?#{q.join("&")}"}"
   # A board that predates `full` rejects it with a 400 naming the param. Degrade to
   # the raw listing rather than dying: this CLI ships in worktrees and CI while the
@@ -2525,21 +2529,24 @@ when "list"
   # The raw rows are still a truthful listing — they are simply missing the derived
   # fields, and every consumer that DECIDES on them is required to notice that for
   # itself (see bin/agent-worktree's BATCH_REQUIRED_FIELDS).
-  tasks = begin
-    api(:get, path)["data"] || []
+  first = begin
+    api(:get, path)
   rescue SystemExit
     raise unless as_json
 
     q -= ["full=1"]
     path = "/api/v1/tasks?#{q.join("&")}"
     warn "note: this board does not serve full=1 yet; listing raw rows (derived fields absent)"
-    api(:get, path)["data"] || []
+    api(:get, path)
   end
+  tasks = first["data"] || []
+  # The index's meta.total: how many rows the filter matches across every page.
+  total = first.dig("meta", "total")
   # Walk the remaining pages so --json is the WHOLE set, not the newest page. The
   # index caps per_page at 100, and Task.recent is newest-first: a single page
   # would hand a batch caller the newest 20 — i.e. exactly the live work — and
   # silently omit the rest.
-  if as_json
+  if every_page
     page = 1
     while tasks.size == (page * LIST_JSON_PER_PAGE)
       page += 1
@@ -2553,7 +2560,13 @@ when "list"
     puts JSON.pretty_generate(tasks)
   else
     tasks.each { |t| puts "#{t["slug"]}  [#{t["stage"]}]  #{t["title"]}" }
-    puts "(#{tasks.size} task(s))"
+    # Say so when this is one page of a longer list: a bare "(20 task(s))" read as
+    # the whole board, and the rest was silently missing.
+    if total.is_a?(Integer) && total > tasks.size
+      puts "(#{tasks.size} of #{total} — pass --all or --json for every row)"
+    else
+      puts "(#{tasks.size} task(s))"
+    end
   end
 when "show"
   usage = "usage: #{$PROGRAM_NAME} show <slug> [--json | --verbose|-v]"

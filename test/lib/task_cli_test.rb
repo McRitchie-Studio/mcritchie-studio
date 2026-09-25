@@ -17,6 +17,7 @@ require "rbconfig"
 require "tmpdir"
 require "fileutils"
 require "time"
+require "uri"
 require_relative "../support/session_env"
 
 class TaskCliTest < Minitest::Test
@@ -194,8 +195,16 @@ class TaskCliTest < Minitest::Test
 
     # The tasks INDEX (bin/task list): data is an ARRAY, not a single record. Without
     # this the fallback below returns one object and `list` would iterate a Hash.
+    # @stub_list seeds the index rows; it pages them the way Api::Paginatable does
+    # (page/per_page, default 20, clamped to 100) and carries the same meta.total.
     if method == "GET" && path =~ %r{\A/api/v1/tasks(\?.*)?\z}
-      return ["200 OK", JSON.generate("data" => [])]
+      rows = @stub_list || []
+      query = URI.decode_www_form(path.split("?", 2)[1].to_s).to_h
+      page = [query.fetch("page", 1).to_i, 1].max
+      per_page = query.fetch("per_page", 20).to_i.clamp(1, 100)
+      return ["200 OK", JSON.generate("data" => rows.slice((page - 1) * per_page, per_page) || [],
+                                      "meta" => { "page" => page, "per_page" => per_page, "total" => rows.size,
+                                                  "total_pages" => (rows.size.to_f / per_page).ceil })]
     end
 
     # The ACTIVITIES index — an ARRAY too, and `bin/task block --kind rework` reads
@@ -2384,6 +2393,39 @@ class TaskCliTest < Minitest::Test
     assert_empty requests
     assert_match(/unknown flag "--stag"/, err)
     assert_match(/--stage/, err, "a close typo earns a suggestion")
+  end
+
+  def list_rows(count)
+    (1..count).map { |i| { "slug" => "task-#{i}", "stage" => "designed", "title" => "Task #{i}" } }
+  end
+
+  # The index pages at 20 by default; a bare list used to print those 20 and
+  # "(20 task(s))" with no hint that 37 more existed.
+  def test_list_prints_the_board_total_when_the_page_is_not_every_row
+    @stub_list = list_rows(57)
+    _requests, out, err, status = run_task(["list"])
+    assert status.success?, err
+    assert_equal 20, out.lines.count { |l| l.start_with?("task-") }
+    assert_includes out, "20 of 57 — pass --all or --json for every row"
+  end
+
+  def test_list_total_line_is_the_plain_count_when_every_row_is_shown
+    @stub_list = list_rows(3)
+    _requests, out, _err, status = run_task(["list"])
+    assert status.success?
+    assert_includes out, "(3 task(s))"
+    refute_includes out, "pass --all"
+  end
+
+  def test_list_all_pages_through_every_row
+    @stub_list = list_rows(157)
+    requests, out, err, status = run_task(["list", "--all"])
+    assert status.success?, "--all is a valid list flag (#{err})"
+    gets = requests.select { |r| r[:method] == "GET" && r[:path].start_with?("/api/v1/tasks?") }
+    assert_equal 2, gets.size, "157 rows at 100 per page is two reads"
+    assert(gets.all? { |r| r[:path].include?("per_page=100") })
+    assert_equal 157, out.lines.count { |l| l.start_with?("task-") }
+    assert_includes out, "(157 task(s))"
   end
 
   # --reviewable is the parallel-review queue filter: the SOP documents

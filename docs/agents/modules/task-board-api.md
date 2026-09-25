@@ -900,13 +900,12 @@ bin/task move <slug> submitted \               # optional per-transition usage �
   --model M --tokens-in N --tokens-out N --cost D --actor A   #   recorded on the TaskEvent
 ```
 
-> ⚠️ **`bin/task list` caps at 20 rows, recency-ordered across all stages, with
-> no truncation warning.** It surfaces only the API's default page (`per_page=20`,
-> `created_at DESC`) and discards `meta`, so it prints `(20 task(s))` even when
-> more exist — older tasks in quiet apps silently fall off. **`bin/task list
-> --stage <stage>` is the reliable enumeration** (an actionable stage holds far
-> fewer than 20); enumerate the Deploy queue by stage at the start of every cycle
-> (see [`parallel-agent-devops.md` → Step 0](parallel-agent-devops.md#step-0--assess-the-queue-by-stage)).
+> **`bin/task list` shows one page of 20 rows by default**, newest first across all
+> stages, and says so: when more rows match, its last line reads `(20 of 57 — pass
+> --all or --json for every row)` from the index's `meta.total`. `--all` walks every
+> page (100 per read) in the same three-column rendering; `--json` walks every page
+> as full records. `--stage <stage>` still narrows the read to one queue (see
+> [`parallel-agent-devops.md` → Step 0](parallel-agent-devops.md#step-0--assess-the-queue-by-stage)).
 
 List flags are **repeatable** (one value per flag), so commas inside an
 `acceptance`/`test_plan` item are safe. Fall back to the raw API above only when
