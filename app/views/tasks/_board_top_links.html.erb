@@ -6,7 +6,7 @@
     checks and screen readers find them on every board surface.
     Local: current ("tasks" | "deployments" | "stages" | "epics") marks the active page. %>
 <% current = local_assigns.fetch(:current, nil) %>
-<nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Board sections">
+<nav class="flex flex-wrap items-center gap-3 gap-y-1 text-xs mb-1.5" aria-label="Board sections">
   <% if admin? %>
     <%= link_to "← Dashboard", admin_dashboard_path,
           class: "text-muted hover:text-heading transition" %>
