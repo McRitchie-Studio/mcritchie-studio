@@ -346,6 +346,74 @@ module Insights
       end
     end
 
+    # The dry-run (default) and live backfill over the most recently shipped tasks —
+    # what `bin/rails learning_loop:backfill` runs, so Alex can read the loop's output
+    # before it grades anything for real. Dry run writes NOTHING; live grades each
+    # ungraded task exactly as the ship hook would (idempotent — graded ones are
+    # skipped). One Baseline serves the whole run: the current trailing window.
+    class Backfill
+      COLUMNS = [["task", 34], ["po>act", 8], ["bnc", 3], ["gate fails", 12], ["build", 6],
+                 ["review", 6], ["cost", 8], ["lines", 6], ["verdict", 0]].freeze
+
+      def self.run(limit: 30, live: false, io: $stdout, pr_reader: nil)
+        new(limit: limit, live: live, io: io, pr_reader: pr_reader).run
+      end
+
+      def initialize(limit:, live:, io:, pr_reader:)
+        @limit = limit.to_i.clamp(1, 500)
+        @live = live
+        @io = io
+        @pr_reader = pr_reader || PrLines.new
+      end
+
+      # Returns the per-task rows ({slug:, assessment:, graded:}) it printed.
+      def run
+        baseline = Baseline.build
+        tasks = Task.where(stage: "shipped").where.not(completed_at: nil)
+                    .order(completed_at: :desc).limit(@limit).to_a
+        @io.puts "learning_loop:backfill — #{@live ? "LIVE" : "DRY RUN (nothing written)"} · " \
+                 "last #{tasks.size} shipped · baseline #{baseline_label(baseline)}"
+        @io.puts header
+        rows = tasks.map { |task| row_for(task, baseline) }
+        learnings = rows.count { |r| r[:assessment].learning }
+        @io.puts "#{learnings} of #{rows.size} would write a learning; #{rows.size - learnings} nothing to learn."
+        rows
+      end
+
+      private
+
+      def row_for(task, baseline)
+        grader = TaskGrader.new(task, baseline: baseline, pr_reader: @pr_reader)
+        result = grader.assessment
+        graded = @live && !TaskGrade.exists?(task_slug: task.slug) ? grader.grade! : nil
+        @io.puts line(task, result)
+        { slug: task.slug, assessment: result, graded: graded }
+      end
+
+      def line(task, result)
+        f = result.facts
+        cells = [
+          task.slug, "#{f["po_size"] || "-"}>#{f["actual_size"] || "-"}", f["bounces"].to_s,
+          f["gate_failures"].map { |k, n| "#{k}:#{n}" }.join(",").presence || "-",
+          hours(f["build_seconds"]), hours(f["review_seconds"]), format("$%.2f", f["cost"]),
+          f["lines_changed"]&.to_s || "?", result.learning ? "LEARN #{result.learning}" : "nothing to learn"
+        ]
+        COLUMNS.each_with_index.map { |(_, w), i| w.zero? ? cells[i] : cells[i].to_s.truncate(w).ljust(w) }.join(" ")
+      end
+
+      def header
+        COLUMNS.map { |name, w| w.zero? ? name : name.ljust(w) }.join(" ")
+      end
+
+      def hours(seconds)
+        seconds ? format("%.1fh", seconds.to_f / 3600) : "-"
+      end
+
+      def baseline_label(baseline)
+        baseline.to_h.map { |k, v| "#{k} n=#{v["n"]} p90=#{v.values.last.nil? ? "skip" : v.values.last.round(2)}" }.join(", ")
+      end
+    end
+
     # Lines changed on the task's PR — additions + deletions from GitHub. Best-effort
     # by contract: any failure (no URL, no token, 404, rate limit) reads nil, never 0,
     # and never raises into the grade.
