@@ -219,4 +219,28 @@ class Release::CliTest < ActiveSupport::TestCase
     assert_nil Release::Cli.guard_args(nil)
     assert_nil Release::Cli.guard_args("")
   end
+
+  # --- release_notes_line ---
+
+  test "[unit] release_notes_line prints the real error and the repost command, never a guess" do
+    line = Release::Cli.release_notes_line(
+      { "notes_delivered" => false, "notes_error" => "DeliveryError: HTTP 400 content too long" }, "rel-x"
+    )
+
+    assert_includes line, "NOT delivered — DeliveryError: HTTP 400 content too long"
+    assert_includes line, "bin/release notes rel-x --post"
+    assert_not_includes line, "webhook unset?"
+  end
+
+  test "[unit] release_notes_line says no error was reported rather than inventing one" do
+    line = Release::Cli.release_notes_line({ "notes_delivered" => false }, "rel-x")
+
+    assert_includes line, "NOT delivered — no error was reported"
+  end
+
+  test "[unit] release_notes_line counts messages only when the notes were split" do
+    assert_equal "  release notes: posted", Release::Cli.release_notes_line({ "notes_delivered" => true, "notes_messages" => 1 }, "r")
+    assert_equal "  release notes: posted (2 messages)",
+                 Release::Cli.release_notes_line({ "notes_delivered" => true, "notes_messages" => 2 }, "r")
+  end
 end

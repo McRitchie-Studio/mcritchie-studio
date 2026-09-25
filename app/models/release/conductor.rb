@@ -862,12 +862,15 @@ class Release
 
     # Build + deliver release notes for a shipped release — reusing the exact
     # Formatter + DiscordClient behind POST /api/v1/release_notes. Delivers rich
-    # embeds (a summary + one card per task) when the release fits Discord's
-    # 10-embed cap, else the plain-text fallback — the Formatter#discord_payload
-    # chooser decides. Non-fatal by design: a missing webhook or delivery error
-    # returns the message without delivering, so it never fails an
-    # already-completed ship. Returns { message:, delivered: } (message is the
-    # text render, kept for preview regardless of which payload shipped).
+    # embeds when the release fits the card cap, else the plain-text fallback (the
+    # Formatter#discord_payload chooser decides); DiscordClient splits either across
+    # as many messages as Discord's limits need. Non-fatal by design: a missing
+    # webhook or delivery error returns the message without delivering, so it never
+    # fails an already-completed ship — but the REAL error rides back in `error:`
+    # so bin/release prints it instead of guessing (rel-20260925-3b1f5c printed
+    # "webhook unset?" for what was a 400 on a 2790-char message).
+    # Returns { message:, delivered:, error:, messages: } — message is the text
+    # render, kept for preview; messages is the planned split (see #release_notes_plan).
     def post_release_notes(release:, app: "mcritchie-studio", environment: "production", dry_run: false)
       unless release.event_started?("release_notes")
         record_event!(
@@ -879,7 +882,42 @@ class Release
         )
       end
 
-      formatter = ReleaseNotes::Formatter.new(
+      result = deliver_release_notes(release: release, app: app, environment: environment, dry_run: dry_run)
+
+      record_event!(
+        release: release,
+        step: "release_notes",
+        status: "completed",
+        source: "conductor",
+        idempotency_key: "#{release.slug}:release_notes:completed"
+      )
+
+      result
+    end
+
+    # Re-post a release's notes on demand (`bin/release notes <release> --post`),
+    # e.g. after a delivery failed. Writes NO release event — the ship's own
+    # release_notes step already completed; this only talks to Discord. dry_run
+    # (the CLI default) builds and measures the split without sending.
+    def repost_release_notes(release:, app: "mcritchie-studio", environment: "production", dry_run: true)
+      deliver_release_notes(release: release, app: app, environment: environment, dry_run: dry_run)
+    end
+
+    # The messages a delivery would POST, measured against Discord's limits — one
+    # row per message: content length, embed count, summed embed text.
+    def release_notes_plan(formatter)
+      ReleaseNotes::DiscordClient.messages(**formatter.discord_payload).map do |body|
+        embeds = Array(body[:embeds])
+        {
+          content_chars: ReleaseNotes::DiscordClient.discord_length(body[:content]),
+          embeds: embeds.size,
+          embed_chars: embeds.sum { |embed| ReleaseNotes::DiscordClient.embed_length(embed) }
+        }
+      end
+    end
+
+    def release_notes_formatter(release:, app:, environment:)
+      ReleaseNotes::Formatter.new(
         app: app,
         environment: environment,
         release: release.slug,
@@ -891,31 +929,25 @@ class Release
         # when unsealed (a manual / pre-seal ship) → the seal line is simply omitted.
         seal: release.smoke_seal
       )
-      message = formatter.message
+    end
 
-      delivered = false
-      unless dry_run
-        begin
-          ReleaseNotes::DiscordClient.deliver(**formatter.discord_payload)
-          delivered = true
-        rescue StandardError => e
-          # Defense in depth: this runs AFTER an irreversible prod deploy + ship!,
-          # so a notification failure (missing webhook, HTTP error, or any
-          # transport blip) must never raise. Swallow + log; the ship stands.
-          Rails.logger.warn("[release-notes] delivery failed (non-fatal): #{e.class}: #{e.message}")
-          delivered = false
-        end
+    def deliver_release_notes(release:, app:, environment:, dry_run:)
+      formatter = release_notes_formatter(release: release, app: app, environment: environment)
+      result = { message: formatter.message, delivered: false, error: nil, messages: release_notes_plan(formatter) }
+      return result if dry_run
+
+      begin
+        ReleaseNotes::DiscordClient.deliver(**formatter.discord_payload)
+        result[:delivered] = true
+      rescue StandardError => e
+        # Defense in depth: this runs AFTER an irreversible prod deploy + ship!,
+        # so a notification failure (missing webhook, HTTP error, or any
+        # transport blip) must never raise. Swallow + log, and hand the real
+        # cause back to the caller; the ship stands.
+        Rails.logger.warn("[release-notes] delivery failed (non-fatal): #{e.class}: #{e.message}")
+        result[:error] = "#{e.class.name.demodulize}: #{e.message}"
       end
-
-      record_event!(
-        release: release,
-        step: "release_notes",
-        status: "completed",
-        source: "conductor",
-        idempotency_key: "#{release.slug}:release_notes:completed"
-      )
-
-      { message: message, delivered: delivered }
+      result
     end
 
     # --- archive (the DevOps loop's conclusion: shipped → archived) ----------
