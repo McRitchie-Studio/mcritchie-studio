@@ -1,7 +1,7 @@
 # Review Comment Taxonomy
 
 Task conversations are the durable channel between feature agents, reviewers,
-DevOps, and Mr. McRitchie. Use the activity type to say whether the note is
+DevOps, and Alex. Use the activity type to say whether the note is
 coordination, a non-blocking clarification, a blocking request for rework, or a
 handoff back to the next owner.
 

@@ -102,7 +102,7 @@ returns `none`, report "no reviewable PRs" and stop, UNLESS it prints one of two
 warnings:
 
 - `no CI is ingested for <repo>` is a WIRING gap: the board receives no Actions
-  deliveries for that repo. Report the repos to Mr. McRitchie (recipe:
+  deliveries for that repo. Report the repos to Alex (recipe:
   `../../../modules/deployment.md`, "Wiring a repo's Actions webhook").
 - `the board's OWN ingested CI is what this refusal read` is an INGESTION gap on
   ONE HEAD: the board holds no run for this PR's tip while GitHub says green.
@@ -179,7 +179,6 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
   ```bash
   gh api user   # WHO am I about to merge as? 403 "not accessible by integration" = the App. STOP on a 200.
   gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget ONLY a base PROVEN unclaimed — at a merge anything unproven REFUSES, all five arms; see the merge-ready bullet)
-  bin/task merged <task> accepted      # stamp the git-location BEFORE the stage move
   bin/task move <task> reviewed
   bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
   ```
@@ -197,9 +196,10 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
   itself (`bin/lib/acting_identity.rb`). Do NOT substitute a permissions probe:
   the deployer App and a personal `repo` scope both pass it.
 
-  Order matters: merge → stamp → move, so the task is `reviewed` **iff** its code
-  is on `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`). If the `gh pr
-  merge` FAILS, leave the task `submitted` and UNSTAMPED (never move to
+  Order matters: merge → move, so the task is `reviewed` **iff** its code is on
+  `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`); the board derives
+  `merged`, so there is no stamp. If the `gh pr merge` FAILS, leave the task
+  `submitted` (never move to
   `reviewed`) — resolve the conflict/checks on GitHub, then re-review. A mis-based
   feat PR (base ≠ `accepted`) self-heals ONLY when the guard can PROVE the base is
   unclaimed: retarget it to `accepted`, then merge. **At a merge, anything unproven
@@ -260,7 +260,7 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
     --feedback "<builder's position vs review's position, in brief>" --agent carl
   ```
 
-  and surface it to Mr. McRitchie in the wave report as an **⚠ Escalated** line.
+  and surface it to Alex in the wave report as an **⚠ Escalated** line.
 
   If the bounce is **mechanical** — red CI, a merge conflict, a dirty base;
   nothing for the operator to arbitrate — say so and the block proceeds, with the

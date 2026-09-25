@@ -264,7 +264,7 @@ Do not do that: it **silently disarmed** this gate while printing "already green
 
 **Steffon**, via the `production-deploy` SOP
 ([`../../agents/steffon/sops/production-deploy.md`](../../agents/steffon/sops/production-deploy.md))
-— ship authority is granted per session by Mr. McRitchie. The gate writes are
+— ship authority is granted per session by Alex. The gate writes are
 conductor-owned (actor = the ship's `--by`, defaulting to the operator's
 `$USER`; source `conductor`); you never post G4 markers by hand on the happy
 path.

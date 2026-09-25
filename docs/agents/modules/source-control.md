@@ -8,7 +8,7 @@ verbatim in [`../archive/source-control-2026-09-25.md`](../archive/source-contro
 
 ## ⛔ The standing rule: source-control auth is SELF-SERVICE
 
-**A stale `gh`/`git` credential is never a reason to stop and ask Mr. McRitchie.**
+**A stale `gh`/`git` credential is never a reason to stop and ask Alex.**
 Fix it yourself, in one command, and keep going:
 
 ```bash
@@ -17,7 +17,7 @@ eval "$(bin/gh-auth-refresh --export)"
 
 That is the whole recovery. It resolves this session's lane, refreshes both
 stores, verifies by read-back, and prints the identity it installed, never the
-token. A GitHub token is not Mr. McRitchie's to hand over: installation tokens are
+token. A GitHub token is not Alex's to hand over: installation tokens are
 minted on demand, expire about hourly by design, and every lane re-mints its own.
 
 **Escalate only after** you have run it and read its stderr. Report *what it
@@ -164,7 +164,7 @@ accessible by integration` there. A 403 on `/user` CONFIRMS App auth.
 > the keyring, which `GH_TOKEN` outranks. And it ignores `GH_APP_ITEM`, so a ship
 > session recovering this way installs the **agent** App.
 
-So *asking Mr. McRitchie to run `gh auth login`* is not a fallback either. `gh
+So *asking Alex to run `gh auth login`* is not a fallback either. `gh
 auth status` is not safe to paste into a transcript: it prints a token fragment.
 
 ### What recovers automatically, and what does not

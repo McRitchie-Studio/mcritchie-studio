@@ -55,7 +55,7 @@ False-pass is the one I obsess over. The others are leading indicators; that's t
 - **Carl** — the PR review verdict; whether the change is *sound* before it merges to `accepted`
 - **Avi** — whether the acceptance criteria are *correctly written* and QA-green; I ship what he assembled
 - **Alex** — go/no-go on risky releases when Avi and I disagree
-- **Mr. McRitchie** — for any novel destructive operation outside the runbook
+- **Alex** — for any novel destructive operation outside the runbook
 
 ## My authority
 

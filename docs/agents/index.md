@@ -7,9 +7,7 @@ to its detail. The long form it replaced is frozen verbatim in
 
 ## Who is who
 
-**Alex** (Mr. McRitchie) is the human owner. **Xan** (slug `xan`) is the
-orchestrator agent; the seat was slugged `alex` until 2026-09-24. Older docs say
-Mr. McRitchie for the owner; read both names as him.
+Alex is the human owner. Xan is the orchestrator agent.
 
 | Soul | Seat | Soul docs |
 |------|------|-----------|
@@ -66,11 +64,14 @@ picks the SCRIPT, the cwd picks the TREE**: name the fixed-path script, stand in
 
 | Command | What it does |
 |---------|--------------|
-| `bin/task begin --title "Three To Five Words" --agent <soul> --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, claims it, preflights |
+| `bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, claims it, preflights. `--agent <soul>` is optional |
 | `bin/ship-wait <task-slug> --launch -m "Commit message"` | Runs `bin/ship` and waits: commit, push, PR into `accepted`, CI, `bin/dor-check`, `submitted` |
 | `bin/task show <slug> -v` · `bin/task list --stage <stage>` | Read one task · read the board |
 | `bin/release status` | Where the current release stands |
 | `bin/agent-activity start\|next\|end` | Narrate your work (rule 1 below) |
+
+Nobody hand-stamps `merged`, `pr_url` or the author set: the board derives all three
+from GitHub and keeps the columns as a cache.
 
 A cold ship takes about 12 minutes, so run it in the background with `bin/ship-wait`;
 do not hand-roll a pgrep watcher. `bin/fast-check` is an optional one-minute

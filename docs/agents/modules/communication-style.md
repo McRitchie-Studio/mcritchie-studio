@@ -1,11 +1,11 @@
-# Communication Style — reporting to Mr. McRitchie
+# Communication Style — reporting to Alex
 
 This module governs every operator-facing message: chat replies, handoffs, task
 notes, PR summaries, QA reports, and blocker escalations. It complements
 `result-distillation.md` (what to record in the trajectory); this file is about
-how to phrase what you hand to Mr. McRitchie.
+how to phrase what you hand to Alex.
 
-The core fact: **Mr. McRitchie reads slowly.** Dense prose costs him real time.
+The core fact: **Alex reads slowly.** Dense prose costs him real time.
 But slow uptake is not low appetite — once the idea lands, he wants the exact
 specifics so he can dive in. So every report carries two layers, in order; a
 chat hand-back adds a third.
@@ -43,7 +43,7 @@ simpler, the specifics stay exact.
 
 ## Name work by its task slug
 
-To Mr. McRitchie the task slug **is** the name of the work: it reads as words
+To Alex the task slug **is** the name of the work: it reads as words
 (`remove-prod-deploy-approval`) and it is the board URL (`/tasks/<slug>`). PR numbers,
 branch names, and SHAs are pipeline plumbing.
 
@@ -74,7 +74,7 @@ Checks: [unit] geo_gate_test.rb · [integration] funding flow spec
 ## Layer 3 — the in-flight roster
 
 A session that fans out subagents or backgrounds a long command goes quiet, and
-from the outside Mr. McRitchie cannot tell working from wedged. The roster is
+from the outside Alex cannot tell working from wedged. The roster is
 the fix: **every time a turn ends and the ball returns to him, the message ends
 with a block naming what is still running and how long it has left.**
 
@@ -166,7 +166,7 @@ truth.
 
 ## Review handoffs — hand a review link
 
-When work waits on Mr. McRitchie's review, never hand him a URL that greets
+When work waits on Alex's review, never hand him a URL that greets
 him with a login wall. He wants one click that **signs him in AND drops him on
 the exact page to evaluate — on the running local stack
 (`http://localhost:<port>/…`), never production.**
@@ -214,7 +214,7 @@ It fails quietly and it fails often. Measured across turf-monster the same day:
 exactly ONE ever consumed**, sixteen expired unread. Repeated mints seconds
 apart are the signature of an agent re-minting after a bounce without seeing
 why. Essentially every review link handed over in that window was dead on
-arrival — including ones reported to Mr. McRitchie as working.
+arrival — including ones reported to Alex as working.
 
 Two properties fall out of minting in-request, and together they are the whole
 reason to hand over the endpoint rather than a token:
@@ -255,9 +255,9 @@ The mechanics that still matter (`studio-engine/app/models/studio/link.rb:37`):
 - **turf-monster note:** its request-side controllers derive `return_to` from
   contest params, so pass the path you actually want him on.
 
-## House Writing Style — correct Mr. McRitchie's copy
+## House Writing Style — correct Alex's copy
 
-Mr. McRitchie's prompts and drafts often arrive with spelling and grammar
+Alex's prompts and drafts often arrive with spelling and grammar
 errors. Treat them as normal input, never as intent. The standing rules:
 
 - **Correct as you transcribe.** When his words head anywhere durable — UI
@@ -267,8 +267,8 @@ errors. Treat them as normal input, never as intent. The standing rules:
 - **Mechanics only.** Correct the mechanics; keep his meaning, facts, and
   voice. If a garbled phrase leaves the intent genuinely ambiguous, ask, and
   list the readings you considered.
-- **The house guide is *The Elements of Style* (Strunk & White)** — Mr.
-  McRitchie's favorite book on writing well. Compose and correct by its
+- **The house guide is *The Elements of Style* (Strunk & White)** —
+  Alex's favorite book on writing well. Compose and correct by its
   teachings: omit needless words; prefer the active voice; put statements in
   positive form; use definite, specific, concrete language.
 - **Guardrails.** Style corrections never rename code identifiers, routes, or
@@ -283,6 +283,6 @@ errors. Treat them as normal input, never as intent. The standing rules:
   snapshots stay as written; domain jargon stands once introduced.
 - This style is for **operator-facing** writing. Agent-to-agent context
   (`devops["agent_context"]`, SOP internals) may stay dense.
-- Depth on request: when Mr. McRitchie asks a follow-up, go as deep and
+- Depth on request: when Alex asks a follow-up, go as deep and
   technical as the question demands — the layer rule governs the opening
   report, not the dive.

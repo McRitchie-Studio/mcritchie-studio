@@ -22,8 +22,8 @@
     <%= form_with model: @task, url: task_sizing_path(@task), method: :patch, local: true do |f| %>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <% [
-          [:pm_size,     "Alex (PM)",         "Business-value gut, blind to spec"],
-          [:po_size,     "Avi (PO)",          "After refinement, blind to Alex"],
+          [:pm_size,     "Xan (PM)",          "Business-value gut, blind to spec"],
+          [:po_size,     "Avi (PO)",          "After refinement, blind to Xan"],
           [:dev_size,    "Dev",               "After assignment, blind to both"],
           [:actual_size, "Steffon (actual)",  "Post-release truth"]
         ].each do |field, label, hint| %>

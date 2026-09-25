@@ -46,7 +46,7 @@
     transactions #1 (2026-06-08) and #2 (2026-06-11, the last deploy).
   - *Caveat:* both ran under the June membership, when that Squad was 2-of-3.
     None has run since it became 3-of-5 on 2026-09-15. The agent holds two of the
-    five mainnet seats, so the next upgrade stops for Mr. McRitchie by design.
+    five mainnet seats, so the next upgrade stops for Alex by design.
 - [x] IDL hash pinning live in production turf-monster (ecosystem audit Tier 3 #22). `EXPECTED_IDL_HASH` set in Heroku. — **DONE (2026-09-16).**
   `EXPECTED_IDL_HASH` on `turf-monster-mainnet` equals the sha256 of
   `turf-monster/config/turf_vault.mainnet.idl.json` (`b9b52263…`). Neither
@@ -91,7 +91,7 @@
 1. Deploy `turf-vault` to mainnet (audit-signed-off version) with single key as initial upgrade authority.
    *Ran 2026-06-02:* `DaFv83yo…` was deployed at 19:13:53Z by the single key
    `8K81…`. A first program, `mnzow…`, was deployed that morning and abandoned
-   after the Alex Bot leak. It stayed open until 2026-09-16, when Mr. McRitchie
+   after the Alex Bot leak. It stayed open until 2026-09-16, when Alex
    closed it through its Squad `9dCLM…` and removed the leaked `F6f8…` from that
    Squad (`squads-upgrade-authority-migration.md`, **How it resolved**).
 2. Run the full Phase 4 Squads upgrade-authority migration (see runbook).

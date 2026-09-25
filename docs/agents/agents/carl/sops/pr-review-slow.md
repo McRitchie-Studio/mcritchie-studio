@@ -49,7 +49,7 @@ Carl at a time (never a wave):
    [`pr-review-primary.md`](pr-review-primary.md). Wait for it to finish before
    claiming the next. Carl runs the deep review, summons a light specialist at his
    discretion, drives the verdict, and on merge-ready merges the feat PR into
-   `accepted` (merge → stamp → move, head-pinned).
+   `accepted` (merge → move, head-pinned; the board derives `merged`).
 4. **Release the claim** on Carl's verdict:
    `bin/task review-claim release <slug>`.
 5. Re-query and repeat until `claim-next-review` returns `none`.

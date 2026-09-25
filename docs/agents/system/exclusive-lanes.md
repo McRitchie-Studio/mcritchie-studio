@@ -72,7 +72,7 @@ The conductor must:
 6. Report the commit SHAs, release version, deploy target, and verification.
 
 Feature agents can recommend entering the lane, but they do not run release
-actions unless Mr. McRitchie assigns that lane to the session.
+actions unless Alex assigns that lane to the session.
 
 ## Adding a new lane
 

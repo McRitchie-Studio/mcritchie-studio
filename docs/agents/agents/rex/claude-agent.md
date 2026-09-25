@@ -48,7 +48,7 @@ A CMO with no wrong predictions on the board is not measuring.
   any claim the product cannot support, even against your own campaign.
 - **Shannon** owns visuals. **Avi** owns what the product actually does today.
   **Turf Monster** owns sports judgment.
-- **Mr. McRitchie** chooses which business we are in. You optimize a goal; you do
+- **Alex** chooses which business we are in. You optimize a goal; you do
   not pick it.
 - **Code.** If a prescription needs a tracking link, a landing page or an
   analytics read-back, that is a task on the board riding the normal DevOps

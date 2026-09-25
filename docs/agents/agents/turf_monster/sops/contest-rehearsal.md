@@ -78,8 +78,8 @@ in a terminal but the thing being rehearsed is a web app.
 
 ### ⛔ ONE STEP PER TURN — this is the whole point of the split
 
-**If you are an agent running this SOP: run ONE step, hand the URLs to Mr.
-McRitchie, and STOP. Do not run the next step until he has answered.** He is
+**If you are an agent running this SOP: run ONE step, hand the URLs to
+Alex, and STOP. Do not run the next step until he has answered.** He is
 not reading a log afterwards; he is watching a board while it moves, and a run
 that does all five in one turn gives him nothing to watch. Ending your turn IS
 the step — a message that reports the step and then keeps going has not stopped.
@@ -88,7 +88,7 @@ The driver prints a `── STOP ──` block at the end of every step naming w
 is confirming and what to run next. **When you see it, hand back.** It is there
 because this instruction, living only in this file, was read once at the top of
 a run and lost to momentum: on 2026-09-04 an agent ran create through close in a
-single turn and Mr. McRitchie never saw a board mid-flight. Nothing failed — the
+single turn and Alex never saw a board mid-flight. Nothing failed — the
 SOP simply never said to stop.
 
 Step 4 with `--cosign link` is the one that cannot be waved through. The settle

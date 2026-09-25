@@ -2693,6 +2693,17 @@ class TaskCliTest < Minitest::Test
 
   # --- `bin/task merged` — the accepted-ladder git-location setter (Step B) -----
 
+  # [unit] devops-v3 4c-i: the board derives `merged`, so the command is an OVERRIDE.
+  # It says so — and still writes, because a PR GitHub cannot place still needs it.
+  def test_merged_says_it_is_no_longer_needed_and_still_writes
+    requests, _out, err, status = run_task(["merged", "demo-task", "accepted"])
+    assert_equal 0, status.exitstatus
+    assert_includes err, "no longer needed: the board derives this"
+    assert_includes err, "manual override"
+    assert(requests.any? { |r| r[:method] == "PATCH" && JSON.parse(r[:body])["merged"] == "accepted" },
+           "the override still writes the column")
+  end
+
   def test_merged_sets_the_git_location_via_a_top_level_patch
     requests, out, _err, status = run_task(["merged", "demo-task", "accepted"])
     assert_equal 0, status.exitstatus, "the merged setter succeeds once the read-back confirms it"

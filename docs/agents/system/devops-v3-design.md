@@ -403,6 +403,18 @@ Tasks share one derivation per process for a minute: each GitHub answer is cache
 and the first failed read stops the rest, so an outage costs one timeout per sweep.
 Every stamp and guard stays until 4b.
 
+**4c-i as built.** Nobody hand-stamps the three facts any more; the columns are a
+cache the board refreshes itself. `TaskMergedRungRefreshJob` writes the derived
+rung when a task lands on `reviewed` and when GitHub delivers a merged
+`pull_request` event (the webhook subscription must include that event);
+`Release#add` and `Conductor.record_merged!` keep their own write and then refresh
+advance-only, so a lagging read never pulls the column down. Review drops its
+`bin/task merged` line, and the command now prints "no longer needed" and still
+writes, as an override. `tasks#show` fills a blank `devops.pr_url` from the task
+branch and serves `pr_url_or_derived`, so `bin/ship` skips its write when that
+names the PR it opened and its read-back verifies the derived value. `--agent` is
+optional: review excludes the souls on the PR's commits, union any stamps.
+
 **Where it stands, 2026-09-25.** Every piece below is merged to `accepted`; none
 has reached `main`, because the v3 batch still waits on Alex's ship authority.
 

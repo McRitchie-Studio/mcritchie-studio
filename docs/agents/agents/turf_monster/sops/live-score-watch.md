@@ -73,8 +73,8 @@ no NFL entry — so an agent running this SOP is the **sole path by which
 production contests re-score.** Getting the target wrong is not a slow day; it
 is a Sunday of contests that never move.
 
-Watching the real slate, which is what `live-score-watch` means unless Mr.
-McRitchie says otherwise:
+Watching the real slate, which is what `live-score-watch` means unless
+Alex says otherwise:
 
 ```bash
 cd /Users/alex/projects/turf-monster
@@ -300,7 +300,7 @@ Stop when any of these is true, and say which:
 - every game in the slot reads `FINAL`
 - the twelve-hour window has elapsed
 - `unknown_team` appeared and has not been resolved
-- Mr. McRitchie says stop
+- Alex says stop
 
 Then report the totals above, and **say which environment they describe** — a
 rehearsal's totals and a production watch's totals read identically otherwise.

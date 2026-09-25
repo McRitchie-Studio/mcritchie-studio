@@ -171,8 +171,8 @@ Launcher: [`../agents/carl/HEARTBEAT.md`](../agents/carl/HEARTBEAT.md); SOPs
      [`pr-review-light.md`](../agents/carl/sops/pr-review-light.md). Each reviewer
      narrates **as its soul** (`--agent`).
   3. **Merge-ready** → Carl revalidates the head, `gh pr merge` the feat PR into
-     `accepted`, `bin/task merged <task> accepted`, then `bin/task move <task>
-     reviewed` (merge → stamp → move).
+     `accepted`, then `bin/task move <task> reviewed` (merge → move; the board
+     derives `merged`, nobody stamps it).
   4. **Problems** → Carl, who holds the review claim, blocks: `bin/task block
      <task> --kind rework --feedback "…" --agent carl` (only the claim's holder
      spends the bounce). The **two-bounce
@@ -259,7 +259,7 @@ operator view is [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline).
 
 SOP: [`../agents/xan/sops/grade-events.md`](../agents/xan/sops/grade-events.md).
 Every task is graded once at ship (`Insights::TaskGrader`, thresholds in
-`config/learning_loop.yml`), so run this act only when Mr. McRitchie names it.
+`config/learning_loop.yml`), so run this act only when Alex names it.
 
 - **Precondition:** resolved activities awaiting a grade. None → report and stop.
 - **Steps:** `bin/agent-activity awaiting [--limit 10]` → `bin/agent-activity grade
@@ -274,7 +274,7 @@ Share the **Insight Bank** (`ActionGrade.banked`, whichever grader recorded each
 row) through the docs so every next agent starts with the curated lessons.
 
 - **Precondition:** at least one banked `ActionGrade`. Empty bank → report and
-  stop. **Banking is the gate, not the grader:** `mcr` marks Mr. McRitchie's audit
+  stop. **Banking is the gate, not the grader:** `mcr` marks Alex's audit
   *of* an Xan grade, a lane the agent CLI cannot write.
 - **Steps:** `bin/rails insights:doc` regenerates `../shared/insights.md` from the
   bank. **That is the whole act — it installs nothing, and owes no install step**

@@ -51,8 +51,13 @@ module Api
         render_data(records, meta: result[:meta])
       end
 
+      # SHOW ONLY, not the `full=1` index: the derived facts may ask GitHub for the
+      # PR whose head is the task branch, and a page of 100 rows must not. Derived
+      # FIRST, because deriving can fill the blank `devops.pr_url` cache and the
+      # task JSON must carry the filled value.
       def show
-        render_data(task_json(@task))
+        derived = derived_facts_json(@task)
+        render_data(task_json(@task).merge(derived))
       end
 
       def create
@@ -131,6 +136,19 @@ module Api
         return if @task
 
         render_error("task not found", status: :not_found, error_code: "NOT_FOUND")
+      end
+
+      # The facts the board DERIVES from GitHub (devops-v3 4c-i), beside the stamps
+      # they supersede. `pr_url_or_derived` is the recorded `devops.pr_url`, else the
+      # PR whose head is the task branch, which this read also caches into the blank
+      # column (Task#cache_derived_pr_url!). bin/ship's record step skips its write
+      # when this names the PR it opened, and its read-back verifies it. nil when
+      # neither is known or GitHub cannot be read.
+      def derived_facts_json(task)
+        { "pr_url_or_derived" => task.cache_derived_pr_url! }
+      rescue StandardError => e
+        Rails.logger.warn("[tasks#show] #{task.slug}: derived facts unavailable: #{e.class}: #{e.message}")
+        { "pr_url_or_derived" => task.devops_url("pr").presence }
       end
 
       def task_json(task)

@@ -20,7 +20,7 @@ Two wrappers collapse the cycle's bookends into one command each. Reach for
 them first; the long form below is the fallback.
 
 ```bash
-/Users/alex/projects/.agents/bin/task begin --title "Three To Five Words" --agent <soul> \
+/Users/alex/projects/.agents/bin/task begin --title "Three To Five Words" \
   --repo <app> --kind <kind> \
   --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
 
@@ -89,14 +89,30 @@ count. Read the script from `origin/accepted`, never the local primary:
 `git -C /Users/alex/projects/turf-vault fetch origin && git show
 origin/accepted:bin/release-check`.
 
+### The board derives; nobody stamps
+
+Three facts are no longer hand-written (devops-v3 piece 4c-i). The board derives
+each from GitHub and keeps its old column as a cache:
+
+| Fact | Derived from | Cache refreshed by |
+|------|--------------|--------------------|
+| `merged` | the rung that contains the PR's merge commit (`Task#merged_rung`) | the move to `reviewed`, a merged-PR webhook, the release record steps |
+| `pr_url` | the PR whose head is the task branch (`Task#pr_url_or_derived`) | `bin/task show` of a building-or-later task fills a blank one |
+| authors | the PR's commits: `<soul>@mcritchie.studio` emails and soul `Co-Authored-By` trailers (`Task#derived_authors`) | read live on every review |
+
+So review does not run `bin/task merged` (it remains a manual override for a PR
+GitHub cannot place, and prints "no longer needed"), `bin/ship` writes `pr_url`
+only when the board names a different PR, and `bin/reviewer-select` plus the
+review-claim backstop exclude the derived authors UNION any stamps.
+
 ### The author set
 
-**Pass `--agent <soul>` — it is what makes review able to exclude you.** It stamps
-the task's AUTHOR SET (`devops.built_by` + `devops.builders`) — what
-`bin/reviewer-select` reads to keep a soul off its own PR. Omit it and the
-selector fails CLOSED: it refuses to pick, and the reviewer chooses by hand.
-**If a second soul finishes the task, claim it again** (`bin/task move <task>
-building --actor <soul>`): the set accumulates, so both authors are excluded.
+**`--agent <soul>` is optional.** Review excludes the souls on the PR's commits,
+so the thing that keeps you off your own review is the desk's commit identity:
+`begin --agent <soul>` sets it, and so does `bin/agent-worktree identity <repo>
+<slug> <soul>`. A desk that commits under no soul yields no derived author, and
+with no stamp either the selector still fails CLOSED. `--agent` also stamps
+`devops.built_by` + `devops.builders`, which review unions with the derived set.
 
 **THE BUILD CLAIM STAMPS THE AUTHOR SET — a create alone does not.** `--agent`
 writes two independent facts, and only one of them is what review reads:
@@ -155,7 +171,8 @@ re-running the create line resumes cleanly, and only the OTHER create flags on i
 `move building` → `session-preflight`) and prints the worktree path, port, and
 task URL. `bin/ship` — the HUB's script, run with that worktree as the cwd —
 runs steps 5-6 (commit → optional `bin/fast-check` pre-flight → push →
-**non-draft** PR into `accepted` led by the task URL → record `pr_url` → **wait
+**non-draft** PR into `accepted` led by the task URL → record `pr_url` (skipped
+when the board already derives it) → **wait
 for CI to settle** → `bin/dor-check` → `move submitted` → read-back verify).
 Re-running either after a failure **resumes** — each skips the steps already
 durably recorded. Resume `begin` **by slug** (`bin/task begin <task-slug>`).
@@ -262,12 +279,12 @@ Before handoff:
 
 ### A good session prompt
 
-For a new feature session, Mr. McRitchie should only need to say the target app
+For a new feature session, Alex should only need to say the target app
 and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app> --agent <soul>
+Use the fast lane: /Users/alex/projects/mcritchie-studio/bin/task begin --title "Three To Five Words" --repo <app>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
 --risk <tag> --accept "<criterion>" --test "<tier>". It creates the task,
 allocates the isolated worktree on an allocated port, claims the task, and

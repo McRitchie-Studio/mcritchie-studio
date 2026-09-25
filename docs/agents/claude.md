@@ -23,7 +23,7 @@ Any diff (feature, bug, or chore, however small) runs the DevOps cycle. There is
 no size exemption. Name the fixed-path script and stand in the desk:
 
 ```bash
-/Users/alex/projects/.agents/bin/task begin --title "Three To Five Words" --agent <soul> \
+/Users/alex/projects/.agents/bin/task begin --title "Three To Five Words" \
   --repo <app> --kind <kind> \
   --shape <shape> --risk <tag> --accept "criterion" --test "[unit] ..."
 
@@ -38,6 +38,8 @@ exists, or if it is ever missing, the hub path `/Users/alex/projects/mcritchie-s
 runs the same scripts.
 
 - Write the test tiers your shape requires as you go, unit-first.
+- Nobody hand-stamps `merged`, `pr_url` or the author set: the board derives
+  them from GitHub. `--agent <soul>` is optional.
 - A cold ship takes about 12 minutes, so run it in the background with
   `bin/ship-wait`; do not hand-roll a pgrep watcher.
 - `bin/fast-check` is an optional pre-flight; the cert gate (test-only included)

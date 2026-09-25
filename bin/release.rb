@@ -282,7 +282,7 @@ AGENT_ACTIVITY = File.expand_path("agent-activity", __dir__)
 RELEASE_BRANCH = "release"
 
 # The accepted-ladder's first rung (same name in every repo). Review MERGES each
-# feat PR into `accepted` and stamps merged:"accepted"; the sweep then promotes ALL
+# feat PR into `accepted` (the board derives merged:"accepted"); the sweep then promotes ALL
 # of `accepted` onto `release` via ONE batch PR per repo (promote_accepted_to_release!
 # uses this as the `--head`). KEPT — the batch PR's head needs the branch name.
 # (Phase 3 Slice 4 retired the release→accepted base-retarget stopgap that used to

@@ -6,7 +6,7 @@ class Release
   # versus the anomalies to leave behind.
   #
   # DevOps v2 accepted-ladder (Phase 3 Slice 4): review now MERGES each feat PR into
-  # the `accepted` branch and stamps merged:"accepted", so by the time the sweep
+  # the `accepted` branch (the board derives merged:"accepted"), so by the time the sweep
   # runs every eligible member already carries its code on `accepted`. The sweep no
   # longer merges N per-task feat PRs — the CLI promotes ONE accepted→release batch
   # PR (promote_accepted_to_release!) — so this plan is purely "which members ride,
