@@ -195,7 +195,13 @@ module WorkspaceIcon
              # +size first: the tile canvas's `-size` is a SETTING, and the SVG
              # reader takes it as the render canvas, cropping any mark wider than
              # the tile (Google's 1024-unit canvas came out a quarter-G).
-             [ "+size", "-background", "none", "-density", [ ((72.0 * box * 2) / svg_width(mark)).round, 96 ].max.to_s, mark ]
+             #
+             # MSVG: names ImageMagick's INTERNAL renderer. Left to choose, IM6 on
+             # Ubuntu hands SVG to an external rsvg-convert (absent on CI: the
+             # read fails) while IM7 on a Mac renders it itself, so the same mark
+             # would draw differently per machine. Every committed tile was drawn
+             # by the internal one.
+             [ "+size", "-background", "none", "-density", [ ((72.0 * box * 2) / svg_width(mark)).round, 96 ].max.to_s, "MSVG:#{mark}" ]
            else
              [ "#{mark}[0]" ]
            end
