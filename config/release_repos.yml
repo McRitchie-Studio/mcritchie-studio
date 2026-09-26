@@ -656,7 +656,9 @@ apps:
     # PRODUCTION: the Heroku app `cyvasse` (company account, heroku-26,
     # Postgres essential-0), wired 2026-09-25 by wire-cyvasse-production-deploy.
     # git_push_heroku, modelled on mcritchie-industries. Migrations ride the
-    # repo's Procfile `release: bin/rails db:migrate`, so no post_deploy_cmd.
+    # repo's Procfile `release: bin/rails db:migrate`, so schema needs no
+    # post_deploy_cmd. A member's declared command (the scaffold's
+    # `users:seed_identities`) is skipped at QA and runs on `cyvasse` at ship.
     #
     # smoke_url is the herokuapp host, NOT cyvasse.mcritchie.studio, on purpose:
     # the custom domain is attached with ACM but its CNAME is Alex's Squarespace
