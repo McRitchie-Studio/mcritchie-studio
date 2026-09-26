@@ -14,7 +14,12 @@ namespace :appearances do
 
     # Printed BEFORE the call, because after it the money is gone. The operator
     # sees exactly which photographs the identity would be built from.
-    images = Appearances::ReferenceImages.call(look)
+    #
+    # THROUGH ReferenceSet, NOT ReferenceImages. The set is the floor PLUS the
+    # chosen search hits, which is what the create below is now injected with —
+    # printing the floor alone would have shown the operator a shorter list than
+    # the one they were about to pay for.
+    images = Appearances::ReferenceSet.call(look)
     puts "Look:   #{look.slug} — #{look.person_slug} / #{look.descriptor}"
     puts "Images: #{images.length}"
     images.each { |url| puts "  #{url}" }
@@ -24,7 +29,8 @@ namespace :appearances do
       next
     end
 
-    id = Appearances::CreateCharacterReference.new(look).call(force: force)
+    id = Appearances::CreateCharacterReference
+         .new(look, references: Appearances::ReferenceSet).call(force: force)
     puts "Identity: #{id} (#{look.reload.higgsfield_reference_status})"
     puts "It is NOT usable yet — run appearances:refresh_character_references until it reads " \
          "#{Appearances::CreateCharacterReference::READY_STATUS}"
@@ -50,5 +56,36 @@ namespace :appearances do
       # One unreachable identity must not strand the rest of the sweep.
       puts "#{look.slug}  #{look.higgsfield_reference_id}  -> ERROR #{e.class}: #{e.message}"
     end
+  end
+
+  # FIND PHOTOGRAPHS FOR ONE LOOK. Spends one image-search query.
+  #
+  # SLUG IS REQUIRED for the same reason the mint task requires it: this is a
+  # purchase, and a task that picks its own subject makes a mistyped invocation a
+  # purchase of the wrong thing.
+  #
+  # With no provider configured this reports that and files nothing — it is not an
+  # error, it is the state the machine is in until a credential lands.
+  desc "Search the web for reference photos for one look — SLUG=look-xxx"
+  task search_reference_photos: :environment do
+    slug = ENV["SLUG"].presence or raise "SLUG=look-xxx is required (this spends money; it will not guess)"
+    look = Appearance.find_by!(slug: slug)
+
+    summary = Appearances::GatherReferencePhotos.call(look)
+    unless summary.configured?
+      puts "No image-search provider configured — set " \
+           "#{Appearances::ImageSearch::Serper::API_KEY_ENV}. Nothing searched, nothing spent."
+      next
+    end
+
+    puts "Query:      #{summary.query}"
+    puts "Provider:   #{summary.provider_name}"
+    puts "Returned:   #{summary.returned}"
+    puts "Unreadable: #{summary.unparsed}   (a non-zero count here is a PARSER bug, not an empty search)"
+    puts "Unsafe:     #{summary.unfetchable}"
+    puts "Filed:      #{summary.filed}  (#{summary.chosen} chosen, #{summary.rejected} kept as rejects)"
+    puts
+    puts "The model would now be built from:"
+    Appearances::ReferenceSet.call(look.reload).each { |url| puts "  #{url}" }
   end
 end

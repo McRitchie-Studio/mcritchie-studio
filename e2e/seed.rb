@@ -1194,6 +1194,10 @@ Content.create!(title: "E2E Content Hook", stage: "hook", workflow: "video")
 # association and decide slots that no longer have an image.
 ArtifactSubject.delete_all
 Artifact.delete_all
+# Same reason as ArtifactSubject above, one table over: `Appearance.delete_all`
+# skips callbacks, so `dependent: :destroy` never fires and the candidate
+# photographs outlive the look they were judged for.
+AppearanceReferencePhoto.delete_all
 Appearance.delete_all
 Person.where(last_name: %w[Burrow Chase]).destroy_all
 
@@ -1222,6 +1226,91 @@ pair.subjects.create!(person_slug: burrow.slug, appearance_slug: bw.slug, role: 
 pair.subjects.create!(person_slug: chase.slug,  appearance_slug: cw.slug, role: "skill", ordinal: 2)
 
 puts "  e2e gate content: #{e2e_gate.slug} (burrow=#{burrow.slug} chase=#{chase.slug})"
+
+# THE CHARACTER-MODEL PAGE — /people/<person>/models/<look>. Drives
+# character_model_page.spec.js: the input half, the output half, and the arrow
+# between them.
+#
+# A DEDICATED PERSON, not Burrow above, because this fixture needs a look carrying
+# reference photographs AND a minted identity, and the artifact-gate specs read
+# Burrow's looks for a different question. Sharing one would make either spec's
+# failure ambiguous.
+#
+# THE IDENTITY IS A FIXTURE. Nothing here calls Higgsfield: a real mint costs money
+# and a real poll needs a credential, so the id and the `completed` status are
+# written straight onto the row. That is the whole point of the seam — the page
+# reads columns, so it can be driven to any state the vendor can put us in without
+# paying the vendor.
+#
+# THE PHOTO URLs ARE REAL AND EXTERNAL, and they are never fetched during the run:
+# a signed-in spec installs `blockThirdPartyRequests`, which aborts cross-origin
+# subresources. They are absolute https URLs rather than local asset paths because
+# Appearances::FetchableUrl refuses a relative one, so a local path would be
+# filtered out of the identity's list and the "built from N photos" count would
+# quietly disagree with the gallery.
+Person.where(last_name: "Lockfixture").destroy_all
+model_person = Person.create!(first_name: "Drew", last_name: "Lockfixture", athlete: true)
+e2e_look = Appearance.create!(
+  person_slug: model_person.slug, descriptor: "Seahawks home", colorway: "navy",
+  reference_url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Drew_Lock.JPG/500px-Drew_Lock.JPG",
+  higgsfield_reference_id: "1af15765-4e2c-4f91-9c3a-0b6d7e8f9a01",
+  higgsfield_reference_status: "completed",
+  higgsfield_reference_synced_at: 20.minutes.ago
+)
+
+# THREE CHOSEN SEARCH HITS AND THREE REJECTED, one per rejection reason, because the
+# reject half is the half a reviewer has to be able to see working. With the
+# operator's own `reference_url` as the floor that is FOUR photographs in the
+# identity, which is the number the output half prints.
+# THE FACE SCORES ARE FIXTURES, not classifier output: nothing in the e2e run
+# calls Anthropic. They carry the ORDER the ranking produces, because that order is
+# what the spec asserts — a bare-faced photograph ahead of every helmet, and a
+# scanned book page rejected outright.
+#
+# Note the provider's own `position` deliberately DISAGREES with the face order:
+# the helmet is hit 1 and the bare face is hit 2. A spec that passed with the two
+# in agreement would not be able to tell the new ranking from the old one.
+[
+  { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Drew_Lock_12_18_2023.jpg/500px-Drew_Lock_12_18_2023.jpg",
+    title: "Drew Lock, 18 December 2023 (helmet)", host: "https://commons.wikimedia.org/wiki/File:Drew_Lock_12_18_2023.jpg",
+    position: 1, chosen: true, w: 686, h: 930, face: 0.15 },
+  { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Drew_Lock_10_22_2023.jpg/500px-Drew_Lock_10_22_2023.jpg",
+    title: "Drew Lock, 22 October 2023 (bare face)", host: "https://commons.wikimedia.org/wiki/File:Drew_Lock_10_22_2023.jpg",
+    position: 2, chosen: true, w: 556, h: 780, face: 0.92 },
+  { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/WFT_vs._Broncos_%2851651272550%29.jpg/500px-WFT_vs._Broncos_%2851651272550%29.jpg",
+    title: "WFT vs. Broncos", host: "https://commons.wikimedia.org/wiki/File:WFT_vs._Broncos_(51651272550).jpg",
+    position: 3, chosen: true, w: 3207, h: 2135, face: 0.15 },
+  { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/1976_Penn_State_Nittany_Lions_media_guide.pdf/page1-500px-1976_Penn_State_Nittany_Lions_media_guide.pdf.jpg",
+    title: "1976 Penn State Nittany Lions media guide", host: "https://commons.wikimedia.org/wiki/File:1976_Penn_State_Nittany_Lions_media_guide.pdf",
+    position: 4, chosen: false, face: 0.0, reason: AppearanceReferencePhoto::REJECTED_NOT_A_PHOTO },
+  { url: "http://127.0.0.1:9999/internal-probe.png",
+    title: "A URL no remote fetcher should follow", host: nil,
+    position: 5, chosen: false, reason: AppearanceReferencePhoto::REJECTED_UNFETCHABLE },
+  { url: "https://commons.wikimedia.org/wiki/Special:FilePath/Drew_Lock.JPG?width=500",
+    title: "The same photograph, served from the file page",
+    host: "https://commons.wikimedia.org/wiki/File:Drew_Lock.JPG",
+    position: 6, chosen: false, reason: AppearanceReferencePhoto::REJECTED_DUPLICATE }
+].each do |row|
+  AppearanceReferencePhoto.create!(
+    appearance_slug: e2e_look.slug, image_url: row[:url], page_url: row[:host],
+    title: row[:title], source: AppearanceReferencePhoto::SOURCE_SEARCH,
+    query: "Drew Lockfixture Seattle Seahawks", position: row[:position],
+    width: row[:w], height: row[:h], chosen: row[:chosen], face_score: row[:face],
+    rejection_reason: row[:reason], found_at: 30.minutes.ago
+  )
+end
+
+# ONE GENERATED IMAGE pinned to that identity, so the output half has something in
+# it. A LOCAL asset path on purpose: this one is rendered as an artifact rather than
+# read as a reference, so it never meets FetchableUrl, and a local path keeps the
+# output half painting with the network blocked.
+model_shot = Artifact.create!(kind: "character_sheet", image_url: "/icon.png",
+                              source: "higgsfield", approved_at: Time.current)
+model_shot.subjects.create!(person_slug: model_person.slug, appearance_slug: e2e_look.slug,
+                            role: "qb", ordinal: 1)
+
+puts "  e2e character model: /people/#{model_person.slug}/models/#{e2e_look.slug} " \
+     "(#{AppearanceReferencePhoto.where(appearance_slug: e2e_look.slug).count} candidates)"
 
 # Triage inbox: one open finding for the promote flow (triage_promote.spec.js
 # promotes it — a MUTATING spec, so it must never carry @qa-readonly).
