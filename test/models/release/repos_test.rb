@@ -424,12 +424,12 @@ class Release::ReposTest < ActiveSupport::TestCase
   # that decision must be named here AND quoted in config/release_repos.yml, so a
   # deployable app cannot go exempt by a one-line YAML edit that no one decided.
   #
-  # cyvasse's line is Alex's own words. dads-app's is the decision as the focus
-  # session recorded it in the epic plan (.agents/epics/dads-app.md, 2026-09-26);
-  # Alex's own words were not captured, and the registry comment says so.
+  # Both lines are Alex's own words. dads-app's is his cost ask (chat,
+  # 2026-09-26), answered by option C, one Eco dyno with no QA copy; the registry
+  # comment quotes the "C" reply beside it.
   QA_EXEMPT_BY_OPERATOR_DECISION = {
     "cyvasse" => "No cyvasse-qa unless there is a free teir we can use",
-    "dads-app" => "Alex chose option C (Heroku Eco dyno)"
+    "dads-app" => "anyway we can get it cheaper than $12/m"
   }.freeze
 
   test "[unit] a DEPLOYABLE exempt repo is exempt only by a cited operator decision" do

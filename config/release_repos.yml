@@ -758,17 +758,19 @@ apps:
     # EXEMPT, ON COST, BY OPERATOR DECISION. This is cyvasse's kind of exemption,
     # not turf-vault's: dads-app is a deployable app and a QA copy could exist.
     #
-    #   Recorded decision (epic plan .agents/epics/dads-app.md, 2026-09-26, in
-    #   the focus session's words; the guard matches this line exactly):
-    #   "Alex chose option C (Heroku Eco dyno)"
-    #   The option was ONE Eco dyno, about $5/month, no database and no QA copy,
+    #   Alex's decision, verbatim (chat, 2026-09-26; the guard matches the cost
+    #   line exactly). Asking for the hosting: "anyway we can get it cheaper than $12/m"
+    #   Offered A (GitHub Pages), B (inside moms-app) or C, he replied: "C"
+    #   (the epic plan, .agents/epics/dads-app.md, records "Alex chose option C
+    #   (Heroku Eco dyno)"). Option C was ONE Eco dyno, about $5/month, no database and no QA copy,
     #   over GitHub Pages ($0) and hosting inside moms-app. It applies the
     #   standing rule Alex set for cyvasse the day before (quoted verbatim there):
     #   no QA copy unless there is a free tier.
     #
-    # HONEST CAVEATS. (1) The line above is the session's record of Alex's
-    # choice, not his own words; if a verbatim quote surfaces, replace it here
-    # AND in repos_test.rb's QA_EXEMPT_BY_OPERATOR_DECISION together. (2) Eco
+    # HONEST CAVEATS. (1) Alex's words choose the Eco dyno on cost; "no QA
+    # copy" is that choice read through his cyvasse rule, not a separate
+    # sentence of his. Change the quote here AND in repos_test.rb's
+    # QA_EXEMPT_BY_OPERATOR_DECISION together. (2) Eco
     # dyno hours are one pool per Heroku account, so a sleeping `dads-app-qa`
     # Eco dyno may cost nothing extra; if Alex takes that as his free tier, this
     # key comes out and dads-app earns QA evidence like any app.
