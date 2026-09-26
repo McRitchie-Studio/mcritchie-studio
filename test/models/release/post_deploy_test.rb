@@ -144,6 +144,89 @@ class Release::PostDeployTest < ActiveSupport::TestCase
     assert_equal "", PD.target_app(nil, "turf-monster", :qa)
   end
 
+  # --- a DECLARED QA-evidence-exempt repo (cyvasse) ---------------------------
+  #
+  # cyvasse has no QA app by operator decision and no qa_environments entry, only
+  # a git_push_heroku prod_deploy. Before this, both targets resolved "" and the CLI
+  # aborted: prepare stuck `assembling` holding every member, ship aborting AFTER
+  # the push was live. The exemption skips the :qa run (loudly, in the CLI); :prod
+  # resolves from the repo's own adapter. Nothing is inferred from missing config.
+  CYVASSE_GROUP = {
+    "repo" => "cyvasse", "kind" => "app", "qa_app" => "cyvasse",
+    "prod_deploy" => { "strategy" => "git_push_heroku", "remote" => "https://git.heroku.com/cyvasse.git",
+                       "branch" => "main" },
+    "members" => [{ "slug" => "t-cyv", "post_deploy_cmd" => "bin/rails users:seed_identities" }]
+  }.freeze
+
+  test "[unit] an exempt repo's :qa command is planned as a SKIP naming the exemption" do
+    entry = PD.plan([CYVASSE_GROUP], qa_environments: QA_ENVS, target: :qa, qa_exempt_repos: %w[cyvasse]).sole
+
+    assert_equal PD::SKIP_QA_EXEMPT, entry["skip"], "the command stays in the plan, marked, never dropped"
+    assert_equal "", entry["app"], "a skipped entry names no QA app to run on"
+    assert_equal "bin/rails users:seed_identities", entry["cmd"]
+  end
+
+  # THE MUTATION for the skip: the same group WITHOUT the declaration must fall back
+  # to the unroutable blank app the CLI aborts on. If the skip were keyed off missing
+  # config instead of the declaration, this would come back skipped.
+  test "[unit] MUTATION: the same repo NOT declared exempt is unroutable at :qa (fail-closed)" do
+    entry = PD.plan([CYVASSE_GROUP], qa_environments: QA_ENVS, target: :qa).sole
+
+    assert_nil entry["skip"]
+    assert_equal "", entry["app"]
+  end
+
+  test "[unit] a non-exempt app with no QA env stays unroutable even beside an exempt one" do
+    chain = { "repo" => "chain-ops", "kind" => "app", "qa_app" => "chain-ops",
+              "members" => [{ "slug" => "c", "post_deploy_cmd" => "rake noop" }] }
+    plan = PD.plan([CYVASSE_GROUP, chain], qa_environments: QA_ENVS, target: :qa, qa_exempt_repos: %w[cyvasse])
+
+    chain_entry = plan.find { |e| e["repo"] == "chain-ops" }
+    assert_nil chain_entry["skip"], "the exemption is per repo — it must not leak to a neighbour"
+    assert_equal "", chain_entry["app"]
+  end
+
+  test "[unit] :prod resolves an exempt repo's app from its prod_deploy remote and never skips" do
+    entry = PD.plan([CYVASSE_GROUP], qa_environments: QA_ENVS, target: :prod, qa_exempt_repos: %w[cyvasse]).sole
+
+    assert_nil entry["skip"], "the QA exemption does not reach production: the command must run there"
+    assert_equal "cyvasse", entry["app"]
+  end
+
+  test "[unit] :prod prefers a declared production_app over the adapter" do
+    envs = QA_ENVS.merge("cyvasse" => { "heroku_app" => "cyvasse-qa", "production_app" => "cyvasse-prod" })
+    assert_equal "cyvasse-prod", PD.target_app(envs, "cyvasse", :prod, prod_deploy: CYVASSE_GROUP["prod_deploy"])
+  end
+
+  test "[unit] :prod reads an adapter's explicit heroku_app" do
+    assert_equal "named-app", PD.target_app(QA_ENVS, "x", :prod, prod_deploy: { "heroku_app" => "named-app" })
+  end
+
+  test "[unit] :prod stays unroutable when the adapter names no Heroku app" do
+    repo_script = { "strategy" => "repo_script", "command" => "bin/deploy" }
+    assert_equal "", PD.target_app(QA_ENVS, "tax-studio", :prod, prod_deploy: repo_script)
+    assert_equal "", PD.target_app(QA_ENVS, "tax-studio", :prod, prod_deploy: nil)
+  end
+
+  test "[unit] :qa never falls back to the production adapter" do
+    assert_equal "", PD.target_app(QA_ENVS, "cyvasse", :qa, prod_deploy: CYVASSE_GROUP["prod_deploy"]),
+                 "a production app is not a QA app — running a QA command on prod would be the worse bug"
+  end
+
+  test "[unit] qa_exempt_repos reads the same set as Release::Repos over the real registry" do
+    registry = YAML.load_file(Rails.root.join("config/release_repos.yml"))
+    assert_equal Release::Repos.qa_evidence_exempt_repos.sort, PD.qa_exempt_repos(registry).sort
+    assert_includes PD.qa_exempt_repos(registry), "cyvasse"
+  end
+
+  test "[unit] qa_exempt_repos honours only the exact declared value" do
+    registry = { "apps" => { "a" => { "qa_evidence" => " exempt " }, "b" => { "qa_evidence" => "exmept" },
+                             "c" => { "qa_evidence" => "required" }, "d" => nil },
+                 "gems" => { "g" => { "qa_evidence" => "exempt" } } }
+    assert_equal %w[a g], PD.qa_exempt_repos(registry).sort
+    assert_empty PD.qa_exempt_repos(nil)
+  end
+
   # --- plan: dedupe by the WORK, not the command string ----------------------
   #
   # THE BUG: `plan` emitted one entry per MEMBER. A real release carried

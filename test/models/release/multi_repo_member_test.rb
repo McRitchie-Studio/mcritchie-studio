@@ -664,4 +664,28 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
     Release::Conductor.ship!(release: release.reload, deployed_sha: "deadbeef")
     assert_equal "shipped", task.reload.stage
   end
+
+  # [integration] The seam the conductor tests above never reached: the repo plan a
+  # real sweep builds, round-tripped through JSON exactly as bin/release reads it,
+  # fed to the post-deploy planner with the REAL registries. A cyvasse member
+  # declaring a post_deploy_cmd is skipped at QA (exempt) and routed to Heroku app
+  # `cyvasse` at ship (from its prod_deploy) — neither yields the blank app the CLI
+  # aborts on.
+  test "[integration] a cyvasse member's post_deploy_cmd skips QA and routes to cyvasse at ship" do
+    task = Task.create!(title: "seed cyvasse player identities", stage: "reviewed",
+                        metadata: { "devops" => { "shape" => "backend", "repositories" => [ CYVASSE ],
+                                                  "pr_url" => CYVASSE_PR,
+                                                  "post_deploy_cmd" => "bin/rails users:seed_identities" } })
+    release = Release::Conductor.sweep!(task)
+    repos = JSON.parse(Release::Conductor.repo_plan(release.reload).to_json)
+    qa_envs = YAML.load_file(Rails.root.join("config/qa_environments.yml")).fetch("qa_environments")
+    exempt = Release::PostDeploy.qa_exempt_repos(YAML.load_file(Rails.root.join("config/release_repos.yml")))
+
+    qa = Release::PostDeploy.plan(repos, qa_environments: qa_envs, target: :qa, qa_exempt_repos: exempt)
+    prod = Release::PostDeploy.plan(repos, qa_environments: qa_envs, target: :prod, qa_exempt_repos: exempt)
+
+    assert_equal [ Release::PostDeploy::SKIP_QA_EXEMPT ], qa.map { |e| e["skip"] }
+    assert_equal [ "cyvasse" ], prod.map { |e| e["app"] }
+    assert_equal [ [ task.slug ] ], prod.map { |e| e["tasks"] }
+  end
 end

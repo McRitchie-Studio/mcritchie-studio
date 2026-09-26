@@ -1454,7 +1454,8 @@ end
 # abort — a declared command must never silently no-op. --dry-run PRINTS the
 # command + target app and executes nothing.
 def run_post_deploy(repos, target:)
-  plan = Release::PostDeploy.plan(repos, qa_environments: QA_ENVIRONMENTS, target: target)
+  plan = Release::PostDeploy.plan(repos, qa_environments: QA_ENVIRONMENTS, target: target,
+                                         qa_exempt_repos: Release::PostDeploy.qa_exempt_repos(RELEASE_REPOS))
   return if plan.empty?
 
   phase  = target == :qa ? "QA" : "prod"
@@ -1472,12 +1473,22 @@ def run_post_deploy(repos, target:)
     tasks = Array(entry["tasks"])
     tasks = [task] if tasks.empty?
     label = tasks.join(", ")
+    # A repo DECLARING `qa_evidence: exempt` has no QA app by decision, so its QA
+    # post-deploy is SKIPPED — loudly, per entry, never dropped. Only PostDeploy.plan
+    # sets "skip", and only at :qa for a declared repo; the command still runs on
+    # production at ship. Every other blank app falls through to the abort below.
+    if entry["skip"] == Release::PostDeploy::SKIP_QA_EXEMPT
+      say("  post-deploy #{label} (#{entry['repo']}): SKIPPED at QA — #{entry['repo']} declares " \
+          "qa_evidence: exempt in config/release_repos.yml (no QA app); `#{cmd}` runs on production at ship")
+      next
+    end
     # Unroutable declared command (a gem, or an app missing from qa_environments)
     # is a HARD abort, never a silent no-op. Intentionally BEFORE the DRY gate: a
     # dry-run must surface this misconfig (it would block the real run) rather than
     # preview past it.
     abort!("task #{label} (#{entry['repo']}) declares a post_deploy_cmd but has no #{phase} app in " \
-           "config/qa_environments.yml — register one or clear devops.post_deploy_cmd") if app.empty?
+           "config/qa_environments.yml#{target == :prod ? ' or its prod_deploy' : ''} — register one or " \
+           "clear devops.post_deploy_cmd") if app.empty?
 
     # One canonical argv drives BOTH the preview and the real run, so --dry-run
     # prints exactly what executes. It is built by the unit-tested
