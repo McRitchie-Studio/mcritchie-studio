@@ -163,7 +163,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   test "[unit] dads-app registers CI's full suite as test_cmd and no QA gate" do
-    assert_equal "bin/rails test test:system", Release::Repos.test_cmd("dads-app"),
+    assert_equal "bin/rails test:all", Release::Repos.test_cmd("dads-app"),
                  "git_push_heroku runs no tests — test_cmd is the last gate and must be CI's full suite"
     assert_nil Release::Repos.qa_test_cmd("dads-app"),
                "dads-app has no QA app; a qa_test_cmd would make its QA exemption stale"
@@ -174,11 +174,17 @@ class Release::ReposTest < ActiveSupport::TestCase
   # No ActiveRecord, so no `db:test:prepare` task: a gate string carrying it would
   # fail in dads-app's own CI before a single test ran. The system tier stays in,
   # or a slideshow regression could ride to production past a green gate.
+  #
+  # And NOT `bin/rails test test:system`: without a leading rake task, Rails 8.1's
+  # TestCommand loads `test:system` as a file path and raises LoadError. `test:all`
+  # is the one-command spelling of both tiers.
   test "[unit] dads-app's gate names both tiers and no database step" do
     argv = Shellwords.split(Release::Repos.test_cmd("dads-app"))
 
-    assert_equal %w[bin/rails test test:system], argv
+    assert_equal %w[bin/rails test:all], argv
     assert_empty argv.grep(/\Adb:/), "dads-app has no database, so its gate must not prepare one"
+    assert_not_equal "test", argv[1],
+                     "a bare `bin/rails test <task>` treats the task as a path; lead with a task or use test:all"
   end
 
   test "app_meta returns the app's registry metadata" do
@@ -606,8 +612,8 @@ class Release::ReposTest < ActiveSupport::TestCase
   # passed over.
   #
   # dads-app has no database, so its suite step carries no db:test:prepare; it is
-  # anchored on `bin/rails test` instead, which a `tailwindcss:build` step does not
-  # match. Its ci.yml was still being built (build-dads-app-slideshow) when its
+  # anchored on `bin/rails test` instead (which `bin/rails test:all` contains and a
+  # `tailwindcss:build` step does not). Its ci.yml was still being built (build-dads-app-slideshow) when its
   # test_cmd was pinned on 2026-09-26, so it too falls back to origin/accepted, and
   # this binds the moment that ci.yml lands there.
   GIT_PUSH_HEROKU_GATES = {

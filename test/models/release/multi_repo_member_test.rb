@@ -700,7 +700,7 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
   DADS    = "dads-app"
   DADS_PR = "https://github.com/McRitchie-Studio/dads-app/pull/1"
 
-  def dads_task(label = "add a photo to the slideshow")
+  def dads_task(label = "add a slideshow photo")
     Task.create!(title: label, stage: "reviewed",
                  metadata: { "devops" => { "shape" => "ui-only", "repositories" => [ DADS ],
                                            "pr_url" => DADS_PR } })

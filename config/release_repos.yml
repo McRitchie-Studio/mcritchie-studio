@@ -735,12 +735,23 @@ apps:
     # step, so this IS the last gate before production; G4 reads CI's settled
     # verdict for the frozen tree, and nothing runs it locally). There is NO
     # `db:test:prepare` in it, unlike every other app here: with no ActiveRecord
-    # the task does not exist. Pinned 2026-09-26 to the command the sibling
-    # task (build-dads-app-slideshow) is building dads-app's CI around, BEFORE
-    # that ci.yml reached dads-app's accepted; repos_test.rb holds this string
-    # against dads-app's own ci.yml the moment it lands, so a drift on either
-    # side goes red rather than shipping a narrower gate.
-    test_cmd: bin/rails test test:system
+    # the task does not exist.
+    #
+    # `test:all`, NOT the hub's `test test:system` spelling. The hub's string
+    # works only because its FIRST word is the rake task `db:test:prepare`, which
+    # routes every word after it through rake. Drop that word and
+    # `bin/rails test test:system` reaches Rails 8.1's TestCommand, which loads
+    # `test:system` as a FILE PATH and dies with `LoadError: cannot load such
+    # file -- <root>/test:system` (measured 2026-09-26). `bin/rails test:all` is
+    # railties' one-command spelling of both tiers (`test/**/*_test.rb`, system
+    # tests included).
+    #
+    # Pinned 2026-09-26 BEFORE dads-app's ci.yml reached its accepted (the
+    # sibling task build-dads-app-slideshow is building it). repos_test.rb holds
+    # this string against the `test` job of dads-app's own ci.yml the moment it
+    # lands, so a drift on either side goes red rather than shipping a narrower
+    # gate.
+    test_cmd: bin/rails test:all
     #
     # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
     # EXEMPT, ON COST, BY OPERATOR DECISION. This is cyvasse's kind of exemption,
