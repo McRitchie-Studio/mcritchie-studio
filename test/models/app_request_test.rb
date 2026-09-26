@@ -124,4 +124,21 @@ class AppRequestTest < ActiveSupport::TestCase
     assert d.claimable_by?(users(:alex))
     refute d.claimable_by?(users(:viewer))
   end
+
+  test "the gallery finds a live showcase app's screenshot by convention, and nothing when it is missing" do
+    live = draft(user: users(:alex)).queue!("zz-no-screenshot")
+    live.update!(status: "live")
+    entry = BuildGallery.showcased.find { |e| e.url.include?("zz-no-screenshot") }
+
+    assert entry
+    assert_nil entry.image, "no file at build_gallery/zz-no-screenshot.jpg, so no image"
+    assert_equal "build_gallery/cyvasse.jpg", BuildGallery.configured.find { |e| e.name == "Cyvasse" }.image
+  end
+
+  test "a customer's live app is never in the public gallery" do
+    live = draft(user: users(:viewer)).queue!("customer-app")
+    live.update!(status: "live")
+
+    refute BuildGallery.examples.any? { |e| e.url.include?("customer-app") }
+  end
 end
