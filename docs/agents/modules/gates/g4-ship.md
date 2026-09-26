@@ -36,7 +36,8 @@ The gate window spans the whole irreversible half of the ship:
   interchangeable `rake`/`bin/rails` runner spellings — the rest of the command
   is compared verbatim.
   The app is the repo's `production_app` in `config/qa_environments.yml`, or
-  else the Heroku app its `prod_deploy` names (cyvasse); neither aborts ship.
+  else the Heroku app its `prod_deploy` names (cyvasse); if neither names one,
+  ship aborts.
 - **The smoke seal** (`prod_smoke_seal` SOP) — the read-only `@qa-readonly`
   suite against prod. A SEAL, not a blocker: its verdict rides the gate
   (`metadata.seal: green|red|unsealed`) but a red seal never flips the gate's
