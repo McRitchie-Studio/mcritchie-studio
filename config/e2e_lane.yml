@@ -252,7 +252,21 @@
 # clicking through to an epic's tasks by stage. Coverage ADDED; `quarantined` untouched at 10.
 # MEASURED with the lister on THIS tree, never by arithmetic:
 #   npx playwright test --list => 164
-total_specs: 166
+# 166 -> 168 on 2026-09-26: the two e2e/character_model_page.spec.js specs
+# (/tasks/character-model-reference-ui), the character-model page's layout at both widths
+# and the refused URL the browser never requests. Coverage ADDED; `quarantined` untouched
+# at 10.
+#
+# WHY THIS BUMP IS +2 FROM 166 RATHER THAN FROM 164, and it is the whole reason this line
+# needs a comment. Both this branch and `accepted` independently raised 164 -> 166, each
+# adding two DIFFERENT specs. Git merged the two identical `166` lines with no conflict, so
+# the counter came out of the merge unchanged while the spec SET on disk was the union of
+# both. A count cannot see a permutation: the number was right on each side and wrong on
+# neither diff. Re-derived with the lister on the MERGED tree, which is the only tree the
+# question can be asked of.
+# MEASURED with the lister on THIS tree, never by arithmetic:
+#   npx playwright test --list => 168
+total_specs: 168
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -410,7 +424,21 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 164
 #   npx playwright test --list --grep-invert @quarantine => 154
-executed: 156
+# 156 -> 158 on 2026-09-26: the two e2e/character_model_page.spec.js specs
+# (/tasks/character-model-reference-ui) pin the character-model page — both halves side by
+# side at desktop and stacked on a phone with no horizontal overflow, and a URL the SSRF
+# guard refused shown as text and never REQUESTED by the browser. Coverage ADDED;
+# `quarantined` untouched at 10.
+#
+# +2 FROM 156 RATHER THAN FROM 154 for the reason recorded against `total_specs` above:
+# this branch and `accepted` each raised the pair by two, with different specs, so the two
+# identical numbers merged cleanly while the spec SET became the union. Both figures below
+# were re-derived with the lister on the MERGED tree, which is the only tree that can
+# answer it.
+# Re-derived on THIS tree with the lister, never by arithmetic:
+#   npx playwright test --list                           => 168
+#   npx playwright test --list --grep-invert @quarantine => 158
+executed: 158
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
