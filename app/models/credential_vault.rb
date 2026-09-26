@@ -11,10 +11,6 @@ class CredentialVault < ApplicationRecord
   LANES = %w[agents admin applications human].freeze
   STATUSES = %w[active reserved retired].freeze
 
-  # Where bin/workspace-icon writes a scope's icon by default, relative to
-  # app/assets/images — so a render is what this page shows.
-  ICON_DIR = "workspace_icons/1password".freeze
-
   has_many :credential_records, foreign_key: :credential_vault_slug, primary_key: :slug,
                                 dependent: :restrict_with_exception, inverse_of: :credential_vault
   belongs_to :workspace_account, foreign_key: :workspace_domain, primary_key: :domain, optional: true
@@ -30,12 +26,7 @@ class CredentialVault < ApplicationRecord
 
   # The icon asset path for image_tag, or nil when this scope has not been
   # rendered yet — the page then says so rather than showing a broken image.
-  def icon_asset
-    return nil if icon_scope.blank?
-
-    path = "#{ICON_DIR}/#{icon_scope}.png"
-    Rails.root.join("app/assets/images", path).file? ? path : nil
-  end
+  def icon_asset = icon_scope.present? ? WorkspaceIconConfig.asset("1password", icon_scope) : nil
 
   def workspace_name = icon_workspace&.fetch("name", nil) || entity.titleize
 
