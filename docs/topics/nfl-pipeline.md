@@ -115,7 +115,7 @@ summed total reads healthy. So the report prints each lane's three steps (*wante
 
 | Rule | Fires when | What it catches |
 |---|---|---|
-| 1. the pass broke down | more raises than writes | the **write** path — an orphaned row, a database error. Not the paid call, which never raises |
+| 1. the pass broke down | more raises than writes | the **write** path — a row that no longer satisfies a validation, a database error. Not the paid call, which never raises |
 | 2. the free lane wrote nothing | height and weight were on file for ≥1 athlete wanting a build, and none was written | the deriver rejecting every row, or every write failing |
 | 3. the paid lane never landed | ≥1 call was asked for and **not one was billed a token** | a present-but-invalid credential, a sustained 429, unreadable S3 objects |
 

@@ -93,8 +93,14 @@ module Athletes
       def self.zero = new(*Array.new(members.size, 0))
     end
 
-    # `describer` is a seam so the suite can drive the whole loop without a
-    # transport; production passes nothing.
+    # `describer` is a seam, and it must answer TWO questions: #call(athlete) for one
+    # athlete's description, and #armed? for whether the paid lane can make a call at
+    # all — asked once per run, before any athlete is handed over.
+    #
+    # THE RAKE TASK PASSES ONE IN, so its pre-run credential warning and its post-run
+    # lane report read the same object rather than two answers to two different
+    # questions. The default is here for a caller that has no opinion, and for the
+    # suite, which injects a double.
     def initialize(limit: nil, pause: DEFAULT_PAUSE, describer: nil, logger: nil)
       @limit = limit
       @pause = pause.to_f

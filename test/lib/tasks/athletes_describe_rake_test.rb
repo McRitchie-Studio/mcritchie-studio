@@ -20,7 +20,9 @@ require "rake"
 # summed counter reads healthy.
 #
 #   1. THE PASS BROKE DOWN — more raises than writes. Its population is the WRITE
-#      path (an orphaned row, a database error), because the describer never raises.
+#      path — a row that no longer satisfies a validation, a database error — because
+#      the describer never raises. NOT an orphaned row: measured here, an athlete whose
+#      person is deleted is still `valid?`, since `belongs_to :person` is not required.
 #   2. THE FREE LANE HAD ITS INPUT AND WROTE NOTHING — graded on height and weight
 #      being on file, never on the deriver's own verdict.
 #   3. THE PAID LANE NEVER REACHED THE API — graded on whether a single call was
