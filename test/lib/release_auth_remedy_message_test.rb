@@ -39,7 +39,7 @@ class ReleaseAuthRemedyMessageTest < Minitest::Test
     assert_operator msg.index("source ~/.zprofile.admin"), :<, msg.index("bin/setup-1pass-token"),
                     "the install must come SECOND and conditionally — leading with it sends a " \
                     "provisioned machine on the wrong errand, which is what cost the session"
-    assert_match(/export GH_APP_ITEM=github\.mcritchie-deployer/, msg)
+    assert_match(/export GH_APP_ITEM=github\.mcritchie-admin/, msg)
     assert_operator msg.index("export GH_APP_ITEM"), :>, msg.index("source ~/.zprofile.admin"),
                     "GH_APP_ITEM must be exported BEFORE minting but AFTER sourcing; printed the " \
                     "other way round the reader mints the AGENT token and calls it a success"

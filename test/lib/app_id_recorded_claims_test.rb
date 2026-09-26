@@ -35,7 +35,7 @@ class AppIdRecordedClaimsTest < Minitest::Test
   INVENTORY = "docs/agents/modules/credential-inventory.md"
   SOP       = "docs/agents/modules/token-session.md"
 
-  ITEMS = %w[github.mcritchie-agent github.mcritchie-deployer].freeze
+  ITEMS = %w[github.mcritchie-agent github.mcritchie-admin].freeze
 
   # The heading the SOP's hand-mint recipe lives under. Matched loosely on
   # purpose: the rule is "a section about minting when 1Password is down

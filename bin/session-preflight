@@ -25,6 +25,7 @@ require "uri"
 require "yaml"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
+require_relative "lib/gh_identity"
 require_relative "lib/migration_collision"
 require_relative "lib/task_board"
 require_relative "lib/fast_lane"
@@ -326,8 +327,12 @@ end
 def gh_auth_report(root)
   return { "status" => "skipped", "message" => "gh CLI is unavailable" } unless command_available?("gh")
 
+  # The LANE, not the item's suffix: since the 2026-09-26 rename the ship lane's
+  # item is github.mcritchie-admin, and stripping the prefix would report "admin"
+  # for a lane every doc and flag calls `deployer`. An unknown item is reported
+  # verbatim so the operator sees what was exported.
   item = ENV["GH_APP_ITEM"].to_s.strip
-  lane = item.empty? ? "agent" : item.sub(/\Agithub\.mcritchie-/, "")
+  lane = GhIdentity.resolve(nil) || item
   ok, _out, err = capture("gh", "api", "rate_limit", chdir: root)
   return { "status" => "ok", "lane" => lane } if ok
 

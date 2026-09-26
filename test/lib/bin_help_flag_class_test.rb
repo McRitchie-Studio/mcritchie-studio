@@ -273,6 +273,7 @@ class BinHelpFlagClassTest < Minitest::Test
     # exit code 3, not to step over it — and it parses before any side effect, so
     # `--help` and `--bogus` both act on nothing. The parser's refusal is intact.
     "ship-wait"              => :optparse,
+    "rotate-heroku-ci-key"   => :optparse,
     "dor-check"              => :optparse,
     "fast-check"             => :optparse,
     # Both corpus scripts parse before touching anything and then REFUSE a leftover
