@@ -24,7 +24,12 @@ software:
   # Marks come from Simple Icons (CC0; v16, and v9 for the three brands v16
   # dropped: AWS, Heroku, Slack) or, where it has none, the brand's own site
   # icon. `tile: false` marks the one mark that is already an icon.
+  #
+  # ORDER IS THE MATRIX'S ROW ORDER: the headline accounts first, then A-Z.
   1password: { name: 1Password, mark: lib/workspace_icons/marks/1password.png, tile: false }
+  google: { name: Google Workspace, mark: lib/workspace_icons/marks/google.svg }
+  tiktok: { name: TikTok, mark: lib/workspace_icons/marks/tiktok.svg }
+  x: { name: X, mark: lib/workspace_icons/marks/x.svg }
   anthropic: { name: Anthropic, mark: lib/workspace_icons/marks/anthropic.svg }
   aws: { name: AWS, mark: lib/workspace_icons/marks/aws.svg }
   cloudflare: { name: Cloudflare, mark: lib/workspace_icons/marks/cloudflare.svg }
@@ -32,7 +37,6 @@ software:
   coinflow: { name: Coinflow, mark: lib/workspace_icons/marks/coinflow.png }
   discord: { name: Discord, mark: lib/workspace_icons/marks/discord.svg }
   github: { name: GitHub, mark: lib/workspace_icons/marks/github.svg }
-  google: { name: Google Workspace, mark: lib/workspace_icons/marks/google.svg }
   helius: { name: Helius, mark: lib/workspace_icons/marks/helius.png }
   heroku: { name: Heroku, mark: lib/workspace_icons/marks/heroku.svg }
   higgsfield: { name: Higgsfield, mark: lib/workspace_icons/marks/higgsfield.png }
@@ -46,9 +50,7 @@ software:
   solana: { name: Solana, mark: lib/workspace_icons/marks/solana.svg }
   squads: { name: Squads, mark: lib/workspace_icons/marks/squads.png }
   stripe: { name: Stripe, mark: lib/workspace_icons/marks/stripe.svg }
-  tiktok: { name: TikTok, mark: lib/workspace_icons/marks/tiktok.svg }
   turf-monster: { name: Turf Monster, mark: lib/workspace_icons/badges/turf-monster.png }
-  x: { name: X, mark: lib/workspace_icons/marks/x.svg }
 
 workspaces:
   studio:

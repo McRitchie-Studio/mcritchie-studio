@@ -9,7 +9,10 @@ class CredentialVaultsController < ApplicationController
     @workspaces = WorkspaceIconConfig.workspaces
     @entities = CredentialVault::ENTITIES
     records = CredentialRecord.includes(:credential_vault).order(:title).to_a
-    @services = records.map(&:service).uniq.sort_by { |service| CredentialRecord.service_label(service).downcase }
+    # Rows follow config/workspace_icons.yml's software order, so the headline
+    # accounts sit at the top by an edit to the config, not to this page.
+    order = WorkspaceIconConfig.softwares.keys
+    @services = records.map(&:service).uniq.sort_by { |service| [ order.index(service) || order.size, service ] }
     # Google access for a client is a delegation grant on its domain, read with
     # the one shared service-account key, so the Google row also shows each
     # entity's workspace and whether that grant is proven.
