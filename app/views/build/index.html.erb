@@ -1,0 +1,80 @@
+<% content_for :title, "App requests · McRitchie Studio" %>
+<% tabs = [ [ "active", "Requests", AppRequest::HOLDING.sum { |s| @counts[s].to_i } ],
+            [ "queued", "Queued", @counts["queued"].to_i ],
+            [ "building", "Building", @counts["building"].to_i ],
+            [ "live", "Live", @counts["live"].to_i ],
+            [ "draft", "Drafts", @counts["draft"].to_i ],
+            [ "cancelled", "Cancelled", @counts["cancelled"].to_i ],
+            [ "all", "All", @counts.values.sum ] ] %>
+<% pill = { "draft" => "border-subtle text-muted", "queued" => "border-primary text-primary",
+            "building" => "border-amber-400 text-amber-500", "live" => "border-green-500 text-green-600 dark:text-green-400",
+            "cancelled" => "border-subtle text-muted line-through" } %>
+
+<section class="max-w-6xl mx-auto px-4 py-10" data-test="app-requests-page">
+  <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Build</p>
+      <h1 class="text-3xl font-bold text-heading mb-2">App requests</h1>
+      <p class="text-muted max-w-2xl">
+        Every app asked for through <%= link_to "/build", build_path, class: "text-primary hover:underline" %>,
+        newest first. Agents work them from the board; the queue SOP is <code>launch-build-queue</code>.
+      </p>
+    </div>
+  </header>
+
+  <nav class="mb-4 flex flex-wrap gap-2" aria-label="Filter by status" data-test="app-request-tabs">
+    <% tabs.each do |key, label, count| %>
+      <%= link_to build_requests_path(status: key),
+            class: "rounded-full border px-3 py-1 text-sm #{@status == key ? 'border-primary bg-primary text-white' : 'border-subtle text-body hover:border-primary'}",
+            aria: { current: (@status == key ? "page" : nil) }, data: { test: "app-request-tab", status: key } do %>
+        <%= label %> <span class="ml-1 opacity-75"><%= count %></span>
+      <% end %>
+    <% end %>
+  </nav>
+
+  <% if @requests.empty? %>
+    <p class="rounded-2xl border border-subtle bg-surface p-8 text-center text-muted" data-test="app-requests-empty">
+      No requests here yet.
+    </p>
+  <% else %>
+    <ul class="space-y-3" data-test="app-request-list">
+      <% @requests.each do |req| %>
+        <li class="rounded-2xl border border-subtle bg-surface p-5" data-test="app-request" data-status="<%= req.status %>">
+          <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-2">
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 min-w-0">
+              <% if req.host %>
+                <span class="font-mono font-semibold text-heading break-all" data-test="app-request-host"><%= req.host %></span>
+              <% else %>
+                <span class="text-muted italic">no name claimed</span>
+              <% end %>
+              <span class="rounded-full border px-2 py-0.5 text-xs font-semibold <%= pill[req.status] %>" data-test="app-request-status"><%= req.status %></span>
+              <span class="text-xs text-muted"><%= req.tier.titleize %></span>
+            </div>
+            <span class="text-xs text-muted whitespace-nowrap" title="<%= (req.queued_at || req.created_at).iso8601 %>">
+              <%= req.queued_at ? "queued" : "started" %> <%= time_ago_in_words(req.queued_at || req.created_at) %> ago
+            </span>
+          </div>
+
+          <p class="text-body whitespace-pre-line mb-3" data-test="app-request-prompt"><%= req.prompt %></p>
+
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted">
+            <span data-test="app-request-requester">
+              <% if req.user %>
+                <%= [ req.user.name.presence, req.user.email ].compact.join(" · ") %>
+              <% else %>
+                not signed in yet
+              <% end %>
+            </span>
+            <% if req.task_slug %>
+              <%= link_to "Board card", task_path(req.task_slug), class: "text-primary hover:underline", data: { test: "app-request-task" } %>
+            <% end %>
+            <%= link_to "Requester's page", build_request_path(req.token), class: "text-primary hover:underline" %>
+            <% if req.queued? || req.status.in?(%w[building live]) %>
+              <span data-test="app-request-discord"><%= req.discord_notified_at ? "Posted to #scratch-pad" : "Not posted to Discord" %></span>
+            <% end %>
+          </div>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+</section>

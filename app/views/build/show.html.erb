@@ -1,0 +1,205 @@
+<% content_for :title, "Your app · McRitchie Studio" %>
+<% req = @app_request %>
+
+<section class="max-w-2xl mx-auto px-4 pt-12 pb-24" data-test="build-request" data-status="<%= req.status %>">
+  <%# The prompt, echoed back as the first message of the conversation. %>
+  <div class="mb-8 flex justify-end">
+    <div class="max-w-[85%] rounded-3xl rounded-br-md bg-surface-alt px-5 py-3 text-body whitespace-pre-line" data-test="build-echo"><%= req.prompt %></div>
+  </div>
+
+  <% if req.draft? && !logged_in? %>
+    <%# STEP 1 — register, in the standard sign-in modal (modals/_auth). It opens
+        on arrival; the button reopens it. The emailed link returns to THIS page
+        (the draft's token rides returnTo), so the prompt survives even when the
+        email is opened on another device. Google always lands on the home page,
+        which forwards back here once (session[:build_draft_token]). %>
+    <% modal_props = { returnTo: build_request_path(req.token), title: "Create your free account",
+                       subtitle: "Your description is saved. Sign in and you'll pick your app's name next." } %>
+    <div class="rounded-3xl border border-subtle bg-surface p-6 sm:p-8 text-center" data-test="build-register"
+         x-data x-init="$nextTick(() => $store.modals.open('auth', <%= modal_props.to_json %>))">
+      <h1 class="text-2xl font-bold text-heading mb-1">Sign in to build it</h1>
+      <p class="text-muted mb-6">Your description is saved. Create your free account and you'll pick your app's name next.</p>
+      <button type="button" class="btn btn-primary btn-lg" data-test="build-open-auth"
+              @click="$store.modals.open('auth', <%= modal_props.to_json %>)">Create free account</button>
+    </div>
+
+  <% elsif req.draft? %>
+    <%# STEP 2 — claim a subdomain. Availability is checked live as they type;
+        the server re-checks on submit (the live answer is advice, not a lock). %>
+    <div class="rounded-3xl border border-subtle bg-surface p-6 sm:p-8" data-test="build-claim">
+      <h1 class="text-2xl font-bold text-heading mb-1">Name your app</h1>
+      <p class="text-muted mb-6">Your free app lives at this address. You can move it to your own domain later.</p>
+
+      <%# The name field (buildNameField below): cleans what is typed into a valid
+          name as it goes, focuses itself once no modal is open (sign-in and the
+          first-name step come first), and TYPES example names into its
+          placeholder until the user starts typing their own. %>
+      <script>
+        window.buildNameField = function (examples, initial, checkUrl) {
+          return {
+            name: initial || '', state: 'idle', reason: '', timer: null,
+            placeholderText: '', _typing: null, _stopped: false,
+
+            // Lowercase; every run of anything but a-z/0-9 becomes ONE hyphen;
+            // no leading hyphen. A trailing one is left while they type (they may
+            // be mid-word) and trimmed on blur — the server trims it too.
+            clean(value) {
+              return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 30);
+            },
+            onInput(el) {
+              this.stopExamples();
+              const cleaned = this.clean(el.value);
+              if (cleaned !== el.value) el.value = cleaned;
+              this.name = cleaned;
+              this.check();
+            },
+            // Trim a trailing hyphen on blur — and re-check ONLY if that changed
+            // the name. Blur fires on the mousedown that presses "Build my app";
+            // an unconditional re-check flipped the button to disabled between
+            // mousedown and click, so the click was swallowed (measured
+            // 2026-09-26: the claim never submitted).
+            onBlur() {
+              const trimmed = this.name.replace(/-+$/, '');
+              if (trimmed === this.name) return;
+              this.name = trimmed;
+              this.check();
+            },
+
+            // Focus whenever nothing is covering the page — until they start
+            // typing. x-effect re-runs on every modal-stack change, so this
+            // lands the moment sign-in or the first-name dialog closes. It must
+            // RE-focus rather than focus once: the dialog opens a beat AFTER
+            // load, so a one-shot focus is spent before it appears and the
+            // dialog takes the focus away (measured 2026-09-26).
+            focusWhenClear(el) {
+              const modals = window.Alpine && Alpine.store('modals');
+              const covered = !!(modals && modals.stack && modals.stack.length);
+              if (covered || this._stopped) return;
+              this.$nextTick(() => { if (document.activeElement !== el) el.focus() });
+            },
+
+            check() {
+              clearTimeout(this.timer);
+              const n = this.name.replace(/-+$/, '');
+              if (!n) { this.state = 'idle'; this.reason = ''; return }
+              this.state = 'checking';
+              this.timer = setTimeout(async () => {
+                try {
+                  const r = await fetch(checkUrl + '?subdomain=' + encodeURIComponent(n), { headers: { Accept: 'application/json' } });
+                  const d = await r.json();
+                  if (d.subdomain !== this.name.replace(/-+$/, '')) return;
+                  this.state = d.available ? 'available' : 'taken'; this.reason = d.reason || '';
+                } catch (e) { this.state = 'idle' }
+              }, 300)
+            },
+
+            // The typed placeholder: THREE examples, sampled fresh each visit —
+            // type the first, hold, erase; the second the same; then type the
+            // third and STOP, leaving it as the hint. The motion ends on its own
+            // rather than cycling forever. Same rules as studio-engine's
+            // first-name card: the FIELD stays empty (only the placeholder
+            // moves), no fake caret, reduced motion shows the final example
+            // statically, and typing stops it for good.
+            startExamples() {
+              if (this.name || !examples.length) return;
+              const picks = examples.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+              const last = picks.length - 1;
+              if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                this.placeholderText = picks[last];
+                return;
+              }
+              let index = 0, chars = 0, phase = 'type';
+              const tick = () => {
+                if (this._stopped) return;
+                const word = picks[index];
+                let wait = 90;
+                if (phase === 'type') {
+                  chars += 1;
+                  if (chars >= word.length) {
+                    this.placeholderText = word;
+                    if (index === last) { this._typing = null; return }  // done: the last one stays
+                    phase = 'hold'; wait = 1400;
+                  }
+                } else if (phase === 'hold') {
+                  phase = 'erase'; wait = 40;
+                } else {
+                  chars -= 1; wait = 40;
+                  if (chars <= 0) { phase = 'type'; index += 1; wait = 350 }
+                }
+                this.placeholderText = word.slice(0, Math.max(chars, 0));
+                this._typing = setTimeout(tick, wait);
+              };
+              this._typing = setTimeout(tick, 500);
+            },
+            stopExamples() {
+              if (this._stopped) return;
+              this._stopped = true;
+              clearTimeout(this._typing);
+              this.placeholderText = '';
+            }
+          }
+        }
+      </script>
+      <%= form_with model: req, url: build_request_path(req.token), method: :patch, local: true,
+            html: { "x-data": "buildNameField(#{AppRequest::EXAMPLE_NAMES.to_json}, #{req.subdomain.to_s.to_json}, #{build_check_path.to_json})",
+                    "x-init": "startExamples()",
+                    "@submit": "name = name.replace(/-+$/, '')" } do |f| %>
+        <%= f.label :subdomain, "App address", class: "block text-sm text-secondary mb-2 font-medium" %>
+        <div class="flex items-stretch rounded-xl border border-subtle focus-within:border-primary overflow-hidden">
+          <span class="flex items-center pl-4 text-muted font-mono text-sm">https://</span>
+          <%= f.text_field :subdomain, required: true, autocomplete: "off", spellcheck: false, autocapitalize: "none",
+                maxlength: 30,
+                class: "min-w-0 flex-1 bg-transparent px-1 py-3 font-mono text-heading placeholder:text-muted focus:outline-none",
+                ":value": "name", ":placeholder": "placeholderText",
+                "@input": "onInput($el)", "@blur": "onBlur()", "x-effect": "focusWhenClear($el)",
+                data: { test: "build-subdomain" } %>
+          <span class="flex items-center pr-4 text-muted font-mono text-sm">.mcritchie.studio</span>
+        </div>
+        <p class="mt-2 text-sm min-h-5" aria-live="polite" data-test="build-availability">
+          <span x-show="state === 'checking'" x-cloak class="text-muted">Checking…</span>
+          <span x-show="state === 'available'" x-cloak class="text-green-600 dark:text-green-400">Available</span>
+          <span x-show="state === 'taken'" x-cloak class="text-red-500" x-text="reason"></span>
+        </p>
+        <% if req.errors[:subdomain].any? || req.errors[:base].any? %>
+          <p class="mt-1 text-sm text-red-500" data-test="build-errors"><%= (req.errors[:subdomain] + req.errors[:base]).to_sentence %></p>
+        <% end %>
+        <%# Disabled only for a name we KNOW is refused. Not while a check is in
+            flight: the server re-validates on submit, and a button that greys
+            out under the cursor loses the click. %>
+        <button type="submit" class="btn btn-primary btn-lg w-full mt-4" :disabled="state === 'taken'" data-test="build-claim-submit">
+          Build my app
+        </button>
+      <% end %>
+    </div>
+
+  <% else %>
+    <%# STEP 3 — the request's status page. Builds are asynchronous. %>
+    <div class="rounded-3xl border border-subtle bg-surface p-6 sm:p-8" data-test="build-status">
+      <% steps = [ [ "queued", "In the build queue" ], [ "building", "Being built" ], [ "live", "Live" ] ] %>
+      <% at = steps.index { |key, _| key == req.status } || 0 %>
+      <h1 class="text-2xl font-bold text-heading mb-1">
+        <%= req.status == "live" ? "Your app is live" : "Your app is in the queue" %>
+      </h1>
+      <p class="text-muted mb-6">
+        <% if req.status == "live" %>
+          It's served at <%= link_to req.host, req.url, class: "font-mono text-primary hover:underline", target: "_blank", rel: "noopener" %>.
+        <% else %>
+          Our agents build each app by hand, in the order they arrive. Its address is reserved for you:
+          <span class="font-mono text-body" data-test="build-host"><%= req.host %></span>.
+        <% end %>
+      </p>
+      <ol class="flex flex-col sm:flex-row gap-3" data-test="build-steps">
+        <% steps.each_with_index do |(key, label), i| %>
+          <li class="flex-1 rounded-xl border px-4 py-3 text-sm <%= i <= at ? 'border-primary text-heading' : 'border-subtle text-muted' %>"
+              data-step="<%= key %>" data-done="<%= i <= at %>">
+            <span class="font-semibold"><%= i + 1 %>.</span> <%= label %>
+          </li>
+        <% end %>
+      </ol>
+      <% if req.status == "cancelled" %>
+        <p class="mt-4 text-sm text-muted">This request was cancelled.</p>
+      <% end %>
+      <p class="mt-6 text-sm text-muted">Bookmark this page to check on it. It's only visible to you.</p>
+    </div>
+  <% end %>
+</section>
