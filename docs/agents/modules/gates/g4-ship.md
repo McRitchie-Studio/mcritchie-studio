@@ -35,6 +35,9 @@ The gate window spans the whole irreversible half of the ship:
   commands fold to one run **only on the same app**, and only across the
   interchangeable `rake`/`bin/rails` runner spellings — the rest of the command
   is compared verbatim.
+  The app is the repo's `production_app` in `config/qa_environments.yml`, or
+  else the Heroku app its `prod_deploy` names (cyvasse, dads-app); if neither names one,
+  ship aborts.
 - **The smoke seal** (`prod_smoke_seal` SOP) — the read-only `@qa-readonly`
   suite against prod. A SEAL, not a blocker: its verdict rides the gate
   (`metadata.seal: green|red|unsealed`) but a red seal never flips the gate's
@@ -160,7 +163,7 @@ actually need a checkout FOR?" has a two-line answer:
 |------|----------------------|-------------------|
 | advance `main` → frozen SHA | **no** | `git push origin <frozen>:refs/heads/main` — a ref push out of the shared object store |
 | `github_actions` deploy (the hub) | **no** | `gh workflow run <prod-deploy workflow> -f sha=<frozen>` — Actions does the Heroku push and the `/up` smoke |
-| `git_push_heroku` deploy (mcritchie-industries; rolio, parked) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
+| `git_push_heroku` deploy (mcritchie-industries, cyvasse, dads-app; rolio, parked) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
 | `repo_script` deploy (turf-monster) | **yes** (its `bin/deploy` runs the repo's suite, hashes the IDL, pushes) | the **ship workspace**: `<repo>/.worktrees/_ship`, detached at the frozen SHA, own lock, own test DB (`<app>_ship_test`) |
 | gem re-pin commit | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
 | gem artifact build | **yes** (`gem build` packages what is on disk) | still the gem's **primary** — the one residual (see below) |

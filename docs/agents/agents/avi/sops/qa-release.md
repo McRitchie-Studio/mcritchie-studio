@@ -261,8 +261,8 @@ An abort leaves the same board state as an interruption. Each abort names its ca
 `prepare` never force-ships a red candidate: eject it or fix it forward.
 
 **A member left `reviewed` on a GREEN QA run is the per-repo evidence guard**: it needs
-QA evidence for **every** repo it names (gems and `qa_evidence: exempt` turf-vault
-excepted), logged as `[release-evidence] … landed nothing for <repo>`. The ship guards
+QA evidence for **every** repo it names (gems and the `qa_evidence: exempt` repos, turf-vault,
+cyvasse and dads-app, excepted), logged as `[release-evidence] … landed nothing for <repo>`. The ship guards
 `shipped_shas` the same way, though `merged: "main"` still lands per repo. Get the
 missing repo onto the candidate, or drop it from the task.
 

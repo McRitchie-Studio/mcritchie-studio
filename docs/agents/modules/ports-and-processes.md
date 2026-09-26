@@ -11,6 +11,7 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 | Chain Ops | 3400 | 3400-3499 |
 | McRitchie Industries | 3500 | 3500-3599 (3510 reserved) |
 | Cyvasse | 3600 | 3600-3699 |
+| Dads App | 3700 | 3700-3799 reserved |
 
 The durable app registry decision surface is
 `mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
@@ -22,8 +23,16 @@ Acquisition Studio prototype, which previously held this range.
 Caution: the unmanaged MSAA client workspace informally parks a dev app on
 `3510` inside this band — the worktree launcher excludes it
 (`reserved_ports` in `bin/agent-worktree`), and no McRitchie Industries side
-stack should sit on it until MSAA moves. Cyvasse is a planned managed satellite (`planned`
-in `config/satellites.yml`), the revival of Alex's first app.
+stack should sit on it until MSAA moves.
+
+Cyvasse (`3600-3699`) is a planned managed satellite (`planned` in
+`config/satellites.yml`), the revival of Alex's first app. Production is the
+Heroku app `cyvasse`; it has no QA environment.
+
+Dads App (`3700-3799`) is a release-managed standalone (`reserved` in
+`config/satellites.yml`): a photo slideshow with no studio-engine and no
+database. Production is the Heroku app `dads-app` on one Eco dyno; it has no QA
+environment.
 
 ## Primary Ports
 

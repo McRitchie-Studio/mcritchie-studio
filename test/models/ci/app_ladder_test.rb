@@ -61,10 +61,13 @@ module Ci
       # it draws a card. It resolves the plain "CI" workflow like any non-gem repo,
       # and its .github/workflows/ci.yml declares `name: CI`, so it has a real
       # verdict to report.
-      # cyvasse joined on 2026-09-25 — registered three-rung before its scaffold
-      # landed a ci.yml, so its card reads "not built" until it does (the
-      # suiteless-still-draws rule above).
-      assert_equal %w[cyvasse mcritchie-industries mcritchie-studio solana-studio studio-engine
+      # cyvasse joined on 2026-09-25 — registered three-rung; its ci.yml
+      # (`name: CI`) arrived with the scaffold, so it reports a verdict like any
+      # non-gem repo.
+      # dads-app joined on 2026-09-26 — registered three-rung. Its ci.yml was
+      # still being built when it registered; a suiteless three-rung repo still
+      # draws a card (see the reversal above), so it is on the row either way.
+      assert_equal %w[cyvasse dads-app mcritchie-industries mcritchie-studio solana-studio studio-engine
                       turf-monster turf-vault],
                    Ci::AppLadder.reportable_repos.sort
     end

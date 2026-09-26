@@ -653,20 +653,140 @@ apps:
     # McRitchie-Studio/cyvasse was created with main + accepted + release, so it
     # is three-rung from birth and the rung guard holds it to that.
     #
-    # NO prod_deploy, NO test_cmd, NO qa_test_cmd, NO qa_environments entry —
-    # DELIBERATE, and each one owes its own arrival:
-    #   * prod_deploy: the Heroku app `cyvasse` does not exist yet (epic piece 8).
-    #     An app with no target is a first-class case — ship advances main and
-    #     records "no production deploy target". Do NOT declare a git_push_heroku
-    #     adapter before the app is provisioned; declare it WITH piece 8.
-    #   * test_cmd / qa_test_cmd: the repo has no ci.yml yet (piece 1 scaffolds
-    #     it). When it lands, register CI's full suite verbatim at BOTH gates, as
-    #     mcritchie-industries does — git_push_heroku runs no test step, so the
-    #     registered command IS the last gate before prod.
-    #   * qa_evidence stays REQUIRED (the default). With no QA environment a
-    #     cyvasse member cannot earn QA evidence, so a sweep holds it at the QA
-    #     stamp until piece 8 wires `cyvasse-qa`. That hold is the honest state;
-    #     do not declare it exempt — it will be QA-deployable.
+    # PRODUCTION: the Heroku app `cyvasse` (company account, heroku-26,
+    # Postgres essential-0), wired 2026-09-25 by wire-cyvasse-production-deploy.
+    # git_push_heroku, modelled on mcritchie-industries. Migrations ride the
+    # repo's Procfile `release: bin/rails db:migrate`, so schema needs no
+    # post_deploy_cmd. A member's declared command (the scaffold's
+    # `users:seed_identities`) is skipped at QA and runs on `cyvasse` at ship.
+    #
+    # smoke_url is the herokuapp host, NOT cyvasse.mcritchie.studio, on purpose:
+    # the custom domain is attached with ACM but its CNAME is Alex's Squarespace
+    # step, and until that record resolves a smoke against it would abort the
+    # ship AFTER the push. The herokuapp host always resolves, and cyvasse's
+    # production.rb leaves host authorization off, so /up answers on it. Switch
+    # this to https://cyvasse.mcritchie.studio once that host serves /up 200.
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/cyvasse.git
+      branch: main
+      smoke_url: https://cyvasse-614ed5f7e99d.herokuapp.com
+    #
+    # test_cmd is CI's `test` job suite, VERBATIM (git_push_heroku has NO test
+    # step, so this IS the last gate before production). repos_test.rb holds it
+    # against cyvasse's own ci.yml. CI's `static` and `javascript` jobs are not
+    # lost: the gate reads the whole CI workflow's verdict on the frozen SHA.
+    test_cmd: bin/rails db:test:prepare test test:system
+    #
+    # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
+    # EXEMPT. Read this before copying it to another app.
+    #
+    # This exemption is NOT turf-vault's. turf-vault is exempt because QA does not
+    # APPLY to it (no dyno, no URL, no deploy of any kind). Cyvasse is a deployable
+    # Rails app: a QA copy could exist. It is exempt on COST, by OPERATOR DECISION:
+    #
+    #   Alex, 2026-09-25 (verbatim, typo kept; the guard matches it exactly):
+    #   "No cyvasse-qa unless there is a free teir we can use"
+    #   Heroku has no free tier (a QA copy is ~$12/mo), so there is no
+    #   `cyvasse-qa` app.
+    #
+    # WHAT THAT COSTS, said plainly: a cyvasse change reaches production without a
+    # human-reviewable QA deploy. Its gates are CI (every rung, full suite) and
+    # review. Without this key a sweep would hold every cyvasse member at the QA
+    # stamp forever — no run can evidence a QA env that does not exist — so the
+    # choice is exempt-by-decision or never ship.
+    #
+    # THE GUARD STAYS FAIL-CLOSED for every other repo. repos_test.rb pins the
+    # exempt set to exactly turf-vault + cyvasse, and requires every exempt repo
+    # that HAS a prod_deploy (i.e. could have had a QA copy) to be on its
+    # operator-decision list with the decision cited. The day cyvasse gains a
+    # qa_test_cmd or a qa_environments entry, the "exempt repo really has no QA
+    # target" test goes red and this key must come out. The exemption is QA-only:
+    # the `shipped` stamp still needs cyvasse's real release -> main record.
+    qa_evidence: exempt
+  dads-app:
+    ladder: three-rung
+    # RELEASE-MANAGED STANDALONE (epic dads-app, registered 2026-09-26): a public
+    # photo slideshow of Greig McRitchie, Alex's dad, at greigmcritchie.com. It
+    # succeeds the 2015 gift `amcritchie/grieg_mcritchie` on the dead personal
+    # Heroku app `vast-chamber-8478`. NOT a managed satellite: no studio-engine,
+    # no database (Rails 8.1 without ActiveRecord), and config/satellites.yml
+    # holds only a `status: reserved` row for its 3700-3799 port block.
+    # McRitchie-Studio/dads-app was created with main + accepted + release, so it
+    # is three-rung from birth and the rung guard holds it to that.
+    #
+    # PRODUCTION: the Heroku app `dads-app` (company account, heroku-26, no
+    # add-ons), on ONE Eco dyno. git_push_heroku, modelled on cyvasse. There is
+    # no database, so there are no migrations and no post_deploy_cmd; a member
+    # that declares one anyway is skipped at QA (exempt, below) and runs on
+    # `dads-app` at ship.
+    #
+    # smoke_url is the herokuapp host, NOT greigmcritchie.com, on purpose: the
+    # domains are attached, but the Name.com records are Alex's step, and until
+    # they resolve a smoke against the custom host would abort the ship AFTER the
+    # push. Switch this to https://greigmcritchie.com once that host serves /up 200.
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/dads-app.git
+      branch: main
+      smoke_url: https://dads-app-7b5aef805731.herokuapp.com
+    #
+    # test_cmd is CI's `test` job suite, VERBATIM (git_push_heroku has NO test
+    # step, so this IS the last gate before production; G4 reads CI's settled
+    # verdict for the frozen tree, and nothing runs it locally). There is NO
+    # `db:test:prepare` in it, unlike every other app here: with no ActiveRecord
+    # the task does not exist.
+    #
+    # dads-app SPLITS its suite across two CI jobs (the Rails 8.1 generator
+    # default, dads-app PR #1, on its accepted at 8a2483c): `test` runs
+    # `bin/rails test` and `system-test` runs `bin/rails test:system`. This
+    # string is the `test` job's command VERBATIM; the system tier lives in the
+    # `system-test` job and is NOT lost, because the ship gate reads CI's full
+    # settled verdict for the frozen SHA, all five jobs (lint, scan_ruby,
+    # scan_js, test, system-test), not this string. repos_test.rb holds BOTH
+    # jobs: `test` equal to this string and `system-test` running
+    # `bin/rails test:system`, so dropping or narrowing either goes red.
+    #
+    # Do NOT "fix" the split by joining it here as `bin/rails test test:system`:
+    # the hub's spelling works only because its FIRST word is the rake task
+    # `db:test:prepare`. Without it Rails 8.1's TestCommand loads `test:system`
+    # as a FILE PATH and dies with `LoadError: cannot load such file --
+    # <root>/test:system` (measured 2026-09-26).
+    test_cmd: bin/rails test
+    #
+    # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
+    # EXEMPT, ON COST, BY OPERATOR DECISION. This is cyvasse's kind of exemption,
+    # not turf-vault's: dads-app is a deployable app and a QA copy could exist.
+    #
+    #   Alex's decision, verbatim (chat, 2026-09-26; the guard matches the cost
+    #   line exactly). Asking for the hosting: "anyway we can get it cheaper than $12/m"
+    #   Offered A (GitHub Pages), B (inside moms-app) or C, he replied: "C"
+    #   (the epic plan, .agents/epics/dads-app.md, records "Alex chose option C
+    #   (Heroku Eco dyno)"). Option C was ONE Eco dyno, about $5/month, no database and no QA copy,
+    #   over GitHub Pages ($0) and hosting inside moms-app. It applies the
+    #   standing rule Alex set for cyvasse the day before (quoted verbatim there):
+    #   no QA copy unless there is a free tier.
+    #
+    # HONEST CAVEATS. (1) Alex's words choose the Eco dyno on cost; "no QA
+    # copy" is that choice read through his cyvasse rule, not a separate
+    # sentence of his. Change the quote here AND in repos_test.rb's
+    # QA_EXEMPT_BY_OPERATOR_DECISION together. (2) Eco
+    # dyno hours are one pool per Heroku account, so a sleeping `dads-app-qa`
+    # Eco dyno may cost nothing extra; if Alex takes that as his free tier, this
+    # key comes out and dads-app earns QA evidence like any app.
+    #
+    # WHAT THE EXEMPTION COSTS, said plainly: a dads-app change reaches
+    # production without a human-reviewable QA deploy. Its gates are CI (every
+    # rung, full suite) and review. Without this key a sweep would hold every
+    # dads-app member at the QA stamp forever, since no run can evidence a QA
+    # env that does not exist.
+    #
+    # THE GUARD STAYS FAIL-CLOSED for every other repo: repos_test.rb pins the
+    # exempt set to exactly cyvasse + dads-app + turf-vault, and requires each
+    # exempt repo with a prod_deploy to carry a cited operator decision. The
+    # exemption is QA-only: the `shipped` stamp still needs dads-app's real
+    # release -> main record.
+    qa_evidence: exempt
   tax-studio:
     # PLANNED — no repo yet. The guard asserts no checkout exists, so this
     # exemption expires the day one does.

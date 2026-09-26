@@ -591,4 +591,192 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
                  task.repos_missing_pr_url
     assert_equal [ TURF ], task.repos_missing_pr_url
   end
+
+  # --- cyvasse: the second exemption, and the first taken on COST ---------------
+  #
+  # cyvasse is a DEPLOYABLE Rails app with no QA copy, by Alex's decision
+  # (2026-09-25: "No cyvasse-qa unless there is a free teir we can use"). Its
+  # registry entry declares `qa_evidence: exempt` and a git_push_heroku
+  # prod_deploy. These drive the sweep end to end: the plan names the Heroku
+  # deploy, the QA stamp does not hold the member, and the shipped stamp still
+  # waits for cyvasse's own release -> main record.
+  #
+  # Every run here lands evidence for a HUB neighbour, as a real `bin/release
+  # prepare` does. A release that recorded NO evidence holds no single-repo
+  # member at all (MemberEvidence.hold?), so without the neighbour these tests
+  # would pass with the exemption deleted — the mutation below proves they don't.
+  CYVASSE    = "cyvasse"
+  CYVASSE_PR = "https://github.com/McRitchie-Studio/cyvasse/pull/20"
+
+  def cyvasse_task(label = "polish the cyvasse board")
+    Task.create!(title: label, stage: "reviewed",
+                 metadata: { "devops" => { "shape" => "backend", "repositories" => [ CYVASSE ],
+                                           "pr_url" => CYVASSE_PR } })
+  end
+
+  # Sweeps a cyvasse member beside a hub member and records the run's QA
+  # evidence: the hub deployed to QA, cyvasse has nowhere to go.
+  def cyvasse_candidate
+    task = cyvasse_task
+    release = Release::Conductor.sweep!(task)
+    Release::Conductor.sweep!(single_repo_task)
+    qa_landed(release.reload, HUB)
+    [ task, release.reload ]
+  end
+
+  test "[integration] release sweep plans a cyvasse deploy with no QA hold" do
+    task, release = cyvasse_candidate
+
+    group = Release::Conductor.repo_plan(release).find { |g| g[:repo] == CYVASSE }
+    assert group, "a swept cyvasse member must put cyvasse in the repo plan"
+    assert_equal "git_push_heroku", group[:prod_deploy]["strategy"]
+    assert_equal "https://git.heroku.com/cyvasse.git", group[:prod_deploy]["remote"]
+
+    Release::Conductor.qa_green!(release)
+
+    assert_equal "assembled", task.reload.stage,
+                 "cyvasse has no QA environment by operator decision; without the declared " \
+                 "exemption this member would sit at `reviewed` forever"
+  end
+
+  test "[integration] MUTATION: without cyvasse's declaration the same member is HELD" do
+    task, release = cyvasse_candidate
+
+    Release::Repos.stub(:qa_evidence_exempt?, ->(repo) { repo == VAULT }) do
+      Release::Conductor.qa_green!(release)
+    end
+
+    assert_equal "reviewed", task.reload.stage,
+                 "the assemble above must be CAUSED by cyvasse's declaration, not by a looser guard"
+  end
+
+  test "[integration] cyvasse's QA exemption does NOT extend to `shipped`" do
+    task, release = cyvasse_candidate
+    Release::Conductor.qa_green!(release)
+    assert_equal "assembled", task.reload.stage
+
+    shipped_landed(release.reload, HUB) # the hub's main moved; cyvasse's did not
+    Release::Conductor.ship!(release: release.reload, deployed_sha: "deadbeef")
+    assert_equal "assembled", task.reload.stage,
+                 "no cyvasse release -> main record landed, so the member must not claim `shipped`"
+
+    shipped_landed(release.reload, CYVASSE)
+    Release::Conductor.ship!(release: release.reload, deployed_sha: "deadbeef")
+    assert_equal "shipped", task.reload.stage
+  end
+
+  # [integration] The seam the conductor tests above never reached: the repo plan a
+  # real sweep builds, round-tripped through JSON exactly as bin/release reads it,
+  # fed to the post-deploy planner with the REAL registries. A cyvasse member
+  # declaring a post_deploy_cmd is skipped at QA (exempt) and routed to Heroku app
+  # `cyvasse` at ship (from its prod_deploy) — neither yields the blank app the CLI
+  # aborts on.
+  test "[integration] a cyvasse member's post_deploy_cmd skips QA and routes to cyvasse at ship" do
+    task = Task.create!(title: "seed cyvasse player identities", stage: "reviewed",
+                        metadata: { "devops" => { "shape" => "backend", "repositories" => [ CYVASSE ],
+                                                  "pr_url" => CYVASSE_PR,
+                                                  "post_deploy_cmd" => "bin/rails users:seed_identities" } })
+    release = Release::Conductor.sweep!(task)
+    repos = JSON.parse(Release::Conductor.repo_plan(release.reload).to_json)
+    qa_envs = YAML.load_file(Rails.root.join("config/qa_environments.yml")).fetch("qa_environments")
+    exempt = Release::PostDeploy.qa_exempt_repos(YAML.load_file(Release::Repos::CONFIG_PATH))
+
+    qa = Release::PostDeploy.plan(repos, qa_environments: qa_envs, target: :qa, qa_exempt_repos: exempt)
+    prod = Release::PostDeploy.plan(repos, qa_environments: qa_envs, target: :prod, qa_exempt_repos: exempt)
+
+    assert_equal [ Release::PostDeploy::SKIP_QA_EXEMPT ], qa.map { |e| e["skip"] }
+    assert_equal [ "cyvasse" ], prod.map { |e| e["app"] }
+    assert_equal [ [ task.slug ] ], prod.map { |e| e["tasks"] }
+  end
+
+  # --- dads-app: the third exemption, the second on COST ------------------------
+  #
+  # dads-app is a release-managed STANDALONE (no studio-engine, no database) on
+  # one Eco dyno, with no QA copy by Alex's cost decision (epic dads-app,
+  # 2026-09-26). Same contract as cyvasse, driven end to end: the plan names the
+  # Heroku deploy, the QA stamp does not hold the member, and the shipped stamp
+  # still waits for dads-app's own release -> main record. Each run lands HUB
+  # evidence beside it, for the reason given on the cyvasse block above.
+  DADS    = "dads-app"
+  DADS_PR = "https://github.com/McRitchie-Studio/dads-app/pull/1"
+
+  def dads_task(label = "add a slideshow photo")
+    Task.create!(title: label, stage: "reviewed",
+                 metadata: { "devops" => { "shape" => "ui-only", "repositories" => [ DADS ],
+                                           "pr_url" => DADS_PR } })
+  end
+
+  def dads_candidate
+    task = dads_task
+    release = Release::Conductor.sweep!(task)
+    Release::Conductor.sweep!(single_repo_task)
+    qa_landed(release.reload, HUB)
+    [ task, release.reload ]
+  end
+
+  test "[integration] release sweep plans a dads-app deploy with no QA hold" do
+    task, release = dads_candidate
+
+    group = Release::Conductor.repo_plan(release).find { |g| g[:repo] == DADS }
+    assert group, "a swept dads-app member must put dads-app in the repo plan"
+    assert_equal "git_push_heroku", group[:prod_deploy]["strategy"]
+    assert_equal "https://git.heroku.com/dads-app.git", group[:prod_deploy]["remote"]
+
+    Release::Conductor.qa_green!(release)
+
+    assert_equal "assembled", task.reload.stage,
+                 "dads-app has no QA environment by operator decision; without the declared " \
+                 "exemption this member would sit at `reviewed` forever"
+  end
+
+  # The exemption is per repo: keeping cyvasse's and turf-vault's declarations while
+  # dropping only dads-app's must hold the member, so the assemble above is caused
+  # by dads-app's own line and not by a neighbour's.
+  test "[integration] MUTATION: without dads-app's declaration the same member is HELD" do
+    task, release = dads_candidate
+
+    Release::Repos.stub(:qa_evidence_exempt?, ->(repo) { [ VAULT, CYVASSE ].include?(repo) }) do
+      Release::Conductor.qa_green!(release)
+    end
+
+    assert_equal "reviewed", task.reload.stage,
+                 "the assemble above must be CAUSED by dads-app's declaration, not by a looser guard"
+  end
+
+  test "[integration] dads-app's QA exemption does NOT extend to `shipped`" do
+    task, release = dads_candidate
+    Release::Conductor.qa_green!(release)
+    assert_equal "assembled", task.reload.stage
+
+    shipped_landed(release.reload, HUB)
+    Release::Conductor.ship!(release: release.reload, deployed_sha: "deadbeef")
+    assert_equal "assembled", task.reload.stage,
+                 "no dads-app release -> main record landed, so the member must not claim `shipped`"
+
+    shipped_landed(release.reload, DADS)
+    Release::Conductor.ship!(release: release.reload, deployed_sha: "deadbeef")
+    assert_equal "shipped", task.reload.stage
+  end
+
+  # dads-app declares no post_deploy_cmd (no database, nothing to migrate or seed).
+  # A member that declares one anyway must still route: skipped at QA by the
+  # exemption, run on Heroku app `dads-app` at ship from its prod_deploy remote,
+  # never the blank app the CLI aborts on after the push is live.
+  test "[integration] a dads-app member's post_deploy_cmd skips QA and routes to dads-app at ship" do
+    task = Task.create!(title: "warm the dads-app photo cache", stage: "reviewed",
+                        metadata: { "devops" => { "shape" => "backend", "repositories" => [ DADS ],
+                                                  "pr_url" => DADS_PR,
+                                                  "post_deploy_cmd" => "bin/rails runner 'puts :ok'" } })
+    release = Release::Conductor.sweep!(task)
+    repos = JSON.parse(Release::Conductor.repo_plan(release.reload).to_json)
+    qa_envs = YAML.load_file(Rails.root.join("config/qa_environments.yml")).fetch("qa_environments")
+    exempt = Release::PostDeploy.qa_exempt_repos(YAML.load_file(Release::Repos::CONFIG_PATH))
+
+    qa = Release::PostDeploy.plan(repos, qa_environments: qa_envs, target: :qa, qa_exempt_repos: exempt)
+    prod = Release::PostDeploy.plan(repos, qa_environments: qa_envs, target: :prod, qa_exempt_repos: exempt)
+
+    assert_equal [ Release::PostDeploy::SKIP_QA_EXEMPT ], qa.map { |e| e["skip"] }
+    assert_equal [ "dads-app" ], prod.map { |e| e["app"] }
+    assert_equal [ [ task.slug ] ], prod.map { |e| e["tasks"] }
+  end
 end

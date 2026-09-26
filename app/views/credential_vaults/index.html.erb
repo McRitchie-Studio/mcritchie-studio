@@ -1,0 +1,84 @@
+<% content_for :title, "Credentials · McRitchie Studio" %>
+
+<section class="max-w-6xl mx-auto px-4 py-10" data-test="credentials-page">
+  <header class="mb-8">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Credentials</p>
+    <h1 class="text-3xl font-bold text-heading mb-2">Software by entity</h1>
+    <p class="text-muted max-w-2xl">
+      Which software each entity holds credentials for. Hover an icon for the 1Password items behind
+      it. Records only, never the secrets themselves.
+    </p>
+  </header>
+
+  <%# The table scrolls sideways inside its own box on a phone; the page never does. %>
+  <div class="overflow-x-auto rounded-2xl border border-subtle bg-surface" data-test="credential-matrix">
+    <table class="w-full min-w-[720px] text-sm border-collapse">
+      <thead>
+        <tr class="border-b border-subtle">
+          <th scope="col" class="sticky left-0 z-10 bg-surface text-left align-bottom px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted w-28 sm:w-40">Software</th>
+          <% @entities.each do |entity| %>
+            <% workspace = @workspaces.fetch(entity, {}) %>
+            <% icon = WorkspaceIconConfig.asset("1password", entity) %>
+            <th scope="col" class="px-3 py-4 align-bottom text-center" data-test="matrix-entity" data-entity="<%= entity %>">
+              <div class="flex flex-col items-center gap-2">
+                <% if icon %>
+                  <%= image_tag icon, alt: "#{workspace['name'] || entity} 1Password vault icon", class: "w-16 h-16", data: { test: "entity-icon" } %>
+                <% else %>
+                  <div class="w-16 h-16 rounded-full border-2 border-dashed border-subtle flex items-center justify-center text-[10px] leading-tight text-muted p-2"
+                       title="Add a badge for <%= entity %> in config/workspace_icons.yml, then run bin/workspace-icon --all" data-test="entity-icon-missing">No badge</div>
+                <% end %>
+                <span class="font-semibold text-heading"><%= workspace["name"] || entity.titleize %></span>
+              </div>
+            </th>
+          <% end %>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-subtle">
+        <% @services.each do |service| %>
+          <% tile = WorkspaceIconConfig.tile(service) %>
+          <tr data-test="matrix-software" data-service="<%= service %>">
+            <th scope="row" class="sticky left-0 z-10 bg-surface text-left align-middle px-4 py-3 font-semibold text-heading">
+              <div class="flex items-center gap-2">
+                <% if tile %>
+                  <%= image_tag tile, alt: "", class: "w-7 h-7 shrink-0", data: { test: "software-tile" } %>
+                <% end %>
+                <span><%= CredentialRecord.service_label(service) %></span>
+              </div>
+            </th>
+            <% @entities.each do |entity| %>
+              <% records = (@matrix.dig(service, entity) || []).sort_by { |r| [ r.live? ? 0 : 1, r.title ] } %>
+              <%# Google is a workspace, not a key per entity: one service-account key
+                  acts in every registered domain, so an entity with a domain gets a
+                  Google cell even with no item of its own, and its tooltip carries the
+                  delegation grant. %>
+              <% domain = service == "google" ? @domains[entity] : nil %>
+              <% delegation = domain && (@workspace_accounts[domain]&.status || "not registered") %>
+              <% lines = [] %>
+              <% lines += [ domain, "delegation #{delegation}" ] if domain %>
+              <% lines += records.map { |r| "#{r.title} (#{[ r.credential_vault.lane, (r.status unless r.status == 'filed') ].compact.join(', ')})" } %>
+              <% live = records.any?(&:live?) || delegation == "active" %>
+              <td class="px-3 py-3 align-middle" data-test="matrix-cell" data-entity="<%= entity %>" data-count="<%= records.size %>">
+                <% if lines.empty? %>
+                  <span class="block text-center text-muted">—</span>
+                <% else %>
+                  <% icon = WorkspaceIconConfig.asset(service, entity) || tile %>
+                  <div class="flex flex-col items-center gap-0.5" title="<%= lines.join("\n") %>"
+                       data-test="matrix-icon" data-live="<%= live %>"<%= %( data-delegation="#{delegation}").html_safe if delegation %>>
+                    <%= image_tag icon, alt: "#{CredentialRecord.service_label(service)} for #{@workspaces.dig(entity, 'name') || entity}",
+                                        class: "w-14 h-14 #{'opacity-40 grayscale' unless live}" if icon %>
+                    <% if records.size > 1 %>
+                      <span class="text-[11px] text-muted" data-test="record-count"><%= records.size %> items</span>
+                    <% end %>
+                  </div>
+                <% end %>
+              </td>
+            <% end %>
+          </tr>
+        <% end %>
+        <% if @services.empty? %>
+          <tr><td colspan="<%= @entities.size + 1 %>" class="px-4 py-6 text-center text-muted">No credential records yet.</td></tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</section>

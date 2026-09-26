@@ -1,0 +1,90 @@
+# Workspace icons — the two axes bin/workspace-icon renders and /credentials
+# shows: `software` (the base logos, the matrix's rows) and `workspaces` (the
+# client badges, its columns). One render = one software x one workspace.
+#
+# Each scope is one client workspace, keyed by the same entity slug the
+# credential_vaults rows use, in the column order /credentials shows. `domain`
+# is its Google Workspace domain (the WorkspaceAccount the Google row reads);
+# omit it for an entity with no Google workspace. `badge` is the logo drawn in the corner
+# disc (a repo path; omit it and the CLI demands --badge). `accent` is the ring
+# colour as #rrggbb; omit it and the ring takes the badge logo's own average
+# colour. `vaults` names the 1Password vaults that wear this icon, which is
+# what the credential_vaults rows' icon_scope points back at.
+#
+# This repo is PUBLIC. A logo and a vault name belong here; an email address,
+# an item id or anything secret does not.
+#
+# SOP: docs/agents/agents/steffon/sops/workspace-icon.md
+
+software:
+  # One row per piece of software we hold a credential for. The key is the
+  # `service` a credential_records row names. `mark` is the brand mark in
+  # lib/workspace_icons/marks/; `bin/workspace-icon --tiles` centres it on the
+  # white disc and writes app/assets/images/workspace_icons/software/<key>.png.
+  # Marks come from Simple Icons (CC0; v16, and v9 for the three brands v16
+  # dropped: AWS, Heroku, Slack) or, where it has none, the brand's own site
+  # icon. `tile: false` marks the one mark that is already an icon.
+  #
+  # `hosting: ms` marks software McRitchie Studio runs on its OWN accounts for a
+  # client by default (Google through our delegation key, Heroku, GitHub, ...):
+  # /stack draws it with the Studio chest in the corner. Anything unmarked is the
+  # client's own account (their X, their Stripe) and is drawn plain. A client can
+  # override either way: stack_clients.hosting.
+  #
+  # ORDER IS THE MATRIX'S ROW ORDER: the headline accounts first, then A-Z.
+  1password: { name: 1Password, mark: lib/workspace_icons/marks/1password.png, tile: false, hosting: ms }
+  google: { name: Google Workspace, mark: lib/workspace_icons/marks/google.svg, hosting: ms }
+  tiktok: { name: TikTok, mark: lib/workspace_icons/marks/tiktok.svg }
+  x: { name: X, mark: lib/workspace_icons/marks/x.svg }
+  instagram: { name: Instagram, mark: lib/workspace_icons/marks/instagram.svg }
+  anthropic: { name: Anthropic, mark: lib/workspace_icons/marks/anthropic.svg, hosting: ms }
+  aws: { name: AWS, mark: lib/workspace_icons/marks/aws.svg, hosting: ms }
+  cloudflare: { name: Cloudflare, mark: lib/workspace_icons/marks/cloudflare.svg, hosting: ms }
+  coinbase: { name: Coinbase, mark: lib/workspace_icons/marks/coinbase.png }
+  coinflow: { name: Coinflow, mark: lib/workspace_icons/marks/coinflow.png }
+  discord: { name: Discord, mark: lib/workspace_icons/marks/discord.svg }
+  github: { name: GitHub, mark: lib/workspace_icons/marks/github.svg, hosting: ms }
+  helius: { name: Helius, mark: lib/workspace_icons/marks/helius.png, hosting: ms }
+  heroku: { name: Heroku, mark: lib/workspace_icons/marks/heroku.svg, hosting: ms }
+  higgsfield: { name: Higgsfield, mark: lib/workspace_icons/marks/higgsfield.png, hosting: ms }
+  ipinfo: { name: ipinfo, mark: lib/workspace_icons/marks/ipinfo.png }
+  mcritchie-studio: { name: McRitchie Studio, mark: lib/workspace_icons/badges/studio.png }
+  moonpay: { name: MoonPay, mark: lib/workspace_icons/marks/moonpay.png }
+  rails: { name: Ruby on Rails, mark: lib/workspace_icons/marks/rubyonrails.svg, hosting: ms }
+  resend: { name: Resend, mark: lib/workspace_icons/marks/resend.svg, hosting: ms }
+  rubygems: { name: RubyGems, mark: lib/workspace_icons/marks/rubygems.svg, hosting: ms }
+  slack: { name: Slack, mark: lib/workspace_icons/marks/slack.svg, hosting: ms }
+  solana: { name: Solana, mark: lib/workspace_icons/marks/solana.svg }
+  squads: { name: Squads, mark: lib/workspace_icons/marks/squads.png }
+  stripe: { name: Stripe, mark: lib/workspace_icons/marks/stripe.svg }
+  turf-monster: { name: Turf Monster, mark: lib/workspace_icons/badges/turf-monster.png }
+
+workspaces:
+  studio:
+    name: McRitchie Studio
+    domain: mcritchie.studio
+    # The treasure chest — the same art public/studio-logo.svg embeds, in the
+    # violet Alex supplied on 2026-09-25.
+    badge: lib/workspace_icons/badges/studio.png
+    accent: "#8E83FC"
+    vaults: [studio-agents, studio-agents-admin, studio-applications]
+  industries:
+    name: McRitchie Industries
+    domain: mcritchie.industries
+    vaults: [industries-agents]
+  turf-monster:
+    name: Turf Monster
+    domain: turfmonster.media
+    # The gator from public/turf-monster-logo.png; the ring takes its green.
+    badge: lib/workspace_icons/badges/turf-monster.png
+    vaults: []
+  commercial-welding:
+    name: Commercial Welding
+    domain: commercialwelding.llc
+    # The welding helmet, commercial-welding-llc-icon.png from the brand files.
+    badge: lib/workspace_icons/badges/commercial-welding.png
+    accent: "#2D5E8E"
+    vaults: [Commercial Welding]
+  family:
+    name: McRitchie Family
+    vaults: [family-agents]

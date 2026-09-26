@@ -101,7 +101,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # --- apps as a hash: app_meta / prod_deploy / qa_app ---
 
   test "app_repos lists the registry's app hash keys" do
-    assert_equal %w[mcritchie-studio turf-monster turf-vault mcritchie-industries cyvasse rolio
+    assert_equal %w[mcritchie-studio turf-monster turf-vault mcritchie-industries cyvasse dads-app rolio
                     tax-studio chain-ops].sort,
                  Release::Repos.app_repos.sort
   end
@@ -115,19 +115,72 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_not Release::Repos.app?("not-a-real-repo")
   end
 
-  # cyvasse (epic cyvasse-revival) was registered before its Heroku app existed.
-  # Its repo was born with both rungs, so it is three-rung; it declares no deploy
-  # target and no gate command until hosting lands, because a declared adapter is
-  # a promise ship acts on and the app it would name does not exist yet.
-  test "[unit] cyvasse is three-rung and declares no deploy target before hosting" do
+  # cyvasse (epic cyvasse-revival) was registered before its Heroku app existed;
+  # wire-cyvasse-production-deploy gave it the Heroku app `cyvasse` as its target.
+  # git_push_heroku has no test step, so it gates like mcritchie-industries: CI's
+  # full suite, verbatim, as test_cmd. It has NO QA copy (Alex, on cost), so no
+  # qa_test_cmd and a DECLARED QA exemption.
+  test "[unit] cyvasse deploys to the Heroku app cyvasse by git_push_heroku" do
     assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder("cyvasse")
     assert_includes Release::Ladder.sweepable(Release::Repos.config), "cyvasse"
-    assert_nil Release::Repos.prod_deploy("cyvasse"),
-               "no Heroku app `cyvasse` exists yet; declare prod_deploy with the hosting piece"
-    assert_nil Release::Repos.test_cmd("cyvasse")
-    assert_nil Release::Repos.qa_test_cmd("cyvasse")
-    assert_not Release::Repos.qa_evidence_exempt?("cyvasse"),
-               "cyvasse will have a QA app; it must earn QA evidence, never be declared exempt"
+
+    adapter = Release::Repos.prod_deploy("cyvasse")
+    assert_equal "git_push_heroku", adapter["strategy"]
+    assert_equal "https://git.heroku.com/cyvasse.git", adapter["remote"]
+    assert_equal "main", adapter["branch"]
+    # The herokuapp host until the cyvasse.mcritchie.studio CNAME resolves; the
+    # ship smokes `<smoke_url>/up` AFTER the push, so a dead host aborts a live deploy.
+    assert_equal "https://cyvasse-614ed5f7e99d.herokuapp.com", adapter["smoke_url"]
+    assert_equal "cyvasse", Release::ShipSequence.heroku_app_for(adapter)
+  end
+
+  test "[unit] cyvasse registers CI's full suite as test_cmd and no QA gate" do
+    assert_equal "bin/rails db:test:prepare test test:system", Release::Repos.test_cmd("cyvasse"),
+                 "git_push_heroku runs no tests — test_cmd is the last gate and must be CI's full suite"
+    assert_nil Release::Repos.qa_test_cmd("cyvasse"),
+               "cyvasse has no QA app; a qa_test_cmd would make its QA exemption stale"
+    assert Release::Repos.qa_evidence_exempt?("cyvasse"),
+           "no cyvasse-qa by Alex's decision (2026-09-25), so a sweep must not hold cyvasse at the QA stamp"
+  end
+
+  # dads-app (epic dads-app) is a release-managed STANDALONE: no studio-engine and
+  # no database. It gates like cyvasse (git_push_heroku has no test step, so
+  # test_cmd is CI's full suite, verbatim) and, like cyvasse, has no QA copy by
+  # Alex's cost decision, so no qa_test_cmd and a DECLARED QA exemption.
+  test "[unit] dads-app deploys to the Heroku app dads-app by git_push_heroku" do
+    assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder("dads-app")
+    assert_includes Release::Ladder.sweepable(Release::Repos.config), "dads-app"
+    assert_equal :app, Release::Repos.kind("dads-app")
+
+    adapter = Release::Repos.prod_deploy("dads-app")
+    assert_equal "git_push_heroku", adapter["strategy"]
+    assert_equal "https://git.heroku.com/dads-app.git", adapter["remote"]
+    assert_equal "main", adapter["branch"]
+    # The herokuapp host until greigmcritchie.com's Name.com records resolve; the
+    # ship smokes `<smoke_url>/up` AFTER the push, so a dead host aborts a live deploy.
+    assert_equal "https://dads-app-7b5aef805731.herokuapp.com", adapter["smoke_url"]
+    assert_equal "dads-app", Release::ShipSequence.heroku_app_for(adapter)
+  end
+
+  test "[unit] dads-app registers CI's full suite as test_cmd and no QA gate" do
+    assert_equal "bin/rails test", Release::Repos.test_cmd("dads-app"),
+                 "test_cmd is dads-app's CI `test` job verbatim; its system tier runs in the `system-test` job"
+    assert_nil Release::Repos.qa_test_cmd("dads-app"),
+               "dads-app has no QA app; a qa_test_cmd would make its QA exemption stale"
+    assert Release::Repos.qa_evidence_exempt?("dads-app"),
+           "no QA copy by Alex's Eco-dyno decision (2026-09-26), so a sweep must not hold dads-app at the QA stamp"
+  end
+
+  # No ActiveRecord, so no `db:test:prepare` task: a gate string carrying it would
+  # fail in dads-app's own CI before a single test ran. And NOT a joined
+  # `bin/rails test test:system`: without a leading rake task, Rails 8.1's
+  # TestCommand loads `test:system` as a file path and raises LoadError.
+  test "[unit] dads-app's gate has no database step and no task-as-path argument" do
+    argv = Shellwords.split(Release::Repos.test_cmd("dads-app"))
+
+    assert_empty argv.grep(/\Adb:/), "dads-app has no database, so its gate must not prepare one"
+    assert_empty argv.drop(2).grep(/\Atest:/),
+                 "a bare `bin/rails test <task>` treats the task as a path and raises LoadError"
   end
 
   test "app_meta returns the app's registry metadata" do
@@ -360,10 +413,52 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # Guards the guard: every assertion above would pass vacuously over an empty list.
   test "[unit] the QA-evidence exemption guard actually has a repo to check" do
-    assert_includes Release::Repos.qa_evidence_exempt_repos, "turf-vault"
-    assert_equal 1, Release::Repos.qa_evidence_exempt_repos.length,
-                 "exactly one repo is declared exempt today — a second one arriving unreviewed " \
-                 "is what this count is here to surface"
+    assert_equal %w[cyvasse dads-app turf-vault], Release::Repos.qa_evidence_exempt_repos.sort,
+                 "exactly these repos are declared exempt — a third one arriving unreviewed " \
+                 "is what this pin is here to surface"
+  end
+
+  # THE NARROW EXTENSION for cyvasse, and then dads-app. turf-vault's exemption
+  # rests on "QA does not apply" (no deploy of any kind). A repo WITH a prod_deploy
+  # could have a QA copy, so its exemption can only be an operator's decision — and
+  # that decision must be named here AND quoted in config/release_repos.yml, so a
+  # deployable app cannot go exempt by a one-line YAML edit that no one decided.
+  #
+  # Both lines are Alex's own words. dads-app's is his cost ask (chat,
+  # 2026-09-26), answered by option C, one Eco dyno with no QA copy; the registry
+  # comment quotes the "C" reply beside it.
+  QA_EXEMPT_BY_OPERATOR_DECISION = {
+    "cyvasse" => "No cyvasse-qa unless there is a free teir we can use",
+    "dads-app" => "anyway we can get it cheaper than $12/m"
+  }.freeze
+
+  test "[unit] a DEPLOYABLE exempt repo is exempt only by a cited operator decision" do
+    raw = File.read(Rails.root.join("config/release_repos.yml"))
+    deployable_exempt = Release::Repos.qa_evidence_exempt_repos.select { |repo| Release::Repos.prod_deploy(repo) }
+
+    assert_includes deployable_exempt, "cyvasse", "guards the guard: the list it walks is not empty"
+    assert_includes deployable_exempt, "dads-app", "dads-app is exempt by decision, not by QA not applying"
+    deployable_exempt.each do |repo|
+      decision = QA_EXEMPT_BY_OPERATOR_DECISION[repo]
+      assert decision, "#{repo} has a prod_deploy and declares qa_evidence: exempt without an operator " \
+                       "decision — a deployable app must earn QA evidence unless the operator ruled otherwise"
+      assert_includes raw, decision, "#{repo}'s registry comment must quote the operator decision verbatim"
+    end
+  end
+
+  # The other direction: a decision cited for a repo that is no longer exempt (or no
+  # longer deployable) is a stale grant waiting to be re-armed by a YAML edit.
+  test "[unit] every cited operator decision belongs to a deployable exempt repo" do
+    deployable_exempt = Release::Repos.qa_evidence_exempt_repos.select { |repo| Release::Repos.prod_deploy(repo) }
+
+    assert_equal QA_EXEMPT_BY_OPERATOR_DECISION.keys.sort, deployable_exempt.sort,
+                 "the operator-decision list and the deployable exempt set must name the same repos"
+  end
+
+  test "[unit] the Anchor-program exemption is not a deployable app's" do
+    assert_nil Release::Repos.prod_deploy("turf-vault"),
+               "turf-vault is exempt because QA does not apply — it has no deploy target"
+    assert_not QA_EXEMPT_BY_OPERATOR_DECISION.key?("turf-vault")
   end
 
   test "prod_deploy is nil for a gem or an unknown repo" do
@@ -495,18 +590,56 @@ class Release::ReposTest < ActiveSupport::TestCase
     end
   end
 
-  test "mcritchie-industries' gate runs its CI test command verbatim" do
-    # THE DRIFT GUARD, rolio-style: asserted against the repo's OWN ci.yml at
-    # origin/release, so when its first system test lands and ci.yml grows
-    # `test:system`, this fails at the seam until the registry grows it too.
-    # Anchored on the suite step (db:test:prepare) because this repo's test job
-    # runs `bin/rails tailwindcss:build` BEFORE the suite — the bin/rails
-    # anchor would find the asset build, not the gate command.
-    ci = sibling_ci_test_command("mcritchie-industries", anchor: "db:test:prepare")
-    skip "mcritchie-industries checkout not present (hub CI runner) — shape guards above still bind" if ci.nil?
+  # THE DRIFT GUARD for the git_push_heroku satellites, rolio-style: each app's
+  # ship gate is asserted against the repo's OWN ci.yml, so when ci.yml grows a
+  # tier (as mcritchie-industries' did with `test:system`) this fails at the seam
+  # until the registry grows it too. Anchored on the suite step (db:test:prepare)
+  # because both test jobs run `bin/rails tailwindcss:build` BEFORE the suite —
+  # the bin/rails anchor would find the asset build, not the gate command.
+  #
+  # ONE test over both apps, deliberately: on the hub CI runner neither sibling is
+  # checked out, and the lane's skip ceiling (config/rails_lane.yml) counts each
+  # skipped test. A repo that IS checked out is always asserted; the test skips
+  # only when none is.
+  #
+  # Read from origin/release, the branch that ships. cyvasse's release carried only
+  # its initial commit on 2026-09-25, so until the first sweep lands ci.yml there it
+  # is held against origin/accepted, the branch that will ship next, rather than
+  # passed over.
+  #
+  # dads-app has no database, so its suite steps carry no db:test:prepare; they are
+  # anchored on `bin/rails test`, which both contain and a `tailwindcss:build` step
+  # does not. It SPLITS its suite across two jobs (the Rails 8.1 generator
+  # default): `test` must equal its registry test_cmd, and `system-test` must run
+  # `bin/rails test:system`. The ship gate reads CI's full settled verdict for the
+  # frozen SHA (all five dads-app jobs), so the system tier gates production even
+  # though test_cmd names only the `test` job; this guard is what keeps that job
+  # from being dropped or narrowed unseen. Its release branch carried no ci.yml on
+  # 2026-09-26, so it falls back to origin/accepted like cyvasse.
+  GIT_PUSH_HEROKU_GATES = {
+    "mcritchie-industries" => { field: :qa_test_cmd, anchor: "db:test:prepare", fallback: false },
+    "cyvasse" => { field: :test_cmd, anchor: "db:test:prepare", fallback: true },
+    "dads-app" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
+                    companion_jobs: { "system-test" => "bin/rails test:system" } }
+  }.freeze
 
-    assert_equal ci, Release::Repos.qa_test_cmd("mcritchie-industries"),
-                 "mcritchie-industries' G3 gate must run its CI suite, verbatim"
+  test "git_push_heroku satellites' gates run their CI test command verbatim" do
+    checked = GIT_PUSH_HEROKU_GATES.filter_map do |repo, gate|
+      field, anchor = gate.values_at(:field, :anchor)
+      ci = sibling_ci_test_command(repo, anchor: anchor) ||
+           (gate[:fallback] && sibling_ci_test_command(repo, anchor: anchor, ref: "origin/accepted"))
+      next unless ci
+
+      assert_equal ci, Release::Repos.public_send(field, repo), "#{repo}'s #{field} must run its CI suite, verbatim"
+      (gate[:companion_jobs] || {}).each do |job, expected|
+        companion = sibling_ci_test_command(repo, anchor: anchor, job: job) ||
+                    (gate[:fallback] && sibling_ci_test_command(repo, anchor: anchor, job: job, ref: "origin/accepted"))
+        assert_equal expected, companion,
+                     "#{repo}'s ci.yml `#{job}` job must run #{expected} — together with `test` it covers the suite"
+      end
+      repo
+    end
+    skip "no git_push_heroku satellite checkout present (hub CI runner) — shape guards above still bind" if checked.empty?
   end
 
   test "turf-monster has no system tests, so its integration subset is the right gate" do
@@ -615,18 +748,19 @@ class Release::ReposTest < ActiveSupport::TestCase
     # ci.yml on a feature branch would turn THE HUB's gate red for a change that is
     # nowhere near the release. The registry gates the code that SHIPS, so it is held
     # against the branch that ships.
-    def sibling_ci_test_command(repo, anchor: "bin/rails")
+    def sibling_ci_test_command(repo, anchor: "bin/rails", ref: "origin/release", job: "test")
       root = projects_root
       return nil if root.nil?
 
       path = root.join(repo)
-      raw, ok = Open3.capture2("git", "-C", path.to_s, "show", "origin/release:.github/workflows/ci.yml")
+      raw, ok = Open3.capture2("git", "-C", path.to_s, "show", "#{ref}:.github/workflows/ci.yml",
+                               err: File::NULL)
       return nil unless ok.success?
 
       ci    = YAML.safe_load(raw, aliases: true)
-      steps = ci.dig("jobs", "test", "steps") || []
+      steps = ci.dig("jobs", job, "steps") || []
       run   = steps.filter_map { |s| s["run"] }.find { |c| c.include?(anchor) }
-      assert run.present?, "#{repo}'s ci.yml `test` job no longer has a #{anchor} step — the guard is blind"
+      assert run.present?, "#{repo}'s ci.yml `#{job}` job no longer has a #{anchor} step — the guard is blind"
       run.strip
     end
 

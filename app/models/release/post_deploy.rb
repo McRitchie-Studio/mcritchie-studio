@@ -52,11 +52,28 @@ class Release
     # silently loses its record. `app` is "" when the repo has no registered target
     # for `target` — the CLI treats a blank app as a hard abort (a declared command
     # with nowhere to run), so a misdeclared command never silently no-ops.
-    def plan(repos, qa_environments:, target:)
+    #
+    # `qa_exempt_repos` — the repos config/release_repos.yml DECLARES
+    # `qa_evidence: exempt` (see .qa_exempt_repos). At :qa ONLY, a declared
+    # command in one of those repos is planned as a SKIP — the entry carries
+    # "skip" => SKIP_QA_EXEMPT and a blank app, and bin/release prints a line
+    # naming the exemption instead of aborting. It is a skip, never a silent
+    # drop: the entry stays in the plan so the operator sees the command that did
+    # not run and why. The repo has no QA app BY DECLARATION (cyvasse: Alex,
+    # 2026-09-25, no QA copy on cost), so "register a QA app" — the abort's
+    # remedy — is exactly what its operator ruled out. Every OTHER repo with a
+    # blank app keeps the hard abort; nothing is inferred from missing config.
+    # At :prod the exemption is irrelevant: the command must run on production.
+    def plan(repos, qa_environments:, target:, qa_exempt_repos: [])
       raise ArgumentError, "target must be one of #{TARGETS.inspect}, got #{target.inspect}" unless TARGETS.include?(target)
 
+      exempt = Array(qa_exempt_repos).map(&:to_s)
       entries = Array(repos).flat_map do |group|
-        app = target_app(qa_environments, group["qa_app"], target)
+        # Skip at :qa only when :prod can route the command; an exempt repo with no
+        # production app (turf-vault) keeps the prepare abort, not one after go-live.
+        skip = target == :qa && exempt.include?(group["repo"].to_s) &&
+               !target_app(qa_environments, group["qa_app"], :prod, prod_deploy: group["prod_deploy"]).empty?
+        app = skip ? "" : target_app(qa_environments, group["qa_app"], target, prod_deploy: group["prod_deploy"])
         Array(group["members"]).filter_map do |member|
           cmd = member["post_deploy_cmd"].to_s.strip
           # "none" is the explicit no-op sentinel the dor-check gate hands authors
@@ -65,12 +82,31 @@ class Release
           next if cmd.empty? || cmd.casecmp?("none")
 
           slug = member["slug"].to_s
-          { "task" => slug, "tasks" => [slug], "repo" => group["repo"].to_s,
-            "app" => app, "cmd" => cmd }
+          entry = { "task" => slug, "tasks" => [slug], "repo" => group["repo"].to_s,
+                    "app" => app, "cmd" => cmd }
+          entry["skip"] = SKIP_QA_EXEMPT if skip
+          entry
         end
       end
 
       dedupe(entries)
+    end
+
+    # The "skip" reason on a :qa entry for a repo declaring `qa_evidence: exempt`.
+    SKIP_QA_EXEMPT = "qa_evidence_exempt"
+
+    # The repos config/release_repos.yml declares `qa_evidence: exempt`, read from
+    # the parsed registry hash (bin/release has no Rails, so it cannot call
+    # Release::Repos). Same rule as Release::Repos.qa_evidence: the value must be
+    # EXACTLY "exempt" after stripping; anything else — absent, a typo — is not
+    # exempt. post_deploy_test.rb holds the two readers equal over the real file.
+    def qa_exempt_repos(release_repos)
+      registry = release_repos.is_a?(Hash) ? release_repos : {}
+      %w[gems apps].flat_map do |half|
+        (registry[half].is_a?(Hash) ? registry[half] : {}).filter_map do |repo, meta|
+          repo.to_s if meta.is_a?(Hash) && meta["qa_evidence"].to_s.strip == "exempt"
+        end
+      end
     end
 
     # Fold entries that do the SAME WORK on the SAME APP into one command.
@@ -153,11 +189,23 @@ class Release
 
     # The heroku app a post-deploy command runs on for `target`, resolved from the
     # qa_environments registry by qa-server key: :qa → "heroku_app" (the QA app),
-    # :prod → "production_app". "" when the key isn't registered (a gem group, or
-    # an app with no QA env) — the caller aborts on a declared-but-unroutable cmd.
-    def target_app(qa_environments, qa_app, target)
+    # :prod → "production_app". "" when nothing resolves (a gem group, or an app
+    # with no QA env) — the caller aborts on a declared-but-unroutable cmd.
+    #
+    # :prod FALLS BACK to the repo's own prod_deploy adapter (its declared
+    # heroku_app, or the app named by a https://git.heroku.com/<app>.git remote —
+    # Release::ShipSequence.heroku_app_for) when qa_environments names no
+    # production_app. An app with no QA environment (cyvasse) is otherwise
+    # unroutable at ship, and the abort lands AFTER its code is live. :qa never
+    # falls back: a production adapter is not a QA app.
+    def target_app(qa_environments, qa_app, target, prod_deploy: nil)
       env = (qa_environments || {}).fetch(qa_app.to_s, nil) || {}
-      (target == :qa ? env["heroku_app"] : env["production_app"]).to_s
+      return env["heroku_app"].to_s if target == :qa
+
+      declared = env["production_app"].to_s
+      return declared unless declared.empty?
+
+      Release::ShipSequence.heroku_app_for(prod_deploy).to_s
     end
   end
 end

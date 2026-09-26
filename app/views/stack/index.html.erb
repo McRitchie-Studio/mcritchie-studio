@@ -1,0 +1,112 @@
+<% content_for :title, "Stack · McRitchie Studio" %>
+
+<section class="max-w-6xl mx-auto px-4 py-10" data-test="stack-page">
+  <header class="mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Stack</p>
+    <h1 class="text-3xl font-bold text-heading mb-2">Every client's stack</h1>
+    <p class="text-muted max-w-2xl">
+      Each client's tier and the software it runs on. The McRitchie Studio chest in a logo's corner means
+      we host it for them; a plain logo is the client's own account.
+      <%= link_to "Credential detail", credentials_path, class: "text-primary hover:underline whitespace-nowrap" %>
+    </p>
+  </header>
+
+  <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mb-4 text-xs text-muted" data-test="stack-legend">
+    <% sample = WorkspaceIconConfig.asset("google", "studio") %>
+    <% plain = WorkspaceIconConfig.tile("x") %>
+    <span class="inline-flex items-center gap-1.5">
+      <%= image_tag sample, alt: "", class: "w-6 h-6" if sample %> Hosted by McRitchie Studio
+    </span>
+    <span class="inline-flex items-center gap-1.5">
+      <%= image_tag plain, alt: "", class: "w-6 h-6" if plain %> The client's own account
+    </span>
+  </div>
+
+  <%# The table scrolls sideways inside its own box on a phone; the page never does. %>
+  <div class="overflow-x-auto rounded-2xl border border-subtle bg-surface" data-test="stack-table">
+    <table class="w-full min-w-[820px] text-sm border-collapse">
+      <thead>
+        <tr class="border-b border-subtle text-left text-xs font-semibold uppercase tracking-wider text-muted">
+          <th scope="col" class="sticky left-0 z-10 bg-surface px-4 py-3 w-56">Client</th>
+          <th scope="col" class="px-3 py-3">Tier</th>
+          <th scope="col" class="px-3 py-3">Software</th>
+          <th scope="col" class="px-3 py-3 text-right">Google users</th>
+          <th scope="col" class="px-4 py-3">Resend</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-subtle">
+        <% @clients.each do |client| %>
+          <% records = @records_by_entity.fetch(client.slug, []) %>
+          <tr class="align-middle" data-test="stack-client" data-client="<%= client.slug %>" data-tier="<%= client.tier %>">
+            <th scope="row" class="sticky left-0 z-10 bg-surface px-4 py-3 text-left font-normal">
+              <div class="flex items-center gap-3">
+                <% if (badge = client.badge_icon) %>
+                  <%= image_tag badge, alt: "", class: "w-10 h-10 shrink-0" %>
+                <% else %>
+                  <span class="w-10 h-10 shrink-0 rounded-full border-2 border-dashed border-subtle" aria-hidden="true"></span>
+                <% end %>
+                <div class="min-w-0">
+                  <p class="font-semibold text-heading"><%= client.name %></p>
+                  <% if client.domain %>
+                    <p class="font-mono text-xs text-muted truncate"><%= client.domain %></p>
+                  <% end %>
+                </div>
+              </div>
+            </th>
+            <td class="px-3 py-3" data-test="stack-tier">
+              <% if client.internal? %>
+                <span class="text-xs text-muted">Internal</span>
+              <% else %>
+                <span class="inline-block rounded-full border border-primary text-primary px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap">
+                  <%= client.tier_name %><%= " · #{client.package.free? ? 'Free' : number_to_currency(client.package.price_monthly, precision: 0) + '/mo'}" if client.package&.priced? %>
+                </span>
+                <% if client.notes.present? %>
+                  <p class="text-[11px] text-muted mt-1" data-test="stack-notes"><%= client.notes %></p>
+                <% end %>
+              <% end %>
+            </td>
+            <td class="px-3 py-3" data-test="stack-software">
+              <ul class="flex flex-wrap gap-1.5">
+                <% client.software_keys(records).each do |software| %>
+                  <% icon = client.icon_for(software) %>
+                  <% hosted = client.ms_hosted?(software) %>
+                  <% label = "#{WorkspaceIconConfig.software_name(software)} · #{hosted ? 'hosted by McRitchie Studio' : "#{client.name}'s own account"}" %>
+                  <li title="<%= label %>" data-test="stack-software-icon" data-software="<%= software %>" data-hosting="<%= hosted ? 'ms' : 'own' %>">
+                    <% if icon %>
+                      <%= image_tag icon, alt: label, class: "w-10 h-10" %>
+                    <% else %>
+                      <span class="inline-flex w-10 h-10 items-center justify-center rounded-full bg-surface-alt text-[10px] text-muted"><%= software %></span>
+                    <% end %>
+                  </li>
+                <% end %>
+              </ul>
+            </td>
+            <td class="px-3 py-3 text-right tabular-nums" data-test="stack-google-users">
+              <% if client.google_users %>
+                <span class="font-semibold text-heading"><%= client.google_users %></span>
+              <% else %>
+                <span class="text-muted" title="Not recorded yet">—</span>
+              <% end %>
+              <% if (account = client.workspace_account) %>
+                <p class="text-[11px] whitespace-nowrap <%= account.active? ? 'text-green-400' : 'text-muted' %>">delegation · <%= account.status %></p>
+              <% end %>
+            </td>
+            <td class="px-4 py-3" data-test="stack-resend" data-mode="<%= client.resend_mode %>">
+              <% case client.resend_mode %>
+              <% when "ms" %>
+                <span class="text-body">McRitchie Studio account</span>
+              <% when "white_label" %>
+                <span class="text-body">White label</span>
+              <% else %>
+                <span class="text-muted">—</span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+        <% if @clients.empty? %>
+          <tr><td colspan="5" class="px-4 py-6 text-center text-muted">No clients recorded yet.</td></tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</section>

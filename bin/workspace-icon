@@ -1,0 +1,123 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/workspace-icon — render a client workspace's icon for one piece of
+# software: that software's logo (1Password by default, or Google) with the
+# workspace's logo badged in the lower-right corner, on a transparent background.
+#
+#   bin/workspace-icon --workspace studio                     # 1Password vault icon
+#   bin/workspace-icon --workspace studio --software google   # Google Workspace icon
+#   bin/workspace-icon --tiles                                # rebuild every software tile from its mark
+#   bin/workspace-icon --all                                  # every software x every badged workspace
+#   bin/workspace-icon --workspace industries --badge ~/Downloads/industries.png
+#   bin/workspace-icon --badge logo.png --accent "#8E83FC" --out ~/Desktop/icon.png
+#   bin/workspace-icon --list
+#
+# It writes a PNG and reads it back (size, transparent corner). It never talks
+# to 1Password or Google: a custom vault image is uploaded in the 1Password app.
+#
+# SOP: docs/agents/agents/steffon/sops/workspace-icon.md
+
+require "optparse"
+require "fileutils"
+require_relative "lib/workspace_icon"
+
+options = { software: WorkspaceIcon::DEFAULT_SOFTWARE }
+parser = OptionParser.new do |o|
+  o.banner = "usage: bin/workspace-icon (--workspace SCOPE | --badge PATH | --all) [--software KEY] [--logo PATH] " \
+             "[--accent #rrggbb] [--size N] [--out PATH]\n" \
+             "       bin/workspace-icon --list"
+  o.on("--workspace SCOPE", "workspace scope from config/workspace_icons.yml") { |v| options[:workspace] = v }
+  o.on("--software KEY", "base logo from config/workspace_icons.yml (default #{WorkspaceIcon::DEFAULT_SOFTWARE})") { |v| options[:software] = v }
+  o.on("--all", "render every software for every workspace that has a badge") { options[:all] = true }
+  o.on("--tiles", "rebuild every software tile from its mark, then exit") { options[:tiles] = true }
+  o.on("--badge PATH", "the workspace logo for the corner disc (overrides the scope's)") { |v| options[:badge] = v }
+  o.on("--logo PATH", "the main icon (overrides --software)") { |v| options[:logo] = v }
+  o.on("--accent HEX", "ring colour, #rrggbb (default: the scope's, else the badge's average)") { |v| options[:accent] = v }
+  o.on("--size N", Integer, "square edge in px (default #{WorkspaceIcon::ASSET_SIZE} into the page's assets, " \
+                            "#{WorkspaceIcon::DEFAULT_SIZE} with --out)") { |v| options[:size] = v }
+  o.on("--out PATH", "where to write the PNG (default #{WorkspaceIcon::ASSET_DIR}/<software>/<scope>.png; " \
+                     "tmp/workspace-icons/ without --workspace)") { |v| options[:out] = v }
+  o.on("--list", "print the software and workspace scopes and exit") { options[:list] = true }
+  o.on("-h", "--help", "show this help") do
+    puts o
+    exit 0
+  end
+end
+
+begin
+  parser.parse!(ARGV)
+rescue OptionParser::ParseError => e
+  warn "bin/workspace-icon: #{e.message}"
+  warn parser.banner
+  exit 2
+end
+
+# OptionParser rejects an unknown FLAG but leaves a stray positional in ARGV;
+# `bin/workspace-icon logo.png` must not render the default badge while the
+# operator watches the path they typed be ignored.
+unless ARGV.empty?
+  warn "bin/workspace-icon: unexpected argument(s): #{ARGV.join(' ')} — pass files with --badge / --logo"
+  exit 2
+end
+
+if options[:tiles]
+  begin
+    WorkspaceIcon.softwares.each_key { |key| puts "tile #{WorkspaceIcon.build_tile!(key)}" }
+  rescue WorkspaceIcon::Error => e
+    warn "bin/workspace-icon: #{e.message}"
+    exit 1
+  end
+  exit 0
+end
+
+if options[:list]
+  puts "software:"
+  WorkspaceIcon.softwares.each { |key, sw| puts format("  %-20s %-20s %-5s %s", key, sw["name"], sw["hosting"] || "own", sw["mark"]) }
+  puts "workspaces:"
+  WorkspaceIcon.workspaces.each do |scope, ws|
+    puts format("  %-20s %-22s %-24s %s", scope, ws["name"], ws["domain"] || "-", ws["badge"] || "(no badge on file — pass --badge)")
+  end
+  exit 0
+end
+
+# One render: resolve the badge, the base logo and the output, then draw.
+render = lambda do |software_key, scope, ws|
+  badge = options[:badge] || (ws["badge"] && File.join(WorkspaceIcon::ROOT, ws["badge"]))
+  if badge.nil?
+    raise WorkspaceIcon::Error, scope ? "workspace #{scope} has no badge on file — pass --badge PATH" : "pass --workspace SCOPE, --badge PATH or --all"
+  end
+
+  logo = options[:logo] || WorkspaceIcon.software_logo(software_key)
+  # A named scope renders into the asset /credentials shows; an ad-hoc --badge
+  # render goes to tmp/ so it can never overwrite a scope's icon.
+  out = options[:out] ||
+        (scope ? WorkspaceIcon.asset_path(software_key, scope) : File.join(WorkspaceIcon::ROOT, "tmp/workspace-icons", "#{File.basename(badge, '.*')}.png"))
+  FileUtils.mkdir_p(File.dirname(out)) unless options[:out]
+  size = options[:size] || (options[:out] ? WorkspaceIcon::DEFAULT_SIZE : WorkspaceIcon::ASSET_SIZE)
+
+  result = WorkspaceIcon.render!(logo: logo, badge: File.expand_path(badge), out: File.expand_path(out),
+                                 accent: options[:accent] || ws["accent"], size: size)
+  puts "wrote #{result[:out]}  (#{result[:size]}x#{result[:size]}, accent #{result[:accent]}, transparent corner verified)"
+end
+
+begin
+  if options[:all]
+    if options[:workspace] || options[:badge] || options[:logo] || options[:out]
+      raise WorkspaceIcon::Error, "--all renders every configured pair; it takes no --workspace, --badge, --logo or --out"
+    end
+
+    WorkspaceIcon.workspaces.each do |scope, ws|
+      next warn("skip #{scope}: no badge on file") unless ws["badge"]
+
+      WorkspaceIcon.softwares.each_key { |software_key| render.call(software_key, scope, ws) }
+    end
+  else
+    WorkspaceIcon.software(options[:software]) unless options[:logo]
+    ws = options[:workspace] ? WorkspaceIcon.workspace(options[:workspace]) : {}
+    render.call(options[:software], options[:workspace], ws)
+  end
+rescue WorkspaceIcon::Error, ArgumentError => e
+  warn "bin/workspace-icon: #{e.message}"
+  exit 1
+end
