@@ -82,4 +82,13 @@ begin
 rescue HerokuCiKeyRotation::Abort => e
   warn "rotate-heroku-ci-key: #{HerokuCiKeyRotation.redact(e.message, secrets)}"
   exit 1
+rescue StandardError => e
+  # ANY OTHER FAILURE ENDS THE SAME WAY. Runner#call turns an error AFTER the mint
+  # into an Abort (it rolls back first), but one raised before it — a timeout, a
+  # refused connection, a 200 whose body is not JSON — used to escape here and
+  # print Ruby's own report: a stack trace, and an exception message that may quote
+  # a response body, unredacted. One redacted line, with the class, is enough.
+  message = HerokuCiKeyRotation.redact(e.message, secrets).gsub(/\s*\n\s*/, " ")
+  warn "rotate-heroku-ci-key: #{e.class}: #{message}"
+  exit 1
 end

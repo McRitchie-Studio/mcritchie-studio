@@ -89,6 +89,23 @@ class RotateHerokuCiKeyTest < Minitest::Test
     assert_empty log("op")
   end
 
+  # [integration] A failure that is NOT an Abort (here Heroku answers 200 with a
+  # body that is not JSON, so preflight raises JSON::ParserError) used to escape
+  # the script's `rescue Abort` and print Ruby's own report: a stack trace, and an
+  # exception message that quotes the unparsed body UNREDACTED. It must end the way
+  # an Abort does: one redacted line, exit 1, nothing mutated.
+  def test_a_non_abort_preflight_error_prints_one_redacted_line_and_no_stack_trace
+    @garbled_authorization = true
+    out, err, status = run_script("--dry-run")
+
+    assert_equal 1, status.exitstatus, "#{out}\n#{err}"
+    assert_match(/^rotate-heroku-ci-key: .*JSON::ParserError/, err, "name the failure class")
+    refute_match(/\.rb:\d+:in /, err, "no stack trace")
+    assert_equal 1, err.lines.size, "one line, not a report: #{err}"
+    assert_equal ["GET"], @requests.map(&:first).uniq, "a failed preflight mutates nothing"
+    assert_no_secret_leaked(out, err)
+  end
+
   private
 
   def assert_no_secret_leaked(out, err)
@@ -141,7 +158,7 @@ class RotateHerokuCiKeyTest < Minitest::Test
     @requests << [verb, path]
     key = headers["authorization"].to_s.delete_prefix("Bearer ")
     code, json = route(verb, path, key, body)
-    payload = JSON.generate(json)
+    payload = json.is_a?(String) ? json : JSON.generate(json)
     client.write("HTTP/1.1 #{code} X\r\nContent-Type: application/json\r\n" \
                  "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
     client.close
@@ -153,6 +170,8 @@ class RotateHerokuCiKeyTest < Minitest::Test
       return [401, { "message" => "Invalid credentials provided." }] if key == OLD_KEY && @revoked.include?(OLD_ID)
 
       [200, { "email" => "alex@mcritchie.studio" }]
+    in ["GET", %r{\A/oauth/authorizations/(.+)\z}] if @garbled_authorization
+      [200, "<html>upstream error for #{ADMIN_KEY} #{OLD_KEY}</html>"]
     in ["GET", %r{\A/oauth/authorizations/(.+)\z}]
       [200, { "id" => OLD_ID, "description" => "heroku.studio.applications",
               "scope" => %w[identity read-protected write-protected], "access_token" => { "token" => OLD_KEY } }]
