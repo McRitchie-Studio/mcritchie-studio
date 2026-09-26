@@ -600,26 +600,39 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
   # prod_deploy. These drive the sweep end to end: the plan names the Heroku
   # deploy, the QA stamp does not hold the member, and the shipped stamp still
   # waits for cyvasse's own release -> main record.
+  #
+  # Every run here lands evidence for a HUB neighbour, as a real `bin/release
+  # prepare` does. A release that recorded NO evidence holds no single-repo
+  # member at all (MemberEvidence.hold?), so without the neighbour these tests
+  # would pass with the exemption deleted — the mutation below proves they don't.
   CYVASSE    = "cyvasse"
   CYVASSE_PR = "https://github.com/McRitchie-Studio/cyvasse/pull/20"
 
-  def cyvasse_task(label = "cyvasse polish")
+  def cyvasse_task(label = "polish the cyvasse board")
     Task.create!(title: label, stage: "reviewed",
                  metadata: { "devops" => { "shape" => "backend", "repositories" => [ CYVASSE ],
                                            "pr_url" => CYVASSE_PR } })
   end
 
-  test "[integration] release sweep plans a cyvasse deploy with no QA hold" do
+  # Sweeps a cyvasse member beside a hub member and records the run's QA
+  # evidence: the hub deployed to QA, cyvasse has nowhere to go.
+  def cyvasse_candidate
     task = cyvasse_task
     release = Release::Conductor.sweep!(task)
+    Release::Conductor.sweep!(single_repo_task)
+    qa_landed(release.reload, HUB)
+    [ task, release.reload ]
+  end
 
-    group = Release::Conductor.repo_plan(release.reload).find { |g| g[:repo] == CYVASSE }
+  test "[integration] release sweep plans a cyvasse deploy with no QA hold" do
+    task, release = cyvasse_candidate
+
+    group = Release::Conductor.repo_plan(release).find { |g| g[:repo] == CYVASSE }
     assert group, "a swept cyvasse member must put cyvasse in the repo plan"
     assert_equal "git_push_heroku", group[:prod_deploy]["strategy"]
     assert_equal "https://git.heroku.com/cyvasse.git", group[:prod_deploy]["remote"]
 
-    # The run QA'd NOTHING for cyvasse — there is no cyvasse-qa to deploy to.
-    Release::Conductor.qa_green!(release.reload)
+    Release::Conductor.qa_green!(release)
 
     assert_equal "assembled", task.reload.stage,
                  "cyvasse has no QA environment by operator decision; without the declared " \
@@ -627,11 +640,10 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
   end
 
   test "[integration] MUTATION: without cyvasse's declaration the same member is HELD" do
-    task = cyvasse_task
-    release = Release::Conductor.sweep!(task)
+    task, release = cyvasse_candidate
 
     Release::Repos.stub(:qa_evidence_exempt?, ->(repo) { repo == VAULT }) do
-      Release::Conductor.qa_green!(release.reload)
+      Release::Conductor.qa_green!(release)
     end
 
     assert_equal "reviewed", task.reload.stage,
@@ -639,11 +651,11 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
   end
 
   test "[integration] cyvasse's QA exemption does NOT extend to `shipped`" do
-    task = cyvasse_task
-    release = Release::Conductor.sweep!(task)
-    Release::Conductor.qa_green!(release.reload)
+    task, release = cyvasse_candidate
+    Release::Conductor.qa_green!(release)
     assert_equal "assembled", task.reload.stage
 
+    shipped_landed(release.reload, HUB) # the hub's main moved; cyvasse's did not
     Release::Conductor.ship!(release: release.reload, deployed_sha: "deadbeef")
     assert_equal "assembled", task.reload.stage,
                  "no cyvasse release -> main record landed, so the member must not claim `shipped`"
@@ -652,5 +664,4 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
     Release::Conductor.ship!(release: release.reload, deployed_sha: "deadbeef")
     assert_equal "shipped", task.reload.stage
   end
-
 end

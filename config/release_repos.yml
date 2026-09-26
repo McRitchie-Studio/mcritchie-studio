@@ -683,8 +683,9 @@ apps:
     # APPLY to it (no dyno, no URL, no deploy of any kind). Cyvasse is a deployable
     # Rails app: a QA copy could exist. It is exempt on COST, by OPERATOR DECISION:
     #
-    #   Alex, 2026-09-25 (verbatim): "No cyvasse-qa unless there is a free teir we
-    #   can use." Heroku has no free tier (a QA copy is ~$12/mo), so there is no
+    #   Alex, 2026-09-25 (verbatim, typo kept; the guard matches it exactly):
+    #   "No cyvasse-qa unless there is a free teir we can use"
+    #   Heroku has no free tier (a QA copy is ~$12/mo), so there is no
     #   `cyvasse-qa` app.
     #
     # WHAT THAT COSTS, said plainly: a cyvasse change reaches production without a
