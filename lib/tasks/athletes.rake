@@ -52,32 +52,50 @@ namespace :athletes do
       limit: limit, pause: pause, logger: ->(line) { puts line }
     ).call
 
-    # THE NUMBERS THE VERDICTS BELOW READ, and `unattempted` is DERIVED rather than
-    # accumulated — every future `next` in the loop lands in it by subtraction, so a
-    # skip branch added later is counted without being told to report itself. Hand
-    # counting is how `nfl:upload_headshots` dug the hole that cost 2,048 athletes
-    # their avatar: a counter was faithfully incremented and printed, and no rule
-    # read it.
-    attempted = outcome.updated + outcome.failed
-    unattempted = outcome.needed - attempted
-
+    # THE REPORT IS PER LANE, and so are the verdicts below it. Two sources answer
+    # different columns at different prices and fail in different ways, so a total
+    # that sums them cannot say whether the run did its job: one full pass with a dead
+    # credential fills 2,051 free builds, writes zero paid descriptions, and every
+    # summed counter reads healthy. Each lane is reported and graded on its own
+    # evidence instead.
+    #
+    # READ EACH LANE LEFT TO RIGHT: wanted it -> a source could answer -> something
+    # came back. A gap in the first step is a DATA gap and is not an error. A gap in
+    # the last step is the lane not working, and that is what exits non-zero.
     puts ""
     puts "considered:               #{outcome.considered}"
-    puts "updated:                  #{outcome.updated}"
-    puts "  build filled:           #{outcome.build_filled}"
-    puts "  described from photo:   #{outcome.described}"
     puts "skipped (already done):   #{outcome.skipped_complete}"
-    puts "skipped (no headshot):    #{outcome.skipped_no_headshot}"
+    puts "updated:                  #{outcome.updated}"
     puts "failed:                   #{outcome.failed}"
-    puts "unattempted:              #{unattempted}"
     puts ""
-    puts "vision calls:             #{outcome.vision_calls}"
+    puts "build lane — free, from the athlete's own height and weight"
+    puts "  wanted a build:         #{outcome.build_wanted}"
+    puts "  had the measurements:   #{outcome.build_measured}"
+    puts "  filled:                 #{outcome.build_filled}"
+    puts ""
+    if outcome.vision_armed
+      puts "vision lane — paid, one call per athlete over the cached " \
+           "#{describer::HEADSHOT_VARIANT}px headshot"
+      puts "  wanted skin or hair:    #{outcome.vision_wanted}"
+      puts "  no cached headshot:     #{outcome.skipped_no_headshot}"
+      puts "  asked:                  #{outcome.vision_asked}"
+      puts "  billed (call landed):   #{outcome.vision_billed}"
+      puts "  described:              #{outcome.described}"
+    else
+      # NOT ASKED AT ALL, rather than asked 2,043 times for $0.00. The describer is
+      # unarmed, so the backfill never hands it an athlete — which is why there is no
+      # ask count to misread here, and why the paid verdict below cannot fire.
+      puts "vision lane — NOT ARMED (#{describer::API_KEY_ENV} unset): " \
+           "#{outcome.vision_wanted} athlete(s) wanted skin or hair and went unasked."
+    end
+    puts ""
     puts "tokens:                   in #{outcome.usage['input']}, out #{outcome.usage['output']}"
     puts "cost (#{describer::MODEL} list): #{outcome.cost ? format('$%.4f', outcome.cost) : 'unpriced'}"
-    if outcome.cost_per_call
-      puts "cost per call:            #{format('$%.6f', outcome.cost_per_call)}"
+    if outcome.cost_per_billed_call
+      puts "cost per billed call:     #{format('$%.6f', outcome.cost_per_billed_call)}"
       remaining = Athlete.where(skin_tone: [nil, ""]).or(Athlete.where(hair_description: [nil, ""])).count
-      puts "projected for the remaining #{remaining}: #{format('$%.2f', outcome.cost_per_call * remaining)}"
+      puts "projected for the remaining #{remaining}: " \
+           "#{format('$%.2f', outcome.cost_per_billed_call * remaining)}"
     end
 
     if outcome.rows.any?
@@ -92,34 +110,69 @@ namespace :athletes do
       end
     end
 
-    # GRADED ON THE MAJORITY OF ATTEMPTS. More failures than successes cannot be one
-    # dead S3 object — it is the pass not working, which is what a bad credential
-    # looks like from here: every attempt fails, so `updated` is 0 and `failed` is
-    # everything. Ending on `puts` is what let `nfl:upload_headshots` report a total
-    # credential failure as an exit-0 success.
+    # RULE 1 — THE PASS ITSELF BROKE DOWN. More raises than writes is not one dead
+    # row; it is the iteration failing. Its population is the WRITE path — a
+    # validation on a row that predates it, a database error, an ErrorLog insert that
+    # itself fails — and NOT the paid call, because Athletes::DescribeFromHeadshot
+    # degrades to a blank Result by contract and never raises into the loop's rescue.
+    # That is exactly why it cannot be the only rule: rules 2 and 3 grade the two
+    # sources, and this one grades the walk over them. Ending on `puts` is what let
+    # `nfl:upload_headshots` report a total credential failure as an exit-0 success.
     if outcome.failed > outcome.updated
-      abort "athletes:describe_from_headshots failed #{outcome.failed} of #{attempted} attempts " \
-            "(updated #{outcome.updated}) — read the [!] lines above, which name the cause per " \
-            "athlete, and /admin/error_logs, which has the rows. Across MANY attempts this is " \
-            "usually a credential: check #{describer::API_KEY_ENV} and the AWS keys that read " \
-            "the cached headshot out of S3."
+      abort "athletes:describe_from_headshots raised on #{outcome.failed} of the " \
+            "#{outcome.failed + outcome.updated} athlete(s) it tried to write (wrote " \
+            "#{outcome.updated}) — read the [!] lines above, which name the exception per " \
+            "athlete, and /admin/error_logs, which has the rows. A raise here is the write " \
+            "failing, not a description failing: the describer degrades rather than raising."
     end
 
-    # THE SECOND RULE, AND THE ONE THE FIRST IS STRUCTURALLY BLIND TO. The rule above
-    # grades ATTEMPTS, so a run that made none clears it: with `updated` 0 and
-    # `failed` 0, `failed > updated` is false and the task returns normally. That is
-    # exactly the shape that hid a broken `nfl:upload_headshots` for its whole life —
-    # `cached: 0`, `skipped: 2048`, exit 0, a clean summary every time.
+    # RULE 2 — THE FREE LANE HAD ITS INPUT AND WROTE NOTHING. Graded on the DATA
+    # (height and weight on file), never on the deriver's own verdict, because a
+    # deriver that returned nil for every row would otherwise grade itself as having
+    # had nothing to do. That is the `nfl:upload_headshots` shape precisely:
+    # `candidates: 2048`, `cached: 0`, a clean summary, exit 0, for its whole life.
     #
-    # IT CANNOT CRY WOLF ON THE WARM RE-RUN: `needed` subtracts the already-complete
-    # rows, so the re-run that legitimately does nothing has `needed == 0` and this
-    # says nothing. It fires only when the task found work and declined all of it.
-    if outcome.needed.positive? && attempted.zero?
-      abort "athletes:describe_from_headshots found #{outcome.needed} athlete(s) needing a " \
-            "description and wrote none of them. That is the task declining its job, not a bad " \
-            "afternoon: #{outcome.skipped_no_headshot} had no cached #{describer::HEADSHOT_VARIANT}px " \
-            "headshot, and any athlete with no height/weight on file gets no build either. " \
-            "Run `bin/rails athletes:description_coverage` to see which source is missing."
+    # IT CANNOT CRY WOLF. An athlete whose build is already filled is never counted as
+    # wanting one, so the warm re-run has build_measured == 0 and this says nothing.
+    # An athlete with no height or weight is counted as wanting a build and NOT as
+    # having the input, so a permanent data gap is silent — which is the distinction
+    # the old single rule got wrong, and the one that would have got it disabled.
+    if outcome.build_measured.positive? && outcome.build_filled.zero?
+      abort "athletes:describe_from_headshots had height and weight on file for " \
+            "#{outcome.build_measured} athlete(s) wanting a build and wrote none of them. " \
+            "The free lane needs no credential and no network, so this is either " \
+            "Athletes::BuildFromMeasurements rejecting every row as implausible or every " \
+            "write failing — read the [!] lines above, then " \
+            "`bin/rails athletes:description_coverage`."
+    end
+
+    # RULE 3 — THE PAID LANE NEVER REACHED THE API, and this is the rule the task
+    # exists to carry. The describer degrades and never raises, so a present-but-
+    # INVALID credential, a sustained 429, or an unreadable S3 object files an
+    # ErrorLog row and returns a blank Result: `failed` stays 0, rule 1 is false, and
+    # the free build lane meanwhile drives `updated` to 2,051. Without this rule the
+    # run exits 0 having described nobody and left ~2,000 ErrorLog rows nobody was
+    # told to read — `nfl:upload_headshots` reproduced for the half that costs money.
+    #
+    # BILLED, NOT DESCRIBED, and the difference is the warm re-run. An answer that is
+    # legitimately null — a helmet, a hood, a placeholder crop — leaves the row short
+    # of #complete?, so every later run asks about it again and gets nothing again.
+    # Grading on `described` would abort on that steady state for ever. Token usage is
+    # the honest evidence that a call HAPPENED: re-asking a covered face bills, a call
+    # that never left the process does not.
+    #
+    # WHAT IT STILL CANNOT SEE: a lane that bills every call and writes nothing — our
+    # own parser broken, say — looks from here exactly like that null steady state.
+    # Separating them needs a record that we ASKED and the answer was null (noted at
+    # Athletes::BackfillDescriptions#wants_vision?), which is a column rather than an
+    # accounting change and is not in this pass.
+    if outcome.vision_asked.positive? && outcome.vision_billed.zero?
+      abort "athletes:describe_from_headshots asked for #{outcome.vision_asked} vision " \
+            "description(s) and not one call was billed a single token, so no call reached " \
+            "the API. Check #{describer::API_KEY_ENV} (a key that is present but invalid " \
+            "looks exactly like this), the rate limit, and the AWS keys that read the cached " \
+            "headshot out of S3. /admin/error_logs has a row per athlete. The free build lane " \
+            "wrote #{outcome.build_filled}, which is why nothing else above looks wrong."
     end
   end
 end

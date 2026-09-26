@@ -58,6 +58,23 @@ module Athletes
     # The imperial BMI constant: 703 x lb / in^2.
     BMI_FACTOR = 703.0
 
+    # DOES THE RECORD CARRY THE INPUT THIS SOURCE READS? Lives here, beside the
+    # deriver that reads it, so the backfill's per-lane accounting cannot drift from
+    # what #describe actually requires.
+    #
+    # IT ASKS ABOUT THE DATA, NOT ABOUT THE VERDICT, and that distinction is the
+    # whole reason it exists. "Both measurements are on file" is a fact about the
+    # row; "#describe returned nil" is this module's own opinion about it. A grading
+    # rule that read the opinion would let a deriver which returns nil for every row
+    # declare that it had nothing to do — which is exactly how `nfl:upload_headshots`
+    # reported a total failure as exit 0. So the caller counts the input, then checks
+    # whether anything came of it (lib/tasks/athletes.rake, rule 2).
+    def self.measured?(athlete)
+      return false if athlete.nil?
+
+      athlete.height_inches.present? && athlete.weight_lbs.present?
+    end
+
     # Returns the build sentence, or NIL when the measurements cannot support one.
     # Nil is a real answer here and the caller writes nothing for it.
     def self.call(athlete)

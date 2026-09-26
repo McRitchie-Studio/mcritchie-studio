@@ -277,6 +277,38 @@ class Athletes::DescribeFromHeadshotTest < ActiveSupport::TestCase
     end
   end
 
+  # THE INSTANCE'S OWN ANSWER, which is the one the backfill asks before it hands over
+  # a single athlete. `self.available?` speaks for the process; a describer handed an
+  # explicit key is armed whatever the environment says. Asking first is what keeps a
+  # credential-less run from reporting thousands of "calls" that never left the process.
+  test "armed? answers for the describer the caller holds, not for the process" do
+    with_env(DFH::API_KEY_ENV, nil) do
+      refute DFH.new.armed?
+      assert DFH.new(api_key: "test-key-not-a-real-credential").armed?
+    end
+  end
+
+  # THE TWO DEGRADE ARMS THAT DELIBERATELY FILE NOTHING, pinned because the class
+  # comment used to claim all five file a row. Each of these would file one identical
+  # row per athlete for a condition the rake task already reports by name — a missing
+  # credential it warns about before the run starts, and a missing headshot it counts
+  # in the paid lane's report — so filing them would bury the three surprises somebody
+  # should actually read under 2,000 rows of noise.
+  test "no credential and no cached headshot degrade without filing a row" do
+    no_headshot = bare_athlete
+
+    with_env(DFH::API_KEY_ENV, nil) do
+      assert_no_difference -> { ErrorLog.count } do
+        refute DFH.new.call(athlete_with_headshot).any?, "no credential: blank, unfiled"
+
+        refute DFH.new(api_key: "test-key-not-a-real-credential",
+                       transport: ->(**) { flunk "no cached headshot means no call" },
+                       downloader: ->(**) { flunk "no cached headshot means no download" })
+                  .call(no_headshot).any?, "no cached headshot: blank, unfiled"
+      end
+    end
+  end
+
   test "a transport failure degrades rather than raising, and is filed" do
     athlete = athlete_with_headshot
 

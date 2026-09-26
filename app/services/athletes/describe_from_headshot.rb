@@ -40,8 +40,20 @@ module Athletes
   # knows where the bytes are; the deriver does not.
   #
   # DEGRADES, NEVER RAISES. No credential, no headshot, a refusal, a timeout, an
-  # unreadable answer — every one returns a blank Result and files an ErrorLog row.
-  # A backfill over 2,000 rows must not die on one of them.
+  # unreadable answer — every one returns a blank Result rather than dying, because a
+  # backfill over 2,000 rows must not die on one of them.
+  #
+  # THREE OF THE FIVE FILE AN ErrorLog ROW; two deliberately do not. A refusal, a
+  # timeout and an unreadable answer are each filed, because each is a surprise
+  # somebody should read. No credential (#call's first line) and no cached headshot
+  # (its second) are not: the first would file one identical row per athlete for a
+  # condition the rake task already warns about at the top of the run, and the second
+  # is a known 8-athlete data gap the rake task counts by name. Both are visible in
+  # the per-lane report without 2,000 rows of noise burying the three that matter.
+  #
+  # BECAUSE IT NEVER RAISES, THE CALLER CANNOT GRADE THIS LANE BY COUNTING
+  # EXCEPTIONS. Result#billed? is the evidence a call actually reached the API, and
+  # it is what the rake task's paid-lane verdict reads.
   class DescribeFromHeadshot
     API_KEY_ENV = "ANTHROPIC_API_KEY".freeze
 
@@ -172,6 +184,16 @@ module Athletes
       @transport = transport || VisionTransport.method(:call)
       @downloader = downloader || ->(key:) { Studio::S3.download(key: key) }
     end
+
+    # IS THE PAID LANE ARMED FOR *THIS* DESCRIBER? `self.available?` answers for the
+    # process; this answers for the instance the caller is holding, which may have
+    # been handed an explicit key.
+    #
+    # THE CALLER ASKS BEFORE HANDING OVER AN ATHLETE, which is what keeps a
+    # credential-less run from reporting 2,051 "vision calls" that never left the
+    # process at a cost of $0.00 — and what keeps it from sleeping out the paid lane's
+    # rate-limit pause 2,051 times for calls it never made.
+    def armed? = @api_key.present?
 
     def call(athlete)
       return BLANK if athlete.nil? || @api_key.blank?
