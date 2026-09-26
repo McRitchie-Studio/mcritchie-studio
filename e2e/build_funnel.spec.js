@@ -105,6 +105,11 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
     await expect(page.locator("[data-test='build-request']")).toHaveAttribute("data-status", "queued");
   }
 
+  // Both of THIS spec's apps are listed as showcase. (Not a total count: the
+  // seed carries live showcase apps of its own for the gallery spec.)
   await page.goto("/build/requests?status=showcase");
-  await expect(page.locator("[data-test='app-request-showcase']")).toHaveCount(2);
+  for (const name of ["prisoners-dilemma", "weekly-lock"]) {
+    const row = page.locator("[data-test='app-request']", { has: page.locator("[data-test='app-request-host']", { hasText: `${name}.mcritchie.studio` }) });
+    await expect(row.locator("[data-test='app-request-showcase']")).toHaveCount(1);
+  }
 });

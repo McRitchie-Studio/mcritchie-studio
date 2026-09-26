@@ -47,7 +47,19 @@ which writes to a local database nobody sees.
    records live with the domain (see [deployment](deployment.md), the
    subdomain cutover steps).
 3. Confirm it answers: `curl -fsS https://<subdomain>.mcritchie.studio/up`.
-4. Mark it live. The requester's page then links to it:
+4. **Showcase builds only:** capture its gallery screenshot, pointed at the page
+   that shows what the app IS (Cyvasse's game board, not its landing text), and
+   commit it in a hub PR:
+
+   ```bash
+   node script/gallery_screenshot.cjs https://<subdomain>.mcritchie.studio/<page> <subdomain>
+   ```
+
+   It writes `app/assets/images/build_gallery/<subdomain>.jpg`, which the
+   "Built with McRitchie Studio" row on `/build` finds by convention. Without
+   it the card shows an emoji instead.
+5. Mark it live. The requester's page then links to it (and a showcase app
+   joins the /build gallery):
 
    ```bash
    heroku run -a mcritchie-studio --no-tty --exit-code -- \

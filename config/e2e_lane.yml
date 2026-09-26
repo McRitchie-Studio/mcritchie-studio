@@ -283,7 +283,9 @@
 # 170 -> 171 for e2e/build_gallery.spec.js. Both branch from 170, so whichever merges
 # SECOND inherits a stale number and must RE-DERIVE it on the merged tree rather than add
 # the two deltas by hand. If both land, the merged answer is 175.
-total_specs: 174
+# 174 -> 175 on 2026-09-26: e2e/build_gallery.spec.js (/tasks/build-gallery-carousel); set from the
+# real test( count after merging accepted, not by adding one to either side.
+total_specs: 175
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -457,7 +459,8 @@ quarantined: 10
 # 160 -> 164: the four photo_scouting.spec.js specs above. None is quarantined, so the
 # whole delta lands in the executed set.
 # ⚠ Same collision as `total_specs`: PR #1636 moves this 160 -> 161. Merged answer 165.
-executed: 164
+# 164 -> 165: total_specs - quarantined, the same build_gallery.spec.js spec.
+executed: 165
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
