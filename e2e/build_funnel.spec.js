@@ -84,7 +84,7 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
   // Two apps from one admin account: the second must queue too (showcase exemption).
   // Unregistered names: the real showcase apps (prisoners-dilemma, weekly-lock, ...)
   // have config/satellites.yml rows, so their subdomains are reserved.
-  for (const name of ["coin-toss", "trivia-night"]) {
+  for (const name of ["coin-toss", "chess-club"]) {
     await page.goto("/build");
     if (await onboarding.isVisible().catch(() => false)) {
       await onboarding.getByRole("button", { name: "Skip for now" }).click();
@@ -108,7 +108,7 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
   // Both of THIS spec's apps are listed as showcase. (Not a total count: the
   // seed carries live showcase apps of its own for the gallery spec.)
   await page.goto("/build/requests?status=showcase");
-  for (const name of ["prisoners-dilemma", "weekly-lock"]) {
+  for (const name of ["coin-toss", "chess-club"]) {
     const row = page.locator("[data-test='app-request']", { has: page.locator("[data-test='app-request-host']", { hasText: `${name}.mcritchie.studio` }) });
     await expect(row.locator("[data-test='app-request-showcase']")).toHaveCount(1);
   }

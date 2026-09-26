@@ -89,7 +89,7 @@ class AppRequestTest < ActiveSupport::TestCase
     admin = users(:alex)
     assert admin.admin?
     first = draft(user: admin).queue!("coin-toss")
-    second = draft(user: admin).queue!("trivia-night")
+    second = draft(user: admin).queue!("chess-club")
 
     assert first.showcase? && second.showcase?
     assert_includes Task.find_by!(slug: second.task_slug).metadata.dig("devops", "agent_context"), "SHOWCASE build"

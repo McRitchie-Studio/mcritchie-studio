@@ -174,7 +174,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     # Unregistered names: the real showcase apps' subdomains are reserved by their
     # config/satellites.yml rows (register-showcase-apps).
-    %w[coin-toss trivia-night].each do |name|
+    %w[coin-toss chess-club].each do |name|
       post build_path, params: { app_request: { prompt: "Rebuild #{name}" } }
       token = AppRequest.recent.first.token
       patch build_request_path(token), params: { app_request: { subdomain: name } }
