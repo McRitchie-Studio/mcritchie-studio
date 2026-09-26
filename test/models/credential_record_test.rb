@@ -25,7 +25,11 @@ class CredentialRecordTest < ActiveSupport::TestCase
       "API secret key" => "sk-ant-#{'x' * 30}",
       "AWS access key id" => "AKIA#{'B' * 16}",
       "Slack token" => "xoxb-#{'1' * 12}",
-      "private key" => "-----BEGIN OPENSSH PRIVATE KEY-----"
+      "private key" => "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "Stripe key" => "sk_live_#{'C' * 24}",
+      "Stripe webhook secret" => "whsec_#{'D' * 24}",
+      "Heroku token" => "HRKU-#{'e' * 30}",
+      "credential in a URL" => "https://rpc.example.test/?api-key=#{'f' * 20}"
     }
     assert_equal CredentialRecord::SECRET_SHAPES.keys.sort, samples.keys.sort, "every shape needs a sample here"
 
@@ -40,6 +44,7 @@ class CredentialRecordTest < ActiveSupport::TestCase
 
   test "prose that merely mentions a token kind passes" do
     assert record(notes: "The ops_ token lives in ~/.zprofile.admin; rotate the sk- key yearly.").valid?
+    assert record(url: "https://dashboard.stripe.com/apikeys?tab=live").valid?, "a dashboard URL is not a key"
   end
 
   test "the service must be a software in config/workspace_icons.yml, so every row has an icon" do
