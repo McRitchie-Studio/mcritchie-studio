@@ -100,7 +100,9 @@ class AppRequest < ApplicationRecord
       self.queued_at = Time.current
       save!
       task = Task.create!(
-        title: "Build #{host}",
+        # Four words whatever the name: the board requires a 3-5 word title, and
+        # a hyphenated subdomain stays one word.
+        title: "Build Launch App #{subdomain}",
         stage: "designed",
         priority: 1,
         description: "Launch-tier app requested through /build by #{user&.email || 'unknown'}.",

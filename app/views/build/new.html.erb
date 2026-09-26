@@ -1,0 +1,75 @@
+<% content_for :title, "Build an app · McRitchie Studio" %>
+
+<section class="max-w-3xl mx-auto px-4 pt-16 pb-24" data-test="build-page">
+  <header class="text-center mb-8">
+    <h1 class="text-3xl sm:text-5xl font-bold text-heading tracking-tight mb-3">What do you want to build?</h1>
+    <p class="text-muted max-w-xl mx-auto">
+      Describe your app. Our agents build it on the McRitchie Studio stack and host it free at
+      <span class="font-mono text-body">yourapp.mcritchie.studio</span>.
+    </p>
+  </header>
+
+  <% if @draft %>
+    <p class="mb-4 text-center text-sm text-muted" data-test="resume-draft">
+      You have an unfinished request.
+      <%= link_to "Pick up where you left off", build_request_path(@draft.token), class: "text-primary hover:underline" %>
+    </p>
+  <% end %>
+
+  <%# A chat-style composer. Enter sends; Shift+Enter is a new line. The box grows
+      with the text up to a cap, then scrolls. Without JavaScript it is a plain
+      form with a submit button, and still works. %>
+  <%= form_with model: AppRequest.new, url: build_path, method: :post, local: true,
+                data: { test: "build-form" },
+                html: { "x-data": "{ prompt: '', sending: false, grow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 320) + 'px' } }",
+                        "@submit": "if (!prompt.trim()) { $event.preventDefault(); return } sending = true" } do |f| %>
+    <div class="relative rounded-3xl border border-subtle bg-surface shadow-lg focus-within:border-primary transition-colors">
+      <%= f.label :prompt, "Describe your app", class: "sr-only" %>
+      <%= f.text_area :prompt, rows: 3, maxlength: AppRequest::PROMPT_LIMIT, required: true, autofocus: true,
+            placeholder: "A booking site for my dog-grooming business, with a calendar and text reminders…",
+            class: "block w-full resize-none bg-transparent px-5 pt-5 pb-16 text-base text-heading placeholder:text-muted focus:outline-none",
+            "x-model": "prompt", "x-ref": "prompt",
+            "@input": "grow($el)",
+            "@keydown.enter": "if (!$event.shiftKey) { $event.preventDefault(); if (prompt.trim()) { sending = true; $el.form.requestSubmit() } }",
+            data: { test: "build-prompt" } %>
+      <div class="absolute bottom-3 left-5 right-3 flex items-center justify-between gap-3">
+        <span class="text-xs text-muted hidden sm:inline">Enter to send · Shift+Enter for a new line</span>
+        <button type="submit" class="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white disabled:opacity-40"
+                :disabled="!prompt.trim() || sending" aria-label="Send" data-test="build-send">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 19V5M5 12l7-7 7 7"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="mt-5 flex flex-wrap justify-center gap-2" data-test="build-examples" x-data>
+    <% [
+      "A waitlist page for my new product, with email signups",
+      "A client portal where customers upload documents",
+      "A league site with schedules, scores and standings",
+      "An internal dashboard for tracking job quotes"
+    ].each do |example| %>
+      <button type="button" class="rounded-full border border-subtle px-3 py-1.5 text-sm text-body hover:border-primary hover:text-primary"
+              @click="const box = document.querySelector('[data-test=build-prompt]'); box.value = <%= example.to_json %>; box.dispatchEvent(new Event('input')); box.focus()">
+        <%= example %>
+      </button>
+    <% end %>
+  </div>
+
+  <ol class="mt-14 grid gap-4 sm:grid-cols-3 text-sm" aria-label="How it works">
+    <li class="rounded-xl bg-surface-alt p-4">
+      <p class="font-semibold text-heading mb-1">1. Describe it</p>
+      <p class="text-muted">Say what the app is for and who uses it. Plain words are fine.</p>
+    </li>
+    <li class="rounded-xl bg-surface-alt p-4">
+      <p class="font-semibold text-heading mb-1">2. Claim your name</p>
+      <p class="text-muted">Create a free account and pick <span class="font-mono">yourapp</span>.mcritchie.studio.</p>
+    </li>
+    <li class="rounded-xl bg-surface-alt p-4">
+      <p class="font-semibold text-heading mb-1">3. We build it</p>
+      <p class="text-muted">Our agents build it on our stack. Follow its progress on your request page.</p>
+    </li>
+  </ol>
+</section>
