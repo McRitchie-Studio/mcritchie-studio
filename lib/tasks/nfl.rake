@@ -28,11 +28,44 @@ namespace :nfl do
     skipped_complete = 0
     skipped_no_source = 0
     failed = 0
+    misfiled = 0
 
     candidates.find_each do |athlete|
       break if limit && (cached + failed) >= limit
 
       considered += 1
+
+      # THE FOLDER, RESOLVED BEFORE THE SKIP BRANCHES rather than at the upload
+      # call site below, because the drift counter needs it on EVERY candidate --
+      # including the thousands this task is about to walk past as complete. It is
+      # a pure string built from a column already loaded, so hoisting it costs
+      # nothing, and asking for it later would have cost the count.
+      #
+      # THE TEAM IS A FOLDER NAME, NOT A PRECONDITION. This task used to resolve
+      # an NFL team through person.contracts and `next` past any athlete without
+      # one, discarding the athlete over a cosmetic path segment it could have
+      # defaulted. Athlete#headshot_key_prefix is now the only writer of this
+      # string, shared with Nflverse::SeedPlayers, which had the fallback all
+      # along.
+      key_prefix = athlete.headshot_key_prefix
+
+      rows = athlete.image_caches.select { |c| c.purpose == "headshot" }
+
+      # THE COMPLETENESS CHECK BELOW CANNOT SEE A WRONG KEY, and that blindness is
+      # why 2,043 athletes are stuck: a hand-rolled backfill derived the folder
+      # from the EMPTY `contracts` table and filed every one of them under
+      # `free-agents/`, rostered players included. All three variants are PRESENT,
+      # so this task skips every one of them as complete -- forever, while printing
+      # a clean summary. The drift is therefore COUNTED off the STORED key versus
+      # the COMPUTED prefix, the only comparison that can see it, and the summary
+      # names the task that repairs it.
+      #
+      # A WARNING, NEVER AN ABORT. A stale folder name still serves every avatar
+      # correctly -- ImageCache#url reads the stored key and nothing rebuilds it
+      # from the prefix -- so this is a taxonomy defect, not an outage, and
+      # reddening a rebuild over a cosmetic path segment is how an operator learns
+      # to stop reading the line.
+      misfiled += 1 if rows.any? { |c| Athletes::RekeyHeadshots.misfiled?(c, key_prefix) }
 
       # "ALREADY DONE" HAS TO INCLUDE "original". Studio::ImageCache.cache!
       # stores the unmodified source as variant "original" PLUS one variant per
@@ -40,7 +73,7 @@ namespace :nfl do
       # check used to call it complete, which both under-counts the work left and
       # corrupts the `needed` denominator the verdict below is computed from.
       # upload_coach_headshots already spells it this way.
-      have = athlete.image_caches.select { |c| c.purpose == "headshot" }.map(&:variant)
+      have = rows.map(&:variant)
       if (["original"] + widths.map(&:to_s) - have).empty?
         skipped_complete += 1
         next
@@ -55,14 +88,6 @@ namespace :nfl do
         skipped_no_source += 1
         next
       end
-
-      # THE TEAM IS A FOLDER NAME, NOT A PRECONDITION. This task used to resolve
-      # an NFL team through person.contracts and `next` past any athlete without
-      # one, discarding the athlete over a cosmetic path segment it could have
-      # defaulted. Athlete#headshot_key_prefix is now the only writer of this
-      # string, shared with Nflverse::SeedPlayers, which had the fallback all
-      # along.
-      key_prefix = athlete.headshot_key_prefix
 
       begin
         Studio::ImageCache.cache!(
@@ -103,6 +128,14 @@ namespace :nfl do
     puts "skipped (already done): #{skipped_complete}"
     puts "skipped (no image src): #{skipped_no_source}"
     puts "failed:                 #{failed}"
+    puts "misfiled (stale key):   #{misfiled}"
+
+    if misfiled.positive?
+      warn "nfl:upload_headshots: #{misfiled} athletes carry headshot rows filed under a stale " \
+           "key. This task cannot repair them -- it grades \"already done\" by VARIANT PRESENCE " \
+           "and never by key, so it skips every one of them as complete. Run " \
+           "`rake nfl:rekey_headshots` to re-file them under Athlete#headshot_key_prefix."
+    end
 
     # THE PER-ATHLETE RESCUE ABOVE IS RIGHT; ENDING ON `puts` WAS NOT. One dead
     # ESPN headshot URL must not cost the other thousand their upload, so each
@@ -172,6 +205,105 @@ namespace :nfl do
     elsif unattempted.positive?
       warn "nfl:upload_headshots: #{unattempted} of #{needed} athletes needing a headshot were " \
            "skipped without an attempt (#{skipped_no_source} had no espn_headshot_url)"
+    end
+  end
+
+  desc "Re-file cached athlete headshots under Athlete#headshot_key_prefix where the stored key disagrees. Idempotent. REKEY_LIMIT=N REKEY_KEEP_ORPHANS=1"
+  task rekey_headshots: :environment do
+    # A SEPARATE TASK, NOT A MODE OF nfl:upload_headshots, and the split is
+    # deliberate. The two jobs differ in what they do and in how a bad run is
+    # graded: `upload_headshots` CREATES missing variants by fetching ESPN, and its
+    # two verdicts read `cached`/`failed`/`needed` -- counters that describe upload
+    # attempts. A re-key MOVES bytes that are already in the bucket and fetches
+    # nothing, so folding it in would mean feeding a second population into those
+    # denominators, which is precisely the hand-counted-verdict hole both of those
+    # rules carry a comment block about. What DOES belong in the other task is the
+    # DETECTION -- it now counts misfiled athletes and names this task -- because
+    # the reason 2,043 rows are stuck is that the rebuild could not see them.
+    #
+    # REKEY_LIMIT: stop after N re-keyed athletes, so a ~2,000-athlete repair can
+    # be taken in inspectable waves. The task is idempotent, so the next wave
+    # resumes exactly where this one stopped; nothing records progress because
+    # nothing has to -- the ImageCache rows ARE the progress.
+    #
+    # REKEY_KEEP_ORPHANS=1: repoint the rows and LEAVE the old objects where they
+    # are. The default deletes them, and only ever after the new object is written
+    # AND the row has been repointed onto it; Athletes::RekeyHeadshots documents
+    # why that order is the whole design. Set this when you want to eyeball the
+    # result before anything is destroyed.
+    limit = ENV["REKEY_LIMIT"].presence&.to_i
+    keep_orphans = ENV["REKEY_KEEP_ORPHANS"] == "1"
+
+    stats = Athletes::RekeyHeadshots.new(limit: limit, delete_orphans: !keep_orphans).call
+
+    # THE SAME THREE NUMBERS nfl:upload_headshots GRADES ITSELF ON, and derived
+    # the same way for the same reason.
+    #
+    #   needed      candidates whose stored key disagreed  (considered - already_filed)
+    #   attempted   candidates this run actually moved     (rekeyed + failed)
+    #   unattempted needed, and walked past anyway         (needed - attempted)
+    #
+    # `unattempted` is DERIVED, never accumulated. Today nothing can land in it:
+    # there is no `next` between the staleness check and the move, so it is a NET
+    # for a skip branch added later rather than a path this run can take. Stated
+    # plainly because a guard that reads as load-bearing and is not gets deleted
+    # by the next person who measures it.
+    considered  = stats[:considered]
+    already     = stats[:already_filed]
+    rekeyed     = stats[:rekeyed]
+    failed      = stats[:failed]
+    needed      = considered - already
+    attempted   = rekeyed + failed
+    unattempted = needed - attempted
+
+    puts ""
+    puts "re-keyed:               #{rekeyed}"
+    puts "already filed:          #{already}"
+    puts "objects copied:         #{stats[:objects_copied]}"
+    puts "objects already there:  #{stats[:objects_already_present]}"
+    puts "orphans deleted:        #{stats[:orphans_deleted]}"
+    puts "failed:                 #{failed}"
+
+    # GRADED ON THE MAJORITY, exactly as the uploader is. One unreadable object is
+    # an afternoon S3 is having; more failures than successes is the mover not
+    # working, which from here is what a credential or permission failure looks
+    # like -- every attempt fails, so `rekeyed` is 0 and `failed` is everything.
+    # A tie at zero is nothing to do, not a failure, so this cannot fire on it.
+    if failed > rekeyed
+      warn "nfl:rekey_headshots: #{failed} of #{attempted} attempted re-keys failed"
+      abort "nfl:rekey_headshots failed #{failed} of #{attempted} attempted re-keys " \
+            "(re-keyed #{rekeyed}) -- read the [!] lines above, which name the cause per " \
+            "athlete. Across MANY attempts this is usually S3 access: check " \
+            "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION, and that the key may " \
+            "GetObject, PutObject and DeleteObject on the bucket. NO AVATAR WAS LOST: a " \
+            "failed athlete's rows still point at the objects they always did."
+    end
+
+    if needed.positive? && attempted.zero?
+      warn "nfl:rekey_headshots: attempted 0 of #{needed} misfiled athletes"
+      abort "nfl:rekey_headshots found #{needed} misfiled athletes and moved none of them " \
+            "WITHOUT trying, so this is the task declining its job rather than S3 refusing " \
+            "the copy. A skip count that equals the misfiled count is never a successful run."
+    elsif unattempted.positive?
+      warn "nfl:rekey_headshots: #{unattempted} of #{needed} misfiled athletes were skipped " \
+           "without an attempt"
+    end
+
+    # THE ORDERING'S OWN SAFETY CATCH, REPORTED. An old key still referenced by an
+    # ImageCache row is never deleted, and reaching that branch means the repoint
+    # did not land where this expected -- worth an operator's eye even though the
+    # outcome (an object kept) is the safe one.
+    if stats[:orphans_held].positive?
+      warn "nfl:rekey_headshots: kept #{stats[:orphans_held]} old object(s) because an " \
+           "ImageCache row still references them -- nothing was deleted out from under a " \
+           "live row, but the repoint did not land as expected. Re-run to retry."
+    end
+
+    # AN UNDELETED ORPHAN IS INERT: no row points at it, so it serves nothing and
+    # costs storage. Reported, never fatal -- the repair itself succeeded.
+    if stats[:orphans_failed].positive?
+      warn "nfl:rekey_headshots: #{stats[:orphans_failed]} old object(s) could not be deleted. " \
+           "They are unreferenced, so they serve nothing; re-run to retry the cleanup."
     end
   end
 
