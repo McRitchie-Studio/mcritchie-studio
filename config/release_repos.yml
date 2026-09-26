@@ -653,20 +653,54 @@ apps:
     # McRitchie-Studio/cyvasse was created with main + accepted + release, so it
     # is three-rung from birth and the rung guard holds it to that.
     #
-    # NO prod_deploy, NO test_cmd, NO qa_test_cmd, NO qa_environments entry —
-    # DELIBERATE, and each one owes its own arrival:
-    #   * prod_deploy: the Heroku app `cyvasse` does not exist yet (epic piece 8).
-    #     An app with no target is a first-class case — ship advances main and
-    #     records "no production deploy target". Do NOT declare a git_push_heroku
-    #     adapter before the app is provisioned; declare it WITH piece 8.
-    #   * test_cmd / qa_test_cmd: the repo has no ci.yml yet (piece 1 scaffolds
-    #     it). When it lands, register CI's full suite verbatim at BOTH gates, as
-    #     mcritchie-industries does — git_push_heroku runs no test step, so the
-    #     registered command IS the last gate before prod.
-    #   * qa_evidence stays REQUIRED (the default). With no QA environment a
-    #     cyvasse member cannot earn QA evidence, so a sweep holds it at the QA
-    #     stamp until piece 8 wires `cyvasse-qa`. That hold is the honest state;
-    #     do not declare it exempt — it will be QA-deployable.
+    # PRODUCTION: the Heroku app `cyvasse` (company account, heroku-26,
+    # Postgres essential-0), wired 2026-09-25 by wire-cyvasse-production-deploy.
+    # git_push_heroku, modelled on mcritchie-industries. Migrations ride the
+    # repo's Procfile `release: bin/rails db:migrate`, so no post_deploy_cmd.
+    #
+    # smoke_url is the herokuapp host, NOT cyvasse.mcritchie.studio, on purpose:
+    # the custom domain is attached with ACM but its CNAME is Alex's Squarespace
+    # step, and until that record resolves a smoke against it would abort the
+    # ship AFTER the push. The herokuapp host always resolves, and cyvasse's
+    # production.rb leaves host authorization off, so /up answers on it. Switch
+    # this to https://cyvasse.mcritchie.studio once that host serves /up 200.
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/cyvasse.git
+      branch: main
+      smoke_url: https://cyvasse-614ed5f7e99d.herokuapp.com
+    #
+    # test_cmd is CI's `test` job suite, VERBATIM (git_push_heroku has NO test
+    # step, so this IS the last gate before production). repos_test.rb holds it
+    # against cyvasse's own ci.yml. CI's `static` and `javascript` jobs are not
+    # lost: the gate reads the whole CI workflow's verdict on the frozen SHA.
+    test_cmd: bin/rails db:test:prepare test test:system
+    #
+    # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
+    # EXEMPT. Read this before copying it to another app.
+    #
+    # This exemption is NOT turf-vault's. turf-vault is exempt because QA does not
+    # APPLY to it (no dyno, no URL, no deploy of any kind). Cyvasse is a deployable
+    # Rails app: a QA copy could exist. It is exempt on COST, by OPERATOR DECISION:
+    #
+    #   Alex, 2026-09-25 (verbatim): "No cyvasse-qa unless there is a free teir we
+    #   can use." Heroku has no free tier (a QA copy is ~$12/mo), so there is no
+    #   `cyvasse-qa` app.
+    #
+    # WHAT THAT COSTS, said plainly: a cyvasse change reaches production without a
+    # human-reviewable QA deploy. Its gates are CI (every rung, full suite) and
+    # review. Without this key a sweep would hold every cyvasse member at the QA
+    # stamp forever — no run can evidence a QA env that does not exist — so the
+    # choice is exempt-by-decision or never ship.
+    #
+    # THE GUARD STAYS FAIL-CLOSED for every other repo. repos_test.rb pins the
+    # exempt set to exactly turf-vault + cyvasse, and requires every exempt repo
+    # that HAS a prod_deploy (i.e. could have had a QA copy) to be on its
+    # operator-decision list with the decision cited. The day cyvasse gains a
+    # qa_test_cmd or a qa_environments entry, the "exempt repo really has no QA
+    # target" test goes red and this key must come out. The exemption is QA-only:
+    # the `shipped` stamp still needs cyvasse's real release -> main record.
+    qa_evidence: exempt
   tax-studio:
     # PLANNED — no repo yet. The guard asserts no checkout exists, so this
     # exemption expires the day one does.
