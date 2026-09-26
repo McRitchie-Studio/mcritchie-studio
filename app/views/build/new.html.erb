@@ -22,12 +22,15 @@
   <script>
     window.buildComposer = function (signedIn) {
       return {
-        prompt: '', sending: false,
+        prompt: '', sending: false, draft: null,
         grow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 320) + 'px' },
         async send(event) {
           if (!this.prompt.trim() || this.sending) { event.preventDefault(); return }
           if (signedIn) { this.sending = true; return }
           event.preventDefault();
+          // Enter again on the SAME prompt reopens sign-in for the draft already
+          // saved, instead of saving a duplicate.
+          if (this.draft && this.draft.prompt === this.prompt.trim()) { this.openAuth(this.draft.path); return }
           this.sending = true;
           const form = event.target;
           try {
@@ -37,14 +40,18 @@
             });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error || 'Could not save your description');
-            Alpine.store('modals').open('auth', {
-              returnTo: data.path,
-              title: 'Create your free account',
-              subtitle: "Your description is saved. Sign in and you'll pick your app's name next."
-            });
+            this.draft = { prompt: this.prompt.trim(), path: data.path };
+            this.openAuth(data.path);
           } catch (e) {
             form.submit(); // the plain-HTML path: the draft page, then sign-in
           } finally { this.sending = false }
+        },
+        openAuth(path) {
+          Alpine.store('modals').open('auth', {
+            returnTo: path,
+            title: 'Create your free account',
+            subtitle: "Your description is saved. Sign in and you'll pick your app's name next."
+          });
         }
       }
     }
@@ -92,6 +99,28 @@
       </button>
     <% end %>
   </div>
+
+  <% if @examples.any? %>
+    <section class="mt-14" aria-labelledby="built-with" data-test="build-gallery">
+      <h2 id="built-with" class="text-sm font-semibold uppercase tracking-wider text-muted mb-4 text-center">Built with McRitchie Studio</h2>
+      <ul class="grid gap-3 sm:grid-cols-2">
+        <% @examples.each do |example| %>
+          <li>
+            <%= link_to example.url, target: "_blank", rel: "noopener",
+                  class: "group flex h-full items-start gap-3 rounded-2xl border border-subtle bg-surface p-4 hover:border-primary transition-colors",
+                  data: { test: "build-example" } do %>
+              <span class="text-2xl leading-none" aria-hidden="true"><%= example.emoji %></span>
+              <span class="min-w-0">
+                <span class="block font-semibold text-heading group-hover:text-primary"><%= example.name %></span>
+                <span class="block font-mono text-xs text-muted truncate"><%= URI.parse(example.url).host rescue example.url %></span>
+                <span class="block text-sm text-body mt-1"><%= example.blurb %></span>
+              </span>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+  <% end %>
 
   <ol class="mt-14 grid gap-4 sm:grid-cols-3 text-sm" aria-label="How it works">
     <li class="rounded-xl bg-surface-alt p-4">

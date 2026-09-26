@@ -170,6 +170,29 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='app-request']", 2
   end
 
+  test "an admin can queue several apps; each is a showcase and the list can filter them" do
+    log_in_as users(:alex)
+    %w[prisoners-dilemma weekly-lock].each do |name|
+      post build_path, params: { app_request: { prompt: "Rebuild #{name}" } }
+      token = AppRequest.recent.first.token
+      patch build_request_path(token), params: { app_request: { subdomain: name } }
+      assert AppRequest.find_by(token: token).queued?, "#{name} should queue for an admin"
+    end
+
+    get build_requests_path(status: "showcase")
+    assert_select "[data-test='app-request']", 2
+    assert_select "[data-test='app-request-showcase']", 2
+  end
+
+  test "the /build page shows showcase apps once they are live" do
+    live = AppRequest.create!(prompt: "A prisoner's dilemma tournament. Play against strategies.", user: users(:alex)).queue!("prisoners-dilemma")
+    live.update!(status: "live")
+
+    get build_path
+    assert_select "[data-test='build-example'][href='https://prisoners-dilemma.mcritchie.studio']", text: /Prisoners Dilemma/
+    assert_select "[data-test='build-example']", text: /A prisoner's dilemma tournament\./
+  end
+
   test "the availability check answers in JSON" do
     get build_check_path, params: { subdomain: "WWW" }
     assert_equal({ "subdomain" => "www", "available" => false, "reason" => "That name is reserved." }, response.parsed_body)

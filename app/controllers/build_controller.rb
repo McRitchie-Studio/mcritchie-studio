@@ -23,17 +23,20 @@ class BuildController < ApplicationController
   # their own tab so the list leads with real requests.
   def index
     @counts = AppRequest.group(:status).count
-    @status = params[:status].presence_in(AppRequest::STATUSES + [ "all" ]) || "active"
+    @showcase_count = AppRequest.where(showcase: true).count
+    @status = params[:status].presence_in(AppRequest::STATUSES + %w[all showcase]) || "active"
     scope = AppRequest.includes(:user).recent
     @requests = case @status
                 when "all" then scope
                 when "active" then scope.where(status: AppRequest::HOLDING)
+                when "showcase" then scope.where(showcase: true)
                 else scope.where(status: @status)
                 end
   end
 
   def new
     @draft = logged_in? ? AppRequest.where(user: current_user, status: "draft").recent.first : nil
+    @examples = BuildGallery.examples
   end
 
   def create

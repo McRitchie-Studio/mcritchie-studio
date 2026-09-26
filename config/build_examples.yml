@@ -1,0 +1,15 @@
+# "Built with McRitchie Studio" — the example apps /build shows under its prompt.
+#
+# Two sources feed the gallery (BuildGallery):
+#   1. this list — apps already live that did NOT come through /build
+#      (built before it existed);
+#   2. every SHOWCASE app request that reaches `live` — automatically, no edit
+#      needed. A customer's live app is never listed publicly from here.
+#
+# Only list an app that is LIVE at its URL right now. A gallery of placeholders
+# reads worse than an empty one.
+examples:
+  - name: Cyvasse
+    url: https://cyvasse.mcritchie.studio
+    emoji: "🐉"
+    blurb: The hex strategy board game from Alex's first app, rebuilt as a live multiplayer game.
