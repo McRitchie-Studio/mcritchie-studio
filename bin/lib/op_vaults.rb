@@ -15,7 +15,7 @@
 #
 # THE TRAP THIS ENCODES, and the reason the mapping is per-IDENTITY rather than
 # one global vault name. `studio-agents` holds github.mcritchie-agent but NOT
-# github.mcritchie-deployer. A blind repoint of everything to the reachable
+# github.mcritchie-admin. A blind repoint of everything to the reachable
 # vault turns the AGENT lane green immediately — builds, PRs, merges — and
 # breaks PRODUCTION DEPLOYS hours later, with the cause far behind the symptom.
 # The two identities are separated on purpose: agent builds and merges,
@@ -211,7 +211,7 @@ module OpVaults
 
   def source_commands(name, spec)
     lines = ["    source #{spec[:profile]}"]
-    lines << "    export GH_APP_ITEM=github.mcritchie-deployer" unless name.to_sym == DEFAULT_LANE
+    lines << "    export GH_APP_ITEM=github.mcritchie-admin" unless name.to_sym == DEFAULT_LANE
     lines.join("\n")
   end
 

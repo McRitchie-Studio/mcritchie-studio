@@ -132,7 +132,7 @@ class GhAuthRetryTest < Minitest::Test
   def test_a_ship_lane_recovers_as_the_deployer_not_the_agent
     Dir.mktmpdir do |dir|
       broker = echoing_broker(dir)
-      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-deployer" }
+      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-admin" }
 
       assert_equal "deployer", GhAuthRetry.mint(env: env),
                    "a ship session's recovery must not re-authenticate as the PR-writing App"
@@ -151,7 +151,7 @@ class GhAuthRetryTest < Minitest::Test
   def test_an_explicit_identity_still_outranks_the_lane_export
     Dir.mktmpdir do |dir|
       broker = echoing_broker(dir)
-      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-deployer" }
+      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-admin" }
 
       assert_equal "agent", GhAuthRetry.mint(env: env, identity: "agent"),
                    "a caller that genuinely needs the PR-writing App names it and wins"
@@ -164,7 +164,7 @@ class GhAuthRetryTest < Minitest::Test
   def test_an_explicit_but_empty_identity_mints_nothing_and_explains
     Dir.mktmpdir do |dir|
       broker = echoing_broker(dir)
-      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-deployer" }
+      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-admin" }
 
       assert_nil GhAuthRetry.mint(env: env, identity: ""),
                  "an empty identity must not inherit the lane export"

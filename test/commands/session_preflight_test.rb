@@ -351,7 +351,7 @@ def test_gh_auth_lane_is_read_from_gh_app_item
   out, err, status = run_preflight(
     "--file", task, "--no-install-docs", "--no-fetch", "--json",
     env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}",
-           "GH_APP_ITEM" => "github.mcritchie-deployer" }
+           "GH_APP_ITEM" => "github.mcritchie-admin" }
   )
   assert status.success?, "#{out}\n#{err}"
 

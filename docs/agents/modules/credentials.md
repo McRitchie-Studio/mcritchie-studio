@@ -84,7 +84,7 @@ rather than fixing a machine it is entitled to fix.
 
 So state the other half. **`production-deploy` is an admin act**, and the agent
 running it holds the `deployer` lane — the admin token and the
-`github.mcritchie-deployer` identity — exactly as a build lane holds the agent
+`github.mcritchie-admin` identity — exactly as a build lane holds the agent
 one. Admin credentials are withheld from **ordinary shells**, not from the admin
 lanes.
 
@@ -133,7 +133,7 @@ read in a shell that HAS sourced `~/.zprofile.admin` still authenticates as the
 agent:
 
 ```text
-$ op item get github.mcritchie-deployer --vault studio-agents-admin --fields label=app-id
+$ op item get github.mcritchie-admin --vault studio-agents-admin --fields label=app-id
 [ERROR] "studio-agents-admin" isn't a vault in this account.
 ```
 
@@ -146,7 +146,7 @@ same by hand for a direct read:
 
 ```bash
 OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN" \
-  op item get github.mcritchie-deployer --vault studio-agents-admin \
+  op item get github.mcritchie-admin --vault studio-agents-admin \
   --fields label=app-id >/dev/null && echo "admin vault: readable"
 ```
 
@@ -206,12 +206,12 @@ rather than a personal token.
 
 ### The items
 
-The two GitHub App items are split across the two vaults — `github.mcritchie-agent` in `studio-agents`, `github.mcritchie-deployer` in `studio-agents-admin` — see the two-lane table above. A ship session therefore runs `source ~/.zprofile.admin` BEFORE `export GH_APP_ITEM=github.mcritchie-deployer`; without the admin token the deployer read refuses, by design.
+The two GitHub App items are split across the two vaults — `github.mcritchie-agent` in `studio-agents`, `github.mcritchie-admin` in `studio-agents-admin` — see the two-lane table above. A ship session therefore runs `source ~/.zprofile.admin` BEFORE `export GH_APP_ITEM=github.mcritchie-admin`; without the admin token the deployer read refuses, by design.
 
 | Identity (1Password item) | Lane | Grants |
 |---------------------------|------|--------|
 | `github.mcritchie-agent` (**default**) | build / review | Contents write + **Pull requests write** + Checks read + Actions write + Workflows write + Administration write + Metadata/Statuses read |
-| `github.mcritchie-deployer` (`export GH_APP_ITEM=github.mcritchie-deployer`) | ship | Contents write + Actions write + Checks read + Secrets write + Administration write + Metadata/Statuses read. **No `pull_requests` grant at all** — the deployer cannot open or merge PRs by design |
+| `github.mcritchie-admin` (`export GH_APP_ITEM=github.mcritchie-admin`) | ship | Contents write + Actions write + Checks read + Secrets write + Administration write + Metadata/Statuses read. **No `pull_requests` grant at all** — the deployer cannot open or merge PRs by design |
 
 Grants above are the installations' live permission sets, read 2026-08-12 from
 `GET /app/installations`. Re-read them there rather than trusting this table if a

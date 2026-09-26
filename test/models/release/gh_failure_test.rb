@@ -123,7 +123,7 @@ class Release::GhFailureTest < ActiveSupport::TestCase
 
   # `not accessible by integration` = the token is LIVE and the INSTALLATION lacks
   # the grant. Measured 2026-08-12 against both installations: mcritchie-agent has
-  # pull_requests:write; mcritchie-deployer has NO pull_requests grant at all. And
+  # pull_requests:write; mcritchie-admin has NO pull_requests grant at all. And
   # bin/gh-app-git-credential reads GH_APP_ITEM, so re-minting under a leftover
   # ship-lane export mints the SAME powerless identity — forever.
   DEPLOYER_OUTPUT = "failed to create pull request: GraphQL: Resource not accessible by " \
@@ -135,7 +135,7 @@ class Release::GhFailureTest < ActiveSupport::TestCase
     assert_includes msg, "unset GH_APP_ITEM", "the ONE remedy that breaks the loop"
     assert_includes msg, "RE-MINTING WILL NOT FIX",
                     "the default advice is wrong here and must be contradicted out loud"
-    assert_includes msg, "github.mcritchie-deployer"
+    assert_includes msg, "github.mcritchie-admin"
     assert_includes msg, "pull_requests"
     assert_includes msg, DEPLOYER_OUTPUT, "gh's words still lead"
   end
