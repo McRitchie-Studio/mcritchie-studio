@@ -101,7 +101,10 @@ class RotateHerokuCiKeyTest < Minitest::Test
     assert_equal 1, status.exitstatus, "#{out}\n#{err}"
     assert_match(/^rotate-heroku-ci-key: .*JSON::ParserError/, err, "name the failure class")
     refute_match(/\.rb:\d+:in /, err, "no stack trace")
-    assert_equal 1, err.lines.size, "one line, not a report: #{err}"
+    refute_match(/^\s+from /, err, "no stack trace")
+    # Counted by the script's own prefix: a Bundler/RubyGems host can add unrelated
+    # interpreter warnings to stderr, which are not this script's output.
+    assert_equal 1, err.lines.grep(/rotate-heroku-ci-key/).size, "one line, not a report: #{err}"
     assert_equal ["GET"], @requests.map(&:first).uniq, "a failed preflight mutates nothing"
     assert_no_secret_leaked(out, err)
   end
