@@ -3,7 +3,22 @@
     floor rows Appearances::ReferenceSet builds in memory, so the gallery cannot
     drift from the list the identity was built from.
 
-    Locals: photo (AppearanceReferencePhoto, possibly unsaved). %>
+    Locals:
+      photo       AppearanceReferencePhoto, possibly unsaved.
+      calibration optional. Truthy on the scouting page only: adds the mint
+                  evidence chip, the score reasoning, and the operator's
+                  keep/drop control. The character-model page passes nothing and
+                  renders exactly as it did before this local existed.
+      person_name optional. Required by the score reasoning, which reports
+                  whether the title names the person.
+
+    READ THROUGH local_assigns RATHER THAN A BARE NAME. An undefined local raises
+    in a partial, and these two are absent on the look page by design, so the
+    presence check has to be a Hash lookup. It is deliberately NOT block_given? —
+    inside a partial that inherits the layout's own yield and is true when nobody
+    passed a block here at all. %>
+<% calibration = local_assigns[:calibration] %>
+<% person_name = local_assigns[:person_name] %>
 <% chip = reference_source_chip(photo) %>
 <% host = reference_photo_host(photo) %>
 <%# data-test / data-source / data-chosen are the handles the component and e2e
@@ -49,7 +64,14 @@
           The type utilities are ON THE IMG on purpose — a broken image renders its alt
           in the img element's own font, so without them the fallback text sets at body
           size and spills out of a thumbnail-sized tile. %>
-      <img src="<%= photo.image_url %>" loading="lazy" referrerpolicy="no-referrer"
+      <%# THE THUMBNAIL IS RENDERED AND THE ORIGINAL IS LINKED, which is not a
+          micro-optimisation but the difference between a gallery that paints and one
+          that does not. MEASURED 2026-09-26: twenty Commons originals at 1-3 MB each
+          earn an HTTP 429 from the third one onward, and a third of the tiles came up
+          as grey alt-text. `display_url` falls back to the original wherever no
+          thumbnail was reported, so a Serper row and every row filed before that column
+          existed still render. %>
+      <img src="<%= photo.display_url %>" loading="lazy" referrerpolicy="no-referrer"
            alt="<%= photo.title.presence || host || "reference photo" %>"
            class="w-full h-full object-cover text-3xs text-muted leading-tight p-1">
     </a>
@@ -108,6 +130,60 @@
 
     <% if photo.width.present? && photo.height.present? %>
       <p class="text-3xs text-muted mt-auto"><%= photo.width %>x<%= photo.height %></p>
+    <% end %>
+
+    <% if calibration %>
+      <%# THE SCOUTING BLOCK. Everything above is the tile the look page shows; this
+          is what turns it into something arguable. Three additions, in the order the
+          operator reads them: can it mint, why did it score what it scored, and what
+          do YOU think. %>
+      <div class="pt-1.5 mt-1.5 border-t border-subtle space-y-1.5">
+        <% if photo.mime_type.present? %>
+          <%# THE ARCHIVE'S OWN ADMISSION OF WHAT THE FILE IS. On a real Commons
+              answer more than half the rows report a document mime type, and this is
+              the cheapest place the operator can see that without opening anything. %>
+          <p class="text-3xs text-muted font-mono truncate" title="Reported by the provider">
+            <%= photo.mime_type %>
+          </p>
+        <% end %>
+
+        <% evidence = mint_evidence(photo) %>
+        <% if evidence %>
+          <span class="badge text-3xs <%= mint_evidence_classes(evidence[:tone]) %>"
+                title="<%= evidence[:title] %>">
+            <%= evidence[:label] %>
+          </span>
+        <% end %>
+
+        <% reasons = photo_merit_reasons(photo, person_name) %>
+        <% if reasons.any? %>
+          <div class="flex flex-wrap gap-1" data-test="merit-reasons">
+            <% reasons.each do |reason| %>
+              <span class="badge text-3xs <%= merit_reason_classes(reason[:tone]) %>">
+                <%= reason[:label] %>
+              </span>
+            <% end %>
+          </div>
+        <% end %>
+
+        <% if photo.persisted? %>
+          <%# THE OPERATOR'S CONTROL, and it renders only on a PERSISTED row.
+              Appearances::ReferenceSet builds the two floor rows in memory, so they
+              have no slug to address and no row to write to. Offering a button that
+              could not save is the one thing worse than not offering one. %>
+          <%= render "photo_scouting/verdict_control", photo: photo %>
+        <% else %>
+          <%# A FLOOR ROW SAYS WHY IT HAS NO CONTROL rather than just lacking one.
+              Our mirrored headshot and the URL the operator typed are INPUTS we
+              control, not things a search found, so they are not part of the set being
+              calibrated — and they are built in memory, so there is nothing to write a
+              verdict to either way. An absent control with no explanation reads as a
+              bug on the one tile that leads the picks gallery. %>
+          <p data-test="not-calibratable" class="text-3xs text-muted leading-tight">
+            not from the search &mdash; nothing to judge
+          </p>
+        <% end %>
+      </div>
     <% end %>
   </figcaption>
 </figure>

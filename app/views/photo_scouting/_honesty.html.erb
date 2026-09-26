@@ -1,0 +1,89 @@
+<%# WHAT THIS PAGE IS NOT TELLING YOU — stated on the page, at the top, before the
+    galleries.
+
+    THIS BLOCK IS THE POINT OF THE WHOLE SURFACE. The operator is being asked to
+    calibrate his taste against the machine's, and a calibration done against a
+    flattering picture of the machine is worse than none: he would tune his judgement
+    to a ranker that does not behave the way the page implied. Every known defect in
+    this lane is therefore printed here, with what was measured and when.
+
+    NEITHER DEFECT IS FIXED HERE. Both belong to task `reference-photos-wrong-person`
+    and both are named so a reader does not file a third copy of them. %>
+<div data-test="scouting-honesty"
+     class="rounded-lg border border-warning/40 bg-warning/10 p-3 sm:p-4 space-y-3">
+  <p class="text-xs font-black text-warning-ink uppercase tracking-wide">
+    Read this before you judge the picks
+  </p>
+
+  <ul class="space-y-2.5 text-xs text-warning-ink">
+    <li class="flex gap-2">
+      <span aria-hidden="true" class="shrink-0">&#9679;</span>
+      <span>
+        <strong>What actually ranked these:</strong>
+        <% if @face_ranked %>
+          a vision classifier judged how clearly each face shows. That is
+          <em>visibility</em>, not face <em>size</em>, and the two come apart below.
+        <% else %>
+          <strong>nothing looked at these photographs.</strong> They are ordered on
+          shape and relevance only, because the vision classifier needs
+          <span class="font-mono"><%= Appearances::FaceVisibility::API_KEY_ENV %></span>
+          and that credential exists on no machine. A high position here means
+          &ldquo;worth a closer look&rdquo;, never &ldquo;a face is visible&rdquo;.
+        <% end %>
+      </span>
+    </li>
+
+    <li class="flex gap-2" data-test="defect-wrong-person">
+      <span aria-hidden="true" class="shrink-0">&#9679;</span>
+      <span>
+        <strong>A clear photo of the wrong man can beat a helmeted photo of the right
+        one.</strong> The classifier was asked whether a face is visible, and it
+        answers that correctly for a stranger. Measured 2026-09-26: searching
+        &ldquo;Drew Lock&rdquo; returns <span class="font-mono">Drew Hutton.jpg</span>
+        at hit 5, and it ranks second. <strong>Read the titles</strong> &mdash; they are
+        printed on every tile because that is the signal no score here catches.
+      </span>
+    </li>
+
+    <li class="flex gap-2" data-test="defect-cannot-mint">
+      <span aria-hidden="true" class="shrink-0">&#9679;</span>
+      <span>
+        <strong>The top-ranked photo is often one Higgsfield refuses to mint.</strong>
+        Four real mints on 2026-09-25: three wide action shots failed at prepare, the
+        same three at full resolution failed, a bare-faced sideline shot failed, and a
+        tight ESPN headshot completed. Resolution is not the variable and the helmet is
+        not the variable &mdash; face size in frame is, and we cannot measure it without
+        the classifier above. Tiles carry the evidence we do have, never a prediction.
+      </span>
+    </li>
+
+    <% if @search_provider == Appearances::ImageSearch::WikimediaCommons.provider_name %>
+      <li class="flex gap-2" data-test="commons-and-note">
+        <span aria-hidden="true" class="shrink-0">&#9679;</span>
+        <span>
+          <strong>The team in the query can collapse this search.</strong> The query
+          above is the person plus their team, which helps a general image search tell
+          a quarterback from a locksmith. Wikimedia Commons ANDs the terms instead, so
+          the team narrows rather than disambiguates. Measured 2026-09-26:
+          &ldquo;Drew Lock&rdquo; returns 20 candidates and &ldquo;Drew Lock Seattle
+          Seahawks&rdquo; returns <strong>2</strong>, while
+          &ldquo;Patrick Mahomes&rdquo; returns 20 either way. Precision goes up and
+          recall goes down, and a 2-candidate answer cannot fill a cap of
+          <%= @chosen_limit %>. If this page shows very few candidates, suspect the
+          query before the archive.
+        </span>
+      </li>
+    <% end %>
+
+    <li class="flex gap-2" data-test="chosen-limit-note">
+      <span aria-hidden="true" class="shrink-0">&#9679;</span>
+      <span>
+        <strong>The cap is <%= @chosen_limit %>, not 5.</strong> You asked for the five
+        best; the pipeline shipped with
+        <span class="font-mono">CHOSEN_LIMIT = <%= @chosen_limit %></span> and this page
+        reports what it actually does. Everything past the cap is filed with a reason
+        rather than dropped, so changing the number is a re-pick and not another search.
+      </span>
+    </li>
+  </ul>
+</div>

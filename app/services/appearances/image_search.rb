@@ -29,14 +29,29 @@ module Appearances
   # whole file reaches the identity through Appearances::ReferenceSet and the
   # create service does not know it exists.
   #
-  # ONLY ONE PROVIDER SHIPS TODAY, and that is a decision rather than an
-  # oversight. Serper.dev was chosen for the first implementation; a second
-  # provider would mean a second parser written against a shape nobody has seen
-  # (read that provider's header for what "unverified" means here), doubling the
-  # guessed surface with no credential to measure either half against. The
-  # registry, the `available?` protocol, and the keyless fake in
-  # test/services/appearances/image_search_test.rb exist so the second provider is
-  # a file and a line rather than a refactor.
+  # TWO PROVIDERS SHIP, and the SECOND one is what makes this lane usable at all.
+  #
+  #   Serper       serper.dev, general image search. PAID, and its response shape
+  #                is still UNVERIFIED — no credential has ever existed, so its
+  #                parser reads one field and guesses the rest.
+  #   Wikimedia    commons.wikimedia.org. KEYLESS, and its shape was MEASURED
+  #     Commons    against a live 200 on 2026-09-26.
+  #
+  # THIS FILE ONCE ARGUED FOR EXACTLY ONE, and the argument is worth preserving
+  # because it was right at the time and is instructive about when it stops being
+  # right. It ran: a second provider means a second parser written against a shape
+  # nobody has seen, doubling the guessed surface with no credential to measure
+  # either half against. That holds while both providers are unmeasured and one of
+  # them works. It collapsed on two facts — `SERPER_API_KEY` was never bought, so
+  # `available?` was false on every machine and the operator's Search button never
+  # rendered anywhere; and the keyless provider's shape can be measured for free, by
+  # anyone, at any time. A provider that needs no credential does not double the
+  # guess; it removes the guess from the only path that runs.
+  #
+  # THE SEAM COST WHAT IT PROMISED. The registry, the `available?` protocol and the
+  # keyless fake in test/services/appearances/image_search_test.rb were built so the
+  # second provider would be "a file and a line". It was: one provider file, one name
+  # added to `providers`, and nothing above it changed.
   module ImageSearch
     # ONE NORMALISED SEARCH HIT. Providers return these rather than their own
     # payload shapes, so the picker, the persistence and the gallery are written
@@ -46,8 +61,24 @@ module Appearances
     # DESIGN and not merely by convenience: the Serper response shape could not be
     # measured (no credential existed), so a provider that omits `width`, `title`
     # or `page_url` must still yield a usable photograph rather than lose it.
+    #
+    # `mime` IS REPORTED, NOT ACTED ON — and that split is deliberate. It is the
+    # cheapest honest answer to "is this a photograph at all": Wikimedia Commons
+    # volunteers `application/pdf` and `image/vnd.djvu` on the scanned books it
+    # returns, which is the same judgement PhotoMerit::DOCUMENT_MARKERS reaches by
+    # sniffing a file extension out of a URL. The calibration page PRINTS it so the
+    # operator can see the archive admit what a row is. Nothing ranks on it yet:
+    # folding a new signal into the ranking belongs to the task that owns the
+    # ranking defects (`reference-photos-wrong-person`), not to the page that
+    # exposes them. Providers that cannot report it leave it nil.
+    #
+    # `thumb_url` IS FOR THE BROWSER, `image_url` IS FOR THE VENDOR. A gallery of
+    # twenty full-size originals is how a page earns an HTTP 429 from the archive
+    # (measured 2026-09-26 on Commons: the third original onward answered 429 and
+    # rendered as grey alt-text). Providers that offer no small rendition leave it nil
+    # and every reader falls back to `image_url`.
     Result = Struct.new(:image_url, :page_url, :title, :width, :height, :position,
-                        keyword_init: true)
+                        :mime, :thumb_url, keyword_init: true)
 
     # WHAT A SEARCH ANSWERS WITH — the results AND how many rows we could not read.
     #
@@ -83,7 +114,22 @@ module Appearances
     # seam: a test hands this a keyless fake to prove the `available?` protocol
     # does not assume a credential, which a frozen constant would need
     # constant-surgery to reach.
-    def self.providers = [Serper]
+    # THE ORDER IS THE PREFERENCE, AND IT IS PAID-FIRST-THEN-FLOOR.
+    #
+    # Serper leads because a bought key means somebody chose a general image search
+    # over a free-licence media archive, and the façade serves the first AVAILABLE
+    # provider — so listing WikimediaCommons first would make that purchase
+    # unreachable forever. Commons answers `available?` unconditionally, which makes
+    # it a FLOOR rather than a preference: it serves whenever nothing better is
+    # configured, which today is everywhere.
+    #
+    # ⚠ `available?` IS NOW TRUE ON EVERY MACHINE, and that is a behaviour change to
+    # be aware of rather than a detail. Before this provider existed the whole
+    # unconfigured path — no Search button, "web image search is off" — was the one
+    # that ran in production and on every desk. It is now unreachable in practice and
+    # is kept, with its tests, because an empty registry and a provider list that all
+    # answer false are still states this façade must render rather than raise on.
+    def self.providers = [Serper, WikimediaCommons]
 
     # HOW MANY CANDIDATES TO ASK FOR. Generous on purpose: this is the number the
     # operator JUDGES the search by, and a short list hides a bad search behind

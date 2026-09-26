@@ -48,11 +48,20 @@
     <% else %>
       <div data-test="search-unconfigured" class="space-y-1">
         <p class="text-xs text-heading font-bold">Web image search is off</p>
+        <%# THIS BRANCH USED TO BE THE ONE THAT RAN EVERYWHERE, and now it should reach
+            nobody: Appearances::ImageSearch::WikimediaCommons needs no credential and
+            answers `available?` true on every machine. So the honest message is no
+            longer "go and buy a key" — it is "something removed the keyless floor",
+            which is a registry edit or a stub rather than a missing purchase. The
+            credential is still named because a paid provider is the upgrade, and
+            whoever reads this is who would buy it. %>
         <p class="text-2xs text-muted break-words">
-          No provider is configured, so the photos below are the ones we already had:
-          our own mirrored headshot, plus any URL you typed on the model. Set
+          No provider is available, so the photos below are the ones we already had:
+          our own mirrored headshot, plus any URL you typed on the model. The keyless
+          Wikimedia Commons provider normally covers this, so its absence means the
+          provider registry was changed. Set
           <span class="font-mono text-warning-ink"><%= Appearances::ImageSearch::Serper::API_KEY_ENV %></span>
-          and a Search button appears here.
+          for a paid provider with better relevance.
         </p>
       </div>
     <% end %>

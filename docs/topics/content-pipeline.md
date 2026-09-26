@@ -120,7 +120,7 @@ something is absent.
 | Mint / read | `Higgsfield::Client#create_custom_reference`, `#custom_reference` |
 | Which photos (floor) | `Appearances::ReferenceImages` — **injected**, see below |
 | Which photos (composed) | `Appearances::ReferenceSet` — the floor plus the chosen search hits |
-| Finding more | `Appearances::ImageSearch` (façade) + `::Serper` (provider) |
+| Finding more | `Appearances::ImageSearch` (façade) + `::Serper` (paid) + `::WikimediaCommons` (keyless) |
 | Ranking them | `Appearances::FaceVisibility` (vision, paid) over `Appearances::PhotoMerit` (free) |
 | Filing candidates | `Appearances::GatherReferencePhotos` → `appearance_reference_photos` |
 | URL safety | `Appearances::FetchableUrl` → `Studio::ImageCache.validate_source_url!` |
@@ -140,8 +140,15 @@ now.
 `Appearances::ReferenceSet` is the composed collaborator — floor first, then the
 chosen search hits — and it is what the rake task and the page pass as
 `references:`. `Appearances::CreateCharacterReference` was not changed to accept
-it, because it already took the list as an injection. Read "waiting on a search"
-as "waiting on `SERPER_API_KEY`", never as "waiting on code".
+it, because it already took the list as an injection.
+
+**A SEARCH NO LONGER WAITS ON A CREDENTIAL.** Until 2026-09-26 the line here read
+*"waiting on a search" means "waiting on `SERPER_API_KEY`", never "waiting on code"* —
+and that was the whole problem: the key was never bought, so the search waited forever
+and `ImageSearch.available?` was false on every machine and in production.
+`Appearances::ImageSearch::WikimediaCommons` is KEYLESS, ships in the registry behind
+Serper, and makes `available?` true everywhere. Read "the gallery is thin" as a question
+about the QUERY or the ARCHIVE now, never as a missing purchase.
 
 **Where the found photographs live.** `appearance_reference_photos` holds EVERY
 candidate a search returned, chosen or not, with the reason each was passed over
@@ -156,17 +163,33 @@ filing a reject would mean paying to mirror a photograph we had already refused.
 **The provider is an interface, and it does not assume a credential.** A provider
 answers `provider_name`, `available?` and `search(query:, limit:)`, and
 `available?` is asked OF THE PROVIDER — so a keyless source (Wikimedia Commons
-answers image queries with no key) plugs in without the façade changing. Serper.dev
-is the only provider that ships. **Its response shape is UNVERIFIED**: no
-credential exists, so the parser reads `imageUrl` alone and treats every other
-field as optional, skipping and COUNTING rows it cannot read. When the key lands,
-probe once, capture the body, and replace the `assumed_serper_body` fixture in
-`test/services/appearances/image_search/serper_test.rb` — a green test over a
-guessed fixture proves the guess is self-consistent and nothing more.
+answers image queries with no key) plugs in without the façade changing — and on
+2026-09-26 exactly that happened, in one provider file and one name added to
+`providers`, with nothing above it changed.
 
-**No key is a clean degrade, not an error.** With nothing configured the page
-renders from the headshot floor, offers no Search button, and names
-`SERPER_API_KEY` in the note — because the reader of that note is who will set it.
+**TWO PROVIDERS SHIP, ordered paid-first-then-keyless-floor.** The façade serves the
+first AVAILABLE provider, so the order is the preference:
+
+| Provider | Credential | Response shape |
+|---|---|---|
+| `::Serper` | `SERPER_API_KEY` — **never bought, exists nowhere** | **UNVERIFIED.** Reads `imageUrl` alone, treats every other field as optional, skips and COUNTS rows it cannot read. When a key lands, probe once, capture the body, and replace the `assumed_serper_body` fixture in `test/services/appearances/image_search/serper_test.rb` — a green test over a guessed fixture proves the guess is self-consistent and nothing more. |
+| `::WikimediaCommons` | none | **MEASURED** against a live 200 on 2026-09-26. Its fixture (`test/fixtures/files/wikimedia_commons_drew_lock.json`) is a verbatim trim of that body, which is the difference between it and the row above. |
+
+Commons was listed SECOND deliberately: it answers `available?` unconditionally, so
+listing it first would make a bought Serper key permanently unreachable.
+
+**Two traps in the Commons shape, both pinned by tests.** `query.pages` is a Hash keyed
+by pageid and its order is NOT the ranking — the rank is each page's `index`, and the
+measured body's keys ran 2, 5, 9, 1, 6. And `url`/`descriptionurl` arrive decorated with
+`utm_source`/`utm_campaign`/`utm_content`, which are stripped: `image_url` is half the
+unique index, so a campaign tag that ever changed would file one photograph twice.
+
+**No key is a clean degrade, and it is now an unreachable one.** The unconfigured path —
+headshot floor only, no Search button, a note naming `SERPER_API_KEY` — is kept, with its
+tests, because an empty registry is still a state the façade must render rather than raise
+on. But a keyless provider means nothing reaches it in practice, so the panel's copy no
+longer reads as "go and buy a key": it says the keyless floor is missing, which is a
+registry edit rather than a missing purchase.
 
 **The page is PUBLIC to read and ADMIN-ONLY to spend on.** `#show` is open,
 matching the person page it is reached from; `#search`, `#mint` and `#refresh` are
@@ -304,6 +327,79 @@ Two further gaps to know before trusting the chain end to end:
   `logo_overlay: false`).
 - **`Content::Finalize` is a labelled stub.** It prints `[STUB] FFmpeg watermark`
   and returns the URL it was given.
+
+### Photo scouting — calibrating the machine's taste against the operator's
+
+`/people/:person_slug/scouting` (`PhotoScoutingController`). The operator's framing:
+*"a new page in the model. Where the AI goes out pulls images for the person (athlete)
+in this case and then picks the 5 best photos … In this way I should have a good idea of
+what the raw found images look like and which ones your taste is picking up."*
+
+**It is a CALIBRATION surface, not a debug view**, and the difference is the verdict
+column. A page that only reported would leave the operator's taste in his head; recording
+it beside the machine's turns the same page into a labelled set — the only thing that can
+tell a future change to the ranking whether it made things better or worse.
+
+| Half | What it shows | Order |
+|---|---|---|
+| The picks | the chosen set, each with the reasoning underneath | our ranking (`gallery_order`) |
+| What the search returned | EVERY raw candidate, rejects included | the provider's own (`found_order`) |
+
+**Both orders are on the page on purpose.** Shown one way only, a bad search and a bad
+ranker are indistinguishable — the reader could not tell "the archive handed us twelve
+books" from "we sorted twelve books to the top".
+
+**The verdict is two values expressing four cells**, and there is no `promote` value:
+`keep`/`drop` is read AGAINST `chosen`, so a keep on a REJECTED photograph already means
+"you would have promoted this". A third value would encode the same fact twice and let
+the two disagree. `Appearances::Calibration` tallies them; `agreement_rate` is over the
+JUDGED rows and is **nil rather than zero** when nothing has been judged, because a fresh
+look has no measured disagreement and rendering one as 0 percent is a damning result
+nobody earned.
+
+**`:operator_promoted` is the cell worth collecting.** The other three describe how well
+the ranker orders candidates it was already going to rank; a promotion says it discarded
+something it should have kept, which is the only cell that can teach it something it does
+not already believe.
+
+**Only SEARCH rows can be judged.** `Appearances::ReferenceSet` builds the two floor rows
+(our mirrored headshot, the operator's typed URL) in memory, so they carry no row to write
+to — and they are inputs we control rather than things a search found, so they are not part
+of the population under calibration. Those tiles say "not from the search" instead of
+showing a control that could not save.
+
+**⚠ The page states its own lane's defects, and must keep doing so.** A calibration surface
+that flattered the machine would have the operator tune his judgement to a ranker that does
+not behave the way the page implied. It names: the wrong-person ranking defect; that the
+top-ranked photograph is usually one Higgsfield refuses to mint; that **the cap is
+`CHOSEN_LIMIT` = 6, not the 5 the operator asked for**; and whether anything actually
+looked at the photographs. Both ranking defects are owned by task
+`reference-photos-wrong-person` and neither is fixed here.
+
+**Mint evidence is REPORTED, never PREDICTED.** `AppearanceReferencePhoto#mint_proven?`
+(our ESPN headshot — the one input measured to complete a reference) and
+`#mint_shape_failed_before?` (the wide crop shape that failed all four measured mints) are
+the only two claims made. Face size in frame is the actual variable and it cannot be
+measured without `ANTHROPIC_API_KEY`, which exists on no machine — so a tile says what was
+measured and stops.
+
+**⚠ The query the pipeline builds can collapse a Commons search.**
+`GatherReferencePhotos#query` is the person plus their team, which helps a general image
+search tell a quarterback from a locksmith. Commons CirrusSearch ANDs the terms instead, so
+the team NARROWS rather than disambiguates. Measured 2026-09-26:
+
+| query | results | photographs |
+|---|---|---|
+| `Drew Lock` | 20 | 8 |
+| `Drew Lock Seattle Seahawks` | **2** | 2 |
+| `Drew Lock Denver Broncos` | 20 | 2 |
+| `Patrick Mahomes` | 20 | 20 |
+| `Patrick Mahomes Kansas City Chiefs` | 20 | 20 |
+
+Precision goes up, recall goes down, and a 2-candidate answer cannot fill a cap of 6. It is
+person-specific, it is NOT fixed here, and the page says so where the operator will see it.
+Re-derive the table rather than re-copying it.
+
 
 ## The agent surface — where inference lives
 
