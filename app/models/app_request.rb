@@ -40,7 +40,7 @@ class AppRequest < ApplicationRecord
   validates :token, presence: true, uniqueness: true
   validates :prompt, presence: true, length: { maximum: PROMPT_LIMIT }
   validates :status, inclusion: { in: STATUSES }
-  validates :tier, inclusion: { in: -> (_) { WorkspacePackage.keys } }
+  validates :tier, inclusion: { in: ->(_) { WorkspacePackage.keys } }
   validates :subdomain, presence: true, unless: :draft?
   validate :subdomain_is_claimable, if: -> { subdomain.present? && (new_record? || will_save_change_to_subdomain?) }
   validate :one_free_app_per_account, if: -> { user && tier == "launch" && HOLDING.include?(status) }
