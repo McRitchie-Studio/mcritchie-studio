@@ -5,8 +5,8 @@
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Credentials</p>
     <h1 class="text-3xl font-bold text-heading mb-2">Software by entity</h1>
     <p class="text-muted max-w-2xl">
-      Which software each entity holds credentials for, and in which 1Password vault. Records only,
-      never the secrets themselves.
+      Which software each entity holds credentials for. Hover an icon for the 1Password items behind
+      it. Records only, never the secrets themselves.
     </p>
   </header>
 
@@ -35,46 +35,41 @@
       </thead>
       <tbody class="divide-y divide-subtle">
         <% @services.each do |service| %>
+          <% tile = WorkspaceIconConfig.tile(service) %>
           <tr data-test="matrix-software" data-service="<%= service %>">
-            <th scope="row" class="sticky left-0 z-10 bg-surface text-left align-top px-4 py-3 font-semibold text-heading"><%= CredentialRecord.service_label(service) %></th>
+            <th scope="row" class="sticky left-0 z-10 bg-surface text-left align-middle px-4 py-3 font-semibold text-heading">
+              <div class="flex items-center gap-2">
+                <% if tile %>
+                  <%= image_tag tile, alt: "", class: "w-7 h-7 shrink-0", data: { test: "software-tile" } %>
+                <% end %>
+                <span><%= CredentialRecord.service_label(service) %></span>
+              </div>
+            </th>
             <% @entities.each do |entity| %>
-              <% records = @matrix.dig(service, entity) || [] %>
-              <td class="px-3 py-3 align-top" data-test="matrix-cell" data-entity="<%= entity %>" data-count="<%= records.size %>">
-                <% if service == "google" %>
-                  <%# Google is a workspace, not a key per entity: one service-account key
-                      acts in every registered domain. So the cell is that workspace's
-                      badged Google icon, dimmed unless delegation is active, with the
-                      domain, grant and records in the tooltip. %>
-                  <% domain = @domains[entity] %>
-                  <% if domain.nil? %>
-                    <span class="block text-center text-muted" title="No Google workspace">—</span>
-                  <% else %>
-                    <% status = @workspace_accounts[domain]&.status || "not registered" %>
-                    <% details = [ domain, "delegation #{status}", *records.map { |r| "#{r.title} (#{r.credential_vault.lane}#{", #{r.status}" unless r.status == 'filed'})" } ].join("\n") %>
-                    <% icon = WorkspaceIconConfig.asset("google", entity) %>
-                    <div class="flex justify-center" title="<%= details %>" data-test="google-workspace" data-status="<%= status %>">
-                      <% if icon %>
-                        <%= image_tag icon, alt: "#{domain} Google Workspace, delegation #{status}",
-                                            class: "w-16 h-16 #{'opacity-40 grayscale' unless status == 'active'}", data: { test: "google-icon" } %>
-                      <% else %>
-                        <div class="w-16 h-16 rounded-full border-2 border-dashed border-subtle flex items-center justify-center text-center text-[10px] leading-tight text-muted p-2"
-                             data-test="google-icon-missing">No badge</div>
-                      <% end %>
-                    </div>
-                  <% end %>
-                <% elsif records.empty? %>
+              <% records = (@matrix.dig(service, entity) || []).sort_by { |r| [ r.live? ? 0 : 1, r.title ] } %>
+              <%# Google is a workspace, not a key per entity: one service-account key
+                  acts in every registered domain, so an entity with a domain gets a
+                  Google cell even with no item of its own, and its tooltip carries the
+                  delegation grant. %>
+              <% domain = service == "google" ? @domains[entity] : nil %>
+              <% delegation = domain && (@workspace_accounts[domain]&.status || "not registered") %>
+              <% lines = [] %>
+              <% lines += [ domain, "delegation #{delegation}" ] if domain %>
+              <% lines += records.map { |r| "#{r.title} (#{[ r.credential_vault.lane, (r.status unless r.status == 'filed') ].compact.join(', ')})" } %>
+              <% live = records.any?(&:live?) || delegation == "active" %>
+              <td class="px-3 py-3 align-middle" data-test="matrix-cell" data-entity="<%= entity %>" data-count="<%= records.size %>">
+                <% if lines.empty? %>
                   <span class="block text-center text-muted">—</span>
                 <% else %>
-                  <ul class="space-y-1.5">
-                    <% records.sort_by { |r| [ r.live? ? 0 : 1, r.title ] }.each do |record| %>
-                      <li class="<%= 'opacity-50 line-through' unless record.live? %>" title="<%= record.scope_summary.presence || record.notes %>" data-test="credential-record">
-                        <span class="block font-mono text-xs text-heading break-all"><%= record.title %></span>
-                        <span class="block text-[11px] text-muted">
-                          <%= record.credential_vault.lane %><%= " · #{record.status}" unless record.status == "filed" %>
-                        </span>
-                      </li>
+                  <% icon = WorkspaceIconConfig.asset(service, entity) || tile %>
+                  <div class="flex flex-col items-center gap-0.5" title="<%= lines.join("\n") %>"
+                       data-test="matrix-icon" data-live="<%= live %>"<%= %( data-delegation="#{delegation}").html_safe if delegation %>>
+                    <%= image_tag icon, alt: "#{CredentialRecord.service_label(service)} for #{@workspaces.dig(entity, 'name') || entity}",
+                                        class: "w-14 h-14 #{'opacity-40 grayscale' unless live}" if icon %>
+                    <% if records.size > 1 %>
+                      <span class="text-[11px] text-muted" data-test="record-count"><%= records.size %> items</span>
                     <% end %>
-                  </ul>
+                  </div>
                 <% end %>
               </td>
             <% end %>

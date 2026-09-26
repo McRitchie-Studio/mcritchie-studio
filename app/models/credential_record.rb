@@ -22,13 +22,7 @@ class CredentialRecord < ApplicationRecord
 
   TEXT_COLUMNS = %w[title service url used_by scope_summary notes].freeze
 
-  # How a service slug reads as a row label. Unlisted slugs are titleized.
-  SERVICE_LABELS = {
-    "aws" => "AWS", "github" => "GitHub", "heroku" => "Heroku", "higgsfield" => "Higgsfield",
-    "slack" => "Slack", "coinbase" => "Coinbase", "google" => "Google Workspace"
-  }.freeze
-
-  def self.service_label(service) = SERVICE_LABELS.fetch(service.to_s) { service.to_s.titleize }
+  def self.service_label(service) = WorkspaceIconConfig.software_name(service)
 
   # <service>.<entity>.<lane> — the credential-filing convention.
   CONVENTION = /\A[a-z0-9-]+\.[a-z0-9-]+\.(?:agents|admin|applications)\z/
@@ -37,6 +31,8 @@ class CredentialRecord < ApplicationRecord
 
   validates :title, presence: true, uniqueness: { scope: :credential_vault_slug }
   validates :service, presence: true
+  validates :entity, inclusion: { in: CredentialVault::ENTITIES }, allow_blank: true
+  validate :service_is_configured
   validates :status, inclusion: { in: STATUSES }
   validates :category, inclusion: { in: CATEGORIES }, allow_blank: true
   validate :holds_no_secret
@@ -48,7 +44,19 @@ class CredentialRecord < ApplicationRecord
 
   def live? = %w[filed empty].include?(status)
 
+  # The client this credential serves: its own `entity` when set (the Turf
+  # Monster keys live in the Studio vault), else its vault's.
+  def served_entity = entity.presence || credential_vault&.entity
+
   private
+
+  # Every service is a row with an icon, so it must be a software in
+  # config/workspace_icons.yml — a typo would otherwise open an iconless row.
+  def service_is_configured
+    return if service.blank? || WorkspaceIconConfig.softwares.key?(service)
+
+    errors.add(:service, "#{service.inspect} is not a software in config/workspace_icons.yml")
+  end
 
   def holds_no_secret
     TEXT_COLUMNS.each do |column|

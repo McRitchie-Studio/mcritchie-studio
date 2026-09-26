@@ -15,6 +15,6 @@ class CredentialVaultsController < ApplicationController
     # entity's workspace and whether that grant is proven.
     @domains = WorkspaceIconConfig.domains
     @workspace_accounts = WorkspaceAccount.where(domain: @domains.values).index_by(&:domain)
-    @matrix = records.group_by(&:service).transform_values { |rows| rows.group_by { |r| r.credential_vault.entity } }
+    @matrix = records.group_by(&:service).transform_values { |rows| rows.group_by(&:served_entity) }
   end
 end
