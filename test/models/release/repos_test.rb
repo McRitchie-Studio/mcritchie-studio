@@ -156,9 +156,10 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal "git_push_heroku", adapter["strategy"]
     assert_equal "https://git.heroku.com/dads-app.git", adapter["remote"]
     assert_equal "main", adapter["branch"]
-    # The herokuapp host until greigmcritchie.com's Name.com records resolve; the
-    # ship smokes `<smoke_url>/up` AFTER the push, so a dead host aborts a live deploy.
-    assert_equal "https://dads-app-7b5aef805731.herokuapp.com", adapter["smoke_url"]
+    # The custom host, live over HTTPS since 2026-09-26. The ship smokes
+    # `<smoke_url>/up` AFTER the push, so the value is the bare host: a trailing
+    # /up would probe /up/up and abort a live deploy.
+    assert_equal "https://greigmcritchie.com", adapter["smoke_url"]
     assert_equal "dads-app", Release::ShipSequence.heroku_app_for(adapter)
   end
 

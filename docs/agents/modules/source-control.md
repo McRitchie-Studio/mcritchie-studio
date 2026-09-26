@@ -72,10 +72,10 @@ The lane picks the identity through **`GH_APP_ITEM`**; precedence is
 | `github.mcritchie-agent` (**default**) | build / review | **Yes** — Contents + **Pull requests** + Checks read + Actions + Workflows + Administration |
 | `github.mcritchie-admin` (`export GH_APP_ITEM=github.mcritchie-admin`) | ship / admin | **No `pull_requests` grant at all** — it cannot open or merge PRs, by design. Contents + Actions + Checks read + Secrets + Environments + Administration |
 
-**Renamed 2026-09-26.** The App was `mcritchie-deployer` until then (same app id,
-same key). Its lane is still called `deployer` in code (`--identity deployer`), and
-the legacy item `github.mcritchie-deployer` still routes to the admin vault until it
-is retired from 1Password; export the new name.
+**Renamed 2026-09-26** (same app id, same key). Its lane is still called `deployer`
+in code (`--identity deployer`). The old item name is retired: `GH_APP_ITEM` is
+matched by exact name, and anything other than the two items above is refused
+before a 1Password read.
 
 The two items live in different vaults, read by different tokens: the agent's in
 `studio-agents` (`OP_SERVICE_ACCOUNT_TOKEN`, every shell), the deployer's in

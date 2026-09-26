@@ -6,7 +6,7 @@
 #
 # WHY IT CAN BE UNATTENDED NOW. Until 2026-09-26 the GitHub half was an operator
 # step: the agent App had no secrets grant (credential-rotation.md §1.2). The ship
-# App was renamed mcritchie-deployer -> mcritchie-admin that day and granted
+# App was renamed mcritchie-admin that day and granted
 # Environments + Secrets read/write, so the admin lane can write the secret itself.
 #
 # THE ORDER, and why it is this order (credential-rotation.md Phases 4-6):

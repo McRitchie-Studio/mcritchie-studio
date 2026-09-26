@@ -126,9 +126,12 @@ records = [
   { vault: "studio-agents-admin", title: "github.mcritchie-admin", service: "github", category: "API Credential",
     url: "https://github.com/McRitchie-Studio", used_by: "Ship and admin lanes",
     scope_summary: "GitHub App: contents, actions, checks read, secrets, environments. CANNOT open or merge pull requests, by design." },
-  { vault: "studio-agents-admin", title: "github.mcritchie-deployer", service: "github", category: "API Credential",
-    url: "https://github.com/McRitchie-Studio", used_by: "Legacy name during the transition",
-    scope_summary: "Legacy copy of github.mcritchie-admin (the App was renamed 2026-09-26). Retire once no shell exports it." },
+  # used_by and scope_summary are cleared explicitly: this row was seeded live, and
+  # the upsert keeps any column a row leaves out.
+  { vault: "studio-agents-admin", title: "github.mcritchie-deployer", service: "github", status: "retired",
+    used_by: nil, scope_summary: nil,
+    notes: "Old name of github.mcritchie-admin (the App was renamed 2026-09-26). Refused by every code path " \
+           "since 2026-09-26; the 1Password item is deleted once that change merges." },
   { vault: "studio-agents-admin", title: "agent.xan.solana", service: "solana", category: "Crypto Wallet",
     scope_summary: "The Xan signer; the rotated replacement for agent.solana." },
   { vault: "studio-agents-admin", title: "AWS", service: "aws", category: "API Credential", url: "https://console.aws.amazon.com",

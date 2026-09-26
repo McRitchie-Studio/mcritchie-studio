@@ -37,9 +37,9 @@ so it mints on **every** call, by design.
 | Cached on disk? | **yes**, shared between agents | **never** |
 | Default? | yes | only when a ship lane asks |
 
-The `deployer` lane's App is `mcritchie-admin` since 2026-09-26 (renamed from
-`mcritchie-deployer`; same app id and key). The legacy item name still mints during
-the transition (`GhIdentity::LEGACY_ITEMS`).
+The `deployer` lane's App is `mcritchie-admin` since 2026-09-26 (same app id and
+key). Its old item name is retired: `GH_APP_ITEM` is matched by exact name, and any
+other value is refused before a 1Password read.
 
 The lane → vault → token map has exactly one source: `bin/lib/op_vaults.rb`.
 Read it rather than hardcoding a vault name.
