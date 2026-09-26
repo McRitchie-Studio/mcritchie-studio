@@ -1,22 +1,23 @@
-# Announce a queued /build request to the team's Discord #scratch-pad, so a new
-# app request is seen without anyone watching the board.
+# Announce a queued /build request to the team's Discord, on the EXTERNAL lane
+# (#external-communication: messages from the outside world), so a new app
+# request is seen without anyone watching the board. Lanes: DiscordChannels.
 #
 # Runs after the request is queued (AppRequest#queue!), in the background: a
 # Discord outage or a missing webhook must never cost a visitor their claim.
 #
-# The webhook is DISCORD_SCRATCH_PAD_WEBHOOK_URL. Unset, the job logs and does
-# nothing — the request is still saved and still on the board and on
+# The webhook is the external lane's (DiscordChannels). Unset, the job logs and
+# does nothing — the request is still saved and still on the board and on
 # /build/requests; only the ping is skipped. `discord_notified_at` is stamped on
 # a successful post, so a retried job never announces the same request twice.
 class AppRequestDiscordJob < ApplicationJob
   queue_as :default
 
-  WEBHOOK_ENV = "DISCORD_SCRATCH_PAD_WEBHOOK_URL".freeze
+  LANE = :external
   # The Studio accent violet (the chest badge's ring), so the post reads as a
   # /build event at a glance.
   EMBED_COLOR = 0x8E83FC
 
-  def self.webhook_url = ENV[WEBHOOK_ENV].presence
+  def self.webhook_url = DiscordChannels.webhook_url(LANE)
 
   def perform(app_request_id)
     request_row = AppRequest.find_by(id: app_request_id)
@@ -24,7 +25,8 @@ class AppRequestDiscordJob < ApplicationJob
 
     webhook = self.class.webhook_url
     if webhook.nil?
-      Rails.logger.info("[app_request_discord] #{WEBHOOK_ENV} is unset; not announcing #{request_row.host}")
+      Rails.logger.info("[app_request_discord] #{DiscordChannels.lane(LANE)[:env]} is unset; " \
+                        "not announcing #{request_row.host} to #{DiscordChannels.channel_label(LANE)}")
       return
     end
 

@@ -26,9 +26,11 @@ module LinkTreeHelper
       ]
     end
 
-    # Public on purpose: the packages page is where customers compare the tiers,
-    # so it is reachable without an account.
+    # Public on purpose: the App Builder is the funnel's front door and the
+    # packages page is where customers compare the tiers, so both are reachable
+    # without an account.
     sections << { title: "Services", links: [
+      { label: "App Builder", href: build_path, emoji: "🧱", hover_emoji: "✨", desc: "Describe an app and we build it" },
       { label: "Packages", href: packages_path, emoji: "📦", hover_emoji: "🏢", desc: "Launch, Host, Workspace and Agentic tiers" },
     ] }
 
@@ -59,6 +61,13 @@ module LinkTreeHelper
         { label: "Design System", href: admin_style_path, emoji: "🎨", hover_emoji: "🧩", desc: "Theme · Modals · Tricks · Tasks" },
         { label: "Schema", href: admin_schema_path, emoji: "🗂️", hover_emoji: "🔎", desc: "DB schema browser" },
         { label: "Emails", href: admin_emails_path, emoji: "✉️", hover_emoji: "🖼️", desc: "Transactional emails + their banners" },
+      ] },
+      # The client side of the business: what the funnel brought in, what each
+      # client runs on, and the credentials behind it.
+      { title: "Clients", links: [
+        { label: "App requests", href: build_requests_path, emoji: "🧱", hover_emoji: "📥", desc: "Every app requested through /build" },
+        { label: "Stack", href: stack_path, emoji: "🥞", hover_emoji: "🧭", desc: "Each client's tier and software" },
+        { label: "Credentials", href: credentials_path, emoji: "🔐", hover_emoji: "🗝️", desc: "Software by entity, with vault icons" },
       ] },
       { title: "Ops", links: [
         { label: "Error logs", href: "/error_logs", emoji: "🚨", hover_emoji: "🔍", desc: "Captured errors" },

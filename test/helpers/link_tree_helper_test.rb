@@ -106,15 +106,34 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute_includes labels, "Builders"
   end
 
-  test "the packages page is linked for everyone, signed in or not" do
+  test "the App Builder and the packages page are linked for everyone, signed in or not" do
     self.admin_enabled = false
     [ false, true ].each do |signed_in|
       self.logged_in_enabled = signed_in
       services = sidebar_link_sections.find { |section| section.fetch(:title) == "Services" }
 
-      assert services, "customers must reach /packages without an account (signed_in=#{signed_in})"
-      assert_equal [ "/packages" ], services.fetch(:links).map { |link| link.fetch(:href) }
+      assert services, "customers must reach /build and /packages without an account (signed_in=#{signed_in})"
+      assert_equal [ "/build", "/packages" ], services.fetch(:links).map { |link| link.fetch(:href) }
+      assert_equal "App Builder", services.fetch(:links).first.fetch(:label)
     end
+  end
+
+  test "admins get a Clients section: app requests, stack and credentials" do
+    self.admin_enabled = true
+    self.logged_in_enabled = true
+
+    clients = sidebar_link_sections.find { |section| section.fetch(:title) == "Clients" }
+
+    assert clients, "admins should see a Clients section"
+    assert clients[:admin], "Clients is an admin section"
+    assert_equal [ "/build/requests", "/stack", "/credentials" ], clients.fetch(:links).map { |link| link.fetch(:href) }
+  end
+
+  test "non-admins never see the Clients section" do
+    self.admin_enabled = false
+    self.logged_in_enabled = true
+
+    refute sidebar_link_sections.any? { |section| section.fetch(:title) == "Clients" }
   end
 
   test "logged-in sidebar reveals Studio with Agents and Builders together" do
@@ -158,6 +177,10 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def people_path = "/people"
   def docs_path = "/docs"
   def packages_path = "/packages"
+  def build_path = "/build"
+  def build_requests_path = "/build/requests"
+  def stack_path = "/stack"
+  def credentials_path = "/credentials"
   def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
   def admin_theme_path = "/admin/theme"

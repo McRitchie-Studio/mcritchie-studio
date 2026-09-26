@@ -1,7 +1,8 @@
 require "test_helper"
 
-# [unit] AppRequestDiscordJob — a queued /build request is announced to the
-# team's #scratch-pad once, in the background, and never at the funnel's expense.
+# [unit] AppRequestDiscordJob — a queued /build request is announced once, on the
+# EXTERNAL Discord lane (#external-communication), in the background, and never
+# at the funnel's expense.
 class AppRequestDiscordJobTest < ActiveJob::TestCase
   def queued_request
     AppRequest.create!(prompt: "A league site with schedules", user: users(:viewer)).queue!("league-hub")
@@ -39,6 +40,24 @@ class AppRequestDiscordJobTest < ActiveJob::TestCase
     assert request_row.reload.discord_notified_at
   end
 
+  test "app requests post on the external lane, not the internal one" do
+    assert_equal :external, AppRequestDiscordJob::LANE
+    request_row = queued_request
+    posts = []
+
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(**kwargs) { posts << kwargs }) do
+      original = ENV["DISCORD_INTERNAL_WEBHOOK_URL"]
+      ENV["DISCORD_INTERNAL_WEBHOOK_URL"] = "https://discord.example/webhooks/internal"
+      begin
+        with_webhook(nil) { AppRequestDiscordJob.perform_now(request_row.id) }
+      ensure
+        ENV["DISCORD_INTERNAL_WEBHOOK_URL"] = original
+      end
+    end
+
+    assert_empty posts, "with only the internal lane configured, an app request must not leak into it"
+  end
+
   test "the message carries the address, the prompt verbatim, the requester and the board card" do
     request_row = queued_request
     embed = AppRequestDiscordJob.embed(request_row)
@@ -54,10 +73,11 @@ class AppRequestDiscordJobTest < ActiveJob::TestCase
   private
 
   def with_webhook(value)
-    original = ENV[AppRequestDiscordJob::WEBHOOK_ENV]
-    ENV[AppRequestDiscordJob::WEBHOOK_ENV] = value
+    key = DiscordChannels.lane(:external)[:env]
+    original = ENV[key]
+    ENV[key] = value
     yield
   ensure
-    ENV[AppRequestDiscordJob::WEBHOOK_ENV] = original
+    ENV[key] = original
   end
 end
