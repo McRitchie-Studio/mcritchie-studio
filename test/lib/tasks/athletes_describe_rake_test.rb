@@ -212,6 +212,11 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
   # height and weight and needs no credential at all, so the run still does real work.
   test "with no credential it warns, fills build anyway, and exits zero" do
     athlete = bare_athlete(height_inches: 74, weight_lbs: 240)
+    # A HEADSHOT ATHLETE TOO, so the paid lane has something it WOULD ask about. An
+    # unarmed describer answers blank without making a call, so asking anyway would
+    # report an ask that was never billed — and trip the paid lane's verdict on a run
+    # whose only fault is a missing credential the warning above already named.
+    athlete_with_headshot(height_inches: 72, weight_lbs: 197)
 
     status, output = with_env(DFH::API_KEY_ENV, nil) { run_task(describer: nil) }
 

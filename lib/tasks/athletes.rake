@@ -36,20 +36,28 @@ namespace :athletes do
     # DESCRIBE_PAUSE: seconds after each PAID call. Free build fills are not paused.
     pause = ENV.fetch("DESCRIBE_PAUSE", Athletes::BackfillDescriptions::DEFAULT_PAUSE.to_s).to_f
 
-    describer = Athletes::DescribeFromHeadshot
-    unless describer.available?
+    # ONE DESCRIBER, BUILT HERE AND ASKED ONCE. The warning below and the lane report
+    # at the end must agree about whether the paid lane is armed, and the only way they
+    # can is by reading the same object: `DescribeFromHeadshot.available?` answers for
+    # the process, while `#armed?` answers for the instance the run actually used.
+    # `vision` is the class, kept for its constants.
+    vision = Athletes::DescribeFromHeadshot
+    describer = vision.new
+
+    unless describer.armed?
       # NOT AN ABORT. Build comes off the recorded height and weight and needs no
       # credential at all, so a run without a key still does real work — it just
-      # cannot fill skin tone or hair. Saying so beats refusing to start.
-      warn "#{describer::API_KEY_ENV} is not set — filling build from measurements only; " \
+      # cannot fill skin tone or hair. Saying so beats refusing to start. The paid
+      # lane's verdict cannot fire either, because an unarmed describer is never asked.
+      warn "#{vision::API_KEY_ENV} is not set — filling build from measurements only; " \
            "skin tone and hair need a credential."
     end
 
-    puts "model: #{describer::MODEL}; pause: #{pause}s#{limit ? "; limit: #{limit} athlete(s) changed" : ''}"
+    puts "model: #{vision::MODEL}; pause: #{pause}s#{limit ? "; limit: #{limit} athlete(s) changed" : ''}"
     puts ""
 
     outcome = Athletes::BackfillDescriptions.new(
-      limit: limit, pause: pause, logger: ->(line) { puts line }
+      limit: limit, pause: pause, describer: describer, logger: ->(line) { puts line }
     ).call
 
     # THE REPORT IS PER LANE, and so are the verdicts below it. Two sources answer
@@ -75,7 +83,7 @@ namespace :athletes do
     puts ""
     if outcome.vision_armed
       puts "vision lane — paid, one call per athlete over the cached " \
-           "#{describer::HEADSHOT_VARIANT}px headshot"
+           "#{vision::HEADSHOT_VARIANT}px headshot"
       puts "  wanted skin or hair:    #{outcome.vision_wanted}"
       puts "  no cached headshot:     #{outcome.skipped_no_headshot}"
       puts "  asked:                  #{outcome.vision_asked}"
@@ -85,12 +93,12 @@ namespace :athletes do
       # NOT ASKED AT ALL, rather than asked 2,043 times for $0.00. The describer is
       # unarmed, so the backfill never hands it an athlete — which is why there is no
       # ask count to misread here, and why the paid verdict below cannot fire.
-      puts "vision lane — NOT ARMED (#{describer::API_KEY_ENV} unset): " \
+      puts "vision lane — NOT ARMED (#{vision::API_KEY_ENV} unset): " \
            "#{outcome.vision_wanted} athlete(s) wanted skin or hair and went unasked."
     end
     puts ""
     puts "tokens:                   in #{outcome.usage['input']}, out #{outcome.usage['output']}"
-    puts "cost (#{describer::MODEL} list): #{outcome.cost ? format('$%.4f', outcome.cost) : 'unpriced'}"
+    puts "cost (#{vision::MODEL} list): #{outcome.cost ? format('$%.4f', outcome.cost) : 'unpriced'}"
     if outcome.cost_per_billed_call
       puts "cost per billed call:     #{format('$%.6f', outcome.cost_per_billed_call)}"
       remaining = Athlete.where(skin_tone: [nil, ""]).or(Athlete.where(hair_description: [nil, ""])).count
@@ -169,7 +177,7 @@ namespace :athletes do
     if outcome.vision_asked.positive? && outcome.vision_billed.zero?
       abort "athletes:describe_from_headshots asked for #{outcome.vision_asked} vision " \
             "description(s) and not one call was billed a single token, so no call reached " \
-            "the API. Check #{describer::API_KEY_ENV} (a key that is present but invalid " \
+            "the API. Check #{vision::API_KEY_ENV} (a key that is present but invalid " \
             "looks exactly like this), the rate limit, and the AWS keys that read the cached " \
             "headshot out of S3. /admin/error_logs has a row per athlete. The free build lane " \
             "wrote #{outcome.build_filled}, which is why nothing else above looks wrong."
