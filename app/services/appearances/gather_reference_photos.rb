@@ -55,7 +55,7 @@ module Appearances
     #
     # WHY IT HAD TO EXIST. Without it, `CHOSEN_LIMIT` is a blind take-the-top-N and
     # a thin answer fills the identity with whatever was left. Measured on a real
-    # Commons answer for "Drew Lock": 15 of 20 hits were scanned books, and a
+    # Commons answer for "Drew Lock": 12 of 20 hits were scanned books, and a
     # 1750 edition of The Rape of the Lock was selected INTO the character model.
     # A helmeted photograph is a poor reference; a scanned book page is not a
     # reference, and no supply shortage makes it one.
@@ -197,9 +197,10 @@ module Appearances
       return {} unless @faces.respond_to?(:available?) && @faces.available?
 
       # DOCUMENTS ARE NOT SHORTLISTED, because they can never be chosen and the
-      # classifier bills per image. Measured on a real Commons answer: 15 of 20
-      # hits were scanned pages, so without this half the shortlist — and half the
-      # bill — would be spent confirming that a book is not a face.
+      # classifier bills per image. MEASURED on a real Commons answer for "Drew
+      # Lock": 20 candidates, 12 of them documents, so the shortlist this fills
+      # drops from 12 images to 8 — a third of the bill, spent confirming that a
+      # book is not a face.
       eligible = results.reject { |r| PhotoMerit.document?(r) }
       shortlist = eligible.sort_by { |r| [-merit(r), r.position.to_i] }.first(VISION_SHORTLIST)
       return {} if shortlist.empty?

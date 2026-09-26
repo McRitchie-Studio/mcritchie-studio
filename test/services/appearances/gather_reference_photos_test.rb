@@ -243,7 +243,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   end
 
   # THE BUG THIS RULE WAS WRITTEN FROM. Measured on a real Commons answer for
-  # "Drew Lock": 15 of 20 hits were scanned books, and with a blind take-the-top-N
+  # "Drew Lock": 12 of 20 hits were scanned books, and with a blind take-the-top-N
   # a 1896 edition of The Rape of the Lock was selected INTO the character model.
   test "a scanned document is never chosen, however thin the answer" do
     scan = hit("https://cdn.example.com/page1-500px-book.pdf.jpg", position: 1,
@@ -262,7 +262,8 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   end
 
   # A DOCUMENT IS NEVER PAID FOR. It can never be chosen, so classifying it buys an
-  # answer we would not act on — and on a real answer that was 15 of 20 images.
+  # answer we would not act on — and on a real answer that was 12 of 20 images,
+  # taking the classifier's shortlist from 12 images down to 8.
   test "documents are never sent to the classifier" do
     scan = hit("https://cdn.example.com/page1-500px-book.pdf.jpg", position: 1)
     photo = hit("https://cdn.example.com/player.jpg", position: 2)

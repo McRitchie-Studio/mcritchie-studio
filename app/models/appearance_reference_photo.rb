@@ -40,7 +40,7 @@ class AppearanceReferencePhoto < ApplicationRecord
   #                   shot of the right person is a poor reference, a scan of an
   #                   1896 edition of The Rape of the Lock is not a reference at
   #                   all. Both were real hits for "Drew Lock" (measured 2026-09-26:
-  #                   15 of 20 Wikimedia Commons results were scanned documents).
+  #                   12 of 20 Wikimedia Commons results were scanned documents).
   #   beyond_limit  — good enough, but past the number we build an identity from.
   REJECTED_UNFETCHABLE = "unfetchable".freeze
   REJECTED_DUPLICATE = "duplicate".freeze

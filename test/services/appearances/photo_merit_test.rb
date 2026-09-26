@@ -14,7 +14,7 @@ class Appearances::PhotoMeritTest < ActiveSupport::TestCase
   end
 
   # THE CLASS IT EXISTS TO CATCH. Measured on a real Wikimedia Commons answer for
-  # "Drew Lock" (2026-09-26): 15 of 20 results were scanned books and PDFs. Every
+  # "Drew Lock" (2026-09-26): 12 of 20 results were scanned books and PDFs. Every
   # one it recognises here is an image we do not pay a vision model to look at.
   test "a scanned document scores zero however good its other metadata looks" do
     scan = hit("https://upload.example.com/page1-500px-media_guide.pdf.jpg",

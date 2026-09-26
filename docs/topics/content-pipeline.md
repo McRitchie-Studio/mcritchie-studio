@@ -202,7 +202,9 @@ have cleared `Appearances::FetchableUrl` are ever passed.
 when nothing better exists — measured on a real Commons answer for "Drew Lock",
 exactly ONE of twenty hits was bare-faced. The one HARD exclusion is
 `not_a_photo`: a scanned book page or a diagram, which is not a poor reference but
-no reference at all. That rule exists because of a real defect — with a blind
+no reference at all. Documents are also never sent to the classifier — measured on
+that same answer, 12 of the 20 candidates were documents, so the paid shortlist
+drops from 12 images to 8. That rule exists because of a real defect — with a blind
 take-the-top-N, an 1896 edition of *The Rape of the Lock* was selected into a
 character model.
 
