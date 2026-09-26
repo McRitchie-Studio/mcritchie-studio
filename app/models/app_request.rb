@@ -53,7 +53,9 @@ class AppRequest < ApplicationRecord
   validates :tier, inclusion: { in: ->(_) { WorkspacePackage.keys } }
   validates :subdomain, presence: true, unless: :draft?
   validate :subdomain_is_claimable, if: -> { subdomain.present? && (new_record? || will_save_change_to_subdomain?) }
-  validate :one_free_app_per_account, if: -> { user && tier == "launch" && HOLDING.include?(status) }
+  # Admins are exempt: Mr. McRitchie seeds the App Builder with showcase builds
+  # (his legacy apps) through the same funnel, and those are not customers.
+  validate :one_free_app_per_account, if: -> { user && !user.admin? && tier == "launch" && HOLDING.include?(status) }
 
   before_validation :normalize
   before_validation -> { self.token ||= SecureRandom.urlsafe_base64(18) }, on: :create
@@ -115,6 +117,9 @@ class AppRequest < ApplicationRecord
       self.subdomain = name
       self.status = "queued"
       self.queued_at = Time.current
+      # An admin's request is a showcase build (an example of what the App
+      # Builder delivers), never a customer's — kept apart everywhere it shows.
+      self.showcase = true if user&.admin?
       save!
       task = Task.create!(
         # Four words whatever the name: the board requires a 3-5 word title, and
@@ -122,12 +127,13 @@ class AppRequest < ApplicationRecord
         title: "Build Launch App #{subdomain}",
         stage: "designed",
         priority: 1,
-        description: "Launch-tier app requested through /build by #{user&.email || 'unknown'}.",
+        description: "#{showcase? ? 'Showcase' : 'Launch-tier'} app requested through /build by #{user&.email || 'unknown'}.",
         metadata: { "devops" => {
           "kind" => "feature",
           "acceptance" => [ "#{host} serves the app the requester described" ],
           "agent_context" => "Prompt from the requester, verbatim:\n\n#{prompt}\n\n" \
-                             "Subdomain reserved: #{host}. Tier: #{tier}. App request token: #{token}."
+                             "Subdomain reserved: #{host}. Tier: #{tier}. App request token: #{token}." \
+                             "#{showcase? ? ' SHOWCASE build: an example of what the App Builder delivers, submitted by an admin.' : ''}"
         } }
       )
       update!(task_slug: task.slug)

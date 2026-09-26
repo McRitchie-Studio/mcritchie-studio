@@ -43,8 +43,16 @@
             // Lowercase; every run of anything but a-z/0-9 becomes ONE hyphen;
             // no leading hyphen. A trailing one is left while they type (they may
             // be mid-word) and trimmed on blur — the server trims it too.
+            // A pasted full address keeps just the name: drop a scheme and a
+            // trailing .mcritchie.studio first, the way the server does, or
+            // "myapp.mcritchie.studio" becomes "myapp-mcritchie-studio". The
+            // field carries NO maxlength for the same reason: the browser would
+            // cut a 38-character paste before this ran (measured 2026-09-26);
+            // the 30-character cap is applied here, after stripping.
             clean(value) {
-              return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 30);
+              const bare = value.toLowerCase().trim()
+                .replace(/^https?:\/\//, '').replace(/\/+$/, '').replace(/\.mcritchie\.studio$/, '');
+              return bare.replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 30);
             },
             onInput(el) {
               this.stopExamples();
@@ -146,15 +154,20 @@
                     "@submit": "name = name.replace(/-+$/, '')" } do |f| %>
         <%= f.label :subdomain, "App address", class: "block text-sm text-secondary mb-2 font-medium" %>
         <div class="flex items-stretch rounded-xl border border-subtle focus-within:border-primary overflow-hidden">
-          <span class="flex items-center pl-4 text-muted font-mono text-sm">https://</span>
+          <%# https:// is decoration: below sm it is hidden so the name itself keeps
+              the room (at 360px the field used to collapse to ~8px). %>
+          <span class="hidden sm:flex items-center pl-4 text-muted font-mono text-sm">https://</span>
           <%= f.text_field :subdomain, required: true, autocomplete: "off", spellcheck: false, autocapitalize: "none",
-                maxlength: 30,
-                class: "min-w-0 flex-1 bg-transparent px-1 py-3 font-mono text-heading placeholder:text-muted focus:outline-none",
+                class: "min-w-[7rem] flex-1 bg-transparent pl-4 sm:pl-1 pr-4 sm:pr-1 py-3 font-mono text-heading placeholder:text-muted focus:outline-none",
                 ":value": "name", ":placeholder": "placeholderText",
                 "@input": "onInput($el)", "@blur": "onBlur()", "x-effect": "focusWhenClear($el)",
                 data: { test: "build-subdomain" } %>
-          <span class="flex items-center pr-4 text-muted font-mono text-sm">.mcritchie.studio</span>
+          <span class="hidden sm:flex items-center pr-4 text-muted font-mono text-sm whitespace-nowrap">.mcritchie.studio</span>
         </div>
+        <%# Below sm the box holds only the name, full width; the whole address is
+            spelled out underneath as they type. %>
+        <p class="sm:hidden mt-1 font-mono text-xs text-muted break-all" data-test="build-address-preview"
+           x-text="(name.replace(/-+$/, '') || 'yourapp') + '.mcritchie.studio'">yourapp.mcritchie.studio</p>
         <p class="mt-2 text-sm min-h-5" aria-live="polite" data-test="build-availability">
           <span x-show="state === 'checking'" x-cloak class="text-muted">Checking…</span>
           <span x-show="state === 'available'" x-cloak class="text-green-600 dark:text-green-400">Available</span>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_26_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_26_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -175,6 +175,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_150000) do
     t.datetime "discord_notified_at"
     t.text "prompt", null: false
     t.datetime "queued_at"
+    t.boolean "showcase", default: false, null: false
     t.string "status", default: "draft", null: false
     t.string "subdomain"
     t.string "task_slug"
@@ -183,7 +184,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_150000) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.index ["status"], name: "index_app_requests_on_status"
-    t.index ["subdomain"], name: "index_app_requests_on_subdomain", unique: true, where: "(subdomain IS NOT NULL)"
+    t.index ["subdomain"], name: "index_app_requests_on_holding_subdomain", unique: true, where: "((subdomain IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'building'::character varying, 'live'::character varying])::text[])))"
     t.index ["token"], name: "index_app_requests_on_token", unique: true
     t.index ["user_id"], name: "index_app_requests_on_user_id"
   end
