@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_26_040100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1418,6 +1418,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_140000) do
     t.index ["knowledge_source_id"], name: "index_source_documents_on_knowledge_source_id"
   end
 
+  create_table "stack_clients", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "domain"
+    t.jsonb "extra_software", default: [], null: false
+    t.integer "google_users"
+    t.jsonb "hosting", default: {}, null: false
+    t.string "name", null: false
+    t.text "notes"
+    t.integer "position", default: 0, null: false
+    t.string "resend_mode"
+    t.string "slug", null: false
+    t.string "tier", null: false
+    t.datetime "updated_at", null: false
+    t.index ["domain"], name: "index_stack_clients_on_domain"
+    t.index ["slug"], name: "index_stack_clients_on_slug", unique: true
+  end
+
   create_table "studio_email_deliveries", force: :cascade do |t|
     t.string "action", null: false
     t.jsonb "args", default: [], null: false
@@ -1833,6 +1850,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_140000) do
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"
   add_foreign_key "builders", "people"
+  add_foreign_key "credential_records", "credential_vaults", column: "credential_vault_slug", primary_key: "slug"
   add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
   add_foreign_key "knowledge_sources", "workspace_accounts"

@@ -15,6 +15,10 @@ module WorkspaceIconConfig
 
   def software_name(key) = softwares.dig(key.to_s, "name") || key.to_s.titleize
 
+  # "ms" when McRitchie Studio runs this software on its own account by default
+  # (`hosting: ms`), else "own" — the client's account.
+  def default_hosting(key) = softwares.dig(key.to_s, "hosting") == "ms" ? "ms" : "own"
+
   # The plain software tile (no badge): the row icon, and a cell's fallback
   # when that software x workspace pair has not been rendered.
   def tile(software)
