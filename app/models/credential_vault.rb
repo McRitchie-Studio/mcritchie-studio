@@ -11,9 +11,9 @@ class CredentialVault < ApplicationRecord
   LANES = %w[agents admin applications human].freeze
   STATUSES = %w[active reserved retired].freeze
 
-  # Where bin/onepass-icon writes a scope's icon by default, relative to
+  # Where bin/workspace-icon writes a scope's icon by default, relative to
   # app/assets/images — so a render is what this page shows.
-  ICON_DIR = "onepass_icons".freeze
+  ICON_DIR = "workspace_icons/1password".freeze
 
   has_many :credential_records, foreign_key: :credential_vault_slug, primary_key: :slug,
                                 dependent: :restrict_with_exception, inverse_of: :credential_vault
@@ -42,16 +42,16 @@ class CredentialVault < ApplicationRecord
   def icon_workspace
     return nil if icon_scope.blank?
 
-    OnepassIconConfig.workspaces[icon_scope]
+    WorkspaceIconConfig.workspaces[icon_scope]
   end
 
   private
 
-  # A scope that is not in config/onepass_icons.yml can never be rendered, so
+  # A scope that is not in config/workspace_icons.yml can never be rendered, so
   # naming one is a typo, not a plan.
   def icon_scope_is_configured
-    return if icon_scope.blank? || OnepassIconConfig.workspaces.key?(icon_scope)
+    return if icon_scope.blank? || WorkspaceIconConfig.workspaces.key?(icon_scope)
 
-    errors.add(:icon_scope, "#{icon_scope.inspect} is not a workspace in config/onepass_icons.yml")
+    errors.add(:icon_scope, "#{icon_scope.inspect} is not a workspace in config/workspace_icons.yml")
   end
 end

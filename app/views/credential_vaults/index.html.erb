@@ -25,7 +25,7 @@
                   <%= image_tag icon, alt: "#{workspace['name'] || entity} 1Password vault icon", class: "w-16 h-16", data: { test: "entity-icon" } %>
                 <% else %>
                   <div class="w-16 h-16 rounded-full border-2 border-dashed border-subtle flex items-center justify-center text-[10px] leading-tight text-muted p-2"
-                       title="bin/onepass-icon --workspace <%= entity %> --badge PATH" data-test="entity-icon-missing">No badge</div>
+                       title="bin/workspace-icon --workspace <%= entity %> --badge PATH" data-test="entity-icon-missing">No badge</div>
                 <% end %>
                 <span class="font-semibold text-heading"><%= workspace["name"] || entity.titleize %></span>
               </div>

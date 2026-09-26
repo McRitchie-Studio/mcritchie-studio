@@ -1,4 +1,6 @@
-# 1Password vault icons — the workspace scopes bin/onepass-icon can badge.
+# Workspace icons — the two axes bin/workspace-icon renders and /credentials
+# shows: `software` (the base logos, the matrix's rows) and `workspaces` (the
+# client badges, its columns). One render = one software x one workspace.
 #
 # Each scope is one client workspace, keyed by the same entity slug the
 # credential_vaults rows use, in the column order /credentials shows. `domain`
@@ -12,9 +14,17 @@
 # This repo is PUBLIC. A logo and a vault name belong here; an email address,
 # an item id or anything secret does not.
 #
-# SOP: docs/agents/agents/steffon/sops/onepass-icon.md
+# SOP: docs/agents/agents/steffon/sops/workspace-icon.md
 
-logo: lib/onepass_icons/1password.png
+software:
+  1password:
+    name: 1Password
+    logo: lib/workspace_icons/software/1password.png
+  google:
+    name: Google Workspace
+    # Google's multicolour G (the same paths as app/views/packages/logos/_google)
+    # on a white tile, rendered once from google.svg beside it.
+    logo: lib/workspace_icons/software/google.png
 
 workspaces:
   studio:
@@ -22,7 +32,7 @@ workspaces:
     domain: mcritchie.studio
     # The treasure chest — the same art public/studio-logo.svg embeds, in the
     # violet Alex supplied on 2026-09-25.
-    badge: lib/onepass_icons/badges/studio.png
+    badge: lib/workspace_icons/badges/studio.png
     accent: "#8E83FC"
     vaults: [studio-agents, studio-agents-admin, studio-applications]
   industries:
@@ -33,7 +43,7 @@ workspaces:
     name: Turf Monster
     domain: turfmonster.media
     # The gator from public/turf-monster-logo.png; the ring takes its green.
-    badge: lib/onepass_icons/badges/turf-monster.png
+    badge: lib/workspace_icons/badges/turf-monster.png
     vaults: []
   commercial-welding:
     name: Commercial Welding

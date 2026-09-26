@@ -3,14 +3,19 @@
 require "open3"
 require "yaml"
 
-# OnepassIcon — composites a workspace badge onto the 1Password icon, producing
-# the transparent PNG we give each client's vault so a vault list reads at a
-# glance: the 1Password lock, and in its lower-right corner the workspace's
-# logo on a white disc ringed in the workspace's accent colour.
+# WorkspaceIcon — composites a client workspace's badge onto a piece of
+# software's logo: the 1Password lock (the icon each client's vault wears in
+# 1Password), the Google "G" (that client's Google Workspace), and so on. The
+# workspace's logo sits in the lower-right corner on a white disc ringed in the
+# workspace's accent colour, on a transparent background.
 #
-#   OnepassIcon.render!(logo: "lib/onepass_icons/1password.png",
-#                       badge: "lib/onepass_icons/badges/treasure-chest.png",
-#                       out: "tmp/onepass-icons/studio-agents.png")
+#   WorkspaceIcon.render!(logo: "lib/workspace_icons/software/1password.png",
+#                         badge: "lib/workspace_icons/badges/studio.png",
+#                         out: "app/assets/images/workspace_icons/1password/studio.png")
+#
+# config/workspace_icons.yml holds both axes: `software` (the base logos) and
+# `workspaces` (the badges). /credentials shows the renders as a software-by-
+# entity matrix.
 #
 # WHY IMAGEMAGICK AND NOT LIBVIPS. The app's image_processing stack is libvips,
 # and libvips is absent on every developer Mac (see the Gemfile note on
@@ -21,12 +26,16 @@ require "yaml"
 # (`convert`). Every operator below is spelled the way both versions accept, and
 # the binary is chosen at run time, so the same argv renders on both.
 #
-# NOTHING HERE TOUCHES 1PASSWORD. `op vault edit --icon` accepts only the
-# built-in icon keywords, not an image, so the upload is a 1Password-app act;
-# see docs/agents/agents/steffon/sops/onepass-icon.md.
-module OnepassIcon
+# NOTHING HERE TOUCHES 1PASSWORD OR GOOGLE. `op vault edit --icon` accepts only
+# the built-in icon keywords, not an image, so a vault upload is a 1Password-app
+# act; see docs/agents/agents/steffon/sops/workspace-icon.md.
+module WorkspaceIcon
   ROOT = File.expand_path("../..", __dir__)
-  CONFIG = File.join(ROOT, "config/onepass_icons.yml")
+  CONFIG = File.join(ROOT, "config/workspace_icons.yml")
+  # Rendered icons live where the /credentials page serves them from:
+  # app/assets/images/workspace_icons/<software>/<scope>.png.
+  ASSET_DIR = "app/assets/images/workspace_icons"
+  DEFAULT_SOFTWARE = "1password"
 
   DEFAULT_SIZE = 1024
   MIN_SIZE = 64
@@ -67,7 +76,18 @@ module OnepassIcon
     end
   end
 
-  def default_logo(path = CONFIG) = File.join(ROOT, config(path).fetch("logo"))
+  # The software logos the config knows, keyed by software ("1password").
+  def softwares(path = CONFIG) = config(path).fetch("software", {})
+
+  def software(key, path = CONFIG)
+    softwares(path).fetch(key.to_s) do
+      raise Error, "unknown software #{key.inspect} — known: #{softwares(path).keys.sort.join(', ')}"
+    end
+  end
+
+  def software_logo(key, path = CONFIG) = File.join(ROOT, software(key, path).fetch("logo"))
+
+  def asset_path(software_key, scope) = File.join(ROOT, ASSET_DIR, software_key.to_s, "#{scope}.png")
 
   def geometry(size)
     size = Integer(size)
