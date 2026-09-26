@@ -69,6 +69,8 @@ class BuildViewTest < ActionView::TestCase
     assert_equal "focusWhenClear($el)", field["x-effect"], "focus lands once the modals close"
     assert_includes rendered, ".mcritchie.studio"
     AppRequest::EXAMPLE_NAMES.each { |example| assert_includes rendered, example }
+    assert_includes rendered, ".slice(0, 3)", "three examples are sampled per visit"
+    assert_includes rendered, "if (index === last) { this._typing = null; return }", "the motion stops on the third"
     assert_select "[data-test='build-register']", 0
   end
 

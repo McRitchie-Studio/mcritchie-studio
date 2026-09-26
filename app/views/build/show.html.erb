@@ -93,26 +93,33 @@
               }, 300)
             },
 
-            // The typed placeholder: type an example, hold it, erase it, move on
-            // to the next — in a shuffled order — until the user types. Same
-            // rules as studio-engine's first-name card: the FIELD stays empty
-            // (only the placeholder moves), no fake caret, reduced motion shows
-            // one example statically, and it never restarts once stopped.
+            // The typed placeholder: THREE examples, sampled fresh each visit —
+            // type the first, hold, erase; the second the same; then type the
+            // third and STOP, leaving it as the hint. The motion ends on its own
+            // rather than cycling forever. Same rules as studio-engine's
+            // first-name card: the FIELD stays empty (only the placeholder
+            // moves), no fake caret, reduced motion shows the final example
+            // statically, and typing stops it for good.
             startExamples() {
               if (this.name || !examples.length) return;
-              const order = examples.slice().sort(() => Math.random() - 0.5);
+              const picks = examples.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+              const last = picks.length - 1;
               if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-                this.placeholderText = order[0];
+                this.placeholderText = picks[last];
                 return;
               }
               let index = 0, chars = 0, phase = 'type';
               const tick = () => {
                 if (this._stopped) return;
-                const word = order[index % order.length];
+                const word = picks[index];
                 let wait = 90;
                 if (phase === 'type') {
                   chars += 1;
-                  if (chars >= word.length) { phase = 'hold'; wait = 1400 }
+                  if (chars >= word.length) {
+                    this.placeholderText = word;
+                    if (index === last) { this._typing = null; return }  // done: the last one stays
+                    phase = 'hold'; wait = 1400;
+                  }
                 } else if (phase === 'hold') {
                   phase = 'erase'; wait = 40;
                 } else {
