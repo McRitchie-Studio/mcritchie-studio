@@ -94,7 +94,7 @@ class Release
     # identity fails identically — the very loop this module exists to stop, one
     # identity over. Measured 2026-08-12 against both installations:
     #   github.mcritchie-agent    → pull_requests: write
-    #   github.mcritchie-deployer → NO pull_requests grant at all
+    #   github.mcritchie-admin → NO pull_requests grant at all
     # and bin/gh-app-git-credential:34 reads GH_APP_ITEM, so a ship-lane export
     # left in the environment re-mints the deployer every time.
     #
@@ -107,7 +107,7 @@ class Release
       "permission, so a fresh token for the same identity fails identically. Check which " \
       "identity is selected:\n" \
       "      echo \"GH_APP_ITEM=${GH_APP_ITEM:-github.mcritchie-agent (default)}\"\n" \
-      "    The ship identity `github.mcritchie-deployer` carries NO `pull_requests` grant by " \
+      "    The ship identity `github.mcritchie-admin` carries NO `pull_requests` grant by " \
       "design and can never open or merge a PR. If it is selected, `unset GH_APP_ITEM`, re-mint, " \
       "and re-run so this lane rides `github.mcritchie-agent` (pull_requests: write):\n" \
       "      unset GH_APP_ITEM && #{REMINT_COMMAND}\n" \

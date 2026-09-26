@@ -18,6 +18,7 @@ Skill.delete_all
 Agent.delete_all
 Usage.delete_all
 ErrorLog.delete_all
+AppRequest.delete_all # /build requests reference their user — clear before it
 User.delete_all
 CoachRanking.delete_all
 Coach.delete_all

@@ -21,7 +21,8 @@ on QA, ready for Steffon's `production-deploy`. It does not ship production.
 Run from the McRitchie Studio primary checkout (`cd /Users/alex/projects/mcritchie-studio`),
 on the production board (do not add `--local`). The sweep runs under the **default
 agent GitHub App identity** (`github.mcritchie-agent`); it opens and merges the batch
-promote PRs, which the deployer identity cannot. Git pushes ride the global credential
+promote PRs, which the ship identity (`github.mcritchie-admin`, the App formerly named
+`mcritchie-deployer`) cannot. Git pushes ride the global credential
 helper (`bin/gh-app-git-credential`); the sweep's `gh` calls need a minted token, so
 before the sweep export:
 
@@ -31,8 +32,9 @@ export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
   sed -n 's/^password=//p')
 ```
 
-**Do not export `GH_APP_ITEM` here**: a leftover ship-lane export mints the
-**deployer**, which has **no `pull_requests` grant**. On `Resource not accessible by
+**Do not export `GH_APP_ITEM` here**: a leftover ship-lane export
+(`github.mcritchie-admin`, or the legacy `github.mcritchie-deployer`, which still
+routes during the rename) mints the **ship App**, which has **no `pull_requests` grant**. On `Resource not accessible by
 integration`: `unset GH_APP_ITEM`, re-run the export, re-run `bin/release prepare`.
 
 A mid-sweep **401 `Bad credentials`** (the 1-hour token expired) or **403 `not

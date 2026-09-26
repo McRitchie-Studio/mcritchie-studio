@@ -458,7 +458,7 @@ phase_secrets() {
   # script that reached studio-agents-admin, so a fresh Mac no longer needs
   # `source ~/.zprofile.admin` to finish Phase 4. That is scoped to THIS SCRIPT
   # and is not a claim about the vault: studio-agents-admin still holds
-  # github.mcritchie-deployer, AWS and heroku.studio.admin, and the ship and
+  # github.mcritchie-admin, AWS and heroku.studio.admin, and the ship and
   # provisioning lanes still need the admin token to read them.
   #
   # ⚠ THIS IS NOT WHAT PRODUCTION SIGNS WITH. turf-monster-mainnet's

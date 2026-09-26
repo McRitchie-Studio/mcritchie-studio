@@ -11,9 +11,17 @@
 # mint the AGENT App instead. The two Apps are scoped apart deliberately:
 #
 #   github.mcritchie-agent     build/review — contents, PULL REQUESTS, checks, actions, workflows
-#   github.mcritchie-deployer  ship         — contents, actions, checks, secrets, and NO
-#                                             pull_requests grant AT ALL, so a deployer
-#                                             cannot open or merge a PR. By design.
+#   github.mcritchie-admin     ship/admin   — contents, actions, checks, secrets,
+#                                             environments, and NO pull_requests grant
+#                                             AT ALL, so it cannot open or merge a PR.
+#                                             By design. Its lane is still named
+#                                             `deployer` here and everywhere downstream.
+#
+# TRANSITION (2026-09-26). The App was renamed mcritchie-deployer -> mcritchie-admin
+# (same app id, same key) and its 1Password item copied to github.mcritchie-admin.
+# The legacy item name github.mcritchie-deployer still resolves to the `deployer`
+# lane (LEGACY_ITEMS) so a shell exporting the old name keeps shipping until that
+# item is retired. Delete the LEGACY_ITEMS row in the same change that deletes it.
 #
 # Handing a ship session the agent App therefore does not merely mislabel the audit
 # trail — it grants `pull_requests: write` to the one lane the boundary exists to
@@ -27,12 +35,19 @@ module GhIdentity
   # identity => 1Password item name.
   IDENTITIES = {
     "agent" => "github.mcritchie-agent",
-    "deployer" => "github.mcritchie-deployer"
+    "deployer" => "github.mcritchie-admin"
+  }.freeze
+
+  # Retired item names that still resolve to a lane during a rename. Never the
+  # target of item_for: a lane mints from its CANONICAL item unless GH_APP_ITEM
+  # names a legacy one explicitly (see item_for_env).
+  LEGACY_ITEMS = {
+    "github.mcritchie-deployer" => "deployer"
   }.freeze
 
   # item name => identity. GH_APP_ITEM names the ITEM; --identity names the SHORT
   # name. Both spell the same lane, so both are understood.
-  ITEMS = IDENTITIES.invert.freeze
+  ITEMS = IDENTITIES.invert.merge(LEGACY_ITEMS).freeze
 
   DEFAULT = "agent"
 
@@ -44,6 +59,16 @@ module GhIdentity
 
   def item_for(identity)
     IDENTITIES[identity.to_s]
+  end
+
+  # The 1Password item this call should mint `identity` from: the item GH_APP_ITEM
+  # names when that item belongs to the same lane (so a legacy name reads its own
+  # item, which is what proves it still works), otherwise the canonical item.
+  def item_for_env(identity, env: ENV)
+    named = env["GH_APP_ITEM"].to_s.strip
+    return named if !named.empty? && ITEMS[named] == identity.to_s
+
+    item_for(identity)
   end
 
   # The identity for this call, or nil when the instruction cannot be read.

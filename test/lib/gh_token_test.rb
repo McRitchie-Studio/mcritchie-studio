@@ -218,7 +218,7 @@ class GhTokenTest < Minitest::Test
     end
 
     Dir.mktmpdir do |dir|
-      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-deployer")
+      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-admin")
       _out, _err, status = run_token(env, "--identity")
 
       refute status.success?, "a lost --identity must not fall through to the ambient lane either"
@@ -318,28 +318,50 @@ class GhTokenTest < Minitest::Test
   # the AGENT App — the one holding `pull_requests: write`, which the deployer is
   # denied by design. The cache slot is the observable proof of which App was asked
   # for, so assert there rather than on a flag having been forwarded.
+  # Both names of the admin App (renamed from mcritchie-deployer on 2026-09-26) must
+  # select the ship lane AND read the item they name, attachment included: the
+  # legacy item keeps its `.pem` name, the new one carries `privatekeypem`.
+  ADMIN_LANE_PEMS = {
+    "github.mcritchie-admin" => "privatekeypem",
+    "github.mcritchie-deployer" => "mcritchie-deployer.2026-07-29.private-key.pem"
+  }.freeze
+
   def test_gh_app_item_selects_the_deployer_lane
+    ADMIN_LANE_PEMS.each do |item, pem|
+      Dir.mktmpdir do |dir|
+        env = with_env(dir).merge("GH_APP_ITEM" => item)
+        out, err, status = run_token(env)
+
+        assert status.success?, "#{item}: #{err}"
+        assert_equal "ghs_sTuBtOkEn", out.strip
+
+        calls = op_calls(dir)
+
+        assert_includes calls, "op://studio-agents-admin/#{item}/app-id",
+                        "the ship lane must read the item it was named: #{calls.inspect}"
+        assert_includes calls, "op://studio-agents-admin/#{item}/#{pem}"
+        refute_includes calls, "github.mcritchie-agent",
+                        "and must never read the agent's — that App holds pull_requests:write, " \
+                        "which the ship lane is denied by design"
+        assert_nil store(dir)["agent"], "and NOTHING may land in the agent slot"
+      end
+    end
+  end
+
+  # `--identity deployer` with no item named mints from the CANONICAL item.
+  def test_the_deployer_identity_defaults_to_the_admin_item
     Dir.mktmpdir do |dir|
-      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-deployer")
-      out, err, status = run_token(env)
+      _out, err, status = run_token(with_env(dir), "--identity", "deployer")
 
       assert status.success?, err
-      assert_equal "ghs_sTuBtOkEn", out.strip
-
-      calls = op_calls(dir)
-
-      assert_includes calls, "github.mcritchie-deployer",
-                      "the ship lane must read the DEPLOYER App item: #{calls.inspect}"
-      refute_includes calls, "github.mcritchie-agent",
-                      "and must never read the agent's — that App holds pull_requests:write, " \
-                      "which the deployer is denied by design"
-      assert_nil store(dir)["agent"], "and NOTHING may land in the agent slot"
+      assert_includes op_calls(dir), "op://studio-agents-admin/github.mcritchie-admin/privatekeypem"
+      refute_includes op_calls(dir), "github.mcritchie-deployer"
     end
   end
 
   def test_an_explicit_identity_outranks_gh_app_item
     Dir.mktmpdir do |dir|
-      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-deployer")
+      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-admin")
       _out, err, status = run_token(env, "--identity", "agent")
 
       assert status.success?, err

@@ -20,11 +20,18 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     %w[espn:scrape_depth_charts nfl:upload_headshots nfl:rankings_compute].each do |name|
       Rake::Task[name].reenable
     end
-    @env_was = ENV.to_h.slice("SEASON", "GRADES_FROM", "TEAM", "VERBOSE")
+    @env_was = ENV.to_h.slice("SEASON", "GRADES_FROM", "TEAM", "VERBOSE",
+                              "HEADSHOT_PAUSE", "HEADSHOT_LIMIT")
+    # The task sleeps between ATTEMPTED uploads to stay a polite guest at
+    # a.espncdn.com. Nothing here talks to ESPN, so the suite does not pay for
+    # the politeness — but it is set explicitly rather than left to the default,
+    # so a future change to that default cannot quietly add seconds per test.
+    ENV["HEADSHOT_PAUSE"] = "0"
+    ENV.delete("HEADSHOT_LIMIT")
   end
 
   teardown do
-    %w[SEASON GRADES_FROM TEAM VERBOSE].each { |k| ENV.delete(k) }
+    %w[SEASON GRADES_FROM TEAM VERBOSE HEADSHOT_PAUSE HEADSHOT_LIMIT].each { |k| ENV.delete(k) }
     @env_was.each { |k, v| ENV[k] = v }
   end
 
@@ -137,6 +144,148 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
                       "do is not a failure"
   end
 
+  # --- nfl:upload_headshots: the work it declined to do ---------------------
+  #
+  # [integration] The verdicts above grade the ATTEMPTS. These grade whether the
+  # run attempted anything at all — a different question, and the one that cost
+  # 2,048 athletes their avatar.
+
+  # THE DEFECT, MEASURED ON PRODUCTION 2026-09-26. The task resolved an NFL team
+  # through person.contracts and `next`-ed past any athlete without one:
+  # `candidates: 2048`, `cached: 0`, `skipped (no NFL team): 2048`, exit 0. Both
+  # `contracts` and `teams` are EMPTY tables in production — 0 rows each — so
+  # that precondition could not be satisfied by anybody, and the task had cached
+  # nothing, ever, while printing a clean summary. The team is a folder name.
+  test "the headshot upload caches an athlete with no contract at all" do
+    athlete = headshot_candidate(1, team_slug: "buffalo-bills")
+    assert_empty athlete.person.contracts,
+                 "precondition: the production shape — an athlete with a team_slug and no contract"
+
+    keys = []
+    capture_io do
+      Studio::ImageCache.stub(:cache!, ->(key_prefix:, **) { keys << key_prefix; {} }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal ["headshots/nfl/buffalo-bills/#{athlete.person_slug}"], keys,
+                 "a contract is not a precondition for a headshot, and the athlete's own " \
+                 "team_slug is where the folder comes from"
+  end
+
+  # The other half of the fallback: no team at all is still an upload.
+  test "the headshot upload caches a teamless athlete under free-agents" do
+    athlete = headshot_candidate(2, team_slug: nil)
+
+    keys = []
+    capture_io do
+      Studio::ImageCache.stub(:cache!, ->(key_prefix:, **) { keys << key_prefix; {} }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal ["headshots/nfl/free-agents/#{athlete.person_slug}"], keys
+  end
+
+  # THE SILENT SUCCESS ITSELF. `failed > cached` is structurally blind here —
+  # both counters are 0, so the rule is false and the task returns normally. A
+  # run that finds work and attempts none of it is the task refusing its job, not
+  # S3 refusing the upload, and it must not exit 0.
+  test "the headshot upload refuses a run that attempted none of the work it found" do
+    headshot_candidate(3, espn_headshot_url: nil)
+    headshot_candidate(4, espn_headshot_url: nil)
+
+    _out, err = capture_io do
+      assert_raises(SystemExit) { Rake::Task["nfl:upload_headshots"].invoke }
+    end
+
+    assert_match(/attempted 0 of the 2 athletes/, err)
+    assert_match(/declined every one of them WITHOUT trying/, err)
+    assert_match(/espn_headshot_url/, err, "name the field an operator goes and fills")
+  end
+
+  # THE GREEN TWIN THAT KEEPS THE GUARD HONEST, and the reason it is computed
+  # from `needed` rather than from `cached`. On a warm machine nearly every
+  # candidate is already complete; a rule that reddened THAT run would be a rule
+  # an operator switches off, which is how the ecosystem got here.
+  test "a warm re-run with every headshot already cached stays green and says nothing" do
+    athlete = headshot_candidate(5, team_slug: "buffalo-bills")
+    cache_variants(athlete, %w[original 100 400])
+
+    completed = false
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { flunk "a complete athlete must not be re-uploaded" }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+        completed = true
+      end
+    end
+
+    assert completed, "nothing left to do is not a failure"
+    assert_equal "", err, "the warm re-run legitimately attempts nothing — `needed` subtracts " \
+                          "the complete candidates out precisely so this stays silent"
+  end
+
+  # A PARTIAL decline is reported, not refused. Some athletes have no image
+  # source and never will; reddening a rebuild for a permanent data gap trains an
+  # operator to stop reading the line.
+  test "a partial decline is reported without reddening the run" do
+    headshot_candidate(6, team_slug: "buffalo-bills")
+    headshot_candidate(7, espn_headshot_url: nil)
+
+    completed = false
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { {} }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+        completed = true
+      end
+    end
+
+    assert completed, "one athlete with no source URL is a data gap, not a broken uploader"
+    assert_match(/1 of 2 athletes needing a headshot were skipped without an attempt/, err)
+  end
+
+  # "ALREADY DONE" HAS TO INCLUDE "original". Studio::ImageCache.cache! stores
+  # the unmodified source plus one variant per width, so a row set holding only
+  # 100 and 400 is NOT done — and calling it done both hides the gap and inflates
+  # `skipped_complete`, which is the denominator the verdict above is computed
+  # from. upload_coach_headshots already spelled its check this way.
+  test "an athlete missing only the original is not already done" do
+    athlete = headshot_candidate(8, team_slug: "buffalo-bills")
+    cache_variants(athlete, %w[100 400])
+
+    attempts = 0
+    capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { attempts += 1; {} }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal 1, attempts,
+                 "100 and 400 without an original is an incomplete row set, not a finished one"
+  end
+
+  # RESUMABILITY, the operable half. A cold run is ~2,000 fetches from
+  # a.espncdn.com plus three S3 puts each, which an operator wants to take in
+  # waves and inspect between. Nothing records progress because nothing has to:
+  # the ImageCache rows ARE the progress, so the next wave resumes exactly where
+  # this one stopped.
+  test "HEADSHOT_LIMIT stops the run after N attempted uploads" do
+    3.times { |i| headshot_candidate(20 + i, team_slug: "buffalo-bills") }
+    ENV["HEADSHOT_LIMIT"] = "2"
+
+    attempts = 0
+    completed = false
+    capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { attempts += 1; {} }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+        completed = true
+      end
+    end
+
+    assert completed, "a bounded wave is a complete run, not a partial failure"
+    assert_equal 2, attempts, "the limit bounds the ATTEMPTS, which is the cost being bounded"
+  end
+
   # --- nfl:rankings_compute ------------------------------------------------
 
   # MEASURED BEFORE THE FIX: with AthleteGrade emptied, compute_all! wrote the
@@ -192,6 +341,43 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
 
   # Athletes the task will actually attempt: an espn_id, an NFL-league team
   # through a contract, and no cached variants yet.
+  # A rake `abort` raises SystemExit, which is NOT a StandardError — Minitest does
+  # not rescue it. A task that wrongly aborts therefore kills the whole suite
+  # PROCESS with a bare exit 1, no dots and no failure name, and the
+  # `assert completed` line after the invoke never runs at all. MEASURED while
+  # mutation-testing this file: restoring the contract precondition made the run
+  # print `# Running:` and nothing else. Naming it here turns that into a
+  # readable failure attributed to the test that caused it.
+  def refute_aborts
+    yield
+  rescue SystemExit => e
+    flunk "nfl:upload_headshots aborted a run it should have completed: #{e.message}"
+  end
+
+  # A CANDIDATE IN THE PRODUCTION SHAPE: espn_id set, a team_slug on the athlete's
+  # OWN column, and no Contract anywhere. prepare_candidates above deliberately
+  # picks NFL-CONTRACTED people because that is what the task used to demand; this
+  # builds the athlete the task used to throw away.
+  def headshot_candidate(suffix, team_slug: nil, espn_headshot_url: :espn)
+    person = Person.create!(first_name: "Head", last_name: "Shot#{suffix}", athlete: true)
+    url = if espn_headshot_url == :espn
+      "https://a.espncdn.com/i/headshots/nfl/players/full/9#{suffix}.png"
+    else
+      espn_headshot_url
+    end
+    Athlete.create!(person_slug: person.slug, sport: "football", team_slug: team_slug,
+                    espn_id: "9#{suffix}", espn_headshot_url: url)
+  end
+
+  def cache_variants(athlete, variants)
+    variants.each do |variant|
+      ImageCache.create!(owner: athlete, purpose: "headshot", variant: variant,
+                         s3_key: "#{athlete.headshot_key_prefix}/#{variant}.png",
+                         content_type: "image/png")
+    end
+    athlete.reload
+  end
+
   def prepare_candidates(count)
     people = Person.joins("INNER JOIN contracts ON contracts.person_slug = people.slug")
                    .joins("INNER JOIN teams ON teams.slug = contracts.team_slug AND teams.league = 'nfl'")

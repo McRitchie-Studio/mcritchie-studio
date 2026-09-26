@@ -212,7 +212,7 @@ Ask every row, every time. "Probably not" is not an answer; run the command.
 |---|---|---|
 | 1Password item + field | `op item list --vault <vault> --format json \| jq -r '.[].title'` | the lane that owns the vault (`credential-filing` §4) |
 | Heroku config, **per app** (10 apps) | `heroku config --json --app <app> \| jq 'has("<VAR>")'` | any agent lane with the Heroku agent key |
-| GitHub **Actions** secrets, per repo | `gh secret list -R McRitchie-Studio/<repo>` | **operator only** — see 1.2 |
+| GitHub **Actions** secrets, per repo and per environment | `gh secret list -R McRitchie-Studio/<repo>` (add `--env <env>` for an environment) | the **admin lane** (`github.mcritchie-admin`) — see 1.2 |
 | GitHub **Dependabot** secrets, per repo | `gh secret list --app dependabot -R McRitchie-Studio/<repo>` | **operator only** — separate store |
 | `.env` on primaries **and every desk** | `grep -rl '^<VAR>=' /Users/alex/projects/*/.env /Users/alex/projects/*/.worktrees/*/.env` | you, per file |
 | Env snapshots on disk | `ls -l /Users/alex/projects/mcritchie-studio/tmp/env-snapshot-*.json` | you |
@@ -245,20 +245,48 @@ permission`, check `op service-account ratelimit` first — the daily cap is 1,0
 reads account-wide and shared by every lane, and a spent quota refuses exactly like
 a missing grant.
 
-**GitHub — two stores, and neither is yours to write.** Measured 2026-09-09: both
-commands return `HTTP 403: Resource not accessible by integration` under the agent
-GitHub App installation token, because that App has no secrets permission. The two
-calls hit distinct REST namespaces — `/actions/secrets` and `/dependabot/secrets`
-— which is the plainest proof they are separate stores. A value mirrored into
-Actions is **not** in Dependabot; `studio-engine`'s `consumer-ci.yml` consumes
-`MCRITCHIE_AGENT_APP_ID` and `MCRITCHIE_AGENT_PRIVATE_KEY`, and a Dependabot-raised
-PR runs that workflow with the Dependabot copy.
+**GitHub — two stores; the Actions one is the admin lane's to write.** Measured
+2026-09-09: both `gh secret list` commands return `HTTP 403: Resource not accessible
+by integration` under the **agent** App's token, because that App has no secrets
+permission. The two calls hit distinct REST namespaces — `/actions/secrets` and
+`/dependabot/secrets` — which is the plainest proof they are separate stores. A value
+mirrored into Actions is **not** in Dependabot; `studio-engine`'s `consumer-ci.yml`
+consumes `MCRITCHIE_AGENT_APP_ID` and `MCRITCHIE_AGENT_PRIVATE_KEY`, and a
+Dependabot-raised PR runs that workflow with the Dependabot copy.
 
-So the GitHub store is an **operator step**, and it is the one that will stall you
-if you discover it at the end. Plan it into Phase 4: Alex updates it at
-`Settings → Secrets and variables → Actions`, then the `Dependabot` tab of the same
-page, per repo. Give him the repo list and the secret names — never the value in
-chat; hand it over per `credential-filing` §5 (`read -rs`, clipboard, cleared after).
+**Actions secrets, including environment secrets, are no longer operator-only.** On
+2026-09-26 the ship App was renamed `mcritchie-deployer` → `mcritchie-admin` and
+granted **Environments + Secrets read/write**; Alex accepted the install
+permissions. So the admin lane writes them itself, with the value on stdin and never
+in argv:
+
+```bash
+source ~/.zprofile.admin                       # without a pipe
+export GH_TOKEN="$(GH_APP_ITEM=github.mcritchie-admin /Users/alex/projects/mcritchie-studio/bin/gh-token)"
+: "${NEW:?refusing to set an empty value}" && \
+  printf '%s' "$NEW" | gh secret set <VAR> --env <env> -R McRitchie-Studio/<repo>
+gh api repos/McRitchie-Studio/<repo>/environments/<env>/secrets/<VAR> --jq .updated_at   # moved to now
+```
+
+GitHub cannot read a secret back, so the proof is a run that consumes it, not the
+`updated_at` stamp.
+
+**`HEROKU_API_KEY` for mcritchie-studio is fully scripted: `bin/rotate-heroku-ci-key`.**
+It mints a new authorization with the admin Heroku key, files it in
+`op://studio-applications/heroku.studio.applications` first (digest read-back),
+sets the `qa` and `production` environment secrets, proves each by dispatching
+`qa-deploy.yml` and `prod-deploy.yml` at the SHA each app already runs (a no-op push
+that must conclude `success`), and only then revokes the old authorization. A
+failed proof rolls every store back and leaves the old key live. Run
+`bin/rotate-heroku-ci-key --dry-run` first: it is read-only and prints the plan. It
+has no operator step; afterwards, refresh `HEROKU_STUDIO_APPLICATIONS_API_KEY` in
+`~/.zprofile.admin`, which still holds the revoked key.
+
+**Dependabot secrets stay an operator step**: the admin App's grant covers Actions,
+not Dependabot. Plan it into Phase 4: Alex updates it at `Settings → Secrets and
+variables → Dependabot`, per repo. Give him the repo list and the secret names —
+never the value in chat; hand it over per `credential-filing` §5 (`read -rs`,
+clipboard, cleared after).
 
 **`.env` — there are far more copies than you think.** `bin/agent-worktree` COPIES
 the primary `.env` into each desk at creation, so a desk holds a frozen snapshot
@@ -1020,9 +1048,10 @@ processes for the life of the call — acceptable on this single-operator machin
 stated so the recipe is not mistaken for airtight. `config:set` restarts the app's
 dynos; a worker mid-job may still finish under the old value.
 
-**GitHub Actions and Dependabot.** The operator step from Phase 1.2. Give
-Alex the repo list and the secret names, hand the value over off-transcript,
-and confirm BOTH tabs. A rotation that updates Actions and forgets Dependabot goes
+**GitHub Actions and Dependabot.** Actions secrets (repo and environment) are the
+admin lane's: the stdin recipe in Phase 1.2. Dependabot remains the operator step
+from Phase 1.2: give Alex the repo list and the secret names, hand the value over
+off-transcript, and confirm the tab. A rotation that updates Actions and forgets Dependabot goes
 green on every push and red only on the next Dependabot PR, days later, in a
 workflow nobody is watching.
 
@@ -1164,7 +1193,7 @@ confirmed normal operation first.
 
 | Source | Revoke with |
 |---|---|
-| Heroku authorization | **operator step.** `heroku authorizations` fails under the agent lane — measured 2026-09-09: `Error: The scope of this OAuth authorization does not allow access to this resource.` Alex revokes at https://dashboard.heroku.com/account/applications, matching the row by its **description**, which is the only human-readable handle an authorization has. Never revoke the one the current session is authenticating with; if you cannot tell them apart, mint the replacement first, prove it works, and revoke the row that is then unused. |
+| Heroku authorization | **the admin lane** (`HEROKU_STUDIO_ADMIN_API_KEY`; `bin/rotate-heroku-ci-key` revokes the CI key's old authorization itself, after its proofs). Under the **agent** lane it is an operator step: `heroku authorizations` fails there — measured 2026-09-09: `Error: The scope of this OAuth authorization does not allow access to this resource.` Alex revokes at https://dashboard.heroku.com/account/applications, matching the row by its **description**, which is the only human-readable handle an authorization has. Never revoke the one the current session is authenticating with; if you cannot tell them apart, mint the replacement first, prove it works, and revoke the row that is then unused. |
 | AWS access key | delete the old access key for that IAM user in the console or CLI |
 | Provider API key | the provider's console — "revoke", not "hide" |
 | On-chain signer (`VaultState`) | **already done in 4.3** — the whole-set `update_signers` evicted the old pubkey in the same transaction. There is no second eviction. Reversible only by another 2-of-3 `update_signers`, so keep the old secret filed until Phase 5 passes. |

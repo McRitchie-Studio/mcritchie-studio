@@ -184,6 +184,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| `launch-build-queue` | Shared | `mcritchie-studio/docs/agents/modules/launch-build-queue.md` |
 | `focus-session` | Shared | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
@@ -246,6 +247,7 @@ heartbeat may set attribution and act order; the SOP files do not depend on it.
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
+| `launch-build-queue` | Shared | `mcritchie-studio/docs/agents/modules/launch-build-queue.md` |
 | `focus-session` | Shared | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |

@@ -94,4 +94,83 @@ class AthleteTest < ActiveSupport::TestCase
 
     assert_equal "Build: 6ft2 wiry", athlete.physical_brief
   end
+
+  # --- the headshot S3 key prefix -----------------------------------------
+  #
+  # [unit] This string was built at TWO call sites — Nflverse::SeedPlayers
+  # #cache_headshot and the `nfl:upload_headshots` rake task — and the two
+  # disagreed about the teamless athlete. SeedPlayers defaulted the folder; the
+  # rake task treated a missing team as a reason to skip the athlete entirely,
+  # and the rake task is the one operators run. One expression now serves both.
+
+  test "the headshot key prefix files an athlete under their team" do
+    person = Person.create!(first_name: "Rostered", last_name: "Player", athlete: true)
+    athlete = Athlete.create!(person_slug: person.slug, sport: "football", team_slug: "buffalo-bills")
+
+    assert_equal "headshots/nfl/buffalo-bills/#{person.slug}", athlete.headshot_key_prefix
+  end
+
+  # THE CASE THE RAKE TASK USED TO DROP ON THE FLOOR. The folder is cosmetic, so
+  # a blank team_slug picks a default rather than costing the athlete an avatar.
+  test "a teamless athlete still gets a key prefix" do
+    person = Person.create!(first_name: "Teamless", last_name: "Player", athlete: true)
+    athlete = Athlete.create!(person_slug: person.slug, sport: "football", team_slug: nil)
+
+    assert_equal "headshots/nfl/free-agents/#{person.slug}", athlete.headshot_key_prefix
+  end
+
+  # An empty string is not nil, and `||` alone would have let it through to build
+  # "headshots/nfl//slug" — a valid S3 key with a doubled separator that no
+  # browse of the bucket would ever group correctly.
+  test "an empty team_slug falls back rather than emptying the folder" do
+    person = Person.create!(first_name: "Blank", last_name: "Roster", athlete: true)
+    athlete = Athlete.create!(person_slug: person.slug, sport: "football", team_slug: "")
+
+    assert_equal "headshots/nfl/free-agents/#{person.slug}", athlete.headshot_key_prefix
+    refute_includes athlete.headshot_key_prefix, "//"
+  end
+
+  # THE ONE THAT PINS THE AGREEMENT rather than restating one side of it. Asks
+  # BOTH writers for the same athlete's key and compares them, so re-forking the
+  # expression in either place reddens this test. An assertion on the literal
+  # string in each file would pass happily while the two drifted apart, which is
+  # exactly what happened.
+  test "both headshot writers build the same key for the same athlete" do
+    person = Person.create!(first_name: "Agreed", last_name: "Upon", athlete: true)
+    athlete = Athlete.create!(person_slug: person.slug, sport: "football", team_slug: "miami-dolphins",
+                              espn_headshot_url: "https://a.espncdn.com/i/headshots/nfl/players/full/1.png")
+
+    seen = nil
+    Studio::ImageCache.stub(:cache!, ->(key_prefix:, **) { seen = key_prefix; {} }) do
+      # upload_headshots: false only gates the CALL SITE inside #call (and keeps
+      # the constructor from demanding AWS_ACCESS_KEY_ID); #cache_headshot is
+      # what we are asking, so we ask it directly.
+      seeder = Nflverse::SeedPlayers.new(csv_body: "", upload_headshots: false)
+      seeder.send(:cache_headshot, athlete)
+    end
+
+    assert_equal athlete.headshot_key_prefix, seen,
+                 "Nflverse::SeedPlayers must key headshots exactly as Athlete does — two " \
+                 "spellings of this string is the defect this method exists to prevent"
+  end
+
+  # The width list forked the same way: [100, 400] was literal in SeedPlayers and
+  # a separate constant in the rake task, so adding a width would have reached
+  # one writer and not the other.
+  test "the seeder caches the widths the model declares" do
+    person = Person.create!(first_name: "Width", last_name: "Check", athlete: true)
+    athlete = Athlete.create!(person_slug: person.slug, sport: "football", team_slug: "buffalo-bills",
+                              espn_headshot_url: "https://a.espncdn.com/i/headshots/nfl/players/full/2.png")
+
+    seen = nil
+    Studio::ImageCache.stub(:cache!, ->(widths:, **) { seen = widths; {} }) do
+      # upload_headshots: false only gates the CALL SITE inside #call (and keeps
+      # the constructor from demanding AWS_ACCESS_KEY_ID); #cache_headshot is
+      # what we are asking, so we ask it directly.
+      seeder = Nflverse::SeedPlayers.new(csv_body: "", upload_headshots: false)
+      seeder.send(:cache_headshot, athlete)
+    end
+
+    assert_equal Athlete::HEADSHOT_WIDTHS, seen
+  end
 end
