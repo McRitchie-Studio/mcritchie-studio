@@ -13,8 +13,9 @@ const { loginWithMagicLink } = require("./helpers");
 //
 // NOTHING HERE SPENDS MONEY. The seeded identity and candidates are fixtures written
 // straight onto the rows (e2e/seed.rb), so no Higgsfield call and no search query
-// happens; the Search button is not even rendered, because no provider is configured
-// in the test environment.
+// happens. The Search button IS now reachable in principle — the keyless Wikimedia
+// Commons provider makes a provider available on every machine — but it is admin-only
+// and this spec browses anonymously, and it is never clicked.
 //
 // The person is "Drew Lockfixture" rather than a real seeded athlete so this spec's
 // failures can never be confused with the artifact-gate specs that read Burrow.
@@ -86,12 +87,19 @@ test("both halves render on one page, side by side at desktop and stacked on a p
   await expect(page.locator("[data-test='identity-status'][data-state='ready']")).toHaveCount(1);
   await expect(page.locator("[data-test='generated-images'] figure")).toHaveCount(1);
 
-  // NO PROVIDER IS CONFIGURED in the test environment, so the page must degrade to
-  // the note rather than offering a purchase it cannot make. The NOTE is the
-  // load-bearing assertion of the two: this spec browses anonymously and the Search
-  // button is admin-only, so its absence now has two causes and proves neither on its
-  // own. CharacterModelPageTest holds the single-cause versions of both halves.
-  await expect(page.locator("[data-test='search-unconfigured']")).toHaveCount(1);
+  // A PROVIDER IS ALWAYS CONFIGURED NOW, and this assertion used to say the opposite.
+  // Appearances::ImageSearch::WikimediaCommons is keyless, so `available?` is true on
+  // every machine including this one; before it shipped, SERPER_API_KEY existed nowhere
+  // and the page degraded to the "search is off" note. The note is now unreachable and
+  // asserting it would pin a world that no longer exists.
+  await expect(page.locator("[data-test='search-unconfigured']")).toHaveCount(0);
+  await expect(page.locator("[data-test='search-configured'][data-provider='wikimedia-commons']"))
+    .toHaveCount(1);
+
+  // THE BUTTON IS STILL ABSENT, for a DIFFERENT reason than it used to be — it is
+  // admin-only and this spec browses anonymously, where before it was also missing
+  // because nothing could be searched. Two causes collapsed into one, so this half
+  // proves less than it looks; CharacterModelPageTest holds the single-cause versions.
   await expect(page.locator("[data-test='search-button']")).toHaveCount(0);
 
   // STACKS ON A PHONE, and nothing spills sideways. The horizontal-overflow check is

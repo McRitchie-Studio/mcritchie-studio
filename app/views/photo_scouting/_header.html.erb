@@ -1,0 +1,65 @@
+<%# THE PAGE'S OWN HEADING, plus the one control that spends money.
+
+    THE QUERY IS PRINTED, not merely implied by the person's name. It is assembled
+    from the person plus their team (Appearances::GatherReferencePhotos#query), so it
+    is not what the operator would have typed — and he cannot judge a search whose
+    question he cannot see. %>
+<header class="space-y-3">
+  <div>
+    <p class="label-upper text-muted">Photo scouting</p>
+    <h1 class="text-2xl sm:text-3xl font-black text-heading leading-tight">
+      <%= @person.full_name %>
+    </h1>
+    <p class="text-xs text-muted mt-1">
+      <%= link_to "back to #{@person.full_name}", person_path(@person.slug),
+            class: "hover:text-primary underline" %>
+      <% if @appearance %>
+        &middot;
+        <%= link_to "the look this files against", person_appearance_path(@person.slug, @appearance.slug),
+              class: "hover:text-primary underline" %>
+      <% end %>
+    </p>
+  </div>
+
+  <p class="text-sm text-body max-w-2xl">
+    What the search found, what the ranking picked, and
+    <strong class="text-heading">what you would have picked instead</strong>.
+    Judge the search as well as the pick: every candidate it returned is below, in the
+    order it returned them.
+  </p>
+
+  <% if @appearance %>
+    <div class="rounded-lg border border-subtle bg-surface-alt p-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div class="min-w-0 flex-1">
+        <% if @search_available %>
+          <p class="text-xs text-heading font-bold">
+            Searching with <span class="font-mono"><%= @search_provider %></span>
+          </p>
+          <p class="text-2xs text-muted break-words">
+            Query: &ldquo;<%= @search_query %>&rdquo;
+          </p>
+        <% else %>
+          <p data-test="search-unconfigured" class="text-xs text-heading font-bold">
+            No provider is configured
+          </p>
+          <p class="text-2xs text-muted break-words">
+            Nothing can be searched. Set
+            <span class="font-mono text-warning-ink"><%= Appearances::ImageSearch::Serper::API_KEY_ENV %></span>
+            for a paid provider; the keyless one should have covered this, so its
+            absence here means the registry was changed.
+          </p>
+        <% end %>
+      </div>
+
+      <%# ADMINS ONLY, matching the controller. A search buys one provider query plus
+          up to VISION_SHORTLIST vision classifications, and hub signup is open — so a
+          button shown to everyone is a purchase offered to everyone. A control nobody
+          but an admin may use is furniture on every other reader's page. %>
+      <% if admin? && @search_available %>
+        <%= button_to "Search the web", search_person_scouting_path(@person.slug),
+              method: :post, class: "btn btn-sm btn-primary shrink-0",
+              form: { data: { test: "scouting-search-button" } } %>
+      <% end %>
+    </div>
+  <% end %>
+</header>
