@@ -213,6 +213,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # asked. It also needs the GUARD_HELPER_CALLERS row below, because it wraps
     # the guard in a helper.
     "chrome-profiles"        => :cli_arg_guard,
+    # Writes PNGs into app/assets/images and tmp/. OptionParser with a -h arm;
+    # it also REFUSES a leftover positional, so `bin/workspace-icon logo.png`
+    # cannot render the default badge while the path typed is silently ignored.
+    "workspace-icon"         => :optparse,
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,

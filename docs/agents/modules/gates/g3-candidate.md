@@ -92,6 +92,9 @@ run inside it rides the close:
   plan folds the `rake`/`bin/rails` spellings of one command and records the
   check on each. That runner prefix is all it normalises: the rest of the
   command is compared verbatim, so anything else different runs twice.
+  A repo declaring `qa_evidence: exempt` (cyvasse) has no QA app, so its
+  commands are skipped here with a printed line; any other repo with no QA app
+  aborts prepare.
 - **The CI verdict** — GitHub CI's conclusion for the release SHA **IS** the G3
   verdict (DevOps v2 Phase 3): green certifies, every other state fails closed. The
   verdict is recorded on the release (`qa_gates[repo]`). See

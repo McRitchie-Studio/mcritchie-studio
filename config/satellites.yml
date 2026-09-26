@@ -93,3 +93,14 @@ satellites:
     description: "Central business knowledge base — acquisitions (flagship), companies, financials, clients; version-controlled business-data/ files plus the app DB. Successor to the retired acquisition-studio prototype"
     deploy_provider: "heroku"
     status: "active"
+
+  - slug: cyvasse
+    display_name: "Cyvasse"
+    emoji: "🐉"
+    port: 3600
+    heroku_app: "cyvasse"
+    production_url: "https://cyvasse.mcritchie.studio"
+    role: "viewer"
+    description: "Hex strategy board game, revived from Alex's first app"
+    deploy_provider: "heroku"
+    status: "planned"

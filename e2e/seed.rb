@@ -29,6 +29,9 @@ CiCheckJob.delete_all # per-check LIVE CI progress rows (workflow_job) — resee
 Release.delete_all
 SessionMascot.delete_all
 Pokemon.delete_all
+CredentialRecord.delete_all # records restrict their vault's delete — clear before it
+CredentialVault.delete_all
+WorkspaceAccount.where(domain: "mcritchie.studio").delete_all
 
 # Admin user
 admin = User.create!(
@@ -1306,3 +1309,9 @@ Communication.create!(
 )
 
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AgentAction.count} agent actions, #{AgentActivity.count} agent activities, #{GithubWorkflowRun.count} github runs, #{News.count} news, #{Content.count} content, #{Communication.count} communications"
+
+# /credentials — the credential census (records only, no secret values) and an
+# ACTIVE Studio workspace, so e2e/credentials_matrix.spec.js has a proven Google
+# grant to read. The census seed is the same file development loads.
+load Rails.root.join("db/seeds/59_credentials.rb")
+WorkspaceAccount.create!(domain: "mcritchie.studio", entity: "mcritchie-studio", status: "active")
