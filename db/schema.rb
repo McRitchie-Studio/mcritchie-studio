@@ -184,7 +184,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_210000) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.index ["status"], name: "index_app_requests_on_status"
-    t.index ["subdomain"], name: "index_app_requests_on_holding_subdomain", unique: true, where: "((subdomain IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'building'::character varying, 'live'::character varying])::text[])))"
+    t.index ["subdomain"], name: "index_app_requests_on_holding_subdomain", unique: true, where: "((subdomain IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('building'::character varying)::text, ('live'::character varying)::text])))"
     t.index ["token"], name: "index_app_requests_on_token", unique: true
     t.index ["user_id"], name: "index_app_requests_on_user_id"
   end
