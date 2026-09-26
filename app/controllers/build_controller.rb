@@ -65,7 +65,9 @@ class BuildController < ApplicationController
       redirect_to build_path, alert: "That draft belongs to another account."
       return
     end
-    @app_request.update!(user: current_user) if @app_request.user.nil?
+    # An admin opening an unsigned draft from /build/requests only reads it;
+    # attaching it would lock the visitor out of their own prompt.
+    @app_request.update!(user: current_user) if @app_request.user.nil? && !current_user.admin?
     session.delete(:build_draft_token)
   end
 

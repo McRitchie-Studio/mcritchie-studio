@@ -115,6 +115,14 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to build_path
   end
 
+  test "an admin opening an unsigned draft reads it without taking it" do
+    draft = send_prompt
+    log_in_as users(:alex)
+    get build_request_path(draft.token)
+    assert_response :success
+    assert_nil draft.reload.user
+  end
+
   test "a queued request's status page is private to its owner" do
     draft = send_prompt
     log_in_as users(:viewer)
