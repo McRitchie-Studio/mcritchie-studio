@@ -226,6 +226,7 @@ class Release::PostDeployTest < ActiveSupport::TestCase
     registry = YAML.load_file(Release::Repos::CONFIG_PATH)
     assert_equal Release::Repos.qa_evidence_exempt_repos.sort, PD.qa_exempt_repos(registry).sort
     assert_includes PD.qa_exempt_repos(registry), "cyvasse"
+    assert_includes PD.qa_exempt_repos(registry), "dads-app"
   end
 
   test "[unit] qa_exempt_repos honours only the exact declared value" do

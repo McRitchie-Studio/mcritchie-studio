@@ -1066,7 +1066,8 @@ module ApplicationHelper
     "chain-ops"            => "⛓️",
     "tax-studio"           => "📊",
     "rolio"                => "📇",
-    "cyvasse"              => "🐉"
+    "cyvasse"              => "🐉",
+    "dads-app"             => "🎞️"
   }.freeze
 
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.
