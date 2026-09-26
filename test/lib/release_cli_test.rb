@@ -5247,6 +5247,53 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "ABORTED", "an unroutable declared command aborts rather than silently skipping"
   end
 
+  # [integration] cyvasse through the REAL run_post_deploy, reading the REAL
+  # config/release_repos.yml (qa_evidence: exempt + git_push_heroku prod_deploy) and
+  # config/qa_environments.yml (no cyvasse entry). Before the fix both phases hit the
+  # blank-app abort: prepare stuck `assembling` with every member held, and ship
+  # aborting after cyvasse's push was already live.
+  CYVASSE_POST_DEPLOY_REPOS = <<~RUBY
+    REPOS = [{ "repo" => "cyvasse", "kind" => "app", "qa_app" => "cyvasse",
+               "prod_deploy" => { "strategy" => "git_push_heroku",
+                                  "remote" => "https://git.heroku.com/cyvasse.git", "branch" => "main" },
+               "members" => [{ "slug" => "t-cyv", "post_deploy_cmd" => "bin/rails users:seed_identities" }] }]
+  RUBY
+
+  def test_cyvasse_qa_post_deploy_is_skipped_by_its_declared_exemption
+    out = run_cli(["--yes"], setup: POST_DEPLOY_ARGV_STUB + CYVASSE_POST_DEPLOY_REPOS,
+                  call: "begin; run_post_deploy(REPOS, target: :qa); puts('QA-CONTINUES'); " \
+                        "rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "SKIPPED at QA", "the skip is printed, not silent"
+    assert_includes out, "qa_evidence: exempt", "the printed line names the exemption"
+    refute_includes out, "SH-ARGV", "nothing runs on a QA app that does not exist"
+    refute_includes out, "ABORTED"
+    assert_includes out, "QA-CONTINUES", "prepare carries on to the QA-green stamp"
+  end
+
+  def test_cyvasse_prod_post_deploy_runs_on_the_app_its_prod_deploy_names
+    out = run_cli(["--yes"], setup: POST_DEPLOY_ARGV_STUB + CYVASSE_POST_DEPLOY_REPOS,
+                  call: "begin; run_post_deploy(REPOS, target: :prod); rescue SystemExit; puts('ABORTED'); end")
+
+    refute_includes out, "ABORTED", "ship must not abort after the push is live"
+    assert_includes out, %q("-a", "cyvasse"), "the command runs on Heroku app cyvasse"
+    assert_includes out, %q("users:seed_identities")
+  end
+
+  # The fence: a NON-exempt app with no QA env entry keeps the hard abort at QA.
+  def test_post_deploy_still_aborts_for_a_non_exempt_app_with_no_qa_env
+    setup = <<~RUBY
+      def conductor(*_a, **_k) = {}
+      REPOS = [{ "repo" => "chain-ops", "kind" => "app", "qa_app" => "chain-ops",
+                 "members" => [{ "slug" => "t-chain", "post_deploy_cmd" => "rake noop" }] }]
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; run_post_deploy(REPOS, target: :qa); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "ABORTED"
+    refute_includes out, "SKIPPED at QA"
+  end
+
   # --- batched merge: N slugs, ONE heroku-run adopt (the timeout fix) -------
   # The old `merge` did `gh pr merge` + a COLD-START `heroku run` adopt PER PR; 3
   # in a loop blew the 2-min tool timeout and a mid-run timeout left a PR merged
