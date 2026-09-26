@@ -129,14 +129,19 @@ module Appearances
 
     # FILE THE ANSWER, IN RANK ORDER RATHER THAN IN THE PROVIDER'S ORDER.
     #
-    # Four verdicts:
+    # Five verdicts:
     #
     #   unfetchable   — failed the SSRF/reachability guard. NEVER sent anywhere,
     #                   and filed so the operator can see the search offered it.
+    #   not_a_photo   — no person in the picture at all. The one HARD exclusion:
+    #                   a scanned page is not a poor reference, it is not one.
     #   face_obscured — the vision classifier looked and found no usable face.
     #                   Only ever stamped when something ACTUALLY LOOKED.
     #   beyond_limit  — fine, but past CHOSEN_LIMIT.
     #   chosen        — in the identity.
+    #
+    # `duplicate` is the sixth reason the model declares and the one NOTHING here
+    # stamps — see AppearanceReferencePhoto for why it is declared anyway.
     #
     # THE GUARD RUNS BEFORE THE RANKING, so a rejected-as-unsafe hit never consumes
     # a slot and is never paid to be classified. Ordering it the other way would

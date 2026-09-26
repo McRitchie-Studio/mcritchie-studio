@@ -28,7 +28,18 @@ class AppearanceReferencePhoto < ApplicationRecord
   # the reader of a reject list will find it.
   #
   #   unfetchable   — failed the SSRF/reachability guard. Never sent anywhere.
-  #   duplicate     — the same image already on file under a better source.
+  #   duplicate     — the same photograph reached us at two different URLs.
+  #                   ⚠ NOTHING IN THE APP STAMPS THIS YET, and that is a stated
+  #                   gap rather than an oversight. The unique index is on
+  #                   (appearance_slug, image_url), so the same image served from
+  #                   two URLs is two rows and can occupy two slots in one
+  #                   identity — a real case (Wikimedia serves every file from both
+  #                   `upload.wikimedia.org/.../500px-X` and
+  #                   `commons.wikimedia.org/wiki/Special:FilePath/X`). Catching it
+  #                   needs a perceptual hash of the BYTES, which means fetching
+  #                   them, which this lane deliberately never does. The value is
+  #                   declared so the gallery can render the state and so the fix
+  #                   has somewhere to land.
   #   face_obscured — something LOOKED at it and found no usable face (a helmet,
   #                   the back of a head, a document scan). Stamped only when
   #                   Appearances::FaceVisibility actually ran on this photograph:
