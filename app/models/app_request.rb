@@ -35,6 +35,16 @@ class AppRequest < ApplicationRecord
     mcritchie studio team security root
   ].freeze
 
+  # The names the name field types, one after another, as its placeholder — so
+  # the field shows what a good answer looks like instead of saying "yourapp".
+  # Cached here rather than generated: every one is a valid, unreserved name.
+  EXAMPLE_NAMES = %w[
+    pawsome-grooming league-hub taco-truck-map book-club fit-log
+    garden-planner band-merch rent-tracker recipe-box tutor-match
+    pickup-hoops wedding-rsvp plant-swap budget-buddy dog-walks
+    study-sprint yard-sale trivia-night bike-repair pet-sitter
+  ].freeze
+
   belongs_to :user, optional: true
 
   validates :token, presence: true, uniqueness: true
@@ -76,7 +86,14 @@ class AppRequest < ApplicationRecord
     nil
   end
 
-  def self.normalize_subdomain(name) = name.to_s.strip.downcase.delete_suffix(".#{PARENT_DOMAIN}")
+  # What the name field does as the user types, done again on the server so the
+  # two always agree: lowercase, drop the parent domain, turn every run of
+  # anything that is not a-z or 0-9 into ONE hyphen, and trim hyphens off both
+  # ends. "Uber for Dogs!" becomes "uber-for-dogs".
+  def self.normalize_subdomain(name)
+    name.to_s.strip.downcase.delete_suffix(".#{PARENT_DOMAIN}")
+        .gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+  end
 
   def draft? = status == "draft"
 

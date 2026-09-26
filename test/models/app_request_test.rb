@@ -22,13 +22,27 @@ class AppRequestTest < ActiveSupport::TestCase
     %w[abc pawsome-grooming a1b app-2026].each do |ok|
       assert_nil AppRequest.unavailable_reason(ok), "#{ok} should be claimable"
     end
-    %w[ab -abc abc- a_b ab.cd].push("a" * 31).each do |bad|
-      assert_match(/letters, numbers or hyphens/, AppRequest.unavailable_reason(bad), "#{bad} should be refused")
+    [ "ab", "a" * 31, "--", "!!", "" ].each do |bad|
+      assert_match(/letters, numbers or hyphens/, AppRequest.unavailable_reason(bad), "#{bad.inspect} should be refused")
     end
   end
 
-  test "input is normalized: case, spaces and the parent domain" do
-    assert_equal "pawsome", AppRequest.normalize_subdomain("  Pawsome.mcritchie.studio ")
+  test "names are cleaned the way the field cleans them: case, runs of symbols, edge hyphens" do
+    {
+      "  Pawsome.mcritchie.studio " => "pawsome",
+      "Uber for Dogs!" => "uber-for-dogs",
+      "asda ddadd   d" => "asda-ddadd-d",
+      "-My_App--" => "my-app",
+      "ab.cd" => "ab-cd"
+    }.each { |typed, name| assert_equal name, AppRequest.normalize_subdomain(typed), typed.inspect }
+  end
+
+  test "every example name the field types is a valid, unreserved name" do
+    assert_equal 20, AppRequest::EXAMPLE_NAMES.size
+    assert_equal AppRequest::EXAMPLE_NAMES.uniq, AppRequest::EXAMPLE_NAMES
+    AppRequest::EXAMPLE_NAMES.each do |example|
+      assert_nil AppRequest.unavailable_reason(example), "#{example} would teach a name we refuse"
+    end
   end
 
   test "reserved names include ours and every satellite's subdomain" do

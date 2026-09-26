@@ -55,8 +55,17 @@ test("a signed-out visitor's prompt survives sign-in, then they claim a name and
   await onboarding.getByRole("button", { name: "Save and continue" }).click();
   await expect(onboarding).toBeHidden();
 
-  // Name the app.
+  // Name the app. The field is focused as soon as the dialog closes, and is
+  // already typing example names into its placeholder.
   const name = page.locator("[data-test='build-subdomain']");
+  await expect(name).toBeFocused();
+  await expect(name).toHaveAttribute("placeholder", /[a-z]/);
+
+  // Whatever is typed is cleaned into a valid name as it goes.
+  await name.pressSequentially("League Hub!");
+  await expect(name).toHaveValue("league-hub-");
+  await name.fill("");
+
   await name.fill("www");
   await expect(page.locator("[data-test='build-availability']")).toContainText("reserved");
   await name.fill("league-hub");

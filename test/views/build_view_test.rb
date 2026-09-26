@@ -61,8 +61,14 @@ class BuildViewTest < ActionView::TestCase
     @app_request = AppRequest.create!(prompt: "A client portal", user: users(:alex))
     render template: "build/show"
 
-    assert_select "[data-test='build-claim'] input[data-test='build-subdomain'][maxlength='30']"
+    field = css_select("[data-test='build-claim'] input[data-test='build-subdomain'][maxlength='30']").first
+    assert field, "no name field"
+    assert_nil field["placeholder"], "no static placeholder: the examples are typed into it"
+    assert_equal "placeholderText", field[":placeholder"]
+    assert_equal "onInput($el)", field["@input"], "input is cleaned as it is typed"
+    assert_equal "focusWhenClear($el)", field["x-effect"], "focus lands once the modals close"
     assert_includes rendered, ".mcritchie.studio"
+    AppRequest::EXAMPLE_NAMES.each { |example| assert_includes rendered, example }
     assert_select "[data-test='build-register']", 0
   end
 
