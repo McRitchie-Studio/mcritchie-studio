@@ -5,16 +5,32 @@
 #   GET   /build                   the prompt
 #   POST  /build                   send the prompt → a draft (no account needed)
 #   GET   /build/check?subdomain=  live availability, JSON
+#   GET   /build/requests          admin: every requested app, filterable by status
 #   GET   /build/:token            the draft: sign in, then claim a subdomain;
 #                                  once queued, the request's status page
 #   PATCH /build/:token            claim the subdomain and queue the build
 class BuildController < ApplicationController
   skip_before_action :require_authentication, only: %i[new create show check]
   before_action :load_request, only: %i[show update]
+  before_action :require_admin, only: :index
 
   # A public form that writes a row: bounded, so it cannot be used to fill the table.
   rate_limit to: 10, within: 1.minute, only: :create, with: -> { redirect_to build_path, alert: "Too many requests — try again in a minute." }
   rate_limit to: 60, within: 1.minute, only: :check
+
+  # Every app requested through the funnel, newest first. ?status= narrows it;
+  # the default hides drafts (a prompt whose sender never signed in) behind
+  # their own tab so the list leads with real requests.
+  def index
+    @counts = AppRequest.group(:status).count
+    @status = params[:status].presence_in(AppRequest::STATUSES + [ "all" ]) || "active"
+    scope = AppRequest.includes(:user).recent
+    @requests = case @status
+                when "all" then scope
+                when "active" then scope.where(status: AppRequest::HOLDING)
+                else scope.where(status: @status)
+                end
+  end
 
   def new
     @draft = logged_in? ? AppRequest.where(user: current_user, status: "draft").recent.first : nil

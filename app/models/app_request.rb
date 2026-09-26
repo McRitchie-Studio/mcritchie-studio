@@ -132,6 +132,9 @@ class AppRequest < ApplicationRecord
       )
       update!(task_slug: task.slug)
     end
+    # After the commit, not inside it: the job must never see a request the
+    # transaction could still roll back, and a Discord outage must never undo a claim.
+    AppRequestDiscordJob.perform_later(id)
     self
   end
 

@@ -15,6 +15,8 @@ This SOP is how an agent works that queue.
 | A request | `app_requests`: `prompt`, `subdomain`, `status` (`draft → queued → building → live`, or `cancelled`), `tier` (`launch`), `task_slug` |
 | The board card | opened when the request is queued, titled `Build Launch App <subdomain>`, stage `designed`; `agent_context` carries the prompt verbatim, the reserved host and the request token |
 | The rules | `AppRequest`: 3-30 of a-z, 0-9 and hyphens; reserved names plus every satellite's subdomain from `config/satellites.yml`; one free app per account |
+| Every request, for admins | `/build/requests`: filter by status; each row shows the prompt, the requester, the reserved address and links to the board card |
+| The team ping | each queued request is posted to Discord #scratch-pad by `AppRequestDiscordJob`, in the background, once (`discord_notified_at`). The webhook is `DISCORD_SCRATCH_PAD_WEBHOOK_URL`; unset, the post is skipped and logged, and nothing else changes |
 
 ## Act 1: Pick up a request
 
@@ -22,8 +24,8 @@ Requests live in the **production** database, so every status change below runs
 on the production app (`heroku run`), never a bare `bin/rails runner` in a desk,
 which writes to a local database nobody sees.
 
-1. Find queued builds on the board: cards titled `Build Launch App …` in
-   `designed`. The requester's prompt is in the card's `agent_context`; read it
+1. Find queued builds on `/build/requests` (or the board: cards titled
+   `Build Launch App …` in `designed`, which #scratch-pad also announces). The requester's prompt is in the card's `agent_context`; read it
    whole before scoping anything.
 2. Claim it the normal way ([building-sop](building-sop.md)). The card is
    created without a repository, because the app does not exist yet: name the

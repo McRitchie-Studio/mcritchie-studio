@@ -133,6 +133,35 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to build_path, "signed out, a queued request is not shown either"
   end
 
+  test "the requests list is admin-only" do
+    get build_requests_path
+    assert_redirected_to "/login"
+
+    log_in_as users(:viewer)
+    get build_requests_path
+    assert_redirected_to root_path
+  end
+
+  test "an admin sees every requested app, drafts behind their own tab" do
+    AppRequest.create!(prompt: "A league site", user: users(:viewer)).queue!("league-hub")
+    AppRequest.create!(prompt: "An unfinished idea")
+    log_in_as users(:alex)
+
+    get build_requests_path
+    assert_response :success
+    assert_select "[data-test='app-request']", 1, "the default tab is real requests, not drafts"
+    assert_select "[data-test='app-request-host']", text: "league-hub.mcritchie.studio"
+    assert_select "[data-test='app-request-prompt']", text: "A league site"
+    assert_select "[data-test='app-request-task']"
+    assert_select "[data-test='app-request-tab'][data-status='draft']", text: /Drafts\s*1/
+
+    get build_requests_path(status: "draft")
+    assert_select "[data-test='app-request'][data-status='draft']", 1
+
+    get build_requests_path(status: "all")
+    assert_select "[data-test='app-request']", 2
+  end
+
   test "the availability check answers in JSON" do
     get build_check_path, params: { subdomain: "WWW" }
     assert_equal({ "subdomain" => "www", "available" => false, "reason" => "That name is reserved." }, response.parsed_body)

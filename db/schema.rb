@@ -172,6 +172,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_150000) do
 
   create_table "app_requests", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.datetime "discord_notified_at"
     t.text "prompt", null: false
     t.datetime "queued_at"
     t.string "status", default: "draft", null: false

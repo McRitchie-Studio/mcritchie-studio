@@ -22,6 +22,9 @@ class CreateAppRequests < ActiveRecord::Migration[8.1]
       t.string :tier, null: false, default: "launch"
       t.string :task_slug
       t.datetime :queued_at
+      # When the queued request was announced to the team's Discord (scratch-pad).
+      # Set once, so a retried job never posts the same request twice.
+      t.datetime :discord_notified_at
       t.timestamps
     end
     add_index :app_requests, :token, unique: true

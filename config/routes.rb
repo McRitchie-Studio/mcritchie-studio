@@ -14,6 +14,9 @@ Rails.application.routes.draw do
   get   "build",        to: "build#new",    as: :build
   post  "build",        to: "build#create"
   get   "build/check",  to: "build#check",  as: :build_check
+  # Admin: every app requested through the funnel. Before build/:token, or
+  # "requests" would be read as a token.
+  get   "build/requests", to: "build#index", as: :build_requests
   get   "build/:token", to: "build#show",   as: :build_request
   patch "build/:token", to: "build#update"
   # Credential RECORDS by client workspace, with each workspace's 1Password
