@@ -85,30 +85,57 @@ class GhAppGitCredentialTest < Minitest::Test
     assert_includes log, "read op://studio-agents/github.mcritchie-agent/app-id"
   end
 
-  # BOTH NAMES, one assertion each. The App was renamed mcritchie-deployer ->
-  # mcritchie-admin on 2026-09-26; the legacy item still routes until it is retired
-  # from 1Password, so a shell exporting either name must reach the ADMIN vault.
-  ADMIN_LANE_ITEMS = %w[github.mcritchie-admin github.mcritchie-deployer].freeze
+  ADMIN_ITEM = "github.mcritchie-admin"
 
-  def test_gh_app_item_selects_the_admin_lane_under_both_names
-    ADMIN_LANE_ITEMS.each do |item|
-      File.delete(File.join(@sandbox, "op.log")) if File.exist?(File.join(@sandbox, "op.log"))
-      _out, err, status = run_credential("get", env: { "GH_APP_ITEM" => item })
+  def test_gh_app_item_selects_the_admin_lane
+    _out, err, status = run_credential("get", env: { "GH_APP_ITEM" => ADMIN_ITEM })
 
-      assert status.success?, "#{item}: #{err}"
-      log = File.read(File.join(@sandbox, "op.log"))
-      # THE ISOLATION, asserted rather than assumed: the admin lane resolves to a
-      # DIFFERENT vault than the agent. studio-agents carries the agent App item and
-      # NOT the admin App's, so collapsing these two onto one vault turns the build
-      # lane green while breaking production deploys silently. See bin/lib/op_vaults.rb.
-      assert_includes log, "item get #{item} --vault studio-agents-admin --format json"
-      # Boundary-aware since the entity-first rename: the agent vault's name
-      # ("studio-agents") is a SUBSTRING of the admin one ("studio-agents-admin"),
-      # so a bare-substring refute would forbid the correct vault too.
-      refute_match(/--vault studio-agents(?!-admin)/, log,
-                   "#{item} must never read from the agent vault")
-      assert_includes log, "read op://studio-agents-admin/#{item}/app-id"
+    assert status.success?, err
+    log = File.read(File.join(@sandbox, "op.log"))
+    # THE ISOLATION, asserted rather than assumed: the admin lane resolves to a
+    # DIFFERENT vault than the agent. studio-agents carries the agent App item and
+    # NOT the admin App's, so collapsing these two onto one vault turns the build
+    # lane green while breaking production deploys silently. See bin/lib/op_vaults.rb.
+    assert_includes log, "item get #{ADMIN_ITEM} --vault studio-agents-admin --format json"
+    # Boundary-aware since the entity-first rename: the agent vault's name
+    # ("studio-agents") is a SUBSTRING of the admin one ("studio-agents-admin"),
+    # so a bare-substring refute would forbid the correct vault too.
+    refute_match(/--vault studio-agents(?!-admin)/, log, "the admin lane must never read from the agent vault")
+    assert_includes log, "read op://studio-agents-admin/#{ADMIN_ITEM}/app-id"
+  end
+
+  # [unit] EXACT-NAME ROUTING. The retired item name (the App was renamed on
+  # 2026-09-26) is refused outright, and so is a name that merely CONTAINS "admin":
+  # the old `*admin*|*deployer*` substring match read either with the admin
+  # service-account token. Asserted by RECEIPT on all three legs, since a refusal
+  # that still spent a 1Password read or consulted the cache is not a refusal.
+  REFUSED_ITEMS = {
+    "the retired deployer item" => "github.mcritchie-deployer",
+    "a name that merely contains admin" => "github.mcritchie-admin-old",
+    "a name that merely contains agent" => "github.mcritchie-agent2",
+    "a typo" => "github.mcritchie-typo"
+  }.freeze
+
+  def test_an_item_that_is_not_an_exact_known_name_is_refused
+    REFUSED_ITEMS.each do |label, item|
+      File.delete(spy_log) if File.exist?(spy_log)
+      out, err, status = run_credential("get", env: { "GH_APP_ITEM" => item })
+
+      refute status.success?, "#{label} must be refused"
+      assert_empty out, "#{label} must emit no credential"
+      assert_includes err, "GH_APP_ITEM='#{item}' names no known GitHub App item"
+      assert_includes err, "github.mcritchie-admin", "#{label}: name the item to export instead"
+      assert_empty spy_calls, "#{label} must reach no leg (cache, op, or mint)"
     end
+  end
+
+  # The guard sits AFTER `erase`: erase is bookkeeping that git has already given
+  # up on, and must stay a silent exit 0 whatever the environment says.
+  def test_erase_under_a_refused_item_stays_a_silent_success
+    _out, err, status = run_credential("erase", env: { "GH_APP_ITEM" => "github.mcritchie-deployer" })
+
+    assert status.success?, err
+    assert_empty err
   end
 
   # github.mcritchie-admin's key attachment is named `privatekeypem` (the dot was
@@ -225,16 +252,6 @@ class GhAppGitCredentialTest < Minitest::Test
 
       assert_includes err, "source ~/.zprofile.admin", "name the command, not the obstacle"
       refute_includes err, "setup-1pass-token", "installing is the wrong errand here"
-    end
-  end
-
-  # The legacy item name is still an admin-lane item during the transition, so it
-  # must get the same remedy, not fall silent as if it were an agent item.
-  def test_the_legacy_deployer_item_still_gets_the_admin_remedy
-    Dir.mktmpdir do |home|
-      File.write(File.join(home, ".zprofile.admin"), "# token\n")
-
-      assert_includes legacy_deployer_failure(home), "source ~/.zprofile.admin"
     end
   end
 
@@ -410,7 +427,6 @@ class GhAppGitCredentialTest < Minitest::Test
   end
 
   def deployer_failure(home) = credential_failure(home, "github.mcritchie-admin")
-  def legacy_deployer_failure(home) = credential_failure(home, "github.mcritchie-deployer")
   def agent_failure(home) = credential_failure(home, "github.mcritchie-agent")
 
   # Drive the failure path with an `op` that always fails, so the message under
