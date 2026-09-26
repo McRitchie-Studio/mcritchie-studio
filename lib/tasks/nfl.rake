@@ -1,33 +1,68 @@
 namespace :nfl do
-  HEADSHOT_WIDTHS = [100, 400].freeze
-
-  desc "For Athletes with espn_id, cache headshot variants in S3 + ImageCache. Idempotent."
+  desc "For Athletes with espn_id, cache headshot variants in S3 + ImageCache. Idempotent. HEADSHOT_PAUSE=0.25 HEADSHOT_LIMIT=N"
   task upload_headshots: :environment do
-    candidates = Athlete.where.not(espn_id: nil).includes(person: { contracts: :team }, image_caches: {})
-    puts "candidates: #{candidates.count} athletes; widths: #{HEADSHOT_WIDTHS.inspect}"
+    # HEADSHOT_PAUSE: seconds to wait after each ATTEMPTED upload, so a cold run
+    # of ~2,000 candidates is a polite guest at a.espncdn.com rather than a
+    # scraper. Paid only on an attempt, so the warm re-run — which fetches
+    # nothing — is not slowed by it. HEADSHOT_PAUSE=0 disables it.
+    # HEADSHOT_LIMIT: stop after N attempted uploads, so the cold run can be
+    # taken in inspectable waves. The task is idempotent, so the next wave
+    # resumes exactly where this one stopped; nothing records progress because
+    # nothing has to — the ImageCache rows ARE the progress.
+    pause = ENV.fetch("HEADSHOT_PAUSE", "0.25").to_f
+    limit = ENV["HEADSHOT_LIMIT"].presence&.to_i
 
+    # A LOCAL, resolved inside the task BODY. Binding the width list to a
+    # namespace-level constant would read Athlete at task-DEFINITION time, which
+    # runs before the `:environment` prerequisite and so before Zeitwerk can
+    # autoload the model — a NameError on every `rake -T`.
+    widths = Athlete::HEADSHOT_WIDTHS
+
+    candidates = Athlete.where.not(espn_id: nil).includes(:image_caches)
+    banner = "candidates: #{candidates.count} athletes; widths: #{widths.inspect}; pause: #{pause}s"
+    banner += "; limit: #{limit} upload(s)" if limit
+    puts banner
+
+    considered = 0
     cached = 0
     skipped_complete = 0
-    skipped_no_team = 0
+    skipped_no_source = 0
     failed = 0
 
     candidates.find_each do |athlete|
-      person = athlete.person
-      contract = person.contracts.find { |c| c.team&.league == "nfl" }
-      team = contract&.team
+      break if limit && (cached + failed) >= limit
 
-      unless team
-        skipped_no_team += 1
-        next
-      end
+      considered += 1
 
+      # "ALREADY DONE" HAS TO INCLUDE "original". Studio::ImageCache.cache!
+      # stores the unmodified source as variant "original" PLUS one variant per
+      # width, so a row set holding only 100 and 400 is not complete — and this
+      # check used to call it complete, which both under-counts the work left and
+      # corrupts the `needed` denominator the verdict below is computed from.
+      # upload_coach_headshots already spells it this way.
       have = athlete.image_caches.select { |c| c.purpose == "headshot" }.map(&:variant)
-      if (HEADSHOT_WIDTHS.map(&:to_s) - have).empty?
+      if (["original"] + widths.map(&:to_s) - have).empty?
         skipped_complete += 1
         next
       end
 
-      key_prefix = "headshots/nfl/#{team.slug}/#{person.slug}"
+      # NO SOURCE URL IS A DATA GAP, NOT AN UPLOAD FAILURE. cache! raises a bare
+      # ArgumentError without one, which the rescue below would file under
+      # `failed` and the abort above would then blame on AWS credentials that are
+      # fine. Counted separately for the same reason upload_coach_headshots
+      # counts its `without_url`.
+      if athlete.espn_headshot_url.blank?
+        skipped_no_source += 1
+        next
+      end
+
+      # THE TEAM IS A FOLDER NAME, NOT A PRECONDITION. This task used to resolve
+      # an NFL team through person.contracts and `next` past any athlete without
+      # one, discarding the athlete over a cosmetic path segment it could have
+      # defaulted. Athlete#headshot_key_prefix is now the only writer of this
+      # string, shared with Nflverse::SeedPlayers, which had the fallback all
+      # along.
+      key_prefix = athlete.headshot_key_prefix
 
       begin
         Studio::ImageCache.cache!(
@@ -35,21 +70,38 @@ namespace :nfl do
           purpose: "headshot",
           source_url: athlete.espn_headshot_url,
           key_prefix: key_prefix,
-          widths: HEADSHOT_WIDTHS,
+          widths: widths,
           content_type: "image/png"
         )
         cached += 1
-        puts "  [+] #{person.slug.ljust(28)} -> #{key_prefix}/{original,#{HEADSHOT_WIDTHS.join(',')}}.png" if cached <= 5 || (cached % 50).zero?
+        puts "  [+] #{athlete.person_slug.ljust(28)} -> #{key_prefix}/{original,#{widths.join(',')}}.png" if cached <= 5 || (cached % 50).zero?
       rescue => e
         failed += 1
-        puts "  [!] #{person.slug}: #{e.class}: #{e.message}"
+        puts "  [!] #{athlete.person_slug}: #{e.class}: #{e.message}"
       end
+
+      sleep pause if pause.positive?
     end
+
+    # THE THREE NUMBERS THE VERDICTS BELOW ARE READ FROM.
+    #
+    #   needed      candidates that still LACKED a variant  (considered - complete)
+    #   attempted   candidates this run actually tried      (cached + failed)
+    #   unattempted needed, and walked past anyway          (needed - attempted)
+    #
+    # `unattempted` is DERIVED, never accumulated, and that is the whole point:
+    # every `next` above that is not `skipped_complete` lands in it by
+    # subtraction, so a skip branch added later is counted without being told to
+    # report itself. Hand-counting is how the hole below got dug —
+    # `skipped_no_team` was faithfully counted AND printed, and no rule read it.
+    needed      = considered - skipped_complete
+    attempted   = cached + failed
+    unattempted = needed - attempted
 
     puts ""
     puts "cached:                 #{cached}"
     puts "skipped (already done): #{skipped_complete}"
-    puts "skipped (no NFL team):  #{skipped_no_team}"
+    puts "skipped (no image src): #{skipped_no_source}"
     puts "failed:                 #{failed}"
 
     # THE PER-ATHLETE RESCUE ABOVE IS RIGHT; ENDING ON `puts` WAS NOT. One dead
@@ -67,8 +119,8 @@ namespace :nfl do
     # `cached` is 0 and `failed` is everything.
     #
     # THE MAJORITY IS ONLY AS GOOD AS THE SAMPLE, and on a WARM machine the
-    # sample is tiny. `skipped_complete` and `skipped_no_team` both `next` above
-    # WITHOUT touching either counter, so `failed + cached` counts only the
+    # sample is tiny. `skipped_complete` and `skipped_no_source` both `next`
+    # above WITHOUT touching either counter, so `failed + cached` counts only the
     # newly-discovered espn_ids — often one. One new athlete whose ESPN headshot
     # 404s is then `failed: 1, cached: 0`, which clears this rule and aborts. So
     # "a single 404 is a normal afternoon" holds for the COLD rebuild and not for
@@ -81,6 +133,45 @@ namespace :nfl do
             "Across MANY attempts this is usually AWS credentials: check AWS_ACCESS_KEY_ID / " \
             "AWS_SECRET_ACCESS_KEY / AWS_REGION in .env. Across one or two it is more often a " \
             "dead ESPN source URL, since only newly-discovered espn_ids are attempted."
+    end
+
+    # THE SECOND HOLE, AND THE ONE THAT COST 2,048 ATHLETES THEIR AVATAR. The
+    # rule above grades the ATTEMPTS, so it is structurally blind to a run that
+    # made none: with `cached` 0 and `failed` 0, `failed > cached` is false and
+    # the task returns normally. MEASURED on production 2026-09-26, against the
+    # contract precondition this task carried until today: `candidates: 2048`,
+    # `cached: 0`, `skipped (no NFL team): 2048`, exit 0. `contracts` and `teams`
+    # are both EMPTY tables in production — 0 rows each — so that precondition
+    # could never be satisfied by anybody, and the task had cached nothing, ever,
+    # while printing a clean summary every time somebody ran it. Nobody noticed
+    # for as long as the task existed. That is what a silent success costs.
+    #
+    # GRADED ON WHETHER THE RUN DID THE WORK IT FOUND, which is a different
+    # question from whether its attempts succeeded, and the reason this is a
+    # SECOND rule rather than a rewrite of the first. The two are disjoint by
+    # construction: `attempted.zero?` forces `failed == cached == 0`, so
+    # `failed > cached` is false exactly when this can fire.
+    #
+    # IT CANNOT CRY WOLF ON THE WARM RE-RUN — the failure the rule above earned
+    # its own comment block warning about. On a warm machine nearly every
+    # candidate is `skipped_complete`, and `needed` subtracts those out, so the
+    # warm re-run that legitimately does nothing has `needed == 0` and this says
+    # NOTHING. It fires only when the task found work and declined all of it,
+    # which is not an afternoon S3 is having — it is the task refusing its job.
+    #
+    # A PARTIAL decline only warns. Some athletes genuinely have no image source
+    # and never will, and reddening a rebuild for a permanent data gap is how an
+    # operator learns to stop reading the line.
+    if needed.positive? && attempted.zero?
+      warn "nfl:upload_headshots: attempted 0 of #{needed} athletes that still needed a headshot"
+      abort "nfl:upload_headshots attempted 0 of the #{needed} athletes still missing a headshot " \
+            "variant — it declined every one of them WITHOUT trying, so this is the task " \
+            "refusing its job, not S3 refusing the upload. Of those, #{skipped_no_source} had no " \
+            "espn_headshot_url (run `rake nfl:players_seed` to populate it). A skip count that " \
+            "equals the candidate count is never a successful run."
+    elsif unattempted.positive?
+      warn "nfl:upload_headshots: #{unattempted} of #{needed} athletes needing a headshot were " \
+           "skipped without an attempt (#{skipped_no_source} had no espn_headshot_url)"
     end
   end
 

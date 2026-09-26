@@ -503,15 +503,18 @@ class Nflverse::SeedPlayers
     PositionConcern.normalize_position(row["position"], source: :nflverse)
   end
 
+  # The key prefix and the width list both live on Athlete now. They used to be
+  # spelled here AND in `nfl:upload_headshots`, and the two spellings disagreed
+  # about whether a teamless athlete gets a headshot at all — this side said yes,
+  # the rake task said no, and the rake task is the one operators run.
   def cache_headshot(athlete)
-    folder = athlete.team_slug.presence || "free-agents"
-    key_prefix = "headshots/nfl/#{folder}/#{athlete.person_slug}"
+    key_prefix = athlete.headshot_key_prefix
     Studio::ImageCache.cache!(
       owner: athlete,
       purpose: "headshot",
       source_url: athlete.espn_headshot_url,
       key_prefix: key_prefix,
-      widths: [100, 400],
+      widths: Athlete::HEADSHOT_WIDTHS,
       content_type: "image/png"
     )
     @stats[:headshots_cached] += 1
