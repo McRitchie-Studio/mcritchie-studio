@@ -2,13 +2,14 @@
 <% features = WorkspacePackage.features %>
 <% discount = WorkspacePackage.annual_discount_percent %>
 
-<section class="max-w-5xl mx-auto px-4 py-10" data-test="packages-page">
+<section class="max-w-7xl mx-auto px-4 py-10" data-test="packages-page">
   <header class="text-center mb-10">
-    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Workspace packages</p>
-    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">Launch your company workspace</h1>
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Packages</p>
+    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">From your first app to an agentic company</h1>
     <p class="text-muted max-w-2xl mx-auto">
-      We stand up your domain, email and agent, step by step. You make a handful of
-      clicks we can't make for you; our agents do the rest and check every step.
+      Start free on our app template, then add hosting, your own workspace and an agent as you grow.
+      Each tier includes everything below it. You make a handful of clicks we can't make for you;
+      our agents do the rest and check every step.
     </p>
   </header>
 
@@ -26,14 +27,16 @@
       </div>
     <% end %>
 
-    <%# TWO SWIM LANES ON ONE ROW GRID. Each card spans every row and adopts the
-        outer grid's rows (subgrid), so a feature sits on the SAME line in both
-        lanes and the difference reads across it: "2 users" beside "10 users".
-        Below md the cards stack and each simply lists every row. %>
-    <div class="space-y-6 md:space-y-0 md:grid md:grid-cols-2 md:gap-x-6" data-test="package-lanes">
+    <%# ONE SWIM LANE PER TIER ON ONE ROW GRID. Each card spans every row and
+        adopts the outer grid's rows (subgrid), so a feature sits on the SAME line
+        in every lane and the difference reads across it: "2 users" beside
+        "10 users". Four lanes from xl, two from md (two bands of two), stacked
+        below md. The outer gap-y separates the bands; each card sets its own
+        gap-y-0, because a subgrid inherits the parent's gap. %>
+    <div class="space-y-6 md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-4 md:gap-x-5 md:gap-y-6" data-test="package-lanes">
       <% @packages.each do |package| %>
-        <% featured = package.key == "pro" %>
-        <article class="rounded-2xl border <%= featured ? 'border-primary' : 'border-subtle' %> bg-surface px-6 md:grid md:grid-rows-subgrid"
+        <% featured = package.key == "agentic" %>
+        <article class="rounded-2xl border <%= featured ? 'border-primary' : 'border-subtle' %> bg-surface px-5 md:grid md:grid-rows-subgrid md:gap-y-0"
                  style="grid-row: span <%= features.size + 1 %> / span <%= features.size + 1 %>"
                  data-test="package-card" data-package="<%= package.key %>">
           <div class="pt-6 pb-5">
@@ -45,7 +48,12 @@
             </div>
             <p class="text-body mb-4"><%= package.tagline %></p>
             <div data-test="package-price">
-              <% if package.priced? %>
+              <% if package.free? %>
+                <div data-test="price-free">
+                  <span class="text-4xl font-bold text-heading">Free</span>
+                  <p class="text-xs text-muted mt-1">No card needed</p>
+                </div>
+              <% elsif package.priced? %>
                 <div x-show="!annual" data-test="price-monthly">
                   <span class="text-4xl font-bold text-heading"><%= number_to_currency(package.price_monthly, precision: 0) %></span>
                   <span class="text-muted">/month</span>
