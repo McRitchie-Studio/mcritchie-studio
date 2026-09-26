@@ -9,6 +9,9 @@ Rails.application.routes.draw do
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
   get "packages", to: "packages#index", as: :packages
+  # Credential RECORDS by client workspace, with each workspace's 1Password
+  # vault icon. Admin-only; no secret is ever stored or shown.
+  get "credentials", to: "credential_vaults#index", as: :credentials
 
   # Broadcast emails — table view + editor. `preview` renders the email itself
   # (in the email shell) for the editor's live iframe.
