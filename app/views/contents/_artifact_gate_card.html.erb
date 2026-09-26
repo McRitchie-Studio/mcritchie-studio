@@ -17,7 +17,7 @@
 
   <%# THE COLORWAY. Guessed from home/away and labelled as a guess — an
       unconfirmed guess that looks confirmed is how a wrong jersey ships. %>
-  <div class="rounded-lg bg-surface-2 p-4 space-y-3">
+  <div class="rounded-lg bg-surface-alt p-4 space-y-3">
     <div class="flex items-center gap-2 flex-wrap">
       <span class="label-upper text-muted">Jersey</span>
       <span class="text-heading font-bold text-lg"><%= plan.colorway || "unknown" %></span>
@@ -45,8 +45,8 @@
   <%# THE THREE SLOTS. %>
   <div class="space-y-3">
     <% slots.each_with_index do |slot, slot_index| %>
-      <div class="rounded-lg border border-border p-4 flex gap-4">
-        <div class="w-28 h-28 shrink-0 rounded-md bg-surface-2 border border-border overflow-hidden flex items-center justify-center">
+      <div class="rounded-lg border border-subtle p-4 flex gap-4">
+        <div class="w-28 h-28 shrink-0 rounded-md bg-surface-alt border border-subtle overflow-hidden flex items-center justify-center">
           <%# THE PICTURE IS THE CELL OCCUPANT, never the recolor source. On a
               :reskin `slot.artifact` is another colorway's asset, so rendering
               it here showed the operator a jersey from a different game and hid
@@ -130,7 +130,7 @@
 
   <%# APPROVE. Deliberately refuses until every slot has an image: the gate's
       whole job is that a human looked at all three. %>
-  <div class="pt-2 border-t border-border flex items-center gap-3 flex-wrap">
+  <div class="pt-2 border-t border-subtle flex items-center gap-3 flex-wrap">
     <%= button_to "✅ Approve all three",
           approve_artifacts_content_path(@content.slug), method: :post,
           class: ready ? "btn-primary" : "btn-primary opacity-40 cursor-not-allowed",

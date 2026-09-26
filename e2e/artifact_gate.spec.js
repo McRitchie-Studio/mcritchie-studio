@@ -14,9 +14,16 @@ test("a person's model library shows their looks and every image they appear in"
   await expect(page.locator("body")).toContainText("Models");
 
   // The first look created is the default; a second one is not.
+  //
+  // SELECTED BY ITS HANDLE, not by its label. This used to read
+  // `toContainText("DEFAULT")`, which bound the spec to a shouty spelling of a
+  // badge — so re-theming that chip onto the engine's status roles (one page,
+  // one spelling for "approved") turned a presentation change into a red e2e
+  // lane. The claim the spec actually makes is "exactly one of these two looks
+  // is the default", and that is what it now asserts.
   await expect(page.locator("body")).toContainText("Bengals white");
   await expect(page.locator("body")).toContainText("Navy suit");
-  await expect(page.locator("body")).toContainText("DEFAULT");
+  await expect(page.locator("[data-test='default-look-badge']")).toHaveCount(1);
 
   // Images include ones SHARED with someone else — the pair shows on both
   // people's pages, which is the point of reading through the subject join.
