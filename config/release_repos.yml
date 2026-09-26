@@ -787,6 +787,101 @@ apps:
     # exemption is QA-only: the `shipped` stamp still needs dads-app's real
     # release -> main record.
     qa_evidence: exempt
+  # --- THE FOUR SHOWCASE APPS (registered 2026-09-26, task register-showcase-apps)
+  #
+  # prisoners-dilemma, weekly-lock, rantly and portfolio are showcase rebuilds
+  # built from /build, each a RELEASE-MANAGED STANDALONE registered exactly the
+  # way dads-app is (read its block above for the long form): no studio-engine,
+  # no database (Rails 8.1 without ActiveRecord), a `status: reserved` row in
+  # config/satellites.yml for the port block only, and public repos in
+  # McRitchie-Studio created with main + accepted + release, so each is
+  # three-rung from birth and the rung guard holds it to that.
+  #
+  # PRODUCTION: a Heroku app `mcr-<repo>` on the company account, deployed by
+  # git_push_heroku. No database means no migrations and no post_deploy_cmd; a
+  # member that declares one anyway is skipped at QA (exempt, below) and runs on
+  # the production app at ship.
+  #
+  # smoke_url is the herokuapp HOST, not <repo>.mcritchie.studio, on purpose:
+  # the custom domains wait on Alex's DNS records and ACM, and until they
+  # resolve a smoke against them would abort the ship AFTER the push. Each
+  # app's production.rb leaves host authorization off, so /up answers on the
+  # herokuapp host. Switch each to https://<repo>.mcritchie.studio once that
+  # host serves /up 200. It is the HOST, not /up: the ship smokes
+  # `<smoke_url>/up` itself (bin/release.rb).
+  #
+  # test_cmd is each app's CI `test` job command VERBATIM (git_push_heroku has
+  # NO test step, so this IS the last gate before production; G4 reads CI's
+  # settled verdict for the frozen tree). Like dads-app, each SPLITS its suite:
+  # `test` runs `bin/rails test` and `system-test` runs `bin/rails
+  # test:system`; the ship gate reads CI's full verdict for the frozen SHA, so
+  # the system tier (and prisoners-dilemma's Node `test_js` job) gates too.
+  # repos_test.rb holds both jobs against each app's own ci.yml. No
+  # `db:test:prepare` (no ActiveRecord), and do NOT join the tiers as
+  # `bin/rails test test:system` (see dads-app: `test:system` loads as a path).
+  #
+  # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
+  # EXEMPT, BY OPERATOR DECISION. This is cyvasse's and dads-app's kind of
+  # exemption, not turf-vault's: each is a deployable app and a QA copy could
+  # exist.
+  #
+  #   Alex's decision (chat, 2026-09-26). Asked in an AskUserQuestion prompt
+  #   "Should the four showcase apps get QA copies, or ship straight to
+  #   production like Cyvasse and dads-app?", he selected the option
+  #   "No QA copies (Recommended)".
+  #   The option text was written by the agent; the choice was his. The guard
+  #   matches that string exactly, in repos_test.rb's
+  #   QA_EXEMPT_BY_OPERATOR_DECISION; change both together.
+  #
+  # WHAT THE EXEMPTION COSTS, said plainly: a change to any of the four reaches
+  # production without a human-reviewable QA deploy. Its gates are CI (every
+  # rung, full suite) and review. Without this key a sweep would hold every
+  # member at the QA stamp forever. The exemption is QA-only: the `shipped`
+  # stamp still needs each app's real release -> main record.
+  prisoners-dilemma:
+    ladder: three-rung
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/mcr-prisoners-dilemma.git
+      branch: main
+      # Moves to https://prisoners-dilemma.mcritchie.studio once DNS + ACM land.
+      smoke_url: https://mcr-prisoners-dilemma-9fde4bf81cc4.herokuapp.com
+    test_cmd: bin/rails test
+    # Alex selected "No QA copies (Recommended)" (see the block above).
+    qa_evidence: exempt
+  weekly-lock:
+    ladder: three-rung
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/mcr-weekly-lock.git
+      branch: main
+      # Moves to https://weekly-lock.mcritchie.studio once DNS + ACM land.
+      smoke_url: https://mcr-weekly-lock-51f3dfe1ba48.herokuapp.com
+    test_cmd: bin/rails test
+    # Alex selected "No QA copies (Recommended)" (see the block above).
+    qa_evidence: exempt
+  rantly:
+    ladder: three-rung
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/mcr-rantly.git
+      branch: main
+      # Moves to https://rantly.mcritchie.studio once DNS + ACM land.
+      smoke_url: https://mcr-rantly-27c88595c2de.herokuapp.com
+    test_cmd: bin/rails test
+    # Alex selected "No QA copies (Recommended)" (see the block above).
+    qa_evidence: exempt
+  portfolio:
+    ladder: three-rung
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/mcr-portfolio.git
+      branch: main
+      # Moves to https://portfolio.mcritchie.studio once DNS + ACM land.
+      smoke_url: https://mcr-portfolio-0600e75bd62d.herokuapp.com
+    test_cmd: bin/rails test
+    # Alex selected "No QA copies (Recommended)" (see the block above).
+    qa_evidence: exempt
   tax-studio:
     # PLANNED — no repo yet. The guard asserts no checkout exists, so this
     # exemption expires the day one does.

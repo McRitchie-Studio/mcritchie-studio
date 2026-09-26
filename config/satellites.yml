@@ -115,3 +115,47 @@ satellites:
     description: "Photo slideshow of Greig McRitchie; release-managed standalone (no studio-engine, no database)"
     deploy_provider: "heroku"
     status: "reserved"
+
+  - slug: prisoners-dilemma
+    display_name: "Prisoners Dilemma"
+    emoji: "🎲"
+    port: 3800
+    heroku_app: "mcr-prisoners-dilemma"
+    production_url: "https://prisoners-dilemma.mcritchie.studio"
+    role: "viewer"
+    description: "Showcase rebuild of the in-browser iterated prisoner's dilemma tournament; release-managed standalone (no studio-engine, no database)"
+    deploy_provider: "heroku"
+    status: "reserved"
+
+  - slug: weekly-lock
+    display_name: "Weekly Lock"
+    emoji: "🏈"
+    port: 3900
+    heroku_app: "mcr-weekly-lock"
+    production_url: "https://weekly-lock.mcritchie.studio"
+    role: "viewer"
+    description: "Showcase rebuild of the Weekly Lock, one confident NFL pick a week; release-managed standalone (no studio-engine, no database)"
+    deploy_provider: "heroku"
+    status: "reserved"
+
+  - slug: rantly
+    display_name: "Rantly"
+    emoji: "📣"
+    port: 4000
+    heroku_app: "mcr-rantly"
+    production_url: "https://rantly.mcritchie.studio"
+    role: "viewer"
+    description: "Showcase rebuild of Rantly, the social network with a 140-character minimum; release-managed standalone (no studio-engine, no database)"
+    deploy_provider: "heroku"
+    status: "reserved"
+
+  - slug: portfolio
+    display_name: "Portfolio"
+    emoji: "🗂️"
+    port: 4100
+    heroku_app: "mcr-portfolio"
+    production_url: "https://portfolio.mcritchie.studio"
+    role: "viewer"
+    description: "Showcase rebuild of Alex's portfolio of web apps since 2014; release-managed standalone (no studio-engine, no database)"
+    deploy_provider: "heroku"
+    status: "reserved"

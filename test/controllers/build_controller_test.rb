@@ -172,7 +172,9 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
 
   test "an admin can queue several apps; each is a showcase and the list can filter them" do
     log_in_as users(:alex)
-    %w[prisoners-dilemma weekly-lock].each do |name|
+    # Unregistered names: the real showcase apps' subdomains are reserved by their
+    # config/satellites.yml rows (register-showcase-apps).
+    %w[coin-toss chess-club].each do |name|
       post build_path, params: { app_request: { prompt: "Rebuild #{name}" } }
       token = AppRequest.recent.first.token
       patch build_request_path(token), params: { app_request: { subdomain: name } }
@@ -185,12 +187,12 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "the /build page shows showcase apps once they are live" do
-    live = AppRequest.create!(prompt: "A prisoner's dilemma tournament. Play against strategies.", user: users(:alex)).queue!("prisoners-dilemma")
+    live = AppRequest.create!(prompt: "A coin toss tournament. Call it in the air.", user: users(:alex)).queue!("coin-toss")
     live.update!(status: "live")
 
     get build_path
-    assert_select "[data-test='build-example'][href='https://prisoners-dilemma.mcritchie.studio']", text: /Prisoners Dilemma/
-    assert_select "[data-test='build-example']", text: /A prisoner's dilemma tournament\./
+    assert_select "[data-test='build-example'][href='https://coin-toss.mcritchie.studio']", text: /Coin Toss/
+    assert_select "[data-test='build-example']", text: /A coin toss tournament\./
   end
 
   test "the availability check answers in JSON" do

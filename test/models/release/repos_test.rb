@@ -102,7 +102,7 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   test "app_repos lists the registry's app hash keys" do
     assert_equal %w[mcritchie-studio turf-monster turf-vault mcritchie-industries cyvasse dads-app rolio
-                    tax-studio chain-ops].sort,
+                    tax-studio chain-ops prisoners-dilemma weekly-lock rantly portfolio].sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -182,6 +182,57 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_empty argv.grep(/\Adb:/), "dads-app has no database, so its gate must not prepare one"
     assert_empty argv.drop(2).grep(/\Atest:/),
                  "a bare `bin/rails test <task>` treats the task as a path and raises LoadError"
+  end
+
+  # The four showcase apps (task register-showcase-apps, 2026-09-26) are
+  # release-managed STANDALONES registered exactly like dads-app: no studio-engine,
+  # no database, git_push_heroku to a `mcr-<repo>` Heroku app, CI's `test` job as
+  # test_cmd, and no QA copy by Alex's decision. One loop, each assertion naming
+  # its repo, so a failure says which app drifted.
+  SHOWCASE_APPS = {
+    "prisoners-dilemma" => "https://mcr-prisoners-dilemma-9fde4bf81cc4.herokuapp.com",
+    "weekly-lock" => "https://mcr-weekly-lock-51f3dfe1ba48.herokuapp.com",
+    "rantly" => "https://mcr-rantly-27c88595c2de.herokuapp.com",
+    "portfolio" => "https://mcr-portfolio-0600e75bd62d.herokuapp.com"
+  }.freeze
+
+  test "[unit] each showcase app deploys to its mcr- Heroku app by git_push_heroku" do
+    SHOWCASE_APPS.each do |repo, smoke_host|
+      assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder(repo), "#{repo} is three-rung from birth"
+      assert_includes Release::Ladder.sweepable(Release::Repos.config), repo
+      assert_equal :app, Release::Repos.kind(repo), "#{repo} is an app, not a gem"
+
+      adapter = Release::Repos.prod_deploy(repo)
+      assert_equal "git_push_heroku", adapter["strategy"], "#{repo} deploys by git_push_heroku"
+      assert_equal "https://git.heroku.com/mcr-#{repo}.git", adapter["remote"], "#{repo}'s Heroku remote"
+      assert_equal "main", adapter["branch"], "#{repo} pushes the frozen SHA onto Heroku main"
+      # The herokuapp host until <repo>.mcritchie.studio resolves over HTTPS. The
+      # ship smokes `<smoke_url>/up` AFTER the push, so the value is the bare host:
+      # a dead host or a trailing /up aborts a live deploy.
+      assert_equal smoke_host, adapter["smoke_url"], "#{repo}'s smoke host is its herokuapp host, no /up"
+      assert_equal "mcr-#{repo}", Release::ShipSequence.heroku_app_for(adapter), "#{repo}'s Heroku app name"
+    end
+  end
+
+  test "[unit] each showcase app registers CI's test job as test_cmd and no QA gate" do
+    SHOWCASE_APPS.each_key do |repo|
+      assert_equal "bin/rails test", Release::Repos.test_cmd(repo),
+                   "test_cmd is #{repo}'s CI `test` job verbatim; its system tier runs in the `system-test` job"
+      assert_nil Release::Repos.qa_test_cmd(repo),
+                 "#{repo} has no QA app; a qa_test_cmd would make its QA exemption stale"
+      assert Release::Repos.qa_evidence_exempt?(repo),
+             "no QA copy by Alex's 2026-09-26 selection, so a sweep must not hold #{repo} at the QA stamp"
+    end
+  end
+
+  test "[unit] each showcase app's gate has no database step and no task-as-path argument" do
+    SHOWCASE_APPS.each_key do |repo|
+      argv = Shellwords.split(Release::Repos.test_cmd(repo))
+
+      assert_empty argv.grep(/\Adb:/), "#{repo} has no database, so its gate must not prepare one"
+      assert_empty argv.drop(2).grep(/\Atest:/),
+                   "#{repo}: a bare `bin/rails test <task>` treats the task as a path and raises LoadError"
+    end
   end
 
   test "app_meta returns the app's registry metadata" do
@@ -414,7 +465,8 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # Guards the guard: every assertion above would pass vacuously over an empty list.
   test "[unit] the QA-evidence exemption guard actually has a repo to check" do
-    assert_equal %w[cyvasse dads-app turf-vault], Release::Repos.qa_evidence_exempt_repos.sort,
+    assert_equal %w[cyvasse dads-app portfolio prisoners-dilemma rantly turf-vault weekly-lock],
+                 Release::Repos.qa_evidence_exempt_repos.sort,
                  "exactly these repos are declared exempt — a third one arriving unreviewed " \
                  "is what this pin is here to surface"
   end
@@ -428,9 +480,19 @@ class Release::ReposTest < ActiveSupport::TestCase
   # Both lines are Alex's own words. dads-app's is his cost ask (chat,
   # 2026-09-26), answered by option C, one Eco dyno with no QA copy; the registry
   # comment quotes the "C" reply beside it.
+  #
+  # The four showcase apps' line is the option Alex SELECTED in an
+  # AskUserQuestion prompt (chat, 2026-09-26: "Should the four showcase apps get
+  # QA copies, or ship straight to production like Cyvasse and dads-app?"). The
+  # option text was written by the agent; the choice was his.
+  SHOWCASE_QA_DECISION = "No QA copies (Recommended)".freeze
   QA_EXEMPT_BY_OPERATOR_DECISION = {
     "cyvasse" => "No cyvasse-qa unless there is a free teir we can use",
-    "dads-app" => "anyway we can get it cheaper than $12/m"
+    "dads-app" => "anyway we can get it cheaper than $12/m",
+    "prisoners-dilemma" => SHOWCASE_QA_DECISION,
+    "weekly-lock" => SHOWCASE_QA_DECISION,
+    "rantly" => SHOWCASE_QA_DECISION,
+    "portfolio" => SHOWCASE_QA_DECISION
   }.freeze
 
   test "[unit] a DEPLOYABLE exempt repo is exempt only by a cited operator decision" do
@@ -439,6 +501,9 @@ class Release::ReposTest < ActiveSupport::TestCase
 
     assert_includes deployable_exempt, "cyvasse", "guards the guard: the list it walks is not empty"
     assert_includes deployable_exempt, "dads-app", "dads-app is exempt by decision, not by QA not applying"
+    SHOWCASE_APPS.each_key do |repo|
+      assert_includes deployable_exempt, repo, "#{repo} is exempt by decision, not by QA not applying"
+    end
     deployable_exempt.each do |repo|
       decision = QA_EXEMPT_BY_OPERATOR_DECISION[repo]
       assert decision, "#{repo} has a prod_deploy and declares qa_evidence: exempt without an operator " \
@@ -617,11 +682,32 @@ class Release::ReposTest < ActiveSupport::TestCase
   # though test_cmd names only the `test` job; this guard is what keeps that job
   # from being dropped or narrowed unseen. Its release branch carried no ci.yml on
   # 2026-09-26, so it falls back to origin/accepted like cyvasse.
+  #
+  # The four showcase apps (register-showcase-apps, 2026-09-26) are held exactly
+  # like dads-app; prisoners-dilemma also pins its Node `test_js` job. A companion
+  # step is found by its own command, not the gate's anchor, so a `node` step can
+  # be pinned beside `bin/rails` ones. On the day they registered, only rantly's
+  # accepted carried a ci.yml (its scaffold); the other three held only a README,
+  # with CI on their unmerged build PRs. Such a repo cannot be read yet, and it is
+  # NOT passed over silently: the test asserts its accepted also carries no Rails
+  # app, i.e. there is nothing a sweep could ship ungated. The day a build PR
+  # merges, ci.yml and the app land together and the pin binds.
   GIT_PUSH_HEROKU_GATES = {
     "mcritchie-industries" => { field: :qa_test_cmd, anchor: "db:test:prepare", fallback: false },
     "cyvasse" => { field: :test_cmd, anchor: "db:test:prepare", fallback: true },
     "dads-app" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
-                    companion_jobs: { "system-test" => "bin/rails test:system" } }
+                    companion_jobs: { "system-test" => "bin/rails test:system" } },
+    "prisoners-dilemma" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
+                             companion_jobs: {
+                               "system-test" => "bin/rails test:system",
+                               "test_js" => "node --experimental-detect-module --test test/javascript/*_test.mjs"
+                             } },
+    "weekly-lock" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
+                       companion_jobs: { "system-test" => "bin/rails test:system" } },
+    "rantly" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
+                  companion_jobs: { "system-test" => "bin/rails test:system" } },
+    "portfolio" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
+                     companion_jobs: { "system-test" => "bin/rails test:system" } }
   }.freeze
 
   test "git_push_heroku satellites' gates run their CI test command verbatim" do
@@ -629,12 +715,15 @@ class Release::ReposTest < ActiveSupport::TestCase
       field, anchor = gate.values_at(:field, :anchor)
       ci = sibling_ci_test_command(repo, anchor: anchor) ||
            (gate[:fallback] && sibling_ci_test_command(repo, anchor: anchor, ref: "origin/accepted"))
-      next unless ci
+      unless ci
+        assert_nothing_shippable_without_ci(repo)
+        next
+      end
 
       assert_equal ci, Release::Repos.public_send(field, repo), "#{repo}'s #{field} must run its CI suite, verbatim"
       (gate[:companion_jobs] || {}).each do |job, expected|
-        companion = sibling_ci_test_command(repo, anchor: anchor, job: job) ||
-                    (gate[:fallback] && sibling_ci_test_command(repo, anchor: anchor, job: job, ref: "origin/accepted"))
+        companion = sibling_ci_test_command(repo, anchor: expected, job: job) ||
+                    (gate[:fallback] && sibling_ci_test_command(repo, anchor: expected, job: job, ref: "origin/accepted"))
         assert_equal expected, companion,
                      "#{repo}'s ci.yml `#{job}` job must run #{expected} — together with `test` it covers the suite"
       end
@@ -737,6 +826,22 @@ class Release::ReposTest < ActiveSupport::TestCase
       _out, status = Open3.capture2e("git", "-C", path.to_s,
                                      "rev-parse", "--verify", "--quiet", "origin/#{branch}")
       status.success?
+    end
+
+    # A registered repo whose sibling IS checked out but whose ci.yml is on neither
+    # rung may be unreadable only while it has nothing to ship: no Rails app on
+    # origin/accepted (the fallback rung) or origin/release. Absent checkout: no-op.
+    def assert_nothing_shippable_without_ci(repo)
+      root = projects_root
+      return if root.nil? || !root.join(repo, ".git").exist?
+
+      %w[origin/release origin/accepted].each do |ref|
+        _out, status = Open3.capture2e("git", "-C", root.join(repo).to_s, "cat-file", "-e",
+                                       "#{ref}:config/application.rb")
+        assert_not status.success?,
+                   "#{repo}'s #{ref} carries a Rails app but no ci.yml the drift guard can read — " \
+                   "its gate would ship unpinned"
+      end
     end
 
     # The single command a sibling repo's ci.yml `test` job runs. Located by content
