@@ -300,6 +300,13 @@ module Appearances
         width: result.width,
         height: result.height,
         position: result.position,
+        # REPORTED BY THE PROVIDER WHEN IT VOLUNTEERS ONE, and nil is fine — Serper
+        # does not report a mime type and a row without one is not worse, only
+        # quieter. Stored rather than derived because it is the ARCHIVE's own claim
+        # about what the file is, which is a stronger statement than sniffing an
+        # extension out of a URL, and the scouting page prints it as such.
+        mime_type: result.mime,
+        thumb_url: result.thumb_url,
         query: query,
         chosen: chosen,
         rejection_reason: rejection_reason,

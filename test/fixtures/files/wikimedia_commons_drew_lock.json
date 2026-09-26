@@ -1,0 +1,165 @@
+{
+  "batchcomplete": "",
+  "continue": {
+    "gsroffset": 20,
+    "continue": "gsroffset||"
+  },
+  "query": {
+    "pages": {
+      "112249364": {
+        "pageid": 112249364,
+        "ns": 6,
+        "title": "File:WFT vs. Broncos (51651272550).jpg",
+        "index": 2,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "size": 779441,
+            "width": 3207,
+            "height": 2135,
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/WFT_vs._Broncos_%2851651272550%29.jpg/960px-WFT_vs._Broncos_%2851651272550%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 600,
+            "thumbheight": 399,
+            "responsiveUrls": {
+              "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/WFT_vs._Broncos_%2851651272550%29.jpg/1280px-WFT_vs._Broncos_%2851651272550%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+            },
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/WFT_vs._Broncos_%2851651272550%29.jpg/960px-WFT_vs._Broncos_%2851651272550%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 600,
+              "height": 399,
+              "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/WFT_vs._Broncos_%2851651272550%29.jpg/1280px-WFT_vs._Broncos_%2851651272550%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/5/59/WFT_vs._Broncos_%2851651272550%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:WFT_vs._Broncos_(51651272550).jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=112249364",
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      "15515602": {
+        "pageid": 15515602,
+        "ns": 6,
+        "title": "File:Drew Hutton.jpg",
+        "index": 5,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "size": 296379,
+            "width": 1065,
+            "height": 1600,
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7f/Drew_Hutton.jpg/960px-Drew_Hutton.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 600,
+            "thumbheight": 901,
+            "responsiveUrls": {
+              "2": "https://upload.wikimedia.org/wikipedia/commons/7/7f/Drew_Hutton.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled"
+            },
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7f/Drew_Hutton.jpg/960px-Drew_Hutton.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 600,
+              "height": 901,
+              "srcset": "https://upload.wikimedia.org/wikipedia/commons/7/7f/Drew_Hutton.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled 2x"
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/7/7f/Drew_Hutton.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Drew_Hutton.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=15515602",
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      "38867343": {
+        "pageid": 38867343,
+        "ns": 6,
+        "title": "File:Pope - The Rape of the Lock, 1896.djvu",
+        "index": 9,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "size": 3662050,
+            "width": 2209,
+            "height": 2989,
+            "pagecount": 88,
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c2/Pope_-_The_Rape_of_the_Lock%2C_1896.djvu/page1-960px-Pope_-_The_Rape_of_the_Lock%2C_1896.djvu.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 600,
+            "thumbheight": 812,
+            "responsiveUrls": {
+              "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c2/Pope_-_The_Rape_of_the_Lock%2C_1896.djvu/page1-1280px-Pope_-_The_Rape_of_the_Lock%2C_1896.djvu.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+            },
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c2/Pope_-_The_Rape_of_the_Lock%2C_1896.djvu/page1-960px-Pope_-_The_Rape_of_the_Lock%2C_1896.djvu.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 600,
+              "height": 812,
+              "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c2/Pope_-_The_Rape_of_the_Lock%2C_1896.djvu/page1-1280px-Pope_-_The_Rape_of_the_Lock%2C_1896.djvu.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/c/c2/Pope_-_The_Rape_of_the_Lock%2C_1896.djvu?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Pope_-_The_Rape_of_the_Lock,_1896.djvu",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=38867343",
+            "mime": "image/vnd.djvu"
+          }
+        ]
+      },
+      "85472510": {
+        "pageid": 85472510,
+        "ns": 6,
+        "title": "File:Drew Lock.JPG",
+        "index": 1,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "size": 936715,
+            "width": 936,
+            "height": 1026,
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/5/50/Drew_Lock.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+            "thumbwidth": 600,
+            "thumbheight": 658,
+            "thumbattribs": {
+              "src": "https://upload.wikimedia.org/wikipedia/commons/5/50/Drew_Lock.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 600,
+              "height": 658
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/5/50/Drew_Lock.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Drew_Lock.JPG",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=85472510",
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      "95573309": {
+        "pageid": 95573309,
+        "ns": 6,
+        "title": "File:John Drew (IA johndrew00dith).pdf",
+        "index": 6,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "size": 4936398,
+            "width": 600,
+            "height": 975,
+            "pagecount": 202,
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/35/John_Drew_%28IA_johndrew00dith%29.pdf/page1-500px-John_Drew_%28IA_johndrew00dith%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 600,
+            "thumbheight": 975,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/35/John_Drew_%28IA_johndrew00dith%29.pdf/page1-500px-John_Drew_%28IA_johndrew00dith%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 600,
+              "height": 975
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/3/35/John_Drew_%28IA_johndrew00dith%29.pdf?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:John_Drew_(IA_johndrew00dith).pdf",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=95573309",
+            "mime": "application/pdf"
+          }
+        ]
+      }
+    }
+  }
+}

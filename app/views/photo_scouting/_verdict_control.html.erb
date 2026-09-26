@@ -1,0 +1,57 @@
+<%# THE OPERATOR'S VERDICT ON ONE CANDIDATE — the calibration half, one tile at a
+    time.
+
+    Locals: photo (a PERSISTED AppearanceReferencePhoto).
+
+    ADMINS ONLY, matching the controller. #verdict is behind require_admin because
+    what it stores is the OPERATOR's taste, which is the reference a future ranking
+    change gets measured against — a stranger's opinion averaged into that column
+    would quietly corrupt the one signal this page exists to collect. Hub signup is
+    open, so a session is not a gate. A reader who may not write is shown the
+    machine's verdict and no control, rather than a control that would refuse.
+
+    THE STATE LIVES IN ALPINE, NOT IN THIS MARKUP. The chip and both buttons read
+    `verdicts[slug]` from the root component, which is replaced from the SERVER's
+    answer on every write. So the tile cannot show a verdict that was not stored. %>
+<% if admin? %>
+  <% slug = photo.slug %>
+  <div class="flex items-center gap-1" data-test="verdict-control" data-photo="<%= slug %>">
+    <%# "KEEP" AND "DROP" RATHER THAN A STAR RATING. The machine's output is binary —
+        a photograph is in the model or it is not — so the operator's answer has to be
+        binary too or the two could not be compared at all. %>
+    <button type="button"
+            data-test="verdict-keep"
+            @click="record('<%= slug %>', 'keep')"
+            :disabled="busy === '<%= slug %>'"
+            :class="verdicts['<%= slug %>'] === 'keep' ? 'bg-success/20 text-success-ink border-success/50' : 'bg-surface text-muted border-subtle hover:border-success/40'"
+            class="flex-1 rounded border px-1.5 py-1 text-3xs font-bold transition-colors disabled:opacity-50"
+            title="I would put this photo in the model">
+      keep
+    </button>
+    <button type="button"
+            data-test="verdict-drop"
+            @click="record('<%= slug %>', 'drop')"
+            :disabled="busy === '<%= slug %>'"
+            :class="verdicts['<%= slug %>'] === 'drop' ? 'bg-danger/20 text-danger-ink border-danger/50' : 'bg-surface text-muted border-subtle hover:border-danger/40'"
+            class="flex-1 rounded border px-1.5 py-1 text-3xs font-bold transition-colors disabled:opacity-50"
+            title="I would leave this photo out">
+      drop
+    </button>
+  </div>
+  <%# THE AGREEMENT CELL, live. Hidden until a verdict exists, because "not judged"
+      on twenty tiles is noise the operator already knows about — the panel at the top
+      counts them. `x-cloak` keeps it from flashing before Alpine evaluates. %>
+  <p x-cloak x-show="verdicts['<%= slug %>']"
+     data-test="verdict-state"
+     class="text-3xs leading-tight"
+     :class="agreementTone('<%= slug %>', <%= photo.chosen? %>)"
+     x-text="agreementLabel('<%= slug %>', <%= photo.chosen? %>)"></p>
+<% else %>
+  <%# A READER WHO MAY NOT WRITE still gets the operator's recorded verdict, because
+      the comparison is the page's whole content and hiding it would leave a reader
+      with only the machine's half. %>
+  <% if photo.judged? %>
+    <% cell = calibration_chip(photo) %>
+    <span class="badge text-3xs <%= cell[:classes] %>"><%= cell[:label] %></span>
+  <% end %>
+<% end %>

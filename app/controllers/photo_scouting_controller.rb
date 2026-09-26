@@ -1,0 +1,177 @@
+# PHOTO SCOUTING — the calibration surface for reference-photo search.
+#
+# WHAT THIS PAGE IS FOR, in the operator's words: *"a new page in the model. Where
+# the AI goes out pulls images for the person (athlete) in this case and then picks
+# the 5 best photos to be used in the model. In this way I should have a good idea
+# of what the raw found images look like and which ones your taste is picking up to
+# use into the model build."*
+#
+# So it is a CALIBRATION surface, not a debug view, and the difference shows in what
+# it refuses to summarise. It answers two questions side by side — what did the
+# search actually return, and why did these win — and then asks the operator for HIS
+# answer to the second one so the two can be compared. A page that only reported
+# would leave his taste in his head; #verdict is what gets it into a column.
+#
+# IT SHOWS THE PIPELINE'S OWN WORST RESULTS ON PURPOSE. Two measured defects live in
+# this lane (both owned by task `reference-photos-wrong-person`, neither fixed here):
+# a clear photograph of the WRONG MAN outranks a helmeted photograph of the right
+# one, and the top-ranked photograph is one Higgsfield REFUSES to mint. A calibration
+# page that hid either would be worse than no page, because the operator would
+# calibrate against a picture of the system that was not true.
+#
+# ⚠ THE PAGE IS PUBLIC TO READ AND ADMIN-ONLY TO WRITE, and `require_admin` rather
+# than a session is the gate for the same reason it is on AppearancesController: hub
+# signup is OPEN — magic-link and Google are both create-or-login — so "needs a
+# session" means "needs an email address" and is no control at all. #search buys one
+# provider query plus up to GatherReferencePhotos::VISION_SHORTLIST vision
+# classifications. #verdict spends nothing, and is gated anyway: it records the
+# OPERATOR's taste as the reference the ranking will be measured against, and a
+# stranger's opinion mixed into that column would corrupt the one signal this page
+# exists to collect.
+class PhotoScoutingController < ApplicationController
+  skip_before_action :require_authentication, only: [:show]
+  # BEFORE the record lookups, exactly as on AppearancesController: a request that
+  # may not write has no business costing us three queries on its way to a redirect.
+  before_action :require_admin, except: [:show]
+  before_action :set_person
+  before_action :set_appearance
+
+  def show
+    load_scouting
+  end
+
+  # BUY ONE QUERY and re-file every candidate it returns.
+  #
+  # This is the action the operator's "the AI goes out and pulls images" names, and
+  # until Appearances::ImageSearch::WikimediaCommons shipped it could not run on any
+  # machine: Serper was the only provider and `SERPER_API_KEY` exists nowhere. The
+  # keyless provider is what makes this button real rather than decorative.
+  def search
+    if @appearance.nil?
+      return redirect_to scouting_path,
+                         alert: "#{@person.full_name} has no look to search against. " \
+                                "Create one on the person page first."
+    end
+
+    summary = Appearances::GatherReferencePhotos.call(@appearance)
+
+    if !summary.configured?
+      redirect_to scouting_path, alert: unconfigured_message
+    elsif summary.returned.zero?
+      redirect_to scouting_path,
+                  alert: "#{summary.provider_name || 'The search'} returned nothing for " \
+                         "\"#{summary.query}\". Nothing was filed and nothing changed."
+    else
+      redirect_to scouting_path, notice: search_message(summary)
+    end
+  end
+
+  # RECORD THE OPERATOR'S VERDICT ON ONE CANDIDATE.
+  #
+  # ANSWERS JSON WITH THE RECOMPUTED TALLY, and the page renders what comes back
+  # rather than adding up its own. The client has every number it would need to
+  # predict the new totals, and predicting them is exactly the bug: a click that
+  # failed on the server would still move the counters, and the operator would be
+  # reading a calibration figure that no row supports. The server is the only thing
+  # that knows what was stored, so the server says what the tally now is.
+  #
+  # TOGGLES OFF when the same verdict is re-sent, because the fastest correction for
+  # a misclick is the button you just pressed, and "no opinion" has to be reachable
+  # or the first click on a tile is permanent.
+  def verdict
+    photo = AppearanceReferencePhoto.find_by(slug: params[:photo_slug],
+                                            appearance_slug: @appearance&.slug)
+    return render(json: { error: "no such candidate on this look" }, status: :not_found) if photo.nil?
+
+    wanted = params[:verdict].to_s
+    unless AppearanceReferencePhoto::VERDICTS.include?(wanted)
+      return render json: { error: "verdict must be keep or drop" }, status: :unprocessable_entity
+    end
+
+    settled = photo.operator_verdict == wanted ? nil : wanted
+    photo.update!(operator_verdict: settled,
+                  operator_verdict_at: settled.nil? ? nil : Time.current)
+
+    # RELOADED FROM THE DATABASE rather than patched in memory, so the tally counts
+    # what was actually written — including the row this request just changed.
+    load_scouting
+    render json: {
+      photo_slug: photo.slug,
+      verdict: photo.operator_verdict,
+      state: photo.calibration_state,
+      tally: @tally.to_h
+    }
+  end
+
+  private
+
+  def set_person
+    @person = Person.find_by!(slug: params[:person_slug])
+  end
+
+  # THE LOOK THE PHOTOGRAPHS ARE FILED AGAINST. nil is a REAL state — a person with
+  # no looks yet — and the page renders an explanation rather than 404ing, because a
+  # person page links here and a dead link would read as a broken feature.
+  def set_appearance
+    slug = @person.resolve_default_appearance!
+    @appearance = slug.present? ? @person.appearances.find_by(slug: slug) : nil
+  end
+
+  def scouting_path = person_scouting_path(@person.slug)
+
+  def load_scouting
+    @candidates = candidates
+    # THE SEARCH'S OWN OUTPUT, IN THE ARCHIVE'S OWN ORDER — the first question the
+    # page answers. Floor rows are excluded here because they are INPUTS we control
+    # (our mirrored headshot, a URL the operator typed) and were never returned by a
+    # search; including them in the column that judges the search would credit it
+    # with photographs it did not find.
+    @found = @candidates.select(&:from_search?).sort_by { |p| [p.position || Float::INFINITY, p.id] }
+    @chosen = @candidates.select(&:chosen?)
+    @rejected = @candidates.reject(&:chosen?)
+    # THE TALLY COVERS THE SEARCH ROWS ONLY, because they are the only rows a verdict
+    # can be stored on: Appearances::ReferenceSet builds the floor in memory, so
+    # those tiles have no persisted row to write to. That is the honest population
+    # anyway — the ranking under calibration is the one applied to search results.
+    @tally = Appearances::Calibration.for(@found)
+
+    @search_available = Appearances::ImageSearch.available?
+    @search_provider = Appearances::ImageSearch.provider_name
+    @search_query = @appearance && Appearances::GatherReferencePhotos.new(@appearance).query
+    # READ OFF THE ROWS, NOT OFF THE CREDENTIAL. These answer different questions: a
+    # key that landed this morning says nothing about how the gallery on screen was
+    # ordered, and the gallery on screen is what the operator is judging.
+    @face_ranked = @found.any?(&:face_scored?)
+    @face_ranking_available = Appearances::FaceVisibility.available?
+    @chosen_limit = Appearances::GatherReferencePhotos::CHOSEN_LIMIT
+  end
+
+  def candidates
+    return [] if @appearance.nil?
+
+    Appearances::ReferenceSet.new(@appearance).gallery
+  end
+
+  # NAMES THE CREDENTIAL, because the reader of this message is whoever would set it.
+  # Reachable only if every registered provider answers `available?` false, which the
+  # keyless provider makes unlikely rather than impossible — a registry edit or a
+  # stubbed provider still lands here, and a page that rendered a bare "off" would
+  # send the operator to ask somebody.
+  def unconfigured_message
+    "No image-search provider is configured, so nothing was searched and nothing " \
+      "was spent. Set #{Appearances::ImageSearch::Serper::API_KEY_ENV} to turn it on."
+  end
+
+  def search_message(summary)
+    parts = ["#{summary.provider_name} returned #{summary.returned} result(s)"]
+    parts << "#{summary.unparsed} in a shape we could not read" if summary.unparsed.positive?
+    parts << "#{summary.unfetchable} refused as unsafe to fetch" if summary.unfetchable.positive?
+    parts << if summary.ranked_by_face?
+      "#{summary.scored} scored for face visibility"
+    else
+      "ranked on shape and relevance only (no face classifier)"
+    end
+    parts << "#{summary.chosen} chosen for the model"
+    "#{parts.join(' · ')}."
+  end
+end

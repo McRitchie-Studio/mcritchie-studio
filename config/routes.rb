@@ -338,6 +338,27 @@ Rails.application.routes.draw do
         post :refresh
       end
     end
+
+    # THE PHOTO SCOUTING PAGE — what the search found, what the ranker picked, and
+    # what the operator would have picked instead.
+    #
+    # PER-PERSON RATHER THAN PER-LOOK, and SINGULAR for that reason: the question it
+    # answers ("are we any good at finding photographs of this man?") is about the
+    # person, so `/people/drew-lock/scouting` is the whole address. It resolves the
+    # person's default look to search against, because the photographs are filed per
+    # look and a page that made the operator pick a look first would be asking him
+    # about a distinction he was not thinking about.
+    #
+    # #show IS PUBLIC, matching the person page and the model page it sits beside.
+    # #search and #verdict are behind `require_admin` — #search because it buys a
+    # query plus up to VISION_SHORTLIST classifications, and #verdict because it
+    # writes the OPERATOR's taste, which is the one signal a future ranking change
+    # would be measured against. Hub signup is open, so a session is not a control
+    # over either. PhotoScoutingController carries the argument.
+    resource :scouting, controller: "photo_scouting", only: [:show] do
+      post :search
+      post :verdict
+    end
   end
 
   # NFL hub + rankings (SEO-friendly URLs)
