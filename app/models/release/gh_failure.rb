@@ -94,9 +94,9 @@ class Release
     # identity fails identically — the very loop this module exists to stop, one
     # identity over. Measured 2026-08-12 against both installations:
     #   github.mcritchie-agent    → pull_requests: write
-    #   github.mcritchie-admin → NO pull_requests grant at all
-    # and bin/gh-app-git-credential:34 reads GH_APP_ITEM, so a ship-lane export
-    # left in the environment re-mints the deployer every time.
+    #   github.mcritchie-admin    → NO pull_requests grant at all
+    # and bin/gh-app-git-credential reads GH_APP_ITEM (its `ITEM=` line), so a
+    # ship-lane export left in the environment re-mints the deployer every time.
     #
     # The string is GENERIC, though, and the remedy says so rather than assuming
     # the deployer: an agent-identity token calling a user-scoped endpoint returns
