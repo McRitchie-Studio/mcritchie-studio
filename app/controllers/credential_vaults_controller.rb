@@ -10,6 +10,11 @@ class CredentialVaultsController < ApplicationController
     @entities = CredentialVault::ENTITIES
     records = CredentialRecord.includes(:credential_vault).order(:title).to_a
     @services = records.map(&:service).uniq.sort_by { |service| CredentialRecord.service_label(service).downcase }
+    # Google access for a client is a delegation grant on its domain, read with
+    # the one shared service-account key, so the Google row also shows each
+    # entity's workspace and whether that grant is proven.
+    @domains = OnepassIconConfig.domains
+    @workspace_accounts = WorkspaceAccount.where(domain: @domains.values).index_by(&:domain)
     @matrix = records.group_by(&:service).transform_values { |rows| rows.group_by { |r| r.credential_vault.entity } }
   end
 end

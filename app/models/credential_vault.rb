@@ -7,7 +7,7 @@
 # column is a plain string so a vault can be recorded before its workspace is
 # registered, and the association simply reads nil until then.
 class CredentialVault < ApplicationRecord
-  ENTITIES = %w[studio industries family commercial-welding].freeze
+  ENTITIES = %w[studio industries turf-monster commercial-welding family].freeze
   LANES = %w[agents admin applications human].freeze
   STATUSES = %w[active reserved retired].freeze
 

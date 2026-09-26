@@ -7,4 +7,7 @@ module OnepassIconConfig
   module_function
 
   def workspaces = YAML.safe_load_file(CONFIG).fetch("workspaces", {})
+
+  # entity => Google Workspace domain, for the entities that have one.
+  def domains = workspaces.filter_map { |scope, ws| [ scope, ws["domain"] ] if ws["domain"].present? }.to_h
 end

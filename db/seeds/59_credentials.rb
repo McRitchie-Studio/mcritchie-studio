@@ -64,9 +64,17 @@ records = [
     scope_summary: "CDP API key. Grandfathered name." },
   { vault: "studio-agents", title: "agent.higgesfield", service: "higgsfield", status: "retired",
     url: "https://higgsfield.ai", notes: "Retired 2026-09-20; superseded by higgsfield.studio.agents." },
+  # ONE key for every client workspace: Workspace::Credentials impersonates the
+  # team@ subject of each ACTIVE WorkspaceAccount with it, so a new client's
+  # Google access is a delegation grant on their domain, not a new item.
   { vault: "industries-agents", title: "google.industries.agents", service: "google", category: "API Credential",
-    status: "empty", url: "https://admin.google.com", used_by: "Workspace delegation for Industries",
-    scope_summary: "Filed empty on 2026-09-18; the value is pasted by Mr. McRitchie." }
+    status: "empty", url: "https://admin.google.com", used_by: "Workspace::Credentials (Drive walk, drafting)",
+    scope_summary: "Service-account key with domain-wide delegation, used for every registered workspace. " \
+                   "Filed empty on 2026-09-18; the value is pasted by Mr. McRitchie." },
+  { vault: "studio-agents", title: "gmail.studio.agents", service: "google", category: "API Credential",
+    url: "https://console.cloud.google.com/apis/credentials", used_by: "Gmail::Credentials (mailbox ingest)",
+    scope_summary: "Gmail OAuth client id, secret and refresh token, as one JSON field.",
+    notes: "Gmail::Credentials says the item was filed empty until real values exist; whether it is filled now is unverified." }
 ]
 
 records.each do |attrs|

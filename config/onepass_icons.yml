@@ -1,6 +1,9 @@
 # 1Password vault icons — the workspace scopes bin/onepass-icon can badge.
 #
-# Each scope is one client workspace. `badge` is the logo drawn in the corner
+# Each scope is one client workspace, keyed by the same entity slug the
+# credential_vaults rows use, in the column order /credentials shows. `domain`
+# is its Google Workspace domain (the WorkspaceAccount the Google row reads);
+# omit it for an entity with no Google workspace. `badge` is the logo drawn in the corner
 # disc (a repo path; omit it and the CLI demands --badge). `accent` is the ring
 # colour as #rrggbb; omit it and the ring takes the badge logo's own average
 # colour. `vaults` names the 1Password vaults that wear this icon, which is
@@ -16,6 +19,7 @@ logo: lib/onepass_icons/1password.png
 workspaces:
   studio:
     name: McRitchie Studio
+    domain: mcritchie.studio
     # The treasure chest — the same art public/studio-logo.svg embeds, in the
     # violet Alex supplied on 2026-09-25.
     badge: lib/onepass_icons/badges/studio.png
@@ -23,10 +27,18 @@ workspaces:
     vaults: [studio-agents, studio-agents-admin, studio-applications]
   industries:
     name: McRitchie Industries
+    domain: mcritchie.industries
     vaults: [industries-agents]
+  turf-monster:
+    name: Turf Monster
+    domain: turfmonster.media
+    # The gator from public/turf-monster-logo.png; the ring takes its green.
+    badge: lib/onepass_icons/badges/turf-monster.png
+    vaults: []
+  commercial-welding:
+    name: Commercial Welding
+    domain: commercialwelding.llc
+    vaults: [Commercial Welding]
   family:
     name: McRitchie Family
     vaults: [family-agents]
-  commercial-welding:
-    name: Commercial Welding
-    vaults: [Commercial Welding]
