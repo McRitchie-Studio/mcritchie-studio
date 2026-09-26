@@ -9,6 +9,9 @@
 # Slug-keyed like the rest of the hub: records point at their vault by the
 # vault's slug (its 1Password name), and a vault points at its client by the
 # WorkspaceAccount's domain, so a vault can be recorded before the workspace is.
+#
+# A record's `entity` is the client it SERVES, which is not always its vault's:
+# the Turf Monster keys live in the Studio agent vault. Blank means the vault's.
 class CreateCredentialVaultsAndRecords < ActiveRecord::Migration[8.0]
   def change
     create_table :credential_vaults do |t|
@@ -29,6 +32,7 @@ class CreateCredentialVaultsAndRecords < ActiveRecord::Migration[8.0]
       t.string :title, null: false
       t.string :credential_vault_slug, null: false
       t.string :service, null: false
+      t.string :entity
       t.string :category
       t.string :url
       t.string :used_by
@@ -39,5 +43,6 @@ class CreateCredentialVaultsAndRecords < ActiveRecord::Migration[8.0]
     end
     add_index :credential_records, [ :credential_vault_slug, :title ], unique: true
     add_index :credential_records, :status
+    add_index :credential_records, :service
   end
 end

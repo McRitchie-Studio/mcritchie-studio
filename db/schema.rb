@@ -569,6 +569,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_140000) do
     t.string "category"
     t.datetime "created_at", null: false
     t.string "credential_vault_slug", null: false
+    t.string "entity"
     t.text "notes"
     t.text "scope_summary"
     t.string "service", null: false
@@ -578,6 +579,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_140000) do
     t.string "url"
     t.string "used_by"
     t.index ["credential_vault_slug", "title"], name: "index_credential_records_on_credential_vault_slug_and_title", unique: true
+    t.index ["service"], name: "index_credential_records_on_service"
     t.index ["status"], name: "index_credential_records_on_status"
   end
 
