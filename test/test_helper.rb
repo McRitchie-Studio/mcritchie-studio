@@ -18,6 +18,26 @@ ENV.delete("OP_SERVICE_ACCOUNT_TOKEN")
 # RAISES instead of sleeping, so the mistake surfaces in milliseconds and cannot
 # ride into CI as a slow-suite mystery (see app/models/release/seal_retry.rb).
 ENV["SEAL_RETRY_NO_SLEEP"] = "1"
+# ZERO PAID VISION CALLS FROM THIS SUITE — a trap, not an assertion.
+#
+# Athletes::VisionTransport is the only path a paid Anthropic vision call takes out
+# of this process (Athletes::DescribeFromHeadshot backfills ~2,000 athletes through
+# it). Armed here, every call through it RAISES instead of posting, so a test that
+# forgets to inject a transport fails in milliseconds rather than billing.
+#
+# Set before boot for the same reason the fake `op` above is: nothing can call it
+# first. And the exception it raises sits OUTSIDE StandardError on purpose — the
+# describer is contractually degrade-never-raise, so a StandardError trap would be
+# swallowed by the very caller it guards, and the careless test would pass quietly.
+# test/services/athletes/vision_transport_test.rb proves both halves: that the trap
+# bites, and that THIS LINE is what armed the suite.
+#
+# SPELLED AS A LITERAL, not as Athletes::VisionTransport::NO_LIVE_CALLS_ENV, because
+# this runs BEFORE config/environment and Zeitwerk cannot autoload the constant yet —
+# naming it here would NameError the whole suite on boot. The vision_transport test
+# named above pins this literal against the constant, so the two cannot drift apart
+# in silence.
+ENV["VISION_NO_LIVE_CALLS"] = "1"
 require_relative "../config/environment"
 require "rails/test_help"
 
