@@ -24,11 +24,7 @@
 # once the floor has proven cheap. See test-steward-grooms-suite for the grooming act
 # that proposes reductions — and note the rule it works under: a test may only be
 # deleted or merged by demonstrating that the mutation it caught is still caught.
-# +1 (2026-09-25, wire-cyvasse-production-deploy): 25 -> 26. The cyvasse drift guard
-# in test/models/release/repos_test.rb reads cyvasse's OWN ci.yml from its sibling
-# checkout and skips where none exists (the hub CI runner), exactly like the rolio and
-# mcritchie-industries guards beside it. The shape pins above it still bind on CI.
-skips: 26
+skips: 25
 assertion_free: 0
 
 # FROZEN HOTSPOTS — files that may not GROW.

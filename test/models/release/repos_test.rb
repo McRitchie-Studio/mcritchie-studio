@@ -143,19 +143,6 @@ class Release::ReposTest < ActiveSupport::TestCase
            "no cyvasse-qa by Alex's decision (2026-09-25), so a sweep must not hold cyvasse at the QA stamp"
   end
 
-  test "[unit] cyvasse's gate runs its CI test command verbatim" do
-    # THE DRIFT GUARD, as for mcritchie-industries: held against cyvasse's OWN
-    # ci.yml. origin/release is the branch that ships; before the first sweep
-    # carries ci.yml onto it (release held only the initial commit on
-    # 2026-09-25), hold against origin/accepted, the branch that will ship next,
-    # rather than skipping over a file that exists.
-    ci = sibling_ci_test_command("cyvasse", anchor: "db:test:prepare") ||
-         sibling_ci_test_command("cyvasse", anchor: "db:test:prepare", ref: "origin/accepted")
-    skip "cyvasse checkout not present (hub CI runner) — shape guards above still bind" if ci.nil?
-
-    assert_equal ci, Release::Repos.test_cmd("cyvasse"), "cyvasse's ship gate must run its CI suite, verbatim"
-  end
-
   test "app_meta returns the app's registry metadata" do
     meta = Release::Repos.app_meta("turf-monster")
     assert_kind_of Hash, meta
@@ -548,18 +535,32 @@ class Release::ReposTest < ActiveSupport::TestCase
     end
   end
 
-  test "mcritchie-industries' gate runs its CI test command verbatim" do
-    # THE DRIFT GUARD, rolio-style: asserted against the repo's OWN ci.yml at
-    # origin/release, so when its first system test lands and ci.yml grows
-    # `test:system`, this fails at the seam until the registry grows it too.
-    # Anchored on the suite step (db:test:prepare) because this repo's test job
-    # runs `bin/rails tailwindcss:build` BEFORE the suite — the bin/rails
-    # anchor would find the asset build, not the gate command.
-    ci = sibling_ci_test_command("mcritchie-industries", anchor: "db:test:prepare")
-    skip "mcritchie-industries checkout not present (hub CI runner) — shape guards above still bind" if ci.nil?
+  # THE DRIFT GUARD for the git_push_heroku satellites, rolio-style: each app's
+  # ship gate is asserted against the repo's OWN ci.yml, so when ci.yml grows a
+  # tier (as mcritchie-industries' did with `test:system`) this fails at the seam
+  # until the registry grows it too. Anchored on the suite step (db:test:prepare)
+  # because both test jobs run `bin/rails tailwindcss:build` BEFORE the suite —
+  # the bin/rails anchor would find the asset build, not the gate command.
+  #
+  # ONE test over both apps, deliberately: on the hub CI runner neither sibling is
+  # checked out, and the lane's skip ceiling (config/rails_lane.yml) counts each
+  # skipped test. A repo that IS checked out is always asserted; the test skips
+  # only when none is.
+  #
+  # Read from origin/release, the branch that ships. cyvasse's release carried only
+  # its initial commit on 2026-09-25, so until the first sweep lands ci.yml there it
+  # is held against origin/accepted, the branch that will ship next, rather than
+  # passed over.
+  test "git_push_heroku satellites' gates run their CI test command verbatim" do
+    checked = { "mcritchie-industries" => :qa_test_cmd, "cyvasse" => :test_cmd }.filter_map do |repo, field|
+      ci = sibling_ci_test_command(repo, anchor: "db:test:prepare") ||
+           (repo == "cyvasse" && sibling_ci_test_command(repo, anchor: "db:test:prepare", ref: "origin/accepted"))
+      next unless ci
 
-    assert_equal ci, Release::Repos.qa_test_cmd("mcritchie-industries"),
-                 "mcritchie-industries' G3 gate must run its CI suite, verbatim"
+      assert_equal ci, Release::Repos.public_send(field, repo), "#{repo}'s #{field} must run its CI suite, verbatim"
+      repo
+    end
+    skip "no git_push_heroku satellite checkout present (hub CI runner) — shape guards above still bind" if checked.empty?
   end
 
   test "turf-monster has no system tests, so its integration subset is the right gate" do
