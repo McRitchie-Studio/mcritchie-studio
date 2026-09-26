@@ -102,6 +102,25 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to build_path
   end
 
+  test "a queued request's status page is private to its owner" do
+    draft = send_prompt
+    log_in_as users(:viewer)
+    get build_request_path(draft.token)
+    patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
+    assert draft.reload.queued?
+
+    # show's own draft guard does not run for a queued request, so this is the
+    # load_request ownership check alone.
+    log_in_as User.create!(email: "nosy@example.test", name: "Nosy Neighbour")
+    get build_request_path(draft.token)
+    assert_redirected_to build_path
+
+    delete "/logout" rescue nil
+    reset!
+    get build_request_path(draft.token)
+    assert_redirected_to build_path, "signed out, a queued request is not shown either"
+  end
+
   test "the availability check answers in JSON" do
     get build_check_path, params: { subdomain: "WWW" }
     assert_equal({ "subdomain" => "www", "available" => false, "reason" => "That name is reserved." }, response.parsed_body)
