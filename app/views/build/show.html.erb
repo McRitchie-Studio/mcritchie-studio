@@ -50,7 +50,9 @@
             // cut a 38-character paste before this ran (measured 2026-09-26);
             // the 30-character cap is applied here, after stripping.
             clean(value) {
-              const bare = value.toLowerCase().trim()
+              // Leading whitespace only: a TRAILING space is the user mid-word
+              // ("League " → "league-"), and trimming it swallowed the hyphen.
+              const bare = value.toLowerCase().replace(/^\s+/, '')
                 .replace(/^https?:\/\//, '').replace(/\/+$/, '').replace(/\.mcritchie\.studio$/, '');
               return bare.replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 30);
             },
