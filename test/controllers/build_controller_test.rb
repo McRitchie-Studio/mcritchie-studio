@@ -115,7 +115,6 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     get build_request_path(draft.token)
     assert_redirected_to build_path
 
-    delete "/logout" rescue nil
     reset!
     get build_request_path(draft.token)
     assert_redirected_to build_path, "signed out, a queued request is not shown either"
