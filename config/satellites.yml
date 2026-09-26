@@ -104,3 +104,14 @@ satellites:
     description: "Hex strategy board game, revived from Alex's first app"
     deploy_provider: "heroku"
     status: "planned"
+
+  - slug: dads-app
+    display_name: "Dads App"
+    emoji: "🎞️"
+    port: 3700
+    heroku_app: "dads-app"
+    production_url: "https://greigmcritchie.com"
+    role: "viewer"
+    description: "Photo slideshow of Greig McRitchie; release-managed standalone (no studio-engine, no database)"
+    deploy_provider: "heroku"
+    status: "reserved"

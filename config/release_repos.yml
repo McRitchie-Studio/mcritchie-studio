@@ -704,6 +704,75 @@ apps:
     # target" test goes red and this key must come out. The exemption is QA-only:
     # the `shipped` stamp still needs cyvasse's real release -> main record.
     qa_evidence: exempt
+  dads-app:
+    ladder: three-rung
+    # RELEASE-MANAGED STANDALONE (epic dads-app, registered 2026-09-26): a public
+    # photo slideshow of Greig McRitchie, Alex's dad, at greigmcritchie.com. It
+    # succeeds the 2015 gift `amcritchie/grieg_mcritchie` on the dead personal
+    # Heroku app `vast-chamber-8478`. NOT a managed satellite: no studio-engine,
+    # no database (Rails 8.1 without ActiveRecord), and config/satellites.yml
+    # holds only a `status: reserved` row for its 3700-3799 port block.
+    # McRitchie-Studio/dads-app was created with main + accepted + release, so it
+    # is three-rung from birth and the rung guard holds it to that.
+    #
+    # PRODUCTION: the Heroku app `dads-app` (company account, heroku-26, no
+    # add-ons), on ONE Eco dyno. git_push_heroku, modelled on cyvasse. There is
+    # no database, so there are no migrations and no post_deploy_cmd; a member
+    # that declares one anyway is skipped at QA (exempt, below) and runs on
+    # `dads-app` at ship.
+    #
+    # smoke_url is the herokuapp host, NOT greigmcritchie.com, on purpose: the
+    # domains are attached, but the Name.com records are Alex's step, and until
+    # they resolve a smoke against the custom host would abort the ship AFTER the
+    # push. Switch this to https://greigmcritchie.com once that host serves /up 200.
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/dads-app.git
+      branch: main
+      smoke_url: https://dads-app-7b5aef805731.herokuapp.com
+    #
+    # test_cmd is CI's `test` job suite, VERBATIM (git_push_heroku has NO test
+    # step, so this IS the last gate before production; G4 reads CI's settled
+    # verdict for the frozen tree, and nothing runs it locally). There is NO
+    # `db:test:prepare` in it, unlike every other app here: with no ActiveRecord
+    # the task does not exist. Pinned 2026-09-26 to the command the sibling
+    # task (build-dads-app-slideshow) is building dads-app's CI around, BEFORE
+    # that ci.yml reached dads-app's accepted; repos_test.rb holds this string
+    # against dads-app's own ci.yml the moment it lands, so a drift on either
+    # side goes red rather than shipping a narrower gate.
+    test_cmd: bin/rails test test:system
+    #
+    # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
+    # EXEMPT, ON COST, BY OPERATOR DECISION. This is cyvasse's kind of exemption,
+    # not turf-vault's: dads-app is a deployable app and a QA copy could exist.
+    #
+    #   Recorded decision (epic plan .agents/epics/dads-app.md, 2026-09-26, in
+    #   the focus session's words; the guard matches this line exactly):
+    #   "Alex chose option C (Heroku Eco dyno)"
+    #   The option was ONE Eco dyno, about $5/month, no database and no QA copy,
+    #   over GitHub Pages ($0) and hosting inside moms-app. It applies the
+    #   standing rule Alex set for cyvasse the day before (quoted verbatim there):
+    #   no QA copy unless there is a free tier.
+    #
+    # HONEST CAVEATS. (1) The line above is the session's record of Alex's
+    # choice, not his own words; if a verbatim quote surfaces, replace it here
+    # AND in repos_test.rb's QA_EXEMPT_BY_OPERATOR_DECISION together. (2) Eco
+    # dyno hours are one pool per Heroku account, so a sleeping `dads-app-qa`
+    # Eco dyno may cost nothing extra; if Alex takes that as his free tier, this
+    # key comes out and dads-app earns QA evidence like any app.
+    #
+    # WHAT THE EXEMPTION COSTS, said plainly: a dads-app change reaches
+    # production without a human-reviewable QA deploy. Its gates are CI (every
+    # rung, full suite) and review. Without this key a sweep would hold every
+    # dads-app member at the QA stamp forever, since no run can evidence a QA
+    # env that does not exist.
+    #
+    # THE GUARD STAYS FAIL-CLOSED for every other repo: repos_test.rb pins the
+    # exempt set to exactly cyvasse + dads-app + turf-vault, and requires each
+    # exempt repo with a prod_deploy to carry a cited operator decision. The
+    # exemption is QA-only: the `shipped` stamp still needs dads-app's real
+    # release -> main record.
+    qa_evidence: exempt
   tax-studio:
     # PLANNED — no repo yet. The guard asserts no checkout exists, so this
     # exemption expires the day one does.
