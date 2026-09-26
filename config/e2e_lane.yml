@@ -252,7 +252,7 @@
 # clicking through to an epic's tasks by stage. Coverage ADDED; `quarantined` untouched at 10.
 # MEASURED with the lister on THIS tree, never by arithmetic:
 #   npx playwright test --list => 164
-total_specs: 165
+total_specs: 166
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -410,7 +410,7 @@ quarantined: 10
 # Re-derived on THIS tree with the lister, never by arithmetic:
 #   npx playwright test --list                           => 164
 #   npx playwright test --list --grep-invert @quarantine => 154
-executed: 155
+executed: 156
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

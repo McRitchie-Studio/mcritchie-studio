@@ -25,28 +25,35 @@ software:
   # dropped: AWS, Heroku, Slack) or, where it has none, the brand's own site
   # icon. `tile: false` marks the one mark that is already an icon.
   #
+  # `hosting: ms` marks software McRitchie Studio runs on its OWN accounts for a
+  # client by default (Google through our delegation key, Heroku, GitHub, ...):
+  # /stack draws it with the Studio chest in the corner. Anything unmarked is the
+  # client's own account (their X, their Stripe) and is drawn plain. A client can
+  # override either way: stack_clients.hosting.
+  #
   # ORDER IS THE MATRIX'S ROW ORDER: the headline accounts first, then A-Z.
-  1password: { name: 1Password, mark: lib/workspace_icons/marks/1password.png, tile: false }
-  google: { name: Google Workspace, mark: lib/workspace_icons/marks/google.svg }
+  1password: { name: 1Password, mark: lib/workspace_icons/marks/1password.png, tile: false, hosting: ms }
+  google: { name: Google Workspace, mark: lib/workspace_icons/marks/google.svg, hosting: ms }
   tiktok: { name: TikTok, mark: lib/workspace_icons/marks/tiktok.svg }
   x: { name: X, mark: lib/workspace_icons/marks/x.svg }
-  anthropic: { name: Anthropic, mark: lib/workspace_icons/marks/anthropic.svg }
-  aws: { name: AWS, mark: lib/workspace_icons/marks/aws.svg }
-  cloudflare: { name: Cloudflare, mark: lib/workspace_icons/marks/cloudflare.svg }
+  instagram: { name: Instagram, mark: lib/workspace_icons/marks/instagram.svg }
+  anthropic: { name: Anthropic, mark: lib/workspace_icons/marks/anthropic.svg, hosting: ms }
+  aws: { name: AWS, mark: lib/workspace_icons/marks/aws.svg, hosting: ms }
+  cloudflare: { name: Cloudflare, mark: lib/workspace_icons/marks/cloudflare.svg, hosting: ms }
   coinbase: { name: Coinbase, mark: lib/workspace_icons/marks/coinbase.png }
   coinflow: { name: Coinflow, mark: lib/workspace_icons/marks/coinflow.png }
   discord: { name: Discord, mark: lib/workspace_icons/marks/discord.svg }
-  github: { name: GitHub, mark: lib/workspace_icons/marks/github.svg }
-  helius: { name: Helius, mark: lib/workspace_icons/marks/helius.png }
-  heroku: { name: Heroku, mark: lib/workspace_icons/marks/heroku.svg }
-  higgsfield: { name: Higgsfield, mark: lib/workspace_icons/marks/higgsfield.png }
+  github: { name: GitHub, mark: lib/workspace_icons/marks/github.svg, hosting: ms }
+  helius: { name: Helius, mark: lib/workspace_icons/marks/helius.png, hosting: ms }
+  heroku: { name: Heroku, mark: lib/workspace_icons/marks/heroku.svg, hosting: ms }
+  higgsfield: { name: Higgsfield, mark: lib/workspace_icons/marks/higgsfield.png, hosting: ms }
   ipinfo: { name: ipinfo, mark: lib/workspace_icons/marks/ipinfo.png }
   mcritchie-studio: { name: McRitchie Studio, mark: lib/workspace_icons/badges/studio.png }
   moonpay: { name: MoonPay, mark: lib/workspace_icons/marks/moonpay.png }
-  rails: { name: Ruby on Rails, mark: lib/workspace_icons/marks/rubyonrails.svg }
-  resend: { name: Resend, mark: lib/workspace_icons/marks/resend.svg }
-  rubygems: { name: RubyGems, mark: lib/workspace_icons/marks/rubygems.svg }
-  slack: { name: Slack, mark: lib/workspace_icons/marks/slack.svg }
+  rails: { name: Ruby on Rails, mark: lib/workspace_icons/marks/rubyonrails.svg, hosting: ms }
+  resend: { name: Resend, mark: lib/workspace_icons/marks/resend.svg, hosting: ms }
+  rubygems: { name: RubyGems, mark: lib/workspace_icons/marks/rubygems.svg, hosting: ms }
+  slack: { name: Slack, mark: lib/workspace_icons/marks/slack.svg, hosting: ms }
   solana: { name: Solana, mark: lib/workspace_icons/marks/solana.svg }
   squads: { name: Squads, mark: lib/workspace_icons/marks/squads.png }
   stripe: { name: Stripe, mark: lib/workspace_icons/marks/stripe.svg }

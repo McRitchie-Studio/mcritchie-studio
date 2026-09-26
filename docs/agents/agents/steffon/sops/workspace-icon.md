@@ -23,7 +23,8 @@ Records only, throughout. Nothing here reads, stores or shows a secret value.
 | Software tiles (the mark on a white disc) | `app/assets/images/workspace_icons/software/<software>.png` |
 | Badged icons | `app/assets/images/workspace_icons/<software>/<workspace>.png` |
 | The census the page reads | `credential_vaults` and `credential_records`, seeded from `db/seeds/59_credentials.rb` |
-| The page | `/credentials`, admin-only |
+| The pages | `/stack` (clients as rows) and `/credentials` (software by entity), both admin-only |
+| Clients, tiers, Google users, Resend mode | `stack_clients`, seeded from `db/seeds/60_stack_clients.rb` |
 
 **This repo is PUBLIC.** A logo, a vault name and an item title belong here, and
 all of them are already published in the
@@ -117,7 +118,27 @@ Google access is a delegation grant on their domain (`workspace:register`, then
 `workspace:check`), not a new item, and the Google row shows each workspace's
 grant from `domain:` in the config.
 
-## Act 4: Put the vault icon into 1Password
+## Act 4: Put a client on /stack
+
+`/stack` shows one row per client: tier, software, Google users, Resend mode.
+
+1. Add the client to `db/seeds/60_stack_clients.rb`: `slug` (its workspace key in
+   `config/workspace_icons.yml`), `name`, `tier` (`launch`, `host`, `workspace`,
+   `agentic`, or `internal`), `domain`, and `google_users` / `resend_mode`
+   (`ms` or `white_label`) once known. Leave an unknown blank; never guess one.
+2. **Do not list its software.** The strip is derived: the software its tier
+   provisions (`software:` on each feature in `config/workspace_packages.yml`),
+   plus every LIVE credential record serving it, plus `extra_software`.
+3. **Hosting is per software.** A logo wears the Studio chest when McRitchie
+   Studio runs it on our own account (`hosting: ms` in
+   `config/workspace_icons.yml`: Google, Heroku, GitHub, AWS, Resend, 1Password
+   and the rest of our infrastructure). Anything else is the client's own account
+   and is drawn plain. A white-label client overrides per software in `hosting`,
+   such as `{ "heroku" => "own" }`.
+4. Load it the way Act 3 loads the census:
+   `bin/rails runner 'load Rails.root.join("db/seeds/60_stack_clients.rb")'`.
+
+## Act 5: Put the vault icon into 1Password
 
 `op vault edit --icon` takes only 1Password's built-in icon keywords
 (`treasure-chest`, `vault-door`, ...), never an image. A custom vault image is

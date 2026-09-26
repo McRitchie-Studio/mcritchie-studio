@@ -29,6 +29,7 @@ CiCheckJob.delete_all # per-check LIVE CI progress rows (workflow_job) — resee
 Release.delete_all
 SessionMascot.delete_all
 Pokemon.delete_all
+StackClient.delete_all
 CredentialRecord.delete_all # records restrict their vault's delete — clear before it
 CredentialVault.delete_all
 WorkspaceAccount.where(domain: "mcritchie.studio").delete_all
@@ -1315,3 +1316,7 @@ puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #
 # grant to read. The census seed is the same file development loads.
 load Rails.root.join("db/seeds/59_credentials.rb")
 WorkspaceAccount.create!(domain: "mcritchie.studio", entity: "mcritchie-studio", status: "active")
+
+# /stack — the client roster (tier, domain, Resend); software is derived from it
+# and the census above. e2e/stack_page.spec.js reads it.
+load Rails.root.join("db/seeds/60_stack_clients.rb")

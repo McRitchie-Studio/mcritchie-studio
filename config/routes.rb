@@ -12,6 +12,9 @@ Rails.application.routes.draw do
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.
   get "credentials", to: "credential_vaults#index", as: :credentials
+  # Every client's stack: tier, software (Studio chest when we host it), Google
+  # users, Resend. Admin-only.
+  get "stack", to: "stack#index", as: :stack
 
   # Broadcast emails — table view + editor. `preview` renders the email itself
   # (in the email shell) for the editor's live iframe.

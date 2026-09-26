@@ -1,11 +1,13 @@
 # What each McRitchie Studio workspace package includes — and which SOP delivers
 # each feature. This is the ONE place package contents live: the public /packages
-# page renders it as two swim lanes, one row per feature, so the difference
-# between Basic and Pro reads across the row ("2 users" vs "10 users").
+# page renders it as one swim lane per tier, one row per feature, so the
+# difference between tiers reads across the row ("2 users" vs "10 users").
 # Steffon's workspace-launch SOP runs the features a package includes.
 #
-# Prices set by Mr. McRitchie 2026-09-24: Basic $100/mo, Pro $500/mo, 10% off
-# billed annually. A blank `price_monthly` renders "Pricing coming soon".
+# Tiers set by Mr. McRitchie 2026-09-25, a ladder where each includes the one
+# below: Launch free, Host $100/mo, Workspace $200/mo, Agentic $500/mo; 10% off
+# billed annually. (They replaced Basic $100 and Pro $500 of 2026-09-24.) A
+# `price_monthly` of 0 renders "Free"; a blank one "Pricing coming soon".
 #
 # Feature keys:
 #   name      customer-facing label
@@ -13,7 +15,8 @@
 #             app/views/packages/logos/), or a list of logo keys shown side by side.
 #             Use a logo only where the customer gets that brand's product.
 #   blurb     one customer-facing sentence: what they get, not how
-#   basic/pro what that package gets, shown IN the row:
+#   launch/host/workspace/agentic
+#             what that tier gets, shown IN the row:
 #               a string  → the package's value ("2 users")
 #               true      → included, nothing to quantify
 #               omitted   → not included (the lane shows "Not included")
@@ -21,49 +24,88 @@
 #   section   optional — the part of that SOP that applies
 #   you_do    what the CUSTOMER / operator does themselves (blank = nothing)
 #   status    live (an SOP delivers it today) or planned (no SOP yet: "Coming soon")
+#   software  the software keys (config/workspace_icons.yml) the feature puts in a
+#             client's stack — what /stack draws for a client on that tier
 billing:
   annual_discount_percent: 10
 
 packages:
-  - key: basic
-    name: Basic
-    tagline: Your company on its own domain, with an agent that drafts your email.
+  - key: launch
+    name: Launch
+    tagline: Start from our app template and ship through our pipeline.
+    price_monthly: 0
+  - key: host
+    name: Host
+    tagline: Your app live in production, deployed and watched for you.
     price_monthly: 100
-  - key: pro
-    name: Pro
+  - key: workspace
+    name: Workspace
+    tagline: Your company on its own domain, with an agent that drafts your email.
+    price_monthly: 200
+  - key: agentic
+    name: Agentic
     tagline: An agent that knows your business, not just your inbox.
     price_monthly: 500
 
 features:
+  - name: App template and pipeline
+    icon: "🧩"
+    blurb: Our Rails app template and the build, review and ship pipeline we use ourselves.
+    launch: true
+    host: true
+    workspace: true
+    agentic: true
+    you_do: Describe what you want built
+    status: planned
+    software: [github]
+  - name: Production hosting
+    icon: "🚀"
+    blurb: Your app live on its own URL, with a database, deploys and error logs handled.
+    host: 1 app
+    workspace: 1 app
+    agentic: 1 app · more power + database space
+    sop: website-launch
+    you_do: Approve the hosting costs
+    status: live
+    software: [heroku]
   - name: Hosted domain
     icon: "🌐"
-    blurb: Your own domain and website, registered, hosted and kept online for you.
-    basic: 1 domain · standard hosting
-    pro: 1 domain · more power + database space
-    sop: website-launch
-    you_do: Approve the domain and hosting costs
+    blurb: Your own domain, registered and pointed at your app for you.
+    workspace: 1 domain
+    agentic: 1 domain
+    sop: domain-purchase
+    you_do: Approve the domain
     status: live
   - name: Google Workspace
     icon: google
     blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
-    basic: 2 users
-    pro: 10 users
+    workspace: 2 users
+    agentic: 10 users
     sop: workspace-signup
     you_do: Sign up and create the users
     status: live
+    software: [google]
   - name: Email that lands in the inbox
     icon: "📬"
     blurb: Verification, SPF, DKIM and DMARC set up so your mail is trusted, not spammed.
-    basic: true
-    pro: true
+    workspace: true
+    agentic: true
     sop: domain-dns
     you_do: Paste the records we give you
     status: live
+  - name: App email from your domain
+    icon: "✉️"
+    blurb: Your app's sign-in links and receipts sent from your own domain, not ours.
+    workspace: true
+    agentic: true
+    you_do: Paste the records we give you
+    status: planned
+    software: [resend]
   - name: Agentic email drafting
     icon: "✍️"
     blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
-    basic: true
-    pro: true
+    workspace: true
+    agentic: true
     sop: workspace-provision
     section: "7. Drafting mailboxes"
     you_do: Approve our key once
@@ -71,22 +113,23 @@ features:
   - name: Password vault
     icon: "🔐"
     blurb: Every new login filed in 1Password, never pasted in chat.
-    basic: true
-    pro: true
+    workspace: true
+    agentic: true
     sop: credential-filing
     you_do: Paste each password once
     status: live
+    software: [1password]
   - name: Dedicated browser profile
     icon: "🧭"
     blurb: A Chrome profile for the new company, so accounts never mix.
-    basic: true
-    pro: true
+    workspace: true
+    agentic: true
     sop: chrome-profiles
     status: live
   - name: Knowledge base from your Drive
     icon: "📚"
     blurb: Your agent indexes the Drive folders you choose, so drafts use your real documents.
-    pro: true
+    agentic: true
     sop: workspace-provision
     section: "4. Attach the folders"
     you_do: Name the folders
@@ -94,24 +137,26 @@ features:
   - name: File storage
     icon: "🗄️"
     blurb: A private storage bucket for your app's uploads and exports.
-    pro: true
+    agentic: true
     sop: bucket-provision
     status: live
+    software: [aws]
   - name: Credential rotation
     icon: "🔄"
     blurb: Any leaked or aging secret rotated everywhere it is used, in one pass.
-    pro: true
+    agentic: true
     sop: credential-rotation
     status: live
   - name: Social media outreach
     icon: [tiktok, instagram]
     blurb: Weekly TikTok and Instagram content, tested at volume and measured, not just posted.
-    pro: true
+    agentic: true
     sop: content-sprint
     you_do: Approve the weekly plan
     status: live
+    software: [tiktok, instagram]
   - name: Team drafting access
     icon: "👥"
     blurb: Your admins can draft as the mailboxes you grant them, with every draft logged.
-    pro: true
+    agentic: true
     status: planned

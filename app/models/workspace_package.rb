@@ -1,10 +1,10 @@
-# A McRitchie Studio workspace package (Basic, Pro) and the features it
-# includes, read from config/workspace_packages.yml — the one place package
-# contents live.
+# A McRitchie Studio package tier (Launch, Host, Workspace, Agentic) and the
+# features it includes, read from config/workspace_packages.yml — the one place
+# package contents live.
 #
 # The config is shaped as FEATURE ROWS, each carrying every package's value,
-# because the page compares packages in two lanes on the same row ("2 users"
-# vs "10 users"). Not a database table on purpose: contents are still being
+# because the page compares packages in lanes on the same row ("2 users" vs
+# "10 users"). Not a database table on purpose: contents are still being
 # decided, and a config file is an edit anyone can review in a PR, with the SOP
 # each feature names checked by the suite against the files on disk.
 class WorkspacePackage
@@ -16,8 +16,12 @@ class WorkspacePackage
   # value is an emoji rendered as text.
   LOGOS = %w[google tiktok instagram].freeze
 
-  Feature = Struct.new(:name, :icon, :blurb, :values, :sop, :section, :you_do, :status, keyword_init: true) do
+  Feature = Struct.new(:name, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, keyword_init: true) do
     def live? = status == "live"
+
+    # The software keys (config/workspace_icons.yml) this feature puts in a
+    # client's stack. Empty for a feature that is a service, not an account.
+    def software_keys = Array(software)
 
     # One logo key, or a list of them shown side by side.
     def logos = Array(icon).select { |key| LOGOS.include?(key) }
@@ -63,6 +67,8 @@ class WorkspacePackage
 
   def self.find(key) = all.find { |package| package.key == key.to_s }
 
+  def self.keys = config.fetch("packages").map { |attrs| attrs.fetch("key") }
+
   def self.annual_discount_percent = config.dig("billing", "annual_discount_percent").to_i
 
   def self.features
@@ -86,13 +92,19 @@ class WorkspacePackage
 
   def priced? = price_monthly.present?
 
+  def free? = priced? && price_monthly.zero?
+
+  # Every software this tier provisions, in feature order — what /stack draws
+  # for a client on it.
+  def software_keys = features.flat_map(&:software_keys).uniq
+
   # Billed annually: the discount applies to the whole year.
   # $100/mo at 10% off is $1,080/yr, which reads as $90/mo.
   def annual_price
-    return nil unless priced?
+    return nil unless priced? && !free?
 
     (price_monthly * 12 * (100 - @annual_discount_percent) / 100.0).round
   end
 
-  def annual_monthly_equivalent = priced? ? (annual_price / 12.0).round(2) : nil
+  def annual_monthly_equivalent = annual_price ? (annual_price / 12.0).round(2) : nil
 end
