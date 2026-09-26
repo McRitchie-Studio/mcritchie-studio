@@ -5,7 +5,7 @@
 # The privilege boundary between the two Apps is enforced by GitHub, but WHICH App
 # a process asks for is decided here. Before this module every caller decided
 # separately and two of the three hardcoded `agent`, so a ship session could hold
-# GH_APP_ITEM=github.mcritchie-deployer and still be handed the App with
+# GH_APP_ITEM=github.mcritchie-deployer (now github.mcritchie-admin) and still be handed the App with
 # `pull_requests: write`. These cases pin the resolution order that fixes that.
 #
 #   ruby -Itest test/lib/gh_identity_test.rb
@@ -15,7 +15,27 @@ require_relative "../../bin/lib/gh_identity"
 
 class GhIdentityTest < Minitest::Test
   AGENT_ITEM = "github.mcritchie-agent"
-  DEPLOYER_ITEM = "github.mcritchie-deployer"
+  DEPLOYER_ITEM = "github.mcritchie-admin"
+  # The App's name until 2026-09-26; still resolves during the transition.
+  LEGACY_DEPLOYER_ITEM = "github.mcritchie-deployer"
+
+  def test_the_legacy_item_name_still_selects_the_ship_identity
+    assert_equal "deployer", GhIdentity.resolve(nil, env: { "GH_APP_ITEM" => LEGACY_DEPLOYER_ITEM })
+  end
+
+  def test_the_ship_identity_mints_from_the_admin_item_by_default
+    assert_equal DEPLOYER_ITEM, GhIdentity.item_for("deployer")
+    assert_equal DEPLOYER_ITEM, GhIdentity.item_for_env("deployer", env: {})
+  end
+
+  # A shell naming the legacy item reads THAT item, which is what proves the old
+  # name still works; an item from another lane never redirects the mint.
+  def test_item_for_env_honours_a_same_lane_item_only
+    assert_equal LEGACY_DEPLOYER_ITEM,
+                 GhIdentity.item_for_env("deployer", env: { "GH_APP_ITEM" => LEGACY_DEPLOYER_ITEM })
+    assert_equal DEPLOYER_ITEM, GhIdentity.item_for_env("deployer", env: { "GH_APP_ITEM" => AGENT_ITEM })
+    assert_equal AGENT_ITEM, GhIdentity.item_for_env("agent", env: { "GH_APP_ITEM" => LEGACY_DEPLOYER_ITEM })
+  end
 
   # THE BUG, at unit scale: a ship session exports the deployer ITEM and every
   # GitHub call it makes must follow. Ignoring this env var is what handed the ship

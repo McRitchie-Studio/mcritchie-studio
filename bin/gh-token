@@ -44,7 +44,7 @@
 #
 # THE LANE PICKS THE IDENTITY, via GH_APP_ITEM. `git` (through
 # bin/gh-app-git-credential) and the SOPs already treat `export
-# GH_APP_ITEM=github.mcritchie-deployer` as "this session is a ship session". This
+# GH_APP_ITEM=github.mcritchie-admin` as "this session is a ship session". This
 # command used to read only --identity and IGNORE that export, so a ship session
 # that asked the broker for a token got the AGENT identity — the one App holding
 # `pull_requests: write`, which the deployer is denied ON PURPOSE. A privilege
@@ -75,12 +75,23 @@ require_relative "lib/gh_identity"
 
 IDENTITIES = {
   # `lane` selects the VAULT and the TOKEN (see bin/lib/op_vaults.rb). The
-  # deployer's credentials live in the admin vault and are deliberately
-  # unreadable from an ordinary agent shell.
-  "agent" => { item: "github.mcritchie-agent", pem: "mcritchie-agent.2026-07-29.private-key.pem",
-               lane: :agent },
-  "deployer" => { item: "github.mcritchie-deployer", pem: "mcritchie-deployer.2026-07-29.private-key.pem",
-                  lane: :deployer }
+  # deployer lane's credentials live in the admin vault and are deliberately
+  # unreadable from an ordinary agent shell. Its App is mcritchie-admin since
+  # 2026-09-26 (renamed from mcritchie-deployer; same app id and key).
+  "agent" => { item: "github.mcritchie-agent", lane: :agent },
+  "deployer" => { item: "github.mcritchie-admin", lane: :deployer }
+}.freeze
+
+# item => the name of its private-key FILE attachment, which `op read` addresses
+# by name. The names are not uniform: github.mcritchie-admin was copied from the
+# deployer item on 2026-09-26 and its attachment came out as `privatekeypem`. The
+# legacy github.mcritchie-deployer row stays until that item is retired, so a
+# shell still exporting the old name mints from the item it names
+# (GhIdentity.item_for_env) rather than being silently redirected.
+PEM_ATTACHMENTS = {
+  "github.mcritchie-agent" => "mcritchie-agent.2026-07-29.private-key.pem",
+  "github.mcritchie-admin" => "privatekeypem",
+  "github.mcritchie-deployer" => "mcritchie-deployer.2026-07-29.private-key.pem"
 }.freeze
 
 # The lane this process belongs to, resolved by the shared map in bin/lib/gh_identity.rb
@@ -214,8 +225,9 @@ end
 def mint(identity)
   meta = IDENTITIES.fetch(identity)
   lane = meta.fetch(:lane)
-  app_id = read_secret(OpVaults.ref(meta[:item], "app-id", lane), lane).strip
-  pem = read_secret(OpVaults.ref(meta[:item], meta[:pem], lane), lane)
+  item = GhIdentity.item_for_env(identity)
+  app_id = read_secret(OpVaults.ref(item, "app-id", lane), lane).strip
+  pem = read_secret(OpVaults.ref(item, PEM_ATTACHMENTS.fetch(item), lane), lane)
   if app_id.empty? || pem.strip.empty?
     # The parenthetical goes BEFORE the diagnosis, never after. OpVaults.diagnose
     # ends on an indented, copy-pasteable command; anything appended lands on that

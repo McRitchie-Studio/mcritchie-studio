@@ -5,7 +5,7 @@
 #   bin/setup-1pass-token --admin   # ADMIN token  -> ~/.zprofile.admin (opt-in)
 #
 # TWO TOKENS, AND THE SECOND ONE IS DELIBERATELY NOT AUTO-LOADED. The admin
-# token reads the vault holding github.mcritchie-deployer and other admin
+# token reads the vault holding github.mcritchie-admin and other admin
 # credentials. Putting it in ~/.zprofile would hand it to every background agent
 # shell, which is exactly the isolation this design exists to create: a build
 # lane must be STRUCTURALLY unable to MINT an admin credential — the 1Password

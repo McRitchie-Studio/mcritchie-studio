@@ -20,7 +20,7 @@
 # at all, which the CI gates read. Two app identities exist:
 #   github.mcritchie-agent    — build/review lanes: contents + pull-requests +
 #                               checks-read + actions + workflows. The DEFAULT.
-#   github.mcritchie-deployer — ship lane: contents + actions + checks-read +
+#   github.mcritchie-admin — ship lane: contents + actions + checks-read +
 #                               secrets. NO pull-request scope — the deployer
 #                               cannot open or merge PRs by design.
 # bin/gh-app-git-credential resolves either item from 1Password and feeds this

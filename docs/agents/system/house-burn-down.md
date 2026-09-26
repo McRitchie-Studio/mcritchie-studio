@@ -235,7 +235,7 @@ Use a **service account token** rather than the desktop app integration — it a
 1. Sign into https://start.1password.com as `alex@mcritchie.studio` (account `MWOV5OT5BRHATI4EGMN26C5DPA`)
 **TWO TOKENS, TWO VAULTS — and the split is a security boundary, not bookkeeping.**
 The build lanes and the ship lane authenticate as different GitHub App identities
-(`github.mcritchie-agent` builds and merges; `github.mcritchie-deployer` pushes
+(`github.mcritchie-agent` builds and merges; `github.mcritchie-admin` pushes
 `main` and deploys but cannot touch PRs). Their credentials live in **different
 vaults**, read by **different service-account tokens**, so an ordinary agent shell
 cannot MINT an admin credential — the 1Password read is the step that is
@@ -272,7 +272,7 @@ verifies with `op vault list`. Then `source ~/.zprofile`, or open a new terminal
 5. Create a **SECOND, SEPARATE** service account granted **read** on `studio-agents-admin`.
    Do **not** simply add `studio-agents-admin` to the agent's service account: one token
    that sees both vaults still works, but the isolation above is then gone.
-6. Confirm `github.mcritchie-deployer` actually lives in `studio-agents-admin` — the
+6. Confirm `github.mcritchie-admin` actually lives in `studio-agents-admin` — the
    deployer App item, `app-id` field plus the `.pem` **file attachment**.
 7. Copy that token, then:
 

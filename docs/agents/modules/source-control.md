@@ -70,7 +70,12 @@ The lane picks the identity through **`GH_APP_ITEM`**; precedence is
 | Identity (1Password item) | Lane | Can it touch PRs? |
 |---------------------------|------|-------------------|
 | `github.mcritchie-agent` (**default**) | build / review | **Yes** — Contents + **Pull requests** + Checks read + Actions + Workflows + Administration |
-| `github.mcritchie-deployer` (`export GH_APP_ITEM=github.mcritchie-deployer`) | ship | **No `pull_requests` grant at all** — the deployer cannot open or merge PRs, by design. Contents + Actions + Checks read + Secrets + Administration |
+| `github.mcritchie-admin` (`export GH_APP_ITEM=github.mcritchie-admin`) | ship / admin | **No `pull_requests` grant at all** — it cannot open or merge PRs, by design. Contents + Actions + Checks read + Secrets + Environments + Administration |
+
+**Renamed 2026-09-26.** The App was `mcritchie-deployer` until then (same app id,
+same key). Its lane is still called `deployer` in code (`--identity deployer`), and
+the legacy item `github.mcritchie-deployer` still routes to the admin vault until it
+is retired from 1Password; export the new name.
 
 The two items live in different vaults, read by different tokens: the agent's in
 `studio-agents` (`OP_SERVICE_ACCOUNT_TOKEN`, every shell), the deployer's in
@@ -219,7 +224,7 @@ Two rules that are about source control, not process:
 ```bash
 eval "$(bin/gh-auth-refresh --export)"      # fix this session's credential; read its stderr
 source ~/.zprofile.admin                    # ship lane only: load the admin 1Password token
-export GH_APP_ITEM=github.mcritchie-deployer  # ship lane only, BEFORE the push
+export GH_APP_ITEM=github.mcritchie-admin  # ship lane only, BEFORE the push
 bin/gh-auth-refresh --force                 # bypass the broker cache (revoked token)
 bin/gh-token --status                       # cache state; prints NO token
 gh api rate_limit                           # is the credential live?

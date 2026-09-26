@@ -29,13 +29,17 @@ so it mints on **every** call, by design.
 
 | | `agent` | `deployer` |
 |---|---|---|
-| 1Password item | `github.mcritchie-agent` | `github.mcritchie-deployer` |
+| 1Password item | `github.mcritchie-agent` | `github.mcritchie-admin` |
 | Vault | `studio-agents` | `studio-agents-admin` |
 | Token env | `OP_SERVICE_ACCOUNT_TOKEN` | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` |
 | May | build, review, open + merge PRs | push `main`, deploy, read secrets |
 | May **not** | push `main` | touch pull requests at all |
 | Cached on disk? | **yes**, shared between agents | **never** |
 | Default? | yes | only when a ship lane asks |
+
+The `deployer` lane's App is `mcritchie-admin` since 2026-09-26 (renamed from
+`mcritchie-deployer`; same app id and key). The legacy item name still mints during
+the transition (`GhIdentity::LEGACY_ITEMS`).
 
 The lane → vault → token map has exactly one source: `bin/lib/op_vaults.rb`.
 Read it rather than hardcoding a vault name.
@@ -186,7 +190,7 @@ identity claim, not a credential, which is why it may live in the repo:
 | `ci:no_checks` or `ci:unverified` on that row | **NOT a token fault.** The PR reported no checks yet, or `gh` fell over on the network | nothing here helps — wait for CI, or re-read. Rotating a credential that was fine is the wasted move this row exists to prevent |
 | `ci:no_pr` on that row | **NOT a token fault, and not a fault at all.** `devops.pr_url` is blank, so no PR was read; submit-side this is the ordinary state | open the PR, then re-run the gate. Before `/tasks/no-pr-records-as-fail` this row said `unverified`, which sent readers here to chase a credential that was never involved |
 | `REFUSING to merge <slug>` from `pr-review` | the merge-path identity assertion refused | read the line — it names which of the three causes; see the trap below |
-| deployer mint fails, and you hold the ship lane | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is not in **this shell** | `source ~/.zprofile.admin`, then `export GH_APP_ITEM=github.mcritchie-deployer` **before** minting |
+| deployer mint fails, and you hold the ship lane | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is not in **this shell** | `source ~/.zprofile.admin`, then `export GH_APP_ITEM=github.mcritchie-admin` **before** minting |
 | deployer mint fails in an ordinary build shell | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` absent **by design** | that refusal is the isolation working — stop there |
 
 ## Two traps
@@ -221,7 +225,7 @@ token is already on disk. It is simply not loaded into this shell:
 
 ```bash
 source ~/.zprofile.admin
-export GH_APP_ITEM=github.mcritchie-deployer   # BEFORE the push — see below
+export GH_APP_ITEM=github.mcritchie-admin   # BEFORE the push — see below
 ```
 
 **Those two lines are the whole fix — there is no third command.** The deployer

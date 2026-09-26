@@ -79,7 +79,7 @@ module GhAuthRetry
   # reports gh's ORIGINAL error, which is the honest thing to show.
   #
   # `identity` defaults to THIS SESSION'S LANE rather than to "agent": a ship session
-  # (GH_APP_ITEM=github.mcritchie-deployer) recovers as the deployer, a build/review
+  # (GH_APP_ITEM=github.mcritchie-admin) recovers as the deployer, a build/review
   # session as the agent. A caller that genuinely requires one specific App still
   # names it and wins.
   def mint(root: nil, env: ENV, identity: nil)

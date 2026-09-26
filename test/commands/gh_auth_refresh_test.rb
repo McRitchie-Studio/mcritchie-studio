@@ -32,7 +32,7 @@ class GhAuthRefreshTest < Minitest::Test
   # first dot and silently passes the rest through. That exact gap turned a
   # redaction into a leak while this task was being built.
   TOKEN_SHAPED = /gh[psou]_[A-Za-z0-9_.-]{8,}|github_pat_[A-Za-z0-9_.-]{8,}/
-  DEPLOYER_ITEM = "github.mcritchie-deployer"
+  DEPLOYER_ITEM = "github.mcritchie-admin"
   AGENT_ITEM = "github.mcritchie-agent"
 
   # A token with the real modern SHAPE, used to prove the guards above bite on the
