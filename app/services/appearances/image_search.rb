@@ -116,7 +116,20 @@ module Appearances
     # A PROVIDER THAT RAISES IS CAUGHT rather than propagated. A search is an
     # optional enrichment of a list that already has a floor; a provider outage
     # must cost the operator some photographs, never the page.
-    def self.search(query:, limit: DEFAULT_LIMIT)
+    #
+    # CAUGHT IS NOT SWALLOWED, and that distinction is the whole reason `target:`
+    # exists on this method. An empty Answer is what a provider ALSO returns when it
+    # searched fine and found nothing, so on the page a 401 and an empty result read
+    # as the same sentence — "returned nothing" — and the operator spends an
+    # afternoon looking for a photograph problem they do not have. The row in
+    # /admin/error_logs is what tells those two apart, and `target:` is what names
+    # the look it happened on.
+    #
+    # `target:` IS OPTIONAL because this façade is reachable from a console and a
+    # rake task, where there may be no record to file it against. A row with no
+    # target is still a row; `ErrorLog.capture!` stamps its own slug, so it is still
+    # reachable in the admin list.
+    def self.search(query:, limit: DEFAULT_LIMIT, target: nil)
       chosen = provider
       return Answer.empty if chosen.nil?
 
@@ -128,6 +141,7 @@ module Appearances
       Rails.logger.warn(
         "[Appearances::ImageSearch] #{chosen&.provider_name} failed: #{e.class}: #{e.message}"
       )
+      Appearances::FailureLog.file(e, target: target)
       Answer.empty(provider_name: chosen&.provider_name)
     end
   end

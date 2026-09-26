@@ -12,19 +12,26 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   class FakeSearch
     attr_reader :asked
 
+    attr_reader :targets
+
     def initialize(results: [], unparsed: 0, available: true)
       @answer = Appearances::ImageSearch::Answer.new(
         results: results, unparsed_count: unparsed, provider_name: "fake"
       )
       @available = available
       @asked = []
+      @targets = []
     end
 
     def available? = @available
     def provider_name = (@available ? "fake" : nil)
 
-    def search(query:, limit:)
+    # `target:` IS RECORDED RATHER THAN IGNORED. It is what the façade files a
+    # provider failure against, and a fake that quietly accepted and dropped it
+    # would let the caller stop passing it with every test still green.
+    def search(query:, limit:, target: nil)
       @asked << [query, limit]
+      @targets << target
       @answer
     end
   end
@@ -36,16 +43,20 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   class FakeFaces
     attr_reader :asked
 
+    attr_reader :targets
+
     def initialize(scores = {}, available: true)
       @scores = scores
       @available = available
       @asked = []
+      @targets = []
     end
 
     def available? = @available
 
-    def call(urls)
+    def call(urls, target: nil)
       @asked.concat(urls)
+      @targets << target
       @scores.slice(*urls)
     end
   end
@@ -54,7 +65,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   # with no ANTHROPIC_API_KEY.
   class NoFaces
     def self.available? = false
-    def self.call(_urls) = raise("an unavailable classifier must never be asked to look")
+    def self.call(_urls, target: nil) = raise("an unavailable classifier must never be asked to look")
   end
 
   def hit(url, position: 1, **rest)
@@ -383,5 +394,22 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     summary = Appearances::GatherReferencePhotos.call(@look, search: search, faces: NoFaces, limit: 11)
 
     assert_equal [[summary.query, 11]], search.asked
+  end
+
+  # WHO THE FAILURE GETS FILED AGAINST. Both collaborators degrade to an empty
+  # answer rather than raising, so a credential failure inside either one is
+  # invisible on the page — the ErrorLog row is what makes it findable, and the look
+  # is the only handle the operator has for reading the right row back. If this
+  # object stops passing itself along, the row loses its subject and every other test
+  # here still passes.
+  test "the look is handed to both collaborators as the failure target" do
+    photo = hit("https://cdn.example.com/a.jpg", position: 1)
+    search = FakeSearch.new(results: [photo])
+    faces = FakeFaces.new({ photo.image_url => 0.8 })
+
+    Appearances::GatherReferencePhotos.call(@look, search: search, faces: faces)
+
+    assert_equal [@look], search.targets
+    assert_equal [@look], faces.targets
   end
 end

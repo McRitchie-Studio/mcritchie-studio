@@ -168,6 +168,24 @@ guessed fixture proves the guess is self-consistent and nothing more.
 renders from the headshot floor, offers no Search button, and names
 `SERPER_API_KEY` in the note — because the reader of that note is who will set it.
 
+**The page is PUBLIC to read and ADMIN-ONLY to spend on.** `#show` is open,
+matching the person page it is reached from; `#search`, `#mint` and `#refresh` are
+behind `require_admin`, and the three buttons are hidden from everyone else so the
+page never offers a control it would refuse. A SESSION IS NOT A COST CONTROL here
+and must never be mistaken for one: hub signup is open (magic-link and Google are
+both create-or-login), so a login-only gate on these actions means any member of
+the public can buy a Higgsfield identity per look and, once `SERPER_API_KEY` lands,
+an uncapped search plus up to `GatherReferencePhotos::VISION_SHORTLIST` vision
+classifications per click.
+
+**A provider failure lands in `/admin/error_logs`, filed against the look.** Both
+paid collaborators degrade to an empty answer rather than raising — which is right
+for the page and terrible for diagnosis, because "the key was rejected" and "the
+search found nothing" then print the same sentence. `Appearances::FailureLog` is
+what keeps them apart: every degrade writes an `ErrorLog` row with the `Appearance`
+as its target. So a thin gallery is read by looking for a row on that look FIRST,
+not by re-running the search.
+
 ### Ranking the candidates — why a helmet is not a reference photo
 
 The operator's words: *"we should prioritize pictures with no helmet so the face

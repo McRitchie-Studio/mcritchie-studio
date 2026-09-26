@@ -104,6 +104,43 @@ class Appearances::ImageSearchTest < ActiveSupport::TestCase
     end
   end
 
+  # CONTAINED IS NOT SWALLOWED, and this is the assertion that keeps the two apart.
+  #
+  # The empty Answer above is the SAME value a healthy provider returns when it found
+  # nothing, so on the page a 401 and an empty result print the same sentence:
+  # "returned nothing for …". Nobody tails a log to work out which one they got, so a
+  # credential failure read to the operator as a photograph problem. The ErrorLog row
+  # is the whole remedy, and `target:` is what names the look it happened on.
+  test "a provider failure is filed as an ErrorLog against the look it happened on" do
+    look = Appearance.create!(person_slug: people(:josh_allen).slug, descriptor: "Bills home")
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      Appearances::ImageSearch.stub(:providers, [ExplodingProvider]) do
+        Appearances::ImageSearch.search(query: "Josh Allen", target: look)
+      end
+    end
+
+    row = ErrorLog.order(:id).last
+    assert_equal "connection reset", row.message
+    assert_equal look, row.target, "a row with no subject cannot be read back from the look"
+    assert_equal look.slug, row.target_name
+    assert row.slug.present?, "a slugless row is unreachable in /admin/error_logs"
+  end
+
+  # NO RECORD TO FILE AGAINST IS NOT A REASON TO FILE NOTHING. This façade is
+  # reachable from a console and from the rake task, and a row with no target is
+  # still a row — ErrorLog.capture! stamps its own slug, so the operator can still
+  # find it.
+  test "a provider failure with no target is still filed" do
+    assert_difference -> { ErrorLog.count }, 1 do
+      Appearances::ImageSearch.stub(:providers, [ExplodingProvider]) do
+        Appearances::ImageSearch.search(query: "Josh Allen")
+      end
+    end
+
+    assert_nil ErrorLog.order(:id).last.target
+  end
+
   # THE REAL PROVIDER, ASKED THE ONLY QUESTION THAT IS FREE.
   #
   # `available?` reads ENV and nothing else — no round-trip — which is what lets the

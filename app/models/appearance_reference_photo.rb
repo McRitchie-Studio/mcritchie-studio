@@ -110,7 +110,41 @@ class AppearanceReferencePhoto < ApplicationRecord
   # The photograph's own page, when the provider named one. Worth its own reader
   # because the gallery links the thumbnail to it: judging a search hit usually
   # means looking at where it came from, not only at the crop.
-  def origin_url = page_url.presence || image_url
+  #
+  # READS THE LINKABLE FORM, not the raw column, so the caption's host and the
+  # caption's link can never disagree about which URL they describe.
+  def origin_url = page_link_url.presence || image_url
+
+  # ONLY THE SCHEMES A BROWSER MAY BE HANDED. nil for anything else.
+  LINKABLE_SCHEMES = %w[http https].freeze
+
+  # `page_url` AS SOMETHING SAFE TO PUT IN AN href, or nil.
+  #
+  # The column holds whatever a third-party search engine put in its answer, stored
+  # unvalidated ON PURPOSE: the row is evidence of what the search offered, and a
+  # refused value is part of that evidence. `image_url` is separately cleared by
+  # Appearances::FetchableUrl before anything is sent anywhere; `page_url` is never
+  # sent anywhere, so it was never cleared — and that is exactly why it must be
+  # judged here, at the one place it reaches a browser.
+  #
+  # TWO REAL SHAPES THIS REFUSES, and neither is hypothetical:
+  #
+  #   javascript://host/%0aalert(1)  parses with a host, so a host-presence check
+  #                                  alone passes it straight into an href.
+  #   espn.com                       a BARE DOMAIN, which the Serper parser emits
+  #                                  when a row carries `source` and no `link`
+  #                                  (see that parser's own note). As an href it is
+  #                                  RELATIVE, so today it navigates the operator
+  #                                  to /people/:person/models/espn.com on our own
+  #                                  site rather than to the page they clicked for.
+  def page_link_url
+    return nil if page_url.blank?
+    return nil unless LINKABLE_SCHEMES.include?(URI.parse(page_url).scheme&.downcase)
+
+    page_url
+  rescue URI::InvalidURIError
+    nil
+  end
 
   def from_search? = source == SOURCE_SEARCH
 

@@ -6,12 +6,26 @@
 # would have been shorter and would have made the operator's route to the page a
 # URL they had to know.
 #
-# TWO OF THE THREE ACTIONS SPEND MONEY. #show is free — it reads rows and renders.
-# #search buys one image-search query. #mint buys one character identity. Neither
-# is reachable without a session (only #show is public, matching the person page
-# beside it), and neither runs from a callback, a sweep or a page render.
+# TWO OF THE THREE ACTIONS SPEND MONEY, AND THE ADMIN GATE IS WHAT STOPS THE
+# PUBLIC SPENDING IT. #show is free — it reads rows and renders. #search buys one
+# image-search query PLUS up to GatherReferencePhotos::VISION_SHORTLIST vision
+# classifications; #mint buys one character identity, per look, from a vendor that
+# serves no list endpoint to recall it from.
+#
+# A SESSION IS NOT A COST CONTROL, and this comment used to claim it was. Hub
+# signup is OPEN — both magic-link and Google are create-or-login — so "not
+# reachable without a session" means "reachable by anyone willing to type an email
+# address", which is not a control over a paid endpoint at all. `require_admin` is
+# the gate that costs something to get through, and it matches contents_controller
+# beside it. #show stays public, matching the person page it is reached from.
+#
+# Nothing here runs from a callback, a sweep or a page render either: the render
+# path reads rows and asks `available?`, and neither question spends.
 class AppearancesController < ApplicationController
   skip_before_action :require_authentication, only: [:show]
+  # BEFORE set_appearance ON PURPOSE. A request that may not spend has no business
+  # costing us two lookups on its way to being refused.
+  before_action :require_admin, except: [:show]
   before_action :set_appearance
 
   # THE PAGE THE OPERATOR JUDGES THE PIPELINE BY: the reference photographs on one
@@ -55,31 +69,57 @@ class AppearancesController < ApplicationController
   # NO `force:`. A rebuild orphans the previous identity beyond recall (there is no
   # list endpoint on the vendor's side) and it is a second purchase, so it stays on
   # the rake task where FORCE=1 has to be typed deliberately.
+  #
+  # THE FAILURE PATH IS AN ErrorLog ROW, NOT ONLY A FLASH. A flash lives for one
+  # redirect and is then gone; the operator who has to work out WHY a mint refused
+  # is reading /admin/error_logs a day later, and `target: @appearance` is what puts
+  # the look's slug on the row so they can find the right one.
+  #
+  # `rescue_and_log` RE-RAISES by design — that is what lets the action keep its own
+  # answer. It logs, re-raises, and the rescue below turns the exception into the
+  # flash the operator actually sees.
   def mint
+    rescue_and_log(target: @appearance) { mint_identity }
+  rescue StandardError => e
+    redirect_to appearance_path, alert: "Higgsfield refused the request: #{e.message}"
+  end
+
+  # ASK THE VENDOR WHERE THE IDENTITY GOT TO. A read — free — and the only thing
+  # that stops the stored status being a permanent `not_ready`. Free does not mean
+  # it cannot fail, and a credential failure here is exactly as invisible as one in
+  # #mint, so it is logged the same way.
+  def refresh
+    rescue_and_log(target: @appearance) { poll_identity }
+  rescue StandardError => e
+    redirect_to appearance_path, alert: "Could not reach Higgsfield: #{e.message}"
+  end
+
+  private
+
+  # THE MINT ITSELF, split out so the one EXPECTED refusal is handled INSIDE the
+  # logged block and therefore never reaches the logger. "This look has no
+  # photographs" is a state of the record, not a failure of ours — an ErrorLog row
+  # for it is noise in the one place an operator goes to find real failures. Every
+  # other exception falls out of here and gets its row.
+  def mint_identity
     id = Appearances::CreateCharacterReference.new(@appearance, references: Appearances::ReferenceSet).call
     redirect_to appearance_path,
                 notice: "Character model #{id} requested from #{@appearance.reference_photo_count} " \
                         "photo(s). It is not usable until it reads ready — refresh to poll it."
   rescue Appearances::CreateCharacterReference::NoReferenceImages => e
     redirect_to appearance_path, alert: e.message
-  rescue StandardError => e
-    redirect_to appearance_path, alert: "Higgsfield refused the request: #{e.message}"
   end
 
-  # ASK THE VENDOR WHERE THE IDENTITY GOT TO. A read — free — and the only thing
-  # that stops the stored status being a permanent `not_ready`.
-  def refresh
+  # "NOTHING TO POLL YET" IS ALSO A STATE RATHER THAN A FAILURE, so it answers here
+  # instead of raising into the logger.
+  def poll_identity
     status = Appearances::CreateCharacterReference.new(@appearance).refresh_status!
     if status.blank?
       redirect_to appearance_path, alert: "No character model to poll yet."
     else
       redirect_to appearance_path, notice: "Higgsfield says: #{status}."
     end
-  rescue StandardError => e
-    redirect_to appearance_path, alert: "Could not reach Higgsfield: #{e.message}"
   end
-
-  private
 
   def set_appearance
     @person = Person.find_by!(slug: params[:person_slug])

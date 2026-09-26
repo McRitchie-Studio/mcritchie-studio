@@ -95,7 +95,7 @@ module Appearances
 
     def self.available? = ENV[API_KEY_ENV].present?
 
-    def self.call(image_urls) = new.call(image_urls)
+    def self.call(image_urls, target: nil) = new.call(image_urls, target: target)
 
     def initialize(api_key: nil)
       @api_key = api_key || ENV[API_KEY_ENV].presence
@@ -104,13 +104,22 @@ module Appearances
     # Returns { image_url => Float } for the images it could score. A URL absent
     # from the Hash was NOT judged — which the caller must treat as "unknown",
     # never as "no face", or an outage would quietly demote every photograph.
-    def call(image_urls)
+    #
+    # EVERY DEGRADE IS ALSO AN ErrorLog ROW (`target:` names the look it happened
+    # on). An empty Hash is the answer for "no credential", "refused", "timed out"
+    # and "unreadable answer" alike, and on the page all four render as the same
+    # sentence — "ranked on shape and relevance only (no face classifier)". That
+    # sentence is TRUE of a machine with no key and MISLEADING of a machine whose key
+    # was rejected, and only a row in /admin/error_logs tells the operator which one
+    # they are looking at.
+    def call(image_urls, target: nil)
       urls = Array(image_urls).map(&:to_s).uniq.reject(&:empty?)
       return {} if urls.empty? || @api_key.blank?
 
-      parse(post(urls), urls)
+      parse(post(urls), urls, target: target)
     rescue StandardError => e
       Rails.logger.warn("[Appearances::FaceVisibility] #{e.class}: #{e.message}")
+      FailureLog.file(e, target: target)
       {}
     end
 
@@ -167,7 +176,7 @@ module Appearances
     # than a zero: the caller reads absence as "unknown" and falls back to its free
     # ranking, while a zero would assert "this photograph has no face in it" on the
     # strength of a parse failure.
-    def parse(payload, urls)
+    def parse(payload, urls, target: nil)
       text = Array(payload["content"]).filter_map { |b| b["text"] if b["type"] == "text" }.join
       rows = JSON.parse(text[/\[.*\]/m].to_s)
       return {} unless rows.is_a?(Array)
@@ -184,6 +193,11 @@ module Appearances
       end
     rescue JSON::ParserError, TypeError => e
       Rails.logger.warn("[Appearances::FaceVisibility] unreadable answer: #{e.class}: #{e.message}")
+      # LOGGED SEPARATELY FROM THE #call RESCUE because it means something different:
+      # we PAID for this answer and could not read it. That is a parser bug on our
+      # side, not a vendor outage, and it is the one failure here that recurs
+      # silently on every search until somebody reads the row.
+      FailureLog.file(e, target: target)
       {}
     end
   end

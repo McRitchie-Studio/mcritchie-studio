@@ -87,7 +87,10 @@ test("both halves render on one page, side by side at desktop and stacked on a p
   await expect(page.locator("[data-test='generated-images'] figure")).toHaveCount(1);
 
   // NO PROVIDER IS CONFIGURED in the test environment, so the page must degrade to
-  // the note rather than offering a purchase it cannot make.
+  // the note rather than offering a purchase it cannot make. The NOTE is the
+  // load-bearing assertion of the two: this spec browses anonymously and the Search
+  // button is admin-only, so its absence now has two causes and proves neither on its
+  // own. CharacterModelPageTest holds the single-cause versions of both halves.
   await expect(page.locator("[data-test='search-unconfigured']")).toHaveCount(1);
   await expect(page.locator("[data-test='search-button']")).toHaveCount(0);
 

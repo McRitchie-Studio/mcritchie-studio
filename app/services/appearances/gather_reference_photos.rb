@@ -98,7 +98,10 @@ module Appearances
     def call
       return unconfigured_summary unless @search.available?
 
-      answer = @search.search(query: query, limit: @limit)
+      # `target:` IS WHAT MAKES A PROVIDER FAILURE FINDABLE. Both collaborators
+      # degrade to an empty answer rather than raising, so the look they were
+      # working on is the only handle the operator has for reading the row back.
+      answer = @search.search(query: query, limit: @limit, target: @appearance)
       file(answer)
     end
 
@@ -210,7 +213,7 @@ module Appearances
       shortlist = eligible.sort_by { |r| [-merit(r), r.position.to_i] }.first(VISION_SHORTLIST)
       return {} if shortlist.empty?
 
-      @faces.call(shortlist.map(&:image_url)) || {}
+      @faces.call(shortlist.map(&:image_url), target: @appearance) || {}
     end
 
     # MAY THIS CANDIDATE GO INTO THE IDENTITY AT ALL? Two independent disqualifiers,

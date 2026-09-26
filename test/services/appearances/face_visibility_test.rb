@@ -50,6 +50,44 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
     assert_equal({}, classifier.call(nil))
   end
 
+  # THE DEGRADE IS ALSO AN ErrorLog ROW, filed against the look.
+  #
+  # An empty Hash is the answer for "no credential", "refused", "timed out" and
+  # "unreadable answer" alike, and the page renders all four as one sentence —
+  # "ranked on shape and relevance only (no face classifier)". That sentence is TRUE
+  # of a machine with no key and MISLEADING of a machine whose key was rejected, and
+  # a row in /admin/error_logs is the only thing that tells the operator which he has.
+  test "a transport failure is filed against the look, not only warned about" do
+    look = Appearance.create!(person_slug: people(:josh_allen).slug, descriptor: "Bills home")
+    provider = classifier
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      provider.stub(:post, ->(_urls) { raise IOError, "connection reset" }) do
+        assert_equal({}, provider.call(["https://cdn.example.com/a.jpg"], target: look))
+      end
+    end
+
+    row = ErrorLog.order(:id).last
+    assert_equal "connection reset", row.message
+    assert_equal look, row.target
+    assert_equal look.slug, row.target_name
+  end
+
+  # AN ANSWER WE PAID FOR AND COULD NOT READ is a parser bug on OUR side, not a
+  # vendor outage, and it is the failure here that would otherwise recur silently on
+  # every single search. It is filed from its own rescue for that reason.
+  test "an answer we paid for and cannot read is filed too" do
+    look = Appearance.create!(person_slug: people(:josh_allen).slug, descriptor: "Bills home")
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      scores = classifier.send(:parse, { "content" => [{ "type" => "text", "text" => "[not json" }] },
+                               ["https://cdn.example.com/a.jpg"], target: look)
+      assert_equal({}, scores)
+    end
+
+    assert_equal look, ErrorLog.order(:id).last.target
+  end
+
   # ---- the request ------------------------------------------------------------
 
   # THE PRODUCTION BUILDER, called directly rather than through a stub. An earlier

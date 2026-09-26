@@ -43,6 +43,14 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
 
   def page_path = person_appearance_path(@person.slug, @look.slug)
 
+  # A VENDOR THAT CANNOT BE REACHED, standing in for Higgsfield refusing. Injected by
+  # stubbing `.new` rather than by reaching for a mock, so nothing in this file can
+  # open a socket even if the stub is removed by mistake.
+  class ExplodingMint
+    def initialize(*, **); end
+    def call(*) = raise(StandardError, "Higgsfield said 402 insufficient credits")
+  end
+
   # ---- the shape of the page -------------------------------------------------
 
   # THE ACCEPTANCE TEST ITSELF. Both halves, on one page, with the direction between
@@ -118,7 +126,11 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
 
   # THE PATH THAT RUNS TODAY, on every machine, because no serper.dev credential
   # exists anywhere. It must be a finished-looking page, not an error and not a stub.
+  # SIGNED IN AS AN ADMIN ON PURPOSE. The `search-button count: 0` assertion below
+  # claims "an absent provider offers no purchase" — and a non-admin session would
+  # satisfy it for the OTHER reason, leaving the sentence true and the test inert.
   test "[integration] with no search provider the page renders the headshot floor and names the env var" do
+    log_in_as(users(:alex))
     cache_headshot
     Appearances::ImageSearch.stub(:available?, false) do
       Appearances::ImageSearch.stub(:provider_name, nil) do
@@ -139,6 +151,10 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
   # service raises rather than building an identity from nothing, so the page has to
   # say so instead of offering a button that cannot work.
   test "[integration] a look with no photographs renders a warning and no live mint button" do
+    # AS AN ADMIN, because the disabled button is what an admin who may mint sees
+    # when there is nothing to mint FROM. A non-admin is shown no button at all, for
+    # a different reason, and asserting the absence would prove the wrong thing.
+    log_in_as(users(:alex))
     get page_path
 
     assert_response :success
@@ -227,10 +243,17 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     answer = Appearances::ImageSearch::Answer.new(results: results, unparsed_count: 0,
                                                   provider_name: "fake")
 
+    # FaceVisibility IS STUBBED UNAVAILABLE, and that is not belt-and-braces: it
+    # reads ANTHROPIC_API_KEY off the machine, and this app has eight other callers
+    # so a developer running the suite plausibly has one set. Without the stub, this
+    # test bills that key for up to VISION_SHORTLIST images on their laptop and
+    # passes either way — a suite that can spend is a suite that will.
     Appearances::ImageSearch.stub(:available?, true) do
       Appearances::ImageSearch.stub(:provider_name, "fake") do
         Appearances::ImageSearch.stub(:search, ->(**) { answer }) do
-          post search_person_appearance_path(@person.slug, @look.slug)
+          Appearances::FaceVisibility.stub(:available?, false) do
+            post search_person_appearance_path(@person.slug, @look.slug)
+          end
         end
       end
     end
@@ -263,6 +286,127 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     post mint_person_appearance_path(@person.slug, @look.slug)
     assert_redirected_to "/login"
     assert_equal 0, AppearanceReferencePhoto.count
+  end
+
+  # ---- who may spend ---------------------------------------------------------
+
+  # THE GATE THE OPEN SIGNUP MAKES NECESSARY, and the reason a login-only gate was
+  # not one. Hub signup is OPEN — magic-link and Google are both create-or-login —
+  # so "signed in" costs a member of the public one email address. Behind that, a
+  # login-only #mint buys a Higgsfield identity per look and a login-only #search
+  # buys one query plus up to VISION_SHORTLIST vision classifications PER CLICK,
+  # uncapped. Before this lane, Appearances::CreateCharacterReference ran only from a
+  # rake task; the page is what made the spend reachable from the web at all.
+  #
+  # THE REDIRECT IS THE WEAKER HALF OF THIS TEST. What it has to prove is that NO
+  # PROVIDER WAS REACHED, so every collaborator is stubbed to RAISE: a refusal that
+  # bought the query on its way out would satisfy a status assertion and still have
+  # spent the money the gate exists to protect.
+  test "[integration] a signed-in non-admin is refused and reaches no provider" do
+    log_in_as(users(:viewer))
+    cache_headshot
+
+    Appearances::ImageSearch.stub(:available?, true) do
+      Appearances::ImageSearch.stub(:search, ->(**) { raise "a non-admin POST must never reach a search provider" }) do
+        Appearances::FaceVisibility.stub(:available?, ->(*) { raise "a non-admin POST must never reach the classifier" }) do
+          post search_person_appearance_path(@person.slug, @look.slug)
+        end
+      end
+    end
+    assert_redirected_to root_path
+    assert_equal 0, AppearanceReferencePhoto.count, "a refused search files nothing"
+
+    Appearances::CreateCharacterReference.stub(:new, ->(*, **) { raise "a non-admin POST must never reach the vendor" }) do
+      post mint_person_appearance_path(@person.slug, @look.slug)
+      assert_redirected_to root_path
+
+      post refresh_person_appearance_path(@person.slug, @look.slug)
+      assert_redirected_to root_path
+    end
+    assert_nil @look.reload.higgsfield_reference_id, "a refused mint buys no identity"
+  end
+
+  # THE PAGE OFFERS NO CONTROL IT WOULD REFUSE. #show is public, so without the view
+  # guards every reader is shown a button whose only effect is a bounce to the
+  # landing page — and the most expensive button on the page reads as available to
+  # anybody who can load it.
+  test "[component] a non-admin reader is offered no purchase controls" do
+    log_in_as(users(:viewer))
+    cache_headshot
+
+    Appearances::ImageSearch.stub(:available?, true) do
+      Appearances::ImageSearch.stub(:provider_name, "fake") do
+        get page_path
+      end
+    end
+
+    assert_response :success
+    assert_select "[data-test='reference-input-panel']", { count: 1 },
+                  "the read half still renders for a non-admin"
+    assert_select "[data-test='search-button']", count: 0
+    assert_select "form[action='#{search_person_appearance_path(@person.slug, @look.slug)}']", count: 0
+    assert_select "form[action='#{mint_person_appearance_path(@person.slug, @look.slug)}']", count: 0
+  end
+
+  # ---- where a failure goes --------------------------------------------------
+
+  # A FLASH IS NOT A RECORD. It lives for one redirect and is then gone, and the
+  # operator asking "why did the mint refuse?" is reading /admin/error_logs a day
+  # later. `target` is what lets them find the row for THIS look rather than reading
+  # every row since Tuesday.
+  test "[integration] a vendor failure on mint leaves an ErrorLog row on the look" do
+    log_in_as(users(:alex))
+    cache_headshot
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      Appearances::CreateCharacterReference.stub(:new, ->(*, **) { ExplodingMint.new }) do
+        post mint_person_appearance_path(@person.slug, @look.slug)
+      end
+    end
+
+    assert_redirected_to page_path
+    assert_match(/Higgsfield refused the request/, flash[:alert],
+                 "the operator still gets an answer — the row is in ADDITION to it")
+    row = ErrorLog.order(:id).last
+    assert_equal @look, row.target
+    assert_equal @look.slug, row.target_name
+  end
+
+  # THE REFUSAL THAT IS NOT A FAILURE, and the reason #mint splits the two apart. A
+  # look with nothing to build from is a state of the record; a row for it would be
+  # noise in the one place an operator goes to find real failures.
+  test "[integration] a look with nothing to mint from is refused without an ErrorLog row" do
+    log_in_as(users(:alex))
+
+    assert_no_difference -> { ErrorLog.count } do
+      post mint_person_appearance_path(@person.slug, @look.slug)
+    end
+
+    assert_redirected_to page_path
+    assert_match(/no reference photographs/, flash[:alert])
+  end
+
+  # ---- what a linked caption may point at ------------------------------------
+
+  # A `page_url` IS NOT A URL UNTIL SOMETHING SAYS SO. It is stored exactly as the
+  # provider sent it and is never validated on the way in, because the row is
+  # evidence of what the search offered. This is the one place it reaches a browser.
+  test "[component] a page_url that is not http(s) is never emitted as an href" do
+    cache_headshot
+    file_photo("https://cdn.example.com/a.jpg", chosen: true, position: 1,
+               page_url: "javascript://evil.test/%0aalert(1)")
+    file_photo("https://cdn.example.com/b.jpg", chosen: true, position: 2,
+               page_url: "espn.com")
+
+    get page_path
+
+    assert_response :success
+    assert_select "a[href='javascript://evil.test/%0aalert(1)']", count: 0
+    # A BARE DOMAIN IS A RELATIVE href, so today this linked the operator to
+    # /people/:person/models/espn.com on our own site instead of anywhere useful.
+    assert_select "a[href='espn.com']", count: 0
+    refute_includes response.body, "javascript://evil.test",
+                    "a refused scheme has no business in the page at all"
   end
 
   # A SEARCH THAT COULD NOT RUN CHANGES NOTHING AND SAYS WHY. Without this the

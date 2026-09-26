@@ -93,8 +93,11 @@
 
     <% if host.present? %>
       <p class="text-3xs text-muted truncate" title="<%= photo.origin_url %>">
-        <% if photo.page_url.present? %>
-          <%= link_to host, photo.page_url, target: "_blank",
+        <%# page_link_url, NEVER the raw page_url. The column holds whatever the
+            provider put in its answer, and only http and https may reach an href —
+            the model carries the judgement and the two shapes it refuses. %>
+        <% if photo.page_link_url.present? %>
+          <%= link_to host, photo.page_link_url, target: "_blank",
                 rel: "noopener noreferrer nofollow", referrerpolicy: "no-referrer",
                 class: "hover:text-primary" %>
         <% else %>

@@ -33,10 +33,17 @@
             Will search for &ldquo;<%= @search_query %>&rdquo;. Each search costs money.
           </p>
         </div>
-        <%= button_to "Search the web",
-              search_person_appearance_path(@person.slug, @appearance.slug),
-              method: :post, class: "btn btn-sm btn-primary shrink-0",
-              form: { data: { test: "search-button" } } %>
+        <%# ADMINS ONLY, matching the controller. #show is public, so without this
+            guard the page offers every visitor a button that buys a query and a
+            dozen classifications, and the only thing between them and the purchase
+            is a redirect they never asked for. A control nobody but an admin may
+            use is furniture on everyone else's page. %>
+        <% if admin? %>
+          <%= button_to "Search the web",
+                search_person_appearance_path(@person.slug, @appearance.slug),
+                method: :post, class: "btn btn-sm btn-primary shrink-0",
+                form: { data: { test: "search-button" } } %>
+        <% end %>
       </div>
     <% else %>
       <div data-test="search-unconfigured" class="space-y-1">

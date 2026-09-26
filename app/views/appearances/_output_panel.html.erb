@@ -59,7 +59,10 @@
           stored status on its own — the create stamps `not_ready` and only a poll
           changes it. So the poll button is the one control a pending identity needs,
           and it is free (a read). %>
-      <% if @appearance.higgsfield_reference_state != :ready %>
+      <%# ADMINS ONLY, matching the controller. The poll is free, but it is still an
+          outbound call on our credential and the action refuses a non-admin, so
+          offering it to the public page would be offering a redirect. %>
+      <% if admin? && @appearance.higgsfield_reference_state != :ready %>
         <%= button_to "Ask Higgsfield again",
               refresh_person_appearance_path(@person.slug, @appearance.slug),
               method: :post, class: "btn btn-sm btn-neutral w-full" %>
@@ -69,18 +72,28 @@
       <% end %>
     <% else %>
       <p class="text-2xs text-muted">
-        Nothing minted yet. Requesting one sends
-        <%= pluralize(@identity_urls.length, "photo") %> to Higgsfield and costs money.
+        Nothing minted yet.
+        <% if admin? %>
+          Requesting one sends
+          <%= pluralize(@identity_urls.length, "photo") %> to Higgsfield and costs money.
+        <% end %>
       </p>
-      <%= button_to "Request the model",
-            mint_person_appearance_path(@person.slug, @appearance.slug),
-            method: :post,
-            class: "btn btn-sm btn-primary w-full",
-            disabled: @identity_urls.empty? %>
-      <% if @identity_urls.empty? %>
-        <p class="text-3xs text-warning-ink">
-          Needs at least one photo first.
-        </p>
+      <%# ADMINS ONLY, matching the controller. This is the most expensive button on
+          the page: one identity per look, from a vendor with no list endpoint to
+          recall it from. The disabled state stays for the admin who has no photos
+          yet, because that is a purchase which would refuse rather than one they may
+          not make. %>
+      <% if admin? %>
+        <%= button_to "Request the model",
+              mint_person_appearance_path(@person.slug, @appearance.slug),
+              method: :post,
+              class: "btn btn-sm btn-primary w-full",
+              disabled: @identity_urls.empty? %>
+        <% if @identity_urls.empty? %>
+          <p class="text-3xs text-warning-ink">
+            Needs at least one photo first.
+          </p>
+        <% end %>
       <% end %>
     <% end %>
   </div>
