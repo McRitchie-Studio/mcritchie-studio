@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_26_040100) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_26_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -168,6 +168,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_040100) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_agents_on_slug", unique: true
     t.index ["status"], name: "index_agents_on_status"
+  end
+
+  create_table "app_requests", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "prompt", null: false
+    t.datetime "queued_at"
+    t.string "status", default: "draft", null: false
+    t.string "subdomain"
+    t.string "task_slug"
+    t.string "tier", default: "launch", null: false
+    t.string "token", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["status"], name: "index_app_requests_on_status"
+    t.index ["subdomain"], name: "index_app_requests_on_subdomain", unique: true, where: "(subdomain IS NOT NULL)"
+    t.index ["token"], name: "index_app_requests_on_token", unique: true
+    t.index ["user_id"], name: "index_app_requests_on_user_id"
   end
 
   create_table "appearances", force: :cascade do |t|
@@ -1847,6 +1864,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_040100) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "agent_actions", "agent_activities", on_delete: :nullify
+  add_foreign_key "app_requests", "users"
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"
   add_foreign_key "builders", "people"

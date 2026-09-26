@@ -9,6 +9,13 @@ Rails.application.routes.draw do
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
   get "packages", to: "packages#index", as: :packages
+  # The app funnel: prompt → sign in → claim <name>.mcritchie.studio → queued
+  # for an agent. `check` is the live subdomain availability probe.
+  get   "build",        to: "build#new",    as: :build
+  post  "build",        to: "build#create"
+  get   "build/check",  to: "build#check",  as: :build_check
+  get   "build/:token", to: "build#show",   as: :build_request
+  patch "build/:token", to: "build#update"
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.
   get "credentials", to: "credential_vaults#index", as: :credentials

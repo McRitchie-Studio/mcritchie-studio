@@ -179,9 +179,14 @@
     <%# Magic-link request. Inline so it is always defined before the auth
         card's Alpine form or the check-inbox modal can call it. %>
     <script>
-      window.postMagicLink = async function (email) {
+      // `returnTo` (optional) is where the emailed link lands after sign-in —
+      // /build passes its draft's URL so the prompt survives the round trip,
+      // even when the email is opened on another device. The server keeps it
+      // to a same-origin path.
+      window.postMagicLink = async function (email, returnTo) {
         var body = new URLSearchParams();
         body.set('email', email || '');
+        if (returnTo) body.set('return_to', returnTo);
         var resp = await fetch('/magic_link', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json',
