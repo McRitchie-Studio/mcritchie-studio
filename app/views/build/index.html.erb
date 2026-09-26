@@ -70,7 +70,7 @@
             <% end %>
             <%= link_to "Requester's page", build_request_path(req.token), class: "text-primary hover:underline" %>
             <% if req.queued? || req.status.in?(%w[building live]) %>
-              <span data-test="app-request-discord"><%= req.discord_notified_at ? "Posted to #scratch-pad" : "Not posted to Discord" %></span>
+              <span data-test="app-request-discord"><%= req.discord_notified_at ? "Posted to #{DiscordChannels.channel_label(AppRequestDiscordJob::LANE)}" : "Not posted to Discord" %></span>
             <% end %>
           </div>
         </li>
