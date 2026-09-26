@@ -82,14 +82,26 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
+  # The names are unregistered on purpose: the real showcase builds
+  # (prisoners-dilemma, weekly-lock, rantly, portfolio) have satellites.yml rows
+  # since register-showcase-apps, so their subdomains are reserved now.
   test "an admin is exempt from the one-app rule, and their requests are showcase builds" do
     admin = users(:alex)
     assert admin.admin?
-    first = draft(user: admin).queue!("prisoners-dilemma")
-    second = draft(user: admin).queue!("weekly-lock")
+    first = draft(user: admin).queue!("coin-toss")
+    second = draft(user: admin).queue!("chess-club")
 
     assert first.showcase? && second.showcase?
     assert_includes Task.find_by!(slug: second.task_slug).metadata.dig("devops", "agent_context"), "SHOWCASE build"
+  end
+
+  # A showcase app registered in config/satellites.yml reserves its subdomain the
+  # day it is registered, so no new request can claim a name that ships there.
+  test "a registered showcase app's subdomain is reserved" do
+    %w[prisoners-dilemma weekly-lock rantly portfolio].each do |name|
+      assert_equal "That name is reserved.", AppRequest.unavailable_reason(name),
+                   "#{name} has a satellites.yml row, so its subdomain must not be claimable"
+    end
   end
 
   test "a customer's request is never a showcase" do
@@ -123,5 +135,22 @@ class AppRequestTest < ActiveSupport::TestCase
     d.update!(user: users(:alex))
     assert d.claimable_by?(users(:alex))
     refute d.claimable_by?(users(:viewer))
+  end
+
+  test "the gallery finds a live showcase app's screenshot by convention, and nothing when it is missing" do
+    live = draft(user: users(:alex)).queue!("zz-no-screenshot")
+    live.update!(status: "live")
+    entry = BuildGallery.showcased.find { |e| e.url.include?("zz-no-screenshot") }
+
+    assert entry
+    assert_nil entry.image, "no file at build_gallery/zz-no-screenshot.jpg, so no image"
+    assert_equal "build_gallery/cyvasse.jpg", BuildGallery.configured.find { |e| e.name == "Cyvasse" }.image
+  end
+
+  test "a customer's live app is never in the public gallery" do
+    live = draft(user: users(:viewer)).queue!("customer-app")
+    live.update!(status: "live")
+
+    refute BuildGallery.examples.any? { |e| e.url.include?("customer-app") }
   end
 end

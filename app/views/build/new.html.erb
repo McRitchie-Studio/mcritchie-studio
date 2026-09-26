@@ -100,25 +100,63 @@
     <% end %>
   </div>
 
-  <% if @examples.any? %>
+  <% if @examples.any? || (logged_in? && current_user.admin?) %>
     <section class="mt-14" aria-labelledby="built-with" data-test="build-gallery">
-      <h2 id="built-with" class="text-sm font-semibold uppercase tracking-wider text-muted mb-4 text-center">Built with McRitchie Studio</h2>
-      <ul class="grid gap-3 sm:grid-cols-2">
-        <% @examples.each do |example| %>
-          <li>
-            <%= link_to example.url, target: "_blank", rel: "noopener",
-                  class: "group flex h-full items-start gap-3 rounded-2xl border border-subtle bg-surface p-4 hover:border-primary transition-colors",
-                  data: { test: "build-example" } do %>
-              <span class="text-2xl leading-none" aria-hidden="true"><%= example.emoji %></span>
-              <span class="min-w-0">
-                <span class="block font-semibold text-heading group-hover:text-primary"><%= example.name %></span>
-                <span class="block font-mono text-xs text-muted truncate"><%= URI.parse(example.url).host rescue example.url %></span>
-                <span class="block text-sm text-body mt-1"><%= example.blurb %></span>
-              </span>
-            <% end %>
-          </li>
+      <div class="flex items-center justify-between gap-3 mb-4">
+        <h2 id="built-with" class="text-sm font-semibold uppercase tracking-wider text-muted">Built with McRitchie Studio</h2>
+        <% if logged_in? && current_user.admin? %>
+          <%= link_to "See all apps →", build_requests_path(status: "all"), class: "text-sm font-semibold text-primary hover:underline",
+                data: { test: "build-gallery-all" } %>
         <% end %>
-      </ul>
+      </div>
+
+      <% if @examples.any? %>
+        <%# A sideways row of every live app: 2.5 cards wide on a laptop (1.25 on a
+            phone), so the half card says "there is more". The edge that still
+            has cards past it fades out (mask-image, the technique of
+            components/_overflow_fade), measured on scroll AND on resize, since the
+            row's width changes without the window moving. %>
+        <div x-data="{ atStart: true, atEnd: true, _ro: null,
+                       measure(el) { this.atStart = el.scrollLeft <= 2; this.atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 },
+                       get mask() {
+                         if (this.atStart && this.atEnd) return 'none';
+                         const left = this.atStart ? 'black 0' : 'transparent 0, black 3rem';
+                         const right = this.atEnd ? 'black 100%' : 'black calc(100% - 4rem), transparent 100%';
+                         return 'linear-gradient(to right, ' + left + ', ' + right + ')';
+                       } }"
+             x-init="$nextTick(() => measure($refs.row)); _ro = new ResizeObserver(() => measure($refs.row)); _ro.observe($refs.row)"
+             x-on:turbo:before-cache.window="_ro && _ro.disconnect()">
+          <ul x-ref="row" @scroll.passive="measure($el)"
+              class="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-3 [scrollbar-width:thin]"
+              :style="`-webkit-mask-image: ${mask}; mask-image: ${mask}`"
+              data-test="build-gallery-row">
+            <% @examples.each do |example| %>
+              <li class="snap-start shrink-0 basis-[80%] sm:basis-[calc((100%-2rem)/2.5)]" data-test="build-gallery-item">
+                <%= link_to example.url, target: "_blank", rel: "noopener",
+                      class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors",
+                      data: { test: "build-example" } do %>
+                  <span class="block aspect-[16/10] overflow-hidden bg-surface-alt border-b border-subtle">
+                    <% if example.image %>
+                      <%= image_tag example.image, alt: "#{example.name}, as it looks live", loading: "lazy",
+                            class: "h-full w-full object-cover object-top group-hover:scale-[1.02] transition-transform duration-300",
+                            data: { test: "build-example-image" } %>
+                    <% else %>
+                      <span class="flex h-full items-center justify-center text-5xl" aria-hidden="true"><%= example.emoji %></span>
+                    <% end %>
+                  </span>
+                  <span class="block p-4">
+                    <span class="block font-semibold text-heading group-hover:text-primary"><%= example.name %></span>
+                    <span class="block font-mono text-xs text-muted truncate"><%= URI.parse(example.url).host rescue example.url %></span>
+                    <span class="block text-sm text-body mt-1 line-clamp-2"><%= example.blurb %></span>
+                  </span>
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        </div>
+      <% else %>
+        <p class="text-sm text-muted" data-test="build-gallery-empty">Nothing live yet — admins see this line; visitors see no gallery at all.</p>
+      <% end %>
     </section>
   <% end %>
 

@@ -8,8 +8,15 @@
 #
 # Only list an app that is LIVE at its URL right now. A gallery of placeholders
 # reads worse than an empty one.
+#
+# `image` is a screenshot under app/assets/images, captured with
+#   node script/gallery_screenshot.cjs <url> <slug>
+# Point it at the page that shows what the app IS (Cyvasse's game board, not its
+# landing text). A live showcase request needs no entry: its screenshot is found
+# by convention at build_gallery/<subdomain>.jpg.
 examples:
   - name: Cyvasse
     url: https://cyvasse.mcritchie.studio
     emoji: "🐉"
     blurb: The hex strategy board game from Alex's first app, rebuilt as a live multiplayer game.
+    image: build_gallery/cyvasse.jpg
