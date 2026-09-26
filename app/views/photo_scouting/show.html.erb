@@ -1,0 +1,149 @@
+<%# PHOTO SCOUTING — the calibration surface.
+
+    TWO QUESTIONS, ANSWERED IN THIS ORDER: why did these win, and what did the
+    search actually return. The picks lead because they are the answer the operator
+    came for; the raw set follows because it is the evidence he judges that answer
+    against. Both are on one page on purpose — a gallery of winners alone cannot
+    distinguish a good ranker from a lucky search.
+
+    MOBILE FIRST. Every grid starts at two columns and widens; the calibration panel
+    stacks to a single column on a phone rather than shrinking six figures into an
+    unreadable row. %>
+<% content_for :title, "Photo scouting for #{@person.full_name}" %>
+
+<script>
+  // THE CALIBRATION COMPONENT, defined INLINE rather than in an importmap module.
+  // Alpine is loaded with `defer` and evaluates `x-data` before a module import has
+  // run, so a component referenced below and defined in a module is undefined at the
+  // moment Alpine looks for it — the section renders with every binding dead and no
+  // console error worth finding.
+  function photoScouting() {
+    return {
+      verdicts: {},
+      states: {},
+      cells: {},
+      tally: {},
+      verdictUrl: null,
+      busy: null,
+      error: null,
+
+      // SEEDED FROM data- ATTRIBUTES, NOT FROM AN x-data ARGUMENT. A JSON literal
+      // inside x-data carries double quotes, which close the attribute and kill the
+      // component silently. Read out of the dataset, the browser has already
+      // un-escaped it for us.
+      //
+      // ⚠ EVERYTHING IS READ OFF THE ROOT **HERE**, IN init, AND CACHED — never from
+      // `$el` inside a method. `$el` is the element the CURRENT EXPRESSION is being
+      // evaluated on, so in `record()` — reached from a button's `@click` — it is the
+      // BUTTON, whose dataset has no `verdictUrl` at all. That produced
+      // `fetch(undefined)`, which posts to the current page instead of the endpoint:
+      // the page rendered perfectly and every click silently did nothing. Caught by
+      // the e2e tier, invisible to every request test.
+      init() {
+        const root = this.$el;
+        this.verdictUrl = root.dataset.verdictUrl;
+        this.verdicts = this.readJson(root, 'verdicts');
+        this.states = this.readJson(root, 'states');
+        this.cells = this.readJson(root, 'cells');
+        this.tally = this.readJson(root, 'tally');
+      },
+
+      readJson(root, key) {
+        try {
+          return JSON.parse(root.dataset[key] || '{}');
+        } catch (e) {
+          return {};
+        }
+      },
+
+      async record(slug, verdict) {
+        if (this.busy) return;
+        this.busy = slug;
+        this.error = null;
+        try {
+          const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+          const res = await fetch(this.verdictUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-CSRF-Token': csrf
+            },
+            body: JSON.stringify({ photo_slug: slug, verdict: verdict })
+          });
+          // fetch RESOLVES ON A 403 OR A 500 — it rejects only on a transport
+          // failure — so without this check a refused write would light the button
+          // up as though it had been stored, and the operator would be calibrating
+          // against a column with nothing in it.
+          if (!res.ok) {
+            this.error = 'That verdict was not saved (' + res.status + '). Nothing changed.';
+            return;
+          }
+          const data = await res.json();
+          // EVERYTHING COMES FROM THE SERVER'S ANSWER. The client never computes a
+          // cell or a total of its own: the four-cell mapping lives in
+          // AppearanceReferencePhoto#calibration_state, and a second copy here is a
+          // second thing to keep in step. Whatever was stored is what shows.
+          this.verdicts[data.photo_slug] = data.verdict;
+          this.states[data.photo_slug] = data.state;
+          this.tally = data.tally;
+        } catch (e) {
+          this.error = 'Could not reach the server. Nothing was saved.';
+        } finally {
+          this.busy = null;
+        }
+      },
+
+      cell(slug) {
+        return this.cells[this.states[slug]] || {};
+      },
+      agreementLabel(slug) { return this.cell(slug).label || ''; },
+      agreementTone(slug) { return this.cell(slug).text || 'text-muted'; },
+
+      figure(key) {
+        const value = this.tally[key];
+        return (value === null || value === undefined) ? '0' : String(value);
+      },
+      // THE FOUR CELLS LIVE ONE LEVEL DOWN, under `states`, so they need their own
+      // reader — `figure('agreed_keep')` would look for a top-level key that is not
+      // there and print 0 on every tile forever.
+      stateCount(name) {
+        const value = (this.tally.states || {})[name];
+        return (value === null || value === undefined) ? '0' : String(value);
+      },
+      rate() {
+        const value = this.tally.agreement_rate;
+        return (value === null || value === undefined) ? 'not judged yet' : value + ' percent';
+      }
+    };
+  }
+</script>
+
+<section class="max-w-6xl mx-auto px-4 py-6 space-y-6"
+         x-data="photoScouting()"
+         data-test="photo-scouting"
+         data-verdict-url="<%= verdict_person_scouting_path(@person.slug) %>"
+         data-verdicts="<%= scouting_verdicts_json(@found) %>"
+         data-states="<%= scouting_states_json(@found) %>"
+         data-cells="<%= scouting_cells_json %>"
+         data-tally="<%= @tally.to_h.to_json %>">
+
+  <%= render "photo_scouting/header" %>
+
+  <% if @appearance.nil? %>
+    <div data-test="no-look" class="rounded-lg border border-warning/40 bg-warning/10 p-4">
+      <p class="text-sm text-warning-ink font-bold">There is no look to scout against.</p>
+      <p class="text-xs text-warning-ink mt-1">
+        Reference photographs are filed per look, so <%= @person.full_name %> needs one
+        before a search can run. Create one on
+        <%= link_to "the person page", person_path(@person.slug), class: "underline" %>.
+      </p>
+    </div>
+  <% else %>
+    <%= render "photo_scouting/honesty" %>
+    <%= render "photo_scouting/calibration_panel" %>
+    <%= render "photo_scouting/picks" %>
+    <%= render "photo_scouting/found" %>
+  <% end %>
+</section>

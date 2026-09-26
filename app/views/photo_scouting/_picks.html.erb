@@ -1,0 +1,42 @@
+<%# THE MACHINE'S PICKS — the answer, with the reasoning under each one.
+
+    LEADS THE PAGE because it is what the operator came for, and is separated from the
+    raw set below by its own heading and border rather than by ordering alone: on the
+    look page the chosen photographs are simply the first rows of one gallery, and
+    "which of these are actually in the model" was a question the operator had to
+    answer by counting. %>
+<section data-test="picks-section" class="space-y-3">
+  <div class="flex items-baseline gap-2 flex-wrap">
+    <h2 class="text-lg font-black text-heading">
+      In the model (<%= @chosen.length %>)
+    </h2>
+    <span data-test="ranking-basis" data-basis="<%= @face_ranked ? "face" : "merit" %>"
+          class="text-2xs text-muted">
+      <%= @face_ranked ? "ranked by how clearly the face shows" : "ranked on shape and relevance only" %>
+      &middot; cap is <%= @chosen_limit %>
+    </span>
+  </div>
+
+  <% if @chosen.any? %>
+    <%# FOUR ACROSS AT DESKTOP, TWO ON A PHONE. CHOSEN_LIMIT is 6 plus up to two floor
+        rows, so three across wraps a full set to a ragged third row; two across on a
+        phone keeps each tile's chips on one line instead of wrapping every one. %>
+    <div data-test="picks-gallery" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+      <%= render partial: "appearances/reference_photo", collection: @chosen, as: :photo,
+                 locals: { calibration: true, person_name: @person.full_name } %>
+    </div>
+  <% else %>
+    <div data-test="no-picks" class="rounded-lg border border-subtle bg-surface-alt p-4">
+      <p class="text-sm text-heading font-bold">Nothing has been picked yet.</p>
+      <p class="text-xs text-muted mt-1">
+        <% if @found.any? %>
+          The search has run but chose nothing, which means every candidate was
+          disqualified. The reasons are on the tiles below.
+        <% else %>
+          No search has run for <%= @person.full_name %> yet.
+          <%= admin? ? "Use the Search button above." : "An admin has to run it." %>
+        <% end %>
+      </p>
+    </div>
+  <% end %>
+</section>

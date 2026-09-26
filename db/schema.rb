@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_26_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_26_234500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -197,17 +197,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_210000) do
     t.datetime "found_at"
     t.integer "height"
     t.text "image_url", null: false
+    t.string "mime_type"
+    t.string "operator_verdict"
+    t.datetime "operator_verdict_at"
     t.text "page_url"
     t.integer "position"
     t.text "query"
     t.string "rejection_reason"
     t.string "slug", null: false
     t.string "source", null: false
+    t.text "thumb_url"
     t.text "title"
     t.datetime "updated_at", null: false
     t.integer "width"
     t.index ["appearance_slug", "chosen"], name: "index_reference_photos_per_look"
     t.index ["appearance_slug", "image_url"], name: "index_reference_photos_unique_per_look", unique: true
+    t.index ["appearance_slug", "operator_verdict"], name: "index_reference_photos_verdict_per_look"
     t.index ["slug"], name: "index_appearance_reference_photos_on_slug", unique: true
   end
 

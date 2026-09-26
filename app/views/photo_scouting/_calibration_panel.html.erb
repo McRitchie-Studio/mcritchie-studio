@@ -1,0 +1,69 @@
+<%# THE AGREEMENT PANEL — how far your taste and the machine's line up.
+
+    EVERY FIGURE IS BOUND TO ALPINE rather than rendered once, because the operator
+    judges twenty tiles in one sitting and a panel that only updated on reload would
+    make him lose his place twenty times. The values come from the SERVER's answer to
+    each write, never from arithmetic in the browser.
+
+    STACKS TO ONE COLUMN ON A PHONE. Six figures in a row at 375px is six unreadable
+    figures, so the grid starts at two and widens to four. %>
+<div data-test="calibration-panel"
+     class="rounded-lg border border-subtle bg-surface-alt p-3 sm:p-4 space-y-3">
+  <div class="flex items-baseline justify-between gap-2 flex-wrap">
+    <p class="label-upper text-muted">Your taste versus the machine&rsquo;s</p>
+    <p class="text-2xs text-muted">
+      <span x-text="figure('judged')"><%= @tally.judged %></span> of
+      <span x-text="figure('total')"><%= @tally.total %></span> judged
+    </p>
+  </div>
+
+  <%# THE HEADLINE NUMBER, and it reads "not judged yet" rather than zero on a fresh
+      look. A page reporting 0 percent agreement because nothing had been judged would
+      be a damning result nobody had earned. %>
+  <div class="flex items-baseline gap-2">
+    <%# THE SERVER RENDERS THE SAME SENTENCE Alpine would, so the figure is right
+        before any JavaScript runs and right for a reader who has none. %>
+    <span class="text-3xl font-black text-heading" x-text="rate()"><%= @tally.agreement_rate.nil? ? "not judged yet" : "#{@tally.agreement_rate} percent" %></span>
+    <span class="text-xs text-muted">agreement, over what you have judged</span>
+  </div>
+
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+    <% [[:agreed_keep, "both keep"], [:agreed_reject, "both drop"],
+        [:machine_overpicked, "we over-picked"], [:operator_promoted, "you would promote"]].each do |state, label| %>
+      <% chip = AppearancesHelper::CALIBRATION_CHIPS.fetch(state) %>
+      <div class="rounded border p-2 <%= chip[:classes] %>" data-test="tally-<%= state %>">
+        <p class="text-xl font-black leading-none" x-text="stateCount('<%= state %>')"><%= @tally[state] %></p>
+        <p class="text-3xs mt-1 leading-tight"><%= label %></p>
+      </div>
+    <% end %>
+  </div>
+
+  <%# THE SHARPEST SIGNAL, CALLED OUT ON ITS OWN. Three of the four cells describe how
+      well the ranker orders the candidates it was already going to rank. A PROMOTION
+      says it threw away something it should have kept, which is the only cell that can
+      teach it something it does not already believe — so it gets a sentence rather
+      than a tile among four. %>
+  <%# x-cloak AND x-show, NEVER the `hidden` ATTRIBUTE. Alpine removes `x-cloak` on
+      init and then governs visibility through inline display; it does not touch
+      `hidden`, so a `hidden` attribute rendered server-side would survive and keep
+      this callout invisible at the exact moment a click made it true. %>
+  <p x-cloak x-show="tally.promotions > 0"
+     data-test="promotion-callout"
+     class="rounded border border-primary/40 bg-primary/10 p-2 text-xs text-primary">
+    You would promote <strong x-text="figure('promotions')"><%= @tally.promotions %></strong> photo(s) the
+    ranking rejected. That is the most useful thing on this page &mdash; it says the
+    ranking is discarding something it should keep, which no amount of re-ordering its
+    winners would reveal.
+  </p>
+
+  <p x-cloak x-show="error" data-test="verdict-error"
+     class="rounded border border-danger/40 bg-danger/10 p-2 text-xs text-danger-ink"
+     x-text="error"></p>
+
+  <% unless admin? %>
+    <p class="text-2xs text-muted">
+      Verdicts are recorded by the operator only, so the keep and drop controls are
+      hidden here. What has already been judged is shown on each tile.
+    </p>
+  <% end %>
+</div>

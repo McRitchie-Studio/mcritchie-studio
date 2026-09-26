@@ -1,0 +1,53 @@
+<%# EVERY RAW CANDIDATE, IN THE ORDER THE SEARCH RETURNED IT.
+
+    THIS IS THE COLUMN THAT JUDGES THE SEARCH, and the ordering is the whole reason it
+    exists separately from the picks above. Those are sorted by OUR ranking, which is
+    the thing under examination; these are in the provider's own order, which is the
+    evidence you examine it against. Shown one way only, a bad search and a bad ranker
+    are indistinguishable — the operator could not tell "the archive handed us twelve
+    books" from "we sorted twelve books to the top".
+
+    FLOOR ROWS ARE NOT HERE. Our mirrored headshot and any URL the operator typed are
+    inputs we control, not things a search found, so crediting this column with them
+    would flatter the search. They appear in the picks above, where they belong. %>
+<section data-test="found-section" class="space-y-3">
+  <div class="flex items-baseline gap-2 flex-wrap">
+    <h2 class="text-lg font-black text-heading">
+      What the search returned (<%= @found.length %>)
+    </h2>
+    <span class="text-2xs text-muted">in the order it returned them</span>
+  </div>
+
+  <% if @found.any? %>
+    <%# THE SHAPE OF THE ANSWER, as counts per verdict. On a real Commons answer for
+        "Drew Lock" the proportion is the finding: 12 of 20 rows were scanned books.
+        Twelve more tiles would bury that; one row of counts states it. %>
+    <% breakdown = rejection_breakdown(@found) %>
+    <% if breakdown.any? %>
+      <div data-test="rejection-breakdown" class="flex flex-wrap gap-1.5">
+        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">
+          <%= @found.count(&:chosen?) %> chosen
+        </span>
+        <% breakdown.each do |label, count| %>
+          <span class="badge text-3xs bg-surface-alt text-muted border-subtle">
+            <%= count %> <%= label %>
+          </span>
+        <% end %>
+      </div>
+    <% end %>
+
+    <div data-test="found-gallery" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      <%= render partial: "appearances/reference_photo", collection: @found, as: :photo,
+                 locals: { calibration: true, person_name: @person.full_name } %>
+    </div>
+  <% else %>
+    <div data-test="no-candidates" class="rounded-lg border border-subtle bg-surface-alt p-4">
+      <p class="text-sm text-heading font-bold">No search has run yet.</p>
+      <p class="text-xs text-muted mt-1">
+        Nothing has been searched for <%= @person.full_name %>, so there is nothing to
+        judge. The photographs above, if any, are the ones we already had: our own
+        mirrored headshot plus any URL typed on the look.
+      </p>
+    </div>
+  <% end %>
+</section>

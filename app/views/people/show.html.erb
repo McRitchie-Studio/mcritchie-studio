@@ -70,6 +70,29 @@
       <span class="text-xs text-muted">the first one created becomes the default</span>
     </div>
 
+    <%# THE ROUTE INTO PHOTO SCOUTING, and the only one — a page an operator can reach
+        only by typing a URL is a page that does not exist for the person it was built
+        for. It sits ABOVE the per-look rows rather than inside one because the question
+        it answers ("are we any good at finding photographs of this man?") is about the
+        person; the page itself resolves the default look to file against.
+
+        Rendered whenever the person has a look, for everybody: the page is a free read,
+        and the controls on it that spend are admin-gated there. %>
+    <% if @appearances.any? %>
+      <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 flex items-center gap-3 flex-wrap">
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-bold text-heading">Photo scouting</p>
+          <p class="text-2xs text-muted">
+            What the search found, what the ranking picked, and what you would have
+            picked instead.
+          </p>
+        </div>
+        <%= link_to "Scout photos →", person_scouting_path(@person.slug),
+              data: { test: "photo-scouting-link" },
+              class: "btn btn-sm btn-primary shrink-0" %>
+      </div>
+    <% end %>
+
     <% if @appearances.any? %>
       <div class="space-y-2">
         <% @appearances.each do |look| %>

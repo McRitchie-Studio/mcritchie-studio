@@ -61,6 +61,20 @@ class AppearanceReferencePhoto < ApplicationRecord
   REJECTION_REASONS = [REJECTED_UNFETCHABLE, REJECTED_DUPLICATE, REJECTED_FACE_OBSCURED,
                        REJECTED_NOT_A_PHOTO, REJECTED_BEYOND_LIMIT].freeze
 
+  # THE OPERATOR'S OWN VERDICT — the calibration half of the scouting page.
+  #
+  # TWO VALUES EXPRESS FOUR OUTCOMES, and that is why there is no `promote` value.
+  # The verdict is read AGAINST `chosen`, so the interesting cell — "the machine
+  # rejected this and I would have used it" — is already `keep` on an unchosen row.
+  # A third value would encode the same fact twice and let the two disagree.
+  #
+  #   keep — I would put this photograph in the model.
+  #   drop — I would leave it out.
+  #   nil  — I have not judged it. NOT the same as `drop`; see #calibration_state.
+  VERDICT_KEEP = "keep".freeze
+  VERDICT_DROP = "drop".freeze
+  VERDICTS = [VERDICT_KEEP, VERDICT_DROP].freeze
+
   # WHAT THE UNIQUE INDEX CAN PHYSICALLY HOLD, and the reason it is a validation
   # rather than a column limit.
   #
@@ -78,11 +92,30 @@ class AppearanceReferencePhoto < ApplicationRecord
   validates :source, presence: true, inclusion: { in: SOURCES }
   validates :appearance_slug, presence: true
   validates :rejection_reason, inclusion: { in: REJECTION_REASONS }, allow_blank: true
+  validates :operator_verdict, inclusion: { in: VERDICTS }, allow_blank: true
 
   before_validation :generate_slug, on: :create
 
   scope :chosen, -> { where(chosen: true) }
   scope :rejected, -> { where(chosen: false) }
+  scope :judged, -> { where.not(operator_verdict: nil) }
+
+  # THE ORDER THE SEARCH RETURNED THEM IN — the raw column's ordering, and
+  # deliberately NOT `gallery_order`.
+  #
+  # These two scopes answer different questions and the calibration page asks both.
+  # `gallery_order` is OUR ranking, which is the thing under examination; this is
+  # the provider's own, which is the evidence you examine it against. Showing only
+  # the ranked order would make a bad search and a bad ranker look identical — the
+  # operator could not tell "the archive handed us twelve books" from "we sorted
+  # twelve books to the top".
+  #
+  # NULLS LAST, because the two floor rows (our headshot, the operator's URL) have
+  # no provider rank and Postgres sorts NULL first in ascending order — so without
+  # this the unranked rows would lead a column whose entire point is the rank.
+  scope :found_order, -> {
+    order(Arel.sql("position ASC NULLS LAST, created_at ASC, id ASC"))
+  }
 
   # GALLERY ORDER — OUR ranking, not the provider's.
   #
@@ -147,6 +180,80 @@ class AppearanceReferencePhoto < ApplicationRecord
   end
 
   def from_search? = source == SOURCE_SEARCH
+
+  # WHAT THE BROWSER SHOULD RENDER, which is NOT what the vendor should fetch.
+  #
+  # The scouting page paints twenty-odd tiles at once and Commons originals run 1-3 MB
+  # each; MEASURED 2026-09-26, the third original onward answered **HTTP 429** and a
+  # third of the gallery rendered as grey alt-text. `thumb_url` is the archive's own
+  # small rendition of the same file.
+  #
+  # FALLS BACK TO THE ORIGINAL rather than rendering nothing: Serper reports no
+  # thumbnail, Commons declines to make one for some formats, and every row filed before
+  # this column existed has none. A tile with no picture is worse than a heavy one.
+  def display_url = thumb_url.presence || image_url
+
+  def judged? = operator_verdict.present?
+  def operator_keep? = operator_verdict == VERDICT_KEEP
+  def operator_drop? = operator_verdict == VERDICT_DROP
+
+  # WHERE THIS PHOTOGRAPH SITS IN THE FOUR-CELL AGREEMENT between the machine's
+  # pick and the operator's, plus the fifth state of not having been judged.
+  #
+  #   :agreed_keep        both would use it.
+  #   :agreed_reject      both would leave it out.
+  #   :machine_overpicked we put it in the model; the operator would not have.
+  #   :operator_promoted  we rejected it; the operator would have used it.
+  #   :unjudged           no verdict recorded.
+  #
+  # `:operator_promoted` IS THE VALUABLE ONE and the reason this method is not just
+  # a boolean `agrees?`. The other three cells tell us how well the ranking scores
+  # the candidates it was already going to rank; a promotion says the ranking threw
+  # away something it should have kept, which is the only cell that can teach it
+  # something it does not already believe.
+  #
+  # `:unjudged` IS ITS OWN STATE rather than folded into a disagreement. Reading an
+  # absent opinion as either agreement or disagreement would let a page the operator
+  # has barely touched report a confident score.
+  def calibration_state
+    return :unjudged unless judged?
+
+    if chosen?
+      operator_keep? ? :agreed_keep : :machine_overpicked
+    else
+      operator_keep? ? :operator_promoted : :agreed_reject
+    end
+  end
+
+  # ── MINT EVIDENCE ─────────────────────────────────────────────────────────────
+  #
+  # WHAT IS REPORTED HERE IS MEASUREMENT, NOT PREDICTION, and the distinction is the
+  # whole reason these two readers are separate and narrow.
+  #
+  # Four real mints against https://api.higgsfield.ai/v1/custom-references on
+  # 2026-09-25 (recorded on task `reference-photos-wrong-person`):
+  #
+  #   3 Commons sideline/action shots at 500px  → failed at prepare
+  #   the SAME 3 at full resolution             → failed
+  #   1 bare-faced sideline shot, full res      → failed
+  #   1 ESPN headshot (tight face crop)         → COMPLETED in ~2 min
+  #
+  # So resolution is not the variable and the helmet is not the variable; face size
+  # in frame is. WE CANNOT MEASURE FACE SIZE — that needs the vision classifier, and
+  # `ANTHROPIC_API_KEY` exists on no machine — so nothing here claims to know
+  # whether a given photograph will mint. It reports two facts that ARE known, and
+  # the page labels them as evidence rather than as a verdict.
+  #
+  # THE ONE INPUT MEASURED TO MINT. Our own mirrored ESPN headshot is a tight face
+  # crop and is the only photograph that has ever completed a reference.
+  def mint_proven? = source == SOURCE_HEADSHOT
+
+  # THE SHAPE THAT FAILED EVERY TIME IT WAS TRIED. A wide crop is a sideline or
+  # crowd photograph, which is the shape all four failures shared. Judged with
+  # PhotoMerit's own ratio so the page and the ranker cannot disagree about what
+  # "wide" means; false when the provider reported no dimensions, because an unknown
+  # shape is not a wide one.
+  def mint_shape_failed_before? = !mint_proven? && Appearances::PhotoMerit.wide?(self)
 
   # Was this photograph actually LOOKED AT by the classifier? Distinct from
   # `face_score.zero?`, which means "looked at and saw nothing" — the opposite

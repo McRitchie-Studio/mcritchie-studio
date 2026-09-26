@@ -107,4 +107,123 @@ module AppearancesHelper
   rescue URI::InvalidURIError
     nil
   end
+
+  # ── THE SCOUTING PAGE'S OWN CHIPS AND EXPLANATIONS ───────────────────────────
+  #
+  # Every class below is written out WHOLE for the reason this file's header gives:
+  # `config/tailwind.config.js` scans helpers as text, so an assembled class
+  # ("bg-#{role}/10") compiles nowhere. And every colour is a THEME ROLE, never a
+  # raw palette shade, so the page reads in light mode as well as dark.
+
+  # WHY A PHOTOGRAPH SCORED WHAT IT DID, in the free signals' own terms.
+  #
+  # THIS IS THE "WHY IT WON" THE OPERATOR ASKED FOR, and it is reconstructible for
+  # nothing because Appearances::PhotoMerit is deterministic metadata arithmetic over
+  # columns we already hold — no network, no spend, no stored explanation to go stale.
+  #
+  # ⚠ IT EXPLAINS THE FREE SCORE, WHICH IS NOT ALWAYS THE DECIDING ONE. Where the
+  # vision classifier spoke, its face score outranks all of this
+  # (GatherReferencePhotos#final_score puts a scored candidate a whole band above an
+  # unscored one), so the page prints the face chip as the authority and these as the
+  # reasoning underneath it. Saying so is the difference between an explanation and a
+  # plausible story.
+  def photo_merit_reasons(photo, person_name)
+    reasons = []
+
+    if Appearances::PhotoMerit.document?(photo)
+      # THE ONE HARD EXCLUSION, so it is the only reason worth printing for this row:
+      # a scanned page is not a poor reference, it is not a reference. Returning
+      # early keeps the tile from also explaining its aspect ratio, which nobody is
+      # asking about once the answer is "this is a book".
+      return [{ label: "not a photograph — a scan or document", tone: :bad }]
+    end
+
+    reasons << if Appearances::PhotoMerit.names_person?(photo, person_name)
+      { label: "title names #{person_name}", tone: :good }
+    else
+      # NOT STYLED AS A FAILURE. A missing or foreign-language title is common and
+      # says nothing about the photograph; it only means this signal could not help.
+      { label: "title does not name #{person_name}", tone: :neutral }
+    end
+
+    reasons << { label: "portrait shape", tone: :good } if Appearances::PhotoMerit.portrait?(photo)
+    reasons << { label: "wide crop — a sideline or crowd shot", tone: :bad } if Appearances::PhotoMerit.wide?(photo)
+    reasons << { label: "too small to carry a face", tone: :bad } if too_small_for_face?(photo)
+    reasons << { label: "found at hit #{photo.position}", tone: :neutral } if photo.position.present?
+
+    reasons
+  end
+
+  MERIT_TONES = {
+    good: "bg-success/10 text-success-ink border-success/30",
+    bad: "bg-danger/10 text-danger-ink border-danger/30",
+    neutral: "bg-surface text-muted border-subtle"
+  }.freeze
+
+  def merit_reason_classes(tone) = MERIT_TONES.fetch(tone, MERIT_TONES[:neutral])
+
+  # PhotoMerit keeps its own predicate private, so this asks the same question of the
+  # same constant rather than hard-coding 300 in a view.
+  def too_small_for_face?(photo)
+    longest = [photo.width, photo.height].compact.max
+    longest.present? && longest < Appearances::PhotoMerit::MIN_USEFUL_EDGE
+  end
+
+  # THE OPERATOR-VERSUS-MACHINE CELLS. `:operator_promoted` is the only one styled as
+  # a finding rather than as a status, because it is the only one that says the
+  # ranking threw away something it should have kept.
+  CALIBRATION_CHIPS = {
+    agreed_keep: { label: "you agree — in the model",
+                   classes: "bg-success/10 text-success-ink border-success/40" },
+    agreed_reject: { label: "you agree — leave it out",
+                     classes: "bg-surface-alt text-muted border-subtle" },
+    machine_overpicked: { label: "you would drop this",
+                          classes: "bg-warning/10 text-warning-ink border-warning/40" },
+    operator_promoted: { label: "you would PROMOTE this",
+                         classes: "bg-primary/10 text-primary border-primary/40" },
+    unjudged: { label: "not judged", classes: "bg-surface text-muted border-subtle" }
+  }.freeze
+
+  def calibration_chip(photo) = CALIBRATION_CHIPS.fetch(photo.calibration_state, UNKNOWN_CHIP)
+
+  # WHAT IS KNOWN ABOUT WHETHER THIS PHOTOGRAPH CAN BE MINTED — evidence, never a
+  # prediction, and nil when nothing is known.
+  #
+  # The measurements behind both branches are on AppearanceReferencePhoto's own
+  # readers. The wording matters as much as the logic: "failed in all four measured
+  # mints" is a fact about four mints, while "will fail" would be a claim about this
+  # photograph that nobody has tested. Face size in frame is the variable, and face
+  # size is exactly what we cannot measure without a vision key.
+  def mint_evidence(photo)
+    if photo.mint_proven?
+      { label: "mints — measured", tone: :good,
+        title: "Our mirrored ESPN headshot is a tight face crop and is the only " \
+               "photograph that has ever completed a Higgsfield reference (2026-09-25)." }
+    elsif photo.mint_shape_failed_before?
+      { label: "wide crop — this shape failed to mint", tone: :bad,
+        title: "All four measured mints of wide sideline/action shots failed at " \
+               "prepare, at 500px and at full resolution (2026-09-25). Face size in " \
+               "frame is the variable, and we cannot measure it without a vision key." }
+    end
+  end
+
+  MINT_TONES = {
+    good: "bg-success/10 text-success-ink border-success/40",
+    bad: "bg-danger/10 text-danger-ink border-danger/40"
+  }.freeze
+
+  def mint_evidence_classes(tone) = MINT_TONES.fetch(tone, MINT_TONES[:bad])
+
+  # THE SHAPE OF THE SEARCH'S FAILURE, as counts per reason.
+  #
+  # A BREAKDOWN RATHER THAN A SECOND GALLERY. The question it answers — "what KIND of
+  # answer did the archive give us?" — is a question about proportions, and on a real
+  # Commons answer for "Drew Lock" the proportion IS the finding: 12 of 20 rows were
+  # scanned books. Rendering those twelve as twelve more tiles would bury that.
+  def rejection_breakdown(photos)
+    photos.reject(&:chosen?)
+          .group_by { |photo| rejection_label(photo) }
+          .transform_values(&:length)
+          .sort_by { |_label, count| -count }
+  end
 end
