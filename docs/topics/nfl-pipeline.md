@@ -52,3 +52,94 @@ Behaviors of note:
 ## Position Normalization
 
 `PositionConcern` (`app/models/concerns/position_concern.rb`) holds canonical position lists, per-source mapping tables (`ESPN_MAP`, `PFF_MAP`, `NFLVERSE_MAP`, `SPOTRAC_MAP`, `GENERAL_MAP`), AND the `FORMATION_GROUPS` / `GROUP_ATHLETE_POSITIONS` maps used by the defensive picker. Callers pass `source:` to dispatch: `PositionConcern.normalize_position("LDE", source: :espn) # => "EDGE"`. Falls back to `GENERAL_MAP` when source is omitted.
+
+## Athlete Physical Descriptions
+
+`athletes:describe_from_headshots` fills `build`, `skin_tone` and `hair_description`
+— the three columns `Athlete#physical_brief` folds into
+`Appearance#generation_brief` and `Content::AssetsAgent#build_image_prompt`, which
+is the text an image generator works from. Before the first run, all 2,051
+production athletes had **none** of the three (measured 2026-09-26), so every
+character prompt in the ecosystem was the operator's typed descriptor plus nothing.
+
+**Two sources, not one, and they cost different amounts.**
+
+| Column | Source | Cost | Coverage |
+|---|---|---|---|
+| `build` | the athlete's own `height_inches` + `weight_lbs` (`Athletes::BuildFromMeasurements`) | free, no API call | all 2,051 |
+| `skin_tone`, `hair_description` | one Haiku 4.5 vision call over the cached 400px headshot (`Athletes::DescribeFromHeadshot`) | ~$0.0011/call, ~$2.25 for the full set | the 2,043 with a cached headshot |
+
+**Build does NOT come from the photograph.** A headshot is head and shoulders and
+cannot see a body, so a vision model asked for build is guessing from a collar.
+The measurement was on the record all along, and it also reaches the 8 athletes who
+have no cached headshot.
+
+**It reads the image by the ImageCache row's recorded `s3_key`, never by recomputing
+`Athlete#headshot_key_prefix`.** Those two disagree in production: every cached
+headshot object sits under `headshots/nfl/free-agents/…` (the run that uploaded them
+derived the folder from the empty `contracts` table) while `team_slug` is populated
+for every athlete, so the prefix computes a folder the bytes are not in.
+
+**Never overwrites.** A value already on file came from a human or a better source
+and outranks the model. Each field is considered independently, so a hand-written
+skin tone survives while hair is still filled in. The columns are the only progress
+record, which is what makes the task resumable — a re-run over completed rows makes
+no calls and costs nothing.
+
+**Run a sample first.** The value of the feature is whether the descriptions read
+well, and that is a human judgement:
+
+```bash
+bin/rails athletes:description_coverage                  # read-only: what is filled, and from which source
+DESCRIBE_LIMIT=20 bin/rails athletes:describe_from_headshots   # 20 rows, then read the table it prints
+bin/rails athletes:describe_from_headshots               # the rest
+```
+
+`DESCRIBE_LIMIT` caps athletes **changed** — a sample run stops rather than walking
+on to bulk-write the free column everywhere. It bounds the **writes**, not the spend:
+the walk advances on changes, so an athlete who is paid for and yields nothing to
+write (build already on file, both fields answered null) does not consume the limit,
+and `DESCRIBE_LIMIT=20` can cost more than twenty calls. It cannot run away —
+`find_each` visits each athlete once, so the ceiling is one full pass, ~2,043 calls,
+~$2.25 — but the flag caps rows and the table caps the bill. `DESCRIBE_PAUSE`
+(default 0.2s) waits after each call the task **asked for**; a failed call waits too,
+so a rate-limited run does not retry faster than a healthy one.
+
+**Three exit-code rules, one per lane, and the per-lane split is the point.** The two
+sources cost different amounts and fail differently: build always succeeds, while the
+vision describer degrades to a blank answer rather than raising. A rule reading a
+counter that summed them could not tell "did the cheap half" from "did the job" — one
+full pass with a dead credential fills 2,051 builds, describes nobody, and every
+summed total reads healthy. So the report prints each lane's three steps (*wanted it
+→ a source could answer → something came back*) and each rule grades one lane:
+
+| Rule | Fires when | What it catches |
+|---|---|---|
+| 1. the pass broke down | more raises than writes | the **write** path — a row that no longer satisfies a validation, a database error. Not the paid call, which never raises |
+| 2. the free lane wrote nothing | height and weight were on file for ≥1 athlete wanting a build, and none was written | the deriver rejecting every row, or every write failing |
+| 3. the paid lane never landed | ≥1 call was asked for and **not one was billed a token** | a present-but-invalid credential, a sustained 429, unreadable S3 objects |
+
+Rule 3 exists because rules 1 and 2 are structurally blind to it, which is the exact
+shape in which `nfl:upload_headshots` reported a total failure as exit 0 for its
+entire life — `candidates: 2048`, `cached: 0`, a clean summary.
+
+**What must stay quiet, because a rule that cries wolf gets disabled.** A completed
+row is skipped, so a warm re-run reports nothing on either lane. A row **no source
+can ever complete** — one of the 8 with no cached headshot, whose skin tone and hair
+have no second source — is found on every run for ever and is reported as a data gap,
+never as work declined. And a row whose honest answer is null (a helmet, a hood, a
+placeholder crop) is re-asked on every later run: rule 3 therefore grades on
+**billing** rather than on output, because a re-ask that bills is evidence the lane
+works, whatever it answered. The cost of that is one blind spot, named here so it is
+not rediscovered: a lane that bills every call and writes nothing — our own parser
+broken, say — reads exactly like that null steady state. Separating them needs a
+record that the task *asked and the answer was null*, which is a column rather than an
+accounting change.
+
+**No live vision call can happen in the test suite, and that is a trap rather than
+an assertion.** Every paid call leaves through `Athletes::VisionTransport`, which
+`test/test_helper.rb` arms to raise before boot (`VISION_NO_LIVE_CALLS=1`, beside the
+fake `op` and `SEAL_RETRY_NO_SLEEP`). The exception is deliberately **not** a
+`StandardError`: the describer rescues `StandardError` by contract so one dead image
+cannot abort a 2,000-row run, so a `StandardError` trap would be swallowed by the
+caller it guards and a careless test would pass quietly.
