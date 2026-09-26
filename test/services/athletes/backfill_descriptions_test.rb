@@ -77,6 +77,13 @@ class Athletes::BackfillDescriptionsTest < ActiveSupport::TestCase
 
   # EACH FIELD INDEPENDENTLY, which is the case a whole-row skip would get wrong: a
   # human who filled in one field must not lose the other two.
+  #
+  # THIS IS THE TEST THAT ACTUALLY BITES #fill_blanks' never-overwrite guard, and the
+  # one above is not — measured by mutation, 2026-09-26: dropping both `.blank?`
+  # guards reddens only this test. The fully-filled athlete above is `complete?`, so
+  # the loop skips it before #fill_blanks is ever reached; it pins the SKIP, which is
+  # also required (it is what makes the re-run free), but it would stay green against
+  # a writer that overwrites. Both are kept, for the two different properties.
   test "a partly filled athlete keeps what is there and gains what is missing" do
     athlete = athlete_with_headshot(height_inches: 72, weight_lbs: 197,
                                     skin_tone: "hand-written tone")
