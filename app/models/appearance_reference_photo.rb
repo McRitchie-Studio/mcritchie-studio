@@ -27,13 +27,28 @@ class AppearanceReferencePhoto < ApplicationRecord
   # gallery can style them and so a new reason has to be declared here, where
   # the reader of a reject list will find it.
   #
-  #   unfetchable  — failed the SSRF/reachability guard. Never sent anywhere.
-  #   duplicate    — the same image already on file under a better source.
-  #   beyond_limit — good enough, but past the number we build an identity from.
+  #   unfetchable   — failed the SSRF/reachability guard. Never sent anywhere.
+  #   duplicate     — the same image already on file under a better source.
+  #   face_obscured — something LOOKED at it and found no usable face (a helmet,
+  #                   the back of a head, a document scan). Stamped only when
+  #                   Appearances::FaceVisibility actually ran on this photograph:
+  #                   a candidate nobody classified is `beyond_limit`, because a
+  #                   reason the operator reads as a judgement must not be a guess.
+  #   not_a_photo   — not a photograph of a person at all: a scanned book page, a
+  #                   media-guide PDF, a diagram. NEVER chosen at any supply level,
+  #                   which is what separates it from `face_obscured`: a helmeted
+  #                   shot of the right person is a poor reference, a scan of an
+  #                   1896 edition of The Rape of the Lock is not a reference at
+  #                   all. Both were real hits for "Drew Lock" (measured 2026-09-26:
+  #                   15 of 20 Wikimedia Commons results were scanned documents).
+  #   beyond_limit  — good enough, but past the number we build an identity from.
   REJECTED_UNFETCHABLE = "unfetchable".freeze
   REJECTED_DUPLICATE = "duplicate".freeze
+  REJECTED_FACE_OBSCURED = "face_obscured".freeze
+  REJECTED_NOT_A_PHOTO = "not_a_photo".freeze
   REJECTED_BEYOND_LIMIT = "beyond_limit".freeze
-  REJECTION_REASONS = [REJECTED_UNFETCHABLE, REJECTED_DUPLICATE, REJECTED_BEYOND_LIMIT].freeze
+  REJECTION_REASONS = [REJECTED_UNFETCHABLE, REJECTED_DUPLICATE, REJECTED_FACE_OBSCURED,
+                       REJECTED_NOT_A_PHOTO, REJECTED_BEYOND_LIMIT].freeze
 
   # WHAT THE UNIQUE INDEX CAN PHYSICALLY HOLD, and the reason it is a validation
   # rather than a column limit.
@@ -58,17 +73,25 @@ class AppearanceReferencePhoto < ApplicationRecord
   scope :chosen, -> { where(chosen: true) }
   scope :rejected, -> { where(chosen: false) }
 
-  # GALLERY ORDER, and it is deliberately not `created_at`.
+  # GALLERY ORDER — OUR ranking, not the provider's.
   #
-  # Chosen photographs lead, because the first question the page answers is
-  # "what did the identity get built from". Within each half, the provider's own
-  # rank leads: hit 1 being wrong says something different about a search than
-  # hit 18 being wrong, and that signal is destroyed by any other sort.
-  # NULLS LAST keeps the headshot and the operator's URL — which have no rank —
-  # from sorting ahead of the ranked hits on Postgres, where NULL sorts high by
-  # default in ascending order.
+  # Chosen photographs lead, because the first question the page answers is "what
+  # did the identity get built from".
+  #
+  # Within each half, FACE SCORE leads and the provider's `position` only breaks
+  # ties. That order is the whole point of the ranking step: the provider ranks by
+  # its own idea of relevance, which says nothing about whether you can see the
+  # person's face — and on the operator's own labelled example the provider's hit 1
+  # was the only bare-faced photograph in a set of four while hits 2 and 3 were
+  # helmets. Sorting by `position` would put the gallery back in the order the
+  # ranking exists to correct, and the operator would see no change.
+  #
+  # NULLS LAST ON BOTH KEYS, for two different absences: an unscored row (nobody
+  # looked) and an unranked one (the headshot and the operator's URL have no
+  # provider rank). Postgres sorts NULL HIGH in ascending order and FIRST in
+  # descending, so without this an unscored row would lead the gallery.
   scope :gallery_order, -> {
-    order(Arel.sql("chosen DESC, position ASC NULLS LAST, created_at ASC, id ASC"))
+    order(Arel.sql("chosen DESC, face_score DESC NULLS LAST, position ASC NULLS LAST, created_at ASC, id ASC"))
   }
 
   def to_param = slug
@@ -79,6 +102,14 @@ class AppearanceReferencePhoto < ApplicationRecord
   def origin_url = page_url.presence || image_url
 
   def from_search? = source == SOURCE_SEARCH
+
+  # Was this photograph actually LOOKED AT by the classifier? Distinct from
+  # `face_score.zero?`, which means "looked at and saw nothing" — the opposite
+  # judgement from "never looked", and the page prints them differently.
+  def face_scored? = face_score.present?
+
+  # 0.0..1.0 as a percentage for the chip, or nil when nobody looked.
+  def face_score_percent = face_scored? ? (face_score * 100).round : nil
 
   private
 

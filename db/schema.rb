@@ -174,6 +174,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_020000) do
     t.string "appearance_slug", null: false
     t.boolean "chosen", default: false, null: false
     t.datetime "created_at", null: false
+    t.float "face_score"
     t.datetime "found_at"
     t.integer "height"
     t.text "image_url", null: false

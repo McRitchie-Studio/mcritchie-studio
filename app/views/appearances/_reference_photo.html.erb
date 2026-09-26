@@ -63,10 +63,33 @@
       <% else %>
         <span class="badge text-3xs bg-surface text-muted border-subtle"><%= rejection_label(photo) %></span>
       <% end %>
+      <%# THE FACE SCORE IS WHAT ORDERED THIS GALLERY, so it is printed on every
+          photograph that has one. Without it the operator sees a new order and no
+          reason for it, and cannot tell a ranking that worked from one that did
+          nothing. A row with no score says nothing rather than showing a zero —
+          "nobody looked" and "looked and saw no face" are opposite judgements. %>
+      <% if photo.face_scored? %>
+        <span class="badge text-3xs <%= face_score_chip(photo) %>"
+              title="How clearly this photo shows the face, judged 0-100">
+          face <%= photo.face_score_percent %>
+        </span>
+      <% end %>
       <% if photo.position.present? %>
         <span class="text-3xs text-muted">hit <%= photo.position %></span>
       <% end %>
     </div>
+
+    <%# THE TITLE THE PROVIDER GAVE IT, which is the fastest way to spot the one
+        failure the face score cannot catch: a CLEAR photograph of the WRONG
+        PERSON. A bare-faced stranger scores higher than a helmeted shot of your
+        man and will rank above it, so the operator has to be able to read the name
+        without opening the tile. Measured: "Drew Hutton" was hit 5 in a real
+        Wikimedia answer for "Drew Lock". %>
+    <% if photo.title.present? %>
+      <p class="text-3xs text-body line-clamp-2 leading-tight" title="<%= photo.title %>">
+        <%= photo.title %>
+      </p>
+    <% end %>
 
     <% if host.present? %>
       <p class="text-3xs text-muted truncate" title="<%= photo.origin_url %>">

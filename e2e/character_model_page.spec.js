@@ -59,6 +59,29 @@ test("both halves render on one page, side by side at desktop and stacked on a p
   await expect(page.locator("[data-source='operator']")).toHaveCount(1);
   await expect(page.locator("[data-source='search']")).toHaveCount(6);
 
+  // THE RANKING, asserted as ORDER rather than as a label. A helmet hides exactly
+  // the features a character model is built from, so the bare-faced photograph has
+  // to lead — and the seed deliberately makes it the provider's hit 2, so a page
+  // that fell back to the provider's own order would put the helmet first and fail
+  // here.
+  await expect(page.locator("[data-test='ranking-basis'][data-basis='face']")).toHaveCount(1);
+  const chosenTitles = await page
+    .locator("[data-test='chosen-gallery'] [data-test='reference-photo'] img")
+    .evaluateAll((els) => els.map((e) => e.getAttribute("alt")));
+  const bare = chosenTitles.findIndex((t) => (t || "").includes("bare face"));
+  const helmet = chosenTitles.findIndex((t) => (t || "").includes("helmet"));
+  expect(bare).toBeGreaterThanOrEqual(0);
+  expect(helmet).toBeGreaterThanOrEqual(0);
+  expect(bare).toBeLessThan(helmet);
+
+  // A SCANNED BOOK PAGE IS NEVER IN THE MODEL, at any supply level. This is the
+  // defect the exclusion was written from: with a blind take-the-top-N an 1896
+  // edition of The Rape of the Lock was selected into a character model.
+  await expect(page.locator("[data-test='chosen-gallery'] [data-rejection='not_a_photo']"))
+    .toHaveCount(0);
+  await expect(page.locator("[data-test='rejected-gallery'] [data-rejection='not_a_photo']"))
+    .toHaveCount(1);
+
   // THE OUTPUT HALF: the identity, and an image generated against it.
   await expect(page.locator("[data-test='identity-status'][data-state='ready']")).toHaveCount(1);
   await expect(page.locator("[data-test='generated-images'] figure")).toHaveCount(1);

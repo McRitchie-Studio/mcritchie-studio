@@ -1258,19 +1258,27 @@ e2e_look = Appearance.create!(
 # reject half is the half a reviewer has to be able to see working. With the
 # operator's own `reference_url` as the floor that is FOUR photographs in the
 # identity, which is the number the output half prints.
+# THE FACE SCORES ARE FIXTURES, not classifier output: nothing in the e2e run
+# calls Anthropic. They carry the ORDER the ranking produces, because that order is
+# what the spec asserts — a bare-faced photograph ahead of every helmet, and a
+# scanned book page rejected outright.
+#
+# Note the provider's own `position` deliberately DISAGREES with the face order:
+# the helmet is hit 1 and the bare face is hit 2. A spec that passed with the two
+# in agreement would not be able to tell the new ranking from the old one.
 [
-  { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Drew_Lock_10_22_2023.jpg/500px-Drew_Lock_10_22_2023.jpg",
-    title: "Drew Lock, 22 October 2023", host: "https://commons.wikimedia.org/wiki/File:Drew_Lock_10_22_2023.jpg",
-    position: 1, chosen: true, w: 556, h: 780 },
   { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Drew_Lock_12_18_2023.jpg/500px-Drew_Lock_12_18_2023.jpg",
-    title: "Drew Lock, 18 December 2023", host: "https://commons.wikimedia.org/wiki/File:Drew_Lock_12_18_2023.jpg",
-    position: 2, chosen: true, w: 686, h: 930 },
+    title: "Drew Lock, 18 December 2023 (helmet)", host: "https://commons.wikimedia.org/wiki/File:Drew_Lock_12_18_2023.jpg",
+    position: 1, chosen: true, w: 686, h: 930, face: 0.15 },
+  { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Drew_Lock_10_22_2023.jpg/500px-Drew_Lock_10_22_2023.jpg",
+    title: "Drew Lock, 22 October 2023 (bare face)", host: "https://commons.wikimedia.org/wiki/File:Drew_Lock_10_22_2023.jpg",
+    position: 2, chosen: true, w: 556, h: 780, face: 0.92 },
   { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/WFT_vs._Broncos_%2851651272550%29.jpg/500px-WFT_vs._Broncos_%2851651272550%29.jpg",
     title: "WFT vs. Broncos", host: "https://commons.wikimedia.org/wiki/File:WFT_vs._Broncos_(51651272550).jpg",
-    position: 3, chosen: true, w: 3207, h: 2135 },
+    position: 3, chosen: true, w: 3207, h: 2135, face: 0.15 },
   { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/1976_Penn_State_Nittany_Lions_media_guide.pdf/page1-500px-1976_Penn_State_Nittany_Lions_media_guide.pdf.jpg",
     title: "1976 Penn State Nittany Lions media guide", host: "https://commons.wikimedia.org/wiki/File:1976_Penn_State_Nittany_Lions_media_guide.pdf",
-    position: 4, chosen: false, reason: AppearanceReferencePhoto::REJECTED_BEYOND_LIMIT },
+    position: 4, chosen: false, face: 0.0, reason: AppearanceReferencePhoto::REJECTED_NOT_A_PHOTO },
   { url: "http://127.0.0.1:9999/internal-probe.png",
     title: "A URL no remote fetcher should follow", host: nil,
     position: 5, chosen: false, reason: AppearanceReferencePhoto::REJECTED_UNFETCHABLE },
@@ -1283,7 +1291,7 @@ e2e_look = Appearance.create!(
     appearance_slug: e2e_look.slug, image_url: row[:url], page_url: row[:host],
     title: row[:title], source: AppearanceReferencePhoto::SOURCE_SEARCH,
     query: "Drew Lockfixture Seattle Seahawks", position: row[:position],
-    width: row[:w], height: row[:h], chosen: row[:chosen],
+    width: row[:w], height: row[:h], chosen: row[:chosen], face_score: row[:face],
     rejection_reason: row[:reason], found_at: 30.minutes.ago
   )
 end

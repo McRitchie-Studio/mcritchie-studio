@@ -69,7 +69,21 @@ class CreateAppearanceReferencePhotos < ActiveRecord::Migration[8.1]
       # the gallery's whole job is to split the set in two.
       t.boolean :chosen, null: false, default: false
 
-      # Why it did not make it — "unfetchable", "duplicate", "beyond_limit".
+      # HOW CLEARLY THIS PHOTOGRAPH SHOWS THE PERSON'S FACE, 0.0 to 1.0, as judged
+      # by Appearances::FaceVisibility. A character identity is built from faces and
+      # a helmet occludes exactly the features it is built from, so this is the
+      # ranking signal — not `position`, which is the provider's opinion about
+      # relevance and says nothing about whether you can see anyone.
+      #
+      # NULLABLE, AND NULL MEANS "NOBODY LOOKED", never "no face". The classifier
+      # bills per image so only a shortlist is ever scored, and with no credential
+      # configured nothing is. Storing 0.0 for an unscored row would assert a
+      # judgement nothing made — and would sort a perfectly good photograph to the
+      # bottom on the strength of an absent credential.
+      t.float :face_score
+
+      # Why it did not make it — "unfetchable", "duplicate", "face_obscured",
+      # "beyond_limit".
       # Blank on a chosen row. Without this a reject is indistinguishable from a
       # photograph nobody got round to, which is the difference between "the
       # search is bad" and "the picker is bad".

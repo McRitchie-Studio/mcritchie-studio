@@ -118,20 +118,127 @@ something is absent.
 | Piece | File |
 |---|---|
 | Mint / read | `Higgsfield::Client#create_custom_reference`, `#custom_reference` |
-| Which photos | `Appearances::ReferenceImages` — **injected**, see below |
+| Which photos (floor) | `Appearances::ReferenceImages` — **injected**, see below |
+| Which photos (composed) | `Appearances::ReferenceSet` — the floor plus the chosen search hits |
+| Finding more | `Appearances::ImageSearch` (façade) + `::Serper` (provider) |
+| Ranking them | `Appearances::FaceVisibility` (vision, paid) over `Appearances::PhotoMerit` (free) |
+| Filing candidates | `Appearances::GatherReferencePhotos` → `appearance_reference_photos` |
+| URL safety | `Appearances::FetchableUrl` → `Studio::ImageCache.validate_source_url!` |
 | Mint + record + poll | `Appearances::CreateCharacterReference` |
 | Storage | `appearances.higgsfield_reference_id` / `_status` / `_synced_at` |
 | Spending it | `Content::AssetsAgent#character_reference` (only when ready) |
-| Operator | `rake appearances:character_reference SLUG=look-xxx`, `rake appearances:refresh_character_references` |
+| **The page** | `/people/:person_slug/models/:slug` — `AppearancesController#show` |
+| Operator | `rake appearances:character_reference SLUG=look-xxx`, `rake appearances:refresh_character_references`, `rake appearances:search_reference_photos SLUG=look-xxx` |
 
 **The reference list is a seam, not a lookup.** Today's floor is the cached ESPN
 headshot (`Studio::ImageCache`, purpose `headshot`, variants 100/400, mirrored by
 `Nflverse::SeedPlayers#cache_headshot`) plus the operator's `reference_url` when
 they have typed one. One image satisfies the API's minimum, so the lane works
-now. The character sheet the operator actually wants — head-on, profile, back,
-expressions — needs an image-search credential that does not exist yet; when it
-does, it is a new callable passed as `references:` and nothing else in the lane
-moves.
+now.
+
+**The callable that grows that list now EXISTS; only the credential is missing.**
+`Appearances::ReferenceSet` is the composed collaborator — floor first, then the
+chosen search hits — and it is what the rake task and the page pass as
+`references:`. `Appearances::CreateCharacterReference` was not changed to accept
+it, because it already took the list as an injection. Read "waiting on a search"
+as "waiting on `SERPER_API_KEY`", never as "waiting on code".
+
+**Where the found photographs live.** `appearance_reference_photos` holds EVERY
+candidate a search returned, chosen or not, with the reason each was passed over
+(`unfetchable` / `duplicate` / `beyond_limit`) and the query that found it. The
+rejects are kept on purpose: the operator's question is "is the search any good?",
+and a table of winners cannot answer it — a search returning twenty stock
+thumbnails yields the same single winner as one returning twenty good portraits we
+capped at `GatherReferencePhotos::CHOSEN_LIMIT`. `ImageCache` is NOT the home for
+these: it is unique on `variant` per (owner, purpose) and demands an `s3_key`, so
+filing a reject would mean paying to mirror a photograph we had already refused.
+
+**The provider is an interface, and it does not assume a credential.** A provider
+answers `provider_name`, `available?` and `search(query:, limit:)`, and
+`available?` is asked OF THE PROVIDER — so a keyless source (Wikimedia Commons
+answers image queries with no key) plugs in without the façade changing. Serper.dev
+is the only provider that ships. **Its response shape is UNVERIFIED**: no
+credential exists, so the parser reads `imageUrl` alone and treats every other
+field as optional, skipping and COUNTING rows it cannot read. When the key lands,
+probe once, capture the body, and replace the `assumed_serper_body` fixture in
+`test/services/appearances/image_search/serper_test.rb` — a green test over a
+guessed fixture proves the guess is self-consistent and nothing more.
+
+**No key is a clean degrade, not an error.** With nothing configured the page
+renders from the headshot floor, offers no Search button, and names
+`SERPER_API_KEY` in the note — because the reader of that note is who will set it.
+
+### Ranking the candidates — why a helmet is not a reference photo
+
+The operator's words: *"we should prioritize pictures with no helmet so the face
+has more details."* He is right for a structural reason: a character identity is
+built from a face, and a helmet occludes exactly the features it is built from.
+
+**The provider's own rank cannot answer this.** It orders by ITS idea of relevance,
+which says nothing about whether you can see anyone. Measured on the operator's own
+labelled look: the provider's hit 1 and hit 2 were a bare-faced photograph and a
+helmeted one, same person, days apart, near-identical portrait ratios (0.71 vs
+0.74) and near-identical titles. **No metadata signal available to us orders that
+pair correctly** — which is why the ranking is a VISION call and not a heuristic.
+`Appearances::PhotoMeritTest` pins that limit as a test so nobody deletes the
+classifier to save money.
+
+**Two scores, and they do different jobs.**
+
+| | `PhotoMerit` | `FaceVisibility` |
+|---|---|---|
+| Cost | free, metadata only | **bills per image** |
+| Decides | who is worth PAYING to look at | the actual order |
+| Can it spot a helmet? | **no** | yes |
+| Runs when | always | only with `ANTHROPIC_API_KEY` |
+
+The classifier is asked once per search with every shortlisted image in ONE
+message (`GatherReferencePhotos::VISION_SHORTLIST`, currently 12), and Anthropic
+fetches the images server-side from a `type: "url"` source — the same trust
+boundary Higgsfield's create sits behind, and the same obligation: only URLs that
+have cleared `Appearances::FetchableUrl` are ever passed.
+
+**Prioritise, never starve.** A helmeted photograph still goes into the identity
+when nothing better exists — measured on a real Commons answer for "Drew Lock",
+exactly ONE of twenty hits was bare-faced. The one HARD exclusion is
+`not_a_photo`: a scanned book page or a diagram, which is not a poor reference but
+no reference at all. That rule exists because of a real defect — with a blind
+take-the-top-N, an 1896 edition of *The Rape of the Lock* was selected into a
+character model.
+
+**⚠ The classifier is UNVERIFIED end to end.** No `ANTHROPIC_API_KEY` exists on
+any machine or in any readable vault, so it has never been driven against the live
+API. Its request shape comes from the documented Messages API, not from an
+observed 200. First job the day a key lands: one real call, then pin the real
+response body as a fixture in `test/services/appearances/face_visibility_test.rb`.
+
+**⚠ Known gap: face visibility is not identity.** A clear photograph of the WRONG
+person outranks a helmeted photograph of the right one, because that is exactly
+what the classifier was asked to judge. Measured: "Drew Hutton" was hit 5 in a real
+Wikimedia answer for "Drew Lock" and ranks second under this scoring. The gallery
+prints every candidate's title so a human can see it; a comparative
+"is this the same person as the others?" pass in the same call is the obvious next
+step and is NOT built.
+
+**⚠ Biasing the QUERY toward faces was tried and REFUTED — do not re-add it
+without re-measuring.** The intuition (append "press conference", "portrait",
+"headshot") is wrong in every form measured against Wikimedia Commons on
+2026-09-26:
+
+| query | results | photographs | of the right person |
+|---|---|---|---|
+| `Drew Lock` | 20 | 8 | **3** |
+| `Drew Lock press conference` | 20 | 0 | 0 |
+| `Drew Lock portrait` | 20 | 1 | - |
+| `Drew Lock headshot` | 0 | 0 | 0 |
+| `Drew Lock press conference portrait headshot interview` | 0 | 0 | 0 |
+| `Drew Lock (press conference OR portrait OR headshot)` | 20 | 20 | **0** |
+
+The OR form looks like a win on photograph YIELD and is the worst of the lot: the
+modifiers swamp the name and it returns twenty portraits of strangers. Commons
+CirrusSearch is not Google, so this does not transfer with certainty — but the
+failure mode it demonstrates (a query mutation that silently returns the wrong
+people) is not one to ship into a paid path nobody can test.
 
 **Higgsfield fetches our URLs server-side**, so every reference image must be
 publicly reachable by THEM, not merely by us. Verified 2026-09-24: a real cached

@@ -65,8 +65,34 @@ module AppearancesHelper
   REJECTION_LABELS = {
     AppearanceReferencePhoto::REJECTED_UNFETCHABLE => "unsafe to fetch",
     AppearanceReferencePhoto::REJECTED_DUPLICATE => "already have it",
+    # "face not visible" rather than "helmet": a helmet is the commonest cause and
+    # the one the operator named, but the classifier also rejects the back of a
+    # head, a distant crowd shot and a document scan — and a label that named only
+    # helmets would read as wrong on the other three.
+    AppearanceReferencePhoto::REJECTED_FACE_OBSCURED => "face not visible",
+    AppearanceReferencePhoto::REJECTED_NOT_A_PHOTO => "not a photo",
     AppearanceReferencePhoto::REJECTED_BEYOND_LIMIT => "past the limit of #{Appearances::GatherReferencePhotos::CHOSEN_LIMIT}"
   }.freeze
+
+  # THE FACE SCORE'S OWN CHIP, banded rather than continuous: the operator is
+  # asking "can you see his face in this one?", which is a three-way answer, and a
+  # gradient across 100 values would make two adjacent photographs look different
+  # when the judgement is the same.
+  #
+  # The bands are named against GatherReferencePhotos::FACE_VISIBLE_THRESHOLD so
+  # the colour and the `face not visible` rejection chip can never disagree: a
+  # photograph styled as a failure here is exactly one that would be labelled
+  # obscured if it lost.
+  def face_score_chip(photo)
+    score = photo.face_score.to_f
+    if score >= 0.75
+      "bg-success/10 text-success-ink border-success/40"
+    elsif score >= Appearances::GatherReferencePhotos::FACE_VISIBLE_THRESHOLD
+      "bg-warning/10 text-warning-ink border-warning/40"
+    else
+      "bg-danger/10 text-danger-ink border-danger/40"
+    end
+  end
 
   def rejection_label(photo)
     REJECTION_LABELS.fetch(photo.rejection_reason, "not chosen")

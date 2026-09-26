@@ -101,6 +101,12 @@ class AppearancesController < ApplicationController
     @search_available = Appearances::ImageSearch.available?
     @search_provider = Appearances::ImageSearch.provider_name
     @search_query = Appearances::GatherReferencePhotos.new(@appearance).query
+    # WHETHER ANYTHING HAS ACTUALLY LOOKED AT THESE PHOTOGRAPHS. Read off the rows
+    # rather than off the credential, because the two answer different questions:
+    # a key that landed this morning does not mean last week's gallery was ranked
+    # by face, and the operator is looking at last week's gallery.
+    @face_ranked = @search_rows.any?(&:face_scored?)
+    @face_ranking_available = Appearances::FaceVisibility.available?
   end
 
   # THE MESSAGE THE UNCONFIGURED PATH PRINTS, and it names the env var on purpose.
@@ -116,6 +122,14 @@ class AppearancesController < ApplicationController
     parts = ["#{summary.provider_name} returned #{summary.returned} result(s)"]
     parts << "#{summary.unparsed} in a shape we could not read" if summary.unparsed.positive?
     parts << "#{summary.unfetchable} refused as unsafe to fetch" if summary.unfetchable.positive?
+    # NAMES WHAT DID THE ORDERING. "6 chosen" reads the same whether a vision
+    # classifier ranked them or nothing did, and those are the two outcomes the
+    # operator most needs to tell apart right after clicking.
+    parts << if summary.ranked_by_face?
+      "#{summary.scored} scored for face visibility"
+    else
+      "ranked on shape and relevance only (no face classifier)"
+    end
     parts << "#{summary.chosen} chosen for the model"
     "#{parts.join(' · ')}."
   end

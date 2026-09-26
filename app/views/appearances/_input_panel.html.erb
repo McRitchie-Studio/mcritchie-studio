@@ -53,7 +53,17 @@
 
   <% if chosen.any? %>
     <div class="space-y-2">
-      <p class="label-upper">In the model (<%= chosen.length %>)</p>
+      <div class="flex items-baseline gap-2 flex-wrap">
+        <p class="label-upper">In the model (<%= chosen.length %>)</p>
+        <%# WHAT PUT THEM IN THIS ORDER. A helmet hides exactly the features a
+            character model is built from, so the ranking is the feature — and an
+            operator who cannot see WHICH ranking ran cannot tell a working
+            classifier from a silent fallback to shape-and-relevance. %>
+        <span data-test="ranking-basis" data-basis="<%= @face_ranked ? "face" : "merit" %>"
+              class="text-3xs text-muted">
+          <%= @face_ranked ? "ranked by how clearly the face shows" : "ranked on shape and relevance — no face check yet" %>
+        </span>
+      </div>
       <%# FOUR ACROSS AT DESKTOP because CHOSEN_LIMIT is 6 plus a two-row floor:
           at three across a full set wraps to a ragged third row and leaves the panel
           a head taller than the one beside it. Two across on a phone keeps the
@@ -81,7 +91,8 @@
     <div class="space-y-2">
       <p class="label-upper">Found but not used (<%= rejected.length %>)</p>
       <p class="text-2xs text-muted">
-        Kept on purpose. These are how you judge the search rather than only its result.
+        Kept on purpose. These are how you judge the search rather than only its
+        result — including the ones passed over because the face was not visible.
       </p>
       <%# DENSER THAN THE CHOSEN GRID at every size above a phone: these are
           secondary and there can be many of them. Still TWO across on a phone —
