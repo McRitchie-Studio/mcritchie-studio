@@ -12,6 +12,10 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 | McRitchie Industries | 3500 | 3500-3599 (3510 reserved) |
 | Cyvasse | 3600 | 3600-3699 |
 | Dads App | 3700 | 3700-3799 reserved |
+| Prisoners Dilemma | 3800 | 3800-3899 reserved |
+| Weekly Lock | 3900 | 3900-3999 reserved |
+| Rantly | 4000 | 4000-4099 reserved |
+| Portfolio | 4100 | 4100-4199 reserved |
 
 The durable app registry decision surface is
 `mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
@@ -33,6 +37,11 @@ Dads App (`3700-3799`) is a release-managed standalone (`reserved` in
 `config/satellites.yml`): a photo slideshow with no studio-engine and no
 database. Production is the Heroku app `dads-app` on one Eco dyno; it has no QA
 environment.
+
+The four showcase apps (`3800-4199`: Prisoners Dilemma, Weekly Lock, Rantly,
+Portfolio) are release-managed standalones like Dads App (`reserved` in
+`config/satellites.yml`, no studio-engine, no database). Production is the
+Heroku app `mcr-<repo>` for each; none has a QA environment.
 
 ## Primary Ports
 
