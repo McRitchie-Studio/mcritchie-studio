@@ -186,6 +186,22 @@ class HerokuCiKeyRotationTest < Minitest::Test
     assert_no_secret_printed
   end
 
+  # A failed restore leaves that secret on the NEW key: the new authorization must stay live.
+  def test_a_failed_restore_keeps_the_new_authorization_live
+    @github.conclusions["prod-deploy.yml"] = "failure"
+    @github.define_singleton_method(:set_secret) do |env, value|
+      raise R::Abort, "HTTP 401 Bad credentials" if value == OLD_KEY && env == "production"
+
+      super(env, value)
+    end
+
+    assert_raises(R::Abort) { @runner.call(dry_run: false) }
+
+    refute_includes mutations, [:revoke, NEW_ID], "production still holds the new key"
+    refute_includes mutations, [:revoke, OLD_ID]
+    assert_includes @out.string, "NOT revoking the new authorization"
+  end
+
   # If the vault's authorization-id names a different key, revoking it would kill
   # something else. Refuse before minting anything.
   def test_a_vault_id_that_does_not_match_its_key_refuses_before_the_mint

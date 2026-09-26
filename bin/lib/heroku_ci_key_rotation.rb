@@ -387,12 +387,16 @@ module HerokuCiKeyRotation
       say "  revoked #{plan[:old_id]}; the old key now answers 401"
     end
 
+    # A store that could not be restored still HOLDS the new key: revoke the new
+    # authorization only when every restore succeeded, or a deploy secret dies.
     def rollback(plan, auth)
       say "== rollback"
+      stranded = []
       (@written & TARGETS.map { |t| t[:env] }).each do |env|
         @github.set_secret(env, plan[:old_key])
         say "  #{env}: #{SECRET} restored to the old key"
       rescue Abort => e
+        stranded << env
         say "  #{env}: RESTORE FAILED — #{redact(e.message)}"
       end
       if @written.include?(:vault)
@@ -400,9 +404,14 @@ module HerokuCiKeyRotation
           @vault.write(KEY_FIELD => plan[:old_key], AUTH_ID_FIELD => plan[:old_id])
           say "  op://#{VAULT}/#{ITEM}: restored to authorization #{plan[:old_id]}"
         rescue Abort => e
+          stranded << :vault
           say "  vault RESTORE FAILED — #{redact(e.message)} (1Password keeps item history)"
         end
       end
+      unless stranded.empty?
+        return say "  NOT revoking the new authorization #{auth[:id]}: #{stranded.join(', ')} still hold it"
+      end
+
       @heroku.revoke_authorization(@admin_key, auth[:id])
       say "  revoked the new authorization #{auth[:id]}"
     rescue Abort => e
