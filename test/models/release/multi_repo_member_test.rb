@@ -679,7 +679,7 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
     release = Release::Conductor.sweep!(task)
     repos = JSON.parse(Release::Conductor.repo_plan(release.reload).to_json)
     qa_envs = YAML.load_file(Rails.root.join("config/qa_environments.yml")).fetch("qa_environments")
-    exempt = Release::PostDeploy.qa_exempt_repos(YAML.load_file(Rails.root.join("config/release_repos.yml")))
+    exempt = Release::PostDeploy.qa_exempt_repos(YAML.load_file(Release::Repos::CONFIG_PATH))
 
     qa = Release::PostDeploy.plan(repos, qa_environments: qa_envs, target: :qa, qa_exempt_repos: exempt)
     prod = Release::PostDeploy.plan(repos, qa_environments: qa_envs, target: :prod, qa_exempt_repos: exempt)

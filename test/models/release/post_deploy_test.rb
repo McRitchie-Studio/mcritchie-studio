@@ -214,7 +214,7 @@ class Release::PostDeployTest < ActiveSupport::TestCase
   end
 
   test "[unit] qa_exempt_repos reads the same set as Release::Repos over the real registry" do
-    registry = YAML.load_file(Rails.root.join("config/release_repos.yml"))
+    registry = YAML.load_file(Release::Repos::CONFIG_PATH)
     assert_equal Release::Repos.qa_evidence_exempt_repos.sort, PD.qa_exempt_repos(registry).sort
     assert_includes PD.qa_exempt_repos(registry), "cyvasse"
   end
