@@ -130,6 +130,37 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
     assert_equal AppearanceReferencePhoto::SOURCE_OPERATOR, operator.source
   end
 
+  # THE COUNTS ON THE PAGE MUST AGREE. A search routinely re-finds the URL the
+  # operator already typed, and before this the gallery rendered that photograph
+  # TWICE — once as the floor, once as a search hit — so the page read
+  # "IN THE MODEL (6)" beside an identity "BUILT FROM 5 photos". Two counts of one
+  # thing, on one screen, disagreeing.
+  test "a search hit that duplicates the floor renders once, not twice" do
+    cache_headshot
+    url = "https://example.com/operator.jpg"
+    @look.update!(reference_url: url)
+    file(url)
+
+    gallery = Appearances::ReferenceSet.new(@look.reload).gallery
+
+    assert_equal 1, gallery.count { |p| p.image_url == url }
+    assert_equal gallery.count(&:chosen?), Appearances::ReferenceSet.call(@look).length,
+                 "the gallery's chosen count IS the number of photos the identity gets"
+  end
+
+  # THE FLOOR WINS THE COLLAPSE, because the chip is the more trustworthy claim:
+  # "you added this" is a fact about a human.
+  test "the surviving row of a duplicate is the floor's, not the search's" do
+    cache_headshot
+    url = "https://example.com/operator.jpg"
+    @look.update!(reference_url: url)
+    file(url)
+
+    row = Appearances::ReferenceSet.new(@look.reload).gallery.find { |p| p.image_url == url }
+
+    assert_equal AppearanceReferencePhoto::SOURCE_OPERATOR, row.source
+  end
+
   test "the gallery puts the chosen photographs first" do
     cache_headshot
     file("https://cdn.example.com/passed.jpg", chosen: false, position: 1,

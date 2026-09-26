@@ -56,7 +56,20 @@ module Appearances
     # UNSAVED for the two floor entries — so one partial renders all of them and
     # the gallery cannot drift from the list the identity was built from.
     def gallery
-      floor_rows + persisted_rows
+      floor = floor_rows
+      seen = floor.map(&:image_url).to_set
+      # THE SAME PHOTOGRAPH IS ONE TILE, NOT TWO.
+      #
+      # A search routinely re-finds the URL the operator already typed, so the same
+      # image exists both as a floor row and as a persisted search row. #call
+      # de-duplicates (the vendor must not be billed twice for one picture), and
+      # without the same collapse here the gallery said "IN THE MODEL (6)" beside an
+      # identity built from 5 — two counts of one thing, on one screen, disagreeing.
+      #
+      # THE FLOOR WINS, because the source chip is the more trustworthy of the two
+      # claims: "you added this" is a fact about a human, "a search found it" is a
+      # fact about a machine, and both are true of this row.
+      floor + persisted_rows.reject { |photo| seen.include?(photo.image_url) }
     end
 
     # The rows the operator is judging the SEARCH by. Split out because the page
