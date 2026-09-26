@@ -7,6 +7,7 @@
 #
 #   bin/workspace-icon --workspace studio                     # 1Password vault icon
 #   bin/workspace-icon --workspace studio --software google   # Google Workspace icon
+#   bin/workspace-icon --tiles                                # rebuild every software tile from its mark
 #   bin/workspace-icon --all                                  # every software x every badged workspace
 #   bin/workspace-icon --workspace industries --badge ~/Downloads/industries.png
 #   bin/workspace-icon --badge logo.png --accent "#8E83FC" --out ~/Desktop/icon.png
@@ -21,7 +22,7 @@ require "optparse"
 require "fileutils"
 require_relative "lib/workspace_icon"
 
-options = { size: WorkspaceIcon::DEFAULT_SIZE, software: WorkspaceIcon::DEFAULT_SOFTWARE }
+options = { software: WorkspaceIcon::DEFAULT_SOFTWARE }
 parser = OptionParser.new do |o|
   o.banner = "usage: bin/workspace-icon (--workspace SCOPE | --badge PATH | --all) [--software KEY] [--logo PATH] " \
              "[--accent #rrggbb] [--size N] [--out PATH]\n" \
@@ -29,10 +30,12 @@ parser = OptionParser.new do |o|
   o.on("--workspace SCOPE", "workspace scope from config/workspace_icons.yml") { |v| options[:workspace] = v }
   o.on("--software KEY", "base logo from config/workspace_icons.yml (default #{WorkspaceIcon::DEFAULT_SOFTWARE})") { |v| options[:software] = v }
   o.on("--all", "render every software for every workspace that has a badge") { options[:all] = true }
+  o.on("--tiles", "rebuild every software tile from its mark, then exit") { options[:tiles] = true }
   o.on("--badge PATH", "the workspace logo for the corner disc (overrides the scope's)") { |v| options[:badge] = v }
   o.on("--logo PATH", "the main icon (overrides --software)") { |v| options[:logo] = v }
   o.on("--accent HEX", "ring colour, #rrggbb (default: the scope's, else the badge's average)") { |v| options[:accent] = v }
-  o.on("--size N", Integer, "square edge in px (default #{WorkspaceIcon::DEFAULT_SIZE})") { |v| options[:size] = v }
+  o.on("--size N", Integer, "square edge in px (default #{WorkspaceIcon::ASSET_SIZE} into the page's assets, " \
+                            "#{WorkspaceIcon::DEFAULT_SIZE} with --out)") { |v| options[:size] = v }
   o.on("--out PATH", "where to write the PNG (default #{WorkspaceIcon::ASSET_DIR}/<software>/<scope>.png; " \
                      "tmp/workspace-icons/ without --workspace)") { |v| options[:out] = v }
   o.on("--list", "print the software and workspace scopes and exit") { options[:list] = true }
@@ -58,6 +61,16 @@ unless ARGV.empty?
   exit 2
 end
 
+if options[:tiles]
+  begin
+    WorkspaceIcon.softwares.each_key { |key| puts "tile #{WorkspaceIcon.build_tile!(key)}" }
+  rescue WorkspaceIcon::Error => e
+    warn "bin/workspace-icon: #{e.message}"
+    exit 1
+  end
+  exit 0
+end
+
 if options[:list]
   puts "software:"
   WorkspaceIcon.softwares.each { |key, sw| puts format("  %-20s %-20s %s", key, sw["name"], sw["logo"]) }
@@ -81,9 +94,10 @@ render = lambda do |software_key, scope, ws|
   out = options[:out] ||
         (scope ? WorkspaceIcon.asset_path(software_key, scope) : File.join(WorkspaceIcon::ROOT, "tmp/workspace-icons", "#{File.basename(badge, '.*')}.png"))
   FileUtils.mkdir_p(File.dirname(out)) unless options[:out]
+  size = options[:size] || (options[:out] ? WorkspaceIcon::DEFAULT_SIZE : WorkspaceIcon::ASSET_SIZE)
 
   result = WorkspaceIcon.render!(logo: logo, badge: File.expand_path(badge), out: File.expand_path(out),
-                                 accent: options[:accent] || ws["accent"], size: options[:size])
+                                 accent: options[:accent] || ws["accent"], size: size)
   puts "wrote #{result[:out]}  (#{result[:size]}x#{result[:size]}, accent #{result[:accent]}, transparent corner verified)"
 end
 

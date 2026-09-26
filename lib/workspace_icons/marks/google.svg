@@ -1,17 +1,7 @@
-<!-- The G for the Google Workspace base tile: Google's multicolour G (the paths
-     from app/views/packages/logos/_google.html.erb), FILLS ONLY. The disc behind
-     it is drawn by ImageMagick, because ImageMagick's internal SVG renderer
-     drops strokes (measured 2026-09-25: a 6px stroke rendered as nothing).
-     google.png beside it, a disc shaped like the 1Password icon so the rows of
-     /credentials read as one family, is rendered with:
-
-       magick -size 1024x1024 xc:none \
-         -fill '#8A8A8A' -draw 'circle 512,512 512,53' \
-         -fill '#FFFFFF' -draw 'circle 512,512 512,59' \
-         -fill '#E3E5E8' -draw 'circle 512,512 512,106' \
-         -fill '#F5F6F8' -draw 'circle 512,512 512,110' \
-         \( -background none -density 96 google.svg \) -compose over -composite \
-         PNG32:google.png -->
+<!-- Google's multicolour G (the paths from app/views/packages/logos/_google.html.erb),
+     FILLS ONLY: ImageMagick's internal SVG renderer drops strokes (measured
+     2026-09-25: a 6px stroke rendered as nothing), so the disc behind it is
+     drawn by the tiles step of bin/workspace-icon, like every other software tile. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <g transform="translate(232 232) scale(11.6667)">
     <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>

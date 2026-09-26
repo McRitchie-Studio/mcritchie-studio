@@ -37,7 +37,15 @@ module WorkspaceIcon
   ASSET_DIR = "app/assets/images/workspace_icons"
   DEFAULT_SOFTWARE = "1password"
 
+  # A 1Password vault upload wants the full 1024; the matrix shows a cell at
+  # 64px, so the committed assets render at 256 (sharp at 4x, ~40KB each).
   DEFAULT_SIZE = 1024
+  ASSET_SIZE = 256
+  # Software tiles: each brand mark centred on a white disc shaped like the
+  # 1Password icon. The disc radii are fractions of the tile's edge.
+  TILE_SIZE = 512
+  TILE_DISC = [ [ "#8A8A8A", 0.448 ], [ "#FFFFFF", 0.442 ], [ "#E3E5E8", 0.3965 ], [ "#F5F6F8", 0.3926 ] ].freeze
+  TILE_MARK = 0.50
   MIN_SIZE = 64
   MAX_SIZE = 4096
 
@@ -85,7 +93,17 @@ module WorkspaceIcon
     end
   end
 
-  def software_logo(key, path = CONFIG) = File.join(ROOT, software(key, path).fetch("logo"))
+  # The tile a software's badged icons are drawn on — built from its mark by
+  # #build_tile!, and served as the matrix's row icon.
+  def software_logo(key, path = CONFIG)
+    # A mark that is already an icon (1Password) is drawn from the full-size
+    # original, so a 1024px vault upload is not an upscaled 512px tile.
+    software(key, path).fetch("tile", true) ? tile_path(key) : mark_path(key, path)
+  end
+
+  def tile_path(key) = File.join(ROOT, ASSET_DIR, "software", "#{key}.png")
+
+  def mark_path(key, path = CONFIG) = File.join(ROOT, software(key, path).fetch("mark"))
 
   def asset_path(software_key, scope) = File.join(ROOT, ASSET_DIR, software_key.to_s, "#{scope}.png")
 
@@ -158,6 +176,57 @@ module WorkspaceIcon
 
   # -draw's circle takes a centre and ANY point on the edge.
   def circle(cx, cy, r) = "circle #{cx},#{cy} #{cx},#{cy - r}"
+
+  # An SVG's viewBox width, so the render density can be picked to land the mark
+  # near the size it will be drawn at: a 24-unit Simple Icons mark and a
+  # 1024-unit tile need densities 40x apart.
+  def svg_width(file)
+    box = File.read(file)[/viewBox="([^"]+)"/, 1]
+    box ? box.split(/[\s,]+/)[2].to_f : 24.0
+  end
+
+  # The argv that turns one mark into its tile. `tile: false` marks (1Password)
+  # are already an icon and are only resized.
+  def tile_command(mark:, out:, tile: true, size: TILE_SIZE, bin: "magick")
+    box = (size * TILE_MARK).round
+    read = if File.extname(mark).casecmp?(".svg")
+             # Floor of 96 so a large-canvas mark is never rendered coarser
+             # than it was drawn.
+             # +size first: the tile canvas's `-size` is a SETTING, and the SVG
+             # reader takes it as the render canvas, cropping any mark wider than
+             # the tile (Google's 1024-unit canvas came out a quarter-G).
+             [ "+size", "-background", "none", "-density", [ ((72.0 * box * 2) / svg_width(mark)).round, 96 ].max.to_s, mark ]
+           else
+             [ "#{mark}[0]" ]
+           end
+    return [ bin, *read, "-resize", "#{size}x#{size}", "-background", "none", "-gravity", "center",
+             "-extent", "#{size}x#{size}", "PNG32:#{out}" ] unless tile
+
+    c = size / 2
+    disc = TILE_DISC.flat_map { |color, r| [ "-fill", color, "-draw", circle(c, c, (size * r).round) ] }
+    [
+      bin, "-size", "#{size}x#{size}", "xc:none", *disc,
+      "(", *read, "-trim", "+repage", "-resize", "#{box}x#{box}", ")",
+      "-gravity", "center", "-compose", "over", "-composite", "PNG32:#{out}"
+    ]
+  end
+
+  def build_tile!(key, path = CONFIG)
+    bin = binary
+    raise Error, "ImageMagick is not installed (need `magick` or `convert`)" if bin.nil?
+
+    entry = software(key, path)
+    mark = mark_path(key, path)
+    raise Error, "no such mark for #{key}: #{mark}" unless File.file?(mark)
+
+    out = tile_path(key)
+    Dir.exist?(File.dirname(out)) || raise(Error, "output directory does not exist: #{File.dirname(out)}")
+    _o, err, status = Open3.capture3(*tile_command(mark: mark, out: out, tile: entry.fetch("tile", true), bin: bin))
+    raise Error, "ImageMagick failed on #{key}: #{err.strip}" unless status.success?
+
+    verify!(out, size: TILE_SIZE, bin: bin)
+    out
+  end
 
   # The badge logo's alpha-weighted average colour, as #rrggbb. Used when the
   # workspace names no accent, so the ring matches the logo it frames.
