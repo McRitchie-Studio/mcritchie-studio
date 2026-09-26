@@ -163,8 +163,8 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   test "[unit] dads-app registers CI's full suite as test_cmd and no QA gate" do
-    assert_equal "bin/rails test:all", Release::Repos.test_cmd("dads-app"),
-                 "git_push_heroku runs no tests — test_cmd is the last gate and must be CI's full suite"
+    assert_equal "bin/rails test", Release::Repos.test_cmd("dads-app"),
+                 "test_cmd is dads-app's CI `test` job verbatim; its system tier runs in the `system-test` job"
     assert_nil Release::Repos.qa_test_cmd("dads-app"),
                "dads-app has no QA app; a qa_test_cmd would make its QA exemption stale"
     assert Release::Repos.qa_evidence_exempt?("dads-app"),
@@ -172,19 +172,15 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   # No ActiveRecord, so no `db:test:prepare` task: a gate string carrying it would
-  # fail in dads-app's own CI before a single test ran. The system tier stays in,
-  # or a slideshow regression could ride to production past a green gate.
-  #
-  # And NOT `bin/rails test test:system`: without a leading rake task, Rails 8.1's
-  # TestCommand loads `test:system` as a file path and raises LoadError. `test:all`
-  # is the one-command spelling of both tiers.
-  test "[unit] dads-app's gate names both tiers and no database step" do
+  # fail in dads-app's own CI before a single test ran. And NOT a joined
+  # `bin/rails test test:system`: without a leading rake task, Rails 8.1's
+  # TestCommand loads `test:system` as a file path and raises LoadError.
+  test "[unit] dads-app's gate has no database step and no task-as-path argument" do
     argv = Shellwords.split(Release::Repos.test_cmd("dads-app"))
 
-    assert_equal %w[bin/rails test:all], argv
     assert_empty argv.grep(/\Adb:/), "dads-app has no database, so its gate must not prepare one"
-    assert_not_equal "test", argv[1],
-                     "a bare `bin/rails test <task>` treats the task as a path; lead with a task or use test:all"
+    assert_empty argv.drop(2).grep(/\Atest:/),
+                 "a bare `bin/rails test <task>` treats the task as a path and raises LoadError"
   end
 
   test "app_meta returns the app's registry metadata" do
@@ -611,15 +607,20 @@ class Release::ReposTest < ActiveSupport::TestCase
   # is held against origin/accepted, the branch that will ship next, rather than
   # passed over.
   #
-  # dads-app has no database, so its suite step carries no db:test:prepare; it is
-  # anchored on `bin/rails test` instead (which `bin/rails test:all` contains and a
-  # `tailwindcss:build` step does not). Its ci.yml was still being built (build-dads-app-slideshow) when its
-  # test_cmd was pinned on 2026-09-26, so it too falls back to origin/accepted, and
-  # this binds the moment that ci.yml lands there.
+  # dads-app has no database, so its suite steps carry no db:test:prepare; they are
+  # anchored on `bin/rails test`, which both contain and a `tailwindcss:build` step
+  # does not. It SPLITS its suite across two jobs (the Rails 8.1 generator
+  # default): `test` must equal its registry test_cmd, and `system-test` must run
+  # `bin/rails test:system`. The ship gate reads CI's full settled verdict for the
+  # frozen SHA (all five dads-app jobs), so the system tier gates production even
+  # though test_cmd names only the `test` job; this guard is what keeps that job
+  # from being dropped or narrowed unseen. Its release branch carried no ci.yml on
+  # 2026-09-26, so it falls back to origin/accepted like cyvasse.
   GIT_PUSH_HEROKU_GATES = {
     "mcritchie-industries" => { field: :qa_test_cmd, anchor: "db:test:prepare", fallback: false },
     "cyvasse" => { field: :test_cmd, anchor: "db:test:prepare", fallback: true },
-    "dads-app" => { field: :test_cmd, anchor: "bin/rails test", fallback: true }
+    "dads-app" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
+                    companion_jobs: { "system-test" => "bin/rails test:system" } }
   }.freeze
 
   test "git_push_heroku satellites' gates run their CI test command verbatim" do
@@ -630,6 +631,12 @@ class Release::ReposTest < ActiveSupport::TestCase
       next unless ci
 
       assert_equal ci, Release::Repos.public_send(field, repo), "#{repo}'s #{field} must run its CI suite, verbatim"
+      (gate[:companion_jobs] || {}).each do |job, expected|
+        companion = sibling_ci_test_command(repo, anchor: anchor, job: job) ||
+                    (gate[:fallback] && sibling_ci_test_command(repo, anchor: anchor, job: job, ref: "origin/accepted"))
+        assert_equal expected, companion,
+                     "#{repo}'s ci.yml `#{job}` job must run #{expected} — together with `test` it covers the suite"
+      end
       repo
     end
     skip "no git_push_heroku satellite checkout present (hub CI runner) — shape guards above still bind" if checked.empty?
@@ -741,7 +748,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     # ci.yml on a feature branch would turn THE HUB's gate red for a change that is
     # nowhere near the release. The registry gates the code that SHIPS, so it is held
     # against the branch that ships.
-    def sibling_ci_test_command(repo, anchor: "bin/rails", ref: "origin/release")
+    def sibling_ci_test_command(repo, anchor: "bin/rails", ref: "origin/release", job: "test")
       root = projects_root
       return nil if root.nil?
 
@@ -751,9 +758,9 @@ class Release::ReposTest < ActiveSupport::TestCase
       return nil unless ok.success?
 
       ci    = YAML.safe_load(raw, aliases: true)
-      steps = ci.dig("jobs", "test", "steps") || []
+      steps = ci.dig("jobs", job, "steps") || []
       run   = steps.filter_map { |s| s["run"] }.find { |c| c.include?(anchor) }
-      assert run.present?, "#{repo}'s ci.yml `test` job no longer has a #{anchor} step — the guard is blind"
+      assert run.present?, "#{repo}'s ci.yml `#{job}` job no longer has a #{anchor} step — the guard is blind"
       run.strip
     end
 

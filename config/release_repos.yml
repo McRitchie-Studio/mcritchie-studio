@@ -737,21 +737,22 @@ apps:
     # `db:test:prepare` in it, unlike every other app here: with no ActiveRecord
     # the task does not exist.
     #
-    # `test:all`, NOT the hub's `test test:system` spelling. The hub's string
-    # works only because its FIRST word is the rake task `db:test:prepare`, which
-    # routes every word after it through rake. Drop that word and
-    # `bin/rails test test:system` reaches Rails 8.1's TestCommand, which loads
-    # `test:system` as a FILE PATH and dies with `LoadError: cannot load such
-    # file -- <root>/test:system` (measured 2026-09-26). `bin/rails test:all` is
-    # railties' one-command spelling of both tiers (`test/**/*_test.rb`, system
-    # tests included).
+    # dads-app SPLITS its suite across two CI jobs (the Rails 8.1 generator
+    # default, dads-app PR #1, on its accepted at 8a2483c): `test` runs
+    # `bin/rails test` and `system-test` runs `bin/rails test:system`. This
+    # string is the `test` job's command VERBATIM; the system tier lives in the
+    # `system-test` job and is NOT lost, because the ship gate reads CI's full
+    # settled verdict for the frozen SHA, all five jobs (lint, scan_ruby,
+    # scan_js, test, system-test), not this string. repos_test.rb holds BOTH
+    # jobs: `test` equal to this string and `system-test` running
+    # `bin/rails test:system`, so dropping or narrowing either goes red.
     #
-    # Pinned 2026-09-26 BEFORE dads-app's ci.yml reached its accepted (the
-    # sibling task build-dads-app-slideshow is building it). repos_test.rb holds
-    # this string against the `test` job of dads-app's own ci.yml the moment it
-    # lands, so a drift on either side goes red rather than shipping a narrower
-    # gate.
-    test_cmd: bin/rails test:all
+    # Do NOT "fix" the split by joining it here as `bin/rails test test:system`:
+    # the hub's spelling works only because its FIRST word is the rake task
+    # `db:test:prepare`. Without it Rails 8.1's TestCommand loads `test:system`
+    # as a FILE PATH and dies with `LoadError: cannot load such file --
+    # <root>/test:system` (measured 2026-09-26).
+    test_cmd: bin/rails test
     #
     # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
     # EXEMPT, ON COST, BY OPERATOR DECISION. This is cyvasse's kind of exemption,
