@@ -303,6 +303,21 @@ Rails.application.routes.draw do
       post :make_default_appearance
       post :attach_artifact
     end
+
+    # ONE LOOK'S CHARACTER MODEL. Nested because a look has no meaning without its
+    # person, and PATHED as "models" because that is the word the person page and
+    # the operator both use for a look — `/people/drew-lock/models/look-abc123`.
+    #
+    # #show is a free read. #search buys one image-search query and #mint buys one
+    # character identity, which is why both are POSTs behind the session the
+    # person page's own mutations sit behind.
+    resources :appearances, path: "models", param: :slug, only: [:show] do
+      member do
+        post :search
+        post :mint
+        post :refresh
+      end
+    end
   end
 
   # NFL hub + rankings (SEO-friendly URLs)

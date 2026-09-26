@@ -14,6 +14,14 @@ class Appearance < ApplicationRecord
   belongs_to :team, foreign_key: :team_slug, primary_key: :slug, optional: true
   has_many :artifact_subjects, foreign_key: :appearance_slug, primary_key: :slug, dependent: :nullify
 
+  # THE PHOTOGRAPHS WE FOUND OF THIS PERSON, chosen and rejected both. DESTROYED
+  # with the look rather than nullified, unlike the artifacts above: an artifact is
+  # a picture that outlives the look it was filed under, while a candidate
+  # photograph means nothing without the look whose identity it was judged for.
+  has_many :reference_photos, class_name: "AppearanceReferencePhoto",
+           foreign_key: :appearance_slug, primary_key: :slug,
+           inverse_of: :appearance, dependent: :destroy
+
   validates :slug, presence: true, uniqueness: true
   validates :person_slug, :descriptor, presence: true
 
@@ -67,6 +75,29 @@ class Appearance < ApplicationRecord
   def higgsfield_reference_pending?
     higgsfield_reference_id.present? &&
       Appearances::CreateCharacterReference::PENDING_STATUSES.include?(higgsfield_reference_status)
+  end
+
+  # HOW MANY PHOTOGRAPHS THE IDENTITY WOULD BE BUILT FROM RIGHT NOW.
+  #
+  # Asked through Appearances::ReferenceSet rather than counted off
+  # `reference_photos`, because the floor — the cached headshot and the operator's
+  # URL — is derived rather than filed. Counting the table alone would report 0 for
+  # every look that has never been searched, which is exactly the look the operator
+  # opens first.
+  def reference_photo_count = Appearances::ReferenceSet.call(self).length
+
+  # ONE WORD FOR THE PAGE'S STATUS CHIP, and it is not the raw column.
+  #
+  # The column is nil for a look nobody has minted, and may hold a word the vendor
+  # invented that we have never seen. Both are real states the page must name, and
+  # neither has a value in the column to name it with — so the mapping lives here
+  # instead of as a chain of conditionals in the view.
+  def higgsfield_reference_state
+    return :none if higgsfield_reference_id.blank?
+    return :ready if higgsfield_reference_ready?
+    return :pending if higgsfield_reference_pending?
+
+    :unknown
   end
 
   def display_label

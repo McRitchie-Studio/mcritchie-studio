@@ -83,14 +83,13 @@ module Appearances
     # (422 `url_parsing` on a relative URL, measured 2026-09-24), so a malformed
     # entry costs a paid round-trip; worse, a `localhost` or private-range URL
     # from the operator's form would be asking someone else's server to probe our
-    # network. Studio::ImageCache already encodes exactly that judgement for the
-    # fetches WE make, so this reuses it rather than writing a second, divergent
-    # opinion about what an unsafe URL is.
-    def fetchable?(url)
-      Studio::ImageCache.validate_source_url!(url)
-      true
-    rescue Studio::ImageCache::InvalidSourceURL, URI::InvalidURIError
-      false
-    end
+    # network.
+    #
+    # THE JUDGEMENT ITSELF MOVED TO Appearances::FetchableUrl once the image
+    # search gained the same question about URLs a third party handed us — and
+    # those are the more dangerous of the two, because nobody looked at them. One
+    # opinion, two callers; this delegates rather than keeping a private copy that
+    # would drift the day the engine tightens its ranges.
+    def fetchable?(url) = FetchableUrl.ok?(url)
   end
 end

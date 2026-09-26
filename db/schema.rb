@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_26_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -168,6 +168,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_120000) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_agents_on_slug", unique: true
     t.index ["status"], name: "index_agents_on_status"
+  end
+
+  create_table "appearance_reference_photos", force: :cascade do |t|
+    t.string "appearance_slug", null: false
+    t.boolean "chosen", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "found_at"
+    t.integer "height"
+    t.text "image_url", null: false
+    t.text "page_url"
+    t.integer "position"
+    t.text "query"
+    t.string "rejection_reason"
+    t.string "slug", null: false
+    t.string "source", null: false
+    t.text "title"
+    t.datetime "updated_at", null: false
+    t.integer "width"
+    t.index ["appearance_slug", "chosen"], name: "index_reference_photos_per_look"
+    t.index ["appearance_slug", "image_url"], name: "index_reference_photos_unique_per_look", unique: true
+    t.index ["slug"], name: "index_appearance_reference_photos_on_slug", unique: true
   end
 
   create_table "appearances", force: :cascade do |t|
