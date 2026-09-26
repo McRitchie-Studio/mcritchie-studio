@@ -82,7 +82,9 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
   const onboarding = page.getByRole("dialog", { name: "onboarding first name" });
 
   // Two apps from one admin account: the second must queue too (showcase exemption).
-  for (const name of ["prisoners-dilemma", "weekly-lock"]) {
+  // Unregistered names: the real showcase apps (prisoners-dilemma, weekly-lock, ...)
+  // have config/satellites.yml rows, so their subdomains are reserved.
+  for (const name of ["coin-toss", "trivia-night"]) {
     await page.goto("/build");
     if (await onboarding.isVisible().catch(() => false)) {
       await onboarding.getByRole("button", { name: "Skip for now" }).click();
