@@ -57,7 +57,7 @@
                         <%= image_tag icon, alt: "#{domain} Google Workspace, delegation #{status}",
                                             class: "w-16 h-16 #{'opacity-40 grayscale' unless status == 'active'}", data: { test: "google-icon" } %>
                       <% else %>
-                        <div class="w-16 h-16 rounded-full border-2 border-dashed border-subtle flex items-center justify-center text-[10px] leading-tight text-muted p-2"
+                        <div class="w-16 h-16 rounded-full border-2 border-dashed border-subtle flex items-center justify-center text-center text-[10px] leading-tight text-muted p-2"
                              data-test="google-icon-missing">No badge</div>
                       <% end %>
                     </div>
