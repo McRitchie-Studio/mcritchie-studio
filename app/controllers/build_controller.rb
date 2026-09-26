@@ -23,14 +23,23 @@ class BuildController < ApplicationController
   def create
     request_row = AppRequest.new(prompt: params.dig(:app_request, :prompt), user: (current_user if logged_in?))
     unless request_row.save
-      redirect_to build_path, alert: request_row.errors.full_messages.to_sentence
+      message = request_row.errors.full_messages.to_sentence
+      respond_to do |format|
+        format.json { render json: { error: message }, status: :unprocessable_entity }
+        format.html { redirect_to build_path, alert: message }
+      end
       return
     end
 
     # Kept for Google sign-in, which always lands on the home page: the home
     # page forwards a just-signed-in visitor here once (LandingController).
     session[:build_draft_token] = request_row.token unless logged_in?
-    redirect_to build_request_path(request_row.token)
+    respond_to do |format|
+      # The composer asks for JSON when the visitor is signed out: it stays on
+      # the page and opens the sign-in modal, whose emailed link returns to `path`.
+      format.json { render json: { token: request_row.token, path: build_request_path(request_row.token) }, status: :created }
+      format.html { redirect_to build_request_path(request_row.token) }
+    end
   end
 
   def show

@@ -38,6 +38,19 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-echo']", text: PROMPT
   end
 
+  test "the signed-out composer gets JSON back: the draft's token and path, for the sign-in modal" do
+    post build_path, params: { app_request: { prompt: PROMPT } }, as: :json
+    draft = AppRequest.recent.first
+
+    assert_response :created
+    assert_equal({ "token" => draft.token, "path" => build_request_path(draft.token) }, response.parsed_body)
+    assert draft.draft?
+
+    post build_path, params: { app_request: { prompt: " " } }, as: :json
+    assert_response :unprocessable_entity
+    assert_match(/Prompt/, response.parsed_body["error"])
+  end
+
   test "the prompt survives an emailed sign-in link and lands on the name step" do
     draft = send_prompt
     user = users(:viewer)

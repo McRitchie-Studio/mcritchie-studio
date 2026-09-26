@@ -1,0 +1,62 @@
+<%# Sign in / create an account, as a modal. Mounted by the modal host's
+    <template x-if="id==='auth'"> — single root. The engine ships no auth card on
+    purpose (which methods, whose copy are this app's product decisions); this is
+    the hub's, built the way check_inbox is.
+
+    Open it from anywhere:
+      $store.modals.open('auth', { returnTo: '/build/<token>', title: '…', subtitle: '…' })
+
+    props.returnTo — where the emailed link lands after sign-in (kept to a
+                     same-origin path by the server). Google cannot carry it: a
+                     page that needs Google to come back must also leave itself
+                     in the session (see LandingController and /build).
+    props.title / props.subtitle — optional copy; sensible defaults below. %>
+<div x-data="{
+       email: '', sending: false, error: '',
+       get props() { var c = $store.modals.current(); return (c && c.props) || {}; },
+       get title() { return this.props.title || 'Sign in to McRitchie Studio'; },
+       get subtitle() { return this.props.subtitle || 'New here? The same step creates your free account.'; },
+       async submit() {
+         if (!this.email || this.sending) return;
+         this.error = ''; this.sending = true;
+         try {
+           await window.postMagicLink(this.email, this.props.returnTo);
+           $store.modals.open('check-inbox', { sentEmail: this.email });
+         } catch (e) {
+           this.error = 'Could not send the link — check your connection and try again.';
+         } finally { this.sending = false; }
+       }
+     }"
+     class="text-left" data-test="auth-modal">
+  <div class="flex items-start justify-between gap-4 mb-5">
+    <div>
+      <h3 class="text-heading font-bold text-xl" x-text="title">Sign in to McRitchie Studio</h3>
+      <p class="text-secondary text-sm mt-1" x-text="subtitle"></p>
+    </div>
+    <button type="button" @click="$store.modals.close()" class="text-muted hover:text-heading -mt-1" aria-label="Close" data-test="auth-close">
+      <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+
+  <%= button_to "/auth/google_oauth2", method: :post, data: { turbo: false, test: "auth-google" },
+        class: "btn btn-neutral btn-lg w-full gap-3" do %>
+    <%= render "components/google_logo" %>
+    Continue with Google
+  <% end %>
+
+  <div class="relative my-5">
+    <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-strong"></div></div>
+    <div class="relative flex justify-center text-sm"><span class="bg-surface px-3 text-secondary">or</span></div>
+  </div>
+
+  <form @submit.prevent="submit()" novalidate data-test="auth-email-form">
+    <label for="auth-email" class="block text-sm text-secondary mb-2 font-medium">Email</label>
+    <input type="email" id="auth-email" x-model="email" x-init="$nextTick(() => $el.focus())" required
+           class="input-field mb-4" placeholder="you@example.com" autocomplete="email">
+    <button type="submit" :disabled="sending || !email" class="btn btn-primary btn-lg w-full disabled:cursor-wait disabled:opacity-60">
+      <span x-text="sending ? 'Sending…' : 'Email me a sign-in link'">Email me a sign-in link</span>
+    </button>
+    <p x-show="error" x-cloak class="text-xs text-red-400 text-center mt-2" x-text="error"></p>
+    <p class="text-xs text-muted text-center mt-2">One tap from your inbox, no password.</p>
+  </form>
+</div>

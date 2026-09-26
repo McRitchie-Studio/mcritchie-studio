@@ -8,47 +8,19 @@
   </div>
 
   <% if req.draft? && !logged_in? %>
-    <%# STEP 1 — register. The emailed link returns to THIS page (the draft's
-        token rides return_to), so the prompt survives even when the email is
-        opened on another device. Google always lands on the home page, which
-        forwards back here once (session[:build_draft_token]). %>
-    <div class="rounded-3xl border border-subtle bg-surface p-6 sm:p-8" data-test="build-register">
-      <h1 class="text-2xl font-bold text-heading mb-1">Create your free account to build it</h1>
-      <p class="text-muted mb-6">Your description is saved. Sign in and you'll pick your app's name next.</p>
-
-      <%= button_to "/auth/google_oauth2", method: :post, data: { turbo: false },
-            class: "btn btn-neutral btn-lg w-full gap-3" do %>
-        <%= render "components/google_logo" %>
-        Continue with Google
-      <% end %>
-
-      <div class="relative my-6">
-        <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-strong"></div></div>
-        <div class="relative flex justify-center text-sm"><span class="bg-surface px-3 text-secondary">or</span></div>
-      </div>
-
-      <form x-data="{
-              sending: false, error: '',
-              async submit(email) {
-                if (!email || this.sending) return;
-                this.error = ''; this.sending = true;
-                try {
-                  await window.postMagicLink(email, <%= build_request_path(req.token).to_json %>);
-                  $store.modals.open('check-inbox', { sentEmail: email });
-                } catch (e) {
-                  this.error = 'Could not send the link — check your connection and try again.';
-                } finally { this.sending = false; }
-              }
-            }"
-            @submit.prevent="submit($refs.email.value)" novalidate data-test="build-email-form">
-        <label for="build-email" class="block text-sm text-secondary mb-2 font-medium">Email</label>
-        <input type="email" id="build-email" x-ref="email" required class="input-field mb-4" placeholder="you@example.com">
-        <button type="submit" :disabled="sending" class="btn btn-primary btn-lg w-full disabled:cursor-wait">
-          <span x-text="sending ? 'Sending…' : 'Email me a sign-in link'">Email me a sign-in link</span>
-        </button>
-        <p x-show="error" x-cloak class="text-xs text-red-400 text-center mt-2" x-text="error"></p>
-        <p class="text-xs text-muted text-center mt-2">One tap from your inbox, no password. It brings you straight back here.</p>
-      </form>
+    <%# STEP 1 — register, in the standard sign-in modal (modals/_auth). It opens
+        on arrival; the button reopens it. The emailed link returns to THIS page
+        (the draft's token rides returnTo), so the prompt survives even when the
+        email is opened on another device. Google always lands on the home page,
+        which forwards back here once (session[:build_draft_token]). %>
+    <% modal_props = { returnTo: build_request_path(req.token), title: "Create your free account",
+                       subtitle: "Your description is saved. Sign in and you'll pick your app's name next." } %>
+    <div class="rounded-3xl border border-subtle bg-surface p-6 sm:p-8 text-center" data-test="build-register"
+         x-data x-init="$nextTick(() => $store.modals.open('auth', <%= modal_props.to_json %>))">
+      <h1 class="text-2xl font-bold text-heading mb-1">Sign in to build it</h1>
+      <p class="text-muted mb-6">Your description is saved. Create your free account and you'll pick your app's name next.</p>
+      <button type="button" class="btn btn-primary btn-lg" data-test="build-open-auth"
+              @click="$store.modals.open('auth', <%= modal_props.to_json %>)">Create free account</button>
     </div>
 
   <% elsif req.draft? %>

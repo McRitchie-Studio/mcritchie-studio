@@ -13,6 +13,15 @@ class BuildViewTest < ActionView::TestCase
     view.define_singleton_method(:current_user) { user }
   end
 
+  test "signed out, the composer opens the sign-in modal instead of leaving the page" do
+    signed_in(nil)
+    @draft = nil
+    render template: "build/new"
+
+    assert_select "[data-test='build-form'][x-data='buildComposer(false)']"
+    assert_includes rendered, "Alpine.store('modals').open('auth'"
+  end
+
   test "the composer: a labelled prompt, Enter-to-send, a send button and examples" do
     signed_in(nil)
     @draft = nil
@@ -25,15 +34,26 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-examples'] button", 4
   end
 
-  test "signed out, a draft asks the visitor to register and echoes their prompt" do
+  test "signed out, a draft opens the standard sign-in modal and echoes their prompt" do
     signed_in(nil)
     @app_request = AppRequest.create!(prompt: "A client portal")
     render template: "build/show"
 
     assert_select "[data-test='build-echo']", text: "A client portal"
-    assert_select "[data-test='build-register'] form[action='/auth/google_oauth2']"
-    assert_includes rendered, @app_request.token, "the emailed link must return to this draft"
+    register = css_select("[data-test='build-register']").first
+    assert_includes register["x-init"], "$store.modals.open('auth'", "sign-in is the modal, not an inline form"
+    assert_includes register["x-init"], build_request_path(@app_request.token), "the emailed link must return to this draft"
+    assert_select "[data-test='build-register'] form", 0, "no inline sign-in form"
+    assert_select "[data-test='build-open-auth']", 1
     assert_select "[data-test='build-claim']", 0
+  end
+
+  test "the auth modal card: Google, an email field, and returnTo passed to the magic link" do
+    render partial: "modals/auth"
+
+    assert_select "[data-test='auth-modal'] form[action='/auth/google_oauth2']"
+    assert_select "[data-test='auth-email-form'] input#auth-email[type='email']"
+    assert_includes rendered, "window.postMagicLink(this.email, this.props.returnTo)"
   end
 
   test "signed in, a draft asks for a name on the parent domain" do

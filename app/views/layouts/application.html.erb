@@ -74,9 +74,21 @@
       </div>
     <% end %>
 
-    <%# Modal host (engine) + the app's modal partials. Powers the "check your
-        inbox" magic-link confirmation and the first-name onboarding step. %>
+    <%# Modal host (engine) + the app's modal partials. Powers sign-in (auth),
+        the "check your inbox" magic-link confirmation and the first-name
+        onboarding step. %>
+    <%# Per-modal card widths, BY MODAL ID (studio-engine's registry): read by
+        the host when it renders, so this must come BEFORE the host. The sign-in
+        card needs more than the default max-w-sm for its Google button and
+        two-line title. %>
+    <script>
+      window.StudioModals = window.StudioModals || {};
+      window.StudioModals.CARD_WIDTHS = Object.assign({}, window.StudioModals.CARD_WIDTHS || {}, { 'auth': 'max-w-md' });
+    </script>
     <%= render "studio/modals/host" do %>
+      <template x-if="$store.modals.current().id === 'auth'">
+        <%= render "modals/auth" %>
+      </template>
       <template x-if="$store.modals.current().id === 'check-inbox'">
         <%= render "modals/check_inbox" %>
       </template>
