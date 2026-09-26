@@ -255,7 +255,7 @@ consumes `MCRITCHIE_AGENT_APP_ID` and `MCRITCHIE_AGENT_PRIVATE_KEY`, and a
 Dependabot-raised PR runs that workflow with the Dependabot copy.
 
 **Actions secrets, including environment secrets, are no longer operator-only.** On
-2026-09-26 the ship App was renamed `mcritchie-deployer` → `mcritchie-admin` and
+2026-09-26 the ship App was renamed `mcritchie-admin` and
 granted **Environments + Secrets read/write**; Alex accepted the install
 permissions. So the admin lane writes them itself, with the value on stdin and never
 in argv:

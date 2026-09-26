@@ -20,10 +20,9 @@ QA lane holds:
 | What | Where it comes from |
 |------|---------------------|
 | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` — the only token that reads the `studio-agents-admin` vault | `~/.zprofile.admin`, installed once per machine by `bin/setup-1pass-token --admin` |
-| `github.mcritchie-admin` — the ship GitHub App identity (renamed from `mcritchie-deployer` on 2026-09-26; same app id and key) | that vault, selected with `export GH_APP_ITEM=github.mcritchie-admin` |
+| `github.mcritchie-admin` — the ship GitHub App identity | that vault, selected with `export GH_APP_ITEM=github.mcritchie-admin` |
 
-The legacy item name `github.mcritchie-deployer` still mints during the transition,
-so a shell that exports it keeps working; export the new name.
+The App's pre-2026-09-26 item name is retired and refused; export the name above.
 
 You are **expected to hold both**; an absent one is this machine's setup gap. Remedy:
 **`source ~/.zprofile.admin`** (yours), or, on a machine that never had one,
