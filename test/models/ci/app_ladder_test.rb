@@ -67,8 +67,10 @@ module Ci
       # dads-app joined on 2026-09-26 — registered three-rung. Its ci.yml was
       # still being built when it registered; a suiteless three-rung repo still
       # draws a card (see the reversal above), so it is on the row either way.
-      assert_equal %w[cyvasse dads-app mcritchie-industries mcritchie-studio solana-studio studio-engine
-                      turf-monster turf-vault],
+      # prisoners-dilemma, weekly-lock, rantly and portfolio joined on 2026-09-26
+      # (task register-showcase-apps), registered three-rung like dads-app.
+      assert_equal %w[cyvasse dads-app mcritchie-industries mcritchie-studio portfolio prisoners-dilemma
+                      rantly solana-studio studio-engine turf-monster turf-vault weekly-lock],
                    Ci::AppLadder.reportable_repos.sort
     end
 
