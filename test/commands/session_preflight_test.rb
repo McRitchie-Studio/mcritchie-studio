@@ -360,6 +360,20 @@ def test_gh_auth_lane_is_read_from_gh_app_item
   assert_equal "deployer", gh_auth.fetch("lane")
 end
 
+# [unit] The legacy item name (the App was renamed 2026-09-26) is the same lane.
+def test_gh_auth_lane_reads_the_legacy_item_as_the_same_lane
+  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+  fake_bin = write_fake_gh
+
+  out, err, status = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}",
+           "GH_APP_ITEM" => "github.mcritchie-deployer" }
+  )
+  assert status.success?, "#{out}\n#{err}"
+  assert_equal "deployer", JSON.parse(out).fetch("gh_auth").fetch("lane")
+end
+
 # [integration] The whole path through the real script: a live credential reports ok
 # and leaves the PR read intact, and a dead one is diagnosed as AUTH rather than as
 # the absent PR it superficially resembles. This is the misdiagnosis the check exists
