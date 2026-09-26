@@ -85,22 +85,82 @@ class GhAppGitCredentialTest < Minitest::Test
     assert_includes log, "read op://studio-agents/github.mcritchie-agent/app-id"
   end
 
-  def test_gh_app_item_selects_the_deployer_identity
-    _out, _err, status = run_credential("get", env: { "GH_APP_ITEM" => "github.mcritchie-deployer" })
+  # BOTH NAMES, one assertion each. The App was renamed mcritchie-deployer ->
+  # mcritchie-admin on 2026-09-26; the legacy item still routes until it is retired
+  # from 1Password, so a shell exporting either name must reach the ADMIN vault.
+  ADMIN_LANE_ITEMS = %w[github.mcritchie-admin github.mcritchie-deployer].freeze
 
-    assert status.success?
+  def test_gh_app_item_selects_the_admin_lane_under_both_names
+    ADMIN_LANE_ITEMS.each do |item|
+      File.delete(File.join(@sandbox, "op.log")) if File.exist?(File.join(@sandbox, "op.log"))
+      _out, err, status = run_credential("get", env: { "GH_APP_ITEM" => item })
+
+      assert status.success?, "#{item}: #{err}"
+      log = File.read(File.join(@sandbox, "op.log"))
+      # THE ISOLATION, asserted rather than assumed: the admin lane resolves to a
+      # DIFFERENT vault than the agent. studio-agents carries the agent App item and
+      # NOT the admin App's, so collapsing these two onto one vault turns the build
+      # lane green while breaking production deploys silently. See bin/lib/op_vaults.rb.
+      assert_includes log, "item get #{item} --vault studio-agents-admin --format json"
+      # Boundary-aware since the entity-first rename: the agent vault's name
+      # ("studio-agents") is a SUBSTRING of the admin one ("studio-agents-admin"),
+      # so a bare-substring refute would forbid the correct vault too.
+      refute_match(/--vault studio-agents(?!-admin)/, log,
+                   "#{item} must never read from the agent vault")
+      assert_includes log, "read op://studio-agents-admin/#{item}/app-id"
+    end
+  end
+
+  # github.mcritchie-admin's key attachment is named `privatekeypem` (the dot was
+  # lost when the item was copied). The helper must pick it over an unrelated
+  # attachment, not fall back to whichever file happens to come first.
+  def test_attachment_named_privatekeypem_is_selected_over_a_note
+    File.write(File.join(@sandbox, "item.json"), JSON.generate(
+      { "files" => [{ "name" => "note.txt" }, { "name" => "privatekeypem" }] }
+    ))
+
+    _out, err, status = run_credential("get", env: { "GH_APP_ITEM" => "github.mcritchie-admin" })
+
+    assert status.success?, err
     log = File.read(File.join(@sandbox, "op.log"))
-    # THE ISOLATION, asserted rather than assumed: the deployer resolves to a
-    # DIFFERENT vault than the agent. studio-agents carries the agent App item and
-    # NOT the deployer's, so collapsing these two onto one vault turns the build
-    # lane green while breaking production deploys silently. See bin/lib/op_vaults.rb.
-    assert_includes log, "item get github.mcritchie-deployer --vault studio-agents-admin --format json"
-    # Boundary-aware since the entity-first rename: the agent vault's name
-    # ("studio-agents") is a SUBSTRING of the deployer's ("studio-agents-admin"),
-    # so a bare-substring refute would forbid the correct vault too.
-    refute_match(/--vault studio-agents(?!-admin)/, log,
-                 "the deployer must never read from the agent vault")
-    assert_includes log, "read op://studio-agents-admin/github.mcritchie-deployer/app-id"
+    assert_includes log, "read op://studio-agents-admin/github.mcritchie-admin/privatekeypem"
+    refute_includes log, "note.txt"
+  end
+
+  # A dotless `pem` suffix alone (no "private key" in the name) is still the key.
+  def test_a_dotless_pem_suffix_is_selected_over_a_note
+    File.write(File.join(@sandbox, "item.json"), JSON.generate(
+      { "files" => [{ "name" => "note.txt" }, { "name" => "mcritchie-adminpem" }] }
+    ))
+
+    _out, err, status = run_credential("get")
+
+    assert status.success?, err
+    assert_includes File.read(File.join(@sandbox, "op.log")), "read op://studio-agents/github.mcritchie-agent/mcritchie-adminpem"
+  end
+
+  def test_a_lone_attachment_is_used_whatever_its_name
+    File.write(File.join(@sandbox, "item.json"), JSON.generate({ "files" => [{ "name" => "key" }] }))
+
+    _out, err, status = run_credential("get")
+
+    assert status.success?, err
+    assert_includes File.read(File.join(@sandbox, "op.log")), "read op://studio-agents/github.mcritchie-agent/key"
+  end
+
+  # Several attachments and none of them names a key: refusing beats guessing,
+  # because a guess hands the minter a note and fails far from the cause.
+  def test_several_unnamed_attachments_refuse_rather_than_guess
+    File.write(File.join(@sandbox, "item.json"), JSON.generate(
+      { "files" => [{ "name" => "note.txt" }, { "name" => "readme.md" }] }
+    ))
+
+    out, err, status = run_credential("get")
+
+    refute status.success?
+    refute_includes out, "password="
+    assert_includes err, ".pem file attachment"
+    refute_includes File.read(File.join(@sandbox, "op.log")), "read op://studio-agents/github.mcritchie-agent/note.txt"
   end
 
   # The key is the .pem FILE attachment — the helper must pick it over other
@@ -165,6 +225,16 @@ class GhAppGitCredentialTest < Minitest::Test
 
       assert_includes err, "source ~/.zprofile.admin", "name the command, not the obstacle"
       refute_includes err, "setup-1pass-token", "installing is the wrong errand here"
+    end
+  end
+
+  # The legacy item name is still an admin-lane item during the transition, so it
+  # must get the same remedy, not fall silent as if it were an agent item.
+  def test_the_legacy_deployer_item_still_gets_the_admin_remedy
+    Dir.mktmpdir do |home|
+      File.write(File.join(home, ".zprofile.admin"), "# token\n")
+
+      assert_includes legacy_deployer_failure(home), "source ~/.zprofile.admin"
     end
   end
 
@@ -339,7 +409,8 @@ class GhAppGitCredentialTest < Minitest::Test
     path
   end
 
-  def deployer_failure(home) = credential_failure(home, "github.mcritchie-deployer")
+  def deployer_failure(home) = credential_failure(home, "github.mcritchie-admin")
+  def legacy_deployer_failure(home) = credential_failure(home, "github.mcritchie-deployer")
   def agent_failure(home) = credential_failure(home, "github.mcritchie-agent")
 
   # Drive the failure path with an `op` that always fails, so the message under
