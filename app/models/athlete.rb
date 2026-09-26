@@ -34,10 +34,19 @@ class Athlete < ApplicationRecord
   # WHERE THIS ATHLETE'S HEADSHOT VARIANTS LIVE IN S3. The folder is cosmetic —
   # it groups the objects by roster so a human can browse them — so a blank
   # team_slug falls back rather than stopping the upload. Reads team_slug, the
-  # athlete's OWN column, and not a Contract: production carries 2,048 athletes
+  # athlete's OWN column, and not a Contract: production carries 2,051 athletes
   # with a populated team_slug and ZERO rows in either `contracts` or `teams`
-  # (measured 2026-09-26), so a contract-derived folder is not merely indirect,
-  # it is unavailable.
+  # (measured 2026-09-26; 2,048 of those 2,051 also carry an espn_id, which is the
+  # candidate count `nfl:upload_headshots` prints and the number this comment used
+  # to give here), so a contract-derived folder is not merely indirect, it is
+  # unavailable.
+  #
+  # A CONTRACT-DERIVED FOLDER WAS TRIED ANYWAY, by hand, against production on the
+  # day this method merged: every lookup returned nil against those empty tables
+  # and all 2,043 athletes with a cached headshot were filed under `free-agents/`,
+  # rostered players included. `nfl:rekey_headshots` re-files them by calling THIS
+  # method, and `nfl:upload_headshots` cannot, because it grades completeness by
+  # variant presence and never by key.
   def headshot_key_prefix
     "headshots/nfl/#{team_slug.presence || HEADSHOT_TEAMLESS_FOLDER}/#{person_slug}"
   end

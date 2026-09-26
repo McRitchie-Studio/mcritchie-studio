@@ -86,7 +86,12 @@ Step 3 (nfl:players_seed) only caches headshots for athletes who appear in nflve
 
 This step closes both gaps.
 
-**Athletes** — uploads any Athlete with `espn_id` + `team_slug` but no cached variants:
+**Athletes** — uploads any Athlete with `espn_id` but no cached variants. A
+`team_slug` is NOT a precondition: it only names the S3 folder, and a blank one
+falls back to `free-agents/` (`Athlete#headshot_key_prefix`). It used to be a
+precondition, resolved through `person.contracts`, and because `contracts` is
+EMPTY in production that skipped all 2,048 candidates on every run while printing
+a clean summary — fixed 2026-09-26.
 
 ```bash
 op run --env-file=/Users/alex/projects/.env -- bin/rails nfl:upload_headshots > tmp/headshot_backfill.log 2>&1
@@ -103,6 +108,67 @@ tail -8 tmp/coach_backfill.log
 ```
 
 Expect: ~300-400 athletes newly cached + ~150 coaches (HC always, OC/DC/STC where NFL.com scrape captured a URL). Both tasks are idempotent.
+
+### Step 5b — Re-key headshots filed under the wrong folder
+
+Run this when Step 5 prints a non-zero `misfiled (stale key):` line, or warns
+`N athletes carry headshot rows filed under a stale key`.
+
+Step 5 decides "already done" from VARIANT PRESENCE — do `original`/`100`/`400`
+exist — and never from the key. So an athlete whose three variants sit under the
+WRONG folder is complete forever, and no amount of re-running Step 5 will move
+them. That is not hypothetical: a hand-rolled backfill on 2026-09-26 derived the
+folder from the empty `contracts` table and filed all 2,043 cached athletes under
+`free-agents/`, rostered players included.
+
+```bash
+op run --env-file=/Users/alex/projects/.env -- bin/rails nfl:rekey_headshots > tmp/rekey.log 2>&1
+echo "exit: $?"
+tail -12 tmp/rekey.log
+```
+
+On PRODUCTION, run it as a rake task on the deployed slug — never as a
+`rails runner` one-liner, which is the shortcut that caused the defect:
+
+```bash
+heroku run -x -a mcritchie-studio 'bin/rails nfl:rekey_headshots REKEY_LIMIT=25'   # one wave first
+heroku run -x -a mcritchie-studio 'bin/rails nfl:rekey_headshots'                  # then the rest
+```
+
+Expect: `re-keyed:` equal to the misfiled count Step 5 reported, `already filed:`
+everything else, and `failed: 0`. Idempotent — a second run re-keys nothing and
+says nothing. `REKEY_LIMIT=N` bounds the wave; `REKEY_KEEP_ORPHANS=1` repoints the
+rows and leaves the old objects in place.
+
+Nothing goes dark while it runs. Per athlete it copies every object to the new key
+FIRST, repoints all of that athlete's rows in one transaction SECOND, and deletes
+the old objects LAST — and only ones no `ImageCache` row still references. A
+failure at any step leaves every row pointing at an object that exists.
+
+Verify by re-running the repair rather than with a hand-written query: its own
+idempotence is the proof, and it touches neither ESPN nor S3 when there is nothing
+to move.
+
+```bash
+heroku run -x -a mcritchie-studio 'bin/rails nfl:rekey_headshots'
+# expect:  re-keyed: 0   ·   already filed: <every cached athlete>   ·   failed: 0
+```
+
+`re-keyed: 0` with `already filed` accounting for every athlete that owns a cached
+headshot IS "no misfiled row remains" — the task reaches that number by comparing
+each stored key against `Athlete#headshot_key_prefix`, which is the same
+comparison any audit would write. Do NOT verify by re-running Step 5 on
+production: it would attempt the handful of athletes that legitimately have no
+cached headshot, and on a warm machine a single dead ESPN URL among two attempts
+trips its majority rule and aborts a run that found nothing wrong.
+
+Then open one re-keyed avatar and confirm it still serves — the row is what
+resolves the URL, so a 200 here is the proof the repair kept serving intact:
+
+```bash
+curl -sI "$(heroku run -x -a mcritchie-studio 'bin/rails runner "print Athlete.find_by(person_slug: %q(jaxon-smith-njigba)).headshot_url"')" | head -1
+# expect: HTTP/1.1 200 OK  — and a URL containing /seattle-seahawks/, not /free-agents/
+```
 
 ### Step 5c — Compute proprietary Pass/Run grades
 

@@ -17,7 +17,7 @@ require "rake"
 class RebuildLaneVerdictTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("espn:scrape_depth_charts")
-    %w[espn:scrape_depth_charts nfl:upload_headshots nfl:rankings_compute].each do |name|
+    %w[espn:scrape_depth_charts nfl:upload_headshots nfl:rekey_headshots nfl:rankings_compute].each do |name|
       Rake::Task[name].reenable
     end
     @env_was = ENV.to_h.slice("SEASON", "GRADES_FROM", "TEAM", "VERBOSE",
@@ -286,6 +286,166 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     assert_equal 2, attempts, "the limit bounds the ATTEMPTS, which is the cost being bounded"
   end
 
+  # --- nfl:upload_headshots: the work it cannot SEE -------------------------
+  #
+  # [integration] The verdicts above grade what the run attempted. This grades
+  # whether it can even notice the 2,043 athletes it will never attempt again.
+
+  # THE THIRD HOLE, AND THE ONE THAT MADE THE SECOND ONE PERMANENT. "Already done"
+  # is decided from VARIANT PRESENCE, so an athlete whose three variants sit under
+  # the WRONG folder is complete forever and the centralized taxonomy never reaches
+  # them. MEASURED on production 2026-09-26: 2,043 of 2,043 cached athletes filed
+  # under `free-agents/`, every one of them skipped as complete on the next run.
+  # The task cannot repair that — it fetches and uploads, it does not move — so it
+  # must at least SAY so, and name the task that can.
+  test "the headshot upload names the re-key task for an athlete filed under a stale key" do
+    athlete = headshot_candidate(30, team_slug: "buffalo-bills")
+    cache_variants(athlete, %w[original 100 400],
+                   prefix: "headshots/nfl/free-agents/#{athlete.person_slug}")
+
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { flunk "a complete athlete must not be re-uploaded" }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_match(/1 athletes carry headshot rows filed under a stale key/, err)
+    assert_match(/rake nfl:rekey_headshots/, err, "name the task that fixes it, not just the symptom")
+    refute_match(/attempted 0 of/, err,
+                 "a stale folder name is not work this task declined — every variant IS present, " \
+                 "so `needed` is 0 and the uploader's own verdicts must stay quiet")
+  end
+
+  # THE GREEN TWIN IS ALREADY ABOVE — "a warm re-run with every headshot already
+  # cached stays green and says nothing" asserts stderr is EXACTLY empty, and its
+  # rows are filed under the correct prefix. That is what keeps this detector from
+  # warning on every healthy rebuild. This case pins the other direction: a row set
+  # that is INCOMPLETE and misfiled is reported as both, because the two counters
+  # answer different questions.
+  test "an incomplete misfiled athlete is counted as both misfiled and attempted" do
+    athlete = headshot_candidate(31, team_slug: "buffalo-bills")
+    cache_variants(athlete, %w[100 400],
+                   prefix: "headshots/nfl/free-agents/#{athlete.person_slug}")
+
+    attempts = 0
+    out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { attempts += 1; {} }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal 1, attempts, "a missing original is still work this task does"
+    assert_match(/misfiled \(stale key\):   1/, out)
+    assert_match(/rake nfl:rekey_headshots/, err)
+  end
+
+  # --- nfl:rekey_headshots -------------------------------------------------
+  #
+  # [integration] The repair for the rows above, graded on the same three numbers
+  # the uploader grades itself on.
+
+  # THE REAL THING, ACROSS THE DB BOUNDARY. A rostered Seahawk filed under
+  # `free-agents/` comes out under his own team, and the row — which is what serves
+  # the avatar — names an object that exists.
+  test "the re-key task moves a misfiled athlete onto their team folder" do
+    athlete = headshot_candidate(32, team_slug: "seattle-seahawks")
+    stale = "headshots/nfl/free-agents/#{athlete.person_slug}"
+    cache_variants(athlete, %w[original 100 400], prefix: stale)
+    objects = %w[original 100 400].index_with { |v| "bytes-#{v}" }
+                                  .transform_keys { |v| "#{stale}/#{v}.png" }
+
+    with_fake_bucket(objects) do |bucket|
+      capture_io { refute_aborts("nfl:rekey_headshots") { Rake::Task["nfl:rekey_headshots"].invoke } }
+
+      keys = athlete.image_caches.reload.map(&:s3_key)
+      assert_equal ["headshots/nfl/seattle-seahawks/#{athlete.person_slug}/100.png",
+                    "headshots/nfl/seattle-seahawks/#{athlete.person_slug}/400.png",
+                    "headshots/nfl/seattle-seahawks/#{athlete.person_slug}/original.png"], keys.sort
+      assert keys.all? { |key| bucket.key?(key) },
+             "every row names an object that exists — that is the property the whole ordering buys"
+      assert_empty bucket.keys.grep(/free-agents/), "and the orphans are gone"
+    end
+  end
+
+  # GRADED ON THE MAJORITY, exactly as the uploader is: more failures than
+  # successes is the mover not working, which from here is what an S3 permission
+  # failure looks like.
+  test "the re-key refuses a run where every move failed" do
+    _out, err = capture_io do
+      assert_raises(SystemExit) { rekey(considered: 2, rekeyed: 0, failed: 2) }
+    end
+
+    assert_match(/failed 2 of 2 attempted re-keys/, err)
+    assert_match(/AWS_ACCESS_KEY_ID/, err, "name the credential an operator goes and checks")
+    assert_match(/NO AVATAR WAS LOST/, err,
+                 "the ordering guarantees it, so the abort must say it — otherwise the operator's " \
+                 "first instinct is to go looking for missing images")
+  end
+
+  # THE GREEN TWIN. One unreadable object is an afternoon S3 is having; reddening
+  # the repair for it is how an operator learns to stop running it.
+  test "the re-key accepts a run where one move of three failed" do
+    completed = false
+    capture_io { refute_aborts("nfl:rekey_headshots") { rekey(considered: 3, rekeyed: 2, failed: 1) }; completed = true }
+
+    assert completed, "2 successes against 1 failure is one bad object, not a broken mover"
+  end
+
+  # NOTHING TO DO IS NOT A FAILURE, and `failed > rekeyed` must not fire on a tie
+  # at zero — the state a healthy ecosystem is in permanently once the repair has
+  # run.
+  test "the re-key accepts a run with nothing to move" do
+    completed = false
+    _out, err = capture_io { refute_aborts("nfl:rekey_headshots") { rekey }; completed = true }
+
+    assert completed, "a tie at zero is nothing to do"
+    assert_equal "", err
+  end
+
+  # THE WARM RE-RUN, which is what every run after the repair looks like: thousands
+  # of athletes, every key already correct. It must be silent, or the signal is
+  # worthless.
+  test "a re-key run where every key is already correct says nothing" do
+    completed = false
+    _out, err = capture_io { refute_aborts("nfl:rekey_headshots") { rekey(considered: 2051, already_filed: 2051) }; completed = true }
+
+    assert completed
+    assert_equal "", err, "`needed` subtracts the correctly filed out precisely so this stays quiet"
+  end
+
+  # FOUND THE WORK AND DECLINED IT. Structurally unreachable today — there is no
+  # `next` between the staleness check and the move — so this grades the VERDICT,
+  # which is the half that has to already exist when a skip branch is added later.
+  test "the re-key refuses a run that found misfiled rows and moved none of them" do
+    _out, err = capture_io do
+      assert_raises(SystemExit) { rekey(considered: 2, already_filed: 0) }
+    end
+
+    assert_match(/attempted 0 of 2 misfiled athletes/, err)
+    assert_match(/declining its job/, err)
+  end
+
+  # THE SAFETY CATCH IS REPORTED, NOT FATAL. Keeping an object a row still
+  # references is the SAFE outcome; it is still worth an operator's eye, because it
+  # means the repoint did not land where the service expected.
+  test "held orphans are reported without reddening the re-key" do
+    completed = false
+    _out, err = capture_io { refute_aborts("nfl:rekey_headshots") { rekey(considered: 1, rekeyed: 1, orphans_held: 3) }; completed = true }
+
+    assert completed, "an object that was KEPT is not a failed repair"
+    assert_match(/kept 3 old object\(s\)/, err)
+  end
+
+  # AN UNDELETED ORPHAN IS INERT: nothing references it, so it serves nothing and
+  # costs storage. Reported, never fatal — the repair itself succeeded.
+  test "an undeletable orphan is reported without reddening the re-key" do
+    completed = false
+    _out, err = capture_io { refute_aborts("nfl:rekey_headshots") { rekey(considered: 1, rekeyed: 1, orphans_failed: 2) }; completed = true }
+
+    assert completed
+    assert_match(/2 old object\(s\) could not be deleted/, err)
+  end
+
   # --- nfl:rankings_compute ------------------------------------------------
 
   # MEASURED BEFORE THE FIX: with AthleteGrade emptied, compute_all! wrote the
@@ -348,10 +508,10 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
   # mutation-testing this file: restoring the contract precondition made the run
   # print `# Running:` and nothing else. Naming it here turns that into a
   # readable failure attributed to the test that caused it.
-  def refute_aborts
+  def refute_aborts(task = "nfl:upload_headshots")
     yield
   rescue SystemExit => e
-    flunk "nfl:upload_headshots aborted a run it should have completed: #{e.message}"
+    flunk "#{task} aborted a run it should have completed: #{e.message}"
   end
 
   # A CANDIDATE IN THE PRODUCTION SHAPE: espn_id set, a team_slug on the athlete's
@@ -369,13 +529,44 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
                     espn_id: "9#{suffix}", espn_headshot_url: url)
   end
 
-  def cache_variants(athlete, variants)
+  # `prefix:` defaults to the key the model would write today, which is the shape
+  # a healthy row set has. Pass it explicitly to build the PRODUCTION shape after
+  # the 2026-09-26 backfill: complete variants filed under the wrong folder.
+  def cache_variants(athlete, variants, prefix: athlete.headshot_key_prefix)
     variants.each do |variant|
       ImageCache.create!(owner: athlete, purpose: "headshot", variant: variant,
-                         s3_key: "#{athlete.headshot_key_prefix}/#{variant}.png",
+                         s3_key: "#{prefix}/#{variant}.png",
                          content_type: "image/png")
     end
     athlete.reload
+  end
+
+  # THE TALLY-GRADING SEAM, the same one `scrape` above uses: the rake task's job
+  # is to READ a tally and decide, and the service's job is to produce one. Stubbed
+  # apart so each verdict can be exercised against the exact numbers that trigger
+  # it, including numbers no live run can currently produce.
+  def rekey(**tally)
+    stats = Hash.new(0).merge(tally)
+    fake = Object.new
+    fake.define_singleton_method(:call) { stats }
+    Athletes::RekeyHeadshots.stub(:new, ->(**) { fake }) do
+      Rake::Task["nfl:rekey_headshots"].invoke
+    end
+  end
+
+  # A BUCKET IN A HASH. The service's own unit test owns the ordering assertions;
+  # here it exists only so the rake task can be invoked across a real DB boundary
+  # without credentials.
+  def with_fake_bucket(objects)
+    Studio::S3.stub(:exists?, ->(key:) { objects.key?(key) }) do
+      Studio::S3.stub(:download, ->(key:) { objects.fetch(key) }) do
+        Studio::S3.stub(:upload, ->(key:, body:, **) { objects[key] = body; key }) do
+          Studio::S3.stub(:delete, ->(key:) { objects.delete(key); nil }) do
+            yield objects
+          end
+        end
+      end
+    end
   end
 
   def prepare_candidates(count)
