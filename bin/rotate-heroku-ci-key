@@ -1,0 +1,85 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# rotate-heroku-ci-key — rotate HEROKU_API_KEY, the key GitHub Actions deploys
+# mcritchie-studio with, on the `qa` and `production` environments, unattended:
+# mint, store, set, prove, revoke. The order and every guard are documented in
+# bin/lib/heroku_ci_key_rotation.rb; the procedure it automates is
+# docs/agents/agents/steffon/sops/credential-rotation.md.
+#
+#   source ~/.zprofile.admin              # without a pipe
+#   bin/rotate-heroku-ci-key --dry-run    # read-only preflight + the plan
+#   bin/rotate-heroku-ci-key              # the real rotation
+#
+# Needs the admin lane: HEROKU_STUDIO_ADMIN_API_KEY (the only Heroku key allowed to
+# create authorizations — the agents key is refused, observed 2026-09-26) and
+# OP_ADMIN_SERVICE_ACCOUNT_TOKEN (reads and writes studio-applications, and mints
+# the github.mcritchie-admin App token through bin/gh-token).
+#
+# Test seams: ROTATE_HEROKU_CI_KEY_API_BASE, ROTATE_HEROKU_CI_KEY_OP_BIN,
+# ROTATE_HEROKU_CI_KEY_GH_BIN, ROTATE_HEROKU_CI_KEY_GH_TOKEN_CMD,
+# ROTATE_HEROKU_CI_KEY_POLL_SECONDS.
+
+require "optparse"
+require_relative "lib/heroku_ci_key_rotation"
+
+dry_run = false
+parser = OptionParser.new do |o|
+  o.banner = "Usage: bin/rotate-heroku-ci-key [--dry-run]"
+  o.separator ""
+  o.separator "Rotates HEROKU_API_KEY on the qa and production environments of #{HerokuCiKeyRotation::REPO}:"
+  o.separator "mint -> store (1Password) -> set (GitHub) -> prove (no-op deploys) -> revoke the old key."
+  o.separator "Run `source ~/.zprofile.admin` first. Never prints a secret."
+  o.separator ""
+  o.on("--dry-run", "read-only preflight and the plan; mints, writes and dispatches nothing") { dry_run = true }
+  o.on("-h", "--help", "this text; does nothing else") do
+    puts o
+    exit 0
+  end
+end
+parser.parse!
+unless ARGV.empty?
+  warn "rotate-heroku-ci-key: unexpected argument(s): #{ARGV.join(' ')} — nothing was done."
+  warn parser
+  exit 2
+end
+
+def need(name)
+  value = ENV[name].to_s
+  return value unless value.strip.empty?
+
+  warn "rotate-heroku-ci-key: #{name} is not set in this shell — run `source ~/.zprofile.admin` " \
+       "(without a pipe) and retry. Nothing was done."
+  exit 1
+end
+
+admin_key = need("HEROKU_STUDIO_ADMIN_API_KEY")
+op_token = need("OP_ADMIN_SERVICE_ACCOUNT_TOKEN")
+
+secrets = [admin_key, op_token]
+shell = HerokuCiKeyRotation::Shell.new(->(text) { HerokuCiKeyRotation.redact(text, secrets) })
+
+begin
+  # The admin App's installation token, minted fresh (bin/gh-token never caches
+  # this lane). OP_ADMIN_SERVICE_ACCOUNT_TOKEN is already in the environment.
+  token_cmd = ENV.fetch("ROTATE_HEROKU_CI_KEY_GH_TOKEN_CMD", File.expand_path("gh-token", __dir__))
+  gh_token = shell.call([token_cmd], env: { "GH_APP_ITEM" => HerokuCiKeyRotation::GH_APP_ITEM }).strip
+  secrets << gh_token
+  unless gh_token.match?(/\Agh[su]_/)
+    raise HerokuCiKeyRotation::Abort, "bin/gh-token returned no #{HerokuCiKeyRotation::GH_APP_ITEM} token"
+  end
+
+  runner = HerokuCiKeyRotation::Runner.new(
+    heroku: HerokuCiKeyRotation::HerokuApi.new,
+    vault: HerokuCiKeyRotation::Vault.new(op_token: op_token, shell: shell),
+    github: HerokuCiKeyRotation::GitHub.new(token: gh_token, shell: shell),
+    admin_key: admin_key,
+    secrets: secrets,
+    poll_seconds: Integer(ENV.fetch("ROTATE_HEROKU_CI_KEY_POLL_SECONDS", "10"))
+  )
+  runner.call(dry_run: dry_run)
+  puts dry_run ? "DRY RUN — nothing was minted, written, dispatched or revoked." : "ROTATED."
+rescue HerokuCiKeyRotation::Abort => e
+  warn "rotate-heroku-ci-key: #{HerokuCiKeyRotation.redact(e.message, secrets)}"
+  exit 1
+end
