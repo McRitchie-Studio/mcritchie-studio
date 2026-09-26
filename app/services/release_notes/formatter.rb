@@ -11,7 +11,11 @@ module ReleaseNotes
       { key: "mcritchie-industries", label: "McRitchie Industries", emoji: "📐",
         aliases: ["mcritchie-industries"] },
       { key: "cyvasse", label: "Cyvasse", emoji: "🐉", aliases: ["cyvasse"] },
-      { key: "dads-app", label: "Dads App", emoji: "🎞️", aliases: ["dads-app"] }
+      { key: "dads-app", label: "Dads App", emoji: "🎞️", aliases: ["dads-app"] },
+      { key: "prisoners-dilemma", label: "Prisoners Dilemma", emoji: "🎲", aliases: ["prisoners-dilemma"] },
+      { key: "weekly-lock", label: "Weekly Lock", emoji: "🏈", aliases: ["weekly-lock"] },
+      { key: "rantly", label: "Rantly", emoji: "📣", aliases: ["rantly"] },
+      { key: "portfolio", label: "Portfolio", emoji: "🗂️", aliases: ["portfolio"] }
     ].freeze
 
     # Discord caps a single message at 10 embeds. The deploy header now rides in the
