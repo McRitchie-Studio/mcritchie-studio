@@ -721,15 +721,15 @@ apps:
     # that declares one anyway is skipped at QA (exempt, below) and runs on
     # `dads-app` at ship.
     #
-    # smoke_url is the herokuapp host, NOT greigmcritchie.com, on purpose: the
-    # domains are attached, but the Name.com records are Alex's step, and until
-    # they resolve a smoke against the custom host would abort the ship AFTER the
-    # push. Switch this to https://greigmcritchie.com once that host serves /up 200.
+    # smoke_url is the custom host since 2026-09-26, when the Name.com records
+    # resolved and ACM issued its certificate (https://greigmcritchie.com/up
+    # answered 200). It is the HOST, not /up: the ship smokes `<smoke_url>/up`
+    # itself (bin/release.rb), so a value ending in /up would probe /up/up.
     prod_deploy:
       strategy: git_push_heroku
       remote: https://git.heroku.com/dads-app.git
       branch: main
-      smoke_url: https://dads-app-7b5aef805731.herokuapp.com
+      smoke_url: https://greigmcritchie.com
     #
     # test_cmd is CI's `test` job suite, VERBATIM (git_push_heroku has NO test
     # step, so this IS the last gate before production; G4 reads CI's settled

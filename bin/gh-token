@@ -76,22 +76,17 @@ require_relative "lib/gh_identity"
 IDENTITIES = {
   # `lane` selects the VAULT and the TOKEN (see bin/lib/op_vaults.rb). The
   # deployer lane's credentials live in the admin vault and are deliberately
-  # unreadable from an ordinary agent shell. Its App is mcritchie-admin since
-  # 2026-09-26 (renamed from mcritchie-deployer; same app id and key).
+  # unreadable from an ordinary agent shell. Its App is mcritchie-admin.
   "agent" => { item: "github.mcritchie-agent", lane: :agent },
   "deployer" => { item: "github.mcritchie-admin", lane: :deployer }
 }.freeze
 
 # item => the name of its private-key FILE attachment, which `op read` addresses
-# by name. The names are not uniform: github.mcritchie-admin was copied from the
-# deployer item on 2026-09-26 and its attachment came out as `privatekeypem`. The
-# legacy github.mcritchie-deployer row stays until that item is retired, so a
-# shell still exporting the old name mints from the item it names
-# (GhIdentity.item_for_env) rather than being silently redirected.
+# by name. The names are not uniform: github.mcritchie-admin was copied on
+# 2026-09-26 and its attachment came out as `privatekeypem`.
 PEM_ATTACHMENTS = {
   "github.mcritchie-agent" => "mcritchie-agent.2026-07-29.private-key.pem",
-  "github.mcritchie-admin" => "privatekeypem",
-  "github.mcritchie-deployer" => "mcritchie-deployer.2026-07-29.private-key.pem"
+  "github.mcritchie-admin" => "privatekeypem"
 }.freeze
 
 # The lane this process belongs to, resolved by the shared map in bin/lib/gh_identity.rb
@@ -225,7 +220,7 @@ end
 def mint(identity)
   meta = IDENTITIES.fetch(identity)
   lane = meta.fetch(:lane)
-  item = GhIdentity.item_for_env(identity)
+  item = GhIdentity.item_for(identity)
   app_id = read_secret(OpVaults.ref(item, "app-id", lane), lane).strip
   pem = read_secret(OpVaults.ref(item, PEM_ATTACHMENTS.fetch(item), lane), lane)
   if app_id.empty? || pem.strip.empty?

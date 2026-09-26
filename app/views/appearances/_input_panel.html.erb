@@ -1,0 +1,113 @@
+<%# HALF ONE: THE PHOTOGRAPHS WE FOUND.
+
+    Two sections, and the second one is the point. "In the model" is the set the
+    identity was built from; "Found but not used" is every candidate we passed over,
+    with the reason. A gallery of winners alone cannot answer the question the
+    operator is actually asking — is the search any good? — because a search that
+    returned twenty watermarked thumbnails and one usable portrait shows the same
+    single winner as a search that returned twenty good portraits we capped. %>
+<% chosen = @gallery.select(&:chosen?) %>
+<% rejected = @gallery.reject(&:chosen?) %>
+
+<div data-test="reference-input-panel" class="card p-4 sm:p-5 space-y-4">
+  <header class="space-y-1">
+    <p class="label-upper text-primary">1 &middot; Input</p>
+    <h2 class="text-lg font-bold text-heading">Reference photos</h2>
+    <p class="text-xs text-muted">
+      <%= pluralize(chosen.length, "photo") %> going into the model<%= ", #{rejected.length} found and passed over" if rejected.any? %>.
+    </p>
+  </header>
+
+  <%# THE SEARCH CONTROL, and the unconfigured state is the one that matters most —
+      it is what runs today. It names the environment variable rather than saying
+      "not configured", because the person reading it is the person who will add the
+      credential, and a message without the variable's name sends them to ask. %>
+  <div class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-2">
+    <% if @search_available %>
+      <div class="flex items-start gap-2 flex-wrap justify-between">
+        <div class="min-w-0 space-y-0.5">
+          <p class="text-xs text-heading font-bold">
+            Web image search &mdash; <span class="font-mono"><%= @search_provider %></span>
+          </p>
+          <p class="text-2xs text-muted break-words">
+            Will search for &ldquo;<%= @search_query %>&rdquo;. Each search costs money.
+          </p>
+        </div>
+        <%# ADMINS ONLY, matching the controller. #show is public, so without this
+            guard the page offers every visitor a button that buys a query and a
+            dozen classifications, and the only thing between them and the purchase
+            is a redirect they never asked for. A control nobody but an admin may
+            use is furniture on everyone else's page. %>
+        <% if admin? %>
+          <%= button_to "Search the web",
+                search_person_appearance_path(@person.slug, @appearance.slug),
+                method: :post, class: "btn btn-sm btn-primary shrink-0",
+                form: { data: { test: "search-button" } } %>
+        <% end %>
+      </div>
+    <% else %>
+      <div data-test="search-unconfigured" class="space-y-1">
+        <p class="text-xs text-heading font-bold">Web image search is off</p>
+        <p class="text-2xs text-muted break-words">
+          No provider is configured, so the photos below are the ones we already had:
+          our own mirrored headshot, plus any URL you typed on the model. Set
+          <span class="font-mono text-warning-ink"><%= Appearances::ImageSearch::Serper::API_KEY_ENV %></span>
+          and a Search button appears here.
+        </p>
+      </div>
+    <% end %>
+  </div>
+
+  <% if chosen.any? %>
+    <div class="space-y-2">
+      <div class="flex items-baseline gap-2 flex-wrap">
+        <p class="label-upper">In the model (<%= chosen.length %>)</p>
+        <%# WHAT PUT THEM IN THIS ORDER. A helmet hides exactly the features a
+            character model is built from, so the ranking is the feature — and an
+            operator who cannot see WHICH ranking ran cannot tell a working
+            classifier from a silent fallback to shape-and-relevance. %>
+        <span data-test="ranking-basis" data-basis="<%= @face_ranked ? "face" : "merit" %>"
+              class="text-3xs text-muted">
+          <%= @face_ranked ? "ranked by how clearly the face shows" : "ranked on shape and relevance — no face check yet" %>
+        </span>
+      </div>
+      <%# FOUR ACROSS AT DESKTOP because CHOSEN_LIMIT is 6 plus a two-row floor:
+          at three across a full set wraps to a ragged third row and leaves the panel
+          a head taller than the one beside it. Two across on a phone keeps the
+          source and verdict chips on one line each instead of wrapping every tile. %>
+      <div data-test="chosen-gallery" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        <%= render partial: "appearances/reference_photo", collection: chosen, as: :photo %>
+      </div>
+    </div>
+  <% else %>
+    <%# NO PHOTOGRAPHS AT ALL is a real state and not an error: a person with no
+        athlete record and no typed URL has nothing to build an identity from, and
+        Appearances::CreateCharacterReference raises rather than minting from
+        nothing. Saying so here is what stops the Request button below reading as
+        broken. %>
+    <div data-test="no-photos" class="rounded-lg border border-warning/40 bg-warning/10 p-3">
+      <p class="text-xs text-warning-ink">
+        No photos on file for <%= @person.full_name %>. There is no mirrored headshot
+        and no reference URL on this model, so there is nothing to build a character
+        model from yet.
+      </p>
+    </div>
+  <% end %>
+
+  <% if rejected.any? %>
+    <div class="space-y-2">
+      <p class="label-upper">Found but not used (<%= rejected.length %>)</p>
+      <p class="text-2xs text-muted">
+        Kept on purpose. These are how you judge the search rather than only its
+        result — including the ones passed over because the face was not visible.
+      </p>
+      <%# DENSER THAN THE CHOSEN GRID at every size above a phone: these are
+          secondary and there can be many of them. Still TWO across on a phone —
+          three fit, but the caption chips then wrap to three lines each and the
+          reject list becomes the tallest thing on the page. %>
+      <div data-test="rejected-gallery" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+        <%= render partial: "appearances/reference_photo", collection: rejected, as: :photo %>
+      </div>
+    </div>
+  <% end %>
+</div>

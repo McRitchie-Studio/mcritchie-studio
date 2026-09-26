@@ -318,13 +318,9 @@ class GhTokenTest < Minitest::Test
   # the AGENT App — the one holding `pull_requests: write`, which the deployer is
   # denied by design. The cache slot is the observable proof of which App was asked
   # for, so assert there rather than on a flag having been forwarded.
-  # Both names of the admin App (renamed from mcritchie-deployer on 2026-09-26) must
-  # select the ship lane AND read the item they name, attachment included: the
-  # legacy item keeps its `.pem` name, the new one carries `privatekeypem`.
-  ADMIN_LANE_PEMS = {
-    "github.mcritchie-admin" => "privatekeypem",
-    "github.mcritchie-deployer" => "mcritchie-deployer.2026-07-29.private-key.pem"
-  }.freeze
+  # The admin item must select the ship lane AND read the item it names, attachment
+  # included: it carries `privatekeypem`, not the agent's `.pem` name.
+  ADMIN_LANE_PEMS = { "github.mcritchie-admin" => "privatekeypem" }.freeze
 
   def test_gh_app_item_selects_the_deployer_lane
     ADMIN_LANE_PEMS.each do |item, pem|
@@ -355,7 +351,21 @@ class GhTokenTest < Minitest::Test
 
       assert status.success?, err
       assert_includes op_calls(dir), "op://studio-agents-admin/github.mcritchie-admin/privatekeypem"
-      refute_includes op_calls(dir), "github.mcritchie-deployer"
+    end
+  end
+
+  # [unit] The retired item name (the App was renamed 2026-09-26) aborts exactly as
+  # a typo does: no token printed, no 1Password read, nothing cached.
+  def test_the_retired_deployer_item_aborts
+    Dir.mktmpdir do |dir|
+      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-deployer")
+      out, err, status = run_token(env)
+
+      refute status.success?, "a retired item must not mint"
+      assert_match(/github\.mcritchie-deployer/, err)
+      refute_match(TOKEN_SHAPED, out)
+      assert_empty op_calls(dir), "no 1Password read may be spent on a refused item"
+      refute File.exist?(store_path(dir)), "nothing was minted, so nothing was cached"
     end
   end
 

@@ -360,8 +360,9 @@ def test_gh_auth_lane_is_read_from_gh_app_item
   assert_equal "deployer", gh_auth.fetch("lane")
 end
 
-# [unit] The legacy item name (the App was renamed 2026-09-26) is the same lane.
-def test_gh_auth_lane_reads_the_legacy_item_as_the_same_lane
+# [unit] The retired item name (the App was renamed 2026-09-26) is NOT the ship
+# lane any more: it is reported verbatim, so the operator sees the stale export.
+def test_gh_auth_lane_reports_the_retired_item_verbatim
   task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
   fake_bin = write_fake_gh
 
@@ -371,7 +372,7 @@ def test_gh_auth_lane_reads_the_legacy_item_as_the_same_lane
            "GH_APP_ITEM" => "github.mcritchie-deployer" }
   )
   assert status.success?, "#{out}\n#{err}"
-  assert_equal "deployer", JSON.parse(out).fetch("gh_auth").fetch("lane")
+  assert_equal "github.mcritchie-deployer", JSON.parse(out).fetch("gh_auth").fetch("lane")
 end
 
 # [integration] The whole path through the real script: a live credential reports ok

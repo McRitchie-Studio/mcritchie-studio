@@ -319,6 +319,25 @@ Rails.application.routes.draw do
       post :make_default_appearance
       post :attach_artifact
     end
+
+    # ONE LOOK'S CHARACTER MODEL. Nested because a look has no meaning without its
+    # person, and PATHED as "models" because that is the word the person page and
+    # the operator both use for a look — `/people/drew-lock/models/look-abc123`.
+    #
+    # #show is a free read and is PUBLIC, like the person page it is reached from.
+    # The other three POSTs sit behind `require_admin`, NOT merely behind a session:
+    # #search buys one image-search query plus up to VISION_SHORTLIST vision
+    # classifications, #mint buys one character identity, and #refresh is free but
+    # fails as invisibly as either. Hub signup is OPEN, so a session costs a member of
+    # the public one email address and is no control at all over a paid endpoint.
+    # AppearancesController carries the full argument.
+    resources :appearances, path: "models", param: :slug, only: [:show] do
+      member do
+        post :search
+        post :mint
+        post :refresh
+      end
+    end
   end
 
   # NFL hub + rankings (SEO-friendly URLs)
