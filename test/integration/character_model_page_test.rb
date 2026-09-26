@@ -147,6 +147,27 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
                     "the reader of this message is who will set the credential"
   end
 
+  # THE UNSTUBBED STATE, AND THE REASON THIS TEST EXISTS AT ALL.
+  #
+  # Every other test on this panel STUBS `available?`, which makes them all immune to a
+  # change in what the real registry answers — and that immunity is exactly how a
+  # regression got to CI. When Appearances::ImageSearch::WikimediaCommons shipped,
+  # `available?` went from false-everywhere to true-everywhere; every stubbed test stayed
+  # green and the e2e spec asserting "search is off" went red in a browser, three minutes
+  # of CI later. This asserts the REAL answer, at the cheapest tier, so the next flip of
+  # that condition fails here first.
+  test "[component] with nothing stubbed, a keyless provider serves and the panel names it" do
+    cache_headshot
+    get page_path
+
+    assert_response :success
+    assert Appearances::ImageSearch.available?,
+           "the keyless provider must keep a provider available with no credential set"
+    assert_select "[data-test='search-configured'][data-provider='wikimedia-commons']", count: 1
+    assert_select "[data-test='search-unconfigured']", { count: 0 },
+                  "the unconfigured note is unreachable while a keyless provider ships"
+  end
+
   # A PERSON WITH NO PHOTOGRAPHS AT ALL is a real state, not a failure: the mint
   # service raises rather than building an identity from nothing, so the page has to
   # say so instead of offering a button that cannot work.

@@ -18,19 +18,37 @@
     </p>
   </header>
 
-  <%# THE SEARCH CONTROL, and the unconfigured state is the one that matters most —
-      it is what runs today. It names the environment variable rather than saying
-      "not configured", because the person reading it is the person who will add the
-      credential, and a message without the variable's name sends them to ask. %>
+  <%# THE SEARCH CONTROL. Until the keyless Wikimedia Commons provider shipped, the
+      UNCONFIGURED branch was the one that ran on every machine, and this comment said
+      so; now a provider is always available and the configured branch is the normal
+      one. The unconfigured copy still names the environment variable, because whoever
+      reads it is whoever would buy a paid provider.
+
+      BOTH BRANCHES CARRY A data-test, and that is a lesson rather than a flourish.
+      Only the `else` had one, so when the keyless provider flipped this condition an
+      e2e spec asserting "search is off" had nothing to move ITS assertion to — it just
+      went red with no positive state to name. A branch nobody expects to render is
+      exactly the one that will. %>
   <div class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-2">
     <% if @search_available %>
-      <div class="flex items-start gap-2 flex-wrap justify-between">
+      <div data-test="search-configured" data-provider="<%= @search_provider %>"
+           class="flex items-start gap-2 flex-wrap justify-between">
         <div class="min-w-0 space-y-0.5">
           <p class="text-xs text-heading font-bold">
             Web image search &mdash; <span class="font-mono"><%= @search_provider %></span>
           </p>
           <p class="text-2xs text-muted break-words">
-            Will search for &ldquo;<%= @search_query %>&rdquo;. Each search costs money.
+            <%# WHAT A SEARCH ACTUALLY COSTS depends on which provider is serving, and
+                saying "costs money" flatly was true only while the paid one was the only
+                one. Wikimedia Commons bills nothing per query; the vision classifier
+                bills per image either way, when it is configured at all. %>
+            Will search for &ldquo;<%= @search_query %>&rdquo;.
+            <% if @search_provider == Appearances::ImageSearch::WikimediaCommons.provider_name %>
+              The query itself is free; ranking the results costs money when a face
+              classifier is configured.
+            <% else %>
+              Each search costs money.
+            <% end %>
           </p>
         </div>
         <%# ADMINS ONLY, matching the controller. #show is public, so without this
