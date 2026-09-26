@@ -69,7 +69,10 @@ class Release
 
       exempt = Array(qa_exempt_repos).map(&:to_s)
       entries = Array(repos).flat_map do |group|
-        skip = target == :qa && exempt.include?(group["repo"].to_s)
+        # Skip at :qa only when :prod can route the command; an exempt repo with no
+        # production app (turf-vault) keeps the prepare abort, not one after go-live.
+        skip = target == :qa && exempt.include?(group["repo"].to_s) &&
+               !target_app(qa_environments, group["qa_app"], :prod, prod_deploy: group["prod_deploy"]).empty?
         app = skip ? "" : target_app(qa_environments, group["qa_app"], target, prod_deploy: group["prod_deploy"])
         Array(group["members"]).filter_map do |member|
           cmd = member["post_deploy_cmd"].to_s.strip

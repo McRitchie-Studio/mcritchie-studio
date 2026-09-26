@@ -193,6 +193,15 @@ class Release::PostDeployTest < ActiveSupport::TestCase
     assert_equal "cyvasse", entry["app"]
   end
 
+  test "[unit] an exempt repo with NO production app is not skipped at :qa (aborts at prepare)" do
+    vault = { "repo" => "turf-vault", "kind" => "app", "qa_app" => "turf-vault",
+              "members" => [{ "slug" => "v", "post_deploy_cmd" => "rake noop" }] }
+    entry = PD.plan([vault], qa_environments: QA_ENVS, target: :qa, qa_exempt_repos: %w[turf-vault]).sole
+
+    assert_nil entry["skip"], "a skip here defers the abort to ship, AFTER every other app is live"
+    assert_equal "", entry["app"]
+  end
+
   test "[unit] :prod prefers a declared production_app over the adapter" do
     envs = QA_ENVS.merge("cyvasse" => { "heroku_app" => "cyvasse-qa", "production_app" => "cyvasse-prod" })
     assert_equal "cyvasse-prod", PD.target_app(envs, "cyvasse", :prod, prod_deploy: CYVASSE_GROUP["prod_deploy"])
