@@ -164,7 +164,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     keys = []
     capture_io do
       Studio::ImageCache.stub(:cache!, ->(key_prefix:, **) { keys << key_prefix; {} }) do
-        Rake::Task["nfl:upload_headshots"].invoke
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
       end
     end
 
@@ -180,7 +180,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     keys = []
     capture_io do
       Studio::ImageCache.stub(:cache!, ->(key_prefix:, **) { keys << key_prefix; {} }) do
-        Rake::Task["nfl:upload_headshots"].invoke
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
       end
     end
 
@@ -215,7 +215,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     completed = false
     _out, err = capture_io do
       Studio::ImageCache.stub(:cache!, ->(**) { flunk "a complete athlete must not be re-uploaded" }) do
-        Rake::Task["nfl:upload_headshots"].invoke
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
         completed = true
       end
     end
@@ -235,7 +235,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     completed = false
     _out, err = capture_io do
       Studio::ImageCache.stub(:cache!, ->(**) { {} }) do
-        Rake::Task["nfl:upload_headshots"].invoke
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
         completed = true
       end
     end
@@ -256,7 +256,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     attempts = 0
     capture_io do
       Studio::ImageCache.stub(:cache!, ->(**) { attempts += 1; {} }) do
-        Rake::Task["nfl:upload_headshots"].invoke
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
       end
     end
 
@@ -277,7 +277,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     completed = false
     capture_io do
       Studio::ImageCache.stub(:cache!, ->(**) { attempts += 1; {} }) do
-        Rake::Task["nfl:upload_headshots"].invoke
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
         completed = true
       end
     end
@@ -341,6 +341,19 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
 
   # Athletes the task will actually attempt: an espn_id, an NFL-league team
   # through a contract, and no cached variants yet.
+  # A rake `abort` raises SystemExit, which is NOT a StandardError — Minitest does
+  # not rescue it. A task that wrongly aborts therefore kills the whole suite
+  # PROCESS with a bare exit 1, no dots and no failure name, and the
+  # `assert completed` line after the invoke never runs at all. MEASURED while
+  # mutation-testing this file: restoring the contract precondition made the run
+  # print `# Running:` and nothing else. Naming it here turns that into a
+  # readable failure attributed to the test that caused it.
+  def refute_aborts
+    yield
+  rescue SystemExit => e
+    flunk "nfl:upload_headshots aborted a run it should have completed: #{e.message}"
+  end
+
   # A CANDIDATE IN THE PRODUCTION SHAPE: espn_id set, a team_slug on the athlete's
   # OWN column, and no Contract anywhere. prepare_candidates above deliberately
   # picks NFL-CONTRACTED people because that is what the task used to demand; this
