@@ -202,6 +202,16 @@ class HerokuCiKeyRotationTest < Minitest::Test
     assert_includes @out.string, "NOT revoking the new authorization"
   end
 
+  # A non-Abort failure after the mint (a dropped connection) must roll back too.
+  def test_a_network_error_mid_proof_still_rolls_back
+    @github.define_singleton_method(:dispatch) { |*| raise Errno::ECONNRESET }
+
+    assert_raises(R::Abort) { @runner.call(dry_run: false) }
+
+    assert_includes mutations, [:revoke, NEW_ID]
+    assert_equal OLD_KEY, @vault.store["credential"]
+  end
+
   # If the vault's authorization-id names a different key, revoking it would kill
   # something else. Refuse before minting anything.
   def test_a_vault_id_that_does_not_match_its_key_refuses_before_the_mint

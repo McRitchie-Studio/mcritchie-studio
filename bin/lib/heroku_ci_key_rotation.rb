@@ -258,7 +258,7 @@ module HerokuCiKeyRotation
         store(new_auth)
         set(new_auth)
         prove(plan)
-      rescue Abort => e
+      rescue StandardError => e # not only Abort: a timeout mid-proof must roll back too
         say "FAILED after the mint: #{redact(e.message)}"
         rollback(plan, new_auth)
         raise Abort, "rotation rolled back; the old authorization #{plan[:old_id]} was NOT revoked"
@@ -395,7 +395,7 @@ module HerokuCiKeyRotation
       (@written & TARGETS.map { |t| t[:env] }).each do |env|
         @github.set_secret(env, plan[:old_key])
         say "  #{env}: #{SECRET} restored to the old key"
-      rescue Abort => e
+      rescue StandardError => e
         stranded << env
         say "  #{env}: RESTORE FAILED — #{redact(e.message)}"
       end
@@ -403,7 +403,7 @@ module HerokuCiKeyRotation
         begin
           @vault.write(KEY_FIELD => plan[:old_key], AUTH_ID_FIELD => plan[:old_id])
           say "  op://#{VAULT}/#{ITEM}: restored to authorization #{plan[:old_id]}"
-        rescue Abort => e
+        rescue StandardError => e
           stranded << :vault
           say "  vault RESTORE FAILED — #{redact(e.message)} (1Password keeps item history)"
         end
@@ -414,7 +414,7 @@ module HerokuCiKeyRotation
 
       @heroku.revoke_authorization(@admin_key, auth[:id])
       say "  revoked the new authorization #{auth[:id]}"
-    rescue Abort => e
+    rescue StandardError => e
       say "  could not revoke the new authorization #{auth[:id]}: #{redact(e.message)} — revoke it by hand"
     end
 
