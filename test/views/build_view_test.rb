@@ -33,6 +33,47 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-example'][href='https://cyvasse.mcritchie.studio'][target='_blank']", text: /Cyvasse/
   end
 
+  def example(name, image: nil)
+    BuildGallery::Example.new(name: name, url: "https://#{name.parameterize}.mcritchie.studio", emoji: "🧱", blurb: "An app.", image: image)
+  end
+
+  test "the gallery is a sideways row, 2.5 cards wide, with a scroll-aware edge fade" do
+    signed_in(nil)
+    @draft = nil
+    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.jpg"), example("Rantly"), example("Weekly Lock") ]
+    render template: "build/new"
+
+    row = css_select("[data-test='build-gallery-row']").first
+    assert_includes row["class"], "overflow-x-auto"
+    assert_includes row["class"], "snap-x"
+    assert_includes row["@scroll.passive"], "measure", "the fade follows the scroll position"
+    assert_includes row[":style"], "mask-image"
+    assert_select "[data-test='build-gallery-item'][class*='sm:basis-[calc((100%-2rem)/2.5)]']", 3
+  end
+
+  test "a card shows its screenshot when there is one, and its emoji when not" do
+    signed_in(nil)
+    @draft = nil
+    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.jpg"), example("Rantly") ]
+    render template: "build/new"
+
+    assert_select "[data-test='build-example-image'][src*='build_gallery/cyvasse']", 1
+    assert_select "[data-test='build-example-image']", 1, "no image tag for an app without a screenshot"
+  end
+
+  test "See all apps is for admins only" do
+    @draft = nil
+    @examples = [ example("Cyvasse") ]
+
+    signed_in(nil)
+    render template: "build/new"
+    assert_select "[data-test='build-gallery-all']", 0
+
+    signed_in(users(:alex))
+    render template: "build/new"
+    assert_select "[data-test='build-gallery-all'][href*='status=all']", 1
+  end
+
   test "no gallery at all when there is nothing live to show" do
     signed_in(nil)
     @draft = nil

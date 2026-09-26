@@ -9,7 +9,9 @@ module BuildGallery
   CONFIG = Rails.root.join("config/build_examples.yml")
   BLURB_LIMIT = 120
 
-  Example = Struct.new(:name, :url, :emoji, :blurb, keyword_init: true)
+  Example = Struct.new(:name, :url, :emoji, :blurb, :image, keyword_init: true)
+
+  IMAGE_DIR = "build_gallery".freeze
 
   module_function
 
@@ -18,15 +20,23 @@ module BuildGallery
   def configured
     YAML.safe_load_file(CONFIG).fetch("examples", []).map do |attrs|
       Example.new(name: attrs.fetch("name"), url: attrs.fetch("url"), emoji: attrs["emoji"].presence || "🧱",
-                  blurb: attrs["blurb"].to_s)
+                  blurb: attrs["blurb"].to_s, image: existing_image(attrs["image"]))
     end
   end
 
   def showcased
     AppRequest.where(showcase: true, status: "live").order(updated_at: :desc).map do |req|
       Example.new(name: req.subdomain.to_s.tr("-", " ").titleize, url: req.url, emoji: "🧱",
-                  blurb: first_sentence(req.prompt))
+                  blurb: first_sentence(req.prompt), image: existing_image("#{IMAGE_DIR}/#{req.subdomain}.jpg"))
     end
+  end
+
+  # An image path for image_tag, or nil when the file is not there — a card
+  # then shows its emoji instead of a broken image.
+  def existing_image(path)
+    return nil if path.blank?
+
+    Rails.root.join("app/assets/images", path).file? ? path : nil
   end
 
   # The request's prompt is the only description it has; its first sentence,

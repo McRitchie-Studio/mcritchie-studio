@@ -1411,3 +1411,15 @@ WorkspaceAccount.create!(domain: "mcritchie.studio", entity: "mcritchie-studio",
 # /stack — the client roster (tier, domain, Resend); software is derived from it
 # and the census above. e2e/stack_page.spec.js reads it.
 load Rails.root.join("db/seeds/60_stack_clients.rb")
+
+# /build gallery — three LIVE showcase apps from the admin, so the "Built with
+# McRitchie Studio" row has enough cards to scroll (e2e/build_gallery.spec.js).
+gallery_admin = User.find_by!(email: "alex@test.com")
+# Names NO spec claims: e2e/build_funnel.spec.js claims league-hub,
+# prisoners-dilemma and weekly-lock, and a live seed row holding one of those
+# makes its claim fail as taken.
+{ "trivia-night" => "A trivia night scoreboard: teams, rounds and a live leaderboard.",
+  "recipe-box" => "A recipe box: save recipes, scale servings and build a shopping list.",
+  "garden-planner" => "A garden planner: lay out beds and track what to plant when." }.each do |sub, prompt|
+  AppRequest.create!(prompt: prompt, user: gallery_admin).queue!(sub).update!(status: "live")
+end
