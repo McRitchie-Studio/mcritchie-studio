@@ -73,7 +73,7 @@ end
 
 if options[:list]
   puts "software:"
-  WorkspaceIcon.softwares.each { |key, sw| puts format("  %-20s %-20s %s", key, sw["name"], sw["logo"]) }
+  WorkspaceIcon.softwares.each { |key, sw| puts format("  %-20s %-20s %-5s %s", key, sw["name"], sw["hosting"] || "own", sw["mark"]) }
   puts "workspaces:"
   WorkspaceIcon.workspaces.each do |scope, ws|
     puts format("  %-20s %-22s %-24s %s", scope, ws["name"], ws["domain"] || "-", ws["badge"] || "(no badge on file — pass --badge)")

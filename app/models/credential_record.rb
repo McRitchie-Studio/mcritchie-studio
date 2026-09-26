@@ -5,8 +5,9 @@
 #
 # The secret-shape check below is a tripwire, not a guarantee: it refuses the
 # token shapes we know (1Password, GitHub, Anthropic/OpenAI, AWS, Slack, PEM
-# keys) in every text column, because the likeliest way a secret lands here is
-# a note pasted from the wrong window. An unknown shape passes it.
+# keys, Stripe, Heroku, a key in a URL's query) in every text column, because
+# the likeliest way a secret lands here is a note pasted from the wrong window.
+# An unknown shape passes it.
 class CredentialRecord < ApplicationRecord
   STATUSES = %w[filed empty retired missing].freeze
   CATEGORIES = [ "API Credential", "Login", "Password", "Document", "Crypto Wallet", "Secure Note" ].freeze
@@ -17,7 +18,11 @@ class CredentialRecord < ApplicationRecord
     "API secret key" => /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/,
     "AWS access key id" => /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/,
     "Slack token" => /\bxox[abprs]-[A-Za-z0-9-]{10,}/,
-    "private key" => /-----BEGIN [A-Z ]*PRIVATE KEY-----/
+    "private key" => /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+    "Stripe key" => /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/,
+    "Stripe webhook secret" => /\bwhsec_[A-Za-z0-9]{16,}/,
+    "Heroku token" => /\bHRKU-[A-Za-z0-9_-]{20,}/,
+    "credential in a URL" => /[?&](?:api[-_]?key|key|token|secret|access_token)=[^&\s]{8,}/i
   }.freeze
 
   TEXT_COLUMNS = %w[title service url used_by scope_summary notes].freeze
