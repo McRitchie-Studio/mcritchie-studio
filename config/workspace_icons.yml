@@ -74,6 +74,9 @@ workspaces:
   commercial-welding:
     name: Commercial Welding
     domain: commercialwelding.llc
+    # The welding helmet, commercial-welding-llc-icon.png from the brand files.
+    badge: lib/workspace_icons/badges/commercial-welding.png
+    accent: "#2D5E8E"
     vaults: [Commercial Welding]
   family:
     name: McRitchie Family
