@@ -22,8 +22,11 @@ Acquisition Studio prototype, which previously held this range.
 Caution: the unmanaged MSAA client workspace informally parks a dev app on
 `3510` inside this band — the worktree launcher excludes it
 (`reserved_ports` in `bin/agent-worktree`), and no McRitchie Industries side
-stack should sit on it until MSAA moves. Cyvasse is a planned managed satellite (`planned`
-in `config/satellites.yml`), the revival of Alex's first app.
+stack should sit on it until MSAA moves.
+
+Cyvasse (`3600-3699`) is a planned managed satellite (`planned` in
+`config/satellites.yml`), the revival of Alex's first app. Production is the
+Heroku app `cyvasse`; it has no QA environment.
 
 ## Primary Ports
 
