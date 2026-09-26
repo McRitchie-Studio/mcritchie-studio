@@ -1,0 +1,113 @@
+<%# ONE CANDIDATE PHOTOGRAPH. Renders identically whether it was chosen or
+    rejected, and whether it is a persisted search hit or one of the two unsaved
+    floor rows Appearances::ReferenceSet builds in memory, so the gallery cannot
+    drift from the list the identity was built from.
+
+    Locals: photo (AppearanceReferencePhoto, possibly unsaved). %>
+<% chip = reference_source_chip(photo) %>
+<% host = reference_photo_host(photo) %>
+<%# data-test / data-source / data-chosen are the handles the component and e2e
+    tiers select on. They assert STRUCTURE — how many tiles, which verdict, which
+    source — rather than the caption prose, which is copy and will be reworded. %>
+<figure data-test="reference-photo"
+        data-source="<%= photo.source %>"
+        data-chosen="<%= photo.chosen? %>"
+        data-rejection="<%= photo.rejection_reason %>"
+        class="group rounded-lg border overflow-hidden bg-surface-alt flex flex-col
+               <%= photo.chosen? ? "border-success/40" : "border-subtle" %>">
+
+  <% if photo.rejection_reason == AppearanceReferencePhoto::REJECTED_UNFETCHABLE %>
+    <%# A URL WE REFUSED IS NOT RENDERED, AND NOT LINKED.
+        This row exists because Appearances::FetchableUrl judged the URL unsafe to
+        hand a remote fetcher — and an img tag hands it to the operator's own
+        browser instead, which is the same request from a machine INSIDE our
+        network rather than outside it. A loopback or private-range URL is exactly
+        the one this page must not fetch, so the tile shows the address as TEXT and
+        stops there. Seeing that the search offered it is the whole value of the
+        row; fetching it is none of it. %>
+    <div class="aspect-square bg-inset flex flex-col items-center justify-center gap-1 p-2 text-center">
+      <span class="text-lg opacity-50" aria-hidden="true">&#9888;</span>
+      <span class="text-3xs text-muted break-all leading-tight"><%= photo.image_url %></span>
+      <span class="text-3xs text-muted">not fetched</span>
+    </div>
+  <% else %>
+    <%# LINKS TO THE IMAGE ITSELF, not to the page it was found on. Judging a search
+        hit means looking at the photograph at full size first; the page it came from
+        is one line down, for when the crop is not enough to decide.
+
+        rel and referrerpolicy are not decoration: these are third-party URLs a
+        search engine handed us, and neither the tab nor the referrer needs to carry
+        anything of ours to them. %>
+    <a href="<%= photo.image_url %>" target="_blank" rel="noopener noreferrer nofollow"
+       referrerpolicy="no-referrer"
+       class="block aspect-square bg-inset overflow-hidden
+              <%= photo.chosen? ? "" : "opacity-60 group-hover:opacity-100 transition-opacity" %>">
+      <%# A FAILED IMAGE SHOWS ITS ALT TEXT, which is why alt carries the title or the
+          host rather than being empty: plenty of search hits 404 or refuse hotlinking,
+          and an empty alt turns every one of those into an identical blank square.
+
+          The type utilities are ON THE IMG on purpose — a broken image renders its alt
+          in the img element's own font, so without them the fallback text sets at body
+          size and spills out of a thumbnail-sized tile. %>
+      <img src="<%= photo.image_url %>" loading="lazy" referrerpolicy="no-referrer"
+           alt="<%= photo.title.presence || host || "reference photo" %>"
+           class="w-full h-full object-cover text-3xs text-muted leading-tight p-1">
+    </a>
+  <% end %>
+
+  <figcaption class="p-2 space-y-1 flex-1 flex flex-col">
+    <div class="flex items-center gap-1 flex-wrap">
+      <span class="badge text-3xs <%= chip[:classes] %>"><%= chip[:label] %></span>
+      <% if photo.chosen? %>
+        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">in the model</span>
+      <% else %>
+        <span class="badge text-3xs bg-surface text-muted border-subtle"><%= rejection_label(photo) %></span>
+      <% end %>
+      <%# THE FACE SCORE IS WHAT ORDERED THIS GALLERY, so it is printed on every
+          photograph that has one. Without it the operator sees a new order and no
+          reason for it, and cannot tell a ranking that worked from one that did
+          nothing. A row with no score says nothing rather than showing a zero —
+          "nobody looked" and "looked and saw no face" are opposite judgements. %>
+      <% if photo.face_scored? %>
+        <span class="badge text-3xs <%= face_score_chip(photo) %>"
+              title="How clearly this photo shows the face, judged 0-100">
+          face <%= photo.face_score_percent %>
+        </span>
+      <% end %>
+      <% if photo.position.present? %>
+        <span class="text-3xs text-muted">hit <%= photo.position %></span>
+      <% end %>
+    </div>
+
+    <%# THE TITLE THE PROVIDER GAVE IT, which is the fastest way to spot the one
+        failure the face score cannot catch: a CLEAR photograph of the WRONG
+        PERSON. A bare-faced stranger scores higher than a helmeted shot of your
+        man and will rank above it, so the operator has to be able to read the name
+        without opening the tile. Measured: "Drew Hutton" was hit 5 in a real
+        Wikimedia answer for "Drew Lock". %>
+    <% if photo.title.present? %>
+      <p class="text-3xs text-body line-clamp-2 leading-tight" title="<%= photo.title %>">
+        <%= photo.title %>
+      </p>
+    <% end %>
+
+    <% if host.present? %>
+      <p class="text-3xs text-muted truncate" title="<%= photo.origin_url %>">
+        <%# page_link_url, NEVER the raw page_url. The column holds whatever the
+            provider put in its answer, and only http and https may reach an href —
+            the model carries the judgement and the two shapes it refuses. %>
+        <% if photo.page_link_url.present? %>
+          <%= link_to host, photo.page_link_url, target: "_blank",
+                rel: "noopener noreferrer nofollow", referrerpolicy: "no-referrer",
+                class: "hover:text-primary" %>
+        <% else %>
+          <%= host %>
+        <% end %>
+      </p>
+    <% end %>
+
+    <% if photo.width.present? && photo.height.present? %>
+      <p class="text-3xs text-muted mt-auto"><%= photo.width %>x<%= photo.height %></p>
+    <% end %>
+  </figcaption>
+</figure>

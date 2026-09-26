@@ -1,0 +1,87 @@
+<%# ONE LOOK'S CHARACTER MODEL, and the whole point of the layout is the arrow.
+
+    The operator's acceptance test for this page was one sentence: "I want to see
+    the images found on the internet and the output on the same UI." So the page is
+    two panels with a direction between them — INPUT on the left, OUTPUT on the
+    right, an arrow in the middle that turns downward when the panels stack. The
+    relationship has to be readable without a caption, because the caption is what
+    an operator skips.
+
+    Numbered headings ("1 . Input", "2 . Output") carry the same job for a reader
+    who lands mid-page on a phone, where the two panels are a scroll apart and the
+    arrow is the only other thing saying which way the pipeline runs. %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+
+  <%# WHO, and the way back. The person page is where every route to this one
+      starts, so the breadcrumb is the return leg rather than decoration. %>
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "People", people_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <%= link_to @person.full_name, person_path(@person.slug), class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold"><%= @appearance.descriptor %></span>
+  </nav>
+
+  <div class="card p-4 sm:p-5 flex gap-4 items-start">
+    <div class="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-full bg-surface-alt border border-subtle
+                overflow-hidden flex items-center justify-center">
+      <% avatar = @person.athlete_profile&.espn_headshot_url.presence || @person.avatar_url.presence %>
+      <% if avatar %>
+        <%= image_tag avatar, class: "object-cover w-full h-full", alt: @person.full_name %>
+      <% else %>
+        <span class="text-2xl opacity-40" aria-hidden="true">&#128100;</span>
+      <% end %>
+    </div>
+
+    <div class="flex-1 min-w-0">
+      <h1 class="text-xl sm:text-2xl font-bold text-heading truncate"><%= @person.full_name %></h1>
+      <p class="text-sm text-secondary"><%= @appearance.descriptor %></p>
+      <div class="flex gap-1.5 flex-wrap mt-2">
+        <% if @appearance.default? %>
+          <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">default model</span>
+        <% end %>
+        <% if @appearance.colorway.present? %>
+          <span class="badge text-3xs bg-surface-alt text-muted border-subtle"><%= @appearance.colorway %></span>
+        <% end %>
+        <span class="badge text-3xs bg-surface-alt text-muted border-subtle font-mono"><%= @appearance.slug %></span>
+      </div>
+    </div>
+  </div>
+
+  <%# THE TWO HALVES. 7 / 1 / 4 of twelve: the gallery is the panel that has to
+      hold a grid of thumbnails, the identity is a handful of facts and a couple of
+      buttons, and the middle column is the arrow. Stacks to one column below lg,
+      where the arrow rotates.
+
+      min-w-0 on both panels because a grid child defaults to min-content width,
+      and one long unbroken URL inside would otherwise push the track wider than
+      the viewport and give the whole page a horizontal scrollbar. %>
+  <div class="grid gap-3 lg:gap-2 lg:grid-cols-12 lg:items-start">
+
+    <section class="lg:col-span-7 min-w-0">
+      <%= render "appearances/input_panel" %>
+    </section>
+
+    <%# THE ARROW SITS LEVEL WITH THE TWO HEADINGS, not with the middle of the row.
+        Centring it vertically put it a thousand pixels below them on a populated
+        gallery, where it reads as decoration between two unrelated cards rather
+        than as the direction the pipeline runs. The top margin lands it beside the
+        panel titles, which is where the eye is when it asks what connects them.
+
+        lg:items-start on the grid is the other half: without it every cell
+        stretches to the tallest, and the short output card grows a column of empty
+        space as long as the gallery. %>
+    <div data-test="pipeline-arrow" class="lg:col-span-1 flex items-center justify-center py-1 lg:mt-14"
+         aria-hidden="true">
+      <div class="w-9 h-9 rounded-full border border-subtle bg-surface-alt text-primary
+                  flex items-center justify-center text-lg font-bold shrink-0">
+        <span class="lg:hidden">&darr;</span>
+        <span class="hidden lg:inline">&rarr;</span>
+      </div>
+    </div>
+
+    <section class="lg:col-span-4 min-w-0">
+      <%= render "appearances/output_panel" %>
+    </section>
+  </div>
+</div>
