@@ -16,15 +16,45 @@ class BuildViewTest < ActionView::TestCase
   test "signed out, the composer opens the sign-in modal instead of leaving the page" do
     signed_in(nil)
     @draft = nil
+    @examples = []
     render template: "build/new"
 
     assert_select "[data-test='build-form'][x-data='buildComposer(false)']"
     assert_includes rendered, "Alpine.store('modals').open('auth'"
   end
 
+  test "the gallery lists live examples under the prompt" do
+    signed_in(nil)
+    @draft = nil
+    @examples = [ BuildGallery::Example.new(name: "Cyvasse", url: "https://cyvasse.mcritchie.studio", emoji: "🐉", blurb: "Hex strategy.") ]
+    render template: "build/new"
+
+    assert_select "[data-test='build-gallery'] h2", text: "Built with McRitchie Studio"
+    assert_select "[data-test='build-example'][href='https://cyvasse.mcritchie.studio'][target='_blank']", text: /Cyvasse/
+  end
+
+  test "no gallery at all when there is nothing live to show" do
+    signed_in(nil)
+    @draft = nil
+    @examples = []
+    render template: "build/new"
+
+    assert_select "[data-test='build-gallery']", 0
+  end
+
+  test "the composer reuses its draft on a repeat Enter" do
+    signed_in(nil)
+    @draft = nil
+    @examples = []
+    render template: "build/new"
+
+    assert_includes rendered, "this.draft.prompt === this.prompt.trim()"
+  end
+
   test "the composer: a labelled prompt, Enter-to-send, a send button and examples" do
     signed_in(nil)
     @draft = nil
+    @examples = []
     render template: "build/new"
 
     assert_select "[data-test='build-form'] textarea[name='app_request[prompt]'][maxlength='#{AppRequest::PROMPT_LIMIT}'][required]"
@@ -61,7 +91,9 @@ class BuildViewTest < ActionView::TestCase
     @app_request = AppRequest.create!(prompt: "A client portal", user: users(:alex))
     render template: "build/show"
 
-    field = css_select("[data-test='build-claim'] input[data-test='build-subdomain'][maxlength='30']").first
+    field = css_select("[data-test='build-claim'] input[data-test='build-subdomain']").first
+    assert_nil field && field["maxlength"], "no maxlength: it would cut a pasted full address before clean() strips it"
+    assert_select "[data-test='build-address-preview']", 1, "phones see the whole address under the field"
     assert field, "no name field"
     assert_nil field["placeholder"], "no static placeholder: the examples are typed into it"
     assert_equal "placeholderText", field[":placeholder"]

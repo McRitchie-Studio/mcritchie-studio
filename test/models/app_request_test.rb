@@ -82,10 +82,36 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
-  test "one free app per account" do
-    draft(user: users(:alex)).queue!("first-app")
+  test "an admin is exempt from the one-app rule, and their requests are showcase builds" do
+    admin = users(:alex)
+    assert admin.admin?
+    first = draft(user: admin).queue!("prisoners-dilemma")
+    second = draft(user: admin).queue!("weekly-lock")
 
-    second = draft(user: users(:alex))
+    assert first.showcase? && second.showcase?
+    assert_includes Task.find_by!(slug: second.task_slug).metadata.dig("devops", "agent_context"), "SHOWCASE build"
+  end
+
+  test "a customer's request is never a showcase" do
+    refute draft(user: users(:viewer)).queue!("league-hub").showcase?
+  end
+
+  test "a cancelled request frees its name in the database too, not only in the model" do
+    first = draft(user: users(:viewer)).queue!("league-hub")
+    first.update!(status: "cancelled")
+
+    reclaimed = draft(user: users(:alex)).queue!("league-hub")
+    assert reclaimed.queued?, "the holding-only unique index lets a cancelled name be claimed again"
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      AppRequest.new(prompt: "dup", token: SecureRandom.hex(8), subdomain: "league-hub", status: "queued").save!(validate: false)
+    end
+  end
+
+  test "one free app per account" do
+    # A customer (non-admin). Admins are exempt — see the showcase test above.
+    draft(user: users(:viewer)).queue!("first-app")
+
+    second = draft(user: users(:viewer))
     error = assert_raises(ActiveRecord::RecordInvalid) { second.queue!("second-app") }
     assert_match(/one app/, error.message)
   end

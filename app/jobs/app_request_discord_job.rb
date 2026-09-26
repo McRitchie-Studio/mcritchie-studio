@@ -47,7 +47,7 @@ class AppRequestDiscordJob < ApplicationJob
     fields << { name: "Board card", value: "#{base}/tasks/#{request_row.task_slug}", inline: false } if request_row.task_slug
     fields << { name: "All requests", value: "#{base}/build/requests", inline: false }
     {
-      title: "🧱 New app request: #{request_row.host}",
+      title: "🧱 New #{request_row.showcase? ? 'showcase ' : ''}app request: #{request_row.host}",
       description: request_row.prompt.to_s,
       color: EMBED_COLOR,
       fields: fields,

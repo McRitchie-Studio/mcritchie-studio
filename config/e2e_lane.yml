@@ -273,7 +273,9 @@
 # time against the base as it stands then, not at push time.
 # MEASURED on the MERGED tree (this branch + accepted 943475d6), never by arithmetic:
 #   committed bare `test(...)` declarations under e2e/  => 169
-total_specs: 169
+# 169 -> 170 on 2026-09-26: e2e/build_funnel.spec.js adds the phone-width showcase spec
+# (/tasks/build-showcase-polish). Coverage ADDED; `quarantined` untouched.
+total_specs: 170
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -443,7 +445,8 @@ quarantined: 10
 # MEASURED on the MERGED tree (this branch + accepted 943475d6), never by arithmetic:
 #   committed bare `test(...)` declarations under e2e/  => 169
 #   of those, titles carrying the ` @quarantine` tag    =>  10
-executed: 159
+# 159 -> 160: the same build_funnel.spec.js phone spec.
+executed: 160
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

@@ -14,7 +14,8 @@ This SOP is how an agent works that queue.
 | The funnel | `/build` (public), `/build/<token>` (the requester's own page) |
 | A request | `app_requests`: `prompt`, `subdomain`, `status` (`draft → queued → building → live`, or `cancelled`), `tier` (`launch`), `task_slug` |
 | The board card | opened when the request is queued, titled `Build Launch App <subdomain>`, stage `designed`; `agent_context` carries the prompt verbatim, the reserved host and the request token |
-| The rules | `AppRequest`: 3-30 of a-z, 0-9 and hyphens; reserved names plus every satellite's subdomain from `config/satellites.yml`; one free app per account |
+| The rules | `AppRequest`: 3-30 of a-z, 0-9 and hyphens; reserved names plus every satellite's subdomain from `config/satellites.yml`; one free app per account, except admins |
+| Showcase builds | an admin's request is flagged `showcase`: an example of what the App Builder delivers (Mr. McRitchie's legacy apps), not a customer. The board card and the Discord post say so; `/build/requests?status=showcase` lists them. Once one is `live`, it appears automatically in the "Built with McRitchie Studio" gallery on `/build` (hand-kept extras: `config/build_examples.yml`) |
 | Every request, for admins | `/build/requests`: filter by status; each row shows the prompt, the requester, the reserved address and links to the board card |
 | The team ping | each queued request is posted to Discord **#external-communication** (the EXTERNAL lane: messages from the outside world) by `AppRequestDiscordJob`, in the background, once (`discord_notified_at`). Lanes live in `DiscordChannels`; the external webhook is `DISCORD_EXTERNAL_WEBHOOK_URL`, filed on the 1Password item `discord.webhooks`. Unset, the post is skipped and logged, and nothing else changes |
 
