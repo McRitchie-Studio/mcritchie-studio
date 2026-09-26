@@ -275,6 +275,14 @@
 #   committed bare `test(...)` declarations under e2e/  => 169
 # 169 -> 170 on 2026-09-26: e2e/build_funnel.spec.js adds the phone-width showcase spec
 # (/tasks/build-showcase-polish). Coverage ADDED; `quarantined` untouched.
+# 170 -> 174 on 2026-09-26: e2e/photo_scouting.spec.js adds FOUR specs
+# (/tasks/photo-scouting-calibration-page) — the render/reflow pass, the anonymous
+# no-controls pass, and the two calibration round trips. Coverage ADDED; `quarantined`
+# untouched.
+# ⚠ COLLIDES WITH PR #1636 (/tasks/build-gallery-carousel), which moves this same line
+# 170 -> 171 for e2e/build_gallery.spec.js. Both branch from 170, so whichever merges
+# SECOND inherits a stale number and must RE-DERIVE it on the merged tree rather than add
+# the two deltas by hand. If both land, the merged answer is 175.
 total_specs: 174
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
@@ -446,6 +454,9 @@ quarantined: 10
 #   committed bare `test(...)` declarations under e2e/  => 169
 #   of those, titles carrying the ` @quarantine` tag    =>  10
 # 159 -> 160: the same build_funnel.spec.js phone spec.
+# 160 -> 164: the four photo_scouting.spec.js specs above. None is quarantined, so the
+# whole delta lands in the executed set.
+# ⚠ Same collision as `total_specs`: PR #1636 moves this 160 -> 161. Merged answer 165.
 executed: 164
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
