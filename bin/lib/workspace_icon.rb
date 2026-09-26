@@ -196,12 +196,13 @@ module WorkspaceIcon
              # reader takes it as the render canvas, cropping any mark wider than
              # the tile (Google's 1024-unit canvas came out a quarter-G).
              #
-             # MSVG: names ImageMagick's INTERNAL renderer. Left to choose, IM6 on
-             # Ubuntu hands SVG to an external rsvg-convert (absent on CI: the
-             # read fails) while IM7 on a Mac renders it itself, so the same mark
-             # would draw differently per machine. Every committed tile was drawn
-             # by the internal one.
-             [ "+size", "-background", "none", "-density", [ ((72.0 * box * 2) / svg_width(mark)).round, 96 ].max.to_s, "MSVG:#{mark}" ]
+             # Which renderer draws the SVG depends on the build: IM7 on a Mac
+             # uses ImageMagick's own (every committed tile was drawn by it); IM6
+             # on Ubuntu has no internal one and hands SVG to rsvg-convert, which
+             # CI installs (librsvg2-bin). Forcing `MSVG:` was tried and fails on
+             # IM6 outright. Tiles are built on the Mac and committed; CI only
+             # proves the command.
+             [ "+size", "-background", "none", "-density", [ ((72.0 * box * 2) / svg_width(mark)).round, 96 ].max.to_s, mark ]
            else
              [ "#{mark}[0]" ]
            end

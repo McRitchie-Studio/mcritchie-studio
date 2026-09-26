@@ -454,11 +454,12 @@ jobs:
         # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
         # and bin/agent-worktree shells `psql` to do it, and libvips is required
         # outright by image_processing + Active Storage's boot-time
-        # Vips.block_untrusted call. `imagemagick` is for
+        # Vips.block_untrusted call. `imagemagick` and `librsvg2-bin` are for
         # test/lib/workspace_icon_render_test.rb, which draws real PNGs with
-        # bin/workspace-icon's argv and fails (not skips) without it.
+        # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
+        # ImageMagick 6 reads SVG only through rsvg-convert.
         timeout-minutes: 25
-        run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick
+        run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick librsvg2-bin
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
@@ -600,11 +601,12 @@ jobs:
         # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
         # and bin/agent-worktree shells `psql` to do it, and libvips is required
         # outright by image_processing + Active Storage's boot-time
-        # Vips.block_untrusted call. `imagemagick` is for
+        # Vips.block_untrusted call. `imagemagick` and `librsvg2-bin` are for
         # test/lib/workspace_icon_render_test.rb, which draws real PNGs with
-        # bin/workspace-icon's argv and fails (not skips) without it.
+        # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
+        # ImageMagick 6 reads SVG only through rsvg-convert.
         timeout-minutes: 25
-        run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick
+        run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick librsvg2-bin
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
