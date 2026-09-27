@@ -85,12 +85,19 @@ module Appearances
       @surname.presence || @appearance&.person&.full_name.to_s.split.last.presence
     end
 
-    # ⚠ THERE IS NO JERSEY NUMBER IN THE DATA MODEL. Measured 2026-09-27: neither
-    # `athletes` nor `roster_spots` carries one, and the approved v4 sheet's "14"
-    # was supplied BY HAND. So this is nil for every athlete today and the number
-    # and nameplate clauses omit themselves rather than emitting a literal
-    # placeholder — a sheet reading "jersey number <NUMBER>" is worse than a sheet
-    # with no number, because the model will happily render the angle brackets.
+    # ⚠ THE NUMBER IS STILL HAND-SUPPLIED HERE, AND THAT IS NOW A CHOICE RATHER THAN
+    # A LIMIT. `athletes.jersey_number` landed 2026-09-27 (Athletes::AcquireOrValidate,
+    # `:roster` policy), so the claim this comment used to make — that no table carries
+    # a number and the approved v4 sheet's "14" had to be supplied by hand — is true
+    # only of the sheets built before that day.
+    #
+    # NOTHING READS THE COLUMN FROM HERE YET, DELIBERATELY. Reading it would change the
+    # text of every generated prompt, and a prompt change costs money to evaluate and
+    # owes its own before/after artifacts; it is a task, not a side effect of correcting
+    # a comment. Until then `number:` stays the caller's argument and is nil unless one
+    # is passed, and the number and nameplate clauses omit THEMSELVES rather than
+    # emitting a literal placeholder — a sheet reading "jersey number <NUMBER>" is worse
+    # than a sheet with no number, because the model will happily render the brackets.
     def number = @number.presence
 
     private

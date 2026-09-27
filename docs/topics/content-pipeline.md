@@ -379,11 +379,15 @@ variant — deliberately unlike `Appearances::ReferenceImages::HEADSHOT_VARIANTS
 (`%w[400 100]`), because that list feeds a TRAINING set while this feeds a
 generator reading one image.
 
-**There is no jersey number in the data model.** Measured 2026-09-27: neither
-`athletes` nor `roster_spots` carries one, and the approved reference sheet's "14"
-was supplied by hand. The page offers an optional number field; left blank, the
-prompt omits the number and nameplate clauses rather than asking the model to
-render a placeholder.
+**The jersey number is in the data model, and this recipe still does not read it.**
+`athletes.jersey_number` landed 2026-09-27 (`Athletes::AcquireOrValidate`, `:roster`
+policy); before that no table carried one and the approved reference sheet's "14" was
+supplied by hand. `Appearances::CharacterSheetPrompt` takes `number:` as a caller's
+argument and reads no column, deliberately: wiring it changes the text of every
+generated prompt, and a prompt change costs money to evaluate and owes its own
+before/after artifacts. Until then the page offers an optional number field; left
+blank, the prompt omits the number and nameplate clauses rather than asking the model
+to render a placeholder.
 
 **⚠ `POST https://queue.fal.run/<model>` submits billable work on ANY body**,
 including an empty one. Probe fal with the GET status endpoint: a real key answers
