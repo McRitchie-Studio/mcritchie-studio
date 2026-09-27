@@ -67,4 +67,35 @@ class EmailTrackingControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, @delivery.reload.open_count
     assert_nil @delivery.human_opened_at
   end
+
+  # [integration] Result tracking: a click that lands on one of our sites
+  # carries the email's ref; a beacon credits a goal once.
+  test "a tracked Cyvasse link lands with the email's ref" do
+    cyvasse = Broadcast.create!(subject: "Cyvasse is back", template_key: "cyvasse_is_back")
+    delivery = cyvasse.deliveries.create!(contact: @contact)
+    get email_click_path(token: delivery.token, l: "play")
+
+    assert_redirected_to "https://cyvasse.mcritchie.studio/play?ref=#{delivery.token}"
+    assert_equal "play", delivery.events.of_kind("clicked").sole.link_key
+  end
+
+  test "a link to someone else's site carries no ref" do
+    get email_click_path(token: @delivery.token, l: "turf_totals")
+    assert_redirected_to "https://example.com/turf"
+  end
+
+  test "a result beacon credits its goal once and answers a gif" do
+    2.times { get email_goal_path(token: @delivery.token, g: "signed_in") }
+
+    assert_response :success
+    assert_equal "image/gif", response.media_type
+    assert_equal 1, @delivery.events.of_kind("converted").count
+  end
+
+  test "a beacon with an unknown goal or token records nothing" do
+    get email_goal_path(token: @delivery.token, g: "nope")
+    get email_goal_path(token: "not-real", g: "signed_in")
+    assert_response :success
+    assert_equal 0, EmailEvent.count
+  end
 end

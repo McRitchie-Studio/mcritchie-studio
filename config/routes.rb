@@ -42,6 +42,7 @@ Rails.application.routes.draw do
   # Email engagement tracking (open pixel + click redirect), keyed by delivery token.
   get "e/o/:token", to: "email_tracking#open",  as: :email_open
   get "e/c/:token", to: "email_tracking#click", as: :email_click
+  get "e/g/:token", to: "email_tracking#goal",  as: :email_goal
 
   get "dashboard", to: "dashboard#index"
   # Task-development trends dashboard (stage speed, cycle time, tokens, cost,
