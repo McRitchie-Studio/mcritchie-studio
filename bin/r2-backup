@@ -8,6 +8,7 @@
 
 require_relative "lib/cli_arg_guard"
 require_relative "lib/r2_backup"
+require_relative "lib/op_vaults"
 
 USAGE = <<~TXT
   usage: bin/r2-backup run <app> [--accept-drop] [--op]
@@ -23,7 +24,7 @@ USAGE = <<~TXT
 
   Credentials, from the environment: R2_ENDPOINT, R2_BACKUP_ACCESS_KEY_ID,
   R2_BACKUP_SECRET_ACCESS_KEY (the app's backup token). With --op they are read
-  from 1Password item r2.<app> in studio-agents instead. Needs rclone on PATH.
+  from 1Password item r2.<app> in the agent vault instead. Needs rclone on PATH.
 TXT
 
 args = CliArgGuard.guard!(
@@ -56,10 +57,9 @@ unless app.match?(/\A[a-z0-9][a-z0-9-]*\z/)
 end
 
 if args.bool?("--op")
-  item = "op://studio-agents/r2.#{app}"
   { "R2_ENDPOINT" => "endpoint", "R2_BACKUP_ACCESS_KEY_ID" => "access-key-id-backup",
     "R2_BACKUP_SECRET_ACCESS_KEY" => "secret-access-key-backup" }.each do |env, field|
-    value = IO.popen(["op", "read", "#{item}/#{field}"], err: File::NULL, &:read).to_s.strip
+    value = IO.popen(["op", "read", OpVaults.ref("r2.#{app}", field)], err: File::NULL, &:read).to_s.strip
     abort("r2-backup: could not read #{field} from r2.#{app} — NOTHING ran.") if value.empty?
     ENV[env] = value
   end
