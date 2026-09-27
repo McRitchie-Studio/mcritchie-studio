@@ -609,8 +609,50 @@ namespace :nfl do
     end
   end
 
-  ESPN_TEAMS_INDEX_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams"
-  ESPN_TEAM_COACHES_URL = ->(team_id) { "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/#{team_id}/coaches" }
+  # ── HOW THIS LANE TALKS TO ESPN ─────────────────────────────────────────────
+  #
+  # The host, the name and the reads all come from Espn::Api, which is the ONE
+  # place this app spells a host. Read app/services/espn/api.rb before changing a
+  # word of the three constants below; the short version is that
+  # Espn::Api::FILTERED_HOST serves curl 200 and Ruby 403 from behind an Akamai
+  # deny page, so a URL you verify by hand is not a URL this task can read.
+  #
+  # MEASURED 2026-09-27 THROUGH `URI.open` -- the call this task makes, not curl,
+  # and not Net::HTTP as the sibling services use -- with the working host carried
+  # as a control so the 403 is pinned on the host rather than on how Ruby asks:
+  #
+  #     URI.open("https://<host>/apis/site/v2/sports/football/nfl/teams")
+  #
+  #     HOST                   UA CONDITION           STATUS         BYTES
+  #     site.api.espn.com      open-uri default       403 Forbidden     437
+  #     site.api.espn.com      Espn::Api::USER_AGENT  403 Forbidden     437
+  #     site.web.api.espn.com  open-uri default       200           148,848  <- control
+  #     site.web.api.espn.com  Espn::Api::USER_AGENT  200           148,848  <- control
+  #
+  # The user agent moves NEITHER host, which is the whole finding: the fix is the
+  # host, and no string we send can revive the other one.
+  #
+  # ── WHY THE INDEX URL IS A LAMBDA AND NOT A STRING ─────────────────────────
+  #
+  # Because a String would break every rake task in the repository. Rails loads
+  # lib/tasks/*.rake BEFORE the `:environment` task sets Zeitwerk up, so
+  # `Espn::Api` is not yet autoloadable at the moment this line is evaluated.
+  # MEASURED 2026-09-27 with a throwaway .rake file and `rake -T`:
+  #
+  #     PROBE: load-time reference FAILED -> NameError: uninitialized constant Espn
+  #
+  # So the sibling spelling -- `ESPN_TEAMS_INDEX_URL = "https://#{Espn::Api::WEB_HOST}/..."`,
+  # which is correct inside app/services because Zeitwerk is up by then -- cannot
+  # be copied here. The callable defers the constant lookup to run time, which is
+  # also the idiom ESPN_TEAM_COACHES_URL already used.
+  ESPN_TEAMS_INDEX_URL = -> { "https://#{Espn::Api::WEB_HOST}/apis/site/v2/sports/football/nfl/teams" }
+  ESPN_TEAM_COACHES_URL = ->(team_id) { "https://#{Espn::Api::CORE_HOST}/v2/sports/football/leagues/nfl/teams/#{team_id}/coaches" }
+
+  # ONE SPELLING OF WHO WE ARE, for every ESPN read this lane makes. Unset is not
+  # anonymous: measured off a local socket 2026-09-27, open-uri fills in
+  # `User-Agent: Ruby`, so the only choice available was between Ruby's name and
+  # our own, and an honest identifier with a contact URL is the better one.
+  ESPN_JSON_GET = ->(url) { URI.open(url, "User-Agent" => Espn::Api::USER_AGENT).read }
   COACH_HEADSHOT_WIDTHS = [100, 400].freeze
 
   desc "Pull NFL head coaches from ESPN; populate Coach espn_id + espn_headshot_url. No S3 traffic."
@@ -624,9 +666,51 @@ namespace :nfl do
     )
 
     puts "Fetching ESPN team index..."
-    teams_resp = JSON.parse(URI.open(ESPN_TEAMS_INDEX_URL).read)
-    espn_teams = teams_resp.dig("sports", 0, "leagues", 0, "teams").map { |t| t["team"] }
+    index_url = ESPN_TEAMS_INDEX_URL.call
+
+    # RESCUED HERE AND NOT THROUGH Espn::Api::TRANSPORT_ERRORS, DELIBERATELY. That
+    # constant is documented as "the failures that mean the network, not ESPN's
+    # answer", and an OpenURI::HTTPError is precisely ESPN's answer -- it carries a
+    # status. Adding it there would also be inert in both places the constant is
+    # actually read: Espn::ScrapeDepthCharts and Espn::PlayerProfile use Net::HTTP,
+    # which RETURNS a 4xx response rather than raising, so neither can raise this
+    # class. An addition that looks meaningful and does nothing is how the host
+    # divergence rotted in the first place, so the handling stays where the call is.
+    teams_resp =
+      begin
+        JSON.parse(ESPN_JSON_GET.call(index_url))
+      rescue OpenURI::HTTPError => e
+        # READ THE STATUS LINE, NOT THE MESSAGE. open-uri builds the message from
+        # the status so they usually agree, but a proxy may reword a reason phrase
+        # while the status line stays the protocol's. Falls back to the message
+        # when the io cannot be read, because a weaker abort beats no abort.
+        status = Array(e.io.respond_to?(:status) ? e.io.status : nil).join(" ").presence || e.message
+        abort "nfl:link_coach_headshots: ESPN answered #{status} for #{index_url} -- no coach " \
+              "was read and nothing changed. If that status is 403, this lane has been pointed " \
+              "back at #{Espn::Api::FILTERED_HOST}, which answers curl with 200 and Ruby with " \
+              "403 from an Akamai deny page: CHECKING THAT URL BY HAND WILL SUCCEED WHILE THIS " \
+              "TASK FAILS. Read the note in app/services/espn/api.rb and dial " \
+              "Espn::Api::WEB_HOST instead."
+      end
+
+    # `Array(...)` so an index whose shape MOVED reaches the same guard as one that
+    # is merely empty: `dig` returns nil, `Array(nil)` is [], and both end in the
+    # abort below rather than in a NoMethodError backtrace.
+    espn_teams = Array(teams_resp.dig("sports", 0, "leagues", 0, "teams")).map { |t| t["team"] }
     puts "  #{espn_teams.size} ESPN teams"
+
+    # A RUN WITH NO TEAMS IS NOT A RUN WITH NOTHING TO DO. This list is the lane's
+    # ONLY source of work, so zero teams means zero coaches were considered -- and
+    # before this guard the loop walked zero times, printed a tidy column of zeros
+    # and exited 0. The dead host could therefore present as a clean run, which is
+    # the quieter half of the same defect.
+    if espn_teams.empty?
+      abort "nfl:link_coach_headshots: resolved 0 ESPN teams from #{index_url} -- no coach was " \
+            "read and none could be, so this run changed nothing despite exiting cleanly before " \
+            "this guard existed. ESPN answered, but its team list was empty or no longer lives " \
+            "at sports[0].leagues[0].teams. Re-read that URL FROM RUBY (curl agreeing proves " \
+            "nothing about this host) before concluding the document moved."
+    end
 
     matched = 0
     skipped_unchanged = 0
@@ -645,14 +729,14 @@ namespace :nfl do
         next
       end
 
-      coaches_resp = JSON.parse(URI.open(ESPN_TEAM_COACHES_URL.call(espn_team_id)).read)
+      coaches_resp = JSON.parse(ESPN_JSON_GET.call(ESPN_TEAM_COACHES_URL.call(espn_team_id)))
       ref = coaches_resp.dig("items", 0, "$ref")
       unless ref
         skipped_no_coach += 1
         next
       end
 
-      coach_resp = JSON.parse(URI.open(ref).read)
+      coach_resp = JSON.parse(ESPN_JSON_GET.call(ref))
       espn_id = coach_resp["id"].to_s
       headshot_url = coach_resp.dig("headshot", "href")
       first = coach_resp["firstName"]
