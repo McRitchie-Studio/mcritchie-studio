@@ -16,7 +16,7 @@
 # EmailEvents::MachineDetector. Webhook events carry Resend's event id in
 # `provider_event_id`, so a redelivered webhook is recorded once.
 class EmailEvent < ApplicationRecord
-  KINDS = %w[sent delivered delivery_delayed bounced complained opened clicked unsubscribed converted].freeze
+  KINDS = %w[sent delivered delivery_delayed bounced complained opened clicked unsubscribed resubscribed converted].freeze
   SOURCES = %w[resend pixel redirect page app beacon].freeze
 
   # What a reader did after clicking, credited to the email (kind "converted",

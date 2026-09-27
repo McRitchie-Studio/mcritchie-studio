@@ -1,0 +1,11 @@
+<%# Which address, and which email the reader followed the link from. %>
+<p class="text-secondary">
+  <span class="block text-xs uppercase tracking-widest text-muted mb-1">Your address</span>
+  <strong class="text-heading break-all" data-unsubscribe-email><%= contact.email %></strong>
+</p>
+<% if delivery %>
+  <p class="text-secondary mt-3">
+    <span class="block text-xs uppercase tracking-widest text-muted mb-1">From the email</span>
+    <span class="text-heading" data-unsubscribe-broadcast>“<%= delivery.broadcast.subject %>”</span>
+  </p>
+<% end %>

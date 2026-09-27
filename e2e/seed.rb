@@ -1529,3 +1529,13 @@ AppRequest.create!(prompt: "A trivia night scoreboard: teams, rounds and a live 
   AppRequest.create!(prompt: prompt, user: gallery_admin).queue!("zz-seed-#{sub}")
     .update_columns(subdomain: sub, status: "live")
 end
+
+# /unsubscribe — one reader with fixed tokens, reached from one broadcast, so
+# e2e/unsubscribe.spec.js can walk unsubscribe then resubscribe.
+EmailEvent.delete_all
+BroadcastDelivery.delete_all
+Broadcast.delete_all
+Contact.delete_all
+unsubscribe_reader = Contact.create!(email: "reader@example.com", unsubscribe_token: "e2e-unsubscribe-token")
+Broadcast.create!(slug: "e2e-cyvasse-is-back", subject: "Cyvasse is back", template_key: "cyvasse_is_back")
+  .deliveries.create!(contact: unsubscribe_reader, token: "e2e-delivery-token", sent_at: Time.current)
