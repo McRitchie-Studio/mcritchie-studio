@@ -43,12 +43,14 @@ module ImageGeneration
   # does it BECAUSE THE ROW SAYS SO, which is a sentence a reader can go and check.
   #
   # THE REGISTRY ROW FOR THE SHEET GENERATOR STILL SAYS `one` (config/image_generators.yml,
-  # `openai_gpt5_sheet`), so today that is still what ships. Flipping it is a CLAIM about
-  # the vendor's request shape, and this repo holds no measured multi-image call to this
-  # endpoint: the "five references were no better than one" sentence appears three times
-  # attributed to three different paths (this row, /v1/images/edits, and the Higgsfield
-  # trainer), so it settles nothing. When somebody measures it, the whole path below is
-  # already built for the plural answer.
+  # `openai_gpt5_sheet`), so today that is still what ships — and that row now carries the
+  # reasoning and what would settle it, rather than leaving the value to be read as a
+  # vendor constraint. This repo holds no measured multi-image call to this endpoint. The
+  # "five references were no better than one" sentence was once carried with three
+  # different subjects (this row, /v1/images/edits, and the Higgsfield trainer); it is the
+  # /v1/images/edits measurement, it says so everywhere now, and it therefore settles
+  # nothing about the Responses path either way. When somebody measures it, the whole path
+  # below is already built for the plural answer.
   class OpenAI
     OPEN_TIMEOUT = 10
 

@@ -125,13 +125,18 @@ module Appearances
     # operator is owed a sentence about rather than a vendor error.
     #
     # ⚠ THE "FIVE WERE NO BETTER THAN ONE" CLAIM USED TO BE THE JUSTIFICATION FOR
-    # STOPPING HERE, AND IT CANNOT BE. The same sentence appears three times in this repo
-    # attributed to three different paths — config/image_generators.yml credits this
-    # Responses row, ImageGeneration::OpenAI credits /v1/images/edits (a different
-    # endpoint it tells you never to use), and the 2026-09-27 operator relay credits the
-    # Higgsfield TRAINING path. Three attributions of one measurement is no measurement,
-    # so it is not load-bearing anywhere any more. Whether more references make a better
-    # sheet on THIS path is UNMEASURED.
+    # STOPPING HERE, AND IT CANNOT BE. That sentence was at one time carried in three
+    # places with three different subjects — this Responses row, /v1/images/edits (a
+    # different endpoint the registry tells you never to use), and the 2026-09-27
+    # operator relay's Higgsfield TRAINING path. Three attributions of one measurement
+    # is no measurement.
+    #
+    # THE ATTRIBUTION IS NOW SETTLED and the conclusion is unchanged: the measurement
+    # was made on /v1/images/edits ONLY, every site says so, and a guard
+    # (test/lib/generator_record_tripwire_test.rb) fails on a copy that drops the
+    # endpoint. What that buys is a smaller claim, not a bigger one — whether more
+    # references make a better sheet on THIS path is still UNMEASURED, and
+    # config/image_generators.yml's `reference_arity` note says what would settle it.
     #
     # READS THE STORED s3_key AND NEVER REBUILDS THE PATH. `Athlete#headshot_url`
     # resolves the ImageCache row and calls `ImageCache#url` on it; the sibling

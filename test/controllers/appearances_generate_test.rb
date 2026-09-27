@@ -50,10 +50,10 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     FakeAdapter.result = ImageGeneration::Result.new(
       image_urls: ["data:image/png;base64,QUJD"], seed: nil,
       request_id: "resp_1", generator_key: "openai_gpt5_sheet",
-      # A MEASURED TOKEN COUNT, NOT AN INVENTED ONE. This stub used to say 18_432, a
-      # figure nothing ever measured, and it LEAKED: five comments across app/ and
-      # docs/ went on to quote it as an observed OpenAI cost and to call the order
-      # "tens of thousands". Real sheets ran 6,724-7,629 (config/image_generators.yml).
+      # A MEASURED TOKEN COUNT, NOT AN INVENTED ONE. This stub used to carry a five-figure
+      # number nothing ever measured, and it LEAKED: five comments across app/ and docs/
+      # went on to quote it as an observed OpenAI cost and to overstate the order of
+      # magnitude with it. Real sheets ran 6,724-7,629 (config/image_generators.yml).
       # Keep this a number the registry row can vouch for, so a reader who finds it
       # here and repeats it elsewhere repeats something true.
       version: "gpt-5-2025-08-07@v1", billable_units: 7_629

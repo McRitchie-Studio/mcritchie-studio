@@ -48,12 +48,13 @@ class GeneratorRecordTripwireTest < ActiveSupport::TestCase
   OUTPUT_PANEL = "app/views/appearances/_output_panel.html.erb".freeze
   REGISTRY_TEST = "test/models/image_generation/registry_test.rb".freeze
   LOOK_READING_TEST = "test/services/appearances/look_reading_test.rb".freeze
+  USE_CASE_TEST = "test/services/appearances/generate_artifact_test.rb".freeze
   PIPELINE_DOC = "docs/topics/content-pipeline.md".freeze
 
   SCANNED = [
     REGISTRY_YAML, REGISTRY_RB, CONTROLLER, ADAPTER, USE_CASE, REFERENCE_SET,
     LOOK_READING, PROMPT, ARTIFACT, OUTPUT_PANEL, REGISTRY_TEST, LOOK_READING_TEST,
-    PIPELINE_DOC
+    USE_CASE_TEST, PIPELINE_DOC
   ].freeze
 
   EDITS_ENDPOINT = "/v1/images/edits".freeze
