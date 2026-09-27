@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_27_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_070000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -281,13 +281,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_060000) do
   create_table "artifacts", force: :cascade do |t|
     t.datetime "approved_at"
     t.string "approved_by"
+    t.integer "billable_units"
+    t.decimal "cost_usd", precision: 10, scale: 4
     t.datetime "created_at", null: false
+    t.string "generator"
+    t.string "generator_endpoint"
+    t.string "generator_version"
     t.string "image_url"
     t.string "kind", null: false
+    t.text "prompt"
     t.datetime "retired_at"
+    t.bigint "seed"
     t.string "slug", null: false
     t.string "source"
     t.datetime "updated_at", null: false
+    t.index ["generator", "retired_at"], name: "index_artifacts_on_generator_and_retired_at", where: "(generator IS NOT NULL)"
     t.index ["kind", "retired_at"], name: "index_artifacts_on_kind_and_retired_at"
     t.index ["slug"], name: "index_artifacts_on_slug", unique: true
   end
@@ -339,6 +347,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_060000) do
     t.string "gsis_id"
     t.string "hair_description"
     t.integer "height_inches"
+    t.integer "jersey_number"
     t.string "nflverse_id"
     t.string "otc_id"
     t.string "person_slug", null: false
@@ -1138,12 +1147,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_060000) do
     t.integer "defense"
     t.integer "dex", null: false
     t.jsonb "evolution", default: [], null: false
+    t.jsonb "evolution_genders", default: {}, null: false
+    t.string "female_sprite_url"
+    t.jsonb "gender_forms", default: {}, null: false
+    t.integer "gender_rate"
     t.integer "generation", default: 1, null: false
+    t.boolean "has_gender_differences", default: false, null: false
     t.integer "hp"
     t.string "name", null: false
     t.string "primary_type"
     t.string "shiny_avatar_fallback_url"
     t.string "shiny_avatar_url"
+    t.string "shiny_female_sprite_url"
     t.string "shiny_sprite_url"
     t.string "slug", null: false
     t.integer "special_attack"
@@ -1152,7 +1167,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_060000) do
     t.string "sprite_url"
     t.string "types", default: [], null: false, array: true
     t.datetime "updated_at", null: false
-    t.index ["dex"], name: "index_pokemons_on_dex", unique: true
+    t.index ["dex"], name: "index_pokemons_on_dex"
     t.index ["slug"], name: "index_pokemons_on_slug", unique: true
   end
 
@@ -1299,6 +1314,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_060000) do
 
   create_table "session_mascots", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.string "gender"
     t.string "mascot_slug", null: false
     t.string "parent_session_id"
     t.string "session_id", null: false

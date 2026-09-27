@@ -69,8 +69,11 @@ module Ci
       # draws a card (see the reversal above), so it is on the row either way.
       # prisoners-dilemma, weekly-lock, rantly and portfolio joined on 2026-09-26
       # (task register-showcase-apps), registered three-rung like dads-app.
-      assert_equal %w[cyvasse dads-app mcritchie-industries mcritchie-studio portfolio prisoners-dilemma
-                      rantly solana-studio studio-engine turf-monster turf-vault weekly-lock],
+      # 10and5 and search-position followed the same day
+      # (task register-two-more-showcase-apps), registered the same way.
+      assert_equal %w[10and5 cyvasse dads-app mcritchie-industries mcritchie-studio portfolio
+                      prisoners-dilemma rantly search-position solana-studio studio-engine turf-monster
+                      turf-vault weekly-lock],
                    Ci::AppLadder.reportable_repos.sort
     end
 

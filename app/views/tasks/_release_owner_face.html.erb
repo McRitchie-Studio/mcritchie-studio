@@ -7,8 +7,9 @@
     shows full-colour with a soft ring; an idle (lapsed-lease) claim dims. Sized a
     touch larger than the conductor-mascot img row and pinned beside the status badge.
     Locals: role (String), pokemon (Pokemon), name (String),
-            label (String, title/aria), shiny (Boolean), live (Boolean). %>
-<% sprite = pokemon.display_sprite(shiny: shiny) %>
+            label (String, title/aria), shiny (Boolean), live (Boolean),
+            gender (String or nil; optional). %>
+<% sprite = pokemon.display_sprite(shiny: shiny, gender: local_assigns[:gender]) %>
 <span class="flex items-center gap-1.5 min-w-0<%= " opacity-50" unless live %>"
       data-test="release-owner-face" data-role="<%= role %>" data-pokemon="<%= pokemon.slug %>"
       data-live="<%= live %>" title="<%= label %>" aria-label="<%= label %>">

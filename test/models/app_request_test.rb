@@ -83,8 +83,9 @@ class AppRequestTest < ActiveSupport::TestCase
   end
 
   # The names are unregistered on purpose: the real showcase builds
-  # (prisoners-dilemma, weekly-lock, rantly, portfolio) have satellites.yml rows
-  # since register-showcase-apps, so their subdomains are reserved now.
+  # (prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position)
+  # have satellites.yml rows since register-showcase-apps and
+  # register-two-more-showcase-apps, so their subdomains are reserved now.
   test "an admin is exempt from the one-app rule, and their requests are showcase builds" do
     admin = users(:alex)
     assert admin.admin?
@@ -98,7 +99,7 @@ class AppRequestTest < ActiveSupport::TestCase
   # A showcase app registered in config/satellites.yml reserves its subdomain the
   # day it is registered, so no new request can claim a name that ships there.
   test "a registered showcase app's subdomain is reserved" do
-    %w[prisoners-dilemma weekly-lock rantly portfolio].each do |name|
+    %w[prisoners-dilemma weekly-lock rantly portfolio 10and5 search-position].each do |name|
       assert_equal "That name is reserved.", AppRequest.unavailable_reason(name),
                    "#{name} has a satellites.yml row, so its subdomain must not be claimable"
     end
@@ -148,8 +149,8 @@ class AppRequestTest < ActiveSupport::TestCase
   end
 
   test "each showcase rebuild's live card carries its screenshot" do
-    %w[prisoners-dilemma weekly-lock rantly portfolio].each_with_index do |subdomain, i|
-      # The four names are reserved satellites, so queue! refuses them; queue a
+    %w[prisoners-dilemma weekly-lock rantly portfolio 10and5 search-position].each_with_index do |subdomain, i|
+      # These names are reserved satellites, so queue! refuses them; queue a
       # placeholder and give it the real subdomain, as production holds it.
       live = draft(user: users(:alex)).queue!("zz-showcase-#{i}")
       live.update_columns(subdomain: subdomain, status: "live")
@@ -169,6 +170,11 @@ class AppRequestTest < ActiveSupport::TestCase
 
     assert_equal %w[cyvasse prisoners-dilemma rantly], subdomains.first(3)
     assert_equal %w[portfolio weekly-lock], subdomains.drop(3) & %w[portfolio weekly-lock], "newest first after the lead"
+  end
+
+  test "a showcase card takes its name from the config, else titleizes the subdomain" do
+    assert_equal "10&5 Hospitality", BuildGallery.display_name("10and5")
+    assert_equal "Weekly Lock", BuildGallery.display_name("weekly-lock")
   end
 
   test "a customer's live app is never in the public gallery" do

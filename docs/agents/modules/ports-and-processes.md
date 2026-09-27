@@ -16,6 +16,8 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 | Weekly Lock | 3900 | 3900-3999 reserved |
 | Rantly | 4000 | 4000-4099 reserved |
 | Portfolio | 4100 | 4100-4199 reserved |
+| 10&5 Hospitality | 4200 | 4200-4299 reserved |
+| Search Position | 4300 | 4300-4399 reserved |
 
 The durable app registry decision surface is
 `mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
@@ -41,7 +43,9 @@ environment.
 The four showcase apps (`3800-4199`: Prisoners Dilemma, Weekly Lock, Rantly,
 Portfolio) are release-managed standalones like Dads App (`reserved` in
 `config/satellites.yml`, no studio-engine, no database). Production is the
-Heroku app `mcr-<repo>` for each; none has a QA environment.
+Heroku app `mcr-<repo>` for each; none has a QA environment. 10&5 Hospitality
+(`10and5`, `4200-4299`) and Search Position (`search-position`, `4300-4399`)
+are registered the same way.
 
 ## Primary Ports
 

@@ -6,6 +6,7 @@
 class SessionMascot < ApplicationRecord
   validates :session_id,  presence: true, uniqueness: true
   validates :mascot_slug, presence: true
+  validates :gender, inclusion: { in: Pokemon::GENDERS }, allow_nil: true
 
   # The stable mascot for a session — drawn once, then reused. Honors a mascot a
   # live task of this session already carries (an in-flight session keeps its
@@ -25,7 +26,8 @@ class SessionMascot < ApplicationRecord
     parent_sid = parent_session_id.to_s.strip.presence
     if parent_sid && (parent = find_by(session_id: parent_sid))
       parent.with_lock do
-        create_with_draw!(sid, parent_session_id: parent_sid, parent_mascot_slug: parent.mascot_slug)
+        create_with_draw!(sid, parent_session_id: parent_sid, parent_mascot_slug: parent.mascot_slug,
+                               parent_gender: parent.gender)
       end
     else
       create_with_draw!(sid, parent_session_id: parent_sid)
@@ -37,37 +39,66 @@ class SessionMascot < ApplicationRecord
   # The slug to assign a fresh session: reuse a live peer task's mascot for this
   # session; for a known parent session, draw from that parent's evolution tree;
   # else draw one not already spoken for.
-  def self.draw_for(sid, parent_session_id: nil, parent_mascot_slug: nil)
+  #
+  # A subagent session's draw is pruned to the branches the parent's GENDER allows
+  # (a female Nidoran parent never hands a child the Nidorino line).
+  def self.draw_for(sid, parent_session_id: nil, parent_mascot_slug: nil, parent_gender: nil)
+    draw_with_gender_hint(sid, parent_session_id: parent_session_id, parent_mascot_slug: parent_mascot_slug,
+                               parent_gender: parent_gender).first
+  end
+
+  # [slug, gender hint] — the hint is the gender the slug's source already carries
+  # (a live peer task's devops.mascot_gender, or the parent session's gender), nil
+  # for a fresh deck draw. create_with_draw! keeps a hint the species allows and
+  # rolls otherwise.
+  def self.draw_with_gender_hint(sid, parent_session_id: nil, parent_mascot_slug: nil, parent_gender: nil)
     peer = Task.live.detect do |task|
       task.metadata&.dig("devops", "session_id").to_s == sid &&
         task.metadata&.dig("devops", "mascot").present?
     end
-    return peer.metadata.dig("devops", "mascot") if peer
+    return [peer.metadata.dig("devops", "mascot"), peer.metadata.dig("devops", "mascot_gender")] if peer
 
     if parent_session_id.present?
-      parent_slug = parent_mascot_slug.presence || find_by(session_id: parent_session_id)&.mascot_slug
-      if (slug = draw_for_parent_tree(parent_session_id, parent_slug))
-        return slug
+      parent = find_by(session_id: parent_session_id) if parent_mascot_slug.blank? || parent_gender.blank?
+      parent_slug = parent_mascot_slug.presence || parent&.mascot_slug
+      parent_gender = parent_gender.presence || parent&.gender
+      if (slug = draw_for_parent_tree(parent_session_id, parent_slug, gender: parent_gender))
+        return [slug, parent_gender]
       end
     end
 
-    Pokemon.draw(exclude: taken)&.slug
+    [Pokemon.draw(exclude: taken)&.slug, nil]
   end
 
-  def self.create_with_draw!(sid, parent_session_id: nil, parent_mascot_slug: nil)
-    slug = draw_for(sid, parent_session_id: parent_session_id, parent_mascot_slug: parent_mascot_slug)
+  def self.create_with_draw!(sid, parent_session_id: nil, parent_mascot_slug: nil, parent_gender: nil)
+    slug, gender_hint = draw_with_gender_hint(sid, parent_session_id: parent_session_id,
+                                                   parent_mascot_slug: parent_mascot_slug,
+                                                   parent_gender: parent_gender)
     return nil unless slug
 
     # The shiny roll happens HERE, once per session draw (1-in-25 prod, 1-in-2
     # dev/QA) — the session's tasks then adopt the flag as devops.mascot_shiny.
+    # So does the GENDER roll, weighted by the species' gender_rate; the tasks
+    # adopt it as devops.mascot_gender.
     create!(session_id: sid, parent_session_id: parent_session_id.presence,
-            mascot_slug: slug, shiny: Pokemon.roll_shiny?)
+            mascot_slug: slug, shiny: Pokemon.roll_shiny?, gender: gender_for(slug, gender_hint))
   end
 
-  def self.draw_for_parent_tree(parent_sid, parent_slug)
+  # The session's gender: an inherited hint the species allows (a subagent keeps
+  # its parent's), else a fresh roll by gender_rate. nil for a genderless species
+  # or a slug with no seeded row.
+  def self.gender_for(slug, hint = nil)
+    pokemon = Pokemon.find_by(slug: slug)
+    return nil unless pokemon
+
+    hint = Pokemon.normalize_gender(hint)
+    hint && pokemon.allows_gender?(hint) ? hint : pokemon.roll_gender
+  end
+
+  def self.draw_for_parent_tree(parent_sid, parent_slug, gender: nil)
     return nil if parent_sid.blank? || parent_slug.blank?
 
-    tree = Pokemon.evolution_tree_for(parent_slug)
+    tree = Pokemon.evolution_tree_for(parent_slug, gender: gender)
     return nil if tree.empty?
     return parent_slug if tree.one?
 

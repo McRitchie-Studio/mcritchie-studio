@@ -23,6 +23,12 @@ and make product calls, not to operate the terminal on behalf of the agent.
   the shiny artwork on every board avatar and a ✨ suffix on its status-line
   glyphs (`⚡✨ Pikachu`). Purely cosmetic, rolled once per session at draw time
   (`devops.mascot_shiny`), and historical stage events keep the shiny face.
+  The same draw rolls a **gender** (`devops.mascot_gender`), weighted by the
+  species' real PokéAPI `gender_rate`: forced species get their only gender, and
+  genderless ones get none. A female draw of a species with a distinct female
+  look wears the female pixel sprite. Gender also picks the evolution branch, so
+  Nidoran is one drawable family: a female one evolves into Nidorina and a male one
+  into Nidorino. A subagent session inherits its parent's gender.
 - **Mascot for identity, soul for expertise.** When the work wants a specific soul —
   Carl (backend), Shannon (UI), Jasper (Web3), Steffon (platform), Xan (docs) — act
   *as* that soul: the agent handle drives the review pool and domain fit. The Pokémon

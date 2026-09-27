@@ -28,6 +28,8 @@ Rails.application.routes.draw do
 
   # Broadcast emails — table view + editor. `preview` renders the email itself
   # (in the email shell) for the editor's live iframe.
+  # Email analytics dashboard (before the resource, so "analytics" is not an id).
+  get "broadcasts/analytics", to: "broadcast_analytics#show", as: :broadcast_analytics
   resources :broadcasts, only: %i[index edit update] do
     member do
       get  :preview
@@ -42,6 +44,7 @@ Rails.application.routes.draw do
   # Email engagement tracking (open pixel + click redirect), keyed by delivery token.
   get "e/o/:token", to: "email_tracking#open",  as: :email_open
   get "e/c/:token", to: "email_tracking#click", as: :email_click
+  get "e/g/:token", to: "email_tracking#goal",  as: :email_goal
 
   get "dashboard", to: "dashboard#index"
   # Task-development trends dashboard (stage speed, cycle time, tokens, cost,
@@ -351,6 +354,12 @@ Rails.application.routes.draw do
         post :search
         post :mint
         post :refresh
+        # #generate BUYS ONE IMAGE from a zero-shot identity adapter — one
+        # headshot in, one picture out, no training step and therefore no
+        # character model required. Behind `require_admin` with the other two
+        # spenders, for the reason spelled out above: hub signup is open, so a
+        # session is no control over a paid endpoint.
+        post :generate
       end
     end
 

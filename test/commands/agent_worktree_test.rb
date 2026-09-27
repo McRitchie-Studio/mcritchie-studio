@@ -328,23 +328,8 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
                  orphan_decision(primary, managed, [primary, managed.first, "/elsewhere/stray"])
   end
 
-  # [integration] A real out-of-tree git worktree (outside `.worktrees/`) must be
-  # reported by `doctor` with its path, branch, and clean/merged state, and
-  # doctor must NOT claim "no issues" when an orphan exists.
-  test "[integration] doctor flags an out-of-tree orphan worktree" do
-    orphan_dir = File.join(@projects_dir, "stray-worktree")
-    git!(@hub_dir, "worktree", "add", orphan_dir, "-b", "stray/orphan")
-
-    out, err, status = agent_worktree("doctor", "mcritchie-studio", env: command_env)
-
-    assert status.success?, err
-    assert_no_match(/no worktree lifecycle issues found/, out)
-    assert_includes out, "untracked git worktree"
-    assert_includes out, File.realpath(orphan_dir)
-    assert_includes out, "stray/orphan"
-    # The managed worktree (in `.worktrees/`) must NOT be misreported as orphan.
-    assert_no_match(%r{untracked git worktree at \S*\.worktrees/}, out)
-  end
+  # An out-of-tree worktree is a DESK now, not an orphan: see
+  # test/commands/agent_worktree_desk_discovery_test.rb.
 
   # [integration] A PRUNABLE worktree — git still LISTS it but its directory was
   # deleted on disk without `git worktree prune`. Computing branch/merge/clean

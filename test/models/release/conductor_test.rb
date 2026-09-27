@@ -1357,22 +1357,29 @@ class Release::ConductorTest < ActiveSupport::TestCase
     loose_shipped_task("a")
     loose_shipped_task("b")
 
+    # A fake clock for the batch's BeatClock alone, so the recorded waits are
+    # exact whatever the CI runner's speed (on the real clock a write over 100ms
+    # failed the old 0.1 tolerance). Each read of it costs WRITE seconds,
+    # standing in for the card's own write, and the paced "sleep" moves it by
+    # what it waits. Only the scheduler reads it; the rest of Rails keeps time.
+    write = 0.2
+    now = 1_000.0
+    fake_beat = Class.new(Release::BeatClock) { define_method(:monotonic_now) { now += write } }
+    new_fake = ->(beat) { fake_beat.allocate.tap { |clock| clock.send(:initialize, beat) } }
     paced = []
-    result = Release::Conductor.stub(:pause_between_archives, ->(seconds) { paced << seconds }) do
-      Release::Conductor.archive_completed!(pause: 0.5)
+    result = Release::BeatClock.stub(:new, new_fake) do
+      Release::Conductor.stub(:pause_between_archives, ->(seconds) { paced << seconds; now += seconds }) do
+        Release::Conductor.archive_completed!(pause: 0.5)
+      end
     end
     assert_operator result[:count], :>=, 2
     assert_equal result[:count] - 1, paced.size,
                  "one wait BETWEEN each pair — never before the first card"
     # Each wait is the remainder until the nth BEAT measured from the batch's start
-    # (Release::BeatClock) — the archive's own write time is spent inside the beat
-    # rather than added to it, so the batch cannot drift later with every card. The
-    # stub never actually sleeps, so what it records is the deadline itself: 1 beat,
-    # 2 beats, 3 beats… and the useful assertion is that they step by exactly one.
-    assert_in_delta 0.5, paced.first, 0.1, "the second card is due one beat in"
-    paced.each_cons(2) do |earlier, later|
-      assert_in_delta 0.5, later - earlier, 0.1, "consecutive cards are one beat apart"
-    end
+    # (Release::BeatClock): the write is spent INSIDE the beat, so every wait is
+    # the beat less the write, and the cards leave exactly one beat apart. A
+    # schedule that slept a full beat after each write would record 0.5 here.
+    paced.each { |seconds| assert_in_delta 0.5 - write, seconds, 1e-9, "the write is spent inside the beat" }
 
     loose_shipped_task("c")
     unpaced = []

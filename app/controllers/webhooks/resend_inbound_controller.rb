@@ -20,6 +20,9 @@ module Webhooks
       head :ok
     rescue JSON::ParserError
       head :bad_request
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      raise
     end
 
     private

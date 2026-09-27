@@ -235,6 +235,37 @@ class StatuslineTest < Minitest::Test
     refute_includes out, "\e[38;5;213m", "and never the old pink tint"
   end
 
+  # --- Nidoran carries its sign (tasks/pokemon-mascot-gender) --------------------
+
+  def test_legacy_nidoran_slugs_render_their_sign_not_a_letter
+    female = render_in(session: SESSION, extra: { "mascot" => "nidoran-f" })
+    male = render_in(session: SESSION, extra: { "mascot" => "nidoran-m" })
+
+    assert_includes female, "Nidoran♀"
+    refute_includes female, "Nidoran f", "the slug's -f is not a word"
+    assert_includes male, "Nidoran♂"
+    refute_includes male, "Nidoran m"
+  end
+
+  def test_nidoran_family_takes_its_sign_from_the_session_gender
+    female = render_in(session: SESSION, extra: { "mascot" => "nidoran", "mascot_gender" => "female" })
+    male = render_in(session: SESSION, extra: { "mascot" => "nidoran", "mascot_gender" => "male" })
+    unknown = render_in(session: SESSION, extra: { "mascot" => "nidoran" })
+
+    assert_includes female, "Nidoran♀"
+    assert_includes female, "\e]0;Nidoran♀\a", "the tab title carries the sign too"
+    assert_includes male, "Nidoran♂"
+    assert_includes unknown, "Nidoran"
+    refute_includes unknown, "♀"
+    refute_includes unknown, "♂"
+  end
+
+  def test_gender_never_renames_an_ordinary_mascot
+    out = render_in(session: SESSION, extra: { "mascot" => "mr-mime", "mascot_gender" => "male" })
+    assert_includes out, "Mr mime"
+    refute_includes out, "♂"
+  end
+
   # --- No build-claim heartbeat: the desk is the claim -------------------------
 
   # Run statusline with a stub `task` binary (records its args) wired in via

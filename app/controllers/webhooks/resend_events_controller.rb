@@ -34,13 +34,17 @@ module Webhooks
       head :ok
     rescue JSON::ParserError
       head :bad_request
+    rescue StandardError => e
+      # Record it, then fail the request so Resend retries the event.
+      ErrorLog.capture!(e)
+      raise
     end
 
     private
 
     def record(delivery, kind, payload, data)
       details = event_details(kind, data)
-      event = delivery.record_event!(
+      delivery.record_event!(
         kind: kind, source: "resend",
         at: parse_time(payload["created_at"]) || Time.current,
         provider_event_id: request.headers["svix-id"],
@@ -48,8 +52,8 @@ module Webhooks
         machine: machine?(kind, data, delivery),
         data: details
       )
-      return unless event
-
+      # Also on a redelivery: if the first attempt logged the event but failed
+      # to unsubscribe, Resend's retry must still take the contact off the list.
       if kind == "complained"
         delivery.contact.unsubscribe!(reason: "complained")
       elsif kind == "bounced" && details["bounce_kind"] == "hard"

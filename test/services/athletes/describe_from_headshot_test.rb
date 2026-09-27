@@ -359,6 +359,58 @@ class Athletes::DescribeFromHeadshotTest < ActiveSupport::TestCase
     refute DFH.new(api_key: "test-key-not-a-real-credential").call(nil).any?
   end
 
+  # --- THE DEFAULT SEAMS, which nothing above this line reaches ------------
+  #
+  # [unit] THE HEADLINE SAFETY CLAIM, PINNED AT THE BINDING RATHER THAN ASSERTED ABOUT
+  # IT. Every other test in this file that reaches #call with a credential INJECTS a
+  # transport, and the ones that do not return early at the `@api_key.blank?` or
+  # `athlete.nil?` guard — so before this test, `@transport = transport ||
+  # VisionTransport.method(:call)` was covered by nothing. Repoint that default at any
+  # other HTTP client and the whole suite would have stayed green while production
+  # billed through a path the trap does not stand in front of.
+  #
+  # That is the trap test's own philosophy — "delete the line and everything still
+  # passes" — turned on the BINDING instead of the ENV var, and it is the one claim the
+  # feature makes that its tests did not hold: *every paid call leaves through
+  # Athletes::VisionTransport*.
+  #
+  # ONE ASSERTION PROVES BOTH HALVES. It builds the real describer with a key and
+  # injects only the downloader, so the call runs all the way to the transport the
+  # PRODUCTION path would use. Reaching the armed trap proves the default routes
+  # through VisionTransport; the exception escaping #call proves the trap bites through
+  # the describer's degrade, which it only does because LiveCallAttempted sits outside
+  # StandardError.
+  test "the default transport is the armed VisionTransport, not some other client" do
+    assert Athletes::VisionTransport.armed?,
+           "the suite-wide trap must be armed or this test proves nothing"
+
+    describer = DFH.new(api_key: "test-key-not-a-real-credential",
+                        downloader: ->(key:) { "PNGBYTES" })
+
+    error = assert_raises(Athletes::VisionTransport::LiveCallAttempted) do
+      describer.call(athlete_with_headshot)
+    end
+
+    assert_match Athletes::VisionTransport::NO_LIVE_CALLS_ENV, error.message,
+                 "the raise must come from the trap, not from something else that failed"
+  end
+
+  # THE SAME SHAPE AT LOWER STAKES: an S3 read rather than a bill. Stubbing
+  # Studio::S3.download is what makes this safe to assert — the point is only that the
+  # default `@downloader` routes there, so a repointed default is caught too.
+  test "the default downloader reads the object through Studio::S3" do
+    asked = nil
+    athlete = athlete_with_headshot
+
+    Studio::S3.stub(:download, ->(key:) { asked = key; "PNGBYTES" }) do
+      DFH.new(api_key: "test-key-not-a-real-credential",
+              transport: ->(**) { GOOD_ANSWER }).call(athlete)
+    end
+
+    assert_equal athlete.image_caches.first.s3_key, asked,
+                 "the default downloader must read the ImageCache row's recorded key through Studio::S3"
+  end
+
   private
 
   # Drives the real #call with both seams injected. Yields the request body when a

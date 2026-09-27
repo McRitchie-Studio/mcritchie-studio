@@ -457,12 +457,14 @@ module ApplicationHelper
     pokemon = session_mascot&.pokemon
     return nil if pokemon.blank?
 
+    name = pokemon.display_name(gender: session_mascot.gender)
     render "tasks/release_owner_face",
            role: role,
            pokemon: pokemon,
-           name: pokemon.name,
-           label: release_owner_face_label(role, pokemon.name),
+           name: name,
+           label: release_owner_face_label(role, name),
            shiny: session_mascot.shiny,
+           gender: session_mascot.gender,
            live: info["live"] ? true : false
   end
 
@@ -1076,7 +1078,9 @@ module ApplicationHelper
     "prisoners-dilemma"    => "🎲",
     "weekly-lock"          => "🏈",
     "rantly"               => "📣",
-    "portfolio"            => "🗂️"
+    "portfolio"            => "🗂️",
+    "10and5"               => "🍽️",
+    "search-position"      => "🔎"
   }.freeze
 
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.

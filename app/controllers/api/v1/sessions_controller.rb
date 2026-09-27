@@ -22,6 +22,9 @@ module Api
         render_data({
           "mascot"       => session_mascot.mascot_slug,
           "mascot_shiny" => session_mascot.shiny?,
+          # The session's gender roll ("female"/"male"/nil). bin/statusline reads it
+          # to name a gender family's form (nidoran → Nidoran♀ / Nidoran♂).
+          "mascot_gender" => session_mascot.gender,
           "mascot_color" => pokemon&.signature_color,
           "mascot_emoji" => pokemon&.status_emoji(shiny: session_mascot.shiny?),
           "app"          => app&.slug || App::DEFAULT_SLUG,

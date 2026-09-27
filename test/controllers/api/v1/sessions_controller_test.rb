@@ -34,6 +34,18 @@ module Api
         assert_equal "🔶✨", data["mascot_emoji"]
       end
 
+      # tasks/pokemon-mascot-gender: bin/task writes this into the session marker,
+      # and bin/statusline names a gender family's form by it.
+      test "POST mascot returns the session's gender roll" do
+        Pokemon.find_by!(slug: "snorlax").update!(gender_rate: 1)
+        Pokemon.stub(:gender_die, 0) do
+          post "/api/v1/sessions/sess-gender/mascot", headers: @headers
+        end
+
+        assert_response :success
+        assert_equal "female", JSON.parse(response.body).dig("data", "mascot_gender")
+      end
+
       test "POST mascot also returns the default app so a fresh session shows it" do
         post "/api/v1/sessions/sess-1/mascot", headers: @headers
 
