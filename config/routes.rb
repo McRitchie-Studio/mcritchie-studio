@@ -28,6 +28,8 @@ Rails.application.routes.draw do
 
   # Broadcast emails — table view + editor. `preview` renders the email itself
   # (in the email shell) for the editor's live iframe.
+  # Email analytics dashboard (before the resource, so "analytics" is not an id).
+  get "broadcasts/analytics", to: "broadcast_analytics#show", as: :broadcast_analytics
   resources :broadcasts, only: %i[index edit update] do
     member do
       get  :preview
