@@ -878,6 +878,58 @@ apps:
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
+  # --- TWO MORE SHOWCASE APPS (registered 2026-09-26, task
+  # register-two-more-showcase-apps)
+  #
+  # 10and5 (10&5 Hospitality, a restaurant mystery-shopper platform; showcase
+  # rebuild of amcritchie/garret-app, 2015-17) and search-position (a Google
+  # search position checker; showcase rebuild of amcritchie/google-search-position,
+  # 2015) are registered EXACTLY like the four above: read that block for the
+  # long form. Release-managed standalones, no studio-engine, no database, a
+  # `status: reserved` row in config/satellites.yml for the port block, public
+  # McRitchie-Studio repos with main + accepted + release (three-rung from
+  # birth), git_push_heroku to `mcr-<repo>` on one Eco dyno, and test_cmd = CI's
+  # `test` job verbatim.
+  #
+  # smoke_url is the herokuapp HOST, not <repo>.mcritchie.studio, on purpose:
+  # the custom domains wait on Alex's DNS records (CNAMEs to each app's
+  # herokudns target) and ACM, and until they resolve a smoke against them
+  # would abort the ship AFTER the push. Each app's production.rb leaves host
+  # authorization off, so /up answers on the herokuapp host. Switch each to
+  # https://<repo>.mcritchie.studio once that host serves /up 200, as task
+  # showcase-smoke-custom-domains did for the four. It is the HOST, not /up:
+  # the ship smokes `<smoke_url>/up` itself (bin/release.rb).
+  #
+  # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
+  # EXEMPT under the SAME operator decision as the four: Alex selected
+  # "No QA copies (Recommended)" for the showcase apps, and on 2026-09-26 asked
+  # for these two to be migrated the same way. No new decision was taken, so
+  # repos_test.rb's QA_EXEMPT_BY_OPERATOR_DECISION cites the same string for
+  # both; change it everywhere together. The cost is the four's: a change
+  # reaches production without a human-reviewable QA deploy, gated by CI and
+  # review, and the `shipped` stamp still needs each app's release -> main record.
+  10and5:
+    ladder: three-rung
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/mcr-10and5.git
+      branch: main
+      # Moves to https://10and5.mcritchie.studio once DNS + ACM land.
+      smoke_url: https://mcr-10and5-eb8feab2def8.herokuapp.com
+    test_cmd: bin/rails test
+    # Alex selected "No QA copies (Recommended)" (see the four's block above).
+    qa_evidence: exempt
+  search-position:
+    ladder: three-rung
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/mcr-search-position.git
+      branch: main
+      # Moves to https://search-position.mcritchie.studio once DNS + ACM land.
+      smoke_url: https://mcr-search-position-3c91e0b95f46.herokuapp.com
+    test_cmd: bin/rails test
+    # Alex selected "No QA copies (Recommended)" (see the four's block above).
+    qa_evidence: exempt
   tax-studio:
     # PLANNED — no repo yet. The guard asserts no checkout exists, so this
     # exemption expires the day one does.
