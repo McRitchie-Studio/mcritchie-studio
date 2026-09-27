@@ -194,9 +194,9 @@ class PokemonTest < ActiveSupport::TestCase
 
   # --- Committed data file (db/seeds/data/pokemon.json) ---
 
-  test "data file carries all 251 Gen 1-2 rows with complete image URL sets" do
+  test "data file carries all 493 Gen 1-4 rows with complete image URL sets" do
     all_rows = JSON.parse(File.read(Rails.root.join("db/seeds/data/pokemon.json")))
-    # The one gender-family row (nidoran) rides beside the 251 species and wears
+    # The one gender-family row (nidoran) rides beside the 493 species and wears
     # Nidoran♀'s dex and art; the male art comes through its gender_forms.
     families, rows = all_rows.partition { |r| r["gender_forms"].present? }
     assert_equal ["nidoran"], families.map { |r| r["slug"] }
@@ -205,12 +205,16 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal({ "female" => "nidoran-f", "male" => "nidoran-m" }, nidoran["gender_forms"])
     assert nidoran["avatar_url"].end_with?("/29-nidoran-f-cropped.png")
 
-    assert_equal (1..251).to_a, rows.map { |r| r["dex"] }
-    assert_equal 251, rows.map { |r| r["slug"] }.uniq.size
-    assert(rows.all? { |r| r["generation"] == (r["dex"] <= 151 ? 1 : 2) })
+    assert_equal (1..493).to_a, rows.map { |r| r["dex"] }
+    assert_equal 493, rows.map { |r| r["slug"] }.uniq.size
+    ranges = { 1 => Pokemon::GEN1_RANGE, 2 => Pokemon::GEN2_RANGE, 3 => Pokemon::GEN3_RANGE, 4 => Pokemon::GEN4_RANGE }
+    assert(rows.all? { |r| ranges.fetch(r["generation"]).cover?(r["dex"]) })
 
     # Every row carries the six dex-slug-keyed image URLs (normal + shiny,
-    # cropped primary + uncropped fallback + pixel sprite).
+    # cropped primary + uncropped fallback + pixel sprite). All six were live in
+    # S3 for every Gen 3–4 row when pokemon-gen-3-and-4 ran prune_missing_art
+    # (1,550 URLs, none blanked); a species whose art is missing upstream would
+    # carry nil here and wear the model's fallback instead.
     rows.each do |r|
       key = "#{r['dex']}-#{r['slug']}"
       assert r["avatar_url"].end_with?("/#{key}-cropped.png"), "##{r['dex']} avatar_url"
@@ -418,12 +422,12 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal %w[deoxys giratina shaymin wormadam], Pokemon.where(dex: [386, 413, 487, 492]).order(:slug).pluck(:slug)
   end
 
-  test "seed populates both a cropped avatar_url and an uncropped fallback for all 251" do
+  test "seed populates both a cropped avatar_url and an uncropped fallback for all 493" do
     seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
     capture_io { load seed }
 
     pokemon = Pokemon.species.order(:dex).to_a
-    assert_equal 251, pokemon.size
+    assert_equal 493, pokemon.size
     pokemon.each do |p|
       assert p.avatar_url.present?, "##{p.dex} #{p.slug} missing avatar_url"
       assert p.avatar_fallback_url.present?, "##{p.dex} #{p.slug} missing avatar_fallback_url"
