@@ -56,15 +56,36 @@ module Espn
   # A second copy of a host is a second place for this to rot, so both services
   # read these constants and neither spells a host out again.
   #
-  # A THIRD COPY IS STILL OUT THERE and is NOT repaired here: lib/tasks/nfl.rake's
-  # `nfl:link_coach_headshots` (the task at :431, off the ESPN_TEAMS_INDEX_URL
-  # constant at :426) names site.api.espn.com and reads it with URI.open.
-  # MEASURED 2026-09-27 through open-uri itself, not inferred from the table above:
-  # that host answered 403 Forbidden and this one answered 200 with 148848 bytes,
-  # so that task is dead in exactly the way this service was. It is a different
-  # code path with a different rescue shape — OpenURI::HTTPError into a per-team
-  # `rescue StandardError` — and its own acceptance, so it is filed as
-  # `revive-coaches-seed-host` rather than smuggled in here.
+  # THE THIRD COPY IS NOW REPAIRED, under `revive-coaches-seed-host`:
+  # lib/tasks/nfl.rake's `nfl:link_coach_headshots` named site.api.espn.com and
+  # read it with `URI.open`. It now resolves WEB_HOST and USER_AGENT from here, so
+  # no host is spelled out anywhere in that file and a test refuses to let one back
+  # in. MEASURED 2026-09-27 through open-uri itself — the call that task makes —
+  # with this host carried as a control: site.api answered 403 Forbidden / 437
+  # bytes and site.web.api answered 200 / 148848, for both the open-uri default UA
+  # and the honest one above. The user agent moved neither host; only the host did.
+  #
+  # TWO CORRECTIONS TO WHAT THIS NOTE USED TO SAY, both measured while repairing it:
+  #
+  #   * It described that task's rescue shape as "OpenURI::HTTPError into a per-team
+  #     `rescue StandardError`". The per-team rescue is real, but the INDEX fetch sat
+  #     ABOVE the loop and was not covered by it, so the 403 propagated out of the
+  #     task as a bare open-uri backtrace. It now aborts naming the host trap.
+  #   * It pinned the task at :431 and the constant at :426. Those were CORRECT at
+  #     fb95c5af, where this note was written, and went stale the same day when PR
+  #     1685 added ~186 lines above them. Names are the durable handle; a line
+  #     number in this file is only true for one commit.
+  #
+  # THAT TASK CANNOT SPELL THESE CONSTANTS THE WAY THIS FILE'S CONSUMERS DO, and the
+  # difference is load order, not taste. Rails loads lib/tasks/*.rake BEFORE the
+  # `:environment` task sets Zeitwerk up, so `Espn::Api` is not resolvable while a
+  # .rake file's constant assignments run. MEASURED with a throwaway .rake file and
+  # `rake -T`: an eager `ESPN_TEAMS_INDEX_URL = "https://#{WEB_HOST}/..."` there
+  # raises `NameError: uninitialized constant Espn` and drops the repository from
+  # 165 loadable rake tasks to 1 — every task, not just that one. So the rake lane
+  # holds callables that resolve these constants at run time. Copying the eager
+  # spelling below into a .rake file is the one edit that looks like a tidy-up and
+  # takes the whole task list down.
   module Api
     # THE HOST THAT SERVES RUBY. site.api.espn.com is the one that does not; see
     # the table above before changing this by one word.
