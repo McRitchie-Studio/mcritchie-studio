@@ -247,7 +247,13 @@ ESPN ──(AcquireOrValidate)──> athletes.team_slug ──(LookReading#trad
   is nil while `a-j-cole` is on file, so 1 of the 18 Las Vegas players that looked
   absent was a player we have had for years. `Athletes::NameKey` compares
   punctuation- and suffix-insensitively and the act REFUSES an ambiguous name rather
-  than filing a second row for one human.
+  than filing a second row for one human. **The refusal prints the line that settles
+  it** — one runnable `Person.find_by(slug: …).then { … p.aliases.to_a | ["AJ Cole"] … }`
+  per candidate, which files the source's spelling where `find_by_name`'s third strategy
+  looks, so the same repair unblocks the run AND fixes every later lookup. It
+  deliberately does not send the operator back with `source_id:`: that chooses which
+  PROFILE the source answers with, not which ROW is resolved, so re-running with one
+  returns the identical refusal (measured 2026-09-27, which is how this was found).
 - **A trade means the stored team is the one roster he is no longer on.** Searching
   only the stored team can never discover the event the act was built for, so a miss
   widens to all 32 rosters (ESPN publishes no working player-name search:

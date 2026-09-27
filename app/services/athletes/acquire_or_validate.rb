@@ -306,14 +306,73 @@ module Athletes
       # reaches Person.find_by_name as nil while `a-j-cole` sits on file, so
       # "no exact match" is NOT "new player". See Athletes::NameKey.
       near = NameKey.near_matches(profile.full_name)
-      if near.any?
-        return [refusal(:ambiguous_name, profile.full_name,
-                        "#{profile.full_name} is not on file under that spelling, but " \
-                        "#{near.map(&:slug).join(', ')} could be the same person — " \
-                        "resolve by hand, or re-run with source_id: to bind the id to the right row"), nil]
-      end
+      return [ambiguous_name_refusal(profile, near), nil] if near.any?
 
       [nil, nil]
+    end
+
+    # THE AMBIGUOUS-NAME REFUSAL, AND THE ONE REMEDY THAT IS NOT A LOOP.
+    #
+    # This message used to end "resolve by hand, or re-run with source_id: to bind the id
+    # to the right row", and following it returns the BYTE-IDENTICAL refusal. Measured
+    # 2026-09-27, two passes with the same `source_id:`: naming an id decides which
+    # PROFILE the source answers with, and #local_for above still resolves the ROW by
+    # name — by_id misses because nothing holds the id yet, find_by_name cannot see
+    # across the punctuation, and the near-match ladder fires again. An instruction that
+    # returns its own refusal is worse than no instruction, because the operator spends
+    # the run believing they have tried something.
+    #
+    # It is the same defect this file already fixed once for #profile_for_known_person's
+    # `:stale_source_id`, and `acquire_or_validate_test.rb` now holds BOTH to the same
+    # bar: it cuts the printed line out of the message and RUNS it.
+    def ambiguous_name_refusal(profile, near)
+      spelling = profile.full_name
+      # Sorted because NameKey.near_matches filters in Ruby over an unordered query, and
+      # an operator comparing two sweeps should not have to wonder whether the order
+      # means something.
+      slugs = near.map(&:slug).sort
+
+      refusal(:ambiguous_name, spelling,
+              "#{spelling} is not on file under that spelling, but #{slugs.join(', ')} " \
+              "could be the same person. source_id: does not settle this — it chooses " \
+              "which PROFILE the source answers with, while the ROW is still resolved by " \
+              "name, so re-running with one returns this very message. What settles it is " \
+              "filing this spelling as an alias on the right row: Person.find_by_name " \
+              "matches on aliases, so it unblocks this act AND fixes every later lookup. " \
+              "If he is nobody on that list he is a new person and needs his own row by " \
+              "hand. Otherwise run #{slugs.length > 1 ? 'the line for the right man' : 'this'} " \
+              "and re-run the act — " \
+              "#{slugs.map { |slug| alias_remedy(slug, spelling) }.join(' — or — ')}")
+    end
+
+    # ONE RUNNABLE LINE PER CANDIDATE, printed last so nothing is appended to the
+    # characters the operator copies, and one per candidate rather than one template with
+    # a placeholder — an instruction that has to be edited before it runs is the class of
+    # defect this method exists to end.
+    #
+    # `people.aliases` is jsonb, so `|` is a set union and a second press adds nothing —
+    # which matters, because an operator re-runs a line they are unsure about. Verified
+    # 2026-09-27 in BOTH row shapes: a Person whose Athlete row carries no `espn_id`, and
+    # a Person with no Athlete row at all.
+    #
+    # `.to_a` IS NOT DECORATION, and `|` is not nil-safe the way it looks. The column
+    # defaults to `[]` and 3,056 of 3,056 people carry an array (measured 2026-09-27),
+    # but it is nullable, and `NilClass#|` is DEFINED — `nil | ["AJ Cole"]` is `true`, not
+    # a NoMethodError, so a null row would store the literal `true` in a jsonb column and
+    # raise nothing at all. This line is pasted into a console by a human; it does not get
+    # to fail silently there. `nil.to_a` is `[]` and `Array#to_a` is self, so the union is
+    # the same for every row that exists and correct for the one that should not.
+    #
+    # DELIBERATELY NOT AN ID-BINDING LINE. A near match is a PERSON —
+    # NameKey.near_matches queries `people` — and a person on file need not have an
+    # `athletes` row, so `Athlete.find_by(person_slug: ...).update!(espn_id: ...)` raises
+    # NoMethodError on nil for exactly the punter this refusal was written for. Measured.
+    # And deliberately not a `Person.create!` line for the "different man" branch: this
+    # refusal exists to stop a second row for one human, so handing over the command that
+    # makes one is not something to print beside "these could be the same person".
+    def alias_remedy(slug, spelling)
+      "Person.find_by(slug: #{slug.inspect})" \
+        ".then { |p| p.update!(aliases: p.aliases.to_a | [#{spelling.inspect}]) }"
     end
 
     # A STORED ID THAT DISAGREES REFUSES EVERYTHING. There is no safe half-measure:
