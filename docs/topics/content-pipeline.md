@@ -156,9 +156,26 @@ candidate a search returned, chosen or not, with the reason each was passed over
 rejects are kept on purpose: the operator's question is "is the search any good?",
 and a table of winners cannot answer it — a search returning twenty stock
 thumbnails yields the same single winner as one returning twenty good portraits we
-capped at `GatherReferencePhotos::CHOSEN_LIMIT`. `ImageCache` is NOT the home for
-these: it is unique on `variant` per (owner, purpose) and demands an `s3_key`, so
-filing a reject would mean paying to mirror a photograph we had already refused.
+capped at `GatherReferencePhotos::CHOSEN_LIMIT`. `ImageCache` is NOT the RECORD of
+these: it is unique on `variant` per (owner, purpose) and demands an `s3_key`, so a
+candidate we never mirrored could have no row at all and twenty candidates could not
+share one (look, purpose) pair.
+
+**But `ImageCache` IS the MIRROR, and the two are different jobs.** Since 2026-09-26
+`Appearances::MirrorCandidates` copies every SHORTLISTED candidate into our own S3
+before anything is asked to look at it — `owner:` the candidate ROW (not the look, so
+the variant-uniqueness constraint is satisfied by construction), `purpose:
+"reference_photo"`, `widths: []` so only the original is stored. `AppearanceReferencePhoto`
+stays the record of every candidate, mirrored or not; `#hosted_url` reads the copy back
+and is nil when there is none. **A caller that finds no mirror must NOT fall back to
+`image_url`** — see the classifier section below for what that cost.
+
+**Why the shortlist and not everything.** A reject OUTSIDE the shortlist was rejected by
+the FREE metadata score, so re-judging it later costs a re-derivation rather than money;
+a reject INSIDE it was judged by a PAID classifier, and every one of those is mirrored,
+so no judgement we paid for becomes unrepeatable. It also puts the fetch cost and the
+classifier cost under one ceiling (`VISION_SHORTLIST`) instead of letting the mirror
+scale with however many results a provider returns.
 
 **The provider is an interface, and it does not assume a credential.** A provider
 answers `provider_name`, `available?` and `search(query:, limit:)`, and
@@ -239,6 +256,11 @@ fetches the images server-side from a `type: "url"` source — the same trust
 boundary Higgsfield's create sits behind, and the same obligation: only URLs that
 have cleared `Appearances::FetchableUrl` are ever passed.
 
+**AND ONLY URLs WE SERVE.** Every shortlisted candidate is mirrored into our own S3
+first (`Appearances::MirrorCandidates`) and the classifier is handed the copy. A
+candidate that could not be mirrored is simply not classified — it is never sent as a
+remote URL, because that is the defect:
+
 **Prioritise, never starve.** A helmeted photograph still goes into the identity
 when nothing better exists — measured on a real Commons answer for "Drew Lock",
 exactly ONE of twenty hits was bare-faced. The one HARD exclusion is
@@ -249,11 +271,47 @@ drops from 12 images to 8. That rule exists because of a real defect — with a 
 take-the-top-N, an 1896 edition of *The Rape of the Lock* was selected into a
 character model.
 
-**⚠ The classifier is UNVERIFIED end to end.** No `ANTHROPIC_API_KEY` exists on
-any machine or in any readable vault, so it has never been driven against the live
-API. Its request shape comes from the documented Messages API, not from an
-observed 200. First job the day a key lands: one real call, then pin the real
-response body as a fixture in `test/services/appearances/face_visibility_test.rb`.
+**⚠ IT HAS NOW BEEN DRIVEN LIVE, AND IT FAILED — measured on production
+2026-09-26**, during the first real scouting run (`jaxon-smith-njigba`). This
+paragraph previously read *"No `ANTHROPIC_API_KEY` exists on any machine or in any
+readable vault, so it has never been driven against the live API"*; that is no longer
+true of production, and a 400 rather than a 401 is itself the evidence the key was
+accepted. (`credential-inventory.md` records where the vault item is NOT filed, which
+is a different question and still stands.) What the run returned, on every image:
+
+```
+[Appearances::FaceVisibility] Anthropic answered 400:
+  {"type":"error","error":{"type":"invalid_request_error",
+   "message":"Unable to download the file. Please verify the URL and try again."}}
+```
+
+**The cause was hotlink policy on the source host, not an outage and not a bad URL.**
+Measured against the exact failing URL: `curl` **with** a User-Agent → 200 `image/png`;
+**without** one → **403**. Wikimedia refuses a request that sends no User-Agent, and
+Anthropic's fetcher was the party being refused. Our own fetcher is not — `URI.open`
+sends Net::HTTP's default `User-Agent: Ruby` and answered 200 with 222,045 bytes — which
+is why mirroring fixes it and a retry would not.
+
+**The asymmetry this explains:** Higgsfield fetches the same Wikimedia URLs
+successfully (its `reference_media` comes back re-hosted on its own CDN), so one
+consumer worked and another did not, from the same URL, with nothing in our code to
+tell them apart. Any source host may hotlink-protect, so the fix is architectural:
+mirror first, then hand out our own URL.
+
+**What the silence cost, and why "loud" is now a requirement.** The classifier degrades
+to an empty Hash by contract, so the run continued with NO face scores, ranking fell
+back to title-match and aspect ratio, and SIX photographs entered the character model —
+**three of them aircraft** (`9V-JSN` and `HB-JSN` are registration codes sharing the
+athlete's initials). The operator read it off the page before we did, because the page
+reported a green notice. `Summary#face_classifier_blind?` now separates **zero scores
+from N attempts** from **N photographs that scored zero**: the flash becomes an ALERT
+naming both counts (`0 of 8 shortlisted scored (8 mirrored and sent)`), and one
+`ErrorLog` row is filed against the look. It keys on `shortlisted`, not `attempted`, so
+a total MIRROR failure is equally loud rather than reading as "nothing to do".
+
+Still owed: the request shape comes from the documented Messages API, and no 200 has
+ever been observed. Pin a real response body as a fixture in
+`test/services/appearances/face_visibility_test.rb` on the first successful run.
 
 **⚠ Known gap: face visibility is not identity.** A clear photograph of the WRONG
 person outranks a helmeted photograph of the right one, because that is exactly
@@ -380,8 +438,12 @@ looked at the photographs. Both ranking defects are owned by task
 (our ESPN headshot — the one input measured to complete a reference) and
 `#mint_shape_failed_before?` (the wide crop shape that failed all four measured mints) are
 the only two claims made. Face size in frame is the actual variable and it cannot be
-measured without `ANTHROPIC_API_KEY`, which exists on no machine — so a tile says what was
-measured and stops.
+measured. A live classifier does not supply it either, and that is a narrower claim than
+the one this line used to make (*"`ANTHROPIC_API_KEY` … exists on no machine"* — production
+has one as of 2026-09-26; see the classifier section above). `FaceVisibility`'s prompt DOES
+fold size in — *small in frame* scores 0.6, *far from camera* 0.3 — but it gives those same
+values to a turned head and a shadowed one, so a score cannot be read BACK as a face size.
+A tile therefore says what was measured and stops.
 
 **⚠ The query the pipeline builds can collapse a Commons search.**
 `GatherReferencePhotos#query` is the person plus their team, which helps a general image
