@@ -9,13 +9,17 @@ module Appearances
   # the lane is buildable and testable now.
   #
   # THAT IS WHY THIS IS A SEPARATE OBJECT rather than a `headshot_url` call
-  # inside the create service. The list is the part that will change: an
-  # image-search step will supply the profile and the expressions once there is
-  # a credential for one. Whoever builds it writes a new callable with the same
-  # one-method shape and injects it —
-  # `Appearances::CreateCharacterReference.new(look, references: ImageSearch)` —
-  # and nothing else in the lane moves. A hardcoded lookup would have made that
-  # a rewrite of the create service instead.
+  # inside the create service. The list is the part that changes, and it has now
+  # changed: `Appearances::ReferenceSet` is the richer callable, it wraps this one as
+  # its floor, and it is what BOTH generators are injected with today (see
+  # AppearancesController#mint_identity and Appearances::GenerateArtifact#references).
+  # Nothing else in the lane moved, which is what the seam was for.
+  #
+  # ⚠ SO THIS OBJECT IS THE FLOOR, NOT THE WHOLE SET, and reading it as the whole set is
+  # a live trap: it answers `headshot_url` and `operator_reference_url` and nothing else,
+  # so a reader who finds it first concludes that scouted photographs reach no generator.
+  # They reach both, through ReferenceSet, which vets them
+  # (Appearances::ReferenceEligibility) and keeps this answer at the head of its list.
   #
   # THE CONTRACT, so a replacement can be written against it rather than against
   # this file: `.call(appearance)` returns an Array of absolute http(s) URLs,

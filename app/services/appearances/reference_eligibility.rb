@@ -193,14 +193,11 @@ module Appearances
       ELIGIBLE
     end
 
-    def self.eligible?(...) = verdict(...) == ELIGIBLE
-    def self.mint_eligible?(...) = mint_verdict(...) == ELIGIBLE
-
-    # THE ONE REFUSAL THAT IS NOT A JUDGEMENT OF THE PHOTOGRAPH, and the only one
-    # `.verdict` can never return. Everything else in REFUSALS says something is wrong
-    # with the picture; this says nobody has measured it yet, which is a statement about
-    # US — so the page words it differently and it never keeps a photograph out of a
-    # zero-shot sheet.
-    def self.unmeasured?(verdict) = verdict == FACE_SIZE_UNMEASURED
+    # ⚠ NO `eligible?` / `mint_eligible?` PREDICATE LIVES HERE, deliberately. The verdict
+    # SYMBOL is the thing every caller needs — Appearances::GatherReferencePhotos stamps it
+    # as the rejection reason and AppearancesHelper prints it — so a boolean wrapper would
+    # be a second, lossier way to ask the same question, and the reason for a refusal is
+    # exactly what this lane keeps losing. AppearanceReferencePhoto carries the booleans
+    # because a ROW is the thing callers hold.
   end
 end

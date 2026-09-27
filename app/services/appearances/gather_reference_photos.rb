@@ -128,26 +128,16 @@ module Appearances
         self[:scored].to_i.positive? && self[:sized].to_i.zero?
       end
 
-      # CHOSEN PHOTOGRAPHS NONE OF WHICH MAY BE PAID TO THE TRAINER. Not an error: it
-      # is the correct outcome on a machine with no vision credential, because
-      # Appearances::ReferenceEligibility.mint_verdict demands a MEASURED face size and
-      # nothing measured one. But it IS the outcome an operator would otherwise read as
-      # "six photographs went into the character model", and the remedy is different.
-      #
-      # THE ZERO-SHOT SHEET STILL GETS ALL SIX. That is the whole reason this is a
-      # separate reader rather than a refusal: the photographs are not wasted, they are
-      # spent on the generator that has no preparation stage to refuse them.
-      def mint_starved? = self[:chosen].to_i.positive? && self[:mint_ready].to_i.zero?
-
       # WHICH FLASH THIS SENTENCE DESERVES. A blind classifier is an ALERT, not a
       # notice: the run "succeeded" — photographs were filed and an identity can be
       # built from them — so a green notice is exactly what let a confidently wrong
       # result read as a good one. The severity is part of the same judgement as the
       # sentence, so it lives beside it rather than being re-derived by each caller.
       #
-      # A STARVED TRAINER IS A NOTICE, NOT AN ALERT, and the asymmetry is deliberate:
-      # the sheet path — the one the operator actually uses — got its photographs, so
-      # the run really did succeed. The sentence still says what the trainer will get.
+      # A TRAINER WITH NOTHING TO TRAIN ON IS A NOTICE, NOT AN ALERT, and the asymmetry is
+      # deliberate: the sheet path — the one the operator actually presses — got its
+      # photographs, so the run really did succeed. `#trainer_clause` says what the trainer
+      # will get in the same sentence, which is why there is no separate predicate for it.
       def flash_key = face_classifier_blind? || face_size_blind? ? :alert : :notice
 
       # THE ONE SENTENCE BOTH SEARCH ACTIONS PRINT.

@@ -163,7 +163,10 @@ module Appearances
     # new fact — but the object says `visibility`, because reading `face_score` as face
     # SIZE is the defect this whole file now exists to separate.
     Judgement = Struct.new(:visibility, :fill, :subjects, keyword_init: true) do
-      def measured? = !visibility.nil?
+      # ONLY THE QUESTION SOMEBODY ASKS. `sized?` is read by the ranker, the summary and the
+      # mint gate; a companion `measured?` for `visibility` was written and never called,
+      # because a Judgement with no visibility is dropped by the parser and never reaches a
+      # caller at all — so the predicate could only ever answer true.
       def sized? = !fill.nil?
     end
 

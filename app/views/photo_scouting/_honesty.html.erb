@@ -40,7 +40,11 @@
         <% else %>
           <strong>nothing looked at these photographs.</strong> They are ordered on
           shape and relevance only. A high position here means &ldquo;worth a closer
-          look&rdquo;, never &ldquo;a face is visible&rdquo;.
+          look&rdquo;, never &ldquo;a face is visible&rdquo; &mdash; and because nothing
+          examined them, <strong>none of them is picked</strong>: a photograph nobody has
+          looked at cannot be shown to hold one person&rsquo;s face, so both generators
+          fall back on the cached headshot. An empty picks section here is that refusal,
+          not a failed search.
           <% if @face_ranking_available %>
             <%# CONFIGURED BUT SILENT, and this is the state that misled the operator %>
             <%# on 2026-09-26: the classifier answered nothing, and the page said only %>

@@ -29,8 +29,9 @@ module Appearances
   # headshot *leads*, which implies something follows.
   #
   # SO A SCOUTED PHOTOGRAPH MAY JOIN, BUT IT HAS TO EARN IT: Appearances::ReferenceEligibility
-  # refuses a document, a stranger, a crowd, a hidden face, and a face MEASURED to be too
-  # small in frame.
+  # refuses a document, a stranger, a crowd, a hidden face, a face MEASURED to be too small
+  # in frame — and a photograph NOTHING LOOKED AT, which is the refusal production evidence
+  # added on 2026-09-27 after five of five unjudged candidates were chosen for one look.
   #
   # TWO LISTS, BECAUSE THE TWO GENERATORS DO NOT ACCEPT THE SAME SET:
   #
