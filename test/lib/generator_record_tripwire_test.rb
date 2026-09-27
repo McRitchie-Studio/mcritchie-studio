@@ -98,6 +98,31 @@ class GeneratorRecordTripwireTest < ActiveSupport::TestCase
       prefix = shorter[0, (shorter.length * 0.8).to_i]
       prefix.length >= 32 && longer.start_with?(prefix)
     end
+
+    # ⚠ A WINDOW, NOT ADJACENCY, AND THAT IS THE WHOLE CORRECTION.
+    #
+    # The first version of this rule compared each sentence with its immediate NEIGHBOUR
+    # and did not catch the defect it was written for. What shipped was a TWO-SENTENCE
+    # BLOCK pasted twice, so the repeated opening sentences were separated by the second
+    # sentence of the first copy and were never neighbours. Measured by re-introducing
+    # the real defect, 2026-09-27: the adjacent-only detector stayed GREEN on it.
+    #
+    # WINDOW is how many sentences ahead to look. 4 covers a pasted block of up to four
+    # sentences, which is larger than any comment paragraph in this controller.
+    WINDOW = 4
+
+    def duplicate_pairs(sentences)
+      pairs = []
+      sentences.each_with_index do |sentence, i|
+        (1..WINDOW).each do |ahead|
+          other = sentences[i + ahead]
+          next if other.nil?
+
+          pairs << [sentence, other] if near_duplicate?(sentence, other)
+        end
+      end
+      pairs
+    end
   end
 
   def flat(rel) = self.class.flat(rel)
@@ -174,13 +199,24 @@ class GeneratorRecordTripwireTest < ActiveSupport::TestCase
 
   # THE POSITIVE HALF. Absence checks alone would pass on a file that said nothing at
   # all, so the row must still carry the measured evidence the rules above defer to.
-  test "the registry row records the measured range and more than one sheet" do
+  # EACH SAMPLE IS KEYED TO ITS SUBJECT, not asserted as a bare number. A bare `6724`
+  # is also a substring of the RANGE `6724-7629`, so deleting the jaylen-waddle sample
+  # left the check green — the assertion could not tell a listed sample from a digit of
+  # the range. Measured by mutation, 2026-09-27. The subject is what makes a sample
+  # re-checkable by somebody else, so it is the right thing to require.
+  MEASURED_SHEETS = { "7629" => "Courtland Sutton", "7423" => "bo-nix", "6724" => "jaylen-waddle" }.freeze
+
+  test "the registry row records the measured range and every sheet behind it" do
     row = ImageGeneration::Registry.find!("openai_gpt5_sheet")
     cost = row.measured[:cost].to_s
 
-    %w[7629 7423 6724].each do |sample|
-      assert_includes cost, sample, "the row must carry every measured sheet, not just one"
+    MEASURED_SHEETS.each do |tokens, subject|
+      assert_match(/#{tokens}\s*\(#{Regexp.escape(subject)}/, cost,
+                   "the row must carry the #{subject} sheet's #{tokens} tokens as a LABELLED " \
+                   "sample — three sheets are what makes the range a range")
     end
+    assert_operator MEASURED_SHEETS.size, :>=, 3,
+                    "fewer than three samples cannot support a range claim"
     assert_match(/6724-7629|6,724-7,629/, cost, "the row must state the range, not only the samples")
   end
 
@@ -228,6 +264,14 @@ class GeneratorRecordTripwireTest < ActiveSupport::TestCase
   # delete a real finding. What it may never be is unattributed: it was at one point
   # credited to three different paths (the Responses row, the edits endpoint, and the
   # Higgsfield trainer), and three attributions of one measurement is no measurement.
+  #
+  # ⚠ WHAT THIS RULE CANNOT DO, stated because a reader will otherwise over-trust it. A
+  # window catches an ORPHANED claim — one in a passage that never names the endpoint. It
+  # does NOT catch a claim mis-scoped INSIDE a passage that names the endpoint for some
+  # other reason: the sheet row's header discusses /v1/images/edits at length, so a
+  # sentence there can lose its explicit subject and still sit within the window.
+  # Measured by mutation, 2026-09-27 — dropping the explicit subject from that row's
+  # header stayed green. The absence rules above are exact; this one is a net.
   FIVE_REF_PHRASES = [
     "no better than one",
     "measured NO BETTER than one",
@@ -295,7 +339,7 @@ class GeneratorRecordTripwireTest < ActiveSupport::TestCase
     assert_operator sentences.size, :>, 10,
                     "the sentence split found almost nothing — this scan is inspecting no prose"
 
-    repeats = sentences.each_cons(2).select { |a, b| self.class.near_duplicate?(a, b) }
+    repeats = self.class.duplicate_pairs(sentences)
 
     assert_empty repeats.map { |a, b| "#{a[0, 60]}… / #{b[0, 60]}…" },
                  "#{CONTROLLER} repeats a comment sentence back to back. The shipped defect was " \
@@ -309,26 +353,35 @@ class GeneratorRecordTripwireTest < ActiveSupport::TestCase
   # cannot rot: it compares the doc against the code every time it runs. The doc named
   # three reasons and the constant had grown to ten — it went stale by SEVEN without a
   # single test noticing, which is what a prose-only record always eventually does.
+  # THE LIST IS READ FROM A DELIMITED BLOCK, NOT FROM THE WHOLE DOC, and that is the
+  # second version of this rule. The first scanned the entire file for `` `reason` ``
+  # and it let a deletion through: the paragraph introducing the list mentioned three
+  # reason names in passing, so removing one from the LIST still left it present in the
+  # FILE and the check passed. A whole-file search cannot tell a list entry from a
+  # mention. Measured by mutation, 2026-09-27.
+  REASONS_BEGIN = "<!-- REJECTION_REASONS:BEGIN".freeze
+  REASONS_END = "<!-- REJECTION_REASONS:END -->".freeze
+
   test "the pipeline doc enumerates exactly the shipped rejection reasons" do
     reasons = AppearanceReferencePhoto::REJECTION_REASONS
     doc = self.class.read(PIPELINE_DOC)
 
-    assert_operator reasons.size, :>=, 10,
-                    "the constant shrank; if a reason was retired, this guard's premise changed"
+    # BOTH markers, checked separately. A slice taken on a half-present pair silently
+    # runs to the end of the file (or returns nothing) and the comparison becomes noise.
+    assert_includes doc, REASONS_BEGIN, "#{PIPELINE_DOC} lost the rejection-reason BEGIN marker"
+    assert_includes doc, REASONS_END, "#{PIPELINE_DOC} lost the rejection-reason END marker"
 
-    missing = reasons.reject { |reason| doc.include?("`#{reason}`") }
-    assert_empty missing,
-                 "#{PIPELINE_DOC} does not name #{missing.join(', ')}. The doc is the operator's " \
-                 "list and AppearanceReferencePhoto::REJECTION_REASONS is the truth; add them."
+    block = doc[/#{Regexp.escape(REASONS_BEGIN)}.*?-->(.*?)#{Regexp.escape(REASONS_END)}/m, 1].to_s
+    listed = block.scan(/`([a-z_]+)`/).flatten
 
-    # And the other direction: a retired reason must not linger in the doc.
-    doc.scan(/`(\w+)`/).flatten.uniq.each do |token|
-      next unless token.start_with?("face_", "not_a_", "wrong_", "mixed_", "beyond_", "unfetch")
-
-      assert_includes reasons, token,
-                      "#{PIPELINE_DOC} names `#{token}` as a rejection reason and the constant " \
-                      "does not carry it"
-    end
+    refute_empty listed, "the delimited block parsed to no reasons — the guard is comparing nothing"
+    assert_equal reasons.sort, listed.sort,
+                 "#{PIPELINE_DOC}'s rejection-reason block and " \
+                 "AppearanceReferencePhoto::REJECTION_REASONS disagree.\n" \
+                 "  only in the constant: #{(reasons - listed).inspect}\n" \
+                 "  only in the doc:      #{(listed - reasons).inspect}\n" \
+                 "The constant is the truth; the doc is what an operator reads."
+    assert_equal listed, listed.uniq, "the doc lists a reason twice"
   end
 
   # ── 10. The arity decision stays stated rather than silently flipped ───────────
