@@ -78,4 +78,44 @@ class Broadcasts::AnalyticsTest < ActiveSupport::TestCase
     assert_equal :amber, Broadcasts::Analytics.health(0.03, limits)
     assert_equal :red, Broadcasts::Analytics.health(0.04, limits)
   end
+
+  # The grouped tables are the per-row summary, computed in bulk.
+  test "every grouped row equals the summary of its own deliveries" do
+    a = deliver("a@gmail.com")
+    b = deliver("b@hotmail.com", broadcast: @other, sent_at: Time.utc(2026, 9, 29, 1))
+    c = deliver("c@proton.me", sent_at: Time.utc(2026, 9, 29, 2))
+    [a, b, c].each { |d| d.record_event!(kind: "delivered", source: "resend") }
+    a.record_open!
+    b.record_click!(link_key: "play")
+    c.record_event!(kind: "bounced", source: "resend", data: { "bounce_kind" => "hard" })
+    a.record_event!(kind: "converted", source: "beacon", data: { "goal" => "signed_in" })
+    c.record_event!(kind: "converted", source: "beacon", data: { "goal" => "played_match" })
+    analytics = Broadcasts::Analytics.new
+
+    analytics.by_broadcast.each do |broadcast, sum|
+      assert_equal analytics.summary(analytics.deliveries.where(broadcast: broadcast)), sum, broadcast.subject
+    end
+    analytics.by_send_day.each do |day, sum|
+      assert_equal analytics.summary(analytics.deliveries.where(sent_at: Time.utc(day.year, day.month, day.day).all_day)), sum, day.to_s
+    end
+    gmail = analytics.by_provider.to_h["Gmail"]
+    assert_equal analytics.summary(analytics.deliveries.where(id: a.id)), gmail
+  end
+
+  test "a breakdown costs the same queries for one group as for many" do
+    deliver("a@gmail.com")
+    one = sql_count { Broadcasts::Analytics.new.by_send_day }
+    deliver("b@gmail.com", sent_at: Time.utc(2026, 9, 29, 1))
+    deliver("c@gmail.com", sent_at: Time.utc(2026, 9, 30, 1))
+    assert_equal one, sql_count { Broadcasts::Analytics.new.by_send_day }
+  end
+
+  private
+
+  def sql_count(&block)
+    count = 0
+    counter = ->(*, payload) { count += 1 unless payload[:name] == "SCHEMA" || payload[:sql].start_with?("SAVEPOINT", "RELEASE") }
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record", &block)
+    count
+  end
 end
