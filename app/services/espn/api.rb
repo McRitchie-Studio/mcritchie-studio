@@ -20,11 +20,19 @@ module Espn
   #     a Chrome 120 browser string     403 /   437 bytes  200 / 148848 bytes
   #     curl/8.7.1 (from the shell)     200 / 148848 bytes 200 / 148848 bytes
   #
-  # THERE IS NO "no User-Agent" ROW because Net::HTTP will not send one: measured,
-  # a request whose header is never set arrives as `User-Agent: Ruby`, and setting
-  # it to nil drops the header on the floor rather than sending it empty. So "it
-  # works with no UA" is a claim this table cannot make and does not make; the
-  # empty-string row above is the closest thing that is actually on the wire.
+  # READ THE FIRST ROW'S LABEL LITERALLY. A request whose User-Agent is never set
+  # does not arrive without one: measured on the wire, Net::HTTP fills in
+  # `User-Agent: Ruby`. That is why the table carries a "Ruby" row and no "(none)"
+  # row — an earlier draft labelled that same request "(none)", and the mislabel was
+  # the error, not a missing measurement.
+  #
+  # A GENUINELY UA-LESS REQUEST IS REACHABLE, and it is one line: `req["User-Agent"]
+  # = nil` DELETES the header, where `= ""` sends `User-Agent:` with nothing after
+  # it. Measured 2026-09-27, on a local socket and then against ESPN: site.web.api
+  # answers that headerless request 200 / 148848 bytes, the same as every row above.
+  # So this host does not merely tolerate our UA, it does not consult one at all,
+  # which is why an honest string costs nothing here. The site.api cell of that row
+  # was not measured and is deliberately absent rather than guessed.
   #
   # The 403 body is an Akamai "Access Denied" page, so it is not even JSON: a
   # caller that parses before checking the status raises, and one that returns nil
