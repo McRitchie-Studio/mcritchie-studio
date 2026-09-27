@@ -14,7 +14,7 @@ class BroadcastMailer < ApplicationMailer
 
     if delivery
       @open_pixel_url = email_open_url(token: delivery.token, **url_host_options)
-      @tracked_urls = Broadcast::TRACKED_LINKS.keys.index_with do |key|
+      @tracked_urls = @broadcast.link_keys.index_with do |key|
         email_click_url(token: delivery.token, l: key, **url_host_options)
       end.symbolize_keys
     end

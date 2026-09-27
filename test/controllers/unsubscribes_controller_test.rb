@@ -50,4 +50,10 @@ class UnsubscribesControllerTest < ActionDispatch::IntegrationTest
     assert_not @contact.reload.subscribed?
     assert_equal 0, EmailEvent.count
   end
+
+  test "a malformed d parameter still unsubscribes without an error" do
+    post unsubscribe_path(token: @contact.unsubscribe_token), params: { d: [ "x" ] }
+    assert_response :success
+    assert_not @contact.reload.subscribed?
+  end
 end

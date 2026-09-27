@@ -35,6 +35,9 @@ class BuildController < ApplicationController
   end
 
   def new
+    # A reader who came from an email: an app request made now is credited
+    # to it (EmailEvents::Results).
+    session[:email_ref] = params[:ref] if params[:ref].is_a?(String) && params[:ref].match?(/\A[\w-]{16,64}\z/)
     @draft = logged_in? ? AppRequest.where(user: current_user, status: "draft").recent.first : nil
     @examples = BuildGallery.examples
   end
@@ -53,6 +56,7 @@ class BuildController < ApplicationController
     # Kept for Google sign-in, which always lands on the home page: the home
     # page forwards a just-signed-in visitor here once (LandingController).
     session[:build_draft_token] = request_row.token unless logged_in?
+    EmailEvents::Results.record!(session[:email_ref], "requested_app", source: "app") if session[:email_ref]
     respond_to do |format|
       # The composer asks for JSON when the visitor is signed out: it stays on
       # the page and opens the sign-in modal, whose emailed link returns to `path`.
