@@ -123,11 +123,16 @@ The recipe:
    and fall back to size for multipart objects). Active Storage misses must be
    zero. `Studio::S3` objects written after step 4 are expected to be missing
    here; step 7 catches them up.
-6. **Public domain** (apps that serve public objects). Attach
-   `assets.<domain>` to the R2 production bucket and fetch one copied object
-   through it. Still no `R2_PUBLIC_URL`.
+6. **Public domain** (apps that serve public objects; needs the domain's DNS
+   on Cloudflare first, see **Blocker for step 6** below). Attach
+   `assets.<domain>` to the R2 production bucket (a dashboard step until the
+   provisioning token has Zone Read) and fetch one copied object through it.
+   Still no `R2_PUBLIC_URL`.
 7. **Flip `Studio::S3` — one deploy.** Set `R2_PUBLIC_URL` and turn the switch
-   on in the same config change, so writes and URLs move together. Then at once
+   on in the same config change, so writes and URLs move together. A
+   private-object app has no `assets.` domain and sets no `R2_PUBLIC_URL`; it
+   must first confirm nothing calls `Studio::S3.url`, which raises on R2
+   without one (`moms-app`, first in the order, is such an app). Then at once
    re-run the step 4 copy **with `--update`** (it copies only what S3 gained
    since, and skips a key R2 already holds newer: several `Studio::S3` keys are
    fixed, such as `email/<file>` and a lineup's `starter_posts/…`, so a plain
