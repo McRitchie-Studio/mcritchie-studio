@@ -365,6 +365,178 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     assert_match(/returned nothing/, flash[:alert])
   end
 
+  # ── WHAT THE PAGE SAYS ABOUT AN UNRANKED GALLERY ─────────────────────────────────
+  #
+  # TWO STATES, NOT ONE. "Nothing looked at these" was the whole message before
+  # 2026-09-26, and it reads as "no credential" — which was TRUE of every machine then
+  # and a LIE about the production run that had a key, sent eight images and was refused
+  # on all eight. The operator trusted the ordering because the page gave them no reason
+  # not to.
+
+  test "[component] an unranked gallery with NO classifier says the credential is missing" do
+    file_three
+    Photo.update_all(face_score: nil)
+
+    Appearances::FaceVisibility.stub(:available?, false) { get page_path }
+
+    assert_select "[data-test='classifier-absent']", count: 1
+    assert_select "[data-test='classifier-silent']", count: 0
+  end
+
+  test "[component] an unranked gallery with a CONFIGURED classifier says it went silent" do
+    file_three
+    Photo.update_all(face_score: nil)
+
+    Appearances::FaceVisibility.stub(:available?, true) { get page_path }
+
+    assert_select "[data-test='classifier-silent']", { count: 1 },
+                  "a configured classifier that scored nothing must not read as a missing key"
+    assert_select "[data-test='classifier-absent']", count: 0
+  end
+
+  # THE ERROR-LOG LINK IS ADMIN-ONLY, because /error_logs is behind require_admin and a
+  # link that bounces the reader to a sign-in wall is worse than no link.
+  test "[component] only an admin is offered the error-log link on a silent classifier" do
+    file_three
+    Photo.update_all(face_score: nil)
+
+    Appearances::FaceVisibility.stub(:available?, true) { get page_path }
+    assert_select "[data-test='classifier-silent'] a[href=?]", error_logs_path, count: 0
+
+    log_in_as(users(:alex))
+    Appearances::FaceVisibility.stub(:available?, true) { get page_path }
+    assert_select "[data-test='classifier-silent'] a[href=?]", error_logs_path, count: 1
+  end
+
+  # ── THE CLASSIFIER LANE, END TO END THROUGH THE ACTION ───────────────────────────
+  #
+  # MEASURED ON PRODUCTION 2026-09-26, and these two tests are that run's two halves.
+  # Anthropic answered 400 on every image — "Unable to download the file" — because
+  # Wikimedia refuses a request with no User-Agent and Anthropic's fetcher was the
+  # party refused. The classifier degraded to an empty Hash as documented, ranking fell
+  # back to shape and title, six photographs entered the character model, and THREE
+  # WERE AIRCRAFT. The operator read it off this page before we did, because this page
+  # reported a green notice.
+  #
+  # ONLY THE TWO NETWORK COLLABORATORS ARE STUBBED. The controller, the flash choice,
+  # GatherReferencePhotos and the ErrorLog row are all the real thing — which is the
+  # point: the defect was in what the real wiring REPORTED, so a test that stubbed the
+  # reporting would have proved nothing.
+
+  # A provider whose two hits are both real photographs, so both reach the shortlist.
+  def two_photo_provider
+    Class.new do
+      def self.provider_name = "fake-archive"
+      def self.available? = true
+      def self.search(query:, limit: 20)
+        results = [
+          Appearances::ImageSearch::Result.new(image_url: "https://upload.wikimedia.org/a.png",
+                                              title: "Josh Allen", width: 700, height: 900,
+                                              position: 1, mime: "image/png"),
+          Appearances::ImageSearch::Result.new(image_url: "https://upload.wikimedia.org/b.png",
+                                              title: "Josh Allen", width: 700, height: 900,
+                                              position: 2, mime: "image/png")
+        ]
+        Appearances::ImageSearch::Answer.new(results: results, unparsed_count: 0,
+                                            provider_name: provider_name)
+      end
+    end
+  end
+
+  # A mirror that copies nothing but answers the shape the real one does, plus the
+  # classifier's answer, and a record of what the classifier was actually shown.
+  def with_scouting_lane(provider:, scores:, shown:, mirror_fails: [])
+    mirror = lambda do |photos, target: nil|
+      photos.reject { |photo| mirror_fails.include?(photo.image_url) }
+            .to_h { |photo| [photo.image_url, "https://bucket.s3.test/mirror/#{photo.slug}.png"] }
+    end
+    faces = lambda do |urls, target: nil|
+      shown.concat(urls)
+      scores.call(urls)
+    end
+
+    Appearances::ImageSearch.stub(:providers, [provider]) do
+      Appearances::MirrorCandidates.stub(:call, mirror) do
+        Appearances::FaceVisibility.stub(:available?, true) do
+          Appearances::FaceVisibility.stub(:call, faces) { yield }
+        end
+      end
+    end
+  end
+
+  test "[integration] a classifier that scored none of its inputs warns on the page" do
+    log_in_as(users(:alex))
+    shown = []
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      with_scouting_lane(provider: two_photo_provider, scores: ->(_urls) { {} }, shown: shown) do
+        post search_person_scouting_path(@person.slug)
+      end
+    end
+
+    assert_redirected_to page_path
+    # THE FLASH IS AN ALERT, NOT A NOTICE. The run "succeeded" — two candidates were
+    # filed and an identity can be built from them — so a green notice is precisely
+    # what let a confidently wrong result read as a good one.
+    refute_match(/fake-archive returned/, flash[:notice].to_s,
+                 "a blind classifier must not be reported as good news — note the " \
+                 "sign-in notice is still in the flash, so this asks whether the " \
+                 "SEARCH's own sentence arrived as a notice, not whether any did")
+    assert_match(/FACE CLASSIFIER SAW NOTHING/, flash[:alert])
+    assert_match(/0 of 2 shortlisted/, flash[:alert])
+    assert_match(/2 mirrored and sent/, flash[:alert],
+                 "the numbers separate a classifier failure from a mirror failure")
+    # AND THE DURABLE HALF. A flash lives for one redirect; the operator working out a
+    # week later why a gallery looks wrong is reading /admin/error_logs.
+    row = ErrorLog.order(:id).last
+    assert_equal @look, row.target
+    assert_match(/scored 0 of 2 shortlisted/, row.message)
+    # THE PAGE STILL WORKS. This degrades — it must cost an ordering, never the page.
+    assert_equal 2, Photo.count
+  end
+
+  test "[integration] the classifier is shown our mirrored copy, never the provider's URL" do
+    log_in_as(users(:alex))
+    shown = []
+    scores = ->(urls) { urls.index_with { 0.9 } }
+
+    with_scouting_lane(provider: two_photo_provider, scores: scores, shown: shown) do
+      post search_person_scouting_path(@person.slug)
+    end
+
+    assert_equal 2, shown.length
+    assert shown.all? { |url| url.start_with?("https://bucket.s3.test/mirror/") },
+           "the classifier was handed #{shown.inspect} — any upload.wikimedia.org URL " \
+           "here is the production defect: that host answers 403 to a fetcher sending " \
+           "no User-Agent, and the silent degrade put three aircraft in a model"
+    refute shown.any? { |url| url.include?("upload.wikimedia.org") }
+
+    # A HEALTHY LANE IS STILL A NOTICE, so the alert above means something.
+    assert_match(/2 scored for face visibility/, flash[:notice])
+    assert_nil flash[:alert]
+    # AND THE SCORE LANDS ON THE ROW KEYED BY THE PROVIDER'S URL, which is what the
+    # gallery and every rejection reason read.
+    assert_in_delta 0.9, Photo.find_by!(image_url: "https://upload.wikimedia.org/a.png").face_score, 0.001
+  end
+
+  # A TOTAL MIRROR FAILURE IS THE SAME CLASS OF SILENCE and must be just as loud —
+  # otherwise "the mirror copied nothing, so we sent nothing, so there was nothing to
+  # do" reads as a clean run.
+  test "[integration] a mirror that copied nothing is as loud as a blind classifier" do
+    log_in_as(users(:alex))
+    shown = []
+    both = ["https://upload.wikimedia.org/a.png", "https://upload.wikimedia.org/b.png"]
+
+    with_scouting_lane(provider: two_photo_provider, scores: ->(_urls) { {} },
+                       shown: shown, mirror_fails: both) do
+      post search_person_scouting_path(@person.slug)
+    end
+
+    assert_empty shown, "nothing mirrored means nothing is paid to be classified"
+    assert_match(/0 mirrored and sent/, flash[:alert])
+    refute_match(/fake-archive returned/, flash[:notice].to_s)
+  end
+
   # ── A PERSON WITH NO LOOK ────────────────────────────────────────────────────────
 
   test "[component] a person with no look explains itself rather than 404ing" do

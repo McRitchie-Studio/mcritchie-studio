@@ -62,7 +62,11 @@ class PhotoScoutingController < ApplicationController
                   alert: "#{summary.provider_name || 'The search'} returned nothing for " \
                          "\"#{summary.query}\". Nothing was filed and nothing changed."
     else
-      redirect_to scouting_path, notice: search_message(summary)
+      # THE SUMMARY CHOOSES THE FLASH KEY, because a blind face classifier is an
+      # ALERT rather than a notice: the run "succeeded" -- candidates were filed and an
+      # identity can be built from them -- so a green notice is exactly what let a
+      # confidently wrong result read as a good one on 2026-09-26.
+      redirect_to scouting_path, summary.flash_key => summary.sentence
     end
   end
 
@@ -160,18 +164,5 @@ class PhotoScoutingController < ApplicationController
   def unconfigured_message
     "No image-search provider is configured, so nothing was searched and nothing " \
       "was spent. Set #{Appearances::ImageSearch::Serper::API_KEY_ENV} to turn it on."
-  end
-
-  def search_message(summary)
-    parts = ["#{summary.provider_name} returned #{summary.returned} result(s)"]
-    parts << "#{summary.unparsed} in a shape we could not read" if summary.unparsed.positive?
-    parts << "#{summary.unfetchable} refused as unsafe to fetch" if summary.unfetchable.positive?
-    parts << if summary.ranked_by_face?
-      "#{summary.scored} scored for face visibility"
-    else
-      "ranked on shape and relevance only (no face classifier)"
-    end
-    parts << "#{summary.chosen} chosen for the model"
-    "#{parts.join(' · ')}."
   end
 end
