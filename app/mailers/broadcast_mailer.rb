@@ -9,7 +9,8 @@ class BroadcastMailer < ApplicationMailer
     @broadcast        = broadcast
     @contact          = contact
     @email_asset_host = Broadcasts::Assets.base_url
-    @unsubscribe_url  = unsubscribe_url(token: contact.unsubscribe_token, **url_host_options)
+    # `d` names the email the reader unsubscribed from, for the analytics.
+    @unsubscribe_url  = unsubscribe_url(token: contact.unsubscribe_token, d: delivery&.token, **url_host_options)
 
     if delivery
       @open_pixel_url = email_open_url(token: delivery.token, **url_host_options)

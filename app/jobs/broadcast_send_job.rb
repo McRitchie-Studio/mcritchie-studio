@@ -9,6 +9,9 @@ class BroadcastSendJob < ApplicationJob
 
     delivery = broadcast.deliveries.find_or_create_by!(contact: contact)
     delivery.update!(sent_at: Time.current)
-    BroadcastMailer.campaign(broadcast, contact, delivery).deliver_now
+    message = BroadcastMailer.campaign(broadcast, contact, delivery).deliver_now
+    # Resend's mailer puts its email id in message_id; its webhooks name it.
+    delivery.update!(provider_message_id: message.message_id) if message&.message_id.present?
+    delivery.record_event!(kind: "sent", source: "app")
   end
 end
