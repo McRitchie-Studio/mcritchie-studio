@@ -160,6 +160,17 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
+  test "the gallery leads with Cyvasse, Prisoners Dilemma and Rantly, the rest after in their usual order" do
+    %w[portfolio rantly weekly-lock prisoners-dilemma].each_with_index do |subdomain, i|
+      live = draft(user: users(:alex)).queue!("zz-lead-#{i}")
+      live.update_columns(subdomain: subdomain, status: "live", updated_at: i.minutes.ago)
+    end
+    subdomains = BuildGallery.examples.map { |e| BuildGallery.subdomain(e.url) }
+
+    assert_equal %w[cyvasse prisoners-dilemma rantly], subdomains.first(3)
+    assert_equal %w[portfolio weekly-lock], subdomains.drop(3) & %w[portfolio weekly-lock], "newest first after the lead"
+  end
+
   test "a customer's live app is never in the public gallery" do
     live = draft(user: users(:viewer)).queue!("customer-app")
     live.update!(status: "live")

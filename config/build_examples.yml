@@ -14,6 +14,13 @@
 # Point it at the page that shows what the app IS (Cyvasse's game board, not its
 # landing text). A live showcase request needs no entry: its screenshot is found
 # by convention at build_gallery/<subdomain>.jpg.
+# `lead` names the apps shown first, in this order, by subdomain; every other
+# app follows in its usual order (this list, then showcase apps newest first).
+lead:
+  - cyvasse
+  - prisoners-dilemma
+  - rantly
+
 examples:
   - name: Cyvasse
     url: https://cyvasse.mcritchie.studio

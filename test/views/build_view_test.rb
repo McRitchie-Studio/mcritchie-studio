@@ -37,7 +37,7 @@ class BuildViewTest < ActionView::TestCase
     BuildGallery::Example.new(name: name, url: "https://#{name.parameterize}.mcritchie.studio", emoji: "🧱", blurb: "An app.", image: image)
   end
 
-  test "the gallery is a sideways row, 2.5 cards wide, with a scroll-aware edge fade" do
+  test "the gallery is a sideways row, about 3.3 cards wide, with a scroll-aware edge fade and centered card text" do
     signed_in(nil)
     @draft = nil
     @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.jpg"), example("Rantly"), example("Weekly Lock") ]
@@ -48,7 +48,8 @@ class BuildViewTest < ActionView::TestCase
     assert_includes row["class"], "snap-x"
     assert_includes row["@scroll.passive"], "measure", "the fade follows the scroll position"
     assert_includes row[":style"], "mask-image"
-    assert_select "[data-test='build-gallery-item'][class*='sm:basis-[calc((100%-2rem)/2.5)]']", 3
+    assert_select "[data-test='build-gallery-item'][class*='sm:basis-[calc((100%-3rem)/3.3)]']", 3
+    assert_select "[data-test='build-example'] > span.text-center", 3, "name, host and blurb are centered on every card"
   end
 
   test "a card shows its screenshot when there is one, and its emoji when not" do
