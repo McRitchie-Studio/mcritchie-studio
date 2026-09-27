@@ -56,10 +56,12 @@ through the hub's domain-wide delegation key, whose Drive scopes are
 `drive.readonly` and `drive.file` (it can read, and create or edit files it
 made); it cannot create shared drives or manage membership.
 
-**Proposed, not decided.** Everything below the table above is a proposal
-until Alex says otherwise: the Wave 2 recipe, the catalog's shape and where it
-lives, the Wave 4 order, Cloudflare Stream for video and CAD in the
-business-document tier, and Resend as SES's outbound replacement.
+**Proposed, not decided.** The Decisions table and the Shared Drives above are
+decided; the Waves states, the writer checklist, the DNS measurements and the
+Wave 7 inventory record what exists. These are proposals until Alex says
+otherwise: the Wave 2 recipe, the catalog's shape and where it lives, the Wave 4
+order, Cloudflare Stream for video and CAD in the business-document tier,
+`DeskCapture`'s private R2 bucket, and Resend as SES's outbound replacement.
 
 ## Waves
 
@@ -256,4 +258,4 @@ account before starting; this is what the docs name today.
 | Release the `studio-engine` version carrying `s3_endpoint` (Wave 2's gate) | Avi (`qa-release`) and Steffon (`production-deploy`) |
 | Does Commercial Welding carry CMMC or ITAR obligations? | Alex |
 | What writes the `commercial-welding-*` S3 buckets | Steffon, at the start of that app's Wave 2 task |
-| Approve or amend the proposals (Wave 2 recipe, catalog, Wave 4 order, Stream and CAD, Resend) | Alex |
+| Approve or amend the proposals (Wave 2 recipe, catalog, Wave 4 order, Stream and CAD, `DeskCapture` bucket, Resend) | Alex |
