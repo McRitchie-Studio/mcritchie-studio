@@ -285,25 +285,31 @@ module Appearances
       "#{artifact_count} image#{'s' if artifact_count != 1} delivered."
     end
 
-    # WHAT IS KNOWN ABOUT THE PERSON, as facts rather than as a gate. Height and
-    # weight are on file for every athlete measured; the physique description is the
-    # one a separate backfill fills, and a card that said nothing about it would let
-    # an empty brief look like a complete one.
+    # WHAT THE PERSON'S DEFINITION IS STILL MISSING — at most ONE chip, and only when
+    # something IS missing.
+    #
+    # THE FIRST VERSION PRINTED A CHIP PER FIELD WHETHER IT WAS PRESENT OR NOT, and
+    # rendering it killed the board: measurements and a physique description are blank
+    # for most athletes today (build/skin_tone/hair_description were empty for all
+    # 2,051, measured 2026-09-26), so every card carried two coloured chips and the ONE
+    # card that genuinely needed attention — the traded one — was impossible to pick out
+    # of the column. At 1000 feet a chip that is on every card carries no information;
+    # it only spends the contrast the exceptions need.
+    #
+    # SO: nothing when the definition is complete, one `warn` chip naming the gaps when
+    # it is not. `warn` rather than `bad` deliberately — a blank physique is the normal
+    # state until a separate backfill fills it, and styling 2,000 correct rows as
+    # failures is the same mistake in a different colour. The full field-by-field
+    # readout belongs on the look's own page, which the card links to.
     def definition_facts
       return [] unless athlete?
 
-      facts = []
-      facts << if height_inches.present? && weight_lbs.present?
-        { label: "#{height_inches}in · #{weight_lbs}lb", tone: :good }
-      else
-        { label: "no measurements", tone: :bad }
-      end
-      facts << if physique_described?
-        { label: "physique described", tone: :good }
-      else
-        { label: "physique blank", tone: :warn }
-      end
-      facts
+      missing = []
+      missing << "measurements" if height_inches.blank? || weight_lbs.blank?
+      missing << "physique" unless physique_described?
+      return [] if missing.empty?
+
+      [{ label: "no #{missing.join(' or ')}", tone: :warn }]
     end
   end
 end

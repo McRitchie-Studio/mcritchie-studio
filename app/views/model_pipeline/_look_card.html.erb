@@ -63,7 +63,10 @@
   <%# WHAT IT IS MADE OF. A colorway and the captured team are the uniform half of the
       definition; the measurement and physique chips are the person half. %>
   <div class="flex flex-wrap items-center gap-1">
-    <% if reading.colorway.present? %>
+    <%# The colorway is skipped when the descriptor in the title already says it — the
+        common case, because Appearance.file_for_colorway! titleizes the colorway into the
+        descriptor. One fact printed twice is two chips of contrast spent on nothing. %>
+    <% if reading.colorway.present? && !reading.descriptor.to_s.casecmp?(reading.colorway.to_s) %>
       <span class="badge text-3xs <%= pipeline_chip_classes(:neutral) %>"><%= reading.colorway %></span>
     <% end %>
     <% if reading.captured_team_slug.present? %>
