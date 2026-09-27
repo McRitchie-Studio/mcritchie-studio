@@ -1419,8 +1419,14 @@ gallery_admin = User.find_by!(email: "alex@test.com")
 # and chess-club, and a live seed row holding one of those makes its claim fail
 # as taken. (The real showcase apps, prisoners-dilemma and the rest, are
 # reserved by their config/satellites.yml rows, so no spec can claim them.)
-{ "trivia-night" => "A trivia night scoreboard: teams, rounds and a live leaderboard.",
-  "recipe-box" => "A recipe box: save recipes, scale servings and build a shopping list.",
-  "garden-planner" => "A garden planner: lay out beds and track what to plant when." }.each do |sub, prompt|
-  AppRequest.create!(prompt: prompt, user: gallery_admin).queue!(sub).update!(status: "live")
+AppRequest.create!(prompt: "A trivia night scoreboard: teams, rounds and a live leaderboard.", user: gallery_admin)
+  .queue!("trivia-night").update!(status: "live")
+# Two real showcase apps, so the spec sees the `lead` order of
+# config/build_examples.yml (Cyvasse, Prisoners Dilemma, Rantly) and real
+# screenshots. Their names are reserved, so queue! refuses them: queue a
+# placeholder, then give it the real subdomain, as production holds it.
+{ "prisoners-dilemma" => "A prisoner's dilemma tournament: pick or write a strategy and see the leaderboard.",
+  "rantly" => "Rantly: a Twitter rival for people who need more room to rant." }.each do |sub, prompt|
+  AppRequest.create!(prompt: prompt, user: gallery_admin).queue!("zz-seed-#{sub}")
+    .update_columns(subdomain: sub, status: "live")
 end

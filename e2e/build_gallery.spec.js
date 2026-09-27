@@ -16,10 +16,18 @@ test("the gallery scrolls sideways, its screenshot loads, and the fade follows t
   await expect(page.locator("[data-test='build-gallery-item']")).toHaveCount(4);
   await expect(page.locator("[data-test='build-gallery-all']")).toHaveCount(0); // visitors see no admin button
 
-  // 2.5 cards: one card is roughly 40% of the row.
+  // About 3.3 cards: one card is roughly 30% of the row.
   const ratio = await row.evaluate((el) => el.clientWidth / el.children[0].getBoundingClientRect().width);
-  expect(ratio).toBeGreaterThan(2.3);
-  expect(ratio).toBeLessThan(2.8);
+  expect(ratio).toBeGreaterThan(3.1);
+  expect(ratio).toBeLessThan(3.6);
+  // Every card is the same width: a long host (prisoners-dilemma.mcritchie.studio)
+  // truncates instead of widening its card.
+  const widths = await row.evaluate((el) => [...el.children].map((li) => Math.round(li.getBoundingClientRect().width)));
+  expect(new Set(widths).size).toBe(1);
+
+  // Cyvasse, Prisoners Dilemma and Rantly lead (config/build_examples.yml `lead`).
+  const hosts = await page.locator("[data-test='build-example']").evaluateAll((links) => links.map((a) => new URL(a.href).host.split(".")[0]));
+  expect(hosts.slice(0, 3)).toEqual(["cyvasse", "prisoners-dilemma", "rantly"]);
 
   const image = page.locator("[data-test='build-example-image']").first();
   await image.scrollIntoViewIfNeeded();
