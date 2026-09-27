@@ -60,8 +60,10 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
   # pair of counts this lane has shipped before.
   test "[component] the page says which chosen photos the trainer will not take" do
     cache_headshot
+    # LOOKED AT, NO SIZE REPORTED — the state that is sheet-only. A row nothing looked at is
+    # a different sentence, asserted below.
     file_photo("https://example.com/unmeasured.jpg", chosen: true, position: 1,
-               title: "Josh Allen at camp")
+               title: "Josh Allen at camp", face_score: 0.9, face_subjects: 1)
 
     get page_path
 
@@ -70,6 +72,23 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
       # whitespace would break on a re-indent that changed nothing a reader can see.
       assert_match(/NOT offered to/, nodes.first.text.squish)
     end
+  end
+
+  # THE THIRD STATE, AND THE COUNT THAT WOULD HAVE LIED. A row an older ranking chose that
+  # nothing ever looked at goes to NEITHER generator — so folding it into the sheet-only
+  # line would have claimed the character sheet uses a photograph the sheet refuses.
+  test "[component] a chosen row nothing looked at is reported as offered to neither" do
+    cache_headshot
+    file_photo("https://example.com/unjudged.jpg", chosen: true, position: 1,
+               title: "Josh Allen and a teammate")
+
+    get page_path
+
+    assert_select "[data-test='offered-to-neither']", count: 1 do |nodes|
+      assert_match(/NEITHER/, nodes.first.text.squish)
+    end
+    assert_select "[data-test='trainer-subset']", { count: 0 },
+                  "an unjudged row is not a sheet-only row, and saying so would be false"
   end
 
   # THE CONTROL: when every chosen photograph carries a measured face size the two sets are
