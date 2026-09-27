@@ -684,7 +684,7 @@ namespace :nfl do
         # the status so they usually agree, but a proxy may reword a reason phrase
         # while the status line stays the protocol's. Falls back to the message
         # when the io cannot be read, because a weaker abort beats no abort.
-        status = Array(e.io.respond_to?(:status) ? e.io.status : nil).join(" ").presence || e.message
+        status = Array(e.io&.respond_to?(:status) ? e.io.status : nil).join(" ").presence || e.message
         abort "nfl:link_coach_headshots: ESPN answered #{status} for #{index_url} -- no coach " \
               "was read and nothing changed. If that status is 403, this lane has been pointed " \
               "back at #{Espn::Api::FILTERED_HOST}, which answers curl with 200 and Ruby with " \
