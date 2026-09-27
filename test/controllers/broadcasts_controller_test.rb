@@ -43,4 +43,27 @@ class BroadcastsControllerTest < ActionDispatch::IntegrationTest
       post deliver_broadcast_path(@broadcast), params: { audience: "all" }
     end
   end
+
+  # [component] The Cyvasse relaunch note renders in the email shell with its
+  # copy, the Cyvasse header art, the play link and the app-builder P.S.
+  test "the cyvasse_is_back preview renders its copy and links" do
+    cyvasse = Broadcast.create!(slug: "cyvasse-is-back", subject: "Cyvasse is back", template_key: "cyvasse_is_back")
+    log_in_as(@admin)
+    get preview_broadcast_path(cyvasse)
+
+    assert_response :success
+    assert_includes response.body, "Cyvasse is back"
+    assert_includes response.body, "/email/cyvasse_header.jpg"
+    assert_select "a[href='https://cyvasse.mcritchie.studio/play']", text: /Play Cyvasse/
+    assert_select "a[href='https://mcritchie.studio/build']"
+    assert_includes response.body, "more than 100,000 matches"
+    assert_includes response.body, "because you have an account on Cyvasse"
+    assert_not_includes response.body, "joined the McRitchie Studio mailing list"
+  end
+
+  test "a template that names no reason keeps the mailing-list footer" do
+    log_in_as(@admin)
+    get preview_broadcast_path(@broadcast)
+    assert_includes response.body, "joined the McRitchie Studio mailing list"
+  end
 end
