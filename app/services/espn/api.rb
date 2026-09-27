@@ -14,16 +14,23 @@ module Espn
   # not get through it. Measured 2026-09-27 from Net::HTTP, not from a terminal:
   #
   #     UA                              site.api           site.web.api
-  #     (none)                          -                  200 / 148848 bytes
+  #     "Ruby" (Net::HTTP's default)    403 /   437 bytes  200 / 148848 bytes
+  #     "" (empty string)               403 /   437 bytes  200 / 148848 bytes
   #     mcritchie-studio/1.0            403 /   437 bytes  200 / 148848 bytes
   #     a Chrome 120 browser string     403 /   437 bytes  200 / 148848 bytes
   #     curl/8.7.1 (from the shell)     200 / 148848 bytes 200 / 148848 bytes
+  #
+  # THERE IS NO "no User-Agent" ROW because Net::HTTP will not send one: measured,
+  # a request whose header is never set arrives as `User-Agent: Ruby`, and setting
+  # it to nil drops the header on the floor rather than sending it empty. So "it
+  # works with no UA" is a claim this table cannot make and does not make; the
+  # empty-string row above is the closest thing that is actually on the wire.
   #
   # The 403 body is an Akamai "Access Denied" page, so it is not even JSON: a
   # caller that parses before checking the status raises, and one that returns nil
   # on any non-success reports "ESPN has nothing" about a service it never reached.
   #
-  # NOTE THE THIRD ROW. The WAF rejects the BROWSER string and admits curl, so the
+  # NOTE THE CHROME ROW. The WAF rejects the BROWSER string and admits curl, so the
   # usual impersonation reflex makes this strictly worse. The fix is to ask the host
   # that does not filter, not to dress Ruby up as something it is not.
   #
@@ -41,12 +48,14 @@ module Espn
   # A second copy of a host is a second place for this to rot, so both services
   # read these constants and neither spells a host out again.
   #
-  # A THIRD COPY IS STILL OUT THERE, deliberately not repaired here:
-  # lib/tasks/nfl.rake's `nfl:coaches_seed` names site.api.espn.com and reads it
-  # with URI.open, which sends Ruby's own default UA and therefore 403s the same
-  # way. It is a different code path with a different rescue shape and its own
-  # acceptance, it is under review in another PR as this lands, and it is filed
-  # rather than smuggled in.
+  # A THIRD COPY IS STILL OUT THERE and is NOT repaired here: lib/tasks/nfl.rake's
+  # `nfl:coaches_seed` names site.api.espn.com and reads it with URI.open.
+  # MEASURED 2026-09-27 through open-uri itself, not inferred from the table above:
+  # that host answered 403 Forbidden and this one answered 200 with 148848 bytes,
+  # so that task is dead in exactly the way this service was. It is a different
+  # code path with a different rescue shape — OpenURI::HTTPError into a per-team
+  # `rescue StandardError` — and its own acceptance, so it is filed as
+  # `revive-coaches-seed-host` rather than smuggled in here.
   module Api
     # THE HOST THAT SERVES RUBY. site.api.espn.com is the one that does not; see
     # the table above before changing this by one word.
