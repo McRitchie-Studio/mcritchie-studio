@@ -308,7 +308,7 @@ module Appearances
     #   chosen        — in the reference set.
     #   everything else — Appearances::ReferenceEligibility's verdict, stamped verbatim:
     #                   not_a_photo, wrong_person, mixed_subjects, face_obscured,
-    #                   face_too_small.
+    #                   face_unscored, face_too_small.
     #
     # `face_size_unmeasured` IS NEVER STAMPED HERE, and that is the two-generator split
     # rather than an omission: an unmeasured face size keeps a photograph out of
@@ -345,10 +345,6 @@ module Appearances
         # search actually found for it.
         take = verdict == ReferenceEligibility::ELIGIBLE && taken < CHOSEN_LIMIT
         taken += 1 if take
-        # COUNTED HERE RATHER THAN RE-DERIVED FROM THE ROWS, because the summary's job is
-        # to report THIS run: a re-count over the table would fold in photographs an
-        # earlier search chose and this one never saw.
-        counts[:mint_ready] += 1 if take && judgements[result.image_url]&.sized?
         record(result, take, rejection_for(verdict, take), counts,
                judgement: judgements[result.image_url])
       end
@@ -442,12 +438,20 @@ module Appearances
       )
     end
 
+    # EVERY COUNT IS INCREMENTED IN ONE PLACE, AFTER THE WRITE SUCCEEDED.
+    #
+    # ⚠ `mint_ready` USED TO BE COUNTED AT THE CALL SITE and that was a count that could
+    # lie. `#upsert` answers nil for a row it deliberately left alone — a headshot or
+    # operator row a search re-found — so a caller that counted before asking could report
+    # "1 of 0 carry a measured face size". Counting after the write is what keeps every
+    # figure in the summary about the same population.
     def record(result, take, reason, counts, judgement:)
       return unless upsert(result, chosen: take, rejection_reason: reason,
                                    judgement: judgement)
 
       counts[:filed] += 1
       take ? counts[:chosen] += 1 : counts[:rejected] += 1
+      counts[:mint_ready] += 1 if take && judgement&.sized?
     end
 
     # PAY TO LOOK AT THE SHORTLIST, NOT AT EVERYTHING.

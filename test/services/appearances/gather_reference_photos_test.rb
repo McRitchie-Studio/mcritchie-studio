@@ -276,6 +276,31 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     assert_nil row.rejection_reason
   end
 
+  # EVERY NUMBER IN THE SUMMARY IS ABOUT THE SAME POPULATION, and a row this run left
+  # ALONE is in none of them.
+  #
+  # `#upsert` answers nil for a headshot or operator row a search re-found, so a count
+  # taken before that answer describes a photograph the run did not file. Measured as a
+  # real off-by-one: `mint_ready` was incremented at the call site and could report
+  # "1 of 0 carry a measured face size" on a look whose only hit was the operator's own.
+  test "a row the run left alone is counted in nothing, not even as mint-ready" do
+    url = "https://cdn.example.com/operator-picked.jpg"
+    AppearanceReferencePhoto.create!(appearance_slug: @look.slug, image_url: url,
+                                     source: AppearanceReferencePhoto::SOURCE_OPERATOR,
+                                     chosen: true)
+    found = hit(url, position: 1)
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [found]),
+      faces: mintable([found]), mirror: mirror
+    )
+
+    assert_equal 0, summary.filed
+    assert_equal 0, summary.chosen
+    assert_equal 0, summary.mint_ready,
+                   "a photograph this run never filed cannot be one it offered the trainer"
+  end
+
   # THE TRUST ORDER. `source` is what the operator reads to know whether a human
   # ever looked at a photograph, so a search hit arriving at the same URL must not
   # rewrite the record of where we actually got it.
