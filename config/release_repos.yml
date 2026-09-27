@@ -802,13 +802,13 @@ apps:
   # member that declares one anyway is skipped at QA (exempt, below) and runs on
   # the production app at ship.
   #
-  # smoke_url is the herokuapp HOST, not <repo>.mcritchie.studio, on purpose:
-  # the custom domains wait on Alex's DNS records and ACM, and until they
-  # resolve a smoke against them would abort the ship AFTER the push. Each
-  # app's production.rb leaves host authorization off, so /up answers on the
-  # herokuapp host. Switch each to https://<repo>.mcritchie.studio once that
-  # host serves /up 200. It is the HOST, not /up: the ship smokes
-  # `<smoke_url>/up` itself (bin/release.rb).
+  # smoke_url is each app's custom domain, https://<repo>.mcritchie.studio: its
+  # CNAME points at the app's herokudns target and ACM has issued its
+  # certificate (task showcase-smoke-custom-domains, 2026-09-26). The ship
+  # smokes it from the machine running `bin/release ship`, AFTER the push, so a
+  # host that machine cannot resolve to Heroku with a valid certificate aborts
+  # a live deploy. It is the HOST, not /up: the ship smokes `<smoke_url>/up`
+  # itself (bin/release.rb).
   #
   # test_cmd is each app's CI `test` job command VERBATIM (git_push_heroku has
   # NO test step, so this IS the last gate before production; G4 reads CI's
