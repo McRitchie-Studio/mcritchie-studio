@@ -1,5 +1,11 @@
 require "test_helper"
 require "rake"
+# THE FETCH LIBRARY THE LANE ACTUALLY USES. Studio::ImageCache.fetch_remote calls
+# `URI.open`, so a retired ESPN headshot reaches the task as an
+# OpenURI::HTTPError. Required here because `dead_source_error` below builds the
+# genuine object rather than a double that would pass a weaker check.
+require "open-uri"
+require "stringio"
 
 # [integration] The three rebuild-lane rake tasks that could not fail, run for
 # real against the DB.
@@ -335,6 +341,54 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     assert_match(/AWS_ACCESS_KEY_ID/, err)
   end
 
+  # --- nfl:upload_headshots: a dead SOURCE is not a broken UPLOADER ---------
+  #
+  # [integration] A 404 from a.espncdn.com is a fact about ESPN; a failed
+  # `put_object` is a fact about us. The task counted both in one `failed`
+  # counter through one bare `rescue => e`, so the rule `failed > cached` fired on
+  # a run where nothing was wrong with the uploader, and the abort's first named
+  # cause was "usually AWS credentials".
+
+  # THE DEFECT, MEASURED ON PRODUCTION 2026-09-27 (read-only, heroku run
+  # bin/rails runner):
+  #
+  #   TOTAL=2051  WITH_ESPN_ID=2048  COMPLETE_CANDIDATES=2043
+  #   FETCHABLE=5  SOURCELESS_CANDIDATES=0
+  #
+  # So production's whole fetchable population is five athletes, every one of them
+  # WITH an `espn_headshot_url` on file, and every one of those five URLs answers
+  # 404 when fetched the way the app fetches — `URI.open(url, read_timeout: 30,
+  # redirect: true)` — while a control espn_id answered 230,577 bytes through the
+  # same call. `curl` agreeing proves nothing about what Ruby sees, so it was
+  # asked in Ruby.
+  #
+  # The run is therefore cached 0, failed 5, and `failed > cached` aborts the
+  # rebuild and tells the operator to check AWS credentials that are fine. Scaled
+  # to 2 here, which is the same shape: 100% of attempts "failed", none of them
+  # ours. THIS IS NOT A REGRESSION FROM THE `fetchable` NARROWING — the retired
+  # `needed` code aborted identically on the same data, by the same rule.
+  test "a run whose every ESPN source answers 404 stays green and names them" do
+    a = headshot_candidate(40, team_slug: "buffalo-bills")
+    b = headshot_candidate(41, team_slug: "buffalo-bills")
+
+    out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { raise dead_source_error }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal "", err, "a retired ESPN photo is a data gap, exactly like a blank " \
+                          "espn_headshot_url — the uploader did its job and there was " \
+                          "nothing at the other end. Only OUR failure may redden a run"
+    assert_match(/dead source \(404\/410\):\s+2/, out)
+    assert_match(/failed:\s+0/, out,
+                 "a 404 must leave the graded counter untouched, not merely be excused " \
+                 "afterwards — a subtraction cannot tell the two apart")
+    assert_match(/#{a.person_slug}/, out, "name the athlete an operator goes and checks")
+    assert_match(/#{b.person_slug}/, out)
+    assert_match(/HTTP 404/, out, "carry the status, because 404 is permanent and 503 is not")
+  end
+
   # "ALREADY DONE" HAS TO INCLUDE "original". Studio::ImageCache.cache! stores
   # the unmodified source plus one variant per width, so a row set holding only
   # 100 and 400 is NOT done — and calling it done both hides the gap and inflates
@@ -603,6 +657,20 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     yield
   rescue SystemExit => e
     flunk "#{task} aborted a run it should have completed: #{e.message}"
+  end
+
+  # THE REAL EXCEPTION THE LANE SEES, not a stand-in. Studio::ImageCache.cache!
+  # fetches through open-uri (`fetch_remote` -> `URI.open`), so a retired ESPN
+  # headshot arrives as an OpenURI::HTTPError whose `io.status` is
+  # `["404", "Not Found"]`. Built genuinely rather than doubled, because a double
+  # carrying only a `message` would pass a classifier that reads the message and
+  # would prove nothing about one that reads the status — and the status is the
+  # reliable half: `e.message` is whatever the server's reason phrase said.
+  def dead_source_error(status = "404", reason = "Not Found")
+    io = StringIO.new("")
+    io.extend(OpenURI::Meta)
+    io.status = [status, reason]
+    OpenURI::HTTPError.new("#{status} #{reason}", io)
   end
 
   # A CANDIDATE IN THE PRODUCTION SHAPE: espn_id set, a team_slug on the athlete's
