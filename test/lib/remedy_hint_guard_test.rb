@@ -103,18 +103,28 @@ class RemedyHintGuardTest < Minitest::Test
   # refusals, so they reach the reader wave 1 already fixed for the cert refusals),
   # bin/session-preflight, and bin/lib/block_recipe.rb (recipes that exist to be PASTED).
   #
-  # STILL NOT SWEPT, filed with measured counts rather than half-done — 77 instruction
-  # sites, none of them in this task's scope: bin/lib/review_claim_cli.rb (16),
-  # bin/agent-worktree (14), bin/lib/agent_worktree_cli.rb (13), bin/reviewer-select (8),
+  # STILL NOT SWEPT, filed with measured counts rather than half-done — the counts below
+  # were taken 2026-09-09/24 and are NOT re-measured here (see the wave 3 note):
+  # bin/lib/review_claim_cli.rb (16), bin/agent-worktree (14),
+  # bin/lib/agent_worktree_cli.rb (13),
   # bin/release.rb (7 — and MOST are correctly bare, since the conductor runs bin/release
   # from the hub primary by SOP), bin/conductor (5),
   # bin/control-check (4), bin/qa-intake (4),
   # bin/lib/desk_guard.rb (1), bin/ship-wait (1), lib/open_pr_guard.rb (1).
   # Add a file here as it is cleaned; the sweep is what keeps it clean afterwards.
+  #
+  # WAVE 3 (refusal-remedy-must-round-trip) added bin/reviewer-select, and it was
+  # filed above at EIGHT sites. MEASURED on the shipped tree 2026-09-27 with the
+  # INSTRUCTION_RE that actually ships: SEVENTEEN — fifteen runnable remedies plus
+  # two usage banners. The filed count predates wave 2's `--flag` arm, so it was a
+  # count taken with a narrower rule and carried forward as though it still held.
+  # A filed count is a measurement with a date, not a fact; re-measure before you
+  # trust one.
   SWEPT = %w[bin/ship bin/fast-check bin/dor-check
              lib/claim_holder.rb
              bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
-             bin/session-preflight bin/lib/block_recipe.rb].freeze
+             bin/session-preflight bin/lib/block_recipe.rb
+             bin/reviewer-select].freeze
 
   # THE FLOORS. Everything above asserts an ABSENCE — and an absence is precisely what a
   # BROKEN scanner reports. Point SWEPT at paths that no longer exist, let a file read
@@ -123,14 +133,19 @@ class RemedyHintGuardTest < Minitest::Test
   # routed sites across 16,391 lines in 12 files; 2026-09-24, after the local cert
   # scripts retired: 69 sites across ~13,400 lines in 10 files. These are FLOORS with
   # headroom, not equalities — routing more remedies must never redden them.
-  MINIMUM_SWEPT_FILES = 10
-  MINIMUM_SWEPT_LINES = 12_000
-  MINIMUM_ROUTED_SITES = 60
+  MINIMUM_SWEPT_FILES = 11
+  MINIMUM_SWEPT_LINES = 13_000
+  MINIMUM_ROUTED_SITES = 70
 
   # A remedy that HAS been routed: the helper called directly, or one of the resolved
   # constants interpolated into a message. This is the POSITIVE side of the sweep —
   # what the guard exists to protect, as opposed to what it forbids.
+  # GithubReadRemedy.refresh_command is routed for the same reason the helpers are: it
+  # composes its path through FastLane.resolve_bin (bin/lib/github_read_remedy.rb) and
+  # takes the env var the READ consumes from the caller, so neither the path nor the
+  # variable can be a literal that drifts.
   ROUTED_RE = /FastLane\.(?:remedy_command|resolve_bin|handoff_command)|
+               GithubReadRemedy\.refresh_command|
                \#\{(?:[A-Za-z_][A-Za-z0-9_]*::)?
                (?:SELF_CMD|TASK_CMD|TASK_COMMAND|FAST_CHECK_CMD|FULL_SUITE_CMD|
                   DOR_CHECK_CMD|SHIP_CMD|GH_AUTH_REFRESH_CMD)\}/x
@@ -259,7 +274,7 @@ class RemedyHintGuardTest < Minitest::Test
     # $PROGRAM_NAME and reworded one prose line, and it routes no remedy of its own.
     %w[bin/ship bin/dor-check
        lib/claim_holder.rb bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
-       bin/lib/block_recipe.rb].each do |rel|
+       bin/lib/block_recipe.rb bin/reviewer-select].each do |rel|
       assert_operator per_file.fetch(rel), :>=, 2,
                       "#{rel} carries #{per_file.fetch(rel)} routed remedy site(s) — it was swept because it " \
                       "prints remedies, so this near-zero means the file, not the defect, went away"

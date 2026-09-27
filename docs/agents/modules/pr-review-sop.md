@@ -98,7 +98,16 @@ Carl** (Agent tool, `subagent_type: carl`) as the **review OWNER**. Carl:
    | authors unknown | no *soul* is named: `built_by` blank or off-roster, no soul on a `→ building` **build claim**, and the PR's commits were READ and name none |
    | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
    | `none` is CONTRADICTED | you asserted no soul built it and a witness disagrees — the record, `devops.fix_forward`, or the PR's own commits name a soul |
-   | `none` is UNVERIFIED | the PR read FAILED, so no witness answered. **An unreadable PR is not an authorless PR.** Remedy: `eval "$(bin/gh-auth-refresh --export)"` |
+   | `none` is UNVERIFIED | the PR read FAILED, so no witness answered. **An unreadable PR is not an authorless PR.** Remedy: state the fact with `--builder <soul>[,<soul>]`, which needs no credential; if the read was refused on credentials, the tool prints `export GITHUB_TOKEN="$(…/bin/gh-token)"` |
+
+   **The credential remedy names `GITHUB_TOKEN`, not `GH_TOKEN`, and that is not a
+   typo.** `bin/reviewer-select` performs this read ITSELF, in Ruby, through
+   `Github::AppToken` — whose fallback is `GITHUB_TOKEN`. `eval "$(bin/gh-auth-refresh
+   --export)"` sets `GH_TOKEN` and only `GH_TOKEN`, so it is the right remedy wherever
+   the reader is `gh` and the wrong one here; following it verbatim returned the
+   byte-identical refusal. The tool also prints **no** credential remedy when the
+   failure was not a credential fault (a rate limit, a 5xx, a dead network, a `pr_url`
+   that names no PR) — read the quoted reason instead.
 
    Say which it is: `--builder <soul>[,<soul>]` names the authors. Stamp it durably
    with `bin/task move <task> building --actor <soul>` (it works on a task already

@@ -13,7 +13,18 @@ Rails.application.configure do
 
   # Tests never reach GitHub by default: Task's derived facts (TaskDerivedFacts)
   # fall back to the stamps unless a test passes its own `derivation:`.
-  config.x.derive_from_github = false
+  #
+  # DERIVE_FROM_GITHUB=1 ARMS THE DERIVATION PATH, not a network call, and the
+  # distinction is the whole reason the knob exists. A test that drives a SCRIPT
+  # cannot inject `derivation:` — it only gets to write the task JSON — so the
+  # refusals that fire on an unreadable PR were unreachable from any CLI test, and
+  # that is precisely why neither of bin/reviewer-select's credential refusals had
+  # one. Armed, a pr_url that is not a GitHub PR url raises
+  # Github::TaskDerivation::Unreadable in `parse!` BEFORE any HTTP is attempted
+  # (app/services/github/task_derivation.rb:161), so the refusal is reachable with
+  # no network at all. A test that arms this and then names a REAL pr_url would
+  # reach GitHub; do not.
+  config.x.derive_from_github = ENV["DERIVE_FROM_GITHUB"] == "1"
 
   # Eager loading loads your entire application. When running a single test locally,
   # this is usually not necessary, and can slow down your test suite. However, it's
