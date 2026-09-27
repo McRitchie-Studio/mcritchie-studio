@@ -159,3 +159,25 @@ satellites:
     description: "Showcase rebuild of Alex's portfolio of web apps since 2014; release-managed standalone (no studio-engine, no database)"
     deploy_provider: "heroku"
     status: "reserved"
+
+  - slug: 10and5
+    display_name: "10&5 Hospitality"
+    emoji: "🍽️"
+    port: 4200
+    heroku_app: "mcr-10and5"
+    production_url: "https://10and5.mcritchie.studio"
+    role: "viewer"
+    description: "Showcase rebuild of 10&5 Hospitality, a restaurant mystery-shopper platform; release-managed standalone (no studio-engine, no database)"
+    deploy_provider: "heroku"
+    status: "reserved"
+
+  - slug: search-position
+    display_name: "Search Position"
+    emoji: "🔎"
+    port: 4300
+    heroku_app: "mcr-search-position"
+    production_url: "https://search-position.mcritchie.studio"
+    role: "viewer"
+    description: "Showcase rebuild of the Google search position checker, a free project; release-managed standalone (no studio-engine, no database)"
+    deploy_provider: "heroku"
+    status: "reserved"

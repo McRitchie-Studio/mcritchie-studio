@@ -9,7 +9,16 @@ module EmailEvents
   module Results
     module_function
 
+    # Never raises: a result that cannot be recorded is logged to ErrorLog, and
+    # the page or pixel that reported it carries on.
     def record!(token, goal, source: "beacon")
+      record_unsafely!(token, goal, source: source)
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      nil
+    end
+
+    def record_unsafely!(token, goal, source:)
       goal = goal.to_s
       return unless EmailEvent::GOALS.include?(goal)
 
@@ -34,9 +43,13 @@ module EmailEvents
       url
     end
 
+    # Our own apps only. Customer apps also live on *.mcritchie.studio, and
+    # an email's token is not theirs to receive, so this is a list, not a
+    # suffix match. Add an app here when an email links to it.
+    APP_HOSTS = %w[mcritchie.studio www.mcritchie.studio cyvasse.mcritchie.studio].freeze
+
     def our_host?(host)
-      host = host.to_s.downcase
-      host == "mcritchie.studio" || host.end_with?(".mcritchie.studio")
+      APP_HOSTS.include?(host.to_s.downcase.delete_suffix("."))
     end
   end
 end
