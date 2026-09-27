@@ -54,17 +54,21 @@
             data-test="look-card-person" title="<%= reading.display_name %>"><%= reading.display_name %></span>
       <span class="block text-2xs text-secondary leading-snug truncate"><%= reading.descriptor %></span>
     <% end %>
-
-    <% if reading.position.present? %>
-      <span class="shrink-0 text-3xs text-muted font-mono opacity-0 group-hover:opacity-100 transition-opacity"><%= reading.position %></span>
-    <% end %>
   </div>
 
   <%# THE SPORTS-DATA ROW — team, position, jersey number, size. Every cell reports its
       own absence rather than collapsing, because a row with a hole in it is what tells
-      the operator which athlete needs attention. A `no #` cell means this athlete has
-      not been acquired or re-validated yet, which is why it is muted rather than amber
-      — it is the ordinary state, not an alarm — and its own tooltip says so. %>
+      the operator which athlete needs attention.
+
+      A HOLE AND A FACT MUST BE TELLABLE APART WITHOUT READING 10px TYPE, which is the
+      whole job of the `absent` tone: the jersey cell loses its fill and takes a dashed
+      edge, so it reads as an empty slot rather than as a value. Deliberately NOT amber
+      like `no team` / `no position` / `no size` — those three fill on the same acquire,
+      so they cluster on genuinely un-acquired athletes, while the number is nil on
+      nearly every athlete who was acquired before the column existed. Amber there would
+      indict thousands of correct rows. Its own tooltip carries the act that can fill
+      it. See ModelPipelineHelper::CHIP_TONES for why the signal is structural rather
+      than a hue. %>
   <% sports = reading.sports_facts %>
   <% if sports.any? %>
     <div class="flex flex-wrap items-center gap-1" data-test="look-card-sports">

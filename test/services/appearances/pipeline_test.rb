@@ -271,7 +271,9 @@ class Appearances::PipelineTest < ActiveSupport::TestCase
 
     number = reading.sports_facts.find { |f| f[:key] == :number }
     assert_equal "no #", number[:label]
-    assert_equal :neutral, number[:tone]
+    # :absent, its own tone since 2026-09-27 — quieter than :neutral (which is the class
+    # string a HELD fact carries) and never :warn (amber on nearly every card).
+    assert_equal :absent, number[:tone]
   end
 
   # ── the connection `defined` asserts ──────────────────────────────────────────

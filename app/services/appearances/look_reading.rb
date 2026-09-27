@@ -87,14 +87,16 @@ module Appearances
   # asserted exactly that, so the claim could not outlive the schema. It fired the
   # day the column landed, and #sports_facts now renders the value.
   #
-  # `defined` STILL DOES NOT REQUIRE IT, for a new reason. The column fills per
-  # athlete on demand, never by backfill, so nil is the ORDINARY state of an athlete
-  # nobody has acquired yet — a gate over it would demote nearly every look for a
-  # reason that is not about that look. So the number is a FACT the card reports and
-  # not a rung on the ladder: #sports_facts prints it when we hold one and a muted,
-  # self-explaining `no #` when we do not, and
-  # Appearances::Pipeline::DEFINITION_GAP_NOTE states the actionable version once on
-  # the board.
+  # `defined` STILL DOES NOT REQUIRE IT, for a new reason. The column fills per athlete
+  # on demand, never by backfill, so nil is the ORDINARY state of an athlete nobody has
+  # acquired OR RE-VALIDATED yet — and the large population is not un-acquired athletes
+  # at all: it is the athletes who WERE acquired, before the column existed, and so
+  # carry everything but the number. A gate over it would demote nearly every look for a
+  # reason that is not about that look. So the number is a FACT the card reports and not
+  # a rung on the ladder: #sports_facts prints it when we hold one and an `absent`-toned,
+  # dashed, self-explaining `no #` when we do not (see #number_cell for why that tone is
+  # neither neutral nor amber), and Appearances::Pipeline::DEFINITION_GAP_NOTE states the
+  # actionable version once on the board.
   class LookReading
     # THE FIVE LANES, IN PIPELINE ORDER. The order IS the rule — #furthest and the
     # controller's refusal both read this array's index, so a lane inserted here
@@ -123,9 +125,16 @@ module Appearances
     # WHAT THE `no #` CELL SAYS WHEN ASKED. It names the ACT that fills the column
     # rather than the column itself — a reader looking at a hole wants the remedy, and
     # "acquire or re-validate this athlete" is something they can go and do.
+    #
+    # THE ACT IS NECESSARY, NOT SUFFICIENT, and the copy may not promise otherwise.
+    # Athletes::AcquireOrValidate writes the number only when ESPN's payload carries a
+    # readable one; a payload without it yields `:absent` from #blank_value? and nothing
+    # is written, so this cell can still read `no #` after a SUCCESSFUL re-validate. An
+    # operator who was promised an end state and did not get it reads the board as
+    # broken, so the tooltip states the condition instead.
     NUMBER_GAP_TITLE =
       "No jersey number on file — it fills from ESPN when this athlete is acquired " \
-      "or re-validated.".freeze
+      "or re-validated, if ESPN publishes one for him.".freeze
 
     def self.index(stage) = STAGES.index(stage.to_s)
 
@@ -168,8 +177,16 @@ module Appearances
       @athlete = athlete
       @athlete_team_slug = athlete_team_slug.presence
       @athlete_position = athlete_position.presence
-      # NEITHER `.presence` NOR TRUTHINESS: 0 is a legal jersey number (the league has
-      # allowed it since 2023), so the only absence this cell may report is nil.
+      # NEITHER COERCED NOR NARROWED: 0 is a legal jersey number (the league has allowed
+      # it since 2023), so the only absence this cell may report is nil.
+      #
+      # THE CHECK THAT WOULD BREAK THAT IS A ZERO-MINDED ONE — `to_i.positive?`,
+      # `nonzero?`, `to_i > 0` — and NOT `presence`. Measured in this app's runtime
+      # (ActiveSupport 8.1): `0.present?` is true, `0.presence` is 0, `0.blank?` is
+      # false and 0 is truthy, so presence and truthiness happen to AGREE with `nil?`
+      # here. `nil?` is still the right check because it asks the question the cell
+      # actually has — "do we hold a number" — rather than agreeing by coincidence.
+      # Appearances::JerseyNumberSemanticsTest pins the measurement.
       @jersey_number = jersey_number
       @headshot = headshot
       @avatar_url = avatar_url.presence
@@ -185,7 +202,15 @@ module Appearances
     end
 
     def slug = appearance.slug
-    def position = appearance.position
+    # DELIBERATELY NO `#position`, and the omission is the fix for a shipped defect.
+    # `appearances.position` is the ENGINE BOARD'S RANK — Studio::Board::Rankable, whose
+    # `board_rank_attr` defaults to :position, seeded 100-gapped by
+    # Appearance#set_initial_position — so it is an implementation detail of the drag and
+    # not a fact about the athlete. A reader named `position` on an object whose cards
+    # also print a FOOTBALL position got rendered into the card's identity row as a bare
+    # monospace 100 / 200 / 300 beside the person's name, about 20px above the chip
+    # carrying "QB": two adjacent numbers where one is a meaningless ordinal. The
+    # football one is `#athlete_position`, which is what the sports row reads.
     def descriptor = appearance.descriptor
     def colorway = appearance.colorway
     def captured_team_slug = appearance.team_slug.presence
@@ -401,13 +426,26 @@ module Appearances
     # contrast the traded card needs. That is the same leak the physique chip was
     # already fixed for, arriving for a new reason.
     #
-    # So: a number we hold reads as a plain fact, and one we do not is muted and
-    # carries the act that would fill it. 0 IS A LEGAL JERSEY, so absence is asked as
-    # `nil?` — truthiness or `presence` would print "no #" for the man wearing it.
+    # BUT :neutral WAS NOT A TREATMENT EITHER, and that is what :absent fixes.
+    # CHIP_TONES[:neutral] is the exact class string a HELD fact carries, so the absent
+    # cell was byte-identical CSS to a fact and the honesty of the row rested entirely
+    # on a 10px word and the legend. :absent drops the fill and dashes the edge —
+    # quieter than neutral rather than louder, and no hue at all — so a 1000-foot scan
+    # can tell a hole from a fact without reading the type. See CHIP_TONES for why every
+    # signal is structural and why AA holds in both themes.
+    #
+    # 0 IS A LEGAL JERSEY, SO ABSENCE IS ASKED AS `nil?`. The check that would break
+    # that is a ZERO-MINDED one — `to_i.positive?`, `nonzero?`, `to_i > 0`; mutating
+    # this guard to `if jersey_number.to_i.positive?` reddens the suite. `presence` and
+    # truthiness do NOT break it: measured, `0.present?` is true, `0.presence` is 0 and
+    # 0 is truthy, so they agree with `nil?` here — mutating to
+    # `if jersey_number.present?` leaves all of these tests GREEN. An earlier version of
+    # this comment claimed the opposite; Appearances::JerseyNumberSemanticsTest now
+    # holds the measurement so the claim cannot come back.
     def number_cell
       return { key: :number, label: "##{jersey_number}", tone: :neutral } unless jersey_number.nil?
 
-      { key: :number, label: "no #", tone: :neutral, title: NUMBER_GAP_TITLE }
+      { key: :number, label: "no #", tone: :absent, title: NUMBER_GAP_TITLE }
     end
 
     def measurements_label
@@ -418,6 +456,13 @@ module Appearances
 
     # A cell is the value when we hold one, and the NAMED absence when we do not — never
     # blank. A row that collapsed its empty cells would read as complete.
+    #
+    # THESE ABSENCES STAY :warn WHILE THE NUMBER'S IS :absent, and the asymmetry is
+    # principled rather than an oversight. Team, position and size all fill on the SAME
+    # acquire, so an empty one clusters on genuinely un-acquired athletes and is worth a
+    # warning. The number fills on that same acquire but the column only landed
+    # 2026-09-27, so it is empty on athletes who are otherwise complete — amber there
+    # would indict rows that are correct.
     def cell(key, value, absent_label)
       value.present? ? { key: key, label: value, tone: :neutral } : { key: key, label: absent_label, tone: :warn }
     end
