@@ -92,17 +92,74 @@ class Appearances::GenerateArtifactTest < ActiveSupport::TestCase
                  "a fal row is available here too and must NOT be chosen for a sheet"
   end
 
-  # ONE REFERENCE IS ENOUGH — measured, not assumed: five performed no better.
-  test "exactly one reference photograph is sent" do
+  # ⚠ A REVERSAL, AND THE OPERATOR ASKED FOR IT. This case used to assert "exactly one
+  # reference photograph is sent", justified by "five performed no better than one" — a
+  # sentence this repo attributes to three different paths (config/image_generators.yml
+  # credits this Responses row, ImageGeneration::OpenAI credits /v1/images/edits, the
+  # 2026-09-27 operator relay credits the Higgsfield trainer), so it settles nothing here.
+  #
+  # The operator's words, 2026-09-27: *"it would be better if we provided a few headshots
+  # when submitting for the character model ... more context on facial structure and
+  # expressions"*. So this service now offers the distilled set.
+  #
+  # WHAT NARROWS IT NOW IS THE ROW'S DECLARED ARITY, one layer down, where a reader can
+  # check it — see ImageGeneration::OpenAITest. This service's job is to OFFER the right
+  # photographs in the right order.
+  test "the whole vetted reference set is offered, the cached headshot first" do
     cache_headshot(variant: "original", key: "headshots/nfl/buffalo-bills/josh-allen/original.png")
     @look.update!(reference_url: "https://example.com/another.png")
 
     with_fake_generator { Appearances::GenerateArtifact.call(@look.reload) }
 
     call = FakeAdapter.calls.sole
-    assert_equal 1, call.reference_urls.length
     assert_includes call.reference_urls.first, "/original.png",
-                    "the measured headshot leads; the typed URL is only a fallback"
+                    "the one input measured to carry a likeness leads the list"
+    assert_includes call.reference_urls, "https://example.com/another.png",
+                    "the photograph the operator typed is a reference, not a fallback"
+  end
+
+  # THE `original` VARIANT IS WHY THIS SERVICE PREPENDS ITS OWN FLOOR RATHER THAN TAKING
+  # ReferenceSet'S. That object resolves the headshot through
+  # Appearances::ReferenceImages::HEADSHOT_VARIANTS (`%w[400 100]`); a zero-shot generator
+  # reading one face carries every pixel of it, so this path prefers the original.
+  test "the widest cached variant leads even when a narrower one exists" do
+    cache_headshot(variant: "400", key: "headshots/nfl/buffalo-bills/josh-allen/400.png")
+    cache_headshot(variant: "original", key: "headshots/nfl/buffalo-bills/josh-allen/original.png")
+
+    with_fake_generator { Appearances::GenerateArtifact.call(@look.reload) }
+
+    urls = FakeAdapter.calls.sole.reference_urls
+    assert_includes urls.first, "/original.png"
+    assert_equal urls.uniq, urls, "the same headshot at two variants is still one photograph"
+  end
+
+  # A SCOUTED PHOTOGRAPH REACHES THE SHEET — the narrowing the operator named. Nothing
+  # about it is measured by a classifier, and that is deliberate: the zero-shot path has
+  # no preparation stage to refuse it, so an unmeasured reference is allowed here and
+  # refused at Higgsfield's trainer.
+  test "a chosen scouted photograph rides along with the headshot" do
+    cache_headshot(variant: "original", key: "headshots/nfl/buffalo-bills/josh-allen/original.png")
+    AppearanceReferencePhoto.create!(appearance_slug: @look.slug, chosen: true,
+                                     image_url: "https://cdn.example.com/scouted.jpg",
+                                     source: AppearanceReferencePhoto::SOURCE_SEARCH)
+
+    with_fake_generator { Appearances::GenerateArtifact.call(@look.reload) }
+
+    assert_includes FakeAdapter.calls.sole.reference_urls, "https://cdn.example.com/scouted.jpg"
+  end
+
+  # AND A PHOTOGRAPH OF THE WRONG MAN DOES NOT. A sheet built from two faces is a sheet of
+  # a third man, which is the same defect as a blended trained identity by another route.
+  test "a chosen photograph of a different person is never offered to the sheet" do
+    cache_headshot(variant: "original", key: "headshots/nfl/buffalo-bills/josh-allen/original.png")
+    AppearanceReferencePhoto.create!(appearance_slug: @look.slug, chosen: true,
+                                     image_url: "https://cdn.example.com/keenan.jpg",
+                                     title: "Keenan Allen.jpg",
+                                     source: AppearanceReferencePhoto::SOURCE_SEARCH)
+
+    with_fake_generator { Appearances::GenerateArtifact.call(@look.reload) }
+
+    refute_includes FakeAdapter.calls.sole.reference_urls, "https://cdn.example.com/keenan.jpg"
   end
 
   # READS THE STORED s3_key AND NEVER REBUILDS THE PATH. Athletes::RekeyHeadshots

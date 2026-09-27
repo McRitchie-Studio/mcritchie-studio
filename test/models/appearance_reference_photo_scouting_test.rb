@@ -6,11 +6,15 @@ require "test_helper"
 # THE MINT READERS REPORT MEASUREMENT, NEVER PREDICTION, and the tests below are written
 # to hold that line. Four real mints on 2026-09-25 showed wide action shots failing at
 # prepare at any resolution while a tight ESPN headshot completed, so face size in frame
-# is the variable — and no signal available to us MEASURES face size. A live classifier
-# (production has the credential as of 2026-09-26) does not supply it: FaceVisibility's
-# prompt folds size in ("small in frame" 0.6, "far from camera" 0.3) but gives those same
-# values to a turned head and a shadowed one, so a score cannot be read back as a size.
-# Anything here that started answering "will this mint?" would be inventing an answer.
+# is the variable.
+#
+# FACE SIZE IS NOW MEASURED WHERE A CLASSIFIER RAN — `face_fill` is
+# Appearances::FaceVisibility's own answer to "how much of the frame does the head fill",
+# asked as its own number because `face_score` provably could not be read back for it
+# (the old prompt gave "small in frame" and "partly turned" the same 0.6). Where nothing
+# ran the column is NULL, and a NULL is reported as an ABSENCE of evidence rather than as
+# a small face: that distinction is what the two verdict readers rest on, and several
+# cases below exist only to hold it.
 class AppearanceReferencePhotoScoutingTest < ActiveSupport::TestCase
   Photo = AppearanceReferencePhoto
 
@@ -101,5 +105,80 @@ class AppearanceReferencePhotoScoutingTest < ActiveSupport::TestCase
     # measured anything about.
     refute build(width: nil, height: nil).mint_shape_failed_before?
     refute build(width: 800, height: nil).mint_shape_failed_before?
+  end
+
+  # ── FACE SIZE, AND THE TWO VERDICTS IT DECIDES ───────────────────────────────────
+
+  test "[unit] a scored row and a SIZED row are different states" do
+    # THE ROW EVERY EARLIER SEARCH LEFT BEHIND: a visibility and no size. Reading the
+    # first as the second is the whole defect this column was added for.
+    scored_only = build(face_score: 0.92)
+
+    assert scored_only.face_scored?
+    refute scored_only.face_sized?
+    assert_nil scored_only.face_fill_percent
+    assert_equal 80, build(face_fill: 0.8).face_fill_percent
+  end
+
+  test "[unit] the two verdicts differ on an unmeasured face and agree on everything else" do
+    # THE ASYMMETRY THE TWO GENERATORS NEED. The zero-shot sheet has no preparation stage
+    # to refuse a reference; Higgsfield's trainer refused four of six measured mints.
+    unmeasured = build(face_score: 0.9)
+
+    assert unmeasured.reference_eligible?("Drew Lock")
+    refute unmeasured.mint_eligible?("Drew Lock")
+    assert_equal Photo::REJECTED_FACE_SIZE_UNMEASURED, unmeasured.mint_verdict("Drew Lock").to_s
+  end
+
+  test "[unit] a stranger's title is refused by both verdicts, on a row nothing classified" do
+    # THE FREE HALF OF THE RULE, which is why it still holds on a legacy row: no
+    # classifier ever looked at this photograph and it is still refused.
+    stranger = build(title: "Drew Hutton.jpg")
+
+    refute stranger.reference_eligible?("Drew Lock")
+    refute stranger.mint_eligible?("Drew Lock")
+    assert_equal Photo::REJECTED_WRONG_PERSON, stranger.reference_verdict("Drew Lock").to_s
+  end
+
+  test "[unit] the floor is exempt from both verdicts, and only the floor" do
+    # OUR MIRRORED HEADSHOT IS THE ONE INPUT MEASURED TO MINT and the operator's URL is one
+    # a human chose; neither came from a search, and neither has a face size because nobody
+    # ever paid to classify a photograph we already trust.
+    assert build(source: Photo::SOURCE_HEADSHOT).mint_eligible?("Drew Lock")
+    assert build(source: Photo::SOURCE_OPERATOR).mint_eligible?("Drew Lock")
+    refute build(source: Photo::SOURCE_SEARCH).mint_eligible?("Drew Lock")
+  end
+
+  test "[unit] the gallery is ordered by face SIZE before face visibility" do
+    # THE ORDER MUST MATCH THE RANKER'S. GatherReferencePhotos#final_score puts a measured
+    # size above a visibility score, and a gallery sorted the other way reads as a ranking
+    # bug that is not there. This is the case the old order got wrong: a 92-visibility
+    # photograph whose face is small in frame is precisely the one that cannot mint.
+    Photo.where(appearance_slug: "look-order").delete_all
+    look = "look-order"
+    small = Photo.create!(appearance_slug: look, image_url: "https://x.test/small.jpg",
+                          source: Photo::SOURCE_SEARCH, chosen: true,
+                          face_score: 0.92, face_fill: 0.2, position: 1)
+    tight = Photo.create!(appearance_slug: look, image_url: "https://x.test/tight.jpg",
+                          source: Photo::SOURCE_SEARCH, chosen: true,
+                          face_score: 0.80, face_fill: 0.9, position: 9)
+
+    ordered = Photo.where(appearance_slug: look).gallery_order.to_a
+
+    assert_equal [tight, small], ordered,
+                 "a smaller face with a better visibility score must not lead the gallery"
+  end
+
+  test "[unit] an unsized row sorts BELOW every measured one, never above" do
+    # POSTGRES SORTS NULL FIRST IN DESCENDING ORDER, so without NULLS LAST a row nobody
+    # measured would lead a gallery ordered by a measurement it does not have.
+    Photo.where(appearance_slug: "look-nulls").delete_all
+    look = "look-nulls"
+    unsized = Photo.create!(appearance_slug: look, image_url: "https://x.test/unsized.jpg",
+                            source: Photo::SOURCE_SEARCH, chosen: true, position: 1)
+    sized = Photo.create!(appearance_slug: look, image_url: "https://x.test/sized.jpg",
+                          source: Photo::SOURCE_SEARCH, chosen: true, face_fill: 0.1, position: 2)
+
+    assert_equal [sized, unsized], Photo.where(appearance_slug: look).gallery_order.to_a
   end
 end
