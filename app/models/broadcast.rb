@@ -12,6 +12,15 @@ class Broadcast < ApplicationRecord
   # "hero" is the clickable header image.
   TRACKED_LINKS = { "hero" => :hero_url, "survivor" => :survivor_url, "turf_totals" => :turf_totals_url }.freeze
 
+  # Links a template fixes in its copy rather than taking from a column:
+  # template_key => { link key => URL }. Tracked like TRACKED_LINKS.
+  TEMPLATE_LINKS = {
+    "cyvasse_is_back" => {
+      "play" => "https://cyvasse.mcritchie.studio/play",
+      "build" => "https://mcritchie.studio/build"
+    }.freeze
+  }.freeze
+
   # Registry of available copy templates: key => human label. Each key maps to
   # a view at app/views/broadcasts/<key>.html.erb.
   TEMPLATES = {
@@ -44,7 +53,14 @@ class Broadcast < ApplicationRecord
   # click endpoint can't be turned into an open redirect).
   def link_for(key)
     col = TRACKED_LINKS[key.to_s]
-    col && public_send(col)
+    return public_send(col) if col
+
+    TEMPLATE_LINKS.fetch(template_key, {})[key.to_s]
+  end
+
+  # Every link key this broadcast's email can carry.
+  def link_keys
+    TRACKED_LINKS.keys + TEMPLATE_LINKS.fetch(template_key, {}).keys
   end
 
   # --- engagement ------------------------------------------------------------

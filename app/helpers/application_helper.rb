@@ -1078,7 +1078,9 @@ module ApplicationHelper
     "prisoners-dilemma"    => "🎲",
     "weekly-lock"          => "🏈",
     "rantly"               => "📣",
-    "portfolio"            => "🗂️"
+    "portfolio"            => "🗂️",
+    "10and5"               => "🍽️",
+    "search-position"      => "🔎"
   }.freeze
 
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.

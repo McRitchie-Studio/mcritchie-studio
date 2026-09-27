@@ -202,4 +202,48 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     get build_check_path, params: { subdomain: "fresh-idea" }
     assert_equal true, response.parsed_body["available"]
   end
+
+  # [integration] An app requested by a reader who came from an email is
+  # credited to that email.
+  test "an app request after arriving from an email credits it" do
+    broadcast = Broadcast.create!(subject: "Cyvasse is back", template_key: "cyvasse_is_back")
+    delivery = broadcast.deliveries.create!(contact: Contact.create!(email: "b-#{SecureRandom.hex(3)}@example.com"))
+
+    get build_path(ref: delivery.token)
+    send_prompt
+
+    assert_equal ["requested_app"], delivery.events.of_kind("converted").map { |e| e.data["goal"] }
+  end
+
+  test "an app request with no email behind it credits nothing" do
+    get build_path
+    send_prompt
+    assert_equal 0, EmailEvent.count
+  end
+
+  # [integration] Review follow-ups (PR #1655).
+  test "the email's credit is used once, then the ref is forgotten" do
+    broadcast = Broadcast.create!(subject: "Cyvasse is back", template_key: "cyvasse_is_back")
+    delivery = broadcast.deliveries.create!(contact: Contact.create!(email: "c-#{SecureRandom.hex(3)}@example.com"))
+
+    get build_path(ref: delivery.token)
+    send_prompt
+    assert_nil session[:email_ref], "a later visitor on this browser is not the email's reader"
+    assert_equal 1, delivery.events.of_kind("converted").count
+  end
+
+  test "a crediting error still saves the draft and logs it" do
+    broadcast = Broadcast.create!(subject: "Cyvasse is back", template_key: "cyvasse_is_back")
+    delivery = broadcast.deliveries.create!(contact: Contact.create!(email: "d-#{SecureRandom.hex(3)}@example.com"))
+    get build_path(ref: delivery.token)
+
+    EmailEvents::Results.stub(:record_unsafely!, ->(*, **) { raise "db down" }) do
+      assert_difference -> { ErrorLog.count }, 1 do
+        assert_difference -> { AppRequest.count }, 1 do
+          post build_path, params: { app_request: { prompt: PROMPT } }
+        end
+      end
+    end
+    assert_response :redirect
+  end
 end
