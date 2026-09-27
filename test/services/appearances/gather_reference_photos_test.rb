@@ -101,8 +101,23 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
       @targets << target
       @scores.each_with_object({}) do |(remote_url, score), out|
         hosted = FakeMirror.hosted_for(remote_url)
-        out[hosted] = score if urls.include?(hosted)
+        out[hosted] = judgement(score) if urls.include?(hosted)
       end
+    end
+
+    # A FIXTURE IS EITHER A BARE VISIBILITY OR A WHOLE JUDGEMENT, and both build the
+    # value object the real classifier returns — so no test here can be green against a
+    # shape Appearances::FaceVisibility#parse does not produce.
+    #
+    # `0.15` reads as "the helmet scored 0.15" and is what the cases about VISIBILITY
+    # want. A Hash (`{ visibility: 0.9, fill: 0.8 }`) is for the cases about face SIZE,
+    # which is the measurement a mint turns on. A bare number therefore means "something
+    # looked and never measured the size" — which is a real answer shape, and the one
+    # every row filed before that field existed carries.
+    def judgement(score)
+      return Appearances::FaceVisibility::Judgement.new(**score) if score.is_a?(Hash)
+
+      Appearances::FaceVisibility::Judgement.new(visibility: score)
     end
   end
 
@@ -119,6 +134,19 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
 
   # ONE MIRROR PER TEST, memoised so a test can assert on what it was handed.
   def mirror = @mirror ||= FakeMirror.new
+
+  # A CLASSIFIER THAT MEASURED EVERY CANDIDATE AND LIKED THEM ALL — the precondition for
+  # the cases about the MINT list specifically.
+  #
+  # Appearances::ReferenceEligibility asks two different questions, and this helper is for
+  # the stricter one: a photograph may be a REFERENCE without a measured face size, but it
+  # may not be paid to Higgsfield's trainer without one, because four real mints on
+  # 2026-09-25 turned on face size and a portrait-shaped bare-faced sideline shot failed
+  # at prepare. A test about mint eligibility therefore has to hand the lane a classifier
+  # that actually measured a size.
+  def mintable(results, visibility: 0.9, fill: 0.9)
+    FakeFaces.new(Array(results).to_h { |r| [r.image_url, { visibility: visibility, fill: fill }] })
+  end
 
   setup do
     Appearance.delete_all
@@ -287,18 +315,28 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
                  "the bare face must lead even though the helmet was the provider's hit 1"
   end
 
-  # PRIORITISE, NOT EXCLUDE. On a real Commons answer for "Drew Lock" exactly ONE
-  # of twenty hits was bare-faced; a threshold that dropped the helmets would have
-  # left the identity with a single photograph.
-  test "helmeted photos are still chosen when there is nothing better" do
+  # ⚠ A REVERSAL, AND THE MEASUREMENT THAT EARNED IT. This case used to assert the
+  # opposite — "helmeted photos are still chosen when there is nothing better" — on the
+  # argument that a threshold which EXCLUDED would starve a person of whom no clear
+  # photograph exists. The mint measurements retired that argument: the three-photograph
+  # set that failed at Higgsfield's prepare step was helmets, and a photograph with no
+  # visible face cannot contribute a face to a face likeness on either generator.
+  #
+  # NOBODY IS STARVED, which is the only reason this is safe: Appearances::ReferenceImages
+  # still puts the cached headshot at the head of every set, and that headshot is the one
+  # input measured to complete a reference.
+  test "a helmeted photo is refused, because a hidden face is no reference at all" do
     helmets = (1..3).map { |i| hit("https://cdn.example.com/h#{i}.jpg", position: i) }
-    faces = FakeFaces.new(helmets.to_h { |h| [h.image_url, 0.15] })
+    faces = FakeFaces.new(helmets.to_h { |h| [h.image_url, { visibility: 0.15, fill: 0.95 }] })
 
     summary = Appearances::GatherReferencePhotos.call(
       @look, search: FakeSearch.new(results: helmets), faces: faces, mirror: mirror
     )
 
-    assert_equal 3, summary.chosen, "a person with only helmeted photos still gets an identity"
+    assert_equal 0, summary.chosen
+    assert_equal 3, AppearanceReferencePhoto.where(
+      rejection_reason: AppearanceReferencePhoto::REJECTED_FACE_OBSCURED
+    ).count, "a big helmet is still a hidden face — fill 0.95 must not rescue it"
   end
 
   # THE BUG THIS RULE WAS WRITTEN FROM. Measured on a real Commons answer for
@@ -656,15 +694,65 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
                  "the class name is what the operator scans /admin/error_logs for"
   end
 
+  # HEALTHY NOW MEANS A FACE SIZE CAME BACK TOO. A run that scores every candidate for
+  # visibility and measures NO face size is not healthy — it is the shape that would
+  # leave Higgsfield's trainer with the headshot alone and say nothing about why — so the
+  # fixture reports a fill, and the case below asserts the opposite.
   test "a healthy search files no ErrorLog row" do
     photo = hit("https://cdn.example.com/a.jpg", position: 1)
 
     assert_no_difference -> { ErrorLog.count } do
       Appearances::GatherReferencePhotos.call(
         @look, search: FakeSearch.new(results: [photo]),
+        faces: FakeFaces.new({ photo.image_url => { visibility: 0.9, fill: 0.8 } }), mirror: mirror
+      )
+    end
+  end
+
+  # ---- the face-size blindness alarm --------------------------------------------
+  #
+  # THE FAILURE THIS WHOLE ALARM EXISTS FOR. `fill` is a prompt field that no paid call
+  # has ever verified, so the realistic failure is a model that answers a visibility and
+  # ignores it — which refuses every search hit at the trainer and, without this, reads
+  # as an ordinary run.
+  test "a classifier that reports no face size at all is loud about it" do
+    photo = hit("https://cdn.example.com/a.jpg", position: 1)
+
+    summary = nil
+    assert_difference -> { ErrorLog.count }, 1 do
+      summary = Appearances::GatherReferencePhotos.call(
+        @look, search: FakeSearch.new(results: [photo]),
         faces: FakeFaces.new({ photo.image_url => 0.9 }), mirror: mirror
       )
     end
+
+    assert summary.face_size_blind?
+    refute summary.face_classifier_blind?, "the classifier answered — it just answered thinly"
+    assert_equal :alert, summary.flash_key
+    assert_match "NO FACE SIZE REPORTED", summary.sentence
+    assert_match Appearances::GatherReferencePhotos::FaceSizeBlind.name,
+                 ErrorLog.order(:id).last.read_attribute(:inspect),
+                 "the two blindnesses have different remedies, so they need different names"
+    assert_equal 1, summary.chosen, "the photograph is still a reference for the sheet path"
+    assert_equal 0, summary.mint_ready
+  end
+
+  # A MEASURED RUN IS NOT AN ALARM, and this is the control for the case above: the same
+  # shape with a fill reported files nothing and says the trainer can have it.
+  test "a classifier that reports a face size raises no alarm and names the trainer's set" do
+    photo = hit("https://cdn.example.com/a.jpg", position: 1)
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [photo]),
+      faces: FakeFaces.new({ photo.image_url => { visibility: 0.9, fill: 0.8 } }), mirror: mirror
+    )
+
+    refute summary.face_size_blind?
+    assert_equal :notice, summary.flash_key
+    assert summary.ranked_by_face_size?
+    assert_equal 1, summary.mint_ready
+    assert_match "1 measured for face size", summary.sentence
+    assert_match "all 1 can also go to the trainer", summary.sentence
   end
 
   # THE SENTENCE IS THE SUMMARY'S, not each controller's. It lived twice, verbatim, in
@@ -676,13 +764,13 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
 
     summary = Appearances::GatherReferencePhotos.call(
       @look, search: FakeSearch.new(results: [photo, unsafe], unparsed: 2),
-      faces: FakeFaces.new({ photo.image_url => 0.9 }), mirror: mirror
+      faces: FakeFaces.new({ photo.image_url => { visibility: 0.9, fill: 0.7 } }), mirror: mirror
     )
 
     assert_match "fake returned 2 result(s)", summary.sentence
     assert_match "2 in a shape we could not read", summary.sentence
     assert_match "1 refused as unsafe to fetch", summary.sentence
-    assert_match "1 scored for face visibility", summary.sentence
-    assert_match "1 chosen for the model", summary.sentence
+    assert_match "1 measured for face size", summary.sentence
+    assert_match "1 chosen as references", summary.sentence
   end
 end

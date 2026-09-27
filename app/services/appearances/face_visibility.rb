@@ -72,23 +72,49 @@ module Appearances
     OPEN_TIMEOUT = 5
     READ_TIMEOUT = 30
 
-    # Asking for a NUMBER rather than a yes/no, because the caller RANKS rather
-    # than filters: "mostly visible, three-quarter profile" has to be able to beat
-    # "fully visible but 80 pixels wide" and lose to a clean head-on portrait, and
-    # a boolean collapses all three.
+    # THREE NUMBERS PER IMAGE, AND THE SECOND ONE IS THE ONE THAT DECIDES A MINT.
+    #
+    # `visibility` — asked as a NUMBER rather than a yes/no because the caller RANKS
+    #   rather than filters: "mostly visible, three-quarter profile" has to be able to
+    #   beat "fully visible but 80 pixels wide" and lose to a clean head-on portrait,
+    #   and a boolean collapses all three.
+    #
+    # `fill` — HOW MUCH OF THE FRAME THE HEAD FILLS, asked separately because
+    #   visibility provably cannot be read back for it. Four real Higgsfield mints on
+    #   2026-09-25 settled which one decides: a BARE-FACED 556x780 sideline shot failed
+    #   at prepare and a tight ESPN headshot completed, so face size in frame is the
+    #   variable and resolution is not. A single score cannot carry both, because this
+    #   prompt used to give "small in frame" and "partly turned" the same 0.6 — so a
+    #   0.6 could not be read as either judgement.
+    #
+    # `faces` — HOW MANY PEOPLE'S FACES ARE CLEARLY VISIBLE. An identity trained on a
+    #   photograph of two players is trained on a blend of two faces, and the
+    #   visibility score is beautiful for exactly that photograph.
+    #
+    # ⚠ THE TWO NEW FIELDS ARE UNVERIFIED AGAINST THE LIVE MODEL. The task that added
+    # them forbade paid calls (`cost` risk tag), so `#parse` was written and tested
+    # against fixtures instead. THE DEGRADE IS THEREFORE THE IMPORTANT PART: a field
+    # the model does not return is ABSENT, never zero, and
+    # Appearances::GatherReferencePhotos::Summary#face_size_blind? raises an alarm on
+    # the page and files an ErrorLog row the first time a real answer comes back
+    # without one. A silent degrade here would have made the whole gate inert in
+    # production with nothing to read.
     #
     # The index is echoed back because the answer order is not guaranteed to match
     # the request order — keying on position would silently mis-attribute a score
     # to the wrong photograph, which is the failure a reviewer could not see.
     SYSTEM_PROMPT = <<~PROMPT.freeze
-      You rate photographs that will be used as reference images for building a
-      character likeness. The only thing that matters is whether the person's FACE
-      is clearly visible and unobstructed.
+      You rate photographs that will be used as reference images for training a
+      character likeness of ONE named person. Two things matter and they are
+      separate: whether that person's FACE IS VISIBLE, and HOW BIG the head is in
+      the frame.
 
-      Score each image from 0.0 to 1.0:
+      For each image report three numbers.
+
+      "visibility" 0.0 to 1.0 - how clearly a face shows:
         1.0  a clear, well-lit, unobstructed view of the face
-        0.6  face visible but partly turned, small in frame, or partly shadowed
-        0.3  face mostly obscured - heavy shadow, far from camera, partial occlusion
+        0.6  face visible but partly turned or partly shadowed
+        0.3  face mostly obscured - heavy shadow, partial occlusion
         0.15 a person IS present but their face is hidden - helmet, mask, back of
              head, hands over the face
         0.0  NO PERSON IS PRESENT AT ALL - a document scan, a book page, a logo, a
@@ -100,10 +126,46 @@ module Appearances
       mask is 0.15 even when the person is obviously identifiable from their
       uniform. A scanned page is 0.0.
 
+      "fill" 0.0 to 1.0 - HOW MUCH OF THE FRAME THE HEAD OCCUPIES. Judge the head
+      itself, not the body, and judge SIZE only - a helmeted head that fills the
+      frame is a high fill and a low visibility:
+        1.0  a tight head crop - the head is most of the picture, as in a passport
+             photograph or a sports headshot
+        0.6  a head-and-shoulders portrait - the head is roughly a third of the
+             frame's height
+        0.3  upper body or mid-range - the head is under a fifth of the frame
+        0.1  full body, or a distant sideline or crowd photograph - the head is a
+             small part of the frame
+        0.0  no head in the picture at all
+
+      "faces" - a whole number: how many DIFFERENT people's faces are clearly
+      visible. Count only faces you can actually see; a crowd blurred in the
+      background is not a visible face. Most reference photographs are 1.
+
       Respond with ONLY a JSON array, no markdown and no explanation. One object
       per image, echoing the index you were given:
-      [{"index": 0, "score": 0.9, "reason": "clear head-on portrait"}, ...]
+      [{"index": 0, "visibility": 0.9, "fill": 0.8, "faces": 1,
+        "reason": "tight head-on portrait"}, ...]
     PROMPT
+
+    # WHAT ONE IMAGE CAME BACK AS. A value object rather than three parallel Hashes,
+    # because the three numbers are one answer about one photograph and parallel Hashes
+    # drift — a caller that translated two of them and forgot the third would read as
+    # "the classifier did not report a face size", which is the one state this lane
+    # already went blind on once.
+    #
+    # EVERY MEMBER IS SEPARATELY NULLABLE. `visibility` without `fill` is the shape a
+    # model that ignored the new field returns, and it must degrade to the old
+    # behaviour rather than to a zero.
+    #
+    # NAMING: `visibility` is the number the COLUMN calls `face_score`. The column
+    # keeps its name — renaming it is a migration and a rewrite of every reader for no
+    # new fact — but the object says `visibility`, because reading `face_score` as face
+    # SIZE is the defect this whole file now exists to separate.
+    Judgement = Struct.new(:visibility, :fill, :subjects, keyword_init: true) do
+      def measured? = !visibility.nil?
+      def sized? = !fill.nil?
+    end
 
     def self.available? = ENV[API_KEY_ENV].present?
 
@@ -113,7 +175,7 @@ module Appearances
       @api_key = api_key || ENV[API_KEY_ENV].presence
     end
 
-    # Returns { image_url => Float } for the images it could score. A URL absent
+    # Returns { image_url => Judgement } for the images it could score. A URL absent
     # from the Hash was NOT judged — which the caller must treat as "unknown",
     # never as "no face", or an outage would quietly demote every photograph.
     #
@@ -195,24 +257,36 @@ module Appearances
       JSON.parse(response.body.to_s)
     end
 
-    # READ THE ANSWER TOLERANTLY. A score we cannot read is an ABSENT key rather
+    # READ THE ANSWER TOLERANTLY. A number we cannot read is an ABSENT member rather
     # than a zero: the caller reads absence as "unknown" and falls back to its free
     # ranking, while a zero would assert "this photograph has no face in it" on the
     # strength of a parse failure.
+    #
+    # A ROW WITH NO VISIBILITY IS DROPPED ENTIRELY, because visibility is the member
+    # every caller keys on — a Judgement carrying only a fill would rank a photograph
+    # nothing readable was said about. A row with a visibility and no fill is KEPT: it
+    # is exactly the old answer shape, and losing it would turn a model that ignored
+    # the new field into a total outage.
+    #
+    # `visibility` OR `score`, because the field was called `score` until face size
+    # was split out of it, and a model echoing the older spelling back is answering the
+    # same question. Tolerating both costs one `||` and removes a way for a correct
+    # answer to be thrown away.
     def parse(payload, urls, target: nil)
       text = Array(payload["content"]).filter_map { |b| b["text"] if b["type"] == "text" }.join
       rows = JSON.parse(text[/\[.*\]/m].to_s)
       return {} unless rows.is_a?(Array)
 
-      rows.each_with_object({}) do |row, scores|
+      rows.each_with_object({}) do |row, judgements|
         next unless row.is_a?(Hash)
 
         index = Integer(row["index"], exception: false)
         url = urls[index] if index && index >= 0
-        score = Float(row["score"], exception: false)
-        next if url.nil? || score.nil?
+        visibility = unit(row["visibility"] || row["score"])
+        next if url.nil? || visibility.nil?
 
-        scores[url] = score.clamp(0.0, 1.0)
+        judgements[url] = Judgement.new(visibility: visibility, fill: unit(row["fill"]),
+                                        subjects: count(row["faces"]))
       end
     rescue JSON::ParserError, TypeError => e
       Rails.logger.warn("[Appearances::FaceVisibility] unreadable answer: #{e.class}: #{e.message}")
@@ -222,6 +296,22 @@ module Appearances
       # silently on every search until somebody reads the row.
       FailureLog.file(e, target: target)
       {}
+    end
+
+    # A 0.0..1.0 NUMBER, OR nil. Clamped rather than trusted — the scale is ours and a
+    # model that answers 1.4 has not invented a new band — and nil for anything that is
+    # not a number at all, which is how a missing field stays missing.
+    def unit(value)
+      number = Float(value, exception: false)
+      number&.clamp(0.0, 1.0)
+    end
+
+    # A WHOLE COUNT, OR nil. A negative count is not a count, and 0 is meaningful: it
+    # says the model looked and saw nobody's face, which the caller reads through
+    # visibility anyway.
+    def count(value)
+      number = Integer(value, exception: false)
+      number if number && !number.negative?
     end
   end
 end
