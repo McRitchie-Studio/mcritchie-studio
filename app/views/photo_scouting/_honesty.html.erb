@@ -7,8 +7,11 @@
     to a ranker that does not behave the way the page implied. Every known defect in
     this lane is therefore printed here, with what was measured and when.
 
-    NEITHER DEFECT IS FIXED HERE. Both belong to task `reference-photos-wrong-person`
-    and both are named so a reader does not file a third copy of them. %>
+    THE TWO DEFECTS ARE NOW GUARDED, AND THE PANEL SAYS SO RATHER THAN DISAPPEARING.
+    `reference-photos-wrong-person` shipped the guards; a calibration page that simply
+    deleted the warnings would leave the operator unable to tell a defect that was fixed
+    from one nobody found. Each bullet now names the measurement, the guard, and what the
+    guard still cannot catch — which is the part that matters when he is judging picks. %>
 <div data-test="scouting-honesty"
      class="rounded-lg border border-warning/40 bg-warning/10 p-3 sm:p-4 space-y-3">
   <p class="text-xs font-black text-warning-ink uppercase tracking-wide">
@@ -20,13 +23,28 @@
       <span aria-hidden="true" class="shrink-0">&#9679;</span>
       <span>
         <strong>What actually ranked these:</strong>
-        <% if @face_ranked %>
-          a vision classifier judged how clearly each face shows. That is
-          <em>visibility</em>, not face <em>size</em>, and the two come apart below.
+        <% if @face_sized %>
+          <%# THE STRONGEST STATE, and it is new: the classifier reported how much of the %>
+          <%# frame each head fills, which is the measurement four real mints turned on. %>
+          <span data-test="ranked-by-size">
+            a vision classifier measured how much of the frame each face fills, and that
+            &mdash; not how clearly the face shows &mdash; is what ordered this gallery.
+            Face <em>size</em> is the variable the mint measurements turned on.
+          </span>
+        <% elsif @face_ranked %>
+          <span data-test="ranked-by-visibility">
+            a vision classifier judged how clearly each face shows, and reported NO face
+            size. That is <em>visibility</em> only, so these are ordered by the weaker of
+            the two signals and nothing here may go to Higgsfield&rsquo;s trainer.
+          </span>
         <% else %>
           <strong>nothing looked at these photographs.</strong> They are ordered on
           shape and relevance only. A high position here means &ldquo;worth a closer
-          look&rdquo;, never &ldquo;a face is visible&rdquo;.
+          look&rdquo;, never &ldquo;a face is visible&rdquo; &mdash; and because nothing
+          examined them, <strong>none of them is picked</strong>: a photograph nobody has
+          looked at cannot be shown to hold one person&rsquo;s face, so both generators
+          fall back on the cached headshot. An empty picks section here is that refusal,
+          not a failed search.
           <% if @face_ranking_available %>
             <%# CONFIGURED BUT SILENT, and this is the state that misled the operator %>
             <%# on 2026-09-26: the classifier answered nothing, and the page said only %>
@@ -59,26 +77,37 @@
     <li class="flex gap-2" data-test="defect-wrong-person">
       <span aria-hidden="true" class="shrink-0">&#9679;</span>
       <span>
-        <strong>A clear photo of the wrong man can beat a helmeted photo of the right
-        one.</strong> The classifier was asked whether a face is visible, and it
-        answers that correctly for a stranger. Measured 2026-09-26: searching
-        &ldquo;Drew Lock&rdquo; returns <span class="font-mono">Drew Hutton.jpg</span>
-        at hit 5, and it ranks second. <strong>Read the titles</strong> &mdash; they are
-        printed on every tile because that is the signal no score here catches.
+        <strong>A clear photo of the wrong man used to beat a helmeted photo of the right
+        one.</strong> The classifier was asked whether a face is visible, and it answers
+        that correctly for a stranger. Measured 2026-09-25: searching &ldquo;Drew
+        Lock&rdquo; returned <span class="font-mono">Drew Hutton.jpg</span>, face 90,
+        ranked second in the identity. A photograph whose title names somebody else is
+        now refused outright and never paid to be classified.
+        <strong>The title check is a filter, not the answer:</strong> it fires on a name
+        that CONFLICTS with this person&rsquo;s &mdash; a shared given name with a
+        different surname &mdash; so an untitled photograph, a mis-titled one, or a
+        stranger who shares no name word at all still gets through.
+        <strong>Read the titles.</strong>
       </span>
     </li>
 
     <li class="flex gap-2" data-test="defect-cannot-mint">
       <span aria-hidden="true" class="shrink-0">&#9679;</span>
       <span>
-        <strong>The top-ranked photo is often one Higgsfield refuses to mint.</strong>
+        <strong>Two generators, and they do not take the same photographs.</strong>
         Four real mints on 2026-09-25: three wide action shots failed at prepare, the
-        same three at full resolution failed, a bare-faced sideline shot failed, and a
-        tight ESPN headshot completed. Resolution is not the variable and the helmet is
-        not the variable &mdash; face size in frame is, and nothing here measures it. The
-        classifier above folds size into its score but cannot be read back for it: a
-        small face and a turned head score the same. Tiles carry the evidence we do
-        have, never a prediction.
+        same three at full resolution failed, a bare-faced 556x780 sideline shot failed,
+        and a tight ESPN headshot completed. Resolution is not the variable and the
+        helmet is not the variable &mdash; face size in frame is. So the
+        <strong>character sheet</strong> (zero-shot, no training step to refuse
+        anything) is given every photograph below that passes the checks, while
+        <strong>Higgsfield&rsquo;s trainer</strong> is only offered the ones whose face
+        size something actually measured &mdash; at least
+        <%= (Appearances::ReferenceEligibility::MINT_FACE_FILL * 100).round %>% of the
+        frame. On a machine with no vision credential that is none of them, and the
+        trainer gets the cached headshot alone. Tiles carry the evidence, never a
+        prediction: no photograph has ever been minted between the failing anchors and
+        the proven headshot.
       </span>
     </li>
 

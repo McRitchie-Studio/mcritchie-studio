@@ -40,26 +40,20 @@ module Appearances
     # would scale with whatever the provider felt like returning.
     VISION_SHORTLIST = 12
 
-    # BELOW THIS, THE CLASSIFIER SAW NO USABLE FACE. Used only to LABEL a loser
-    # (`face_obscured` rather than `beyond_limit`), never to exclude one: the
-    # operator asked to PRIORITISE bare faces, and a threshold that excluded would
-    # starve a person of whom no clear photograph exists. On a real Commons answer
-    # for "Drew Lock" exactly ONE of twenty hits was bare-faced — excluding the
-    # helmets would have left the identity with a single photograph.
-    FACE_VISIBLE_THRESHOLD = 0.5
-
-    # BELOW THIS, THERE IS NO PERSON IN THE PICTURE AT ALL, and this one IS a hard
-    # exclusion. The distinction it rests on is the one FaceVisibility's prompt is
-    # written to make: 0.15 means "your man, face hidden by a helmet" and 0.0 means
-    # "this is not a photograph of anybody".
+    # WHICH CANDIDATES MAY GO INTO AN IDENTITY IS NOT DECIDED HERE ANY MORE.
     #
-    # WHY IT HAD TO EXIST. Without it, `CHOSEN_LIMIT` is a blind take-the-top-N and
-    # a thin answer fills the identity with whatever was left. Measured on a real
-    # Commons answer for "Drew Lock": 12 of 20 hits were scanned books, and a
-    # 1750 edition of The Rape of the Lock was selected INTO the character model.
-    # A helmeted photograph is a poor reference; a scanned book page is not a
-    # reference, and no supply shortage makes it one.
-    NO_PERSON_THRESHOLD = 0.1
+    # Every threshold that used to live at this spot — the visibility floor, the
+    # no-person floor, and now a face-SIZE floor and a wrong-person check — moved to
+    # Appearances::ReferenceEligibility, because the same rule has to be applied three
+    # times: here at file time to decide `chosen`, and again by
+    # Appearances::ReferenceSet over the persisted rows once per GENERATOR, since the
+    # zero-shot sheet and Higgsfield's trainer do not accept the same set. Three copies
+    # of a threshold is three answers to "is this photograph a reference", and the page
+    # prints one of them.
+    #
+    # THE TWO RULES THAT STAYED HERE — `CHOSEN_LIMIT` and `VISION_SHORTLIST` — are
+    # about how many photographs and how big a bill, not about which photograph, which
+    # is why they did not go with the rest.
 
     # THREE COUNTS DESCRIBE THE CLASSIFIER LANE, because two of them cannot tell
     # "did nothing" from "had nothing to do":
@@ -76,14 +70,18 @@ module Appearances
     # different for each.
     Summary = Struct.new(:configured, :provider_name, :query, :returned, :filed,
                          :chosen, :rejected, :unfetchable, :unparsed, :ranked_by,
-                         :scored, :shortlisted, :attempted, keyword_init: true) do
+                         :scored, :sized, :mint_ready, :shortlisted, :attempted,
+                         keyword_init: true) do
       def configured? = !!self[:configured]
 
-      # WHAT ACTUALLY DID THE ORDERING — `:face` when the vision classifier ran,
-      # `:merit` when it could not. On the page this is the difference between
-      # "these were ranked by whether a face is visible" and "these were ranked by
-      # shape and relevance", and the operator has to be able to tell.
-      def ranked_by_face? = self[:ranked_by] == :face
+      # WHAT ACTUALLY DID THE ORDERING — `:face_size` when the classifier reported how
+      # much of the frame the head fills, `:face` when it reported only visibility,
+      # `:merit` when it could not answer at all. On the page this is the difference
+      # between "these were ranked by the thing that decides a mint", "these were
+      # ranked by whether a face is visible" and "these were ranked by shape", and the
+      # operator has to be able to tell which one he is looking at.
+      def ranked_by_face? = [:face, :face_size].include?(self[:ranked_by])
+      def ranked_by_face_size? = self[:ranked_by] == :face_size
 
       # THE LANE SAW NONE OF ITS INPUTS — the failure this whole change was written
       # from, and the one the page could not previously express.
@@ -109,12 +107,38 @@ module Appearances
         self[:shortlisted].to_i.positive? && self[:scored].to_i.zero?
       end
 
+      # THE CLASSIFIER ANSWERED BUT REPORTED NO FACE SIZE — the one failure that would
+      # otherwise make this whole gate inert without saying so.
+      #
+      # WHY IT IS ITS OWN ALARM. `fill` is a field of FaceVisibility's prompt that was
+      # never verified against the live model (the task that added it forbade paid
+      # calls), and Appearances::ReferenceEligibility refuses a candidate whose face size
+      # nobody measured. So a model that ignores the field produces a page that files
+      # twenty candidates, scores them all, chooses NONE, and — without this — explains
+      # it with the ordinary "past the limit" furniture. That is the same silent shape
+      # that put three photographs of aircraft into a character model on 2026-09-26,
+      # and the lesson from that week was to name the blindness rather than its
+      # symptom.
+      #
+      # KEYED ON `scored` RATHER THAN ON `shortlisted`, because it is a statement about
+      # an answer we received: a classifier that answered nothing at all is
+      # `face_classifier_blind?`, and reporting both alarms for one outage would bury
+      # the actionable one.
+      def face_size_blind?
+        self[:scored].to_i.positive? && self[:sized].to_i.zero?
+      end
+
       # WHICH FLASH THIS SENTENCE DESERVES. A blind classifier is an ALERT, not a
       # notice: the run "succeeded" — photographs were filed and an identity can be
       # built from them — so a green notice is exactly what let a confidently wrong
       # result read as a good one. The severity is part of the same judgement as the
       # sentence, so it lives beside it rather than being re-derived by each caller.
-      def flash_key = face_classifier_blind? ? :alert : :notice
+      #
+      # A TRAINER WITH NOTHING TO TRAIN ON IS A NOTICE, NOT AN ALERT, and the asymmetry is
+      # deliberate: the sheet path — the one the operator actually presses — got its
+      # photographs, so the run really did succeed. `#trainer_clause` says what the trainer
+      # will get in the same sentence, which is why there is no separate predicate for it.
+      def flash_key = face_classifier_blind? || face_size_blind? ? :alert : :notice
 
       # THE ONE SENTENCE BOTH SEARCH ACTIONS PRINT.
       #
@@ -128,7 +152,8 @@ module Appearances
         parts << "#{unparsed} in a shape we could not read" if self[:unparsed].to_i.positive?
         parts << "#{unfetchable} refused as unsafe to fetch" if self[:unfetchable].to_i.positive?
         parts << ranking_clause
-        parts << "#{chosen} chosen for the model"
+        parts << "#{chosen} chosen as references"
+        parts << trainer_clause
         "#{parts.join(' · ')}."
       end
 
@@ -136,10 +161,37 @@ module Appearances
       # classifier ranked them or nothing did, and those are the two outcomes the
       # operator most needs to tell apart right after clicking.
       def ranking_clause
+        return "#{sized} measured for face size" if ranked_by_face_size?
+        return size_blind_clause if face_size_blind?
         return "#{scored} scored for face visibility" if ranked_by_face?
         return blind_clause if face_classifier_blind?
 
         "ranked on shape and relevance only (no face classifier)"
+      end
+
+      # SAYS THE MEASUREMENT THAT DECIDES A MINT IS MISSING, and what that costs. It
+      # names the field so whoever reads it can check the prompt against the vendor's
+      # answer, which is the actual next move.
+      def size_blind_clause
+        "NO FACE SIZE REPORTED: #{scored} photograph(s) were scored for visibility and " \
+          "0 for face size, which is the measurement Higgsfield's prepare step turns on " \
+          "- so the trainer is offered the cached headshot alone"
+      end
+
+      # WHAT EACH OF THE TWO GENERATORS ACTUALLY GETS, in one clause.
+      #
+      # THE TWO NUMBERS DIVERGE AND THE OPERATOR CANNOT SEE WHY WITHOUT THIS. Every
+      # chosen photograph reaches the zero-shot sheet; only the ones with a measured
+      # face size may be paid to Higgsfield's trainer, because four of six measured
+      # mints failed at prepare and face size is the variable they turned on. One
+      # number labelled "chosen" would describe whichever generator the reader happened
+      # to be thinking about.
+      def trainer_clause
+        return "all #{chosen} can also go to the trainer" if chosen.to_i.positive? &&
+                                                             self[:mint_ready].to_i == chosen.to_i
+
+        "#{self[:mint_ready].to_i} of #{chosen} carry a measured face size, so the trainer " \
+          "gets that many plus the cached headshot"
       end
 
       # SAYS WHAT BROKE AND HOW MUCH IT COST, in the operator's units. It names both
@@ -161,6 +213,12 @@ module Appearances
     # NEVER RAISED, only filed. Raising it would cost the operator the page, which is
     # the opposite of what this lane promises.
     class ClassifierBlind < StandardError; end
+
+    # WHAT GETS FILED WHEN THE CLASSIFIER ANSWERS BUT REPORTS NO FACE SIZE. Its own
+    # class rather than a second message on ClassifierBlind, because the class name is
+    # what the operator scans /admin/error_logs for and the two failures have different
+    # remedies — one is the vendor's fetch, the other is our prompt.
+    class FaceSizeBlind < StandardError; end
 
     def self.call(appearance, **kwargs) = new(appearance, **kwargs).call
 
@@ -225,24 +283,36 @@ module Appearances
     def unconfigured_summary
       Summary.new(configured: false, provider_name: nil, query: query, returned: 0,
                   filed: 0, chosen: 0, rejected: 0, unfetchable: 0, unparsed: 0,
-                  ranked_by: nil, scored: 0, shortlisted: 0, attempted: 0)
+                  ranked_by: nil, scored: 0, sized: 0, mint_ready: 0, shortlisted: 0,
+                  attempted: 0)
     end
 
     # FILE THE ANSWER, IN RANK ORDER RATHER THAN IN THE PROVIDER'S ORDER.
     #
-    # Five verdicts:
+    # The verdicts, and only ONE of them is decided here:
     #
     #   unfetchable   — failed the SSRF/reachability guard. NEVER sent anywhere,
     #                   and filed so the operator can see the search offered it.
-    #   not_a_photo   — no person in the picture at all. The one HARD exclusion:
-    #                   a scanned page is not a poor reference, it is not one.
-    #   face_obscured — the vision classifier looked and found no usable face.
-    #                   Only ever stamped when something ACTUALLY LOOKED.
-    #   beyond_limit  — fine, but past CHOSEN_LIMIT.
-    #   chosen        — in the identity.
+    #   beyond_limit  — eligible, but past CHOSEN_LIMIT. THE ONE THIS OBJECT OWNS,
+    #                   because the cap is this object's rule.
+    #   chosen        — in the reference set.
+    #   everything else — Appearances::ReferenceEligibility's verdict, stamped verbatim:
+    #                   not_a_photo, wrong_person, mixed_subjects, face_obscured,
+    #                   face_unscored, face_too_small.
     #
-    # `duplicate` is the sixth reason the model declares and the one NOTHING here
-    # stamps — see AppearanceReferencePhoto for why it is declared anyway.
+    # `face_size_unmeasured` IS NEVER STAMPED HERE, and that is the two-generator split
+    # rather than an omission: an unmeasured face size keeps a photograph out of
+    # Higgsfield's TRAINER (Appearances::ReferenceSet#call re-asks for that) and not out
+    # of the reference set, because the zero-shot sheet has no preparation stage to
+    # refuse it and the operator asked for more references rather than fewer.
+    #
+    # `duplicate` is the one reason the model declares that NOTHING here stamps — see
+    # AppearanceReferencePhoto for why it is declared anyway.
+    #
+    # THE VERDICT IS STAMPED VERBATIM RATHER THAN RE-DERIVED, which is the whole
+    # reason the eligibility rule is a separate object: the symbol that refused the
+    # photograph IS the reason printed on the tile, so the page can never explain a
+    # rejection with a different rule from the one that made it.
     #
     # THE GUARD RUNS BEFORE THE RANKING, so a rejected-as-unsafe hit never consumes
     # a slot and is never paid to be classified. Ordering it the other way would
@@ -252,27 +322,28 @@ module Appearances
       results = answer.results
       safe, unsafe = results.partition { |r| FetchableUrl.ok?(r.image_url) }
 
-      scores = face_scores(safe)
-      ranked = safe.sort_by { |r| [-final_score(r, scores), r.position.to_i] }
+      judgements = face_judgements(safe)
+      ranked = safe.sort_by { |r| [-final_score(r, judgements), r.position.to_i] }
 
-      counts = { filed: 0, chosen: 0, rejected: 0 }
+      counts = { filed: 0, chosen: 0, rejected: 0, mint_ready: 0 }
       taken = 0
       ranked.each do |result|
+        verdict = reference_verdict(result, judgements)
         # COUNTING TAKEN RATHER THAN INDEX. A disqualified candidate must not
         # consume a slot on its way to being rejected, or a thin answer full of
         # scanned pages would leave the identity with fewer photographs than the
         # search actually found for it.
-        take = !not_a_photo?(result, scores) && taken < CHOSEN_LIMIT
+        take = verdict == ReferenceEligibility::ELIGIBLE && taken < CHOSEN_LIMIT
         taken += 1 if take
-        record(result, take, rejection_for(result, scores, take), counts,
-               face_score: scores[result.image_url])
+        record(result, take, rejection_for(verdict, take), counts,
+               judgement: judgements[result.image_url])
       end
       # THE UNSAFE ONES ARE NEVER SCORED — they were never sent to the classifier,
       # because paying to look at a URL we have already refused to fetch is paying
       # for an answer we would not act on.
       unsafe.each do |result|
         record(result, false, AppearanceReferencePhoto::REJECTED_UNFETCHABLE, counts,
-               face_score: nil)
+               judgement: nil)
       end
 
       summary = Summary.new(configured: true,
@@ -280,10 +351,25 @@ module Appearances
                             query: query, returned: results.length, filed: counts[:filed],
                             chosen: counts[:chosen], rejected: counts[:rejected],
                             unfetchable: unsafe.length, unparsed: answer.unparsed_count,
-                            ranked_by: scores.any? ? :face : :merit, scored: scores.length,
+                            ranked_by: ranked_by(judgements), scored: judgements.length,
+                            sized: judgements.count { |_url, j| j.sized? },
+                            mint_ready: counts[:mint_ready],
                             shortlisted: @shortlisted, attempted: @attempted)
       report_blind_classifier(summary)
+      report_blind_face_size(summary)
       summary
+    end
+
+    # WHAT ORDERED THE GALLERY — the strongest measurement anything actually reported,
+    # never the strongest one we asked for. A run where the classifier answered but
+    # reported no face size ranked on visibility, and saying `:face_size` because the
+    # prompt requested it is precisely the confident lie this lane keeps having to
+    # unlearn.
+    def ranked_by(judgements)
+      return :face_size if judgements.any? { |_url, j| j.sized? }
+      return :face if judgements.any?
+
+      :merit
     end
 
     # ONE ROW PER BLIND SEARCH, filed where the operator already looks.
@@ -319,12 +405,43 @@ module Appearances
       )
     end
 
-    def record(result, take, reason, counts, face_score:)
+    # ONE ROW PER BLIND FACE-SIZE ANSWER, filed where the operator already looks.
+    #
+    # SEPARATE FROM `report_blind_classifier` BECAUSE THE REMEDY IS DIFFERENT, and the
+    # remedy is the only reason an ErrorLog row is worth writing. A blind classifier is
+    # a credential or a fetch problem on the vendor's side of the wire; a blind face
+    # SIZE is our own prompt not getting the field back, and the person reading the row
+    # has to know which of those two they are holding. A single row covering both would
+    # send them to the wrong place half the time.
+    def report_blind_face_size(summary)
+      return unless summary.face_size_blind?
+
+      FailureLog.file(
+        FaceSizeBlind.new(
+          "the face classifier scored #{summary.scored} photograph(s) for \"#{summary.query}\" " \
+          "and reported a face SIZE for none of them — face size is what " \
+          "Appearances::ReferenceEligibility.mint_verdict demands, so Higgsfield's trainer " \
+          "gets the cached headshot alone (the zero-shot sheet still gets the set). Check " \
+          "Appearances::FaceVisibility::SYSTEM_PROMPT against the vendor's actual answer"
+        ),
+        target: @appearance
+      )
+    end
+
+    # EVERY COUNT IS INCREMENTED IN ONE PLACE, AFTER THE WRITE SUCCEEDED.
+    #
+    # ⚠ `mint_ready` USED TO BE COUNTED AT THE CALL SITE and that was a count that could
+    # lie. `#upsert` answers nil for a row it deliberately left alone — a headshot or
+    # operator row a search re-found — so a caller that counted before asking could report
+    # "1 of 0 carry a measured face size". Counting after the write is what keeps every
+    # figure in the summary about the same population.
+    def record(result, take, reason, counts, judgement:)
       return unless upsert(result, chosen: take, rejection_reason: reason,
-                                   face_score: face_score)
+                                   judgement: judgement)
 
       counts[:filed] += 1
       take ? counts[:chosen] += 1 : counts[:rejected] += 1
+      counts[:mint_ready] += 1 if take && judgement&.sized?
     end
 
     # PAY TO LOOK AT THE SHORTLIST, NOT AT EVERYTHING.
@@ -337,15 +454,27 @@ module Appearances
     # NORMAL answer and the whole method degrades to the free ranking. The caller
     # can tell which happened from `Summary#ranked_by_face?`.
     # MIRROR FIRST, THEN CLASSIFY. The classifier never sees a third-party URL.
-    def face_scores(results)
+    def face_judgements(results)
       return {} unless @faces.respond_to?(:available?) && @faces.available?
 
-      # DOCUMENTS ARE NOT SHORTLISTED, because they can never be chosen and the
-      # classifier bills per image. MEASURED on a real Commons answer for "Drew
-      # Lock": 20 candidates, 12 of them documents, so the shortlist this fills
-      # drops from 12 images to 8 — a third of the bill, spent confirming that a
-      # book is not a face.
-      eligible = results.reject { |r| PhotoMerit.document?(r) }
+      # WHAT CAN NEVER BE CHOSEN IS NEVER PAID FOR, and there are now two of those.
+      #
+      # DOCUMENTS, because a scanned page cannot be a reference at any supply level.
+      # MEASURED on a real Commons answer for "Drew Lock": 20 candidates, 12 of them
+      # documents, so the shortlist this fills drops from 12 images to 8 — a third of
+      # the bill, spent confirming that a book is not a face.
+      #
+      # AND A PHOTOGRAPH WHOSE TITLE NAMES SOMEBODY ELSE, for exactly the same reason:
+      # `Drew Hutton.jpg` is refused by Appearances::ReferenceEligibility however well it
+      # scores, so classifying it buys an answer we would not act on. This is the one
+      # place in the change where the free wrong-person check SAVES money rather than
+      # only preventing a blend.
+      #
+      # NOTHING ELSE IS SKIPPED, and the line is drawn where the REFERENCE verdict draws
+      # it: a photograph that may be a reference is worth measuring, even if its face
+      # size turns out to keep it away from the trainer, because the measurement is what
+      # decides that.
+      eligible = results.reject { |r| PhotoMerit.document?(r) || wrong_person?(r) }
       shortlist = eligible.sort_by { |r| [-merit(r), r.position.to_i] }.first(VISION_SHORTLIST)
       return {} if shortlist.empty?
 
@@ -370,15 +499,15 @@ module Appearances
 
       # ASKED ABOUT OUR URLs, ANSWERED IN THEIRS. Everything downstream keys on the
       # provider's `image_url` — the rows, the merit memo, the rejection reasons — so
-      # the scores are translated straight back rather than leaking a second identity
-      # for the same photograph through the rest of this object.
+      # the judgements are translated straight back rather than leaking a second
+      # identity for the same photograph through the rest of this object.
       #
-      # THE MAP IS THE ONLY TRANSLATION, so a score for a URL we did not send has
+      # THE MAP IS THE ONLY TRANSLATION, so a judgement for a URL we did not send has
       # nowhere to land and is dropped, which is the same tolerance the classifier's
       # own parser applies to an index it cannot resolve.
-      scored = @faces.call(hosted.values, target: @appearance) || {}
+      judged = @faces.call(hosted.values, target: @appearance) || {}
       hosted.each_with_object({}) do |(remote_url, our_url), out|
-        value = scored[our_url]
+        value = judged[our_url]
         out[remote_url] = value unless value.nil?
       end
     end
@@ -441,35 +570,56 @@ module Appearances
       }
     end
 
-    # MAY THIS CANDIDATE GO INTO THE IDENTITY AT ALL? Two independent disqualifiers,
-    # and both mean the same thing — there is no person in this picture:
+    # MAY THIS CANDIDATE BE A REFERENCE AT ALL? Asked of
+    # Appearances::ReferenceEligibility rather than answered here, so the verdict that
+    # refuses a photograph is the same one the page prints and the same one
+    # Appearances::ReferenceSet re-checks before either generator is paid.
     #
-    #   · the free metadata check recognised a document (deterministic, no spend);
-    #   · the classifier looked and scored it below NO_PERSON_THRESHOLD.
-    #
-    # Everything else is eligible, however poor, because the operator asked for a
-    # PRIORITY ORDER and a person of whom only helmeted photographs exist must still
-    # get an identity.
-    def not_a_photo?(result, scores)
-      return true if PhotoMerit.document?(result)
+    # THE REFERENCE QUESTION, NOT THE MINT QUESTION. `.mint_verdict` is stricter by one
+    # demand and is asked later, by the object that knows which vendor is about to be
+    # billed.
+    def reference_verdict(result, judgements)
+      judgement = judgements[result.image_url]
 
-      scored = scores[result.image_url]
-      scored.present? && scored < NO_PERSON_THRESHOLD
+      ReferenceEligibility.verdict(result, person_name: person_name,
+                                      visibility: judgement&.visibility,
+                                      fill: judgement&.fill,
+                                      subjects: judgement&.subjects)
     end
 
-    # THE CLASSIFIER IS THE AUTHORITY WHERE IT SPOKE; merit only orders the rest.
-    #
-    # An UNSCORED candidate is not a zero. It is scaled into the band below the
-    # classifier's own scale rather than mixed into it, because "nobody looked at
-    # this" must not outrank "something looked and saw a face" — and must equally
-    # not be read as "something looked and saw none". With no classifier at all,
-    # every candidate is unscored and the band is the only scale in play, so the
-    # ordering is pure merit.
-    def final_score(result, scores)
-      scored = scores[result.image_url]
-      return 1.0 + scored if scored
+    # THE FREE HALF OF THE PERSON CHECK, asked before anything is paid for. Its own
+    # method because the shortlist and the verdict both need it and a second spelling of
+    # "names somebody else" would let them disagree about who is in the picture.
+    def wrong_person?(result) = PersonNaming.judge(result.title, person_name).names_other?
 
-      merit(result)
+    # THREE BANDS, IN THE ORDER OF HOW MUCH IS KNOWN — and the top band is ordered by
+    # FACE SIZE, which is the whole point of this ranking.
+    #
+    #   3.0 + fill + 0.1·visibility   something measured how big the face is
+    #   1.0 + visibility              something looked, but reported no size
+    #   merit (0.0..1.0)              nobody looked
+    #
+    # SIZE LEADS AND VISIBILITY ONLY BREAKS ITS TIES, at a tenth of the weight. Four
+    # real mints on 2026-09-25 turned on size: a bare-faced 556x780 sideline shot
+    # failed at prepare and a tight ESPN headshot completed, while the photograph the
+    # old ranking put FIRST — scored 92 for visibility — is one the vendor refuses. A
+    # ranking whose top result cannot be minted is not a ranking of anything the
+    # operator can use.
+    #
+    # THE BANDS DO NOT OVERLAP, deliberately: "nobody looked at this" must not outrank
+    # "something looked and saw a face", and must equally not be read as "something
+    # looked and saw none". With no classifier at all every candidate falls to the
+    # bottom band and the ordering is pure merit, exactly as before.
+    FILL_BAND = 3.0
+    VISIBILITY_BAND = 1.0
+    VISIBILITY_TIEBREAK = 0.1
+
+    def final_score(result, judgements)
+      judgement = judgements[result.image_url]
+      return merit(result) if judgement.nil?
+      return VISIBILITY_BAND + judgement.visibility unless judgement.sized?
+
+      FILL_BAND + judgement.fill + (VISIBILITY_TIEBREAK * judgement.visibility)
     end
 
     def merit(result)
@@ -477,20 +627,23 @@ module Appearances
       @merit[result.image_url] ||= PhotoMerit.score(result, person_name: person_name)
     end
 
-    # `face_obscured` IS ONLY EVER STAMPED WHEN SOMETHING ACTUALLY LOOKED. A loser
-    # the classifier never saw — because it fell outside the shortlist, or because
-    # there is no classifier configured — is `beyond_limit`, which is the truth. A
-    # reason the operator reads as a judgement must not be a guess.
-    def rejection_for(result, scores, take)
+    # THE REFUSAL THAT ACTUALLY HAPPENED, or the cap.
+    #
+    # THE VERDICT IS THE REASON, spelled the same way in both vocabularies — see
+    # Appearances::ReferenceEligibility::REFUSALS and
+    # AppearanceReferencePhoto::REJECTION_REASONS, which the suite asserts are the same
+    # words. A mapping table here is where a new refusal would get forgotten and land
+    # on the page as the old reassuring "past the limit".
+    #
+    # `beyond_limit` IS THE ONLY REASON THIS OBJECT AUTHORS, because the cap is the only
+    # rule it owns. An ELIGIBLE candidate that did not make it in was fine and the list
+    # was full, which is the one rejection that means RAISE THE CAP rather than FIX THE
+    # SEARCH.
+    def rejection_for(verdict, take)
       return nil if take
-      return AppearanceReferencePhoto::REJECTED_NOT_A_PHOTO if not_a_photo?(result, scores)
+      return AppearanceReferencePhoto::REJECTED_BEYOND_LIMIT if verdict == ReferenceEligibility::ELIGIBLE
 
-      scored = scores[result.image_url]
-      if scored && scored < FACE_VISIBLE_THRESHOLD
-        AppearanceReferencePhoto::REJECTED_FACE_OBSCURED
-      else
-        AppearanceReferencePhoto::REJECTED_BEYOND_LIMIT
-      end
+      verdict.to_s
     end
 
     def person_name = @appearance&.person&.full_name
@@ -512,7 +665,7 @@ module Appearances
     # nil for a row that would not save — a candidate whose URL is longer than the
     # unique index can hold is dropped, and counting it as filed would make the
     # summary claim a photograph the gallery cannot show.
-    def upsert(result, chosen:, rejection_reason:, face_score: nil)
+    def upsert(result, chosen:, rejection_reason:, judgement: nil)
       photo = AppearanceReferencePhoto.find_or_initialize_by(
         appearance_slug: @appearance.slug, image_url: result.image_url
       )
@@ -523,11 +676,18 @@ module Appearances
           source: AppearanceReferencePhoto::SOURCE_SEARCH,
           chosen: chosen,
           rejection_reason: rejection_reason,
-          # ONLY OVERWRITE A SCORE WITH A SCORE. A re-search whose shortlist did not
-          # include this photograph must not erase the judgement the last one paid
-          # for — that would turn "we looked in March" into "nobody has ever looked"
-          # and re-sort the gallery on an absence we created.
-          face_score: face_score || photo.face_score
+          # ONLY OVERWRITE A MEASUREMENT WITH A MEASUREMENT. A re-search whose
+          # shortlist did not include this photograph must not erase the judgement the
+          # last one paid for — that would turn "we looked in March" into "nobody has
+          # ever looked" and re-sort the gallery on an absence we created.
+          #
+          # MEMBER BY MEMBER RATHER THAN JUDGEMENT BY JUDGEMENT, and that matters here:
+          # a run against a model that answered a visibility and no face size must keep
+          # the face size an earlier, better answer paid for, rather than blanking it
+          # because the newest judgement is thinner.
+          face_score: judgement&.visibility || photo.face_score,
+          face_fill: judgement&.fill || photo.face_fill,
+          face_subjects: judgement&.subjects || photo.face_subjects
         )
       )
       photo.save ? photo : nil

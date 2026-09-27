@@ -101,8 +101,23 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
       @targets << target
       @scores.each_with_object({}) do |(remote_url, score), out|
         hosted = FakeMirror.hosted_for(remote_url)
-        out[hosted] = score if urls.include?(hosted)
+        out[hosted] = judgement(score) if urls.include?(hosted)
       end
+    end
+
+    # A FIXTURE IS EITHER A BARE VISIBILITY OR A WHOLE JUDGEMENT, and both build the
+    # value object the real classifier returns — so no test here can be green against a
+    # shape Appearances::FaceVisibility#parse does not produce.
+    #
+    # `0.15` reads as "the helmet scored 0.15" and is what the cases about VISIBILITY
+    # want. A Hash (`{ visibility: 0.9, fill: 0.8 }`) is for the cases about face SIZE,
+    # which is the measurement a mint turns on. A bare number therefore means "something
+    # looked and never measured the size" — which is a real answer shape, and the one
+    # every row filed before that field existed carries.
+    def judgement(score)
+      return Appearances::FaceVisibility::Judgement.new(**score) if score.is_a?(Hash)
+
+      Appearances::FaceVisibility::Judgement.new(visibility: score)
     end
   end
 
@@ -119,6 +134,32 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
 
   # ONE MIRROR PER TEST, memoised so a test can assert on what it was handed.
   def mirror = @mirror ||= FakeMirror.new
+
+  # A CLASSIFIER THAT MEASURED EVERY CANDIDATE AND LIKED THEM ALL — the precondition for
+  # the cases about the MINT list specifically.
+  #
+  # Appearances::ReferenceEligibility asks two different questions, and this helper is for
+  # the stricter one: a photograph may be a REFERENCE without a measured face size, but it
+  # may not be paid to Higgsfield's trainer without one, because four real mints on
+  # 2026-09-25 turned on face size and a portrait-shaped bare-faced sideline shot failed
+  # at prepare. A test about mint eligibility therefore has to hand the lane a classifier
+  # that actually measured a size.
+  def mintable(results, visibility: 0.9, fill: 0.9)
+    FakeFaces.new(Array(results).to_h { |r| [r.image_url, { visibility: visibility, fill: fill }] })
+  end
+
+  # A CLASSIFIER THAT LOOKED AND REPORTED NO SIZE — the precondition for being a REFERENCE
+  # at all, and the weaker of the two.
+  #
+  # Appearances::ReferenceEligibility refuses a candidate nothing looked at, because an
+  # unjudged photograph cannot be shown to hold ONE person's face. Measured on production
+  # 2026-09-27 (`jaylen-waddle`): five returned, three scored, all five chosen, and one of
+  # the two unjudged ones was a correctly titled photograph of two men. So a case about the
+  # cap or the SSRF guard has to hand the lane a classifier that at least LOOKED; under
+  # `NoFaces` nothing is chosen and the case would be asserting a different thing.
+  def looked_at(results, visibility: 0.9)
+    FakeFaces.new(Array(results).to_h { |r| [r.image_url, visibility] })
+  end
 
   setup do
     Appearance.delete_all
@@ -147,7 +188,9 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     over = Appearances::GatherReferencePhotos::CHOSEN_LIMIT + 3
     results = (1..over).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
 
-    summary = Appearances::GatherReferencePhotos.call(@look, search: FakeSearch.new(results: results), faces: NoFaces)
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: results), faces: looked_at(results), mirror: mirror
+    )
 
     assert_equal over, AppearanceReferencePhoto.count, "every candidate is kept, not just the winners"
     assert_equal Appearances::GatherReferencePhotos::CHOSEN_LIMIT, summary.chosen
@@ -167,7 +210,9 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
       hit("not-a-url", position: 5)
     ]
 
-    summary = Appearances::GatherReferencePhotos.call(@look, search: FakeSearch.new(results: results), faces: NoFaces)
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: results), faces: looked_at(results), mirror: mirror
+    )
 
     assert_equal 4, summary.unfetchable
     assert_equal 1, summary.chosen
@@ -184,7 +229,9 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
       hit("https://cdn.example.com/#{i}.jpg", position: i)
     end
 
-    summary = Appearances::GatherReferencePhotos.call(@look, search: FakeSearch.new(results: results), faces: NoFaces)
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: results), faces: looked_at(results), mirror: mirror
+    )
 
     assert_equal Appearances::GatherReferencePhotos::CHOSEN_LIMIT, summary.chosen,
                  "the unsafe hit must not have eaten a slot a good photograph wanted"
@@ -208,7 +255,9 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
 
     first = (1..limit).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
     first << hit(demoted, position: limit + 1)
-    Appearances::GatherReferencePhotos.call(@look, search: FakeSearch.new(results: first), faces: NoFaces)
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: first), faces: looked_at(first), mirror: mirror
+    )
 
     row = AppearanceReferencePhoto.find_by!(image_url: demoted)
     refute row.chosen?
@@ -217,12 +266,39 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     # Same photograph, now the provider's top hit.
     second = [hit(demoted, position: 1)]
     second += (1..limit).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i + 1) }
-    Appearances::GatherReferencePhotos.call(@look, search: FakeSearch.new(results: second), faces: NoFaces)
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: second), faces: looked_at(second), mirror: FakeMirror.new
+    )
 
     assert_equal limit + 1, AppearanceReferencePhoto.count, "no row was duplicated"
     row.reload
     assert row.chosen?, "a hit that climbed to rank 1 must now be chosen"
     assert_nil row.rejection_reason
+  end
+
+  # EVERY NUMBER IN THE SUMMARY IS ABOUT THE SAME POPULATION, and a row this run left
+  # ALONE is in none of them.
+  #
+  # `#upsert` answers nil for a headshot or operator row a search re-found, so a count
+  # taken before that answer describes a photograph the run did not file. Measured as a
+  # real off-by-one: `mint_ready` was incremented at the call site and could report
+  # "1 of 0 carry a measured face size" on a look whose only hit was the operator's own.
+  test "a row the run left alone is counted in nothing, not even as mint-ready" do
+    url = "https://cdn.example.com/operator-picked.jpg"
+    AppearanceReferencePhoto.create!(appearance_slug: @look.slug, image_url: url,
+                                     source: AppearanceReferencePhoto::SOURCE_OPERATOR,
+                                     chosen: true)
+    found = hit(url, position: 1)
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [found]),
+      faces: mintable([found]), mirror: mirror
+    )
+
+    assert_equal 0, summary.filed
+    assert_equal 0, summary.chosen
+    assert_equal 0, summary.mint_ready,
+                   "a photograph this run never filed cannot be one it offered the trainer"
   end
 
   # THE TRUST ORDER. `source` is what the operator reads to know whether a human
@@ -287,18 +363,148 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
                  "the bare face must lead even though the helmet was the provider's hit 1"
   end
 
-  # PRIORITISE, NOT EXCLUDE. On a real Commons answer for "Drew Lock" exactly ONE
-  # of twenty hits was bare-faced; a threshold that dropped the helmets would have
-  # left the identity with a single photograph.
-  test "helmeted photos are still chosen when there is nothing better" do
+  # ── RANK BY FACE SIZE, NOT JUST BY VISIBILITY ────────────────────────────────────
+  #
+  # THE DEFECT, MEASURED. The photograph the old ranking put FIRST on look `1943e690035b`
+  # scored 92 for face visibility and is one Higgsfield REFUSES: a bare-faced 556x780
+  # sideline shot that failed at prepare every time it was tried, while a tight ESPN
+  # headshot completed. Ordering on visibility put an unmintable photograph at the top of
+  # the page with a confident 92 beside it.
+  test "a big face outranks a clearer but smaller one" do
+    small = hit("https://cdn.example.com/sideline.jpg", position: 1)
+    big = hit("https://cdn.example.com/tight.jpg", position: 2)
+    faces = FakeFaces.new({ small.image_url => { visibility: 0.95, fill: 0.2 },
+                            big.image_url => { visibility: 0.80, fill: 0.9 } })
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [small, big]), faces: faces, mirror: mirror
+    )
+
+    ranked = Appearances::ReferenceSet.new(@look.reload).persisted_rows.map(&:image_url)
+    assert_equal [big.image_url, small.image_url], ranked,
+                 "face SIZE is the variable four real mints turned on; visibility is not"
+  end
+
+  # ⚠ THE CASE ABOVE READS THE GALLERY ORDER, WHICH IS THE SQL SCOPE — NOT THE CHOOSER.
+  # A mutation run proved it: collapsing `#final_score` to visibility only left that case
+  # GREEN, because `gallery_order` sorts on `face_fill` in Postgres and would have kept
+  # reporting the right order over a chooser that had stopped using it. The ranker's real
+  # consequence is WHICH photographs are chosen once supply exceeds the cap, so that is
+  # what this case measures: seven candidates for six slots, where the one with the biggest
+  # face has the WORST visibility. Under a visibility-only ranking it is the one left out.
+  test "when supply exceeds the cap, the biggest face takes the last slot" do
+    limit = Appearances::GatherReferencePhotos::CHOSEN_LIMIT
+    clear_but_small = (1..limit).map { |i| hit("https://cdn.example.com/small#{i}.jpg", position: i) }
+    big_face = hit("https://cdn.example.com/big.jpg", position: limit + 1)
+    scores = clear_but_small.to_h { |r| [r.image_url, { visibility: 0.99, fill: 0.62 }] }
+                            .merge(big_face.image_url => { visibility: 0.60, fill: 0.99 })
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: clear_but_small + [big_face]),
+      faces: FakeFaces.new(scores), mirror: mirror
+    )
+
+    assert_equal limit, summary.chosen
+    assert AppearanceReferencePhoto.find_by!(image_url: big_face.image_url).chosen?,
+           "face SIZE decides the last slot; a visibility-only ranking drops this one"
+    refute AppearanceReferencePhoto.find_by!(image_url: clear_but_small.last.image_url).chosen?,
+           "the clearest small face is the one the cap should push out"
+  end
+
+  # AND THE SAME MEASUREMENT THROUGH THE CHOOSER FOR THE TIE-BREAK, so neither half of
+  # "rank by face size, not JUST by face size" rests on the SQL scope alone.
+  test "when supply exceeds the cap, visibility breaks a tie for the last slot" do
+    limit = Appearances::GatherReferencePhotos::CHOSEN_LIMIT
+    filler = (1..limit).map { |i| hit("https://cdn.example.com/f#{i}.jpg", position: i) }
+    dim = hit("https://cdn.example.com/dim.jpg", position: limit + 1)
+    scores = filler.to_h { |r| [r.image_url, { visibility: 0.9, fill: 0.9 }] }
+    scores[filler.last.image_url] = { visibility: 0.95, fill: 0.7 }
+    scores[dim.image_url] = { visibility: 0.55, fill: 0.7 }
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: filler + [dim]),
+      faces: FakeFaces.new(scores), mirror: mirror
+    )
+
+    assert AppearanceReferencePhoto.find_by!(image_url: filler.last.image_url).chosen?,
+           "two faces the same size are separated by how clearly they show"
+    refute AppearanceReferencePhoto.find_by!(image_url: dim.image_url).chosen?
+  end
+
+  # VISIBILITY STILL BREAKS A TIE, at a tenth of the weight — "not JUST visibility" rather
+  # than "never visibility". Two photographs whose faces fill the same fraction of the frame
+  # are ordered by how clearly those faces show.
+  test "visibility breaks a tie between two faces of the same size" do
+    dim = hit("https://cdn.example.com/dim.jpg", position: 1)
+    clear = hit("https://cdn.example.com/clear.jpg", position: 2)
+    faces = FakeFaces.new({ dim.image_url => { visibility: 0.55, fill: 0.9 },
+                            clear.image_url => { visibility: 0.95, fill: 0.9 } })
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [dim, clear]), faces: faces, mirror: mirror
+    )
+
+    ranked = Appearances::ReferenceSet.new(@look.reload).persisted_rows.map(&:image_url)
+    assert_equal [clear.image_url, dim.image_url], ranked
+  end
+
+  # A MEASURED PHOTOGRAPH OUTRANKS ONE NOBODY LOOKED AT, and neither is read as a zero.
+  # Three bands, and this is the boundary between the top two.
+  test "a measured face size outranks a photograph with only a visibility score" do
+    sized = hit("https://cdn.example.com/sized.jpg", position: 9)
+    unsized = hit("https://cdn.example.com/unsized.jpg", position: 1)
+    faces = FakeFaces.new({ sized.image_url => { visibility: 0.5, fill: 0.6 },
+                            unsized.image_url => 0.99 })
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [unsized, sized]), faces: faces, mirror: mirror
+    )
+
+    ranked = Appearances::ReferenceSet.new(@look.reload).persisted_rows.map(&:image_url)
+    assert_equal [sized.image_url, unsized.image_url], ranked,
+                 "the band with more evidence in it leads, even on a worse visibility"
+  end
+
+  # A PHOTOGRAPH WHOSE TITLE NAMES SOMEBODY ELSE IS NEVER PAID FOR. Same argument as the
+  # documents: it can never be chosen, and the classifier bills per image.
+  test "a photograph of a different person is never sent to the classifier" do
+    stranger = hit("https://cdn.example.com/hutton.jpg", position: 1, title: "Keenan Allen.jpg")
+    ours = hit("https://cdn.example.com/ours.jpg", position: 2, title: "Josh Allen at camp")
+    faces = FakeFaces.new({ ours.image_url => { visibility: 0.9, fill: 0.9 } })
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [stranger, ours]), faces: faces, mirror: mirror
+    )
+
+    assert_equal 1, summary.shortlisted, "the stranger must not be shortlisted, let alone billed"
+    refute mirror.owners.map(&:image_url).include?(stranger.image_url)
+    row = AppearanceReferencePhoto.find_by!(image_url: stranger.image_url)
+    refute row.chosen?
+    assert_equal AppearanceReferencePhoto::REJECTED_WRONG_PERSON, row.rejection_reason
+  end
+
+  # ⚠ A REVERSAL, AND THE MEASUREMENT THAT EARNED IT. This case used to assert the
+  # opposite — "helmeted photos are still chosen when there is nothing better" — on the
+  # argument that a threshold which EXCLUDED would starve a person of whom no clear
+  # photograph exists. The mint measurements retired that argument: the three-photograph
+  # set that failed at Higgsfield's prepare step was helmets, and a photograph with no
+  # visible face cannot contribute a face to a face likeness on either generator.
+  #
+  # NOBODY IS STARVED, which is the only reason this is safe: Appearances::ReferenceImages
+  # still puts the cached headshot at the head of every set, and that headshot is the one
+  # input measured to complete a reference.
+  test "a helmeted photo is refused, because a hidden face is no reference at all" do
     helmets = (1..3).map { |i| hit("https://cdn.example.com/h#{i}.jpg", position: i) }
-    faces = FakeFaces.new(helmets.to_h { |h| [h.image_url, 0.15] })
+    faces = FakeFaces.new(helmets.to_h { |h| [h.image_url, { visibility: 0.15, fill: 0.95 }] })
 
     summary = Appearances::GatherReferencePhotos.call(
       @look, search: FakeSearch.new(results: helmets), faces: faces, mirror: mirror
     )
 
-    assert_equal 3, summary.chosen, "a person with only helmeted photos still gets an identity"
+    assert_equal 0, summary.chosen
+    assert_equal 3, AppearanceReferencePhoto.where(
+      rejection_reason: AppearanceReferencePhoto::REJECTED_FACE_OBSCURED
+    ).count, "a big helmet is still a hidden face — fill 0.95 must not rescue it"
   end
 
   # THE BUG THIS RULE WAS WRITTEN FROM. Measured on a real Commons answer for
@@ -352,19 +558,54 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     assert_equal limit, summary.chosen
   end
 
-  # `face_obscured` IS A JUDGEMENT, so it is stamped only where something judged.
-  test "a loser nothing looked at is beyond_limit, never face_obscured" do
+  # `face_obscured` IS A JUDGEMENT, so it is stamped only where something judged — and a
+  # candidate nothing looked at now says exactly that instead.
+  #
+  # ⚠ THE REASON CHANGED FROM `beyond_limit` AND THAT IS THE POINT. "past the limit of 6"
+  # over a set of 8 that nothing examined was a reassuring sentence about a run in which no
+  # judgement was ever made; on production 2026-09-27 the same silence let five of five
+  # unjudged candidates into a reference set.
+  test "a loser nothing looked at says nobody looked, never face_obscured" do
     results = (1..(Appearances::GatherReferencePhotos::CHOSEN_LIMIT + 2)).map do |i|
       hit("https://cdn.example.com/#{i}.jpg", position: i)
     end
 
-    Appearances::GatherReferencePhotos.call(
+    summary = Appearances::GatherReferencePhotos.call(
       @look, search: FakeSearch.new(results: results), faces: NoFaces
     )
 
     reasons = AppearanceReferencePhoto.rejected.pluck(:rejection_reason).uniq
-    assert_equal [AppearanceReferencePhoto::REJECTED_BEYOND_LIMIT], reasons,
+    assert_equal [AppearanceReferencePhoto::REJECTED_FACE_UNSCORED], reasons,
                  "with no classifier configured nothing may be labelled face_obscured"
+    assert_equal 0, summary.chosen,
+                 "an unjudged photograph cannot be shown to hold one person's face"
+  end
+
+  # ── A CANDIDATE SET SMALLER THAN THE SHORTLIST ───────────────────────────────────
+  #
+  # THE PRODUCTION SHAPE, cloned from the measured run rather than imagined. On
+  # 2026-09-27 `jaylen-waddle` returned FIVE candidates, three were scored, and all five
+  # were chosen — because the only thing between a candidate and the model was the cap,
+  # and five is under the cap of six. A thin answer therefore had NO floor at all: every
+  # hit reached the reference set whatever its merit, which is exactly the condition under
+  # which one wrong-person or two-subject hit is guaranteed to be chosen.
+  test "a thin answer has a floor, not just a cap" do
+    scored = (1..3).map { |i| hit("https://cdn.example.com/scored#{i}.jpg", position: i) }
+    unscored = (4..5).map { |i| hit("https://cdn.example.com/unscored#{i}.jpg", position: i) }
+    faces = FakeFaces.new(scored.to_h { |r| [r.image_url, { visibility: 0.9, fill: 0.8 }] })
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: scored + unscored), faces: faces, mirror: mirror
+    )
+
+    assert_equal 5, summary.filed, "every candidate is still filed as evidence of the search"
+    assert_equal 3, summary.chosen,
+                 "five under a cap of six must not mean five chosen — the cap is not a floor"
+    unscored.each do |result|
+      row = AppearanceReferencePhoto.find_by!(image_url: result.image_url)
+      refute row.chosen?
+      assert_equal AppearanceReferencePhoto::REJECTED_FACE_UNSCORED, row.rejection_reason
+    end
   end
 
   test "a loser the classifier judged obscured is labelled as such" do
@@ -395,16 +636,21 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     assert_equal Appearances::GatherReferencePhotos::VISION_SHORTLIST, faces.asked.length
   end
 
-  # THE DEGRADE. An unconfigured or broken classifier must cost the operator a
-  # better ORDER, never the search itself.
-  test "a classifier that returns nothing falls back to the free ranking" do
+  # THE DEGRADE, AND WHAT IT NOW COSTS. A broken classifier must never cost the operator
+  # the SEARCH — every candidate is still filed with its evidence and the page still
+  # renders — but it does now cost him the picks, and that is the deliberate trade made from
+  # production evidence: an unjudged photograph cannot be shown to hold one person's face,
+  # and the zero-shot sheet falls back on the cached headshot it used before this lane
+  # existed.
+  test "a classifier that returns nothing files everything and chooses nothing" do
     results = (1..3).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
 
     summary = Appearances::GatherReferencePhotos.call(
       @look, search: FakeSearch.new(results: results), faces: FakeFaces.new({}), mirror: mirror
     )
 
-    assert_equal 3, summary.chosen
+    assert_equal 3, summary.filed, "the evidence of what the search offered is never lost"
+    assert_equal 0, summary.chosen
     refute summary.ranked_by_face?
     assert AppearanceReferencePhoto.where.not(face_score: nil).none?,
            "an unscored row must stay NULL - nobody looked is not a score of zero"
@@ -634,7 +880,9 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     assert_match "0 mirrored and sent", summary.sentence,
                  "the sentence must separate a mirror failure from a classifier failure"
     assert_empty faces.asked, "nothing mirrored means nothing is paid to be classified"
-    assert_equal 4, summary.chosen, "the page still gets its photographs — this degrades"
+    assert_equal 4, summary.filed, "the page still gets its photographs, as evidence"
+    assert_equal 0, summary.chosen,
+                 "nothing was judged, so nothing may be offered to a generator as vetted"
   end
 
   # THE DURABLE HALF OF LOUD. A flash lives for one redirect; the operator working out
@@ -656,15 +904,65 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
                  "the class name is what the operator scans /admin/error_logs for"
   end
 
+  # HEALTHY NOW MEANS A FACE SIZE CAME BACK TOO. A run that scores every candidate for
+  # visibility and measures NO face size is not healthy — it is the shape that would
+  # leave Higgsfield's trainer with the headshot alone and say nothing about why — so the
+  # fixture reports a fill, and the case below asserts the opposite.
   test "a healthy search files no ErrorLog row" do
     photo = hit("https://cdn.example.com/a.jpg", position: 1)
 
     assert_no_difference -> { ErrorLog.count } do
       Appearances::GatherReferencePhotos.call(
         @look, search: FakeSearch.new(results: [photo]),
+        faces: FakeFaces.new({ photo.image_url => { visibility: 0.9, fill: 0.8 } }), mirror: mirror
+      )
+    end
+  end
+
+  # ---- the face-size blindness alarm --------------------------------------------
+  #
+  # THE FAILURE THIS WHOLE ALARM EXISTS FOR. `fill` is a prompt field that no paid call
+  # has ever verified, so the realistic failure is a model that answers a visibility and
+  # ignores it — which refuses every search hit at the trainer and, without this, reads
+  # as an ordinary run.
+  test "a classifier that reports no face size at all is loud about it" do
+    photo = hit("https://cdn.example.com/a.jpg", position: 1)
+
+    summary = nil
+    assert_difference -> { ErrorLog.count }, 1 do
+      summary = Appearances::GatherReferencePhotos.call(
+        @look, search: FakeSearch.new(results: [photo]),
         faces: FakeFaces.new({ photo.image_url => 0.9 }), mirror: mirror
       )
     end
+
+    assert summary.face_size_blind?
+    refute summary.face_classifier_blind?, "the classifier answered — it just answered thinly"
+    assert_equal :alert, summary.flash_key
+    assert_match "NO FACE SIZE REPORTED", summary.sentence
+    assert_match Appearances::GatherReferencePhotos::FaceSizeBlind.name,
+                 ErrorLog.order(:id).last.read_attribute(:inspect),
+                 "the two blindnesses have different remedies, so they need different names"
+    assert_equal 1, summary.chosen, "the photograph is still a reference for the sheet path"
+    assert_equal 0, summary.mint_ready
+  end
+
+  # A MEASURED RUN IS NOT AN ALARM, and this is the control for the case above: the same
+  # shape with a fill reported files nothing and says the trainer can have it.
+  test "a classifier that reports a face size raises no alarm and names the trainer's set" do
+    photo = hit("https://cdn.example.com/a.jpg", position: 1)
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [photo]),
+      faces: FakeFaces.new({ photo.image_url => { visibility: 0.9, fill: 0.8 } }), mirror: mirror
+    )
+
+    refute summary.face_size_blind?
+    assert_equal :notice, summary.flash_key
+    assert summary.ranked_by_face_size?
+    assert_equal 1, summary.mint_ready
+    assert_match "1 measured for face size", summary.sentence
+    assert_match "all 1 can also go to the trainer", summary.sentence
   end
 
   # THE SENTENCE IS THE SUMMARY'S, not each controller's. It lived twice, verbatim, in
@@ -676,13 +974,13 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
 
     summary = Appearances::GatherReferencePhotos.call(
       @look, search: FakeSearch.new(results: [photo, unsafe], unparsed: 2),
-      faces: FakeFaces.new({ photo.image_url => 0.9 }), mirror: mirror
+      faces: FakeFaces.new({ photo.image_url => { visibility: 0.9, fill: 0.7 } }), mirror: mirror
     )
 
     assert_match "fake returned 2 result(s)", summary.sentence
     assert_match "2 in a shape we could not read", summary.sentence
     assert_match "1 refused as unsafe to fetch", summary.sentence
-    assert_match "1 scored for face visibility", summary.sentence
-    assert_match "1 chosen for the model", summary.sentence
+    assert_match "1 measured for face size", summary.sentence
+    assert_match "1 chosen as references", summary.sentence
   end
 end

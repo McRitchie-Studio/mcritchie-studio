@@ -51,6 +51,58 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     def call(*) = raise(StandardError, "Higgsfield said 402 insufficient credits")
   end
 
+  # ---- the two generators get different sets ---------------------------------
+
+  # THE COUNT THE PAGE USED TO IMPLY WAS ONE NUMBER, and it is two. Every chosen
+  # photograph reaches the zero-shot character sheet; Higgsfield's TRAINER additionally
+  # demands a measured face size, because four of six measured mints failed at prepare.
+  # "In the model (2)" over an identity built from 1 is the kind of quietly disagreeing
+  # pair of counts this lane has shipped before.
+  test "[component] the page says which chosen photos the trainer will not take" do
+    cache_headshot
+    # LOOKED AT, NO SIZE REPORTED — the state that is sheet-only. A row nothing looked at is
+    # a different sentence, asserted below.
+    file_photo("https://example.com/unmeasured.jpg", chosen: true, position: 1,
+               title: "Josh Allen at camp", face_score: 0.9, face_subjects: 1)
+
+    get page_path
+
+    assert_select "[data-test='trainer-subset']", count: 1 do |nodes|
+      # SQUISHED, because the sentence wraps across ERB lines and an assertion on raw
+      # whitespace would break on a re-indent that changed nothing a reader can see.
+      assert_match(/NOT offered to/, nodes.first.text.squish)
+    end
+  end
+
+  # THE THIRD STATE, AND THE COUNT THAT WOULD HAVE LIED. A row an older ranking chose that
+  # nothing ever looked at goes to NEITHER generator — so folding it into the sheet-only
+  # line would have claimed the character sheet uses a photograph the sheet refuses.
+  test "[component] a chosen row nothing looked at is reported as offered to neither" do
+    cache_headshot
+    file_photo("https://example.com/unjudged.jpg", chosen: true, position: 1,
+               title: "Josh Allen and a teammate")
+
+    get page_path
+
+    assert_select "[data-test='offered-to-neither']", count: 1 do |nodes|
+      assert_match(/NEITHER/, nodes.first.text.squish)
+    end
+    assert_select "[data-test='trainer-subset']", { count: 0 },
+                  "an unjudged row is not a sheet-only row, and saying so would be false"
+  end
+
+  # THE CONTROL: when every chosen photograph carries a measured face size the two sets are
+  # the same, and a line reporting a difference that does not exist is worse than no line.
+  test "[component] no subset line renders when the trainer takes everything" do
+    cache_headshot
+    file_photo("https://example.com/measured.jpg", chosen: true, position: 1,
+               title: "Josh Allen at camp", face_score: 0.9, face_fill: 0.9, face_subjects: 1)
+
+    get page_path
+
+    assert_select "[data-test='trainer-subset']", count: 0
+  end
+
   # ---- the shape of the page -------------------------------------------------
 
   # THE ACCEPTANCE TEST ITSELF. Both halves, on one page, with the direction between
@@ -280,12 +332,24 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to page_path
-    assert_equal limit + 2, AppearanceReferencePhoto.count
-    assert_equal limit, AppearanceReferencePhoto.chosen.count
+    assert_equal limit + 2, AppearanceReferencePhoto.count,
+                 "every candidate is filed as evidence of what the search offered"
+    # ⚠ NONE OF THEM IS CHOSEN, AND THAT IS THE POINT OF THE STUB ABOVE. With no classifier
+    # available nothing looked at any of these photographs, and
+    # Appearances::ReferenceEligibility refuses a candidate nothing examined — measured on
+    # production 2026-09-27, where five of five unjudged candidates were chosen and one of
+    # them was a photograph of two men. This case used to assert `limit` chosen here, which
+    # was the defect rather than the feature.
+    assert_equal 0, AppearanceReferencePhoto.chosen.count
+    assert_equal [AppearanceReferencePhoto::REJECTED_FACE_UNSCORED],
+                 AppearanceReferencePhoto.pluck(:rejection_reason).uniq
 
     follow_redirect!
-    assert_select "[data-test='chosen-gallery'] [data-test='reference-photo']", count: limit + 1
-    assert_select "[data-test='rejected-gallery'] [data-test='reference-photo']", count: 2
+    # THE FLOOR IS STILL IN THE MODEL — the cached headshot, which is the one input measured
+    # to complete a reference. So the chosen gallery holds exactly one tile.
+    assert_select "[data-test='chosen-gallery'] [data-test='reference-photo']", count: 1
+    assert_select "[data-test='rejected-gallery'] [data-test='reference-photo']",
+                  count: limit + 2
   end
 
   # THE READ IS PUBLIC, THE PURCHASES ARE NOT. #show matches the person page beside

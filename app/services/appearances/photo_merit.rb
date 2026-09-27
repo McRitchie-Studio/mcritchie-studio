@@ -63,15 +63,16 @@ module Appearances
       DOCUMENT_MARKERS.any? { |marker| haystack.include?(marker) }
     end
 
+    # ASKED OF Appearances::PersonNaming rather than answered here, because that object
+    # now answers the HARDER half of the same question — "does this title name somebody
+    # ELSE" — and two readings of one title is how a photograph ends up bonused as the
+    # right person by one rule and refused as a stranger by another.
+    #
+    # THE READING IS ALSO TIGHTER THAN IT WAS. This method used to ask
+    # `title.include?(word)`, which is a substring test: "Locksmith" contained "lock"
+    # and earned the bonus for naming Drew Lock. PersonNaming matches WORDS.
     def self.names_person?(result, person_name)
-      return false if person_name.blank?
-
-      title = result.title.to_s.downcase
-      return false if title.empty?
-
-      # Every word of the name, so "Drew Hutton" does not match "Drew Lock" —
-      # measured as a real neighbour in a Commons answer for that very query.
-      person_name.to_s.downcase.split.all? { |word| title.include?(word) }
+      PersonNaming.judge(result.title, person_name).names_person?
     end
 
     def self.portrait?(result)

@@ -178,6 +178,99 @@ class CharacterReferenceLaneTest < ActionDispatch::IntegrationTest
     ENV.delete("FORCE")
   end
 
+  # ── NEVER MINT AN IDENTITY FROM MIXED SUBJECTS ───────────────────────────────────
+  #
+  # THE MEASURED SET THIS REFUSES, from look `1943e690035b` on 2026-09-25:
+  #
+  #   1. operator-added            (helmet)
+  #   2. face 92  Drew Lock 10 22 2023.jpg   <- the right man, and it CANNOT MINT
+  #   3. face 90  Drew Hutton.jpg            <- A DIFFERENT MAN, ranked second
+  #
+  # An identity trained on two men is a blended third man, which defeats the entire
+  # feature. This walks the real mint path with the real ReferenceSet injected — the way
+  # AppearancesController and the rake task call it — so it fails if EITHER the ranking or
+  # the spend-time re-check stops refusing.
+  test "a set mixing two people is refused before the vendor is ever called" do
+    stranger = AppearanceReferencePhoto.create!(
+      appearance_slug: @look.slug, image_url: "https://cdn.example.com/keenan.jpg",
+      title: "Keenan Allen.jpg", source: AppearanceReferencePhoto::SOURCE_SEARCH,
+      chosen: true, face_score: 0.9, face_fill: 0.9, face_subjects: 1
+    )
+    ours = AppearanceReferencePhoto.create!(
+      appearance_slug: @look.slug, image_url: "https://cdn.example.com/josh.jpg",
+      title: "Josh Allen, 22 October 2023", source: AppearanceReferencePhoto::SOURCE_SEARCH,
+      chosen: true, face_score: 0.9, face_fill: 0.9, face_subjects: 1
+    )
+
+    Appearances::CreateCharacterReference
+      .new(@look, client: @vendor, references: Appearances::ReferenceSet).call
+
+    sent = @vendor.creates.sole[:image_urls]
+    refute_includes sent, stranger.image_url,
+                    "a photograph of another man reached the trainer — the identity is a blend"
+    assert_includes sent, ours.image_url, "the right man's measured photograph still rides"
+    assert_includes sent.first, "/400.png", "the cached headshot still leads the set"
+  end
+
+  # THE SECOND ROUTE TO A BLEND, and the classifier is the only thing that can see it: one
+  # photograph carrying two visible faces cannot be attributed to our man at all.
+  test "a photograph with two visible faces is refused before the vendor is called" do
+    AppearanceReferencePhoto.create!(
+      appearance_slug: @look.slug, image_url: "https://cdn.example.com/pair.jpg",
+      title: "Josh Allen and a teammate", source: AppearanceReferencePhoto::SOURCE_SEARCH,
+      chosen: true, face_score: 0.95, face_fill: 0.9, face_subjects: 2
+    )
+
+    Appearances::CreateCharacterReference
+      .new(@look, client: @vendor, references: Appearances::ReferenceSet).call
+
+    refute_includes @vendor.creates.sole[:image_urls], "https://cdn.example.com/pair.jpg"
+  end
+
+  # THE SET THE OPERATOR'S OWN DEFECT 1 DESCRIBES: the best-scoring photograph in the
+  # labelled example is one Higgsfield refuses, and nobody measured its face size. Refusing
+  # it leaves a set that is thin and MINTABLE rather than full and refused — measured
+  # 2026-09-25, a set of three such photographs failed at prepare every time it was tried.
+  test "an unmeasured photograph is kept out of the trainer and the headshot still mints" do
+    # SOMETHING LOOKED AT IT AND REPORTED NO SIZE — the state that separates the two
+    # generators. A row nothing looked at is refused by both (see the case below it).
+    AppearanceReferencePhoto.create!(
+      appearance_slug: @look.slug, image_url: "https://cdn.example.com/sideline.jpg",
+      title: "Josh Allen, 18 December 2023", source: AppearanceReferencePhoto::SOURCE_SEARCH,
+      chosen: true, width: 556, height: 780, face_score: 0.9, face_subjects: 1
+    )
+
+    Appearances::CreateCharacterReference
+      .new(@look, client: @vendor, references: Appearances::ReferenceSet).call
+
+    sent = @vendor.creates.sole[:image_urls]
+    assert_equal 1, sent.length, "refusing is cheaper than a failed prepare"
+    assert_includes sent.first, "/400.png"
+    # AND THE SAME PHOTOGRAPH STILL REACHES THE GENERATOR THAT CANNOT REFUSE IT, which is
+    # what makes the refusal above a routing decision rather than a loss.
+    assert_includes Appearances::ReferenceSet.new(@look).generation_urls,
+                    "https://cdn.example.com/sideline.jpg"
+  end
+
+  # THE PRODUCTION SHAPE, AND THE ONE ABSENCE BOTH GENERATORS REFUSE. Measured 2026-09-27
+  # on `jaylen-waddle`: five candidates returned, three scored, ALL FIVE chosen — and one of
+  # the two unjudged ones was titled "...Jaylen Waddle and L'Jarius Sneed", a correctly
+  # titled photograph of two men. Nothing examined it, so nothing can say whose face it is.
+  test "a chosen photograph nothing ever looked at reaches neither generator" do
+    AppearanceReferencePhoto.create!(
+      appearance_slug: @look.slug, image_url: "https://cdn.example.com/unjudged.jpg",
+      title: "Josh Allen and a teammate", source: AppearanceReferencePhoto::SOURCE_SEARCH,
+      chosen: true, width: 900, height: 900
+    )
+
+    Appearances::CreateCharacterReference
+      .new(@look, client: @vendor, references: Appearances::ReferenceSet).call
+
+    refute_includes @vendor.creates.sole[:image_urls], "https://cdn.example.com/unjudged.jpg"
+    refute_includes Appearances::ReferenceSet.new(@look).generation_urls,
+                    "https://cdn.example.com/unjudged.jpg"
+  end
+
   # The sweep is what keeps the stored status honest across many looks.
   test "the refresh sweep moves every pending identity and leaves the rest alone" do
     Appearances::CreateCharacterReference.new(@look, client: @vendor).call
