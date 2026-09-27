@@ -46,11 +46,13 @@ module ModelPipelineHelper
   def pipeline_chip_classes(tone) = CHIP_TONES.fetch(tone&.to_sym, CHIP_TONES[:neutral])
 
   # THE CARD'S LEFT EDGE, which is the only thing a 1000-foot scan reads before the
-  # words. A stale look is the one card the operator must not scroll past, so it is the
-  # only one that gets `danger`; a hand-placed card gets `primary` because it is where
-  # the board is showing HIS judgement rather than the data's.
+  # words. `danger` is spent on the two cards the operator must not scroll past — a look
+  # whose person is not on file, and a look whose captured team the athlete has since
+  # left. A hand-placed card gets `primary` because it is where the board is showing HIS
+  # judgement rather than the data's. Everything else is quiet by design: an edge on
+  # every card is an edge on none.
   def look_card_edge_classes(reading)
-    return "border-l-4 border-l-danger" if reading.stale?
+    return "border-l-4 border-l-danger" if reading.orphan? || reading.stale?
     return "border-l-4 border-l-primary" if reading.hand_placed?
 
     "border-l-4 border-l-transparent"

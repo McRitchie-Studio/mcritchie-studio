@@ -33,6 +33,11 @@
           <%= board[:stale_count] %> need re-defining
         </span>
       <% end %>
+      <% if board[:orphan_count].positive? %>
+        <span class="badge text-2xs <%= pipeline_chip_classes(:bad) %>" data-test="pipeline-orphan-count">
+          <%= board[:orphan_count] %> with no person on file
+        </span>
+      <% end %>
       <% if board[:hand_placed_count].positive? %>
         <span class="badge text-2xs <%= pipeline_chip_classes(:info) %>" data-test="pipeline-hand-placed-count">
           <%= board[:hand_placed_count] %> placed by hand
@@ -85,7 +90,21 @@
             cards: lane.cards,
             count: lane.total,
             count_class: lane_count_classes(lane.key),
-            min_width: "sm:min-w-[210px]",
+            # 225px, and both bounds were measured in a browser rather than guessed. Wider
+            # than the other boards' 190px because a card here carries an avatar beside a
+            # two-line name-and-descriptor stack, and at 210px surnames truncated
+            # ("A'Shawn Robi…"). Narrower than 250px because five columns plus their gaps
+            # then exceed the layout's max-w-7xl content box and the fifth lane — the one
+            # the operator is looking for — falls off the right edge of a 1440px window.
+            # 5 x 225 + 4 x 16 = 1189, inside the 1248 available.
+            # `min-w-0` IS LOAD-BEARING, not decoration. A flex item defaults to
+            # `min-width: auto` = min-content, so ONE long unbreakable token in a card —
+            # a slug like "person-who-is-not-on-file" — sets the whole lane's width.
+            # Measured in a browser: lanes came out 242-326px instead of the 225 declared
+            # here, the row overflowed its 1248px content box, and Generation fell off the
+            # right edge of a 1440px window. `min-w-0` overrides the auto, and the `sm:`
+            # declaration wins back above the breakpoint.
+            min_width: "min-w-0 sm:min-w-[225px]",
             kickoff: lane_blurb_slot(lane),
             header_extra: lane_overflow_chip(lane)
           }

@@ -24,26 +24,67 @@
                "#{'cursor-grab active:cursor-grabbing' if draggable}"
       } do %>
 
-  <%# WHO AND WHICH LOOK. The link goes to the model page, which is where every control
-      that spends money lives — this board has none. @click.stop so following the link
-      is not read as the start of a drag. %>
+  <%# WHO AND WHICH LOOK — a face, a name, and the look's own descriptor.
+      THE AVATAR IS THE CACHED HEADSHOT, resolved off the STORED s3_key by
+      Appearances::Pipeline (never a rebuilt path: a re-key moved every athlete out of
+      `free-agents/`, so a derived path names objects that have moved). An athlete with
+      no espn_id has no cached headshot at all, which is a real state and not an
+      accident — it falls back to initials rather than to a broken image. %>
   <div class="flex items-start gap-2">
+    <% if reading.avatar_url.present? %>
+      <img src="<%= reading.avatar_url %>" alt="<%= reading.display_name %>" loading="lazy"
+           data-test="look-card-avatar"
+           class="w-8 h-8 rounded-full object-cover bg-surface-alt shrink-0">
+    <% else %>
+      <div data-test="look-card-avatar-initials"
+           title="No cached headshot for <%= reading.display_name %>"
+           class="w-8 h-8 rounded-full bg-surface-alt border border-subtle shrink-0 flex items-center justify-center text-3xs font-bold text-secondary">
+        <%= reading.initials %>
+      </div>
+    <% end %>
+
+    <%# The link goes to the model page, which is where every control that spends money
+        lives — this board has none. @click.stop so following the link is not read as the
+        start of a drag. %>
     <%= link_to person_appearance_path(reading.person_slug, reading.slug),
-          class: "min-w-0 flex-1 text-heading font-semibold text-sm leading-snug hover:text-primary transition",
+          class: "min-w-0 flex-1 group/link",
           data: { test: "look-card-link" },
           "@click.stop": true do %>
-      <%= reading.title %>
+      <span class="block text-heading font-semibold text-sm leading-snug truncate group-hover/link:text-primary transition"
+            data-test="look-card-person" title="<%= reading.display_name %>"><%= reading.display_name %></span>
+      <span class="block text-2xs text-secondary leading-snug truncate"><%= reading.descriptor %></span>
     <% end %>
+
     <% if reading.position.present? %>
       <span class="shrink-0 text-3xs text-muted font-mono opacity-0 group-hover:opacity-100 transition-opacity"><%= reading.position %></span>
     <% end %>
   </div>
 
-  <%# WHY IT IS HERE — the one line the whole board exists for. %>
-  <p class="text-2xs text-secondary leading-snug" data-test="look-card-blocker"><%= reading.blocker %></p>
+  <%# THE SPORTS-DATA ROW — team, position, jersey number, size. Every cell reports its
+      own absence rather than collapsing, because a row with a hole in it is what tells
+      the operator which athlete needs attention. The `no #` cell is permanent until a
+      jersey-number column exists; its own tooltip says so. %>
+  <% sports = reading.sports_facts %>
+  <% if sports.any? %>
+    <div class="flex flex-wrap items-center gap-1" data-test="look-card-sports">
+      <% sports.each do |fact| %>
+        <span class="badge text-3xs break-words <%= pipeline_chip_classes(fact[:tone]) %>"
+              data-test="look-card-sports-<%= fact[:key] %>"
+              <% if fact[:title] %>title="<%= fact[:title] %>"<% end %>><%= fact[:label] %></span>
+      <% end %>
+    </div>
+  <% end %>
 
-  <%# THE FLAGS THAT CHANGE WHAT THE OPERATOR SHOULD DO. Both are rare by design, so
-      they earn the loudest styling on the card. %>
+  <%# WHY IT IS HERE — the one line the whole board exists for. %>
+  <p class="text-2xs text-secondary leading-snug break-words" data-test="look-card-blocker"><%= reading.blocker %></p>
+
+  <%# THE FLAGS THAT CHANGE WHAT THE OPERATOR SHOULD DO. All rare by design, so they
+      earn the loudest styling on the card. %>
+  <% if reading.orphan? %>
+    <span class="badge text-3xs <%= pipeline_chip_classes(:bad) %>" data-test="look-card-orphan">
+      no person on file
+    </span>
+  <% end %>
   <% if reading.stale? %>
     <span class="badge text-3xs <%= pipeline_chip_classes(:bad) %>" data-test="look-card-stale">
       re-define · traded
@@ -60,17 +101,21 @@
     </span>
   <% end %>
 
-  <%# WHAT IT IS MADE OF. A colorway and the captured team are the uniform half of the
-      definition; the measurement and physique chips are the person half. %>
+  <%# WHAT IT IS MADE OF — the uniform half of the definition, and the physique gap. %>
   <div class="flex flex-wrap items-center gap-1">
-    <%# The colorway is skipped when the descriptor in the title already says it — the
-        common case, because Appearance.file_for_colorway! titleizes the colorway into the
+    <%# The colorway is skipped when the descriptor above already says it — the common
+        case, because Appearance.file_for_colorway! titleizes the colorway into the
         descriptor. One fact printed twice is two chips of contrast spent on nothing. %>
     <% if reading.colorway.present? && !reading.descriptor.to_s.casecmp?(reading.colorway.to_s) %>
       <span class="badge text-3xs <%= pipeline_chip_classes(:neutral) %>"><%= reading.colorway %></span>
     <% end %>
-    <% if reading.captured_team_slug.present? %>
-      <span class="badge text-3xs <%= pipeline_chip_classes(reading.stale? ? :bad : :neutral) %>"><%= reading.captured_team_slug %></span>
+    <%# THE CAPTURED TEAM IS PRINTED ONLY WHEN IT DISAGREES with the athlete's current
+        one. Otherwise the sports row above already says which team this is, and the two
+        chips would be the same fact twice. When they disagree it is the whole story. %>
+    <% if reading.stale? %>
+      <span class="badge text-3xs <%= pipeline_chip_classes(:bad) %>" data-test="look-card-captured-team">
+        captured <%= reading.captured_team_slug %>
+      </span>
     <% end %>
     <%# THE DEFINITION'S GAPS BELONG TO THE DEFINE STEP, so they are printed only in the
         lane that owns it. Measured on the board: a blank physique description is the

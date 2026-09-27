@@ -23,15 +23,20 @@ module Appearances
     LANE_LIMIT = 60
 
     # THE FIELD THE OPERATOR NAMED THAT THE SCHEMA DOES NOT HAVE. Stated on the board
-    # rather than silently omitted from the define step's checks: he described the
-    # step as "name, height, and for athletes number and team", and a jersey-number
-    # column exists on no table (measured 2026-09-26). The character-sheet recipe
-    # substitutes a <NUMBER>, so this is a gap in the step and not a nicety. A gate
-    # over a missing column would fail every look for a reason nobody can act on; a
-    # sentence in the open is honest and actionable.
+    # rather than silently omitted from the define step's checks: he described the step
+    # as "name, height, and for athletes number and team", and a jersey-number column
+    # exists on NO table (measured 2026-09-26, re-checked 2026-09-27: no `jersey_number`,
+    # no `number`). ESPN's API returns it as `athlete.jersey`; we do not store it, and
+    # every character-sheet prompt substitutes a <NUMBER>. So it is genuinely missing
+    # rather than merely unshown.
+    #
+    # A GATE OVER A MISSING COLUMN would fail every look for a reason nobody can act on,
+    # so the gap is SURFACED instead — here for the board, and as a `no #` cell in every
+    # athlete card's sports row, which is where a reader looks for the number and would
+    # otherwise read its absence as completeness.
     DEFINITION_GAP_NOTE =
-      "Jersey number has no column on any table yet, so Defined cannot assert it — " \
-      "the colorway is the only uniform fact on file.".freeze
+      "Jersey number has no column on any table yet, so Defined cannot assert it and " \
+      "every card's sports row reads \"no #\". ESPN returns it; we do not store it.".freeze
 
     Lane = Struct.new(:key, :label, :blurb, :cards, :total, :overflow, keyword_init: true)
 
@@ -49,6 +54,9 @@ module Appearances
         lanes: STAGES.map { |stage| lane_for(stage, grouped.fetch(stage, [])) },
         total: readings.length,
         stale_count: readings.count(&:stale?),
+        # A look naming a person who is not on file. `appearances.person_slug` carries no
+        # foreign key, so nothing else in the app would ever notice one.
+        orphan_count: readings.count(&:orphan?),
         hand_placed_count: readings.count(&:hand_placed?)
       }
     end
@@ -68,8 +76,14 @@ module Appearances
       person_slugs = looks.map(&:person_slug).compact.uniq
 
       people = Person.where(slug: person_slugs).index_by(&:slug)
-      athletes = Athlete.where(person_slug: person_slugs).index_by(&:person_slug)
-      headshot_owner_ids = headshot_athlete_ids(athletes.values)
+      # PRELOADED IMAGE CACHES, so `Athlete#headshot_url` — which `detect`s over the
+      # association — answers from memory. Two queries for the whole board, the same
+      # shape PeopleController#index uses for the same reason. And it is the STORED
+      # `s3_key` that answers, never a rebuilt path: `Athlete#headshot_key_prefix`
+      # derives a folder from the CURRENT team, and a re-key means a derived path names
+      # objects that have moved. people/show hotlinks a.espncdn.com instead; that is the
+      # copy not to follow.
+      athletes = Athlete.where(person_slug: person_slugs).includes(:image_caches).index_by(&:person_slug)
 
       candidates = AppearanceReferencePhoto.where(appearance_slug: slugs).group(:appearance_slug).count
       chosen = AppearanceReferencePhoto.where(appearance_slug: slugs, chosen: true)
@@ -83,14 +97,18 @@ module Appearances
       looks.map do |look|
         person = people[look.person_slug]
         athlete = athletes[look.person_slug]
+        avatar = avatar_url_for(athlete)
 
         LookReading.new(
           appearance: look,
           person_name: person&.full_name,
           person_slug: look.person_slug,
+          person_present: person.present?,
           athlete: athlete.present?,
           athlete_team_slug: athlete&.team_slug,
-          headshot: athlete.present? && headshot_owner_ids.include?(athlete.id),
+          athlete_position: athlete&.position,
+          headshot: avatar.present?,
+          avatar_url: avatar,
           physique_described: athlete.present? && athlete.physical_brief.present?,
           height_inches: athlete&.height_inches,
           weight_lbs: athlete&.weight_lbs,
@@ -103,17 +121,21 @@ module Appearances
       end
     end
 
-    # WHICH ATHLETES HAVE A CACHED HEADSHOT AT ALL. Asked by PURPOSE and not by
-    # variant: Athlete::HEADSHOT_WIDTHS is a preference list and a look with only the
-    # 100px crop still has a photograph to build from, so keying on "400" would report
-    # no reference for a look that has one.
-    def self.headshot_athlete_ids(athletes)
-      ids = athletes.map(&:id)
-      return Set.new if ids.empty?
+    # THE CACHED HEADSHOT'S URL, WIDEST FIRST — and the same value answers two questions,
+    # which is deliberate: it is both the card's avatar and the proof there is a
+    # photograph to build from. Splitting them would let a card show a face while its
+    # lane claimed no reference existed.
+    #
+    # Every variant counts, not just "400". Athlete::HEADSHOT_WIDTHS is a PREFERENCE
+    # list, so a look holding only the 100px crop still has a photograph — keying the
+    # lane on the widest alone would report no reference for a look that has one.
+    #
+    # Reads through Athlete#headshot_url, which resolves Studio::S3.url off the row's
+    # STORED s3_key. No query here: `readings_for` preloads :image_caches.
+    def self.avatar_url_for(athlete)
+      return nil if athlete.nil?
 
-      ImageCache.where(owner_type: "Athlete", owner_id: ids,
-                       purpose: ReferenceImages::HEADSHOT_PURPOSE)
-                .distinct.pluck(:owner_id).to_set
+      ReferenceImages::HEADSHOT_VARIANTS.filter_map { |width| athlete.headshot_url(width: width) }.first
     end
 
     # LIVE images filed against each look. Retired artifacts are excluded for the same

@@ -13,6 +13,15 @@
 #
 # IDEMPOTENT on (person_slug, descriptor) — the pair `index_appearances_live_per_person`
 # makes unique among live looks — so re-seeding a desk updates rather than raising.
+#
+# LOCAL ONLY, and that guard is not caution — it is a correctness rule. Unlike the seeds
+# beside it, these rows are FABRICATED CLAIMS ABOUT REAL PEOPLE: a look filed against a
+# real athlete saying he was traded, another naming a person who is not on file, a
+# character sheet nobody generated. On a desk that is exactly what the board needs to be
+# readable; in the operator's production library it would be counterfeit data, filed under
+# real names, indistinguishable from work.
+
+return unless Rails.env.local?
 
 # Deterministic by slug so the same athletes get the same lanes on every seed, and so a
 # spec can name a lane rather than a person.
@@ -126,6 +135,29 @@ else
   seed_headshot!(pushed)
   seed_look!(pushed, "#{pushed.team_slug.titleize} pushed ahead",
              colorway: "#{pushed.team_slug} pushed", stage: "generation")
+
+  # THE TWO BROKEN CONNECTIONS, so the operator can see what the board does with them.
+  # Both are real states of real data rather than hypotheticals: `appearances.person_slug`
+  # carries no foreign key, and the hub deliberately casts people who have no athlete
+  # record (Appearance's own header names Jim Carrey beside Joe Burrow).
+
+  # ORPHANED — a look naming a person who is not on file. NOTHING STOPS THIS: there is no
+  # foreign key on `appearances.person_slug` and the validation only checks presence, so
+  # `create!` takes a slug nobody holds and every other page reads the row as ordinary.
+  # The board is the first thing that looks.
+  orphan = Appearance.find_or_initialize_by(person_slug: "person-who-is-not-on-file",
+                                            descriptor: "Orphaned look")
+  orphan.colorway = "orphaned look"
+  orphan.save!
+  seed_candidates!(orphan, 8, chosen: 3)
+
+  # NO ATHLETE RECORD AND NO NOTES — a person the hub knows but nothing describes.
+  unrecorded = Person.find_or_create_by!(first_name: "Unrecorded", last_name: "Person") do |person|
+    person.athlete = false
+  end
+  suit = Appearance.find_or_initialize_by(person_slug: unrecorded.slug, descriptor: "Navy suit")
+  suit.colorway = "navy suit"
+  suit.save!
 
   board = Appearances::Pipeline.build
   safe_puts "  Appearances: #{board[:total]} look(s) — " +

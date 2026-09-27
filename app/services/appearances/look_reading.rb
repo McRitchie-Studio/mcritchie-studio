@@ -64,21 +64,35 @@ module Appearances
   # a hole: a look asserting nothing about a uniform has nothing to go stale. It
   # sits in `designed` instead, because nothing downstream can be told what to make.
   #
+  # ── AND `defined` ASSERTS A CONNECTION, NOT MERELY CAPTURED FIELDS ───────────
+  #
+  # His second instruction (2026-09-27): "when they are defined they should have a
+  # standard connection a person (and athlete record)." `appearances.person_slug` is
+  # a STRING with no foreign key, so a look naming a person who is not on file is
+  # byte-identical to a connected one and nothing else in the app would notice. A
+  # lane whose header claims "connected to a person and their record, and current"
+  # cannot be entered by one, so #connected? leads the ladder — ahead even of the
+  # trade, which cannot be asked of a look with no athlete behind it. See
+  # #person_present? and #describable? for why NOTES are the connection a
+  # non-athlete look is allowed to have instead.
+  #
   # ── ONE FIELD THE OPERATOR NAMED THAT HAS NO HOME ────────────────────────────
   #
   # He described the define step as "name, height, and for athletes number and
   # team". Four of those exist (`people.first_name`/`last_name`,
   # `athletes.height_inches`, `athletes.team_slug`). THE JERSEY NUMBER DOES NOT
-  # EXIST ON ANY TABLE — measured 2026-09-26, `grep -n jersey db/schema.rb` is
-  # empty, and every "jersey" in the app means the free-text `colorway`. The
-  # character-sheet recipe substitutes a `<NUMBER>` into its prompt, so this is a
-  # real gap in the define step and not a detail.
+  # EXIST ON ANY TABLE — measured 2026-09-26 and re-checked 2026-09-27: no
+  # `jersey_number`, no `number`, and every "jersey" in the app means the free-text
+  # `colorway`. ESPN's API returns it as `athlete.jersey`; we do not store it, and
+  # the character-sheet recipe substitutes a `<NUMBER>` into every prompt. So it is
+  # a real gap in the define step and not a detail.
   #
   # This object does NOT invent a check for it. A gate over a column that does not
   # exist would fail every look for a reason the operator cannot act on. Instead the
-  # gap is stated once, in the open, on the board itself
-  # (Appearances::Pipeline::DEFINITION_GAP_NOTE) so it is visible rather than
-  # assumed-covered.
+  # gap is SURFACED: #sports_facts renders a muted `no #` cell on every athlete card
+  # so the row cannot read as complete, and
+  # Appearances::Pipeline::DEFINITION_GAP_NOTE states the actionable version once on
+  # the board.
   class LookReading
     # THE FIVE LANES, IN PIPELINE ORDER. The order IS the rule — #furthest and the
     # controller's refusal both read this array's index, so a lane inserted here
@@ -97,8 +111,8 @@ module Appearances
     # ACHIEVED plus what is owed next, which is how /deployments reads and is the
     # board the operator asked this one to resemble.
     BLURBS = {
-      "designed" => "Filed. Nothing says yet what to generate.",
-      "defined" => "The person's data is captured and current.",
+      "designed" => "Filed. Not connected to a person yet, or nothing says what to generate.",
+      "defined" => "Connected to a person and their record, and current.",
       "source" => "Photographs are available to build from.",
       "model" => "A reference set has been chosen.",
       "generation" => "A character model has been delivered."
@@ -118,25 +132,33 @@ module Appearances
     end
 
     attr_reader :appearance, :person_name, :person_slug, :hand_stage,
-                :athlete_team_slug, :candidate_count, :chosen_count, :judged_count,
+                :athlete_team_slug, :athlete_position, :avatar_url,
+                :candidate_count, :chosen_count, :judged_count,
                 :artifact_count, :artifact_source, :height_inches, :weight_lbs
 
     # Every argument is a FACT, not a lookup. `athlete_team_slug` is the athlete
     # row's CURRENT team (nil for a non-athlete); `headshot` is whether a cached
-    # headshot exists to build from; `identity_state` is
-    # Appearance#higgsfield_reference_state, already a mapped symbol.
-    def initialize(appearance:, person_name: nil, person_slug: nil,
-                   athlete: false, athlete_team_slug: nil, headshot: false,
+    # headshot exists to build from; `avatar_url` is that headshot's S3 URL, built
+    # from the STORED s3_key (never a rebuilt path — a re-key moved every athlete
+    # out of `free-agents/`, so a derived path points at objects that have moved);
+    # `identity_state` is Appearance#higgsfield_reference_state, already a mapped
+    # symbol.
+    def initialize(appearance:, person_name: nil, person_slug: nil, person_present: true,
+                   athlete: false, athlete_team_slug: nil, athlete_position: nil,
+                   headshot: false, avatar_url: nil,
                    physique_described: false, height_inches: nil, weight_lbs: nil,
                    candidate_count: 0, chosen_count: 0, judged_count: 0,
                    artifact_count: 0, artifact_source: nil, identity_state: nil)
       @appearance = appearance
       @person_name = person_name
       @person_slug = person_slug || appearance.person_slug
+      @person_present = person_present
       @hand_stage = appearance.stage.presence
       @athlete = athlete
       @athlete_team_slug = athlete_team_slug.presence
+      @athlete_position = athlete_position.presence
       @headshot = headshot
+      @avatar_url = avatar_url.presence
       @physique_described = physique_described
       @height_inches = height_inches
       @weight_lbs = weight_lbs
@@ -158,13 +180,35 @@ module Appearances
     def physique_described? = @physique_described
     def identity_state = @identity_state
 
+    # ── the connection ─────────────────────────────────────────────────────────
+    #
+    # THE OPERATOR'S CONTRACT FOR `defined` (2026-09-27): "when they are defined they
+    # should have a standard connection a person (and athlete record)."
+    #
+    # `appearances.person_slug` is a STRING, not a foreign key — there is no FK on the
+    # column and nothing stops a look naming a person who is not on file. So an orphan
+    # look is byte-identical to a connected one until somebody resolves the slug, and a
+    # lane that asserts "the person's data is captured and current" cannot be entered by
+    # a look with no person behind it.
+
+    # The `person_slug` resolves to a row.
+    def person_present? = @person_present
+
+    # SOMETHING SAYS WHAT THIS PERSON LOOKS LIKE. An athlete record is the standard
+    # connection; `generation_notes` is the hand-written answer for a person who has
+    # none, which is the case the hub is built for — Appearance's own header names Jim
+    # Carrey and George Bush beside Joe Burrow, and #generation_brief already treats the
+    # notes as the substitute. Requiring the athlete record of BOTH would strand every
+    # non-athlete look in Designed forever.
+    def describable? = athlete? || appearance.generation_notes.present?
+
+    def connected? = person_present? && describable?
+    def orphan? = !person_present?
+
     # ── the evidence ───────────────────────────────────────────────────────────
 
-    # CAN THIS LOOK SAY WHAT TO GENERATE? The recipe's prompt substitutes a team
-    # colourway; a look naming none of the three sources for one has nothing
-    # downstream can act on. `generation_notes` counts because it is the hand-written
-    # answer for a person with no athlete record behind them — the same three sources
-    # Appearance#generation_brief composes from.
+    # CAN THIS LOOK SAY WHAT TO WEAR? The recipe's prompt substitutes a team colourway;
+    # a look naming none of the three sources for one has nothing downstream can act on.
     def uniform_named?
       colorway.present? || captured_team_slug.present? || appearance.generation_notes.present?
     end
@@ -204,11 +248,16 @@ module Appearances
 
     # ── the lane ───────────────────────────────────────────────────────────────
 
-    # WHERE THE EVIDENCE PUTS THIS LOOK. First match wins, and the two regressions
-    # lead deliberately: a stale definition and a look that cannot say what to
-    # generate both outrank whatever exists downstream, because neither can be
+    # WHERE THE EVIDENCE PUTS THIS LOOK. First match wins, and the regressions lead
+    # deliberately: a missing connection, a stale definition and a look that cannot say
+    # what to wear each outrank whatever exists downstream, because none of them can be
     # trusted until it is fixed.
+    #
+    # THE CONNECTION LEADS EVEN THE TRADE, and it has to: #stale? asks whether the
+    # captured team still matches the ATHLETE's, which a look with no person and no
+    # athlete behind it cannot answer either way.
     def derived_stage
+      return "designed" unless connected?
       return "defined" if stale?
       return "designed" unless uniform_named?
       return "generation" if delivered?
@@ -247,18 +296,43 @@ module Appearances
 
     def title = [person_name.presence, descriptor].compact.join(" · ")
 
+    # WHO THIS IS, for the card's identity line. The person's name where we have one;
+    # the slug is the honest fallback for an orphan, because naming the slug is what
+    # lets the operator go and find what is missing.
+    def display_name = person_name.presence || person_slug
+
+    # THE AVATAR'S FALLBACK. Two letters from the name we have — and from the SLUG when
+    # there is no person, so an orphan card still renders a circle rather than a hole.
+    def initials
+      source = person_name.presence || person_slug.to_s.tr("-", " ")
+      source.split.map { |word| word[0] }.compact.first(2).join.upcase.presence || "?"
+    end
+
     # WHY THIS CARD IS WHERE IT IS, in one sentence the operator can act on. This is
     # the whole point of the board: "what is this and why is it stuck" without a click.
     def blocker
+      return orphan_sentence if orphan?
+      return undescribable_sentence unless describable?
       return traded_sentence if stale?
 
       case derived_stage
-      when "designed" then "Nothing says what to generate — give it a colorway, a team, or notes."
+      when "designed" then "Nothing says what to wear — give it a colorway, a team, or notes."
       when "defined" then "Defined. No photograph on file to build from yet."
       when "source" then source_sentence
       when "model" then model_sentence
       when "generation" then delivered_sentence
       end
+    end
+
+    # THE SLUG IS NAMED, because it is the only handle the operator has to go and find
+    # what happened — a person who was merged away, renamed, or deleted from under the
+    # look. `appearances.person_slug` carries no foreign key, so nothing else caught it.
+    def orphan_sentence
+      "No person on file for \"#{person_slug}\" — this look is orphaned."
+    end
+
+    def undescribable_sentence
+      "No athlete record behind #{display_name}, and no notes — nothing says what they look like."
     end
 
     def traded_sentence
@@ -285,6 +359,47 @@ module Appearances
       "#{artifact_count} image#{'s' if artifact_count != 1} delivered."
     end
 
+    # THE SPORTS-DATA ROW the operator asked for: "a row of data dedicated to there
+    # sports data, team and position." Facts, in the order he named them, and each cell
+    # reports its own absence rather than collapsing — a row with a hole in it is what
+    # tells him which athlete needs attention.
+    #
+    # THE JERSEY NUMBER HAS NO COLUMN, and it is rendered as a hole rather than left out.
+    # He named "number" as part of the define step and every character-sheet prompt
+    # substitutes one, so omitting it silently would let the row read as complete. ESPN's
+    # API returns it (`athlete.jersey`); we do not store it. Adding the column is a
+    # separate change — this row is what makes the gap impossible to miss until then.
+    def sports_facts
+      return [] unless athlete?
+
+      size = measurements_label
+      [
+        cell(:team, athlete_team_slug&.titleize, "no team"),
+        cell(:position, athlete_position, "no position"),
+        # NEUTRAL, NOT A WARNING, and that is the whole difference between a fact and an
+        # alarm. No value is possible for this cell on any card until a jersey-number
+        # column exists, so styling it as a gap to act on would put an amber chip on every
+        # athlete card forever — exactly the contrast leak the physique chip was fixed for.
+        # It is rendered so the row cannot read as complete, muted so it cannot shout, and
+        # it carries its own explanation; the board's legend holds the actionable version.
+        { key: :number, label: "no #", tone: :neutral,
+          title: "Jersey number has no column on any table yet — ESPN returns it, we do not store it." },
+        cell(:size, size, "no size")
+      ]
+    end
+
+    def measurements_label
+      return nil if height_inches.blank? || weight_lbs.blank?
+
+      "#{height_inches / 12}'#{height_inches % 12}\" · #{weight_lbs}lb"
+    end
+
+    # A cell is the value when we hold one, and the NAMED absence when we do not — never
+    # blank. A row that collapsed its empty cells would read as complete.
+    def cell(key, value, absent_label)
+      value.present? ? { key: key, label: value, tone: :neutral } : { key: key, label: absent_label, tone: :warn }
+    end
+
     # WHAT THE PERSON'S DEFINITION IS STILL MISSING — at most ONE chip, and only when
     # something IS missing.
     #
@@ -296,20 +411,19 @@ module Appearances
     # of the column. At 1000 feet a chip that is on every card carries no information;
     # it only spends the contrast the exceptions need.
     #
-    # SO: nothing when the definition is complete, one `warn` chip naming the gaps when
-    # it is not. `warn` rather than `bad` deliberately — a blank physique is the normal
-    # state until a separate backfill fills it, and styling 2,000 correct rows as
-    # failures is the same mistake in a different colour. The full field-by-field
-    # readout belongs on the look's own page, which the card links to.
+    # SO: nothing when the definition is complete, one `warn` chip when it is not. `warn`
+    # rather than `bad` deliberately — a blank physique is the normal state of every
+    # athlete until a separate backfill runs (build/skin_tone/hair_description were empty
+    # for all 2,051, measured 2026-09-26), and styling 2,000 correct rows as failures is
+    # the same mistake in a different colour.
+    #
+    # MEASUREMENTS ARE NOT NAMED HERE ANY MORE: they have a cell of their own in
+    # #sports_facts, and a gap reported in two places at once is two chips of contrast
+    # spent on one fact.
     def definition_facts
-      return [] unless athlete?
+      return [] if !athlete? || physique_described?
 
-      missing = []
-      missing << "measurements" if height_inches.blank? || weight_lbs.blank?
-      missing << "physique" unless physique_described?
-      return [] if missing.empty?
-
-      [{ label: "no #{missing.join(' or ')}", tone: :warn }]
+      [{ label: "physique not described", tone: :warn }]
     end
   end
 end

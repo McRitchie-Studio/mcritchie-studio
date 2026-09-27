@@ -195,6 +195,96 @@ class Appearances::PipelineTest < ActiveSupport::TestCase
     assert_equal before, elsewhere.reload.position, "a reorder in one lane leaves the others alone"
   end
 
+  # ── the identity and sports facts the card renders ────────────────────────────
+
+  # THE AVATAR IS RESOLVED OFF THE STORED s3_key, through Athlete#headshot_url, and the
+  # image_caches are PRELOADED so the URL costs no query per card. Never a rebuilt path:
+  # Athlete#headshot_key_prefix derives its folder from the CURRENT team, and a re-key
+  # means a derived path names objects that have moved.
+  test "a look's avatar comes from the stored headshot key" do
+    cache = headshot!
+    look = look!(descriptor: "With a face", colorway: "bills home")
+
+    reading = Appearances::Pipeline.reading_for(look)
+
+    assert_equal cache.url, reading.avatar_url
+    assert reading.headshot?
+    assert_equal "Josh Allen", reading.display_name
+  end
+
+  # ANY VARIANT IS AN AVATAR, widest first. Athlete::HEADSHOT_WIDTHS is a preference
+  # list, so the 100px crop still gives the card a face and the lane a reference.
+  test "the widest cached variant is preferred and the narrow one still counts" do
+    small = ImageCache.create!(owner: @athlete, purpose: "headshot", variant: "100",
+                               s3_key: "headshots/nfl/buffalo-bills/josh-allen/100.png",
+                               content_type: "image/png")
+    only_small = Appearances::Pipeline.reading_for(look!(descriptor: "Small", colorway: "a"))
+    assert_equal small.url, only_small.avatar_url
+
+    wide = headshot!
+    both = Appearances::Pipeline.reading_for(look!(descriptor: "Both", colorway: "b"))
+    assert_equal wide.url, both.avatar_url, "400 leads 100"
+  end
+
+  # AN ATHLETE WITH NO espn_id HAS NO CACHED HEADSHOT AT ALL — a real state on a
+  # development desk, not an accident.
+  test "an athlete with no cached headshot has no avatar and no reference" do
+    reading = Appearances::Pipeline.reading_for(look!(descriptor: "Faceless", colorway: "bills home"))
+
+    assert_nil reading.avatar_url
+    refute reading.headshot?
+    assert_equal "defined", reading.derived_stage
+    assert_equal "JA", reading.initials
+  end
+
+  test "the sports row is built from the athlete row" do
+    @athlete.update!(position: "QB", team_slug: "buffalo-bills")
+    reading = Appearances::Pipeline.reading_for(look!(descriptor: "Sporty", colorway: "bills home"))
+
+    labels = reading.sports_facts.to_h { |f| [f[:key], f[:label]] }
+    assert_equal "Buffalo Bills", labels[:team]
+    assert_equal "QB", labels[:position]
+    assert_equal "6'5\" · 237lb", labels[:size]
+    assert_equal "no #", labels[:number]
+  end
+
+  # ── the connection `defined` asserts ──────────────────────────────────────────
+
+  # `appearances.person_slug` carries NO foreign key, so a look can name a person who is
+  # not on file and nothing else in the app would notice. The board is the first thing
+  # that looks.
+  test "a look naming a person who is not on file is counted and held in designed" do
+    # BUILT THE WAY ONE ARISES IN THE WILD: a valid look whose person goes away, or is
+    # renamed, under it. `update_column` skips validation exactly as a raw delete of the
+    # person row would skip every callback.
+    orphan = look!(descriptor: "Orphan", colorway: "c")
+    orphan.update_column(:person_slug, "nobody-at-all")
+
+    board = Appearances::Pipeline.build
+
+    assert_equal 1, board[:orphan_count]
+    assert_equal ["Orphan"], lane(board, "designed").cards.map(&:descriptor)
+    assert lane(board, "designed").cards.first.orphan?
+  end
+
+  test "a person with no athlete record and no notes is held in designed" do
+    Athlete.where(person_slug: people(:neymar).slug).destroy_all
+    look!(descriptor: "No record", colorway: "c", person: people(:neymar))
+
+    board = Appearances::Pipeline.build
+
+    assert_equal 0, board[:orphan_count], "the person IS on file — only the athlete record is missing"
+    assert_equal ["No record"], lane(board, "designed").cards.map(&:descriptor)
+  end
+
+  test "hand-written notes connect a person with no athlete record" do
+    Athlete.where(person_slug: people(:neymar).slug).destroy_all
+    look!(descriptor: "Notes instead", colorway: "c", generation_notes: "A floral shirt",
+          person: people(:neymar))
+
+    assert_equal ["Notes instead"], lane(Appearances::Pipeline.build, "defined").cards.map(&:descriptor)
+  end
+
   # THE FIXED-QUERY PROPERTY. Asserted as "the count does not grow with the number of
   # looks" rather than as a magic number, because the magic number is what a new grouped
   # query legitimately changes and a brittle assertion gets deleted rather than fixed.

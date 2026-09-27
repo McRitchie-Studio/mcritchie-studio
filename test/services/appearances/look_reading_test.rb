@@ -22,18 +22,74 @@ class Appearances::LookReadingTest < ActiveSupport::TestCase
     Appearance.new({ slug: "look-test", person_slug: "josh-allen", descriptor: "Bills home" }.merge(attrs))
   end
 
+  # THE DEFAULT IS A CONNECTED ATHLETE LOOK. Since 2026-09-27 the connection — a Person
+  # row that resolves, plus an athlete record or hand-written notes — is a precondition
+  # for every lane past Designed, so a reading built without one tests the connection
+  # rule rather than the lane under test. The tests that are ABOUT the connection pass
+  # `athlete:`/`person_present:` explicitly.
   def reading(appearance = look, **facts)
-    Appearances::LookReading.new(appearance: appearance, **facts)
+    Appearances::LookReading.new(appearance: appearance, **{ athlete: true }.merge(facts))
   end
 
   # ── the derived ladder ─────────────────────────────────────────────────────────
 
-  test "a look that cannot say what to generate sits in designed" do
+  test "a look that cannot say what to wear sits in designed" do
     r = reading(look(colorway: nil, team_slug: nil, generation_notes: nil))
 
     assert_equal "designed", r.derived_stage
     refute r.uniform_named?
-    assert_match(/Nothing says what to generate/, r.blocker)
+    assert_match(/Nothing says what to wear/, r.blocker)
+  end
+
+  # ── the connection `defined` asserts ──────────────────────────────────────────
+  #
+  # The operator's contract (2026-09-27): "when they are defined they should have a
+  # standard connection a person (and athlete record)."
+
+  # `appearances.person_slug` is a STRING with no foreign key, so an orphan look is
+  # byte-identical to a connected one until something resolves the slug. Nothing else in
+  # the app would ever notice.
+  test "a look whose person is not on file cannot leave designed, however much it has" do
+    r = reading(look(colorway: "bills home"), person_present: false, athlete: false,
+                candidate_count: 20, chosen_count: 6, artifact_count: 3)
+
+    assert r.orphan?
+    refute r.connected?
+    assert_equal "designed", r.derived_stage
+    assert_match(/No person on file for "josh-allen"/, r.blocker,
+                 "the slug is the only handle the operator has to go and find what happened")
+  end
+
+  # AN ATHLETE RECORD IS THE STANDARD CONNECTION, and a look without one is not defined.
+  test "a person with no athlete record and no notes cannot leave designed" do
+    r = reading(look(colorway: "bills home"), athlete: false, person_name: "Jim Carrey",
+                candidate_count: 20, chosen_count: 6)
+
+    refute r.describable?
+    assert_equal "designed", r.derived_stage
+    assert_match(/No athlete record behind Jim Carrey, and no notes/, r.blocker)
+  end
+
+  # REQUIRING THE ATHLETE RECORD OF BOTH would strand every non-athlete look in Designed
+  # forever, and the hub is explicitly built to cast one — Appearance's own header names
+  # Jim Carrey and George Bush beside Joe Burrow. The notes are the substitute
+  # #generation_brief already treats as one.
+  test "hand-written notes are the connection for a person with no athlete record" do
+    r = reading(look(colorway: "bills home", generation_notes: "1994 Ace Ventura, floral shirt"),
+                athlete: false, candidate_count: 9, chosen_count: 4)
+
+    assert r.describable?
+    assert r.connected?
+    assert_equal "model", r.derived_stage
+  end
+
+  # THE CONNECTION LEADS EVEN THE TRADE: #stale? compares the captured team against the
+  # ATHLETE's, which a look with neither can answer neither way.
+  test "an orphan is reported as orphaned rather than as stale" do
+    r = reading(look(team_slug: "cincinnati-bengals"), person_present: false, athlete: false)
+
+    refute r.stale?
+    assert_equal "designed", r.derived_stage
   end
 
   # THE THREE SOURCES OF A UNIFORM, each on its own, because #generation_brief composes
@@ -45,7 +101,7 @@ class Appearances::LookReadingTest < ActiveSupport::TestCase
   end
 
   test "a defined look with no photograph anywhere rests in defined" do
-    r = reading(look(colorway: "bills home"), athlete: true, athlete_team_slug: "buffalo-bills")
+    r = reading(look(colorway: "bills home"), athlete_team_slug: "buffalo-bills")
 
     assert_equal "defined", r.derived_stage
     refute r.referenced?
@@ -142,7 +198,7 @@ class Appearances::LookReadingTest < ActiveSupport::TestCase
   end
 
   test "a person with no athlete record behind them is never stale" do
-    r = reading(look(team_slug: BENGALS), athlete: false, athlete_team_slug: nil)
+    r = reading(look(team_slug: BENGALS, generation_notes: "notes"), athlete: false, athlete_team_slug: nil)
 
     refute r.stale?
   end
@@ -239,28 +295,95 @@ class Appearances::LookReadingTest < ActiveSupport::TestCase
   # every card and made the one card that mattered — the traded one — impossible to pick
   # out of its column. So the definition speaks only when something is missing.
   test "a complete definition says nothing on the card" do
-    r = reading(look(colorway: "bills home"), athlete: true,
+    r = reading(look(colorway: "bills home"),
                 height_inches: 77, weight_lbs: 237, physique_described: true)
 
     assert_empty r.definition_facts
   end
 
-  test "an incomplete definition names its gaps in one warning chip" do
-    r = reading(look(colorway: "bills home"), athlete: true, physique_described: false)
+  test "an undescribed physique is named in one warning chip" do
+    r = reading(look(colorway: "bills home"), physique_described: false)
 
-    assert_equal [{ label: "no measurements or physique", tone: :warn }], r.definition_facts
+    assert_equal [{ label: "physique not described", tone: :warn }], r.definition_facts
     assert_equal "defined", r.derived_stage, "a gap in the physique does not demote the lane"
   end
 
-  test "a partially complete definition names only what is missing" do
-    r = reading(look(colorway: "bills home"), athlete: true,
-                height_inches: 77, weight_lbs: 237, physique_described: false)
+  # MEASUREMENTS ARE NOT NAMED TWICE. They have a cell of their own in #sports_facts, and
+  # a gap reported in two places is two chips of contrast spent on one fact.
+  test "missing measurements are left to the sports row" do
+    r = reading(look(colorway: "bills home"), physique_described: true)
 
-    assert_equal ["no physique"], r.definition_facts.map { |f| f[:label] }
+    assert_empty r.definition_facts
+    assert_equal "no size", r.sports_facts.find { |f| f[:key] == :size }[:label]
   end
 
-  test "a non-athlete look reports no definition facts" do
-    assert_empty reading(look, athlete: false, physique_described: false).definition_facts
+  test "a non-athlete look reports no definition facts and no sports row" do
+    r = reading(look(generation_notes: "notes"), athlete: false, physique_described: false)
+
+    assert_empty r.definition_facts
+    assert_empty r.sports_facts
+  end
+
+  # ── the sports-data row the operator asked for ────────────────────────────────
+
+  test "the sports row carries team, position, number and size in that order" do
+    r = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
+                athlete_position: "QB", height_inches: 77, weight_lbs: 237)
+
+    assert_equal %i[team position number size], r.sports_facts.map { |f| f[:key] }
+    assert_equal ["Buffalo Bills", "QB", "no #", "6'5\" · 237lb"], r.sports_facts.map { |f| f[:label] }
+  end
+
+  # A ROW THAT COLLAPSED ITS EMPTY CELLS WOULD READ AS COMPLETE, so every absent value is
+  # NAMED and toned as a gap rather than dropped.
+  test "an absent sports value is named rather than dropped" do
+    r = reading(look(colorway: "c"), athlete_team_slug: nil, athlete_position: nil)
+
+    labels = r.sports_facts.to_h { |f| [f[:key], f[:label]] }
+    assert_equal "no team", labels[:team]
+    assert_equal "no position", labels[:position]
+    assert_equal "no size", labels[:size]
+    assert(r.sports_facts.all? { |f| f[:label].present? })
+  end
+
+  # THE JERSEY NUMBER HAS NO COLUMN ON ANY TABLE (re-checked 2026-09-27). The operator
+  # named it as part of the define step and every character-sheet prompt substitutes one,
+  # so the cell is permanent and carries its own explanation — a row that simply left it
+  # out would read as complete.
+  test "the jersey number cell is always a named gap and explains itself" do
+    number = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
+                     athlete_position: "QB", height_inches: 77, weight_lbs: 237)
+                .sports_facts.find { |f| f[:key] == :number }
+
+    assert_equal "no #", number[:label]
+    assert_equal :neutral, number[:tone],
+                 "muted, not a warning: no card can fill this cell until a column exists"
+    assert_match(/no column on any table/, number[:title])
+    refute_respond_to Athlete.new, :jersey_number,
+                      "a jersey-number column landed — give the cell its value and retire this gap"
+  end
+
+  # ── who the card says this is ─────────────────────────────────────────────────
+
+  test "the card names the person, and falls back to the slug for an orphan" do
+    assert_equal "Josh Allen", reading(look, person_name: "Josh Allen").display_name
+    assert_equal "josh-allen", reading(look, person_present: false).display_name
+  end
+
+  test "initials come from the name, and from the slug when there is no person" do
+    assert_equal "JA", reading(look, person_name: "Josh Allen").initials
+    assert_equal "JA", reading(look, person_present: false).initials
+  end
+
+  # AN ATHLETE WITH NO espn_id HAS NO CACHED HEADSHOT AT ALL — a real state (Bo Nix on a
+  # development desk), not an accident. The card must have something to render.
+  test "a look with no cached headshot still has an avatar fallback and no reference" do
+    r = reading(look(colorway: "c"), avatar_url: nil)
+
+    assert_nil r.avatar_url
+    refute r.headshot?
+    assert_equal "defined", r.derived_stage
+    assert_equal "JA", r.initials
   end
 
   # NOTHING IN THIS OBJECT REACHES THE NETWORK OR THE DATABASE. The board renders

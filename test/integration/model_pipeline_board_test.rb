@@ -92,6 +92,74 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
     assert_select "#dropzone-generation .kanban-card", 0
   end
 
+  # ── who a card says this is, and its sports data ──────────────────────────────
+
+  # THE OPERATOR'S ASK (2026-09-27): "they should have an avatar, name and even a row of
+  # data dedicated to there sports data, team and position."
+  test "an athlete card carries an avatar, a name and a sports row" do
+    @athlete.update!(position: "QB", height_inches: 77, weight_lbs: 237)
+    cache = ImageCache.create!(owner: @athlete, purpose: "headshot", variant: "400",
+                               s3_key: "headshots/nfl/buffalo-bills/josh-allen/400.png",
+                               content_type: "image/png")
+    look!("With a face", colorway: "bills home")
+
+    get model_pipeline_path
+
+    assert_select "[data-test='look-card-person']", text: "Josh Allen"
+    assert_select "img[data-test='look-card-avatar'][src='#{cache.url}']", 1
+    assert_select "[data-test='look-card-sports-team']", text: "Buffalo Bills"
+    assert_select "[data-test='look-card-sports-position']", text: "QB"
+    assert_select "[data-test='look-card-sports-size']", text: /237lb/
+  end
+
+  # AN ATHLETE WITH NO espn_id HAS NO CACHED HEADSHOT — a real state, not an accident.
+  test "a card with no cached headshot renders initials rather than a broken image" do
+    look!("Faceless", colorway: "bills home")
+
+    get model_pipeline_path
+
+    assert_select "[data-test='look-card-avatar']", 0
+    assert_select "[data-test='look-card-avatar-initials']", text: /JA/
+  end
+
+  # THE JERSEY NUMBER HAS NO COLUMN ON ANY TABLE. Rendered as a named gap rather than
+  # left out, because a row that omitted it would read as complete.
+  test "every athlete card's sports row reports the missing jersey number" do
+    look!("Numberless", colorway: "bills home")
+
+    get model_pipeline_path
+
+    assert_select "[data-test='look-card-sports-number']", text: "no #"
+    assert_select "[data-test='pipeline-definition-gap']", text: /Jersey number has no column/
+  end
+
+  # `appearances.person_slug` carries NO foreign key, so a look can name a person who is
+  # not on file and nothing else in the app would notice. The lane that claims "the
+  # person's data is captured and current" must not be enterable by one.
+  test "a look with no person on file is held in designed, counted and flagged" do
+    orphan = look!("Orphan", colorway: "bills home")
+    candidates!(orphan, 9, chosen: 4)
+    sheet!(orphan)
+    orphan.update_column(:person_slug, "nobody-at-all")
+
+    get model_pipeline_path
+
+    assert_select "[data-test='pipeline-orphan-count']", text: /1 with no person on file/
+    assert_select "#dropzone-designed [data-test='look-card-orphan']", 1
+    assert_select "#dropzone-designed [data-test='look-card-person']", text: "nobody-at-all"
+    assert_select "#dropzone-generation .kanban-card", 0
+  end
+
+  test "a person with no athlete record and no notes is held in designed" do
+    Athlete.where(person_slug: people(:neymar).slug).destroy_all
+    look!("No record", colorway: "c", person: people(:neymar))
+
+    get model_pipeline_path
+
+    assert_select "#dropzone-designed [data-test='look-card-blocker']", text: /No athlete record behind/
+    assert_select "#dropzone-designed [data-test='look-card-sports']", 0
+  end
+
   # ── the drag writes one column and NOTHING else ───────────────────────────────
 
   test "an admin drag forward records the placement and the card moves" do
@@ -133,6 +201,21 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
   # THE REFUSAL HAPPENS AT THE WRITE. Accepting it and correcting it on the next page
   # load was the alternative, and a silent correction teaches the operator the board eats
   # his input.
+  # A LOOK THE BOARD HOLDS IN DESIGNED CANNOT BE DRAGGED PAST ITS CONNECTION EITHER —
+  # the same rule, reached through the connection rather than through the work.
+  test "an orphan cannot be dragged out of designed" do
+    orphan = look!("Orphan", colorway: "bills home")
+    orphan.update_column(:person_slug, "nobody-at-all")
+    log_in_as(users(:alex))
+
+    patch model_pipeline_look_path(orphan.slug), params: { appearance: { stage: "defined" } }, as: :json
+
+    assert_response :success, "designed is not BEHIND designed, so a forward placement is allowed"
+    get model_pipeline_path
+    assert_select "#dropzone-defined [data-test='look-card-orphan']", 1,
+                  "the placement is honoured, and the card still says the person is missing"
+  end
+
   test "a drag behind the evidence is refused with the reason, and nothing is written" do
     delivered = look!("Delivered", colorway: "bills home")
     candidates!(delivered, 9, chosen: 4)

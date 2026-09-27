@@ -27,8 +27,14 @@ class ModelPipelineCardViewTest < ActionView::TestCase
     Appearance.new({ slug: "look-abc123", person_slug: "josh-allen", descriptor: "Bills home" }.merge(attrs))
   end
 
+  # A CONNECTED ATHLETE LOOK by default — since 2026-09-27 the connection (a Person row
+  # that resolves, plus an athlete record or notes) is a precondition for every lane past
+  # Designed, so a card built without one would be testing the connection rule.
   def reading(appearance = look, **facts)
-    Appearances::LookReading.new(appearance: appearance, person_name: "Josh Allen", **facts)
+    Appearances::LookReading.new(appearance: appearance,
+                                 **{ person_name: "Josh Allen", athlete: true,
+                                     athlete_team_slug: "buffalo-bills", athlete_position: "QB",
+                                     height_inches: 77, weight_lbs: 237 }.merge(facts))
   end
 
   # RETURNS THIS RENDER'S OWN HTML, and the tests that render more than once assert
@@ -53,17 +59,97 @@ class ModelPipelineCardViewTest < ActionView::TestCase
                  "data-stage is the lane the card renders in, not the hand-placement column"
   end
 
+  # ── who this is ───────────────────────────────────────────────────────────────
+
   test "the card names the person and the look and links to the model page" do
     render_card reading
 
-    assert_select "[data-test='look-card-link']", text: /Josh Allen · Bills home/
+    assert_select "[data-test='look-card-person']", text: "Josh Allen"
     assert_select "a[data-test='look-card-link'][href='/people/josh-allen/models/look-abc123']", 1
+    assert_select "a[data-test='look-card-link']", text: /Bills home/
+  end
+
+  # THE AVATAR IS THE CACHED HEADSHOT, whose URL Appearances::Pipeline resolves off the
+  # STORED s3_key — never a rebuilt path, because a re-key moved every athlete out of
+  # `free-agents/` and a derived path names objects that have moved.
+  test "a look with a cached headshot renders it as the avatar" do
+    render_card reading(look, avatar_url: "https://bucket.test/headshots/nfl/buffalo-bills/josh-allen/400.png")
+
+    avatar = css_select("[data-test='look-card-avatar']").first
+    refute_nil avatar
+    assert_equal "https://bucket.test/headshots/nfl/buffalo-bills/josh-allen/400.png", avatar["src"]
+    assert_equal "Josh Allen", avatar["alt"]
+    assert_select "[data-test='look-card-avatar-initials']", 0
+  end
+
+  # AN ATHLETE WITH NO espn_id HAS NO CACHED HEADSHOT AT ALL — a real state, not an
+  # accident — so the card falls back to initials rather than to a broken image.
+  test "a look with no cached headshot falls back to initials" do
+    render_card reading(look, avatar_url: nil)
+
+    assert_select "[data-test='look-card-avatar']", 0
+    assert_select "[data-test='look-card-avatar-initials']", text: /JA/
+  end
+
+  test "an orphan look is named by its slug and flagged" do
+    render_card reading(look(colorway: "c"), person_present: false, person_name: nil,
+                        athlete: false, artifact_count: 2)
+
+    assert_select "[data-test='look-card-person']", text: "josh-allen"
+    assert_select "[data-test='look-card-orphan']", text: /no person on file/
+    assert_select "[data-test='look-card-blocker']", text: /No person on file for "josh-allen"/
+    assert_includes css_select(".kanban-card").first["class"], "border-l-danger"
+  end
+
+  # ── the sports-data row ───────────────────────────────────────────────────────
+
+  test "an athlete card carries a sports row of team, position, number and size" do
+    render_card reading
+
+    assert_select "[data-test='look-card-sports-team']", text: "Buffalo Bills"
+    assert_select "[data-test='look-card-sports-position']", text: "QB"
+    assert_select "[data-test='look-card-sports-size']", text: /237lb/
+    assert_select "[data-test='look-card-sports-number']", text: "no #"
+  end
+
+  # THE JERSEY NUMBER HAS NO COLUMN ON ANY TABLE. A row that simply left the cell out
+  # would read as complete, so the gap is rendered and carries its own explanation.
+  # MUTED, NOT AMBER: no card can ever fill this cell until a column exists, so styling
+  # it as a gap to act on would put a warning chip on every athlete card forever — the
+  # contrast leak the physique chip was already fixed for. The board's legend carries the
+  # actionable version; the cell only stops the row reading as complete.
+  test "the jersey-number cell explains itself and is muted rather than a warning" do
+    render_card reading
+
+    cell = css_select("[data-test='look-card-sports-number']").first
+    assert_match(/no column on any table/, cell["title"])
+    assert_includes cell["class"], pipeline_chip_classes(:neutral)
+    refute_includes cell["class"], "warning"
+  end
+
+  test "an absent sports value is named rather than dropped" do
+    render_card reading(look, athlete_team_slug: nil, athlete_position: nil,
+                        height_inches: nil, weight_lbs: nil)
+
+    assert_select "[data-test='look-card-sports-team']", text: "no team"
+    assert_select "[data-test='look-card-sports-position']", text: "no position"
+    assert_select "[data-test='look-card-sports-size']", text: "no size"
+  end
+
+  test "a person with no athlete record behind them gets no sports row" do
+    render_card reading(look(colorway: "c", generation_notes: "1994 Ace Ventura"), athlete: false)
+
+    assert_select "[data-test='look-card-sports']", 0
   end
 
   # THE ONE LINE THE BOARD EXISTS FOR.
   test "every card carries its blocker sentence" do
     [
-      [reading(look(colorway: nil)), /Nothing says what to generate/],
+      [reading(look(colorway: nil)), /Nothing says what to wear/],
+      [reading(look(colorway: "c"), athlete: false, person_name: "Jim Carrey"),
+       /No athlete record behind Jim Carrey/],
+      [reading(look(colorway: "c"), person_present: false, person_name: nil, athlete: false),
+       /No person on file/],
       [reading(look(colorway: "c")), /No photograph on file/],
       [reading(look(colorway: "c"), athlete: true, headshot: true), /cached headshot/],
       [reading(look(colorway: "c"), candidate_count: 20), /20 candidates found/],
@@ -153,18 +239,16 @@ class ModelPipelineCardViewTest < ActionView::TestCase
   # ── contrast is spent on exceptions ───────────────────────────────────────────
 
   test "a complete definition adds no chip" do
-    html = render_card(reading(look(colorway: "c"), athlete: true, height_inches: 77,
-                               weight_lbs: 237, physique_described: true))
+    html = render_card(reading(look(colorway: "c"), physique_described: true))
 
-    refute_match(/no measurements/, html)
-    refute_match(/no physique/, html)
+    refute_match(/physique not described/, html)
   end
 
   test "an incomplete definition adds exactly one chip in the Defined lane" do
-    html = render_card(reading(look(colorway: "c"), athlete: true))
+    html = render_card(reading(look(colorway: "c"), physique_described: false))
 
-    assert_match(/no measurements or physique/, html)
-    assert_equal 1, html.scan(/no measurements/).length
+    assert_match(/physique not described/, html)
+    assert_equal 1, html.scan(/physique not described/).length
   end
 
   # THE GAP BELONGS TO THE LANE THAT OWNS IT. Printed on every card it was an amber chip
@@ -174,13 +258,13 @@ class ModelPipelineCardViewTest < ActionView::TestCase
   test "the definition gap is not printed outside the Defined lane" do
     %w[source model generation].each do |lane|
       card_reading = case lane
-                     when "source" then reading(look(colorway: "c"), athlete: true, headshot: true)
-                     when "model" then reading(look(colorway: "c"), athlete: true, candidate_count: 9, chosen_count: 4)
-                     else reading(look(colorway: "c"), athlete: true, artifact_count: 1)
+                     when "source" then reading(look(colorway: "c"), headshot: true)
+                     when "model" then reading(look(colorway: "c"), candidate_count: 9, chosen_count: 4)
+                     else reading(look(colorway: "c"), artifact_count: 1)
                      end
 
       assert_equal lane, card_reading.board_stage
-      refute_match(/no measurements/, render_card(card_reading),
+      refute_match(/physique not described/, render_card(card_reading),
                    "the #{lane} lane printed a define-step gap it does not own")
     end
   end
@@ -188,17 +272,24 @@ class ModelPipelineCardViewTest < ActionView::TestCase
   # ONE FACT, ONE CHIP. Appearance.file_for_colorway! titleizes the colorway INTO the
   # descriptor, so the common look would otherwise print the same words twice.
   test "a colorway the descriptor already says is not printed twice" do
-    html = render_card(reading(look(descriptor: "Bills Home", colorway: "bills home"),
-                               athlete: true, headshot: true))
+    html = render_card(reading(look(descriptor: "Bills Home", colorway: "bills home"), headshot: true))
 
     assert_equal 1, html.scan(/[Bb]ills [Hh]ome/).length
   end
 
   test "a colorway the descriptor does not say is printed" do
-    html = render_card(reading(look(descriptor: "Primary", colorway: "bills home"),
-                               athlete: true, headshot: true))
+    html = render_card(reading(look(descriptor: "Primary", colorway: "bills home"), headshot: true))
 
     assert_match(/bills home/, html)
+  end
+
+  # THE CAPTURED TEAM IS PRINTED ONLY WHEN IT DISAGREES with the athlete's current one.
+  # Otherwise the sports row already says which team this is, and two chips would be one
+  # fact twice; when they disagree it is the whole story.
+  test "the captured team is printed only when the athlete has since left it" do
+    refute_match(/captured /, render_card(reading(look(colorway: "c", team_slug: "buffalo-bills"))))
+    assert_match(/captured cincinnati-bengals/,
+                 render_card(reading(look(colorway: "c", team_slug: "cincinnati-bengals"))))
   end
 
   # A PUBLIC READER CANNOT DRAG, so the card does not invite them to: the grab cursor is
