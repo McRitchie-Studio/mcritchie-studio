@@ -102,8 +102,15 @@ The recipe:
    so rename, do not add: move the existing S3 definition to `amazon_s3`, add
    `r2`, and redefine `amazon` as `service: Mirror, primary: amazon_s3,
    mirrors: [r2]`. Existing rows resolve to the mirror unchanged. Do the same
-   for `amazon_public` (with a public R2 service). From here every new upload
-   lands in both stores.
+   for `amazon_public`, but its R2 half is **not** a stock `S3` service with
+   `public: true`: Rails builds a public URL from the client endpoint, so on R2
+   it names `<account>.r2.cloudflarestorage.com`, which answers no anonymous
+   read, and `public: true` also sends a `public-read` ACL, which R2 does not
+   support. It needs a small custom service (an `S3Service` subclass whose
+   `public_url` is `assets.<domain>` plus the key, and no ACL); without it,
+   step 8 turns every og:image into a dead link. From here every new upload
+   lands in both stores (the mirror copy is an `ActiveStorage::MirrorJob`, so
+   the app's job queue must be running).
 4. **Bulk copy.** `rclone copy` the S3 production bucket into the R2 production
    bucket (and dev into dev), with the S3 key and the R2 prod key as two
    remotes.
