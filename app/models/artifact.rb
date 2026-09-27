@@ -22,6 +22,61 @@ class Artifact < ApplicationRecord
   def approved? = approved_at.present?
   def retired? = retired_at.present?
 
+  # WAS THIS MADE BY A GENERATOR WE RECORDED? False for the whole back-catalogue,
+  # which predates the provenance columns and cannot be back-stamped honestly.
+  def generated? = generator.present?
+
+  # THE GENERATOR'S HUMAN NAME, resolved through the registry but NEVER DEPENDENT
+  # on it.
+  #
+  # THE FALLBACK IS THE POINT. The operator's stated plan is to transition between
+  # generators as capacities change, so a row WILL eventually be retired from
+  # config/image_generators.yml while its images stay in the library forever. A
+  # label that resolved only through the registry would blank out exactly the
+  # historical images whose provenance matters most. The stored key is the record;
+  # the registry only prettifies it.
+  def generator_label
+    return nil if generator.blank?
+
+    ImageGeneration::Registry.find(generator)&.label.presence || generator
+  end
+
+  # THE UNIT THE VENDOR COUNTED IN, resolved through the registry, defaulting to
+  # the neutral "unit" for a row that has since been retired.
+  def billing_unit_name
+    ImageGeneration::Registry.find(generator)&.billing_unit_name.presence || "unit"
+  end
+
+  # WHAT THE CALL COST, IN WORDS — and always with the UNIT NAMED.
+  #
+  # `billable_units` HOLDS TWO DIFFERENT VOCABULARIES: fal bills a sheet at 3
+  # IMAGE UNITS, OpenAI reports tens of thousands of TOKENS for the same picture.
+  # A bare "3" beside a bare "18432" invites exactly one conclusion and it is
+  # wrong, so the unit is never dropped.
+  #
+  # A NIL COST IS PRINTED AS NOTHING, NEVER AS ZERO. nil means the vendor did not
+  # report a price we can re-derive — not that the image was free.
+  def billing_summary
+    return nil if billable_units.blank? && cost_usd.blank?
+
+    parts = []
+    parts << ActiveSupport::NumberHelper.number_to_currency(cost_usd) if cost_usd.present?
+    if billable_units.present?
+      counted = "#{ActiveSupport::NumberHelper.number_to_delimited(billable_units)} #{billing_unit_name}"
+      parts << (cost_usd.present? ? "(#{counted})" : counted)
+    end
+    parts.join(" ")
+  end
+
+  # THE FULL STAMP, for a caption or a tooltip: what made it and which version.
+  # Reads the STORED version rather than the registry's current one — the whole
+  # question this answers is whether the model moved.
+  def provenance_label
+    return nil if generator.blank?
+
+    [generator_label, generator_version].compact_blank.join(" · ")
+  end
+
   def approve!(by: nil, at: Time.current) = update!(approved_at: at, approved_by: by)
   def retire!(at: Time.current) = update!(retired_at: at)
 

@@ -26,3 +26,12 @@ end
 # only surfaces on a Heroku boot). Pin this one basename back to the engine's
 # casing — surgical, leaves the global acronym intact for everything else.
 Rails.autoloaders.main.inflector.inflect("google_oauth_validator" => "GoogleOauthValidator")
+
+# `open_ai.rb` DEFINES `ImageGeneration::OpenAI`, not `OpenAi`.
+#
+# A TARGETED INFLECTION RATHER THAN A GLOBAL `inflect.acronym "OpenAI"`, matching
+# the line above. An acronym is a global rule over EVERY camelize/underscore in
+# the app, so it would also rewrite unrelated strings — any `open_ai` fragment in
+# a route helper, a partial path or an I18n key — to satisfy one class name. This
+# teaches the autoloader about exactly one file and changes nothing else.
+Rails.autoloaders.main.inflector.inflect("open_ai" => "OpenAI")
