@@ -52,7 +52,8 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
 - **Custom domains need the domain on Cloudflare.** R2 attaches
   `assets.<domain>` only to a domain whose DNS Cloudflare serves in this
   account. Measured 2026-09-26: neither `mcritchie.studio` (Google
-  nameservers) nor `turfmonster.media` (Squarespace) is, so the CDN rollout's
+  nameservers) nor `turfmonster.media` (Squarespace; whether it is Turf
+  Monster's serving domain is open in the plan) is, so the CDN rollout's
   nameserver move comes first. `cloudflare.studio.provision` gained DNS read
   and write across every domain in the account that evening (read back from
   the token's own policies); it still lacks Zone Read, so until that is added
