@@ -95,6 +95,45 @@ DESCRIBE_LIMIT=20 bin/rails athletes:describe_from_headshots   # 20 rows, then r
 bin/rails athletes:describe_from_headshots               # the rest
 ```
 
+**Running it on production.** The 2,051 athletes are production rows, so the real pass
+is a `heroku run` on the `mcritchie-studio` app — and it is **detached**, because an
+attached one-off dyno dies with the terminal that started it:
+
+```bash
+# 1. the credential the paid lane needs. Present on prod as of 2026-09-27 —
+#    re-measure by NAME, never by printing the value:
+heroku config --app mcritchie-studio | grep -c '^ANTHROPIC_API_KEY:'   # expect 1
+#    AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are needed too: the pass reads each
+#    cached headshot out of S3 with our own credentials.
+
+# 2. a sample first, attached, because reading the table it prints is the point
+heroku run --app mcritchie-studio DESCRIBE_LIMIT=20 rails athletes:describe_from_headshots
+
+# 3. the rest, detached, then follow it
+heroku run:detached --app mcritchie-studio rails athletes:describe_from_headshots
+heroku logs --app mcritchie-studio --dyno run --tail
+```
+
+**Without the credential it still runs.** The build lane needs no key and no network, so
+a keyless run fills `build` for every athlete and warns instead of aborting; only skin
+tone and hair wait for the key.
+
+**How long it takes, and why the number is not load-bearing.** The derivable floor is the
+pause: `DESCRIBE_PAUSE` (0.2 s) after every call the task asked for, so a full pass of
+~2,043 asks waits **~7 minutes** in pauses alone. Wall clock is that plus one Anthropic
+round trip per athlete, which has not been measured — re-derive it from the first sample
+rather than trusting a figure here (`DESCRIBE_LIMIT=20` prints its own token and cost
+totals). Precision does not matter much because **the columns are the progress**: a killed
+dyno costs only the calls already paid for, and re-running resumes exactly where it
+stopped.
+
+**What to read when it finishes.** The exit code grades the three lanes (below), and
+`/admin/error_logs` carries a row per athlete for every degraded call — an invalid
+credential, a 429, an unreadable S3 object. Two report lines point there without failing
+the run: `asked but NOT billed:` with its `WARNING`, and `measured but IMPLAUSIBLE:` with
+its `[?]` lines. Then `bin/rails athletes:description_coverage` (read-only) for the
+standing totals.
+
 `DESCRIBE_LIMIT` caps athletes **changed** — a sample run stops rather than walking
 on to bulk-write the free column everywhere. It bounds the **writes**, not the spend:
 the walk advances on changes, so an athlete who is paid for and yields nothing to
@@ -115,9 +154,35 @@ summed total reads healthy. So the report prints each lane's three steps (*wante
 
 | Rule | Fires when | What it catches |
 |---|---|---|
-| 1. the pass broke down | more raises than writes | the **write** path — a row that no longer satisfies a validation, a database error. Not the paid call, which never raises |
-| 2. the free lane wrote nothing | height and weight were on file for ≥1 athlete wanting a build, and none was written | the deriver rejecting every row, or every write failing |
+| 1. the pass broke down | more raises than writes | the **write** path — a row that no longer satisfies a validation (a blank `sport` raises `RecordInvalid`), a database error. Not the paid call, which never raises |
+| 2. the free lane wrote nothing | ≥1 athlete wanting a build was **derivable** — both measurements on file *and* inside the plausibility window — and none was written | the deriver failing on rows it accepts, or every write failing |
 | 3. the paid lane never landed | ≥1 call was asked for and **not one was billed a token** | a present-but-invalid credential, a sustained 429, unreadable S3 objects |
+
+**Rule 2 grades `derivable?`, not `measured?`, and the difference is a false positive
+that was live.** `measured?` asks whether both *columns* are present; the deriver
+returns nil outside its window. So a unit mix-up — centimetres in an inches column,
+`180` "inches" — is measured-but-underivable, and on the warm re-run it is the only row
+still wanting a build. The lane therefore read *"had the input for 1, wrote 0"* and
+aborted, on every run, for ever, with nothing wrong and nothing that fixing the lane
+could clear (measured in a desk 2026-09-26). It was not reachable on production — 2,051
+athletes span 67..81 in and 156..380 lb with no out-of-window row, and the task is
+operator-run rather than scheduled — but it becomes reachable on the first ingest that
+lands one bad row, which is the case the window exists for. **A verdict has to be
+clearable by fixing what it accuses**, so an implausible row is now reported as its own
+data gap with a `[?]` line naming the athlete and the offending value, and the operator
+fixes the row rather than the lane.
+
+**Rule 3 is all-or-nothing, and the partial failure is warned about rather than aborted
+on.** A credential revoked at athlete 500, or a sustained 429 from there, leaves asked
+2,043 / billed 499: rule 3 is false because something *was* billed, and rule 1 is false
+because the describer degrades. A `billed < asked` abort would catch that — and would
+also fire on a healthy pass, because one unreadable S3 object degrades to a blank result
+with no usage, so a single dead image among 2,043 sound ones is already asked 2,043 /
+billed 2,042. A rule that fires on a sound run is a rule somebody disables, and a
+threshold only replaces the false positive with a number nobody can defend. So the run
+prints `asked but NOT billed:` and, when it is non-zero beside a non-zero bill, a
+`WARNING` naming `/admin/error_logs`. The pass is resumable, so a systemic failure the
+warning does not stop is caught by the next run one run late rather than never.
 
 Rule 3 exists because rules 1 and 2 are structurally blind to it, which is the exact
 shape in which `nfl:upload_headshots` reported a total failure as exit 0 for its
@@ -134,7 +199,9 @@ works, whatever it answered. The cost of that is one blind spot, named here so i
 not rediscovered: a lane that bills every call and writes nothing — our own parser
 broken, say — reads exactly like that null steady state. Separating them needs a
 record that the task *asked and the answer was null*, which is a column rather than an
-accounting change.
+accounting change. **That deferral covers only that blind spot** — the partial-failure
+case above needed no column, since `vision_asked` and `vision_billed` were both already
+counted and the warning is their difference.
 
 **No live vision call can happen in the test suite, and that is a trap rather than
 an assertion.** Every paid call leaves through `Athletes::VisionTransport`, which

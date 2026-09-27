@@ -101,6 +101,78 @@ class Athletes::BuildFromMeasurementsTest < ActiveSupport::TestCase
     assert_nil BFM.call(nil)
   end
 
+  # --- #derivable?, the population the free lane's VERDICT grades ----------
+  #
+  # [unit] AN IMPLAUSIBLE MEASUREMENT IS A DATA GAP, NOT WORK DECLINED, and this is
+  # the predicate that makes that distinction available to the rule. `measured?` asks
+  # whether the two COLUMNS are on file; `derivable?` asks whether this source can use
+  # what is on them. Grading rule 2 on the first made a permanently bad row look like a
+  # lane refusing to work: on the warm re-run it is the only row still wanting a build,
+  # so the lane read "had the input for 1, wrote 0" and aborted for ever.
+  #
+  # IT MUST NOT BE #describe IN DISGUISE. The whole value of the rule is that a broken
+  # deriver cannot excuse itself, so these tests pin `derivable?` as true for rows whose
+  # description this module is then obliged to produce — never as "whatever #describe
+  # happened to return".
+
+  test "a sound measurement is both measured and derivable" do
+    athlete = build_athlete(height_inches: 72, weight_lbs: 197)
+
+    assert BFM.measured?(athlete)
+    assert BFM.derivable?(athlete)
+  end
+
+  # THE GAP BETWEEN THE TWO PREDICATES, which is the whole reason there are two. This
+  # is the 180-inch unit mix-up that made rule 2 cry wolf on every re-run.
+  test "an implausible measurement is measured but NOT derivable" do
+    athlete = build_athlete(height_inches: 180, weight_lbs: 200)
+
+    assert BFM.measured?(athlete), "both columns are on file — that is what made the old rule fire"
+    refute BFM.derivable?(athlete), "and this source still cannot use them"
+    assert_nil BFM.call(athlete), "so it writes nothing, which must not read as a refusal"
+  end
+
+  test "a missing measurement is neither measured nor derivable" do
+    athlete = build_athlete(height_inches: nil, weight_lbs: nil)
+
+    refute BFM.measured?(athlete)
+    refute BFM.derivable?(athlete)
+  end
+
+  test "a nil athlete is not derivable and does not raise" do
+    refute BFM.derivable?(nil)
+    refute BFM.measured?(nil)
+  end
+
+  test "a non-numeric measurement is not derivable rather than raising" do
+    refute BFM.derivable?(build_athlete(height_inches: nil, weight_lbs: 197))
+  end
+
+  # THE SUITE GUARDS THE PRECONDITION BECAUSE THE RULE NO LONGER CAN. A broken
+  # #in_window? would SILENCE rule 2 rather than trip it — derivable? would read 0 and
+  # the verdict would say nothing — so the boundary is pinned here instead. Both edges
+  # of both ranges, and #derivable? and #describe walked together so the predicate and
+  # the deriver cannot drift into disagreeing about where the window ends.
+  test "derivable? and describe agree at every edge of the window" do
+    heights = [BFM::HEIGHT_INCHES.min, BFM::HEIGHT_INCHES.max]
+    weights = [BFM::WEIGHT_LBS.min, BFM::WEIGHT_LBS.max]
+
+    heights.product(weights).each do |height, weight|
+      athlete = build_athlete(height_inches: height, weight_lbs: weight)
+      assert BFM.derivable?(athlete), "#{height} in / #{weight} lb is inside the window"
+      assert BFM.call(athlete).present?,
+             "#{height} in / #{weight} lb is derivable, so the deriver owes a description"
+    end
+
+    [[BFM::HEIGHT_INCHES.min - 1, 200], [BFM::HEIGHT_INCHES.max + 1, 200],
+     [72, BFM::WEIGHT_LBS.min - 1], [72, BFM::WEIGHT_LBS.max + 1]].each do |height, weight|
+      athlete = build_athlete(height_inches: height, weight_lbs: weight)
+      refute BFM.derivable?(athlete), "#{height} in / #{weight} lb is outside the window"
+      assert_nil BFM.call(athlete),
+                 "#{height} in / #{weight} lb is not derivable, so the deriver owes nothing"
+    end
+  end
+
   private
 
   def build_athlete(**attrs)

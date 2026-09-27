@@ -178,9 +178,15 @@ class Athletes::BackfillDescriptionsTest < ActiveSupport::TestCase
     last = athlete_with_headshot(height_inches: 74, weight_lbs: 240)
 
     # RAISES FROM THE DESCRIBER SEAM to reach the loop's rescue in one step. In
-    # production that rescue's population is the WRITE — an orphaned row, a database
-    # error — because the real describer degrades; the property under test is the
-    # loop's isolation, which is the same either way.
+    # production that rescue's population is the WRITE — a row that no longer satisfies
+    # a validation (a blank `sport` raises RecordInvalid), a database error — because the
+    # real describer degrades; the property under test is the loop's isolation, which is
+    # the same either way.
+    #
+    # NOT "an orphaned row", which this comment used to say. Measured 2026-09-27: an
+    # athlete whose `person` row is deleted is still `valid?` and still saves, in both
+    # the cached-association and fresh-load shapes. See the sibling comment in
+    # test/lib/tasks/athletes_describe_rake_test.rb for why.
     exploding = lambda do |athlete|
       raise IOError, "connection reset" if athlete.id == doomed.id
 
@@ -276,7 +282,72 @@ class Athletes::BackfillDescriptionsTest < ActiveSupport::TestCase
 
     assert_equal 1, outcome.build_wanted
     assert_equal 1, outcome.build_measured, "the height and weight were on the record"
+    assert_equal 1, outcome.build_derivable,
+                 "and they were inside the window, which is what rule 2 grades — a deriver " \
+                 "that stops answering must not be able to excuse itself by moving this count"
     assert_equal 0, outcome.build_filled, "and not one build was written"
+  end
+
+  # --- MEASURED BUT IMPLAUSIBLE IS A DATA GAP, NOT WORK DECLINED ------------
+  #
+  # [unit] THE ROW THAT MADE RULE 2 CRY WOLF. A centimetre value in an inches column is
+  # a plausible-looking integer, so both columns are PRESENT and the deriver still
+  # refuses it. Counting it as "the lane had its input" made the warm re-run report
+  # build_measured=1 build_filled=0 — and the rake verdict aborted on that, every run,
+  # for ever, with nothing wrong. The counters have to tell the two gaps apart before the
+  # verdict can.
+
+  test "an implausible measurement is measured, not derivable, and reported as its own gap" do
+    athlete_with_headshot(height_inches: 180, weight_lbs: 200)
+
+    outcome = run_backfill
+
+    assert_equal 1, outcome.build_wanted
+    assert_equal 1, outcome.build_measured, "both columns are on file"
+    assert_equal 0, outcome.build_derivable, "and this source still cannot use them"
+    assert_equal 1, outcome.build_implausible, "which is a data BUG, reported on its own"
+    assert_equal 0, outcome.build_unmeasured, "and NOT the missing-measurement gap"
+    assert_equal 0, outcome.build_filled
+  end
+
+  # THE WHOLE POINT, AT THE LEDGER: a bad row beside sound ones must not make the sound
+  # ones' success unreadable, and on the re-run it must not be the only thing left.
+  test "a bad row does not hide the rows the free lane did write" do
+    athlete_with_headshot(height_inches: 180, weight_lbs: 200)
+    athlete_with_headshot(height_inches: 72, weight_lbs: 197)
+    athlete_with_headshot(height_inches: 74, weight_lbs: 240)
+
+    cold = run_backfill
+
+    assert_equal 3, cold.build_wanted
+    assert_equal 3, cold.build_measured
+    assert_equal 2, cold.build_derivable
+    assert_equal 1, cold.build_implausible
+    assert_equal 2, cold.build_filled
+
+    # THE RE-RUN IS THE STEADY STATE THE OLD RULE BROKE ON: the implausible row is now
+    # the ONLY one still wanting a build, so the wide count said "had input for 1, wrote
+    # 0". The narrow count says the lane had nothing it could do.
+    warm = run_backfill
+
+    assert_equal 1, warm.build_wanted, "only the bad row is still incomplete"
+    assert_equal 1, warm.build_measured, "which is what the old rule read, and aborted on"
+    assert_equal 0, warm.build_derivable, "and what rule 2 reads now"
+    assert_equal 1, warm.build_implausible
+    assert_equal 0, warm.build_filled
+  end
+
+  test "the implausible row is named in the log, not merely counted" do
+    athlete = athlete_with_headshot(height_inches: 180, weight_lbs: 200)
+    lines = []
+
+    Athletes::BackfillDescriptions.new(pause: 0, describer: stub_describer,
+                                       logger: ->(line) { lines << line }).call
+
+    named = lines.grep(/#{Regexp.escape(athlete.person_slug)}/).grep(/\[\?\]/)
+    assert_equal 1, named.size,
+                 "a count alone cannot tell the operator WHICH row to fix: #{lines.inspect}"
+    assert_match "180", named.first
   end
 
   # AND A ROW WITH NO MEASUREMENTS IS A DATA GAP, counted as wanting a build and NOT
