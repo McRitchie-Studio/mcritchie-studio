@@ -175,10 +175,11 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
     # of the four it named. The counting question is itself the error: `reclaim_hold`
     # is an `||` chain, so only the first channel that returns is ever asked.
     #
-    # What IS derivable is the shape. `claim_hold` sits second and returns a hold
-    # outright for a discovered repo, so the four after it never execute. Both
-    # halves are read off the source here, and the doc must describe THAT rather
-    # than a tally.
+    # What IS derivable is the shape. `claim_hold` sits second and, for a discovered
+    # repo, returns git's hold reason (discovered_git_hold) when a check fails, so the
+    # four after it never execute; when git clears the desk it falls through and they
+    # do. Both halves are read off the source here, and the doc must describe THAT
+    # rather than a tally.
     claim_index = channels.index("claim_hold")
     assert_equal 1, claim_index,
       "claim_hold is no longer second in reclaim_hold (#{channels.inspect}); the short-circuit " \
@@ -194,9 +195,9 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
     assert branch.present?,
       "could not find the `if discovered_app?` branch in claim_hold — this assertion has gone " \
       "blind and would pass on any body at all"
-    assert branch.match?(/^    return "/),
-      "the discovered_app? branch of claim_hold no longer RETURNS — if it falls through, the " \
-      "four channels after it do run, and every doc below describes the wrong mechanism"
+    assert branch.match?(/discovered_git_hold\(record\)/) && branch.match?(/^      return hold$/),
+      "the discovered_app? branch of claim_hold no longer RETURNS git's hold reason — a failed " \
+      "git check must short-circuit the chain, and every doc below describes that mechanism"
 
     body = norm("modules/worktrees.md")
     assert body.match?(/short-circuit/i),

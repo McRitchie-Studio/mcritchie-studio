@@ -104,7 +104,15 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
 - `list` shows health, URL, branch, dirty/merge state, database, Redis DB and pidfile.
 - `finish` blocks dirty, empty, stale or already-merged branches. `--push --pr` opens a draft
   PR on the base branch and stamps `devops.pr_url` on the bound task.
-- `doctor` reports drift and **orphan** worktrees (prune a stale one with `git -C <repo> worktree prune`).
+- `list`, `doctor`, `snapshot` and the sweeps see **every worktree git registered** for a
+  repo (`git worktree list`), wherever it lives: `<repo>/.worktrees/`, a sibling
+  `<repo>.worktrees/`, `<projects>/.worktrees/<repo>/`, a scratchpad. Each is labelled with
+  its real repo; a desk outside `.worktrees/` usually has no port or stack.
+- `doctor` reports drift and **prunable** worktrees, registered but deleted on disk (prune
+  with `git -C <repo> worktree prune`).
+- `remove <app> <desk>` finds the desk by its real directory name first (`qa_env` stays
+  `qa_env`), normalizes only when nothing matches, and refuses a name two trees share; pass
+  the path then.
 - `snapshot --write` writes the non-secret cross-app registry to
   `/Users/alex/projects/.agents/worktree-registry.json` (override `AGENT_WORKTREE_REGISTRY`).
 - `cleanup` is a dry run: clean candidates merged into, or diff-equivalent to, the base ref,
@@ -123,9 +131,14 @@ A fresh desk and a merged one are **git-identical**, so git alone never frees a 
 
 1. **ORIGIN** (`origin_hold`) — a gone or unreachable remote withholds.
 2. **CLAIM** (`claim_hold`) — an old lease row, if any; `_ship`/`_gate` are held by ANY live
-   `ReleaseConductorClaim` (`assembler` + `deployer`). An unbound desk on a **discovered
-   repo** (studio-engine) gets a hold outright — a **short-circuit**: the later channels
-   never run at all. **No discovered desk is ever auto-reclaimed**; use `remove`.
+   `ReleaseConductorClaim` (`assembler` + `deployer`). A desk on a **discovered repo**
+   (studio-engine, turf-vault) has no task to read, so it is judged by **git**
+   (`discovered_git_hold`): clean tree, no commit off every remote (`git rev-list --count
+   HEAD --not --remotes` is 0), HEAD merged into origin's default branch or its PR merged,
+   and no open PR (an unanswerable `gh` holds; there is no board record to fall back on).
+   A failed check returns its reason as a **short-circuit**: the later channels never run
+   at all. A passed one falls through, so the DESK and PR channels still judge it. Its
+   `_ship`/`_gate` workspaces are always withheld.
 3. **STAGE** (`stage_hold`) — frees a bound desk only at `shipped` or `archived`, failing
    closed on an unreadable board (withholding defers; freeing is irreversible).
 4. **REVIEW** (`review_hold`) — a reviewer on the task (`review_in_progress`) holds it.
