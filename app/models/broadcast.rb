@@ -17,6 +17,7 @@ class Broadcast < ApplicationRecord
   TEMPLATES = {
     "world_cup_kickoff"     => "World Cup Kickoff",
     "new_game_announcement" => "New Game Announcement",
+    "cyvasse_is_back"       => "Cyvasse Is Back",
   }.freeze
 
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy
