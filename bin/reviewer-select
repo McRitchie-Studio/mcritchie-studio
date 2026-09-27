@@ -56,23 +56,37 @@
 # rework bounce lands the task back on `building`, so that transition names the
 # REVIEWER who sent the work back, not an author.
 #
-# ⛔ THIS TOOL REFUSES (exit 2, selecting and recording NOTHING) in three states,
+# ⛔ THIS TOOL REFUSES (exit 2, selecting and recording NOTHING) in five states,
 # because an empty exclusion list is not the same answer as "nobody to exclude" —
 # conflating them is what let it pick Carl to review Carl's own PR on 2026-08-13:
 #   1. NO author on record — the stamped AND git-derived author set is empty.
 #   2. An author would be SEATED — the pool was too small to drop them all, so one
 #      was KEPT eligible (the recorder degrades here by design; the CLI must not).
 #   3. A `--builder` entry NAMED NOBODY — see the roster note below.
-# State the fact to proceed: `--builder <soul>[,<soul>]` names the authors,
-# `--builder none` asserts that no soul built it. Fix it durably upstream with
-# `bin/task move <slug> building --actor <soul>`.
+#   4. `--builder none` is CONTRADICTED — the record, the fix-forward ledger, or the
+#      PR's own commits name a soul, so the assertion is provably false.
+#   5. `--builder none` is UNVERIFIED — the PR read FAILED, so no witness answered.
+#      An unreadable PR is not an authorless one, and it used to be reported as one.
+# State the fact to proceed: `--builder <soul>[,<soul>]` names the authors. Fix it
+# durably upstream with `bin/task move <slug> building --actor <soul>`.
+#
+# `--builder none` IS NOT A ROUTINE ESCAPE, and it is no longer offered as one. It
+# asserts something about somebody else's work, and it was the ONE input here that
+# lifted a safety check on the caller's word alone. MEASURED 2026-09-24 on
+# data-flow-doc-contradicts-code (PR #1587, a docs PR Xan wrote, task unstamped): it
+# seated **xan** as the light on Xan's own diff and reported the no-self-review
+# property upheld, while `--builder xan` correctly excluded her. It stopped covering
+# a Pokémon build on 2026-09-24 as well, when `pokemon` joined the roster — a Pokémon
+# build names `--builder pokemon` like any other. What is left for it is the
+# genuinely unattributed build: a change driven straight from the operator's own
+# hands. States 4 and 5 are how the assertion is now checked rather than believed.
 #
 # An UNRECOGNISED soul cannot lift any of that. Every slug is checked against the
 # roster (Task.soul?), not merely a lowercase-word shape: `--builder stefon` names
 # nobody, where it once passed as a known builder who excluded no one. A PARTIAL
 # typo is the sharp case — `--builder steffon,xanx` yields a non-empty set, so the
 # authors would read as KNOWN while the soul you meant to exclude never registered.
-# That refuses too (state 4), rather than honoring the half it understood.
+# That refuses too (state 3 above), rather than honoring the half it understood.
 #
 # BUSY souls (agents mid-build / mid-review on OTHER in-flight tasks) are excluded
 # from the LIGHT seat via `--busy a,b,c` and/or `--busy-auto`, and `--busy-auto` now
@@ -92,7 +106,7 @@
 # light candidates, the least-bad ones are KEPT back so ReviewerSelector always
 # returns a pair (flagged in the audit). The two kept cases are NOT equivalent here:
 # a kept BUSY soul is an inconvenience and prints as a note, while a kept AUTHOR is
-# a self-review and REFUSES (case 3 above).
+# a self-review and REFUSES (state 2 above).
 #
 # Usage:
 #   bin/reviewer-select <task-slug>                 # print the pair AND record the review intent (default)
@@ -102,14 +116,16 @@
 #   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
 #   bin/reviewer-select <task-slug> --builder carl        # override the recorded author set
 #   bin/reviewer-select <task-slug> --builder steffon,xan # a task with TWO authors
-#   bin/reviewer-select <task-slug> --builder none        # ASSERT no soul built it (lifts the refusal)
+#   bin/reviewer-select <task-slug> --builder none        # ASSERT no soul built it — CROSS-CHECKED, and refuses if a witness disagrees
 #   bin/reviewer-select <task-slug> --busy a,b      # exclude busy souls (repeatable)
 #   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents mid-build or mid-review elsewhere
 #   bin/reviewer-select --file task.json            # evaluate a local task JSON (advisory — never records)
 #
 # Exit code: 0 = a pair was selected, 1 = task not found / usage error,
 #            2 = REFUSED — the authors are unknown, incomplete, one would be
-#                seated, or a --builder entry named nobody (see the block above).
+#                seated, a --builder entry named nobody, or a `--builder none`
+#                assertion was CONTRADICTED or could not be checked at all (see the
+#                five states above).
 #           10 = SKIPPED — a DIFFERENT live instance already holds this task's review
 #                claim (or the board refused the claim as a self-review). Nothing was
 #                selected and nothing was recorded; pick another task.
@@ -468,6 +484,14 @@ def seat_line(label, seat)
          label, seat["slug"], matched, seat["fit"], seat_basis(seat))
 end
 
+# The witnesses a `--builder none` assertion is cross-examined against, named the
+# way a reader can act on them: each one needs a different answer when it disagrees.
+NONE_WITNESS_LABELS = {
+  "record" => "the task record (devops.built_by / devops.builders / a `→ building` build claim) names",
+  "fix_forward" => "the fix-forward ledger (devops.fix_forward — a reviewer zap) names",
+  "pr_commits" => "the PR's own commits name"
+}.freeze
+
 # The auditable "who's out" line of the LIGHT pool: the QA owner always, plus the
 # builder when known — flagged "(builder — excluded)" when removed from the light
 # pool, "(builder — KEPT: …)" when kept because excluding it would starve the pool,
@@ -488,7 +512,23 @@ def excluded_line(decision)
   # come from that key alone then printed BOTH "no builder — ASSERTED by the
   # caller" and the author rows below it — self-contradicting, and claiming the
   # operator stated a fact they never stated.
-  parts << "(no builder — ASSERTED by the caller: no soul built this task)" if decision["builder_asserted_none"]
+  #
+  # AND SAY WHETHER THE ASSERTION WAS CHECKED. "(no builder — ASSERTED)" was printed
+  # identically whether a witness had cleared the claim, whether no witness could be
+  # read, and — until the assertion started excluding the souls it denies — whether a
+  # witness flatly contradicted it. A line that reads the same when a guard fired and
+  # when it could not run is the same defect as the old bare `builder=-`.
+  if decision["builder_asserted_none"]
+    parts << if Array(decision["builder_none_contradicted_by"]).any? || Array(decision["builder_none_record_names"]).any?
+      "(no builder — ASSERTED by the caller, and CONTRADICTED by the record/PR)"
+    elsif decision["builder_none_unverified"]
+      "(no builder — ASSERTED by the caller, NOT VERIFIED: #{decision["builder_none_unverified"]})"
+    elsif decision["builder_none_unfalsifiable"]
+      "(no builder — ASSERTED by the caller; no witness to check it: #{decision["builder_none_unfalsifiable"]})"
+    else
+      "(no builder — ASSERTED by the caller and cross-checked: the record and the PR's commits name no soul)"
+    end
+  end
   # EVERY author, not just the current builder. A task can have several (a session
   # limit kills a builder mid-work and another soul finishes it), and printing only
   # devops.built_by is how an author read as a free reviewer.
@@ -532,6 +572,17 @@ def print_human(decision, pr_url, log_line)
   else
     puts "PR:              #{pr_url}"
   end
+  # THE ONE `none` OUTCOME THAT STILL PROCEEDS UNCHECKED, said out loud at the end
+  # rather than left inside the `excluded:` line. The contradicted and unreadable
+  # outcomes refuse before this prints; this is the residue — a record with no PR to
+  # cross-examine — and the honest limit of the guard. A reader who sees this line
+  # has a pair chosen on the caller's word, so it must not look like the cleared case.
+  return unless decision["builder_none_unfalsifiable"]
+
+  puts
+  puts "⚠ `--builder none` WAS NOT CHECKED: #{decision["builder_none_unfalsifiable"]}."
+  puts "  The pair below rests on your assertion alone. If ANY soul touched this diff,"
+  puts "  the light seat may be theirs — name them instead: --builder <soul>[,<soul>]."
 end
 
 # --- main -----------------------------------------------------------------
@@ -551,7 +602,8 @@ OptionParser.new do |o|
   o.on("--dry", "--dry-run", "Advisory only — print the pick, record NOTHING (alias for --no-record)") { options[:record] = false }
   o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (avi)") { |v| options[:qa_owner] = v }
   o.on("--builder SLUG", "Exclude these authors, comma/space separated (overrides the task's recorded set); " \
-                         "`none` ASSERTS that no soul built the task, lifting the unknown-author refusal") do |v|
+                         "`none` ASSERTS that no soul built the task — cross-checked against the record and " \
+                         "the PR's commits, and REFUSED when a witness disagrees or cannot be read") do |v|
     options[:builder] = v
   end
   o.on("--busy LIST", "Exclude these busy souls — mid-build/review elsewhere (comma/space separated; repeatable)") do |v|
@@ -645,6 +697,63 @@ if (unresolved = Array(decision["builder_override_unresolved"])).any?
   exit 2
 end
 
+# ── THE `none` ASSERTION IS CROSS-EXAMINED ───────────────────────────────────────
+#
+# `--builder none` is a statement about somebody else's work, and it is the only
+# input to this tool that used to lift a safety check on the caller's word alone.
+# MEASURED 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a docs PR Xan
+# wrote while the task carried no stamp): `--builder none` seated **xan** as the
+# light on Xan's own diff and printed the no-self-review property as upheld, while
+# `--builder xan` correctly excluded her. The operator who asserted it was honest;
+# the help text had advertised the hatch, and nothing checked the claim.
+#
+# Nothing can VERIFY the claim. The claim is FALSIFIABLE, which is enough: the
+# record and the PR's commits are witnesses the caller does not control, and
+# ReviewerSelector now cross-examines both. Three of the four outcomes refuse here.
+#
+# WHY UNVERIFIED REFUSES TOO, and this is the whole lesson of the incident: on
+# 2026-09-27 the same PR was re-measured, and with a fresh installation token
+# `Github::TaskDerivation#authors` returns ["xan"] — the witness names the author
+# perfectly well. The original run got a 401, and Task#derived_authors flattens an
+# unreadable read into the same `[]` an authorless PR gives. An empty witness box
+# was read as an exonerating one. So a witness that could not be READ is not a
+# clearance, and the remedy is one command rather than a judgement call.
+if decision["builder_asserted_none"]
+  contradicted = Array(decision["builder_none_contradicted_by"])
+  record_names = Array(decision["builder_none_record_names"])
+  if contradicted.any? || record_names.any?
+    warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — `none` IS CONTRADICTED.")
+    warn!("  You asserted that no soul built this task. The record and the PR disagree:")
+    (decision["builder_none_contradictions"] || {}).each do |source, souls|
+      warn!("    #{NONE_WITNESS_LABELS.fetch(source, source)}: #{Array(souls).join(", ")}")
+    end
+    warn!("    the record NAMES #{record_names.join(", ")}, which matches no soul — misspelled, but not nobody") if record_names.any?
+    warn!("  An assertion is not a correction. Nothing was selected and nothing was recorded.")
+    warn!("")
+    warn!("  If those souls DID build it, drop the assertion — they are excluded automatically:")
+    warn!("    bin/reviewer-select #{named}")
+    warn!("  If the record OVER-NAMES (a stale stamp, a soul who only rebased), state the true set:")
+    warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]")
+    exit 2
+  end
+
+  if (why = decision["builder_none_unverified"])
+    warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — `none` IS UNVERIFIED.")
+    warn!("  You asserted that no soul built this task, and the witness that could have")
+    warn!("  checked it could not be read:")
+    warn!("    #{why}")
+    warn!("  An unreadable PR is NOT an authorless PR, and this is exactly how the guard")
+    warn!("  failed on 2026-09-24: the commits named a soul, the read 401'd, the empty")
+    warn!("  answer passed for a clean one, and she was seated on her own PR.")
+    warn!("")
+    warn!("  Refresh the credential and re-run — the PR's commits name their authors:")
+    warn!("    eval \"$(bin/gh-auth-refresh --export)\"")
+    warn!("  Or state the fact directly, which needs no credential at all:")
+    warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]")
+    exit 2
+  end
+end
+
 unless decision["builder_known"]
   warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — the AUTHORS ARE UNKNOWN.")
   if builder
@@ -664,9 +773,25 @@ unless decision["builder_known"]
     warn!("  so the author set is empty even though devops.built_by is NOT blank. The")
     warn!("  exclusion has nothing to exclude. Check the spelling against:")
     warn!("    #{ReviewerSelector::POOL.union([ReviewerSelector::DEFAULT_QA_OWNER]).sort.join(", ")}")
+  elsif (unreadable = decision["pr_authors_unreadable"])
+    # THE READ FAILED — DO NOT CALL THAT AN AUTHORLESS PR. This branch did not
+    # exist, so an unreadable PR fell into the `else` below and was reported as "no
+    # author could be derived from the PR's commits". Measured 2026-09-27 on
+    # data-flow-doc-contradicts-code: the PR's commit carries
+    # `xan@mcritchie.studio`, the desk's static GITHUB_TOKEN 401s, and
+    # Task#derived_authors flattens the failure into the same `[]` an authorless PR
+    # gives. The operator read the sentence, believed the derivation had run, and
+    # asserted `--builder none` — which seated Xan on Xan's own PR. The false
+    # sentence is upstream of the false assertion, so it is fixed here too.
+    warn!("  devops.built_by is blank and no `→ building` BUILD CLAIM names a soul. The PR")
+    warn!("  COULD HAVE named one — its commits carry `<soul>@mcritchie.studio` — but the")
+    warn!("  read failed, so nobody has looked:")
+    warn!("    #{unreadable}")
+    warn!("  This is NOT \"the PR has no author\". Refresh the credential and re-run:")
+    warn!("    eval \"$(bin/gh-auth-refresh --export)\"")
   else
-    warn!("  devops.built_by is blank, no `→ building` BUILD CLAIM names a soul, and no")
-    warn!("  author could be derived from the PR's commits, so the no-self-review")
+    warn!("  devops.built_by is blank, no `→ building` BUILD CLAIM names a soul, and the")
+    warn!("  PR's commits were READ and name no soul, so the no-self-review")
     warn!("  exclusion has nothing to exclude. Selecting anyway could hand the PR to the")
     warn!("  soul who wrote it — refusing instead.")
     warn!("  (A rework block bounces the task onto `building` too. That transition is the")
@@ -676,7 +801,12 @@ unless decision["builder_known"]
   warn!("")
   warn!("  Resolve it by stating the fact (name EVERY author, comma-separated):")
   warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who wrote it")
-  warn!("    bin/reviewer-select #{named} --builder none              # no soul built it")
+  # `none` IS LISTED LAST AND NARROWED ON PURPOSE. It used to sit here as a peer of
+  # naming the author, and an operator who cannot act on a refusal takes the route
+  # that clears it — which is how the 2026-09-24 self-review happened. It is now
+  # cross-examined against the record and the PR (see the block above), so it clears
+  # nothing it cannot survive; the line says what it asserts rather than what it lifts.
+  warn!("    bin/reviewer-select #{named} --builder none              # ONLY if no soul built it — checked, not taken on trust")
   warn!("  Durable fix (stamps the author for next time, re-claims included):")
   warn!("    bin/task move #{named} building --actor <soul>")
   exit 2

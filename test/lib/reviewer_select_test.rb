@@ -110,6 +110,60 @@ class ReviewerSelectCliTest < Minitest::Test
     assert_equal 2, decision["reviewers"].size
   end
 
+  # --- the `none` assertion is CROSS-EXAMINED, end to end (builder-none-fails-open) ---
+  #
+  # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
+  # docs PR Xan wrote while the task carried no stamp): `--builder none` seated XAN
+  # as the light on Xan's own diff and reported the no-self-review property upheld,
+  # while `--builder xan` correctly excluded her. It was the ONE input to this tool
+  # that lifted a safety check on the caller's word alone.
+  #
+  # These boot the real script, because the REFUSAL is the CLI's job — the selector
+  # still degrades (the reviewed-transition recorder must never break on it).
+
+  def test_a_none_assertion_the_record_contradicts_REFUSES
+    out, code = select_verbose({ "shape" => "backend", "built_by" => "shannon" }, "--builder none")
+
+    assert_equal 2, code, "a provably false assertion must refuse, not select:\n#{out}"
+    assert_match(/CONTRADICTED/, out, "the refusal names what went wrong")
+    assert_match(/shannon/, out, "and names the soul the assertion denied")
+    refute_match(/^PRIMARY\s/, out, "no pair is offered on a refusal")
+    assert_match(/--builder <soul>/, out, "and the remedy is to state the true set")
+  end
+
+  def test_a_none_assertion_the_fix_forward_ledger_contradicts_REFUSES
+    # A reviewer zap is a commit that provably exists. `--builder none` used to
+    # silence the ledger outright; denying a recorded commit is not a statement of
+    # fact, it is the guard being routed around.
+    out, code = select_verbose({ "shape" => "backend", "fix_forward" => ["steffon"] }, "--builder none")
+
+    assert_equal 2, code, out
+    assert_match(/CONTRADICTED/, out)
+    assert_match(/steffon/, out)
+  end
+
+  def test_a_none_assertion_over_a_typod_record_REFUSES
+    # The record names `shanon` — misspelled, so it excludes nobody, but a record
+    # that names ANYTHING contradicts "no soul built this". Asserting over it is how
+    # a real author hides behind a typo.
+    out, code = select_verbose({ "shape" => "backend", "built_by" => "shanon" }, "--builder none")
+
+    assert_equal 2, code, out
+    assert_match(/CONTRADICTED/, out)
+    assert_match(/shanon/, out, "the record's actual spelling is quoted back")
+  end
+
+  def test_an_unchecked_none_assertion_says_so_out_loud
+    # The residue: a hand-held record with no PR has no witness to cross-examine, so
+    # the assertion still stands — and must NOT print like the checked case. The
+    # 2026-09-24 run looked exactly like a clean one.
+    out, code = select_verbose({ "shape" => "backend" }, "--builder none")
+
+    assert_equal 0, code, "with no witness to ask, the assertion still selects:\n#{out}"
+    assert_match(/WAS NOT CHECKED/, out, "but the reader is told the guard did not run")
+    refute_match(/cross-checked/, out, "and it must not claim a check it never made")
+  end
+
   def test_json_decision_is_machine_readable
     out, code = select({ "shape" => "backend", "risk_tags" => ["solana"] }, "--builder none --json")
     assert_equal 0, code, out

@@ -130,6 +130,73 @@ class TaskDerivedFactsTest < ActiveSupport::TestCase
     assert_equal [], task(devops: { "pr_url" => HUB_PR }).derived_authors
   end
 
+  # --- the author probe: three outcomes, kept apart (builder-none-fails-open) ----------
+  #
+  # #derived_authors returns `[]` for "the PR names nobody", "the read failed" and
+  # "there was nothing to read". Correct for a caller that only ADDS exclusions —
+  # the fewer it finds, the fewer it drops. WRONG for `bin/reviewer-select --builder
+  # none`, which uses the PR as a WITNESS against the caller's assertion: an empty
+  # witness box is not an exonerating one. MEASURED 2026-09-27 on PR #1587, whose one
+  # commit carries `xan@mcritchie.studio`: with a fresh token the read yields
+  # ["xan"], with the desk's stale GITHUB_TOKEN it 401s, and #derived_authors gave
+  # `[]` either way — which is how `--builder none` seated Xan on Xan's own PR.
+
+  test "[unit] the author probe reports a completed read with nothing unread" do
+    t = task(devops: { "pr_url" => HUB_PR })
+    probe = t.derived_authors_probe(derivation: FakeTaskDerivation.new(authors: { HUB_PR => %w[xan] }))
+
+    assert_equal %w[xan], probe["authors"]
+    assert_nil probe["unreadable"], "the read happened"
+    assert_nil probe["absent"], "and there WAS something to read"
+  end
+
+  test "[unit] the author probe reports a FAILED read as unreadable, not as an empty PR" do
+    t = task(devops: { "pr_url" => HUB_PR })
+    probe = t.derived_authors_probe(derivation: FakeTaskDerivation.new(authors: { HUB_PR => :unreadable }))
+
+    assert_empty probe["authors"]
+    assert_includes probe["unreadable"].to_s, HUB_PR, "the failure names the PR it could not read"
+    assert_nil probe["absent"], "a failed read is NOT the same state as having nothing to read"
+  end
+
+  test "[unit] a PR that WAS read and names nobody is not reported as a failure" do
+    t = task(devops: { "pr_url" => HUB_PR })
+    probe = t.derived_authors_probe(derivation: FakeTaskDerivation.new(authors: { HUB_PR => [] }))
+
+    assert_empty probe["authors"]
+    assert_nil probe["unreadable"], "nothing failed"
+    assert_nil probe["absent"], "and the witness did answer — this is the legitimate `none` case"
+  end
+
+  test "[unit] a multi-repo probe keeps the authors it DID read beside the failure" do
+    # A partial answer must not read as a clean one. The souls found still exclude;
+    # the reason still refuses.
+    t = task(devops: { "repositories" => [HUB, TURF], "pr_url" => HUB_PR, "pr_urls" => { TURF => TURF_PR } })
+    probe = t.derived_authors_probe(derivation: FakeTaskDerivation.new(authors: { HUB_PR => %w[mack],
+                                                                                 TURF_PR => :unreadable }))
+
+    assert_equal %w[mack], probe["authors"]
+    assert_includes probe["unreadable"].to_s, TURF_PR
+  end
+
+  test "[unit] an unreadable PR LOOKUP is a failure too, not a task without a PR" do
+    t = task
+    probe = t.derived_authors_probe(derivation: FakeTaskDerivation.new(branches: { [HUB, "feat/#{t.slug}"] => :unreadable }))
+
+    assert_includes probe["unreadable"].to_s, HUB, "the repo whose PR could not be looked up is named"
+    assert_nil probe["absent"], "we do not know there is no PR — we could not ask"
+  end
+
+  test "[unit] the probe distinguishes no PR and no derivation from a failure" do
+    no_pr = task.derived_authors_probe(derivation: FakeTaskDerivation.new)
+    assert_nil no_pr["unreadable"]
+    assert_includes no_pr["absent"].to_s, "no PR"
+
+    off = task(devops: { "pr_url" => HUB_PR }).derived_authors_probe
+    assert_nil off["unreadable"]
+    assert_includes off["absent"].to_s, "switched off"
+  end
+
   # --- bounded reads (harden-derived-fact-reads) ---------------------------------------
 
   test "[unit] one task row asks for its branch PR and its rung once, however many readers" do
