@@ -70,7 +70,7 @@ class UnsubscribesControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-unsubscribe-email]", text: @contact.email
     assert_select "[data-unsubscribe-broadcast]", text: "“Cyvasse is back”"
-    assert_select "form[action*='d=#{delivery.token}'] button", text: "Unsubscribe"
+    assert_select "form[action*='d=#{delivery.token}'][data-turbo=false] button", text: "Unsubscribe"
     assert @contact.reload.subscribed?, "the page alone changes nothing"
   end
 

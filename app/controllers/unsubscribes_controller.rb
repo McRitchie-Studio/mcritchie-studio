@@ -12,6 +12,10 @@
 #                                          no form token (the unsubscribe token is
 #                                          the proof).
 #   POST /unsubscribe/:token/resubscribe  the landing page's change-of-heart button.
+#
+# Both POSTs answer with a page, not a redirect (the one-click POST must not
+# redirect), so the buttons submit with Turbo off: Turbo will not render a
+# form response that is not a redirect.
 class UnsubscribesController < ApplicationController
   skip_before_action :require_authentication
   skip_forgery_protection only: :create
