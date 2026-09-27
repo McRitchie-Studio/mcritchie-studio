@@ -69,8 +69,18 @@ class RemedyHintGuardTest < Minitest::Test
 
   # The hub-only fast-lane scripts. A bare mention of any of these, carrying an
   # operand, is an instruction a non-hub desk cannot run.
+  #
+  # `gh-token` JOINED IN WAVE 3, and it was a measured hole rather than a tidying.
+  # bin/reviewer-select's new credential remedy is `export GITHUB_TOKEN="$(<abs>/bin/gh-token)"`,
+  # and re-pointing that at the bare form left the whole sweep GREEN — the script was not
+  # on this list, so INSTRUCTION_RE could not see it. bin/gh-token lives in
+  # mcritchie-studio/bin alone like every other name here, and it is now printed as a
+  # remedy, so the same `No such file or directory` is reachable through it. Measured on
+  # the shipped tree: adding it flags NOTHING that was not already flagged, so it closes
+  # a hole at no cost in noise.
   HUB_ONLY = %w[ship fast-check dor-check task session-preflight
-                agent-worktree pr-review reviewer-select gh-auth-refresh release].freeze
+                agent-worktree pr-review reviewer-select gh-auth-refresh release
+                gh-token].freeze
 
   # bare `bin/<hub-only script>`, optional subcommand words, then an OPERAND — an
   # interpolation (`#{`), a `<placeholder>`, or a `--flag`. The negative lookbehind
@@ -89,6 +99,44 @@ class RemedyHintGuardTest < Minitest::Test
   INSTRUCTION_RE =
     /(?<![\/\w-])bin\/(#{HUB_ONLY.join('|')})\b((?:\s+[a-z][a-z0-9:_-]*)*)\s+(?:\#\{|<[a-z]|--[a-z])/
 
+  # ── WAVE 3: AN INSTRUCTION CAN CARRY NO OPERAND AT ALL ───────────────────────
+  #
+  # MEASURED 2026-09-27 while mutating every member of this sweep one at a time.
+  # `warn!("    bin/task claim-next-review")` — the remedy bin/reviewer-select hands an
+  # agent whose task is already under review — reverted to the bare form and the sweep
+  # stayed GREEN. It is a command, it is pasted, and it dies on a satellite desk exactly
+  # like its neighbours; the operand rule simply could not see it, because a subcommand
+  # takes no slug and no flag. An operand is a STRONG tell for an instruction, not a
+  # necessary one, and a rule that mistakes the two is a description of the examples in
+  # front of it.
+  #
+  # THE SECOND TELL: the command is the WHOLE PAYLOAD of the printed line. A string
+  # literal whose entire content is indentation plus `bin/<script>` plus subcommand words
+  # is a handed-over command; prose always has a sentence wrapped around the script, so
+  # it can never match this. Measured on the shipped tree: this arm flags NOTHING the
+  # operand arm did not already flag, so it is purely additive.
+  SOLE_INSTRUCTION_RE =
+    /(["'])\s*bin\/(#{HUB_ONLY.join('|')})\b(?:\s+[a-z][a-z0-9:_-]*)*\s*\1/
+
+  # ── THE THIRD TELL: A COMMAND SUBSTITUTION ───────────────────────────────────
+  #
+  # MEASURED IN THE SAME PASS. `warn!("    export GITHUB_TOKEN=\"$(bin/gh-token)\"")` — the
+  # credential remedy itself — escaped BOTH arms above: the script is followed by `)`, so
+  # there is no operand, and the payload is an `export` line rather than the bare command,
+  # so it is not the sole payload either. `$(…)` around a script is the least ambiguous
+  # tell in the corpus: nobody wraps a SUBJECT in a command substitution. Measured on the
+  # shipped tree: this arm also flags nothing the other two did not.
+  SUBSTITUTION_INSTRUCTION_RE = /\$\(\s*bin\/(#{HUB_ONLY.join('|')})\b/
+
+  # A line that hands over a command by any of the three tells. ORed rather than merged
+  # into one pattern so each tell keeps its own name, its own reason, and its own case in
+  # test_the_instruction_regex_separates_an_instruction_from_prose.
+  def instruction?(line)
+    line.match?(INSTRUCTION_RE) ||
+      line.match?(SOLE_INSTRUCTION_RE) ||
+      line.match?(SUBSTITUTION_INSTRUCTION_RE)
+  end
+
   # The files this guard sweeps. WAVE 1 (remedy-hints-print-bare-paths) routed the four
   # highest-traffic scripts plus the two shared COMPOSERS: bin/lib/fast_cert.rb composes
   # both certs' zero-evidence refusals, and lib/claim_holder.rb composes the claim
@@ -103,18 +151,28 @@ class RemedyHintGuardTest < Minitest::Test
   # refusals, so they reach the reader wave 1 already fixed for the cert refusals),
   # bin/session-preflight, and bin/lib/block_recipe.rb (recipes that exist to be PASTED).
   #
-  # STILL NOT SWEPT, filed with measured counts rather than half-done — 77 instruction
-  # sites, none of them in this task's scope: bin/lib/review_claim_cli.rb (16),
-  # bin/agent-worktree (14), bin/lib/agent_worktree_cli.rb (13), bin/reviewer-select (8),
+  # STILL NOT SWEPT, filed with measured counts rather than half-done — the counts below
+  # were taken 2026-09-09/24 and are NOT re-measured here (see the wave 3 note):
+  # bin/lib/review_claim_cli.rb (16), bin/agent-worktree (14),
+  # bin/lib/agent_worktree_cli.rb (13),
   # bin/release.rb (7 — and MOST are correctly bare, since the conductor runs bin/release
   # from the hub primary by SOP), bin/conductor (5),
   # bin/control-check (4), bin/qa-intake (4),
   # bin/lib/desk_guard.rb (1), bin/ship-wait (1), lib/open_pr_guard.rb (1).
   # Add a file here as it is cleaned; the sweep is what keeps it clean afterwards.
+  #
+  # WAVE 3 (refusal-remedy-must-round-trip) added bin/reviewer-select, and it was
+  # filed above at EIGHT sites. MEASURED on the shipped tree 2026-09-27 with the
+  # INSTRUCTION_RE that actually ships: SEVENTEEN — fifteen runnable remedies plus
+  # two usage banners. The filed count predates wave 2's `--flag` arm, so it was a
+  # count taken with a narrower rule and carried forward as though it still held.
+  # A filed count is a measurement with a date, not a fact; re-measure before you
+  # trust one.
   SWEPT = %w[bin/ship bin/fast-check bin/dor-check
              lib/claim_holder.rb
              bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
-             bin/session-preflight bin/lib/block_recipe.rb].freeze
+             bin/session-preflight bin/lib/block_recipe.rb
+             bin/reviewer-select].freeze
 
   # THE FLOORS. Everything above asserts an ABSENCE — and an absence is precisely what a
   # BROKEN scanner reports. Point SWEPT at paths that no longer exist, let a file read
@@ -123,14 +181,19 @@ class RemedyHintGuardTest < Minitest::Test
   # routed sites across 16,391 lines in 12 files; 2026-09-24, after the local cert
   # scripts retired: 69 sites across ~13,400 lines in 10 files. These are FLOORS with
   # headroom, not equalities — routing more remedies must never redden them.
-  MINIMUM_SWEPT_FILES = 10
-  MINIMUM_SWEPT_LINES = 12_000
-  MINIMUM_ROUTED_SITES = 60
+  MINIMUM_SWEPT_FILES = 11
+  MINIMUM_SWEPT_LINES = 13_000
+  MINIMUM_ROUTED_SITES = 70
 
   # A remedy that HAS been routed: the helper called directly, or one of the resolved
   # constants interpolated into a message. This is the POSITIVE side of the sweep —
   # what the guard exists to protect, as opposed to what it forbids.
+  # GithubReadRemedy.refresh_command is routed for the same reason the helpers are: it
+  # composes its path through FastLane.resolve_bin (bin/lib/github_read_remedy.rb) and
+  # takes the env var the READ consumes from the caller, so neither the path nor the
+  # variable can be a literal that drifts.
   ROUTED_RE = /FastLane\.(?:remedy_command|resolve_bin|handoff_command)|
+               GithubReadRemedy\.refresh_command|
                \#\{(?:[A-Za-z_][A-Za-z0-9_]*::)?
                (?:SELF_CMD|TASK_CMD|TASK_COMMAND|FAST_CHECK_CMD|FULL_SUITE_CMD|
                   DOR_CHECK_CMD|SHIP_CMD|GH_AUTH_REFRESH_CMD)\}/x
@@ -201,7 +264,7 @@ class RemedyHintGuardTest < Minitest::Test
       File.readlines(path).each_with_index do |line, idx|
         text = line.strip
         next if text.start_with?("#")            # a comment explains; it does not instruct
-        next unless line.match?(INSTRUCTION_RE)
+        next unless instruction?(line)
         next if line_exempt?(rel, line)
 
         offenders << "#{rel}:#{idx + 1}  #{text[0, 150]}"
@@ -259,7 +322,7 @@ class RemedyHintGuardTest < Minitest::Test
     # $PROGRAM_NAME and reworded one prose line, and it routes no remedy of its own.
     %w[bin/ship bin/dor-check
        lib/claim_holder.rb bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
-       bin/lib/block_recipe.rb].each do |rel|
+       bin/lib/block_recipe.rb bin/reviewer-select].each do |rel|
       assert_operator per_file.fetch(rel), :>=, 2,
                       "#{rel} carries #{per_file.fetch(rel)} routed remedy site(s) — it was swept because it " \
                       "prints remedies, so this near-zero means the file, not the defect, went away"
@@ -348,7 +411,12 @@ class RemedyHintGuardTest < Minitest::Test
       # THE FLAG-OPERAND SHAPE — invisible to the original rule, six live sites.
       'warn "Usually a stale token: eval \"$(bin/gh-auth-refresh --export)\""',
       'puts "gh auth: STALE -> eval \"$(bin/gh-auth-refresh --export)\""',
-      '"then run `eval \"$(bin/gh-auth-refresh --export)\"` and retry the exact check read."'
+      '"then run `eval \"$(bin/gh-auth-refresh --export)\"` and retry the exact check read."',
+      # WAVE 3's TWO MOTIVATING CASES, in their PRE-FIX form, copied off the lines
+      # themselves. A detector that cannot catch the case it was written for is not a
+      # detector — so these are asserted here, not merely described above.
+      'warn!("    bin/task claim-next-review")',
+      'warn!("    export GITHUB_TOKEN=\"$(bin/gh-token)\"")'
     ]
     prose = [
       'abort "... could not be read (bin/task show), so the receipt ..."',
@@ -369,10 +437,10 @@ class RemedyHintGuardTest < Minitest::Test
     ]
 
     instructions.each do |line|
-      assert_match INSTRUCTION_RE, line, "must be read as an INSTRUCTION: #{line}"
+      assert instruction?(line), "must be read as an INSTRUCTION: #{line}"
     end
     prose.each do |line|
-      refute_match INSTRUCTION_RE, line, "must be read as PROSE: #{line}"
+      refute instruction?(line), "must be read as PROSE: #{line}"
     end
   end
 

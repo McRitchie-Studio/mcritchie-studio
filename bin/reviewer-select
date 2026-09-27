@@ -70,6 +70,16 @@
 # State the fact to proceed: `--builder <soul>[,<soul>]` names the authors. Fix it
 # durably upstream with `bin/task move <slug> building --actor <soul>`.
 #
+# `--builder none` HAS FLIPPED FROM THE CREDENTIAL-FREE ESCAPE TO THE MOST
+# CREDENTIAL-DEPENDENT PATH IN THIS TOOL, and that is why a wrong remedy on states
+# 4/5 is severe rather than cosmetic. It used to lift the author check on the
+# caller's word, needing nothing; now it is cross-examined against the PR's own
+# commits, so it cannot be answered at all without a live GitHub read. The route
+# that needs NO credential is `--builder <soul>[,<soul>]` — stating the fact — and
+# every refusal below leads with it for exactly that reason. See warn_read_remedy!
+# for why the credential remedy names GITHUB_TOKEN and not GH_TOKEN, and why it is
+# printed only when a credential is what actually broke.
+#
 # `--builder none` IS NOT A ROUTINE ESCAPE, and it is no longer offered as one. It
 # asserts something about somebody else's work, and it was the ONE input here that
 # lifted a safety check on the caller's word alone. MEASURED 2026-09-24 on
@@ -153,6 +163,19 @@ require_relative "../lib/task_usage_sandbox"
 require_relative "lib/task_board"
 require_relative "lib/projects_root"
 require_relative "lib/session_identity"
+require_relative "lib/fast_lane"
+require_relative "lib/github_read_remedy"
+
+# EVERY COMMAND THIS SCRIPT HANDS OVER IS ABSOLUTE. It lives in mcritchie-studio/bin
+# alone — no satellite and no gem carries it — so a reader who reached it at all
+# reached it by absolute path, and a bare `bin/reviewer-select …` handed back to them
+# is `No such file or directory` from the tool's own hint at the moment they are
+# already stuck. FastLane.remedy_command resolves against the SPEAKING script's own
+# __dir__, so a hub run names the hub's copy and a run from the fixed-path tooling
+# install names its stable link rather than the SHA the next ship prunes.
+# test/lib/remedy_hint_guard_test.rb sweeps this file for the bare form.
+SELF_CMD = FastLane.remedy_command("reviewer-select", __dir__).freeze
+TASK_CMD = FastLane.remedy_command("task", __dir__).freeze
 
 ROOT = File.expand_path("..", __dir__)
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
@@ -194,6 +217,47 @@ end
 def die!(msg)
   warn!("error: #{msg}")
   exit 1
+end
+
+# THE REMEDY FOR A FAILED PR READ — THE VARIABLE THE READ ACTUALLY CONSUMES, and
+# only when a credential is the thing that broke.
+#
+# BOTH DEFECTS THIS FIXES SHIPPED IN ONE SENTENCE. The two refusals below printed
+# `eval "$(bin/gh-auth-refresh --export)"`, unconditionally, for every unreadable
+# reason there is.
+#
+#   1. WRONG VARIABLE. That command's entire stdout is `export GH_TOKEN='…'`
+#      (bin/gh-auth-refresh:209). The read that just failed is THIS process's —
+#      Task#derived_authors_probe → Github::TaskDerivation → Github::Client →
+#      Github::AppToken — and with App creds absent (the local case) AppToken
+#      returns ENV[FALLBACK_TOKEN_ENV], i.e. GITHUB_TOKEN. Nothing on that path
+#      reads GH_TOKEN or shells out to `gh` at all, so the operator followed the
+#      line verbatim and got the byte-identical refusal. The env var is taken FROM
+#      the consumer's own constant here, so the two cannot drift.
+#
+#   2. WRONG CAUSE. `unreadable` covers a 401, a rate limit, a 5xx, a dead network
+#      and a pr_url that is not a GitHub PR url at all. "Refresh the credential"
+#      is a false causal claim for four of those five, and bin/dor-check already
+#      holds the opposite standard — `refute_match(/gh-auth-refresh/, out, "there
+#      is no credential to refresh on a transport fault")`,
+#      test/lib/dor_check_test.rb:1847. Release::GhFailure.credential_failure? is
+#      the house classifier for this (enumerated spellings, deliberately narrow:
+#      a 403 is also how GitHub reports a rate limit and branch protection), and
+#      bin/release already loads it standalone.
+#
+# A non-credential fault gets no credential remedy and says why, so the operator
+# reads the reason quoted above instead of pasting a command that cannot help.
+def warn_read_remedy!(reason)
+  if Release::GhFailure.credential_failure?(reason)
+    warn!("  The read was REFUSED on credentials. Refresh the one this process reads — the PR's")
+    warn!("  commits name their authors — then re-run:")
+    warn!("    #{GithubReadRemedy.refresh_command(Github::AppToken::FALLBACK_TOKEN_ENV, __dir__)}")
+    warn!("  (NOT `gh-auth-refresh`: that sets GH_TOKEN, which this read never consults.)")
+  else
+    warn!("  This is NOT a credential fault — read the reason above. There is no credential to")
+    warn!("  refresh for a rate limit, a 5xx, a dead network, or a pr_url that names no PR, and")
+    warn!("  a refresh would send you round the same loop. Re-run once the cause has cleared.")
+  end
 end
 
 # --- task board auth + fetch (mirrors bin/task / bin/dor-check) ------------
@@ -298,11 +362,11 @@ def refuse_held!(slug, holder)
   warn!("  OPPOSITE verdicts, spend the two-bounce breaker between them, and one can merge a")
   warn!("  tree the other already sent back. Nothing was claimed and NO intent was recorded.")
   warn!("  Move to the next reviewable task — the board picks and claims one atomically:")
-  warn!("    bin/task claim-next-review")
+  warn!("    #{TASK_CMD} claim-next-review")
   warn!("  If you believe that review is finished and the lease is merely stale, read it:")
-  warn!("    bin/task review-claim status #{slug}")
+  warn!("    #{TASK_CMD} review-claim status #{slug}")
   warn!("  A holder that has stopped renewing frees itself within the review TTL; ask the")
-  warn!("  holder to `bin/task review-claim release #{slug}` rather than taking it from them.")
+  warn!("  holder to `#{TASK_CMD} review-claim release #{slug}` rather than taking it from them.")
   exit REVIEW_CLAIM_SKIPPED
 end
 
@@ -312,8 +376,8 @@ def refuse_self_review!(slug, reviewer)
   warn!("  AUTHOR SET, so seating them is a self-review. Nothing was recorded.")
   warn!("  This is the claim-side backstop firing, which means the author set the board holds")
   warn!("  disagrees with the one this pick was rolled from. Reconcile it:")
-  warn!("    bin/task show #{slug} --verbose            # what the board records")
-  warn!("    bin/task move #{slug} building --actor <the-real-builder>")
+  warn!("    #{TASK_CMD} show #{slug} --verbose            # what the board records")
+  warn!("    #{TASK_CMD} move #{slug} building --actor <the-real-builder>")
   exit REVIEW_CLAIM_SKIPPED
 end
 
@@ -323,7 +387,7 @@ def load_task_json(slug, file)
     raw = JSON.parse(File.read(file))
     raw["data"] || raw
   else
-    die!("usage: bin/reviewer-select <task-slug> [--json] [--qa-owner SLUG] | --file task.json") if slug.to_s.empty?
+    die!("usage: #{$PROGRAM_NAME} <task-slug> [--json] [--qa-owner SLUG] | --file task.json") if slug.to_s.empty?
     res = api(:get, "/api/v1/tasks/#{slug}")
     res["data"] || die!("task #{slug} not found")
   end
@@ -591,7 +655,7 @@ end
 # deploy-lane crew ticker shows them live. --no-record / --dry opt back out.
 options = { json: false, file: nil, qa_owner: nil, builder: nil, busy: [], busy_auto: false, record: true }
 OptionParser.new do |o|
-  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--no-record|--dry] [--qa-owner SLUG] [--builder SLUG] [--busy a,b,c] [--busy-auto] | bin/reviewer-select --file task.json"
+  o.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [--json] [--no-record|--dry] [--qa-owner SLUG] [--builder SLUG] [--busy a,b,c] [--busy-auto] | #{$PROGRAM_NAME} --file task.json"
   o.on("--json", "Emit a machine-readable decision (single-line JSON)") { options[:json] = true }
   # --[no-]record gives both forms: --record (the default; kept as a back-compat
   # no-op) and --no-record (opt out of the board write — advisory only).
@@ -731,9 +795,9 @@ if decision["builder_asserted_none"]
     warn!("  An assertion is not a correction. Nothing was selected and nothing was recorded.")
     warn!("")
     warn!("  If those souls DID build it, drop the assertion — they are excluded automatically:")
-    warn!("    bin/reviewer-select #{named}")
+    warn!("    #{SELF_CMD} #{named}")
     warn!("  If the record OVER-NAMES (a stale stamp, a soul who only rebased), state the true set:")
-    warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]")
+    warn!("    #{SELF_CMD} #{named} --builder <soul>[,<soul>]")
     exit 2
   end
 
@@ -741,15 +805,14 @@ if decision["builder_asserted_none"]
     warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — `none` IS UNVERIFIED.")
     warn!("  You asserted that no soul built this task, and the witness that could have")
     warn!("  checked it could not be read:")
-    warn!("    #{why}")
+    warn!("    #{GithubReadRemedy.one_line(why)}")
     warn!("  An unreadable PR is NOT an authorless PR, and this is exactly how the guard")
     warn!("  failed on 2026-09-24: the commits named a soul, the read 401'd, the empty")
     warn!("  answer passed for a clean one, and she was seated on her own PR.")
     warn!("")
-    warn!("  Refresh the credential and re-run — the PR's commits name their authors:")
-    warn!("    eval \"$(bin/gh-auth-refresh --export)\"")
+    warn_read_remedy!(why)
     warn!("  Or state the fact directly, which needs no credential at all:")
-    warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]")
+    warn!("    #{SELF_CMD} #{named} --builder <soul>[,<soul>]")
     exit 2
   end
 end
@@ -786,9 +849,9 @@ unless decision["builder_known"]
     warn!("  devops.built_by is blank and no `→ building` BUILD CLAIM names a soul. The PR")
     warn!("  COULD HAVE named one — its commits carry `<soul>@mcritchie.studio` — but the")
     warn!("  read failed, so nobody has looked:")
-    warn!("    #{unreadable}")
-    warn!("  This is NOT \"the PR has no author\". Refresh the credential and re-run:")
-    warn!("    eval \"$(bin/gh-auth-refresh --export)\"")
+    warn!("    #{GithubReadRemedy.one_line(unreadable)}")
+    warn!("  This is NOT \"the PR has no author\".")
+    warn_read_remedy!(unreadable)
   else
     warn!("  devops.built_by is blank, no `→ building` BUILD CLAIM names a soul, and the")
     warn!("  PR's commits were READ and name no soul, so the no-self-review")
@@ -800,15 +863,15 @@ unless decision["builder_known"]
   end
   warn!("")
   warn!("  Resolve it by stating the fact (name EVERY author, comma-separated):")
-  warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who wrote it")
+  warn!("    #{SELF_CMD} #{named} --builder <soul>[,<soul>]   # who wrote it")
   # `none` IS LISTED LAST AND NARROWED ON PURPOSE. It used to sit here as a peer of
   # naming the author, and an operator who cannot act on a refusal takes the route
   # that clears it — which is how the 2026-09-24 self-review happened. It is now
   # cross-examined against the record and the PR (see the block above), so it clears
   # nothing it cannot survive; the line says what it asserts rather than what it lifts.
-  warn!("    bin/reviewer-select #{named} --builder none              # ONLY if no soul built it — checked, not taken on trust")
+  warn!("    #{SELF_CMD} #{named} --builder none              # ONLY if no soul built it — checked, not taken on trust")
   warn!("  Durable fix (stamps the author for next time, re-claims included):")
-  warn!("    bin/task move #{named} building --actor <soul>")
+  warn!("    #{TASK_CMD} move #{named} building --actor <soul>")
   exit 2
 end
 
@@ -843,7 +906,7 @@ if (kept = Array(decision["kept_builders"])).any?
   warn!("")
   warn!("  If the author list OVER-NAMES (a stale stamp, a soul who only rebased),")
   warn!("  state the true set — this is the only lever that clears the refusal:")
-  warn!("    bin/reviewer-select #{named} --builder <soul>[,<soul>]   # who ACTUALLY wrote it")
+  warn!("    #{SELF_CMD} #{named} --builder <soul>[,<soul>]   # who ACTUALLY wrote it")
   warn!("  If it is correct, every eligible light authored this diff. There is no")
   warn!("  eligible light: hand the seat to a soul outside the pool, or split the PR.")
   exit 2
@@ -895,11 +958,11 @@ if options[:record]
       # state for the identical reason.
       warn!("intent not recorded — this shell names no agent session, so no review claim can")
       warn!("  identify it. The pick below is ADVISORY. A reviewer with a session should take")
-      warn!("  the task before reviewing it:  bin/task review-claim acquire #{slug}")
+      warn!("  the task before reviewing it:  #{TASK_CMD} review-claim acquire #{slug}")
     when :unreadable
       warn!("intent not recorded — the review claim could not be taken, so this task is NOT")
       warn!("  reserved and a second pair could still select it. The pick below is ADVISORY;")
-      warn!("  confirm the task is free before reviewing:  bin/task review-claim status #{slug}")
+      warn!("  confirm the task is free before reviewing:  #{TASK_CMD} review-claim status #{slug}")
     when :acquired
       begin
         api(:post, "/api/v1/tasks/#{slug}/intent",
