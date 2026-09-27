@@ -19,6 +19,12 @@ class BroadcastMailer < ApplicationMailer
       end.symbolize_keys
     end
 
+    # One-click unsubscribe (RFC 8058), which Gmail and Yahoo require of bulk
+    # senders: the mail client POSTs "List-Unsubscribe=One-Click" to this URL,
+    # which UnsubscribesController#create accepts without a form token.
+    headers["List-Unsubscribe"] = "<#{@unsubscribe_url}>"
+    headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+
     mail(to: contact.email, subject: @broadcast.subject.presence || "(no subject)") do |format|
       format.html { render template: "broadcasts/#{@broadcast.template_key}", layout: "broadcast_email" }
     end

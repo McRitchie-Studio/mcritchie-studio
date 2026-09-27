@@ -1,10 +1,18 @@
-<div class="max-w-md mx-auto px-4 py-16 text-center">
-  <% if @contact %>
-    <h1 class="text-2xl font-extrabold text-heading mb-2">Unsubscribe?</h1>
-    <p class="text-secondary mb-6">Stop receiving McRitchie Studio emails at <strong class="text-heading"><%= @contact.email %></strong>?</p>
-    <%= button_to "Unsubscribe", unsubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, class: "btn btn-primary" %>
-  <% else %>
-    <h1 class="text-2xl font-extrabold text-heading mb-2">Link not found</h1>
-    <p class="text-secondary">This unsubscribe link is invalid or expired.</p>
-  <% end %>
+<% content_for(:title, "Unsubscribe") %>
+<div class="max-w-md mx-auto px-4 py-16">
+  <div class="card p-6 text-center">
+    <% if @contact && @contact.subscribed? %>
+      <h1 class="text-2xl font-extrabold text-heading mb-4">Unsubscribe?</h1>
+      <%= render "context", contact: @contact, delivery: @delivery %>
+      <p class="text-secondary mt-4 mb-6">You'll stop getting McRitchie Studio emails at this address.</p>
+      <%= button_to "Unsubscribe", unsubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, class: "btn btn-primary w-full" %>
+    <% elsif @contact %>
+      <h1 class="text-2xl font-extrabold text-heading mb-4">You're already unsubscribed</h1>
+      <%= render "context", contact: @contact, delivery: @delivery %>
+      <p class="text-secondary mt-4 mb-6">No more McRitchie Studio emails are sent here.</p>
+      <%= button_to "Resubscribe", resubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, class: "btn btn-secondary w-full" %>
+    <% else %>
+      <%= render "not_found" %>
+    <% end %>
+  </div>
 </div>
