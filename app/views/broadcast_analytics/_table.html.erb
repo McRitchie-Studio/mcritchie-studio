@@ -1,0 +1,36 @@
+<%# One breakdown: a row per group, the same columns as the funnel. Locals:
+    title, key (the first column's heading), rows ([ [label, summary] ]). %>
+<section class="card overflow-hidden" aria-label="<%= title %>">
+  <h2 class="text-sm font-semibold uppercase tracking-widest text-muted p-4 pb-2"><%= title %></h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-secondary border-b border-subtle">
+        <tr>
+          <th class="text-left p-3"><%= key %></th>
+          <th class="text-right p-3">Sent</th>
+          <th class="text-right p-3">Delivered</th>
+          <th class="text-right p-3">Bounce</th>
+          <th class="text-right p-3">Complaint</th>
+          <th class="text-right p-3">Opened</th>
+          <th class="text-right p-3">Clicked</th>
+          <th class="text-right p-3">Unsub</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if rows.empty? %><tr><td colspan="8" class="p-3 text-secondary">Nothing sent yet.</td></tr><% end %>
+        <% rows.each do |label, s| %>
+          <tr class="border-b border-subtle/50">
+            <td class="p-3 font-medium text-heading"><%= label %></td>
+            <td class="p-3 text-right tabular-nums"><%= number_with_delimiter(s.sent) %></td>
+            <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.rate(s.delivered, s.sent)) %></td>
+            <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.bounce_rate) %></td>
+            <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.complaint_rate) %></td>
+            <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.open_rate) %></td>
+            <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.click_rate) %></td>
+            <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.unsubscribe_rate) %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</section>
