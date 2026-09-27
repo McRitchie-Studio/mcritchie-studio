@@ -51,6 +51,49 @@ class Athlete < ApplicationRecord
     "headshots/nfl/#{team_slug.presence || HEADSHOT_TEAMLESS_FOLDER}/#{person_slug}"
   end
 
+  # THE VARIANTS A COMPLETE HEADSHOT HAS. "original" is in the list because
+  # Studio::ImageCache.cache! stores the unmodified source under that name PLUS
+  # one variant per width -- and leaving it out has already been paid for once:
+  # a row set holding only 100 and 400 was read as complete, which both hid the
+  # gap and inflated the denominator `nfl:upload_headshots` graded itself on.
+  def self.headshot_variants
+    ["original", *HEADSHOT_WIDTHS.map(&:to_s)]
+  end
+
+  # EVERY REQUIRED VARIANT IS ON FILE. Reads the LOADED `image_caches`, so a
+  # caller that preloaded them pays no query per athlete -- which
+  # `nfl:upload_headshots` depends on across ~2,000 rows.
+  #
+  # BLIND TO A WRONG KEY, DELIBERATELY. Presence is judged by VARIANT and never
+  # by s3_key, so the 2,043 athletes filed under a stale folder read as complete
+  # here. That is why `nfl:rekey_headshots` exists and why the upload task counts
+  # that drift on its own line: a stale folder still serves every avatar
+  # correctly, so it is a taxonomy defect rather than a missing headshot.
+  def headshot_complete?
+    have = image_caches.select { |c| c.purpose == "headshot" }.map(&:variant)
+    (self.class.headshot_variants - have).empty?
+  end
+
+  # THE POPULATION A HEADSHOT LANE CAN BE HELD TO: still missing a variant, AND
+  # carrying a source to fetch one from.
+  #
+  # A VERDICT MUST BE CLEARABLE BY FIXING WHAT IT ACCUSES, which is why this is a
+  # statement about the DATA ON FILE rather than about a run, and why it lives
+  # beside the other headshot facts rather than inline in the task that grades on
+  # it. `nfl:upload_headshots` used to grade itself on every athlete short a
+  # variant; eight of those have no espn_headshot_url and never will, so the
+  # verdict accused the lane of declining work no run could ever have done and
+  # fired on every healthy re-run for ever. An athlete with no source is a data
+  # gap: reported by name, never counted against the lane.
+  #
+  # FALSE FOR A COMPLETE ATHLETE even when a source is on file, because there is
+  # nothing left to fetch. Any caller asking this AFTER a completeness gate gets
+  # the same answer as asking for the source alone; a caller asking it BEFORE one
+  # must not read a false as "no source".
+  def headshot_fetchable?
+    espn_headshot_url.present? && !headshot_complete?
+  end
+
   # WHAT THIS BODY LOOKS LIKE, in the words an image generator works from.
   #
   # Lives here rather than being spelled out at each call site because it was

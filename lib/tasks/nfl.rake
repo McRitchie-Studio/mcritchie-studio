@@ -30,6 +30,18 @@ namespace :nfl do
     failed = 0
     misfiled = 0
 
+    # THE POPULATION THE VERDICT GRADES, counted where the source is KNOWN to be
+    # on file rather than derived afterwards. Derivation by subtraction is how the
+    # false abort below got its denominator, and a subtraction cannot tell "the
+    # lane walked past this" from "nothing could ever have been fetched for it".
+    fetchable = 0
+
+    # THE RESIDUE, BY NAME. Eight athletes on production have no espn_headshot_url
+    # and never will, so they appear on every run for ever. A count alone asks the
+    # operator to go and find out WHICH -- and a verdict that cannot be acted on is
+    # the verdict that gets ignored. Named, it is a chore with a list.
+    sourceless_slugs = []
+
     candidates.find_each do |athlete|
       break if limit && (cached + failed) >= limit
 
@@ -71,10 +83,12 @@ namespace :nfl do
       # stores the unmodified source as variant "original" PLUS one variant per
       # width, so a row set holding only 100 and 400 is not complete — and this
       # check used to call it complete, which both under-counts the work left and
-      # corrupts the `needed` denominator the verdict below is computed from.
-      # upload_coach_headshots already spells it this way.
-      have = rows.map(&:variant)
-      if (["original"] + widths.map(&:to_s) - have).empty?
+      # corrupts the denominator the verdict below is computed from.
+      #
+      # ASKED OF THE MODEL, because the same definition decides the SKIP here and
+      # the graded POPULATION below, and two spellings of one rule drift. Reads the
+      # preloaded `image_caches`, so this costs no query per athlete.
+      if athlete.headshot_complete?
         skipped_complete += 1
         next
       end
@@ -84,10 +98,24 @@ namespace :nfl do
       # `failed` and the abort above would then blame on AWS credentials that are
       # fine. Counted separately for the same reason upload_coach_headshots
       # counts its `without_url`.
-      if athlete.espn_headshot_url.blank?
+      # ASKED THROUGH THE PREDICATE THE VERDICT GRADES, not of the column directly.
+      # Past the completeness gate above, Athlete#headshot_fetchable? reduces to "is
+      # there a source on file" — so this reads the same as the `blank?` check it
+      # replaced, and cannot drift from the population the rules below are written
+      # against. ORDER MATTERS: the predicate is also false for a COMPLETE athlete,
+      # so it must stay below the completeness gate or a finished athlete would be
+      # filed as sourceless.
+      unless athlete.headshot_fetchable?
         skipped_no_source += 1
+        sourceless_slugs << athlete.person_slug
         next
       end
+
+      # PAST THE SOURCE GATE, SO THE LANE CAN BE HELD TO THIS ONE. Incremented HERE,
+      # after the only branch that can prove no source exists, which is what makes
+      # "sourceless athletes never trip the verdict" a property of the code rather
+      # than of the current data.
+      fetchable += 1
 
       begin
         Studio::ImageCache.cache!(
@@ -108,27 +136,71 @@ namespace :nfl do
       sleep pause if pause.positive?
     end
 
-    # THE THREE NUMBERS THE VERDICTS BELOW ARE READ FROM.
+    # READ THE LANE LEFT TO RIGHT: wanted it -> a source could answer -> something
+    # came back. Each step is a different question and only the LAST one grades the
+    # lane; a gap at the source step is a data gap and must be silent.
     #
-    #   needed      candidates that still LACKED a variant  (considered - complete)
-    #   attempted   candidates this run actually tried      (cached + failed)
-    #   unattempted needed, and walked past anyway          (needed - attempted)
+    #   wanted       candidates that still LACKED a variant  (considered - complete)
+    #   fetchable    of those, ones with a source on file    (accumulated above)
+    #   attempted    candidates this run actually tried      (cached + failed)
+    #   unfetched    fetchable, and walked past anyway       (fetchable - attempted)
+    #   unclassified wanted, skipped for no stated reason    (the subtraction guard)
     #
-    # `unattempted` is DERIVED, never accumulated, and that is the whole point:
-    # every `next` above that is not `skipped_complete` lands in it by
-    # subtraction, so a skip branch added later is counted without being told to
-    # report itself. Hand-counting is how the hole below got dug —
-    # `skipped_no_team` was faithfully counted AND printed, and no rule read it.
-    needed      = considered - skipped_complete
-    attempted   = cached + failed
-    unattempted = needed - attempted
+    # `needed` IS RETIRED, and it is the whole defect. It was `wanted` -- every
+    # candidate short of a variant, INCLUDING the ones no source can ever complete
+    # -- and the rule below accused the lane of declining them. Eight athletes on
+    # production have no espn_headshot_url, so once the other 2,043 were cached
+    # `needed` sat at 8 for ever while `attempted` was legitimately 0, and the
+    # healthy steady-state re-run aborted every time. FOUND INDEPENDENTLY BY TWO
+    # BUILDERS a day apart, each of whom read it and correctly left it alone.
+    #
+    # A VERDICT MUST BE CLEARABLE BY FIXING WHAT IT ACCUSES. That one accused the
+    # lane and could only be cleared by filling a column the lane does not write,
+    # which is why it could never be cleared at all. So the graded population holds
+    # only athletes a source could have answered for, and the rest are NAMED below.
+    #
+    # `unfetched` AND `unclassified` KEEP THE SUBTRACTION GUARD the old `needed`
+    # had, which is worth preserving: a `next` added later lands in one of them
+    # without being told to report itself. Which one depends on where it goes --
+    # after the source gate it is `unfetched` (the lane declined fetchable work),
+    # before it `unclassified` (a skip nobody told the verdict about). Both are
+    # reported. Hand-counting is how the original hole got dug: `skipped_no_team`
+    # was faithfully counted AND printed, and no rule read it.
+    wanted       = considered - skipped_complete
+    attempted    = cached + failed
+    unfetched    = fetchable - attempted
+    unclassified = wanted - skipped_no_source - fetchable
 
     puts ""
-    puts "cached:                 #{cached}"
+    puts "considered:             #{considered}"
     puts "skipped (already done): #{skipped_complete}"
-    puts "skipped (no image src): #{skipped_no_source}"
+    puts "wanted a headshot:      #{wanted}"
+    puts "  no espn_headshot_url: #{skipped_no_source}   (a data gap -- never graded)"
+    puts "  fetchable:            #{fetchable}   (the population the rules below grade)"
+    puts "cached:                 #{cached}"
     puts "failed:                 #{failed}"
     puts "misfiled (stale key):   #{misfiled}"
+
+    if sourceless_slugs.any?
+      # ON STDOUT WITH THE COUNTERS, NOT ON STDERR WITH THE VERDICTS. This is the
+      # healthy steady state -- eight rows, every run, for ever -- and a signal
+      # printed on every healthy run is not a signal. It is inventory, so it sits
+      # with the inventory, and it names the task that can shorten the list.
+      # 25 IS A READABILITY CEILING, not a claim about the data. Production's
+      # residue is EIGHT, so the cap never fires there and the whole list prints;
+      # a cold run before any seed has hundreds, and a wall of slugs is how a
+      # report stops being read. A LOCAL rather than a constant, for the reason
+      # the widths list is one: nothing in this file needs it at definition time.
+      named_cap = 25
+      shown = sourceless_slugs.first(named_cap)
+      remaining = sourceless_slugs.size - shown.size
+      puts ""
+      puts "  athletes with NO espn_headshot_url -- nothing to fetch, so nothing the lane"
+      puts "  is graded on. `rake nfl:players_seed` fills the column where a source exists;"
+      puts "  some of these have none and will appear here for ever:"
+      shown.each { |slug| puts "    [-] #{slug}" }
+      puts "    ... and #{remaining} more" if remaining.positive?
+    end
 
     if misfiled.positive?
       warn "nfl:upload_headshots: #{misfiled} athletes carry headshot rows filed under a stale " \
@@ -166,6 +238,25 @@ namespace :nfl do
             "Across MANY attempts this is usually AWS credentials: check AWS_ACCESS_KEY_ID / " \
             "AWS_SECRET_ACCESS_KEY / AWS_REGION in .env. Across one or two it is more often a " \
             "dead ESPN source URL, since only newly-discovered espn_ids are attempted."
+
+    # THE PARTIAL FAILURE, WARNED ABOUT RATHER THAN ABORTED ON, and it needs saying
+    # at all BECAUSE the rule above grades a majority. Credentials revoked at
+    # athlete 1,900 leave cached 1,900 / failed 143: the majority rule is false, the
+    # run exits 0, and 143 [!] lines scroll past on STDOUT while the rebuild lane —
+    # which reads stderr — is told nothing. An abort would be wrong: 143 dead ESPN
+    # URLs among 2,043 good ones is a normal afternoon, and a rule that reddens on
+    # one gets switched off. A threshold would only swap the false positive for a
+    # number nobody can defend from these counters, and an exit code is the wrong
+    # place for a guess — it carries one bit and cannot say "partly worked". So the
+    # gap becomes a SENTENCE on the channel the lane reads. The task is idempotent,
+    # so a systemic failure this warning does not stop is caught by the next run one
+    # run late rather than never.
+    elsif failed.positive?
+      warn "WARNING: nfl:upload_headshots failed #{failed} of #{attempted} attempted uploads " \
+           "(cached #{cached}) — too few to be the uploader breaking, so each is more likely a " \
+           "dead ESPN source URL than a credential problem. Read the [!] lines above, which " \
+           "name the cause per athlete. The task is idempotent, so re-running it retries only " \
+           "these."
     end
 
     # THE SECOND HOLE, AND THE ONE THAT COST 2,048 ATHLETES THEIR AVATAR. The
@@ -185,26 +276,51 @@ namespace :nfl do
     # construction: `attempted.zero?` forces `failed == cached == 0`, so
     # `failed > cached` is false exactly when this can fire.
     #
-    # IT CANNOT CRY WOLF ON THE WARM RE-RUN — the failure the rule above earned
-    # its own comment block warning about. On a warm machine nearly every
-    # candidate is `skipped_complete`, and `needed` subtracts those out, so the
-    # warm re-run that legitimately does nothing has `needed == 0` and this says
-    # NOTHING. It fires only when the task found work and declined all of it,
-    # which is not an afternoon S3 is having — it is the task refusing its job.
+    # IT CANNOT CRY WOLF ON THE WARM RE-RUN, and this comment block used to make
+    # that claim about `needed` -- where it was FALSE, which is the defect. On a
+    # warm machine nearly every candidate is `skipped_complete`, and `needed`
+    # subtracted only THOSE out; the eight athletes with no espn_headshot_url are
+    # `skipped_no_source`, so `needed` never reached 0 and this fired on every
+    # healthy run. Graded on `fetchable`, the claim finally holds: an athlete with
+    # no source is not in the population at all, so the steady state says NOTHING.
     #
-    # A PARTIAL decline only warns. Some athletes genuinely have no image source
-    # and never will, and reddening a rebuild for a permanent data gap is how an
-    # operator learns to stop reading the line.
-    if needed.positive? && attempted.zero?
-      warn "nfl:upload_headshots: attempted 0 of #{needed} athletes that still needed a headshot"
-      abort "nfl:upload_headshots attempted 0 of the #{needed} athletes still missing a headshot " \
-            "variant — it declined every one of them WITHOUT trying, so this is the task " \
-            "refusing its job, not S3 refusing the upload. Of those, #{skipped_no_source} had no " \
-            "espn_headshot_url (run `rake nfl:players_seed` to populate it). A skip count that " \
-            "equals the candidate count is never a successful run."
-    elsif unattempted.positive?
-      warn "nfl:upload_headshots: #{unattempted} of #{needed} athletes needing a headshot were " \
-           "skipped without an attempt (#{skipped_no_source} had no espn_headshot_url)"
+    # WHAT IT STAYS QUIET ABOUT -- and this list is the rule, not a footnote,
+    # because a verdict that fires on a healthy run gets switched off within a week:
+    #
+    #   * a complete athlete is never counted as wanting one, so the warm re-run
+    #     has wanted == 0 and this says nothing;
+    #   * an athlete with NO espn_headshot_url is counted as WANTING a headshot and
+    #     not as fetchable, so a permanent data gap is silent -- it is named in the
+    #     report above instead, which is where a chore belongs.
+    #
+    # A PARTIAL decline only warns, because a partial is not a lane that stopped
+    # working and an exit code carries one bit that cannot say "partly".
+    if fetchable.positive? && attempted.zero?
+      warn "nfl:upload_headshots: attempted 0 of #{fetchable} athletes it could have fetched"
+      abort "nfl:upload_headshots attempted 0 of the #{fetchable} athletes that still needed a " \
+            "headshot AND had an espn_headshot_url to fetch — it declined every one of them " \
+            "WITHOUT trying, so this is the task refusing its job, not S3 refusing the upload. " \
+            "Every one of them was fetchable, so no data gap explains it: read the skip " \
+            "branches in this task. (The #{skipped_no_source} athletes with no " \
+            "espn_headshot_url are NOT in this count — they are named in the report above.)"
+    elsif unfetched.positive?
+      warn "nfl:upload_headshots: #{unfetched} of #{fetchable} fetchable athletes were skipped " \
+           "without an attempt — each had an espn_headshot_url on file, so this is the lane " \
+           "walking past work it could have done"
+    end
+
+    # THE SUBTRACTION GUARD, REPORTED. Zero on every path this task has today: the
+    # source gate is the only branch between "wanted one" and "tried", so `wanted`
+    # minus the sourceless minus the fetchable is exactly 0. It is computed anyway
+    # because that is how the FIRST hole stayed open -- `skipped_no_team` was
+    # counted, printed, and read by no rule. A `next` added above the source gate
+    # lands here instead of vanishing, and says so rather than aborting, because a
+    # skip nobody has classified yet is not yet known to be a failure.
+    if unclassified.positive?
+      warn "nfl:upload_headshots: #{unclassified} of #{wanted} athletes that wanted a headshot " \
+           "were skipped for a reason no verdict here classifies. A skip branch was added " \
+           "without telling the verdict about it — classify it as a data gap (counted like " \
+           "espn_headshot_url) or as the lane declining work (counted like fetchable)."
     end
   end
 

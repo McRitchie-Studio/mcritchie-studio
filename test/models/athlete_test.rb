@@ -173,4 +173,111 @@ class AthleteTest < ActiveSupport::TestCase
 
     assert_equal Athlete::HEADSHOT_WIDTHS, seen
   end
+
+  # --- what the headshot lane is graded on ---------------------------------
+  #
+  # [unit] Athlete#headshot_complete? and #headshot_fetchable? are the two data
+  # predicates `nfl:upload_headshots` grades itself on. They are tested here, on
+  # the DATA, because the governing rule of that verdict is that its population
+  # must be something the lane can be HELD to: a rule computed from a value the
+  # task itself produces lets a broken task excuse itself.
+
+  # "ALREADY DONE" HAS TO INCLUDE "original". Studio::ImageCache.cache! stores the
+  # unmodified source under that name PLUS one per width, and this exact omission
+  # has been paid for once already: 100 and 400 without an original was read as
+  # complete, which hid the gap AND inflated the denominator the verdict used.
+  test "headshot_complete? needs the original as well as every width" do
+    athlete = headshot_athlete(:complete_needs_original)
+    cache_headshot_variants(athlete, %w[100 400])
+
+    refute athlete.headshot_complete?,
+           "100 and 400 without an original is an incomplete row set, not a finished one"
+
+    cache_headshot_variants(athlete, %w[original])
+    assert athlete.headshot_complete?
+  end
+
+  # EVERY WIDTH, not merely one. A row set short of a single variant is unfinished,
+  # and a predicate that accepted it would mark the athlete done for ever.
+  test "headshot_complete? is false while any single width is missing" do
+    Athlete.headshot_variants.each do |missing|
+      athlete = headshot_athlete("missing_#{missing}")
+      cache_headshot_variants(athlete, Athlete.headshot_variants - [missing])
+
+      refute athlete.headshot_complete?,
+             "a row set missing #{missing.inspect} is incomplete — every variant in " \
+             "Athlete.headshot_variants has to be load-bearing, or one of them silently is not"
+    end
+  end
+
+  # ONLY HEADSHOTS COUNT. The owner can carry cached images for other purposes,
+  # and counting those would mark an athlete with no headshot at all complete.
+  test "headshot_complete? ignores rows cached for another purpose" do
+    athlete = headshot_athlete(:other_purpose)
+    Athlete.headshot_variants.each do |variant|
+      ImageCache.create!(owner: athlete, purpose: "action_shot", variant: variant,
+                         s3_key: "action/#{athlete.person_slug}/#{variant}.png",
+                         content_type: "image/png")
+    end
+    athlete.reload
+
+    refute athlete.headshot_complete?, "an action shot is not a headshot"
+  end
+
+  # BLIND TO A WRONG KEY, DELIBERATELY — and pinned, because it is the reason
+  # `nfl:rekey_headshots` exists. 2,043 production athletes hold all three variants
+  # under a stale folder; they ARE complete (every avatar still serves), so the
+  # upload task counts that drift on its own line instead of re-fetching them.
+  test "headshot_complete? judges variant presence and never the stored key" do
+    athlete = headshot_athlete(:stale_key, team_slug: "buffalo-bills")
+    cache_headshot_variants(athlete, Athlete.headshot_variants,
+                            prefix: "headshots/nfl/free-agents/#{athlete.person_slug}")
+
+    assert athlete.headshot_complete?,
+           "a stale folder still serves every avatar, so this is a taxonomy defect " \
+           "rather than a missing headshot — nfl:rekey_headshots owns it"
+  end
+
+  # THE POPULATION THE VERDICT GRADES. All four combinations, because the whole
+  # defect this predicate exists to fix was one of them being graded wrongly.
+  test "headshot_fetchable? is true only for an incomplete athlete with a source" do
+    wants_and_can = headshot_athlete(:wants_and_can)
+    assert wants_and_can.headshot_fetchable?, "missing every variant, and a URL to fetch from"
+
+    wants_but_cannot = headshot_athlete(:wants_but_cannot, espn_headshot_url: nil)
+    refute wants_but_cannot.headshot_fetchable?,
+           "THE DEFECT: no espn_headshot_url means no run can ever fetch one, so this " \
+           "athlete cannot be in a population that accuses the LANE of declining work"
+
+    done_with_source = headshot_athlete(:done_with_source)
+    cache_headshot_variants(done_with_source, Athlete.headshot_variants)
+    refute done_with_source.headshot_fetchable?, "nothing left to fetch"
+
+    done_without_source = headshot_athlete(:done_without_source, espn_headshot_url: nil)
+    cache_headshot_variants(done_without_source, Athlete.headshot_variants)
+    refute done_without_source.headshot_fetchable?
+  end
+
+  # A BLANK STRING IS NOT A SOURCE. The column is nullable and an import that
+  # writes "" instead of NULL is the ordinary way this arrives; `present?` covers
+  # both, and a `nil?` check would have sent an empty string to be fetched.
+  test "headshot_fetchable? treats a blank espn_headshot_url as no source" do
+    athlete = headshot_athlete(:blank_source, espn_headshot_url: "")
+    refute athlete.headshot_fetchable?
+  end
+
+  def headshot_athlete(suffix, team_slug: nil, espn_headshot_url: "https://a.espncdn.com/i/h.png")
+    person = Person.create!(first_name: "Shot", last_name: suffix.to_s.tr("_", "-"), athlete: true)
+    Athlete.create!(person_slug: person.slug, sport: "football", team_slug: team_slug,
+                    espn_headshot_url: espn_headshot_url)
+  end
+
+  def cache_headshot_variants(athlete, variants, prefix: nil)
+    prefix ||= athlete.headshot_key_prefix
+    variants.each do |variant|
+      ImageCache.create!(owner: athlete, purpose: "headshot", variant: variant,
+                         s3_key: "#{prefix}/#{variant}.png", content_type: "image/png")
+    end
+    athlete.reload
+  end
 end
