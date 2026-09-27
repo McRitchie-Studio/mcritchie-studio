@@ -522,6 +522,23 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     assert_match(/shape|expected/i, error.message)
   end
 
+  test "a missing id escapes the per-team rescue instead of becoming one more failure" do
+    # THE GUARD THIS COVERS: fetch_groups wraps everything in `rescue StandardError`
+    # so one dead team cannot cost the other 31. Without the explicit re-raise,
+    # MissingTeamId lands in that rescue and the fault in our own map is laundered
+    # into a tolerated team — the exact silence this task exists to remove. Reached
+    # through scrape_team, which is the entry point when a caller drives one team.
+    service = Stubbed.new({ TEAMS_INDEX => teams_index({ "mia" => "15" }) })
+
+    error = assert_raises(Espn::ScrapeDepthCharts::MissingTeamId) do
+      service.send(:scrape_team, "buf", @bills.slug)
+    end
+
+    assert_includes error.message, "buf"
+    assert_equal 0, service.stats[:teams_failed],
+                 "a fault in our map must not be counted as a team ESPN could not serve"
+  end
+
   # ─── the green twin: per-team tolerance survives ────────────────────────────
 
   test "a team whose depth chart ESPN cannot serve is tolerated and tallied" do
