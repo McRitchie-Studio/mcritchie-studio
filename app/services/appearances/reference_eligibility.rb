@@ -78,10 +78,11 @@ module Appearances
     WRONG_PERSON = :wrong_person
     MIXED_SUBJECTS = :mixed_subjects
     FACE_OBSCURED = :face_obscured
+    FACE_UNSCORED = :face_unscored
     FACE_TOO_SMALL = :face_too_small
     FACE_SIZE_UNMEASURED = :face_size_unmeasured
 
-    REFUSALS = [NOT_A_PHOTO, WRONG_PERSON, MIXED_SUBJECTS, FACE_OBSCURED,
+    REFUSALS = [NOT_A_PHOTO, WRONG_PERSON, MIXED_SUBJECTS, FACE_OBSCURED, FACE_UNSCORED,
                 FACE_TOO_SMALL, FACE_SIZE_UNMEASURED].freeze
 
     # BELOW THIS THE HEAD IS TOO SMALL IN FRAME TO MINT.
@@ -123,11 +124,28 @@ module Appearances
 
     # MAY THIS BE A REFERENCE AT ALL — the question both generators ask.
     #
-    # EVERY REFUSAL HERE IS A REFUSAL ON EVIDENCE, never on an absence. A photograph
-    # nobody classified is eligible: it might be excellent, and the operator asked for
-    # more references rather than fewer. What is refused is what something actually
-    # found wrong with it — a document, a stranger, a crowd, a hidden face, a face
-    # MEASURED to be too small.
+    # ⚠ SOMETHING HAS TO HAVE LOOKED. This is the ONE absence this question refuses on, and
+    # it came from production evidence rather than from reasoning. Measured on production
+    # 2026-09-27, `jaylen-waddle`: five candidates returned, three scored, and ALL FIVE
+    # chosen — including two the classifier never judged at all. One of those two is titled
+    # "2024 Dolphins vs Titans Jaylen Waddle and L'Jarius Sneed", a correctly titled
+    # photograph of TWO men, and it entered the reference set with no number on its tile
+    # for an operator to disbelieve.
+    #
+    # A PHOTOGRAPH NOTHING LOOKED AT CANNOT BE SHOWN TO HOLD ONE PERSON'S FACE, and
+    # "never mint an identity from mixed subjects" is an acceptance criterion rather than a
+    # preference. So an unjudged candidate is refused as FACE_UNSCORED — NOT the same
+    # refusal as FACE_SIZE_UNMEASURED: this one says nothing examined the photograph at
+    # all, that one says the examination did not report one field.
+    #
+    # THE COST IS BOUNDED AND KNOWN. With no vision credential nothing scouted is chosen
+    # and the zero-shot sheet falls back on the cached headshot — which is exactly what
+    # that generator used before this task wired it to the set, so no path gets WORSE.
+    # With a credential, most candidates are judged and the operator gets the several
+    # references he asked for.
+    #
+    # EVERY OTHER REFUSAL IS A REFUSAL ON EVIDENCE: a document, a stranger, a crowd, a
+    # hidden face, a face MEASURED to be too small.
     #
     # `candidate` is anything that answers `image_url`, `page_url` and `title` — an
     # Appearances::ImageSearch::Result at file time and an AppearanceReferencePhoto
@@ -144,6 +162,11 @@ module Appearances
       return WRONG_PERSON if PersonNaming.judge(candidate.title, person_name).names_other?
       return MIXED_SUBJECTS if subjects.present? && subjects > MAX_SUBJECTS
       return FACE_OBSCURED if visibility.present? && visibility < FACE_VISIBLE
+      # ORDERED AFTER THE EVIDENCE-BASED REFUSALS ON PURPOSE. A document or a stranger is
+      # refused for WHAT IT IS even when nothing classified it, and those are findings about
+      # the photograph; "nobody looked" is a weaker and less useful thing to print on a tile
+      # that is provably a scanned book.
+      return FACE_UNSCORED if visibility.blank?
       return FACE_TOO_SMALL if fill.present? && fill < MINT_FACE_FILL
 
       ELIGIBLE

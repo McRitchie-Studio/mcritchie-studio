@@ -79,6 +79,10 @@ module AppearancesHelper
     # NAMES THE MEASUREMENT, not the verdict. "too small" alone reads as a pixel
     # dimension, and this is about how much of the FRAME the head fills — the variable
     # four real mints turned on.
+    # NAMES THE MISSING ACT, NOT THE PHOTOGRAPH. "nothing looked at this" is a statement
+    # about us, and an operator who reads it as a judgement of the picture would calibrate
+    # his taste against a verdict nobody gave.
+    AppearanceReferencePhoto::REJECTED_FACE_UNSCORED => "nothing looked at this one",
     AppearanceReferencePhoto::REJECTED_FACE_TOO_SMALL => "face too small in frame",
     AppearanceReferencePhoto::REJECTED_FACE_SIZE_UNMEASURED => "face size never measured",
     AppearanceReferencePhoto::REJECTED_BEYOND_LIMIT => "past the limit of #{Appearances::GatherReferencePhotos::CHOSEN_LIMIT}"
@@ -89,15 +93,22 @@ module AppearancesHelper
   # gradient across 100 values would make two adjacent photographs look different
   # when the judgement is the same.
   #
-  # The bands are named against GatherReferencePhotos::FACE_VISIBLE_THRESHOLD so
-  # the colour and the `face not visible` rejection chip can never disagree: a
-  # photograph styled as a failure here is exactly one that would be labelled
-  # obscured if it lost.
+  # The bands are named against Appearances::ReferenceEligibility::FACE_VISIBLE so the
+  # colour and the `face not visible` rejection chip can never disagree: a photograph
+  # styled as a failure here is exactly one that would be refused as obscured.
+  #
+  # ⚠ THE MIDDLE BAND HAD NO TEST, AND THE WHOLE PAGE 500'd ON IT. When the thresholds
+  # moved out of GatherReferencePhotos this line kept naming the old constant, and every
+  # request test stayed green: the only face-scored fixture in the suite was 0.92, which
+  # returns on the FIRST branch and never evaluates the `elsif`. A local render of a row
+  # scored 0.70 raised `uninitialized constant` and took the page with it. The three-band
+  # test beside this one is the hole being closed — a banded helper needs a case per band,
+  # or the untested bands are unexecuted code that looks covered.
   def face_score_chip(photo)
     score = photo.face_score.to_f
     if score >= 0.75
       "bg-success/10 text-success-ink border-success/40"
-    elsif score >= Appearances::GatherReferencePhotos::FACE_VISIBLE_THRESHOLD
+    elsif score >= Appearances::ReferenceEligibility::FACE_VISIBLE
       "bg-warning/10 text-warning-ink border-warning/40"
     else
       "bg-danger/10 text-danger-ink border-danger/40"
@@ -236,15 +247,26 @@ module AppearancesHelper
     return MINT_PROVEN_CHIP if photo.mint_proven?
 
     case photo.mint_verdict(person_name)
-    when Appearances::ReferenceEligibility::FACE_SIZE_UNMEASURED
-      # THE FREE EVIDENCE STILL BEATS NO EVIDENCE. Nobody measured this face, but three of
-      # the four measured failures were wide sideline crops and this one has that shape,
-      # which is a stronger thing to tell the operator than "not measured".
-      photo.mint_shape_failed_before? ? MINT_WIDE_CHIP : MINT_UNMEASURED_CHIP
+    when Appearances::ReferenceEligibility::FACE_UNSCORED
+      # THE FREE EVIDENCE STILL BEATS NO EVIDENCE. Nothing looked at this photograph, but
+      # three of the four measured failures were wide sideline crops and this one has that
+      # shape — a stronger thing to tell the operator than "nobody looked".
+      photo.mint_shape_failed_before? ? MINT_WIDE_CHIP : MINT_UNSCORED_CHIP
+    when Appearances::ReferenceEligibility::FACE_SIZE_UNMEASURED then MINT_UNMEASURED_CHIP
     when Appearances::ReferenceEligibility::FACE_TOO_SMALL then mint_too_small_chip(photo)
     when Appearances::ReferenceEligibility::ELIGIBLE then mint_ready_chip(photo)
     end
   end
+
+  # NOTHING LOOKED AT IT AT ALL — the state production was silently choosing from on
+  # 2026-09-27, and the one with no number anywhere on the tile to disbelieve.
+  MINT_UNSCORED_CHIP = {
+    label: "nothing looked at this one", tone: :bad,
+    title: "No vision classifier judged this photograph, so nothing can say whose face it " \
+           "is, whether the face is visible, or how big it is. Measured on production " \
+           "2026-09-27: five candidates, three judged, and all five were going into the " \
+           "reference set - including a photograph of two men."
+  }.freeze
 
   MINT_WIDE_CHIP = {
     label: "wide crop, unmeasured — this shape failed to mint", tone: :bad,
@@ -259,8 +281,8 @@ module AppearancesHelper
            "that has ever completed a Higgsfield reference (2026-09-25)."
   }.freeze
 
-  # THE STATE OF EVERY CANDIDATE ON A MACHINE WITH NO VISION CREDENTIAL, and it says what
-  # it costs rather than only that something is missing.
+  # SOMETHING LOOKED AND REPORTED NO SIZE — a thinner answer than we asked for rather than
+  # no answer, and it says what that costs rather than only that something is missing.
   MINT_UNMEASURED_CHIP = {
     label: "face size not measured — trainer only", tone: :bad,
     title: "Four of six measured Higgsfield mints failed at prepare and face size in " \

@@ -133,19 +133,35 @@ class Appearances::GenerateArtifactTest < ActiveSupport::TestCase
     assert_equal urls.uniq, urls, "the same headshot at two variants is still one photograph"
   end
 
-  # A SCOUTED PHOTOGRAPH REACHES THE SHEET — the narrowing the operator named. Nothing
-  # about it is measured by a classifier, and that is deliberate: the zero-shot path has
-  # no preparation stage to refuse it, so an unmeasured reference is allowed here and
-  # refused at Higgsfield's trainer.
+  # A SCOUTED PHOTOGRAPH REACHES THE SHEET — the narrowing the operator named. Its face
+  # SIZE was never measured, and that is deliberate: the zero-shot path has no preparation
+  # stage to refuse a reference, so an unsized photograph is allowed here and refused at
+  # Higgsfield's trainer.
   test "a chosen scouted photograph rides along with the headshot" do
     cache_headshot(variant: "original", key: "headshots/nfl/buffalo-bills/josh-allen/original.png")
     AppearanceReferencePhoto.create!(appearance_slug: @look.slug, chosen: true,
                                      image_url: "https://cdn.example.com/scouted.jpg",
-                                     source: AppearanceReferencePhoto::SOURCE_SEARCH)
+                                     source: AppearanceReferencePhoto::SOURCE_SEARCH,
+                                     face_score: 0.9, face_subjects: 1)
 
     with_fake_generator { Appearances::GenerateArtifact.call(@look.reload) }
 
     assert_includes FakeAdapter.calls.sole.reference_urls, "https://cdn.example.com/scouted.jpg"
+  end
+
+  # AND ONE NOTHING LOOKED AT DOES NOT. Measured on production 2026-09-27: five candidates,
+  # three judged, all five chosen — a photograph nothing examined cannot be shown to hold
+  # one person's face, and a sheet built from two faces is a sheet of a third man.
+  test "a chosen photograph nothing looked at is not offered to the sheet" do
+    cache_headshot(variant: "original", key: "headshots/nfl/buffalo-bills/josh-allen/original.png")
+    AppearanceReferencePhoto.create!(appearance_slug: @look.slug, chosen: true,
+                                     image_url: "https://cdn.example.com/unjudged.jpg",
+                                     title: "Josh Allen and a teammate",
+                                     source: AppearanceReferencePhoto::SOURCE_SEARCH)
+
+    with_fake_generator { Appearances::GenerateArtifact.call(@look.reload) }
+
+    refute_includes FakeAdapter.calls.sole.reference_urls, "https://cdn.example.com/unjudged.jpg"
   end
 
   # AND A PHOTOGRAPH OF THE WRONG MAN DOES NOT. A sheet built from two faces is a sheet of

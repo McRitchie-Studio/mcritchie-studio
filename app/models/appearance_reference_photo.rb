@@ -73,6 +73,14 @@ class AppearanceReferencePhoto < ApplicationRecord
   #                   cannot catch.
   #   mixed_subjects— the classifier counted more than one visible face, so nothing
   #                   in the picture can be attributed to our person alone.
+  #   face_unscored — NOTHING LOOKED AT THIS PHOTOGRAPH. Measured on production
+  #                   2026-09-27 (`jaylen-waddle`): five candidates returned, three
+  #                   scored, all five chosen — and one of the two unjudged ones was
+  #                   titled "...Jaylen Waddle and L'Jarius Sneed", a correctly titled
+  #                   photograph of TWO men. An unjudged candidate cannot be shown to
+  #                   hold one person's face, so it is no longer chosen. Distinct from
+  #                   `face_size_unmeasured`: that one was examined and the answer was
+  #                   missing a field, this one was never examined.
   #   face_too_small— something MEASURED how much of the frame the head fills and it
   #                   is below Appearances::ReferenceEligibility::MINT_FACE_FILL. This is
   #                   the variable four real mints turned on (2026-09-25).
@@ -90,13 +98,14 @@ class AppearanceReferencePhoto < ApplicationRecord
   REJECTED_NOT_A_PHOTO = "not_a_photo".freeze
   REJECTED_WRONG_PERSON = "wrong_person".freeze
   REJECTED_MIXED_SUBJECTS = "mixed_subjects".freeze
+  REJECTED_FACE_UNSCORED = "face_unscored".freeze
   REJECTED_FACE_TOO_SMALL = "face_too_small".freeze
   REJECTED_FACE_SIZE_UNMEASURED = "face_size_unmeasured".freeze
   REJECTED_BEYOND_LIMIT = "beyond_limit".freeze
   REJECTION_REASONS = [REJECTED_UNFETCHABLE, REJECTED_DUPLICATE, REJECTED_FACE_OBSCURED,
                        REJECTED_NOT_A_PHOTO, REJECTED_WRONG_PERSON, REJECTED_MIXED_SUBJECTS,
-                       REJECTED_FACE_TOO_SMALL, REJECTED_FACE_SIZE_UNMEASURED,
-                       REJECTED_BEYOND_LIMIT].freeze
+                       REJECTED_FACE_UNSCORED, REJECTED_FACE_TOO_SMALL,
+                       REJECTED_FACE_SIZE_UNMEASURED, REJECTED_BEYOND_LIMIT].freeze
 
   # THE OPERATOR'S OWN VERDICT — the calibration half of the scouting page.
   #

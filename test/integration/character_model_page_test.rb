@@ -66,7 +66,9 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     get page_path
 
     assert_select "[data-test='trainer-subset']", count: 1 do |nodes|
-      assert_match(/NOT offered/, nodes.first.text)
+      # SQUISHED, because the sentence wraps across ERB lines and an assertion on raw
+      # whitespace would break on a re-indent that changed nothing a reader can see.
+      assert_match(/NOT offered to/, nodes.first.text.squish)
     end
   end
 
@@ -311,12 +313,24 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to page_path
-    assert_equal limit + 2, AppearanceReferencePhoto.count
-    assert_equal limit, AppearanceReferencePhoto.chosen.count
+    assert_equal limit + 2, AppearanceReferencePhoto.count,
+                 "every candidate is filed as evidence of what the search offered"
+    # ⚠ NONE OF THEM IS CHOSEN, AND THAT IS THE POINT OF THE STUB ABOVE. With no classifier
+    # available nothing looked at any of these photographs, and
+    # Appearances::ReferenceEligibility refuses a candidate nothing examined — measured on
+    # production 2026-09-27, where five of five unjudged candidates were chosen and one of
+    # them was a photograph of two men. This case used to assert `limit` chosen here, which
+    # was the defect rather than the feature.
+    assert_equal 0, AppearanceReferencePhoto.chosen.count
+    assert_equal [AppearanceReferencePhoto::REJECTED_FACE_UNSCORED],
+                 AppearanceReferencePhoto.pluck(:rejection_reason).uniq
 
     follow_redirect!
-    assert_select "[data-test='chosen-gallery'] [data-test='reference-photo']", count: limit + 1
-    assert_select "[data-test='rejected-gallery'] [data-test='reference-photo']", count: 2
+    # THE FLOOR IS STILL IN THE MODEL — the cached headshot, which is the one input measured
+    # to complete a reference. So the chosen gallery holds exactly one tile.
+    assert_select "[data-test='chosen-gallery'] [data-test='reference-photo']", count: 1
+    assert_select "[data-test='rejected-gallery'] [data-test='reference-photo']",
+                  count: limit + 2
   end
 
   # THE READ IS PUBLIC, THE PURCHASES ARE NOT. #show matches the person page beside

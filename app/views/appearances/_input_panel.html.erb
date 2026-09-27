@@ -25,10 +25,11 @@
     <% refused = chosen.reject { |photo| photo.mint_eligible?(@person.full_name) } %>
     <% if refused.any? %>
       <p data-test="trainer-subset" class="text-2xs text-warning-ink">
-        <%= pluralize(refused.length, "photo") %> of these
-        <%= refused.length == 1 ? "is" : "are" %> used by the character sheet but NOT offered
-        to Higgsfield's trainer &mdash; <%= chosen.length - refused.length %> of
-        <%= chosen.length %> carry a measured face size. The reasons are on the tiles.
+        <%= refused.length %> of these <%= chosen.length %>
+        <%= refused.length == 1 ? "is" : "are" %> used by the character sheet but NOT
+        offered to Higgsfield&rsquo;s trainer: only
+        <%= chosen.length - refused.length %> carry a measured face size, and four of six
+        measured mints failed at prepare on that variable. The reason is on each tile.
       </p>
     <% end %>
   </header>

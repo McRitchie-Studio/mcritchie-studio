@@ -33,22 +33,56 @@ class Appearances::ReferenceEligibilityTest < ActiveSupport::TestCase
     assert_equal RE::ELIGIBLE, mint(visibility: 0.9, fill: 0.8, subjects: 1)
   end
 
-  # THE WHOLE DIFFERENCE BETWEEN THE TWO QUESTIONS, in one case.
-  test "an unmeasured photograph is a reference but not a training input" do
-    assert_equal RE::ELIGIBLE, verdict
-    assert_equal RE::FACE_SIZE_UNMEASURED, mint
+  # THE WHOLE DIFFERENCE BETWEEN THE TWO QUESTIONS, in one case: something LOOKED and
+  # reported no face size. The sheet takes it, the trainer does not.
+  test "a photograph looked at but not sized is a reference and not a training input" do
+    assert_equal RE::ELIGIBLE, verdict(visibility: 0.9)
+    assert_equal RE::FACE_SIZE_UNMEASURED, mint(visibility: 0.9)
   end
 
-  # AN ABSENCE IS NEVER A REFUSAL ON THE REFERENCE PATH. `.verdict` may not return
-  # FACE_SIZE_UNMEASURED at all — asserted here because that is the invariant the
-  # operator's "provide a few headshots" request rests on.
-  test "the reference rule never refuses for want of a measurement" do
-    [{}, { visibility: 0.9 }, { subjects: 1 }, { visibility: 0.9, subjects: 1 }].each do |args|
+  # ⚠ THE ONE ABSENCE BOTH QUESTIONS REFUSE ON, and it came from production. Measured
+  # 2026-09-27 on `jaylen-waddle`: five candidates returned, three scored, ALL FIVE chosen —
+  # two of them never judged, and one of those two titled "...Jaylen Waddle and L'Jarius
+  # Sneed", a correctly titled photograph of two men. A photograph nothing examined cannot
+  # be shown to hold one person's face.
+  test "a photograph nothing looked at is refused by both, and says so in its own words" do
+    assert_equal RE::FACE_UNSCORED, verdict
+    assert_equal RE::FACE_UNSCORED, mint
+    refute_equal RE::FACE_SIZE_UNMEASURED, verdict,
+                 "nothing examined it — that is a different sentence from 'no size reported'"
+  end
+
+  # THE SIZE MEASUREMENT IS NOT WHAT THE REFERENCE RULE REFUSES ON. `.verdict` may never
+  # return FACE_SIZE_UNMEASURED, because the operator asked for more references and a photo
+  # something looked at is one we can stand behind for a generator that cannot refuse it.
+  test "the reference rule never refuses for want of a face SIZE" do
+    [{ visibility: 0.9 }, { visibility: 0.9, subjects: 1 }, { visibility: 1.0 }].each do |args|
       refute_equal RE::FACE_SIZE_UNMEASURED, verdict(**args)
+      assert_equal RE::ELIGIBLE, verdict(**args)
     end
   end
 
   # ---- refusals on evidence, which BOTH paths honour -----------------------------
+
+  # A DOCUMENT IS REFUSED FOR WHAT IT IS, EVEN UNJUDGED, and the ORDER of the refusals is
+  # what makes that true: `face_unscored` is tested after the evidence-based refusals, so a
+  # scanned book with no classifier answer still says "not a photo" rather than the weaker
+  # "nobody looked".
+  test "an unjudged document still says not a photo, not merely unjudged" do
+    scan = candidate(title: "The Rape of the Lock, 1896",
+                     image_url: "https://x.test/page1-book.pdf.jpg")
+
+    assert_equal RE::NOT_A_PHOTO, RE.verdict(scan, person_name: "Drew Lock")
+  end
+
+  # AND SO IS A STRANGER. The title check is free and deterministic, so it holds on a row
+  # nothing ever classified — which is the half of the wrong-person guard that protects
+  # every machine with no vision credential.
+  test "an unjudged photograph of somebody else still says wrong person" do
+    stranger = candidate(title: "Drew Hutton.jpg")
+
+    assert_equal RE::WRONG_PERSON, RE.verdict(stranger, person_name: "Drew Lock")
+  end
 
   test "a document is refused by both, at any score" do
     scan = candidate(title: "The Rape of the Lock, 1896", image_url: "https://x.test/page1-book.pdf.jpg")

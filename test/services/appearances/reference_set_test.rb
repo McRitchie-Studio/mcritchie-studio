@@ -47,6 +47,16 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
     file(url, face_score: visibility, face_fill: fill, face_subjects: 1, **rest)
   end
 
+  # A ROW SOMETHING LOOKED AT AND DID NOT SIZE — the precondition for reaching the SHEET.
+  #
+  # The weaker of the two, and the distinction matters in both directions: a row nothing
+  # looked at reaches NEITHER generator (measured on production 2026-09-27, where five of
+  # five unjudged candidates were chosen and one of them was a photograph of two men),
+  # while a row that was looked at but not sized reaches the sheet only.
+  def file_looked(url, visibility: 0.9, **rest)
+    file(url, face_score: visibility, face_subjects: 1, **rest)
+  end
+
   # THE FLOOR IS UNCHANGED WHEN NOTHING HAS BEEN SEARCHED, which is what makes this
   # safe to inject everywhere: a look nobody has run a search for behaves exactly as
   # it did before this object existed.
@@ -78,8 +88,8 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
   # expressions". The headshot leads and the vetted search hits follow it.
   test "the sheet list leads with the headshot and carries the scouted photos after it" do
     cache_headshot
-    file("https://cdn.example.com/found.jpg", position: 1)
-    file("https://cdn.example.com/second.jpg", position: 2)
+    file_looked("https://cdn.example.com/found.jpg", position: 1)
+    file_looked("https://cdn.example.com/second.jpg", position: 2)
 
     urls = Appearances::ReferenceSet.new(@look.reload).generation_urls
 
@@ -93,13 +103,29 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
   # variable four of six measured mints turned on (2026-09-25).
   test "a photograph nobody measured reaches the sheet and not the trainer" do
     cache_headshot
-    file("https://cdn.example.com/unmeasured.jpg")
+    file_looked("https://cdn.example.com/unmeasured.jpg")
 
     set = Appearances::ReferenceSet.new(@look.reload)
 
     assert_includes set.generation_urls, "https://cdn.example.com/unmeasured.jpg"
     refute_includes set.call, "https://cdn.example.com/unmeasured.jpg"
     assert_equal 1, set.call.length, "the trainer is left with the proven headshot"
+  end
+
+  # THE FLOOR THE PRODUCTION RUN HAD NONE OF. Measured 2026-09-27 on `jaylen-waddle`: five
+  # candidates, three scored, all five chosen — two of them never judged at all, and one of
+  # those two a correctly titled photograph of TWO men. A row nothing looked at is now
+  # refused by BOTH generators, and the row is written here as `chosen: true` exactly as
+  # that run left it.
+  test "a chosen row nothing ever looked at reaches neither generator" do
+    cache_headshot
+    file("https://cdn.example.com/unjudged.jpg", title: "Josh Allen and a teammate")
+
+    set = Appearances::ReferenceSet.new(@look.reload)
+
+    refute_includes set.generation_urls, "https://cdn.example.com/unjudged.jpg"
+    refute_includes set.call, "https://cdn.example.com/unjudged.jpg"
+    assert_equal 1, set.generation_urls.length, "the sheet falls back on the cached headshot"
   end
 
   # A MEASURED FACE THAT IS TOO SMALL IS REFUSED BY BOTH, because that is a judgement of
@@ -124,7 +150,7 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
   # documented limit of Appearances::PersonNaming, not a gap in this case.
   test "a chosen photograph of a DIFFERENT man reaches neither generator" do
     cache_headshot
-    file("https://cdn.example.com/keenan.jpg", title: "Keenan Allen.jpg")
+    file_looked("https://cdn.example.com/keenan.jpg", title: "Keenan Allen.jpg")
     file_measured("https://cdn.example.com/allen.jpg", title: "Josh Allen warming up")
 
     set = Appearances::ReferenceSet.new(@look.reload)
@@ -150,7 +176,7 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
   # than showing "in the model" over an identity built from something else.
   test "chosen rows the trainer now refuses are reported rather than silently dropped" do
     cache_headshot
-    file("https://cdn.example.com/legacy.jpg")
+    file_looked("https://cdn.example.com/legacy.jpg")
 
     refused = Appearances::ReferenceSet.new(@look.reload).refused_rows
 
@@ -166,7 +192,7 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
   # a Commons URL costs the whole sheet.
   test "the sheet list hands over our mirrored copy when we took one" do
     cache_headshot
-    photo = file("https://upload.wikimedia.org/commons/x.jpg")
+    photo = file_looked("https://upload.wikimedia.org/commons/x.jpg")
     ImageCache.create!(owner: photo, purpose: Appearances::MirrorCandidates::PURPOSE,
                        variant: "original", s3_key: "reference-photos/x/original.jpg",
                        content_type: "image/jpeg")
@@ -182,7 +208,7 @@ class Appearances::ReferenceSetTest < ActiveSupport::TestCase
   # request body plus another image to reason over.
   test "the sheet list is capped" do
     cache_headshot
-    (1..8).each { |i| file("https://cdn.example.com/#{i}.jpg", position: i) }
+    (1..8).each { |i| file_looked("https://cdn.example.com/#{i}.jpg", position: i) }
 
     urls = Appearances::ReferenceSet.new(@look.reload).generation_urls
 

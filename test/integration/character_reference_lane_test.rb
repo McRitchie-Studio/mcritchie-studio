@@ -232,10 +232,12 @@ class CharacterReferenceLaneTest < ActionDispatch::IntegrationTest
   # it leaves a set that is thin and MINTABLE rather than full and refused — measured
   # 2026-09-25, a set of three such photographs failed at prepare every time it was tried.
   test "an unmeasured photograph is kept out of the trainer and the headshot still mints" do
+    # SOMETHING LOOKED AT IT AND REPORTED NO SIZE — the state that separates the two
+    # generators. A row nothing looked at is refused by both (see the case below it).
     AppearanceReferencePhoto.create!(
       appearance_slug: @look.slug, image_url: "https://cdn.example.com/sideline.jpg",
       title: "Josh Allen, 18 December 2023", source: AppearanceReferencePhoto::SOURCE_SEARCH,
-      chosen: true, width: 556, height: 780
+      chosen: true, width: 556, height: 780, face_score: 0.9, face_subjects: 1
     )
 
     Appearances::CreateCharacterReference
@@ -248,6 +250,25 @@ class CharacterReferenceLaneTest < ActionDispatch::IntegrationTest
     # what makes the refusal above a routing decision rather than a loss.
     assert_includes Appearances::ReferenceSet.new(@look).generation_urls,
                     "https://cdn.example.com/sideline.jpg"
+  end
+
+  # THE PRODUCTION SHAPE, AND THE ONE ABSENCE BOTH GENERATORS REFUSE. Measured 2026-09-27
+  # on `jaylen-waddle`: five candidates returned, three scored, ALL FIVE chosen — and one of
+  # the two unjudged ones was titled "...Jaylen Waddle and L'Jarius Sneed", a correctly
+  # titled photograph of two men. Nothing examined it, so nothing can say whose face it is.
+  test "a chosen photograph nothing ever looked at reaches neither generator" do
+    AppearanceReferencePhoto.create!(
+      appearance_slug: @look.slug, image_url: "https://cdn.example.com/unjudged.jpg",
+      title: "Josh Allen and a teammate", source: AppearanceReferencePhoto::SOURCE_SEARCH,
+      chosen: true, width: 900, height: 900
+    )
+
+    Appearances::CreateCharacterReference
+      .new(@look, client: @vendor, references: Appearances::ReferenceSet).call
+
+    refute_includes @vendor.creates.sole[:image_urls], "https://cdn.example.com/unjudged.jpg"
+    refute_includes Appearances::ReferenceSet.new(@look).generation_urls,
+                    "https://cdn.example.com/unjudged.jpg"
   end
 
   # The sweep is what keeps the stored status honest across many looks.
