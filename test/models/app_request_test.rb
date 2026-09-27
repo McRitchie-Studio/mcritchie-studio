@@ -83,8 +83,9 @@ class AppRequestTest < ActiveSupport::TestCase
   end
 
   # The names are unregistered on purpose: the real showcase builds
-  # (prisoners-dilemma, weekly-lock, rantly, portfolio) have satellites.yml rows
-  # since register-showcase-apps, so their subdomains are reserved now.
+  # (prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position)
+  # have satellites.yml rows since register-showcase-apps and
+  # register-two-more-showcase-apps, so their subdomains are reserved now.
   test "an admin is exempt from the one-app rule, and their requests are showcase builds" do
     admin = users(:alex)
     assert admin.admin?
@@ -98,7 +99,7 @@ class AppRequestTest < ActiveSupport::TestCase
   # A showcase app registered in config/satellites.yml reserves its subdomain the
   # day it is registered, so no new request can claim a name that ships there.
   test "a registered showcase app's subdomain is reserved" do
-    %w[prisoners-dilemma weekly-lock rantly portfolio].each do |name|
+    %w[prisoners-dilemma weekly-lock rantly portfolio 10and5 search-position].each do |name|
       assert_equal "That name is reserved.", AppRequest.unavailable_reason(name),
                    "#{name} has a satellites.yml row, so its subdomain must not be claimable"
     end

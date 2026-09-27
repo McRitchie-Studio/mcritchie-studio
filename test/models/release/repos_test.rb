@@ -102,7 +102,8 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   test "app_repos lists the registry's app hash keys" do
     assert_equal %w[mcritchie-studio turf-monster turf-vault mcritchie-industries cyvasse dads-app rolio
-                    tax-studio chain-ops prisoners-dilemma weekly-lock rantly portfolio].sort,
+                    tax-studio chain-ops prisoners-dilemma weekly-lock rantly portfolio
+                    10and5 search-position].sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -189,11 +190,18 @@ class Release::ReposTest < ActiveSupport::TestCase
   # no database, git_push_heroku to a `mcr-<repo>` Heroku app, CI's `test` job as
   # test_cmd, and no QA copy by Alex's decision. One loop, each assertion naming
   # its repo, so a failure says which app drifted.
+  #
+  # 10and5 and search-position (task register-two-more-showcase-apps, 2026-09-26)
+  # are registered the same way. Their smoke host is still the herokuapp host:
+  # their <repo>.mcritchie.studio CNAMEs and ACM certificates have not landed,
+  # and swapping in a host that does not resolve would abort a live ship.
   SHOWCASE_APPS = {
     "prisoners-dilemma" => "https://prisoners-dilemma.mcritchie.studio",
     "weekly-lock" => "https://weekly-lock.mcritchie.studio",
     "rantly" => "https://rantly.mcritchie.studio",
-    "portfolio" => "https://portfolio.mcritchie.studio"
+    "portfolio" => "https://portfolio.mcritchie.studio",
+    "10and5" => "https://mcr-10and5-eb8feab2def8.herokuapp.com",
+    "search-position" => "https://mcr-search-position-3c91e0b95f46.herokuapp.com"
   }.freeze
 
   test "[unit] each showcase app deploys to its mcr- Heroku app by git_push_heroku" do
@@ -206,10 +214,11 @@ class Release::ReposTest < ActiveSupport::TestCase
       assert_equal "git_push_heroku", adapter["strategy"], "#{repo} deploys by git_push_heroku"
       assert_equal "https://git.heroku.com/mcr-#{repo}.git", adapter["remote"], "#{repo}'s Heroku remote"
       assert_equal "main", adapter["branch"], "#{repo} pushes the frozen SHA onto Heroku main"
-      # The custom domain, now that DNS points at Heroku's herokudns target and ACM
-      # has issued its certificate. The ship smokes `<smoke_url>/up` AFTER the push,
-      # so the value is the bare host: a dead host or a trailing /up aborts a live deploy.
-      assert_equal smoke_host, adapter["smoke_url"], "#{repo}'s smoke host is its mcritchie.studio domain, no /up"
+      # The custom domain once DNS points at Heroku's herokudns target and ACM has
+      # issued its certificate; the herokuapp host until then. The ship smokes
+      # `<smoke_url>/up` AFTER the push, so the value is the bare host: a dead host
+      # or a trailing /up aborts a live deploy.
+      assert_equal smoke_host, adapter["smoke_url"], "#{repo}'s smoke host is the pinned bare host, no /up"
       assert_equal "mcr-#{repo}", Release::ShipSequence.heroku_app_for(adapter), "#{repo}'s Heroku app name"
     end
   end
@@ -465,7 +474,8 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # Guards the guard: every assertion above would pass vacuously over an empty list.
   test "[unit] the QA-evidence exemption guard actually has a repo to check" do
-    assert_equal %w[cyvasse dads-app portfolio prisoners-dilemma rantly turf-vault weekly-lock],
+    assert_equal %w[10and5 cyvasse dads-app portfolio prisoners-dilemma rantly search-position turf-vault
+                    weekly-lock],
                  Release::Repos.qa_evidence_exempt_repos.sort,
                  "exactly these repos are declared exempt — a third one arriving unreviewed " \
                  "is what this pin is here to surface"
@@ -484,7 +494,9 @@ class Release::ReposTest < ActiveSupport::TestCase
   # The four showcase apps' line is the option Alex SELECTED in an
   # AskUserQuestion prompt (chat, 2026-09-26: "Should the four showcase apps get
   # QA copies, or ship straight to production like Cyvasse and dads-app?"). The
-  # option text was written by the agent; the choice was his.
+  # option text was written by the agent; the choice was his. On 2026-09-26 he
+  # asked for 10and5 and search-position to be migrated the same way, so they
+  # cite the same selection: no new decision was taken.
   SHOWCASE_QA_DECISION = "No QA copies (Recommended)".freeze
   QA_EXEMPT_BY_OPERATOR_DECISION = {
     "cyvasse" => "No cyvasse-qa unless there is a free teir we can use",
@@ -492,7 +504,9 @@ class Release::ReposTest < ActiveSupport::TestCase
     "prisoners-dilemma" => SHOWCASE_QA_DECISION,
     "weekly-lock" => SHOWCASE_QA_DECISION,
     "rantly" => SHOWCASE_QA_DECISION,
-    "portfolio" => SHOWCASE_QA_DECISION
+    "portfolio" => SHOWCASE_QA_DECISION,
+    "10and5" => SHOWCASE_QA_DECISION,
+    "search-position" => SHOWCASE_QA_DECISION
   }.freeze
 
   test "[unit] a DEPLOYABLE exempt repo is exempt only by a cited operator decision" do
@@ -692,6 +706,11 @@ class Release::ReposTest < ActiveSupport::TestCase
   # NOT passed over silently: the test asserts its accepted also carries no Rails
   # app, i.e. there is nothing a sweep could ship ungated. The day a build PR
   # merges, ci.yml and the app land together and the pin binds.
+  #
+  # 10and5 and search-position (register-two-more-showcase-apps, 2026-09-26) are
+  # held the same way. On the day they registered both repos were empty (a
+  # README on every rung, no ci.yml), so the same no-Rails-app assertion covers
+  # them until their build PRs merge.
   GIT_PUSH_HEROKU_GATES = {
     "mcritchie-industries" => { field: :qa_test_cmd, anchor: "db:test:prepare", fallback: false },
     "cyvasse" => { field: :test_cmd, anchor: "db:test:prepare", fallback: true },
@@ -707,7 +726,11 @@ class Release::ReposTest < ActiveSupport::TestCase
     "rantly" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
                   companion_jobs: { "system-test" => "bin/rails test:system" } },
     "portfolio" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
-                     companion_jobs: { "system-test" => "bin/rails test:system" } }
+                     companion_jobs: { "system-test" => "bin/rails test:system" } },
+    "10and5" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
+                  companion_jobs: { "system-test" => "bin/rails test:system" } },
+    "search-position" => { field: :test_cmd, anchor: "bin/rails test", fallback: true,
+                           companion_jobs: { "system-test" => "bin/rails test:system" } }
   }.freeze
 
   test "git_push_heroku satellites' gates run their CI test command verbatim" do

@@ -562,11 +562,11 @@ class Release < ApplicationRecord
   #     carries neither a QA sha nor an ff'd `main`. Unchanged.
   #   * a repo DECLARING `qa_evidence: exempt` is exempt at the QA stamp ONLY.
   #
-  # The QA-only scope is deliberate and load-bearing. Seven repos declare it:
+  # The QA-only scope is deliberate and load-bearing. Nine repos declare it:
   # cyvasse (no QA copy, by Alex's 2026-09-25 cost decision), dads-app (no QA
-  # copy, by his 2026-09-26 Eco-dyno decision), the four showcase apps
-  # (prisoners-dilemma, weekly-lock, rantly, portfolio: no QA copies, his
-  # 2026-09-26 selection) and turf-vault.
+  # copy, by his 2026-09-26 Eco-dyno decision), the six showcase apps
+  # (prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position:
+  # no QA copies, his 2026-09-26 selection) and turf-vault.
   # turf-vault genuinely cannot produce QA evidence — no dyno, no
   # URL, both QA steps skip it by design — but it absolutely DOES produce SHIP
   # evidence: `bin/release ship` fast-forwards its `release → main` and records
