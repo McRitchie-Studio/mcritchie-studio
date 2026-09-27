@@ -13,6 +13,9 @@
 #                         branch.
 #   * #derived_authors  — souls on the PR's commits; the SELECTOR unions them with
 #                         the stamps, so a derived set can only ADD exclusions.
+#                         #derived_authors_probe is the same read with its three
+#                         outcomes kept apart, for the one caller that must tell
+#                         "the PR names nobody" from "I could not look".
 #
 # Every read is PURE: nothing here writes. #refresh_merged_rung! is the one writer,
 # and it is explicit, so a read-only release snippet (sweep_detect_ruby previews
@@ -196,6 +199,60 @@ module TaskDerivedFacts
         Rails.logger.warn("[task-derivation] #{slug}: authors unreadable for #{url}: #{e.message}")
         []
       end.uniq
+    end
+  end
+
+  # THE SAME READ, WITH ITS THREE OUTCOMES KEPT APART. #derived_authors above
+  # answers `[]` for all three, which is correct for a caller that only wants to
+  # ADD exclusions (the fewer it finds, the fewer it drops — fail-safe). It is
+  # WRONG for a caller trying to FALSIFY a claim, because "the PR names nobody"
+  # and "I could not look" are opposite answers wearing one value.
+  #
+  # MEASURED 2026-09-27 on data-flow-doc-contradicts-code (PR #1587): the PR's one
+  # commit carries `xan@mcritchie.studio`, and with a fresh installation token
+  # `Github::TaskDerivation#authors` returns `["xan"]`. #derived_authors returned
+  # `[]` — the desk's static GITHUB_TOKEN 401s and the rescue above flattened it.
+  # `bin/reviewer-select --builder none` had nothing to check its assertion
+  # against and seated Xan as the light on Xan's own PR, reporting the
+  # no-self-review property upheld. This method is what lets that refuse instead.
+  #
+  # Returns a string-keyed hash with exactly one of the last two keys set:
+  #   "authors"    — the souls read off the PR's commits
+  #   "unreadable" — a read was ATTEMPTED and FAILED (401, rate limit, outage).
+  #                  Nil when every read landed. On a multi-repo task "authors"
+  #                  may be partly filled BESIDE this, so a caller must treat a
+  #                  non-nil reason as "this set is short", not as "this set is
+  #                  empty".
+  #   "absent"     — there was NOTHING to read: derivation is switched off, or the
+  #                  task names no PR. Distinct from "unreadable" because it
+  #                  carries no remedy — nobody's credential is stale.
+  def derived_authors_probe(derivation: github_derivation)
+    unless derivation
+      return { "authors" => [], "unreadable" => nil,
+               "absent" => "author derivation is switched off (config.x.derive_from_github = false)" }
+    end
+
+    derived_memo(:author_probe, derivation) do
+      unread = []
+      recorded = release_pr_urls
+      gaps = (release_repos - recorded.keys).map do |repo|
+        derived_pr_url(derivation: derivation, repo: repo)
+      rescue Github::TaskDerivation::Unreadable => e
+        unread << "the PR for #{repo} could not be looked up (#{e.message})"
+        nil
+      end
+      urls = (recorded.values + gaps).map { |u| u.to_s.strip }.reject(&:empty?).uniq
+
+      authors = urls.flat_map do |url|
+        derivation.authors(url)
+      rescue Github::TaskDerivation::Unreadable => e
+        unread << "the commits on #{url} could not be read (#{e.message})"
+        []
+      end.uniq
+
+      { "authors" => authors,
+        "unreadable" => unread.presence&.join("; "),
+        "absent" => (urls.empty? && unread.empty? ? "the task names no PR to read authors from" : nil) }
     end
   end
 

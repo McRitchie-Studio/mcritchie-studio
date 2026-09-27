@@ -874,10 +874,13 @@ board):
    claim-next-review` until it lapses. It exits **10** rather than seating a second
    pair on a PR another live session already holds, and **also** exits 10 when the
    board refuses the claim as a self-review (the primary is in the author set) —
-   that arm names no holder and wants the author set reconciled instead. `alex` is the
+   that arm names no holder and wants the author set reconciled instead. `xan` is the
    orchestrator who also holds the launchable Documentation review seat — one
-   identity. (`--qa-owner SLUG` excludes a different soul; `--builder SLUG`
-   overrides the recorded built_by; **`--busy a,b,c`** and/or **`--busy-auto`** (two
+   identity (slugged `alex` until 2026-09-24). (`--qa-owner SLUG` excludes a
+   different soul; `--builder SLUG`
+   overrides the recorded built_by, and `--builder none` asserts that NO soul built
+   it — cross-examined against the record and the PR's commits, and REFUSED when a
+   witness disagrees or the PR could not be read; **`--busy a,b,c`** and/or **`--busy-auto`** (two
    board reads: agents on `stage=building` tasks, and the holders of LIVE review
    claims on `submitted` ones) drop agents mid-BUILD **and** mid-REVIEW elsewhere —
    `bin/pr-review` passes `--busy-auto` on every select — the pool is never starved below a pair, the least-bad are kept
