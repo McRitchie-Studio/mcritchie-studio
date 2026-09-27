@@ -1826,7 +1826,7 @@ def write_feature_marker(task)
   path = TaskUsageSandbox.enforce!(feature_marker_path, store: "session-marker")
 
   dv = task.dig("metadata", "devops") || {}
-  mascot, mascot_color, mascot_emoji, mascot_shiny = marker_mascot_attrs(task, path)
+  mascot, mascot_color, mascot_emoji, mascot_shiny, mascot_gender = marker_mascot_attrs(task, path)
   marker = {
     "slug" => slug,
     "task_slug" => slug,
@@ -1839,6 +1839,7 @@ def write_feature_marker(task)
     "mascot_color" => mascot_color, # …tinted with the mascot's least-common type color, riding with the name
     "mascot_emoji" => marker_display_emoji("mascot_emoji" => mascot_emoji, "mascot_shiny" => mascot_shiny), # …and carries its type emoji(s), with ✨ when shiny
     "mascot_shiny" => (true if truthy_marker_value?(mascot_shiny)),
+    "mascot_gender" => mascot_gender, # the session's gender roll — bin/statusline names Nidoran♀/♂ by it
     "persona" => dv["persona"],     # present only for a deliberate "act as <soul>" override
     "app_color" => dv["app_color"]  # the app's status-line tint (App#color, stamped server-side by Task#sync_app_identity)
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
@@ -1861,7 +1862,7 @@ end
 
 # The marker's mascot AND its display attributes (color + type emoji), resolved
 # TOGETHER so the color/emoji always ride with the name. Returns [mascot, color,
-# emoji, shiny].
+# emoji, shiny, gender].
 #
 # The session's mascot is STICKY — once the per-session marker carries one, a later
 # `create`/`move` updates the app/feature/stage context (write_feature_marker) but
@@ -1883,19 +1884,21 @@ end
 def marker_mascot_attrs(task, path)
   dv = task.dig("metadata", "devops") || {}
   if FeatureMarker.present?(dv["persona"]) && FeatureMarker.present?(dv["mascot"])
-    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], nil]
+    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], nil, nil]
   end
 
   disk = existing_marker(path)
   if disk && FeatureMarker.present?(disk["persona"]) &&
      !FeatureMarker.present?(dv["persona"]) && FeatureMarker.present?(dv["mascot"])
-    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"]]
+    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], dv["mascot_gender"]]
   end
-  return [disk["mascot"], disk["mascot_color"], disk["mascot_emoji"], disk["mascot_shiny"]] if disk && FeatureMarker.present?(disk["mascot"])
+  if disk && FeatureMarker.present?(disk["mascot"])
+    return [disk["mascot"], disk["mascot_color"], disk["mascot_emoji"], disk["mascot_shiny"], disk["mascot_gender"]]
+  end
 
-  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"]] if FeatureMarker.present?(dv["mascot"])
+  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], dv["mascot_gender"]] if FeatureMarker.present?(dv["mascot"])
 
-  [board_mascot(task["slug"]), nil, nil, nil] # a board read carries the name only
+  [board_mascot(task["slug"]), nil, nil, nil, nil] # a board read carries the name only
 end
 
 def existing_marker(path)
@@ -3058,8 +3061,9 @@ when "session-mascot"
           "mascot" => data["mascot"],
           "mascot_color" => data["mascot_color"],
           "mascot_emoji" => marker_display_emoji(data),
-          "mascot_shiny" => (true if truthy_marker_value?(data["mascot_shiny"]))
-        )
+          "mascot_shiny" => (true if truthy_marker_value?(data["mascot_shiny"])),
+          "mascot_gender" => data["mascot_gender"]
+        ).reject { |key, value| key == "mascot_gender" && value.to_s.strip.empty? }
         # Seed the DEFAULT app (mcritchie-studio) only when the marker has no app
         # yet — a brand-new session reads "<Pokémon> · mcritchie-studio". Once a task
         # sets the app (write_feature_marker), never override it here.

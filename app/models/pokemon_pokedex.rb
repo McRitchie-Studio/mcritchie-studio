@@ -18,6 +18,12 @@
 # is that caught is a SUBSET of seen — you cannot catch what you never encountered —
 # and these two numbers sit side by side on a public card, so the guarantee has to be
 # structural, not incidental.
+#
+# GENDER FAMILIES. The dex counts SPECIES. A gender family row (nidoran) is a
+# mascot-draw device, not a species: a sighting of it is credited to the species
+# its gender wears (a female nidoran is a Nidoran♀ sighting, #species_slug). A
+# family sighting with no recorded gender resolves to no species and drops out,
+# exactly like a persona mascot.
 class PokemonPokedex
   RecentAction = Struct.new(:action, :pokemon, keyword_init: true)
 
@@ -59,7 +65,7 @@ class PokemonPokedex
   end
 
   def total_pokemon
-    Pokemon.count
+    Pokemon.species.count
   end
 
   # How many DISTINCT species have been SEEN — spawned or evolved into — no matter
@@ -146,11 +152,16 @@ class PokemonPokedex
   def recent_actions
     return [] if pokemon_slugs.empty?
 
-    AgentAction.where(mascot: pokemon_slugs)
+    # An action carries no gender, so a family mascot's row shows the family
+    # (Nidoran) rather than guessing a form.
+    AgentAction.where(mascot: pokemon_slugs + family_rows.keys)
                .includes(:task)
                .order(occurred_at: :desc, id: :desc)
                .limit(recent_limit)
-               .map { |action| RecentAction.new(action: action, pokemon: pokemon_by_slug[action.mascot]) }
+               .map do |action|
+                 RecentAction.new(action: action,
+                                  pokemon: pokemon_by_slug[action.mascot] || family_rows[action.mascot])
+               end
                .select(&:pokemon)
   end
 
@@ -267,18 +278,19 @@ class PokemonPokedex
         Arel.sql("metadata->'mascot'->>'slug'"),
         :occurred_at,
         Arel.sql("metadata->'mascot'->>'shiny'"),
-        :task_slug
+        :task_slug,
+        Arel.sql("metadata->'mascot'->>'gender'")
       )
-      unsnapshotted = rows.filter_map { |slug, _at, _shiny, task_slug| task_slug if slug.blank? }
+      unsnapshotted = rows.filter_map { |slug, _at, _shiny, task_slug, _gender| task_slug if slug.blank? }
       fallback = task_mascots(unsnapshotted)
       dropped = 0
 
-      appearances = rows.filter_map do |slug, at, shiny_flag, task_slug|
+      appearances = rows.filter_map do |slug, at, shiny_flag, task_slug, gender|
         if slug.present?
-          Appearance.new(slug: slug, at: at, shiny: Task.shiny_value?(shiny_flag),
+          Appearance.new(slug: species_slug(slug, gender), at: at, shiny: Task.shiny_value?(shiny_flag),
                          session_id: nil, task_slug: task_slug)
         elsif (mascot = fallback[task_slug])
-          Appearance.new(slug: mascot.first, at: at, shiny: mascot.last,
+          Appearance.new(slug: mascot[0], at: at, shiny: mascot[1],
                          session_id: nil, task_slug: task_slug)
         else
           dropped += 1
@@ -295,7 +307,8 @@ class PokemonPokedex
     end
   end
 
-  # task_slug => [mascot slug, shiny] for the shipped rows carrying no snapshot.
+  # task_slug => [species slug, shiny] for the shipped rows carrying no snapshot
+  # (a family mascot resolved through devops.mascot_gender).
   # One query for the whole fallback set, so it never becomes a per-row lookup.
   #
   # devops.mascot_shiny is the LEAST controlled shiny representation we read (event
@@ -306,9 +319,10 @@ class PokemonPokedex
     return {} if task_slugs.empty?
 
     Task.where(slug: task_slugs.uniq)
-        .pluck(:slug, Arel.sql("metadata->'devops'->>'mascot'"), Arel.sql("metadata->'devops'->>'mascot_shiny'"))
-        .each_with_object({}) do |(task_slug, mascot, shiny_flag), map|
-          map[task_slug] = [mascot, Task.shiny_value?(shiny_flag)] if mascot.present?
+        .pluck(:slug, Arel.sql("metadata->'devops'->>'mascot'"), Arel.sql("metadata->'devops'->>'mascot_shiny'"),
+               Arel.sql("metadata->'devops'->>'mascot_gender'"))
+        .each_with_object({}) do |(task_slug, mascot, shiny_flag, gender), map|
+          map[task_slug] = [species_slug(mascot, gender), Task.shiny_value?(shiny_flag)] if mascot.present?
         end
   end
 
@@ -349,10 +363,10 @@ class PokemonPokedex
 
   # Spawn sightings: every session mascot draw.
   def spawn_appearances(shiny:)
-    scope = SessionMascot.where(mascot_slug: pokemon_slugs)
+    scope = SessionMascot.where(mascot_slug: pokemon_slugs + family_rows.keys)
     scope = scope.where(shiny: true) if shiny
-    scope.pluck(:mascot_slug, :created_at, :shiny, :session_id).map do |slug, at, shiny_flag, session_id|
-      Appearance.new(slug: slug, at: at, shiny: shiny_flag, session_id: session_id, task_slug: nil)
+    scope.pluck(:mascot_slug, :created_at, :shiny, :session_id, :gender).map do |slug, at, shiny_flag, session_id, gender|
+      Appearance.new(slug: species_slug(slug, gender), at: at, shiny: shiny_flag, session_id: session_id, task_slug: nil)
     end
   end
 
@@ -364,8 +378,9 @@ class PokemonPokedex
     scope = scope.where("metadata->'mascot'->>'shiny' = 'true'") if shiny
     slug_sql  = Arel.sql("metadata->'mascot'->>'slug'")
     shiny_sql = Arel.sql("metadata->'mascot'->>'shiny'")
-    scope.pluck(slug_sql, :occurred_at, shiny_sql, :task_slug).map do |slug, at, shiny_flag, task_slug|
-      Appearance.new(slug: slug, at: at, shiny: Task.shiny_value?(shiny_flag),
+    gender_sql = Arel.sql("metadata->'mascot'->>'gender'")
+    scope.pluck(slug_sql, :occurred_at, shiny_sql, :task_slug, gender_sql).map do |slug, at, shiny_flag, task_slug, gender|
+      Appearance.new(slug: species_slug(slug, gender), at: at, shiny: Task.shiny_value?(shiny_flag),
                      session_id: nil, task_slug: task_slug)
     end
   end
@@ -401,7 +416,24 @@ class PokemonPokedex
     @pokemon_by_slug ||= Pokemon.where(slug: pokemon_slugs).index_by(&:slug)
   end
 
+  # SPECIES only — a gender family row is not a dex entry (see the class note).
   def pokemon_slugs
-    @pokemon_slugs ||= Pokemon.pluck(:slug)
+    @pokemon_slugs ||= Pokemon.species.pluck(:slug)
+  end
+
+  # family slug => its Pokemon row (nidoran), for the sightings to resolve.
+  def family_rows
+    @family_rows ||= Pokemon.where.not(gender_forms: {}).index_by(&:slug)
+  end
+
+  # The species a sighting counts as: a gender family's form for the sighting's
+  # gender (nidoran + female → nidoran-f), or the slug unchanged. A family
+  # sighting with no gender resolves to the family slug, which no dex entry
+  # carries, so it drops out.
+  def species_slug(slug, gender)
+    family = family_rows[slug]
+    return slug unless family
+
+    family.gender_forms[Pokemon.normalize_gender(gender)].presence || slug
   end
 end

@@ -100,6 +100,20 @@ class AgentMarkerTest < Minitest::Test
     assert_empty calls
   end
 
+  # tasks/pokemon-mascot-gender: Nidoran's title carries its sign — from the slug
+  # for the two legacy species, from the session's gender for the family.
+  def test_current_names_nidoran_by_its_sign
+    write_session("thread-123", "mascot" => "nidoran", "mascot_gender" => "male", "mascot_emoji" => "☠",
+                                "app" => "mcritchie-studio")
+    out, err, status = run_marker("current", "--no-kickoff")
+    assert status.success?, err
+    assert_equal "☠ Nidoran♂ · mcritchie-studio", out.strip
+
+    write_session("thread-123", "mascot" => "nidoran-f", "app" => "mcritchie-studio")
+    out, = run_marker("current", "--no-kickoff")
+    assert_equal "Nidoran♀ · mcritchie-studio", out.strip
+  end
+
   def test_current_normalizes_legacy_prefixed_shiny_marker
     write_session("thread-123",
       "mascot" => "rattata",

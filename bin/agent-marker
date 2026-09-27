@@ -65,8 +65,22 @@ def mascot_display_emoji(data)
   base.empty? ? SHINY_EMOJI : "#{base}#{SHINY_EMOJI}"
 end
 
+# Nidoran's names carry the sign: the two species slugs have one each, and the
+# `nidoran` gender family takes it from the session's gender roll — the same rule
+# as bin/statusline's mascot_display_name.
+NIDORAN_NAMES = { "nidoran-f" => "Nidoran♀", "nidoran-m" => "Nidoran♂" }.freeze
+NIDORAN_SIGNS = { "female" => "♀", "male" => "♂" }.freeze
+
+def mascot_name(data)
+  slug = compact(data["mascot"])
+  return NIDORAN_NAMES.fetch(slug) if NIDORAN_NAMES.key?(slug)
+  return "Nidoran#{NIDORAN_SIGNS[compact(data['mascot_gender'])]}" if slug == "nidoran"
+
+  titleize(slug)
+end
+
 def marker_from_data(data)
-  mascot = titleize(data["mascot"])
+  mascot = mascot_name(data)
   head = [mascot_display_emoji(data), mascot].map { |value| compact(value) }.reject(&:empty?).join(" ")
   parts = [head, data["app"], data["worktree_slug"] || data["feature"]].map { |value| compact(value) }.reject(&:empty?)
   parts.join(" · ")
