@@ -1,0 +1,94 @@
+<%# ONE CHARACTER MODEL'S CARD, rendered per reading by the studio/board primitive
+    (card_partial). Bound as :reading via card_as — an Appearances::LookReading, not an
+    Appearance, because every fact the card prints was gathered in a grouped query and a
+    partial handed the raw record would go back to the database per card.
+
+    THE CARD ANSWERS "WHAT IS THIS AND WHY IS IT STUCK" WITHOUT A CLICK. That is the
+    operator's requirement, so the reading's own #blocker sentence is the one line that
+    can never be dropped for space — everything above it is identification and
+    everything below it is provenance.
+
+    The board identity contract (id="card-<slug>", .kanban-card, data-slug, data-stage)
+    is emitted by studio/board/card_shell. data-stage carries the RENDERED lane
+    (#board_stage), which is what the drag reads to compute a "from" — the record's
+    `stage` column is the operator's hand placement and is often NULL.
+
+    NO VENDOR NAME APPEARS IN THIS FILE. The generator is registry-driven and swappable,
+    so the provenance chip prints whatever `artifacts.source` holds. %>
+<%= render layout: "studio/board/card_shell",
+      locals: {
+        id: reading.slug,
+        zone: reading.board_stage,
+        class: "bg-surface rounded-lg border border-subtle #{look_card_edge_classes(reading)} " \
+               "p-3 space-y-1.5 hover:border-primary/40 transition group " \
+               "#{'cursor-grab active:cursor-grabbing' if draggable}"
+      } do %>
+
+  <%# WHO AND WHICH LOOK. The link goes to the model page, which is where every control
+      that spends money lives — this board has none. @click.stop so following the link
+      is not read as the start of a drag. %>
+  <div class="flex items-start gap-2">
+    <%= link_to person_appearance_path(reading.person_slug, reading.slug),
+          class: "min-w-0 flex-1 text-heading font-semibold text-sm leading-snug hover:text-primary transition",
+          data: { test: "look-card-link" },
+          "@click.stop": true do %>
+      <%= reading.title %>
+    <% end %>
+    <% if reading.position.present? %>
+      <span class="shrink-0 text-3xs text-muted font-mono opacity-0 group-hover:opacity-100 transition-opacity"><%= reading.position %></span>
+    <% end %>
+  </div>
+
+  <%# WHY IT IS HERE — the one line the whole board exists for. %>
+  <p class="text-2xs text-secondary leading-snug" data-test="look-card-blocker"><%= reading.blocker %></p>
+
+  <%# THE FLAGS THAT CHANGE WHAT THE OPERATOR SHOULD DO. Both are rare by design, so
+      they earn the loudest styling on the card. %>
+  <% if reading.stale? %>
+    <span class="badge text-3xs <%= pipeline_chip_classes(:bad) %>" data-test="look-card-stale">
+      re-define · traded
+    </span>
+  <% end %>
+  <% if reading.stale_hand_placement? %>
+    <span class="badge text-3xs <%= pipeline_chip_classes(:neutral) %>" data-test="look-card-placement-set-aside">
+      your <%= Appearances::LookReading::LABELS.fetch(reading.hand_stage, reading.hand_stage) %> placement set aside
+    </span>
+  <% end %>
+  <% if reading.hand_placed? %>
+    <span class="badge text-3xs <%= pipeline_chip_classes(:info) %>" data-test="look-card-hand-placed">
+      placed by hand · data says <%= Appearances::LookReading::LABELS.fetch(reading.derived_stage, reading.derived_stage) %>
+    </span>
+  <% end %>
+
+  <%# WHAT IT IS MADE OF. A colorway and the captured team are the uniform half of the
+      definition; the measurement and physique chips are the person half. %>
+  <div class="flex flex-wrap items-center gap-1">
+    <% if reading.colorway.present? %>
+      <span class="badge text-3xs <%= pipeline_chip_classes(:neutral) %>"><%= reading.colorway %></span>
+    <% end %>
+    <% if reading.captured_team_slug.present? %>
+      <span class="badge text-3xs <%= pipeline_chip_classes(reading.stale? ? :bad : :neutral) %>"><%= reading.captured_team_slug %></span>
+    <% end %>
+    <% reading.definition_facts.each do |fact| %>
+      <span class="badge text-3xs <%= pipeline_chip_classes(fact[:tone]) %>"><%= fact[:label] %></span>
+    <% end %>
+  </div>
+
+  <%# THE COUNTS, as one dense line: candidates found, chosen, images delivered. A
+      scan reads the shape of a look's progress off these three numbers. %>
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-3xs text-muted">
+    <% if reading.candidate_count.positive? %>
+      <span><%= reading.chosen_count %>/<%= reading.candidate_count %> chosen</span>
+    <% elsif reading.headshot? %>
+      <span>cached headshot</span>
+    <% end %>
+    <% if reading.artifact_count.positive? %>
+      <span><%= pluralize(reading.artifact_count, "image") %></span>
+    <% end %>
+    <% if reading.identity_state == :pending %>
+      <span class="text-warning-ink">identity training</span>
+    <% end %>
+    <% chip = artifact_source_chip(reading.artifact_source) %>
+    <% if chip %><span data-test="look-card-generator"><%= chip[:label] %></span><% end %>
+  </div>
+<% end %>

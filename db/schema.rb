@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_27_030000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_060000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -225,14 +225,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_030000) do
     t.string "higgsfield_reference_status"
     t.datetime "higgsfield_reference_synced_at"
     t.string "person_slug", null: false
+    t.integer "position"
     t.string "reference_url"
     t.datetime "retired_at"
     t.string "slug", null: false
+    t.string "stage"
     t.string "team_slug"
     t.datetime "updated_at", null: false
     t.index ["higgsfield_reference_id"], name: "index_appearances_on_higgsfield_reference_id", unique: true, where: "(higgsfield_reference_id IS NOT NULL)"
     t.index ["person_slug", "descriptor"], name: "index_appearances_live_per_person", unique: true, where: "(retired_at IS NULL)"
     t.index ["slug"], name: "index_appearances_on_slug", unique: true
+    t.index ["stage", "position"], name: "index_appearances_board_rank", where: "(retired_at IS NULL)"
   end
 
   create_table "apps", force: :cascade do |t|
