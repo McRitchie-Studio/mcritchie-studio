@@ -10,7 +10,7 @@ async function ladderDetail(page) {
 // The /deployments app ladder: one card per reportable repo, each showing where that
 // application sits on `accepted → release → main`. Since the summary row (2026-09-18)
 // the full cards live in the Applications SIDEBAR (#app-ladder-detail) and
-// #app-ladder-row is the Applications summary card plus the pinned strip — so every
+// #app-ladder-row is the Applications summary card — so every
 // test that reads a full card opens the sidebar first (ladderDetail below).
 //
 // WHY A BROWSER-LEVEL CHECK EARNS ITS PLACE HERE. The model and integration tiers
@@ -454,17 +454,17 @@ test("no card shows a green meter over a lane that is red or running", async ({ 
   }
 });
 
-// --- one scrolling row, a measured fade, and the pinned strip -----------------
+// --- the applications summary card ---------------------------------------------
 //
-// The operator's three asks for this section, and the two of them that ONLY a browser
-// can settle. A server-side tier can prove the markup is there; it cannot prove the
-// cards ended up on ONE LINE, that the fade clears when you reach the end of the
-// scroll, or that the strip pins itself under a header whose height it had to measure.
+// What ONLY a browser
+// can settle here: a server-side tier can prove the markup is there; it cannot prove the
+// lines ended up on ONE LINE, or that the list scrolls inside its card rather than
+// stretching the summary row.
 //
 // A WIDE VIEWPORT, like the other Deployments specs in this suite: the six-lane board
 // collapses its upstream lanes below 1400px, and a spec that scrolls this page should
 // be scrolling the page the operator actually looks at.
-test.describe("the applications summary card and its strip", () => {
+test.describe("the applications summary card", () => {
   test.use({ viewport: { width: 1600, height: 900 } });
 
   // ONE LINE PER APP in the summary card, each carrying the SAME meter the full card
@@ -509,77 +509,34 @@ test.describe("the applications summary card and its strip", () => {
     await expect(page.locator("#app-ladder-detail [data-test='app-ladder-card']").first()).toBeVisible();
   });
 
-  test("scrolling past the applications pins them to the top of the page", async ({ page }) => {
+  // THE LIST NEVER SETS THE ROW'S HEIGHT, and nothing follows the page down. Measured
+  // the way the defect showed: with twelve apps the in-flow list made this card the
+  // tallest of the four and stretched Releases and DevOps to match. Taking the list
+  // out of the page entirely must not move the row by a pixel, because its height
+  // belongs to the other three cards (or the well's own min-height).
+  test("the applications list scrolls inside its card and nothing pins on scroll", async ({ page }) => {
     await page.goto("/deployments");
 
-    const strip = page.locator("[data-test='app-ladder-pinned']");
-    await expect(strip, "nothing is pinned while the row itself is on screen").toBeHidden();
+    const row = page.locator("[data-test='deploy-summary-row']");
+    await expect(page.locator("[data-test='app-summary-list']")).toBeVisible();
 
-    // Past the row: the board below it is long, so this lands mid-tasks — the position
-    // the strip exists for.
+    const measured = await page.evaluate(() => {
+      const summary = document.querySelector("[data-test='deploy-summary-row']");
+      const list = document.querySelector("[data-test='app-summary-list']");
+      const withList = Math.round(summary.getBoundingClientRect().height);
+      list.style.display = "none";
+      const withoutList = Math.round(summary.getBoundingClientRect().height);
+      list.style.display = "";
+      return { withList, withoutList, overflowY: getComputedStyle(list).overflowY };
+    });
+    expect(measured.withList, "the list may not stretch the summary row").toBe(measured.withoutList);
+    expect(measured.overflowY, "what does not fit scrolls inside the card").toBe("auto");
+    await expect(row).toBeVisible();
+
+    // Past the row and back: no pinned copy of the applications appears.
     await page.evaluate(() => window.scrollTo(0, 1200));
-    await expect(strip).toBeVisible();
-
-    // IT SITS UNDER THE HEADER, NOT OVER IT — at a top it MEASURED, and it must still
-    // be flush AFTER the header finishes moving.
-    //
-    // POLLED, and that is the assertion rather than a nicety. The header TRANSITIONS its
-    // height over 300ms as it shrinks (`transition-all duration-300` in
-    // layouts/application), so the last scroll event fires while it is still animating.
-    // A one-shot reading here measured an 8px gap and passed on nothing; what the row's
-    // ResizeObserver promises is that the strip CONVERGES on the header's own bottom
-    // edge once it settles — so poll until it does, and fail if it never does.
-    await expect
-      .poll(
-        async () =>
-          page.evaluate(() => {
-            const header = document.querySelector(".vt-pinned-header").getBoundingClientRect();
-            const pinned = document
-              .querySelector("[data-test='app-ladder-pinned']")
-              .getBoundingClientRect();
-            return Math.abs(Math.round(pinned.top - header.bottom));
-          }),
-        { message: "the strip settles flush against the header's own bottom edge" }
-      )
-      .toBeLessThanOrEqual(2);
-
-    const pinnedTop = await page.evaluate(() =>
-      Math.round(document.querySelector("[data-test='app-ladder-pinned']").getBoundingClientRect().top)
-    );
-    expect(pinnedTop, "and stays on screen").toBeLessThan(200);
-
-    // THREE ROWS AND NO FOURTH — the condensed form the operator asked for.
-    const tiles = page.locator("[data-test='app-ladder-pinned-card']");
-    const count = await tiles.count();
-    expect(count).toBeGreaterThan(0);
-
-    const shape = await tiles.evaluateAll((els) =>
-      els.map((el) => ({
-        repo: el.getAttribute("data-repo"),
-        name: (el.querySelector("[data-test='app-ladder-pinned-name']")?.textContent || "").trim(),
-        ci: el.querySelectorAll("[data-test='app-ladder-pinned-ci']").length,
-        rungs: Array.from(el.querySelectorAll("[data-test='app-ladder-rung']")).map((r) =>
-          r.getAttribute("data-branch")
-        ),
-        review: el.querySelectorAll("[data-test='app-ladder-review']").length,
-      }))
-    );
-
-    for (const tile of shape) {
-      expect(tile.name, `${tile.repo} must name itself`).toBe(tile.repo);
-      expect(tile.ci, `${tile.repo} keeps its CI row`).toBe(1);
-      expect(tile.rungs, `${tile.repo} keeps the whole ladder`).toEqual([
-        "accepted",
-        "release",
-        "main",
-      ]);
-      expect(tile.review, `${tile.repo} drops everything below those three rows`).toBe(0);
-    }
-
-    // Back to the top and the strip stands down — it is a substitute for the row, not
-    // a second copy of it.
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await expect(strip).toBeHidden();
+    await expect(page.locator("[data-test='app-ladder-pinned']")).toHaveCount(0);
+    await expect(page.locator("[data-pin='apps']")).toHaveCount(0);
   });
 });
 
