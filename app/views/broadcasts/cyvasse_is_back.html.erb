@@ -4,6 +4,7 @@
     click tracking and the newsletter opt-in page come with the outreach task. %>
 <% play_url  = "https://cyvasse.mcritchie.studio/play" %>
 <% build_url = "https://mcritchie.studio/build" %>
+<% content_for :email_reason, "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
 <%= render "broadcasts/email_head",
       hero_file: "cyvasse_header.jpg",
       preheader: "Your account, your old matches and your saved lineups came across. The board is waiting.",

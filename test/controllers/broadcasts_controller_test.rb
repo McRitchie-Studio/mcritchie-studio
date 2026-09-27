@@ -57,5 +57,13 @@ class BroadcastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href='https://cyvasse.mcritchie.studio/play']", text: /Play Cyvasse/
     assert_select "a[href='https://mcritchie.studio/build']"
     assert_includes response.body, "more than 100,000 matches"
+    assert_includes response.body, "because you have an account on Cyvasse"
+    assert_not_includes response.body, "joined the McRitchie Studio mailing list"
+  end
+
+  test "a template that names no reason keeps the mailing-list footer" do
+    log_in_as(@admin)
+    get preview_broadcast_path(@broadcast)
+    assert_includes response.body, "joined the McRitchie Studio mailing list"
   end
 end
