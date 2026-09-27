@@ -85,7 +85,7 @@ class PokemonPokedex
   # or :unseen (silhouette) — plus whether it has ever been sighted shiny.
   #
   # It reads ONLY the memos the two cards above already built: the in-memory dex, the
-  # first-sighting map, and the caught set. So rendering all 251 cells adds ZERO
+  # first-sighting map, and the caught set. So rendering all 493 cells adds ZERO
   # queries to a public pageview — the whole grid is a re-projection of numbers the
   # page had already paid for.
   def dex_entries
@@ -97,7 +97,7 @@ class PokemonPokedex
       end
 
       # Link each entry to the ENTRIES it evolves into, in a second pass over the map
-      # just built. Pokemon#evolutions would query per cell — 251 of them on a public
+      # just built. Pokemon#evolutions would query per cell — 493 of them on a public
       # page — and the evolution circles need each next form's state anyway.
       by_slug = entries.index_by { |entry| entry.pokemon.slug }
       entries.each do |entry|
@@ -333,7 +333,7 @@ class PokemonPokedex
   # {eevee, umbreon}, never the other four Eeveelutions.
   #
   # The walk reads entirely off the in-memory dex (pokemon_by_slug already loads all
-  # 251 rows, `base` and `evolution` included), so a public pageview costs ZERO extra
+  # 493 rows, `base` and `evolution` included), so a public pageview costs ZERO extra
   # queries no matter how many species are caught.
   def lineage_up_to(slug)
     (@lineage ||= {})[slug] ||= begin
