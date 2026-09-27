@@ -16,7 +16,8 @@ each app's Wave 2 cutover task moves its objects and config, and the whole AWS
 section at the end of this page retires with the last of them (Wave 7). Why R2:
 Alex is leaving AWS for a simpler operator experience, not for cost; R2 speaks
 the S3 API, so Active Storage and `Studio::S3` move by endpoint and key, not by
-rewrite.
+rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
+[`../system/asset-library-plan.md`](../system/asset-library-plan.md).
 
 ## R2 — the rules
 

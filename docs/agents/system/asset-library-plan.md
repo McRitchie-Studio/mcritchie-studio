@@ -1,0 +1,206 @@
+# Asset Library Plan — files, documents and assets across the fleet
+
+## Status: Active
+
+Alex set the direction on 2026-09-26: leave AWS for a simpler operator
+experience (not for cost), keep business documents where people already work,
+and give every app, agent and person one place to find an asset. This page is
+the plan and its decisions. The procedures it relies on live in their own SOPs
+and are linked, not restated.
+
+## The idea: bytes in a dumb store, meaning in our own system
+
+Every file has two halves. The **bytes** are big and dumb, and belong in the
+cheapest reliable store that fits how they are used. **What the file is** —
+owner, app, provenance, rights, status, where it is used — is small and
+valuable, and belongs in our database. Keep the meaning in our system and the
+store becomes replaceable: the next move is one adapter, not a migration.
+
+## Three tiers
+
+| Tier | Holds | Used by | Home |
+|---|---|---|---|
+| **1. App objects** | uploads, OG images, generated lineups and broadcasts, anything a URL serves | code | **Cloudflare R2**, McRitchie Studio's account, a `<app>-dev` / `<app>-production` pair per app ([`../modules/object-storage.md`](../modules/object-storage.md)) |
+| **2. Business documents** | legal, finance, people, brand originals, partner exchanges | people, agents read | **Google Shared Drives** per company |
+| **3. Asset library** | logos, people, athletes and teams, content, everyday data | code, agents, people | **bytes in R2, catalog in the hub** (Wave 3) |
+
+Agent knowledge (SOPs, runbooks, insights) stays in git and `KnowledgeDoc`.
+
+**Rules that keep it clean.**
+
+1. One system of record per asset class. Never two editable masters; a copy
+   flows one way and records where it came from.
+2. Code never reads tier 2 at request time. Drives are for people.
+3. Object keys carry no meaning (a UUID or content hash); meaning lives in the
+   catalog.
+4. Dev/production split everywhere, enforced by keys, not discipline.
+
+## Decisions (Alex, 2026-09-26)
+
+| Decision | Choice |
+|---|---|
+| Object storage | Cloudflare R2; every app inherits McRitchie Studio's account |
+| Business documents for McRitchie Studio | Google Shared Drives. Egnyte declined: the Platform Business plan's 10-seat minimum ($2,640 a year) buys governance McRitchie Studio does not need yet |
+| Commercial Welding | **open.** An `Egnyte` login already sits in the `Commercial Welding` vault; decide after learning whether CW carries CMMC or ITAR obligations |
+| Public URLs | `assets.<domain>` per app, on the production bucket |
+| Backups | yes: [`r2-backup`](../agents/steffon/sops/r2-backup.md) (R2 has no versioning) |
+| Wave 2 order | `moms-app` → `commercial-welding` → `mcritchie-industries` → `mcritchie-studio` → `turf-monster` |
+
+**McRitchie Studio's Shared Drives** (created 2026-09-26, no prefix because each
+company is its own Workspace): `Admin`, `People`, `Brand`, `Content`,
+`Turf Monster`, `External`. Only `External` admits people outside the company,
+one folder per partner, shared by folder and never by drive. `People` admits
+members only. Agents read Drive through the hub's domain-wide delegation key
+(`drive.readonly`); it cannot create drives or manage membership, on purpose.
+
+## Waves
+
+| Wave | Goal | State |
+|---|---|---|
+| 0 | credentials | **done**: `cloudflare.studio.provision` filed and verified |
+| 1 | R2 foundation | **done**: five pairs provisioned and probed; `Studio::S3` speaks R2; backup SOP |
+| 2 | per-app S3 → R2 cutover | next, in the order above; the engine version with R2 support must be released first |
+| 3 | asset catalog | design below |
+| 4 | load the collections | after 3 |
+| 5 | business documents | **done for McRitchie Studio** (Shared Drives); Commercial Welding open |
+| 6 | large media | video on Cloudflare Stream, CAD in the business-document tier, when the first one arrives |
+| 7 | leave AWS | after every app has cut over; inventory below |
+
+## Wave 2 — the per-app cutover recipe
+
+One task per app. The shape is **mirror → copy → verify → flip → soak → drop**,
+so every step is reversible until the last.
+
+1. **Adopt the engine.** Bump the app to the `studio-engine` release that
+   carries `s3_endpoint` (task `studio-s3-r2-endpoint`).
+2. **Config.** Add `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
+   (from `r2.<app>`: the prod pair on production, the dev pair on QA and
+   locally) and, for an app that serves public objects, `R2_PUBLIC_URL`. Keep
+   the `AWS_*` variables: the mirror still writes S3.
+3. **Mirror.** Add an `r2` service to `config/storage.yml` (the `S3` service
+   with `endpoint:`, `region: auto`, the `R2_*` keys) and make the production
+   service Active Storage's built-in `Mirror`: primary the existing S3 service,
+   mirrors `[r2]`. From here every new upload lands in both.
+4. **Copy.** `rclone copy` the S3 production bucket into the R2 production
+   bucket (and dev into dev), once with the S3 key and the R2 prod key as two
+   remotes.
+5. **Verify.** For every `ActiveStorage::Blob` and every `ImageCache` row, the
+   object exists in R2 with the same byte size (Active Storage's `checksum`
+   column is the base64 MD5 of the bytes; R2's ETag is the hex MD5 for a
+   single-part upload, so compare after converting, and fall back to size for
+   multipart objects). The count
+   of missing objects must be zero; record it on the task.
+6. **Public serving** (only apps that serve public objects). Attach
+   `assets.<domain>` to the production bucket, then set `R2_PUBLIC_URL`.
+   **Never set `s3_public_url` before step 5 is zero**: from that moment every
+   `ImageCache#url` points at R2, and a missing object is a broken image.
+7. **Flip.** Make R2 the Active Storage primary (mirror to S3 for the soak) and
+   point `Studio::S3` at R2 (`s3_endpoint` and friends in
+   `config/initializers/studio.rb`).
+8. **Soak** a week with the mirror on, then drop S3 from the mirror.
+9. **Backup.** Enable [`r2-backup`](../agents/steffon/sops/r2-backup.md) for the
+   app and run its drill.
+10. **Record** the app's row in the R2 census as serving.
+
+**Rollback** at any step before 8 is config only: point the primary back at S3.
+
+### Cutover checklist — every S3 writer we know of
+
+A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
+`Studio::S3` and `has_*_attached` at the start of its task.
+
+| App | Writer | Note |
+|---|---|---|
+| all | Active Storage (`has_one_attached` / `has_many_attached`) | the mirror handles it |
+| all engine apps | `Studio::S3` (`ImageCache`, `KnowledgeDoc`, email banners and logos) | flips by config at step 7; `url` raises on R2 without `s3_public_url` |
+| `mcritchie-studio` | `Broadcasts::Assets.publish` | expects `upload` to return a URL; returns `nil` on R2 without a public URL, so step 6 comes first |
+| `mcritchie-studio` | `Content::GenerateLineupAssets`, `Appearances::ReferenceImages` | via `Studio::S3` |
+| `mcritchie-studio` | `lib/tasks/pokemon.rake` | builds its own `Aws::S3::Client` for `us-east-2`; port or retire |
+| `mcritchie-studio` | `DeskCapture` | **not a bucket move**: SES inbound writes raw mail to a private `us-east-1` bucket. Leaving it needs a new inbound path first (Wave 7) |
+| `turf-monster` | `OgImageAttachable` (`amazon_public` service) and contest, landing-page, site-setting attachments | public; needs `assets.` |
+| `mcritchie-industries` | `Slack::ChannelIngest` (storage defaults to `Studio::S3`) | private |
+| `moms-app` | book import and stitching (`BookImporter`, `BookStitcher`) | check how it serves images before choosing public or signed |
+| `commercial-welding` | none found: `projects/commercial-welding-llc/` is a diligence document repo, not an app. Find what writes the `commercial-welding-*` S3 buckets (census: recreated 2026-09-01) before its task; if nothing does, the cutover is a copy and the S3 pair retires | |
+
+**Blocker for step 6.** R2 custom domains need the domain's DNS on Cloudflare
+in the same account. Measured 2026-09-26: `mcritchie.studio` is served by
+Google's nameservers and `turfmonster.media` by Squarespace's. Moving each
+domain's DNS to Cloudflare is the CDN rollout
+([`cdn-rollout.md`](cdn-rollout.md)) and Steffon's `domain-dns` SOP; it must
+carry the Google Workspace mail records across. The three private-object apps
+do not need it; `mcritchie-studio` and `turf-monster` go last partly for this
+reason. The provisioning token already has DNS Edit on all domains; it still
+lacks **Zone Read**, which R2 needs to resolve a domain.
+
+## Wave 3 — the asset catalog
+
+**Model.** One `Studio::Asset` in studio-engine so every app shares it:
+
+| Field | Meaning |
+|---|---|
+| `key` | object key in the app's R2 bucket (meaningless: UUID or content hash) |
+| `checksum`, `byte_size`, `content_type`, `width`, `height` | what the bytes are |
+| `category` | `brand` · `person` · `athlete` · `team` · `content` · `everyday` · `document_ref` |
+| `subject_type`, `subject_slug` | what it depicts, by slug (the fleet's FK convention): a person, player, team, brand or app |
+| `source` | `uploaded` · `generated` · `licensed` · `imported`, with `source_url`, prompt or template for generated, license terms for licensed |
+| `rights` | `owned` · `licensed` · `trademark` · `consent_required`, plus `consent_on` for people |
+| `status` | `draft` · `approved` · `retired` |
+| `visibility` | `public` (served from `assets.`) or `private` (signed URLs only) |
+| `usages` | where it is used (polymorphic, many) |
+| `drive_file_id` | for `document_ref`: a pointer to a Shared Drive file; no bytes in R2 |
+
+**Categories, and the rule each carries.**
+
+- **Brand**: logos, marks, palettes, templates per company and app. Originals
+  live in the `Brand` Shared Drive; the catalog holds the published renditions.
+- **People**: headshots and bios. Private by default; `consent_required` until
+  a consent date is recorded.
+- **Athletes and teams**: keyed to Turf Monster's player and team slugs. Every
+  row records its source and license; team marks are trademarks.
+- **Content**: generated lineups, broadcasts and social cards, with the prompt
+  or template that made them, so a regenerate is reproducible.
+- **Everyday**: exports and one-off files. Short-lived; a lifecycle rule on an
+  `everyday/` prefix expires them.
+- **Document references**: a Drive file id and title only. The document stays
+  in Drive.
+
+**Variants.** Resized and cropped renditions come from Cloudflare Images (or
+a Worker) keyed on the original, so apps stop resizing in Ruby. `ImageCache`
+becomes a read-through onto the catalog, then folds into it.
+
+**Access.**
+
+- **People**: a hub `/assets` browser — search, upload, approve, retire.
+- **Apps**: `Studio::Asset.find_by(subject:, category:)`, with URLs from
+  `Studio::S3` (public) or `signed_url` (private).
+- **Agents**: a read API and an agent tool (search by subject, category and
+  tags; return URL, rights and status). Agents may upload drafts; a person
+  approves.
+
+**Wave 4 order**: brand first (small, used everywhere), then athletes and
+teams (bulk import with source and license per row), then people (with
+consent), then content (the generating services write through the catalog).
+
+## Wave 7 — the AWS exit inventory
+
+Retire nothing until every row is replaced. Re-derive the list from the AWS
+account before starting; this is what the docs name today.
+
+| AWS piece | Used for | Replacement |
+|---|---|---|
+| S3 app buckets (`<app>-dev`, `<app>-production`) | Active Storage, `Studio::S3` | R2 (Wave 2) |
+| S3 desk-capture bucket (`us-east-1`) + **SES inbound** | `team@mcritchie.studio` capture (`DeskCapture`) | an inbound mail path off AWS (e.g. Resend inbound or Cloudflare Email Routing into R2); design owed |
+| **SES outbound** (`agent.aws.mcritchie-ses`, `MAIL_TRANSPORT=ses`) | transactional mail where an app still selects SES | Resend, which `Studio::MailTransport` already supports; turf-monster already sends through Resend |
+| IAM users (`mcritchie-s3`, `mcr-*`, `studio-agents-admin`) | the keys above | delete after their buckets are gone |
+| 1Password items (`agent.aws`, `AWS`, `mcritchie-industries.aws`, `agent.aws.mcritchie-ses`) | the keys above | mark RETIRED in the inventory's name or vault cell |
+
+## Open decisions and blockers
+
+| Item | Owner |
+|---|---|
+| Move `mcritchie.studio` DNS to Cloudflare (hub first), then Turf Monster's app domain | Alex + Steffon (`domain-dns`, CDN rollout) |
+| Add **Zone → Read** to the provisioning token | Alex (dashboard) |
+| Which domain serves Turf Monster publicly (`turfmonster.media` appears in code) | Alex |
+| Automate the nightly `r2-backup` run (where it runs, how it alerts) | Steffon, next task |
+| Commercial Welding's document tier (Egnyte or Drive) | Alex, after the compliance question |
+| Inbound mail replacement for `DeskCapture` | Steffon, before Wave 7 |
