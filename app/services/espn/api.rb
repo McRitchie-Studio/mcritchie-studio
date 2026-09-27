@@ -49,7 +49,8 @@ module Espn
   # read these constants and neither spells a host out again.
   #
   # A THIRD COPY IS STILL OUT THERE and is NOT repaired here: lib/tasks/nfl.rake's
-  # `nfl:coaches_seed` names site.api.espn.com and reads it with URI.open.
+  # `nfl:link_coach_headshots` (the task at :431, off the ESPN_TEAMS_INDEX_URL
+  # constant at :426) names site.api.espn.com and reads it with URI.open.
   # MEASURED 2026-09-27 through open-uri itself, not inferred from the table above:
   # that host answered 403 Forbidden and this one answered 200 with 148848 bytes,
   # so that task is dead in exactly the way this service was. It is a different
