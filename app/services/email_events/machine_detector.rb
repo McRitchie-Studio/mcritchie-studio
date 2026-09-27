@@ -21,7 +21,7 @@ module EmailEvents
     # opens the email.
     SCANNER = /bot|crawl|spider|scan|python|curl|wget|java\/|go-http|okhttp|headless|
                barracuda|proofpoint|mimecast|symantec|trendmicro|forcepoint|sophos|
-               safelinks|linkchecker|existence discovery/xi
+               safelinks|linkchecker|existence\ discovery/xi
 
     module_function
 
