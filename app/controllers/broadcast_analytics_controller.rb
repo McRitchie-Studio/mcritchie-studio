@@ -7,6 +7,8 @@ class BroadcastAnalyticsController < ApplicationController
   def show
     @broadcasts = Broadcast.recent
     @broadcast = @broadcasts.find { |b| b.slug == params[:broadcast] } if params[:broadcast].present?
+    # A filter naming no email (a stale link) shows everything, and says so.
+    @unknown_filter = params[:broadcast].present? && @broadcast.nil?
     @analytics = Broadcasts::Analytics.new(broadcast: @broadcast)
     @summary = @analytics.summary
   end

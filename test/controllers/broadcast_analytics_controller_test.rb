@@ -48,4 +48,11 @@ class BroadcastAnalyticsControllerTest < ActionDispatch::IntegrationTest
     get broadcasts_path
     assert_select "a[href=?]", broadcast_analytics_path, text: "Analytics"
   end
+
+  test "an unknown email filter says so and shows every broadcast" do
+    log_in_as(@admin)
+    get broadcast_analytics_path(broadcast: "no-such-email")
+    assert_select "[role=status]", text: /No email is called “no-such-email”/
+    assert_select "section[aria-label='By email']"
+  end
 end
