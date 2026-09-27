@@ -40,9 +40,12 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
 - **No object versioning.** `PutBucketVersioning` is unimplemented, so the S3
   rule "production versioned" has no R2 equivalent. An errant overwrite or
   delete on a production bucket is NOT recoverable from the bucket itself.
-  Design pending: a scheduled copy of each production bucket to a backup
-  bucket. Until it exists, a destructive bulk operation on a production R2
-  bucket needs Alex's explicit yes.
+  The undo is Steffon's [`r2-backup`](../agents/steffon/sops/r2-backup.md)
+  SOP: a per-app `<app>-backup` bucket holding a mirror of production plus a
+  30-day archive of everything overwritten or deleted, collected by R2
+  lifecycle rules. Its nightly run is not automated yet. On a production
+  bucket without backup enabled, a destructive bulk operation needs Alex's
+  explicit yes; with it enabled, run a backup first and read its receipt.
 - **No tags, ACLs, or bucket policies.** Cost lines come from bucket names, and
   every grant lives on a token.
 - **Custom domains need zone DNS.** `cloudflare.studio.provision` carries no
@@ -56,6 +59,7 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
 |---|---|---|---|
 | 1 | Alex's Cloudflare login | Alex only | his private vault |
 | 2 | `cloudflare.studio.provision` (Cloudflare token name `mcritchie-studio-admin`) | Steffon's provisioning lane: Workers R2 Storage read/write, Account API Tokens read/write (mints the per-app tokens), Account DNS Settings | `studio-agents-admin` (admin op lane only) |
+| 4b | `r2-<app>-backup` | reads `<app>-production`, writes `<app>-backup`; no app key can see the backup bucket | fields `access-key-id-backup` / `secret-access-key-backup` in `r2.<app>` |
 | 4 | `r2-<app>-prod` / `r2-<app>-dev` | one app's buckets, exactly | 1Password `r2.<app>` in `studio-agents`; Heroku config vars once the app cuts over |
 
 Tier 3 (a fleet-wide agent key for object surgery) has no R2 equivalent yet, as
@@ -69,13 +73,13 @@ the positive probes and the three negative ones (prod key refused on dev, dev
 key refused a production write and a production delete). All buckets are
 private and empty; no app reads them yet.
 
-| App | Buckets | 1Password | Serving |
-|---|---|---|---|
-| `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | not yet (Wave 2) |
-| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | not yet (Wave 2) |
-| `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | not yet (Wave 2) |
-| `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) |
-| `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | not yet (Wave 2) |
+| App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
+|---|---|---|---|---|
+| `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | not yet (Wave 2) | not enabled |
+| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | not yet (Wave 2) | not enabled |
+| `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | not yet (Wave 2) | not enabled |
+| `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
+| `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | not yet (Wave 2) | enabled 2026-09-26, `moms-app-backup`; drill passed |
 
 Re-derive before trusting: `GET /accounts/<id>/r2/buckets` with the tier-2
 token lists the pairs, and the SOP's verify script re-runs the probes. A census
@@ -97,7 +101,7 @@ not provision new S3 buckets.
 | Write routing | prod app → production bucket; **QA and local → dev bucket** |
 | Read routing | QA/local may read prod — enforced by IAM, never by app discipline |
 | App credentials | two IAM users per app under path `/mcr/`: `mcr-<app>-prod` (RW its production bucket) and `mcr-<app>-dev` (RW its dev bucket + **read-only** its production bucket). QA runs the dev credential |
-| Public access | private by default: Block Public Access all-on, no bucket policy. Public serving is an explicit, documented exception (see **Legacy posture**) |
+| Public access | private by default: Block Public Access all-on, no bucket policy. Public serving is an explicit, documented exception (see **S3 — legacy posture**) |
 | Private assets | served through app auth via presigned URLs (~15-min GET). Any key with `s3:GetObject` can presign; no extra permission exists |
 | Versioning | ON for production buckets (an errant overwrite or delete is recoverable); dev unversioned |
 | Lifecycle | **design pending** — dev buckets carry seed assets apps still serve, so a blanket dev expiry would break local stacks. Do not add lifecycle rules ad hoc |
@@ -131,7 +135,9 @@ export AWS_DEFAULT_REGION=us-east-2
 The ordinary agent token cannot list the `studio-agents-admin` vault — that
 invisibility is the design
 ([`credential-inventory.md`](credential-inventory.md)). The admin service
-account's grant is read-only: `op item get` works, `op item edit` is refused.
+account has read AND write on `studio-agents*` since 2026-09-02, so `op item
+edit` succeeds and a refusal is a symptom (`credential-filing` §4). This line
+said read-only until 2026-09-26.
 
 **Guards, stated honestly.** `studio-agents-admin` sits outside the `/mcr/` IAM path,
 so it cannot edit its own policy — policy changes are an operator console

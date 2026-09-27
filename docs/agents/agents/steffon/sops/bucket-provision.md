@@ -37,7 +37,8 @@ bin/agent-activity start --category Workflow --reason "bucket-provision <app>"
 ```
 
 Inputs: the app slug (e.g. `rolio`) and Alex's yes to provisioning (the
-onboarding prompt, or his direct ask).
+onboarding prompt, or his direct ask). Prerequisites on the machine: `op`,
+`python3` and the `aws` CLI v2 (for the verify probes).
 
 ## 1. Open the lane
 
@@ -138,11 +139,28 @@ naming one. A failure after the first token mints leaves that token live in
 the dashboard (**Manage Account → Account API Tokens**, named `r2-<app>-*`):
 revoke it before re-running.
 
+**Recovering a partial run.** The script creates both buckets before it mints
+any token, so a failure at the token or 1Password step leaves the buckets
+behind, and a re-run then stops at bucket creation. Before re-running: revoke
+any `r2-<app>-*` token the failed run minted, prove each bucket empty
+(`GET /accounts/<id>/r2/buckets/<bucket>/objects` returns no objects, or the
+dashboard shows 0 objects), delete both with `DELETE
+/accounts/<id>/r2/buckets/<bucket>`, and confirm `r2.<app>` does not exist.
+Never delete a bucket that holds objects.
+
+**Known exposure.** The script passes the derived keys to `op item create` as
+command-line arguments, which other processes run by the same macOS user can
+read in `ps` for the second the command runs. Run it on Alex's machine only,
+not a shared host.
+
 ## 3. Verify — positive and negative
 
 Every probe runs with the minted S3 keys against the R2 endpoint, and the
-negative probes are the point: a provision whose dev token was never refused a
-production write is not verified.
+negative probes are the point. A negative probe passes only on `AccessDenied`;
+any other error (a typo, a network failure) is INCONCLUSIVE and counts as a
+failure, because a refusal for the wrong reason proves nothing about the grant.
+A provision whose dev token was never refused a production write is not
+verified.
 
 ```bash
 cat > "$HOME/.mcr-r2/verify.sh" <<'SH'
@@ -156,7 +174,9 @@ s3()  { local id=$1 sec=$2; shift 2; AWS_ACCESS_KEY_ID=$id AWS_SECRET_ACCESS_KEY
         aws s3api --endpoint-url "$EP" "$@" >/dev/null 2>"$ERR"; }
 FAILS=0
 ok()  { if "$@"; then echo "  PASS"; else echo "  FAIL: $(head -c 160 "$ERR")"; FAILS=$((FAILS+1)); fi; }
-bad() { if "$@"; then echo "  VIOLATION (succeeded)"; FAILS=$((FAILS+1)); else echo "  PASS (refused)"; fi; }
+bad() { if "$@"; then echo "  VIOLATION (succeeded)"; FAILS=$((FAILS+1))
+        elif grep -q AccessDenied "$ERR"; then echo "  PASS (AccessDenied)"
+        else echo "  INCONCLUSIVE: $(head -c 160 "$ERR")"; FAILS=$((FAILS+1)); fi; }
 echo "prod key writes production";  ok  s3 $PID $PSEC put-object --bucket $APP-production --key $KEY --body "$BODY"
 echo "prod key reads production";   ok  s3 $PID $PSEC get-object --bucket $APP-production --key $KEY /dev/null
 echo "prod key cannot touch dev";   bad s3 $PID $PSEC put-object --bucket $APP-dev --key $KEY --body "$BODY"
@@ -184,6 +204,8 @@ very first positive probe is worth a single re-run before it is a finding.
   but a stale copy drifts from this page.
 - Close the activity:
   `bin/agent-activity end --outcome "provisioned <app> R2 pair + tokens"`.
+- Once the app stores real objects, enable its backup with
+  [`r2-backup`](r2-backup.md). R2 has no versioning; that SOP is the undo.
 
 ## Decline path
 

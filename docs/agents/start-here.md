@@ -55,6 +55,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | Steffon clean infra SOP (worktrees, disk, "no space") | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
 | Steffon bucket provision SOP (per-app R2 pair + tokens) | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
+| Steffon R2 backup SOP (backup bucket, nightly run, garbage collection, restore) | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
 | Steffon credential filing SOP (naming, logos, vault lanes) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | Steffon credential rotation SOP (rotate one secret everywhere) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
 | Steffon workspace icon SOP (badged software icons per client, /credentials matrix, 1Password vault icons) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-icon.md` |
