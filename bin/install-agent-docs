@@ -267,12 +267,17 @@ tooling_sha() {
 # someone adds a Rails-booting script to bin/, and goes stale silently.
 TOOLING_RAILS_BOOT_RE='require_relative[[:space:]]+"\.\./config/(boot|environment)"'
 
+# `return 0` is load-bearing under `set -euo pipefail`: the loop's last command is a
+# grep that FAILS on any non-matching file, so the function would exit non-zero, and a
+# `var="$(this | tr ...)"` assignment that fails aborts the whole script. Measured: the
+# check silently stopped mid-run, printing nothing after the OK line.
 tooling_rails_booting_scripts() {
   local dir="$1" script
   for script in "$dir"/*; do
     [ -f "$script" ] || continue
     grep -qE "$TOOLING_RAILS_BOOT_RE" "$script" 2>/dev/null && basename "$script"
   done
+  return 0
 }
 
 # The shim. `$hub` is baked at install time; everything else is resolved at run time.
