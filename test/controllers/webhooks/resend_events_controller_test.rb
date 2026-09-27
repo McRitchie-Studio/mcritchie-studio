@@ -78,4 +78,40 @@ class Webhooks::ResendEventsControllerTest < ActionDispatch::IntegrationTest
                                         timestamp: Time.current.iso8601 } })
     assert @delivery.events.of_kind("clicked").sole.machine
   end
+
+  # [integration] Review follow-ups (PR #1654).
+  test "a retried complaint still unsubscribes when the first attempt only logged it" do
+    @delivery.record_event!(kind: "complained", source: "resend", provider_event_id: "msg_retry")
+    assert @contact.reload.subscribed?, "the first attempt failed after logging"
+
+    deliver("email.complained", msg_id: "msg_retry")
+    assert_response :ok
+    assert_equal "complained", @contact.reload.unsubscribe_reason
+    assert_equal 1, @delivery.events.count
+  end
+
+  test "a blank secret refuses every request" do
+    ENV["RESEND_EVENTS_WEBHOOK_SECRET"] = ""
+    deliver("email.delivered")
+    assert_response :unauthorized
+  end
+
+  test "a stale request is refused, so a captured one cannot be replayed" do
+    body = { type: "email.delivered", data: { email_id: "re_123" } }.to_json
+    old = 10.minutes.ago.to_i.to_s
+    sig = Base64.strict_encode64(OpenSSL::HMAC.digest("SHA256", SECRET_KEY, "msg_old.#{old}.#{body}"))
+    post "/webhooks/resend/events", params: body,
+         headers: { "svix-id" => "msg_old", "svix-timestamp" => old, "svix-signature" => "v1,#{sig}",
+                    "CONTENT_TYPE" => "application/json" }
+    assert_response :unauthorized
+    assert_equal 0, EmailEvent.count
+  end
+
+  test "an error is logged to ErrorLog and fails the request so Resend retries" do
+    BroadcastDelivery.stub(:find_by, ->(*) { raise "boom" }) do
+      assert_difference -> { ErrorLog.count }, 1 do
+        assert_raises(RuntimeError) { deliver("email.delivered") }
+      end
+    end
+  end
 end

@@ -24,7 +24,17 @@ class EmailTrackingController < ApplicationController
       delivery.record_click!(link_key: params[:l].to_s, machine: machine?(delivery),
                              data: { "user_agent" => request.user_agent.to_s.first(255) })
     end
-    redirect_to(url.presence || root_url, allow_other_host: true)
+    destination = url.presence && delivery ? EmailEvents::Results.with_ref(url, delivery.token) : url
+    redirect_to(destination.presence || root_url, allow_other_host: true)
+  end
+
+  # GET /e/g/:token?g=<goal> — a result beacon: another of our apps (or a page
+  # here) reporting that the reader who came from this email reached `goal`
+  # (EmailEvent::GOALS). Answers the pixel whatever happens, like #open.
+  def goal
+    EmailEvents::Results.record!(params[:token], params[:g])
+    response.set_header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+    send_data PIXEL, type: "image/gif", disposition: "inline"
   end
 
   private

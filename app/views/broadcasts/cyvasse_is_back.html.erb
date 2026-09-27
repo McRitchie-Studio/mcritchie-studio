@@ -1,9 +1,10 @@
 <%# "Cyvasse is back": the relaunch note to the players imported from the old
     Cyvasse (task cyvasse-is-back-outreach). Mostly text and one button, so it
-    reads as a letter rather than a promotion. The links are plain for now;
-    click tracking and the newsletter opt-in page come with the outreach task. %>
-<% play_url  = "https://cyvasse.mcritchie.studio/play" %>
-<% build_url = "https://mcritchie.studio/build" %>
+    reads as a letter rather than a promotion. Both links are tracked
+    (Broadcast::TEMPLATE_LINKS); the newsletter opt-in page comes with the
+    outreach task. %>
+<% play_url  = broadcast_link(:play,  Broadcast::TEMPLATE_LINKS["cyvasse_is_back"]["play"]) %>
+<% build_url = broadcast_link(:build, Broadcast::TEMPLATE_LINKS["cyvasse_is_back"]["build"]) %>
 <% content_for :email_reason, "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
 <%= render "broadcasts/email_head",
       hero_file: "cyvasse_header.jpg",
