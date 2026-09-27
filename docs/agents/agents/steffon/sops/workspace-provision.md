@@ -240,10 +240,16 @@ itself would allow it. The grant is domain-wide; the purpose is the boundary.
 
 The purpose is now the boundary **at the token as well as at the caller**. A
 `:mail` authorizer asks for `gmail.readonly` and `gmail.compose` only
-(`Credentials::MAIL_SCOPES`), so the bearer token it carries names no Drive
-scope at all — handed to a Drive service it is a token without the scope the
-call needs, not a token we politely declined to pass. `:workspace` asks for all
-four. Two things this does NOT buy, so do not write that it does:
+(`Credentials::MAIL_SCOPES`); `:workspace` asks for all four. What that is
+measured to mean, and what it is not:
+
+- **Measured:** the credential a Gmail caller receives names those two scopes
+  and no Drive scope. The suite reads it off a real `googleauth` object.
+- **Not measured:** what Google returns for a Drive call made with that token.
+  It should be an insufficient-scope refusal, and nobody has made the call — it
+  needs a live token against a live workspace. Do not write it down as proven.
+
+Two things it does NOT buy at all, so do not write that it does:
 
 - **Not "can draft, cannot send".** There is no draft-only Gmail scope;
   `gmail.compose` covers drafts and send. "Never sends" is still a property of

@@ -82,18 +82,30 @@ module Workspace
     # what it asked for. So purpose stops being a rule our own callers keep and
     # becomes a property of the bearer token itself.
     #
-    # WHAT THIS DOES AND DOES NOT BUY, measured rather than asserted:
+    # WHAT THIS DOES AND DOES NOT BUY. Stated at the level that was actually
+    # measured, because the failure mode of a least-privilege comment is
+    # describing a wall nobody walked into:
     #
-    #   It buys: a :mail token cannot touch Drive. Nothing in the two scopes
-    #   below grants any Drive access, so a mail authorizer handed to a Drive
-    #   service is refused by Google, not merely by us.
+    #   MEASURED: the credential a mail caller is handed names the two scopes
+    #   below and no Drive scope — read off the built object's #scope in
+    #   test/services/workspace/credentials_test.rb, with a real googleauth
+    #   credential rather than a double.
     #
-    #   It does NOT buy "can draft, cannot send". THERE IS NO DRAFT-ONLY GMAIL
-    #   SCOPE — gmail.compose covers drafts AND send — so "never sends" stays a
-    #   property of our code, asserted by test/lib/no_gmail_send_test.rb. It
-    #   does not buy per-sender narrowing either: there is no scope that says
-    #   "this mailbox only". The subject allow-list is what holds that, and it
-    #   holds it in Ruby.
+    #   NOT MEASURED HERE: what Google does with a Drive call made using that
+    #   token. OAuth's own scope check is what should refuse it, and no live
+    #   Drive call has been made with a narrowed token — that needs a real token
+    #   minted against a real workspace, which is an operator's decision, not a
+    #   test's. So do not write "Google refuses it" anywhere on the strength of
+    #   this file. What this file proves is the token's own reach.
+    #
+    #   NOT BOUGHT AT ALL, twice over:
+    #     * "Can draft, cannot send" — THERE IS NO DRAFT-ONLY GMAIL SCOPE.
+    #       gmail.compose covers drafts AND send, so a :mail token can send;
+    #       "never sends" remains a property of our code and is asserted by
+    #       test/lib/no_gmail_send_test.rb.
+    #     * Per-mailbox narrowing — no scope says "this address only". The
+    #       workspace_mailboxes allow-list holds that, in Ruby, in
+    #       #authorizer_for.
     #
     # A purpose with no entry here RAISES rather than inheriting SCOPES: a new
     # purpose must name its own reach, because the silent failure mode of a
