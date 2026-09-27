@@ -208,7 +208,7 @@ class AppearancesController < ApplicationController
   # and nothing was spent. Set OPENAI_API_KEY to turn it on" instead of a shrug.
   #
   # ⚠ THAT EXAMPLE IS THE ONE THE PANEL CAN ACTUALLY PRINT, and it did not used to be.
-  # It read "Ideogram V3 Character — set FAL_KEY to turn it on", which this path cannot
+  # It named the fal Ideogram row and its FAL_KEY credential, which this path cannot
   # reach: `Appearances::GenerateArtifact::CAPABILITY` is `:character_sheet`, and
   # `openai_gpt5_sheet` is the ONLY row that claims it, so `preferred(:character_sheet)`
   # can return nothing else and the label and the env var were both wrong. The operator

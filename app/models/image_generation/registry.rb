@@ -77,9 +77,9 @@ module ImageGeneration
       # and the guard that makes that true is NOT in this file. It is
       # test/models/image_generation/registry_test.rb, "no row claims a capability
       # without recording what was measured", which rejects every row whose
-      # `measured_result` is blank. (This comment used to say "see the guard below",
-      # pointing at nothing in this file; a reader who went looking found no guard and
-      # had to decide whether to trust the sentence or the silence.) Tolerant HERE
+      # `measured_result` is blank. (This comment used to point at a guard "below" in
+      # this file, where there is none; a reader who went looking found nothing and had
+      # to decide whether to trust the sentence or the silence.) Tolerant HERE
       # because a row built by hand in a test has no measurement and should not raise.
       def measured_on = measured.is_a?(Hash) ? measured[:date].to_s.presence : nil
       def measured_result = measured.is_a?(Hash) ? measured[:result].to_s.presence : nil
