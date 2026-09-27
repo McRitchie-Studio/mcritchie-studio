@@ -15,7 +15,21 @@ module BuildGallery
 
   module_function
 
-  def examples = configured + showcased
+  # Every app, the `lead` apps from the config first and in its order; the rest
+  # keep their place (sort_by alone is not stable, hence the index).
+  def examples
+    lead = YAML.safe_load_file(CONFIG).fetch("lead", [])
+    (configured + showcased).each_with_index
+      .sort_by { |example, i| [ lead.index(subdomain(example.url)) || lead.size, i ] }
+      .map(&:first)
+  end
+
+  # "rantly" for https://rantly.mcritchie.studio.
+  def subdomain(url)
+    URI.parse(url.to_s).host.to_s.split(".").first
+  rescue URI::InvalidURIError
+    nil
+  end
 
   def configured
     YAML.safe_load_file(CONFIG).fetch("examples", []).map do |attrs|

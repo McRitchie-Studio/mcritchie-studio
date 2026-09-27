@@ -111,8 +111,8 @@
       </div>
 
       <% if @examples.any? %>
-        <%# A sideways row of every live app: 2.5 cards wide on a laptop (1.25 on a
-            phone), so the half card says "there is more". The edge that still
+        <%# A sideways row of every live app: about 3.3 cards wide on a laptop (1.25
+            on a phone), so the partial card says "there is more". The edge that still
             has cards past it fades out (mask-image, the technique of
             components/_overflow_fade), measured on scroll AND on resize, since the
             row's width changes without the window moving. %>
@@ -131,7 +131,7 @@
               :style="`-webkit-mask-image: ${mask}; mask-image: ${mask}`"
               data-test="build-gallery-row">
             <% @examples.each do |example| %>
-              <li class="snap-start shrink-0 basis-[80%] sm:basis-[calc((100%-2rem)/2.5)]" data-test="build-gallery-item">
+              <li class="snap-start shrink-0 basis-[80%] sm:basis-[calc((100%-3rem)/3.3)]" data-test="build-gallery-item">
                 <%= link_to example.url, target: "_blank", rel: "noopener",
                       class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors",
                       data: { test: "build-example" } do %>
@@ -144,7 +144,7 @@
                       <span class="flex h-full items-center justify-center text-5xl" aria-hidden="true"><%= example.emoji %></span>
                     <% end %>
                   </span>
-                  <span class="block p-4">
+                  <span class="block p-4 text-center">
                     <span class="block font-semibold text-heading group-hover:text-primary"><%= example.name %></span>
                     <span class="block font-mono text-xs text-muted truncate"><%= URI.parse(example.url).host rescue example.url %></span>
                     <span class="block text-sm text-body mt-1 line-clamp-2"><%= example.blurb %></span>
