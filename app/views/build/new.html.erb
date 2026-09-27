@@ -131,7 +131,7 @@
               :style="`-webkit-mask-image: ${mask}; mask-image: ${mask}`"
               data-test="build-gallery-row">
             <% @examples.each do |example| %>
-              <li class="snap-start shrink-0 basis-[80%] sm:basis-[calc((100%-3rem)/3.3)]" data-test="build-gallery-item">
+              <li class="snap-start shrink-0 min-w-0 basis-[80%] sm:basis-[calc((100%-3rem)/3.3)]" data-test="build-gallery-item">
                 <%= link_to example.url, target: "_blank", rel: "noopener",
                       class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors",
                       data: { test: "build-example" } do %>

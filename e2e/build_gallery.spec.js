@@ -20,6 +20,10 @@ test("the gallery scrolls sideways, its screenshot loads, and the fade follows t
   const ratio = await row.evaluate((el) => el.clientWidth / el.children[0].getBoundingClientRect().width);
   expect(ratio).toBeGreaterThan(3.1);
   expect(ratio).toBeLessThan(3.6);
+  // Every card is the same width: a long host (prisoners-dilemma.mcritchie.studio)
+  // truncates instead of widening its card.
+  const widths = await row.evaluate((el) => [...el.children].map((li) => Math.round(li.getBoundingClientRect().width)));
+  expect(new Set(widths).size).toBe(1);
 
   // Cyvasse, Prisoners Dilemma and Rantly lead (config/build_examples.yml `lead`).
   const hosts = await page.locator("[data-test='build-example']").evaluateAll((links) => links.map((a) => new URL(a.href).host.split(".")[0]));
