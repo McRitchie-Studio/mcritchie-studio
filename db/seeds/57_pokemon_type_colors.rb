@@ -34,11 +34,13 @@ POKEMON_TYPE_COLORS = [
   ["fairy",    "Fairy",    "#D685AD", "🌈"]
 ].freeze
 
-# Rank the types by how common they are in the seeded list (Gen 1–2, dex 1–251),
+# Rank the types by how common they are in the seeded list (Gen 1–4, dex 1–493),
 # most common → least common, in steps of 100 so a value can be inserted between
 # two ranks later without renumbering. Counts come from the SAME committed JSON
 # the Pokémon seed loads; ties break on the canonical type order (position), and
-# a type absent from the seeded rows would rank last (all 18 appear in Gen 1–2).
+# a type absent from the seeded rows would rank last (all 18 appear in Gen 1–4).
+# Adding a generation re-ranks the types, so some older Pokémon change their
+# identifying type (Pidgeot went from normal to flying with Gen 3–4).
 type_position = POKEMON_TYPE_COLORS.each_with_index.to_h { |(key, *), i| [key, i] }
 counts = Hash.new(0)
 # Species only: the nidoran gender-family row repeats Nidoran♀'s types and would

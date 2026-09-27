@@ -44,6 +44,63 @@ Behaviors of note:
 
 `Athletes::MergeDuplicates` (`app/services/athletes/merge_duplicates.rb`, rake `nfl:merge_duplicate_athletes`) finds Persons via two patterns: suffix variants (`will-anderson` ↔ `will-anderson-jr`) and same-name siblings with distinct slugs (case-insensitive first+last match where one has IDs and one doesn't). Moves contracts, depth_chart_entries, roster_spots, grades, pff_stats, image_caches from duplicate to canonical (dropping conflicts in favor of the canonical row), then deletes duplicate Athlete + Person. Defaults to `DRY_RUN=1`; pass `DRY_RUN=0` to commit. Wired into the full NFL rebuild workflow after `nfl:players_seed` and before ESPN scrape.
 
+## Athlete Headshot Pipeline
+
+`nfl:upload_headshots` caches three variants per athlete to S3 — `original`, `100`, `400`
+— for every `Athlete` carrying an `espn_id`. It is idempotent and resumable: the
+`ImageCache` rows *are* the progress, so `HEADSHOT_LIMIT=N` takes a cold run in
+inspectable waves and the next wave resumes where the last stopped. `nfl:rekey_headshots`
+re-files rows whose stored key disagrees with `Athlete#headshot_key_prefix`; the upload
+task detects that drift and names it but cannot repair it, because it grades "already
+done" by variant presence and never by key.
+
+**Read the lane left to right: wanted it → a source could answer → something came back.**
+Each step asks a different question, and only the last one grades the lane. A gap at the
+source step is a *data* gap and stays quiet; a gap at the result step is the lane not
+working, and that is what exits non-zero. Two predicates on `Athlete` hold the first two
+steps — `headshot_complete?` and `headshot_fetchable?` — so the skip branches in the task
+and the verdicts below it read one definition instead of two spellings that drift.
+
+**Two exit-code rules, disjoint by construction.** Rule 1 fires when `failed > cached`:
+more failures than successes cannot be one dead ESPN URL, and it names
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, because that is what a credential failure
+looks like from here. Rule 2 fires when the run found fetchable work and attempted none
+of it — the task refusing its job rather than S3 refusing the upload. `attempted.zero?`
+forces `failed == cached == 0`, so rule 1 is false exactly when rule 2 can fire.
+
+**Rule 2 grades `fetchable`, not every athlete short a variant, and that difference was a
+false abort on every healthy run.** The rule was written against `needed = considered -
+skipped_complete`, which subtracted out the *complete* athletes and nothing else. Eight
+production athletes have no `espn_headshot_url` and never will, so once the other 2,043
+were cached `needed` sat positive for ever while `attempted` was legitimately zero — the
+healthy steady-state re-run aborted, claiming the task had declined its job. **A verdict
+must be clearable by fixing what it accuses.** That one accused the lane and could only
+be cleared by filling a column the lane does not write. The graded population now holds
+only athletes a source could have answered for.
+
+Only **five** of those eight ever reach the verdict: three carry no `espn_id`, so they are
+not candidates at all (2,048 of the 2,051 athletes are). An abort on production therefore
+read "0 of the 5", not "0 of the 8".
+
+**What stays quiet, because a rule that cries wolf gets disabled.** A complete athlete is
+never counted as wanting a headshot, so the warm re-run says nothing. An athlete with no
+`espn_headshot_url` is counted as wanting one and not as fetchable, so the permanent
+residue is silent — it is **named**, slug by slug, in the report's inventory instead
+(capped at 25 with a remainder count), which is the honest way to ask for the data to be
+fixed. A stale folder name warns and never aborts: every avatar still serves.
+
+**A `next` added later cannot vanish.** `unfetched` (fetchable, walked past anyway) and
+`unclassified` (wanted one, skipped for a reason no verdict classifies) are both derived
+by subtraction and both reported. That is how the original hole stayed open —
+`skipped_no_team` was faithfully counted, printed, and read by no rule.
+
+**The inverse defect was checked for and is absent.** `Studio::ImageCache.cache!` raises
+on every failure path it has — the remote fetch, `Studio::S3.upload`, and
+`ImageCache.create!` — rather than degrading to a quiet no-op, so a wholesale credential
+failure lands in `failed` and rule 1 sees it. That is *unlike* the vision lane below,
+whose describer degrades by contract and therefore needs a third rule to notice a lane
+that never reached its API.
+
 ## Coach Headshot Pipeline
 
 `nfl:link_coach_headshots` (ESPN v2 coaches API for HCs) + `nfl:link_coach_headshots_from_team_sites` (NFL.com per-team scrape from `Team.coaches_url`) populate `Coach.espn_headshot_url`. `nfl:upload_coach_headshots` caches variants to S3 with `cache_control: immutable, max-age=1y`.
@@ -145,8 +202,20 @@ ESPN ──(AcquireOrValidate)──> athletes.team_slug ──(LookReading#trad
 `athletes.jersey_number` (integer, nullable) was added by this act's migration. Before
 2026-09-27 the number had no column on any table, ESPN returned it as `athlete.jersey`
 and every reader dropped it, so the character-sheet recipe substituted a `<NUMBER>`.
-`Appearances::Pipeline::DEFINITION_GAP_NOTE` and the `no #` cell on the model-pipeline
-board describe that gap and are owed an update now that the column exists.
+
+**The model-pipeline board reads the column now.** Its card prints `#17` when the row
+carries a number and a muted, self-explaining `no #` when it does not, and
+`Appearances::Pipeline::DEFINITION_GAP_NOTE` describes the remaining gap, which is a
+DIFFERENT one: the column fills per athlete on demand through this act, never by
+backfill, so most rows are still empty and `Defined` does not require the number. An
+empty cell is toned neutral rather than amber for that reason — an unacquired athlete
+is the ordinary case, and a warning on nearly every card would spend the contrast the
+traded card needs.
+
+**`Appearances::CharacterSheetPrompt` still takes the number by hand**, and that is now
+a choice rather than a limit. Reading the column there changes the text of every
+generated prompt, which costs money to evaluate and owes its own before/after
+artifacts, so it is a task of its own.
 
 ## Athlete Physical Descriptions
 

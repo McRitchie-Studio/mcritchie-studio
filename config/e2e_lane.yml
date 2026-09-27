@@ -289,8 +289,18 @@
 # retired the pinned applications strip, so e2e/app_ladder_pin_bridge.spec.js (TWO
 # specs) goes with it; the strip spec in app_ladder_row.spec.js is REPLACED one-for-one
 # by the list-scrolls-in-its-card spec. Coverage REMOVED with its feature.
-# MEASURED with the lister on THIS tree: `npx playwright test --list` => 173.
-total_specs: 173
+# 173 -> 174 on 2026-09-27 (/tasks/unsubscribe-and-resubscribe): e2e/unsubscribe.spec.js,
+# the unsubscribe -> resubscribe walk-through (one spec, not quarantined).
+# 174 -> 180 on 2026-09-27 (/tasks/model-pipeline-swim-lanes): e2e/model_pipeline_board.spec.js,
+# SIX specs for the new /model_pipeline swim-lane board — the primitive's card/dropzone
+# contract, the board stating that a drag triggers nothing, the read-only visitor, a
+# forward drag persisting, a backward drag REFUSED, and a reorder round-tripping. None is
+# quarantined, so the whole delta lands in the executed set too.
+# THE TWO DELTAS COLLIDED here: this branch raised 173 -> 179 while `accepted` raised the
+# same 173 -> 174, so the merged answer is neither side's number. It is not computed from
+# them either — MEASURED with the lister on the MERGED tree:
+# `npx playwright test --list` => 180.
+total_specs: 180
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -466,8 +476,11 @@ quarantined: 10
 # ⚠ Same collision as `total_specs`: PR #1636 moves this 160 -> 161. Merged answer 165.
 # 164 -> 165: total_specs - quarantined, the same build_gallery.spec.js spec.
 # 165 -> 163: the same two app_ladder_pin_bridge specs; neither was quarantined.
-# MEASURED: `npx playwright test --list --grep-invert @quarantine` => 163.
-executed: 163
+# 163 -> 164: total_specs - quarantined, the same unsubscribe.spec.js spec.
+# 164 -> 170: the six model_pipeline_board.spec.js specs above, none quarantined.
+# Same collision as `total_specs`, and the same remedy — MEASURED on the MERGED tree:
+# `npx playwright test --list --grep-invert @quarantine` => 170.
+executed: 170
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

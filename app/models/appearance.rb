@@ -10,6 +10,27 @@
 # Burrow in a suit rather than a jersey — is an explicit later choice, and a
 # look that is destroyed hands the default back rather than stranding it.
 class Appearance < ApplicationRecord
+  # THE BOARD RANK READ-MODEL (studio-engine's board primitive), which supplies
+  # `board_ordered`, `board_next_position`, the `set_initial_position` genesis seed
+  # wired below, and `reposition!` — the 100-gap restamp the shared
+  # Studio::Board::Reorderable reorder action on ModelPipelineController delegates to.
+  #
+  # `board_zone_attr` defaults to :stage, and :stage here is the OPERATOR'S HAND
+  # PLACEMENT rather than the lane a card renders in (which is derived —
+  # Appearances::LookReading). That distinction is deliberate and costs nothing: the
+  # zone is read only by `set_initial_position`, and a look nobody has dragged has a
+  # NULL stage, so its genesis rank is seeded globally and lands on top. `reposition!`
+  # never reads the zone — it stamps the ids the drag handed it, in the order it handed
+  # them — so the rank a lane actually carries is always written by a real drag in that
+  # lane.
+  include Studio::Board::Rankable
+
+  # THE FIVE LANES, owned by Appearances::LookReading because the ORDER of them is the
+  # pipeline rule (a hand placement may not move a look behind its evidence) and the
+  # rule and the list must not live in two places. Named here so a validation and a
+  # form can reach it the way every other staged record in this app does.
+  STAGES = Appearances::LookReading::STAGES
+
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug, inverse_of: :appearances, optional: true
   belongs_to :team, foreign_key: :team_slug, primary_key: :slug, optional: true
   has_many :artifact_subjects, foreign_key: :appearance_slug, primary_key: :slug, dependent: :nullify
@@ -25,8 +46,14 @@ class Appearance < ApplicationRecord
   validates :slug, presence: true, uniqueness: true
   validates :person_slug, :descriptor, presence: true
 
+  # NULL IS A REAL AND COMMON VALUE: "nobody has ever dragged this look". It is not
+  # the same as "designed", and `allow_nil` is what keeps the two distinguishable —
+  # every look on file predates the board and asserts no hand placement.
+  validates :stage, inclusion: { in: STAGES }, allow_nil: true
+
   before_validation :generate_slug, on: :create
   before_validation :normalize_colorway
+  before_create :set_initial_position
   after_create :become_default_if_first
   after_destroy :release_default_pointer
 

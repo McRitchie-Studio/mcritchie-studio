@@ -1356,30 +1356,43 @@ class Release::ConductorTest < ActiveSupport::TestCase
   test "[unit] archive_completed! pauses between tasks only when given a cadence" do
     loose_shipped_task("a")
     loose_shipped_task("b")
+    loose_shipped_task("b2") # three cards: two waits, so a later wait can be told from the first
 
     # A fake clock for the batch's BeatClock alone, so the recorded waits are
     # exact whatever the CI runner's speed (on the real clock a write over 100ms
-    # failed the old 0.1 tolerance). Each read of it costs WRITE seconds,
-    # standing in for the card's own write, and the paced "sleep" moves it by
-    # what it waits. Only the scheduler reads it; the rest of Rails keeps time.
-    write = 0.2
+    # failed the old 0.1 tolerance). Only the scheduler reads it; the rest of
+    # Rails keeps real time. It moves the way real time does: by what each paced
+    # "sleep" waits, and by WRITE whenever a card is actually written (an UPDATE
+    # of the tasks table), so the writes fall exactly where the code does them.
+    # Archiving one card runs several UPDATEs; WRITE stays small enough that a
+    # card's total stays well inside one beat.
+    write = 0.02
     now = 1_000.0
-    fake_beat = Class.new(Release::BeatClock) { define_method(:monotonic_now) { now += write } }
+    fake_beat = Class.new(Release::BeatClock) { define_method(:monotonic_now) { now } }
     new_fake = ->(beat) { fake_beat.allocate.tap { |clock| clock.send(:initialize, beat) } }
+    on_write = ->(*, payload) { now += write if payload[:sql].to_s.start_with?('UPDATE "tasks"') }
     paced = []
-    result = Release::BeatClock.stub(:new, new_fake) do
-      Release::Conductor.stub(:pause_between_archives, ->(seconds) { paced << seconds; now += seconds }) do
-        Release::Conductor.archive_completed!(pause: 0.5)
+    result = ActiveSupport::Notifications.subscribed(on_write, "sql.active_record") do
+      Release::BeatClock.stub(:new, new_fake) do
+        Release::Conductor.stub(:pause_between_archives, ->(seconds) { paced << seconds; now += seconds }) do
+          Release::Conductor.archive_completed!(pause: 0.5)
+        end
       end
     end
-    assert_operator result[:count], :>=, 2
+    assert_operator result[:count], :>=, 3
     assert_equal result[:count] - 1, paced.size,
                  "one wait BETWEEN each pair — never before the first card"
-    # Each wait is the remainder until the nth BEAT measured from the batch's start
-    # (Release::BeatClock): the write is spent INSIDE the beat, so every wait is
-    # the beat less the write, and the cards leave exactly one beat apart. A
-    # schedule that slept a full beat after each write would record 0.5 here.
-    paced.each { |seconds| assert_in_delta 0.5 - write, seconds, 1e-9, "the write is spent inside the beat" }
+    # Each wait is the remainder until the nth BEAT counted from the moment the
+    # FIRST card left (Release::BeatClock). So the first wait is a whole beat, and
+    # every later card's write is spent INSIDE its beat: those waits are equal and
+    # shorter. What the known wrong schedules record instead:
+    #   clock started on entry, before card 0's write   first wait short
+    #   a full beat slept after every write               a whole beat every time
+    #   clock restarted at every card                     waits growing 0.5, 1.0, 1.5
+    first, *later = paced
+    assert_in_delta 0.5, first, 1e-9, "the first wait is a whole beat (waits #{paced.inspect})"
+    assert_operator later.first, :<, 0.5 - 1e-6, "a later card's write is spent inside its beat (waits #{paced.inspect})"
+    later.each { |seconds| assert_in_delta later.first, seconds, 1e-9, "later cards leave one beat apart (waits #{paced.inspect})" }
 
     loose_shipped_task("c")
     unpaced = []

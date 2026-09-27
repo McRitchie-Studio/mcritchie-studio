@@ -49,6 +49,20 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "/agents/activities", activities[:href]
   end
 
+  # THE MODEL PIPELINE BOARD IS REACHABLE BY CLICKING. The same argument the person page
+  # makes for the model page it links to: a surface only reachable by knowing a URL is a
+  # surface the operator does not have.
+  test "the Studio section links the model pipeline board" do
+    self.logged_in_enabled = true
+
+    models = public_link_sections.flat_map { |section| section.fetch(:links) }
+                                 .find { |link| link[:label] == "Models" }
+
+    assert models, "expected a Models link in the Studio section"
+    assert_equal "/model_pipeline", models.fetch(:href)
+    assert models[:hover_emoji].present?
+  end
+
   test "public (non-admin) sidebar omits the Activities admin link" do
     self.admin_enabled = false
 
@@ -171,6 +185,11 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def tasks_path = "/tasks"
   def news_index_path = "/news"
   def contents_path = "/contents"
+  # ADDING A LINK TO LinkTreeHelper MEANS ADDING ITS STUB HERE. This class is an
+  # ActiveSupport::TestCase and includes the helper directly, so no route helper is
+  # defined for it — a new link raises NameError in EVERY test in this file, which is how
+  # the Models link took CI red on 2026-09-27 while the page itself was green.
+  def model_pipeline_path = "/model_pipeline"
   def nfl_hub_path = "/nfl"
   def games_season_path(year) = "/games/#{year}"
   def teams_path = "/teams"

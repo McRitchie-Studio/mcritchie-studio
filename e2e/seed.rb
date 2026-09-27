@@ -1314,6 +1314,105 @@ model_shot.subjects.create!(person_slug: model_person.slug, appearance_slug: e2e
 puts "  e2e character model: /people/#{model_person.slug}/models/#{e2e_look.slug} " \
      "(#{AppearanceReferencePhoto.where(appearance_slug: e2e_look.slug).count} candidates)"
 
+# --- /model_pipeline — ONE LOOK IN EVERY LANE ---------------------------------
+#
+# The swim-lane board derives a look's lane from what the look HAS
+# (Appearances::LookReading), so the only way to seed a lane is to give a look the
+# evidence for it. Every lane needs a card or e2e/model_pipeline_board.spec.js is
+# asserting against an empty column, which proves nothing.
+#
+# A DEDICATED SURNAME, and every row local. These people exist only for this board, so
+# no other spec's counts move when a lane is added here; and nothing below reaches a
+# network — the cached headshot is an ImageCache row (ImageCache#url is pure string
+# building) and the delivered image is a local asset path.
+Person.where(last_name: "Lanefixture").find_each do |stale|
+  Athlete.where(person_slug: stale.slug).destroy_all
+  stale.destroy
+end
+
+# `jersey_number` fills per athlete on demand (Athletes::AcquireOrValidate), never by a
+# backfill, so BOTH states are ordinary on a real board and the spec asserts both: the
+# Designed athlete below carries a number, everyone else is left without one.
+lane_athlete = lambda do |first_name, team_slug, jersey_number: nil|
+  person = Person.create!(first_name: first_name, last_name: "Lanefixture", athlete: true)
+  Athlete.create!(person_slug: person.slug, sport: "football", position: "QB",
+                  team_slug: team_slug, jersey_number: jersey_number,
+                  height_inches: 76, weight_lbs: 225)
+end
+
+lane_headshot = lambda do |athlete|
+  ImageCache.create!(owner: athlete, purpose: "headshot", variant: "400",
+                     s3_key: "headshots/nfl/#{athlete.team_slug}/#{athlete.person_slug}/400.png",
+                     content_type: "image/png", bytes: 48_000)
+end
+
+lane_candidates = lambda do |look, count, chosen|
+  count.times do |i|
+    AppearanceReferencePhoto.create!(
+      appearance_slug: look.slug, image_url: "https://example.com/#{look.slug}/c#{i}.jpg",
+      source: AppearanceReferencePhoto::SOURCE_SEARCH, chosen: i < chosen,
+      position: i + 1, width: 600, height: 800, face_score: 0.8
+    )
+  end
+end
+
+# DESIGNED — names no uniform at all, so nothing can be told what to generate.
+Appearance.create!(person_slug: lane_athlete.call("Designed", "seattle-seahawks",
+                                                  jersey_number: 12).person_slug,
+                   descriptor: "Unnamed look")
+
+# DEFINED — a uniform named and no photograph anywhere.
+Appearance.create!(person_slug: lane_athlete.call("Defined", "seattle-seahawks").person_slug,
+                   descriptor: "Seahawks home", colorway: "seahawks home")
+
+# SOURCE — our cached headshot and nothing else. Nobody has judged it, so no selection
+# has been made and the lane is honest about that.
+source_athlete = lane_athlete.call("Sourced", "seattle-seahawks")
+lane_headshot.call(source_athlete)
+Appearance.create!(person_slug: source_athlete.person_slug,
+                   descriptor: "Seahawks white", colorway: "seahawks white")
+
+# MODEL — a chosen reference set, nothing generated.
+lane_candidates.call(
+  Appearance.create!(person_slug: lane_athlete.call("Modelled", "seattle-seahawks").person_slug,
+                     descriptor: "Seahawks navy", colorway: "seahawks navy"), 12, 5
+)
+
+# GENERATION — a delivered image, carrying the generator that made it as DATA.
+delivered_athlete = lane_athlete.call("Delivered", "seattle-seahawks")
+lane_headshot.call(delivered_athlete)
+delivered_look = Appearance.create!(person_slug: delivered_athlete.person_slug,
+                                    descriptor: "Seahawks game", colorway: "seahawks game")
+lane_candidates.call(delivered_look, 10, 4)
+Artifact.create!(kind: "character_sheet", image_url: "/icon.png", source: "a-generator")
+        .subjects.create!(person_slug: delivered_look.person_slug,
+                          appearance_slug: delivered_look.slug, ordinal: 1)
+
+# GENERATION, a SECOND card — the reorder spec needs two in one lane to reverse.
+second_delivered = lane_athlete.call("Redelivered", "seattle-seahawks")
+lane_headshot.call(second_delivered)
+second_look = Appearance.create!(person_slug: second_delivered.person_slug,
+                                 descriptor: "Seahawks throwback", colorway: "seahawks throwback")
+lane_candidates.call(second_look, 10, 4)
+Artifact.create!(kind: "character_sheet", image_url: "/icon.png", source: "another-generator")
+        .subjects.create!(person_slug: second_look.person_slug,
+                          appearance_slug: second_look.slug, ordinal: 1)
+
+# TRADED — the freshness case. The look captured a team the athlete has since left, so it
+# comes BACK to Defined from wherever its work reached, and its hand placement is set aside.
+traded_athlete = lane_athlete.call("Traded", "denver-broncos")
+lane_headshot.call(traded_athlete)
+traded_look = Appearance.create!(person_slug: traded_athlete.person_slug,
+                                 descriptor: "Previous team game", colorway: "previous team game",
+                                 team_slug: "seattle-seahawks", stage: "generation")
+lane_candidates.call(traded_look, 9, 4)
+Artifact.create!(kind: "character_sheet", image_url: "/icon.png", source: "a-generator")
+        .subjects.create!(person_slug: traded_look.person_slug,
+                          appearance_slug: traded_look.slug, ordinal: 1)
+
+lane_board = Appearances::Pipeline.build
+puts "  e2e model pipeline: " + lane_board[:lanes].map { |l| "#{l.key} #{l.total}" }.join(", ")
+
 # Triage inbox: one open finding for the promote flow (triage_promote.spec.js
 # promotes it — a MUTATING spec, so it must never carry @qa-readonly).
 TriageFinding.delete_all
@@ -1430,3 +1529,13 @@ AppRequest.create!(prompt: "A trivia night scoreboard: teams, rounds and a live 
   AppRequest.create!(prompt: prompt, user: gallery_admin).queue!("zz-seed-#{sub}")
     .update_columns(subdomain: sub, status: "live")
 end
+
+# /unsubscribe — one reader with fixed tokens, reached from one broadcast, so
+# e2e/unsubscribe.spec.js can walk unsubscribe then resubscribe.
+EmailEvent.delete_all
+BroadcastDelivery.delete_all
+Broadcast.delete_all
+Contact.delete_all
+unsubscribe_reader = Contact.create!(email: "reader@example.com", unsubscribe_token: "e2e-unsubscribe-token")
+Broadcast.create!(slug: "e2e-cyvasse-is-back", subject: "Cyvasse is back", template_key: "cyvasse_is_back")
+  .deliveries.create!(contact: unsubscribe_reader, token: "e2e-delivery-token", sent_at: Time.current)

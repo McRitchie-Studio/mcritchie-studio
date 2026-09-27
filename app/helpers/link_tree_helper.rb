@@ -13,6 +13,7 @@ module LinkTreeHelper
           { label: "Tasks", href: tasks_path, emoji: "✅", hover_emoji: "🚦", desc: "Task board" },
           { label: "News", href: news_index_path, emoji: "📰", hover_emoji: "🔎", desc: "News pipeline" },
           { label: "Content", href: contents_path, emoji: "🎬", hover_emoji: "✨", desc: "Content pipeline" },
+          { label: "Models", href: model_pipeline_path, emoji: "🪪", hover_emoji: "🎭", desc: "Character model pipeline" },
         ] },
         { title: "NFL", links: [
           { label: "NFL Hub", href: nfl_hub_path, emoji: "🏈", hover_emoji: "📈", desc: "Rankings + grades" },

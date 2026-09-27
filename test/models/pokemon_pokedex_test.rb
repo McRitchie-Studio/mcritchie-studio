@@ -390,7 +390,7 @@ class PokemonPokedexTest < ActiveSupport::TestCase
   end
 
   # The evolution circles are resolved off the in-memory dex, never Pokemon#evolutions
-  # (which queries per cell — 251 of them on a public page). They carry ENTRIES, not
+  # (which queries per cell — 493 of them on a public page). They carry ENTRIES, not
   # bare Pokémon, so each circle can be drawn in its own state.
   test "[unit] dex entries link the line ahead as entries, in their own states" do
     Pokemon.create!(dex: 133, name: "Eevee", slug: "eevee", generation: 1, base: "eevee",

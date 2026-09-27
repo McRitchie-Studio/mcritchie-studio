@@ -1,4 +1,4 @@
-# The Gen 1–2 Pokémon (dex 1–251), seeded as reference data (db/seeds/56_pokemon.rb,
+# The Gen 1–4 Pokémon (dex 1–493), seeded as reference data (db/seeds/56_pokemon.rb,
 # from the committed db/seeds/data/pokemon.json that `rake pokemon:fetch` writes).
 # Carries types + base stats so it's reusable beyond its first job — the per-task
 # mascot draw (Task#assign_mascot stamps metadata.devops.mascot). No behavior is
@@ -6,6 +6,8 @@
 class Pokemon < ApplicationRecord
   GEN1_RANGE = (1..151).freeze
   GEN2_RANGE = (152..251).freeze
+  GEN3_RANGE = (252..386).freeze
+  GEN4_RANGE = (387..493).freeze
 
   # The shared Studio::Enumeral category holding each type's display attributes —
   # color, emoji (in metadata), and commonality rank (seeded in
@@ -15,8 +17,8 @@ class Pokemon < ApplicationRecord
   SHINY_EMOJI = "✨".freeze
 
   # How many times a three-stage line (base → evolves → evolves again) enters the
-  # mascot draw bag relative to shorter lines. The 24 fully-evolving roots
-  # (Charmander, Dratini, Larvitar, …) felt too rare at flat one-in-the-deck odds,
+  # mascot draw bag relative to shorter lines. The fully-evolving roots
+  # (Charmander, Dratini, Larvitar, Gible, …) felt too rare at flat one-in-the-deck odds,
   # so they draw at this multiple — every other base stays at weight 1. See .draw_bag.
   THREE_STAGE_DRAW_WEIGHT = 2
 
@@ -58,14 +60,14 @@ class Pokemon < ApplicationRecord
 
   # The spawnable roots: each family's base form, minus baby forms (reference
   # data only — they never spawn). The baby-list exclusion guards a self-based
-  # baby (base == slug yet on a baby list); no Gen 1–2 form is one today — Togepi
+  # baby (base == slug yet on a baby list); no Gen 1–4 form is one today — Togepi
   # and Tyrogue are reclassified as ordinary bases (lib/tasks/pokemon.rake
   # NOT_BABY) — but the guard stays for any future branching baby with no heir.
   def self.spawnable
     where(arel_table[:base].eq(arel_table[:slug])).where.not(slug: baby_slugs)
   end
 
-  # The deck the mascot draw pulls from — every Gen 1–2 base form. Sessions and
+  # The deck the mascot draw pulls from — every Gen 1–4 base form. Sessions and
   # tasks spawn at the bottom of an evolutionary line; the task's copy of the
   # mascot can then evolve at pipeline gates (tasks/task-mascot-evolution-gates).
   #
@@ -85,7 +87,7 @@ class Pokemon < ApplicationRecord
 
   # The base slugs whose evolutionary line runs a full three stages — the base
   # evolves, and that evolution itself evolves again (the "2 evolutions off base"
-  # roots; 24 across Gen 1–2). Two set-based queries, no N+1: `evolvers` is every
+  # roots; 49 across Gen 1–4). Two set-based queries, no N+1: `evolvers` is every
   # form that can evolve into something, and a base is three-stage exactly when one
   # of its own evolutions is itself an evolver. These draw at THREE_STAGE_DRAW_WEIGHT.
   # (The jsonb `where.not(evolution: [])` predicate over-selects, so empties are
@@ -101,7 +103,7 @@ class Pokemon < ApplicationRecord
   # `exclude`d (falling back to the whole deck when everything is spoken for), with
   # every three-stage line entered THREE_STAGE_DRAW_WEIGHT times so the
   # fully-evolving families surface that much more often. Over the seeded deck the
-  # 24 three-stage roots are counted twice (129 bases → a 153-slot bag).
+  # 49 three-stage roots are counted twice (246 bases → a 295-slot bag).
   def self.draw_bag(exclude: [])
     taken = Array(exclude).compact_blank
     pool = deck.where.not(slug: taken)
@@ -232,7 +234,7 @@ class Pokemon < ApplicationRecord
 
   # { type_key => Studio::Enumeral } for every seeded type, in ONE query — build
   # it once per page and look up each badge's color + emoji with no extra queries
-  # (avoids an N+1 over the 151 rows). Empty when the enumeral table/gem isn't
+  # (avoids an N+1 over the 493 rows). Empty when the enumeral table/gem isn't
   # installed yet, so badges fall back to the neutral chip.
   def self.type_enumerals
     Studio::Enumeral.catalog(TYPE_ENUMERAL_CATEGORY).index_by(&:key)

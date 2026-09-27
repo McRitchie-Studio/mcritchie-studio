@@ -21,6 +21,12 @@ class Contact < ApplicationRecord
 
   # reason: "requested" (the unsubscribe page), "bounced" (a permanent
   # bounce) or "complained" (marked as spam). The first reason sticks.
+  # The reader changed their mind (the unsubscribe landing's button): back on
+  # the list, the unsubscribe forgotten.
+  def resubscribe!
+    update!(subscribed: true, unsubscribed_at: nil, unsubscribe_reason: nil)
+  end
+
   def unsubscribe!(reason: "requested")
     return if !subscribed? && unsubscribe_reason.present?
 

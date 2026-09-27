@@ -1,0 +1,125 @@
+<%# /model_pipeline — EVERY CHARACTER MODEL IN FLIGHT, IN FIVE LANES.
+    The operator's ask: "a similar swim lane to /deployments … a 1000 ft view of the
+    models being generated." So this page is built to be SCANNED, not read: the lane a
+    card sits in and the one sentence on it are the whole interface, and every control
+    that would spend money lives on the model page a card links to.
+
+    REBASED ON THE ENGINE PRIMITIVE, not a second board. studio/board/board owns the
+    SortableJS drag, the cross-lane PATCH, the rank POST, the counts and the toasts;
+    Appearance carries Studio::Board::Rankable and ModelPipelineController includes
+    Studio::Board::Reorderable. This wrapper owns no JavaScript of its own — there is no
+    per-card write on this board, because a drag triggers nothing.
+
+    A NON-ADMIN GETS A READ-ONLY BOARD BY CONSTRUCTION: with no move_url and no
+    reorder_url the factory reverts a cross-lane drop and posts nothing, so the public
+    read cannot produce a refused write it has no way to act on. %>
+<% board = @board %>
+<% draggable = admin? %>
+
+<section class="min-h-screen space-y-6">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div class="min-w-0">
+      <h2 class="text-2xl font-bold text-heading">Model Pipeline</h2>
+      <p class="text-sm text-muted">
+        Every character model in flight. A lane is where a model's own evidence puts it.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="badge text-2xs <%= pipeline_chip_classes(:neutral) %>" data-test="pipeline-total">
+        <%= pluralize(board[:total], "model") %>
+      </span>
+      <% if board[:stale_count].positive? %>
+        <span class="badge text-2xs <%= pipeline_chip_classes(:bad) %>" data-test="pipeline-stale-count">
+          <%= board[:stale_count] %> need re-defining
+        </span>
+      <% end %>
+      <% if board[:orphan_count].positive? %>
+        <span class="badge text-2xs <%= pipeline_chip_classes(:bad) %>" data-test="pipeline-orphan-count">
+          <%= board[:orphan_count] %> with no person on file
+        </span>
+      <% end %>
+      <% if board[:hand_placed_count].positive? %>
+        <span class="badge text-2xs <%= pipeline_chip_classes(:info) %>" data-test="pipeline-hand-placed-count">
+          <%= board[:hand_placed_count] %> placed by hand
+        </span>
+      <% end %>
+      <%= link_to "People →", people_path, class: "btn btn-sm btn-outline" %>
+    </div>
+  </div>
+
+  <%# ── THE TWO RULES THIS BOARD RUNS ON ──────────────────────────────────────────
+      Stated on the page rather than in a comment, because both are answers to
+      questions the operator will ask the first time a card does not go where he put
+      it, and a board that cannot explain itself sends him to read Ruby. %>
+  <div class="card p-4 space-y-3" data-test="pipeline-legend">
+    <p class="label-upper text-primary">How the lanes move</p>
+    <dl class="grid gap-3 sm:grid-cols-2">
+      <div>
+        <dt class="text-xs font-bold text-heading">Dragging a card triggers nothing.</dt>
+        <dd class="text-2xs text-secondary leading-snug">
+          A drag records where you put it and the order of the lane. It never searches,
+          classifies, mints or generates — nothing on this board spends money. The
+          controls that do live on each model's own page.
+        </dd>
+      </div>
+      <div>
+        <dt class="text-xs font-bold text-heading">A hand placement moves a model forward, never back.</dt>
+        <dd class="text-2xs text-secondary leading-snug">
+          Lanes are derived from what a model has. You can drag a card ahead of its
+          evidence and it stays there; dragging it behind is refused, so the board can
+          never show less progress than the work that has actually been done. A change
+          in the person's data — a trade — sets your placement aside and the card says so.
+        </dd>
+      </div>
+    </dl>
+    <p class="text-2xs text-muted border-t border-subtle pt-2" data-test="pipeline-definition-gap">
+      <%= Appearances::Pipeline::DEFINITION_GAP_NOTE %>
+    </p>
+  </div>
+
+  <%# The board. Columns are the five lanes; each card is model_pipeline/_look_card,
+      bound to :reading. A cross-lane drop PATCHes { appearance: { stage } } to
+      #update; a reorder POSTs the DOM-ordered slugs to the shared reorder action. No
+      live channel — nothing broadcasts a look yet, and a channel with no publisher is
+      furniture. %>
+  <%= render "studio/board/board",
+        columns: board[:lanes].map { |lane|
+          {
+            key: lane.key,
+            label: lane.label,
+            cards: lane.cards,
+            count: lane.total,
+            count_class: lane_count_classes(lane.key),
+            # 225px, and both bounds were measured in a browser rather than guessed. Wider
+            # than the other boards' 190px because a card here carries an avatar beside a
+            # two-line name-and-descriptor stack, and at 210px surnames truncated
+            # ("A'Shawn Robi…"). Narrower than 250px because five columns plus their gaps
+            # then exceed the layout's max-w-7xl content box and the fifth lane — the one
+            # the operator is looking for — falls off the right edge of a 1440px window.
+            # 5 x 225 + 4 x 16 = 1189, inside the 1248 available.
+            # `min-w-0` IS LOAD-BEARING, not decoration. A flex item defaults to
+            # `min-width: auto` = min-content, so ONE long unbreakable token in a card —
+            # a slug like "person-who-is-not-on-file" — sets the whole lane's width.
+            # Measured in a browser: lanes came out 242-326px instead of the 225 declared
+            # here, the row overflowed its 1248px content box, and Generation fell off the
+            # right edge of a 1440px window. `min-w-0` overrides the auto, and the `sm:`
+            # declaration wins back above the breakpoint.
+            min_width: "min-w-0 sm:min-w-[225px]",
+            kickoff: lane_blurb_slot(lane),
+            header_extra: lane_overflow_chip(lane)
+          }
+        },
+        card_partial: "model_pipeline/look_card",
+        card_as: :reading,
+        card_locals: { draggable: draggable },
+        reorder_url: (draggable ? reorder_model_pipeline_path(format: :json) : nil),
+        reorder_payload: :slugs,
+        move_url: (draggable ? "/model_pipeline/:id.json" : nil),
+        move_param: (draggable ? { resource: :appearance, attr: :stage } : nil),
+        group: "model-pipeline",
+        id_attr: "slug",
+        zone_attr: "stage",
+        live_channel: nil,
+        toasts: true,
+        empty_label: "No models here" %>
+</section>
