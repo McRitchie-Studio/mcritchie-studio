@@ -13,9 +13,10 @@ module Workspace
   #                 gmail.readonly ONLY, feeding DeskCaptureItem. It cannot
   #                 draft and cannot write.
   #   Workspace::*  this one — a service account impersonating the address the
-  #                 Drive folders are shared with, holding four scopes including
+  #                 Drive folders are shared with, granted four scopes including
   #                 gmail.compose, feeding the communications record and the
-  #                 drafting pipeline.
+  #                 drafting pipeline. The GRANT holds four; a token asks for
+  #                 only the scopes its purpose needs (SCOPES_BY_PURPOSE).
   #
   # Do not collapse them without a decision: they differ in identity, in reach,
   # and in what a leak of either would cost.
@@ -54,8 +55,10 @@ module Workspace
     # Google refusal, which means the grant itself is missing.
     class UnregisteredSubject < StandardError; end
 
-    # The whole grant, frozen, asserted by the suite. Deliberately NOT the full
-    # `drive` scope.
+    # The WHOLE GRANT, frozen, asserted by the suite: the union a domain's
+    # super-admin grants to this key's client id, and what the provisioning
+    # tasks print. An individual token asks for a subset — see
+    # SCOPES_BY_PURPOSE. Deliberately NOT the full `drive` scope.
     #
     # `drive.file` is load-bearing beyond least-privilege: Google documents it
     # as covering only files the app CREATED, or that a user handed the app
@@ -70,6 +73,37 @@ module Workspace
       "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/gmail.compose"
     ].freeze
+
+    # WHAT EACH PURPOSE ASKS FOR — the grant above narrowed at the token.
+    #
+    # The grant cannot be narrowed (delegation is domain-wide and holds all four
+    # scopes for every address), but the REQUEST can: an assertion may name a
+    # subset of the granted scopes and the access token comes back holding only
+    # what it asked for. So purpose stops being a rule our own callers keep and
+    # becomes a property of the bearer token itself.
+    #
+    # WHAT THIS DOES AND DOES NOT BUY, measured rather than asserted:
+    #
+    #   It buys: a :mail token cannot touch Drive. Nothing in the two scopes
+    #   below grants any Drive access, so a mail authorizer handed to a Drive
+    #   service is refused by Google, not merely by us.
+    #
+    #   It does NOT buy "can draft, cannot send". THERE IS NO DRAFT-ONLY GMAIL
+    #   SCOPE — gmail.compose covers drafts AND send — so "never sends" stays a
+    #   property of our code, asserted by test/lib/no_gmail_send_test.rb. It
+    #   does not buy per-sender narrowing either: there is no scope that says
+    #   "this mailbox only". The subject allow-list is what holds that, and it
+    #   holds it in Ruby.
+    #
+    # A purpose with no entry here RAISES rather than inheriting SCOPES: a new
+    # purpose must name its own reach, because the silent failure mode of a
+    # default is the whole grant.
+    MAIL_SCOPES = [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.compose"
+    ].freeze
+
+    SCOPES_BY_PURPOSE = { workspace: SCOPES, mail: MAIL_SCOPES }.freeze
 
     # Keys a usable service-account key must carry. `client_email` and
     # `private_key` are what the JWT assertion is built from; `type` is what
@@ -123,7 +157,9 @@ module Workspace
       #
       # `purpose:` says what the authorizer is FOR (WorkspaceAccount::PURPOSES):
       # Drive passes nothing and gets the workspace subject only; Gmail passes
-      # :mail, which also admits an allow-listed mailbox.
+      # :mail, which also admits an allow-listed mailbox. It decides WHO may be
+      # impersonated (here) and WHAT the resulting token may reach
+      # (SCOPES_BY_PURPOSE, applied in #build_authorizer).
       def authorizer_for(subject, purpose: :workspace)
         subject = normalize_subject(subject)
         unless WorkspaceAccount.impersonatable?(subject, purpose: purpose)
@@ -134,7 +170,17 @@ module Workspace
                 "bin/rails 'workspace:check[<domain>]' to prove it."
         end
 
-        build_authorizer(subject)
+        build_authorizer(subject, purpose: purpose)
+      end
+
+      # The scopes one purpose asks for. Public because the provisioning tasks
+      # print them and the suite pins them.
+      def scopes_for(purpose)
+        SCOPES_BY_PURPOSE.fetch(purpose) do
+          raise ArgumentError, "no scope list for purpose #{purpose.inspect} " \
+                               "(have: #{SCOPES_BY_PURPOSE.keys.join(', ')}) — a new purpose must name its " \
+                               "own scopes in SCOPES_BY_PURPOSE rather than inheriting the whole grant"
+        end
       end
 
       # Proves a grant WITHOUT handing back anything that can read data.
@@ -156,7 +202,13 @@ module Workspace
         # swallowed the guard above and turned a refusal into a return value —
         # an UnregisteredSubject is a StandardError too.
         begin
-          creds = build_authorizer(subject)
+          # THE WHOLE GRANT, not a purpose's slice, and that is not an oversight.
+          # #probe answers "does the delegation exist", and workspace:check_mailbox
+          # leans on the answer covering the workspace too ("a token for this
+          # address proves the WORKSPACE's grant"). A mail-only request could not
+          # show that: it would come back fine with the Drive scopes ungranted.
+          # Safe because probe returns a VERDICT and never the authorizer.
+          creds = build_authorizer(subject, purpose: :workspace)
           creds.fetch_access_token!
           # Read the subject back off the BUILT object: a dropped assignment
           # would otherwise authenticate as the service account itself and look
@@ -229,15 +281,32 @@ module Workspace
 
       def normalize_subject(subject) = subject.to_s.strip.downcase
 
-      # Cached per subject: one credential object per workspace, each holding
-      # its own short-lived token.
-      def build_authorizer(subject)
+      # Cached per (subject, purpose): one credential object per address per
+      # purpose, each holding its own short-lived token.
+      #
+      # THE PURPOSE BELONGS IN THE KEY, not only in the scope request. Keyed on
+      # the subject alone, the FIRST caller to ask for an address decided what
+      # every later caller got, and both real orderings got it wrong:
+      #
+      #   workspace:check_mailbox probes alex@ against the whole grant, then
+      #   GmailClient asks for alex@ with purpose :mail — and was handed the
+      #   cached FOUR-scope object.
+      #   workspace:check reads Drive as team@ first and Gmail as team@ second,
+      #   same address, same outcome.
+      #
+      # So narrowing the request without narrowing the key would have bought
+      # nothing: the broad token stays in play at the one seam the purpose
+      # boundary exists to close.
+      #
+      # `purpose` is a required keyword on purpose — a default here is how the
+      # whole grant leaks back in.
+      def build_authorizer(subject, purpose:)
         require "googleauth"
 
         @authorizers ||= {}
-        @authorizers[subject] ||= begin
+        @authorizers[[ subject, purpose ]] ||= begin
           creds = ::Google::Auth::ServiceAccountCredentials.make_creds(
-            json_key_io: StringIO.new(credential.to_json), scope: SCOPES
+            json_key_io: StringIO.new(credential.to_json), scope: scopes_for(purpose)
           )
           creds.sub = subject
           creds
