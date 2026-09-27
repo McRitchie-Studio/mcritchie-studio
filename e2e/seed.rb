@@ -1330,10 +1330,14 @@ Person.where(last_name: "Lanefixture").find_each do |stale|
   stale.destroy
 end
 
-lane_athlete = lambda do |first_name, team_slug|
+# `jersey_number` fills per athlete on demand (Athletes::AcquireOrValidate), never by a
+# backfill, so BOTH states are ordinary on a real board and the spec asserts both: the
+# Designed athlete below carries a number, everyone else is left without one.
+lane_athlete = lambda do |first_name, team_slug, jersey_number: nil|
   person = Person.create!(first_name: first_name, last_name: "Lanefixture", athlete: true)
   Athlete.create!(person_slug: person.slug, sport: "football", position: "QB",
-                  team_slug: team_slug, height_inches: 76, weight_lbs: 225)
+                  team_slug: team_slug, jersey_number: jersey_number,
+                  height_inches: 76, weight_lbs: 225)
 end
 
 lane_headshot = lambda do |athlete|
@@ -1353,7 +1357,8 @@ lane_candidates = lambda do |look, count, chosen|
 end
 
 # DESIGNED — names no uniform at all, so nothing can be told what to generate.
-Appearance.create!(person_slug: lane_athlete.call("Designed", "seattle-seahawks").person_slug,
+Appearance.create!(person_slug: lane_athlete.call("Designed", "seattle-seahawks",
+                                                  jersey_number: 12).person_slug,
                    descriptor: "Unnamed look")
 
 # DEFINED — a uniform named and no photograph anywhere.

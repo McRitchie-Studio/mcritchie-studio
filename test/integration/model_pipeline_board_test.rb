@@ -71,13 +71,13 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
 
   # THE BOARD STATES ITS OWN RULES, because both are answers to questions the operator
   # will have the first time a card does not go where he put it.
-  test "the page states that a drag triggers nothing and names the jersey-number gap" do
+  test "the page states that a drag triggers nothing and how a jersey number is filled" do
     get model_pipeline_path
 
     assert_select "[data-test='pipeline-legend']", text: /Dragging a card triggers nothing/
     assert_select "[data-test='pipeline-legend']", text: /forward, never back/
     assert_select "[data-test='pipeline-definition-gap']",
-                  text: /Jersey number has no column on any table yet/
+                  text: /fills per athlete on demand from ESPN, never by backfill/
   end
 
   test "a traded look is counted and shown in defined rather than where its work reached" do
@@ -122,15 +122,20 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='look-card-avatar-initials']", text: /JA/
   end
 
-  # THE JERSEY NUMBER HAS NO COLUMN ON ANY TABLE. Rendered as a named gap rather than
-  # left out, because a row that omitted it would read as complete.
-  test "every athlete card's sports row reports the missing jersey number" do
+  # THE JERSEY NUMBER, END TO END. `athletes.jersey_number` landed 2026-09-27 and fills
+  # per athlete on demand, so both states are real on a live board: a number we hold is
+  # printed, and one we do not is a NAMED gap rather than an omitted cell, because a row
+  # that dropped it would read as complete. The legend carries the actionable version.
+  test "a card prints the jersey number it holds and names the gap when it has none" do
     look!("Numberless", colorway: "bills home")
 
     get model_pipeline_path
-
     assert_select "[data-test='look-card-sports-number']", text: "no #"
-    assert_select "[data-test='pipeline-definition-gap']", text: /Jersey number has no column/
+    assert_select "[data-test='pipeline-definition-gap']", text: /fills per athlete on demand/
+
+    @athlete.update!(jersey_number: 17)
+    get model_pipeline_path
+    assert_select "[data-test='look-card-sports-number']", text: "#17"
   end
 
   # `appearances.person_slug` carries NO foreign key, so a look can name a person who is

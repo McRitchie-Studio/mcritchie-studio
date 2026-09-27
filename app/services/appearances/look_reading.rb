@@ -76,21 +76,23 @@ module Appearances
   # #person_present? and #describable? for why NOTES are the connection a
   # non-athlete look is allowed to have instead.
   #
-  # ── ONE FIELD THE OPERATOR NAMED THAT HAS NO HOME ────────────────────────────
+  # ── ONE FIELD THE OPERATOR NAMED THAT IS HELD BUT NOT BACKFILLED ─────────────
   #
   # He described the define step as "name, height, and for athletes number and
-  # team". Four of those exist (`people.first_name`/`last_name`,
-  # `athletes.height_inches`, `athletes.team_slug`). THE JERSEY NUMBER DOES NOT
-  # EXIST ON ANY TABLE — measured 2026-09-26 and re-checked 2026-09-27: no
-  # `jersey_number`, no `number`, and every "jersey" in the app means the free-text
-  # `colorway`. ESPN's API returns it as `athlete.jersey`; we do not store it, and
-  # the character-sheet recipe substitutes a `<NUMBER>` into every prompt. So it is
-  # a real gap in the define step and not a detail.
+  # team". ALL FIVE NOW EXIST (`people.first_name`/`last_name`,
+  # `athletes.height_inches`, `athletes.team_slug`, `athletes.jersey_number`). The
+  # number arrived 2026-09-27, filled by Athletes::AcquireOrValidate under its
+  # `:roster` policy because ESPN publishes it and a trade is the event the operator
+  # named. Before that it existed on no table — and a tripwire in this object's test
+  # asserted exactly that, so the claim could not outlive the schema. It fired the
+  # day the column landed, and #sports_facts now renders the value.
   #
-  # This object does NOT invent a check for it. A gate over a column that does not
-  # exist would fail every look for a reason the operator cannot act on. Instead the
-  # gap is SURFACED: #sports_facts renders a muted `no #` cell on every athlete card
-  # so the row cannot read as complete, and
+  # `defined` STILL DOES NOT REQUIRE IT, for a new reason. The column fills per
+  # athlete on demand, never by backfill, so nil is the ORDINARY state of an athlete
+  # nobody has acquired yet — a gate over it would demote nearly every look for a
+  # reason that is not about that look. So the number is a FACT the card reports and
+  # not a rung on the ladder: #sports_facts prints it when we hold one and a muted,
+  # self-explaining `no #` when we do not, and
   # Appearances::Pipeline::DEFINITION_GAP_NOTE states the actionable version once on
   # the board.
   class LookReading
@@ -118,6 +120,13 @@ module Appearances
       "generation" => "A character model has been delivered."
     }.freeze
 
+    # WHAT THE `no #` CELL SAYS WHEN ASKED. It names the ACT that fills the column
+    # rather than the column itself — a reader looking at a hole wants the remedy, and
+    # "acquire or re-validate this athlete" is something they can go and do.
+    NUMBER_GAP_TITLE =
+      "No jersey number on file — it fills from ESPN when this athlete is acquired " \
+      "or re-validated.".freeze
+
     def self.index(stage) = STAGES.index(stage.to_s)
 
     # The later of two lanes in pipeline order. An unknown or nil lane loses to a
@@ -132,12 +141,14 @@ module Appearances
     end
 
     attr_reader :appearance, :person_name, :person_slug, :hand_stage,
-                :athlete_team_slug, :athlete_position, :avatar_url,
+                :athlete_team_slug, :athlete_position, :jersey_number, :avatar_url,
                 :candidate_count, :chosen_count, :judged_count,
                 :artifact_count, :artifact_source, :height_inches, :weight_lbs
 
     # Every argument is a FACT, not a lookup. `athlete_team_slug` is the athlete
-    # row's CURRENT team (nil for a non-athlete); `headshot` is whether a cached
+    # row's CURRENT team (nil for a non-athlete); `jersey_number` is that row's number,
+    # nil until somebody acquires or re-validates the athlete; `headshot` is whether a
+    # cached
     # headshot exists to build from; `avatar_url` is that headshot's S3 URL, built
     # from the STORED s3_key (never a rebuilt path — a re-key moved every athlete
     # out of `free-agents/`, so a derived path points at objects that have moved);
@@ -145,7 +156,7 @@ module Appearances
     # symbol.
     def initialize(appearance:, person_name: nil, person_slug: nil, person_present: true,
                    athlete: false, athlete_team_slug: nil, athlete_position: nil,
-                   headshot: false, avatar_url: nil,
+                   jersey_number: nil, headshot: false, avatar_url: nil,
                    physique_described: false, height_inches: nil, weight_lbs: nil,
                    candidate_count: 0, chosen_count: 0, judged_count: 0,
                    artifact_count: 0, artifact_source: nil, identity_state: nil)
@@ -157,6 +168,9 @@ module Appearances
       @athlete = athlete
       @athlete_team_slug = athlete_team_slug.presence
       @athlete_position = athlete_position.presence
+      # NEITHER `.presence` NOR TRUTHINESS: 0 is a legal jersey number (the league has
+      # allowed it since 2023), so the only absence this cell may report is nil.
+      @jersey_number = jersey_number
       @headshot = headshot
       @avatar_url = avatar_url.presence
       @physique_described = physique_described
@@ -364,11 +378,9 @@ module Appearances
     # reports its own absence rather than collapsing — a row with a hole in it is what
     # tells him which athlete needs attention.
     #
-    # THE JERSEY NUMBER HAS NO COLUMN, and it is rendered as a hole rather than left out.
-    # He named "number" as part of the define step and every character-sheet prompt
-    # substitutes one, so omitting it silently would let the row read as complete. ESPN's
-    # API returns it (`athlete.jersey`); we do not store it. Adding the column is a
-    # separate change — this row is what makes the gap impossible to miss until then.
+    # THE JERSEY NUMBER IS A CELL LIKE THE OTHERS NOW. An absent one is still NAMED
+    # rather than dropped: he named "number" as part of the define step, so a row that
+    # quietly omitted it would read as complete.
     def sports_facts
       return [] unless athlete?
 
@@ -376,16 +388,26 @@ module Appearances
       [
         cell(:team, athlete_team_slug&.titleize, "no team"),
         cell(:position, athlete_position, "no position"),
-        # NEUTRAL, NOT A WARNING, and that is the whole difference between a fact and an
-        # alarm. No value is possible for this cell on any card until a jersey-number
-        # column exists, so styling it as a gap to act on would put an amber chip on every
-        # athlete card forever — exactly the contrast leak the physique chip was fixed for.
-        # It is rendered so the row cannot read as complete, muted so it cannot shout, and
-        # it carries its own explanation; the board's legend holds the actionable version.
-        { key: :number, label: "no #", tone: :neutral,
-          title: "Jersey number has no column on any table yet — ESPN returns it, we do not store it." },
+        number_cell,
         cell(:size, size, "no size")
       ]
+    end
+
+    # THE ONE CELL THAT DOES NOT GO THROUGH #cell, because its absence is the NORMAL
+    # state rather than an anomaly. `athletes.jersey_number` is filled per athlete on
+    # demand by Athletes::AcquireOrValidate and never by a backfill, so most athletes
+    # carry no number today. Toning that :warn — as #cell does for team, position and
+    # size — would put a warning chip on nearly every athlete card and spend the
+    # contrast the traded card needs. That is the same leak the physique chip was
+    # already fixed for, arriving for a new reason.
+    #
+    # So: a number we hold reads as a plain fact, and one we do not is muted and
+    # carries the act that would fill it. 0 IS A LEGAL JERSEY, so absence is asked as
+    # `nil?` — truthiness or `presence` would print "no #" for the man wearing it.
+    def number_cell
+      return { key: :number, label: "##{jersey_number}", tone: :neutral } unless jersey_number.nil?
+
+      { key: :number, label: "no #", tone: :neutral, title: NUMBER_GAP_TITLE }
     end
 
     def measurements_label

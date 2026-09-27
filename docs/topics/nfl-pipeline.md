@@ -145,8 +145,20 @@ ESPN ──(AcquireOrValidate)──> athletes.team_slug ──(LookReading#trad
 `athletes.jersey_number` (integer, nullable) was added by this act's migration. Before
 2026-09-27 the number had no column on any table, ESPN returned it as `athlete.jersey`
 and every reader dropped it, so the character-sheet recipe substituted a `<NUMBER>`.
-`Appearances::Pipeline::DEFINITION_GAP_NOTE` and the `no #` cell on the model-pipeline
-board describe that gap and are owed an update now that the column exists.
+
+**The model-pipeline board reads the column now.** Its card prints `#17` when the row
+carries a number and a muted, self-explaining `no #` when it does not, and
+`Appearances::Pipeline::DEFINITION_GAP_NOTE` describes the remaining gap, which is a
+DIFFERENT one: the column fills per athlete on demand through this act, never by
+backfill, so most rows are still empty and `Defined` does not require the number. An
+empty cell is toned neutral rather than amber for that reason — an unacquired athlete
+is the ordinary case, and a warning on nearly every card would spend the contrast the
+traded card needs.
+
+**`Appearances::CharacterSheetPrompt` still takes the number by hand**, and that is now
+a choice rather than a limit. Reading the column there changes the text of every
+generated prompt, which costs money to evaluate and owes its own before/after
+artifacts, so it is a task of its own.
 
 ## Athlete Physical Descriptions
 

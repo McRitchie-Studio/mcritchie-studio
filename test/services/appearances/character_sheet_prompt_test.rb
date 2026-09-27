@@ -51,9 +51,11 @@ class Appearances::CharacterSheetPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "NOT a sharp ninety-degree"
   end
 
-  # ⚠ THERE IS NO JERSEY NUMBER IN THE DATA MODEL. Measured 2026-09-27: neither
-  # `athletes` nor `roster_spots` carries one. A template that emitted the
-  # placeholder would have the model render the angle brackets.
+  # ⚠ THIS RECIPE DOES NOT READ `athletes.jersey_number`, though the column has
+  # existed since 2026-09-27 — the number arrives only as the caller's `number:`
+  # argument, so nil is still the ordinary case here. Wiring the column would change
+  # the text of every generated prompt and is a task of its own. A template that
+  # emitted the placeholder instead would have the model render the angle brackets.
   test "an unknown jersey number omits the clause rather than emitting a placeholder" do
     prompt = Appearances::CharacterSheetPrompt.call(@look)
 

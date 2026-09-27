@@ -237,15 +237,41 @@ class Appearances::PipelineTest < ActiveSupport::TestCase
     assert_equal "JA", reading.initials
   end
 
-  test "the sports row is built from the athlete row" do
-    @athlete.update!(position: "QB", team_slug: "buffalo-bills")
+  # THE SCHEMA-COUPLED HALF OF THE JERSEY NUMBER, and it is here rather than in
+  # Appearances::LookReadingTest on purpose. That object takes the number as an ARGUMENT,
+  # so no assertion over it can see whether a column exists — it would keep passing
+  # against a dropped column while every real card silently read "no #" forever. This
+  # test writes `jersey_number` to a real `athletes` row and reads the rendered cell back
+  # through the gather, so a rename or a drop fails loudly here.
+  #
+  # It is the successor to the tripwire this task carried before 2026-09-27: while the
+  # column did not exist, Appearances::LookReadingTest asserted `refute_respond_to
+  # Athlete.new, :jersey_number` so that the claim "the number has no home" could not
+  # outlive the schema. It fired the day PR 1674 landed the column. Same discipline,
+  # opposite direction: name the schema fact the rendering depends on, in a place where
+  # the schema can answer.
+  test "the sports row is built from the athlete row, jersey number included" do
+    @athlete.update!(position: "QB", team_slug: "buffalo-bills", jersey_number: 17)
     reading = Appearances::Pipeline.reading_for(look!(descriptor: "Sporty", colorway: "bills home"))
 
     labels = reading.sports_facts.to_h { |f| [f[:key], f[:label]] }
     assert_equal "Buffalo Bills", labels[:team]
     assert_equal "QB", labels[:position]
     assert_equal "6'5\" · 237lb", labels[:size]
-    assert_equal "no #", labels[:number]
+    assert_equal "#17", labels[:number]
+    assert_equal 17, reading.jersey_number, "read off the athlete row, not re-derived"
+  end
+
+  # `athletes.jersey_number` fills PER ATHLETE ON DEMAND (Athletes::AcquireOrValidate),
+  # never by a backfill, so an empty one is the ordinary state and the board must read as
+  # a named gap rather than a blank or a warning.
+  test "an athlete nobody has acquired reports the number as a named gap" do
+    assert_nil @athlete.jersey_number, "the fixture carries no number — the common case"
+    reading = Appearances::Pipeline.reading_for(look!(descriptor: "Unacquired", colorway: "bills home"))
+
+    number = reading.sports_facts.find { |f| f[:key] == :number }
+    assert_equal "no #", number[:label]
+    assert_equal :neutral, number[:tone]
   end
 
   # ── the connection `defined` asserts ──────────────────────────────────────────

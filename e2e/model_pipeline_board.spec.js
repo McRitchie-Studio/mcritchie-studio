@@ -43,7 +43,18 @@ test("the board tells the operator that a drag triggers nothing", async ({ page 
   const legend = page.locator("[data-test='pipeline-legend']");
   await expect(legend).toContainText("Dragging a card triggers nothing");
   await expect(legend).toContainText("forward, never back");
-  await expect(page.locator("[data-test='pipeline-definition-gap']")).toContainText("Jersey number has no column");
+  await expect(page.locator("[data-test='pipeline-definition-gap']")).toContainText("fills per athlete on demand");
+
+  // THE NUMBER CELL, BOTH WAYS, in a real browser. e2e/seed.rb gives the Designed athlete
+  // a jersey number and leaves the Defined one without, because `athletes.jersey_number`
+  // fills per athlete on demand and both states are ordinary. Located BY NAME, not by
+  // position: other seeded people land in these lanes too, so `.first()` would not be
+  // the card this asserts about.
+  const numberOf = (lane, who) =>
+    page.locator(`#dropzone-${lane} .kanban-card`, { hasText: who })
+        .locator("[data-test='look-card-sports-number']");
+  await expect(numberOf("designed", "Designed Lanefixture")).toHaveText("#12");
+  await expect(numberOf("defined", "Defined Lanefixture")).toHaveText("no #");
 });
 
 test("a visitor reading the board is offered no way to write to it", async ({ page }) => {

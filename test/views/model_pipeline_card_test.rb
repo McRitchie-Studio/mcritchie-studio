@@ -34,7 +34,8 @@ class ModelPipelineCardViewTest < ActionView::TestCase
     Appearances::LookReading.new(appearance: appearance,
                                  **{ person_name: "Josh Allen", athlete: true,
                                      athlete_team_slug: "buffalo-bills", athlete_position: "QB",
-                                     height_inches: 77, weight_lbs: 237 }.merge(facts))
+                                     jersey_number: 17, height_inches: 77,
+                                     weight_lbs: 237 }.merge(facts))
   end
 
   # RETURNS THIS RENDER'S OWN HTML, and the tests that render more than once assert
@@ -109,20 +110,20 @@ class ModelPipelineCardViewTest < ActionView::TestCase
     assert_select "[data-test='look-card-sports-team']", text: "Buffalo Bills"
     assert_select "[data-test='look-card-sports-position']", text: "QB"
     assert_select "[data-test='look-card-sports-size']", text: /237lb/
-    assert_select "[data-test='look-card-sports-number']", text: "no #"
+    assert_select "[data-test='look-card-sports-number']", text: "#17"
   end
 
-  # THE JERSEY NUMBER HAS NO COLUMN ON ANY TABLE. A row that simply left the cell out
-  # would read as complete, so the gap is rendered and carries its own explanation.
-  # MUTED, NOT AMBER: no card can ever fill this cell until a column exists, so styling
-  # it as a gap to act on would put a warning chip on every athlete card forever — the
-  # contrast leak the physique chip was already fixed for. The board's legend carries the
-  # actionable version; the cell only stops the row reading as complete.
-  test "the jersey-number cell explains itself and is muted rather than a warning" do
-    render_card reading
+  # AN ABSENT NUMBER IS RENDERED, not dropped: a row that left the cell out would read as
+  # complete. MUTED, NOT AMBER — `athletes.jersey_number` fills per athlete on demand and
+  # never by backfill, so an empty one is the ordinary state of an athlete nobody has
+  # acquired, and a warning chip on nearly every card is the contrast leak the physique
+  # chip was already fixed for. The board's legend carries the actionable version.
+  test "an absent jersey number is a muted cell that explains itself" do
+    render_card reading(jersey_number: nil)
 
     cell = css_select("[data-test='look-card-sports-number']").first
-    assert_match(/no column on any table/, cell["title"])
+    assert_equal "no #", cell.text.strip
+    assert_match(/acquired or re-validated/, cell["title"])
     assert_includes cell["class"], pipeline_chip_classes(:neutral)
     refute_includes cell["class"], "warning"
   end

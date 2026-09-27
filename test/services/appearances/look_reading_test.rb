@@ -328,10 +328,10 @@ class Appearances::LookReadingTest < ActiveSupport::TestCase
 
   test "the sports row carries team, position, number and size in that order" do
     r = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
-                athlete_position: "QB", height_inches: 77, weight_lbs: 237)
+                athlete_position: "QB", jersey_number: 17, height_inches: 77, weight_lbs: 237)
 
     assert_equal %i[team position number size], r.sports_facts.map { |f| f[:key] }
-    assert_equal ["Buffalo Bills", "QB", "no #", "6'5\" · 237lb"], r.sports_facts.map { |f| f[:label] }
+    assert_equal ["Buffalo Bills", "QB", "#17", "6'5\" · 237lb"], r.sports_facts.map { |f| f[:label] }
   end
 
   # A ROW THAT COLLAPSED ITS EMPTY CELLS WOULD READ AS COMPLETE, so every absent value is
@@ -346,21 +346,57 @@ class Appearances::LookReadingTest < ActiveSupport::TestCase
     assert(r.sports_facts.all? { |f| f[:label].present? })
   end
 
-  # THE JERSEY NUMBER HAS NO COLUMN ON ANY TABLE (re-checked 2026-09-27). The operator
-  # named it as part of the define step and every character-sheet prompt substitutes one,
-  # so the cell is permanent and carries its own explanation — a row that simply left it
-  # out would read as complete.
-  test "the jersey number cell is always a named gap and explains itself" do
+  # ── the jersey number ─────────────────────────────────────────────
+  #
+  # WHAT USED TO BE HERE, AND WHY IT IS GONE. Until 2026-09-27 no table carried a jersey
+  # number, so this cell could only ever be a hole, and the test that asserted it said so
+  # with a TRIPWIRE — `refute_respond_to Athlete.new, :jersey_number` — whose message was
+  # "a jersey-number column landed, give the cell its value and retire this gap". It
+  # fired on exactly the day it was written for: PR 1674 merged the column and CI went
+  # red rather than letting a view keep telling the operator the number had no home.
+  #
+  # ITS JOB MOVES, IT DOES NOT DISAPPEAR. The assertion a gap owes is "say out loud the
+  # thing that makes this a gap, so nobody can quietly disagree with it", and the claim
+  # this cell now makes is a BEHAVIOUR: a number we hold renders, and one we do not reads
+  # as a named, self-explaining, muted gap. Both halves are asserted below. The half that
+  # is COUPLED TO THE SCHEMA — that a real `athletes` row is where the value comes from —
+  # cannot be proved here, because this object takes the number as an argument; it lives
+  # in Appearances::PipelineTest, over a real row, and fails loudly if the column is ever
+  # renamed or dropped.
+  test "a jersey number we hold renders as a plain fact" do
     number = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
-                     athlete_position: "QB", height_inches: 77, weight_lbs: 237)
-                .sports_facts.find { |f| f[:key] == :number }
+                     jersey_number: 17).sports_facts.find { |f| f[:key] == :number }
+
+    assert_equal "#17", number[:label]
+    assert_equal :neutral, number[:tone]
+    assert_nil number[:title], "a value we hold needs no explanation"
+  end
+
+  # MUTED, NOT AMBER, and the reason CHANGED without the styling changing. It used to be
+  # that no card could ever fill this cell; now it is that `athletes.jersey_number` fills
+  # per athlete on demand and never by backfill, so an empty one is the ordinary state of
+  # an athlete nobody has acquired. An amber chip on nearly every card would spend the
+  # contrast the traded card needs.
+  test "an absent jersey number is a muted named gap that says how to fill it" do
+    number = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
+                     jersey_number: nil).sports_facts.find { |f| f[:key] == :number }
 
     assert_equal "no #", number[:label]
     assert_equal :neutral, number[:tone],
-                 "muted, not a warning: no card can fill this cell until a column exists"
-    assert_match(/no column on any table/, number[:title])
-    refute_respond_to Athlete.new, :jersey_number,
-                      "a jersey-number column landed — give the cell its value and retire this gap"
+                 "muted: an unacquired athlete is the normal case, not an alarm"
+    assert_match(/acquired or re-validated/, number[:title],
+                 "the tooltip names the act that fills it, not the column")
+  end
+
+  # 0 IS A LEGAL JERSEY NUMBER (the league has allowed it since 2023), so `presence` or a
+  # truthiness check here would print "no #" for the one man wearing it. This is the whole
+  # reason #number_cell asks `nil?`.
+  test "zero is a jersey number and not an absence" do
+    number = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
+                     jersey_number: 0).sports_facts.find { |f| f[:key] == :number }
+
+    assert_equal "#0", number[:label]
+    assert_nil number[:title]
   end
 
   # ── who the card says this is ─────────────────────────────────────────────────

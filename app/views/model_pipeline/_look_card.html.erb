@@ -62,8 +62,9 @@
 
   <%# THE SPORTS-DATA ROW — team, position, jersey number, size. Every cell reports its
       own absence rather than collapsing, because a row with a hole in it is what tells
-      the operator which athlete needs attention. The `no #` cell is permanent until a
-      jersey-number column exists; its own tooltip says so. %>
+      the operator which athlete needs attention. A `no #` cell means this athlete has
+      not been acquired or re-validated yet, which is why it is muted rather than amber
+      — it is the ordinary state, not an alarm — and its own tooltip says so. %>
   <% sports = reading.sports_facts %>
   <% if sports.any? %>
     <div class="flex flex-wrap items-center gap-1" data-test="look-card-sports">

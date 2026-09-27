@@ -22,21 +22,25 @@ module Appearances
     # is not a 1000-foot view, it is a scroll marathon that answers nothing.
     LANE_LIMIT = 60
 
-    # THE FIELD THE OPERATOR NAMED THAT THE SCHEMA DOES NOT HAVE. Stated on the board
-    # rather than silently omitted from the define step's checks: he described the step
-    # as "name, height, and for athletes number and team", and a jersey-number column
-    # exists on NO table (measured 2026-09-26, re-checked 2026-09-27: no `jersey_number`,
-    # no `number`). ESPN's API returns it as `athlete.jersey`; we do not store it, and
-    # every character-sheet prompt substitutes a <NUMBER>. So it is genuinely missing
-    # rather than merely unshown.
+    # THE FIELD THE OPERATOR NAMED THAT IS HELD BUT NOT BACKFILLED. He described the
+    # define step as "name, height, and for athletes number and team", and until
+    # 2026-09-27 the number had no column anywhere. This note said so, and a tripwire in
+    # Appearances::LookReadingTest asserted it, so the claim could not outlive the
+    # schema: `athletes.jersey_number` landed that day (Athletes::AcquireOrValidate
+    # fills it under the `:roster` policy — ESPN publishes it and a trade is the event
+    # the operator named), the tripwire fired, and this is the correction it asked for.
     #
-    # A GATE OVER A MISSING COLUMN would fail every look for a reason nobody can act on,
-    # so the gap is SURFACED instead — here for the board, and as a `no #` cell in every
-    # athlete card's sports row, which is where a reader looks for the number and would
-    # otherwise read its absence as completeness.
+    # IT FILLS PER ATHLETE, ON DEMAND, NEVER BY BACKFILL. So nil is the ORDINARY state
+    # of an athlete nobody has acquired or re-validated yet, and `Defined` still does
+    # not require the number — a gate over a field almost no row carries would demote
+    # almost every look for a reason that is not about that look. The gap stays
+    # SURFACED instead: actionable here for the board, and as a muted `no #` cell in the
+    # sports row of any card with no number, which is where a reader looks for it and
+    # would otherwise read its absence as completeness.
     DEFINITION_GAP_NOTE =
-      "Jersey number has no column on any table yet, so Defined cannot assert it and " \
-      "every card's sports row reads \"no #\". ESPN returns it; we do not store it.".freeze
+      "Jersey number fills per athlete on demand from ESPN, never by backfill, so a " \
+      "card reads \"no #\" until that athlete is acquired or re-validated. Defined " \
+      "does not require it.".freeze
 
     Lane = Struct.new(:key, :label, :blurb, :cards, :total, :overflow, keyword_init: true)
 
@@ -107,6 +111,10 @@ module Appearances
           athlete: athlete.present?,
           athlete_team_slug: athlete&.team_slug,
           athlete_position: athlete&.position,
+          # NO NEW QUERY: the athlete row is already in hand from the grouped `athletes`
+          # load above, which is the property this object exists to keep. Passed through
+          # untouched rather than coerced, because 0 is a legal jersey number.
+          jersey_number: athlete&.jersey_number,
           headshot: avatar.present?,
           avatar_url: avatar,
           physique_described: athlete.present? && athlete.physical_brief.present?,
