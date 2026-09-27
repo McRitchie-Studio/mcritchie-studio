@@ -132,6 +132,29 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
                  "name the host that was asked, so the next operator can re-ask it by hand")
   end
 
+  # THE OTHER WAY TO RESOLVE NO TEAMS, and a case this file was missing until a
+  # mutation found the hole. MEASURED: with `Array()` removed from the dig, the
+  # whole file stayed green -- so the guard's nil arm was untested. Asked of the
+  # expression directly, the two inputs are not interchangeable:
+  #
+  #     dig -> nil   WITH Array() -> []      WITHOUT -> NoMethodError
+  #     dig -> []    WITH Array() -> []      WITHOUT -> []
+  #
+  # An empty list and a MOVED document are different facts about ESPN, and only
+  # the first one was covered. Both must reach the same legible abort, because a
+  # NoMethodError backtrace out of a rake task tells an operator nothing about
+  # which host was asked or what it said.
+  test "a run whose index shape moved fails as loudly as an empty one" do
+    out, err = capture_io do
+      assert_raises(SystemExit) { run_task(index: moved_index_doc) }
+    end
+
+    assert_match(/resolved 0/i, err)
+    assert_match(/sports\[0\]\.leagues\[0\]\.teams/, err,
+                 "name the path that was dug, so the operator can diff it against the document")
+    assert_match(/#{Regexp.escape(Espn::Api::WEB_HOST)}/, err + out)
+  end
+
   # THE GREEN TWIN, differing by exactly one team. A guard that refused every run
   # would pass the case above; this is what catches it.
   test "a run resolving one ESPN team completes" do
@@ -213,6 +236,13 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
   # exit 0.
   def empty_index_doc
     { "sports" => [{ "leagues" => [{ "teams" => [] }] }] }
+  end
+
+  # ESPN ANSWERED, BUT NOT WITH THIS DOCUMENT: every key past "sports" is gone, so
+  # `dig` returns nil rather than an empty list. This is the shape a v3 endpoint or
+  # a re-pointed URL produces, and it used to be a NoMethodError.
+  def moved_index_doc
+    { "sports" => [] }
   end
 
   def coaches_doc
