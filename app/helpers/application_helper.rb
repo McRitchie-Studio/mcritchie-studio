@@ -594,11 +594,13 @@ module ApplicationHelper
   end
 
   # secs -> the SINGLE-UNIT elapsed token the CI meter shows: "1s".."59s", then
-  # "1m".."59m", then "1h 04m". One unit keeps the clock calm on a dense card — a
+  # "1m".."59m", then "1h".."23h", then "1d" on — each tier drops the unit below it,
+  # so a long-settled suite reads "7h" or "3d" and fits the meter's fixed clock
+  # column instead of clipping as "25h 40m" did. One unit keeps the clock calm on a dense card — a
   # ticking "7m 23s" (format_elapsed_clock, the release ticker's shape) redraws every
   # second where "7m" redraws once a minute — and the seconds tier stays exact
   # because that is the tier a CI run actually lives in. MUST stay in step with
-  # ciFmt() in tasks/_release_ticker (data-mode="short"), or the server-rendered
+  # shortFmt() in tasks/_release_ticker (data-mode="short"), or the server-rendered
   # first paint and the first tick disagree.
   def compact_elapsed_short(secs)
     return nil if secs.nil?
@@ -609,7 +611,10 @@ module ApplicationHelper
     minutes = secs / 60
     return "#{minutes}m" if minutes < 60
 
-    format("%dh %02dm", minutes / 60, minutes % 60)
+    hours = minutes / 60
+    return "#{hours}h" if hours < 24
+
+    "#{hours / 24}d"
   end
 
   # Which stages wear the CI meter ON THE BOARD CARD. Deliberately NARROWER than
@@ -1378,21 +1383,6 @@ module ApplicationHelper
   def app_ladder_tone_classes(name)
     APP_LADDER_SEGMENT_TONES.fetch(name.to_sym, APP_LADDER_FADED)
   end
-
-  # THE ROW'S RIGHT-EDGE FADE — a MASK, so the content itself falls away.
-  #
-  # Not a gradient overlay: an overlay has to be painted in the page's background
-  # colour, which is a claim about what sits behind the cards and has to be kept in
-  # step with both themes. A mask is right over any surface. Same vocabulary as
-  # components/_overflow_fade and the CI meter's overflowed mark row, which is the
-  # point — "there is more this way" already means one thing on this page.
-  #
-  # It lives HERE, as one string, because it is written twice per render: once as the
-  # server-side first-paint seed and once into the row's Alpine state, and two copies
-  # of a gradient are two things to keep identical.
-  APP_LADDER_FADE_MASK =
-    "mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent); " \
-    "-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent)"
 
   # THE FOUR /deployments SUMMARY CARDS OPEN THEIR SIDEBAR THE SAME WAY, so the
   # attributes are defined once (tasks/_deploy_summary_row owns `panel` and the handlers

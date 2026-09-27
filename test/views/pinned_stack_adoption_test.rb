@@ -26,9 +26,9 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
   BOARD  = Rails.root.join("app/views/tasks/_deploy_board.html.erb")
 
   # The release the COMPOSED pinned stack landed in. A NUMBER, not a string:
-  # below it neither --pin-stack-bottom nor --pin-apps-top is ever published,
-  # every var() falls back to 0px, and the strip and every stage header pile up
-  # at the top of the viewport underneath the navbar.
+  # below it --pin-stack-bottom is never published, every var() falls back to
+  # 0px, and every stage header piles up at the top of the viewport underneath
+  # the navbar.
   #
   # It moved 0.65 -> 0.72.3 with the adoption above. 0.65 shipped the per-layer
   # properties this app used to compose itself with a max(); 0.72.3 is where the
@@ -42,8 +42,8 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
     resolved = Gem.loaded_specs["studio-engine"].version
 
     assert_operator resolved, :>=, PINNED_STACK_FROM,
-                    "studio-engine #{resolved} predates the pinned-stack publisher; the strip " \
-                    "and the stage headers would fall back to top 0 under the navbar"
+                    "studio-engine #{resolved} predates the pinned-stack publisher; the stage " \
+                    "headers would fall back to top 0 under the navbar"
   end
 
   test "the navbar is scroll-linked rather than eased on a clock" do
@@ -73,43 +73,28 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
   end
 
   # THE POINT OF THE WHOLE TASK: the dependents no longer measure the header.
-  test "the strip and the stage headers position from the pinned stack alone" do
+  # The app-ladder strip was the other dependent until the operator retired it on
+  # 2026-09-26; the stage headers are the one left, and nothing may re-add a layer
+  # they would have to know about.
+  test "the stage headers position from the pinned stack alone" do
     strip = STRIP.read
     board = BOARD.read
 
-    assert_match(/top:\s*var\(--pin-apps-top/, strip,
-                 "the strip is ITSELF a layer, so it takes the edge of everything ABOVE it — " \
-                 "naming the nav claims the nav is what sits above it, and --pin-apps-bottom " \
-                 "is its OWN edge, which would make it chase itself down the page")
     assert_match(/top:\s*var\(--pin-stack-bottom/, board,
                  "the stage headers must read the engine's ONE composed value")
     refute_match(/max\(var\(--pin-/, board,
-                 "neither consumer may compose the stack itself — see the engine's publisher")
-    assert_includes strip, 'data-pin="apps"',
-                    "the strip is itself a layer, or the stage headers cannot stack onto it"
+                 "the board may not compose the stack itself — see the engine's publisher")
 
     # And the machinery that did the measuring is GONE rather than bypassed — a
     # leftover writer would fight the CSS every frame.
-    refute_match(/:style="\{\s*top:\s*offset/, strip, "the strip must no longer write its own top")
     refute_match(/:style="\{\s*top:\s*laneTop/, board, "the stage headers must no longer write their own top")
     refute_match(/^\s*laneTop:/, board, "laneTop state must go with the writer that used it")
     refute_match(/watchStrip\(/, board, "the strip-observing machinery must be gone")
-
-    # AND THE PINNED STATE MUST OUTLIVE THE NODE. DeploymentsBroadcaster.app_ladder
-    # replaces #app-ladder-row wholesale, which tears down the row's Alpine
-    # component; a fresh one starting at `pinned: false` blinks the strip out and
-    # back on EVERY broadcast, whatever the engine publishes. Measured on
-    # production, parked and untouched for 20s: 4 broadcasts, 2 of them the ladder,
-    # and the lane headers slammed 99px four times. "Have we scrolled past the row"
-    # is a property of the PAGE, so it lives in a store outside the replaced node.
-    refute_match(/^\s*pinned:\s*false,/, strip,
-                 "component-local pinned state dies with the node on every broadcast")
-    assert_match(/x-show="\$store\.appLadder\.pinned"/, strip,
-                 "the strip must read its pinned state from a store that outlives the replace")
-    assert_match(/Alpine\.store\('appLadder'/, board,
-                 "and the store must be registered OUTSIDE the broadcast target — this partial " \
-                 "renders the row and is not itself replaced")
     refute_match(/_laneRo\.observe\(header\)/, board,
                  "observing the header duplicates a measurement the engine already coalesces")
+
+    # The retired strip left no layer, no store and no scroll handler behind.
+    refute_includes strip, 'data-pin="apps"', "the applications strip is retired"
+    refute_match(/appLadder/, strip + board, "the strip's store must go with the strip")
   end
 end

@@ -9,6 +9,18 @@ class AppearanceReferencePhoto < ApplicationRecord
   belongs_to :appearance, foreign_key: :appearance_slug, primary_key: :slug,
                           inverse_of: :reference_photos, optional: true
 
+  # OUR OWN COPY OF THE BYTES, when we made one. Same shape Athlete and Coach use for
+  # their headshots, which is what lets Appearances::MirrorCandidates hand ImageCache
+  # a per-photograph owner and satisfy its variant-unique-per-(owner, purpose)
+  # constraint by construction rather than by working around it.
+  #
+  # NOT `dependent: :destroy`, matching Athlete and Coach. Destroying the row would
+  # leave the S3 object behind either way (nothing here deletes from the bucket), so a
+  # cascade would only make the DB forget where the object is — which is worse than a
+  # row pointing at a photograph we no longer file.
+  has_many :image_caches, as: :owner, class_name: "ImageCache", inverse_of: :owner,
+                          dependent: nil
+
   # WHO FOUND THE PHOTOGRAPH, in descending order of how far we trust it.
   #
   #   headshot — our own mirrored copy of the ESPN portrait. The only URL whose
@@ -193,6 +205,29 @@ class AppearanceReferencePhoto < ApplicationRecord
   # this column existed has none. A tile with no picture is worse than a heavy one.
   def display_url = thumb_url.presence || image_url
 
+  # WHAT A REMOTE FETCHER SHOULD BE HANDED — our mirrored copy, or nil.
+  #
+  # DISTINCT FROM `display_url` AND FROM `image_url`, and the three are not
+  # interchangeable: `display_url` is for the operator's browser (small, the archive's
+  # own rendition), `image_url` is the EVIDENCE of what the search offered, and this is
+  # the only one of the three that a third party's server can be relied on to fetch.
+  #
+  # WHY IT CAN BE nil, and why the caller must not fall back to `image_url` when it is.
+  # A mirror is attempted for the classifier shortlist only
+  # (Appearances::GatherReferencePhotos::VISION_SHORTLIST) and can fail per photograph,
+  # so most rows have none. Falling back to the remote URL is precisely the bug
+  # Appearances::MirrorCandidates exists to fix: on 2026-09-26 Wikimedia answered 403
+  # to Anthropic's fetcher (no User-Agent) and a silently unscored set put three
+  # aircraft into a character model.
+  def hosted_url
+    image_caches.detect { |cache| cache.purpose == Appearances::MirrorCandidates::PURPOSE }&.url
+  end
+
+  # Did we manage to take our own copy of this photograph? The honest question behind
+  # `hosted_url.present?`, worth its own name because "we have no copy" and "we have a
+  # copy at no URL" would otherwise read the same.
+  def mirrored? = hosted_url.present?
+
   def judged? = operator_verdict.present?
   def operator_keep? = operator_verdict == VERDICT_KEEP
   def operator_drop? = operator_verdict == VERDICT_DROP
@@ -239,9 +274,13 @@ class AppearanceReferencePhoto < ApplicationRecord
   #   1 ESPN headshot (tight face crop)         → COMPLETED in ~2 min
   #
   # So resolution is not the variable and the helmet is not the variable; face size
-  # in frame is. WE CANNOT MEASURE FACE SIZE — that needs the vision classifier, and
-  # `ANTHROPIC_API_KEY` exists on no machine — so nothing here claims to know
-  # whether a given photograph will mint. It reports two facts that ARE known, and
+  # in frame is. WE STILL CANNOT MEASURE FACE SIZE, and a live classifier does not give
+  # it to us either — which is a narrower claim than the one this comment used to make
+  # ("ANTHROPIC_API_KEY exists on no machine"; the credential now exists on production,
+  # measured 2026-09-26). Appearances::FaceVisibility's own prompt DOES fold size in —
+  # "small in frame" scores 0.6 and "far from camera" 0.3 — but it gives those same
+  # values to a turned head and a shadowed one, so a score cannot be read BACK as a face
+  # size. So nothing here claims to know whether a given photograph will mint. It reports two facts that ARE known, and
   # the page labels them as evidence rather than as a verdict.
   #
   # THE ONE INPUT MEASURED TO MINT. Our own mirrored ESPN headshot is a tight face

@@ -36,10 +36,52 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     end
   end
 
+  # A MIRROR THAT COPIES NOTHING. Injected for a slightly different reason than the
+  # other two collaborators: it spends no vendor money, but the real one fetches a
+  # remote file and writes an object into a real S3 bucket, and a suite must do neither.
+  # Appearances::LiveCallTrap refuses the un-injected path outright, so forgetting
+  # `mirror:` here fails loudly instead of quietly uploading — see
+  # live_call_trap_test.rb.
+  class FakeMirror
+    HOST = "https://bucket.s3.test.amazonaws.com/reference-photos".freeze
+
+    attr_reader :owners, :targets
+
+    # A STABLE FAKE HOSTED URL PER CANDIDATE, so FakeFaces below can be built with
+    # scores keyed by the PROVIDER's url — the way a reader thinks about a test case —
+    # and still answer the mirrored url the real classifier is now handed.
+    def self.hosted_for(url) = "#{HOST}/#{Digest::SHA256.hexdigest(url)[0, 12]}/original.png"
+
+    # `fails:` names the candidates this mirror cannot copy, which is how the tests
+    # reach the partial and total mirror-failure paths without a network.
+    def initialize(fails: [])
+      @fails = Array(fails)
+      @owners = []
+      @targets = []
+    end
+
+    def call(photos, target: nil)
+      @owners.concat(photos)
+      @targets << target
+      photos.each_with_object({}) do |photo, hosted|
+        next if @fails.include?(photo.image_url)
+
+        hosted[photo.image_url] = self.class.hosted_for(photo.image_url)
+      end
+    end
+  end
+
   # A CLASSIFIER THAT CANNOT SEE. Injected for exactly the reason the search is:
   # Appearances::FaceVisibility bills per image, so the suite must be handed
   # something that cannot reach the network. It returns whatever scores it was
   # built with and records what it was asked to look at.
+  #
+  # BUILT WITH REMOTE-KEYED SCORES, ANSWERING MIRRORED URLs. The real classifier is
+  # handed our own copy of each candidate, never the provider's URL — that is the whole
+  # fix — so this fake translates through FakeMirror's own rule. Keeping the fixtures
+  # keyed on the provider's URL is deliberate: a test case reads as "the helmet scored
+  # 0.15", and rewriting every one of them in terms of a digest would obscure the case
+  # to prove a plumbing detail that #asked already proves directly.
   class FakeFaces
     attr_reader :asked
 
@@ -57,7 +99,10 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     def call(urls, target: nil)
       @asked.concat(urls)
       @targets << target
-      @scores.slice(*urls)
+      @scores.each_with_object({}) do |(remote_url, score), out|
+        hosted = FakeMirror.hosted_for(remote_url)
+        out[hosted] = score if urls.include?(hosted)
+      end
     end
   end
 
@@ -71,6 +116,9 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   def hit(url, position: 1, **rest)
     Appearances::ImageSearch::Result.new(image_url: url, position: position, **rest)
   end
+
+  # ONE MIRROR PER TEST, memoised so a test can assert on what it was handed.
+  def mirror = @mirror ||= FakeMirror.new
 
   setup do
     Appearance.delete_all
@@ -231,7 +279,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     faces = FakeFaces.new({ helmet.image_url => 0.15, bare.image_url => 0.92 })
 
     Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: [helmet, bare]), faces: faces
+      @look, search: FakeSearch.new(results: [helmet, bare]), faces: faces, mirror: mirror
     )
 
     order = Appearances::ReferenceSet.new(@look.reload).persisted_rows.map(&:image_url)
@@ -247,7 +295,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     faces = FakeFaces.new(helmets.to_h { |h| [h.image_url, 0.15] })
 
     summary = Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: helmets), faces: faces
+      @look, search: FakeSearch.new(results: helmets), faces: faces, mirror: mirror
     )
 
     assert_equal 3, summary.chosen, "a person with only helmeted photos still gets an identity"
@@ -263,7 +311,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     faces = FakeFaces.new({ photo.image_url => 0.9 })
 
     summary = Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: [scan, photo]), faces: faces
+      @look, search: FakeSearch.new(results: [scan, photo]), faces: faces, mirror: mirror
     )
 
     assert_equal 1, summary.chosen
@@ -281,10 +329,12 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     faces = FakeFaces.new({ photo.image_url => 0.9 })
 
     Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: [scan, photo]), faces: faces
+      @look, search: FakeSearch.new(results: [scan, photo]), faces: faces, mirror: mirror
     )
 
-    assert_equal [photo.image_url], faces.asked
+    assert_equal [FakeMirror.hosted_for(photo.image_url)], faces.asked,
+                 "one image classified, and it is OUR copy of it"
+    refute_includes faces.asked, scan.image_url
   end
 
   # A DISQUALIFIED CANDIDATE MUST NOT EAT A SLOT on its way to being rejected, or a
@@ -296,7 +346,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     faces = FakeFaces.new(photos.to_h { |p| [p.image_url, 0.8] })
 
     summary = Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: scans + photos), faces: faces
+      @look, search: FakeSearch.new(results: scans + photos), faces: faces, mirror: mirror
     )
 
     assert_equal limit, summary.chosen
@@ -325,7 +375,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     scores = keep.to_h { |k| [k.image_url, 0.9] }.merge(loser.image_url => 0.15)
 
     Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: keep + [loser]), faces: FakeFaces.new(scores)
+      @look, search: FakeSearch.new(results: keep + [loser]), faces: FakeFaces.new(scores), mirror: mirror
     )
 
     row = AppearanceReferencePhoto.find_by!(image_url: loser.image_url)
@@ -339,7 +389,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     faces = FakeFaces.new({})
 
     Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: results), faces: faces
+      @look, search: FakeSearch.new(results: results), faces: faces, mirror: mirror
     )
 
     assert_equal Appearances::GatherReferencePhotos::VISION_SHORTLIST, faces.asked.length
@@ -351,7 +401,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     results = (1..3).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
 
     summary = Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: results), faces: FakeFaces.new({})
+      @look, search: FakeSearch.new(results: results), faces: FakeFaces.new({}), mirror: mirror
     )
 
     assert_equal 3, summary.chosen
@@ -365,7 +415,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
 
     scored = Appearances::GatherReferencePhotos.call(
       @look, search: FakeSearch.new(results: [photo]),
-      faces: FakeFaces.new({ photo.image_url => 0.9 })
+      faces: FakeFaces.new({ photo.image_url => 0.9 }), mirror: mirror
     )
     assert scored.ranked_by_face?
     assert_equal 1, scored.scored
@@ -378,7 +428,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     photo = hit("https://cdn.example.com/a.jpg", position: 1)
     Appearances::GatherReferencePhotos.call(
       @look, search: FakeSearch.new(results: [photo]),
-      faces: FakeFaces.new({ photo.image_url => 0.77 })
+      faces: FakeFaces.new({ photo.image_url => 0.77 }), mirror: mirror
     )
     assert_in_delta 0.77, AppearanceReferencePhoto.find_by!(image_url: photo.image_url).face_score, 0.001
 
@@ -407,9 +457,232 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     search = FakeSearch.new(results: [photo])
     faces = FakeFaces.new({ photo.image_url => 0.8 })
 
-    Appearances::GatherReferencePhotos.call(@look, search: search, faces: faces)
+    Appearances::GatherReferencePhotos.call(@look, search: search, faces: faces, mirror: mirror)
 
     assert_equal [@look], search.targets
     assert_equal [@look], faces.targets
+  end
+  # ── THE MIRROR: NOTHING THIRD-PARTY IS HANDED TO A THIRD-PARTY FETCHER ───────────
+  #
+  # THE BUG THESE WERE WRITTEN FROM, measured on production 2026-09-26. Anthropic
+  # answered 400 "Unable to download the file" on every image, because Wikimedia
+  # refuses a request that sends no User-Agent (403 with none, 200 with one, against
+  # the exact failing URL) and Anthropic's fetcher was the party refused. The
+  # classifier degraded to an empty Hash as documented, ranking fell back to
+  # title-match and aspect ratio, and SIX photographs entered a character model of
+  # which THREE WERE AIRCRAFT — `9V-JSN` and `HB-JSN` are registration codes sharing
+  # the athlete's initials.
+
+  # ACCEPTANCE: "Classifier reads an image we host." The one assertion the whole
+  # change exists for, made against the collaborator's own record of what it was
+  # asked rather than against a mock of the request.
+  test "the classifier is handed our own copy, never the provider's URL" do
+    remote = "https://upload.wikimedia.org/wikipedia/commons/f/f3/Player.png"
+    photo = hit(remote, position: 1)
+    faces = FakeFaces.new({ remote => 0.9 })
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [photo]), faces: faces, mirror: mirror
+    )
+
+    refute_includes faces.asked, remote,
+                    "handing the provider's URL to the classifier IS the bug — " \
+                    "Wikimedia answers 403 to a fetcher that sends no User-Agent"
+    assert_equal [FakeMirror.hosted_for(remote)], faces.asked
+    assert_equal 1, summary.scored, "the score still lands, keyed back to the provider's URL"
+    assert_in_delta 0.9, AppearanceReferencePhoto.find_by!(image_url: remote).face_score, 0.001,
+                    "the row the operator reads is keyed on the provider's URL, not ours"
+  end
+
+  # THE ROW REMAINS THE RECORD; ImageCache is only the copy. Studio::ImageCache
+  # validates `variant` unique per (owner, purpose), so the mirror needs a
+  # PER-PHOTOGRAPH owner — which means the candidate row has to exist before the
+  # mirror runs, and the verdict is stamped afterwards.
+  test "each shortlisted candidate is filed before the mirror, so it can own the copy" do
+    photos = (1..3).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
+    faces = FakeFaces.new(photos.to_h { |p| [p.image_url, 0.8] })
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: photos), faces: faces, mirror: mirror
+    )
+
+    assert_equal 3, mirror.owners.length
+    assert mirror.owners.all?(&:persisted?),
+           "an ImageCache owner must be a saved row — mirroring an unsaved one cannot store"
+    assert_equal photos.map(&:image_url).sort, mirror.owners.map(&:image_url).sort
+    assert_equal [@look], mirror.targets, "the mirror gets the failure target too"
+  end
+
+  # THE VERDICT IS STAMPED AFTER THE CLASSIFIER ANSWERS, not by the pre-pass. A row
+  # left `chosen: false` with no reason by the filing pass would read on the page as a
+  # rejection nothing made.
+  test "the pre-filing pass leaves no candidate stamped with a verdict it did not earn" do
+    keep = (1..Appearances::GatherReferencePhotos::CHOSEN_LIMIT).map do |i|
+      hit("https://cdn.example.com/k#{i}.jpg", position: i)
+    end
+    loser = hit("https://cdn.example.com/helmet.jpg", position: 99)
+    scores = keep.to_h { |k| [k.image_url, 0.9] }.merge(loser.image_url => 0.15)
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: keep + [loser]),
+      faces: FakeFaces.new(scores), mirror: mirror
+    )
+
+    assert_equal Appearances::GatherReferencePhotos::CHOSEN_LIMIT,
+                 AppearanceReferencePhoto.chosen.count
+    assert AppearanceReferencePhoto.rejected.none? { |row| row.rejection_reason.blank? },
+           "every rejected row must carry a reason — a blank one is the pre-pass showing through"
+  end
+
+  # A CANDIDATE WE COULD NOT MIRROR IS NOT CLASSIFIED, and above all is not quietly
+  # sent as a remote URL — that fallback is the bug wearing a different hat.
+  test "an unmirrorable candidate is skipped rather than sent remote" do
+    good = hit("https://cdn.example.com/good.jpg", position: 1)
+    bad = hit("https://cdn.example.com/bad.jpg", position: 2)
+    faces = FakeFaces.new({ good.image_url => 0.9, bad.image_url => 0.8 })
+    partial = FakeMirror.new(fails: [bad.image_url])
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [good, bad]), faces: faces, mirror: partial
+    )
+
+    assert_equal [FakeMirror.hosted_for(good.image_url)], faces.asked
+    refute_includes faces.asked, bad.image_url
+    assert_equal 2, summary.shortlisted
+    assert_equal 1, summary.attempted, "the summary must say how many were actually sent"
+    assert_equal 1, summary.scored
+    refute summary.face_classifier_blind?, "one score is not a blind lane"
+    # THE UNSENT CANDIDATE IS UNKNOWN, NOT ZERO. A NULL face_score is what keeps
+    # "nobody looked" out of the band the classifier's own answers occupy.
+    assert_nil AppearanceReferencePhoto.find_by!(image_url: bad.image_url).face_score
+  end
+
+  # ── THE LOUD FAILURE: "DID NOTHING" IS NOT "HAD NOTHING TO DO" ───────────────────
+
+  # ACCEPTANCE: "A total classifier failure is loud." Before this, zero scores from N
+  # attempts and N photographs that scored zero were indistinguishable to an operator:
+  # both produced `ranked_by: :merit` and the sentence "ranked on shape and relevance
+  # only (no face classifier)", which is TRUE of a machine with no credential and a LIE
+  # about a machine that sent eight images and was refused on every one.
+  test "a classifier that scored none of the images it was sent is loud" do
+    results = (1..8).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
+    refused = FakeFaces.new({})
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: results), faces: refused, mirror: mirror
+    )
+
+    assert_equal 8, summary.shortlisted
+    assert_equal 8, summary.attempted
+    assert_equal 0, summary.scored
+    assert summary.face_classifier_blind?,
+           "8 sent and 0 scored is the production failure this change was written from"
+    assert_equal :alert, summary.flash_key,
+                 "a green notice on this run is what let three aircraft into a model"
+    assert_match "0 of 8 shortlisted", summary.sentence
+    assert_match "8 mirrored and sent", summary.sentence
+    assert_match(/check them before minting/, summary.sentence)
+  end
+
+  # THE ALARM MUST NOT CRY WOLF on the state of every machine that has no
+  # ANTHROPIC_API_KEY, which is the ordinary path and must keep reading as ordinary.
+  test "no classifier configured is not a blind classifier" do
+    results = (1..3).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: results), faces: NoFaces
+    )
+
+    assert_equal 0, summary.shortlisted
+    refute summary.face_classifier_blind?
+    assert_equal :notice, summary.flash_key
+    assert_match "no face classifier", summary.sentence
+  end
+
+  # NOTHING TO CLASSIFY IS NOT A FAILURE EITHER. Documents are never shortlisted, so an
+  # answer that is entirely scanned pages reaches the classifier with nothing to send.
+  test "an answer with nothing classifiable in it is not a blind classifier" do
+    scans = (1..3).map { |i| hit("https://cdn.example.com/page1-#{i}.pdf.jpg", position: i) }
+    faces = FakeFaces.new({})
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: scans), faces: faces, mirror: mirror
+    )
+
+    assert_equal 0, summary.shortlisted
+    assert_empty faces.asked
+    refute summary.face_classifier_blind?,
+           "zero shortlisted is 'nothing to do', which must not read as 'saw nothing'"
+  end
+
+  # A TOTAL MIRROR FAILURE IS EQUALLY BLIND, which is why the predicate keys on
+  # `shortlisted` rather than on `attempted`. Keying on what we SENT would read "the
+  # mirror copied nothing, so we sent nothing, so there was nothing to do" — and go
+  # quiet on exactly the outage the operator most needs to hear about.
+  test "a mirror that copied nothing is as loud as a classifier that scored nothing" do
+    results = (1..4).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
+    faces = FakeFaces.new(results.to_h { |r| [r.image_url, 0.9] })
+    broken = FakeMirror.new(fails: results.map(&:image_url))
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: results), faces: faces, mirror: broken
+    )
+
+    assert_equal 4, summary.shortlisted
+    assert_equal 0, summary.attempted
+    assert summary.face_classifier_blind?
+    assert_match "0 mirrored and sent", summary.sentence,
+                 "the sentence must separate a mirror failure from a classifier failure"
+    assert_empty faces.asked, "nothing mirrored means nothing is paid to be classified"
+    assert_equal 4, summary.chosen, "the page still gets its photographs — this degrades"
+  end
+
+  # THE DURABLE HALF OF LOUD. A flash lives for one redirect; the operator working out
+  # why a gallery looks wrong a day later is reading /admin/error_logs.
+  test "a blind lane files exactly one ErrorLog row, against the look" do
+    results = (1..5).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      Appearances::GatherReferencePhotos.call(
+        @look, search: FakeSearch.new(results: results), faces: FakeFaces.new({}), mirror: mirror
+      )
+    end
+
+    row = ErrorLog.order(:id).last
+    assert_match "0 of 5 shortlisted", row.message
+    assert_equal @look, row.target, "the look is the only handle for reading the right row back"
+    assert_match Appearances::GatherReferencePhotos::ClassifierBlind.name,
+                 row.read_attribute(:inspect),
+                 "the class name is what the operator scans /admin/error_logs for"
+  end
+
+  test "a healthy search files no ErrorLog row" do
+    photo = hit("https://cdn.example.com/a.jpg", position: 1)
+
+    assert_no_difference -> { ErrorLog.count } do
+      Appearances::GatherReferencePhotos.call(
+        @look, search: FakeSearch.new(results: [photo]),
+        faces: FakeFaces.new({ photo.image_url => 0.9 }), mirror: mirror
+      )
+    end
+  end
+
+  # THE SENTENCE IS THE SUMMARY'S, not each controller's. It lived twice, verbatim, in
+  # PhotoScoutingController and AppearancesController — so the clause above would have
+  # had to be added in two places, and could have been added in one.
+  test "the sentence names every number an operator needs, from one place" do
+    photo = hit("https://cdn.example.com/a.jpg", position: 1)
+    unsafe = hit("http://127.0.0.1/x.png", position: 2)
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [photo, unsafe], unparsed: 2),
+      faces: FakeFaces.new({ photo.image_url => 0.9 }), mirror: mirror
+    )
+
+    assert_match "fake returned 2 result(s)", summary.sentence
+    assert_match "2 in a shape we could not read", summary.sentence
+    assert_match "1 refused as unsafe to fetch", summary.sentence
+    assert_match "1 scored for face visibility", summary.sentence
+    assert_match "1 chosen for the model", summary.sentence
   end
 end

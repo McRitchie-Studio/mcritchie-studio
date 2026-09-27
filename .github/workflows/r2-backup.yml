@@ -1,0 +1,81 @@
+# Nightly R2 backup — the automation half of Steffon's r2-backup SOP
+# (docs/agents/agents/steffon/sops/r2-backup.md). R2 has no object versioning;
+# each run mirrors <app>-production into <app>-backup/current/ and archives what
+# changed. Logic and guards live in bin/r2-backup (bin/lib/r2_backup.rb).
+#
+# SILENCE IS NOT SUCCESS. A failed run opens (or comments on) a GitHub issue
+# titled "R2 backup failing: <app>", and the next good run closes it. GitHub's own
+# failure email for a scheduled workflow goes to whoever last edited the cron line,
+# which for an App-authored commit may be nobody, so the issue is the alert.
+#
+# ADDING AN APP: enable its backup with the SOP's §2, file its backup keys as the
+# repo secrets R2_BACKUP_<APP>_ACCESS_KEY_ID / _SECRET_ACCESS_KEY (APP upper-cased,
+# dashes to underscores), and add a row to the matrix below.
+name: R2 Backup
+
+on:
+  schedule:
+    - cron: "0 9 * * *" # 09:00 UTC = 03:00 Denver (MDT), 02:00 (MST)
+  workflow_dispatch:
+
+concurrency:
+  group: r2-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: moms-app
+            secret: MOMS_APP
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install rclone
+        timeout-minutes: 13
+        run: .github/scripts/apt-retry rclone
+
+      - name: Run backup
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BACKUP_ACCESS_KEY_ID: ${{ secrets[format('R2_BACKUP_{0}_ACCESS_KEY_ID', matrix.secret)] }}
+          R2_BACKUP_SECRET_ACCESS_KEY: ${{ secrets[format('R2_BACKUP_{0}_SECRET_ACCESS_KEY', matrix.secret)] }}
+        run: |
+          rclone version | head -1
+          ruby bin/r2-backup run "${{ matrix.app }}"
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP: ${{ matrix.app }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="R2 backup failing: $APP"
+          body="The nightly R2 backup for \`$APP\` did not finish ok: $RUN_URL
+          Read the run log and the receipt it wrote under \`$APP-backup/_receipts/\`. Procedure: docs/agents/agents/steffon/sops/r2-backup.md. A refused wipe is fixed by finding out why production shrank, or, if the delete was deliberate, by \`bin/r2-backup run $APP --accept-drop --op\`."
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+
+      - name: Close a resolved alert
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP: ${{ matrix.app }}
+        run: |
+          title="R2 backup failing: $APP"
+          for n in $(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Backup ran ok again: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          done
