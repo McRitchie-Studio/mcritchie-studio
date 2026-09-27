@@ -405,7 +405,7 @@ namespace :pokemon do
       from = node.dig("species", "name")
       Array(node["evolves_to"]).each do |child|
         codes = Array(child["evolution_details"]).map { |detail| detail["gender"] }.uniq
-        gender = { 1 => "female", 2 => "male" }[codes.first] if codes.one?
+        gender = { 1 => "female", 2 => "male" }[codes.first] if codes.size == 1 # not .one?: it skips nil
         (genders[from] ||= {})[child.dig("species", "name")] = gender if gender
         walk.call(child)
       end
