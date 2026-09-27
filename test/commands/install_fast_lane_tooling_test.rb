@@ -160,6 +160,116 @@ class InstallFastLaneToolingTest < Minitest::Test
     assert_operator File.mtime(tree), :>, Time.now - 60
   end
 
+  # ── SCRIPTS THAT BOOT RAILS ───────────────────────────────────────────────────
+  #
+  # The install copies ALL of bin/, and a few of those scripts boot the Rails
+  # APPLICATION. The tooling tree is bin/ + lib/ + config/ + pure app/models — no
+  # Gemfile, no app/assets, no db/ — so a direct copy died on FIRST BOOT:
+  #
+  #   $ /Users/alex/projects/.agents/bin/reviewer-select --help
+  #   bundler/definition.rb:38:in 'build': .../tooling/<sha>/Gemfile not found
+  #     (Bundler::GemfileNotFound)
+  #
+  # Measured 2026-09-27 and true of EVERY tooling tree since the fixed path was born
+  # (45c83556, 2026-09-25) — not a regression at one ship. Five scripts: rails, rake,
+  # jobs, reviewer-select, reap-cert-databases. A reviewer following CLAUDE.md, which
+  # names the fixed path FIRST, read it as a broken Ruby install and fell back by hand.
+  #
+  # WHY THE OLD TESTS PASSED THROUGH IT. The install test asserted PRESENCE and
+  # EXECUTABILITY of nine named scripts and booted exactly one, `ship-wait`, a script
+  # that needs no Rails, asserting only `refute_match(/cannot load such file/)`. Nothing
+  # in the suite ever BOOTED a Rails-booting script from the installed tree, so the
+  # install could ship five scripts that cannot run and stay green. These tests close
+  # that: the set is DERIVED from bin/ so a NEW Rails-booting script is covered the day
+  # it is written, and one of them is really executed.
+  RAILS_BOOT_RE = %r{require_relative\s+"\.\./config/(?:boot|environment)"}
+
+  # Derived, never enumerated: an enumerated list goes stale silently.
+  def rails_booting_scripts(dir)
+    Dir.children(dir).select do |name|
+      path = File.join(dir, name)
+      File.file?(path) && File.read(path).match?(RAILS_BOOT_RE)
+    rescue ArgumentError # a binary in bin/ is not a Ruby script
+      false
+    end.sort
+  end
+
+  def test_integration_rails_booting_scripts_install_as_hub_shims_not_copies
+    expected = rails_booting_scripts(File.join(ROOT, "bin"))
+    refute_empty expected, "nothing in bin/ boots Rails — this test would assert nothing"
+    # The measured instance. If reviewer-select ever stops booting Rails, revisit this
+    # deliberately rather than letting the guard quietly cover an empty set.
+    assert_includes expected, "reviewer-select"
+
+    install!
+
+    assert_empty rails_booting_scripts(link),
+                 "a Rails-booting COPY at the fixed path dies on Bundler::GemfileNotFound"
+    expected.each do |name|
+      body = File.read(File.join(link, name))
+      assert_match(/\A#!\/bin\/sh/, body, "#{name} must be installed as a shim, not copied")
+      # The shim bakes the hub ROOT and its own NAME and composes the target at run
+      # time, so assert those two, not a joined literal that never appears.
+      assert_match(/^hub=(?:'#{Regexp.escape(@runtime)}'|#{Regexp.escape(@runtime)})$/, body,
+                   "#{name}'s shim must bake the hub root it delegates to")
+      assert_match(/^name=#{Regexp.escape(name)}$/, body, "#{name}'s shim must name itself")
+      assert_includes body, 'exec "$target" "$@"', "#{name}'s shim must exec the hub copy"
+      assert File.executable?(File.join(link, name)), "#{name} must stay executable"
+    end
+  end
+
+  # The real boot. The hub copy is a SYMLINK to this checkout's own script: Ruby
+  # resolves require_relative against a file's REAL path, so the script loads the
+  # hub's config/boot and the hub's Gemfile, exactly as it would in production.
+  # Read-only — `--help` exits before any board or Rails work.
+  def test_integration_a_shimmed_script_boots_from_the_fixed_path
+    install!
+    FileUtils.mkdir_p(File.join(@runtime, "bin"))
+    File.symlink(File.join(ROOT, "bin", "reviewer-select"), File.join(@runtime, "bin", "reviewer-select"))
+
+    out, err, status = Open3.capture3(SessionEnv.neutralized({ "HOME" => @home }),
+                                      File.join(link, "reviewer-select"), "--help")
+    text = out + err
+    refute_match(/GemfileNotFound/, text, "the fixed-path script still dies in Bundler")
+    refute_match(/cannot load such file/, text)
+    assert_match(/Usage: .*reviewer-select/, text, "the shim must reach the real script")
+    assert status.success?, text
+  end
+
+  # An install that CANNOT run must say so in one line naming the path, not hand the
+  # operator a Bundler stack trace that reads like a broken Ruby install.
+  def test_integration_a_shim_without_its_hub_copy_diagnoses_the_missing_delegate
+    install!
+
+    out, err, status = Open3.capture3(SessionEnv.neutralized({ "HOME" => @home }),
+                                      File.join(link, "reviewer-select"), "--help")
+    text = out + err
+    assert_equal 127, status.exitstatus, text
+    refute_match(/GemfileNotFound/, text)
+    assert_includes text, "needs the Rails app"
+    assert_includes text, File.join(@runtime, "bin", "reviewer-select"),
+                    "the diagnosis must name the delegate it could not find"
+  end
+
+  # `check` said OK about the broken tree for two days, because it only asked whether
+  # `ship` was executable. Presence is not runnability.
+  def test_unit_check_names_an_install_that_cannot_run
+    install!
+    out, = run_installer("check")
+    refute_match(/^WARN:/, out, "a shimmed install is not a warning")
+
+    # The pre-fix state: the Rails-booting script back as a plain copy.
+    FileUtils.cp(File.join(ROOT, "bin", "reviewer-select"), File.join(link, "reviewer-select"))
+    out, _err, status = run_installer("check")
+
+    assert_match(/^WARN: .*Rails-booting COPIES.*reviewer-select/, out,
+                 "check must name the scripts that cannot run")
+    # It WARNS without failing: every tree already on disk is a copy install and only
+    # the next production ship replaces it, so failing here would block every desk's
+    # preflight over a condition no builder can fix. CI is the gate that blocks.
+    assert status.success?, "check reports; it does not fail the caller's preflight"
+  end
+
   def test_unit_check_reports_the_install_without_calling_it_drift
     out, = run_installer("check")
     assert_includes out, "NOTE: #{link} is not installed yet"
