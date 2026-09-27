@@ -1,0 +1,152 @@
+<%# ONE CHARACTER MODEL'S CARD, rendered per reading by the studio/board primitive
+    (card_partial). Bound as :reading via card_as — an Appearances::LookReading, not an
+    Appearance, because every fact the card prints was gathered in a grouped query and a
+    partial handed the raw record would go back to the database per card.
+
+    THE CARD ANSWERS "WHAT IS THIS AND WHY IS IT STUCK" WITHOUT A CLICK. That is the
+    operator's requirement, so the reading's own #blocker sentence is the one line that
+    can never be dropped for space — everything above it is identification and
+    everything below it is provenance.
+
+    The board identity contract (id="card-<slug>", .kanban-card, data-slug, data-stage)
+    is emitted by studio/board/card_shell. data-stage carries the RENDERED lane
+    (#board_stage), which is what the drag reads to compute a "from" — the record's
+    `stage` column is the operator's hand placement and is often NULL.
+
+    NO VENDOR NAME APPEARS IN THIS FILE. The generator is registry-driven and swappable,
+    so the provenance chip prints whatever `artifacts.source` holds. %>
+<%= render layout: "studio/board/card_shell",
+      locals: {
+        id: reading.slug,
+        zone: reading.board_stage,
+        class: "bg-surface rounded-lg border border-subtle #{look_card_edge_classes(reading)} " \
+               "p-3 space-y-1.5 hover:border-primary/40 transition group " \
+               "#{'cursor-grab active:cursor-grabbing' if draggable}"
+      } do %>
+
+  <%# WHO AND WHICH LOOK — a face, a name, and the look's own descriptor.
+      THE AVATAR IS THE CACHED HEADSHOT, resolved off the STORED s3_key by
+      Appearances::Pipeline (never a rebuilt path: a re-key moved every athlete out of
+      `free-agents/`, so a derived path names objects that have moved). An athlete with
+      no espn_id has no cached headshot at all, which is a real state and not an
+      accident — it falls back to initials rather than to a broken image. %>
+  <div class="flex items-start gap-2">
+    <% if reading.avatar_url.present? %>
+      <img src="<%= reading.avatar_url %>" alt="<%= reading.display_name %>" loading="lazy"
+           data-test="look-card-avatar"
+           class="w-8 h-8 rounded-full object-cover bg-surface-alt shrink-0">
+    <% else %>
+      <div data-test="look-card-avatar-initials"
+           title="No cached headshot for <%= reading.display_name %>"
+           class="w-8 h-8 rounded-full bg-surface-alt border border-subtle shrink-0 flex items-center justify-center text-3xs font-bold text-secondary">
+        <%= reading.initials %>
+      </div>
+    <% end %>
+
+    <%# The link goes to the model page, which is where every control that spends money
+        lives — this board has none. @click.stop so following the link is not read as the
+        start of a drag. %>
+    <%= link_to person_appearance_path(reading.person_slug, reading.slug),
+          class: "min-w-0 flex-1 group/link",
+          data: { test: "look-card-link" },
+          "@click.stop": true do %>
+      <span class="block text-heading font-semibold text-sm leading-snug truncate group-hover/link:text-primary transition"
+            data-test="look-card-person" title="<%= reading.display_name %>"><%= reading.display_name %></span>
+      <span class="block text-2xs text-secondary leading-snug truncate"><%= reading.descriptor %></span>
+    <% end %>
+
+    <% if reading.position.present? %>
+      <span class="shrink-0 text-3xs text-muted font-mono opacity-0 group-hover:opacity-100 transition-opacity"><%= reading.position %></span>
+    <% end %>
+  </div>
+
+  <%# THE SPORTS-DATA ROW — team, position, jersey number, size. Every cell reports its
+      own absence rather than collapsing, because a row with a hole in it is what tells
+      the operator which athlete needs attention. A `no #` cell means this athlete has
+      not been acquired or re-validated yet, which is why it is muted rather than amber
+      — it is the ordinary state, not an alarm — and its own tooltip says so. %>
+  <% sports = reading.sports_facts %>
+  <% if sports.any? %>
+    <div class="flex flex-wrap items-center gap-1" data-test="look-card-sports">
+      <% sports.each do |fact| %>
+        <span class="badge text-3xs break-words <%= pipeline_chip_classes(fact[:tone]) %>"
+              data-test="look-card-sports-<%= fact[:key] %>"
+              <% if fact[:title] %>title="<%= fact[:title] %>"<% end %>><%= fact[:label] %></span>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# WHY IT IS HERE — the one line the whole board exists for. %>
+  <p class="text-2xs text-secondary leading-snug break-words" data-test="look-card-blocker"><%= reading.blocker %></p>
+
+  <%# THE FLAGS THAT CHANGE WHAT THE OPERATOR SHOULD DO. All rare by design, so they
+      earn the loudest styling on the card. %>
+  <% if reading.orphan? %>
+    <span class="badge text-3xs <%= pipeline_chip_classes(:bad) %>" data-test="look-card-orphan">
+      no person on file
+    </span>
+  <% end %>
+  <% if reading.stale? %>
+    <span class="badge text-3xs <%= pipeline_chip_classes(:bad) %>" data-test="look-card-stale">
+      re-define · traded
+    </span>
+  <% end %>
+  <% if reading.stale_hand_placement? %>
+    <span class="badge text-3xs <%= pipeline_chip_classes(:neutral) %>" data-test="look-card-placement-set-aside">
+      your <%= Appearances::LookReading::LABELS.fetch(reading.hand_stage, reading.hand_stage) %> placement set aside
+    </span>
+  <% end %>
+  <% if reading.hand_placed? %>
+    <span class="badge text-3xs <%= pipeline_chip_classes(:info) %>" data-test="look-card-hand-placed">
+      placed by hand · data says <%= Appearances::LookReading::LABELS.fetch(reading.derived_stage, reading.derived_stage) %>
+    </span>
+  <% end %>
+
+  <%# WHAT IT IS MADE OF — the uniform half of the definition, and the physique gap. %>
+  <div class="flex flex-wrap items-center gap-1">
+    <%# The colorway is skipped when the descriptor above already says it — the common
+        case, because Appearance.file_for_colorway! titleizes the colorway into the
+        descriptor. One fact printed twice is two chips of contrast spent on nothing. %>
+    <% if reading.colorway.present? && !reading.descriptor.to_s.casecmp?(reading.colorway.to_s) %>
+      <span class="badge text-3xs <%= pipeline_chip_classes(:neutral) %>"><%= reading.colorway %></span>
+    <% end %>
+    <%# THE CAPTURED TEAM IS PRINTED ONLY WHEN IT DISAGREES with the athlete's current
+        one. Otherwise the sports row above already says which team this is, and the two
+        chips would be the same fact twice. When they disagree it is the whole story. %>
+    <% if reading.stale? %>
+      <span class="badge text-3xs <%= pipeline_chip_classes(:bad) %>" data-test="look-card-captured-team">
+        captured <%= reading.captured_team_slug %>
+      </span>
+    <% end %>
+    <%# THE DEFINITION'S GAPS BELONG TO THE DEFINE STEP, so they are printed only in the
+        lane that owns it. Measured on the board: a blank physique description is the
+        normal state of every athlete until a separate backfill fills it, so the chip
+        appeared on EVERY card in EVERY lane — an amber chip everywhere competing with
+        the one red card that actually needed attention. It blocks nothing either (the
+        recipe generates from a headshot, a colourway and a number), so it is advice for
+        when work is back at Defined rather than a reason any card is stuck. %>
+    <% if reading.board_stage == "defined" %>
+      <% reading.definition_facts.each do |fact| %>
+        <span class="badge text-3xs <%= pipeline_chip_classes(fact[:tone]) %>"><%= fact[:label] %></span>
+      <% end %>
+    <% end %>
+  </div>
+
+  <%# THE COUNTS, as one dense line: candidates found, chosen, images delivered. A
+      scan reads the shape of a look's progress off these three numbers. %>
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-3xs text-muted">
+    <% if reading.candidate_count.positive? %>
+      <span><%= reading.chosen_count %>/<%= reading.candidate_count %> chosen</span>
+    <% elsif reading.headshot? %>
+      <span>cached headshot</span>
+    <% end %>
+    <% if reading.artifact_count.positive? %>
+      <span><%= pluralize(reading.artifact_count, "image") %></span>
+    <% end %>
+    <% if reading.identity_state == :pending %>
+      <span class="text-warning-ink">identity training</span>
+    <% end %>
+    <% chip = artifact_source_chip(reading.artifact_source) %>
+    <% if chip %><span data-test="look-card-generator"><%= chip[:label] %></span><% end %>
+  </div>
+<% end %>

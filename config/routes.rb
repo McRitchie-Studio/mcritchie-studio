@@ -65,6 +65,19 @@ Rails.application.routes.draw do
   post "triage/:slug/promote", to: "triage#promote", as: :promote_triage_finding
   post "triage/:slug/dismiss", to: "triage#dismiss", as: :dismiss_triage_finding
   get "deployments", to: "tasks#deployments", as: :deployments
+  # THE MODEL PIPELINE BOARD — every character model in flight across five lanes
+  # (designed → defined → source → model → generation), public-read like the boards
+  # above, with the hand-placement PATCH and the rank POST admin-gated in
+  # ModelPipelineController.
+  #
+  # NOT `/models`. `Studio.routes` already draws the model-page protocol at
+  # `/models/:model/:id` and `/models/:model/random` (see
+  # config/initializers/model_pages.rb), and `namespace :admin` draws `/admin/models`
+  # for the LLM roster — a third meaning of the same word is how a reader ends up on
+  # the wrong page.
+  get "model_pipeline", to: "model_pipeline#index", as: :model_pipeline
+  post "model_pipeline/reorder", to: "model_pipeline#reorder", as: :reorder_model_pipeline
+  patch "model_pipeline/:slug", to: "model_pipeline#update", as: :model_pipeline_look
   # The epic view: every epic with its progress by stage, and one epic's tasks
   # grouped by stage on the board's own card (EpicsController, public-read).
   get "epics", to: "epics#index", as: :epics
