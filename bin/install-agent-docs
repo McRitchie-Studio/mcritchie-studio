@@ -251,10 +251,19 @@ tooling_sha() {
 # the fixed path FIRST, read that trace as a broken Ruby install rather than a wrong
 # path and fell back to the hub by hand.
 #
-# ADDING A Gemfile IS NOT THE FIX, and that was measured too: with BUNDLE_GEMFILE
-# pointed at the hub's Gemfile, reviewer-select gets past Bundler and then dies in
-# `config/environment` on the missing app/assets/config/manifest.js. Rails needs the
-# whole checkout; carrying the whole checkout would make this a second primary.
+# ADDING A Gemfile IS NOT THE FIX, and the reason is sharper than "Rails needs the
+# whole checkout" — it needs a CWD. Rails derives Rails.root by climbing from the
+# CWD for config.ru, not from the script's location, so a Gemfile here makes the
+# answer depend on where the CALLER stands. Both arms measured 2026-09-27:
+#
+#   cwd with no checkout above it  -> Sprockets::Railtie::ManifestNeededError
+#   cwd inside ANY checkout (a desk) -> boots fine, Rails.root = THAT checkout
+#
+# The second arm is the dangerous one, and it is why a Gemfile is worse than no
+# Gemfile: the fast lane's rule is "the path picks the SCRIPT, the cwd picks the
+# TREE", so agents stand in their desk — and a Gemfile would have these scripts
+# silently boot the DESK's application instead of the hub's, varying per caller.
+# A shim PINS the tree it delegates to; a Gemfile would let the cwd pick it.
 #
 # SO THE FIXED PATH DELEGATES. Each such script is installed as a shim that execs
 # the hub primary's copy — the one checkout that IS a Rails app. The documented
