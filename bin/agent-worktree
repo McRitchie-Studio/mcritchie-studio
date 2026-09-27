@@ -1805,6 +1805,20 @@ def resolve_mascot_shiny(values, dir, task, mascot)
   nil
 end
 
+# The mascot's gender ("female"/"male"), for the one family whose status-line
+# NAME depends on it (nidoran → Nidoran♀ / Nidoran♂; see bin/statusline
+# mascot_display_name). Every other mascot skips the lookup, so no desk write
+# pays a board read it would never render.
+GENDER_NAMED_MASCOTS = %w[nidoran].freeze
+
+def resolve_mascot_gender(values, dir, task, mascot)
+  return nil unless GENDER_NAMED_MASCOTS.include?(compact_value(mascot))
+
+  gender = existing_context_attr(dir, mascot, "mascot_gender") ||
+           record_mascot_field(task_record_slug(values) || task, "mascot_gender")
+  %w[female male].include?(gender) ? gender : nil
+end
+
 # The on-disk context's <key>, but only when its mascot matches `mascot`, so an
 # attribute can never be stale-paired to a changed mascot.
 def existing_context_attr(dir, mascot, key)
@@ -1907,6 +1921,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil, creating: f
     "mascot_color" => resolve_mascot_color(values, dir, task, mascot),
     "mascot_emoji" => resolve_mascot_emoji(values, dir, task, mascot),
     "mascot_shiny" => (true if mascot_shiny),
+    "mascot_gender" => resolve_mascot_gender(values, dir, task, mascot),
     "branch" => branch,
     "head" => head,
     "repo" => app.fetch("repo"),
