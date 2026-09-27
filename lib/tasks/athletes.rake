@@ -255,4 +255,140 @@ namespace :athletes do
             "wrote #{outcome.build_filled}, which is why nothing else above looks wrong."
     end
   end
+
+  desc "Fill in or re-check ONE athlete against an outside source (ESPN by default). " \
+       "PERSON=<person-slug|Full Name> | ESPN_ID=<id> | TEAM=<abbr> NAME=\"Full Name\" | TEAM=<abbr> (whole roster). " \
+       "DRY_RUN=1 ADOPT=position,height_inches NO_HEADSHOT=1 LIMIT=N PAUSE=0.25"
+  task acquire_or_validate: :environment do
+    # THE OPERATOR'S DOOR ONTO Athletes::AcquireOrValidate. It prints and it
+    # chooses subjects; every decision about what to write lives in the service,
+    # so a second caller (a board button, a job) cannot disagree with this one.
+    #
+    # NEEDS NO CREDENTIAL, which was the explicit requirement — "we also need a
+    # local solution". Every ESPN endpoint behind it is public. The ONLY part that
+    # wants AWS keys is caching the headshot into S3, and that degrades to a
+    # reported line rather than failing the run, so a desk with no bucket still
+    # fills a player's data.
+    #
+    #   bin/rails athletes:acquire_or_validate PERSON=ashton-jeanty
+    #   bin/rails athletes:acquire_or_validate ESPN_ID=3138744
+    #   bin/rails athletes:acquire_or_validate TEAM=lv NAME="Chris Myarick"
+    #   DRY_RUN=1 bin/rails athletes:acquire_or_validate TEAM=lv
+    person = ENV["PERSON"].presence
+    espn_id = ENV["ESPN_ID"].presence
+    team = ENV["TEAM"].presence
+    name = ENV["NAME"].presence
+    dry_run = ENV["DRY_RUN"].present? && ENV["DRY_RUN"] != "0"
+    adopt = ENV["ADOPT"].to_s.split(",").map(&:strip).compact_blank
+    cache_headshot = ENV["NO_HEADSHOT"].blank?
+
+    if [person, espn_id, team].all?(&:blank?)
+      abort "athletes:acquire_or_validate needs a subject: PERSON=<person-slug|Full Name>, " \
+            "ESPN_ID=<id>, TEAM=<abbr> NAME=\"Full Name\", or TEAM=<abbr> for a whole roster."
+    end
+
+    # ONE PROVIDER FOR THE WHOLE RUN, so a roster sweep reads each roster once —
+    # Espn::PlayerProfile memoizes per instance, and a fresh one per subject would
+    # re-fetch the same 79-player document on every call.
+    provider = Espn::PlayerProfile.new
+    act = Athletes::AcquireOrValidate.new(provider: provider, adopt: adopt, dry_run: dry_run,
+                                          cache_headshot: cache_headshot)
+
+    banner = "source: espn"
+    banner += "  DRY RUN (nothing is written)" if dry_run
+    banner += "  adopting: #{adopt.join(', ')}" if adopt.any?
+    banner += "  headshot caching OFF" unless cache_headshot
+    puts banner
+    puts ""
+
+    # THE SUBJECT LIST. A TEAM with no NAME walks that one roster — 79 players for
+    # Las Vegas, so it is bounded by construction and is not a league-wide sweep.
+    # It is the same single-person act 79 times, which is what makes "a trade
+    # happened, re-check this team" one command.
+    subjects =
+      if person then [{ person: person }]
+      elsif espn_id then [{ source_id: espn_id }]
+      elsif name then [{ team: team, name: name }]
+      else
+        entries = provider.roster(team: team)
+        puts "#{team} roster: #{entries.size} player(s)"
+        puts ""
+        entries.map { |entry| { source_id: entry.source_id } }
+      end
+
+    # LIMIT takes the sweep in inspectable waves; the act is idempotent, so the next
+    # wave resumes where this one stopped and nothing has to record progress.
+    limit = ENV["LIMIT"].presence&.to_i
+    subjects = subjects.first(limit) if limit
+
+    # A POLITE GUEST. One subject is one request and needs no pause; a roster sweep is
+    # 79, so it waits between them by default. PAUSE=0 disables it.
+    pause = ENV.fetch("PAUSE", subjects.length > 1 ? "0.25" : "0").to_f
+
+    tally = Hash.new(0)
+
+    subjects.each_with_index do |args, index|
+      report = act.call(**args)
+      tally[report.status] += 1
+      tally[:stale] += 1 if report.ok? && report.stale?
+      tally[report.mode] += 1 if report.ok?
+      print_report(report)
+      sleep pause if pause.positive? && index < subjects.length - 1
+    end
+
+    puts ""
+    puts "verdict: " + tally.sort_by { |key, _| key.to_s }.map { |key, count| "#{key}=#{count}" }.join("  ")
+
+    # A REFUSAL IS NOT A FAILURE, and this is deliberately not an abort. Every
+    # refusal this act emits is a fact about the data that a human has to settle —
+    # two spellings of one man, an id clash, a player ESPN no longer rosters — and
+    # reddening the run would make the operator's next move "re-run it" instead of
+    # "read the line". A source that could not be REACHED is different, and says so.
+    if tally[:unavailable].positive?
+      warn "#{tally[:unavailable]} subject(s) could not be checked because the source did not answer. " \
+           "Nothing was written for them; re-run when it is back."
+    end
+  end
+end
+
+# ONE REPORT, PRINTED. Lives at file scope rather than inside the task body because
+# a rake task body is not a method and cannot hold one.
+def print_report(report)
+  unless report.ok?
+    puts "  [refused: #{report.status}] #{report.subject}"
+    puts "      #{report.message}"
+    puts ""
+    return
+  end
+
+  head = "  #{report.mode.to_s.upcase} #{report.person_name} (#{report.person_slug})"
+  head += "  #{report.source}:#{report.source_id}"
+  head += "  STALE" if report.stale?
+  puts head
+  report.created.each { |row| puts "      created      #{row}" }
+
+  report.changes.each do |change|
+    label = change.outcome.to_s
+    line = "      #{label.ljust(12)} #{change.field}"
+    case change.outcome
+    when :filled then line += ": #{change.incoming.inspect}"
+    when :traded, :updated, :adopted then line += ": #{change.stored.inspect} -> #{change.incoming.inspect}"
+    when :conflict then line += ": kept #{change.stored.inspect}, source says #{change.incoming.inspect}"
+    when :unchanged then line += ": #{change.stored.inspect}"
+    when :unreadable then line += ": #{change.note}"
+    when :absent then next
+    end
+    puts line
+  end
+
+  headshot = report.headshot || {}
+  case headshot[:status]
+  when :cached then puts "      cached       headshot -> #{headshot[:keys].join(', ')}"
+  when :already then puts "      unchanged    headshot (already cached)"
+  when :skipped then puts "      skipped      headshot (#{headshot[:reason]})"
+  when :failed then puts "      FAILED       headshot (#{headshot[:reason]}) — the source url is stored; " \
+                        "`rake nfl:upload_headshots` finishes it later"
+  when :absent then puts "      absent       headshot (#{headshot[:reason]})"
+  end
+  puts ""
 end
