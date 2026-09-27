@@ -105,4 +105,20 @@ class MascotGenderFlowTest < ActiveSupport::TestCase
                       "a female line never hands a child the Nidorino line"
     end
   end
+  test "an inherited gender is kept when the species allows it, and overridden when it cannot" do
+    Pokemon.stub(:gender_die, 7) do # a fresh roll would say male
+      assert_equal "female", SessionMascot.gender_for("nidoran", "female"), "a mixed species keeps the hint"
+      assert_equal "male", SessionMascot.gender_for("nidoran", nil), "no hint: a fresh roll"
+    end
+    assert_equal "male", SessionMascot.gender_for("nidorino", "female"), "a male-only species cannot be female"
+    assert_nil SessionMascot.gender_for("unknown-slug", "female")
+  end
+
+  test "a session-less task draws and stamps its own gender" do
+    nidorina = Pokemon.find_by!(slug: "nidorina") # female-only, so the roll is forced
+    task = Pokemon.stub(:draw, nidorina) { Task.create!(title: "Sessionless gender probe", stage: "building") }
+
+    assert_equal "nidorina", task.devops["mascot"]
+    assert_equal "female", task.reload.devops["mascot_gender"]
+  end
 end

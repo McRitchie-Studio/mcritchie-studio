@@ -51,6 +51,14 @@ class PokemonGenderTest < ActiveSupport::TestCase
     end
   end
 
+  test "forced and genderless species never read the die" do
+    Pokemon.stub(:gender_die, -> { raise "the die was rolled" }) do
+      assert_equal "male", Pokemon.roll_gender(0)
+      assert_equal "female", Pokemon.roll_gender(8)
+      assert_nil Pokemon.roll_gender(-1)
+    end
+  end
+
   test "a mixed species is female exactly when the die lands under gender_rate" do
     # gender_rate n means an n/8 chance of female: the faces 0..n-1 of eight.
     (1..7).each do |rate|
