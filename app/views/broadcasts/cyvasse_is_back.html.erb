@@ -1,0 +1,44 @@
+<%# "Cyvasse is back": the relaunch note to the players imported from the old
+    Cyvasse (task cyvasse-is-back-outreach). Mostly text and one button, so it
+    reads as a letter rather than a promotion. The links are plain for now;
+    click tracking and the newsletter opt-in page come with the outreach task. %>
+<% play_url  = "https://cyvasse.mcritchie.studio/play" %>
+<% build_url = "https://mcritchie.studio/build" %>
+<% content_for :email_reason, "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
+<%= render "broadcasts/email_head",
+      hero_file: "cyvasse_header.jpg",
+      preheader: "Your account, your old matches and your saved lineups came across. The board is waiting.",
+      title:     "Cyvasse is back",
+      subtitle:  "Same board, same pieces &mdash; rebuilt, and your account came with it." %>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td style="padding:28px 32px 8px 32px;">
+      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">Hi <%= broadcast_greeting_name %>,</p>
+      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">You played Cyvasse with us a while back &mdash; the hex-board strategy game from <em>A Song of Ice and Fire</em>. Together, players on the old site played more than 100,000 matches.</p>
+      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">I&rsquo;ve rebuilt it from the ground up, and it&rsquo;s live again. Your account, your old matches and your saved lineups all came across, so you can pick up where you left off.</p>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">Play the computer right in your browser, challenge a friend to an online match, or load one of twenty opening setups if you want a head start.</p>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:22px 32px 8px 32px;text-align:center;">
+      <%= render "broadcasts/button", url: play_url, label: "Play Cyvasse &rarr;".html_safe, color: "#7c3aed", full_width: true %>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:20px 32px 8px 32px;">
+      <p style="margin:0 0 4px 0;font-size:16px;line-height:1.65;color:#2b3440;">See you on the board.</p>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">&mdash; Alex</p>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:14px 32px 28px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eef1f4;">
+        <tr><td style="padding-top:16px;font-size:13px;line-height:1.6;color:#94a3b8;"><strong style="color:#64748b;">P.S.</strong> Cyvasse is built at McRitchie Studio, where we turn an idea into a working app. Got one of your own? <a href="<%= build_url %>" style="color:#7c3aed;font-weight:700;text-decoration:none;">Describe it and we&rsquo;ll build it &rarr;</a></td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
