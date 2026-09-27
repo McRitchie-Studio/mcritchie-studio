@@ -38,10 +38,18 @@ module ImageGeneration
       #
       # `artifacts.billable_units` HOLDS TWO DIFFERENT VOCABULARIES and this is
       # what keeps them apart. fal bills a sheet-sized image at 3 IMAGE UNITS;
-      # OpenAI reports tens of thousands of TOKENS for the same picture. Storing
-      # both as a bare integer called "units" and rendering "3" beside "18432"
-      # invites exactly one conclusion, and it is the wrong one. The row names the
-      # unit so the page can print it and nobody compares the two numbers.
+      # OpenAI reports SINGLE-DIGIT THOUSANDS of TOKENS for the same picture —
+      # 6,724 to 7,629 across the three sheets measured on 2026-09-27
+      # (config/image_generators.yml carries them). Storing both as a bare integer
+      # called "units" and rendering "3" beside a FOUR-FIGURE token count invites
+      # exactly one conclusion, and it is the wrong one. The row names the unit so
+      # the page can print it and nobody compares the two numbers.
+      #
+      # THE ORDER IS THE POINT, NEVER A PARTICULAR SAMPLE. This comment used to claim
+      # the order was "tens of thousands" and illustrate it with an invented
+      # five-figure count that no measurement supports; quoting any ONE measured sheet
+      # instead would be stale by the next sheet, because the three measured here
+      # differ by 900 tokens. Cite the range or the order. A guard pins both mistakes.
       def billing_unit_name = billing_unit.presence || "unit"
 
       # TURN A MEASURED UNIT COUNT INTO A PRICE, or answer nil.
@@ -65,9 +73,14 @@ module ImageGeneration
       # sheet came from "the responses API", which identifies nothing.
       def provenance_version = [model.presence || endpoint, api_version].compact_blank.join("@")
 
-      # WHAT WAS ACTUALLY RUN FOR THIS ROW, as prose. Never nil in the shipped
-      # file — see the guard below — but tolerant here because a row built by hand
-      # in a test has no measurement and should not raise.
+      # WHAT WAS ACTUALLY RUN FOR THIS ROW, as prose. Never nil in the shipped file —
+      # and the guard that makes that true is NOT in this file. It is
+      # test/models/image_generation/registry_test.rb, "no row claims a capability
+      # without recording what was measured", which rejects every row whose
+      # `measured_result` is blank. (This comment used to say "see the guard below",
+      # pointing at nothing in this file; a reader who went looking found no guard and
+      # had to decide whether to trust the sentence or the silence.) Tolerant HERE
+      # because a row built by hand in a test has no measurement and should not raise.
       def measured_on = measured.is_a?(Hash) ? measured[:date].to_s.presence : nil
       def measured_result = measured.is_a?(Hash) ? measured[:result].to_s.presence : nil
       def not_measured = measured.is_a?(Hash) ? measured[:not_measured].to_s.presence : nil
@@ -124,7 +137,18 @@ module ImageGeneration
       # this desk" into a 500 on a page whose only job is to show what we have.
       #
       # ORDER IS THE PREFERENCE and it is the YAML's order, which is why the file
-      # leads with the row that claims full_body and back_view.
+      # leads with `openai_gpt5_sheet`: it is the SHEET generator, the only row
+      # measured to hold a likeness across a whole multi-panel sheet, so it is the
+      # row that should win `for(:character_sheet)`.
+      #
+      # ⚠ NO ROW CLAIMS `full_body` OR `back_view` — this comment used to say the file
+      # led with the row that did, and that was false in a file whose header exists to
+      # enforce truth-of-record. Both were withdrawn as unmeasured overclaims, and
+      # `registry_test.rb`'s "the withdrawn overclaim capabilities are absent
+      # everywhere" asserts they are gone from every row. A sentence here that
+      # contradicts a test three directories away is the exact defect this registry
+      # was built to stop, so if you re-add either capability, that test goes red
+      # first — trust it over any prose, including this.
       def for(capability) = with_capability(capability).find(&:available?)
 
       # THE ROW THAT WOULD SERVE, IGNORING CREDENTIALS. What the page needs to say

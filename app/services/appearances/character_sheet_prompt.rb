@@ -17,9 +17,14 @@ module Appearances
   # attribute that must hold everywhere, it goes in PANEL_SUFFIX, not the preamble.
   #
   # ⚠ AND IT IS STILL NOT ENOUGH FOR CLOSE CROPS — do not read the rule above as
-  # solved. Re-measured 2026-09-27 against the approved v4 artifact with a
-  # criterion describing the OBSERVABLE silhouette rather than naming the
-  # equipment:
+  # solved. MEASURED TWICE INDEPENDENTLY, and per-panel repetition failed to fix it
+  # EITHER TIME:
+  #
+  #   1. On the operator-approved v4 artifact, by the coordinator.
+  #   2. Again on this app's own 2026-09-27 run, through this repo's code path.
+  #
+  # Both were re-read with a criterion describing the OBSERVABLE silhouette rather
+  # than naming the equipment, and both answered the same way:
   #
   #     full_body_left_two_have_pads   true
   #     six_head_panels_have_pads      FALSE
@@ -31,6 +36,14 @@ module Appearances
   # per-panel repetition is simply insufficient at this crop or whether the
   # phrasing must describe the SILHOUETTE rather than name the equipment. Anyone
   # changing PADS_CLAUSE is working on that question.
+  #
+  # TWO MEASUREMENTS IS THE LOAD-BEARING PART, and this file is where it matters most,
+  # because this is the copy a builder reads before touching PADS_CLAUSE. It used to
+  # cite only the v4 re-measure and omit "either time" — which left the weakest of the
+  # three recordings of this defect in the one place it is acted on, and invited a
+  # builder to think repeating the clause harder was untried. It was tried, twice.
+  # The other two recordings are config/image_generators.yml (`not_measured:` on
+  # `openai_gpt5_sheet`) and docs/topics/content-pipeline.md; all three must agree.
   #
   # HOW THE FIRST CHECK MISSED IT, which is the transferable half: a criterion
   # phrased loosely ("pads visible in all panels") got a generous yes from a

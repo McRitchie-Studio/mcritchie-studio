@@ -147,7 +147,12 @@ class ImageGeneration::RegistryTest < ActiveSupport::TestCase
     row = ImageGeneration::Registry.find!("fal_ideogram_character")
 
     assert_equal BigDecimal("0.15"), row.price_for(3), "one image at the API default"
-    assert_equal BigDecimal("0.75"), row.price_for(15), "a five-pose sheet"
+    # FIVE IMAGES, NOT "a five-pose sheet". This label described a retired model: poses
+    # were deleted with the five-call-per-sheet design (there is no POSES constant any
+    # more), and `fal_ideogram_character` claims no `character_sheet` capability at all,
+    # so it cannot produce a sheet of any panel count. What 15 units actually is, at
+    # this row's measured 3 units per image, is five separate single images.
+    assert_equal BigDecimal("0.75"), row.price_for(15), "five single images at 3 units each"
   end
 
   # nil MEANS "WE CANNOT PRICE THIS", never "free" — and the page renders the

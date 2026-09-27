@@ -238,9 +238,18 @@ module Appearances
 
     # Anything at all to build an identity from: a filed candidate, or the derived
     # floor (our cached headshot / a URL the operator typed). The floor counts because
-    # it is what the generator actually consumes — measured 2026-09-26, one cached
-    # ESPN headshot produced an operator-approved ten-panel sheet, and five references
-    # measured no better than one.
+    # it is what the generator actually consumes — measured 2026-09-26, ONE cached
+    # ESPN headshot was enough to produce an operator-approved sheet (ten grid cells,
+    # eight figures).
+    #
+    # THAT IS A CLAIM ABOUT SUFFICIENCY, NOT ABOUT OPTIMALITY, and the difference is
+    # the whole reason this sentence is worded this way. It used to end "and five
+    # references measured no better than one", which is a finding about
+    # /v1/images/edits — a different endpoint — being repeated here as though it
+    # settled the sheet path. It does not: whether MORE references make a better
+    # sheet through /v1/responses is UNMEASURED (config/image_generators.yml,
+    # `reference_arity`). All this predicate needs is that one photograph is enough
+    # to try, which is measured and is all it asserts.
     def referenced?
       candidate_count.positive? || headshot? || appearance.reference_url.present?
     end

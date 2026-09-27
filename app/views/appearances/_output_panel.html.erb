@@ -105,7 +105,8 @@
                       would read as free, and free is the one thing this never is. %>
                   <%# THE UNIT IS ALWAYS NAMED. fal counts image units, OpenAI
                       counts tokens, and both land in one column, so a bare number
-                      would invite comparing 3 with 18,000. A nil cost prints
+                      would invite comparing 3 with a four-figure token count
+                      (the measured sheets ran 6,724 to 7,629). A nil cost prints
                       nothing rather than zero: not reported is not free. %>
                   <% if artifact.billing_summary.present? %>
                     <div class="flex gap-1 min-w-0">

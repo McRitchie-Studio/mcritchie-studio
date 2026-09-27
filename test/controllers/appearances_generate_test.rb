@@ -50,7 +50,13 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     FakeAdapter.result = ImageGeneration::Result.new(
       image_urls: ["data:image/png;base64,QUJD"], seed: nil,
       request_id: "resp_1", generator_key: "openai_gpt5_sheet",
-      version: "gpt-5-2025-08-07@v1", billable_units: 18_432
+      # A MEASURED TOKEN COUNT, NOT AN INVENTED ONE. This stub used to say 18_432, a
+      # figure nothing ever measured, and it LEAKED: five comments across app/ and
+      # docs/ went on to quote it as an observed OpenAI cost and to call the order
+      # "tens of thousands". Real sheets ran 6,724-7,629 (config/image_generators.yml).
+      # Keep this a number the registry row can vouch for, so a reader who finds it
+      # here and repeats it elsewhere repeats something true.
+      version: "gpt-5-2025-08-07@v1", billable_units: 7_629
     )
     ImageGeneration::Adapter.stub(:for, FakeAdapter) do
       Appearances::StoreGeneratedImage.stub(:call, STORED_URL) do
@@ -92,15 +98,17 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
   # THE FLASH NAMES WHAT MADE IT. The operator is about to judge a picture, and
   # "which model produced this" is the first thing he needs to judge it —
   # especially while more than one generator is in play.
+  #
   # THE UNIT IS NAMED BESIDE THE COUNT. fal bills image units and OpenAI reports
-  # tokens into the same column, so a bare number invites comparing 3 with 18,000.
+  # tokens into the same column, so a bare number invites comparing 3 with a
+  # four-figure token count.
   test "the flash names the generator and the billed amount with its unit" do
     log_in_as(@admin)
 
     with_generator { post generate_path }
 
     assert_match(/GPT-5 image generation/, flash[:notice])
-    assert_match(/18,432 tokens/, flash[:notice])
+    assert_match(/7,629 tokens/, flash[:notice])
   end
 
   # A REFUSAL IS A FLASH, NOT A 500, and it names the variable to set.
