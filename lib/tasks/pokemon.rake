@@ -190,7 +190,7 @@ namespace :pokemon do
         put_image(s3, bucket, "pokemon/#{dex}-#{slug}-shiny.png", "#{SPRITE_CDN}/other/official-artwork/shiny/#{dex}.png")
         put_image(s3, bucket, "pokemon/#{dex}-#{slug}-shiny-sprite.png", "#{SPRITE_CDN}/shiny/#{dex}.png")
       end
-      warn "uploaded ##{format('%03d', dex)} #{slug} (#{variants.join('+')})"
+      warn "processed ##{format('%03d', dex)} #{slug} (#{variants.join('+')})"
     end
     puts "mirrored #{rows.size} Pokémon avatars (#{variants.join('+')}) → s3://#{bucket}/pokemon/"
     if variants.include?("female")
