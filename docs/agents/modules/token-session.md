@@ -57,8 +57,8 @@ lanes are rare, so the cost is one extra mint. Do not "fix" this.
 | **Token older than 50 min** | mint a replacement, cache it | automatic |
 | **Token rejected (401) on a `git` operation** | retire that token, next call mints once | automatic |
 | **Token rejected (401) on `gh` or an API call** | nothing retires it — it is served until it ages out | **you** — step 1 |
-| **1Password unreachable, quota spent, or the service account genuinely gone** | `op` cannot serve the key, so `bin/gh-token` cannot mint — but you can, from the recorded app id plus a local `.pem`. **Two legs, `gh` and `git`, and both are yours to arm** | **you** — *When 1Password itself is down* |
 | **Token present, but the one in YOUR shell is stale** | the session inherited a revoked `OP_SERVICE_ACCOUNT_TOKEN` while `~/.zprofile` already holds the live one; `op` then fails exactly as it would for a service account that no longer exists | **you** — step 1a |
+| **1Password unreachable, quota spent, or the service account genuinely gone** | `op` cannot serve the key, so `bin/gh-token` cannot mint — but you can, from the recorded app id plus a local `.pem`. **Two legs, `gh` and `git`, and both are yours to arm** | **you** — **step 1a first**, then *When 1Password itself is down* |
 | **Deployer token needed, admin token absent, machine provisioned** | `source ~/.zprofile.admin` in this shell, then retry | **you** |
 | **Deployer token needed, and this machine has no `~/.zprofile.admin`** | install it once — `bin/setup-1pass-token --admin` | **Alex** |
 
@@ -361,9 +361,9 @@ Two traps in that check:
 | Symptom | Cause | Fix |
 |---|---|---|
 | `Bad credentials`, 401 on `gh` | session aged out | step 1 |
-| `could not read Username for 'https://github.com'` | the git credential helper could not mint, and no other helper answered | step 2, then step 1 — and if `op` cannot serve at all, *When 1Password itself is down* → **leg 2**. Exporting `GH_TOKEN` never reaches `git` |
-| `gh` answers but `git push` still fails | **only the `gh` leg is armed.** They are two legs with two routes | *When 1Password itself is down* → **leg 2** (`GH_APP_TOKEN_CMD`), then re-check with `git push --dry-run` |
-| `remote: Invalid username or token` on a push **in the hub** | the App helper came up empty and the hub's repo-local `!gh auth git-credential` fallback answered with a stale keyring token. Other repos have no such fallback and say `could not read Username` instead | same fix — arm **leg 2**. Do not chase the local config; leave it alone |
+| `could not read Username for 'https://github.com'` | the git credential helper could not mint, and no other helper answered | step 1, then **step 1a**, then step 2 — and if `op` still cannot serve, *When 1Password itself is down* → **leg 2**. Exporting `GH_TOKEN` never reaches `git` |
+| `gh` answers but `git push` still fails | **only the `gh` leg is armed.** They are two legs with two routes | **step 1a** first if you have not run it — a broken `op` starves the git leg while an exported `GH_TOKEN` keeps `gh` answering. Then *When 1Password itself is down* → **leg 2** (`GH_APP_TOKEN_CMD`), and re-check with `git push --dry-run` |
+| `remote: Invalid username or token` on a push **in the hub** | the App helper came up empty and the hub's repo-local `!gh auth git-credential` fallback answered with a stale keyring token. Other repos have no such fallback and say `could not read Username` instead | **step 1a** first — an empty App helper is usually a stale `OP_SERVICE_ACCOUNT_TOKEN`, not a broker that cannot serve. Only then arm **leg 2**. Do not chase the local config; leave it alone |
 | `op` answers `(403) Forbidden (Service Account Deleted)` | **almost never a deleted account.** The token in your shell is stale — it names a service account that no longer exists, while `~/.zprofile` already holds the live one. The variable is still *set*, so it reads as a broken credential rather than a missing one | **step 1a** — `unset OP_SERVICE_ACCOUNT_TOKEN`, `source ~/.zprofile`, `op whoami`. Only if it STILL 403s after that is the account genuinely gone, and only then the hand-mint |
 | `"agents" isn't a vault` | **the hub primary is stale** | fast-forward `main`; the fix shipped as `bin/lib/op_vaults.rb` |
 | `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, mint by hand rather than wait |
