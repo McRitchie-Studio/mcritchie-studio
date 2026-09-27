@@ -32,4 +32,17 @@ class EmailEvents::ResultsTest < ActiveSupport::TestCase
     assert_equal "https://example.com/tt", Results.with_ref("https://example.com/tt", "tok")
     assert_equal "https://evilmcritchie.studio/x", Results.with_ref("https://evilmcritchie.studio/x", "tok")
   end
+
+  test "a customer app on a mcritchie.studio subdomain never receives the token" do
+    assert_equal "https://someones-app.mcritchie.studio/", Results.with_ref("https://someones-app.mcritchie.studio/", "tok")
+    assert_equal "https://cyvasse.mcritchie.studio./play?ref=tok", Results.with_ref("https://cyvasse.mcritchie.studio./play", "tok")
+  end
+
+  test "a result that cannot be recorded is logged and never raises" do
+    BroadcastDelivery.stub(:find_by, ->(*) { raise ActiveRecord::ConnectionTimeoutError, "pool" }) do
+      assert_difference -> { ErrorLog.count }, 1 do
+        assert_nil Results.record!(@delivery.token, "signed_in")
+      end
+    end
+  end
 end
