@@ -189,17 +189,13 @@ module TaskDerivedFacts
 
   # The souls who authored the task's PR(s). Empty when there is no PR, derivation
   # is off, or the read fails — the stamps then stand alone, as they did before.
+  # This is the FLATTENED view of #derived_authors_probe below; both read the same
+  # urls once, through the same memo, so the set that excludes a reviewer and the set
+  # that cross-examines a `--builder none` assertion can never drift apart.
   def derived_authors(derivation: github_derivation)
     return [] unless derivation
 
-    derived_memo(:authors, derivation) do
-      derived_release_pr_urls(derivation: derivation).values.flat_map do |url|
-        derivation.authors(url)
-      rescue Github::TaskDerivation::Unreadable => e
-        Rails.logger.warn("[task-derivation] #{slug}: authors unreadable for #{url}: #{e.message}")
-        []
-      end.uniq
-    end
+    derived_authors_probe(derivation: derivation)["authors"]
   end
 
   # THE SAME READ, WITH ITS THREE OUTCOMES KEPT APART. #derived_authors above
@@ -239,6 +235,7 @@ module TaskDerivedFacts
         derived_pr_url(derivation: derivation, repo: repo)
       rescue Github::TaskDerivation::Unreadable => e
         unread << "the PR for #{repo} could not be looked up (#{e.message})"
+        Rails.logger.warn("[task-derivation] #{slug}: PR lookup for #{repo} unreadable: #{e.message}")
         nil
       end
       urls = (recorded.values + gaps).map { |u| u.to_s.strip }.reject(&:empty?).uniq
@@ -247,6 +244,7 @@ module TaskDerivedFacts
         derivation.authors(url)
       rescue Github::TaskDerivation::Unreadable => e
         unread << "the commits on #{url} could not be read (#{e.message})"
+        Rails.logger.warn("[task-derivation] #{slug}: authors unreadable for #{url}: #{e.message}")
         []
       end.uniq
 
