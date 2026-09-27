@@ -54,40 +54,97 @@ re-files rows whose stored key disagrees with `Athlete#headshot_key_prefix`; the
 task detects that drift and names it but cannot repair it, because it grades "already
 done" by variant presence and never by key.
 
-**Read the lane left to right: wanted it → a source could answer → something came back.**
-Each step asks a different question, and only the last one grades the lane. A gap at the
-source step is a *data* gap and stays quiet; a gap at the result step is the lane not
-working, and that is what exits non-zero. Two predicates on `Athlete` hold the first two
-steps — `headshot_complete?` and `headshot_fetchable?` — so the skip branches in the task
-and the verdicts below it read one definition instead of two spellings that drift.
+**Read the lane left to right: wanted it → a source could answer → the source answered →
+the upload worked.** Each step asks a different question, and only the last one grades the
+lane. A gap at either middle step is a fact about *ESPN* and stays quiet; a gap at the
+result step is the lane not working, and that is what exits non-zero. Two predicates on
+`Athlete` hold the first two steps — `headshot_complete?` and `headshot_fetchable?` — and
+`Athletes::DeadHeadshotSource` holds the third, so the skip branches in the task and the
+verdicts below it read one definition instead of two spellings that drift.
 
 **Two exit-code rules, disjoint by construction.** Rule 1 fires when `failed > cached`:
-more failures than successes cannot be one dead ESPN URL, and it names
-`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, because that is what a credential failure
-looks like from here. Rule 2 fires when the run found fetchable work and attempted none
-of it — the task refusing its job rather than S3 refusing the upload. `attempted.zero?`
-forces `failed == cached == 0`, so rule 1 is false exactly when rule 2 can fire.
+more failures than successes cannot be one bad upload, and it names `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`, because that is what a credential failure looks like from here.
+Rule 2 fires when the run found fetchable work and attempted none of it — the task
+refusing its job rather than S3 refusing the upload. `attempted.zero?` forces
+`failed == cached == 0`, so rule 1 is false exactly when rule 2 can fire.
 
-**Rule 2 grades `fetchable`, not every athlete short a variant, and that difference was a
-false abort on every healthy run.** The rule was written against `needed = considered -
-skipped_complete`, which subtracted out the *complete* athletes and nothing else. Eight
-production athletes have no `espn_headshot_url` and never will, so once the other 2,043
-were cached `needed` sat positive for ever while `attempted` was legitimately zero — the
-healthy steady-state re-run aborted, claiming the task had declined its job. **A verdict
-must be clearable by fixing what it accuses.** That one accused the lane and could only
-be cleared by filling a column the lane does not write. The graded population now holds
-only athletes a source could have answered for.
+**A dead source and a broken uploader are not the same event, and counting them together
+was rule 1 aborting every healthy production run.** The fetch and the put are two
+different parties: a 404 from `a.espncdn.com` is a fact about ESPN, a failed `put_object`
+is a fact about us. Both used to arrive through one bare `rescue => e` into one `failed`
+counter. `Athletes::DeadHeadshotSource` reads the exception — `OpenURI::HTTPError` whose
+`io.status` is 404 or 410 — at the point the difference is *known*, and the task keeps a
+separate `dead_source` counter, so rule 1 grades `cached + failed` with the dead sources
+taken out. Everything else, including a 5xx and a 403, fails safe into `failed`: a
+sustained ESPN outage really is a run that did not do its work, and it is transient, so a
+red that clears next run is honest.
 
-Only **five** of those eight ever reach the verdict: three carry no `espn_id`, so they are
-not candidates at all (2,048 of the 2,051 athletes are). An abort on production therefore
-read "0 of the 5", not "0 of the 8".
+**Two denominators, kept apart on purpose.** `attempted` is `cached + failed +
+dead_source` and answers *did the run do the work it found* — a dead source belongs in it,
+because the request went out and the pause was paid. `graded` is `cached + failed` and
+answers *did our half work* — a dead source must not be in it. `HEADSHOT_LIMIT` bounds
+`attempted`, since a 404 costs the same request and the same pause as a hit.
+
+**Rule 2 grades `fetchable`, not every athlete short a variant.** The rule was written
+against `needed = considered - skipped_complete`, which subtracted out the *complete*
+athletes and nothing else, so it could accuse the lane of declining work no run could ever
+have done. **A verdict must be clearable by fixing what it accuses**, and that one could
+only be cleared by filling a column the lane does not write. The graded population now
+holds only athletes a source could have answered for.
+
+**The population, measured read-only on production 2026-09-27** —
+`heroku run --app mcritchie-studio bin/rails runner` over `Athlete`, counting variant
+presence rather than deriving it:
+
+| | |
+|---|---|
+| athletes | 2,051 |
+| carrying an `espn_id` (the candidates) | 2,048 |
+| candidates with all three variants cached | 2,043 |
+| candidates still short a variant, **with** a source (`fetchable`) | **5** |
+| candidates still short a variant, **without** a source (`skipped_no_source`) | **0** |
+| athletes short a variant who are not candidates at all | 3 |
+
+The five are `chris-manhertz`, `brandon-scherff`, `jack-plummer`, `jack-strand` and
+`brett-thorson`, and **every one of those five source URLs answers 404** — fetched the way
+the app fetches, `URI.open(url, read_timeout: 30, redirect: true)`, while a control
+`espn_id` answered 230,577 bytes through the same call. `curl` agreeing proves nothing
+about what Ruby sees. The three non-candidates are `james-thompson`, `gabe-rubio` and
+`blake-miller`; they carry no `espn_id`, so `Athlete.where.not(espn_id: nil)` never sees
+them.
+
+**A figure of eight was carried by three readers and is wrong.** Eight athletes are short
+a variant — that count is correct wherever it means *no cached headshot*. It is **not** the
+count with no `espn_headshot_url`: three have none, and all three of those are the
+non-candidates. So `skipped_no_source` is zero on production, rule 2 never fired there, and
+the abort operators actually got was rule 1 on five 404s.
 
 **What stays quiet, because a rule that cries wolf gets disabled.** A complete athlete is
 never counted as wanting a headshot, so the warm re-run says nothing. An athlete with no
-`espn_headshot_url` is counted as wanting one and not as fetchable, so the permanent
-residue is silent — it is **named**, slug by slug, in the report's inventory instead
-(capped at 25 with a remainder count), which is the honest way to ask for the data to be
-fixed. A stale folder name warns and never aborts: every avatar still serves.
+`espn_headshot_url` is counted as wanting one and not as fetchable. An athlete whose source
+answered 404 counts as *attempted* and not as *failed*. Both residues are **named**, slug
+by slug, in the report's inventory instead — two separate lists, because they are two
+chores with two remedies: one needs a column filled, the other needs a photograph to exist
+at ESPN. Both are capped at 25 with a remainder count, and both go to **stdout**, which
+`bin/ecosystem-build` discards: inventory that prints on every healthy run for ever is not
+a signal. A stale folder name warns and never aborts: every avatar still serves.
+
+**Known blind spot: a wholesale dead-source run reads as green.** Nothing distinguishes
+"ESPN retired five photographs" from "our `espn_headshot_url` derivation broke and now
+every URL 404s" except volume, and volume is the threshold nobody can defend from these
+counters — production's healthy steady state is *100% dead sources*, five of five. Closing
+it needs a record that a URL was probed and gone, which is a column rather than an
+accounting change, so it is named here rather than guessed at. The counters print
+`dead source (404/410)` as a level on every run, which is what an operator watching it
+grow would read.
+
+**The causes travel with the verdict.** The per-athlete `[!]` lines are `puts`, and
+`bin/ecosystem-build` runs the task with `>/dev/null` and keeps stderr — so an abort saying
+"read the `[!]` lines above" pointed at output the lane had already thrown away. Both
+graded verdicts now carry the first three `slug: ExceptionClass: message` pairs in their own
+body, on stderr. The phase's own `log_fail` line no longer asserts a cause either: the task
+has two aborts and only one of them is about credentials.
 
 **A `next` added later cannot vanish.** `unfetched` (fetchable, walked past anyway) and
 `unclassified` (wanted one, skipped for a reason no verdict classifies) are both derived
