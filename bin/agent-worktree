@@ -1581,7 +1581,11 @@ def merged_pr_for_branch(record)
   branch = record[:branch].to_s
   return [:none, nil] if branch.empty? || branch == "?"
 
-  ok, out, = capture_status("gh", "pr", "list", "--repo", slug, "--head", branch, "--state", "merged", "--json", "number")
+  head = git_value(record[:dir], "rev-parse", "HEAD")
+  return [:none, nil] unless head.match?(/\A\h{40}\z/)
+
+  ok, out, = capture_status("gh", "pr", "list", "--repo", slug, "--head", branch, "--state", "merged",
+                            "--json", "number,headRefOid")
   return [:unavailable, nil] unless ok
 
   prs =
@@ -1590,9 +1594,19 @@ def merged_pr_for_branch(record)
     rescue JSON::ParserError
       []
     end
-  first = prs.is_a?(Array) ? prs.first : nil
-  number = first.is_a?(Hash) ? first["number"] : nil
-  number ? [:merged, number.to_s] : [:none, nil]
+  number = merged_pr_at_head(prs, head)
+  number ? [:merged, number] : [:none, nil]
+end
+
+# PURE: the merged PR whose head commit IS the desk's HEAD, or nil. A branch NAME is reused
+# (a squash-merged branch keeps taking commits; a recycled slug cuts the same name), so "a
+# merged PR once came from this branch" says nothing about the commits sitting in the desk.
+# Only a PR merged at exactly this HEAD vouches for it.
+def merged_pr_at_head(prs, head)
+  return nil unless prs.is_a?(Array)
+
+  match = prs.find { |pr| pr.is_a?(Hash) && pr["headRefOid"].to_s == head.to_s }
+  match && match["number"]&.to_s
 end
 
 def human_title(slug)
@@ -2455,6 +2469,37 @@ def repo_desk_dirs(repo)
   known = globbed.map { |dir| canonical_path(dir) }
   registered = linked_worktree_dirs(repo).reject { |dir| known.include?(dir) || !Dir.exist?(dir) }
   (globbed + registered).uniq { |dir| canonical_path(dir) }.sort
+end
+
+# The trees this tooling cuts desks into, and so the only places a sweep may DESTROY one:
+# `<repo>/.worktrees/` (the managed layout) and `<repo>.worktrees/` (the sibling tree gem
+# repos use, which `identity`'s remedy cuts into). Anything else git lists — Claude Code's
+# `<repo>/.claude/worktrees/*`, a scratchpad checkout, `<projects>/.worktrees/<repo>/` — was
+# cut by something that never binds a task, so the unbound fail-open would read it FREE
+# while a session is working in it. Those are LISTED, never nominated (managed_desk_hold).
+def managed_desk_roots(repo)
+  [File.join(repo, ".worktrees"), "#{repo}.worktrees"].map { |root| canonical_path(root) }
+end
+
+def inside_managed_desk_root?(record)
+  app = record[:app]
+  repo = app.is_a?(Hash) ? app["repo"] : nil
+  dir = record[:dir].to_s
+  return false if repo.nil? || dir.empty?
+
+  parent = File.dirname(canonical_path(dir))
+  managed_desk_roots(repo).include?(parent)
+end
+
+# The reclaim hold for a desk outside every managed root, or nil. Checked FIRST in
+# reclaim_evidence, before any git or board channel, because no channel after it can tell
+# a live Claude Code session's worktree from abandoned work: neither is bound to a task.
+def managed_desk_hold(record)
+  return nil if inside_managed_desk_root?(record)
+
+  "outside the managed desk root (#{File.dirname(record[:dir].to_s)} is not <repo>/.worktrees or " \
+    "<repo>.worktrees) — something other than this tooling cut it, and nothing here can tell whether " \
+    "a session is working in it; remove it deliberately with #{cleanup_command(record)}"
 end
 
 # The repo's LINKED worktrees from `git worktree list` — never its main checkout, which
@@ -3587,11 +3632,13 @@ def close_teardown_record(record, spared)
   MSG
 end
 
-# Scale-down-on-close normal flow: release every worktree whose branch is
-# already represented on the resolved base (merged or squash-equivalent) and clean.
-# Dry-run by default; --yes performs the teardown. Never touches dirty/unmerged
-# worktrees or the primary checkout (cleanup_ready? + .worktrees-only source),
-# and re-verifies each candidate under the lock before removing it.
+# Scale-down-on-close normal flow: release every desk reclaim_verdict frees — clean, landed
+# (a registered app's branch on its base ref; a discovered repo's HEAD on origin's default
+# branch or in a PR merged at that HEAD) and cleared by every hold channel. Dry-run by
+# default; --yes performs the teardown. The sweep LISTS every worktree git registers
+# (stack_dirs), but only a desk inside a managed root (<repo>/.worktrees, <repo>.worktrees)
+# can be nominated (managed_desk_hold), and the primary checkout is never a desk. Each
+# candidate is re-verified under the lock before it is removed.
 def run_reclaim(app = nil, yes: false)
   # Refresh the SAME set the sweep will judge, discovered repos included. Skipping
   # them meant a discovered desk's git-eligibility was decided against whatever
@@ -3710,7 +3757,25 @@ def resolve_desk_dir(app, raw)
           "Pass the desk's path instead of its name."
   end
 
-  matches.first || (raw.include?("/") ? raw : worktree_dir(app, clean_slug(raw)))
+  # A PATH must BE one of the app's desks. Falling back to the raw path let
+  # `remove mcritchie-studio /Users/alex/projects/mcritchie-studio` list the PRIMARY
+  # checkout as a remove candidate.
+  if raw.include?("/") && matches.empty?
+    abort "not a desk of #{app.fetch("slug")}: #{raw}\n" \
+          "Pass a desk name or path from `bin/agent-worktree list #{app.fetch("slug")}`."
+  end
+
+  dir = matches.first || worktree_dir(app, clean_slug(raw))
+  refuse_primary_checkout!(app, dir)
+  dir
+end
+
+# Never the repo's own checkout, however it was named. stack_dirs excludes it today; this
+# is the guard that does not depend on that staying true.
+def refuse_primary_checkout!(app, dir)
+  return unless canonical_path(dir) == canonical_path(app.fetch("repo"))
+
+  abort "refusing: #{dir} is the primary checkout of #{app.fetch("slug")}, not a desk"
 end
 
 def run_remove(app, raw_task, yes: false, force: false)
@@ -4584,10 +4649,19 @@ end
 # Overridable for tests with AGENT_WORKTREE_OPEN_PR=<number>|none|unavailable.
 def open_pr_for_branch(record)
   branch = record[:branch].to_s
+  # Keyed on REPO + branch. A two-repo task cuts `feat/<slug>` in BOTH repos, so a
+  # branch-only key handed the hub's "no open PR" to the gem desk, and a gem desk with an
+  # open PR was nominated.
+  key = [open_pr_repo_key(record), branch]
   @open_pr_cache ||= {}
-  return @open_pr_cache[branch] if @open_pr_cache.key?(branch)
+  return @open_pr_cache[key] if @open_pr_cache.key?(key)
 
-  @open_pr_cache[branch] = compute_open_pr_for_branch(record, branch)
+  @open_pr_cache[key] = compute_open_pr_for_branch(record, branch)
+end
+
+def open_pr_repo_key(record)
+  app = record[:app]
+  (app.is_a?(Hash) && app["repo"]) || record[:dir].to_s
 end
 
 def compute_open_pr_for_branch(record, branch)
@@ -5091,6 +5165,13 @@ end
 # its historical [ok, reason] pair from this, and the dry run/ledger read `rationale` from
 # the SAME call — so an explanation can never describe a decision other than the one made.
 def reclaim_evidence(record, fresh: false, announce: false)
+  # A desk outside the managed roots is never a candidate, whatever git says of it — and
+  # it says so, rather than skipping silently (see managed_desk_hold).
+  if (outside = managed_desk_hold(record))
+    warn "note: #{worktree_label(record)}: #{outside}" if announce
+    return { free: false, hold: outside, rationale: nil }
+  end
+
   # A discovered desk skips the base-ref gate: it is judged against origin's DEFAULT
   # branch by discovered_git_hold (inside claim_hold), which names the check that failed —
   # so a dirty or unpushed gem desk is WITHHELD with a reason rather than silently skipped.
@@ -5935,8 +6016,9 @@ if $PROGRAM_NAME == __FILE__
     # discovered repo ("unknown app: studio-engine") — an archive record naming a command
     # that cannot run. run_remove already handles a stackless desk: stop_stack_for_removal
     # branches on STACKLESS_STACK, so there is no stack to stop, no DB to drop, no Redis to
-    # flush. This widens only the MANUAL, explicitly-named path; the automated sweep still
-    # withholds every discovered desk (see claim_hold).
+    # flush. The automated sweep judges a discovered desk by git (discovered_git_hold) and
+    # never nominates one outside a managed root (managed_desk_hold); this explicit path
+    # removes any desk of the app by name or path, but never the primary checkout.
     app = sweep_app_for(app_name)
     # The RAW name: run_remove resolves it against the desks that exist before it
     # normalizes anything (resolve_desk_dir).

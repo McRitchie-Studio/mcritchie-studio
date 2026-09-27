@@ -301,9 +301,15 @@ class AgentWorktreeTest < Minitest::Test
   # quiet one so the claim decision is what decides here. The desk decision has its
   # own checks below, and the REAL filesystem path is driven end to end against a
   # staged git worktree in test/commands/agent_worktree_test.rb.
+  #
+  # The same records have no repo on disk either, so the managed-root check (a desk outside
+  # <repo>/.worktrees is never nominated) would hold every one of them too; they stand in a
+  # managed root here. That check is driven against real worktrees in
+  # test/lib/agent_worktree_desk_discovery_test.rb.
   ABANDONED_DESK = <<~RUBY
     def desk_age_seconds(_r); ClaimLease::DESK_IDLE_SECONDS * 10; end
     def desk_touched_recently?(_r); false; end
+    def inside_managed_desk_root?(_r); true; end
   RUBY
 
   def verdict_for(held:, dirty:)
@@ -351,6 +357,7 @@ class AgentWorktreeTest < Minitest::Test
     run_in_script(<<~RUBY)
       def desk_age_seconds(_r); #{age}; end
       def desk_touched_recently?(_r); #{touched.inspect}; end
+      def inside_managed_desk_root?(_r); true; end
       def task_record_for_pr(_r, fresh: false); #{task_json}; end
       record = { dirty: false, merged: true, equivalent_to_main: true,
                  env: #{env}, task: "t", dir: "/repo/.worktrees/t" }
@@ -529,6 +536,7 @@ class AgentWorktreeTest < Minitest::Test
   def test_reclaim_verdict_withholds_ship_workspace_during_a_live_release
     out = run_in_script(<<~RUBY)
       def release_claim_liveness(fresh: false); :live; end
+      def inside_managed_desk_root?(_r); true; end
       record = { task: "_ship", dir: "/repo/.worktrees/_ship", dirty: false, merged: true,
                  equivalent_to_main: true, env: {} }
       print reclaim_verdict(record).inspect
@@ -555,6 +563,7 @@ class AgentWorktreeTest < Minitest::Test
     out = run_in_script(<<~RUBY)
       def desk_age_seconds(_r); ClaimLease::DESK_IDLE_SECONDS * 10; end
       def desk_touched_recently?(_r); true; end
+      def inside_managed_desk_root?(_r); true; end
       def release_claim_liveness(fresh: false); :none; end
       record = { task: "_gate", dir: "/repo/.worktrees/_gate", dirty: false, merged: true,
                  equivalent_to_main: true, env: {} }
