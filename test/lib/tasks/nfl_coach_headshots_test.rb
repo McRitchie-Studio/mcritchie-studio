@@ -169,13 +169,11 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
       calls << { url: url.to_s, headers: headers.transform_keys(&:to_s) }
       raise index_error if index_error && calls.size == 1
 
-      body = if url.to_s.include?("/nfl/teams") && !url.to_s.include?("/coaches")
-        index
-      elsif url.to_s.include?("/coaches")
-        coaches
-      else
-        coach
-      end
+      # DISPATCH BY CALL ORDER, NOT BY URL SUBSTRING. The lane reads exactly three
+      # documents in a fixed sequence, and the third one is a `$ref` ESPN hands
+      # back whose path also contains "/coaches" -- a substring match sent the
+      # coach fetch to the coaches document and silently produced a blank espn_id.
+      body = [index, coaches, coach][calls.size - 1]
       StringIO.new(JSON.generate(body))
     end
 
