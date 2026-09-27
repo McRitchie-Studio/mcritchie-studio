@@ -131,6 +131,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | **Desks and infra** | `docs/agents/modules/worktrees.md` |
 | Tests | `docs/agents/modules/testing.md` |
 | **Credentials** and GitHub auth | `docs/agents/modules/token-session.md` (a broken session), `docs/agents/modules/source-control.md` (how auth works), `docs/agents/modules/credentials.md` (1Password) |
+| **Business facts**: an entity's name, EIN, address, code, headcount or advisors; a form to fill | Pull from `business-data/FACTS.md` (private `mcritchie-industries` repo) first, and add any durable fact you learn in the same pass: `docs/agents/modules/knowledge-capture.md` (the quick reference rule). Forms: `docs/agents/modules/form-fill.md` |
 | **Communication**: reporting to Alex | `docs/agents/modules/communication-style.md` |
 | **Learning**: grades and insights | `docs/agents/agents/xan/sops/grade-events.md` |
 | History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
