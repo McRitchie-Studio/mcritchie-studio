@@ -8,7 +8,8 @@ class EmailTrackingController < ApplicationController
 
   # GET /e/o/:token — open pixel.
   def open
-    BroadcastDelivery.find_by(token: params[:token])&.record_open!
+    delivery = BroadcastDelivery.find_by(token: params[:token])
+    delivery&.record_open!(machine: machine?(delivery), data: { "user_agent" => request.user_agent.to_s.first(255) })
     response.set_header("Cache-Control", "no-store, no-cache, must-revalidate, private")
     send_data PIXEL, type: "image/gif", disposition: "inline"
   end
@@ -19,7 +20,27 @@ class EmailTrackingController < ApplicationController
   def click
     delivery = BroadcastDelivery.find_by(token: params[:token])
     url = delivery&.broadcast&.link_for(params[:l])
-    delivery&.record_click! if url
-    redirect_to(url.presence || root_url, allow_other_host: true)
+    if url
+      delivery.record_click!(link_key: params[:l].to_s, machine: machine?(delivery),
+                             data: { "user_agent" => request.user_agent.to_s.first(255) })
+    end
+    destination = url.presence && delivery ? EmailEvents::Results.with_ref(url, delivery.token) : url
+    redirect_to(destination.presence || root_url, allow_other_host: true)
+  end
+
+  # GET /e/g/:token?g=<goal> — a result beacon: another of our apps (or a page
+  # here) reporting that the reader who came from this email reached `goal`
+  # (EmailEvent::GOALS). Answers the pixel whatever happens, like #open.
+  def goal
+    EmailEvents::Results.record!(params[:token], params[:g])
+    response.set_header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+    send_data PIXEL, type: "image/gif", disposition: "inline"
+  end
+
+  private
+
+  def machine?(delivery)
+    EmailEvents::MachineDetector.machine?(user_agent: request.user_agent, sent_at: delivery&.sent_at,
+                                          method: request.request_method)
   end
 end

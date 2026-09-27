@@ -35,8 +35,8 @@ Authorization: Bearer <token from POST /api/v1/auth>
 ```
 
 `app/controllers/api/v1/athletes_controller.rb#index` — read-only, `index` is the
-only action the route exposes (`config/routes.rb:344`, `resources :athletes,
-only: [:index]`). Page size defaults to `DEFAULT_PAGE` (200) and is capped at
+only action the route exposes (`config/routes.rb`, `resources :athletes,
+only: [:index]` in the API namespace). Page size defaults to `DEFAULT_PAGE` (200) and is capped at
 `MAX_PAGE` (500) — both are constants, not methods, and both are applied in
 `#page_size` (`athletes_controller.rb:15-16` and `:32-36`). Rows come back
 ordered by `(updated_at, id)`.

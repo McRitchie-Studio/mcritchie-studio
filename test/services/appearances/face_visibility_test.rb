@@ -3,19 +3,31 @@ require "test_helper"
 # [unit] THE VISION CLASSIFIER'S CONTRACT — availability, request shape, tolerant
 # parsing, and the degrade.
 #
-# ⚠ UNVERIFIED END TO END, and that is the first thing to know. No
-# ANTHROPIC_API_KEY exists on this machine or in any vault the agent service
-# account can read (`credential-inventory.md` records ANTHROPIC as NOT PRESENT),
-# so this classifier has NEVER been driven against the live API. Everything below
-# exercises the request BUILDER and the response PARSER over literals.
+# ⚠ IT HAS BEEN DRIVEN LIVE, AND IT FAILED — and that is the first thing to know.
+# This header previously said the classifier "has NEVER been driven against the live
+# API" because no ANTHROPIC_API_KEY existed on this machine or in any readable vault.
+# Production has one, and on 2026-09-26 the first real scouting run answered 400 on
+# every image: "Unable to download the file. Please verify the URL and try again."
+# (A 400 rather than a 401 is itself the evidence the key was accepted.
+# `credential-inventory.md` records where the VAULT ITEM is not filed — a different
+# question, and still true.)
 #
-# What that means for a reader: the shapes here come from the documented Messages
-# API (image blocks with a `url` source), not from an observed 200. The first job
-# the day a key lands is one real call over a handful of candidates — then pin the
-# real response body as a fixture here.
+# THE CAUSE WAS THE URL WE PASSED, not this object. Wikimedia refuses a request that
+# sends no User-Agent (403 with none, 200 with one, measured against the exact failing
+# URL) and Anthropic's fetcher was the party refused. Appearances::GatherReferencePhotos
+# now mirrors every shortlisted candidate into our own S3 and hands this object the
+# copy — so a test that passes a third-party URL here is describing the defect.
 #
-# ZERO NETWORK. Every test drives the private builder or parser directly, or the
-# public path with no key. `#post` is never reached, so nothing here can spend.
+# STILL UNVERIFIED: THE SUCCESS PATH. Everything below exercises the request BUILDER
+# and the response PARSER over literals, and the shapes come from the documented
+# Messages API rather than from an observed 200. First job after the first successful
+# run is to pin the real response body as a fixture here.
+#
+# ZERO NETWORK, AND NOW TRAPPED RATHER THAN MERELY ASSERTED. Every test drives the
+# private builder or parser directly, or the public path with no key. `#post` is
+# additionally guarded by Appearances::LiveCallTrap, armed suite-wide in test_helper,
+# so a future test that reaches it raises instead of billing — see
+# test/services/appearances/live_call_trap_test.rb.
 class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
   FV = Appearances::FaceVisibility
 

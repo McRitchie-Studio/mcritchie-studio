@@ -1,0 +1,98 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/r2-backup — run or collect one app's R2 backup. The nightly workflow
+# (.github/workflows/r2-backup.yml) calls `run`; people call it by hand from the
+# r2-backup SOP (docs/agents/agents/steffon/sops/r2-backup.md). Logic and guards:
+# bin/lib/r2_backup.rb.
+
+require_relative "lib/cli_arg_guard"
+require_relative "lib/r2_backup"
+require_relative "lib/op_vaults"
+
+USAGE = <<~TXT
+  usage: bin/r2-backup run <app> [--accept-drop] [--op]
+         bin/r2-backup gc <app> [--days N] [--apply] [--op]
+
+  run   mirror <app>-production into <app>-backup/current/, archiving what changed
+        into archive/<stamp>/, and write _receipts/<stamp>.json. Exits 1 unless the
+        run is ok (rclone exit 0 AND equal counts), and refuses (exit 1, receipt
+        written) when production dropped sharply since the last good run.
+        --accept-drop: the drop was deliberate; mirror it this once (recorded).
+  gc    delete archive/<stamp>/ folders older than --days (default 30). Dry run
+        unless --apply. Refuses unless the newest receipt is under 48h old and ok.
+
+  Credentials, from the environment: R2_ENDPOINT, R2_BACKUP_ACCESS_KEY_ID,
+  R2_BACKUP_SECRET_ACCESS_KEY (the app's backup token). With --op they are read
+  from 1Password item r2.<app> in the agent vault instead. Needs rclone on PATH.
+TXT
+
+args = CliArgGuard.guard!(
+  ARGV,
+  program: "r2-backup",
+  usage: USAGE,
+  bool: %w[--apply --op --accept-drop],
+  value: %w[--days],
+  allow_positional: true,
+  consequence: "NOTHING ran — no sync, no receipt, no deletion."
+)
+command = args.positionals.first
+unless %w[run gc].include?(command) && args.positionals.length == 2
+  warn(USAGE)
+  exit 2
+end
+if command == "run" && (args.bool?("--apply") || args.first("--days"))
+  warn("r2-backup: --apply and --days belong to gc — NOTHING ran.")
+  exit 2
+end
+if command == "gc" && args.bool?("--accept-drop")
+  warn("r2-backup: --accept-drop belongs to run — NOTHING ran.")
+  exit 2
+end
+
+app = args.positionals.last
+unless app.match?(/\A[a-z0-9][a-z0-9-]*\z/)
+  warn("r2-backup: #{app.inspect} is not an app slug — NOTHING ran.")
+  exit 2
+end
+
+if args.bool?("--op")
+  { "R2_ENDPOINT" => "endpoint", "R2_BACKUP_ACCESS_KEY_ID" => "access-key-id-backup",
+    "R2_BACKUP_SECRET_ACCESS_KEY" => "secret-access-key-backup" }.each do |env, field|
+    value = IO.popen(["op", "read", OpVaults.ref("r2.#{app}", field)], err: File::NULL, &:read).to_s.strip
+    abort("r2-backup: could not read #{field} from r2.#{app} — NOTHING ran.") if value.empty?
+    ENV[env] = value
+  end
+end
+
+missing = %w[R2_ENDPOINT R2_BACKUP_ACCESS_KEY_ID R2_BACKUP_SECRET_ACCESS_KEY].select { |k| ENV[k].to_s.empty? }
+abort("r2-backup: missing #{missing.join(', ')} — NOTHING ran.") unless missing.empty?
+
+ENV["RCLONE_CONFIG_R2_TYPE"] = "s3"
+ENV["RCLONE_CONFIG_R2_PROVIDER"] = "Cloudflare"
+ENV["RCLONE_CONFIG_R2_NO_CHECK_BUCKET"] = "true"
+ENV["RCLONE_CONFIG_R2_ENDPOINT"] = ENV["R2_ENDPOINT"]
+ENV["RCLONE_CONFIG_R2_ACCESS_KEY_ID"] = ENV["R2_BACKUP_ACCESS_KEY_ID"]
+ENV["RCLONE_CONFIG_R2_SECRET_ACCESS_KEY"] = ENV["R2_BACKUP_SECRET_ACCESS_KEY"]
+
+runner = R2Backup::Runner.new(app: app)
+case command
+when "run"
+  receipt = runner.run(accept_drop: args.bool?("--accept-drop"))
+  if receipt["ok"]
+    puts("r2-backup: #{app} ok — #{receipt.dig('current', 'count')} object(s) mirrored, " \
+         "#{receipt.dig('archived', 'count')} archived")
+    exit 0
+  end
+  warn("r2-backup: #{app} FAILED — #{receipt['reason']}")
+  exit 1
+when "gc"
+  days = Integer(args.first("--days") || R2Backup::DEFAULT_DAYS, exception: false)
+  abort("r2-backup: --days must be a whole number — NOTHING ran.") if days.nil? || days.negative?
+  folders, refusal = runner.gc(days: days, apply: args.bool?("--apply"))
+  if refusal
+    warn("r2-backup: gc REFUSED for #{app} — #{refusal}")
+    exit 2
+  end
+  puts("r2-backup: #{folders.length} folder(s) #{args.bool?('--apply') ? 'deleted' : 'would be deleted (dry run)'}")
+end

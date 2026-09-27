@@ -49,7 +49,22 @@ class BuildViewTest < ActionView::TestCase
     assert_includes row["@scroll.passive"], "measure", "the fade follows the scroll position"
     assert_includes row[":style"], "mask-image"
     assert_select "[data-test='build-gallery-item'][class*='sm:basis-[calc((100%-3rem)/3.3)]']", 3
-    assert_select "[data-test='build-example'] > span.text-center", 3, "name, host and blurb are centered on every card"
+    assert_select "[data-test='build-example'] > span.text-center", 6, "the title, and the host and blurb, are centered on every card"
+  end
+
+  test "a card reads title, then screenshot, then host and a two-line description" do
+    signed_in(nil)
+    @draft = nil
+    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.jpg") ]
+    render template: "build/new"
+
+    card = css_select("[data-test='build-example']").first
+    order = card.css("[data-test]").map { |node| node["data-test"] }
+    assert_equal %w[build-example-name build-example-image build-example-host build-example-blurb], order
+
+    blurb = card.at_css("[data-test='build-example-blurb']")["class"].split
+    assert_includes blurb, "line-clamp-2"
+    refute_includes blurb, "block", "block overrides line-clamp's display, so the text would run past two lines"
   end
 
   test "a card shows its screenshot when there is one, and its emoji when not" do

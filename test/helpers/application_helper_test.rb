@@ -413,7 +413,11 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "1m", compact_elapsed_short(60)
     assert_equal "9m", compact_elapsed_short((9 * 60) + 41), "one unit — a CI run reads calmer at minute grain"
     assert_equal "59m", compact_elapsed_short(59 * 60)
-    assert_equal "1h 04m", compact_elapsed_short((64 * 60) + 12), "past an hour it compounds rather than saying 64m"
+    assert_equal "1h", compact_elapsed_short((64 * 60) + 12), "past an hour it drops the minutes"
+    assert_equal "23h", compact_elapsed_short((23 * 3600) + (59 * 60) + 59)
+    assert_equal "1d", compact_elapsed_short(24 * 3600), "past a day it drops the hours"
+    assert_equal "1d", compact_elapsed_short((25 * 3600) + (40 * 60)), "the turf-vault clock that clipped as 25h 40m"
+    assert_equal "9d", compact_elapsed_short((9 * 86_400) + (23 * 3600))
     assert_equal "0s", compact_elapsed_short(-5), "clock skew never renders a negative"
   end
 

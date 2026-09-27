@@ -61,9 +61,22 @@ module Appearances
     # reference, and no supply shortage makes it one.
     NO_PERSON_THRESHOLD = 0.1
 
+    # THREE COUNTS DESCRIBE THE CLASSIFIER LANE, because two of them cannot tell
+    # "did nothing" from "had nothing to do":
+    #
+    #   shortlisted — candidates we selected to be classified. Zero means no
+    #                 classifier was configured, or every candidate was a document.
+    #   attempted   — of those, how many we mirrored and actually sent. Below
+    #                 `shortlisted` means the mirror lost some.
+    #   scored      — of those, how many came back with a readable score.
+    #
+    # `attempted` AND `shortlisted` BOTH EXIST because collapsing them hides which
+    # half broke: eight sent and none scored is a classifier failure, eight
+    # shortlisted and none sent is a mirror failure, and the operator's next move is
+    # different for each.
     Summary = Struct.new(:configured, :provider_name, :query, :returned, :filed,
                          :chosen, :rejected, :unfetchable, :unparsed, :ranked_by,
-                         :scored, keyword_init: true) do
+                         :scored, :shortlisted, :attempted, keyword_init: true) do
       def configured? = !!self[:configured]
 
       # WHAT ACTUALLY DID THE ORDERING — `:face` when the vision classifier ran,
@@ -71,7 +84,83 @@ module Appearances
       # "these were ranked by whether a face is visible" and "these were ranked by
       # shape and relevance", and the operator has to be able to tell.
       def ranked_by_face? = self[:ranked_by] == :face
+
+      # THE LANE SAW NONE OF ITS INPUTS — the failure this whole change was written
+      # from, and the one the page could not previously express.
+      #
+      # ZERO SCORES FROM N ATTEMPTS IS NOT N PHOTOGRAPHS THAT SCORED ZERO, and until
+      # now the two were indistinguishable to an operator: both produced
+      # `ranked_by: :merit` and the sentence "ranked on shape and relevance only (no
+      # face classifier)", which is TRUE of a machine with no credential and a LIE
+      # about a machine that shortlisted eight photographs, sent them, and was
+      # refused on every one. On 2026-09-26 the lie cost the character model three
+      # photographs of aircraft.
+      #
+      # KEYED ON `shortlisted` RATHER THAN ON `attempted`, so it covers BOTH ways the
+      # lane can go blind — the classifier refusing everything, and the mirror
+      # failing so completely that nothing was ever sent. Keying on `attempted` would
+      # have read a total mirror failure as "nothing to do" and gone quiet again.
+      #
+      # IT CANNOT FIRE WITHOUT A CLASSIFIER. With no credential, `shortlisted` is
+      # zero because the shortlist is never built — so an unconfigured machine, which
+      # is every machine that has no ANTHROPIC_API_KEY, reports the ordinary
+      # fallback rather than an alarm.
+      def face_classifier_blind?
+        self[:shortlisted].to_i.positive? && self[:scored].to_i.zero?
+      end
+
+      # WHICH FLASH THIS SENTENCE DESERVES. A blind classifier is an ALERT, not a
+      # notice: the run "succeeded" — photographs were filed and an identity can be
+      # built from them — so a green notice is exactly what let a confidently wrong
+      # result read as a good one. The severity is part of the same judgement as the
+      # sentence, so it lives beside it rather than being re-derived by each caller.
+      def flash_key = face_classifier_blind? ? :alert : :notice
+
+      # THE ONE SENTENCE BOTH SEARCH ACTIONS PRINT.
+      #
+      # It lived twice, verbatim, as a private `search_message` in
+      # PhotoScoutingController and in AppearancesController. Every number in it is
+      # this struct's, and the duplication meant the blind-classifier clause below
+      # would have had to be added in two places — which is to say it could have been
+      # added in one and left the other page still reading the old reassurance.
+      def sentence
+        parts = ["#{provider_name} returned #{returned} result(s)"]
+        parts << "#{unparsed} in a shape we could not read" if self[:unparsed].to_i.positive?
+        parts << "#{unfetchable} refused as unsafe to fetch" if self[:unfetchable].to_i.positive?
+        parts << ranking_clause
+        parts << "#{chosen} chosen for the model"
+        "#{parts.join(' · ')}."
+      end
+
+      # NAMES WHAT DID THE ORDERING. "6 chosen" reads the same whether a vision
+      # classifier ranked them or nothing did, and those are the two outcomes the
+      # operator most needs to tell apart right after clicking.
+      def ranking_clause
+        return "#{scored} scored for face visibility" if ranked_by_face?
+        return blind_clause if face_classifier_blind?
+
+        "ranked on shape and relevance only (no face classifier)"
+      end
+
+      # SAYS WHAT BROKE AND HOW MUCH IT COST, in the operator's units. It names both
+      # counts so the sentence itself separates a mirror failure from a classifier
+      # failure, and it ends by naming the consequence — the ranking that actually
+      # chose the photographs now on the page.
+      def blind_clause
+        "FACE CLASSIFIER SAW NOTHING: 0 of #{shortlisted} shortlisted scored " \
+          "(#{attempted} mirrored and sent) - these were ranked on shape and " \
+          "relevance only, so check them before minting"
+      end
     end
+
+    # WHAT GETS FILED WHEN THE LANE GOES BLIND. An exception class rather than a bare
+    # string because Appearances::FailureLog files through ErrorLog.capture!, which
+    # reads `#message` and `#backtrace` off an exception — and because the class name
+    # is what the operator scans for in /admin/error_logs.
+    #
+    # NEVER RAISED, only filed. Raising it would cost the operator the page, which is
+    # the opposite of what this lane promises.
+    class ClassifierBlind < StandardError; end
 
     def self.call(appearance, **kwargs) = new(appearance, **kwargs).call
 
@@ -87,12 +176,21 @@ module Appearances
     #
     # `search:` defaults to the FAÇADE, never a concrete provider — this object
     # must not know which vendor is serving.
+    #
+    # `mirror:` IS THE THIRD, and it is injected for a slightly different reason than
+    # the other two: it spends no vendor money, but it fetches a remote file and
+    # writes an S3 object, and a suite that did either would be writing into a real
+    # bucket. Appearances::LiveCallTrap refuses the un-injected path outright rather
+    # than trusting every test to remember.
     def initialize(appearance, search: ImageSearch, faces: FaceVisibility,
-                   limit: ImageSearch::DEFAULT_LIMIT)
+                   mirror: MirrorCandidates, limit: ImageSearch::DEFAULT_LIMIT)
       @appearance = appearance
       @search = search
       @faces = faces
+      @mirror = mirror
       @limit = limit
+      @shortlisted = 0
+      @attempted = 0
     end
 
     def call
@@ -127,7 +225,7 @@ module Appearances
     def unconfigured_summary
       Summary.new(configured: false, provider_name: nil, query: query, returned: 0,
                   filed: 0, chosen: 0, rejected: 0, unfetchable: 0, unparsed: 0,
-                  ranked_by: nil, scored: 0)
+                  ranked_by: nil, scored: 0, shortlisted: 0, attempted: 0)
     end
 
     # FILE THE ANSWER, IN RANK ORDER RATHER THAN IN THE PROVIDER'S ORDER.
@@ -177,11 +275,48 @@ module Appearances
                face_score: nil)
       end
 
-      Summary.new(configured: true, provider_name: answer.provider_name || @search.provider_name,
-                  query: query, returned: results.length, filed: counts[:filed],
-                  chosen: counts[:chosen], rejected: counts[:rejected],
-                  unfetchable: unsafe.length, unparsed: answer.unparsed_count,
-                  ranked_by: scores.any? ? :face : :merit, scored: scores.length)
+      summary = Summary.new(configured: true,
+                            provider_name: answer.provider_name || @search.provider_name,
+                            query: query, returned: results.length, filed: counts[:filed],
+                            chosen: counts[:chosen], rejected: counts[:rejected],
+                            unfetchable: unsafe.length, unparsed: answer.unparsed_count,
+                            ranked_by: scores.any? ? :face : :merit, scored: scores.length,
+                            shortlisted: @shortlisted, attempted: @attempted)
+      report_blind_classifier(summary)
+      summary
+    end
+
+    # ONE ROW PER BLIND SEARCH, filed where the operator already looks.
+    #
+    # WHY THE ROW IS FILED HERE rather than inside either collaborator. This is the
+    # only object that knows how many candidates it shortlisted, so it is the only one
+    # that can tell "the classifier saw none of its inputs" from "there was nothing to
+    # classify". FaceVisibility files its own row for a refusal it can NAME — a 400, a
+    # timeout, an unreadable answer — but it cannot file one for the cases with no
+    # exception in them: a 200 carrying an empty array, or a mirror that handed it
+    # nothing to look at. Those are exactly the silent shapes.
+    #
+    # AT MOST ONE ROW, deliberately. Filing per photograph would put twelve identical
+    # rows in front of the operator on a single outage and bury the number that
+    # matters. This row names all three counts, so it is the whole diagnosis.
+    #
+    # IT MAY SIT BESIDE FaceVisibility'S OWN ROW, and that is not duplication: the
+    # vendor's row says WHAT was refused ("Anthropic answered 400: Unable to download
+    # the file"), this one says WHAT IT COST THE RUN ("0 of 8 scored, so these
+    # photographs were ranked on shape alone"). On 2026-09-26 the first existed and
+    # the second did not, and the second is the one that would have stopped three
+    # aircraft entering a character model.
+    def report_blind_classifier(summary)
+      return unless summary.face_classifier_blind?
+
+      FailureLog.file(
+        ClassifierBlind.new(
+          "face classifier scored 0 of #{summary.shortlisted} shortlisted candidate(s) " \
+          "(#{summary.attempted} mirrored and sent) for \"#{summary.query}\" — the " \
+          "photographs now filed were ranked on shape and relevance only"
+        ),
+        target: @appearance
+      )
     end
 
     def record(result, take, reason, counts, face_score:)
@@ -201,6 +336,7 @@ module Appearances
     # An empty Hash back — no credential, an outage, an unreadable answer — is a
     # NORMAL answer and the whole method degrades to the free ranking. The caller
     # can tell which happened from `Summary#ranked_by_face?`.
+    # MIRROR FIRST, THEN CLASSIFY. The classifier never sees a third-party URL.
     def face_scores(results)
       return {} unless @faces.respond_to?(:available?) && @faces.available?
 
@@ -213,7 +349,96 @@ module Appearances
       shortlist = eligible.sort_by { |r| [-merit(r), r.position.to_i] }.first(VISION_SHORTLIST)
       return {} if shortlist.empty?
 
-      @faces.call(shortlist.map(&:image_url), target: @appearance) || {}
+      @shortlisted = shortlist.length
+
+      # THE ROWS ARE FILED BEFORE THE MIRROR RUNS, because the mirror's ImageCache
+      # row is OWNED by the candidate row — one photograph, one owner, one "original"
+      # variant, which is how MirrorCandidates satisfies ImageCache's
+      # variant-unique-per-(owner, purpose) constraint by construction instead of
+      # working around it. An owner has to exist before it can own anything.
+      #
+      # WHAT THESE ROWS CARRY AND WHAT THEY DO NOT: every fact the provider reported,
+      # and NO verdict. The verdict pass below runs `#upsert` over the same rows a few
+      # lines later and stamps `chosen` and `rejection_reason` then, once the
+      # classifier has actually answered — so a row is never stamped with a judgement
+      # nothing made. It also means a run that died here leaves evidence of what the
+      # search offered rather than nothing at all.
+      hosted = @mirror.call(shortlist.filter_map { |result| file_candidate(result) },
+                            target: @appearance)
+      @attempted = hosted.length
+      return {} if hosted.empty?
+
+      # ASKED ABOUT OUR URLs, ANSWERED IN THEIRS. Everything downstream keys on the
+      # provider's `image_url` — the rows, the merit memo, the rejection reasons — so
+      # the scores are translated straight back rather than leaking a second identity
+      # for the same photograph through the rest of this object.
+      #
+      # THE MAP IS THE ONLY TRANSLATION, so a score for a URL we did not send has
+      # nowhere to land and is dropped, which is the same tolerance the classifier's
+      # own parser applies to an index it cannot resolve.
+      scored = @faces.call(hosted.values, target: @appearance) || {}
+      hosted.each_with_object({}) do |(remote_url, our_url), out|
+        value = scored[our_url]
+        out[remote_url] = value unless value.nil?
+      end
+    end
+
+    # FILE THE EVIDENCE, WITHOUT A VERDICT, and return the row the mirror will own.
+    #
+    # A PERSISTED ROW IS RETURNED UNTOUCHED, which keeps the guard that protects a
+    # headshot or operator row from a search hit in ONE place — `#upsert`. This method
+    # never overwrites anything, so it cannot half-apply that rule; the worst it does
+    # to an existing row is hand it to the mirror, and mirroring a photograph we
+    # already trust costs one idempotent no-op.
+    #
+    # nil FOR A ROW THAT WILL NOT SAVE — a URL longer than the unique index can hold,
+    # the same case `#upsert` drops. The caller's `filter_map` removes it, so it is
+    # never mirrored and never classified, which is right: the gallery could not show
+    # it either.
+    def file_candidate(result)
+      photo = AppearanceReferencePhoto.find_or_initialize_by(
+        appearance_slug: @appearance.slug, image_url: result.image_url
+      )
+      return photo if photo.persisted?
+
+      photo.assign_attributes(
+        evidence_attributes(result).merge(
+          source: AppearanceReferencePhoto::SOURCE_SEARCH, chosen: false
+        )
+      )
+      photo.save ? photo : nil
+    rescue ActiveRecord::RecordNotUnique
+      # A concurrent search filed the same URL between the initialize and the save.
+      # Its row is as good as ours and the mirror can own it just the same.
+      AppearanceReferencePhoto.find_by(appearance_slug: @appearance.slug,
+                                       image_url: result.image_url)
+    end
+
+    # WHAT THE PROVIDER SAID ABOUT THIS PHOTOGRAPH — the half of a row that is a
+    # record of the search rather than a judgement of it.
+    #
+    # Shared by `#file_candidate` and `#upsert` because both write it and a second
+    # spelling would let the pre-pass and the verdict pass disagree about what the
+    # provider reported — the pre-pass writes it first, so its version would be the
+    # one a failed run left behind.
+    def evidence_attributes(result)
+      {
+        page_url: result.page_url,
+        title: result.title,
+        width: result.width,
+        height: result.height,
+        position: result.position,
+        # REPORTED BY THE PROVIDER WHEN IT VOLUNTEERS ONE, and nil is fine — Serper
+        # does not report a mime type and a row without one is not worse, only
+        # quieter. Stored rather than derived because it is the ARCHIVE's own claim
+        # about what the file is, which is a stronger statement than sniffing an
+        # extension out of a URL, and the scouting page prints it as such. It is also
+        # what MirrorCandidates asks first when it needs a content type.
+        mime_type: result.mime,
+        thumb_url: result.thumb_url,
+        query: query,
+        found_at: Time.current
+      }
     end
 
     # MAY THIS CANDIDATE GO INTO THE IDENTITY AT ALL? Two independent disqualifiers,
@@ -294,28 +519,16 @@ module Appearances
       return nil if photo.persisted? && !photo.from_search?
 
       photo.assign_attributes(
-        source: AppearanceReferencePhoto::SOURCE_SEARCH,
-        page_url: result.page_url,
-        title: result.title,
-        width: result.width,
-        height: result.height,
-        position: result.position,
-        # REPORTED BY THE PROVIDER WHEN IT VOLUNTEERS ONE, and nil is fine — Serper
-        # does not report a mime type and a row without one is not worse, only
-        # quieter. Stored rather than derived because it is the ARCHIVE's own claim
-        # about what the file is, which is a stronger statement than sniffing an
-        # extension out of a URL, and the scouting page prints it as such.
-        mime_type: result.mime,
-        thumb_url: result.thumb_url,
-        query: query,
-        chosen: chosen,
-        rejection_reason: rejection_reason,
-        # ONLY OVERWRITE A SCORE WITH A SCORE. A re-search whose shortlist did not
-        # include this photograph must not erase the judgement the last one paid
-        # for — that would turn "we looked in March" into "nobody has ever looked"
-        # and re-sort the gallery on an absence we created.
-        face_score: face_score || photo.face_score,
-        found_at: Time.current
+        evidence_attributes(result).merge(
+          source: AppearanceReferencePhoto::SOURCE_SEARCH,
+          chosen: chosen,
+          rejection_reason: rejection_reason,
+          # ONLY OVERWRITE A SCORE WITH A SCORE. A re-search whose shortlist did not
+          # include this photograph must not erase the judgement the last one paid
+          # for — that would turn "we looked in March" into "nobody has ever looked"
+          # and re-sort the gallery on an absence we created.
+          face_score: face_score || photo.face_score
+        )
       )
       photo.save ? photo : nil
     rescue ActiveRecord::RecordNotUnique

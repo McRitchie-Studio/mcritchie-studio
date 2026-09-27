@@ -38,6 +38,22 @@ ENV["SEAL_RETRY_NO_SLEEP"] = "1"
 # named above pins this literal against the constant, so the two cannot drift apart
 # in silence.
 ENV["VISION_NO_LIVE_CALLS"] = "1"
+# ZERO LIVE CALLS OUT OF THE PHOTO-SCOUTING LANE — the same mechanism, one variable
+# further along, and armed here for the same reason: nothing can call it first.
+#
+# Two objects in Appearances reach a third party. Appearances::FaceVisibility bills
+# per image on its own Anthropic credential (NOT through Athletes::VisionTransport, so
+# the line above does not cover it). Appearances::MirrorCandidates fetches a remote
+# file and writes an S3 object into a REAL bucket. Both are injected at
+# Appearances::GatherReferencePhotos' seam, so before this the suite's only protection
+# was that every test remembered to inject — and a test that forgot did not fail, it
+# quietly succeeded against the real thing.
+#
+# SPELLED AS A LITERAL for the same reason as the line above: this runs before
+# config/environment and Zeitwerk cannot autoload Appearances::LiveCallTrap yet.
+# test/services/appearances/live_call_trap_test.rb pins this literal against the
+# constant so a rename cannot disarm the suite in silence.
+ENV["APPEARANCES_NO_LIVE_CALLS"] = "1"
 require_relative "../config/environment"
 require "rails/test_help"
 

@@ -802,13 +802,13 @@ apps:
   # member that declares one anyway is skipped at QA (exempt, below) and runs on
   # the production app at ship.
   #
-  # smoke_url is the herokuapp HOST, not <repo>.mcritchie.studio, on purpose:
-  # the custom domains wait on Alex's DNS records and ACM, and until they
-  # resolve a smoke against them would abort the ship AFTER the push. Each
-  # app's production.rb leaves host authorization off, so /up answers on the
-  # herokuapp host. Switch each to https://<repo>.mcritchie.studio once that
-  # host serves /up 200. It is the HOST, not /up: the ship smokes
-  # `<smoke_url>/up` itself (bin/release.rb).
+  # smoke_url is each app's custom domain, https://<repo>.mcritchie.studio: its
+  # CNAME points at the app's herokudns target and ACM has issued its
+  # certificate (task showcase-smoke-custom-domains, 2026-09-26). The ship
+  # smokes it from the machine running `bin/release ship`, AFTER the push, so a
+  # host that machine cannot resolve to Heroku with a valid certificate aborts
+  # a live deploy. It is the HOST, not /up: the ship smokes `<smoke_url>/up`
+  # itself (bin/release.rb).
   #
   # test_cmd is each app's CI `test` job command VERBATIM (git_push_heroku has
   # NO test step, so this IS the last gate before production; G4 reads CI's
@@ -844,8 +844,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-prisoners-dilemma.git
       branch: main
-      # Moves to https://prisoners-dilemma.mcritchie.studio once DNS + ACM land.
-      smoke_url: https://mcr-prisoners-dilemma-9fde4bf81cc4.herokuapp.com
+      smoke_url: https://prisoners-dilemma.mcritchie.studio
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
@@ -855,8 +854,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-weekly-lock.git
       branch: main
-      # Moves to https://weekly-lock.mcritchie.studio once DNS + ACM land.
-      smoke_url: https://mcr-weekly-lock-51f3dfe1ba48.herokuapp.com
+      smoke_url: https://weekly-lock.mcritchie.studio
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
@@ -866,8 +864,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-rantly.git
       branch: main
-      # Moves to https://rantly.mcritchie.studio once DNS + ACM land.
-      smoke_url: https://mcr-rantly-27c88595c2de.herokuapp.com
+      smoke_url: https://rantly.mcritchie.studio
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
@@ -877,8 +874,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-portfolio.git
       branch: main
-      # Moves to https://portfolio.mcritchie.studio once DNS + ACM land.
-      smoke_url: https://mcr-portfolio-0600e75bd62d.herokuapp.com
+      smoke_url: https://portfolio.mcritchie.studio
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt

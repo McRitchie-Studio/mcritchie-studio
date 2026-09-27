@@ -42,6 +42,7 @@ Rails.application.routes.draw do
   # Email engagement tracking (open pixel + click redirect), keyed by delivery token.
   get "e/o/:token", to: "email_tracking#open",  as: :email_open
   get "e/c/:token", to: "email_tracking#click", as: :email_click
+  get "e/g/:token", to: "email_tracking#goal",  as: :email_goal
 
   get "dashboard", to: "dashboard#index"
   # Task-development trends dashboard (stage speed, cycle time, tokens, cost,
@@ -178,6 +179,8 @@ Rails.application.routes.draw do
   # to authorize @turfmonstershow and capture refresh_token + open_id.
   # Resend inbound (email.received, svix-signed) -> the desk capture queue.
   post "webhooks/resend/inbound", to: "webhooks/resend_inbound#create"
+  # Delivery, bounce, complaint and engagement events for broadcast email.
+  post "webhooks/resend/events", to: "webhooks/resend_events#create"
 
   namespace :admin do
     get "dashboard", to: "dashboard#show", as: :dashboard
