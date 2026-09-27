@@ -61,7 +61,7 @@ class PokemonTest < ActiveSupport::TestCase
   end
 
   test "deck excludes a self-based baby via its baby list (defensive guard)" do
-    # No live Gen 1–2 form is a self-based baby after Togepi/Tyrogue were
+    # No live Gen 1–4 form is a self-based baby after Togepi/Tyrogue were
     # reclassified as ordinary bases, but the guard stays for a future branching
     # baby (base == slug yet on a baby list). Synthetic family: a baby root whose
     # branch carries it, so the union of baby lists keeps the root out.
@@ -163,25 +163,32 @@ class PokemonTest < ActiveSupport::TestCase
     50.times { assert_includes deck, Pokemon.draw.slug }
   end
 
-  test "the seeded deck weights the 23 three-stage roots into the draw bag" do
+  test "the seeded deck weights the 49 three-stage roots into the draw bag" do
     capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
 
-    # Three-stage roots are a fixed 23 across Gen 1–2 — independent of the spawn
-    # base count, which siblings legitimately move (e.g. reclassify-togepi-and-
-    # tyrogue). It was 24 until pokemon-mascot-gender folded Nidoran♀ and Nidoran♂
-    # (each a three-stage root) into the ONE drawable nidoran family.
-    assert_equal 23, Pokemon.three_stage_base_slugs.size
+    # Three-stage roots are a fixed 49 across Gen 1–4 — independent of the spawn
+    # base count, which siblings legitimately move. It was 24 over Gen 1–2 until
+    # pokemon-mascot-gender folded Nidoran♀ and Nidoran♂ into the ONE drawable
+    # nidoran family (23); pokemon-gen-3-and-4 added 21 Hoenn–Sinnoh roots and
+    # gave five Gen 1–2 roots a Gen 4 third stage (Magnezone, Rhyperior,
+    # Porygon-Z, Togekiss, Mamoswine).
+    assert_equal 49, Pokemon.three_stage_base_slugs.size
     assert_includes Pokemon.three_stage_base_slugs, "nidoran"
     # Derive the expected bag from the deck rather than hardcode a base count: every
-    # base is one slot, and each of the 23 three-stage roots adds one more
-    # (128 + 23 = 151).
-    assert_equal Pokemon.deck.count + 23, Pokemon.draw_bag.size
+    # base is one slot, and each of the 49 three-stage roots adds one more
+    # (246 + 49 = 295).
+    assert_equal Pokemon.deck.count + 49, Pokemon.draw_bag.size
 
     deep = Pokemon.three_stage_base_slugs.to_set
     assert_includes deep, "charmander"  # charmander → charmeleon → charizard
     assert_includes deep, "dratini"     # dratini → dragonair → dragonite
+    assert_includes deep, "magnemite"   # magneton → magnezone (Gen 4) makes it three-stage
+    assert_includes deep, "togepi"      # togetic → togekiss (Gen 4); NOT_BABY keeps togepi the root
+    assert_includes deep, "ralts"       # kirlia → gardevoir / gallade
+    assert_includes deep, "gible"       # a Sinnoh root
     assert_not_includes deep, "diglett" # diglett → dugtrio (two-stage)
-    assert_not_includes deep, "snorlax" # single-stage
+    assert_not_includes deep, "snorlax" # single-stage (Munchlax is its baby, not a stage)
+    assert_not_includes deep, "electabuzz" # elekid is a baby; electabuzz → electivire is two stages
     assert_not_includes deep, "eevee"   # branches, but every branch is terminal
   end
 
@@ -244,24 +251,47 @@ class PokemonTest < ActiveSupport::TestCase
       assert_equal "tyrogue", by[slug]["base"]
       assert_empty by[slug]["baby"]
     end
-    # Branching lines list every next step available within Gen 1–2.
-    assert_equal %w[espeon flareon jolteon umbreon vaporeon], by["eevee"]["evolution"].sort
+    # Branching lines list every next step available within Gen 1–4.
     assert_equal %w[slowbro slowking], by["slowpoke"]["evolution"].sort
     assert_equal %w[bellossom vileplume], by["gloom"]["evolution"].sort
     assert_equal %w[politoed poliwrath], by["poliwhirl"]["evolution"].sort
-    # Johto retro-upgrades to Kanto lines.
+    # Johto and Sinnoh retro-upgrades to older lines — derived from PokéAPI's
+    # evolves_from_species, never typed by hand.
     assert_equal ["steelix"], by["onix"]["evolution"]
     assert_equal ["scizor"], by["scyther"]["evolution"]
     assert_equal ["crobat"], by["golbat"]["evolution"]
     assert_equal ["blissey"], by["chansey"]["evolution"]
     assert_equal ["kingdra"], by["seadra"]["evolution"]
-    # Out-of-range relatives don't exist: Marill roots itself (Azurill is Gen 3)
-    # and Porygon2's Gen 4 successor is absent.
-    assert_equal "marill", by["marill"]["base"]
-    assert_empty by["porygon2"]["evolution"]
+    {
+      "electabuzz" => ["electivire"], "magmar" => ["magmortar"], "rhydon" => ["rhyperior"],
+      "magneton" => ["magnezone"], "togetic" => ["togekiss"], "sneasel" => ["weavile"],
+      "piloswine" => ["mamoswine"], "tangela" => ["tangrowth"], "lickitung" => ["lickilicky"],
+      "porygon2" => ["porygon-z"], "yanma" => ["yanmega"], "gligar" => ["gliscor"],
+      "murkrow" => ["honchkrow"], "misdreavus" => ["mismagius"], "aipom" => ["ambipom"],
+      "roselia" => ["roserade"]
+    }.each { |from, into| assert_equal into, by[from]["evolution"], from }
+    assert_equal %w[espeon flareon glaceon jolteon leafeon umbreon vaporeon], by["eevee"]["evolution"].sort
+    assert_equal "electabuzz", by["electivire"]["base"]
+    assert_equal "togepi", by["togekiss"]["base"]
 
+    # Every baby sits on its heir's baby list: Gen 3–4 babies join older bases
+    # (Azurill on Marill, Munchlax on Snorlax) and Budew roots on Roselia.
     babies = rows.flat_map { |r| r["baby"] }.uniq.sort
-    assert_equal %w[cleffa elekid igglybuff magby pichu smoochum], babies
+    assert_equal %w[azurill bonsly budew chingling cleffa elekid happiny igglybuff magby mantyke
+                    mime-jr munchlax pichu riolu smoochum wynaut], babies
+    assert_equal ["azurill"], by["marill"]["baby"]
+    assert_equal ["munchlax"], by["snorlax"]["baby"]
+    assert_equal ["happiny"], by["chansey"]["baby"]
+    assert_equal ["budew"], by["roselia"]["baby"]
+    assert_equal "roselia", by["roserade"]["base"]
+    assert_equal "lucario", by["riolu"]["base"]
+
+    # The gender-gated Gen 3–4 branches, as PokéAPI's evolution chains gate them.
+    assert_equal({ "gallade" => "male" }, by["kirlia"]["evolution_genders"])
+    assert_equal %w[gallade gardevoir], by["kirlia"]["evolution"].sort
+    assert_equal({ "froslass" => "female" }, by["snorunt"]["evolution_genders"])
+    assert_equal({ "wormadam" => "female", "mothim" => "male" }, by["burmy"]["evolution_genders"])
+    assert_equal({ "vespiquen" => "female" }, by["combee"]["evolution_genders"])
 
     # Nidoran is one family: both lines root on it, the gate branch is per gender,
     # and the two species rows keep their own lines for old tasks.
@@ -272,9 +302,9 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal 8, by["nidorina"]["gender_rate"]
     assert_equal(-1, by["magnemite"]["gender_rate"])
 
-    # 23 Gen 1 + 22 Gen 2 species have a distinct female sprite.
+    # 23 Gen 1 + 22 Gen 2 + 18 Gen 3 + 31 Gen 4 species have a distinct female sprite.
     differs = rows.select { |r| r["has_gender_differences"] }
-    assert_equal [23, 22], [differs.count { |r| r["dex"] <= 151 }, differs.count { |r| r["dex"] > 151 }]
+    assert_equal({ 1 => 23, 2 => 22, 3 => 18, 4 => 31 }, differs.map { |r| r["generation"] }.tally)
     differs.each do |r|
       key = "#{r['dex']}-#{r['slug']}"
       assert r["female_sprite_url"].end_with?("/#{key}-female-sprite.png"), "##{r['dex']} female_sprite_url"
@@ -283,16 +313,16 @@ class PokemonTest < ActiveSupport::TestCase
 
     forms = rows.flat_map { |r| Array(r["gender_forms"]&.values) } + %w[nidoran-f nidoran-m]
     spawnable = rows.select { |r| r["base"] == r["slug"] && !babies.include?(r["slug"]) && !forms.include?(r["slug"]) }
-    assert_equal 128, spawnable.size
+    assert_equal 246, spawnable.size
   end
 
   # --- Seed (idempotency from the committed JSON) ---
 
-  test "seed loads the 251 and is idempotent and self-syncing" do
+  test "seed loads the 493 and is idempotent and self-syncing" do
     seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
 
-    # 251 species plus the nidoran gender-family row.
-    assert_difference -> { Pokemon.count }, 252 do
+    # 493 species plus the nidoran gender-family row.
+    assert_difference -> { Pokemon.count }, 494 do
       capture_io { load seed }
     end
 
@@ -334,7 +364,7 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "sprite.png", p.display_avatar
   end
 
-  test "seed carries the family columns and shapes the 128-base deck" do
+  test "seed carries the family columns and shapes the 246-base deck" do
     capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
 
     charizard = Pokemon.find_by!(slug: "charizard")
@@ -342,7 +372,7 @@ class PokemonTest < ActiveSupport::TestCase
     assert_empty charizard.evolution
 
     deck = Pokemon.deck.pluck(:slug)
-    assert_equal 128, deck.size
+    assert_equal 246, deck.size
     assert_includes deck, "nidoran"       # the one Nidoran family…
     assert_not_includes deck, "nidoran-f" # …never its legacy species rows
     assert_not_includes deck, "nidoran-m"
@@ -354,15 +384,25 @@ class PokemonTest < ActiveSupport::TestCase
     assert_not_includes deck, "hitmonlee" # now a Tyrogue branch evolution
     assert_not_includes deck, "charizard" # evolved form
     assert_not_includes deck, "cleffa"    # baby
+    # Gen 3–4 babies never spawn; their heir does.
+    %w[munchlax happiny mime-jr bonsly mantyke budew chingling azurill wynaut riolu].each do |baby|
+      assert_not_includes deck, baby
+    end
+    assert_includes deck, "lucario"       # Riolu's heir roots the line
+    assert_includes deck, "treecko"
+    assert_includes deck, "burmy"
+    assert_not_includes deck, "electivire" # Gen 4 extension of the Electabuzz line
+    assert_not_includes deck, "gallade"
   end
 
-  test "seed splits the generations at the Kanto/Johto boundary" do
+  test "seed splits the generations at the Kanto/Johto/Hoenn/Sinnoh boundaries" do
     seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
     capture_io { load seed }
 
     assert_equal 151, Pokemon.species.gen1.count
     assert_equal 100, Pokemon.species.gen2.count
-    assert_equal (1..251).to_a, Pokemon.species.by_dex.pluck(:dex)
+    assert_equal({ 1 => 151, 2 => 100, 3 => 135, 4 => 107 }, Pokemon.species.group(:generation).count)
+    assert_equal (1..493).to_a, Pokemon.species.by_dex.pluck(:dex)
 
     chikorita = Pokemon.find_by!(slug: "chikorita")
     assert_equal 152, chikorita.dex
@@ -371,6 +411,11 @@ class PokemonTest < ActiveSupport::TestCase
     # Display-name special case new with Johto (title-casing would give "Ho Oh").
     assert_equal "Ho-Oh", Pokemon.find_by!(dex: 250).name
     assert_equal "Porygon2", Pokemon.find_by!(dex: 233).name
+    # …and with Sinnoh.
+    assert_equal "Mime Jr.", Pokemon.find_by!(dex: 439).name
+    assert_equal "Porygon-Z", Pokemon.find_by!(dex: 474).name
+    # Gen 4's named default forms seed under their species slug.
+    assert_equal %w[deoxys giratina shaymin wormadam], Pokemon.where(dex: [386, 413, 487, 492]).order(:slug).pluck(:slug)
   end
 
   test "seed populates both a cropped avatar_url and an uncropped fallback for all 251" do
@@ -464,14 +509,17 @@ class PokemonTest < ActiveSupport::TestCase
     seed = Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s
     capture_io { load seed }
 
-    # water is the most common type across Gen 1–2 (50 of 251); flying second (38).
+    # water is the most common type across Gen 1–4 (92 of 493); normal second (72),
+    # flying third (64).
     assert_equal 100, Studio::Enumeral.lookup("pokemon_type", "water").rank
-    assert_equal 200, Studio::Enumeral.lookup("pokemon_type", "flying").rank
-    # normal and poison tie at 37; the canonical type order breaks the tie.
-    assert_equal 300, Studio::Enumeral.lookup("pokemon_type", "normal").rank
-    assert_equal 400, Studio::Enumeral.lookup("pokemon_type", "poison").rank
-    # dragon is the rarest across the 251 (Johto brought Dark six members).
-    assert_equal 1800, Studio::Enumeral.lookup("pokemon_type", "dragon").rank
+    assert_equal 200, Studio::Enumeral.lookup("pokemon_type", "normal").rank
+    assert_equal 300, Studio::Enumeral.lookup("pokemon_type", "flying").rank
+    # fighting and steel tie at 25; the canonical type order breaks the tie.
+    assert_equal 1200, Studio::Enumeral.lookup("pokemon_type", "fighting").rank
+    assert_equal 1300, Studio::Enumeral.lookup("pokemon_type", "steel").rank
+    # ghost is the rarest across the 493 (18); dragon (19) next.
+    assert_equal 1700, Studio::Enumeral.lookup("pokemon_type", "dragon").rank
+    assert_equal 1800, Studio::Enumeral.lookup("pokemon_type", "ghost").rank
 
     # Every rank is a distinct multiple of 100, 100..1800.
     ranks = Studio::Enumeral.in_category("pokemon_type").pluck(:rank).sort
@@ -531,21 +579,22 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "#A98FF3", pidgeot.signature_color
   end
 
-  test "primary type seed caches the identifying type for all 251" do
+  test "primary type seed caches the identifying type for all 493" do
     capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
     capture_io { load Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s }
     capture_io { load Rails.root.join("db/seeds/58_pokemon_primary_types.rb").to_s }
 
     pokemon = Pokemon.species.order(:dex).to_a
-    assert_equal 251, pokemon.size
+    assert_equal 493, pokemon.size
     assert pokemon.all? { |p| p.primary_type.present? }, "every Pokémon should have a cached primary_type"
 
-    # Pidgeot is normal/flying; across Gen 1–2 flying (38) outnumbers normal (37),
-    # so normal is now the rarer side and identifies it — the cache must agree
-    # with the live computation over the full 251.
+    # Pidgeot is normal/flying; across Gen 1–4 normal (72) outnumbers flying (64),
+    # so flying is the rarer side and identifies it — the cache must agree with the
+    # live computation over the full 493. (Over Gen 1–2 it was the other way round:
+    # adding generations re-ranks types, so some older Pokémon change color.)
     pidgeot = Pokemon.find_by!(slug: "pidgeot")
-    assert_equal "normal", pidgeot.primary_type
-    assert_equal Studio::Enumeral.color_for("pokemon_type", "normal"), pidgeot.signature_color
+    assert_equal "flying", pidgeot.primary_type
+    assert_equal Studio::Enumeral.color_for("pokemon_type", "flying"), pidgeot.signature_color
 
     # A Johto row ranks with the same machinery: Tyranitar (rock/dark) wears dark.
     tyranitar = Pokemon.find_by!(slug: "tyranitar")
