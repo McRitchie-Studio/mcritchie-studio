@@ -1,6 +1,69 @@
 require "test_helper"
 
+# [unit] THE DEPTH CHART SCRAPER, AND THE TWO WAYS IT USED TO DIE QUIETLY.
+#
+# Both defects this suite pins were invisible from a terminal:
+#
+#   1. THE HOST. site.api.espn.com answers curl with 200 and Ruby with 403, so
+#      hand-verifying the endpoint "proves" it works and the application still
+#      cannot reach it. Re-measured 2026-09-27 from Net::HTTP: site.api answered
+#      403 (437 bytes, an Akamai "Access Denied" page) to the honest UA AND to a
+#      Chrome 120 string, while site.web.api answered 200 (148848 bytes) to the
+#      honest UA and to no UA at all. curl got 200 and the same 148848 bytes from
+#      the host Ruby cannot reach. The host is therefore pinned by an assertion,
+#      not only by a comment.
+#   2. THE SILENCE. An unreadable teams index produced an EMPTY abbrev=>id map,
+#      every one of the 32 abbrevs then "had no ESPN team_id", and the run tallied
+#      32 per-team failures — a sentence about OUR map when the truth was that
+#      ESPN was unreachable. A single missing id was worse: 31 of 32 teams applied
+#      and the lane stayed green, which is how a depth chart silently goes a week
+#      stale.
+#
+# The HTTP is stubbed at #fetch_json by a subclass rather than by a mocking
+# library, because this suite has none — and naming the exact URLs keeps each
+# behaviour attached to the endpoint it belongs to. Espn::PlayerProfileTest draws
+# the same line for the same reason.
 class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
+  # A scraper whose only difference is where the bytes come from. A stubbed value
+  # that is an exception is RAISED, so "ESPN was down" is expressible.
+  class Stubbed < Espn::ScrapeDepthCharts
+    attr_reader :requested
+
+    def initialize(responses, **kwargs)
+      super(**kwargs)
+      @responses = responses
+      @requested = []
+    end
+
+    private
+
+    def fetch_json(url)
+      @requested << url
+      raise "unstubbed request: #{url}" unless @responses.key?(url)
+
+      value = @responses.fetch(url)
+      raise value if value.is_a?(StandardError) || (value.is_a?(Class) && value <= StandardError)
+
+      value
+    end
+  end
+
+  TEAMS_INDEX = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams".freeze
+
+  # ESPN's teams index in the shape the service reads: sports[0].leagues[0].teams,
+  # each row a { "team" => { "abbreviation" =>, "id" => } }. Measured 2026-09-27 —
+  # the live index carried 32 rows and an id on every one.
+  def teams_index(pairs)
+    { "sports" => [{ "leagues" => [{ "teams" => pairs.map { |abbrev, id|
+      { "team" => { "abbreviation" => abbrev.to_s.upcase, "id" => id } }
+    } }] }] }
+  end
+
+  # Every abbreviation the service knows, mapped to a plausible ESPN id.
+  def full_index
+    teams_index(Espn::ScrapeDepthCharts::TEAM_ABBREV_TO_SLUG.keys.each_with_index.to_h { |a, i| [a, (i + 1).to_s] })
+  end
+
   setup do
     @service = Espn::ScrapeDepthCharts.new
     @bills = teams(:buffalo_bills)
@@ -123,7 +186,11 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     DepthChart.where(team_slug: @bills.slug).destroy_all
     refute DepthChart.exists?(team_slug: @bills.slug)
 
-    # fetch_groups will return nil (no real network) but the shell create runs first
+    # The shell is created BEFORE the fetch, so a team ESPN cannot serve still gets
+    # its row. fetch_groups is stubbed rather than left to fail: this test used to
+    # depend on a LIVE 403 from site.api.espn.com for its nil, which made it a
+    # network call that passed for the wrong reason.
+    @service.define_singleton_method(:fetch_groups) { |_| nil }
     @service.send(:scrape_team, "buf", @bills.slug)
 
     assert DepthChart.exists?(team_slug: @bills.slug)
@@ -334,5 +401,180 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     # Locked starter held depth 1; backup got the next free slot.
     assert_equal starter.slug, chart.depth_chart_entries.find_by(position: "QB", depth: 1).person_slug
     assert_equal backup.slug,  chart.depth_chart_entries.find_by(position: "QB", depth: 2).person_slug
+  end
+
+  # ─── the host and the user agent that must not drift back ────────────────────
+
+  test "the roster and the teams index are fetched from the host that serves Ruby" do
+    roster = Espn::ScrapeDepthCharts::ESPN_ROSTER_URL.call("13")
+
+    assert_includes roster, "site.web.api.espn.com"
+    assert_includes Espn::ScrapeDepthCharts::ESPN_TEAMS_INDEX_URL, "site.web.api.espn.com"
+
+    # Anchored on `//` so the refutation is about the AUTHORITY and cannot be
+    # satisfied by a path that merely mentions the host, matching the assertion
+    # Espn::PlayerProfileTest already makes about the same mistake.
+    refute_includes roster, "//site.api.espn.com"
+    refute_includes Espn::ScrapeDepthCharts::ESPN_TEAMS_INDEX_URL, "//site.api.espn.com"
+  end
+
+  test "the depth chart endpoint keeps the core host, which never filtered" do
+    # sports.core.api.espn.com was never the bug — measured 2026-09-27 it answered
+    # 200 to Net::HTTP for all 32 team ids. Moving it would be a fix to nothing.
+    assert_includes Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(2026, "13"),
+                    "sports.core.api.espn.com"
+  end
+
+  test "the user agent names this app and does not impersonate a browser" do
+    ua = Espn::ScrapeDepthCharts::USER_AGENT
+
+    refute_match(/Mozilla|Chrome|Safari|AppleWebKit/, ua,
+                 "site.api rejected the Chrome string and admitted curl — impersonation " \
+                 "made this worse, not better")
+    assert_includes ua, "mcritchie-studio"
+  end
+
+  test "the host and the user agent are the shared ones, not a second copy" do
+    # A SECOND DIVERGENT COPY IS HOW THIS BUG HAPPENED. Espn::PlayerProfile already
+    # carried the working host and an honest UA while this service carried the dead
+    # host and a Chrome string, in the same directory, for weeks.
+    assert_equal Espn::Api::USER_AGENT, Espn::ScrapeDepthCharts::USER_AGENT
+    assert_includes Espn::ScrapeDepthCharts::ESPN_TEAMS_INDEX_URL, Espn::Api::WEB_HOST
+    assert_includes Espn::PlayerProfile::ROSTER_URL, Espn::Api::WEB_HOST
+  end
+
+  # ─── fetch_json tells "no such thing" apart from "could not answer" ──────────
+
+  test "fetch_json returns nil for a 404 and raises for every other non-success" do
+    service = Espn::ScrapeDepthCharts.new
+
+    assert_nil service.send(:parse_response, stub_response(Net::HTTPNotFound, "404"), URI(TEAMS_INDEX)),
+               "a 404 is ESPN saying there is no such document — the season fallback needs that nil"
+
+    [[Net::HTTPForbidden, "403"], [Net::HTTPInternalServerError, "500"], [Net::HTTPBadGateway, "502"]].each do |klass, code|
+      error = assert_raises(Espn::ScrapeDepthCharts::SourceUnavailable) do
+        service.send(:parse_response, stub_response(klass, code), URI(TEAMS_INDEX))
+      end
+      assert_includes error.message, code, "the code ESPN answered has to survive into the message"
+    end
+  end
+
+  # ─── a team that yields no id fails loudly ──────────────────────────────────
+
+  test "a run raises when ESPN's index carries no id for a team it was asked to scrape" do
+    # THE 28-OF-32 DEFECT. A missing id used to print one line, tally teams_failed,
+    # and let the other teams through, so the lane stayed green while a chart went
+    # a week stale. Our abbrev map disagreeing with ESPN's index is a code fault,
+    # not weather, and it cannot heal on the next run.
+    short = Espn::ScrapeDepthCharts::TEAM_ABBREV_TO_SLUG.keys - %w[lv sea]
+    service = Stubbed.new({ TEAMS_INDEX => teams_index(short.each_with_index.to_h { |a, i| [a, (i + 1).to_s] }) })
+
+    error = assert_raises(Espn::ScrapeDepthCharts::MissingTeamId) { service.call }
+
+    assert_includes error.message, "lv"
+    assert_includes error.message, "sea"
+    assert_includes error.message, "30", "the size of the index ESPN actually served"
+  end
+
+  test "the missing id is caught before any chart is touched" do
+    # Failing AFTER applying 31 teams would leave a half-refreshed league behind a
+    # non-zero exit, which is the worst of both. Every id is resolved first.
+    DepthChart.where(team_slug: @bills.slug).destroy_all
+    short = Espn::ScrapeDepthCharts::TEAM_ABBREV_TO_SLUG.keys - %w[sea]
+    service = Stubbed.new({ TEAMS_INDEX => teams_index(short.each_with_index.to_h { |a, i| [a, (i + 1).to_s] }) })
+
+    assert_raises(Espn::ScrapeDepthCharts::MissingTeamId) { service.call }
+
+    refute DepthChart.exists?(team_slug: @bills.slug),
+           "no team may be scraped until every id this run needs has resolved"
+    assert_equal 1, service.requested.length, "only the index should have been asked for"
+  end
+
+  test "a single-team run only demands the id for the team it was asked for" do
+    # TEAM=buf must stay usable when ESPN's index is missing some OTHER team, or the
+    # guard turns a one-team refresh into a hostage of the whole league.
+    index = teams_index({ "buf" => "2" })
+    service = Stubbed.new(index_and_buffalo(index), team_abbrev: "buf")
+
+    service.call
+
+    assert_equal 1, service.stats[:teams_scraped]
+    assert_equal 0, service.stats[:teams_failed]
+  end
+
+  test "an unreadable teams index raises instead of blaming 32 abbreviations" do
+    # THE LIE THIS REPLACES: the index 403ed, `body&.dig(...) || []` made an empty
+    # map, and the log said "No ESPN team_id for abbrev" 32 times — a statement
+    # about OUR data when the fact was that ESPN could not be reached.
+    service = Stubbed.new({ TEAMS_INDEX => Espn::ScrapeDepthCharts::SourceUnavailable.new("ESPN answered 403 for site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams") })
+
+    error = assert_raises(Espn::ScrapeDepthCharts::SourceUnavailable) { service.call }
+
+    assert_includes error.message, "403"
+    refute_match(/no espn team_id/i, error.message,
+                 "an unreachable index is not a missing abbreviation")
+  end
+
+  test "an index whose shape moved raises instead of reporting an empty league" do
+    service = Stubbed.new({ TEAMS_INDEX => { "sports" => [{ "leagues" => [{ "teams" => "nope" }] }] } })
+
+    error = assert_raises(Espn::ScrapeDepthCharts::SourceUnavailable) { service.call }
+    assert_match(/shape|expected/i, error.message)
+  end
+
+  # ─── the green twin: per-team tolerance survives ────────────────────────────
+
+  test "a team whose depth chart ESPN cannot serve is tolerated and tallied" do
+    # A GUARD THAT REFUSED EVERY DEGRADED RUN would pass every case above and is
+    # caught here. One dead team is a normal ESPN afternoon; the LANE grades the
+    # tally (lib/tasks/espn.rake), the service keeps its per-team tolerance.
+    index = teams_index({ "buf" => "2" })
+    responses = { TEAMS_INDEX => index }
+    responses[Espn::ScrapeDepthCharts::ESPN_ROSTER_URL.call("2")] = { "athletes" => [] }
+    responses[Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(nfl_year, "2")] =
+      Espn::ScrapeDepthCharts::SourceUnavailable.new("ESPN answered 503 for sports.core.api.espn.com")
+    responses[Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(nfl_year - 1, "2")] =
+      Espn::ScrapeDepthCharts::SourceUnavailable.new("ESPN answered 503 for sports.core.api.espn.com")
+    service = Stubbed.new(responses, team_abbrev: "buf")
+
+    stats = service.call
+
+    assert_equal 1, stats[:teams_failed], "the team is counted, not raised over"
+    assert_equal 0, stats[:teams_scraped]
+  end
+
+  private
+
+  def nfl_year
+    today = Date.current
+    today.month <= 2 ? today.year - 1 : today.year
+  end
+
+  # A real Net::HTTPResponse subclass with a body already "read" — the standard way
+  # to hand Net::HTTP's own is_a? checks something to judge.
+  def stub_response(klass, code, body = "{}")
+    res = klass.new("1.1", code, "stub")
+    res.instance_variable_set(:@body, body)
+    res.instance_variable_set(:@read, true)
+    res
+  end
+
+  # Index plus the two documents a healthy Buffalo scrape reads: a roster (for the
+  # id => name map) and a depth chart carrying all three sides.
+  def index_and_buffalo(index)
+    {
+      TEAMS_INDEX => index,
+      Espn::ScrapeDepthCharts::ESPN_ROSTER_URL.call("2") => {
+        "athletes" => [{ "position" => "offense", "items" => [{ "id" => "3139477", "displayName" => "Buffalo Passer" }] }]
+      },
+      Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(nfl_year, "2") => {
+        "items" => [
+          { "name" => "3WR 1TE 1RB", "positions" => { "qb" => { "position" => { "abbreviation" => "QB" },
+            "athletes" => [{ "slot" => 1, "athlete" => { "$ref" => "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes/3139477?lang=en" } }] } } },
+          { "name" => "Base 4-3 D", "positions" => {} },
+          { "name" => "Special Teams", "positions" => {} }
+        ]
+      }
+    }
   end
 end
