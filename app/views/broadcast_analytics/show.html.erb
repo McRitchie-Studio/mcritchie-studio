@@ -9,9 +9,9 @@
         opens and clicks count people; programs that fake a read are counted apart.
       </p>
     </div>
-    <%= form_with url: broadcast_analytics_path, method: :get, class: "flex items-center gap-2" do %>
+    <%= form_with url: broadcast_analytics_path, method: :get, class: "flex flex-wrap items-center gap-2 min-w-0 max-w-full" do %>
       <label for="broadcast" class="text-sm text-secondary">Email</label>
-      <select id="broadcast" name="broadcast" class="input-field">
+      <select id="broadcast" name="broadcast" class="input-field min-w-0 max-w-full">
         <option value="">All broadcasts</option>
         <% @broadcasts.each do |b| %>
           <option value="<%= b.slug %>" <%= "selected" if @broadcast == b %>><%= b.subject.presence || b.slug %></option>
@@ -20,6 +20,12 @@
       <button class="btn btn-secondary">Show</button>
     <% end %>
   </div>
+
+  <% if @unknown_filter %>
+    <p class="card p-3 border border-warning/40 bg-warning/10 text-warning-ink text-sm" role="status">
+      No email is called “<%= params[:broadcast] %>”, so this shows every broadcast.
+    </p>
+  <% end %>
 
   <%# Health: the two numbers Resend suspends a sender over. %>
   <section aria-labelledby="health-heading">
@@ -77,16 +83,18 @@
   <div class="grid gap-6 md:grid-cols-2">
     <section class="card overflow-hidden" aria-labelledby="links-heading">
       <h2 id="links-heading" class="text-sm font-semibold uppercase tracking-widest text-muted p-4 pb-2">Clicks by link</h2>
+      <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="text-secondary border-b border-subtle"><tr><th class="text-left p-3">Link</th><th class="text-right p-3">People</th><th class="text-right p-3">Programs</th></tr></thead>
         <tbody>
           <% links = @analytics.by_link %>
           <% if links.empty? %><tr><td colspan="3" class="p-3 text-secondary">No clicks yet.</td></tr><% end %>
           <% links.each do |key, people, machines| %>
-            <tr class="border-b border-subtle/50"><td class="p-3 text-heading"><%= key %></td><td class="p-3 text-right tabular-nums"><%= number_with_delimiter(people) %></td><td class="p-3 text-right tabular-nums text-muted"><%= number_with_delimiter(machines) %></td></tr>
+            <tr class="border-b border-subtle/50"><td class="p-3 text-heading break-all"><%= key %></td><td class="p-3 text-right tabular-nums"><%= number_with_delimiter(people) %></td><td class="p-3 text-right tabular-nums text-muted"><%= number_with_delimiter(machines) %></td></tr>
           <% end %>
         </tbody>
       </table>
+      </div>
     </section>
 
     <section class="card p-4" aria-labelledby="list-heading">
