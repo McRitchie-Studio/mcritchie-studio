@@ -30,9 +30,11 @@ class PokemonTest < ActiveSupport::TestCase
     assert_not Pokemon.new(dex: 1, name: "X").valid?
   end
 
-  test "dex and slug are unique" do
+  # slug is the identity; dex may repeat, because the nidoran gender-family row
+  # shares dex 29 with the Nidoran♀ species row it wears.
+  test "slug is unique and dex may repeat" do
     make(1, "bulbasaur")
-    assert_not Pokemon.new(dex: 1, name: "Dupe", slug: "dupe").valid?
+    assert Pokemon.new(dex: 1, name: "Family", slug: "bulbasaur-family").valid?
     assert_not Pokemon.new(dex: 2, name: "Dupe", slug: "bulbasaur").valid?
   end
 
@@ -161,17 +163,19 @@ class PokemonTest < ActiveSupport::TestCase
     50.times { assert_includes deck, Pokemon.draw.slug }
   end
 
-  test "the seeded deck weights the 24 three-stage roots into the draw bag" do
+  test "the seeded deck weights the 23 three-stage roots into the draw bag" do
     capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
 
-    # Three-stage roots are a fixed 24 across Gen 1–2 — independent of the spawn
+    # Three-stage roots are a fixed 23 across Gen 1–2 — independent of the spawn
     # base count, which siblings legitimately move (e.g. reclassify-togepi-and-
-    # tyrogue). This is the weighting invariant this PR owns.
-    assert_equal 24, Pokemon.three_stage_base_slugs.size
-    # Derive the expected bag from the deck rather than hardcode a base count, so
-    # this stays green whether the deck is 131 or 129: every base is one slot, and
-    # each of the 24 three-stage roots adds one more (129 + 24 = 153, 131 + 24 = 155).
-    assert_equal Pokemon.deck.count + 24, Pokemon.draw_bag.size
+    # tyrogue). It was 24 until pokemon-mascot-gender folded Nidoran♀ and Nidoran♂
+    # (each a three-stage root) into the ONE drawable nidoran family.
+    assert_equal 23, Pokemon.three_stage_base_slugs.size
+    assert_includes Pokemon.three_stage_base_slugs, "nidoran"
+    # Derive the expected bag from the deck rather than hardcode a base count: every
+    # base is one slot, and each of the 23 three-stage roots adds one more
+    # (128 + 23 = 151).
+    assert_equal Pokemon.deck.count + 23, Pokemon.draw_bag.size
 
     deep = Pokemon.three_stage_base_slugs.to_set
     assert_includes deep, "charmander"  # charmander → charmeleon → charizard
@@ -184,7 +188,15 @@ class PokemonTest < ActiveSupport::TestCase
   # --- Committed data file (db/seeds/data/pokemon.json) ---
 
   test "data file carries all 251 Gen 1-2 rows with complete image URL sets" do
-    rows = JSON.parse(File.read(Rails.root.join("db/seeds/data/pokemon.json")))
+    all_rows = JSON.parse(File.read(Rails.root.join("db/seeds/data/pokemon.json")))
+    # The one gender-family row (nidoran) rides beside the 251 species and wears
+    # Nidoran♀'s dex and art; the male art comes through its gender_forms.
+    families, rows = all_rows.partition { |r| r["gender_forms"].present? }
+    assert_equal ["nidoran"], families.map { |r| r["slug"] }
+    nidoran = families.first
+    assert_equal 29, nidoran["dex"]
+    assert_equal({ "female" => "nidoran-f", "male" => "nidoran-m" }, nidoran["gender_forms"])
+    assert nidoran["avatar_url"].end_with?("/29-nidoran-f-cropped.png")
 
     assert_equal (1..251).to_a, rows.map { |r| r["dex"] }
     assert_equal 251, rows.map { |r| r["slug"] }.uniq.size
@@ -251,8 +263,27 @@ class PokemonTest < ActiveSupport::TestCase
     babies = rows.flat_map { |r| r["baby"] }.uniq.sort
     assert_equal %w[cleffa elekid igglybuff magby pichu smoochum], babies
 
-    spawnable = rows.select { |r| r["base"] == r["slug"] && !babies.include?(r["slug"]) }
-    assert_equal 129, spawnable.size
+    # Nidoran is one family: both lines root on it, the gate branch is per gender,
+    # and the two species rows keep their own lines for old tasks.
+    assert_equal "nidoran", by["nidoqueen"]["base"]
+    assert_equal "nidoran", by["nidorino"]["base"]
+    assert_equal({ "nidorina" => "female", "nidorino" => "male" }, by["nidoran"]["evolution_genders"])
+    assert_equal ["nidorina"], by["nidoran-f"]["evolution"]
+    assert_equal 8, by["nidorina"]["gender_rate"]
+    assert_equal(-1, by["magnemite"]["gender_rate"])
+
+    # 23 Gen 1 + 22 Gen 2 species have a distinct female sprite.
+    differs = rows.select { |r| r["has_gender_differences"] }
+    assert_equal [23, 22], [differs.count { |r| r["dex"] <= 151 }, differs.count { |r| r["dex"] > 151 }]
+    differs.each do |r|
+      key = "#{r['dex']}-#{r['slug']}"
+      assert r["female_sprite_url"].end_with?("/#{key}-female-sprite.png"), "##{r['dex']} female_sprite_url"
+      assert r["shiny_female_sprite_url"].end_with?("/#{key}-shiny-female-sprite.png"), "##{r['dex']} shiny female"
+    end
+
+    forms = rows.flat_map { |r| Array(r["gender_forms"]&.values) } + %w[nidoran-f nidoran-m]
+    spawnable = rows.select { |r| r["base"] == r["slug"] && !babies.include?(r["slug"]) && !forms.include?(r["slug"]) }
+    assert_equal 128, spawnable.size
   end
 
   # --- Seed (idempotency from the committed JSON) ---
@@ -260,7 +291,8 @@ class PokemonTest < ActiveSupport::TestCase
   test "seed loads the 251 and is idempotent and self-syncing" do
     seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
 
-    assert_difference -> { Pokemon.count }, 251 do
+    # 251 species plus the nidoran gender-family row.
+    assert_difference -> { Pokemon.count }, 252 do
       capture_io { load seed }
     end
 
@@ -302,7 +334,7 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "sprite.png", p.display_avatar
   end
 
-  test "seed carries the family columns and shapes the 129-base deck" do
+  test "seed carries the family columns and shapes the 128-base deck" do
     capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
 
     charizard = Pokemon.find_by!(slug: "charizard")
@@ -310,7 +342,10 @@ class PokemonTest < ActiveSupport::TestCase
     assert_empty charizard.evolution
 
     deck = Pokemon.deck.pluck(:slug)
-    assert_equal 129, deck.size
+    assert_equal 128, deck.size
+    assert_includes deck, "nidoran"       # the one Nidoran family…
+    assert_not_includes deck, "nidoran-f" # …never its legacy species rows
+    assert_not_includes deck, "nidoran-m"
     assert_includes deck, "totodile"
     assert_includes deck, "snorlax"
     assert_includes deck, "togepi"        # reclassified base (Togetic is its evolution)
@@ -325,9 +360,9 @@ class PokemonTest < ActiveSupport::TestCase
     seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
     capture_io { load seed }
 
-    assert_equal 151, Pokemon.gen1.count
-    assert_equal 100, Pokemon.gen2.count
-    assert_equal (1..251).to_a, Pokemon.by_dex.pluck(:dex)
+    assert_equal 151, Pokemon.species.gen1.count
+    assert_equal 100, Pokemon.species.gen2.count
+    assert_equal (1..251).to_a, Pokemon.species.by_dex.pluck(:dex)
 
     chikorita = Pokemon.find_by!(slug: "chikorita")
     assert_equal 152, chikorita.dex
@@ -342,7 +377,7 @@ class PokemonTest < ActiveSupport::TestCase
     seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
     capture_io { load seed }
 
-    pokemon = Pokemon.order(:dex).to_a
+    pokemon = Pokemon.species.order(:dex).to_a
     assert_equal 251, pokemon.size
     pokemon.each do |p|
       assert p.avatar_url.present?, "##{p.dex} #{p.slug} missing avatar_url"
@@ -501,7 +536,7 @@ class PokemonTest < ActiveSupport::TestCase
     capture_io { load Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s }
     capture_io { load Rails.root.join("db/seeds/58_pokemon_primary_types.rb").to_s }
 
-    pokemon = Pokemon.order(:dex).to_a
+    pokemon = Pokemon.species.order(:dex).to_a
     assert_equal 251, pokemon.size
     assert pokemon.all? { |p| p.primary_type.present? }, "every Pokémon should have a cached primary_type"
 

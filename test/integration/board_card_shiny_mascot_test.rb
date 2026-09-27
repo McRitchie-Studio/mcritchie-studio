@@ -86,4 +86,22 @@ class BoardCardShinyMascotTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='avatar-shiny-badge']", count: 0
     end
   end
+  # tasks/pokemon-mascot-gender: a female draw of a species with a distinct female
+  # look wears the female sprite on its board card; the family wears its form.
+  test "tasks board card wears the female sprite for a female mascot" do
+    Pokemon.create!(dex: 3, name: "Venusaur", slug: "venusaur", types: %w[grass poison], generation: 1,
+                    gender_rate: 1, has_gender_differences: true,
+                    sprite_url: "https://img.test/venusaur.png",
+                    female_sprite_url: "https://img.test/venusaur-female.png")
+    task = Task.create!(title: "Female mascot board card", stage: "building",
+                        metadata: { "devops" => { "mascot" => "venusaur", "mascot_gender" => "female" } })
+    assert_equal "female", task.mascot_gender
+
+    get tasks_path
+    assert_response :success
+    assert_select "#card-#{task.slug}" do
+      assert_select "img[src='https://img.test/venusaur-female.png']"
+      assert_select "img[src='https://img.test/venusaur.png']", count: 0
+    end
+  end
 end

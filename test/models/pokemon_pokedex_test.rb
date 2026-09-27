@@ -441,4 +441,26 @@ class PokemonPokedexTest < ActiveSupport::TestCase
     assert_equal pikachu, pokedex.newest_caught.pokemon
     assert_equal 1, pokedex.caught_pokemon
   end
+  # tasks/pokemon-mascot-gender: the dex counts SPECIES. The drawable nidoran
+  # family row is not one; its sightings are credited to the form its gender wears.
+  test "[unit] a nidoran family sighting is credited to the species its gender wears" do
+    female = Pokemon.create!(dex: 29, name: "Nidoran♀", slug: "nidoran-f", generation: 1, gender_rate: 8)
+    male = Pokemon.create!(dex: 32, name: "Nidoran♂", slug: "nidoran-m", generation: 1, gender_rate: 0)
+    Pokemon.create!(dex: 29, name: "Nidoran", slug: "nidoran", generation: 1, gender_rate: 4,
+                    gender_forms: { "female" => "nidoran-f", "male" => "nidoran-m" })
+
+    SessionMascot.create!(session_id: "s-she", mascot_slug: "nidoran", gender: "female",
+                          created_at: 2.hours.ago, updated_at: 2.hours.ago)
+    SessionMascot.create!(session_id: "s-legacy", mascot_slug: "nidoran",
+                          created_at: 1.hour.ago, updated_at: 1.hour.ago) # no gender: no species
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal 2, pokedex.total_pokemon, "the family row is not a dex entry"
+    assert_equal 1, pokedex.seen_pokemon
+    assert_equal female, pokedex.newest_unique.pokemon
+    assert_equal %w[nidoran-f nidoran-m], pokedex.dex_entries.map { |entry| entry.pokemon.slug }.sort
+    assert_equal :seen, pokedex.dex_entries.find { |entry| entry.pokemon == female }.state
+    assert_equal :unseen, pokedex.dex_entries.find { |entry| entry.pokemon == male }.state
+  end
 end

@@ -1135,12 +1135,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_030000) do
     t.integer "defense"
     t.integer "dex", null: false
     t.jsonb "evolution", default: [], null: false
+    t.jsonb "evolution_genders", default: {}, null: false
+    t.string "female_sprite_url"
+    t.jsonb "gender_forms", default: {}, null: false
+    t.integer "gender_rate"
     t.integer "generation", default: 1, null: false
+    t.boolean "has_gender_differences", default: false, null: false
     t.integer "hp"
     t.string "name", null: false
     t.string "primary_type"
     t.string "shiny_avatar_fallback_url"
     t.string "shiny_avatar_url"
+    t.string "shiny_female_sprite_url"
     t.string "shiny_sprite_url"
     t.string "slug", null: false
     t.integer "special_attack"
@@ -1149,7 +1155,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_030000) do
     t.string "sprite_url"
     t.string "types", default: [], null: false, array: true
     t.datetime "updated_at", null: false
-    t.index ["dex"], name: "index_pokemons_on_dex", unique: true
+    t.index ["dex"], name: "index_pokemons_on_dex"
     t.index ["slug"], name: "index_pokemons_on_slug", unique: true
   end
 
@@ -1296,6 +1302,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_030000) do
 
   create_table "session_mascots", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.string "gender"
     t.string "mascot_slug", null: false
     t.string "parent_session_id"
     t.string "session_id", null: false
