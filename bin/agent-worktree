@@ -431,6 +431,14 @@ end
 def sweep_app_for(name)
   slug = ALIASES.fetch(name, name)
   config = apps[slug] || discovered_worktree_configs.find { |c| c["slug"] == slug }
+  # `<repo>.sibling` was a separate discovered config until desks were enumerated per
+  # repo. Ledger rows and old notes still carry `remove <repo>.sibling <desk>`, so the
+  # name resolves to the repo's config pinned to its sibling tree — the tree it named.
+  if config.nil? && slug.end_with?(".sibling")
+    base_slug = slug.delete_suffix(".sibling")
+    base = apps[base_slug] || discovered_worktree_configs.find { |c| c["slug"] == base_slug }
+    config = base&.merge("slug" => slug, "worktrees_dir" => "#{base.fetch("repo")}.worktrees")
+  end
   unless config
     known = (apps.keys + discovered_worktree_configs.map { |c| c["slug"] }).sort
     abort "unknown app: #{name}\nSweepable: #{known.join(", ")}"
@@ -2419,10 +2427,46 @@ def drop_desk_databases(record)
 end
 
 def stack_dirs(app)
-  # Discovered repos carry their resolved tree (the sibling-tree convention puts it
-  # beside the repo, not inside it); registered apps use the managed layout.
-  root = app["worktrees_dir"] || File.join(app.fetch("repo"), ".worktrees")
-  Dir.glob(File.join(root, "*")).select { |dir| File.directory?(dir) }.sort
+  # The legacy `<repo>.sibling` alias (sweep_app_for) pins ONE tree, so a ledgered
+  # `remove <repo>.sibling <desk>` line still resolves into the tree it named.
+  if app["worktrees_dir"]
+    return Dir.glob(File.join(app["worktrees_dir"], "*")).select { |dir| File.directory?(dir) }.sort
+  end
+
+  repo_desk_dirs(app.fetch("repo"))
+end
+
+# EVERY desk a repo has, wherever it lives. Globbing `<repo>/.worktrees/*` alone hid
+# every worktree cut anywhere else — measured 2026-09-26: 13 desks under
+# <projects>/.worktrees/<repo>/, in sibling <repo>.worktrees/ trees, and in a session
+# scratchpad never reached the Desks panel. `git worktree list` is the ground truth for
+# where a repo's worktrees are, so it is read too; the two globs stay because a desk
+# directory git no longer tracks is still a desk the operator has to see.
+#
+# NOT memoized: a reclaim tears desks down and then snapshots, and a cached list would
+# report a removed desk as live to the ledger. A registered path that no longer exists on
+# disk (prunable) is left to orphan_worktree_issues, which reports it as such. The glob
+# form of a path wins over git's realpath'd form, because the desk ledger keys on the
+# path string and a changed spelling would open a second record for the same desk.
+def repo_desk_dirs(repo)
+  globbed = [File.join(repo, ".worktrees"), "#{repo}.worktrees"].flat_map do |root|
+    Dir.glob(File.join(root, "*")).select { |dir| File.directory?(dir) }
+  end
+  known = globbed.map { |dir| canonical_path(dir) }
+  registered = linked_worktree_dirs(repo).reject { |dir| known.include?(dir) || !Dir.exist?(dir) }
+  (globbed + registered).uniq { |dir| canonical_path(dir) }.sort
+end
+
+# The repo's LINKED worktrees from `git worktree list` — never its main checkout, which
+# git always lists first. Asked only of a directory that is its own repo: `git -C` on a
+# directory without a .git of its own walks UP, and would hand back the enclosing repo's
+# worktrees as this one's desks.
+def linked_worktree_dirs(repo)
+  return [] unless File.exist?(File.join(repo, ".git"))
+
+  listed = git_worktree_dirs(repo)
+  primary = canonical_path(repo)
+  listed.drop(1).reject { |dir| dir == primary }
 end
 
 def stack_record(app, dir)
@@ -2514,27 +2558,27 @@ end
 def build_discovered_worktree_configs
   registered = apps.values.map { |config| config.fetch("repo") }
 
-  roots = Dir.glob(File.join(PROJECTS_DIR, "*", ".worktrees")).map { |dir| [File.dirname(dir), dir] } +
-          Dir.glob(File.join(PROJECTS_DIR, "*.worktrees")).map { |dir| [dir.sub(/\.worktrees\z/, ""), dir] }
+  # Three ways a repo shows it has desks: a managed tree, a sibling tree, or a primary
+  # checkout whose `git worktree list` names linked worktrees anywhere at all (the
+  # <projects>/.worktrees/<repo>/ layout, a scratchpad). The first two stay
+  # discoverable even when empty, so `cleanup studio-engine` keeps resolving; the third
+  # counts only when git actually lists a desk.
+  treed = Dir.glob(File.join(PROJECTS_DIR, "*", ".worktrees")).map { |dir| File.dirname(dir) } +
+          Dir.glob(File.join(PROJECTS_DIR, "*.worktrees")).select { |dir| File.directory?(dir) }
+                                                           .map { |dir| dir.sub(/\.worktrees\z/, "") }
+  checkouts = Dir.glob(File.join(PROJECTS_DIR, "*", ".git")).select { |git| File.directory?(git) }
+                                                            .map { |git| File.dirname(git) }
 
-  roots.filter_map do |repo, worktrees_dir|
-    next unless File.directory?(worktrees_dir)
+  (treed + checkouts).uniq.sort.filter_map do |repo|
     next if registered.include?(repo)
+    next unless treed.include?(repo) || linked_worktree_dirs(repo).any?
 
-    # The sibling tree (<repo>.worktrees) and the managed one (<repo>/.worktrees)
-    # are two homes for the SAME repo, so basename alone gives both configs one
-    # slug. The dirs are distinct, so nothing is torn down twice — but every label
-    # built from the slug (worktree_label, the desk ledger record, the
-    # registry) then names two different desks identically, which is exactly the
-    # ambiguity an archive record must not have.
+    # ONE config per repo, named by the repo. The sibling tree used to get its own
+    # `<repo>.sibling` config — a phantom app on the Desks panel for what is one repo's
+    # desks. stack_dirs now reads every tree the repo uses, so the desk is labelled with
+    # the repo it belongs to; two desks sharing a name across trees stay distinct by
+    # path, and `remove` refuses to guess between them (resolve_desk_dir).
     slug = File.basename(repo)
-    # ".sibling", not "(sibling)": this slug is printed INTO a command the operator is
-    # meant to paste (cleanup_command) and written into the desk ledger as the
-    # archive record. Parentheses are shell metacharacters — unquoted, bash answers
-    # "syntax error near unexpected token `('" and zsh "unknown file attribute" — so the
-    # remediation line could not run at all. sweep_app_for matches the slug verbatim, so
-    # any token works; this one needs no quoting.
-    slug = "#{slug}.sibling" if worktrees_dir == "#{repo}.worktrees"
     # No port, no Redis DB, no server: these desks are a git worktree and nothing
     # else, so the teardown must skip stack stop / DB drop / Redis flush rather
     # than fail trying. `stack` is the field the rest of the file already keys on.
@@ -2548,7 +2592,6 @@ def build_discovered_worktree_configs
       "slug" => slug,
       "display_name" => slug,
       "repo" => repo,
-      "worktrees_dir" => worktrees_dir,
       "stack" => STACKLESS_STACK,
       "status" => "discovered",
       "sidekiq" => false,
@@ -3203,7 +3246,9 @@ def cleanup_reason(record)
   base = record[:base_ref] || "origin/main"
   operational = "health #{stack_health(record)}, Redis DB #{record[:redis_db]}, database #{cleanup_database_summary(record)}"
   containment =
-    if record[:merged]
+    if record[:discovered_git]
+      git_clearance(record)
+    elsif record[:merged]
       "clean and HEAD #{record[:head]} is contained in #{base}"
     else
       "clean and its final diff against #{base} is empty, usually after a squash merge"
@@ -3242,7 +3287,12 @@ end
 def print_cleanup_candidate(record)
   puts "  - #{record[:app].fetch("slug")}/#{record[:task]}"
   puts "    worktree: #{record[:dir]}"
-  puts "    safe: #{cleanup_safety_label(record)} on #{record[:base_ref]} (clean, +#{record[:ahead]}/-#{record[:behind]})"
+  if record[:discovered_git]
+    # A discovered desk was judged against origin's default branch, not the base ref.
+    puts "    safe: #{git_clearance(record)}"
+  else
+    puts "    safe: #{cleanup_safety_label(record)} on #{record[:base_ref]} (clean, +#{record[:ahead]}/-#{record[:behind]})"
+  end
   # The `safe:` line above is a GIT fact. This is the safety argument — the questions each
   # guard channel asked and the answers it got. A dry run that cannot explain a nomination
   # is asking the operator to take 29 teardowns on faith.
@@ -3633,9 +3683,40 @@ def run_reclaim(app = nil, yes: false)
   exit TEARDOWN_LEAK_EXIT
 end
 
-def run_remove(app, task, yes: false, force: false)
-  dir = worktree_dir(app, task)
+# The desk a `remove` names, found by where it ACTUALLY is before any normalization.
+#
+# `remove studio-engine studio-s3-ignores-qa_env --yes` answered "missing worktree:
+# …/studio-s3-ignores-qa-env": the dispatch ran the name through clean_slug, which
+# rewrites `_` to `-`, and then built a path no desk lives at. So the raw name is matched
+# against the repo's real desk directories first (by basename, or by path when it holds a
+# `/`); clean_slug's spelling is tried only when nothing matches exactly, and only then
+# does it fall back to the conventional path, which run_remove reports as missing.
+#
+# A name two trees share (studio-engine/.worktrees/x and studio-engine.worktrees/x) is
+# refused rather than guessed at: guessing is how the wrong desk gets destroyed. Pass the
+# path to pick one.
+def resolve_desk_dir(app, raw)
+  raw = raw.to_s
+  dirs = stack_dirs(app)
+  matches =
+    if raw.include?("/")
+      dirs.select { |dir| canonical_path(dir) == canonical_path(raw) }
+    else
+      exact = dirs.select { |dir| File.basename(dir) == raw }
+      exact.empty? ? dirs.select { |dir| File.basename(dir) == clean_slug(raw) } : exact
+    end
+  if matches.size > 1
+    abort "ambiguous desk #{raw.inspect} in #{app.fetch("slug")}: #{matches.join(", ")}\n" \
+          "Pass the desk's path instead of its name."
+  end
+
+  matches.first || (raw.include?("/") ? raw : worktree_dir(app, clean_slug(raw)))
+end
+
+def run_remove(app, raw_task, yes: false, force: false)
+  dir = resolve_desk_dir(app, raw_task)
   abort "missing worktree: #{dir}" unless Dir.exist?(dir)
+  task = File.basename(dir)
 
   sh("git", "-C", app.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
   record = stack_record(app, dir)
@@ -4186,8 +4267,12 @@ def claim_hold(record, fresh: false, announce: false)
   # TASK_RECORD_SLUG would bypass it entirely. Unreachable today, but the guard should not
   # depend on that.
   #
-  # So: unbound + unverifiable = HOLD. Coverage buys VISIBILITY (doctor, list, snapshot, and
-  # the dry run's withheld lines), not automated teardown.
+  # So the board cannot answer for such a desk, and mtimes alone do not prove it abandoned.
+  # GIT can, and that is what it is judged by (discovered_git_hold): a clean tree, nothing
+  # unpushed, HEAD merged into origin's default branch (or its PR merged), no open PR. Until
+  # 2026-09 this branch withheld EVERY discovered desk instead — 66 of 70 held desks on
+  # 2026-09-25, about 50 of them clean and merged — which made the sweep useless for gem
+  # repos. The idle-window/age guard (desk_hold) still runs after it.
   #
   # THIS RETURN SHORT-CIRCUITS THE REST OF THE CHAIN, and the distinction is
   # load-bearing enough that the docs got it wrong by copying the old wording of
@@ -4197,16 +4282,15 @@ def claim_hold(record, fresh: false, announce: false)
   # those channels "cannot answer" describes the desk as unprotected at the exact
   # moment this branch is what protects it.
   if discovered_app?(record[:app])
-    if announce
-      warn "note: #{worktree_label(record)} is a discovered repo's desk, which can never " \
-           "carry a bound task; withholding rather than judging it on mtimes alone"
+    hold = discovered_git_hold(record)
+    if hold
+      warn "note: #{worktree_label(record)}: #{hold}" if announce
+      return hold
     end
-    return "a discovered repo's desk can never carry a bound task (bind-task routes through " \
-           "the registry), so the only channel that could ask a REVIEWER about it has nothing " \
-           "to read — and desk mtimes alone cannot prove a gem desk abandoned, because a cert " \
-           "writes nothing into its desk for longer than the idle window. Withholding rather " \
-           "than nominating a desk we cannot verify; tear it down deliberately with " \
-           "#{cleanup_command(record)}"
+    # Git cleared it. A discovered desk that somehow carries a bound task still gets the
+    # board read below; an unbound one (every one today) is free on this channel, and the
+    # stage/review/desk/pr channels after it still run.
+    return nil unless task_record_slug(record[:env] || {})
   end
 
   # nil-safe: a record without :env must not raise into the rescue below — that would
@@ -4279,6 +4363,75 @@ rescue StandardError => e
   warn "warning: #{worktree_label(record)}: could not check the build lease (#{e.class}: #{e.message})"
   "the build lease could not be checked (#{e.class}); withholding rather than nominating a desk " \
     "we cannot verify"
+end
+
+# --- the GIT channel for a discovered repo's desk ------------------------------------
+#
+# A discovered repo (a gem, a library, an unregistered app) can never bind a task, so the
+# board channels have nothing to read for its desks. Git can still prove the work landed,
+# and each check below names itself when it fails, so a withheld line says which one did:
+#
+#   1. a `_ship`/`_gate` workspace          — release infrastructure, never swept here
+#   2. the tree is clean                    — uncommitted work exists nowhere else
+#   3. no commit unreachable from a remote  — `git rev-list --count HEAD --not --remotes`
+#   4. HEAD merged into origin's default    — or GitHub reports the branch's PR merged
+#   5. no OPEN PR for the branch            — and GitHub must answer: there is no board
+#                                             record to fall back on, unlike a bound desk
+#
+# The idle-window/age guard is desk_hold's, and still runs after this for every desk.
+# Returns the hold reason, or nil when every check passed; the facts it saw are left on
+# the record (:discovered_git) for the clearance line.
+def discovered_git_hold(record)
+  if ship_workspace_record?(record)
+    return "a release workspace (#{record[:task]}) in a discovered repo stays withheld — " \
+           "the sweep never reclaims release infrastructure it has no conductor claim to consult for"
+  end
+  return "tree is dirty (uncommitted changes)" if record[:dirty]
+
+  dir = record[:dir]
+  unpushed = git_unpushed_count(dir)
+  return "could not count commits unreachable from a remote, so unpushed work cannot be ruled out" if unpushed.nil?
+  return "#{unpushed} commit(s) on HEAD are on no remote (unpushed)" if unpushed.positive?
+
+  default = origin_default_ref(dir)
+  merged_into = default if default && git_success?(dir, "merge-base", "--is-ancestor", "HEAD", default)
+  merged_pr = nil
+  unless merged_into
+    status, number = merged_pr_for_branch(record)
+    merged_pr = number if status == :merged
+    unless merged_pr
+      target = default || "origin's default branch (unresolved)"
+      asked = status == :unavailable ? "GitHub could not be asked about a merged PR" : "no merged PR for the branch"
+      return "unmerged: HEAD is not contained in #{target}, and #{asked}"
+    end
+  end
+
+  pr_status, pr_ref = open_pr_for_branch(record)
+  case pr_status
+  when :open
+    return "an OPEN pull request (##{pr_ref}) is still on branch #{record[:branch]}"
+  when :unavailable
+    return "could not ask GitHub whether #{record[:branch]} has an open PR, and a discovered desk has " \
+           "no board record to fall back on"
+  end
+
+  record[:discovered_git] = { merged_into: merged_into, merged_pr: merged_pr }
+  nil
+end
+
+# Commits on HEAD that no remote-tracking ref reaches, or nil when git could not say.
+def git_unpushed_count(dir)
+  value = git_value(dir, "rev-list", "--count", "HEAD", "--not", "--remotes")
+  value.match?(/\A\d+\z/) ? value.to_i : nil
+end
+
+# origin's default branch as a ref (`origin/main`), from origin/HEAD when the clone set it,
+# else the first of origin/main and origin/master that exists; nil when none does.
+def origin_default_ref(dir)
+  head = git_value(dir, "rev-parse", "--abbrev-ref", "origin/HEAD")
+  return head if head.start_with?("origin/") && head != "origin/HEAD"
+
+  %w[origin/main origin/master].find { |ref| git_success?(dir, "rev-parse", "--verify", "--quiet", ref) }
 end
 
 # --- the DESK channel: is anybody working in this DIRECTORY? -------------------------
@@ -4708,6 +4861,11 @@ def reclaim_clearances(record)
 end
 
 def git_clearance(record)
+  if (facts = record[:discovered_git])
+    landed = facts[:merged_into] ? "merged into #{facts[:merged_into]}" : "PR ##{facts[:merged_pr]} merged on GitHub"
+    return "#{landed}, nothing unpushed, tree clean"
+  end
+
   label = record[:merged] ? "merged into" : "diff-empty against"
   "#{label} #{record[:base_ref]}, tree clean"
 end
@@ -4931,7 +5089,12 @@ end
 # its historical [ok, reason] pair from this, and the dry run/ledger read `rationale` from
 # the SAME call — so an explanation can never describe a decision other than the one made.
 def reclaim_evidence(record, fresh: false, announce: false)
-  return { free: false, hold: nil, rationale: nil } unless cleanup_ready?(record)
+  # A discovered desk skips the base-ref gate: it is judged against origin's DEFAULT
+  # branch by discovered_git_hold (inside claim_hold), which names the check that failed —
+  # so a dirty or unpushed gem desk is WITHHELD with a reason rather than silently skipped.
+  unless discovered_app?(record[:app])
+    return { free: false, hold: nil, rationale: nil } unless cleanup_ready?(record)
+  end
 
   hold = reclaim_hold(record, fresh: fresh, announce: announce)
   { free: hold.nil?, hold: hold, rationale: hold ? nil : reclaim_clearances(record).join("; ") }
@@ -5773,8 +5936,9 @@ if $PROGRAM_NAME == __FILE__
     # flush. This widens only the MANUAL, explicitly-named path; the automated sweep still
     # withholds every discovered desk (see claim_hold).
     app = sweep_app_for(app_name)
-    task = clean_slug(raw_task)
-    run_remove(app, task, yes: !!yes, force: !!force)
+    # The RAW name: run_remove resolves it against the desks that exist before it
+    # normalizes anything (resolve_desk_dir).
+    run_remove(app, raw_task, yes: !!yes, force: !!force)
   when "down"
     app_name, raw_task = ARGV
     usage unless app_name && raw_task
