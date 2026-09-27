@@ -149,8 +149,8 @@ class AppRequestTest < ActiveSupport::TestCase
   end
 
   test "each showcase rebuild's live card carries its screenshot" do
-    %w[prisoners-dilemma weekly-lock rantly portfolio].each_with_index do |subdomain, i|
-      # The four names are reserved satellites, so queue! refuses them; queue a
+    %w[prisoners-dilemma weekly-lock rantly portfolio 10and5 search-position].each_with_index do |subdomain, i|
+      # These names are reserved satellites, so queue! refuses them; queue a
       # placeholder and give it the real subdomain, as production holds it.
       live = draft(user: users(:alex)).queue!("zz-showcase-#{i}")
       live.update_columns(subdomain: subdomain, status: "live")
