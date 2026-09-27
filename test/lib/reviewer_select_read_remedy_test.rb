@@ -178,21 +178,37 @@ class ReviewerSelectReadRemedyTest < Minitest::Test
   # --- the reason is one line --------------------------------------------------
 
   def test_the_quoted_reason_never_breaks_the_refusal_block
-    # The reason is a GitHub API error whose body is multi-line JSON. Interpolated
-    # raw it splits the indented block and every single-line grep over it. The
-    # squeeze is asserted on the SHAPE of the printed block, not on the squeezer.
+    # The reason is a GitHub API error whose body is multi-line JSON. Interpolated raw
+    # it splits the indented block open and every single-line grep over the refusal
+    # loses the half it was looking for.
+    #
+    # ASSERTED ON THE BLOCK'S SHAPE, NOT ON A PHRASE, and the first spelling of this
+    # case is why. It looked for the phrase "not a GitHub PR url" on one line and
+    # asserted both halves of the payload were on it — and it stayed GREEN with the
+    # squeeze removed, because Ruby's `inspect` re-escapes the newline inside the
+    # exception message, so the phrase and both halves rode the SAME line anyway. The
+    # assertion was measuring the escaped copy while the defect was in the raw
+    # interpolation two lines above it. Measured: unsqueezed, the block really prints
+    #
+    #     the commits on stub://HTTP 401
+    #   {"message": "Bad credentials"} could not be read (not a GitHub PR url: "…")
+    #
+    # so the observable defect is a body line starting at COLUMN ZERO. A refusal block
+    # has exactly one unindented line — its headline — and that is what is asserted.
     _out, err, = select("stub://HTTP 401\n{\"message\": \"Bad credentials\"}", "--builder", "none", "--dry")
 
-    # The reason quoted below carries a NEWLINE in the payload. Both halves of it must
-    # land on ONE printed line, which is the property; finding two lines each carrying
-    # one half is the defect.
-    quoted = err.lines.select { |line| line.include?("not a GitHub PR url") }
+    body = err.lines.reject { |line| line.strip.empty? }
 
-    assert_equal 1, quoted.size, "the reason must be quoted on exactly one line:\n#{err}"
-    assert_match(/HTTP 401/, quoted.first, "carrying the status GitHub returned")
-    assert_match(/Bad credentials/, quoted.first,
-                 "and the rest of the body on the SAME line — a raw multi-line reason breaks the " \
-                 "indented refusal block and every single-line grep over it:\n#{err}")
+    refute_empty body, "nothing was printed, so this proves nothing:\n#{err}"
+    assert_match(/\Areviewer-select REFUSED/, body.first,
+                 "the headline is the one line that starts at column zero:\n#{err}")
+
+    flush_left = body.drop(1).reject { |line| line.start_with?(" ") }
+
+    assert_empty flush_left.map(&:chomp),
+                 "a raw multi-line reason broke the refusal block open — these body lines start " \
+                 "at column zero, so an operator's single-line grep over the refusal loses " \
+                 "whichever half it was not looking at:\n#{err}"
   end
 
   # --- every printed remedy is RUN ---------------------------------------------
