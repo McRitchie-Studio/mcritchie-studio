@@ -106,6 +106,25 @@ class ReviewerSelectReadRemedyTest < Minitest::Test
     [out, err, status.exitstatus]
   end
 
+  # THE REFUSAL, SLICED OUT OF stderr FROM ITS HEADLINE DOWN.
+  #
+  # stderr is NOT only the refusal. Under `bin/rails test` the child inherits bundler's
+  # env and prints rubygems warnings ahead of anything the script says — the same noise
+  # test/lib/reviewer_select_test.rb's header documents, which is why that file discards
+  # stderr entirely. MEASURED: the first version of the block-shape assertion below read
+  # stderr raw, passed under `ruby -Itest`, and failed under `bin/fast-check` on
+  # "already initialized constant Gem::Platform::JAVA" — a test that depended on which
+  # runner invoked it. The refusal starts at its headline, so say that rather than
+  # trusting the stream to be clean.
+  def refusal(stderr)
+    lines = stderr.lines
+    start = lines.index { |line| line.start_with?("reviewer-select REFUSED") }
+
+    refute_nil start, "no refusal headline in stderr at all, so nothing below is measured:\n#{stderr}"
+
+    lines[start..].join
+  end
+
   # EVERY RUNNABLE COMMAND IN THE REFUSAL, found the way a copying operator finds
   # one: a line that IS an invocation. The scripts are printed ABSOLUTE now, so the
   # extractor keys on "the line starts with a path under this repo's bin, or with an
@@ -197,7 +216,7 @@ class ReviewerSelectReadRemedyTest < Minitest::Test
     # has exactly one unindented line — its headline — and that is what is asserted.
     _out, err, = select("stub://HTTP 401\n{\"message\": \"Bad credentials\"}", "--builder", "none", "--dry")
 
-    body = err.lines.reject { |line| line.strip.empty? }
+    body = refusal(err).lines.reject { |line| line.strip.empty? }
 
     refute_empty body, "nothing was printed, so this proves nothing:\n#{err}"
     assert_match(/\Areviewer-select REFUSED/, body.first,
