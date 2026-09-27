@@ -24,6 +24,7 @@ class BroadcastAnalyticsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-health=bounce-rate]", text: /No sends yet/
     assert_select "h2", text: "Funnel"
     assert_select "td", text: "Nothing sent yet.", minimum: 1
+    assert_select "[data-unknown-filter]", count: 0
   end
 
   test "sends show their rates, and the filter narrows to one email" do
@@ -40,6 +41,7 @@ class BroadcastAnalyticsControllerTest < ActionDispatch::IntegrationTest
 
     get broadcast_analytics_path(broadcast: "cyvasse-is-back")
     assert_select "p", text: /Cyvasse is back/
+    assert_select "[data-unknown-filter]", count: 0, message: "a real email is not an unknown filter"
     assert_select "section[aria-label='By email']", count: 0
   end
 
@@ -52,7 +54,9 @@ class BroadcastAnalyticsControllerTest < ActionDispatch::IntegrationTest
   test "an unknown email filter says so and shows every broadcast" do
     log_in_as(@admin)
     get broadcast_analytics_path(broadcast: "no-such-email")
-    assert_select "[role=status]", text: /No email is called “no-such-email”/
+    assert_select "[data-unknown-filter]", text: /No email is called “no-such-email”/
+    get broadcast_analytics_path(broadcast: "<b>x</b>")
+    assert_select "[data-unknown-filter] b", count: 0, message: "the filter value is shown as text, never as markup"
     assert_select "section[aria-label='By email']"
   end
 end
