@@ -112,7 +112,7 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
   with `git -C <repo> worktree prune`).
 - `remove <app> <desk>` finds the desk by its real directory name first (`qa_env` stays
   `qa_env`), normalizes only when nothing matches, and refuses a name two trees share; pass
-  the path then.
+  the path then. A path must be one of the app's desks, and never the primary checkout.
 - `snapshot --write` writes the non-secret cross-app registry to
   `/Users/alex/projects/.agents/worktree-registry.json` (override `AGENT_WORKTREE_REGISTRY`).
 - `cleanup` is a dry run: clean candidates merged into, or diff-equivalent to, the base ref,
@@ -138,7 +138,9 @@ A fresh desk and a merged one are **git-identical**, so git alone never frees a 
    and no open PR (an unanswerable `gh` holds; there is no board record to fall back on).
    A failed check returns its reason as a **short-circuit**: the later channels never run
    at all. A passed one falls through, so the DESK and PR channels still judge it. Its
-   `_ship`/`_gate` workspaces are always withheld.
+   `_ship`/`_gate` workspaces are always withheld. **A gem desk has no board stage**, so it
+   gets no mid-release hold: it frees once its HEAD is merged and pushed and it has sat idle.
+   A "merged PR" counts only when that PR's head commit is the desk's HEAD.
 3. **STAGE** (`stage_hold`) — frees a bound desk only at `shipped` or `archived`, failing
    closed on an unreadable board (withholding defers; freeing is irreversible).
 4. **REVIEW** (`review_hold`) — a reviewer on the task (`review_in_progress`) holds it.
@@ -146,6 +148,13 @@ A fresh desk and a merged one are **git-identical**, so git alone never frees a 
    mtimes (`DeskActivity.touched_since?`), or the holder's gate in flight. Every unknown holds.
 6. **PR** (`pr_hold`) — an open, unmerged PR holds; with `gh` unreachable the board's
    `pr_url` without a `merged` stamp holds.
+
+Two checks sit outside the chain. A desk **outside a managed root** (`<repo>/.worktrees/`,
+`<repo>.worktrees/`), such as `.claude/worktrees/*` or a scratchpad checkout, is listed but
+never nominated; remove it deliberately. And a desk every channel cleared is still held when
+**gitignored work** (an edited `.env.local`, say) changed after the desk was cut, because
+`git status` cannot see it. Regenerable paths (`tmp/`, `log/`, `node_modules/`, builds) and
+the env files this script writes do not count.
 
 So a desk is `reclaimable?` only when clean, merged, and cleared by all six — its task at
 `shipped` or `archived` included. `quiet` never frees a desk, and no lane fails open. **The

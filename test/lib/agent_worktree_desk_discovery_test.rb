@@ -244,16 +244,22 @@ class AgentWorktreeDeskDiscoveryTest < Minitest::Test
   def test_the_primary_checkout_is_refused_however_it_is_reached
     gem = gem_with_origin
 
+    # The app is built inline, not looked up: a lookup that aborted ("unknown app") would also
+    # read as REFUSED and prove nothing — measured, it did exactly that.
     out = run_in_script(<<~RUBY)
-      begin
-        refuse_primary_checkout!(sweep_app_for("gem-lib"), #{(gem + "/").inspect})
-        print "ALLOWED"
+      app = { "slug" => "gem-lib", "repo" => #{gem.inspect} }
+      verdicts = [#{(gem + "/").inspect}, #{File.join(gem, ".worktrees", "a-desk").inspect}].map do |dir|
+        refuse_primary_checkout!(app, dir)
+        "ALLOWED"
       rescue SystemExit
-        print "REFUSED"
+        "REFUSED"
       end
+      print verdicts.inspect
     RUBY
 
-    assert_equal "REFUSED", out, "the guard must not depend on stack_dirs happening to exclude the primary"
+    assert_equal '["REFUSED", "ALLOWED"]', out,
+                 "the primary is refused however it is spelled, and a desk is not — the guard must not " \
+                 "depend on stack_dirs happening to exclude the primary"
   end
 
   private
