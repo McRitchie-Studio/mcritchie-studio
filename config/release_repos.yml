@@ -844,8 +844,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-prisoners-dilemma.git
       branch: main
-      # Moves to https://prisoners-dilemma.mcritchie.studio once DNS + ACM land.
-      smoke_url: https://mcr-prisoners-dilemma-9fde4bf81cc4.herokuapp.com
+      smoke_url: https://prisoners-dilemma.mcritchie.studio
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
@@ -855,8 +854,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-weekly-lock.git
       branch: main
-      # Moves to https://weekly-lock.mcritchie.studio once DNS + ACM land.
-      smoke_url: https://mcr-weekly-lock-51f3dfe1ba48.herokuapp.com
+      smoke_url: https://weekly-lock.mcritchie.studio
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
@@ -866,8 +864,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-rantly.git
       branch: main
-      # Moves to https://rantly.mcritchie.studio once DNS + ACM land.
-      smoke_url: https://mcr-rantly-27c88595c2de.herokuapp.com
+      smoke_url: https://rantly.mcritchie.studio
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
@@ -877,8 +874,7 @@ apps:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcr-portfolio.git
       branch: main
-      # Moves to https://portfolio.mcritchie.studio once DNS + ACM land.
-      smoke_url: https://mcr-portfolio-0600e75bd62d.herokuapp.com
+      smoke_url: https://portfolio.mcritchie.studio
     test_cmd: bin/rails test
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
