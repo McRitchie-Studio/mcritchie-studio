@@ -151,4 +151,29 @@ class WorkspaceDrafterTest < ActiveSupport::TestCase
     assert_equal 1, captured.size
     assert_equal [ :drafts_create ], client.calls.map(&:first), "the draft itself was made — only its log failed"
   end
+
+  test "the unlogged-draft ErrorLog row NAMES the Gmail draft id" do
+    # The row an operator actually reads, with ErrorLog UNSTUBBED. Capturing the
+    # ORIGINAL exception filed "ActiveRecord::RecordInvalid" and nothing more —
+    # true, and useless: the draft is already sitting in Gmail and the row gave
+    # no way to find it. The WRAPPED error carries the id and the mailbox.
+    client = FakeClient.new
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      MailboxDraft.stub(:create!, ->(**) { raise ActiveRecord::RecordInvalid }) do
+        assert_raises(Workspace::Drafter::Error) do
+          drafter(client).call(to: "a@b.test", subject: "s", markdown: "x")
+        end
+      end
+    end
+
+    log = ErrorLog.order(:id).last
+    assert_includes log.message, "draft r-1", "the id is the only handle on a draft that exists but is unlogged"
+    assert_includes log.message, "alex@mason.test"
+    assert_includes log.inspect_field, "Workspace::Drafter::Error"
+    assert_equal @mailbox, log.target, "the row hangs off the mailbox the draft was written in"
+    # A wrapper built at rescue time has NO backtrace of its own, so the
+    # original's has to be carried across or the failure site is lost.
+    assert_includes log.backtrace.to_s, "drafter.rb", "the original failure site survives the wrap"
+  end
 end

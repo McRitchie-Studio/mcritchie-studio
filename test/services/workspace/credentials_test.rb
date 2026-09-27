@@ -370,6 +370,31 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     assert Workspace::Credentials.authorizer_for("team@mail.test"), "the workspace subject still opens Drive"
   end
 
+  test "the authorizer cache keys on address AND purpose" do
+    # THE BUG THIS PINS, and why narrowing the scope REQUEST alone would have
+    # bought nothing. Keyed on the address only, the FIRST caller to ask for an
+    # address decided what every later caller got:
+    #
+    #   workspace:check_mailbox probes alex@ against the whole grant, THEN
+    #   GmailClient asks for alex@ with purpose :mail — and was handed the
+    #   cached FOUR-scope object. (workspace:check does the same the other way
+    #   round: DriveClient reads first, GmailClient second, same subject.)
+    #
+    # So the broad token stayed in play at the one seam the purpose boundary
+    # exists to close.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    WorkspaceAccount.create!(domain: "both.test").mark_verified!
+
+    workspace = Workspace::Credentials.authorizer_for("team@both.test")
+    mail = Workspace::Credentials.authorizer_for("team@both.test", purpose: :mail)
+
+    # Scope first, object identity second: the scope assertion names the HARM
+    # in one line, where refute_same dumps the whole credential object.
+    refute_includes mail.scope.join(" "), "auth/drive",
+                    "a token minted for mail must not carry Drive, however it was cached"
+    refute_same workspace, mail, "one cache entry per (address, purpose), not per address"
+  end
+
   test "GmailClient asks for :mail and DriveClient for the narrow default" do
     calls = []
     recorder = Object.new
