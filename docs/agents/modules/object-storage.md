@@ -66,8 +66,8 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
 |---|---|---|---|
 | 1 | Alex's Cloudflare login | Alex only | his private vault |
 | 2 | `cloudflare.studio.provision` (Cloudflare token name `mcritchie-studio-admin`) | Steffon's provisioning lane: Workers R2 Storage read/write, Account API Tokens read/write (mints the per-app tokens), Account DNS Settings, and (since the evening of 2026-09-26) DNS read/write on every domain in the account | `studio-agents-admin` (admin op lane only) |
-| 4b | `r2-<app>-backup` | reads `<app>-production`, writes `<app>-backup`; no app key can see the backup bucket | fields `access-key-id-backup` / `secret-access-key-backup` in `r2.<app>` |
 | 4 | `r2-<app>-prod` / `r2-<app>-dev` | one app's buckets, exactly | 1Password `r2.<app>` in `studio-agents`; Heroku config vars once the app cuts over |
+| 4b | `r2-<app>-backup` | reads `<app>-production`, writes `<app>-backup`; no app key can see the backup bucket | fields `access-key-id-backup` / `secret-access-key-backup` in `r2.<app>` |
 
 Tier 3 (a fleet-wide agent key for object surgery) has no R2 equivalent yet, as
 it had none on S3. A credential belongs to exactly one kind of principal: apps
@@ -78,7 +78,9 @@ never borrow agent keys; agents never borrow app keys.
 Provisioned and verified by `bucket-provision` on 2026-09-26: every pair passed
 the positive probes and the three negative ones (prod key refused on dev, dev
 key refused a production write and a production delete). All buckets are
-private and empty; no app reads them yet.
+private, and no app reads them yet. They were empty at provisioning; since then
+`moms-app-backup` holds drill receipts and archives (they expire under its
+lifecycle rules).
 
 | App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
 |---|---|---|---|---|
@@ -86,7 +88,7 @@ private and empty; no app reads them yet.
 | `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | not yet (Wave 2) | not enabled |
 | `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | not yet (Wave 2) | not enabled |
 | `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
-| `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | not yet (Wave 2) | enabled 2026-09-26, `moms-app-backup`; drill passed |
+| `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | not yet (Wave 2) | enabled 2026-09-26, `moms-app-backup`; drill passed; nightly via `.github/workflows/r2-backup.yml` |
 
 Re-derive before trusting: `GET /accounts/<id>/r2/buckets` with the tier-2
 token lists the pairs, and the SOP's verify script re-runs the probes. A census
