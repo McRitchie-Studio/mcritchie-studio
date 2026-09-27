@@ -25,7 +25,7 @@ Reads `db/seeds/data/spotrac_contracts_2025.json` (committed, ~2,500 entries —
 ### 3. `Espn::ScrapeDepthCharts`
 `app/services/espn/scrape_depth_charts.rb`, rake `espn:scrape_depth_charts` — current-roster + depth truth.
 
-Hits `https://www.espn.com/nfl/team/depth/_/name/{abbrev}` per team (data embedded in `window['__espnfitt__']`). Auto-creates DepthChart shells and Contracts for ESPN-listed players we don't have yet (UDFAs, mid-season call-ups). When a player has shifted teams, expires the old active Contract and creates the new one. Updates `Athlete.team_slug`. Stores both `position` (collapsed canonical) AND `formation_slot` (raw ESPN label) on each DepthChartEntry. Locked entries are never moved.
+Hits `https://sports.core.api.espn.com/v2/.../depthcharts` per team. The doc said `https://www.espn.com/nfl/team/depth/_/name/{abbrev}` (data embedded in `window['__espnfitt__']`) until 2026-09-27; that HTML scrape is blocked and the service moved to the JSON API, per its own comment at `app/services/espn/scrape_depth_charts.rb`. Auto-creates DepthChart shells and Contracts for ESPN-listed players we don't have yet (UDFAs, mid-season call-ups). When a player has shifted teams, expires the old active Contract and creates the new one. Updates `Athlete.team_slug`. Stores both `position` (collapsed canonical) AND `formation_slot` (raw ESPN label) on each DepthChartEntry. Locked entries are never moved.
 
 Behaviors of note:
 - **Row-grouped flatten** — multi-row position groups (3 WR rows for WR1/WR2/WR3 chains) round-robin starters together: row1[0], row2[0], row3[0], then row1[1], etc. Drives WR1/WR2/WR3 = starter from each row.
@@ -33,6 +33,7 @@ Behaviors of note:
 - **Stale-entry pruning** — when post-merge data leaves a player with two entries on the same chart at different positions, apply_row keeps the entry already at the target position and drops the rest.
 - **Verbatim ESPN order** — apply_row preserves ESPN's listed order for new vs existing entries. Brand-new players ESPN promotes above an existing one get the higher slot (Will Campbell at LT1 over Hudson, post-fix).
 - **Partial-response guard** — if ESPN returns < 3 sides for a team (e.g. only "Base 4-3 D" with no offense or special teams — Lions hit this on 2026-05-01), skip the team entirely instead of half-overwriting. teams_partial counter on stats hash.
+- ⚠️ **TWO OF ITS THREE ENDPOINTS RETURN 403 TODAY (measured 2026-09-27) and the service exits 0 anyway.** `ESPN_TEAMS_INDEX_URL` and `ESPN_ROSTER_URL` both name `site.api.espn.com`, which filters on User-Agent and rejects everything Ruby's Net::HTTP can send — including this service's Chrome string. `fetch_json` returns nil on any non-success, so `team_id_for` answers nil, every team lands in `teams_skipped` with "No ESPN team_id for abbrev", and the run reports a clean summary. The depth-chart URL itself (`sports.core.api.espn.com`) is fine. The fix is one host: `site.web.api.espn.com` serves the identical documents to any User-Agent — see the note on `Espn::PlayerProfile::ROSTER_URL`, which measured it across 18 requests. Not repaired as part of `acquire-or-validate-player`; it is a bug in a service with its own callers and its own tests.
 - **`espn_id` backfill on name match** — when ESPN places a player who was found via name fallback (not espn_id lookup), persist the `espn_id` from ESPN's href on the Athlete + derive `espn_headshot_url`. Pre-fix, those athletes had a depth chart entry but no espn_id, so `nfl:upload_headshots` couldn't cache their headshot. Backfilled ~110 athletes per scrape with this added.
 
 ## Athlete Cross-Ref IDs
@@ -52,6 +53,100 @@ Behaviors of note:
 ## Position Normalization
 
 `PositionConcern` (`app/models/concerns/position_concern.rb`) holds canonical position lists, per-source mapping tables (`ESPN_MAP`, `PFF_MAP`, `NFLVERSE_MAP`, `SPOTRAC_MAP`, `GENERAL_MAP`), AND the `FORMATION_GROUPS` / `GROUP_ATHLETE_POSITIONS` maps used by the defensive picker. Callers pass `source:` to dispatch: `PositionConcern.normalize_position("LDE", source: :espn) # => "EDGE"`. Falls back to `GENERAL_MAP` when source is omitted.
+
+## One Player: Acquire or Validate
+
+`Athletes::AcquireOrValidate` (`app/services/athletes/acquire_or_validate.rb`, rake
+`athletes:acquire_or_validate`) is the **per-person** act. Everything else on this page
+is bulk: the rebuild workflow drops the database, the refresh workflow re-pulls all of
+nflverse and scrapes 32 depth charts, and `nfl:upload_headshots` selects
+`Athlete.where.not(espn_id: nil)` — which is exactly what a player nobody has fetched
+yet does not have. So there was no way to fix ONE person, which is what the model
+pipeline's `defined` lane needs when it finds an incomplete one.
+
+**It runs on a desk with no credential.** Every ESPN endpoint behind it is public. The
+only step that wants AWS keys is caching the headshot into S3, and that degrades to a
+reported line rather than failing the run.
+
+```bash
+bin/rails athletes:acquire_or_validate PERSON=ashton-jeanty        # validate someone on file
+bin/rails athletes:acquire_or_validate ESPN_ID=3138744            # acquire or validate by id
+bin/rails athletes:acquire_or_validate TEAM=lv NAME="Chris Myarick"   # acquire from a roster
+DRY_RUN=1 bin/rails athletes:acquire_or_validate TEAM=lv          # walk one roster, write nothing
+ADOPT=position,height_inches bin/rails athletes:acquire_or_validate PERSON=tj-watt
+NO_HEADSHOT=1 bin/rails athletes:acquire_or_validate PERSON=bo-nix
+```
+
+### The seam
+
+`Espn::PlayerProfile` is the provider and the only file that knows ESPN's JSON exists.
+It answers `#find`, `#find_on_roster`, `#find_in_league` and `#roster` with
+`Athletes::SourceProfile` values already in our units, our position vocabulary and our
+team slugs. A second source is a second provider and no change to the act — the
+operator's framing was "we can always add supliment data sourses later".
+
+### Who wins a disagreement
+
+Per-field, declared as data in `AcquireOrValidate::FIELDS`:
+
+| policy | fields | rule |
+|--------|--------|------|
+| `:key` | `espn_id` | fill when blank; a stored id that DISAGREES refuses the whole act |
+| `:roster` | `team_slug`, `jersey_number` | the league publishes these, so the source wins — and the change is named (`traded`), never quiet |
+| `:held` | `position`, `height_inches`, `weight_lbs`, `first_name`, `last_name` | fill when blank; on a disagreement KEEP ours and report a `conflict` the operator can take with `ADOPT=` |
+| `:fill` | `espn_headshot_url` | derived from the id, so the `:key` refusal fires first |
+
+**`position` is held, and that is measured, not cautious.** T.J. Watt, Alex Highsmith
+and Nick Herbig are all stored `EDGE` (from PFF, whose vocabulary is finer — see
+Athlete Cross-Ref IDs above) while ESPN says `LB`, which `ESPN_MAP` normalizes to `LB`.
+A source-wins rule on `position` would have quietly demoted every 3-4 edge rusher in
+the league, and nothing would have errored.
+
+### Staleness is causal
+
+Nothing reads a clock. **Stale** means the source now disagrees with a value we had
+already stored, which is the only comparison that can name the change on the report
+line. `athletes.updated_at` moves for any column and `people.updated_at` does not move
+when the athlete row changes at all, so both timestamps answer this worse.
+
+`traded` is deliberately the same word `Appearances::LookReading` uses. They are the
+same event at the next joint along, and each object owns one:
+
+```text
+ESPN ──(AcquireOrValidate)──> athletes.team_slug ──(LookReading#traded?)──> appearance
+```
+
+### Traps this act was built around
+
+- **Height and weight arrive as prose.** `height` and `weight` measure nil on the
+  athlete endpoint while `displayHeight`/`displayWeight` carry `"6' 2\""` and
+  `"217 lbs"`. `Athletes::DisplayMeasurement` parses them and **refuses** anything it
+  cannot read with confidence, because a plausible wrong integer reaches the
+  character-sheet prompt as a body of the wrong shape and raises nothing.
+- **The roster endpoint's `athletes` key is six GROUPS, not players** — offense,
+  defense, specialTeam, injuredReserveOrOut, suspended, practiceSquad. A naive read
+  gets 6 objects instead of Las Vegas's 79 and finds nobody, without raising.
+- **`site.api.espn.com` 403s Ruby and 200s curl.** Hand-verifying that host with curl
+  PROVES an endpoint that the application cannot reach. Use `site.web.api.espn.com`,
+  which serves the identical document to any User-Agent.
+- **`Person.find_by_name` cannot see across punctuation.** `find_by_name("AJ", "Cole")`
+  is nil while `a-j-cole` is on file, so 1 of the 18 Las Vegas players that looked
+  absent was a player we have had for years. `Athletes::NameKey` compares
+  punctuation- and suffix-insensitively and the act REFUSES an ambiguous name rather
+  than filing a second row for one human.
+- **A trade means the stored team is the one roster he is no longer on.** Searching
+  only the stored team can never discover the event the act was built for, so a miss
+  widens to all 32 rosters (ESPN publishes no working player-name search:
+  `common/v3/search?query=Bo+Nix` answers HTTP 200 with `count: 0`). Absence is only
+  concluded from a COMPLETE search; an unreadable roster raises instead.
+
+### `jersey_number`
+
+`athletes.jersey_number` (integer, nullable) was added by this act's migration. Before
+2026-09-27 the number had no column on any table, ESPN returned it as `athlete.jersey`
+and every reader dropped it, so the character-sheet recipe substituted a `<NUMBER>`.
+`Appearances::Pipeline::DEFINITION_GAP_NOTE` and the `no #` cell on the model-pipeline
+board describe that gap and are owed an update now that the column exists.
 
 ## Athlete Physical Descriptions
 
