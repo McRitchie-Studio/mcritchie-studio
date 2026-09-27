@@ -43,7 +43,7 @@ Agent knowledge (SOPs, runbooks, insights) stays in git and `KnowledgeDoc`.
 | Business documents for McRitchie Studio | Google Shared Drives. Egnyte declined: the Platform Business plan's 10-seat minimum ($2,640 a year) buys governance McRitchie Studio does not need yet |
 | Commercial Welding | **open.** An `Egnyte` login already sits in the `Commercial Welding` vault; decide after learning whether CW carries CMMC or ITAR obligations |
 | Public URLs | `assets.<domain>` per app, on the production bucket |
-| Backups | yes: [`r2-backup`](../agents/steffon/sops/r2-backup.md) (R2 has no versioning) |
+| Backups | yes: Steffon's `r2-backup` SOP (`docs/agents/agents/steffon/sops/r2-backup.md`) (R2 has no versioning) |
 | Wave 2 order | `moms-app` → `commercial-welding` → `mcritchie-industries` → `mcritchie-studio` → `turf-monster` |
 
 **McRitchie Studio's Shared Drives** (created 2026-09-26, no prefix because each
@@ -98,7 +98,7 @@ so every step is reversible until the last.
    point `Studio::S3` at R2 (`s3_endpoint` and friends in
    `config/initializers/studio.rb`).
 8. **Soak** a week with the mirror on, then drop S3 from the mirror.
-9. **Backup.** Enable [`r2-backup`](../agents/steffon/sops/r2-backup.md) for the
+9. **Backup.** Enable Steffon's `r2-backup` SOP (`docs/agents/agents/steffon/sops/r2-backup.md`) for the
    app and run its drill.
 10. **Record** the app's row in the R2 census as serving.
 
