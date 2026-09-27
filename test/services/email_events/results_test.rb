@@ -1,0 +1,35 @@
+require "test_helper"
+
+# [unit] Results credited to an email, and the ref added to links that land
+# on our own sites.
+class EmailEvents::ResultsTest < ActiveSupport::TestCase
+  Results = EmailEvents::Results
+
+  setup do
+    broadcast = Broadcast.create!(subject: "Hi", template_key: "cyvasse_is_back")
+    @delivery = broadcast.deliveries.create!(contact: Contact.create!(email: "res-#{SecureRandom.hex(3)}@example.com"))
+  end
+
+  test "each goal is credited once per email however often it is reported" do
+    3.times { Results.record!(@delivery.token, "played_match") }
+    Results.record!(@delivery.token, "signed_in")
+
+    goals = @delivery.events.of_kind("converted").map { |e| e.data["goal"] }
+    assert_equal %w[played_match signed_in], goals.sort
+    assert(@delivery.events.of_kind("converted").all? { |e| e.source == "beacon" })
+  end
+
+  test "an unknown goal or token records nothing" do
+    Results.record!(@delivery.token, "bought_a_yacht")
+    Results.record!("not-a-token", "signed_in")
+    Results.record!(nil, "signed_in")
+    assert_equal 0, EmailEvent.count
+  end
+
+  test "the ref is added only to links on our own sites" do
+    assert_equal "https://cyvasse.mcritchie.studio/play?ref=tok", Results.with_ref("https://cyvasse.mcritchie.studio/play", "tok")
+    assert_equal "https://mcritchie.studio/build?a=1&ref=tok", Results.with_ref("https://mcritchie.studio/build?a=1&ref=old", "tok")
+    assert_equal "https://example.com/tt", Results.with_ref("https://example.com/tt", "tok")
+    assert_equal "https://evilmcritchie.studio/x", Results.with_ref("https://evilmcritchie.studio/x", "tok")
+  end
+end

@@ -190,10 +190,10 @@ class Release::ReposTest < ActiveSupport::TestCase
   # test_cmd, and no QA copy by Alex's decision. One loop, each assertion naming
   # its repo, so a failure says which app drifted.
   SHOWCASE_APPS = {
-    "prisoners-dilemma" => "https://mcr-prisoners-dilemma-9fde4bf81cc4.herokuapp.com",
-    "weekly-lock" => "https://mcr-weekly-lock-51f3dfe1ba48.herokuapp.com",
-    "rantly" => "https://mcr-rantly-27c88595c2de.herokuapp.com",
-    "portfolio" => "https://mcr-portfolio-0600e75bd62d.herokuapp.com"
+    "prisoners-dilemma" => "https://prisoners-dilemma.mcritchie.studio",
+    "weekly-lock" => "https://weekly-lock.mcritchie.studio",
+    "rantly" => "https://rantly.mcritchie.studio",
+    "portfolio" => "https://portfolio.mcritchie.studio"
   }.freeze
 
   test "[unit] each showcase app deploys to its mcr- Heroku app by git_push_heroku" do
@@ -206,10 +206,10 @@ class Release::ReposTest < ActiveSupport::TestCase
       assert_equal "git_push_heroku", adapter["strategy"], "#{repo} deploys by git_push_heroku"
       assert_equal "https://git.heroku.com/mcr-#{repo}.git", adapter["remote"], "#{repo}'s Heroku remote"
       assert_equal "main", adapter["branch"], "#{repo} pushes the frozen SHA onto Heroku main"
-      # The herokuapp host until <repo>.mcritchie.studio resolves over HTTPS. The
-      # ship smokes `<smoke_url>/up` AFTER the push, so the value is the bare host:
-      # a dead host or a trailing /up aborts a live deploy.
-      assert_equal smoke_host, adapter["smoke_url"], "#{repo}'s smoke host is its herokuapp host, no /up"
+      # The custom domain, now that DNS points at Heroku's herokudns target and ACM
+      # has issued its certificate. The ship smokes `<smoke_url>/up` AFTER the push,
+      # so the value is the bare host: a dead host or a trailing /up aborts a live deploy.
+      assert_equal smoke_host, adapter["smoke_url"], "#{repo}'s smoke host is its mcritchie.studio domain, no /up"
       assert_equal "mcr-#{repo}", Release::ShipSequence.heroku_app_for(adapter), "#{repo}'s Heroku app name"
     end
   end

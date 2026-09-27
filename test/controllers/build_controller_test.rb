@@ -202,4 +202,22 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     get build_check_path, params: { subdomain: "fresh-idea" }
     assert_equal true, response.parsed_body["available"]
   end
+
+  # [integration] An app requested by a reader who came from an email is
+  # credited to that email.
+  test "an app request after arriving from an email credits it" do
+    broadcast = Broadcast.create!(subject: "Cyvasse is back", template_key: "cyvasse_is_back")
+    delivery = broadcast.deliveries.create!(contact: Contact.create!(email: "b-#{SecureRandom.hex(3)}@example.com"))
+
+    get build_path(ref: delivery.token)
+    send_prompt
+
+    assert_equal ["requested_app"], delivery.events.of_kind("converted").map { |e| e.data["goal"] }
+  end
+
+  test "an app request with no email behind it credits nothing" do
+    get build_path
+    send_prompt
+    assert_equal 0, EmailEvent.count
+  end
 end
