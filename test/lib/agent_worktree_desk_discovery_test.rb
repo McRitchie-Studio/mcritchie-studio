@@ -134,6 +134,77 @@ class AgentWorktreeDeskDiscoveryTest < Minitest::Test
     assert_match %r{HELD gem-lib/_ship: a release workspace \(_ship\) in a discovered repo stays withheld}, out
   end
 
+  # --- review rework: the ways the widened sweep could call an in-use desk safe ----------
+
+  # Carl's reproduction. A REGISTERED app now lists every worktree git knows, including
+  # Claude Code's `.claude/worktrees/*` — unbound, so the unbound fail-open read it FREE
+  # while a session worked in it. Listed, yes; nominated, never.
+  def test_a_desk_outside_the_managed_root_is_listed_but_never_nominated
+    hub = repo_with_origin("mcritchie-studio")
+    desk(hub, "cc-session", at: File.join(hub, ".claude", "worktrees", "cc-session")) { |_dir| nil }
+    desk(hub, "managed-twin") { |_dir| nil }
+    gem = repo_with_origin("gem-lib")
+    desk(gem, "projects-root-desk", at: File.join(@root, ".worktrees", "gem-lib", "projects-root-desk")) { |_dir| nil }
+
+    hub_out = partition(idle: true, app: "mcritchie-studio")
+    gem_out = partition(idle: true)
+
+    assert_match %r{HELD mcritchie-studio/cc-session: outside the managed desk root .* remove it deliberately}, hub_out
+    assert_includes hub_out, "FREE mcritchie-studio/managed-twin",
+                    "control: the same clean, merged, idle desk inside .worktrees is still nominated"
+    assert_match %r{HELD gem-lib/projects-root-desk: outside the managed desk root}, gem_out
+  end
+
+  # Steffon's reproduction. A two-repo task cuts `feat/<slug>` in both repos; a cache keyed
+  # on the branch alone handed the hub's "no open PR" to the gem desk.
+  def test_the_open_pr_answer_is_never_shared_across_repos_on_one_branch_name
+    out = run_in_script(<<~RUBY)
+      def compute_open_pr_for_branch(record, _branch)
+        record[:app]["repo"].end_with?("gem-lib") ? [:open, "12"] : [:none, nil]
+      end
+      hub = { app: { "repo" => "/p/mcritchie-studio" }, branch: "feat/two-repo", dir: "/p/mcritchie-studio/.worktrees/two-repo" }
+      gem = { app: { "repo" => "/p/gem-lib" }, branch: "feat/two-repo", dir: "/p/gem-lib/.worktrees/two-repo" }
+      print [open_pr_for_branch(hub), open_pr_for_branch(gem)].inspect
+    RUBY
+
+    assert_equal '[[:none, nil], [:open, "12"]]', out,
+                 "the gem desk's own open PR must be asked about, not read from the hub's answer"
+  end
+
+  # A branch NAME is reused — a squash-merged branch keeps taking commits — so only a PR
+  # merged at exactly the desk's HEAD vouches for it.
+  def test_a_merged_pr_counts_only_when_its_head_is_the_desks_head
+    head = "a" * 40
+    out = run_in_script(<<~RUBY, env: { "AGENT_WORKTREE_MERGED_PR" => nil })
+      def command_available?(_n) = true
+      def github_repo_slug(_d) = "o/gem-lib"
+      def git_value(_d, *_a) = #{head.inspect}
+      PRS = { stale: '[{"number":7,"headRefOid":"#{"b" * 40}"}]', current: '[{"number":9,"headRefOid":"#{head}"}]' }
+      def capture_status(*_a) = [true, PRS.fetch($which), ""]
+      record = { dir: "/p/gem-lib/.worktrees/d", branch: "feat/d" }
+      $which = :stale
+      stale = merged_pr_for_branch(record)
+      $which = :current
+      print [stale, merged_pr_for_branch(record)].inspect
+    RUBY
+
+    assert_equal '[[:none, nil], [:merged, "9"]]', out,
+                 "a PR merged at an older commit of the same branch says nothing about the commits in the desk"
+  end
+
+  # An idle, clean, merged desk can still hold a hand-edited `.env.local`: gitignored, so
+  # `git status --porcelain` is blind to it, and a teardown deletes it.
+  def test_gitignored_work_edited_since_the_desk_was_cut_holds_it
+    gem = repo_with_origin("gem-lib", ignore: ".env*\ntmp/\n")
+    desk(gem, "env-edited") { |dir| File.write(File.join(dir, ".env.local"), "SECRET=mine") }
+    desk(gem, "tmp-only") { |dir| FileUtils.mkdir_p(File.join(dir, "tmp")) && File.write(File.join(dir, "tmp", "x"), "1") }
+
+    out = partition(idle: true, age: 2 * 3600)
+
+    assert_match %r{HELD gem-lib/env-edited: gitignored work changed since the desk was cut \(\.env\.local\)}, out
+    assert_includes out, "FREE gem-lib/tmp-only", "regenerable ignored paths (tmp/) never hold a desk"
+  end
+
   # --- 3. remove finds the desk by its real name first ---------------------------------
 
   def test_remove_resolves_a_desk_whose_slug_holds_an_underscore
@@ -156,6 +227,33 @@ class AgentWorktreeDeskDiscoveryTest < Minitest::Test
 
     refute_includes "#{out}#{err}", "missing worktree"
     assert_includes "#{out}#{err}", "gem-lib/plain-desk"
+  end
+
+  # A path must BE a desk: the primary checkout was accepted as a remove candidate.
+  def test_remove_refuses_a_path_that_is_not_one_of_the_apps_desks
+    gem = gem_with_origin
+    desk(gem, "a-real-desk") { |_dir| nil }
+
+    out, err, = Open3.capture3(env, "ruby", BIN, "remove", "gem-lib", gem)
+    said = "#{out}#{err}"
+
+    assert_includes said, "not a desk of gem-lib: #{gem}"
+    refute_includes said, "remove candidate"
+  end
+
+  def test_the_primary_checkout_is_refused_however_it_is_reached
+    gem = gem_with_origin
+
+    out = run_in_script(<<~RUBY)
+      begin
+        refuse_primary_checkout!(sweep_app_for("gem-lib"), #{(gem + "/").inspect})
+        print "ALLOWED"
+      rescue SystemExit
+        print "REFUSED"
+      end
+    RUBY
+
+    assert_equal "REFUSED", out, "the guard must not depend on stack_dirs happening to exclude the primary"
   end
 
   private
@@ -187,19 +285,26 @@ class AgentWorktreeDeskDiscoveryTest < Minitest::Test
   end
 
   # A discovered repo (not in the registry) with a bare origin, main pushed, origin/HEAD set.
-  def gem_with_origin
-    origin = File.join(@root, "origins", "gem-lib.git")
+  def gem_with_origin = repo_with_origin("gem-lib")
+
+  def repo_with_origin(name, ignore: nil)
+    origin = File.join(@root, "origins", "#{name}.git")
     FileUtils.mkdir_p(origin)
     git!(origin, "init", "-q", "--bare", "-b", "main")
-    gem = init_repo("gem-lib")
-    git!(gem, "remote", "add", "origin", origin)
-    git!(gem, "push", "-q", "-u", "origin", "main")
-    git!(gem, "remote", "set-head", "origin", "main")
-    gem
+    repo = init_repo(name)
+    if ignore
+      File.write(File.join(repo, ".gitignore"), ignore.gsub("\\n", "\n"))
+      git!(repo, "add", ".gitignore")
+      git!(repo, "commit", "-q", "-m", "ignore")
+    end
+    git!(repo, "remote", "add", "origin", origin)
+    git!(repo, "push", "-q", "-u", "origin", "main")
+    git!(repo, "remote", "set-head", "origin", "main")
+    repo
   end
 
-  def desk(repo, name)
-    dir = File.join(repo, ".worktrees", name)
+  def desk(repo, name, at: nil)
+    dir = at || File.join(repo, ".worktrees", name)
     git!(repo, "worktree", "add", "-q", dir, "-b", "feat/#{name}", "origin/main")
     yield dir
     dir
@@ -207,11 +312,13 @@ class AgentWorktreeDeskDiscoveryTest < Minitest::Test
 
   # The sweep's own partition over the gem repo, one line per desk. `idle: true` stubs the
   # desk AGE and MTIME seams only — every other guard runs for real.
-  def partition(idle:, env: {})
-    stubs = idle ? "def desk_age_seconds(_r) = 10 * 86_400\ndef desk_touched_recently?(_r) = false\n" : ""
-    run_in_script(<<~RUBY, env: { "AGENT_WORKTREE_OPEN_PR" => "none" }.merge(env))
+  # `age:` is the desk's stubbed age in seconds; the ignored-work check measures edits
+  # against it, so a test that plants a file NOW passes an age that puts the cut before it.
+  def partition(idle:, env: {}, app: "gem-lib", age: 10 * 86_400)
+    stubs = idle ? "def desk_age_seconds(_r) = #{age}\ndef desk_touched_recently?(_r) = false\n" : ""
+    run_in_script(<<~RUBY, env: { "AGENT_WORKTREE_OPEN_PR" => "none", "AGENT_WORKTREE_TASK_JSON" => nil }.merge(env))
       #{stubs}
-      free, withheld = cleanup_partition(sweep_app_for("gem-lib"))
+      free, withheld = cleanup_partition(sweep_app_for(#{app.inspect}))
       lines = free.map { |r| "FREE \#{worktree_label(r)}" } +
               free.map { |r| "RATIONALE \#{worktree_label(r)}: \#{reclaim_evidence(r)[:rationale]}" } +
               withheld.map { |r, reason| "HELD \#{worktree_label(r)}: \#{reason}" }
