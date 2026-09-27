@@ -8,6 +8,12 @@ require "test_helper"
 # duplicate human gets created, and whether "nothing came back" is reported as a fact
 # about the player or a fact about the source.
 class Athletes::AcquireOrValidateTest < ActiveSupport::TestCase
+  # ONE PRINTED REMEDY, CUT OUT OF A REFUSAL MESSAGE so the test can run the operator's
+  # characters instead of a retyped copy of them. Non-greedy to the first `) }`, which is
+  # the end of the one-liner; the messages are built with `\` continuations and carry no
+  # newlines, so a snippet is never split.
+  ALIAS_REMEDY = /Person\.find_by\(slug: .*?\) \}/
+
   # A provider that answers from hashes and records what it was asked.
   class FakeSource
     attr_reader :league_searches, :roster_searches
@@ -347,11 +353,91 @@ class Athletes::AcquireOrValidateTest < ActiveSupport::TestCase
 
     assert_equal :ambiguous_name, report.status
     assert_match(existing.slug, report.message)
-    assert_match(/source_id/, report.message, "the refusal names the way forward")
+  end
+
+  # THE REFUSAL'S OWN REMEDY, RUN AS PRINTED — the bar the `:stale_source_id` test above
+  # set, applied to the sibling refusal that did not meet it.
+  #
+  # WHAT WAS WRONG. The message used to end "resolve by hand, or re-run with source_id:
+  # to bind the id to the right row", and following it returns the BYTE-IDENTICAL
+  # refusal: `source_id:` decides which PROFILE is fetched, and #local_for still resolves
+  # the ROW by name, through Person.find_by_name and then NameKey.near_matches. Measured
+  # 2026-09-27 — two passes with source_id: "9003", same `:ambiguous_name` message both
+  # times. The test above it could not catch that, because it asserted only that the
+  # message MENTIONED source_id.
+  #
+  # WHY THE SNIPPET IS CUT OUT OF THE MESSAGE AND EVAL'D rather than retyped here: a
+  # message whose Ruby does not parse, names a column that does not exist, or lands a
+  # value the act's own lookup cannot see would still pass a `assert_match` against a
+  # hand-copied string. Only running the printed characters proves the operator can.
+  test "the ambiguous-name refusal prints a remedy that runs and unblocks the act" do
+    existing = Person.create!(first_name: "A.J.", last_name: "Cole", athlete: true)
+    assert_equal [], existing.aliases, "`aliases` defaults to [], so the printed union is safe"
+    source = FakeSource.new(by_id: { "9003" => profile(source_id: "9003", first_name: "AJ",
+                                                      last_name: "Cole") })
+
+    refused = act(source).call(source_id: "9003")
+    assert_equal :ambiguous_name, refused.status
+    refute_match(/re-run with source_id/, refused.message,
+                 "source_id: is the remedy that loops back here; it must not be the one printed")
+
+    remedy = refused.message[ALIAS_REMEDY]
+    assert_equal %{Person.find_by(slug: "a-j-cole").then { |p| p.update!(aliases: p.aliases | ["AJ Cole"]) }},
+                 remedy, "the refusal prints exactly one runnable line for one candidate"
+
+    assert_no_difference -> { Person.count } do
+      eval(remedy)
+    end
+    assert_equal ["AJ Cole"], existing.reload.aliases
+
+    again = nil
+    assert_difference -> { Athlete.count } => 1 do
+      again = act(source).call(source_id: "9003")
+    end
+    assert again.ok?, "the printed remedy must unblock the act — got #{again.status}: #{again.message}"
+    assert_equal "a-j-cole", again.person_slug, "and it must bind to the row we already had"
+    assert_equal "9003", Athlete.find_by(person_slug: "a-j-cole").espn_id
+
+    # IDEMPOTENT, because an operator re-runs a line they are unsure about. The union
+    # adds nothing the second time, so a double press is not a second alias.
+    eval(remedy)
+    assert_equal ["AJ Cole"], existing.reload.aliases
+  end
+
+  test "two candidates get one runnable line each and only the one run writes" do
+    # The repo's own split — Athletes::MergeDuplicates was written for "Will Anderson"
+    # sitting beside "Will Anderson Jr." — so the suffix-collapsing key really does
+    # return two rows and the act cannot choose between them. It prints a line PER
+    # candidate rather than a template with a placeholder the operator has to edit,
+    # because an un-runnable instruction is the defect this test exists for.
+    plain = Person.create!(first_name: "Will", last_name: "Anderson", athlete: true)
+    junior = Person.create!(first_name: "Will", last_name: "Anderson Jr.", athlete: true)
+    source = FakeSource.new(by_id: { "9005" => profile(source_id: "9005", first_name: "Will",
+                                                      last_name: "Anderson II") })
+
+    refused = act(source).call(source_id: "9005")
+    assert_equal :ambiguous_name, refused.status
+
+    remedies = refused.message.scan(ALIAS_REMEDY)
+    assert_equal [
+      %{Person.find_by(slug: "will-anderson").then { |p| p.update!(aliases: p.aliases | ["Will Anderson II"]) }},
+      %{Person.find_by(slug: "will-anderson-jr").then { |p| p.update!(aliases: p.aliases | ["Will Anderson II"]) }}
+    ], remedies, "one runnable line per candidate, in a stable order — got #{refused.message}"
+
+    eval(remedies.grep(/will-anderson-jr/).sole)
+
+    again = act(source).call(source_id: "9005")
+    assert again.ok?, "got #{again.status}: #{again.message}"
+    assert_equal junior.slug, again.person_slug
+    assert_equal [], plain.reload.aliases, "the line the operator did not run wrote nothing"
   end
 
   test "an id already on file binds to that row even under another spelling" do
-    # The escape hatch the refusal above points at: identity is the id, never a name.
+    # NOT the escape hatch the refusal above points at — a DIFFERENT precondition, and
+    # naming it as the escape hatch is how the looping remedy survived review. The
+    # `espn_id` is already on the row here, so #local_for's by-id lookup HITS on its
+    # first line and the near-match ladder is never reached. That is worth its own test
+    # — an id beats a spelling — but it proves nothing about the refusal above.
     person = Person.create!(first_name: "A.J.", last_name: "Cole", athlete: true)
     Athlete.create!(person_slug: person.slug, sport: "football", espn_id: "9003")
     source = FakeSource.new(by_id: { "9003" => profile(source_id: "9003", first_name: "AJ",
