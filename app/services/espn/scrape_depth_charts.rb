@@ -1,9 +1,12 @@
 require "net/http"
 require "json"
 
-# Scrapes ESPN's per-team depth chart pages and updates DepthChart entries.
-# Source: https://www.espn.com/nfl/team/depth/_/name/{abbrev}
-# Each page embeds the depth chart as JSON in `window['__espnfitt__']`.
+# Reads ESPN's per-team depth chart documents and updates DepthChart entries.
+#
+# SOURCE: ESPN's public JSON APIs, through Espn::Api's hosts. The class name still
+# says "scrape" because its callers and its rake task do; nothing here has parsed an
+# HTML page since the depth page went behind a CloudFront WAF challenge. The three
+# documents and their hosts are named on the URL constants below.
 #
 # Behavior:
 #   * Locked DepthChartEntry rows are never moved.
@@ -39,7 +42,29 @@ class Espn::ScrapeDepthCharts
   # ESPN ST rows we ignore: holders, returners, gunners are derived from other positions
   IGNORED_POSITIONS = %w[H KR PR LH PH].freeze
 
-  USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+  # Raised when ESPN could not be reached, or answered with something other than a
+  # document. DISTINCT from "ESPN has no such document", which stays a plain nil:
+  # the caller must be able to tell "our data is wrong" from "the service was down",
+  # and a shared nil return collapses exactly that distinction. Espn::PlayerProfile
+  # draws the same line with its own SourceUnavailable, for the same reason.
+  class SourceUnavailable < StandardError; end
+
+  # Raised when ESPN's teams index WAS read and carries no id for an abbreviation
+  # this run was asked to scrape.
+  #
+  # THIS IS NOT WEATHER AND MUST NOT BE TOLERATED. A team ESPN cannot serve a depth
+  # chart for today is a normal ESPN afternoon and is counted, not raised over (see
+  # the tally lib/tasks/espn.rake grades). But TEAM_ABBREV_TO_SLUG disagreeing with
+  # ESPN's own index is a fault in this repository: it cannot heal on the next run,
+  # and the old behaviour — one printed line, one tallied failure, the other 31 teams
+  # applied — is how a chart goes a week stale behind a green lane.
+  class MissingTeamId < StandardError; end
+
+  # WHO WE SAY WE ARE. Read from Espn::Api rather than spelled out, because a
+  # second copy of this string is precisely how this service came to send a Chrome
+  # UA while its neighbour sent an honest one. The browser string was not merely
+  # useless: the WAF on the old host rejected it and admitted curl.
+  USER_AGENT = Espn::Api::USER_AGENT
 
   attr_reader :stats
 
@@ -55,15 +80,24 @@ class Espn::ScrapeDepthCharts
 
   def call
     abbrevs = @only_team ? [@only_team] : TEAM_ABBREV_TO_SLUG.keys
-    abbrevs.each do |abbrev|
-      slug = TEAM_ABBREV_TO_SLUG[abbrev]
-      unless slug
-        puts "  [?] Unknown ESPN abbrev: #{abbrev}"
-        @stats[:teams_skipped] += 1
-        next
-      end
-      scrape_team(abbrev, slug)
+    known, unknown = abbrevs.partition { |abbrev| TEAM_ABBREV_TO_SLUG.key?(abbrev) }
+
+    # An abbrev WE do not know is a mistyped TEAM= and not an ESPN fact, so it is
+    # still only counted.
+    unknown.each do |abbrev|
+      puts "  [?] Unknown ESPN abbrev: #{abbrev}"
+      @stats[:teams_skipped] += 1
     end
+
+    # EVERY ID RESOLVES BEFORE ANY CHART IS TOUCHED. Raising partway through would
+    # leave a half-refreshed league behind a non-zero exit, which is worse than
+    # either outcome; and resolving up front means a run either covers the teams it
+    # was asked for or does nothing at all. It costs one request either way, because
+    # the index is fetched once and memoized.
+    resolve_team_ids!(known) if known.any?
+
+    known.each { |abbrev| scrape_team(abbrev, TEAM_ABBREV_TO_SLUG.fetch(abbrev)) }
+
     puts "\nESPN scrape complete: #{@stats.inspect}"
     @stats
   end
@@ -181,28 +215,29 @@ class Espn::ScrapeDepthCharts
     RECONCILE_FRONT7.include?(chart_pos) && RECONCILE_FRONT7.include?(athlete_pos)
   end
 
-  # Fetch the team's depth chart in the shape the downstream parser expects:
-  #   [{ "name" => "Base 4-3 D", "rows" => [[position_label, athlete_hash, ...], ...] }, ...]
+  # THE THREE DOCUMENTS, AND WHICH HOST EACH ONE LIVES ON.
   #
-  # Source: ESPN's JSON API (site.core.api.espn.com), since the legacy HTML
-  # scrape at www.espn.com/nfl/team/depth/_/name/{abbrev} is now blocked by
-  # CloudFront WAF (HTTP 202 + x-amzn-waf-action: challenge). The JSON API
-  # endpoint is public and doesn't require challenge handshakes.
+  # The depth chart comes from Espn::Api::CORE_HOST; the legacy HTML page at
+  # www.espn.com/nfl/team/depth/_/name/{abbrev} has been behind a CloudFront WAF
+  # challenge (HTTP 202 + x-amzn-waf-action: challenge) since long before this
+  # comment, and nothing here parses HTML. That host never filtered on User-Agent.
   #
-  # The JSON API gives athletes as $ref URLs only — we extract espn_id from the
-  # ref and look up the player's name from a one-call-per-team roster fetch so
-  # the existing name-fallback path in match_person still works.
-  ESPN_DEPTHCHART_URL  = ->(year, team_id) { "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/#{year}/teams/#{team_id}/depthcharts" }
-  ESPN_ROSTER_URL      = ->(team_id)       { "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/#{team_id}/roster" }
-  ESPN_TEAMS_INDEX_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams".freeze
+  # The roster and the teams index come from Espn::Api::WEB_HOST — NOT the obvious
+  # site.api.espn.com, which answers curl with 200 and Ruby with 403. Read the note
+  # on Espn::Api before changing either of them by one word; both of these lines
+  # named the filtered host and that is what killed this service.
+  #
+  # The depth chart document gives athletes as $ref URLs only, so espn_id is pulled
+  # out of the ref and the player's name comes from a one-call-per-team roster read,
+  # which is why the roster host matters here at all.
+  ESPN_DEPTHCHART_URL  = ->(year, team_id) { "https://#{Espn::Api::CORE_HOST}/v2/sports/football/leagues/nfl/seasons/#{year}/teams/#{team_id}/depthcharts" }
+  ESPN_ROSTER_URL      = ->(team_id)       { "https://#{Espn::Api::WEB_HOST}/apis/site/v2/sports/football/nfl/teams/#{team_id}/roster" }
+  ESPN_TEAMS_INDEX_URL = "https://#{Espn::Api::WEB_HOST}/apis/site/v2/sports/football/nfl/teams".freeze
 
+  # The depth chart in the shape the downstream parser expects:
+  #   [{ "name" => "Base 4-3 D", "rows" => [[position_label, athlete_hash, ...], ...] }, ...]
   def fetch_groups(abbrev)
     team_id = team_id_for(abbrev)
-    unless team_id
-      puts "  [!] No ESPN team_id for abbrev #{abbrev}"
-      return nil
-    end
-
     names = fetch_roster_names(team_id) # espn_id (String) => display_name
 
     year = current_nfl_year
@@ -228,23 +263,66 @@ class Espn::ScrapeDepthCharts
       end
       { "name" => item["name"], "rows" => rows }
     end
+  # THE PER-TEAM TOLERANCE, AND THE ONE THING IT MAY NOT SWALLOW. One team ESPN
+  # cannot serve must not cost the other 31 their refresh, so a failure here becomes
+  # a nil and scrape_team tallies it. MissingTeamId is re-raised through that rescue
+  # on purpose: it is a fault in our own abbreviation map, it will still be there
+  # next run, and turning it into one more tolerated team is the defect this service
+  # was revived to remove.
+  rescue MissingTeamId
+    raise
   rescue StandardError => e
     puts "  [!] Fetch error for #{abbrev}: #{e.class}: #{e.message}"
     nil
   end
 
+  # EVERY ID THIS RUN NEEDS, OR A RAISE THAT NAMES THE ONES MISSING.
+  #
+  # The old shape returned nil per team and printed "No ESPN team_id for abbrev X".
+  # That sentence was a statement about OUR map, and it was usually a lie: the real
+  # cause was an unreadable index, which made the abbrev map EMPTY and printed the
+  # same line 32 times. Both halves are now separated and both are loud.
+  def resolve_team_ids!(abbrevs)
+    missing = abbrevs.reject { |abbrev| team_ids[abbrev].present? }
+    return if missing.empty?
+
+    raise MissingTeamId,
+          "ESPN's teams index served #{team_ids.size} team(s) and carries no id for " \
+          "#{missing.size} abbreviation(s) this run needs: #{missing.sort.join(', ')}. " \
+          "TEAM_ABBREV_TO_SLUG in #{self.class} disagrees with ESPN's own index — " \
+          "compare it against #{ESPN_TEAMS_INDEX_URL} and correct the map. No depth " \
+          "chart was touched."
+  end
+
   # ESPN's API uses numeric team_ids. Map our abbrev (e.g. "ari") → ESPN id ("22").
-  # Cached for the lifetime of this service instance — one HTTP call per scrape run.
   def team_id_for(abbrev)
+    team_ids[abbrev] || raise(MissingTeamId, "ESPN's teams index carries no id for abbrev #{abbrev.inspect}")
+  end
+
+  # ESPN'S OWN abbrev => id INDEX. One HTTP call per service instance.
+  #
+  # An index that could not be read RAISES rather than answering with an empty map:
+  # "ESPN has no teams" is never true, and the empty map is what turned a single 403
+  # into 32 honest-looking per-team failures and an exit code of 0.
+  def team_ids
     @team_ids ||= begin
       body = fetch_json(ESPN_TEAMS_INDEX_URL)
-      teams = body&.dig("sports", 0, "leagues", 0, "teams") || []
+      raise SourceUnavailable, "ESPN has no teams index at #{ESPN_TEAMS_INDEX_URL} (404)" if body.nil?
+
+      teams = body.dig("sports", 0, "leagues", 0, "teams")
+      # A SHAPE CHANGE MUST RAISE, NOT PRODUCE AN EMPTY LEAGUE — the same reason
+      # Espn::PlayerProfile refuses to read an ungrouped roster as "nobody".
+      unless teams.is_a?(Array) && teams.any?
+        raise SourceUnavailable,
+              "ESPN's teams index is not shaped as expected at #{ESPN_TEAMS_INDEX_URL}: " \
+              "sports[0].leagues[0].teams was #{teams.class}"
+      end
+
       teams.each_with_object({}) do |entry, h|
         team = entry["team"] || {}
         h[team["abbreviation"].to_s.downcase] = team["id"]
       end
     end
-    @team_ids[abbrev]
   end
 
   # One call per team — returns { espn_id_string => "Jacoby Brissett" }.
@@ -259,14 +337,34 @@ class Espn::ScrapeDepthCharts
     out
   end
 
+  # A JSON DOCUMENT, or nil for "ESPN has no such document", or a raise for "ESPN
+  # could not answer".
+  #
+  # A 404 IS THE ONLY NOT-FOUND, and the season fallback above depends on that nil.
+  # Every other non-success is a failure to reach a working service: the old
+  # `return nil unless Net::HTTPSuccess` is what turned a 403 into "this team has no
+  # id" and a 500 into "ESPN published no depth chart", and then nothing upstream
+  # could tell either from the truth.
   def fetch_json(url_str)
     url = URI(url_str)
     req = Net::HTTP::Get.new(url)
     req["User-Agent"] = USER_AGENT
     req["Accept"] = "application/json"
     res = Net::HTTP.start(url.host, url.port, use_ssl: true, read_timeout: 30) { |http| http.request(req) }
-    return nil unless res.is_a?(Net::HTTPSuccess)
-    JSON.parse(res.body)
+    parse_response(res, url)
+  rescue *Espn::Api::TRANSPORT_ERRORS => e
+    raise SourceUnavailable, "#{e.class}: #{e.message} for #{url_str}"
+  end
+
+  # THE STATUS-CODE POLICY, SPLIT OUT FROM THE TRANSPORT so it can be tested against
+  # a real Net::HTTPResponse without a socket. JSON.parse is inside the rescue in
+  # fetch_json on purpose: the 403 this service used to collect is an HTML page, and
+  # a body that is not JSON is a transport-shaped lie about the document.
+  def parse_response(res, url)
+    return JSON.parse(res.body) if res.is_a?(Net::HTTPSuccess)
+    return nil if res.is_a?(Net::HTTPNotFound)
+
+    raise SourceUnavailable, "ESPN answered #{res.code} for #{url.host}#{url.path}"
   end
 
   def current_nfl_year

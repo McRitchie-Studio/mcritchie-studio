@@ -60,55 +60,24 @@ module Espn
     SOURCE = :espn
 
     # THE ROSTER IS FETCHED FROM site.web.api, NOT site.api — and that one word is
-    # the difference between this act working and this act being dead.
+    # the difference between this act working and this act being dead. The whole
+    # measurement, the UA table and the reason curl cannot verify either of them now
+    # live on Espn::Api, which is where both this class and Espn::ScrapeDepthCharts
+    # read them from.
     #
-    # Both hosts serve `/apis/site/v2/sports/football/nfl/teams/<abbr>/roster`, and
-    # the documents are IDENTICAL: same six groups, same 79 Las Vegas players, the
-    # id sets compared equal (measured 2026-09-27). But site.api.espn.com filters on
-    # User-Agent and Ruby cannot get through it:
-    #
-    #     UA                          site.api    site.web.api
-    #     (Net::HTTP default "Ruby")     403          200
-    #     a Chrome 120 browser string    403          200
-    #     mcritchie-studio/1.0           403          200
-    #     curl/8.7.1                     200          200
-    #
-    # Eighteen requests measured 2026-09-27; `Accept` and `Accept-Encoding` changed
-    # nothing in either direction, so User-Agent is the whole rule. Note the second
-    # row: the WAF rejects the BROWSER string and admits curl, so the usual
-    # impersonation reflex makes it worse, not better.
-    #
-    # THIS IS THE MOST DANGEROUS OF THE TRAPS IN THIS ACT, because of HOW it lies.
-    # `curl https://site.api.espn.com/.../roster` answers 200 from a terminal, so
-    # hand-verifying the endpoint PROVES it works — and then the identical request
-    # from the application 403s, because the application is Ruby. A verification
-    # that cannot reproduce the failure is what let that URL into the task brief.
-    #
-    # Fixed by asking the host that does not filter, rather than by dressing Ruby up
-    # as something it is not: site.web.api serves every UA tried, including no UA at
-    # all, so `USER_AGENT` below is free to say who we actually are.
-    #
-    # THE NEIGHBOURING SCRAPER HAS THIS BUG TODAY, and it is not repaired here —
-    # Espn::ScrapeDepthCharts' ESPN_TEAMS_INDEX_URL and ESPN_ROSTER_URL both name
-    # site.api.espn.com and both measured 403 under that service's Chrome UA on
-    # 2026-09-27 (its `sports.core.api` depth-chart URL is fine). Its `fetch_json`
-    # returns nil on any non-success, so it reports "No ESPN team_id for abbrev" and
-    # skips all 32 teams while exiting 0. That is a separate bug in a service with
-    # its own test file and its own callers; it is filed, not smuggled into this PR.
-    ROSTER_URL = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/%s/roster".freeze
-    ATHLETE_URL = "https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/%s".freeze
+    # THE HOST IS READ, NOT SPELLED OUT, and that is the point. This class had the
+    # working host while Espn::ScrapeDepthCharts, in the same directory, had the
+    # filtered one, and the scraper was dead for as long as the two copies
+    # disagreed. One constant cannot diverge from itself.
+    ROSTER_URL = "https://#{Espn::Api::WEB_HOST}/apis/site/v2/sports/football/nfl/teams/%s/roster".freeze
+    ATHLETE_URL = "https://#{Espn::Api::WEB_HOST}/apis/common/v3/sports/football/nfl/athletes/%s".freeze
     HEADSHOT_URL = "https://a.espncdn.com/i/headshots/nfl/players/full/%s.png".freeze
 
-    # WHO WE SAY WE ARE. An honest identifier with a contact URL, because every
-    # endpoint this class touches serves it (measured above) and a third party
-    # should be able to see who is calling. Impersonating a browser bought nothing
-    # here and cost the roster call outright.
-    USER_AGENT = "mcritchie-studio/1.0 (+https://mcritchie.studio)".freeze
+    # WHO WE SAY WE ARE — shared, for the same reason as the host. Impersonating a
+    # browser bought nothing here and cost the roster call outright.
+    USER_AGENT = Espn::Api::USER_AGENT
 
-    TRANSPORT_ERRORS = [
-      Net::OpenTimeout, Net::ReadTimeout, SocketError, Errno::ECONNREFUSED,
-      Errno::ECONNRESET, Errno::EHOSTUNREACH, OpenSSL::SSL::SSLError, JSON::ParserError
-    ].freeze
+    TRANSPORT_ERRORS = Espn::Api::TRANSPORT_ERRORS
 
     # THE 32 ABBREVIATIONS #find_in_league walks, read from the map
     # Espn::ScrapeDepthCharts already carries rather than copied into a second list.

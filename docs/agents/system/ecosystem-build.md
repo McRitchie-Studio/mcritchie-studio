@@ -118,9 +118,17 @@ on `puts` over a tally `Rosters::SnapshotFromDepthChart` returns without ever
 raising, so a ZERO-WORK snapshot still exits 0. That is a fifth instance of the
 pattern above and this pass does NOT fix it. It is reachable as the direct
 downstream of the failure phase 6b logs one line earlier: `Espn::ScrapeDepthCharts`
-creates each `DepthChart` row BEFORE it fetches, so a total ESPN outage leaves 32
-EMPTY charts, the snapshot reports 32 teams and 0 spots, and the lane logs a green
-team-roster count underneath the ✗ it just printed. Known open, not measured clean.
+creates each `DepthChart` row BEFORE it fetches, so a team it cannot serve leaves an
+EMPTY chart behind, the snapshot reports that team with 0 spots, and the lane logs a
+green team-roster count underneath the ✗ it just printed. Known open, not measured
+clean.
+
+NARROWED, NOT CLOSED, by `revive-dead-depth-scraper` (2026-09-27). The 32-empty-charts
+form of that trigger is gone: a teams index the service cannot read now raises before
+any `scrape_team` runs, so a TOTAL ESPN outage creates no charts at all rather than 32
+empty ones (asserted in `test/integration/espn_depth_chart_refresh_test.rb`). The
+defect itself is untouched — one team ESPN cannot serve still leaves one empty chart
+and still reports 0 spots through a green count.
 
 Three rules the next lane added here should copy.
 
@@ -129,6 +137,17 @@ Three rules the next lane added here should copy.
   the service raise. The service has other callers that need its tolerance; only
   the LANE needs an exit code. Same for `nfl:upload_headshots` and
   `nfl:rankings_compute` in `lib/tasks/nfl.rake`.
+
+  THE RULE IS ABOUT DEGRADATION, AND THAT IS NOT THE SAME AS A BROKEN INVARIANT.
+  `revive-dead-depth-scraper` made `Espn::ScrapeDepthCharts` raise for exactly two
+  conditions, and neither is a tally: a teams index it could not read, and an
+  abbreviation in its own `TEAM_ABBREV_TO_SLUG` that ESPN's index has no id for. A
+  team ESPN cannot serve a depth chart for today is weather, heals by itself, and is
+  still only counted. A map that disagrees with ESPN's index is a fault in this
+  repository that will still be there next run, and tolerating it is how 31 of 32
+  teams refresh behind a green lane. `Espn::PlayerProfile` draws the same line in the
+  same directory — it raises rather than concluding a player is unrostered from an
+  incomplete search. Grade tallies in the lane; raise on invariants in the service.
 - **AND two signals; never swap one for the other.** Phase 6c grades
   `nfl:players_seed` on the exit code AND the `ImportRun` row, because each
   catches what the other cannot: the row sees a rescued outage the exit code
