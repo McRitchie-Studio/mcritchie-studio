@@ -290,7 +290,10 @@
 # specs) goes with it; the strip spec in app_ladder_row.spec.js is REPLACED one-for-one
 # by the list-scrolls-in-its-card spec. Coverage REMOVED with its feature.
 # MEASURED with the lister on THIS tree: `npx playwright test --list` => 173.
-total_specs: 173
+# 173 -> 174 on 2026-09-27 (/tasks/unsubscribe-and-resubscribe): e2e/unsubscribe.spec.js,
+# the unsubscribe -> resubscribe walk-through (one spec, not quarantined).
+# MEASURED: `npx playwright test --list` => 174.
+total_specs: 174
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -467,7 +470,9 @@ quarantined: 10
 # 164 -> 165: total_specs - quarantined, the same build_gallery.spec.js spec.
 # 165 -> 163: the same two app_ladder_pin_bridge specs; neither was quarantined.
 # MEASURED: `npx playwright test --list --grep-invert @quarantine` => 163.
-executed: 163
+# 163 -> 164: total_specs - quarantined, the same unsubscribe.spec.js spec.
+# MEASURED: `npx playwright test --list --grep-invert @quarantine` => 164.
+executed: 164
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
