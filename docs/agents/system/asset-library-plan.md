@@ -48,61 +48,97 @@ Agent knowledge (SOPs, runbooks, insights) stays in git and `KnowledgeDoc`.
 
 **McRitchie Studio's Shared Drives** (created 2026-09-26, no prefix because each
 company is its own Workspace): `Admin`, `People`, `Brand`, `Content`,
-`Turf Monster`, `External`. Only `External` admits people outside the company,
-one folder per partner, shared by folder and never by drive. `People` admits
-members only. Agents read Drive through the hub's domain-wide delegation key
-(`drive.readonly`); it cannot create drives or manage membership, on purpose.
+`Turf Monster`, `External`. Alex created them from a proposed set; the
+membership rules are the proposal he applied, not a separate decision. Only
+`External` admits people outside the company, one folder per partner, shared by
+folder and never by drive. `People` admits members only. Agents reach Drive
+through the hub's domain-wide delegation key, whose Drive scopes are
+`drive.readonly` and `drive.file` (it can read, and create or edit files it
+made); it cannot create shared drives or manage membership.
+
+**Proposed, not decided.** Everything below the table above is a proposal
+until Alex says otherwise: the Wave 2 recipe, the catalog's shape and where it
+lives, the Wave 4 order, Cloudflare Stream for video and CAD in the
+business-document tier, and Resend as SES's outbound replacement.
 
 ## Waves
 
 | Wave | Goal | State |
 |---|---|---|
 | 0 | credentials | **done**: `cloudflare.studio.provision` filed and verified |
-| 1 | R2 foundation | **done**: five pairs provisioned and probed; `Studio::S3` speaks R2; backup SOP |
-| 2 | per-app S3 → R2 cutover | next, in the order above; the engine version with R2 support must be released first |
-| 3 | asset catalog | design below |
+| 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, merged to `accepted`, not yet released); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md) merged, enabled on `moms-app` only |
+| 2 | per-app S3 → R2 cutover | next, in the order above; blocked until the engine release carrying `s3_endpoint` ships |
+| 3 | asset catalog | proposal below |
 | 4 | load the collections | after 3 |
 | 5 | business documents | **done for McRitchie Studio** (Shared Drives); Commercial Welding open |
-| 6 | large media | video on Cloudflare Stream, CAD in the business-document tier, when the first one arrives |
+| 6 | large media | proposed: video on Cloudflare Stream, CAD in the business-document tier, when the first one arrives |
 | 7 | leave AWS | after every app has cut over; inventory below |
 
 ## Wave 2 — the per-app cutover recipe
 
-One task per app. The shape is **mirror → copy → verify → flip → soak → drop**,
-so every step is reversible until the last.
+One task per app. An app has **two kinds of writer**, and they move by
+different mechanisms:
+
+- **Active Storage** has a built-in `Mirror` service, so its move is reversible
+  by config until S3 is dropped from the mirror.
+- **`Studio::S3`** (`ImageCache`, `KnowledgeDoc`, email banners and logos, and
+  the hub's broadcasts, lineups and reference images) has **no mirror**. It
+  writes to exactly one store, so it moves in **one deploy** that switches its
+  writes and its public URLs together, followed at once by a catch-up copy.
+
+The recipe:
 
 1. **Adopt the engine.** Bump the app to the `studio-engine` release that
    carries `s3_endpoint` (task `studio-s3-r2-endpoint`).
-2. **Config.** Add `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
-   (from `r2.<app>`: the prod pair on production, the dev pair on QA and
-   locally) and, for an app that serves public objects, `R2_PUBLIC_URL`. Keep
-   the `AWS_*` variables: the mirror still writes S3.
-3. **Mirror.** Add an `r2` service to `config/storage.yml` (the `S3` service
-   with `endpoint:`, `region: auto`, the `R2_*` keys) and make the production
-   service Active Storage's built-in `Mirror`: primary the existing S3 service,
-   mirrors `[r2]`. From here every new upload lands in both.
-4. **Copy.** `rclone copy` the S3 production bucket into the R2 production
-   bucket (and dev into dev), once with the S3 key and the R2 prod key as two
+2. **Config, inert.** Add `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY` (from `r2.<app>`: the prod pair on production, the dev
+   pair on QA and locally). In `config/initializers/studio.rb`, set every R2
+   `Studio::S3` setting (`s3_endpoint`, `s3_region`, both keys,
+   `s3_public_url`) **only when one switch is on**, e.g.
+   `ENV["STUDIO_S3_BACKEND"] == "r2"`, and leave it off. Do not add
+   `R2_PUBLIC_URL` yet. Keep the `AWS_*` variables.
+3. **Mirror Active Storage, keeping the service names.** Every blob row
+   records its service by name (`amazon`, and turf-monster's `amazon_public`),
+   so rename, do not add: move the existing S3 definition to `amazon_s3`, add
+   `r2`, and redefine `amazon` as `service: Mirror, primary: amazon_s3,
+   mirrors: [r2]`. Existing rows resolve to the mirror unchanged. Do the same
+   for `amazon_public` (with a public R2 service). From here every new upload
+   lands in both stores.
+4. **Bulk copy.** `rclone copy` the S3 production bucket into the R2 production
+   bucket (and dev into dev), with the S3 key and the R2 prod key as two
    remotes.
-5. **Verify.** For every `ActiveStorage::Blob` and every `ImageCache` row, the
-   object exists in R2 with the same byte size (Active Storage's `checksum`
-   column is the base64 MD5 of the bytes; R2's ETag is the hex MD5 for a
-   single-part upload, so compare after converting, and fall back to size for
-   multipart objects). The count
-   of missing objects must be zero; record it on the task.
-6. **Public serving** (only apps that serve public objects). Attach
-   `assets.<domain>` to the production bucket, then set `R2_PUBLIC_URL`.
-   **Never set `s3_public_url` before step 5 is zero**: from that moment every
-   `ImageCache#url` points at R2, and a missing object is a broken image.
-7. **Flip.** Make R2 the Active Storage primary (mirror to S3 for the soak) and
-   point `Studio::S3` at R2 (`s3_endpoint` and friends in
-   `config/initializers/studio.rb`).
-8. **Soak** a week with the mirror on, then drop S3 from the mirror.
-9. **Backup.** Enable Steffon's `r2-backup` SOP (`docs/agents/agents/steffon/sops/r2-backup.md`) for the
-   app and run its drill.
-10. **Record** the app's row in the R2 census as serving.
+5. **Verify.** Every `ActiveStorage::Blob` key and every `Studio::S3` key the
+   database knows (`ImageCache#s3_key`, `KnowledgeDoc#s3_key`) exists in R2
+   with the same size (Active Storage's `checksum` is the base64 MD5; R2's
+   ETag is the hex MD5 for a single-part upload, so compare after converting,
+   and fall back to size for multipart objects). Active Storage misses must be
+   zero. `Studio::S3` objects written after step 4 are expected to be missing
+   here; step 7 catches them up.
+6. **Public domain** (apps that serve public objects). Attach
+   `assets.<domain>` to the R2 production bucket and fetch one copied object
+   through it. Still no `R2_PUBLIC_URL`.
+7. **Flip `Studio::S3` — one deploy.** Set `R2_PUBLIC_URL` and turn the switch
+   on in the same config change, so writes and URLs move together. Then at once
+   re-run the step 4 copy (it copies only what S3 gained since) and re-run
+   step 5 including the `Studio::S3` keys: every miss must now be zero. Between
+   the deploy and the end of that copy, an object written to S3 in the last
+   minutes before the flip can 404 through `assets.`; do this in a quiet hour.
+8. **Flip Active Storage.** Redefine `amazon` as `Mirror, primary: r2,
+   mirrors: [amazon_s3]`.
+9. **Soak** a week, then drop S3: `amazon` becomes the `r2` service alone,
+   keeping the name.
+10. **Backup.** Enable [`r2-backup`](../agents/steffon/sops/r2-backup.md) for
+    the app and run its drill.
+11. **Record** the app's row in the R2 census as serving.
 
-**Rollback** at any step before 8 is config only: point the primary back at S3.
+**Rollback, honestly.**
+
+| After step | Active Storage | `Studio::S3` |
+|---|---|---|
+| 2–6 | config only (the mirror writes both) | nothing to undo: still on S3 |
+| 7 | config only | **config plus a reverse copy**: turn the switch off and `rclone copy` R2 → S3 to carry back what `Studio::S3` wrote to R2 since the flip |
+| 8 | config only (S3 is still a mirror) | as above |
+| 9 | **a reverse copy**: S3 stopped receiving writes | as above |
 
 ### Cutover checklist — every S3 writer we know of
 
@@ -111,12 +147,12 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 
 | App | Writer | Note |
 |---|---|---|
-| all | Active Storage (`has_one_attached` / `has_many_attached`) | the mirror handles it |
-| all engine apps | `Studio::S3` (`ImageCache`, `KnowledgeDoc`, email banners and logos) | flips by config at step 7; `url` raises on R2 without `s3_public_url` |
-| `mcritchie-studio` | `Broadcasts::Assets.publish` | expects `upload` to return a URL; returns `nil` on R2 without a public URL, so step 6 comes first |
+| all | Active Storage (`has_one_attached` / `has_many_attached`) | steps 3, 8 and 9 |
+| all engine apps | `Studio::S3` (`ImageCache`, `KnowledgeDoc`, email banners and logos) | step 7; `url` raises on R2 without `s3_public_url`, which is why the switch sets both |
+| `mcritchie-studio` | `Broadcasts::Assets.publish` | expects `upload` to return a URL; on R2 it needs `s3_public_url`, which step 7 sets in the same deploy |
 | `mcritchie-studio` | `Content::GenerateLineupAssets`, `Appearances::ReferenceImages` | via `Studio::S3` |
 | `mcritchie-studio` | `lib/tasks/pokemon.rake` | builds its own `Aws::S3::Client` for `us-east-2`; port or retire |
-| `mcritchie-studio` | `DeskCapture` | **not a bucket move**: SES inbound writes raw mail to a private `us-east-1` bucket. Leaving it needs a new inbound path first (Wave 7) |
+| `mcritchie-studio` | `DeskCapture` | its own **private** bucket, `mcritchie-studio-desk` (`DESK_CAPTURE_BUCKET`, region `DESK_CAPTURE_REGION`, default `us-east-1`), deliberately not `Studio::S3`'s. The main inbound path is already Resend: `DeskCaptureResendIngestJob` stores the raw mail there with the app's AWS keys. SES inbound is only the manual fallback (`DeskCapturePollJob`). Its move is a private R2 bucket of its own plus retiring the SES fallback |
 | `turf-monster` | `OgImageAttachable` (`amazon_public` service) and contest, landing-page, site-setting attachments | public; needs `assets.` |
 | `mcritchie-industries` | `Slack::ChannelIngest` (storage defaults to `Studio::S3`) | private |
 | `moms-app` | book import and stitching (`BookImporter`, `BookStitcher`) | check how it serves images before choosing public or signed |
@@ -124,13 +160,15 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 
 **Blocker for step 6.** R2 custom domains need the domain's DNS on Cloudflare
 in the same account. Measured 2026-09-26: `mcritchie.studio` is served by
-Google's nameservers and `turfmonster.media` by Squarespace's. Moving each
-domain's DNS to Cloudflare is the CDN rollout
+Google's nameservers and `turfmonster.media` by Squarespace's (whether
+`turfmonster.media` is the domain Turf Monster serves from is an open
+question below). Moving each domain's DNS to Cloudflare is the CDN rollout
 ([`cdn-rollout.md`](cdn-rollout.md)) and Steffon's `domain-dns` SOP; it must
 carry the Google Workspace mail records across. The three private-object apps
 do not need it; `mcritchie-studio` and `turf-monster` go last partly for this
-reason. The provisioning token already has DNS Edit on all domains; it still
-lacks **Zone Read**, which R2 needs to resolve a domain.
+reason. Measured on the provisioning token the same day: it holds DNS read and
+write across every domain in the account, and no Zone Read, which R2 needs to
+resolve a domain.
 
 ## Wave 3 — the asset catalog
 
@@ -189,8 +227,8 @@ account before starting; this is what the docs name today.
 | AWS piece | Used for | Replacement |
 |---|---|---|
 | S3 app buckets (`<app>-dev`, `<app>-production`) | Active Storage, `Studio::S3` | R2 (Wave 2) |
-| S3 desk-capture bucket (`us-east-1`) + **SES inbound** | `team@mcritchie.studio` capture (`DeskCapture`) | an inbound mail path off AWS (e.g. Resend inbound or Cloudflare Email Routing into R2); design owed |
-| **SES outbound** (`agent.aws.mcritchie-ses`, `MAIL_TRANSPORT=ses`) | transactional mail where an app still selects SES | Resend, which `Studio::MailTransport` already supports; turf-monster already sends through Resend |
+| S3 desk-capture bucket `mcritchie-studio-desk` (`us-east-1` by default) and the **SES inbound** fallback | `team@mcritchie.studio` capture (`DeskCapture`); the main path is already Resend inbound, which writes into this bucket | a private R2 bucket for `DeskCapture` alone, then retire the SES fallback (`DeskCapturePollJob`) |
+| **SES outbound** (`agent.aws.mcritchie-ses`, `MAIL_TRANSPORT=ses`) | transactional mail wherever an app still selects SES | proposed: Resend, which `Studio::MailTransport` already supports |
 | IAM users (`mcritchie-s3`, `mcr-*`, `studio-agents-admin`) | the keys above | delete after their buckets are gone |
 | 1Password items (`agent.aws`, `AWS`, `mcritchie-industries.aws`, `agent.aws.mcritchie-ses`) | the keys above | mark RETIRED in the inventory's name or vault cell |
 
@@ -201,6 +239,10 @@ account before starting; this is what the docs name today.
 | Move `mcritchie.studio` DNS to Cloudflare (hub first), then Turf Monster's app domain | Alex + Steffon (`domain-dns`, CDN rollout) |
 | Add **Zone → Read** to the provisioning token | Alex (dashboard) |
 | Which domain serves Turf Monster publicly (`turfmonster.media` appears in code) | Alex |
-| Automate the nightly `r2-backup` run (where it runs, how it alerts) | Steffon, next task |
+| Automate the nightly `r2-backup` run (task `automate-nightly-r2-backup`, filed 2026-09-26) | Steffon |
 | Commercial Welding's document tier (Egnyte or Drive) | Alex, after the compliance question |
-| Inbound mail replacement for `DeskCapture` | Steffon, before Wave 7 |
+| Move `DeskCapture` to a private R2 bucket and retire its SES fallback | Steffon, before Wave 7 |
+| Release the `studio-engine` version carrying `s3_endpoint` (Wave 2's gate) | Avi (`qa-release`) and Steffon (`production-deploy`) |
+| Does Commercial Welding carry CMMC or ITAR obligations? | Alex |
+| What writes the `commercial-welding-*` S3 buckets | Steffon, at the start of that app's Wave 2 task |
+| Approve or amend the proposals (Wave 2 recipe, catalog, Wave 4 order, Stream and CAD, Resend) | Alex |

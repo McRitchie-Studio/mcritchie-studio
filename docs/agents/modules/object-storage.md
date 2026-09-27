@@ -49,17 +49,22 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
   explicit yes; with it enabled, run a backup first and read its receipt.
 - **No tags, ACLs, or bucket policies.** Cost lines come from bucket names, and
   every grant lives on a token.
-- **Custom domains need zone DNS.** `cloudflare.studio.provision` carries no
-  zone DNS permission, so attaching `assets.<domain>` to a bucket is a
-  dashboard step (**R2 → bucket → Settings → Custom Domains**) in the app's
-  cutover task.
+- **Custom domains need the domain on Cloudflare.** R2 attaches
+  `assets.<domain>` only to a domain whose DNS Cloudflare serves in this
+  account. Measured 2026-09-26: neither `mcritchie.studio` (Google
+  nameservers) nor `turfmonster.media` (Squarespace) is, so the CDN rollout's
+  nameserver move comes first. `cloudflare.studio.provision` gained DNS read
+  and write across every domain in the account that evening (read back from
+  the token's own policies); it still lacks Zone Read, so until that is added
+  attaching a domain is a dashboard step (**R2 → bucket → Settings → Custom
+  Domains**).
 
 ## R2 — credential tiers
 
 | Tier | Identity | Holds | Store |
 |---|---|---|---|
 | 1 | Alex's Cloudflare login | Alex only | his private vault |
-| 2 | `cloudflare.studio.provision` (Cloudflare token name `mcritchie-studio-admin`) | Steffon's provisioning lane: Workers R2 Storage read/write, Account API Tokens read/write (mints the per-app tokens), Account DNS Settings | `studio-agents-admin` (admin op lane only) |
+| 2 | `cloudflare.studio.provision` (Cloudflare token name `mcritchie-studio-admin`) | Steffon's provisioning lane: Workers R2 Storage read/write, Account API Tokens read/write (mints the per-app tokens), Account DNS Settings, and (since the evening of 2026-09-26) DNS read/write on every domain in the account | `studio-agents-admin` (admin op lane only) |
 | 4b | `r2-<app>-backup` | reads `<app>-production`, writes `<app>-backup`; no app key can see the backup bucket | fields `access-key-id-backup` / `secret-access-key-backup` in `r2.<app>` |
 | 4 | `r2-<app>-prod` / `r2-<app>-dev` | one app's buckets, exactly | 1Password `r2.<app>` in `studio-agents`; Heroku config vars once the app cuts over |
 
