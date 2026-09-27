@@ -515,6 +515,21 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
                  "an unreachable index is not a missing abbreviation")
   end
 
+  test "a 404 on the teams index is an outage, not a fault in our abbreviation map" do
+    # fetch_json answers nil for a 404 because the season fallback needs that nil.
+    # The index is the one document where nil must NOT flow on: an empty abbrev map
+    # would accuse TEAM_ABBREV_TO_SLUG of being wrong about all 32 teams when the
+    # fact is that ESPN served nothing. MEASURED as uncovered by a mutation pass —
+    # restoring `body&.dig(...) || []` here reddened nothing until this test existed.
+    service = Stubbed.new({ TEAMS_INDEX => nil })
+
+    error = assert_raises(Espn::ScrapeDepthCharts::SourceUnavailable) { service.call }
+
+    assert_includes error.message, TEAMS_INDEX
+    refute_kind_of Espn::ScrapeDepthCharts::MissingTeamId, error,
+                   "ESPN serving nothing is not our map disagreeing with it"
+  end
+
   test "an index whose shape moved raises instead of reporting an empty league" do
     service = Stubbed.new({ TEAMS_INDEX => { "sports" => [{ "leagues" => [{ "teams" => "nope" }] }] } })
 
