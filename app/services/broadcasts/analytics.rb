@@ -27,7 +27,7 @@ module Broadcasts
       "Apple" => %w[icloud.com me.com mac.com]
     }.freeze
 
-    GOALS = %w[signed_in played_match joined_newsletter requested_app].freeze
+    GOALS = EmailEvent::GOALS
 
     Summary = Data.define(:sent, :delivered, :hard_bounced, :soft_bounced, :complained, :unsubscribed,
                           :human_opened, :machine_only_opened, :human_clicked, :machine_only_clicked, :results) do
