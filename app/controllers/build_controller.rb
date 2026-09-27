@@ -56,7 +56,9 @@ class BuildController < ApplicationController
     # Kept for Google sign-in, which always lands on the home page: the home
     # page forwards a just-signed-in visitor here once (LandingController).
     session[:build_draft_token] = request_row.token unless logged_in?
-    EmailEvents::Results.record!(session[:email_ref], "requested_app", source: "app") if session[:email_ref]
+    # Credited once, then forgotten: a later visitor on the same browser is
+    # not this email's reader.
+    EmailEvents::Results.record!(session.delete(:email_ref), "requested_app", source: "app") if session[:email_ref]
     respond_to do |format|
       # The composer asks for JSON when the visitor is signed out: it stays on
       # the page and opens the sign-in modal, whose emailed link returns to `path`.
