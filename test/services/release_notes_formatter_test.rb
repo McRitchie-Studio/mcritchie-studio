@@ -173,6 +173,24 @@ module ReleaseNotes
       assert_includes content, "### [rel-x 🪎🐊💎]"
     end
 
+    test "a shiny mascot's thumbnail is the shiny avatar" do
+      seed_omanyte.update!(shiny_avatar_url: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte-shiny-cropped.png")
+      task = reference_card_task
+      task.update!(metadata: task.metadata.deep_merge("devops" => { "mascot_shiny" => true }))
+      embed = formatter_for(task).embeds.last
+
+      assert_equal({ url: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte-shiny-cropped.png" },
+                   embed[:thumbnail])
+    end
+
+    test "a non-shiny mascot keeps the normal avatar even when shiny art exists" do
+      seed_omanyte.update!(shiny_avatar_url: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte-shiny-cropped.png")
+      embed = formatter_for(reference_card_task).embeds.last
+
+      assert_equal({ url: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte.png" },
+                   embed[:thumbnail])
+    end
+
     test "color and thumbnail fall back to neutral grey with no thumbnail when the task has no mascot" do
       task = tasks(:done_task)
       task.update!(metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
