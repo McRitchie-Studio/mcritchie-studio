@@ -164,6 +164,22 @@ class ModelPipelineCardViewTest < ActionView::TestCase
                    "the ink stays the AA-derived muted role in both themes"
   end
 
+  # THE MAN WEARING 0, AT THE TIER THAT RENDERS HIM. The unit tier asserts the cell hash;
+  # this asserts the MARKUP, because the failure mode is a card that prints a held fact as
+  # a gap and the operator only ever sees the markup. It also pins the pair the unit tier
+  # cannot: 0 must carry the HELD styling, not the absent styling.
+  test "[component] a card renders jersey 0 as its own number, styled as a held fact" do
+    html = render_card(reading(jersey_number: 0))
+    cell = Nokogiri::HTML.fragment(html).at_css("[data-test='look-card-sports-number']")
+
+    assert_equal "#0", cell.text.strip, "0 is a legal jersey; only nil is an absence"
+    assert_nil cell["title"], "a value we hold needs no explanation"
+    assert_equal cell_class(html, :number), cell_class(render_card(reading(jersey_number: 17)), :number),
+                 "0 must be styled exactly as any other held number"
+    refute_includes cell_class(html, :number), "border-dashed",
+                    "0 must never pick up the absent treatment"
+  end
+
   test "an absent sports value is named rather than dropped" do
     render_card reading(look, athlete_team_slug: nil, athlete_position: nil,
                         height_inches: nil, weight_lbs: nil)

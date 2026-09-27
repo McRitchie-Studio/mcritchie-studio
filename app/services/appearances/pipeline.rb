@@ -48,7 +48,8 @@ module Appearances
     DEFINITION_GAP_NOTE =
       "Jersey number fills per athlete on demand from ESPN, never by backfill, so a " \
       "card reads \"no #\" for any athlete not yet acquired or re-validated — and still " \
-      "afterwards if ESPN published no number for him. Defined does not require it.".freeze
+      "does afterwards if ESPN publishes no number for him. Defined does not require " \
+      "it.".freeze
 
     Lane = Struct.new(:key, :label, :blurb, :cards, :total, :overflow, keyword_init: true)
 

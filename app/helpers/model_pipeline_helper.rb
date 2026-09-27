@@ -51,8 +51,12 @@ module ModelPipelineHelper
   # ALL THREE SIGNALS ARE STRUCTURAL, NEVER A HUE DELTA, so no theme can collapse them:
   #   · the FILL IS REMOVED, so the card's own `bg-surface` shows through and the chip
   #     recedes instead of sitting on a ground like a value does;
-  #   · the EDGE IS DASHED, which is the one idiom that already means "an outline of
-  #     something that is not here" (a drop zone, a placeholder slot);
+  #   · the EDGE IS DASHED, and that idiom is NOT imported from elsewhere — it is
+  #     already on this page. The engine's own dropzone is `border-2 border-dashed
+  #     border-subtle` (studio/board/_column.html.erb), so an empty lane on this very
+  #     board draws a dashed outline around the words "No models here". A dashed edge
+  #     therefore already reads as "nothing here" to anyone looking at this screen, and
+  #     the chip inherits a vocabulary the board teaches rather than inventing one;
   #   · the edge is `border-strong` rather than `border-subtle`, because `--color-border`
   #     is a 0.2-alpha line in dark mode and a 1px dash drawn in it is invisible — the
   #     stronger line is what makes the dash readable, not an emphasis.
