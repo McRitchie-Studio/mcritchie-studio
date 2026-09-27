@@ -119,7 +119,10 @@ The recipe:
    through it. Still no `R2_PUBLIC_URL`.
 7. **Flip `Studio::S3` — one deploy.** Set `R2_PUBLIC_URL` and turn the switch
    on in the same config change, so writes and URLs move together. Then at once
-   re-run the step 4 copy (it copies only what S3 gained since) and re-run
+   re-run the step 4 copy **with `--update`** (it copies only what S3 gained
+   since, and skips a key R2 already holds newer: several `Studio::S3` keys are
+   fixed, such as `email/<file>` and a lineup's `starter_posts/…`, so a plain
+   copy would overwrite a post-flip write with the stale S3 object) and re-run
    step 5 including the `Studio::S3` keys: every miss must now be zero. Between
    the deploy and the end of that copy, an object written to S3 in the last
    minutes before the flip can 404 through `assets.`; do this in a quiet hour.
@@ -136,7 +139,7 @@ The recipe:
 | After step | Active Storage | `Studio::S3` |
 |---|---|---|
 | 2–6 | config only (the mirror writes both) | nothing to undo: still on S3 |
-| 7 | config only | **config plus a reverse copy**: turn the switch off and `rclone copy` R2 → S3 to carry back what `Studio::S3` wrote to R2 since the flip |
+| 7 | config only | **config plus a reverse copy**: turn the switch off and `rclone copy --update` R2 → S3 to carry back what `Studio::S3` wrote to R2 since the flip |
 | 8 | config only (S3 is still a mirror) | as above |
 | 9 | **a reverse copy**: S3 stopped receiving writes | as above |
 
