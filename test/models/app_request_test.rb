@@ -172,6 +172,11 @@ class AppRequestTest < ActiveSupport::TestCase
     assert_equal %w[portfolio weekly-lock], subdomains.drop(3) & %w[portfolio weekly-lock], "newest first after the lead"
   end
 
+  test "a showcase card takes its name from the config, else titleizes the subdomain" do
+    assert_equal "10&5 Hospitality", BuildGallery.display_name("10and5")
+    assert_equal "Weekly Lock", BuildGallery.display_name("weekly-lock")
+  end
+
   test "a customer's live app is never in the public gallery" do
     live = draft(user: users(:viewer)).queue!("customer-app")
     live.update!(status: "live")

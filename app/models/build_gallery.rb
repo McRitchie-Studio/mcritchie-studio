@@ -24,6 +24,12 @@ module BuildGallery
       .map(&:first)
   end
 
+  # The config's `names` entry for a subdomain, else the subdomain titleized.
+  def display_name(subdomain)
+    names = YAML.safe_load_file(CONFIG).fetch("names", {}) || {}
+    names[subdomain.to_s].presence || subdomain.to_s.tr("-", " ").titleize
+  end
+
   # "rantly" for https://rantly.mcritchie.studio.
   def subdomain(url)
     URI.parse(url.to_s).host.to_s.split(".").first
@@ -40,7 +46,7 @@ module BuildGallery
 
   def showcased
     AppRequest.where(showcase: true, status: "live").order(updated_at: :desc).map do |req|
-      Example.new(name: req.subdomain.to_s.tr("-", " ").titleize, url: req.url, emoji: "🧱",
+      Example.new(name: display_name(req.subdomain), url: req.url, emoji: "🧱",
                   blurb: first_sentence(req.prompt), image: existing_image("#{IMAGE_DIR}/#{req.subdomain}.jpg"))
     end
   end

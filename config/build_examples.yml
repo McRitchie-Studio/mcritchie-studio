@@ -21,6 +21,12 @@ lead:
   - prisoners-dilemma
   - rantly
 
+# `names` gives a showcase app its display name when its subdomain can't spell
+# it ("10and5" is 10&5 Hospitality). Without an entry the card titleizes the
+# subdomain ("weekly-lock" reads "Weekly Lock").
+names:
+  10and5: "10&5 Hospitality"
+
 examples:
   - name: Cyvasse
     url: https://cyvasse.mcritchie.studio
