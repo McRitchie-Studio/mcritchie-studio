@@ -22,6 +22,34 @@ class Artifact < ApplicationRecord
   def approved? = approved_at.present?
   def retired? = retired_at.present?
 
+  # WAS THIS MADE BY A GENERATOR WE RECORDED? False for the whole back-catalogue,
+  # which predates the provenance columns and cannot be back-stamped honestly.
+  def generated? = generator.present?
+
+  # THE GENERATOR'S HUMAN NAME, resolved through the registry but NEVER DEPENDENT
+  # on it.
+  #
+  # THE FALLBACK IS THE POINT. The operator's stated plan is to transition between
+  # generators as capacities change, so a row WILL eventually be retired from
+  # config/image_generators.yml while its images stay in the library forever. A
+  # label that resolved only through the registry would blank out exactly the
+  # historical images whose provenance matters most. The stored key is the record;
+  # the registry only prettifies it.
+  def generator_label
+    return nil if generator.blank?
+
+    ImageGeneration::Registry.find(generator)&.label.presence || generator
+  end
+
+  # THE FULL STAMP, for a caption or a tooltip: what made it and which version.
+  # Reads the STORED version rather than the registry's current one — the whole
+  # question this answers is whether the model moved.
+  def provenance_label
+    return nil if generator.blank?
+
+    [generator_label, generator_version].compact_blank.join(" · ")
+  end
+
   def approve!(by: nil, at: Time.current) = update!(approved_at: at, approved_by: by)
   def retire!(at: Time.current) = update!(retired_at: at)
 

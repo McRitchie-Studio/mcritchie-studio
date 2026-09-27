@@ -38,6 +38,23 @@ ENV["SEAL_RETRY_NO_SLEEP"] = "1"
 # named above pins this literal against the constant, so the two cannot drift apart
 # in silence.
 ENV["VISION_NO_LIVE_CALLS"] = "1"
+
+# THE SAME TRAP FOR IMAGE GENERATION, and it guards a more expensive mistake than
+# the one above: a vision classification is fractions of a cent, a generated image
+# is not, and `POST https://queue.fal.run/<model>` SUBMITS BILLABLE WORK on any
+# body at all — measured 2026-09-26, an auth probe with an EMPTY body answered
+# HTTP 200 because it queued a job.
+#
+# Every paid call to that vendor goes through ImageGeneration::Fal#perform, which
+# raises here instead of opening a socket. Its exception sits OUTSIDE StandardError
+# for the same reason the vision one does: the callers degrade rather than raise, so
+# a StandardError trap would be swallowed by the very code it guards.
+#
+# SPELLED AS A LITERAL for the same reason as the line above — this runs before
+# config/environment and Zeitwerk cannot autoload the constant yet.
+# test/services/image_generation/fal_test.rb pins this literal against
+# ImageGeneration::Fal::NO_LIVE_CALLS_ENV so the two cannot drift apart in silence.
+ENV["FAL_NO_LIVE_CALLS"] = "1"
 require_relative "../config/environment"
 require "rails/test_help"
 

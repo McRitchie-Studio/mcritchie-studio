@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_26_234500) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_050000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -278,13 +278,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_234500) do
   create_table "artifacts", force: :cascade do |t|
     t.datetime "approved_at"
     t.string "approved_by"
+    t.integer "billable_units"
+    t.decimal "cost_usd", precision: 10, scale: 4
     t.datetime "created_at", null: false
+    t.string "generator"
+    t.string "generator_endpoint"
+    t.string "generator_version"
     t.string "image_url"
     t.string "kind", null: false
+    t.text "prompt"
     t.datetime "retired_at"
+    t.bigint "seed"
     t.string "slug", null: false
     t.string "source"
     t.datetime "updated_at", null: false
+    t.index ["generator", "retired_at"], name: "index_artifacts_on_generator_and_retired_at", where: "(generator IS NOT NULL)"
     t.index ["kind", "retired_at"], name: "index_artifacts_on_kind_and_retired_at"
     t.index ["slug"], name: "index_artifacts_on_slug", unique: true
   end

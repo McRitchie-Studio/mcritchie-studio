@@ -209,6 +209,98 @@ what keeps them apart: every degrade writes an `ErrorLog` row with the `Appearan
 as its target. So a thin gallery is read by looking for a row on that look FIRST,
 not by re-running the search.
 
+### Zero-shot identity — one headshot, no training step
+
+**Training is a stage that can refuse, and it kept refusing.** Six measured
+attempts against the live Higgsfield API on 2026-09-25/26:
+
+| Input | Result |
+|---|---|
+| Drew Lock · 3 Wikimedia 500px thumbs | failed at preparation |
+| Drew Lock · the SAME 3 at full resolution | failed |
+| Drew Lock · 1 bare-faced Wikimedia shot | failed |
+| Sutton · 6 scouted photos, all genuinely him | failed |
+| Drew Lock · ESPN headshot alone | **completed** |
+| JSN · ESPN headshot alone | **completed** |
+
+`fail_reason` is always *"We couldn't prepare your photos for training. Please
+try again."* It reads transient and is not — the same input fails identically
+every time. The images FETCHED fine in every failure (`reference_media` lists
+them re-hosted on the vendor CDN), so this is image CONTENT at the training
+step, never reachability. A vision pass over the six Sutton photographs
+explains it: not one is a front-facing dominant single face (one has ZERO faces
+behind a helmet, one has three, one is 15% of frame, two are side profiles).
+
+**A zero-shot identity adapter has no preparation stage to fail.** It carries
+identity at GENERATION time from ONE face image. We hold exactly one excellent
+front-facing headshot for 2,043 athletes, in our own S3 — which is precisely the
+input that succeeded twice above.
+
+Measured live on 2026-09-26 against `fal-ai/ideogram/character`, one image from
+Courtland Sutton's ESPN headshot alone:
+
+| | Measured |
+|---|---|
+| Identity | **Holds at full-body scale.** Recognisably him — bone structure, brow, goatee, hairline |
+| Framing | Cropped mid-thigh despite "head to toe in frame" — the prompt did not fully carry |
+| Wardrobe | **Wrong.** A grey suit, not the Broncos home jersey; the look's brief is too thin to steer it |
+| Cost | `x-fal-billable-units: 3` × $0.05 = **$0.15** per image, so **$0.75** for a five-pose sheet |
+| Latency | ~60s queued to completed |
+| Back view | **NOT YET TESTED** — the remaining open question |
+
+**Two traps that each cost a paid image.**
+
+- `POST https://queue.fal.run/<model>` **submits billable work on any body at
+  all**, including an empty one. An auth probe with `{}` answered HTTP 200
+  because it queued a job. Probe with the GET status endpoint instead: a real
+  key answers 404 for an unknown request id, a bogus key answers 401.
+- **The published OpenAPI status path is wrong for sub-path models.** It
+  documents `/fal-ai/ideogram/character/requests/{id}/status`; the live host
+  answers **405** there and routes under the first TWO segments,
+  `/fal-ai/ideogram/…`. The submit response returns `status_url` and
+  `response_url` fully formed — use those. Constructing them from the endpoint
+  stranded a job we had already paid for.
+
+**The generator is a registry row, not a hard-coded vendor.**
+`config/image_generators.yml` declares each generator's adapter, pinned
+endpoint, contract version, credential variable, reference-field shape and
+capabilities. Callers ask for a CAPABILITY (`zero_shot_identity`) and never name
+a vendor, so swapping models is an edit to that file. **Higgsfield stays a row**
+— it keeps `trained_identity` and the Kling `image_to_video` job that has never
+failed, and claims no zero-shot capability, so nothing routes it the work its
+training step refuses.
+
+**Every generated artifact is stamped.** `artifacts.generator`,
+`.generator_endpoint`, `.generator_version`, `.seed`, `.prompt`,
+`.billable_units` and `.cost_usd`. The operator's stated plan is to transition
+between generators as capacities change, so the library will hold images from
+several; without the stamp you cannot tell a model regression from a provider
+change. `billable_units` is the MEASURED quantity and `cost_usd` the derived
+price, kept separately so a rate correction re-prices the back-catalogue
+arithmetically rather than stranding figures nobody can re-derive.
+
+**Where it lives in the app.**
+
+| Piece | File |
+|---|---|
+| The registry | `config/image_generators.yml` |
+| Loading it | `ImageGeneration::Registry` (`.for(:zero_shot_identity)`, `.preferred`) |
+| The vendor | `ImageGeneration::Fal` — one class, many rows |
+| Choosing the class | `ImageGeneration::Adapter.for(row)` |
+| Normalised answer | `ImageGeneration::Result` |
+| The use case | `Appearances::GenerateArtifact` (poses, prompt, identity photo, stamp) |
+| Route | `POST /people/:person_slug/models/:slug/generate` — `require_admin` |
+| Suite trap | `FAL_NO_LIVE_CALLS=1`, armed in `test/test_helper.rb` |
+
+**The identity photo reads the STORED `s3_key`, never a rebuilt path.**
+`Athlete#headshot_url` resolves the `ImageCache` row and calls `ImageCache#url`;
+`Athlete#headshot_key_prefix` is a WRITE-time builder. `Athletes::RekeyHeadshots`
+is actively moving athletes out of `headshots/nfl/free-agents/`, so a rebuilt
+path points at an object that has already moved. This path prefers the
+`original` variant — deliberately unlike `Appearances::ReferenceImages::HEADSHOT_VARIANTS`
+(`%w[400 100]`), because that list feeds a TRAINING set while this feeds a face
+adapter reading one image, where every pixel of the face is identity it can carry.
+
 ### Ranking the candidates — why a helmet is not a reference photo
 
 The operator's words: *"we should prioritize pictures with no helmet so the face

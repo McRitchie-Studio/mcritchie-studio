@@ -1,28 +1,184 @@
 <%# HALF TWO: WHAT THE PHOTOGRAPHS PRODUCED.
 
-    The character model is a Higgsfield "custom reference" — a persistent identity
-    minted from the photographs on the left. Pin a generation to it and every image
-    renders the same face; without it a cast drifts between shots.
+    TWO WAYS TO A PICTURE, and they are alternatives rather than stages.
 
-    THE IDENTITY IS NOT A PICTURE, which is the honest thing this panel has to say.
-    Its visible form is a status, an id and a count, and the pictures beneath it are
-    the images generated AGAINST it. The vendor does re-host our reference photos on
-    their CDN, and showing those would look more impressive here — but they are
-    their copies of our INPUT, and labelling input as output is exactly the muddle
-    this page exists to clear up. %>
+    ZERO-SHOT (top) hands a generator ONE headshot at generation time and gets an
+    image back. No training step, so no preparation stage to fail.
+
+    TRAINED (bottom) asks Higgsfield to build a persistent character identity from
+    a photo set first. Stronger when it works, and four of six measured attempts
+    refused the photo set outright.
+
+    THE PICTURES LEAD, because the operator's question about this page is "can I
+    see the thing we made". The controls sit under them and the trained identity,
+    which is a status rather than a picture, sits at the bottom.
+
+    THE VENDOR RE-HOSTS OUR REFERENCE PHOTOS on their CDN and showing those would
+    look more impressive here, but they are their copies of our INPUT, and
+    labelling input as output is exactly the muddle this page exists to clear up. %>
 <% chip = identity_chip(@appearance) %>
 
-<div data-test="model-output-panel" class="card p-4 sm:p-5 space-y-4">
+<div data-test="model-output-panel" class="card p-4 sm:p-5 space-y-5">
   <header class="space-y-1">
     <p class="label-upper text-primary">2 &middot; Output</p>
-    <h2 class="text-lg font-bold text-heading">Character model</h2>
+    <h2 class="text-lg font-bold text-heading">Generated images</h2>
     <p class="text-xs text-muted">
-      One identity, built from the photos on the left. Every image generated against
-      it keeps the same face.
+      Made from the photographs on the left. Every image records which generator
+      produced it.
     </p>
   </header>
 
+  <%# THE GALLERY. One image renders full width rather than in a two-up grid: the
+      spike buys exactly one, and the question being asked of it is "is this
+      recognisably him", which a half-width thumbnail cannot answer.
+
+      object-contain, NOT object-cover. A crop that trims the head or the feet
+      destroys the one thing a full-body test is looking for. Letterboxing against
+      the inset background is the honest rendering. %>
+  <div class="space-y-2">
+    <% if @artifacts.any? %>
+      <div data-test="generated-images"
+           class="grid gap-2 <%= @artifacts.length > 1 ? "grid-cols-2" : "grid-cols-1" %>">
+        <% @artifacts.each do |artifact| %>
+          <figure class="rounded-lg border border-subtle overflow-hidden bg-surface-alt">
+            <div class="aspect-[3/4] bg-inset overflow-hidden flex items-center justify-center">
+              <% if artifact.image_url.present? %>
+                <%# LINKS OUT TO THE FULL-SIZE FILE. Judging a likeness inside a
+                    narrow column is judging a thumbnail, so the picture is always
+                    one click from its original. %>
+                <%= link_to artifact.image_url, target: "_blank", rel: "noopener",
+                      class: "block w-full h-full" do %>
+                  <%= image_tag artifact.image_url, loading: "lazy",
+                        alt: artifact.subjects.first&.role.presence || artifact.kind.to_s.humanize,
+                        class: "w-full h-full object-contain" %>
+                <% end %>
+              <% else %>
+                <span class="text-2xl opacity-40" aria-hidden="true">&#127912;</span>
+              <% end %>
+            </div>
+
+            <figcaption class="p-2 space-y-1.5">
+              <div class="flex items-center gap-1 flex-wrap">
+                <span class="badge text-3xs bg-surface text-muted border-subtle">
+                  <%= artifact.subjects.first&.role.presence || artifact.kind.to_s.humanize %>
+                </span>
+                <% if artifact.approved? %>
+                  <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">approved</span>
+                <% end %>
+              </div>
+
+              <%# THE PROVENANCE STAMP. The operator intends to swap generators as
+                  capacities change, so this library will hold images from several.
+                  Without the stamp a mixed library is unreadable and you cannot
+                  tell a regression from a provider change.
+
+                  An UNSTAMPED artifact says so rather than rendering blank: the
+                  whole back-catalogue predates these columns, and silence there
+                  reads as a bug in this caption. %>
+              <% if artifact.generated? %>
+                <dl data-test="artifact-provenance" class="text-3xs space-y-0.5">
+                  <div class="flex gap-1">
+                    <dt class="text-muted shrink-0">by</dt>
+                    <dd class="text-body font-medium"><%= artifact.generator_label %></dd>
+                  </div>
+                  <% if artifact.generator_version.present? %>
+                    <div class="flex gap-1 min-w-0">
+                      <dt class="text-muted shrink-0">ver</dt>
+                      <dd class="text-muted font-mono break-all"><%= artifact.generator_version %></dd>
+                    </div>
+                  <% end %>
+                  <% if artifact.seed.present? %>
+                    <div class="flex gap-1">
+                      <dt class="text-muted shrink-0">seed</dt>
+                      <dd class="text-muted font-mono"><%= artifact.seed %></dd>
+                    </div>
+                  <% end %>
+                  <%# COST RENDERS ONLY WHEN THE VENDOR REPORTED IT. A blank row
+                      would read as free, and free is the one thing this never is. %>
+                  <% if artifact.cost_usd.present? %>
+                    <div class="flex gap-1">
+                      <dt class="text-muted shrink-0">cost</dt>
+                      <dd class="text-muted font-mono">
+                        <%= number_to_currency(artifact.cost_usd) %>
+                        <% if artifact.billable_units.present? %>
+                          <span class="opacity-60">(<%= pluralize(artifact.billable_units, "unit") %>)</span>
+                        <% end %>
+                      </dd>
+                    </div>
+                  <% end %>
+                </dl>
+              <% else %>
+                <p class="text-3xs text-muted">Made before we recorded the generator.</p>
+              <% end %>
+            </figcaption>
+          </figure>
+        <% end %>
+      </div>
+    <% else %>
+      <div data-test="no-generated-images"
+           class="rounded-lg border border-dashed border-subtle bg-surface-alt p-4 text-center space-y-1">
+        <span class="text-2xl opacity-30 block" aria-hidden="true">&#127912;</span>
+        <p class="text-2xs text-muted">Nothing generated yet.</p>
+      </div>
+    <% end %>
+  </div>
+
+  <%# THE ZERO-SHOT CONTROL. Admin only, matching the controller, because it
+      spends. It needs NO character model — one cached headshot is the whole
+      input, which is why it renders even when the identity below reads "none". %>
+  <div data-test="zero-shot-generate"
+       class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-2">
+    <div class="flex items-baseline justify-between gap-2 flex-wrap">
+      <p class="label-upper">Generate from one photo</p>
+      <% if @generator_row.present? %>
+        <span class="badge text-3xs <%= @can_generate ? "bg-success/10 text-success-ink border-success/40" : "bg-surface text-muted border-subtle" %>">
+          <%= @generator_row.label %>
+        </span>
+      <% end %>
+    </div>
+
+    <% if @identity_photo_url.blank? %>
+      <p class="text-2xs text-warning-ink">
+        No cached headshot for this person, so there is no face to build from.
+      </p>
+    <% elsif @generator_row.blank? %>
+      <p class="text-2xs text-muted">No generator is registered for this yet.</p>
+    <% elsif !@can_generate %>
+      <%# NAMES THE VARIABLE. The person reading this is the person who will go
+          and set it, and "not configured" without the name sends them to ask
+          someone. %>
+      <p class="text-2xs text-muted"><%= @generator_row.unconfigured_message %></p>
+    <% elsif admin? %>
+      <%= form_with url: generate_person_appearance_path(@person.slug, @appearance.slug),
+                    method: :post, class: "space-y-2" do |f| %>
+        <%= f.select :pose,
+              options_for_select(@poses.map { |key, pose| [pose[:label], key] }, @default_pose),
+              {},
+              class: "input-field w-full text-xs" %>
+        <%= f.submit "Generate one image", class: "btn btn-sm btn-primary w-full" %>
+      <% end %>
+      <p class="text-3xs text-muted">
+        Costs money &mdash; one image per press. No character model needed.
+      </p>
+    <% else %>
+      <p class="text-2xs text-muted">
+        <%= @generator_row.label %> is ready. Generating is an admin action.
+      </p>
+    <% end %>
+  </div>
+
+  <%# THE TRAINED IDENTITY. Kept, and moved below the zero-shot path it is an
+      alternative to.
+
+      THE IDENTITY IS NOT A PICTURE, which is the honest thing this block has to
+      say: its visible form is a status, an id and a count. %>
   <div class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-3">
+    <p class="label-upper">Trained character model</p>
+    <p class="text-3xs text-muted">
+      A persistent identity minted from a whole photo set. Stronger than one-photo
+      generation when the set is good enough to train on.
+    </p>
+
     <div data-test="identity-status" data-state="<%= @appearance.higgsfield_reference_state %>"
          class="flex items-center gap-2 flex-wrap">
       <span class="badge text-3xs <%= chip[:classes] %>"><%= chip[:label] %></span>
@@ -87,7 +243,7 @@
         <%= button_to "Request the model",
               mint_person_appearance_path(@person.slug, @appearance.slug),
               method: :post,
-              class: "btn btn-sm btn-primary w-full",
+              class: "btn btn-sm btn-neutral w-full",
               disabled: @identity_urls.empty? %>
         <% if @identity_urls.empty? %>
           <p class="text-3xs text-warning-ink">
@@ -95,40 +251,6 @@
           </p>
         <% end %>
       <% end %>
-    <% end %>
-  </div>
-
-  <div class="space-y-2">
-    <p class="label-upper">Images made from it (<%= @artifacts.length %>)</p>
-    <% if @artifacts.any? %>
-      <div data-test="generated-images" class="grid grid-cols-2 gap-2">
-        <% @artifacts.each do |artifact| %>
-          <figure class="rounded-lg border border-subtle overflow-hidden bg-surface-alt">
-            <div class="aspect-[9/16] bg-inset overflow-hidden flex items-center justify-center">
-              <% if artifact.image_url.present? %>
-                <%= image_tag artifact.image_url, loading: "lazy",
-                      alt: artifact.kind.to_s.humanize, class: "w-full h-full object-cover" %>
-              <% else %>
-                <span class="text-2xl opacity-40" aria-hidden="true">&#127912;</span>
-              <% end %>
-            </div>
-            <figcaption class="p-2 flex items-center gap-1 flex-wrap">
-              <span class="badge text-3xs bg-surface text-muted border-subtle">
-                <%= artifact.kind.to_s.humanize %>
-              </span>
-              <% if artifact.approved? %>
-                <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">approved</span>
-              <% end %>
-            </figcaption>
-          </figure>
-        <% end %>
-      </div>
-    <% else %>
-      <p class="text-2xs text-muted">
-        No images generated from this model yet. Content runs pin a ready model
-        automatically &mdash; a shot generated while it is still training just will not
-        hold the likeness.
-      </p>
     <% end %>
   </div>
 </div>

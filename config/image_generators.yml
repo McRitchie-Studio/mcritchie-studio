@@ -1,0 +1,146 @@
+# THE IMAGE GENERATORS WE CAN CALL — one row per model, read by
+# ImageGeneration::Registry.
+#
+# WHY A REGISTRY RATHER THAN A CLIENT. The operator's decision, 2026-09-26: "the
+# generator should be data driven to an extent and deterministic. We should be
+# able to transition between generators as model capacities change." A vendor
+# name spelled through the codebase makes that transition a rewrite. A row makes
+# it an edit to this file.
+#
+# HIGGSFIELD IS A ROW HERE, NOT A DELETED BRANCH. Its Kling image-to-video job
+# has never failed and Content::AssembleAgent still calls it. What moved is
+# IDENTITY: `higgsfield_soul` TRAINS a character model from a photo set, and six
+# measured attempts (2026-09-25/26) showed it refuses any set that is not a
+# front-facing dominant face — four failed, and the only two that completed used
+# a single tight ESPN headshot. The `zero_shot_identity` capability below is the
+# way out: an adapter that carries identity at GENERATION time from ONE photo,
+# with no training step to fail.
+#
+# EVERY ROW DECLARES FOUR THINGS, and the code chooses on them without knowing
+# any vendor's name:
+#
+#   adapter          which Ruby class speaks this vendor's protocol. Rows sharing
+#                    a vendor share an adapter; the row is the MODEL, not the API.
+#   endpoint         the exact model path. PINNED — see below.
+#   credential_env   the ENV var that turns the row on. `available?` reads THIS,
+#                    so a keyless generator would simply declare none.
+#   capabilities     what the model can do, as facts the chooser can filter on.
+#
+# PINNING IS HALF OF "DETERMINISTIC" and it is why the endpoint is spelled in
+# full. A sheet generated in March must match one from January, which is
+# impossible if the model moves under us. fal addresses a specific published
+# model path; `api_version` records the OpenAPI contract version we read the
+# request and response shapes off, so a vendor reshaping its payload is a visible
+# mismatch rather than a silent parse failure.
+#
+# THE OTHER HALF IS STAMPED ON THE ARTIFACT, not here: every generated image
+# records which generator and which version made it (artifacts.generator,
+# .generator_endpoint, .generator_version, .seed). A library that will hold images
+# from several generators is unreadable without it, and you cannot tell a
+# regression from a provider change.
+#
+# NEVER PUT A SECRET IN THIS FILE. Rows name the ENV var; the value comes from
+# Heroku config or 1Password.
+
+generators:
+  # THE SPIKE'S CANDIDATE, and the reason this file exists.
+  #
+  # Ideogram V3 Character takes a reference image and a prompt and carries the
+  # face into a NEW scene — no training call, no preparation stage, so the step
+  # that failed four times out of six on Higgsfield does not exist here. It
+  # accepts a list but needs only one photo, and we hold exactly one excellent
+  # front-facing headshot for 2,043 athletes in our own S3.
+  #
+  # CHOSEN OVER THE TWO FACE-ONLY ADAPTERS on the strength of the question that
+  # decides the feature: the operator wants a SHEET — "3 full body, head on,
+  # back, side profile, plus examples of facial expressions". fal-ai/flux-pulid
+  # and fal-ai/ip-adapter-face-id are face adapters and are documented as such;
+  # this one is a CHARACTER model, which is the only one of the three whose stated
+  # job is holding a subject across poses and framings.
+  fal_ideogram_character:
+    label: Ideogram V3 Character
+    adapter: fal
+    endpoint: fal-ai/ideogram/character
+    api_version: "1.0.0"
+    credential_env: FAL_KEY
+    # The request field that carries the identity photo, and how many it takes.
+    # Named here rather than in the adapter because it is the part that differs
+    # between rows sharing one adapter: flux-pulid calls it `reference_image_url`
+    # and takes exactly one.
+    reference_field: reference_image_urls
+    reference_arity: many
+    # WHAT ONE BILLABLE UNIT COSTS, so a measured unit count becomes a price.
+    #
+    # DERIVED, NOT GUESSED, and both halves are checkable. fal publishes this
+    # model at $0.10 TURBO / $0.15 BALANCED / $0.20 QUALITY per image. Our call
+    # ran at the API default (BALANCED) and the response header
+    # `x-fal-billable-units` reported 3 — measured 2026-09-26. $0.15 / 3 = $0.05,
+    # and the same rate reproduces the other two tiers exactly (TURBO 2 units,
+    # QUALITY 4). So one image at the default is $0.15 and a five-pose sheet is
+    # $0.75.
+    #
+    # RE-DERIVE THIS, DO NOT RE-COPY IT. If the published price moves, this rate
+    # is stale; `artifacts.billable_units` keeps the measured quantity so every
+    # stored price can be recomputed rather than re-guessed.
+    unit_price_usd: 0.05
+    capabilities:
+      - zero_shot_identity
+      - full_body
+      - back_view
+      - expressions
+    docs_url: https://fal.ai/models/fal-ai/ideogram/character
+
+  # THE FACE-ONLY FALLBACK, registered UNTESTED and deliberately not chosen.
+  #
+  # PuLID Flux is a strong face adapter and would very likely win a portrait
+  # comparison. It is here so that "identity held on the portrait but collapsed
+  # below the neck" has somewhere to go that is an edit rather than a build — and
+  # its capability list is the honest reason it is second: no `full_body`, no
+  # `back_view`. Nothing has measured it; `reference_arity: one` is read off its
+  # published OpenAPI input schema, not off a call we made.
+  fal_flux_pulid:
+    label: PuLID Flux
+    adapter: fal
+    endpoint: fal-ai/flux-pulid
+    api_version: "1.0.0"
+    credential_env: FAL_KEY
+    reference_field: reference_image_url
+    reference_arity: one
+    capabilities:
+      - zero_shot_identity
+    docs_url: https://fal.ai/models/fal-ai/flux-pulid
+
+  # THE INCUMBENT, kept and not deleted.
+  #
+  # `trained_identity` is a real capability and not a euphemism: when a photo set
+  # DOES satisfy it, a trained model holds a subject more tightly than any
+  # zero-shot adapter. It is listed without `zero_shot_identity` because the
+  # training step is exactly what we could not feed. Appearances::CreateCharacterReference
+  # still calls it and this row does not change that.
+  higgsfield_soul:
+    label: Higgsfield Soul v2
+    adapter: higgsfield
+    endpoint: /higgsfield-ai/soul/v2/standard
+    api_version: v2
+    credential_env: HIGGSFIELD_API_KEY
+    reference_field: custom_reference_id
+    reference_arity: trained
+    capabilities:
+      - trained_identity
+      - full_body
+    docs_url: https://docs.higgsfield.ai
+
+  # THE JOB HIGGSFIELD IS ACTUALLY GOOD AT, and the clearest argument for a
+  # registry over a migration. Content::AssembleAgent has called this all along
+  # and it has never failed. Right tool per stage.
+  higgsfield_kling_video:
+    label: Kling 2.5 Turbo Pro (image to video)
+    adapter: higgsfield
+    endpoint: /kling-video/v2.5-turbo/pro/image-to-video
+    api_version: v2.5-turbo
+    credential_env: HIGGSFIELD_API_KEY
+    reference_field: image_url
+    reference_arity: one
+    capabilities:
+      - image_to_video
+    docs_url: https://docs.higgsfield.ai
