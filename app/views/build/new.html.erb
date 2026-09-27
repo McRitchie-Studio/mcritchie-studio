@@ -135,7 +135,10 @@
                 <%= link_to example.url, target: "_blank", rel: "noopener",
                       class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors",
                       data: { test: "build-example" } do %>
-                  <span class="block aspect-[16/10] overflow-hidden bg-surface-alt border-b border-subtle">
+                  <%# Title on top, then the screenshot, then where it lives and what it is. %>
+                  <span class="block px-4 pt-3 pb-2.5 text-center font-semibold text-heading group-hover:text-primary truncate"
+                        data-test="build-example-name"><%= example.name %></span>
+                  <span class="block aspect-[16/10] overflow-hidden bg-surface-alt border-y border-subtle">
                     <% if example.image %>
                       <%= image_tag example.image, alt: "#{example.name}, as it looks live", loading: "lazy",
                             class: "h-full w-full object-cover object-top group-hover:scale-[1.02] transition-transform duration-300",
@@ -145,9 +148,9 @@
                     <% end %>
                   </span>
                   <span class="block p-4 text-center">
-                    <span class="block font-semibold text-heading group-hover:text-primary"><%= example.name %></span>
-                    <span class="block font-mono text-xs text-muted truncate"><%= URI.parse(example.url).host rescue example.url %></span>
-                    <span class="block text-sm text-body mt-1 line-clamp-2"><%= example.blurb %></span>
+                    <span class="block font-mono text-xs text-muted truncate" data-test="build-example-host"><%= URI.parse(example.url).host rescue example.url %></span>
+                    <%# No `block` here: it would override line-clamp's display and let the text run on. %>
+                    <span class="text-sm text-body mt-1 line-clamp-2" data-test="build-example-blurb"><%= example.blurb %></span>
                   </span>
                 <% end %>
               </li>

@@ -29,6 +29,16 @@ test("the gallery scrolls sideways, its screenshot loads, and the fade follows t
   const hosts = await page.locator("[data-test='build-example']").evaluateAll((links) => links.map((a) => new URL(a.href).host.split(".")[0]));
   expect(hosts.slice(0, 3)).toEqual(["cyvasse", "prisoners-dilemma", "rantly"]);
 
+  // The description stops at two lines: line-clamp needs its own display, and a
+  // `block` on the same element used to win and let the text run on.
+  // Measured, not read off the class: fill one with far more than two lines of
+  // text and it must still render two lines tall.
+  const lines = await page.locator("[data-test='build-example-blurb']").first().evaluate((el) => {
+    el.textContent = "A long description that keeps going. ".repeat(20);
+    return el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight);
+  });
+  expect(lines).toBeLessThanOrEqual(2.05);
+
   const image = page.locator("[data-test='build-example-image']").first();
   await image.scrollIntoViewIfNeeded();
   await expect.poll(() => image.evaluate((img) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
