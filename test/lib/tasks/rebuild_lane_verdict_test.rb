@@ -128,6 +128,32 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
                       "broken uploader — refusing it would red a whole rebuild for a 404"
   end
 
+  # THE MINORITY FAILURE REACHES THE CHANNEL THE REBUILD LANE READS. The majority
+  # rule is structurally quiet here and should be — one failure against two
+  # successes is not the uploader breaking. But before this the ONLY trace was a
+  # [!] line on stdout and a `failed: 1` counter, and the lane reads stderr: a
+  # credential revoked at athlete 1,900 of 2,043 exits 0 with 143 unread failures.
+  # A warning, never an abort, for the reason the twin above exists.
+  test "a minority of failed uploads warns without reddening the run" do
+    people = prepare_candidates(3)
+    doomed = people.first
+
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(owner:, **) {
+        raise Aws::Errors::MissingCredentialsError, "no creds" if owner.person_slug == doomed
+        {}
+      }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_match(/failed 1 of 3 attempted uploads/, err)
+    assert_match(/dead ESPN source URL/, err,
+                 "name the likelier cause for a minority — the majority rule already names " \
+                 "the credential, and pointing at AWS for one 404 is how the line stops " \
+                 "being read")
+  end
+
   # NOTHING TO DO IS NOT A FAILURE. With no candidate the counters are 0 and 0,
   # and `failed > cached` must not fire on a tie at zero — the first reading of
   # this task on a desk was exactly this, "candidates: 0", and it is the vacuous
@@ -187,27 +213,35 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     assert_equal ["headshots/nfl/free-agents/#{athlete.person_slug}"], keys
   end
 
-  # THE SILENT SUCCESS ITSELF. `failed > cached` is structurally blind here —
-  # both counters are 0, so the rule is false and the task returns normally. A
-  # run that finds work and attempts none of it is the task refusing its job, not
-  # S3 refusing the upload, and it must not exit 0.
-  test "the headshot upload refuses a run that attempted none of the work it found" do
-    headshot_candidate(3, espn_headshot_url: nil)
-    headshot_candidate(4, espn_headshot_url: nil)
+  # THE FALSE ABORT, AT ITS SMALLEST — and this test used to ASSERT it. Neither
+  # athlete here has an `espn_headshot_url`, so NO run can ever fetch either one,
+  # and the verdict that fired accused the LANE of declining them. A VERDICT MUST
+  # BE CLEARABLE BY FIXING WHAT IT ACCUSES: this one could only be cleared by
+  # populating a column the lane does not write, which is why it fired for ever.
+  # The decline rule's population now holds only athletes a source could have
+  # answered for, and the permanently sourceless are reported BY NAME instead.
+  test "athletes with no source URL are named in the report, never aborted on" do
+    a = headshot_candidate(3, espn_headshot_url: nil)
+    b = headshot_candidate(4, espn_headshot_url: nil)
 
-    _out, err = capture_io do
-      assert_raises(SystemExit) { Rake::Task["nfl:upload_headshots"].invoke }
+    out, err = capture_io do
+      refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
     end
 
-    assert_match(/attempted 0 of the 2 athletes/, err)
-    assert_match(/declined every one of them WITHOUT trying/, err)
-    assert_match(/espn_headshot_url/, err, "name the field an operator goes and fills")
+    assert_match(/no espn_headshot_url:\s+2/, out)
+    assert_match(/#{a.person_slug}/, out, "name the athlete an operator goes and fixes")
+    assert_match(/#{b.person_slug}/, out)
+    assert_match(/nfl:players_seed/, out, "name the task that can fill the column")
+    assert_equal "", err, "a permanent data gap is inventory, not an alert — a line printed " \
+                          "on every healthy run is a line an operator stops reading"
   end
 
-  # THE GREEN TWIN THAT KEEPS THE GUARD HONEST, and the reason it is computed
-  # from `needed` rather than from `cached`. On a warm machine nearly every
-  # candidate is already complete; a rule that reddened THAT run would be a rule
-  # an operator switches off, which is how the ecosystem got here.
+  # THE GREEN TWIN THAT KEEPS THE GUARD HONEST, and the reason the rule is
+  # computed from a POPULATION rather than from `cached`. On a warm machine nearly
+  # every candidate is already complete; a rule that reddened THAT run would be a
+  # rule an operator switches off, which is how the ecosystem got here. This twin
+  # passed throughout the false abort below, because its population is ONE
+  # complete athlete and production's carries a permanent residue too.
   test "a warm re-run with every headshot already cached stays green and says nothing" do
     athlete = headshot_candidate(5, team_slug: "buffalo-bills")
     cache_variants(athlete, %w[original 100 400])
@@ -221,27 +255,84 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     end
 
     assert completed, "nothing left to do is not a failure"
-    assert_equal "", err, "the warm re-run legitimately attempts nothing — `needed` subtracts " \
-                          "the complete candidates out precisely so this stays silent"
+    assert_equal "", err, "the warm re-run legitimately attempts nothing — the decline rule's " \
+                          "population subtracts the complete candidates out so this stays silent"
   end
 
-  # A PARTIAL decline is reported, not refused. Some athletes have no image
-  # source and never will; reddening a rebuild for a permanent data gap trains an
-  # operator to stop reading the line.
-  test "a partial decline is reported without reddening the run" do
-    headshot_candidate(6, team_slug: "buffalo-bills")
-    headshot_candidate(7, espn_headshot_url: nil)
+  # THE DEFECT THIS TASK EXISTS FOR, IN THE PRODUCTION SHAPE. The twin above holds
+  # only because its whole population is one complete athlete. Production's is
+  # 2,043 complete PLUS EIGHT that have no `espn_headshot_url` and never will —
+  # chris-manhertz, brandon-scherff, jack-plummer, jack-strand, james-thompson,
+  # gabe-rubio, blake-miller, brett-thorson, three of them without an `espn_id` at
+  # all. Those eight are `skipped_no_source`, NOT `skipped_complete`, so the old
+  # `needed = considered - skipped_complete` never subtracted them out: it stayed
+  # at 8 for ever, `attempted` was legitimately 0 because there was genuinely
+  # nothing to attempt, and the HEALTHY steady-state re-run aborted claiming the
+  # task had refused its job. Scaled to 1 + 1 here, which is the same shape and
+  # produced the same verdict. FOUND INDEPENDENTLY BY TWO BUILDERS, a day apart.
+  test "a warm re-run with a permanently sourceless athlete stays green" do
+    complete = headshot_candidate(30, team_slug: "buffalo-bills")
+    cache_variants(complete, %w[original 100 400])
+    sourceless = headshot_candidate(31, espn_headshot_url: nil)
 
-    completed = false
-    _out, err = capture_io do
-      Studio::ImageCache.stub(:cache!, ->(**) { {} }) do
+    out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { flunk "nothing in this population is fetchable" }) do
         refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
-        completed = true
       end
     end
 
-    assert completed, "one athlete with no source URL is a data gap, not a broken uploader"
-    assert_match(/1 of 2 athletes needing a headshot were skipped without an attempt/, err)
+    assert_equal "", err, "every cachable headshot IS cached — this is the healthy steady " \
+                          "state, and a rebuild that reddens on it trains an operator to " \
+                          "ignore a red rebuild"
+    assert_match(/#{sourceless.person_slug}/, out,
+                 "the permanent residue is reported by name, which is the honest way to ask " \
+                 "for the data to be fixed")
+  end
+
+  # A MIXED RUN FETCHES WHAT IT CAN AND NAMES WHAT IT CANNOT. This used to assert
+  # a stderr line calling the sourceless athlete "skipped without an attempt",
+  # which reads as work the lane declined. It is not: there was nothing to attempt.
+  # The distinction is the whole fix — a gap at the SOURCE step is a data gap and
+  # belongs in the report, and only a gap at the RESULT step grades the lane.
+  test "a mixed run fetches what it can and names what it cannot" do
+    fetched = headshot_candidate(6, team_slug: "buffalo-bills")
+    gap = headshot_candidate(7, espn_headshot_url: nil)
+
+    attempts = []
+    out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(owner:, **) { attempts << owner.person_slug; {} }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal [fetched.person_slug], attempts,
+                 "the athlete WITH a source is still fetched — narrowing the graded " \
+                 "population must not narrow the work"
+    assert_match(/#{gap.person_slug}/, out, "the one without a source is named, not graded")
+    assert_equal "", err, "one athlete with no source URL is a data gap, not a broken uploader"
+  end
+
+  # THE RULE THAT MUST SURVIVE THE NARROWING, and the reason this is a separate
+  # test rather than a line in the one above. Narrowing the decline rule's
+  # population is only safe if the OTHER verdict still sees a wholesale failure,
+  # so this run carries the permanent residue AND a dead uploader at once: the
+  # sourceless athlete must not dilute the credential verdict, which grades the
+  # attempts and nothing else.
+  test "a wholesale upload failure still exits non-zero beside sourceless athletes" do
+    headshot_candidate(32, team_slug: "buffalo-bills")
+    headshot_candidate(33, team_slug: "buffalo-bills")
+    headshot_candidate(34, espn_headshot_url: nil)
+
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { raise Aws::Errors::MissingCredentialsError, "no creds" }) do
+        assert_raises(SystemExit) { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_match(/failed 2 of 2 attempted uploads/, err,
+                 "the athlete with no source was never attempted, so it is not in this " \
+                 "denominator — a data gap must not dilute a credential failure")
+    assert_match(/AWS_ACCESS_KEY_ID/, err)
   end
 
   # "ALREADY DONE" HAS TO INCLUDE "original". Studio::ImageCache.cache! stores

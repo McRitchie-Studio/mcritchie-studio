@@ -58,4 +58,14 @@ class BroadcastMailerTest < ActiveSupport::TestCase
 
     assert_includes body, "https://broadcasts.mcritchie.studio/unsubscribe/#{@contact.unsubscribe_token}"
   end
+
+  # [unit] RFC 8058 one-click unsubscribe, required of bulk senders by Gmail
+  # and Yahoo: both headers, pointing at the reader's own link.
+  test "campaign carries one-click List-Unsubscribe headers" do
+    delivery = @broadcast.deliveries.create!(contact: @contact)
+    mail = BroadcastMailer.campaign(@broadcast, @contact, delivery)
+
+    assert_match %r{\A<https?://[^>]+/unsubscribe/#{@contact.unsubscribe_token}\?d=#{delivery.token}>\z}, mail["List-Unsubscribe"].value
+    assert_equal "List-Unsubscribe=One-Click", mail["List-Unsubscribe-Post"].value
+  end
 end

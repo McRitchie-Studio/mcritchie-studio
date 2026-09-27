@@ -40,6 +40,7 @@ Rails.application.routes.draw do
   # One-click-safe unsubscribe: GET shows an inert confirm page, POST unsubscribes.
   get  "unsubscribe/:token", to: "unsubscribes#show",   as: :unsubscribe
   post "unsubscribe/:token", to: "unsubscribes#create"
+  post "unsubscribe/:token/resubscribe", to: "unsubscribes#resubscribe", as: :resubscribe
 
   # Email engagement tracking (open pixel + click redirect), keyed by delivery token.
   get "e/o/:token", to: "email_tracking#open",  as: :email_open
