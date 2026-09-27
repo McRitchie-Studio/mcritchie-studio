@@ -5,13 +5,17 @@
 #
 #   rake pokemon:fetch           → pull Gen 1–2 (dex 1–251) from PokéAPI into the JSON
 #   rake pokemon:upload_images   → mirror each Pokémon's avatars + sprites into S3
+#                                  (plus the female pixel sprites, ADDITIVELY — a
+#                                  female key already in the bucket is skipped)
 #   rake pokemon:crop_and_upload → trim each avatar's transparent margin and
 #                                  upload the crop to <dex>-<slug>-cropped.png
 #                                  (ADDITIVE — the original <dex>-<slug>.png is the
 #                                  backup and is never overwritten or deleted)
 #
 # Both image tasks cover the normal AND shiny art (shiny keys carry a -shiny
-# infix); VARIANTS=shiny (or normal) narrows a run to one side. All three tasks
+# infix); VARIANTS=shiny (or normal) narrows a run to one side. upload_images also
+# mirrors the female sprites (VARIANTS=female alone does just those — the
+# additive run after a gender fetch). All three tasks
 # accept RANGE=<from>-<to> (e.g. RANGE=152-251) to work one dex slice — fetch
 # merges the slice into the existing JSON, so a Johto-only run never rewrites
 # (or churns) the committed Kanto rows.
@@ -42,6 +46,29 @@ namespace :pokemon do
   #             one family that evolves to a random branch at a gate, instead of
   #             three standalone Hitmon bases.
   NOT_BABY = %w[togepi tyrogue].freeze
+
+  # Drawable gender FAMILIES: one mascot row whose rolled gender picks the species
+  # it wears. PokéAPI splits Nidoran into two species (dex 29 ♀, 32 ♂); the mascot
+  # draw treats it as ONE family, `nidoran`, and the gender picks the line
+  # (female → Nidorina → Nidoqueen, male → Nidorino → Nidoking). fetch derives the
+  # family row from its two forms (see stamp_gender_families); the form rows stay
+  # so old tasks carrying nidoran-f / nidoran-m still resolve, and the deck skips
+  # them (Pokemon.deck).
+  GENDER_FAMILIES = {
+    "nidoran" => { "name" => "Nidoran", "female" => "nidoran-f", "male" => "nidoran-m" }
+  }.freeze
+
+  # Evolution branches only one gender may take: { from => { into => gender } }.
+  # Stamped onto the FROM row as evolution_genders; a slug missing from the fetched
+  # set is skipped, so the Gen 3–4 rows below sit idle until those dex ranges are
+  # fetched and then apply with no code change. The nidoran branches are derived
+  # from GENDER_FAMILIES instead.
+  EVOLUTION_GENDERS = {
+    "kirlia"  => { "gallade" => "male" },
+    "snorunt" => { "froslass" => "female" },
+    "burmy"   => { "wormadam" => "female", "mothim" => "male" },
+    "combee"  => { "vespiquen" => "female" }
+  }.freeze
 
   # The handful of Pokémon whose display name isn't just the title-cased slug.
   DISPLAY_NAMES = {
@@ -78,6 +105,9 @@ namespace :pokemon do
   task fetch: :environment do
     range = dex_range
     existing = File.exist?(DATA_FILE) ? JSON.parse(File.read(DATA_FILE)) : []
+    # A family row shares its female form's dex, so it would shadow that form in
+    # the dex-keyed family walk; drop it here and re-derive it after the walk.
+    existing.reject! { |row| GENDER_FAMILIES.key?(row["slug"]) }
     fetched = range.map do |dex|
       data = get_json("#{POKEAPI}/pokemon/#{dex}")
       slug = data.fetch("name")
@@ -104,6 +134,8 @@ namespace :pokemon do
         "shiny_avatar_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny-cropped.png",
         "shiny_avatar_fallback_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny.png",
         "shiny_sprite_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny-sprite.png"
+        # gender_rate / has_gender_differences / the female sprites are stamped
+        # from the species record in stamp_family_fields.
       }
       warn "fetched ##{format('%03d', dex)} #{row['name']}"
       row
@@ -114,6 +146,9 @@ namespace :pokemon do
     # they are cross-row facts (Johto gave Onix an evolution), not per-row ones.
     rows = (existing.reject { |row| range.cover?(row["dex"]) } + fetched).sort_by { |row| row["dex"] }
     stamp_family_fields(rows)
+    stamp_gender_families(rows)
+    stamp_evolution_genders(rows)
+    rows.sort_by! { |row| [row["dex"], row["slug"]] }
     File.write(DATA_FILE, "#{JSON.pretty_generate(rows)}\n")
     puts "wrote #{rows.size} Pokémon (fetched #{fetched.size}) → #{DATA_FILE}"
   end
@@ -127,10 +162,26 @@ namespace :pokemon do
     range = dex_range
     # Slug-keyed for self-describing URLs (e.g. pokemon/73-tentacruel.png). Slugs
     # come from the committed JSON; the source images are still dex-keyed on the CDN.
-    rows = JSON.parse(File.read(DATA_FILE)).select { |row| range.cover?(row.fetch("dex")) }
+    # Family rows (nidoran) wear their forms' art, so they own no keys to mirror.
+    rows = image_rows(range)
+    female_uploaded = 0
+    female_skipped = 0
     rows.each do |row|
       dex = row.fetch("dex")
       slug = row.fetch("slug")
+      # The female pixel sprites, for a species with a distinct female look. These
+      # go up ADDITIVELY: a key already in the bucket is never overwritten.
+      if variants.include?("female") && row["has_gender_differences"]
+        female_keys = { "pokemon/#{dex}-#{slug}-female-sprite.png" => "#{SPRITE_CDN}/female/#{dex}.png",
+                        "pokemon/#{dex}-#{slug}-shiny-female-sprite.png" => "#{SPRITE_CDN}/shiny/female/#{dex}.png" }
+        female_keys.each do |key, source|
+          if put_image_if_absent(s3, bucket, key, source)
+            female_uploaded += 1
+          else
+            female_skipped += 1
+          end
+        end
+      end
       if variants.include?("normal")
         put_image(s3, bucket, "pokemon/#{dex}-#{slug}.png", "#{SPRITE_CDN}/other/official-artwork/#{dex}.png")
         put_image(s3, bucket, "pokemon/#{dex}-#{slug}-sprite.png", "#{SPRITE_CDN}/#{dex}.png")
@@ -142,6 +193,9 @@ namespace :pokemon do
       warn "uploaded ##{format('%03d', dex)} #{slug} (#{variants.join('+')})"
     end
     puts "mirrored #{rows.size} Pokémon avatars (#{variants.join('+')}) → s3://#{bucket}/pokemon/"
+    if variants.include?("female")
+      puts "female sprites: #{female_uploaded} uploaded, #{female_skipped} already present (skipped)"
+    end
   end
 
   # Tighten each avatar: download the ORIGINAL official-artwork from S3, trim its
@@ -164,7 +218,7 @@ namespace :pokemon do
 
     s3 = Aws::S3::Client.new(region: "us-east-2")
     range = dex_range
-    rows = JSON.parse(File.read(DATA_FILE)).select { |row| range.cover?(row.fetch("dex")) }
+    rows = image_rows(range)
     rows = rows.first(limit) if limit.positive?
 
     # "" = the normal art, "-shiny" = the shiny mirror; VARIANTS narrows a run.
@@ -235,6 +289,7 @@ namespace :pokemon do
       dex = row["dex"]
       species = get_json("#{POKEAPI}/pokemon-species/#{dex}")
       is_baby[dex] = species["is_baby"] == true && !NOT_BABY.include?(row["slug"])
+      stamp_gender_fields(row, species)
       from = species.dig("evolves_from_species", "url").to_s[%r{/(\d+)/?\z}, 1]&.to_i
       parent[dex] = from if from && by_dex.key?(from)
       warn "species ##{format('%03d', dex)} #{row['slug']}#{' (baby)' if is_baby[dex]}"
@@ -257,6 +312,72 @@ namespace :pokemon do
         base_row = rows.find { |candidate| candidate["slug"] == base_slug }
         base_row["baby"] |= [row["slug"]]
       end
+    end
+  end
+
+  # The species' gender facts, off the pokemon-species record stamp_family_fields
+  # already fetched: gender_rate (eighths-female; -1 genderless) and whether it has
+  # a distinct female look. Only a species with one gets female sprite URLs — the
+  # deterministic S3 keys `rake pokemon:upload_images` mirrors them to.
+  def stamp_gender_fields(row, species)
+    dex = row["dex"]
+    slug = row["slug"]
+    differs = species["has_gender_differences"] == true
+    row["gender_rate"] = species.fetch("gender_rate")
+    row["has_gender_differences"] = differs
+    row["female_sprite_url"] = (differs ? "#{S3_BASE}/#{dex}-#{slug}-female-sprite.png" : nil)
+    row["shiny_female_sprite_url"] = (differs ? "#{S3_BASE}/#{dex}-#{slug}-shiny-female-sprite.png" : nil)
+  end
+
+  # Add each GENDER_FAMILIES row, built from its female form (its dex, types,
+  # stats and art — the male art is worn through gender_forms), and re-root both
+  # forms' descendants on the family so the whole line is one evolution tree.
+  # Each form row keeps its own base + evolution, so an old task still carrying
+  # nidoran-f evolves to Nidorina exactly as before. Idempotent over a re-fetch:
+  # an existing family row is replaced, never duplicated.
+  def stamp_gender_families(rows)
+    GENDER_FAMILIES.each do |family, spec|
+      forms = Pokemon::GENDERS.to_h { |gender| [gender, rows.find { |row| row["slug"] == spec.fetch(gender) }] }
+      next if forms.values.any?(&:nil?)
+
+      rows.reject! { |row| row["slug"] == family }
+      female = forms.fetch("female")
+      evolution_genders = forms.each_with_object({}) do |(gender, form), map|
+        Array(form["evolution"]).each { |child| map[child] = gender }
+      end
+      rows << female.merge(
+        "name" => spec.fetch("name"),
+        "slug" => family,
+        "base" => family,
+        "evolution" => evolution_genders.keys,
+        "baby" => [],
+        # Either form, evenly — the family draws Nidoran♀ and Nidoran♂ alike.
+        "gender_rate" => 4,
+        "has_gender_differences" => false,
+        "female_sprite_url" => nil,
+        "shiny_female_sprite_url" => nil,
+        "gender_forms" => Pokemon::GENDERS.to_h { |gender| [gender, spec.fetch(gender)] },
+        "evolution_genders" => evolution_genders
+      )
+      form_slugs = forms.values.map { |form| form["slug"] }
+      rows.each do |row|
+        next if form_slugs.include?(row["slug"]) || row["slug"] == family
+
+        row["base"] = family if form_slugs.include?(row["base"])
+      end
+    end
+  end
+
+  # Stamp EVOLUTION_GENDERS onto each present FROM row, keeping only the branches
+  # whose target is also present (a Gen 1–2 fetch has no Gallade to gate).
+  def stamp_evolution_genders(rows)
+    slugs = rows.to_set { |row| row["slug"] }
+    EVOLUTION_GENDERS.each do |from, branches|
+      row = rows.find { |candidate| candidate["slug"] == from }
+      next unless row
+
+      present = branches.select { |into, _| slugs.include?(into) }
+      row["evolution_genders"] = present unless present.empty?
     end
   end
 
@@ -288,11 +409,20 @@ namespace :pokemon do
   end
 
   # Which artwork variants an image task processes — VARIANTS=shiny (or
-  # VARIANTS=normal) narrows a run; the default is both. The shiny-only run is
-  # the common re-provision case (the normal art is already mirrored).
+  # VARIANTS=normal, VARIANTS=female) narrows a run; the default is all three.
+  # The shiny-only run is the common re-provision case (the normal art is already
+  # mirrored); female is upload_images-only (crop_and_upload has no female art).
   def image_variants
     requested = ENV["VARIANTS"].to_s.split(",").map(&:strip).reject(&:empty?)
-    requested.presence || %w[normal shiny]
+    requested.presence || %w[normal shiny female]
+  end
+
+  # The committed rows an image task works: the dex slice, minus the gender
+  # FAMILY rows, whose art is their forms' keys (nidoran wears 29-nidoran-f-*).
+  def image_rows(range)
+    JSON.parse(File.read(DATA_FILE)).select do |row|
+      range.cover?(row.fetch("dex")) && row["gender_forms"].blank?
+    end
   end
 
   # GET a PNG, verifying a 2xx + image content-type so an S3 error XML never gets
@@ -318,6 +448,29 @@ namespace :pokemon do
       out_path.to_s
     )
     raise "magick crop failed" unless ok && File.exist?(out_path) && File.size(out_path).positive?
+  end
+
+  # ADDITIVE upload: PUT only when the key is absent, so a re-run never
+  # overwrites (or churns the cache of) an object already served. Returns true
+  # when it uploaded, false when the key was already there. The source is checked
+  # like download_png, so a CDN 404 page is never stored as a sprite.
+  def put_image_if_absent(s3, bucket, key, source_url)
+    begin
+      s3.head_object(bucket: bucket, key: key)
+      warn "  exists, skipped: #{key}"
+      return false
+    rescue Aws::S3::Errors::NotFound, Aws::S3::Errors::NoSuchKey
+      nil # absent — upload it
+    end
+
+    uri = URI(source_url)
+    res = Net::HTTP.get_response(uri)
+    raise "GET #{source_url} → HTTP #{res.code}" unless res.is_a?(Net::HTTPSuccess)
+    raise "GET #{source_url} → content-type #{res.content_type}" unless res.content_type.to_s.start_with?("image/")
+
+    s3.put_object(bucket: bucket, key: key, body: res.body, content_type: "image/png",
+                  cache_control: "public, max-age=31536000, immutable")
+    true
   end
 
   def put_image(s3, bucket, key, source_url)
