@@ -109,10 +109,14 @@ class Appearances::LookReadingTest < ActiveSupport::TestCase
   end
 
   # THE CACHED HEADSHOT IS A REAL REFERENCE, and this is the caveat the board was
-  # warned about: measured 2026-09-26, one cached ESPN headshot produced an
-  # operator-approved ten-panel sheet and five references measured no better than one.
-  # So a look can reach Generation without a rich candidate set, and Source must not
-  # gate on one.
+  # warned about: measured 2026-09-26, ONE cached ESPN headshot was enough to produce
+  # an operator-approved sheet. So a look can reach Generation without a rich candidate
+  # set, and Source must not gate on one.
+  #
+  # SUFFICIENCY, NOT OPTIMALITY. This used to add "and five references measured no
+  # better than one" — an /v1/images/edits finding, quoted here as though it applied
+  # to the sheet endpoint. Whether more references help is unmeasured on that path,
+  # and this case does not depend on the answer either way.
   test "a cached headshot alone satisfies the source step" do
     r = reading(look(colorway: "bills home"), athlete: true, headshot: true)
 

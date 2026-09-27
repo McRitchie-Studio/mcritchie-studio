@@ -50,9 +50,15 @@ class Artifact < ApplicationRecord
   # WHAT THE CALL COST, IN WORDS — and always with the UNIT NAMED.
   #
   # `billable_units` HOLDS TWO DIFFERENT VOCABULARIES: fal bills a sheet at 3
-  # IMAGE UNITS, OpenAI reports tens of thousands of TOKENS for the same picture.
-  # A bare "3" beside a bare "18432" invites exactly one conclusion and it is
-  # wrong, so the unit is never dropped.
+  # IMAGE UNITS, OpenAI reports SINGLE-DIGIT THOUSANDS of TOKENS for the same
+  # picture (6,724-7,629 across the three sheets measured 2026-09-27 — the figures
+  # are in config/image_generators.yml, which owns them). A bare "3" beside a bare
+  # four-figure token count invites exactly one conclusion and it is wrong, so the
+  # unit is never dropped. Quote the ORDER or the RANGE here, never one sample: the
+  # three measured sheets differ by 900 tokens, so any single number goes stale on
+  # the next generation. This comment previously illustrated the contrast with an
+  # invented five-figure count and called the order "tens of thousands", neither of
+  # which any measurement supports — a guard now pins both against reappearing.
   #
   # A NIL COST IS PRINTED AS NOTHING, NEVER AS ZERO. nil means the vendor did not
   # report a price we can re-derive — not that the image was free.

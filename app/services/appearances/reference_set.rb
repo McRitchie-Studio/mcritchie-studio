@@ -109,13 +109,15 @@ module Appearances
     # cost the operator the whole sheet; the mirrored copy sits on our own S3 and needs no
     # headers of anybody's.
     #
-    # ⚠ WHETHER MORE REFERENCES MAKE A BETTER SHEET IS UNMEASURED ON THIS PATH. The "five
-    # references were no better than one" finding in this repo is attributed to three
-    # different endpoints in three different places — config/image_generators.yml credits
-    # this Responses row, ImageGeneration::OpenAI credits /v1/images/edits, and the
-    # 2026-09-27 operator relay credits the Higgsfield training path — so it cannot be
-    # relied on for any of them. No credential for this vendor exists on the machine this
-    # was built on, so nothing here was measured against the live API.
+    # ⚠ WHETHER MORE REFERENCES MAKE A BETTER SHEET IS UNMEASURED ON THIS PATH, and that
+    # is still true after the attribution was cleaned up. The "five references were no
+    # better than one" finding was once credited to three different endpoints in three
+    # different places; it belongs to /v1/images/edits, where it was measured, and every
+    # copy now says so. That settles WHOSE finding it is, not what it implies here: no
+    # multi-reference call to /v1/responses has ever been made from this repo, and no
+    # credential for this vendor exists on the machine this was built on, so nothing
+    # here was measured against the live API. See `reference_arity` in
+    # config/image_generators.yml for the decision and what would settle it.
     def generation_urls
       (floor_urls + offerable_urls(:reference_eligible?, prefer_hosted: true))
         .uniq

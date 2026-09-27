@@ -52,7 +52,11 @@ class Appearances::GenerateArtifactTest < ActiveSupport::TestCase
     FakeAdapter.calls = []
     FakeAdapter.result = result || ImageGeneration::Result.new(
       image_urls: ["data:image/png;base64,QUJD"], seed: nil, request_id: "resp_1",
-      generator_key: @row.key, version: @row.provenance_version, billable_units: 18_432
+      # A MEASURED TOKEN COUNT. This was an invented five-figure number, and it leaked out
+      # of the test suite into comments across app/ and docs/ as though it were an observed
+      # OpenAI cost. Real sheets ran 6,724-7,629; see config/image_generators.yml, which
+      # owns the numbers. Keep a stub the registry row can vouch for.
+      generator_key: @row.key, version: @row.provenance_version, billable_units: 7_629
     )
     ImageGeneration::Adapter.stub(:for, FakeAdapter) do
       Appearances::StoreGeneratedImage.stub(:call, STORED_URL) do
@@ -94,9 +98,10 @@ class Appearances::GenerateArtifactTest < ActiveSupport::TestCase
 
   # ⚠ A REVERSAL, AND THE OPERATOR ASKED FOR IT. This case used to assert "exactly one
   # reference photograph is sent", justified by "five performed no better than one" — a
-  # sentence this repo attributes to three different paths (config/image_generators.yml
-  # credits this Responses row, ImageGeneration::OpenAI credits /v1/images/edits, the
-  # 2026-09-27 operator relay credits the Higgsfield trainer), so it settles nothing here.
+  # sentence that was once carried with three different subjects (this Responses row,
+  # /v1/images/edits, and the Higgsfield trainer). It is the /v1/images/edits
+  # measurement and now says so wherever it appears, which settles the attribution and
+  # leaves it settling nothing here: it is a finding about a different endpoint.
   #
   # The operator's words, 2026-09-27: *"it would be better if we provided a few headshots
   # when submitting for the character model ... more context on facial structure and
@@ -219,7 +224,7 @@ class Appearances::GenerateArtifactTest < ActiveSupport::TestCase
     assert_equal "https://api.openai.com/v1/responses", artifact.generator_endpoint
     assert_equal "gpt-5-2025-08-07@v1", artifact.generator_version,
                  "the MODEL is stamped, not the door every model comes through"
-    assert_equal 18_432, artifact.billable_units
+    assert_equal 7_629, artifact.billable_units
     assert_includes artifact.prompt, "5-column by 2-row grid"
     assert_predicate artifact, :generated?
   end

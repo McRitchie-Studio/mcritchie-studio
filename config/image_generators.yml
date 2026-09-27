@@ -58,8 +58,11 @@ generators:
   # THE ENDPOINT IS THE FINDING. This is the Responses API with the
   # `image_generation` TOOL — not /v1/images/edits, which was measured on the same
   # reference and the same prompt and lost identity even on a SINGLE portrait
-  # ("different facial structure, age, and facial hair"), and was no better with
-  # five reference photos. /v1/images/edits EDITS a picture; the Responses tool
+  # ("different facial structure, age, and facial hair"), and where /v1/images/edits
+  # was no better with five reference photos than with one — a finding about THAT
+  # endpoint, which is the only path it has ever been measured on, and never a
+  # finding about the Responses path this row registers.
+  # /v1/images/edits EDITS a picture; the Responses tool
   # LOOKS at the reference, reasons, then generates, and that reasoning step is
   # what carries the likeness across ten panels.
   #
@@ -83,23 +86,60 @@ generators:
     # true statement, and billable_units still records what was actually measured.
     billing_unit: tokens
     reference_field: input_image
+    # ⚠ `one` HERE IS A QUALITY BELIEF, NOT AN API LIMIT, AND IT IS UNMEASURED.
+    #
+    # THE KEY DOES TWO DIFFERENT JOBS ACROSS THIS FILE, which is worth knowing before
+    # you read any row's value. On the fal rows it records the vendor's REQUEST SHAPE —
+    # `reference_image_urls` takes a list, `reference_image_url` takes one, and getting
+    # it wrong earns a 400. Here it records what we BELIEVE produces a better sheet
+    # through an endpoint that accepts as many `input_image` blocks as you send. The
+    # first is checkable against a vendor doc; the second is only checkable by paying
+    # for sheets. Splitting them into two keys (`request_arity` / `references_sent`)
+    # would stop a reader taking one for the other; that is a code change with its own
+    # blast radius and it is not this comment.
+    #
+    # NOT FLIPPED TO `many`, DELIBERATELY, 2026-09-27. ImageGeneration::OpenAI is wired
+    # for the plural answer and honours whatever this says, so flipping it is one word.
+    # It stays `one` because nothing has measured the alternative ON THIS PATH:
+    #   * The "five were no better than one" finding was measured on /v1/images/edits,
+    #     a DIFFERENT endpoint this file tells you never to use. It is not evidence here.
+    #   * No multi-reference call to /v1/responses has ever been made from this repo.
+    #   * The question is a QUALITY judgement about a likeness, and the pads defect
+    #     below is the standing proof that a loosely-phrased judgement gets a generous
+    #     yes from whoever is asked. It needs the operator's eye, not an agent's.
+    # WHAT WOULD SETTLE IT: two sheets of the SAME person from the same prompt, one at
+    # `one` and one at `many` over a distilled set, put side by side for an operator
+    # verdict, with both token counts recorded here. Until that exists, `many` would be
+    # exactly the unmeasured capability claim this file's header exists to refuse.
     reference_arity: one
     capabilities:
       - zero_shot_identity
       - single_portrait
       - character_sheet
+    # TEN CELLS, EIGHT FIGURES — one layout, two correct counts, and this is the row
+    # that says which is which. The sheet is a 5x2 grid, so there are TEN CELLS. The
+    # two full-body figures each SPAN both rows of their column, so there are EIGHT
+    # FIGURES: 2 full-body + 6 head views. "Ten-panel" elsewhere in the repo means the
+    # ten cells of the grid; a count of eight means the figures standing in them.
+    # Neither number is wrong and they are not the same measurement.
     measured:
       date: "2026-09-26"
       by: coordinator
       result: >
-        A ten-panel character sheet from ONE cached ESPN headshot. The same man in
-        every panel, faithful to the reference. Operator verdict "I think you are
-        there" on v4. FIVE reference photos measured NO BETTER than one.
+        A character sheet from ONE cached ESPN headshot — ten grid cells carrying
+        eight figures (2 full-body + 6 head views). The same man in every one of
+        them, faithful to the reference. Operator verdict "I think you are there"
+        on v4. NOTE: this row claims nothing about reference COUNT — see the
+        reference_arity comment above for why that question is still open.
       cost: >
-        MEASURED 2026-09-27 through this app's own code path: one eight-panel sheet
-        of Courtland Sutton from one stored ESPN headshot took 121.8s and reported
-        usage.total_tokens 7629. There is no dollar figure because no token rate is
-        declared here — see billing_unit above for why inventing one is refused.
+        MEASURED through this app's own code path, three sheets, each one image of
+        ten cells / eight figures from a stored ESPN headshot. usage.total_tokens:
+        7629 (Courtland Sutton, 2026-09-27, 121.8s), 7423 (bo-nix, 2026-09-27),
+        6724 (jaylen-waddle, 2026-09-27). So a sheet costs SINGLE-DIGIT THOUSANDS
+        of tokens, measured range 6724-7629, and no single figure is "the" cost —
+        quote the range or the order, never one sample. There is no dollar figure
+        because no token rate is declared here — see billing_unit above for why
+        inventing one is refused.
       not_measured: >
         The prompt's "full pads in every panel" clause is NOT satisfied in the six
         head views. Measured twice independently — on the operator-approved v4 by

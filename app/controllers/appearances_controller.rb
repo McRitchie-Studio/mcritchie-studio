@@ -146,13 +146,11 @@ class AppearancesController < ApplicationController
   # NAMES WHAT MADE IT, in the flash as well as on the card. The operator is about
   # to judge a picture, and "which model produced this" is the first thing he needs
   # to know to judge it — especially while more than one generator is in play.
-  # NAMES WHAT MADE IT, in the flash as well as on the card. The operator is about
-  # to judge a picture, and "which model produced this" is the first thing he needs
-  # to judge it — especially while more than one generator is in play.
   #
   # THE UNIT IS PRINTED BESIDE THE COUNT because two generators count different
   # things: fal bills image units, OpenAI reports tokens. A bare number invites
-  # comparing 3 with 18,000.
+  # comparing 3 with a four-figure token count — the measured sheets ran 6,724 to
+  # 7,629 (config/image_generators.yml owns those figures).
   def generated_message(artifact)
     parts = ["#{artifact.generator_label} generated one character sheet"]
     parts << "seed #{artifact.seed}" if artifact.seed.present?
@@ -205,8 +203,22 @@ class AppearancesController < ApplicationController
   # TWO SEPARATE QUESTIONS, and collapsing them is what produces the useless
   # "generation is off". `@generator_row` is the row that WOULD serve, read
   # without regard to credentials, so the page can name the model; `@can_generate`
-  # is whether it can run right now. Together they let the panel say "Ideogram V3
-  # Character — set FAL_KEY to turn it on" instead of a shrug.
+  # is whether it can run right now. Together they let the panel say this, rather than
+  # a shrug:
+  #
+  #   "GPT-5 image generation (Responses) is not configured, so nothing was generated
+  #   and nothing was spent. Set OPENAI_API_KEY to turn it on."
+  #
+  # ⚠ THAT EXAMPLE IS THE ONE THE PANEL CAN ACTUALLY PRINT, and it did not used to be.
+  # It named the fal Ideogram row and its FAL_KEY credential, which this path cannot
+  # reach: `Appearances::GenerateArtifact::CAPABILITY` is `:character_sheet`, and
+  # `openai_gpt5_sheet` is the ONLY row that claims it, so `preferred(:character_sheet)`
+  # can return nothing else and the label and the env var were both wrong. The operator
+  # most likely to read this comment is the one debugging "why is generation off", who
+  # would then have gone looking for a fal credential the sheet path never asks for.
+  # The literal string comes from `ImageGeneration::Registry::Row#unconfigured_message`,
+  # so read that for the exact wording rather than trusting this paraphrase — and if
+  # another row ever claims `character_sheet`, the example changes with the YAML order.
   #
   # `@identity_photo_url` IS READ EVEN WHEN GENERATION IS OFF, because "this
   # person has no headshot" is a fact about the record that an operator should see
