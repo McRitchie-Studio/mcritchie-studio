@@ -1,0 +1,221 @@
+# THE IMAGE GENERATORS WE CAN CALL — one row per model, read by
+# ImageGeneration::Registry.
+#
+# WHY A REGISTRY RATHER THAN A CLIENT. The operator's decision, 2026-09-26: "the
+# generator should be data driven to an extent and deterministic. We should be
+# able to transition between generators as model capacities change." A vendor
+# name spelled through the codebase makes that transition a rewrite. A row makes
+# it an edit to this file — and that was proven within a day of writing it: the
+# sheet generator moved from fal to OpenAI and no caller changed.
+#
+# ⚠ A ROW RECORDS WHAT WAS MEASURED FOR **THAT ROW**, AND NOTHING ELSE.
+#
+# This is the rule the file exists to enforce, and it was learned by breaking it
+# twice in one day:
+#
+#   * `fal_ideogram_character` shipped claiming `full_body`, `back_view` and
+#     `expressions`. `back_view` had NEVER been measured. `full_body` had been
+#     measured ONCE and had come back a grey suit cropped mid-thigh, which is not
+#     a pass. Three capability claims, one weak measurement.
+#   * A report then said "fal cannot hold a set" on the strength of a
+#     `fal-ai/flux-pulid` grid. That is a DIFFERENT ROW. Two fal rows are two
+#     models; a result measured on one says nothing about the other.
+#
+# So every row carries a `measured:` block saying what was actually run, when,
+# and what came back — including the word NOT for anything untested. A capability
+# with no corresponding measurement is a claim the code will act on and nobody
+# checked. If you cannot point at a run, do not list the capability.
+#
+# THE CAPABILITY VOCABULARY, deliberately narrow:
+#
+#   zero_shot_identity  carries a likeness from ONE photo at generation time,
+#                       with no training step to prepare and therefore none to fail.
+#   single_portrait     PROVEN to hold that likeness on ONE image.
+#   character_sheet     PROVEN to hold it across a MULTI-PANEL sheet in one image.
+#                       Strictly stronger than single_portrait and measured
+#                       separately, because the two come apart: flux-pulid holds a
+#                       portrait and returns six different men on a grid.
+#   trained_identity    builds a persistent identity by TRAINING on a photo set.
+#   image_to_video      animates a still.
+#
+# PINNING IS HALF OF "DETERMINISTIC". A sheet from March must match one from
+# January, which is impossible if the model moves underneath. Rows name an exact
+# published model — a dated snapshot wherever the vendor offers one — and
+# `api_version` records the contract the request and response shapes were read
+# off, so a vendor reshaping its payload is a visible mismatch rather than a
+# silent parse failure.
+#
+# THE OTHER HALF IS STAMPED ON THE ARTIFACT: artifacts.generator, .generator_endpoint,
+# .generator_version, .seed, .prompt, .billable_units, .cost_usd.
+#
+# NEVER PUT A SECRET IN THIS FILE. Rows name the ENV var; the value comes from
+# Heroku config or 1Password.
+
+generators:
+  # THE SHEET GENERATOR, and the only row measured to hold a likeness across a
+  # whole sheet.
+  #
+  # THE ENDPOINT IS THE FINDING. This is the Responses API with the
+  # `image_generation` TOOL — not /v1/images/edits, which was measured on the same
+  # reference and the same prompt and lost identity even on a SINGLE portrait
+  # ("different facial structure, age, and facial hair"), and was no better with
+  # five reference photos. /v1/images/edits EDITS a picture; the Responses tool
+  # LOOKS at the reference, reasons, then generates, and that reasoning step is
+  # what carries the likeness across ten panels.
+  #
+  # A DATED SNAPSHOT, NOT THE `gpt-5` ALIAS. The alias resolves to this snapshot
+  # today (measured 2026-09-27 against /v1/models), and an alias that silently
+  # rolls forward is precisely what "deterministic" forbids. The approved
+  # artifacts were generated through the alias while it pointed here.
+  openai_gpt5_sheet:
+    label: GPT-5 image generation (Responses)
+    adapter: openai
+    endpoint: https://api.openai.com/v1/responses
+    model: gpt-5-2025-08-07
+    api_version: v1
+    credential_env: OPENAI_API_KEY
+    # TOKENS, NOT IMAGES. The Responses API reports `usage.total_tokens` and no
+    # image count at all, so a sheet is one picture and many thousands of these.
+    # NO `unit_price_usd` IS DECLARED: the call is a reasoning pass plus an image
+    # generation billed on different schedules, and multiplying tokens by a single
+    # made-up rate would put a confident dollar figure on the artifact that nobody
+    # could re-derive. cost_usd therefore stays nil — "not reported" — which is the
+    # true statement, and billable_units still records what was actually measured.
+    billing_unit: tokens
+    reference_field: input_image
+    reference_arity: one
+    capabilities:
+      - zero_shot_identity
+      - single_portrait
+      - character_sheet
+    measured:
+      date: "2026-09-26"
+      by: coordinator
+      result: >
+        A ten-panel character sheet from ONE cached ESPN headshot. The same man in
+        every panel, faithful to the reference. Operator verdict "I think you are
+        there" on v4. FIVE reference photos measured NO BETTER than one.
+      cost: >
+        MEASURED 2026-09-27 through this app's own code path: one eight-panel sheet
+        of Courtland Sutton from one stored ESPN headshot took 121.8s and reported
+        usage.total_tokens 7629. There is no dollar figure because no token rate is
+        declared here — see billing_unit above for why inventing one is refused.
+      not_measured: >
+        The prompt's "full pads in every panel" clause is NOT satisfied in the six
+        head views. Measured twice independently — on the operator-approved v4 by
+        the coordinator, and again on this app's own 2026-09-27 run — the two
+        full-body figures carry pad structure while the head views show a natural
+        sloping shoulder line rather than the squared shelf a shoulder pad creates.
+        Repeating the clause per panel did NOT fix it either time, so the open
+        question is whether the phrasing must describe the SILHOUETTE instead of
+        naming the equipment. The look is operator-approved; the CLAIM is not met.
+    docs_url: https://platform.openai.com/docs/api-reference/responses
+
+  # A SINGLE PORTRAIT, CHEAPLY AND FAST — which is all this row is registered for.
+  #
+  # IT SHIPPED OVERCLAIMING and this is the corrected row. It previously listed
+  # `full_body`, `back_view` and `expressions`. `back_view` was never run at all.
+  # `full_body` ran ONCE and came back a grey business suit cropped at mid-thigh
+  # rather than a team uniform head-to-toe — the likeness held, the instruction did
+  # not, and a capability list is a statement about what the model DELIVERS.
+  fal_ideogram_character:
+    label: Ideogram V3 Character
+    adapter: fal
+    endpoint: fal-ai/ideogram/character
+    api_version: "1.0.0"
+    credential_env: FAL_KEY
+    reference_field: reference_image_urls
+    reference_arity: many
+    unit_price_usd: 0.05
+    billing_unit: image units
+    capabilities:
+      - zero_shot_identity
+      - single_portrait
+    measured:
+      date: "2026-09-26"
+      by: shannon
+      result: >
+        One image of Courtland Sutton from one ESPN headshot. Identity HELD and was
+        plainly recognisable even at full-body scale. Billed 3 units at $0.05 =
+        $0.15; about 60s queued to completed.
+      not_measured: >
+        NOT run on a multi-panel sheet, so it claims no character_sheet capability.
+        The one full-body attempt produced a grey suit cropped mid-thigh, so
+        full_body is NOT claimed either. back_view has never been run.
+    docs_url: https://fal.ai/models/fal-ai/ideogram/character
+
+  # THE FASTEST PORTRAIT, and the clearest example of why `character_sheet` is a
+  # separate capability from `single_portrait`.
+  fal_flux_pulid:
+    label: PuLID Flux
+    adapter: fal
+    endpoint: fal-ai/flux-pulid
+    api_version: "1.0.0"
+    credential_env: FAL_KEY
+    reference_field: reference_image_url
+    reference_arity: one
+    capabilities:
+      - zero_shot_identity
+      - single_portrait
+    measured:
+      date: "2026-09-26"
+      by: coordinator
+      result: >
+        One reference, single portrait — identity HELD, scored 0.75, in 4.3s.
+      not_measured: >
+        FAILS on a set, which is why character_sheet is absent rather than assumed
+        from the portrait result: a 6-panel grid returned SIX DIFFERENT MEN, and
+        three separate calls at the same seed matched the reference 1 time in 3.
+    docs_url: https://fal.ai/models/fal-ai/flux-pulid
+
+  # THE INCUMBENT, kept and not deleted.
+  #
+  # `trained_identity` is a real capability and not a euphemism: when a photo set
+  # DOES satisfy it, a trained model holds a subject more tightly than any
+  # zero-shot adapter. The training step is exactly what we could not feed.
+  higgsfield_soul:
+    label: Higgsfield Soul v2
+    adapter: higgsfield
+    endpoint: /higgsfield-ai/soul/v2/standard
+    api_version: v2
+    credential_env: HIGGSFIELD_API_KEY
+    reference_field: custom_reference_id
+    reference_arity: trained
+    capabilities:
+      - trained_identity
+    measured:
+      date: "2026-09-25"
+      by: coordinator
+      result: >
+        Six custom-reference mints attempted. FOUR FAILED at training preparation,
+        always "We couldn't prepare your photos for training"; the two that
+        completed each used a single tight ESPN headshot. The images fetched fine
+        in every failure, so this is image CONTENT at the training step, never
+        reachability.
+      not_measured: >
+        No generation was ever pinned to a completed identity, so nothing here
+        claims single_portrait or character_sheet.
+    docs_url: https://docs.higgsfield.ai
+
+  # THE JOB HIGGSFIELD IS ACTUALLY GOOD AT, and the clearest argument for a
+  # registry over a migration. Content::AssembleAgent has called this all along
+  # and it has never failed. Right tool per stage.
+  higgsfield_kling_video:
+    label: Kling 2.5 Turbo Pro (image to video)
+    adapter: higgsfield
+    endpoint: /kling-video/v2.5-turbo/pro/image-to-video
+    api_version: v2.5-turbo
+    credential_env: HIGGSFIELD_API_KEY
+    reference_field: image_url
+    reference_arity: one
+    capabilities:
+      - image_to_video
+    measured:
+      date: "2026-09-24"
+      by: content pipeline
+      result: >
+        In continuous use by Content::AssembleAgent and has never failed.
+      not_measured: >
+        Carries no identity capability of its own — it animates a still that some
+        other row produced.
+    docs_url: https://docs.higgsfield.ai

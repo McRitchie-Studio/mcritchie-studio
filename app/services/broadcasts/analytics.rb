@@ -81,26 +81,19 @@ module Broadcasts
 
     # [ [broadcast, summary] ] newest first, for every broadcast with a send.
     def by_broadcast
-      Broadcast.where(id: BroadcastDelivery.where.not(sent_at: nil).select(:broadcast_id)).recent.map do |broadcast|
-        [ broadcast, summary(deliveries.where(broadcast: broadcast)) ]
-      end
+      sums = summaries_by("broadcast_deliveries.broadcast_id")
+      Broadcast.where(id: sums.keys).recent.map { |broadcast| [ broadcast, sums.fetch(broadcast.id) ] }
     end
 
     # [ [date, summary] ] by the (UTC) day the email was sent, newest first. Stands
     # in for waves until the sender sends in waves.
     def by_send_day
-      days = deliveries.pluck(Arel.sql("DISTINCT DATE(broadcast_deliveries.sent_at)")).compact.sort.reverse
-      days.map { |day| [ day, summary(deliveries.where(sent_at: Time.utc(day.year, day.month, day.day).all_day)) ] }
+      summaries_by("DATE(broadcast_deliveries.sent_at)").sort_by { |day, _| day }.reverse
     end
 
     # [ [provider, summary] ] by the recipient's mailbox provider, biggest first.
     def by_provider
-      domain = "split_part(lower(contacts.email), '@', 2)"
-      buckets = PROVIDERS.transform_values { |domains| deliveries.joins(:contact).where("#{domain} IN (?)", domains) }
-      buckets["Other"] = deliveries.joins(:contact).where("#{domain} NOT IN (?)", PROVIDERS.values.flatten)
-      buckets.map { |name, scope| [ name, summary(scope) ] }
-             .reject { |_, s| s.sent.zero? }
-             .sort_by { |_, s| -s.sent }
+      summaries_by(provider_sql, scope: deliveries.joins(:contact)).sort_by { |name, s| [ -s.sent, name ] }
     end
 
     # [ [link_key, people, machines] ] from our click redirect, most clicked first.
@@ -111,6 +104,29 @@ module Broadcasts
         out[key.presence || "(unknown)"][machine ? 1 : 0] += count
       end.map { |key, (people, machines)| [ key, people, machines ] }
           .sort_by { |key, people, machines| [ -people, -machines, key ] }
+    end
+
+    # { group key => Summary } in two queries whatever the number of groups:
+    # the counts grouped by `key_sql`, and the results grouped by it and goal.
+    def summaries_by(key_sql, scope: deliveries)
+      key = Arel.sql(key_sql)
+      counts = scope.group(key).pluck(key, *COLUMNS)
+      results = scope.joins(:events).where(email_events: { kind: "converted" })
+                     .group(key, Arel.sql("email_events.data->>'goal'"))
+                     .distinct.count("broadcast_deliveries.id")
+      counts.to_h do |group, *numbers|
+        by_goal = GOALS.index_with { |goal| results.fetch([ group, goal ], 0) }
+        [ group, Summary.new(*numbers.map(&:to_i), by_goal) ]
+      end
+    end
+
+    # A CASE naming each address's mailbox provider (PROVIDERS), "Other" if none.
+    def provider_sql
+      domain = "split_part(lower(contacts.email), '@', 2)"
+      whens = PROVIDERS.map do |name, domains|
+        BroadcastDelivery.sanitize_sql_array([ "WHEN #{domain} IN (?) THEN ?", domains, name ])
+      end
+      "CASE #{whens.join(' ')} ELSE 'Other' END"
     end
 
     # The list as it stands, whatever was sent.
