@@ -92,7 +92,14 @@ module Workspace
           log = ErrorLog.capture!(unlogged)
           # Hang the row off the mailbox, so the drafts that failed in one
           # mailbox are one query rather than a message grep.
-          log&.update!(target: mailbox)
+          #
+          # target_name is set EXPLICITLY, not left to the house
+          # `target.slug if respond_to?(:slug)` idiom: WorkspaceMailbox has no
+          # slug, and the engine's error-log index renders the target badge only
+          # `if log.target_name.present?` while the show page prints the name
+          # into a block gated on target_type. Target without name is therefore
+          # a row that is reachable by id and blank to a reader.
+          log&.update!(target: mailbox, target_name: mailbox.address)
         end
       rescue StandardError
         nil

@@ -172,6 +172,9 @@ class WorkspaceDrafterTest < ActiveSupport::TestCase
     assert_includes log.message, "alex@mason.test"
     assert_includes log.inspect_field, "Workspace::Drafter::Error"
     assert_equal @mailbox, log.target, "the row hangs off the mailbox the draft was written in"
+    # The engine's index renders the target badge only when target_name is
+    # present, so a target without a name is a row a reader cannot label.
+    assert_equal "alex@mason.test", log.target_name
     # A wrapper built at rescue time has NO backtrace of its own, so the
     # original's has to be carried across or the failure site is lost.
     assert_includes log.backtrace.to_s, "drafter.rb", "the original failure site survives the wrap"
