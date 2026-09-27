@@ -1,11 +1,11 @@
 <%# THE APPLICATIONS SUMMARY CARD — the first of the four /deployments summary cards
-    (tasks/_deploy_summary_row) — plus the pinned strip that follows it down the page.
+    (tasks/_deploy_summary_row).
 
     ONE LINE PER APP, NEWEST SUITE RESTART FIRST. The operator's spec: "whichever app
     test suite restarted most recently jumps to the top", so a glance at the top row
     answers "what is cooking and how is it going". The order is
     Ci::AppLadder.recent_first, applied once in the controller and the broadcaster, so
-    this card, the sidebar's full cards and the pinned strip all read in ONE order.
+    this card and the sidebar's full cards read in ONE order.
 
     EACH LINE IS THE SAME METER as everywhere else on the page —
     components/_ci_progress_meter, inline — so the marks keep their meaning: ✗ failures
@@ -23,11 +23,16 @@
     stamp and every release event. Without it the card sat stale until a reload while
     every other card moved, which is how the slot came to exist.
 
-    THE PINNED STRIP is rendered HERE, inside #app-ladder-row, on purpose: the broadcast
-    replaces this slot, so the strip refreshes with the card and can never sit pinned to
-    the top of the page showing a verdict the card has already moved past. It pins once
-    this card has scrolled above the site header, and carries the full condensed tiles
-    (name, meter, ladder) the operator reads while working the board below.
+    THE LIST SCROLLS INSIDE THE CARD. The four summary cards share one grid row, so an
+    Applications card that grew a line per app set the height of the whole row and
+    stretched Releases and DevOps to twice what they hold. The list is laid ABSOLUTELY
+    inside a flex-1 well: it contributes only its min-height to the row, fills whatever
+    height the tallest sibling sets, and scrolls past that. Newest restart is on top, so
+    what scrolls away is the quietest news.
+
+    THERE IS NO PINNED STRIP. It followed the operator down the page as a full-bleed
+    row of tiles; the operator retired it once this card became a summary. The board's
+    lane headers stack on --pin-stack-bottom, where a missing layer simply measures 0.
 
     data-rendered-at is the slot's own render stamp — "when was this last refreshed" for
     anyone who suspects a stale board, and what makes the wiring e2e deterministic: it
@@ -36,145 +41,24 @@
 
     Locals: cards - Array<Ci::AppLadder::Card>, in display order. %>
 <% cards = local_assigns.fetch(:cards, []) %>
-<%# The pinned strip's fade — seeded server-side from the card count so its first paint
-    is right before Alpine measures anything (Ci::AppLadder::ROW_FADE_AT is the count
-    that cannot fit the board's widest container). %>
-<% seed_fade = cards.size >= Ci::AppLadder::ROW_FADE_AT %>
 <% running = cards.count { |card| card.latest_suite_progress&.running? } %>
-<div id="app-ladder-row" class="min-w-0" data-test="app-ladder-row"
+<div id="app-ladder-row" class="h-full min-w-0" data-test="app-ladder-row"
      data-rendered-at="<%= (Time.current.to_f * 1000).to_i %>">
-  <%# THE CONTROLLER, inline. No <script> tag: this fragment is replaced by a Turbo
-      Stream broadcast, and Alpine re-initialises replaced DOM on its own while a
-      script inside a replaced fragment is a re-execution question nobody should have
-      to answer on a live board.
-
-      It decides ONE thing — whether the card has scrolled above the pinned stack, so
-      the strip should show — and gauges the strip's own fade. The answer is written to
-      the appLadder STORE, which outlives this node (see tasks/_deploy_board): a fresh
-      component starting at false is what made the strip blink out and back on every
-      broadcast.
-
-      The ResizeObserver belongs to the instance and is released in destroy(): this
-      slot is REPLACED wholesale by broadcasts all day, so an observer left behind
-      would accumulate per broadcast. %>
-  <div class="h-full"
-       x-data="{
-         fadeRight: '<%= ApplicationHelper::APP_LADDER_FADE_MASK %>',
-         pinnedOverflowing: <%= seed_fade %>,
-         pinnedAtEnd: false,
-         _ro: null,
-         _dead: false,
-         init() {
-           this.$nextTick(() => {
-             if (this._dead) return;
-             this.measure();
-             if (!window.ResizeObserver) return;
-             this._ro = new ResizeObserver(() => this.measure());
-             const header = document.querySelector('.vt-pinned-header');
-             if (header) this._ro.observe(header);
-             if (this.$refs.pinnedScroller) this._ro.observe(this.$refs.pinnedScroller);
-           });
-         },
-         destroy() {
-           this._dead = true;
-           if (this._ro) { this._ro.disconnect(); this._ro = null; }
-         },
-         measure() {
-           // READ THE PUBLISHED EDGE, DO NOT MEASURE THE HEADER. The engine
-           // publishes the pinned stack from one coalesced measurement; the strip
-           // positions off the same variable, so the question asked -- has the
-           // card scrolled above where I would pin? -- and the answer acted on
-           // cannot drift apart.
-           //
-           // NO DOUBLE QUOTES ANYWHERE IN THIS ATTRIBUTE. x-data is delimited by
-           // them, so one inside -- even inside a comment -- ends the attribute
-           // early and Alpine never parses the component.
-           // test/views/app_ladder_row_test.rb guards this.
-           const edge = parseFloat(
-             getComputedStyle(document.documentElement).getPropertyValue('--pin-apps-top')
-           ) || 0;
-           const row = this.$refs.row;
-           // A card with no box (a hidden parent, a detached node) is not a card
-           // that scrolled away: an all-zero rect would otherwise read as pinned.
-           const box = row ? row.getBoundingClientRect() : null;
-           this.$store.appLadder.pinned = !!box && box.height > 0 && box.bottom <= edge;
-           this.gauge();
-         },
-         gauge() {
-           const strip = this.$refs.pinnedScroller;
-           if (strip) {
-             this.pinnedOverflowing = strip.scrollWidth - strip.clientWidth > 8;
-             this.pinnedAtEnd = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 8;
-           }
-         }
-       }"
-       @scroll.window="measure()"
-       @resize.window="measure()">
-    <%= tag.div(**deploy_summary_card_options("apps", test: "app-summary-card", extra_class: "@container"), "x-ref": "row",
-                "data-running": running) do %>
-      <%= render "tasks/summary_card_header", panel: "apps", title: "Applications",
-                 meta: cards.any? ? (running.positive? ? "#{running} cooking" : pluralize(cards.size, "app")) : nil %>
-      <% if cards.any? %>
-        <ol class="mt-3 space-y-1.5" data-test="app-summary-list">
+  <%= tag.div(**deploy_summary_card_options("apps", test: "app-summary-card", extra_class: "@container"),
+              "data-running": running) do %>
+    <%= render "tasks/summary_card_header", panel: "apps", title: "Applications",
+               meta: cards.any? ? (running.positive? ? "#{running} cooking" : pluralize(cards.size, "app")) : nil %>
+    <% if cards.any? %>
+      <div class="relative mt-3 min-h-[9rem] flex-1" data-test="app-summary-well">
+        <ol class="absolute inset-0 space-y-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]"
+            data-test="app-summary-list">
           <% cards.each do |card| %>
             <%= render "tasks/app_summary_row", card: card %>
           <% end %>
         </ol>
-      <% else %>
-        <p class="mt-3 text-xs text-muted" data-test="app-summary-empty">No applications report CI on the ladder yet.</p>
-      <% end %>
-    <% end %>
-
-    <% if cards.any? %>
-      <%# THE PINNED STRIP. Fixed under the site header (z-40 — the header is z-50 and
-          must always win), full-bleed so it reads as page chrome, and carrying the same
-          container gutters as the board so the tiles line up with the cards they came
-          from. `style="display: none"` is the no-JS/pre-init state: nothing is pinned
-          until something has measured that the row has actually left the screen. %>
-      <%# `:style` BINDS AN OBJECT, and that is a correctness rule rather than a taste
-          one. Alpine's STRING form of :style calls setAttribute("style", …), which
-          replaces the whole attribute — including the `display: none` that x-show wrote
-          — and `offset` changes on every scroll while the header shrinks. So the string
-          form would unhide this strip over the top of the board the moment the operator
-          scrolled with the row still on screen. The object form sets one property and
-          leaves x-show's alone. %>
-      <div class="fixed inset-x-0 z-40 border-b border-subtle bg-page/95 shadow-lg supports-[backdrop-filter]:backdrop-blur"
-           data-test="app-ladder-pinned"
-           role="region"
-           aria-label="Applications, pinned to the top of the page"
-           x-show="$store.appLadder.pinned"
-           <%# top comes from the engine's pinned stack, not from JS. The old
-               :style wrote a MEASURED number that chased the site header through
-               every intermediate height of its collapse — see the task
-               stop-headers-chasing-navbar for the 17 values it stepped through.
-               data-pin makes this strip publish its own --pin-apps-* in turn,
-               which is what the board's lane headers stack onto.
-
-               --pin-apps-TOP, not --pin-nav-bottom: this strip is ITSELF a layer
-               of the stack, and -top is the bottom edge of everything ABOVE it.
-               Today that is the site header and the two are equal, so the change
-               moves nothing — but naming the nav here is a claim that the nav is
-               what sits above this strip, which stops being true the moment
-               anything is pinned between them. (-bottom would be worse still: it
-               is this strip's OWN edge, so the strip would chase itself down the
-               page on every publish.) %>
-           data-pin="apps"
-           style="display: none; top: var(--pin-apps-top, 0px)"
-           x-transition.opacity.duration.150ms>
-        <div class="mx-auto w-full max-w-screen-2xl px-3 py-1.5 sm:px-4 lg:px-6 xl:px-8">
-            <div class="flex min-w-0 items-stretch gap-2 overflow-x-auto"
-                 data-test="app-ladder-pinned-scroller"
-                 x-ref="pinnedScroller"
-                 <%= tag.attributes(data: { faded: true }, style: ApplicationHelper::APP_LADDER_FADE_MASK) if seed_fade %>
-                 :data-faded="pinnedOverflowing && !pinnedAtEnd"
-                 :style="(pinnedOverflowing && !pinnedAtEnd) ? fadeRight : ''"
-                 @scroll="gauge()">
-              <% cards.each do |card| %>
-                <%= render "tasks/app_ladder_pinned_card", card: card %>
-              <% end %>
-            </div>
-        </div>
       </div>
+    <% else %>
+      <p class="mt-3 text-xs text-muted" data-test="app-summary-empty">No applications report CI on the ladder yet.</p>
     <% end %>
-  </div>
+  <% end %>
 </div>

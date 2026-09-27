@@ -22,9 +22,8 @@ async function scrollToBoardBottom(page) {
   });
 }
 
-// THE PINNED STACK on /deployments, in a real browser: the site nav, then the app-ladder
-// strip, then the swim-lane headers — three things holding the top of the page, each one
-// sitting on the bottom edge of the one above it.
+// THE PINNED STACK on /deployments, in a real browser: the site nav, then the swim-lane
+// headers sitting on its bottom edge.
 //
 // WHY THIS CAN ONLY BE A BROWSER CHECK. Every part of it is geometry. The integration
 // tier proves the header is `position: sticky` and takes a measured top; it cannot prove
@@ -35,16 +34,16 @@ async function scrollToBoardBottom(page) {
 //     sticky header stick to a scrollport with no vertical scroll of its own, so it
 //     rides the page up and out of view. Measured: `top: -552px` while the computed
 //     style still read `position: sticky`. Nothing in the markup says anything is wrong.
-//   · A stale offset. The nav TRANSITIONS its height over 300ms and the ladder strip
-//     appears mid-scroll, so a reading taken on the scroll event alone is behind by a
-//     frame and the headers settle into a gap or under the nav.
+//   · A stale offset. The nav changes its height as it collapses, so a reading taken
+//     on the scroll event alone is behind by a frame and the headers settle into a gap
+//     or under the nav.
 //
 // A WIDE VIEWPORT, like the other Deployments specs: the six-lane board collapses its
 // upstream lanes below 1400px, and the lane row only drops its scroller — the thing that
 // lets the headers pin at all — when the lanes fit without one.
 test.use({ viewport: { width: 1600, height: 800 } });
 
-test("the lane headers pin under the applications strip while cards scroll beneath", async ({
+test("the lane headers pin under the site header while cards scroll beneath", async ({
   page,
 }) => {
   await page.goto("/deployments");
@@ -59,20 +58,20 @@ test("the lane headers pin under the applications strip while cards scroll benea
 
   await scrollToBoardBottom(page);
 
-  // POLLED, because the nav's 300ms shrink and the strip's appearance both land after
-  // the scroll event that triggered them. What is asserted is that the stack CONVERGES.
+  // POLLED, because the nav's shrink lands after the scroll event that triggered it.
+  // What is asserted is that the stack CONVERGES.
   await expect
     .poll(
       async () =>
         page.evaluate(() => {
-          const strip = document.querySelector("[data-test='app-ladder-pinned']");
-          const stripBottom = Math.round(strip.getBoundingClientRect().bottom);
+          const nav = document.querySelector(".vt-pinned-header");
+          const navBottom = Math.round(nav.getBoundingClientRect().bottom);
           const tops = Array.from(document.querySelectorAll("[data-test='stage-header']"))
             .filter((el) => el.getBoundingClientRect().width > 0)
             .map((el) => Math.round(el.getBoundingClientRect().top));
-          return tops.every((t) => Math.abs(t - stripBottom) <= 2);
+          return tops.every((t) => Math.abs(t - navBottom) <= 2);
         }),
-      { message: "every lane header settles on the applications strip's bottom edge" }
+      { message: "every lane header settles on the site header's bottom edge" }
     )
     .toBe(true);
 
@@ -155,8 +154,7 @@ test("the lane headers return to the flow at the top of the page", async ({ page
 // Reported by the operator, visible as a mascot portrait sitting on top of "BUILDING 2".
 //
 // The fix is `isolate` on each dropzone, which contains those numbers per lane. Raising
-// the header instead would only move the collision — the ladder strip is z-40 and the
-// nav z-50 — so what is pinned here is the PROPERTY (the header is what you see and what
+// the header instead would only move the collision — the nav is z-50 — so what is pinned here is the PROPERTY (the header is what you see and what
 // you would click), not any particular number, and every future z-index inside a card is
 // covered by the same assertion.
 test("nothing from a lane paints over its pinned header", async ({ page }) => {
