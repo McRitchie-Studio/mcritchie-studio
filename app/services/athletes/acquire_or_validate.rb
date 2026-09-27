@@ -350,10 +350,18 @@ module Athletes
     # a placeholder — an instruction that has to be edited before it runs is the class of
     # defect this method exists to end.
     #
-    # `people.aliases` is jsonb defaulting to `[]`, so `|` is a set union that is
-    # nil-safe on a fresh row and adds nothing on a second press. Verified 2026-09-27 in
-    # BOTH row shapes: a Person whose Athlete row carries no `espn_id`, and a Person with
-    # no Athlete row at all.
+    # `people.aliases` is jsonb, so `|` is a set union and a second press adds nothing —
+    # which matters, because an operator re-runs a line they are unsure about. Verified
+    # 2026-09-27 in BOTH row shapes: a Person whose Athlete row carries no `espn_id`, and
+    # a Person with no Athlete row at all.
+    #
+    # `.to_a` IS NOT DECORATION, and `|` is not nil-safe the way it looks. The column
+    # defaults to `[]` and 3,056 of 3,056 people carry an array (measured 2026-09-27),
+    # but it is nullable, and `NilClass#|` is DEFINED — `nil | ["AJ Cole"]` is `true`, not
+    # a NoMethodError, so a null row would store the literal `true` in a jsonb column and
+    # raise nothing at all. This line is pasted into a console by a human; it does not get
+    # to fail silently there. `nil.to_a` is `[]` and `Array#to_a` is self, so the union is
+    # the same for every row that exists and correct for the one that should not.
     #
     # DELIBERATELY NOT AN ID-BINDING LINE. A near match is a PERSON —
     # NameKey.near_matches queries `people` — and a person on file need not have an
@@ -364,7 +372,7 @@ module Athletes
     # makes one is not something to print beside "these could be the same person".
     def alias_remedy(slug, spelling)
       "Person.find_by(slug: #{slug.inspect})" \
-        ".then { |p| p.update!(aliases: p.aliases | [#{spelling.inspect}]) }"
+        ".then { |p| p.update!(aliases: p.aliases.to_a | [#{spelling.inspect}]) }"
     end
 
     # A STORED ID THAT DISAGREES REFUSES EVERYTHING. There is no safe half-measure:

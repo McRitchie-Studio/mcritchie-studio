@@ -382,7 +382,7 @@ class Athletes::AcquireOrValidateTest < ActiveSupport::TestCase
                  "source_id: is the remedy that loops back here; it must not be the one printed")
 
     remedy = refused.message[ALIAS_REMEDY]
-    assert_equal %{Person.find_by(slug: "a-j-cole").then { |p| p.update!(aliases: p.aliases | ["AJ Cole"]) }},
+    assert_equal %{Person.find_by(slug: "a-j-cole").then { |p| p.update!(aliases: p.aliases.to_a | ["AJ Cole"]) }},
                  remedy, "the refusal prints exactly one runnable line for one candidate"
 
     assert_no_difference -> { Person.count } do
@@ -404,6 +404,26 @@ class Athletes::AcquireOrValidateTest < ActiveSupport::TestCase
     assert_equal ["AJ Cole"], existing.reload.aliases
   end
 
+  # `.to_a` IN THE PRINTED LINE IS LOAD-BEARING AND DOES NOT LOOK IT, which is why it gets
+  # a test rather than only a comment. `people.aliases` is nullable and `NilClass#|` is
+  # DEFINED — `nil | ["AJ Cole"]` is `true`, not a NoMethodError — so the line without
+  # `.to_a` would store the literal `true` into a jsonb array column and raise nothing at
+  # all, on a line a human pastes into a console. Measured 2026-09-27, both halves. No
+  # application path writes nil (3,056 of 3,056 people carry an array, measured the same
+  # day), which is precisely why nothing else here would ever catch it.
+  test "the printed remedy still lands on a person whose aliases column is null" do
+    existing = Person.create!(first_name: "A.J.", last_name: "Cole", athlete: true)
+    Person.where(id: existing.id).update_all("aliases = NULL")
+    assert_nil existing.reload.aliases, "the column has no NOT NULL constraint"
+    source = FakeSource.new(by_id: { "9003" => profile(source_id: "9003", first_name: "AJ",
+                                                      last_name: "Cole") })
+
+    eval(act(source).call(source_id: "9003").message[ALIAS_REMEDY])
+
+    assert_equal ["AJ Cole"], existing.reload.aliases, "a null column must not become `true`"
+    assert act(source).call(source_id: "9003").ok?, "and the act is unblocked either way"
+  end
+
   test "two candidates get one runnable line each and only the one run writes" do
     # The repo's own split — Athletes::MergeDuplicates was written for "Will Anderson"
     # sitting beside "Will Anderson Jr." — so the suffix-collapsing key really does
@@ -420,8 +440,8 @@ class Athletes::AcquireOrValidateTest < ActiveSupport::TestCase
 
     remedies = refused.message.scan(ALIAS_REMEDY)
     assert_equal [
-      %{Person.find_by(slug: "will-anderson").then { |p| p.update!(aliases: p.aliases | ["Will Anderson II"]) }},
-      %{Person.find_by(slug: "will-anderson-jr").then { |p| p.update!(aliases: p.aliases | ["Will Anderson II"]) }}
+      %{Person.find_by(slug: "will-anderson").then { |p| p.update!(aliases: p.aliases.to_a | ["Will Anderson II"]) }},
+      %{Person.find_by(slug: "will-anderson-jr").then { |p| p.update!(aliases: p.aliases.to_a | ["Will Anderson II"]) }}
     ], remedies, "one runnable line per candidate, in a stable order — got #{refused.message}"
 
     eval(remedies.grep(/will-anderson-jr/).sole)

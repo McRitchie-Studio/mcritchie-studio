@@ -191,8 +191,8 @@ ESPN ──(AcquireOrValidate)──> athletes.team_slug ──(LookReading#trad
   absent was a player we have had for years. `Athletes::NameKey` compares
   punctuation- and suffix-insensitively and the act REFUSES an ambiguous name rather
   than filing a second row for one human. **The refusal prints the line that settles
-  it** — one runnable `Person.find_by(slug: …).then { … p.aliases | ["AJ Cole"] … }` per
-  candidate, which files the source's spelling where `find_by_name`'s third strategy
+  it** — one runnable `Person.find_by(slug: …).then { … p.aliases.to_a | ["AJ Cole"] … }`
+  per candidate, which files the source's spelling where `find_by_name`'s third strategy
   looks, so the same repair unblocks the run AND fixes every later lookup. It
   deliberately does not send the operator back with `source_id:`: that chooses which
   PROFILE the source answers with, not which ROW is resolved, so re-running with one

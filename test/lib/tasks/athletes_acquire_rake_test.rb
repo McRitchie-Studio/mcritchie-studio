@@ -54,7 +54,7 @@ class AthletesAcquireRakeTest < ActiveSupport::TestCase
                  "the operator must not be sent back around the loop")
 
     remedy = refused[ALIAS_REMEDY]
-    assert_equal %{Person.find_by(slug: "a-j-cole").then { |p| p.update!(aliases: p.aliases | ["AJ Cole"]) }},
+    assert_equal %{Person.find_by(slug: "a-j-cole").then { |p| p.update!(aliases: p.aliases.to_a | ["AJ Cole"]) }},
                  remedy, "the refusal reaches stdout whole, with its one runnable line"
 
     assert_difference -> { Athlete.count } => 1, -> { Person.count } => 0 do
