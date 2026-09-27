@@ -109,13 +109,15 @@ module StageAgentsHelper
 
   # The task's CURRENT mascot as a board face — the single construction point for
   # a MascotAgent built off a live task + its Pokémon. A shiny draw
-  # (devops.mascot_shiny) wears the shiny sprite; event snapshots don't come
-  # through here (their avatar URL is baked shiny-aware at record time).
+  # (devops.mascot_shiny) wears the shiny sprite, and its gender
+  # (devops.mascot_gender) picks the female sprite or a family's form (Nidoran♀);
+  # event snapshots don't come through here (their name and avatar URL are baked
+  # shiny- and gender-aware at record time).
   def task_mascot_face(task, mascot)
     return nil unless mascot
 
-    MascotAgent.new(name: mascot.name,
-                    avatar: mascot.display_sprite(shiny: task.mascot_shiny?),
+    MascotAgent.new(name: mascot.display_name(gender: task.mascot_gender),
+                    avatar: mascot.display_sprite(shiny: task.mascot_shiny?, gender: task.mascot_gender),
                     color: mascot.signature_color,
                     shiny: task.mascot_shiny?)
   end

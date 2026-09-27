@@ -1015,8 +1015,9 @@ class Task < ApplicationRecord
       merged = task.metadata.deep_dup
       backfilled = (merged["devops"] ||= {})
       backfilled["mascot"] = pick.slug
-      # A backfilled mascot is a fresh draw, so it gets its own shiny roll.
+      # A backfilled mascot is a fresh draw, so it gets its own shiny AND gender roll.
       backfilled["mascot_shiny"] = Pokemon.roll_shiny?
+      backfilled["mascot_gender"] = pick.roll_gender
       task.update!(metadata: merged)
       taken << pick.slug
       assigned += 1
@@ -1036,6 +1037,7 @@ class Task < ApplicationRecord
   def self.resync_session_mascots!
     by_session = {}
     shiny_by_session = {}
+    gender_by_session = {}
     taken = active_mascots.to_set
     restamped = 0
     live.find_each do |task|
@@ -1049,20 +1051,25 @@ class Task < ApplicationRecord
       # The session's shiny roll rides along with its Pokémon: the SessionMascot
       # row is the truth when present, else the first task seen keeps its flag.
       # key? (not ||=) because a legitimate `false` must cache too.
+      # Gender rides the same way (it is rolled beside shiny).
       unless shiny_by_session.key?(sid)
         session_mascot = SessionMascot.find_by(session_id: sid)
         shiny_by_session[sid] = session_mascot ? session_mascot.shiny? : shiny_value?(task.metadata.dig("devops", "mascot_shiny"))
+        gender_by_session[sid] = Pokemon.normalize_gender(session_mascot ? session_mascot.gender : task.metadata.dig("devops", "mascot_gender"))
       end
       shiny = shiny_by_session[sid]
+      gender = gender_by_session[sid]
 
       dev = task.metadata["devops"] || {}
-      next if dev["mascot"] == slug && dev["mascot_session"] == sid && shiny_value?(dev["mascot_shiny"]) == shiny
+      next if dev["mascot"] == slug && dev["mascot_session"] == sid && shiny_value?(dev["mascot_shiny"]) == shiny &&
+              dev.key?("mascot_gender") && Pokemon.normalize_gender(dev["mascot_gender"]) == gender
 
       merged = task.metadata.deep_dup
       d = (merged["devops"] ||= {})
       d["mascot"] = slug
       d["mascot_session"] = sid
       d["mascot_shiny"] = shiny
+      d["mascot_gender"] = gender
       pokemon = Pokemon.find_by(slug: slug)
       d["mascot_color"] = pokemon&.signature_color
       d["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
@@ -1090,6 +1097,15 @@ class Task < ApplicationRecord
   # devops.mascot_shiny alongside mascot_color/emoji.
   def mascot_shiny?
     self.class.shiny_value?(devops["mascot_shiny"])
+  end
+
+  # This task's mascot GENDER — "female", "male", or nil (a genderless species, or
+  # a legacy draw from before the roll). Rolled once at draw time with shiny (the
+  # session's SessionMascot roll, adopted here) and stamped server-side as
+  # devops.mascot_gender. It picks a gender family's form (Nidoran♀ / ♂), the
+  # female sprite, and which evolution branches the gates may offer.
+  def mascot_gender
+    Pokemon.normalize_gender(devops["mascot_gender"])
   end
 
   def devops_kind
@@ -2983,13 +2999,15 @@ class Task < ApplicationRecord
     pokemon = Pokemon.find_by(slug: slug) if Pokemon.table_exists?
     # A shiny mascot bakes its shiny avatar URL into the snapshot, so historical
     # events keep the shiny face even after the mascot recycles to another task.
+    # A gendered draw bakes its gender's name and art too (Nidoran♂ wears dex 32).
     snapshot = {
       "slug" => slug,
-      "name" => pokemon&.name.presence || slug,
-      "avatar" => pokemon&.display_avatar(shiny: mascot_shiny?).presence,
+      "name" => pokemon&.display_name(gender: mascot_gender).presence || slug,
+      "avatar" => pokemon&.display_avatar(shiny: mascot_shiny?, gender: mascot_gender).presence,
       "color" => devops["mascot_color"].presence || pokemon&.signature_color.presence,
       "emoji" => devops["mascot_emoji"].presence,
-      "shiny" => (true if mascot_shiny?)
+      "shiny" => (true if mascot_shiny?),
+      "gender" => mascot_gender
     }.compact
 
     { "mascot" => snapshot }
@@ -3917,7 +3935,7 @@ class Task < ApplicationRecord
     needs = devops["mascot"].blank? || (sid.present? && devops["mascot_session"].to_s != sid)
     return unless needs
 
-    slug, shiny = session_mascot_draw(sid)
+    slug, shiny, gender = session_mascot_draw(sid)
     return unless slug
     devops["mascot"] = slug
     devops["mascot_session"] = sid
@@ -3929,6 +3947,7 @@ class Task < ApplicationRecord
     # (server-owned, like color/emoji) and announces itself with a ✨ glyph.
     pokemon = Pokemon.find_by(slug: slug)
     devops["mascot_shiny"] = shiny
+    devops["mascot_gender"] = gender
     devops["mascot_color"] = pokemon&.signature_color
     devops["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
     # A fresh draw starts a fresh line — the new Pokémon hasn't earned any gates.
@@ -4023,6 +4042,7 @@ class Task < ApplicationRecord
     end
     shiny = mascot_shiny_source(devops)
     devops["mascot_shiny"] = shiny
+    devops["mascot_gender"] = mascot_gender_source(devops)
     pokemon = Pokemon.find_by(slug: devops["mascot"])
     return unless pokemon # unseeded deck: keep the color/emoji we already carry
 
@@ -4046,6 +4066,23 @@ class Task < ApplicationRecord
     end
 
     same_mascot_as_prior?(devops) && self.class.shiny_value?(prior_devops["mascot_shiny"])
+  end
+
+  # The mascot's gender, by the same source order as #mascot_shiny_source: the
+  # stamp on the record, else the session's SessionMascot, else the pre-save
+  # record for the same mascot. KEY presence (not value) decides "stamped",
+  # because nil is a real answer (genderless) that must not re-query every save;
+  # only a client write that dropped the key falls through to the sources.
+  def mascot_gender_source(devops)
+    return Pokemon.normalize_gender(devops["mascot_gender"]) if devops.key?("mascot_gender")
+
+    sid = devops["mascot_session"].to_s.strip
+    if sid.present? && SessionMascot.table_exists? &&
+       (session_mascot = SessionMascot.find_by(session_id: sid))
+      return Pokemon.normalize_gender(session_mascot.gender)
+    end
+
+    same_mascot_as_prior?(devops) ? Pokemon.normalize_gender(prior_devops["mascot_gender"]) : nil
   end
 
   # The devops hash as it stands in the DB — what a wholesale in-memory replace
@@ -4087,7 +4124,10 @@ class Task < ApplicationRecord
 
     devops["mascot_stage"] = gate
 
-    evolved = pokemon.evolutions.order(Arel.sql("RANDOM()")).first
+    # Only the branches the mascot's gender allows (Pokemon#evolution_genders): a
+    # female Nidoran evolves to Nidorina, a male one to Nidorino. The gender itself
+    # carries forward unchanged.
+    evolved = pokemon.evolutions_for(mascot_gender).order(Arel.sql("RANDOM()")).first
     return unless evolved # nowhere to go — the gate is still consumed
 
     devops["mascot"] = evolved.slug
@@ -4124,6 +4164,7 @@ class Task < ApplicationRecord
       devops["mascot"] = nil
       devops["mascot_session"] = nil
       devops["mascot_shiny"] = nil
+      devops["mascot_gender"] = nil
       devops["mascot_color"] = nil
       devops["mascot_emoji"] = nil
       devops.delete("mascot_stage")
@@ -4162,16 +4203,16 @@ class Task < ApplicationRecord
   # drawn here on first task when the hook hasn't run). SessionMascot itself reuses
   # a live peer task's mascot, so every task an agent builds shares its handle.
   # With no session, draw a one-off so the task isn't mascot-less.
-  # [slug, shiny] for this task's mascot: the session's stable draw (slug AND its
-  # shiny roll) when a session exists, else a fresh task-local draw with its own
-  # shiny roll. [nil, false] when nothing can be drawn.
+  # [slug, shiny, gender] for this task's mascot: the session's stable draw (slug,
+  # shiny roll AND gender roll) when a session exists, else a fresh task-local draw
+  # with its own rolls. [nil, false, nil] when nothing can be drawn.
   def session_mascot_draw(sid)
     if sid.present? && (session_mascot = SessionMascot.for(sid))
-      return [session_mascot.mascot_slug, session_mascot.shiny?]
+      return [session_mascot.mascot_slug, session_mascot.shiny?, session_mascot.gender]
     end
 
-    slug = Pokemon.draw(exclude: Task.active_mascots)&.slug
-    slug ? [slug, Pokemon.roll_shiny?] : [nil, false]
+    pick = Pokemon.draw(exclude: Task.active_mascots)
+    pick ? [pick.slug, Pokemon.roll_shiny?, pick.roll_gender] : [nil, false, nil]
   end
 
   def word_count(text)

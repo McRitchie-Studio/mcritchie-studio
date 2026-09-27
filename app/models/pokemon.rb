@@ -20,8 +20,19 @@ class Pokemon < ApplicationRecord
   # so they draw at this multiple — every other base stays at weight 1. See .draw_bag.
   THREE_STAGE_DRAW_WEIGHT = 2
 
+  # A mascot's gender, rolled once per session draw beside shiny (.roll_gender)
+  # and adopted by its tasks as devops.mascot_gender. nil = genderless (Magnemite,
+  # Staryu, the legendaries) or a legacy draw that predates the roll.
+  GENDERS = %w[female male].freeze
+  GENDER_SYMBOLS = { "female" => "♀", "male" => "♂" }.freeze
+  # PokéAPI's gender_rate is in EIGHTHS female: -1 genderless, 0 always male,
+  # 8 always female, n in between = an n/8 chance of female.
+  GENDER_RATE_EIGHTHS = 8
+  GENDERLESS_RATE = -1
+
+  # dex is NOT unique: a gender FAMILY row (nidoran) shares dex 29 with the
+  # Nidoran♀ species row it wears. slug is the identity.
   validates :dex, presence: true,
-                  uniqueness: true,
                   numericality: { only_integer: true, greater_than: 0 }
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true
@@ -34,6 +45,10 @@ class Pokemon < ApplicationRecord
   scope :by_dex, -> { order(:dex) }
   scope :gen1, -> { where(generation: 1) }
   scope :gen2, -> { where(generation: 2) }
+  # The real species — every row but the gender FAMILY rows (nidoran), which are a
+  # mascot-draw device over two species rows, not a species of their own. The
+  # Pokédex and the reference index list these.
+  scope :species, -> { where(gender_forms: {}) }
 
   # Every baby form's slug — babies live on their base's `baby` list (pikachu
   # carries ["pichu"]), so the set is the union of those lists.
@@ -53,8 +68,19 @@ class Pokemon < ApplicationRecord
   # The deck the mascot draw pulls from — every Gen 1–2 base form. Sessions and
   # tasks spawn at the bottom of an evolutionary line; the task's copy of the
   # mascot can then evolve at pipeline gates (tasks/task-mascot-evolution-gates).
+  #
+  # A gender family's FORM rows (nidoran-f, nidoran-m) are left out: the family
+  # row (nidoran) is what draws, and its rolled gender picks the form it wears.
+  # The form rows stay seeded so old tasks and sessions still carrying them
+  # resolve to a name and art.
   def self.deck
-    spawnable
+    spawnable.where.not(slug: gender_form_slugs)
+  end
+
+  # Every slug a gender family wears (nidoran-f, nidoran-m) — read off the data,
+  # so a later family needs no code.
+  def self.gender_form_slugs
+    where.not(gender_forms: {}).pluck(:gender_forms).flat_map { |forms| Array(forms&.values) }.uniq
   end
 
   # The base slugs whose evolutionary line runs a full three stages — the base
@@ -108,8 +134,37 @@ class Pokemon < ApplicationRecord
     where(slug: available).order(Arel.sql("RANDOM()")).first
   end
 
-  def self.evolution_tree_for(slug)
-    PokemonEvolutionTree.for(slug)
+  def self.evolution_tree_for(slug, gender: nil)
+    PokemonEvolutionTree.for(slug, gender: gender)
+  end
+
+  # Roll ONE gender for a draw, weighted by the species' gender_rate: nil for a
+  # genderless (or unrecorded) species, the only gender for a forced one, else
+  # female with an n/8 chance. Called once per mascot draw, like .roll_shiny? —
+  # gender belongs to the DRAW (the session's mascot), never to the species row.
+  def self.roll_gender(gender_rate)
+    return nil if gender_rate.nil? || gender_rate.to_i <= GENDERLESS_RATE
+    return "male" if gender_rate.to_i.zero?
+    return "female" if gender_rate.to_i >= GENDER_RATE_EIGHTHS
+
+    gender_die < gender_rate.to_i ? "female" : "male"
+  end
+
+  # One eight-sided die, 0..7 — female when it lands under the gender_rate. Under
+  # test it always lands on 7, so a mixed species deterministically rolls male and
+  # every task-creating test stays stable (the same idea as .shiny_odds being 0 in
+  # test); a gender spec opts in by stubbing this. Forced and genderless species
+  # never read it.
+  def self.gender_die
+    return GENDER_RATE_EIGHTHS - 1 if Rails.env.test?
+
+    rand(GENDER_RATE_EIGHTHS)
+  end
+
+  # Canonical gender string, or nil for anything else ("", "unknown", junk).
+  def self.normalize_gender(value)
+    gender = value.to_s.strip.downcase
+    GENDERS.include?(gender) ? gender : nil
   end
 
   # Is this form the bottom of its evolutionary line?
@@ -120,6 +175,59 @@ class Pokemon < ApplicationRecord
   # The rows this form can evolve into next (Eevee has five; Snorlax none).
   def evolutions
     self.class.where(slug: Array(evolution))
+  end
+
+  # The evolution slugs a mascot of `gender` may take: every branch whose
+  # evolution_genders requirement is absent or matches. A nil gender (a legacy
+  # draw from before the roll) is unconstrained, so an old task never loses a
+  # branch it could always take. Nidoran: female → ["nidorina"], male → ["nidorino"].
+  def evolution_for(gender)
+    gender = self.class.normalize_gender(gender)
+    requirements = evolution_genders || {}
+    Array(evolution).select do |slug|
+      required = requirements[slug].presence
+      required.nil? || gender.nil? || required == gender
+    end
+  end
+
+  # The rows a mascot of `gender` may evolve into next — the gates' pool.
+  def evolutions_for(gender)
+    self.class.where(slug: evolution_for(gender))
+  end
+
+  # This draw's own gender roll, from the species' gender_rate.
+  def roll_gender
+    self.class.roll_gender(gender_rate)
+  end
+
+  # Whether a draw of this species may carry `gender`: a genderless species only
+  # nil, a forced species only its one gender, a mixed one either (and nil, for
+  # a legacy draw). Used to inherit a parent session's gender safely.
+  def allows_gender?(gender)
+    gender = self.class.normalize_gender(gender)
+    rate = gender_rate
+    return gender.nil? if rate.nil? || rate.to_i <= GENDERLESS_RATE
+    return gender.nil? || gender == "male" if rate.to_i.zero?
+    return gender.nil? || gender == "female" if rate.to_i >= GENDER_RATE_EIGHTHS
+
+    true
+  end
+
+  # A gender family's species row for `gender` (nidoran + female → Nidoran♀'s
+  # row), or nil for an ordinary species or an unknown gender. Memoized per
+  # gender — one query the first time a face renders.
+  def gender_form(gender)
+    gender = self.class.normalize_gender(gender)
+    slug = gender && (gender_forms || {})[gender].presence
+    return nil unless slug
+
+    (@gender_forms_by_gender ||= {})[gender] ||= self.class.find_by(slug: slug)
+  end
+
+  # The name to show for a draw of this Pokémon: a family wears its form's name
+  # (Nidoran♀ / Nidoran♂); everyone else is just their name.
+  def display_name(gender: nil)
+    gender_form(gender)&.name.presence || name
   end
 
   # { type_key => Studio::Enumeral } for every seeded type, in ONE query — build
@@ -268,15 +376,28 @@ class Pokemon < ApplicationRecord
   # explicit backup read avatar_fallback_url directly (e.g. an <img onerror>).
   # A shiny draw prefers the shiny chain but still lands on the normal art when
   # the shiny mirror isn't provisioned — a shiny mascot never goes faceless.
-  def display_avatar(shiny: false)
+  #
+  # Official artwork has no female variants, so gender only matters here for a
+  # gender FAMILY, which wears its form's art (a male nidoran → the dex-32 art).
+  def display_avatar(shiny: false, gender: nil)
+    if (form = gender_form(gender))
+      return form.display_avatar(shiny: shiny)
+    end
+
     (shiny ? shiny_display_avatar : nil) ||
       avatar_url.presence || avatar_fallback_url.presence || sprite_url
   end
 
   # The pixel sprite for small chips (board crew circles, heartbeat rows) —
-  # shiny-aware with the same never-faceless fallback.
-  def display_sprite(shiny: false)
-    (shiny_sprite_url.presence if shiny) || sprite_url
+  # shiny- AND gender-aware with the same never-faceless fallback. A female draw of
+  # a species with a distinct female look wears the female sprite (shiny female →
+  # shiny → normal; female → normal); a gender family wears its form's sprite.
+  def display_sprite(shiny: false, gender: nil)
+    if (form = gender_form(gender))
+      return form.display_sprite(shiny: shiny)
+    end
+
+    female_sprite(shiny, gender) || (shiny_sprite_url.presence if shiny) || sprite_url
   end
 
   def to_param
@@ -284,6 +405,14 @@ class Pokemon < ApplicationRecord
   end
 
   private
+
+  # The female sprite for a female draw, nil when this species has no distinct
+  # female look (or the draw is not female) so the caller falls through.
+  def female_sprite(shiny, gender)
+    return nil unless has_gender_differences? && self.class.normalize_gender(gender) == "female"
+
+    (shiny ? shiny_female_sprite_url : female_sprite_url).presence
+  end
 
   def shiny_display_avatar
     shiny_avatar_url.presence || shiny_avatar_fallback_url.presence || shiny_sprite_url.presence
