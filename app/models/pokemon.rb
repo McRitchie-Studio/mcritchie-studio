@@ -378,14 +378,15 @@ class Pokemon < ApplicationRecord
   # the shiny mirror isn't provisioned — a shiny mascot never goes faceless.
   #
   # Official artwork has no female variants, so gender only matters here for a
-  # gender FAMILY, which wears its form's art (a male nidoran → the dex-32 art).
+  # gender FAMILY, which wears its form's art (a male nidoran → the dex-32 art),
+  # and on the last-resort sprite fallback (a female draw lands on her sprite).
   def display_avatar(shiny: false, gender: nil)
     if (form = gender_form(gender))
       return form.display_avatar(shiny: shiny)
     end
 
     (shiny ? shiny_display_avatar : nil) ||
-      avatar_url.presence || avatar_fallback_url.presence || sprite_url
+      avatar_url.presence || avatar_fallback_url.presence || female_sprite(false, gender) || sprite_url
   end
 
   # The pixel sprite for small chips (board crew circles, heartbeat rows) —
