@@ -22,7 +22,7 @@
   </div>
 
   <% if @unknown_filter %>
-    <p class="card p-3 border border-warning/40 bg-warning/10 text-warning-ink text-sm" role="status">
+    <p class="card p-3 border border-warning/40 bg-warning/10 text-warning-ink text-sm break-words" role="status" data-unknown-filter>
       No email is called “<%= params[:broadcast] %>”, so this shows every broadcast.
     </p>
   <% end %>
