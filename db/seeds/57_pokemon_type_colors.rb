@@ -41,7 +41,11 @@ POKEMON_TYPE_COLORS = [
 # a type absent from the seeded rows would rank last (all 18 appear in Gen 1–2).
 type_position = POKEMON_TYPE_COLORS.each_with_index.to_h { |(key, *), i| [key, i] }
 counts = Hash.new(0)
+# Species only: the nidoran gender-family row repeats Nidoran♀'s types and would
+# count poison twice for one species.
 JSON.parse(File.read(Rails.root.join("db/seeds/data/pokemon.json"))).each do |row|
+  next if row["gender_forms"].present?
+
   Array(row["types"]).each { |type| counts[type] += 1 }
 end
 rank_by_key = type_position.keys
