@@ -360,6 +360,52 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
                  "face SIZE is the variable four real mints turned on; visibility is not"
   end
 
+  # ⚠ THE CASE ABOVE READS THE GALLERY ORDER, WHICH IS THE SQL SCOPE — NOT THE CHOOSER.
+  # A mutation run proved it: collapsing `#final_score` to visibility only left that case
+  # GREEN, because `gallery_order` sorts on `face_fill` in Postgres and would have kept
+  # reporting the right order over a chooser that had stopped using it. The ranker's real
+  # consequence is WHICH photographs are chosen once supply exceeds the cap, so that is
+  # what this case measures: seven candidates for six slots, where the one with the biggest
+  # face has the WORST visibility. Under a visibility-only ranking it is the one left out.
+  test "when supply exceeds the cap, the biggest face takes the last slot" do
+    limit = Appearances::GatherReferencePhotos::CHOSEN_LIMIT
+    clear_but_small = (1..limit).map { |i| hit("https://cdn.example.com/small#{i}.jpg", position: i) }
+    big_face = hit("https://cdn.example.com/big.jpg", position: limit + 1)
+    scores = clear_but_small.to_h { |r| [r.image_url, { visibility: 0.99, fill: 0.62 }] }
+                            .merge(big_face.image_url => { visibility: 0.60, fill: 0.99 })
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: clear_but_small + [big_face]),
+      faces: FakeFaces.new(scores), mirror: mirror
+    )
+
+    assert_equal limit, summary.chosen
+    assert AppearanceReferencePhoto.find_by!(image_url: big_face.image_url).chosen?,
+           "face SIZE decides the last slot; a visibility-only ranking drops this one"
+    refute AppearanceReferencePhoto.find_by!(image_url: clear_but_small.last.image_url).chosen?,
+           "the clearest small face is the one the cap should push out"
+  end
+
+  # AND THE SAME MEASUREMENT THROUGH THE CHOOSER FOR THE TIE-BREAK, so neither half of
+  # "rank by face size, not JUST by face size" rests on the SQL scope alone.
+  test "when supply exceeds the cap, visibility breaks a tie for the last slot" do
+    limit = Appearances::GatherReferencePhotos::CHOSEN_LIMIT
+    filler = (1..limit).map { |i| hit("https://cdn.example.com/f#{i}.jpg", position: i) }
+    dim = hit("https://cdn.example.com/dim.jpg", position: limit + 1)
+    scores = filler.to_h { |r| [r.image_url, { visibility: 0.9, fill: 0.9 }] }
+    scores[filler.last.image_url] = { visibility: 0.95, fill: 0.7 }
+    scores[dim.image_url] = { visibility: 0.55, fill: 0.7 }
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: filler + [dim]),
+      faces: FakeFaces.new(scores), mirror: mirror
+    )
+
+    assert AppearanceReferencePhoto.find_by!(image_url: filler.last.image_url).chosen?,
+           "two faces the same size are separated by how clearly they show"
+    refute AppearanceReferencePhoto.find_by!(image_url: dim.image_url).chosen?
+  end
+
   # VISIBILITY STILL BREAKS A TIE, at a tenth of the weight — "not JUST visibility" rather
   # than "never visibility". Two photographs whose faces fill the same fraction of the frame
   # are ordered by how clearly those faces show.
