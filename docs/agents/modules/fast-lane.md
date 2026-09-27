@@ -42,6 +42,18 @@ still act on the tree you stand in (they root at the cwd), and they read the hub
 stays a working fallback for one release, and wherever this page says
 "hub-absolute", the fixed path works too.
 
+The tooling tree is deliberately **not a Rails app** — no `Gemfile`, no `app/assets`,
+no `db/` — so the handful of `bin/` scripts that boot the application (`rails`, `rake`,
+`jobs`, `reviewer-select`, `reap-cert-databases`) are installed there as **shims that
+exec the hub primary's copy**, not as copies. Call them at the fixed path like any
+other script; they delegate. Those five alone still depend on the hub, so they wait out
+a `git checkout` window and then name the file they could not reach — they do not get
+the checkout immunity the rest of the tooling has, because nothing that boots Rails
+can. Until 2026-09-27 they were installed as plain copies and died with
+`Bundler::GemfileNotFound` naming the tooling directory, a trace that reads like a
+broken Ruby install rather than a wrong path; `bin/install-agent-docs check` now names
+any tree that still carries such a copy.
+
 **Name the hub's script; stand in the desk.** Every fast-lane command —
 `bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/dor-check` —
 lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A **satellite** desk
