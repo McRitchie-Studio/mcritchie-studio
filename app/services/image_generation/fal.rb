@@ -62,7 +62,9 @@ module ImageGeneration
 
     class Error < StandardError; end
     class NotConfigured < Error; end
-    class GenerationError < Error; end
+    # DESCENDS FROM THE SHARED ANCESTOR so a caller can rescue one type across
+    # every adapter — see ImageGeneration::GenerationFailed for why that matters.
+    class GenerationError < ImageGeneration::GenerationFailed; end
     class TimeoutError < Error; end
 
     # DELIBERATELY OUTSIDE StandardError, and this is the load-bearing detail.

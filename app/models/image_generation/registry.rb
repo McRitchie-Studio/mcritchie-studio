@@ -24,15 +24,25 @@ module ImageGeneration
     # NoMethodError naming the member, instead of a silent nil that reads as
     # "this row does not declare that" — the two are indistinguishable on a Hash
     # and only one of them is a bug.
-    Row = Struct.new(:key, :label, :adapter, :endpoint, :api_version, :credential_env,
+    Row = Struct.new(:key, :label, :adapter, :endpoint, :model, :api_version, :credential_env,
                      :reference_field, :reference_arity, :capabilities, :docs_url,
-                     :unit_price_usd, keyword_init: true) do
+                     :unit_price_usd, :billing_unit, :measured, keyword_init: true) do
       # NO credential_env MEANS KEYLESS, not misconfigured. Nothing ships that way
       # today; the branch exists so adding one is a row rather than an argument
       # with this file.
       def available? = credential_env.blank? || ENV[credential_env.to_s].present?
 
       def capable_of?(capability) = capabilities.include?(capability.to_s)
+
+      # WHAT THE VENDOR COUNTS, IN ITS OWN WORDS — "image units", "tokens".
+      #
+      # `artifacts.billable_units` HOLDS TWO DIFFERENT VOCABULARIES and this is
+      # what keeps them apart. fal bills a sheet-sized image at 3 IMAGE UNITS;
+      # OpenAI reports tens of thousands of TOKENS for the same picture. Storing
+      # both as a bare integer called "units" and rendering "3" beside "18432"
+      # invites exactly one conclusion, and it is the wrong one. The row names the
+      # unit so the page can print it and nobody compares the two numbers.
+      def billing_unit_name = billing_unit.presence || "unit"
 
       # TURN A MEASURED UNIT COUNT INTO A PRICE, or answer nil.
       #
@@ -45,11 +55,22 @@ module ImageGeneration
         (BigDecimal(units.to_s) * BigDecimal(unit_price_usd.to_s)).round(4)
       end
 
-      # THE VERSION STAMPED ON EVERY ARTIFACT THIS ROW PRODUCES. Endpoint plus
-      # contract version, because neither alone identifies what ran: the endpoint
-      # can be reshaped under a stable path, and a version with no endpoint does
-      # not say which model it versions.
-      def provenance_version = [endpoint, api_version].compact_blank.join("@")
+      # THE VERSION STAMPED ON EVERY ARTIFACT THIS ROW PRODUCES — what RAN, at
+      # which contract.
+      #
+      # THE MODEL WINS OVER THE ENDPOINT WHERE A ROW HAS ONE, because for some
+      # vendors the endpoint is the model (fal addresses a model by path) and for
+      # others it is a generic door many models come through (every OpenAI model
+      # answers at /v1/responses). Stamping the endpoint there would record that a
+      # sheet came from "the responses API", which identifies nothing.
+      def provenance_version = [model.presence || endpoint, api_version].compact_blank.join("@")
+
+      # WHAT WAS ACTUALLY RUN FOR THIS ROW, as prose. Never nil in the shipped
+      # file — see the guard below — but tolerant here because a row built by hand
+      # in a test has no measurement and should not raise.
+      def measured_on = measured.is_a?(Hash) ? measured[:date].to_s.presence : nil
+      def measured_result = measured.is_a?(Hash) ? measured[:result].to_s.presence : nil
+      def not_measured = measured.is_a?(Hash) ? measured[:not_measured].to_s.presence : nil
 
       # WHAT AN OPERATOR IS TOLD WHEN THE ROW IS OFF. It names the variable on
       # purpose — the person reading it is the person who will go and set it, and
@@ -87,6 +108,11 @@ module ImageGeneration
 
       def with_capability(capability) = rows.select { |row| row.capable_of?(capability) }
 
+      # EVERY CAPABILITY THE SHIPPED FILE DECLARES ANYWHERE. A capability nothing
+      # claims is usually a typo in a CALLER, which would otherwise surface as a
+      # silent nil from `.for` — indistinguishable from "no credential".
+      def known_capabilities = rows.flat_map(&:capabilities).to_set
+
       def available = rows.select(&:available?)
 
       # THE ONE CALL EVERY CONSUMER SHOULD USE: the first AVAILABLE row that can do
@@ -117,13 +143,16 @@ module ImageGeneration
             label: attrs[:label].to_s,
             adapter: attrs[:adapter].to_s,
             endpoint: attrs[:endpoint].to_s,
+            model: attrs[:model]&.to_s,
             api_version: attrs[:api_version]&.to_s,
             credential_env: attrs[:credential_env]&.to_s,
             reference_field: attrs[:reference_field]&.to_s,
             reference_arity: attrs[:reference_arity]&.to_s,
             capabilities: Array(attrs[:capabilities]).map(&:to_s),
             docs_url: attrs[:docs_url]&.to_s,
-            unit_price_usd: attrs[:unit_price_usd]
+            unit_price_usd: attrs[:unit_price_usd],
+            billing_unit: attrs[:billing_unit]&.to_s,
+            measured: attrs[:measured]
           )
         end
       end

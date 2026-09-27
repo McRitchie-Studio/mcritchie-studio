@@ -21,7 +21,7 @@
 <div data-test="model-output-panel" class="card p-4 sm:p-5 space-y-5">
   <header class="space-y-1">
     <p class="label-upper text-primary">2 &middot; Output</p>
-    <h2 class="text-lg font-bold text-heading">Generated images</h2>
+    <h2 class="text-lg font-bold text-heading">Character sheets</h2>
     <p class="text-xs text-muted">
       Made from the photographs on the left. Every image records which generator
       produced it.
@@ -37,20 +37,28 @@
       the inset background is the honest rendering. %>
   <div class="space-y-2">
     <% if @artifacts.any? %>
-      <div data-test="generated-images"
-           class="grid gap-2 <%= @artifacts.length > 1 ? "grid-cols-2" : "grid-cols-1" %>">
+      <%# ALWAYS ONE COLUMN. A ten-panel sheet at half the width of a narrow
+          column is unreadable, and the question asked of it — is every panel the
+          same man — cannot be answered from a thumbnail. %>
+      <div data-test="generated-images" class="grid grid-cols-1 gap-2">
         <% @artifacts.each do |artifact| %>
           <figure class="rounded-lg border border-subtle overflow-hidden bg-surface-alt">
-            <div class="aspect-[3/4] bg-inset overflow-hidden flex items-center justify-center">
+            <%# NO FIXED ASPECT, ON PURPOSE. This library holds two shapes that
+                cannot share one box: a sheet is about 2:1 and a single portrait
+                about 3:4. Any fixed ratio letterboxes one of them, and the
+                wasted band is exactly the height needed to judge whether every
+                panel is the same man. Natural height costs a little layout shift
+                while the image loads and gives both shapes their full width. %>
+            <div class="bg-inset overflow-hidden flex items-center justify-center">
               <% if artifact.image_url.present? %>
                 <%# LINKS OUT TO THE FULL-SIZE FILE. Judging a likeness inside a
                     narrow column is judging a thumbnail, so the picture is always
                     one click from its original. %>
                 <%= link_to artifact.image_url, target: "_blank", rel: "noopener",
-                      class: "block w-full h-full" do %>
+                      class: "block w-full" do %>
                   <%= image_tag artifact.image_url, loading: "lazy",
                         alt: artifact.subjects.first&.role.presence || artifact.kind.to_s.humanize,
-                        class: "w-full h-full object-contain" %>
+                        class: "w-full h-auto object-contain" %>
                 <% end %>
               <% else %>
                 <span class="text-2xl opacity-40" aria-hidden="true">&#127912;</span>
@@ -95,15 +103,14 @@
                   <% end %>
                   <%# COST RENDERS ONLY WHEN THE VENDOR REPORTED IT. A blank row
                       would read as free, and free is the one thing this never is. %>
-                  <% if artifact.cost_usd.present? %>
-                    <div class="flex gap-1">
+                  <%# THE UNIT IS ALWAYS NAMED. fal counts image units, OpenAI
+                      counts tokens, and both land in one column, so a bare number
+                      would invite comparing 3 with 18,000. A nil cost prints
+                      nothing rather than zero: not reported is not free. %>
+                  <% if artifact.billing_summary.present? %>
+                    <div class="flex gap-1 min-w-0">
                       <dt class="text-muted shrink-0">cost</dt>
-                      <dd class="text-muted font-mono">
-                        <%= number_to_currency(artifact.cost_usd) %>
-                        <% if artifact.billable_units.present? %>
-                          <span class="opacity-60">(<%= pluralize(artifact.billable_units, "unit") %>)</span>
-                        <% end %>
-                      </dd>
+                      <dd class="text-muted font-mono break-all"><%= artifact.billing_summary %></dd>
                     </div>
                   <% end %>
                 </dl>
@@ -129,7 +136,7 @@
   <div data-test="zero-shot-generate"
        class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-2">
     <div class="flex items-baseline justify-between gap-2 flex-wrap">
-      <p class="label-upper">Generate from one photo</p>
+      <p class="label-upper">Generate a sheet from one photo</p>
       <% if @generator_row.present? %>
         <span class="badge text-3xs <%= @can_generate ? "bg-success/10 text-success-ink border-success/40" : "bg-surface text-muted border-subtle" %>">
           <%= @generator_row.label %>
@@ -151,14 +158,17 @@
     <% elsif admin? %>
       <%= form_with url: generate_person_appearance_path(@person.slug, @appearance.slug),
                     method: :post, class: "space-y-2" do |f| %>
-        <%= f.select :pose,
-              options_for_select(@poses.map { |key, pose| [pose[:label], key] }, @default_pose),
-              {},
-              class: "input-field w-full text-xs" %>
-        <%= f.submit "Generate one image", class: "btn btn-sm btn-primary w-full" %>
+        <%# THE JERSEY NUMBER IS TYPED, because nothing stores it. Measured
+            2026-09-27: neither athletes nor roster_spots carries a number, and the
+            approved reference sheet's 14 was supplied by hand. Left blank the
+            prompt omits the number and nameplate clauses rather than asking the
+            model to render a placeholder. %>
+        <%= f.number_field :number, placeholder: "Jersey number (optional)",
+              min: 0, max: 99, class: "input-field w-full text-xs" %>
+        <%= f.submit "Generate character sheet", class: "btn btn-sm btn-primary w-full" %>
       <% end %>
       <p class="text-3xs text-muted">
-        Costs money &mdash; one image per press. No character model needed.
+        Costs money &mdash; one full sheet per press. No character model needed.
       </p>
     <% else %>
       <p class="text-2xs text-muted">

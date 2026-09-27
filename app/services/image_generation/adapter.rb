@@ -8,7 +8,7 @@ module ImageGeneration
   module Adapter
     class Unsupported < StandardError; end
 
-    def self.registered = { "fal" => Fal }
+    def self.registered = { "fal" => Fal, "openai" => OpenAI }
 
     # RAISES RATHER THAN RETURNING nil, because by the time a row has been chosen
     # the caller has already decided to generate. A nil here would surface as a

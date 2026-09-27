@@ -56,6 +56,16 @@ ENV["VISION_NO_LIVE_CALLS"] = "1"
 # ImageGeneration::Fal::NO_LIVE_CALLS_ENV so the two cannot drift apart in silence.
 ENV["FAL_NO_LIVE_CALLS"] = "1"
 
+# AND THE SAME FOR THE SHEET GENERATOR, which is the most expensive call in the
+# app: one press buys a ten-panel image. Every paid call to OpenAI's Responses
+# image tool goes through ImageGeneration::OpenAI#perform, which raises here
+# instead of opening a socket.
+#
+# SPELLED AS A LITERAL for the same reason as the lines around it, and pinned
+# against the constant by test/services/image_generation/open_ai_test.rb so the
+# two cannot drift apart in silence.
+ENV["OPENAI_NO_LIVE_CALLS"] = "1"
+
 # ZERO LIVE CALLS OUT OF THE PHOTO-SCOUTING LANE — the same mechanism, one variable
 # further along, and armed here for the same reason: nothing can call it first.
 #

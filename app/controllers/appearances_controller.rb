@@ -136,7 +136,7 @@ class AppearancesController < ApplicationController
   # operator goes to find real ones. "No generator is configured" and "this person
   # has no headshot" both answer here. Everything else falls out and gets its row.
   def generate_artifact
-    artifact = Appearances::GenerateArtifact.call(@appearance, pose: params[:pose])
+    artifact = Appearances::GenerateArtifact.call(@appearance, number: params[:number].presence)
     redirect_to appearance_path, notice: generated_message(artifact)
   rescue Appearances::GenerateArtifact::NoGenerator,
          Appearances::GenerateArtifact::NoIdentityPhoto => e
@@ -146,9 +146,17 @@ class AppearancesController < ApplicationController
   # NAMES WHAT MADE IT, in the flash as well as on the card. The operator is about
   # to judge a picture, and "which model produced this" is the first thing he needs
   # to know to judge it — especially while more than one generator is in play.
+  # NAMES WHAT MADE IT, in the flash as well as on the card. The operator is about
+  # to judge a picture, and "which model produced this" is the first thing he needs
+  # to judge it — especially while more than one generator is in play.
+  #
+  # THE UNIT IS PRINTED BESIDE THE COUNT because two generators count different
+  # things: fal bills image units, OpenAI reports tokens. A bare number invites
+  # comparing 3 with 18,000.
   def generated_message(artifact)
-    parts = ["#{artifact.generator_label} generated one image"]
+    parts = ["#{artifact.generator_label} generated one character sheet"]
     parts << "seed #{artifact.seed}" if artifact.seed.present?
+    parts << artifact.billing_summary if artifact.billing_summary.present?
     "#{parts.join(' · ')}. It is filed against this look below."
   end
 
@@ -208,8 +216,6 @@ class AppearancesController < ApplicationController
     @generator_row = Appearances::GenerateArtifact.preferred_row
     @can_generate = Appearances::GenerateArtifact.available?
     @identity_photo_url = plan.identity_photo_url
-    @poses = Appearances::GenerateArtifact::POSES
-    @default_pose = Appearances::GenerateArtifact::DEFAULT_POSE
   end
 
   # THE MESSAGE THE UNCONFIGURED PATH PRINTS, and it names the env var on purpose.
