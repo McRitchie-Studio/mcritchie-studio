@@ -81,9 +81,10 @@ will never sign a transaction. Most apps are web2. See
 
 On a **yes**, run Steffon's
 [`bucket-provision`](../agents/steffon/sops/bucket-provision.md) (as a subagent
-or in-session): it creates the private `<app>-dev`/`<app>-production` pair in
-`us-east-2`, versions production, tags both, and mints the two `/mcr/` IAM
-users. On a **no**, record the opt-out in the app's README and move on —
+or in-session): it creates the private `<app>-dev`/`<app>-production` pair on
+Cloudflare R2 in McRitchie Studio's account, mints the two bucket-scoped
+tokens, and files them as `r2.<app>`. R2 has no versioning, so production
+carries no undo (see the gaps in `object-storage.md`). On a **no**, record the opt-out in the app's README and move on —
 storage can be provisioned later by the same SOP. Conventions:
 [`object-storage.md`](../modules/object-storage.md).
 

@@ -3,21 +3,30 @@
 ## Status: Active
 
 This is Steffon's `bucket-provision` SOP. It stands up **object storage for one
-app**: the dev/production bucket pair, their safety posture, and the two
-per-app IAM users — in one sitting, to the standards Alex approved
-2026-09-01. The conventions themselves live in
+app** on **Cloudflare R2**: the dev/production bucket pair and the two
+bucket-scoped tokens, in one sitting. Every app's storage lives in McRitchie
+Studio's Cloudflare account; apps inherit it rather than holding an account
+of their own (Alex, 2026-09-26). The conventions themselves live in
 [`../../../modules/object-storage.md`](../../../modules/object-storage.md);
 this file is the act that applies them.
 
-Run it when a new app opts into storage at onboarding, or when an existing app
-graduates off the shared `mcritchie-s3` identity.
+Run it when a new app opts into storage at onboarding. The five apps that held
+AWS S3 pairs were provisioned on R2 by this act on 2026-09-26; moving each one's
+objects and config across is Wave 2 of the asset-library plan, one app per task,
+not this act.
+
+The AWS S3 procedure this replaced is in git history:
+`git show 64d6f3a8:docs/agents/agents/steffon/sops/bucket-provision.md`.
+Use it only to reason about the legacy S3 buckets until they are retired.
 
 ## What this act is NOT
 
 - **It never deletes a bucket that holds objects.** Recreating a misplaced
-  bucket is legal only after `list-objects-v2` proves `KeyCount` 0.
-- **It never touches the studio/turf public-read policies.** Those buckets
-  serve live apps; changing their posture is ladder work, not provisioning.
+  bucket is legal only after a list proves it empty.
+- **It never touches the legacy S3 buckets.** Those still serve live apps
+  until each app's Wave 2 cutover.
+- **It never sets Heroku config.** An app starts reading R2 in its own
+  cutover task, which writes the config vars and proves the read.
 - **It never merges, deploys, or moves board tasks.**
 
 ## Entry
@@ -27,140 +36,154 @@ cd /Users/alex/projects/mcritchie-studio
 bin/agent-activity start --category Workflow --reason "bucket-provision <app>"
 ```
 
-Inputs: the app slug (e.g. `rolio`), its entity tag (e.g. `mcritchie-studio`),
-and Alex's yes to provisioning (the onboarding prompt, or his direct
-ask).
+Inputs: the app slug (e.g. `rolio`) and Alex's yes to provisioning (the
+onboarding prompt, or his direct ask).
 
 ## 1. Open the lane
 
-Provisioning is **admin work** — the lane below is one you are expected to hold,
-so an admin token that is absent or refused here is a setup gap on THIS MACHINE,
-not a lane closed to you. `source ~/.zprofile.admin` when the file is on disk but
-missing from this shell; `bin/setup-1pass-token --admin`, once, when the machine
-has no such file at all — only that second one is Alex's.
+Provisioning is **admin work**. The one credential it needs is the account-owned
+Cloudflare token `cloudflare.studio.provision` in `studio-agents-admin`
+(described in
+[`../../../modules/credential-inventory.md`](../../../modules/credential-inventory.md)).
+An admin token that is absent here is a setup gap on THIS MACHINE: `source
+~/.zprofile.admin` when the file exists, `bin/setup-1pass-token --admin` (Alex,
+once) when it does not.
 
 ```bash
 source ~/.zprofile.admin
 export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
-export AWS_ACCESS_KEY_ID=$(op item get AWS --vault studio-agents-admin --fields label=access-key --reveal)
-export AWS_SECRET_ACCESS_KEY=$(op item get AWS --vault studio-agents-admin --fields label=secret-access-key --reveal)
-export AWS_DEFAULT_REGION=us-east-2
-aws sts get-caller-identity   # must answer arn:...:user/studio-agents-admin
+export CF_TOKEN=$(op read "op://studio-agents-admin/cloudflare.studio.provision/api-token")
+export CF_ACCOUNT=$(op read "op://studio-agents-admin/cloudflare.studio.provision/account-id")
+curl -s -H "Authorization: Bearer $CF_TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/tokens/verify" | grep -o '"status":"[a-z]*"'
+# must print "status":"active"
 ```
 
-A refused `op` read here usually means the shell skipped
-`~/.zprofile.admin`, or the 1Password daily quota is spent — check
-`op service-account ratelimit` before escalating. Source it without a pipe:
-a pipeline runs `source` in a subshell, so the token lands in a child that exits
-and the lane reads ABSENT while fully present.
+Source it without a pipe: a pipeline runs `source` in a subshell, and the lane
+then reads ABSENT while fully present.
 
-## 2. Create the pair
+## 2. Create the pair, mint the tokens, file the record
+
+One script does all three so no secret ever reaches stdout: Cloudflare returns
+each token's value once, and the script hashes it into the S3 secret and hands
+both straight to `op item create` in an argv, never a shell or a print.
+
+- **Buckets:** `<app>-dev` and `<app>-production`, location hint `enam`
+  (eastern North America, nearest Heroku's US region). R2 buckets are private
+  by default; there is no public-access block to set.
+- **prod token** `r2-<app>-prod`: *Workers R2 Storage Bucket Item Write* on
+  `<app>-production` only.
+- **dev token** `r2-<app>-dev`: *Bucket Item Write* on `<app>-dev` plus
+  *Bucket Item Read* on `<app>-production`. That read-only grant is what makes
+  "QA reads prod, never writes it" a property of the token, not app discipline.
+- **S3 credentials** derive from a token: access key id = the token's `id`,
+  secret = SHA-256 of the token's `value` (Cloudflare's R2 token docs).
+- **Record:** `r2.<app>` in `studio-agents`, fields `access-key-id-prod`,
+  `secret-access-key-prod`, `access-key-id-dev`, `secret-access-key-dev`,
+  `endpoint`, `region`. It refuses to run when that item already exists, so a
+  re-run cannot mint an orphan second pair.
 
 ```bash
-APP=<app-slug>; ENTITY=<entity-tag>
-for env in dev production; do
-  b="$APP-$env"
-  aws s3api create-bucket --bucket "$b" \
-    --create-bucket-configuration LocationConstraint=us-east-2
-  aws s3api put-public-access-block --bucket "$b" \
-    --public-access-block-configuration \
-    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-  aws s3api put-bucket-tagging --bucket "$b" \
-    --tagging "TagSet=[{Key=app,Value=$APP},{Key=env,Value=$env},{Key=entity,Value=$ENTITY}]"
-done
-aws s3api put-bucket-versioning --bucket "$APP-production" \
-  --versioning-configuration Status=Enabled
+APP=<app-slug>
+mkdir -p "$HOME/.mcr-r2" && cat > "$HOME/.mcr-r2/provision.py" <<'PY'
+import hashlib, json, os, subprocess, sys, urllib.request, urllib.error
+APP = sys.argv[1]
+TOK, ACCT = os.environ["CF_TOKEN"], os.environ["CF_ACCOUNT"]
+API = f"https://api.cloudflare.com/client/v4/accounts/{ACCT}"
+ITEM_WRITE = "2efd5506f9c8494dacb1fa10a3e7d5b6"  # Workers R2 Storage Bucket Item Write
+ITEM_READ = "6a018a9f2fc74eb6b293b0c548f38b39"   # Workers R2 Storage Bucket Item Read
+VAULT, ITEM = "studio-agents", f"r2.{APP}"
+
+def cf(method, path, body=None):
+    req = urllib.request.Request(API + path, method=method,
+        data=json.dumps(body).encode() if body else None,
+        headers={"Authorization": f"Bearer {TOK}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req) as r: return json.load(r)
+    except urllib.error.HTTPError as e: return json.load(e)
+
+def res(bucket): return {f"com.cloudflare.edge.r2.bucket.{ACCT}_default_{bucket}": "*"}
+
+if subprocess.run(["op", "item", "get", ITEM, "--vault", VAULT], capture_output=True).returncode == 0:
+    sys.exit(f"{ITEM} already exists in {VAULT}; refusing to mint a second pair")
+for env in ("dev", "production"):
+    d = cf("POST", "/r2/buckets", {"name": f"{APP}-{env}", "locationHint": "enam"})
+    if not d.get("success"): sys.exit(f"bucket {APP}-{env}: FAILED {d.get('errors')}")
+    print(f"bucket {APP}-{env}: created")
+policies = {
+    "prod": [{"effect": "allow", "permission_groups": [{"id": ITEM_WRITE}], "resources": res(f"{APP}-production")}],
+    "dev": [{"effect": "allow", "permission_groups": [{"id": ITEM_WRITE}], "resources": res(f"{APP}-dev")},
+            {"effect": "allow", "permission_groups": [{"id": ITEM_READ}], "resources": res(f"{APP}-production")}],
+}
+fields = []
+for env, pol in policies.items():
+    d = cf("POST", "/tokens", {"name": f"r2-{APP}-{env}", "policies": pol})
+    if not d.get("success"): sys.exit(f"token r2-{APP}-{env}: FAILED {d.get('errors')}")
+    t = d["result"]
+    fields += [f"access-key-id-{env}[concealed]={t['id']}",
+               f"secret-access-key-{env}[concealed]={hashlib.sha256(t['value'].encode()).hexdigest()}"]
+    print(f"token r2-{APP}-{env}: minted")
+fields += [f"endpoint[text]=https://{ACCT}.r2.cloudflarestorage.com", "region[text]=auto"]
+p = subprocess.run(["op", "item", "create", "--vault", VAULT, "--category", "API Credential",
+                    "--title", ITEM, *fields], capture_output=True, text=True)
+if p.returncode != 0: sys.exit(f"1Password write FAILED: {p.stderr.strip()[:200]}")
+print(f"filed {ITEM} in {VAULT}")
+PY
+python3 "$HOME/.mcr-r2/provision.py" "$APP"
 ```
 
-Private, tagged, production versioned, dev not. Encryption is the account
-default (SSE-S3); ACLs are disabled fleet-wide, so grant nothing per-object.
+The two permission-group ids are Cloudflare's, stable across accounts; re-read
+them with `GET /accounts/<id>/tokens/permission_groups` if a mint is refused
+naming one. A failure after the first token mints leaves that token live in
+the dashboard (**Manage Account → Account API Tokens**, named `r2-<app>-*`):
+revoke it before re-running.
 
-## 3. Mint the per-app users
+## 3. Verify — positive and negative
 
-Each app gets two IAM users under path `/mcr/` — the path is what keeps them
-inside `studio-agents-admin`'s reach and outside everything else's. The dev user's
-read-only-prod grant is what makes "QA reads prod, never writes it" a law of
-IAM instead of a hope.
+Every probe runs with the minted S3 keys against the R2 endpoint, and the
+negative probes are the point: a provision whose dev token was never refused a
+production write is not verified.
 
 ```bash
-for env in prod dev; do
-  aws iam create-user --user-name "mcr-$APP-$env" --path /mcr/ \
-    --tags "Key=app,Value=$APP"
-done
-
-aws iam put-user-policy --user-name "mcr-$APP-prod" --policy-name bucket-access \
-  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[
-    {\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:ListBucket\"],
-     \"Resource\":[\"arn:aws:s3:::$APP-production\",\"arn:aws:s3:::$APP-production/*\"]}]}"
-
-aws iam put-user-policy --user-name "mcr-$APP-dev" --policy-name bucket-access \
-  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[
-    {\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\",\"s3:ListBucket\"],
-     \"Resource\":[\"arn:aws:s3:::$APP-dev\",\"arn:aws:s3:::$APP-dev/*\"]},
-    {\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:ListBucket\"],
-     \"Resource\":[\"arn:aws:s3:::$APP-production\",\"arn:aws:s3:::$APP-production/*\"]}]}"
-
-# Mint WITHOUT printing: `create-access-key` writes the secret to stdout, and
-# stdout is the session transcript (AGENTS.md First Rules: "Do not print
-# secrets"). Capture to owner-only files, read them in step 4, shred in step 6.
-umask 077
-for env in prod dev; do
-  aws iam create-access-key --user-name "mcr-$APP-$env" \
-    --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text \
-    > "$HOME/.mcr-$APP-$env.key"
-done
+cat > "$HOME/.mcr-r2/verify.sh" <<'SH'
+#!/bin/zsh
+APP=$1; I="op://studio-agents/r2.$APP"
+EP=$(op read "$I/endpoint")
+PID=$(op read "$I/access-key-id-prod"); PSEC=$(op read "$I/secret-access-key-prod")
+DID=$(op read "$I/access-key-id-dev");  DSEC=$(op read "$I/secret-access-key-dev")
+KEY="_probe/r2-verify-$(date +%s).txt"; BODY=$(mktemp); ERR=$(mktemp); echo probe > "$BODY"
+s3()  { local id=$1 sec=$2; shift 2; AWS_ACCESS_KEY_ID=$id AWS_SECRET_ACCESS_KEY=$sec AWS_DEFAULT_REGION=auto \
+        aws s3api --endpoint-url "$EP" "$@" >/dev/null 2>"$ERR"; }
+FAILS=0
+ok()  { if "$@"; then echo "  PASS"; else echo "  FAIL: $(head -c 160 "$ERR")"; FAILS=$((FAILS+1)); fi; }
+bad() { if "$@"; then echo "  VIOLATION (succeeded)"; FAILS=$((FAILS+1)); else echo "  PASS (refused)"; fi; }
+echo "prod key writes production";  ok  s3 $PID $PSEC put-object --bucket $APP-production --key $KEY --body "$BODY"
+echo "prod key reads production";   ok  s3 $PID $PSEC get-object --bucket $APP-production --key $KEY /dev/null
+echo "prod key cannot touch dev";   bad s3 $PID $PSEC put-object --bucket $APP-dev --key $KEY --body "$BODY"
+echo "dev key writes dev";          ok  s3 $DID $DSEC put-object --bucket $APP-dev --key $KEY --body "$BODY"
+echo "dev key reads production";    ok  s3 $DID $DSEC get-object --bucket $APP-production --key $KEY /dev/null
+echo "THE LAW: dev key cannot write production"; bad s3 $DID $DSEC put-object --bucket $APP-production --key $KEY.dev --body "$BODY"
+echo "dev key cannot delete production";         bad s3 $DID $DSEC delete-object --bucket $APP-production --key $KEY
+echo "cleanup"; ok s3 $PID $PSEC delete-object --bucket $APP-production --key $KEY
+                ok s3 $DID $DSEC delete-object --bucket $APP-dev --key $KEY
+rm -f "$BODY" "$ERR"; echo "$APP: $FAILS failure(s)"; exit $FAILS
+SH
+zsh "$HOME/.mcr-r2/verify.sh" "$APP"   # must end "<app>: 0 failure(s)"
 ```
 
-## 4. Store the keys — the one manual seam
+A fresh token can take a few seconds to propagate; one `AccessDenied` on the
+very first positive probe is worth a single re-run before it is a finding.
 
-**The admin lane CAN write 1Password items** — `studio-agents*` has been
-admin-lane read+write since 2026-09-02 — so file the record with
-[`credential-filing`](credential-filing.md) §4 rather than routing around it, and
-read a refusal here as a symptom rather than the expected result. (This step
-claimed the grant was read-only until 2026-09-15, contradicting both
-`credential-filing` §4 and `credential-inventory.md`.) What stays manual is the
-ROUTING below: the values must reach two stores without passing through a
-transcript. Each pair is in `$HOME/.mcr-$APP-<env>.key` from step 3
-(id, then secret). Route it to its stores without printing it into a transcript:
+## 4. Record
 
-- **Deployed app:** set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` on the
-  Heroku app directly (`heroku config:set`, deployer lane) — prod key on the
-  production app, dev key on QA.
-- **1Password record:** item `agent.<app>.aws` in `studio-agents` (fields
-  `access-key-id-prod`, `secret-access-key-prod`, `access-key-id-dev`,
-  `secret-access-key-dev`) — created by the operator or any lane whose vault
-  grant can write; hand over the values through a private channel, never chat.
-- Local dev reads the dev credential from 1Password, never a committed file.
-
-## 5. Verify — positive and negative
-
-```bash
-read -r PROD_ID PROD_SECRET < "$HOME/.mcr-$APP-prod.key"
-read -r DEV_ID DEV_SECRET < "$HOME/.mcr-$APP-dev.key"
-
-# each minted key answers as itself (repeat with $DEV_ID/$DEV_SECRET)
-AWS_ACCESS_KEY_ID=$PROD_ID AWS_SECRET_ACCESS_KEY=$PROD_SECRET \
-  aws sts get-caller-identity
-
-# THE law: the dev key must FAIL to write production
-AWS_ACCESS_KEY_ID=$DEV_ID AWS_SECRET_ACCESS_KEY=$DEV_SECRET \
-  aws s3api put-object --bucket "$APP-production" --key probe.txt --body /dev/null \
-  && echo "VIOLATION — dev key wrote prod; fix the policy before handing off" \
-  || echo "read-only prod confirmed"
-```
-
-A provision whose negative probe never ran is not verified — the routing rule
-is the point of the whole design.
-
-## 6. Record
-
-- Add the pair to the fleet census in
+- Add the pair to the R2 census in
   [`../../../modules/object-storage.md`](../../../modules/object-storage.md).
-- Describe the new 1Password item in
+- Add the `r2.<app>` row to
   [`../../../modules/credential-inventory.md`](../../../modules/credential-inventory.md).
-- Shred the key files: `rm -P "$HOME/.mcr-$APP-prod.key" "$HOME/.mcr-$APP-dev.key"`.
+- Remove the helper scripts: `rm -rf "$HOME/.mcr-r2"`. They hold no secret,
+  but a stale copy drifts from this page.
 - Close the activity:
-  `bin/agent-activity end --outcome "provisioned <app> buckets + users"`.
+  `bin/agent-activity end --outcome "provisioned <app> R2 pair + tokens"`.
 
 ## Decline path
 
@@ -170,11 +193,7 @@ stop. Do not create empty buckets on spec.
 
 ## Background — not needed to execute
 
-Approved rule set, credential tiers, legacy shared-identity migration, and the
-public-read exceptions: [`../../../modules/object-storage.md`](../../../modules/object-storage.md).
-Why an admin lane is meant to hold admin credentials, and the two ways a
-credential CHECK lies: [`../../../modules/credentials.md`](../../../modules/credentials.md).
-The 2026-09-01 fleet audit that produced these standards found six of nine
-buckets world-readable (including the empty Industries pair now flipped
-private) and zero versioning anywhere — the census table records the after
-state.
+Rule set, credential tiers, the R2 gaps (no versioning) and the legacy S3
+posture: [`../../../modules/object-storage.md`](../../../modules/object-storage.md).
+Why an admin lane is meant to hold admin credentials:
+[`../../../modules/credentials.md`](../../../modules/credentials.md).
