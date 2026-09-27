@@ -69,8 +69,18 @@ class RemedyHintGuardTest < Minitest::Test
 
   # The hub-only fast-lane scripts. A bare mention of any of these, carrying an
   # operand, is an instruction a non-hub desk cannot run.
+  #
+  # `gh-token` JOINED IN WAVE 3, and it was a measured hole rather than a tidying.
+  # bin/reviewer-select's new credential remedy is `export GITHUB_TOKEN="$(<abs>/bin/gh-token)"`,
+  # and re-pointing that at the bare form left the whole sweep GREEN — the script was not
+  # on this list, so INSTRUCTION_RE could not see it. bin/gh-token lives in
+  # mcritchie-studio/bin alone like every other name here, and it is now printed as a
+  # remedy, so the same `No such file or directory` is reachable through it. Measured on
+  # the shipped tree: adding it flags NOTHING that was not already flagged, so it closes
+  # a hole at no cost in noise.
   HUB_ONLY = %w[ship fast-check dor-check task session-preflight
-                agent-worktree pr-review reviewer-select gh-auth-refresh release].freeze
+                agent-worktree pr-review reviewer-select gh-auth-refresh release
+                gh-token].freeze
 
   # bare `bin/<hub-only script>`, optional subcommand words, then an OPERAND — an
   # interpolation (`#{`), a `<placeholder>`, or a `--flag`. The negative lookbehind
@@ -88,6 +98,44 @@ class RemedyHintGuardTest < Minitest::Test
   # is a description of the examples that happened to be in front of us.
   INSTRUCTION_RE =
     /(?<![\/\w-])bin\/(#{HUB_ONLY.join('|')})\b((?:\s+[a-z][a-z0-9:_-]*)*)\s+(?:\#\{|<[a-z]|--[a-z])/
+
+  # ── WAVE 3: AN INSTRUCTION CAN CARRY NO OPERAND AT ALL ───────────────────────
+  #
+  # MEASURED 2026-09-27 while mutating every member of this sweep one at a time.
+  # `warn!("    bin/task claim-next-review")` — the remedy bin/reviewer-select hands an
+  # agent whose task is already under review — reverted to the bare form and the sweep
+  # stayed GREEN. It is a command, it is pasted, and it dies on a satellite desk exactly
+  # like its neighbours; the operand rule simply could not see it, because a subcommand
+  # takes no slug and no flag. An operand is a STRONG tell for an instruction, not a
+  # necessary one, and a rule that mistakes the two is a description of the examples in
+  # front of it.
+  #
+  # THE SECOND TELL: the command is the WHOLE PAYLOAD of the printed line. A string
+  # literal whose entire content is indentation plus `bin/<script>` plus subcommand words
+  # is a handed-over command; prose always has a sentence wrapped around the script, so
+  # it can never match this. Measured on the shipped tree: this arm flags NOTHING the
+  # operand arm did not already flag, so it is purely additive.
+  SOLE_INSTRUCTION_RE =
+    /(["'])\s*bin\/(#{HUB_ONLY.join('|')})\b(?:\s+[a-z][a-z0-9:_-]*)*\s*\1/
+
+  # ── THE THIRD TELL: A COMMAND SUBSTITUTION ───────────────────────────────────
+  #
+  # MEASURED IN THE SAME PASS. `warn!("    export GITHUB_TOKEN=\"$(bin/gh-token)\"")` — the
+  # credential remedy itself — escaped BOTH arms above: the script is followed by `)`, so
+  # there is no operand, and the payload is an `export` line rather than the bare command,
+  # so it is not the sole payload either. `$(…)` around a script is the least ambiguous
+  # tell in the corpus: nobody wraps a SUBJECT in a command substitution. Measured on the
+  # shipped tree: this arm also flags nothing the other two did not.
+  SUBSTITUTION_INSTRUCTION_RE = /\$\(\s*bin\/(#{HUB_ONLY.join('|')})\b/
+
+  # A line that hands over a command by any of the three tells. ORed rather than merged
+  # into one pattern so each tell keeps its own name, its own reason, and its own case in
+  # test_the_instruction_regex_separates_an_instruction_from_prose.
+  def instruction?(line)
+    line.match?(INSTRUCTION_RE) ||
+      line.match?(SOLE_INSTRUCTION_RE) ||
+      line.match?(SUBSTITUTION_INSTRUCTION_RE)
+  end
 
   # The files this guard sweeps. WAVE 1 (remedy-hints-print-bare-paths) routed the four
   # highest-traffic scripts plus the two shared COMPOSERS: bin/lib/fast_cert.rb composes
@@ -216,7 +264,7 @@ class RemedyHintGuardTest < Minitest::Test
       File.readlines(path).each_with_index do |line, idx|
         text = line.strip
         next if text.start_with?("#")            # a comment explains; it does not instruct
-        next unless line.match?(INSTRUCTION_RE)
+        next unless instruction?(line)
         next if line_exempt?(rel, line)
 
         offenders << "#{rel}:#{idx + 1}  #{text[0, 150]}"
@@ -363,7 +411,12 @@ class RemedyHintGuardTest < Minitest::Test
       # THE FLAG-OPERAND SHAPE — invisible to the original rule, six live sites.
       'warn "Usually a stale token: eval \"$(bin/gh-auth-refresh --export)\""',
       'puts "gh auth: STALE -> eval \"$(bin/gh-auth-refresh --export)\""',
-      '"then run `eval \"$(bin/gh-auth-refresh --export)\"` and retry the exact check read."'
+      '"then run `eval \"$(bin/gh-auth-refresh --export)\"` and retry the exact check read."',
+      # WAVE 3's TWO MOTIVATING CASES, in their PRE-FIX form, copied off the lines
+      # themselves. A detector that cannot catch the case it was written for is not a
+      # detector — so these are asserted here, not merely described above.
+      'warn!("    bin/task claim-next-review")',
+      'warn!("    export GITHUB_TOKEN=\"$(bin/gh-token)\"")'
     ]
     prose = [
       'abort "... could not be read (bin/task show), so the receipt ..."',
@@ -384,10 +437,10 @@ class RemedyHintGuardTest < Minitest::Test
     ]
 
     instructions.each do |line|
-      assert_match INSTRUCTION_RE, line, "must be read as an INSTRUCTION: #{line}"
+      assert instruction?(line), "must be read as an INSTRUCTION: #{line}"
     end
     prose.each do |line|
-      refute_match INSTRUCTION_RE, line, "must be read as PROSE: #{line}"
+      refute instruction?(line), "must be read as PROSE: #{line}"
     end
   end
 
