@@ -58,9 +58,12 @@ module Espn
   #
   # THE THIRD COPY IS NOW REPAIRED, under `revive-coaches-seed-host`:
   # lib/tasks/nfl.rake's `nfl:link_coach_headshots` named site.api.espn.com and
-  # read it with `URI.open`. It now resolves WEB_HOST and USER_AGENT from here, so
-  # no host is spelled out anywhere in that file and a test refuses to let one back
-  # in. MEASURED 2026-09-27 through open-uri itself — the call that task makes —
+  # read it with `URI.open`. It now resolves WEB_HOST and USER_AGENT from here, so no
+  # ESPN *API* host is spelled out in that lane, and a test refuses these three back
+  # into that file. NOT "no host at all": a.espncdn.com, the headshot CDN, is still
+  # spelled out there in nfl:upload_headshots's operator message, and is deliberately
+  # NOT guarded — it is not an Espn::Api constant and it never filtered.
+  # MEASURED 2026-09-27 through open-uri itself — the call that task makes —
   # with this host carried as a control: site.api answered 403 Forbidden / 437
   # bytes and site.web.api answered 200 / 148848, for both the open-uri default UA
   # and the honest one above. The user agent moved neither host; only the host did.
@@ -80,9 +83,12 @@ module Espn
   # difference is load order, not taste. Rails loads lib/tasks/*.rake BEFORE the
   # `:environment` task sets Zeitwerk up, so `Espn::Api` is not resolvable while a
   # .rake file's constant assignments run. MEASURED with a throwaway .rake file and
-  # `rake -T`: an eager `ESPN_TEAMS_INDEX_URL = "https://#{WEB_HOST}/..."` there
-  # raises `NameError: uninitialized constant Espn` and drops the repository from
-  # 165 loadable rake tasks to 1 — every task, not just that one. So the rake lane
+  # `rake -T`: an eager `ESPN_TEAMS_INDEX_URL = "https://#{Espn::Api::WEB_HOST}/..."`
+  # there raises `NameError: uninitialized constant Espn` and drops the repository
+  # from 165 loadable rake tasks to 0 — every task, not just that one, and the
+  # listing dies rather than shrinking. RE-MEASURED at review both ways: with a
+  # throwaway .rake file, and by eager-spelling the constant in nfl.rake itself.
+  # (An earlier draft of this note said "to 1"; `rake -T` reports 0.) So the rake lane
   # holds callables that resolve these constants at run time. Copying the eager
   # spelling below into a .rake file is the one edit that looks like a tidy-up and
   # takes the whole task list down.
