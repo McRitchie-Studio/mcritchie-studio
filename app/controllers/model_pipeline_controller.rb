@@ -82,17 +82,20 @@ class ModelPipelineController < ApplicationController
 
   private
 
-  # WHY THE DRAG WAS REFUSED, in the operator's terms: the lane the evidence puts it
-  # in, and the evidence itself. A message that only said "not allowed" would send him
-  # to read this file.
+  # WHY THE DRAG WAS REFUSED, in the operator's terms: the lane the evidence puts it in,
+  # the evidence itself, and the rule. A message that only said "not allowed" would send
+  # him to read this file.
+  #
+  # KEPT SHORT BECAUSE IT IS A TOAST. The board primitive renders the server's sentence in
+  # a fixed chip at the top of the viewport; measured in a browser, a version that also
+  # repeated the card's title ran the full width of a 1440px window and was clipped by the
+  # dev banner. The operator just dragged the card — he knows which one it was.
   def refusal_for(reading, target)
-    label = Appearances::LookReading::LABELS
     if Appearances::LookReading.index(target).nil?
       return "#{target.presence || 'That'} is not one of the five lanes."
     end
 
-    "#{reading.title} sits in #{label.fetch(reading.derived_stage)} because of what it " \
-      "has, not where it was put — #{reading.blocker} A hand placement can move a model " \
-      "forward of its evidence, never behind it."
+    "Stays in #{Appearances::LookReading::LABELS.fetch(reading.derived_stage)} — " \
+      "#{reading.blocker} A card moves forward of its evidence, never behind it."
   end
 end

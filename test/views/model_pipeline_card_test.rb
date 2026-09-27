@@ -154,17 +154,35 @@ class ModelPipelineCardViewTest < ActionView::TestCase
 
   test "a complete definition adds no chip" do
     html = render_card(reading(look(colorway: "c"), athlete: true, height_inches: 77,
-                               weight_lbs: 237, physique_described: true, candidate_count: 4))
+                               weight_lbs: 237, physique_described: true))
 
     refute_match(/no measurements/, html)
     refute_match(/no physique/, html)
   end
 
-  test "an incomplete definition adds exactly one chip" do
-    html = render_card(reading(look(colorway: "c"), athlete: true, candidate_count: 4))
+  test "an incomplete definition adds exactly one chip in the Defined lane" do
+    html = render_card(reading(look(colorway: "c"), athlete: true))
 
     assert_match(/no measurements or physique/, html)
     assert_equal 1, html.scan(/no measurements/).length
+  end
+
+  # THE GAP BELONGS TO THE LANE THAT OWNS IT. Printed on every card it was an amber chip
+  # in all five lanes — it is the normal state of every athlete until a backfill runs —
+  # competing with the one red card that actually needed attention. And it blocks nothing:
+  # the recipe generates from a headshot, a colourway and a number.
+  test "the definition gap is not printed outside the Defined lane" do
+    %w[source model generation].each do |lane|
+      card_reading = case lane
+                     when "source" then reading(look(colorway: "c"), athlete: true, headshot: true)
+                     when "model" then reading(look(colorway: "c"), athlete: true, candidate_count: 9, chosen_count: 4)
+                     else reading(look(colorway: "c"), athlete: true, artifact_count: 1)
+                     end
+
+      assert_equal lane, card_reading.board_stage
+      refute_match(/no measurements/, render_card(card_reading),
+                   "the #{lane} lane printed a define-step gap it does not own")
+    end
   end
 
   # ONE FACT, ONE CHIP. Appearance.file_for_colorway! titleizes the colorway INTO the

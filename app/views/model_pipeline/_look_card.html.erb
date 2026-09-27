@@ -72,8 +72,17 @@
     <% if reading.captured_team_slug.present? %>
       <span class="badge text-3xs <%= pipeline_chip_classes(reading.stale? ? :bad : :neutral) %>"><%= reading.captured_team_slug %></span>
     <% end %>
-    <% reading.definition_facts.each do |fact| %>
-      <span class="badge text-3xs <%= pipeline_chip_classes(fact[:tone]) %>"><%= fact[:label] %></span>
+    <%# THE DEFINITION'S GAPS BELONG TO THE DEFINE STEP, so they are printed only in the
+        lane that owns it. Measured on the board: a blank physique description is the
+        normal state of every athlete until a separate backfill fills it, so the chip
+        appeared on EVERY card in EVERY lane — an amber chip everywhere competing with
+        the one red card that actually needed attention. It blocks nothing either (the
+        recipe generates from a headshot, a colourway and a number), so it is advice for
+        when work is back at Defined rather than a reason any card is stuck. %>
+    <% if reading.board_stage == "defined" %>
+      <% reading.definition_facts.each do |fact| %>
+        <span class="badge text-3xs <%= pipeline_chip_classes(fact[:tone]) %>"><%= fact[:label] %></span>
+      <% end %>
     <% end %>
   </div>
 

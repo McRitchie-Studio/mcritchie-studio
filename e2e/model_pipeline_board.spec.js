@@ -7,7 +7,8 @@ const { loginWithMagicLink } = require("./helpers");
 // real drag persists, and a drag behind a model's evidence is REFUSED out loud instead of
 // being accepted and silently corrected on the next load.
 //
-// The rows come from db/seeds/61_appearances.rb, which Playwright's own webServer runs.
+// The rows come from e2e/seed.rb (the "Lanefixture" people), which Playwright's own
+// webServer runs — NOT db/seeds/61_appearances.rb, which is the development desk's copy.
 
 const BOARD = "section[data-test='studio-board'][data-alpine-ready='true']";
 const LANES = ["designed", "defined", "source", "model", "generation"];
@@ -102,7 +103,7 @@ test("a drag behind a model's evidence is refused with the reason", async ({ pag
   });
   expect(resp.status()).toBe(422);
   const body = await resp.json();
-  expect(body.error).toContain("forward of its evidence, never behind");
+  expect(body.error).toContain("moves forward of its evidence, never behind it");
 
   // Refused means nothing moved.
   await page.reload();

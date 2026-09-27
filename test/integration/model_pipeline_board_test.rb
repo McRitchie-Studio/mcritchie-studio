@@ -142,7 +142,8 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
     patch model_pipeline_look_path(delivered.slug), params: { appearance: { stage: "defined" } }, as: :json
 
     assert_response :unprocessable_entity
-    assert_match(/forward of its evidence, never behind/, response.parsed_body["error"])
+    assert_match(/Stays in Generation/, response.parsed_body["error"])
+    assert_match(/moves forward of its evidence, never behind it/, response.parsed_body["error"])
     assert_match(/1 image delivered/, response.parsed_body["error"],
                  "the refusal names the evidence that blocked it, not a rule number")
     assert_nil delivered.reload.stage
