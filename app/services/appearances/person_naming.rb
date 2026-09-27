@@ -85,8 +85,14 @@ module Appearances
 
     # A NAME WORD OF OURS WITH A STRANGER'S NAME WORD BESIDE IT.
     #
-    # Both neighbours are examined because captions run in both orders — "Drew
-    # Hutton" and "Hutton, Drew" are the same claim about the same man.
+    # Both neighbours are examined because captions run in both orders — "Drew Hutton"
+    # and "Hutton, Drew" are the same claim about the same man.
+    #
+    # THE WHOLE PAIR IS RETURNED, IN THE TITLE'S OWN ORDER, and that is not cosmetic. The
+    # page prints this name back to the operator so he can check the refusal against the
+    # thumbnail; naming only the conflicting WORD produced "the title names Keenan, not
+    # Josh Allen", which reads as a machine that cannot read. "Keenan Allen" is the claim
+    # actually being made.
     def self.conflicting_name(title, title_words, components)
       capitals = capitalised(title)
 
@@ -100,7 +106,8 @@ module Appearances
           next if neighbour.nil? || components.include?(neighbour)
           next unless name_shaped?(neighbour, capitals)
 
-          return restore_case(neighbour, title)
+          pair = neighbour_index < index ? [neighbour, word] : [word, neighbour]
+          return pair.map { |part| restore_case(part, title) }.join(" ")
         end
       end
 
@@ -129,15 +136,26 @@ module Appearances
 
     # THE TITLE'S OWN CAPITALISED WORDS, downcased for comparison. Read from the
     # ORIGINAL string, because `words` has already lost the case that matters.
+    #
+    # ⚠ UNDERSCORES ARE SEPARATED FIRST, and skipping that silently disarmed the whole
+    # check on the commonest shape there is. `_` is a WORD character to a regex engine, so
+    # `\b` never fires before the H in `Drew_Hutton.jpg` — the measured defect's own
+    # filename — and the capital that is the entire discriminator went unseen. Caught by
+    # this object's own test, not by review.
     def self.capitalised(text)
-      text.to_s.scan(/\b[[:upper:]][[:alpha:]']*/).map(&:downcase)
+      text.to_s.tr("_", " ").scan(/\b[[:upper:]][[:alpha:]']*/).map(&:downcase)
     end
 
     # THE STRANGER'S NAME AS THE PROVIDER WROTE IT, for the page. Falls back to the
-    # normalised word when the original cannot be found, which cannot happen for a
-    # word we matched case-insensitively but is cheaper than proving it cannot.
+    # normalised word when the original cannot be found.
+    #
+    # THE SAME UNDERSCORE TRAP AS `capitalised`, AND IT HAD TO BE FIXED IN BOTH. `\b`
+    # does not fire beside a `_`, so on `Drew_Hutton.jpg` this returned the lower-cased
+    # fallback and the page printed "the title names drew hutton" — a smaller failure than
+    # the missed refusal, and the same cause. One trap, two readers: fixing one and
+    # leaving the other is how a defect half-survives its own fix.
     def self.restore_case(word, title)
-      title.to_s[/\b#{Regexp.escape(word)}\b/i] || word
+      title.to_s.tr("_", " ")[/\b#{Regexp.escape(word)}\b/i] || word
     end
 
     private_class_method :conflicting_name, :name_shaped?, :capitalised, :restore_case

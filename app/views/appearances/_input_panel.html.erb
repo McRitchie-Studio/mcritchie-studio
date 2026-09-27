@@ -16,6 +16,21 @@
     <p class="text-xs text-muted">
       <%= pluralize(chosen.length, "photo") %> going into the model<%= ", #{rejected.length} found and passed over" if rejected.any? %>.
     </p>
+    <%# THE TWO GENERATORS DO NOT GET THE SAME SET, and one count would describe
+        whichever one the reader happened to be thinking about. Every photograph above
+        reaches the zero-shot character sheet; Higgsfield's TRAINER additionally demands a
+        measured face size, because four of six measured mints failed at prepare and that
+        is the variable they turned on. This line is the difference, and it renders only
+        when there IS one. %>
+    <% refused = chosen.reject { |photo| photo.mint_eligible?(@person.full_name) } %>
+    <% if refused.any? %>
+      <p data-test="trainer-subset" class="text-2xs text-warning-ink">
+        <%= pluralize(refused.length, "photo") %> of these
+        <%= refused.length == 1 ? "is" : "are" %> used by the character sheet but NOT offered
+        to Higgsfield's trainer &mdash; <%= chosen.length - refused.length %> of
+        <%= chosen.length %> carry a measured face size. The reasons are on the tiles.
+      </p>
+    <% end %>
   </header>
 
   <%# THE SEARCH CONTROL. Until the keyless Wikimedia Commons provider shipped, the
@@ -103,7 +118,11 @@
           a head taller than the one beside it. Two across on a phone keeps the
           source and verdict chips on one line each instead of wrapping every tile. %>
       <div data-test="chosen-gallery" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-        <%= render partial: "appearances/reference_photo", collection: chosen, as: :photo %>
+        <%# person_name IS PASSED HERE TOO, though this page shows no calibration block:
+            it is what lets a tile say WHICH name it read instead of only "not this
+            person". The partial reads it through local_assigns, so passing it is safe. %>
+        <%= render partial: "appearances/reference_photo", collection: chosen, as: :photo,
+                   locals: { person_name: @person.full_name } %>
       </div>
     </div>
   <% else %>
@@ -133,7 +152,8 @@
           three fit, but the caption chips then wrap to three lines each and the
           reject list becomes the tallest thing on the page. %>
       <div data-test="rejected-gallery" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2">
-        <%= render partial: "appearances/reference_photo", collection: rejected, as: :photo %>
+        <%= render partial: "appearances/reference_photo", collection: rejected, as: :photo,
+                   locals: { person_name: @person.full_name } %>
       </div>
     </div>
   <% end %>

@@ -9,8 +9,10 @@
                   evidence chip, the score reasoning, and the operator's
                   keep/drop control. The character-model page passes nothing and
                   renders exactly as it did before this local existed.
-      person_name optional. Required by the score reasoning, which reports
-                  whether the title names the person.
+      person_name optional. Required by the score reasoning and by the
+                  wrong-person note. WORTH PASSING ON EVERY PAGE: without it a tile
+                  can print "not this person" and not say who, which is an
+                  assertion the operator cannot check.
 
     READ THROUGH local_assigns RATHER THAN A BARE NAME. An undefined local raises
     in a partial, and these two are absent on the look page by design, so the
@@ -113,6 +115,21 @@
       </p>
     <% end %>
 
+    <%# WHY WE READ IT AS SOMEBODY ELSE, WITH THE NAME — and NOT inside the calibration
+        block, because this is the one rejection a reader of the look page has to be able
+        to argue with too. "not this person" alone is an assertion taken on faith; "the
+        title names Keenan Allen, not Josh Allen" is a claim he can check against the
+        thumbnail in front of him and correct us on when the ARCHIVE is what is wrong.
+
+        Its own data-test, so the assertion is on the STATE rather than on this copy. %>
+    <% note = wrong_person_note(photo, person_name) %>
+    <% if note %>
+      <p data-test="wrong-person-note"
+         class="text-3xs text-danger-ink bg-danger/10 border border-danger/30 rounded px-1 py-0.5 leading-tight">
+        <%= note %>
+      </p>
+    <% end %>
+
     <% if host.present? %>
       <p class="text-3xs text-muted truncate" title="<%= photo.origin_url %>">
         <%# page_link_url, NEVER the raw page_url. The column holds whatever the
@@ -147,7 +164,7 @@
           </p>
         <% end %>
 
-        <% evidence = mint_evidence(photo) %>
+        <% evidence = mint_evidence(photo, person_name) %>
         <% if evidence %>
           <span class="badge text-3xs <%= mint_evidence_classes(evidence[:tone]) %>"
                 title="<%= evidence[:title] %>">

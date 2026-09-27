@@ -51,6 +51,37 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     def call(*) = raise(StandardError, "Higgsfield said 402 insufficient credits")
   end
 
+  # ---- the two generators get different sets ---------------------------------
+
+  # THE COUNT THE PAGE USED TO IMPLY WAS ONE NUMBER, and it is two. Every chosen
+  # photograph reaches the zero-shot character sheet; Higgsfield's TRAINER additionally
+  # demands a measured face size, because four of six measured mints failed at prepare.
+  # "In the model (2)" over an identity built from 1 is the kind of quietly disagreeing
+  # pair of counts this lane has shipped before.
+  test "[component] the page says which chosen photos the trainer will not take" do
+    cache_headshot
+    file_photo("https://example.com/unmeasured.jpg", chosen: true, position: 1,
+               title: "Josh Allen at camp")
+
+    get page_path
+
+    assert_select "[data-test='trainer-subset']", count: 1 do |nodes|
+      assert_match(/NOT offered/, nodes.first.text)
+    end
+  end
+
+  # THE CONTROL: when every chosen photograph carries a measured face size the two sets are
+  # the same, and a line reporting a difference that does not exist is worse than no line.
+  test "[component] no subset line renders when the trainer takes everything" do
+    cache_headshot
+    file_photo("https://example.com/measured.jpg", chosen: true, position: 1,
+               title: "Josh Allen at camp", face_score: 0.9, face_fill: 0.9, face_subjects: 1)
+
+    get page_path
+
+    assert_select "[data-test='trainer-subset']", count: 0
+  end
+
   # ---- the shape of the page -------------------------------------------------
 
   # THE ACCEPTANCE TEST ITSELF. Both halves, on one page, with the direction between

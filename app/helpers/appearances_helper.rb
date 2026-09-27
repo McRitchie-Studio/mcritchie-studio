@@ -71,6 +71,16 @@ module AppearancesHelper
     # helmets would read as wrong on the other three.
     AppearanceReferencePhoto::REJECTED_FACE_OBSCURED => "face not visible",
     AppearanceReferencePhoto::REJECTED_NOT_A_PHOTO => "not a photo",
+    # "NOT THIS PERSON" RATHER THAN "WRONG PERSON": the photograph is not wrong, it is of
+    # somebody else, and the operator's next question is WHO — which the tile answers
+    # underneath with the name it actually read.
+    AppearanceReferencePhoto::REJECTED_WRONG_PERSON => "not this person",
+    AppearanceReferencePhoto::REJECTED_MIXED_SUBJECTS => "more than one face",
+    # NAMES THE MEASUREMENT, not the verdict. "too small" alone reads as a pixel
+    # dimension, and this is about how much of the FRAME the head fills — the variable
+    # four real mints turned on.
+    AppearanceReferencePhoto::REJECTED_FACE_TOO_SMALL => "face too small in frame",
+    AppearanceReferencePhoto::REJECTED_FACE_SIZE_UNMEASURED => "face size never measured",
     AppearanceReferencePhoto::REJECTED_BEYOND_LIMIT => "past the limit of #{Appearances::GatherReferencePhotos::CHOSEN_LIMIT}"
   }.freeze
 
@@ -130,6 +140,13 @@ module AppearancesHelper
   def photo_merit_reasons(photo, person_name)
     reasons = []
 
+    # THE ONE REFUSAL NO SCORE ON THIS PAGE CATCHES, so it leads and it returns early:
+    # once the answer is "this is somebody else", the photograph's shape and rank are not
+    # what the operator is asking about. Measured 2026-09-25: `Drew Hutton.jpg` scored 90
+    # for face visibility and ranked SECOND in a Drew Lock identity.
+    note = wrong_person_note(photo, person_name)
+    return [{ label: note, tone: :bad }] if note
+
     if Appearances::PhotoMerit.document?(photo)
       # THE ONE HARD EXCLUSION, so it is the only reason worth printing for this row:
       # a scanned page is not a poor reference, it is not a reference. Returning
@@ -186,25 +203,86 @@ module AppearancesHelper
 
   def calibration_chip(photo) = CALIBRATION_CHIPS.fetch(photo.calibration_state, UNKNOWN_CHIP)
 
+  # WHY A PHOTOGRAPH IS NOT OUR PERSON, WITH THE NAME WE READ — or nil.
+  #
+  # THE EVIDENCE IS THE POINT. "wrong person" is an assertion the operator has to take on
+  # faith; "the title names Keenan Allen, not Josh Allen" is a claim he can check against
+  # the tile he is looking at, and correct us on when the title is the thing that is wrong.
+  #
+  # ASKED OF Appearances::PersonNaming, which is the object that refused the photograph —
+  # a second reading here could disagree with the verdict on the same tile.
+  def wrong_person_note(photo, person_name)
+    return nil if person_name.blank?
+
+    verdict = Appearances::PersonNaming.judge(photo.title, person_name)
+    return nil unless verdict.names_other?
+
+    name = verdict.other_name.presence || "somebody else"
+    "the title names #{name}, not #{person_name}"
+  end
+
   # WHAT IS KNOWN ABOUT WHETHER THIS PHOTOGRAPH CAN BE MINTED — evidence, never a
   # prediction, and nil when nothing is known.
   #
-  # The measurements behind both branches are on AppearanceReferencePhoto's own
-  # readers. The wording matters as much as the logic: "failed in all four measured
-  # mints" is a fact about four mints, while "will fail" would be a claim about this
-  # photograph that nobody has tested. Face size in frame is the variable, and face
-  # size is exactly what we cannot measure without a vision key.
-  def mint_evidence(photo)
-    if photo.mint_proven?
-      { label: "mints — measured", tone: :good,
-        title: "Our mirrored ESPN headshot is a tight face crop and is the only " \
-               "photograph that has ever completed a Higgsfield reference (2026-09-25)." }
-    elsif photo.mint_shape_failed_before?
-      { label: "wide crop — this shape failed to mint", tone: :bad,
-        title: "All four measured mints of wide sideline/action shots failed at " \
-               "prepare, at 500px and at full resolution (2026-09-25). Face size in " \
-               "frame is the variable, and we cannot measure it without a vision key." }
+  # "MINTED" HERE MEANS HIGGSFIELD'S TRAINER SPECIFICALLY. The zero-shot sheet has no
+  # preparation stage to refuse a reference, so a photograph this chip calls unmintable is
+  # still used by the generator the operator actually presses — which is why the wording
+  # names the trainer rather than saying "unusable".
+  #
+  # The wording matters as much as the logic: "failed in all four measured mints" is a fact
+  # about four mints, while "will fail" would be a claim about this photograph that nobody
+  # has tested.
+  def mint_evidence(photo, person_name = nil)
+    return MINT_PROVEN_CHIP if photo.mint_proven?
+
+    case photo.mint_verdict(person_name)
+    when Appearances::ReferenceEligibility::FACE_SIZE_UNMEASURED
+      # THE FREE EVIDENCE STILL BEATS NO EVIDENCE. Nobody measured this face, but three of
+      # the four measured failures were wide sideline crops and this one has that shape,
+      # which is a stronger thing to tell the operator than "not measured".
+      photo.mint_shape_failed_before? ? MINT_WIDE_CHIP : MINT_UNMEASURED_CHIP
+    when Appearances::ReferenceEligibility::FACE_TOO_SMALL then mint_too_small_chip(photo)
+    when Appearances::ReferenceEligibility::ELIGIBLE then mint_ready_chip(photo)
     end
+  end
+
+  MINT_WIDE_CHIP = {
+    label: "wide crop, unmeasured — this shape failed to mint", tone: :bad,
+    title: "Nobody measured this photograph's face size, and three of the four measured " \
+           "mints that failed at prepare were wide sideline crops like this one, at 500px " \
+           "and at full resolution (2026-09-25)."
+  }.freeze
+
+  MINT_PROVEN_CHIP = {
+    label: "mints — measured", tone: :good,
+    title: "Our mirrored ESPN headshot is a tight face crop and is the only photograph " \
+           "that has ever completed a Higgsfield reference (2026-09-25)."
+  }.freeze
+
+  # THE STATE OF EVERY CANDIDATE ON A MACHINE WITH NO VISION CREDENTIAL, and it says what
+  # it costs rather than only that something is missing.
+  MINT_UNMEASURED_CHIP = {
+    label: "face size not measured — trainer only", tone: :bad,
+    title: "Four of six measured Higgsfield mints failed at prepare and face size in " \
+           "frame is the variable they turned on, so a photograph nobody measured is not " \
+           "offered to the TRAINER. It is still used by the zero-shot character sheet, " \
+           "which has no preparation step to refuse it."
+  }.freeze
+
+  def mint_too_small_chip(photo)
+    { label: "face fills #{photo.face_fill_percent}% of the frame — too small to train",
+      tone: :bad,
+      title: "Measured at #{photo.face_fill_percent}% against a floor of " \
+             "#{(Appearances::ReferenceEligibility::MINT_FACE_FILL * 100).round}%. The one " \
+             "input that has ever completed a reference is a tight face crop; a bare-faced " \
+             "556x780 sideline shot at 71% aspect still failed at prepare (2026-09-25)." }
+  end
+
+  def mint_ready_chip(photo)
+    { label: "face fills #{photo.face_fill_percent}% of the frame", tone: :good,
+      title: "Above the #{(Appearances::ReferenceEligibility::MINT_FACE_FILL * 100).round}% " \
+             "floor, so this is offered to Higgsfield's trainer as well as to the sheet. " \
+             "Nothing here predicts a mint — no photograph at this size has been tried." }
   end
 
   MINT_TONES = {

@@ -41,13 +41,26 @@ class Appearances::PersonNamingTest < ActiveSupport::TestCase
     verdict = PN.judge("Drew Hutton.jpg", "Drew Lock")
 
     assert verdict.names_other?
-    assert_equal "Hutton", verdict.other_name,
+    assert_equal "Drew Hutton", verdict.other_name,
                  "the page has to be able to SAY which name it read, not just refuse"
   end
 
   test "a shared surname with a different given name is somebody else" do
     assert_equal PN::NAMES_OTHER, kind("Keenan Allen.jpg", "Josh Allen")
     assert_equal PN::NAMES_OTHER, kind("Bo Nix throws to Marvin Mims", "Bo Jackson")
+  end
+
+  # THE WHOLE NAME, IN THE TITLE'S OWN ORDER. The page prints this back so the operator can
+  # check the refusal; reporting only the conflicting WORD gave "the title names Keenan,
+  # not Josh Allen", which reads as a machine that cannot read.
+  # THE UNDERSCORE CASE IS THE MEASURED FILENAME AND IT IS LOAD-BEARING. `_` is a word
+  # character to a regex engine, so the capital check saw no boundary before the H in
+  # `Drew_Hutton.jpg` and the refusal did not fire at all until `capitalised` split them.
+  test "the stranger is reported as the whole name the title spells" do
+    assert_equal "Keenan Allen", PN.judge("Keenan Allen.jpg", "Josh Allen").other_name
+    assert_equal "Drew Hutton", PN.judge("Drew_Hutton.jpg", "Drew Lock").other_name
+    assert_equal "Hutton Drew", PN.judge("Hutton, Drew", "Drew Lock").other_name,
+                 "the title's order is kept — inventing a canonical order invents a fact"
   end
 
   # SURNAME-FIRST CAPTIONS ARE COMMON IN ARCHIVES, and the stranger's name can sit on
