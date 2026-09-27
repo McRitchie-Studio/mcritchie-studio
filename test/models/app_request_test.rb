@@ -147,6 +147,19 @@ class AppRequestTest < ActiveSupport::TestCase
     assert_equal "build_gallery/cyvasse.jpg", BuildGallery.configured.find { |e| e.name == "Cyvasse" }.image
   end
 
+  test "each showcase rebuild's live card carries its screenshot" do
+    %w[prisoners-dilemma weekly-lock rantly portfolio].each_with_index do |subdomain, i|
+      # The four names are reserved satellites, so queue! refuses them; queue a
+      # placeholder and give it the real subdomain, as production holds it.
+      live = draft(user: users(:alex)).queue!("zz-showcase-#{i}")
+      live.update_columns(subdomain: subdomain, status: "live")
+      entry = BuildGallery.showcased.find { |e| e.url == "https://#{subdomain}.mcritchie.studio" }
+
+      assert entry, "#{subdomain} is in the gallery"
+      assert_equal "build_gallery/#{subdomain}.jpg", entry.image, "#{subdomain} has a screenshot"
+    end
+  end
+
   test "a customer's live app is never in the public gallery" do
     live = draft(user: users(:viewer)).queue!("customer-app")
     live.update!(status: "live")
