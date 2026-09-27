@@ -89,20 +89,36 @@ Carl** (Agent tool, `subagent_type: carl`) as the **review OWNER**. Carl:
    OUTSIDE a supervised review is recorded by hand with `bin/task fix-forward
    <task> --agent <soul>`.
 
-   **It REFUSES (exit 2) in three states**, because an empty exclusion list is not
+   **It REFUSES (exit 2) in five states**, because an empty exclusion list is not
    the same answer as "nobody to exclude":
 
    | Refusal | What it means |
    |---------|---------------|
-   | AN AUTHOR NAMED NOBODY | a `--builder` entry matches no roster soul, including a PARTIAL typo (`--builder steffon,alexx`) |
-   | authors unknown | no *soul* is named: `built_by` blank or off-roster, no soul on a `→ building` **build claim**, and none derived from the PR's commits |
+   | AN AUTHOR NAMED NOBODY | a `--builder` entry matches no roster soul, including a PARTIAL typo (`--builder steffon,xanx`) |
+   | authors unknown | no *soul* is named: `built_by` blank or off-roster, no soul on a `→ building` **build claim**, and the PR's commits were READ and name none |
    | an author would be SEATED | the pool was too small to drop them all, so one was kept eligible |
+   | `none` is CONTRADICTED | you asserted no soul built it and a witness disagrees — the record, `devops.fix_forward`, or the PR's own commits name a soul |
+   | `none` is UNVERIFIED | the PR read FAILED, so no witness answered. **An unreadable PR is not an authorless PR.** Remedy: `eval "$(bin/gh-auth-refresh --export)"` |
 
-   Say which it is: `--builder <soul>[,<soul>]` names the authors, `--builder none`
-   asserts that no soul built it. Stamp it durably with `bin/task move <task>
-   building --actor <soul>` (it works on a task already at `building`). Every slug
-   is checked against the roster (`Task.soul?`), so a typo names nobody and
-   refuses, and a typo on the RECORD (`built_by: shanon`) is quoted back.
+   Say which it is: `--builder <soul>[,<soul>]` names the authors. Stamp it durably
+   with `bin/task move <task> building --actor <soul>` (it works on a task already
+   at `building`). Every slug is checked against the roster (`Task.soul?`), so a
+   typo names nobody and refuses, and a typo on the RECORD (`built_by: shanon`) is
+   quoted back.
+
+   **`--builder none` IS NOT A ROUTINE ESCAPE — reach for it last, and expect to be
+   checked.** It asserts a fact about somebody else's work, and it was the one input
+   that lifted a safety check on the caller's word alone. Measured 2026-09-24 on
+   `data-flow-doc-contradicts-code` (PR #1587, a docs PR **Xan** wrote while the task
+   carried no stamp): `--builder none` seated **xan** as the light on Xan's own diff
+   and reported the no-self-review property upheld, while `--builder xan` correctly
+   excluded her. It stopped covering a **Pokémon** build on 2026-09-24 too, when
+   `pokemon` joined the roster — a Pokémon build names `--builder pokemon` like any
+   other. What is left for it is the genuinely unattributed build: a change driven
+   straight from the operator's own hands. The assertion is now cross-examined
+   against the record and the PR's commits (the last two rows above), and on a
+   hand-held record with no PR to ask, the run still selects but prints
+   `⚠ --builder none WAS NOT CHECKED` — a pair resting on your word, not on evidence.
 
    **YOUR OWN BOUNCE NO LONGER CAUSES ONE.** `bin/task block <slug> --kind rework`
    lands the task on building, and every reader that took that for a build claim

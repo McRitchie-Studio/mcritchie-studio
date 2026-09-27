@@ -341,10 +341,14 @@ The Rails apps read `.env` via Rails' default dotenv (or the `dotenv-rails` gem)
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app mcritchie-studio)
 GOOGLE_CLIENT_ID=...                  # Google Cloud Console
 GOOGLE_CLIENT_SECRET=...
-ANTHROPIC_API_KEY=...                 # NOT FILED and NOT on prod — re-measured 2026-09-22: no "anthropic"
-                                      # item in any vault the agent token reads, and absent from the
-                                      # mcritchie-studio config (so heroku config:get returns nothing).
-                                      # Get it from console.anthropic.com. credential-inventory.md
+ANTHROPIC_API_KEY=...                 # NOT FILED in any vault, but IT IS ON PROD — re-measured
+                                      # 2026-09-27: present in the mcritchie-studio config. The
+                                      # "absent from prod" half of this line was wrong; the vault half
+                                      # stands (no "anthropic" item in any vault the agent token
+                                      # reads — credential-inventory.md records where it is NOT).
+                                      # So a rebuild copies it off prod:
+                                      #   heroku config:get ANTHROPIC_API_KEY --app mcritchie-studio
+                                      # Fall back to console.anthropic.com if that ever comes back empty.
 X_BEARER_TOKEN=...                    # 1Password: "agent.turf.x" (studio-agents), field "Bearer Token"
 X_API_KEY=...                         # the same item — "Consumer Key" (needs a Read+Write app)
 X_API_SECRET=...

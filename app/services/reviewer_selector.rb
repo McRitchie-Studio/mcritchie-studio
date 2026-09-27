@@ -100,6 +100,14 @@
 # stamp); it is the CLI that fails closed on the fact, and `builder: "none"`
 # (NO_BUILDER) is the caller's explicit "no soul built this" assertion.
 #
+# THAT ASSERTION IS CHECKED, NOT TRUSTED (see NO_BUILDER). It is the only input the
+# caller can state about somebody else's work, it was the only one that failed OPEN,
+# and on 2026-09-24 it seated a soul on her own PR. It is now cross-examined against
+# the record and the PR's commits — two witnesses the caller does not control — so a
+# false assertion is contradicted, and an assertion whose witness could not be READ
+# is reported as unverified rather than as cleared. The class still degrades (the
+# recorder); the CLI refuses.
+#
 # EVERY SLUG IS CHECKED AGAINST THE ROSTER (#soul? → Task.soul?), never the shape
 # alone. `Task::SOUL_SLUG` only asks "does this look like a handle", so a typo'd
 # `--builder stefon` was a KNOWN builder excluding NOBODY — the fail-closed refusal
@@ -166,17 +174,30 @@ class ReviewerSelector
   # build: a change driven straight from the operator's own hands, or a lane that
   # provably has no soul behind it.
   #
-  # ⚠ IT IS THE ONE INPUT HERE THAT FAILS **OPEN**, so assert it only when it is
-  # TRUE. Everything else in this class fails closed — a blank builder refuses, a
-  # typo refuses — precisely because an unnamed author
-  # might be sitting in the pool. `none` lifts that refusal on the caller's word
-  # alone, and nothing can check the word. MEASURED 2026-09-24 on
-  # data-flow-doc-contradicts-code, a docs PR Xan wrote while the task carried no
-  # stamp: `--builder none` seated **xan** as the light on Xan's own diff, while
-  # `--builder xan` (and `--builder alex`, through the alias) correctly excluded
-  # her and seated jasper. A false `none` does not merely skip an exclusion — it
-  # produces the confidently-wrong seating this class's header calls the worse
-  # failure, and reports the property upheld. Hardening it is /tasks/builder-none-fails-open.
+  # IT USED TO FAIL **OPEN**, AND IT NO LONGER DOES. Everything else in this class
+  # fails closed — a blank builder refuses, a typo refuses — precisely because an
+  # unnamed author might be sitting in the pool. `none` lifted that refusal on the
+  # caller's word alone. MEASURED 2026-09-24 on data-flow-doc-contradicts-code, a
+  # docs PR Xan wrote while the task carried no stamp: `--builder none` seated
+  # **xan** as the light on Xan's own diff, while `--builder xan` (and `--builder
+  # alex`, through the alias) correctly excluded her and seated jasper. A false
+  # `none` did not merely skip an exclusion — it produced the confidently-wrong
+  # seating this class's header calls the worse failure, and reported the property
+  # upheld.
+  #
+  # NOTHING CAN VERIFY THE CALLER'S WORD; THE WORD IS STILL FALSIFIABLE. The record
+  # and the PR are witnesses the caller does not control, and the assertion is now
+  # checked against both — see #builder_none_contradicted_by. Re-measured 2026-09-27
+  # on the same PR: with a readable credential the PR's one commit names
+  # `xan@mcritchie.studio`, so the assertion is CONTRADICTED and Xan is excluded
+  # anyway; with the stale one the read 401s, so it is UNVERIFIED and the CLI
+  # refuses. Either way the author is no longer seated.
+  #
+  # ⚠ SO ASSERT IT ONLY WHEN IT IS TRUE — and expect to be checked. What is left
+  # for `none` is the genuinely unattributed build: a change driven straight from
+  # the operator's own hands, or a lane that provably has no soul behind it. On a
+  # hand-held record with no PR there is no witness to ask, and that residue
+  # (#builder_none_unfalsifiable) is the honest limit of the guard.
   NO_BUILDER = "none"
 
   # The two reviewer-role NAMES, sourced from the single vocabulary
@@ -403,6 +424,22 @@ class ReviewerSelector
       # assertion itself; inferring it from `builder.empty? && builder_known` was
       # sound only while builder_known? was defined over the singular builder.
       "builder_asserted_none" => builder_asserted_none?,
+      # WHAT CAME OF CHECKING THAT ASSERTION — see the block at
+      # #builder_none_contradicted_by. All five are empty/nil unless `none` was
+      # asserted, and the first three are each a REFUSAL for `bin/reviewer-select`:
+      # an assertion a witness contradicts, and an assertion no witness could be
+      # read for, are both the fail-open this key set exists to close.
+      "builder_none_contradicted_by" => builder_none_contradicted_by,
+      "builder_none_contradictions" => builder_none_contradictions,
+      "builder_none_record_names" => builder_none_record_names,
+      "builder_none_unverified" => builder_none_unverified,
+      # The honest limit rather than a failure: nothing existed to cross-examine.
+      "builder_none_unfalsifiable" => builder_none_unfalsifiable,
+      # WHY the PR could not be read, on EVERY path — so the unknown-author refusal
+      # stops reporting an unreadable PR as a PR that named nobody. That misreport is
+      # what manufactured the false assertion: the operator was told no author could
+      # be derived from the commits, believed it, and asserted the negative.
+      "pr_authors_unreadable" => pr_authors_unreadable,
       "busy" => busy,
       # Whether anyone LOOKED. Without it a consumer reading `busy: []` cannot tell
       # an idle bench from an exclusion nobody ran — see #busy_log_token.
@@ -611,32 +648,87 @@ class ReviewerSelector
 
     @builders =
       if builder_asserted_none?
-        []
+        # THE ASSERTION IS CHECKED, NOT TAKEN ON TRUST. This returned a bare `[]`
+        # until 2026-09-27 — the caller said nobody, so nobody was excluded, and
+        # every source that could have named an author was skipped unread. On
+        # data-flow-doc-contradicts-code that seated Xan on Xan's own PR. The
+        # assertion now yields whatever the EVIDENCE names (#evidence_authors), so
+        # it is `[]` only when nothing anywhere contradicts it, and a false
+        # assertion can no longer subtract an exclusion.
+        builder_none_contradicted_by
       elsif @builder_override
         override_builders
       else
-        ([devops_built_by] + task_devops_builders + building_event_actors + fix_forward + pr_authors)
-          .map { |s| Task.canonical_soul(s) }.select { |s| soul?(s) }.uniq
+        evidence_authors
       end
   end
 
-  # The souls on the task's PR (see THE FIFTH SOURCE in the header): the injected
-  # `pr_authors:`, else Task#derived_authors. Never raises — a failed derivation
-  # leaves the recorded sources standing alone, exactly as before.
-  def pr_authors
-    return @pr_authors_resolved if defined?(@pr_authors_resolved)
+  # EVERY source that can name an author, with the caller's `--builder` set aside:
+  # the record's stamps, the `→ building` claim actors, the fix-forward ledger, and
+  # the PR's own commits. This is the ordinary author set AND the evidence the
+  # `none` assertion is checked against — one definition, so the check can never
+  # consult a narrower set than the exclusion does.
+  def evidence_authors
+    return @evidence_authors if defined?(@evidence_authors)
 
-    @pr_authors_resolved =
+    @evidence_authors = evidence_by_source.values.flatten.uniq
+  end
+
+  # The same evidence, split by WHERE it came from, so a refusal can send the
+  # reader to the right place: a stale stamp, a recorded zap, and a commit that
+  # provably exists need three different answers.
+  def evidence_by_source
+    return @evidence_by_source if defined?(@evidence_by_source)
+
+    @evidence_by_source = {
+      "record" => souls_among([devops_built_by] + task_devops_builders + building_event_actors),
+      "fix_forward" => souls_among(recorded_fix_forward),
+      "pr_commits" => souls_among(pr_authors)
+    }
+  end
+
+  def souls_among(slugs)
+    Array(slugs).map { |s| Task.canonical_soul(s) }.select { |s| soul?(s) }.uniq
+  end
+
+  # The souls on the task's PR (see THE FIFTH SOURCE in the header): the injected
+  # `pr_authors:`, else the task's own read. Never raises — a failed derivation
+  # leaves the recorded sources standing alone, exactly as before.
+  def pr_authors = pr_author_read["authors"]
+
+  # WHY the PR could not be read, or nil when it was. The reason the `none` check
+  # refuses on, and the reason the unknown-author refusal quotes instead of
+  # claiming the PR "named nobody".
+  def pr_authors_unreadable = pr_author_read["unreadable"]
+
+  # WHY there was nothing to read (derivation off, no PR). NOT a failure and NOT a
+  # remedy — it must not read as either.
+  def pr_authors_absent = pr_author_read["absent"]
+
+  # The PR-author read, kept in its three shapes (Task#derived_authors_probe). An
+  # injected `pr_authors:` set counts as READ — the caller answered the question —
+  # which is how a test states "the PR names nobody" as opposed to "nobody looked".
+  def pr_author_read
+    return @pr_author_read if defined?(@pr_author_read)
+
+    @pr_author_read =
       if !@pr_authors.nil?
-        Array(@pr_authors)
+        { "authors" => Array(@pr_authors), "unreadable" => nil, "absent" => nil }
+      elsif task.respond_to?(:derived_authors_probe)
+        task.derived_authors_probe.to_h.slice("authors", "unreadable", "absent")
+            .reverse_merge("authors" => [], "unreadable" => nil, "absent" => nil)
       elsif task.respond_to?(:derived_authors)
-        Array(task.derived_authors)
+        # A task that answers the flattened read only. Its `[]` cannot say whether
+        # anyone looked, so it is reported as unread rather than as an empty PR.
+        { "authors" => Array(task.derived_authors), "unreadable" => nil,
+          "absent" => "this task answers #derived_authors only, which cannot say whether the PR was read" }
       else
-        []
+        { "authors" => [], "unreadable" => nil, "absent" => "this task cannot be asked for its PR authors" }
       end
   rescue StandardError => e
     @logger&.warn("[reviewer-selector] PR author derivation failed (non-fatal): #{e.class}: #{e.message}")
-    @pr_authors_resolved = []
+    @pr_author_read = { "authors" => [], "unreadable" => "the PR author read raised #{e.class}: #{e.message}",
+                        "absent" => nil }
   end
 
   # `devops.fix_forward` — the souls recorded as having moved the PR head OUTSIDE a
@@ -645,8 +737,17 @@ class ReviewerSelector
   # from `bin/reviewer-select --file task.json` over a hand-held record, and from an
   # in-memory Task the CLI builds from board JSON. Reading the recorded fact directly
   # means the exclusion holds even where the server-side fold never ran.
+  # The reported fix-forward set: silent under an explicit `--builder`, which speaks
+  # for the whole task. A `none` assertion no longer silences it — a recorded zap is
+  # a soul the record NAMES, so it is evidence against the assertion, not something
+  # the assertion gets to wave away.
   def fix_forward
-    return [] if builder_asserted_none? || @builder_override
+    return [] if @builder_override && !builder_asserted_none?
+
+    recorded_fix_forward
+  end
+
+  def recorded_fix_forward
     return [] unless task.respond_to?(:devops_fix_forward)
 
     Array(task.devops_fix_forward).map { |slug| Task.canonical_soul(slug) }.reject(&:empty?)
@@ -683,8 +784,12 @@ class ReviewerSelector
   # stamp, the other wants a correction, and the stamping command would overwrite
   # the evidence of the typo — so a message that conflates them sends the reader to
   # do the wrong thing confidently.
+  # Silent under a NAMED override, which speaks for the whole task. NOT silent under
+  # a `none` assertion: a record that names `stefon` is a record saying SOMETHING
+  # built this, which is the opposite of what the assertion claims, even though the
+  # misspelling excludes nobody.
   def record_unresolved
-    return [] if builder_asserted_none? || @builder_override
+    return [] if @builder_override && !builder_asserted_none?
 
     ([devops_built_by] + task_devops_builders + building_event_actors)
       .map { |s| s.to_s.strip }.reject(&:empty?).reject { |s| soul?(s) }.uniq
@@ -700,6 +805,66 @@ class ReviewerSelector
   # is what keeps the fail-closed guard usable instead of routed around.
   def builder_asserted_none?
     @builder_override.to_s.strip.casecmp(NO_BUILDER).zero?
+  end
+
+  # ── THE `none` ASSERTION, CHECKED ────────────────────────────────────────────
+  #
+  # `none` is the one input to this class that used to fail OPEN: it named nobody,
+  # made the builder KNOWN, and skipped every source that could have named an
+  # author. Nothing can verify the caller's word directly, but the word is
+  # FALSIFIABLE — the record and the PR are both witnesses the caller does not
+  # control — and the three methods below are the falsification, in the three
+  # answers it can give. They are only ever non-empty under an assertion; every
+  # other path is untouched.
+  #
+  #   CONTRADICTED  a witness names a soul → #builder_none_contradicted_by. The
+  #                 assertion is provably false. #builders yields the named souls
+  #                 so the exclusion holds even here (the recorder must never
+  #                 break), and `bin/reviewer-select` refuses outright.
+  #   UNVERIFIED    a witness could not be read → #builder_none_unverified. NOT a
+  #                 clean bill of health, and the state this whole defect lived in:
+  #                 a 401 on the PR read turned `["xan"]` into `[]`, and an empty
+  #                 witness box read as an exonerating one. The CLI refuses, and
+  #                 the remedy is one command.
+  #   UNFALSIFIED   every witness answered and named nobody. The assertion stands
+  #                 on the best evidence available, and the audit says so.
+  #
+  # #builder_none_unfalsifiable is the fourth, weakest state — there was no witness
+  # to ask (derivation off, no PR). It does NOT refuse, because it names no remedy
+  # and no misconfiguration; it prints as a note, and it is the honest limit of this
+  # guard: a hand-held record with no PR cannot be cross-examined by anything.
+  def builder_none_contradicted_by
+    return [] unless builder_asserted_none?
+
+    evidence_authors
+  end
+
+  def builder_none_contradictions
+    return {} unless builder_asserted_none?
+
+    evidence_by_source.reject { |_source, souls| souls.empty? }
+  end
+
+  # Names the record carries under an assertion that resolve to no soul. They
+  # exclude nobody, so they are not in #builder_none_contradicted_by — but a record
+  # that names ANYTHING contradicts "no soul built this", so the CLI refuses on it
+  # and asks for the spelling rather than accepting the negative.
+  def builder_none_record_names
+    return [] unless builder_asserted_none?
+
+    record_unresolved
+  end
+
+  def builder_none_unverified
+    return nil unless builder_asserted_none?
+
+    pr_authors_unreadable
+  end
+
+  def builder_none_unfalsifiable
+    return nil unless builder_asserted_none?
+
+    pr_authors_absent
   end
 
   # Whether WHO BUILT THIS is a settled question. False means the record simply
@@ -948,16 +1113,31 @@ class ReviewerSelector
   end
 
   # The builder, annotated for the audit log: "UNKNOWN(no-exclusion)" when the
-  # record doesn't say, "none(asserted)" when a caller stated no soul built it,
-  # "<slug>(excluded)" when removed from the light pool, "<slug>(kept:too-few)"
-  # when a specialist builder is kept because excluding it would leave too few
-  # candidates, or "<slug>(not-a-candidate)" when a known builder isn't a light
-  # candidate (Carl, a non-pool soul, or the QA owner) — nothing to exclude.
+  # record doesn't say, one of the four `none(...)` tokens below when a caller
+  # asserted no soul built it, "<slug>(excluded)" when removed from the light pool,
+  # "<slug>(kept:too-few)" when a specialist builder is kept because excluding it
+  # would leave too few candidates, or "<slug>(not-a-candidate)" when a known builder
+  # isn't a light candidate (Carl, a non-pool soul, or the QA owner) — nothing to
+  # exclude.
   #
   # The unknown token used to be a bare "-", which is why nobody caught it live:
   # a DISABLED safety check has to read as disabled, not as a tidy empty field.
+  #
+  # THE SAME MISTAKE, ONE INPUT OVER. `none` printed a single `none(asserted)` for
+  # four different outcomes, one of which was a soul being seated on their own PR —
+  # so the audit line for the incident and the audit line for a correct assertion
+  # were character-for-character identical, and the `chosen:` line was too. There is
+  # now a token per outcome, and only "cross-checked" means a guard ran and cleared
+  # it. Whoever greps these logs after the fact can tell the four apart.
   def builder_log_token
-    return "none(asserted)" if builder_asserted_none?
+    if builder_asserted_none?
+      return "none(asserted:CONTRADICTED-by-#{builder_none_contradicted_by.join('+')})" if builder_none_contradicted_by.any?
+      return "none(asserted:CONTRADICTED-by-record)" if builder_none_record_names.any?
+      return "none(asserted:UNVERIFIED)" if builder_none_unverified
+      return "none(asserted:no-witness)" if builder_none_unfalsifiable
+
+      return "none(asserted:cross-checked)"
+    end
     return "UNKNOWN(no-exclusion)" if builders.empty?
 
     builders.map do |soul|

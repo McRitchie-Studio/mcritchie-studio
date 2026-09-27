@@ -25,7 +25,7 @@ Reads `db/seeds/data/spotrac_contracts_2025.json` (committed, ~2,500 entries —
 ### 3. `Espn::ScrapeDepthCharts`
 `app/services/espn/scrape_depth_charts.rb`, rake `espn:scrape_depth_charts` — current-roster + depth truth.
 
-Hits `https://www.espn.com/nfl/team/depth/_/name/{abbrev}` per team (data embedded in `window['__espnfitt__']`). Auto-creates DepthChart shells and Contracts for ESPN-listed players we don't have yet (UDFAs, mid-season call-ups). When a player has shifted teams, expires the old active Contract and creates the new one. Updates `Athlete.team_slug`. Stores both `position` (collapsed canonical) AND `formation_slot` (raw ESPN label) on each DepthChartEntry. Locked entries are never moved.
+Hits `https://sports.core.api.espn.com/v2/.../depthcharts` per team. The doc said `https://www.espn.com/nfl/team/depth/_/name/{abbrev}` (data embedded in `window['__espnfitt__']`) until 2026-09-27; that HTML scrape is blocked and the service moved to the JSON API, per its own comment at `app/services/espn/scrape_depth_charts.rb`. Auto-creates DepthChart shells and Contracts for ESPN-listed players we don't have yet (UDFAs, mid-season call-ups). When a player has shifted teams, expires the old active Contract and creates the new one. Updates `Athlete.team_slug`. Stores both `position` (collapsed canonical) AND `formation_slot` (raw ESPN label) on each DepthChartEntry. Locked entries are never moved.
 
 Behaviors of note:
 - **Row-grouped flatten** — multi-row position groups (3 WR rows for WR1/WR2/WR3 chains) round-robin starters together: row1[0], row2[0], row3[0], then row1[1], etc. Drives WR1/WR2/WR3 = starter from each row.
@@ -33,6 +33,7 @@ Behaviors of note:
 - **Stale-entry pruning** — when post-merge data leaves a player with two entries on the same chart at different positions, apply_row keeps the entry already at the target position and drops the rest.
 - **Verbatim ESPN order** — apply_row preserves ESPN's listed order for new vs existing entries. Brand-new players ESPN promotes above an existing one get the higher slot (Will Campbell at LT1 over Hudson, post-fix).
 - **Partial-response guard** — if ESPN returns < 3 sides for a team (e.g. only "Base 4-3 D" with no offense or special teams — Lions hit this on 2026-05-01), skip the team entirely instead of half-overwriting. teams_partial counter on stats hash.
+- ⚠️ **TWO OF ITS THREE ENDPOINTS RETURN 403 TODAY (measured 2026-09-27) and the service exits 0 anyway.** `ESPN_TEAMS_INDEX_URL` and `ESPN_ROSTER_URL` both name `site.api.espn.com`, which filters on User-Agent and rejects everything Ruby's Net::HTTP can send — including this service's Chrome string. `fetch_json` returns nil on any non-success, so `team_id_for` answers nil, every team lands in `teams_skipped` with "No ESPN team_id for abbrev", and the run reports a clean summary. The depth-chart URL itself (`sports.core.api.espn.com`) is fine. The fix is one host: `site.web.api.espn.com` serves the identical documents to any User-Agent — see the note on `Espn::PlayerProfile::ROSTER_URL`, which measured it across 18 requests. Not repaired as part of `acquire-or-validate-player`; it is a bug in a service with its own callers and its own tests.
 - **`espn_id` backfill on name match** — when ESPN places a player who was found via name fallback (not espn_id lookup), persist the `espn_id` from ESPN's href on the Athlete + derive `espn_headshot_url`. Pre-fix, those athletes had a depth chart entry but no espn_id, so `nfl:upload_headshots` couldn't cache their headshot. Backfilled ~110 athletes per scrape with this added.
 
 ## Athlete Cross-Ref IDs
@@ -52,6 +53,100 @@ Behaviors of note:
 ## Position Normalization
 
 `PositionConcern` (`app/models/concerns/position_concern.rb`) holds canonical position lists, per-source mapping tables (`ESPN_MAP`, `PFF_MAP`, `NFLVERSE_MAP`, `SPOTRAC_MAP`, `GENERAL_MAP`), AND the `FORMATION_GROUPS` / `GROUP_ATHLETE_POSITIONS` maps used by the defensive picker. Callers pass `source:` to dispatch: `PositionConcern.normalize_position("LDE", source: :espn) # => "EDGE"`. Falls back to `GENERAL_MAP` when source is omitted.
+
+## One Player: Acquire or Validate
+
+`Athletes::AcquireOrValidate` (`app/services/athletes/acquire_or_validate.rb`, rake
+`athletes:acquire_or_validate`) is the **per-person** act. Everything else on this page
+is bulk: the rebuild workflow drops the database, the refresh workflow re-pulls all of
+nflverse and scrapes 32 depth charts, and `nfl:upload_headshots` selects
+`Athlete.where.not(espn_id: nil)` — which is exactly what a player nobody has fetched
+yet does not have. So there was no way to fix ONE person, which is what the model
+pipeline's `defined` lane needs when it finds an incomplete one.
+
+**It runs on a desk with no credential.** Every ESPN endpoint behind it is public. The
+only step that wants AWS keys is caching the headshot into S3, and that degrades to a
+reported line rather than failing the run.
+
+```bash
+bin/rails athletes:acquire_or_validate PERSON=ashton-jeanty        # validate someone on file
+bin/rails athletes:acquire_or_validate ESPN_ID=3138744            # acquire or validate by id
+bin/rails athletes:acquire_or_validate TEAM=lv NAME="Chris Myarick"   # acquire from a roster
+DRY_RUN=1 bin/rails athletes:acquire_or_validate TEAM=lv          # walk one roster, write nothing
+ADOPT=position,height_inches bin/rails athletes:acquire_or_validate PERSON=tj-watt
+NO_HEADSHOT=1 bin/rails athletes:acquire_or_validate PERSON=bo-nix
+```
+
+### The seam
+
+`Espn::PlayerProfile` is the provider and the only file that knows ESPN's JSON exists.
+It answers `#find`, `#find_on_roster`, `#find_in_league` and `#roster` with
+`Athletes::SourceProfile` values already in our units, our position vocabulary and our
+team slugs. A second source is a second provider and no change to the act — the
+operator's framing was "we can always add supliment data sourses later".
+
+### Who wins a disagreement
+
+Per-field, declared as data in `AcquireOrValidate::FIELDS`:
+
+| policy | fields | rule |
+|--------|--------|------|
+| `:key` | `espn_id` | fill when blank; a stored id that DISAGREES refuses the whole act |
+| `:roster` | `team_slug`, `jersey_number` | the league publishes these, so the source wins — and the change is named (`traded`), never quiet |
+| `:held` | `position`, `height_inches`, `weight_lbs`, `first_name`, `last_name` | fill when blank; on a disagreement KEEP ours and report a `conflict` the operator can take with `ADOPT=` |
+| `:fill` | `espn_headshot_url` | derived from the id, so the `:key` refusal fires first |
+
+**`position` is held, and that is measured, not cautious.** T.J. Watt, Alex Highsmith
+and Nick Herbig are all stored `EDGE` (from PFF, whose vocabulary is finer — see
+Athlete Cross-Ref IDs above) while ESPN says `LB`, which `ESPN_MAP` normalizes to `LB`.
+A source-wins rule on `position` would have quietly demoted every 3-4 edge rusher in
+the league, and nothing would have errored.
+
+### Staleness is causal
+
+Nothing reads a clock. **Stale** means the source now disagrees with a value we had
+already stored, which is the only comparison that can name the change on the report
+line. `athletes.updated_at` moves for any column and `people.updated_at` does not move
+when the athlete row changes at all, so both timestamps answer this worse.
+
+`traded` is deliberately the same word `Appearances::LookReading` uses. They are the
+same event at the next joint along, and each object owns one:
+
+```text
+ESPN ──(AcquireOrValidate)──> athletes.team_slug ──(LookReading#traded?)──> appearance
+```
+
+### Traps this act was built around
+
+- **Height and weight arrive as prose.** `height` and `weight` measure nil on the
+  athlete endpoint while `displayHeight`/`displayWeight` carry `"6' 2\""` and
+  `"217 lbs"`. `Athletes::DisplayMeasurement` parses them and **refuses** anything it
+  cannot read with confidence, because a plausible wrong integer reaches the
+  character-sheet prompt as a body of the wrong shape and raises nothing.
+- **The roster endpoint's `athletes` key is six GROUPS, not players** — offense,
+  defense, specialTeam, injuredReserveOrOut, suspended, practiceSquad. A naive read
+  gets 6 objects instead of Las Vegas's 79 and finds nobody, without raising.
+- **`site.api.espn.com` 403s Ruby and 200s curl.** Hand-verifying that host with curl
+  PROVES an endpoint that the application cannot reach. Use `site.web.api.espn.com`,
+  which serves the identical document to any User-Agent.
+- **`Person.find_by_name` cannot see across punctuation.** `find_by_name("AJ", "Cole")`
+  is nil while `a-j-cole` is on file, so 1 of the 18 Las Vegas players that looked
+  absent was a player we have had for years. `Athletes::NameKey` compares
+  punctuation- and suffix-insensitively and the act REFUSES an ambiguous name rather
+  than filing a second row for one human.
+- **A trade means the stored team is the one roster he is no longer on.** Searching
+  only the stored team can never discover the event the act was built for, so a miss
+  widens to all 32 rosters (ESPN publishes no working player-name search:
+  `common/v3/search?query=Bo+Nix` answers HTTP 200 with `count: 0`). Absence is only
+  concluded from a COMPLETE search; an unreadable roster raises instead.
+
+### `jersey_number`
+
+`athletes.jersey_number` (integer, nullable) was added by this act's migration. Before
+2026-09-27 the number had no column on any table, ESPN returned it as `athlete.jersey`
+and every reader dropped it, so the character-sheet recipe substituted a `<NUMBER>`.
+`Appearances::Pipeline::DEFINITION_GAP_NOTE` and the `no #` cell on the model-pipeline
+board describe that gap and are owed an update now that the column exists.
 
 ## Athlete Physical Descriptions
 
@@ -95,6 +190,45 @@ DESCRIBE_LIMIT=20 bin/rails athletes:describe_from_headshots   # 20 rows, then r
 bin/rails athletes:describe_from_headshots               # the rest
 ```
 
+**Running it on production.** The 2,051 athletes are production rows, so the real pass
+is a `heroku run` on the `mcritchie-studio` app — and it is **detached**, because an
+attached one-off dyno dies with the terminal that started it:
+
+```bash
+# 1. the credential the paid lane needs. Present on prod as of 2026-09-27 —
+#    re-measure by NAME, never by printing the value:
+heroku config --app mcritchie-studio | grep -c '^ANTHROPIC_API_KEY:'   # expect 1
+#    AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are needed too: the pass reads each
+#    cached headshot out of S3 with our own credentials.
+
+# 2. a sample first, attached, because reading the table it prints is the point
+heroku run --app mcritchie-studio DESCRIBE_LIMIT=20 rails athletes:describe_from_headshots
+
+# 3. the rest, detached, then follow it
+heroku run:detached --app mcritchie-studio rails athletes:describe_from_headshots
+heroku logs --app mcritchie-studio --dyno run --tail
+```
+
+**Without the credential it still runs.** The build lane needs no key and no network, so
+a keyless run fills `build` for every athlete and warns instead of aborting; only skin
+tone and hair wait for the key.
+
+**How long it takes, and why the number is not load-bearing.** The derivable floor is the
+pause: `DESCRIBE_PAUSE` (0.2 s) after every call the task asked for, so a full pass of
+~2,043 asks waits **~7 minutes** in pauses alone. Wall clock is that plus one Anthropic
+round trip per athlete, which has not been measured — re-derive it from the first sample
+rather than trusting a figure here (`DESCRIBE_LIMIT=20` prints its own token and cost
+totals). Precision does not matter much because **the columns are the progress**: a killed
+dyno costs only the calls already paid for, and re-running resumes exactly where it
+stopped.
+
+**What to read when it finishes.** The exit code grades the three lanes (below), and
+`/admin/error_logs` carries a row per athlete for every degraded call — an invalid
+credential, a 429, an unreadable S3 object. Two report lines point there without failing
+the run: `asked but NOT billed:` with its `WARNING`, and `measured but IMPLAUSIBLE:` with
+its `[?]` lines. Then `bin/rails athletes:description_coverage` (read-only) for the
+standing totals.
+
 `DESCRIBE_LIMIT` caps athletes **changed** — a sample run stops rather than walking
 on to bulk-write the free column everywhere. It bounds the **writes**, not the spend:
 the walk advances on changes, so an athlete who is paid for and yields nothing to
@@ -115,9 +249,35 @@ summed total reads healthy. So the report prints each lane's three steps (*wante
 
 | Rule | Fires when | What it catches |
 |---|---|---|
-| 1. the pass broke down | more raises than writes | the **write** path — a row that no longer satisfies a validation, a database error. Not the paid call, which never raises |
-| 2. the free lane wrote nothing | height and weight were on file for ≥1 athlete wanting a build, and none was written | the deriver rejecting every row, or every write failing |
+| 1. the pass broke down | more raises than writes | the **write** path — a row that no longer satisfies a validation (a blank `sport` raises `RecordInvalid`), a database error. Not the paid call, which never raises |
+| 2. the free lane wrote nothing | ≥1 athlete wanting a build was **derivable** — both measurements on file *and* inside the plausibility window — and none was written | the deriver failing on rows it accepts, or every write failing |
 | 3. the paid lane never landed | ≥1 call was asked for and **not one was billed a token** | a present-but-invalid credential, a sustained 429, unreadable S3 objects |
+
+**Rule 2 grades `derivable?`, not `measured?`, and the difference is a false positive
+that was live.** `measured?` asks whether both *columns* are present; the deriver
+returns nil outside its window. So a unit mix-up — centimetres in an inches column,
+`180` "inches" — is measured-but-underivable, and on the warm re-run it is the only row
+still wanting a build. The lane therefore read *"had the input for 1, wrote 0"* and
+aborted, on every run, for ever, with nothing wrong and nothing that fixing the lane
+could clear (measured in a desk 2026-09-26). It was not reachable on production — 2,051
+athletes span 67..81 in and 156..380 lb with no out-of-window row, and the task is
+operator-run rather than scheduled — but it becomes reachable on the first ingest that
+lands one bad row, which is the case the window exists for. **A verdict has to be
+clearable by fixing what it accuses**, so an implausible row is now reported as its own
+data gap with a `[?]` line naming the athlete and the offending value, and the operator
+fixes the row rather than the lane.
+
+**Rule 3 is all-or-nothing, and the partial failure is warned about rather than aborted
+on.** A credential revoked at athlete 500, or a sustained 429 from there, leaves asked
+2,043 / billed 499: rule 3 is false because something *was* billed, and rule 1 is false
+because the describer degrades. A `billed < asked` abort would catch that — and would
+also fire on a healthy pass, because one unreadable S3 object degrades to a blank result
+with no usage, so a single dead image among 2,043 sound ones is already asked 2,043 /
+billed 2,042. A rule that fires on a sound run is a rule somebody disables, and a
+threshold only replaces the false positive with a number nobody can defend. So the run
+prints `asked but NOT billed:` and, when it is non-zero beside a non-zero bill, a
+`WARNING` naming `/admin/error_logs`. The pass is resumable, so a systemic failure the
+warning does not stop is caught by the next run one run late rather than never.
 
 Rule 3 exists because rules 1 and 2 are structurally blind to it, which is the exact
 shape in which `nfl:upload_headshots` reported a total failure as exit 0 for its
@@ -134,7 +294,9 @@ works, whatever it answered. The cost of that is one blind spot, named here so i
 not rediscovered: a lane that bills every call and writes nothing — our own parser
 broken, say — reads exactly like that null steady state. Separating them needs a
 record that the task *asked and the answer was null*, which is a column rather than an
-accounting change.
+accounting change. **That deferral covers only that blind spot** — the partial-failure
+case above needed no column, since `vision_asked` and `vision_billed` were both already
+counted and the warning is their difference.
 
 **No live vision call can happen in the test suite, and that is a trap rather than
 an assertion.** Every paid call leaves through `Athletes::VisionTransport`, which

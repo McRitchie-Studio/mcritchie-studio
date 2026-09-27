@@ -341,6 +341,12 @@ Rails.application.routes.draw do
         post :search
         post :mint
         post :refresh
+        # #generate BUYS ONE IMAGE from a zero-shot identity adapter — one
+        # headshot in, one picture out, no training step and therefore no
+        # character model required. Behind `require_admin` with the other two
+        # spenders, for the reason spelled out above: hub signup is open, so a
+        # session is no control over a paid endpoint.
+        post :generate
       end
     end
 

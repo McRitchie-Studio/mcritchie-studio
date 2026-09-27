@@ -9,12 +9,20 @@ module EmailEvents
   module Results
     module_function
 
-    # Never raises: a result that cannot be recorded is logged to ErrorLog, and
-    # the page or pixel that reported it carries on.
+    # Never raises: a result that cannot be recorded goes to the Rails log
+    # (with the goal and the token's first eight characters, enough to find the
+    # email) and to ErrorLog, and the page or pixel that reported it carries on.
+    # When the database itself is down, ErrorLog cannot be written either; the
+    # log line still is.
     def record!(token, goal, source: "beacon")
       record_unsafely!(token, goal, source: source)
     rescue StandardError => e
-      ErrorLog.capture!(e)
+      Rails.logger.error("[email results] #{goal} for #{token.to_s.first(8)}…: #{e.class}: #{e.message}")
+      begin
+        ErrorLog.capture!(e)
+      rescue StandardError
+        nil
+      end
       nil
     end
 

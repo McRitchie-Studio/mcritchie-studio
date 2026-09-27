@@ -309,8 +309,158 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     ReviewerSelector.new(task_for(shape: "backend"), builder: ReviewerSelector::NO_BUILDER,
                                                      logger: logger).reviewers
 
-    assert_match(/builder=none\(asserted\)/, logger.lines.last,
+    assert_match(/builder=none\(asserted:/, logger.lines.last,
       "a stated fact is auditable as a stated fact, not as a missing one")
+  end
+
+  # --- `--builder none` is CROSS-EXAMINED, not believed (builder-none-fails-open) ---
+  #
+  # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
+  # docs PR Xan wrote while the task carried no stamp): `--builder none` seated XAN
+  # as the light on Xan's own diff and printed the no-self-review property upheld,
+  # while `--builder xan` correctly excluded her. `none` made the builder KNOWN and
+  # returned an empty author set, so every source that could have named an author was
+  # skipped unread — the one input to this class that failed OPEN.
+  #
+  # Nothing can VERIFY the caller's word. The word is FALSIFIABLE, and that is
+  # enough: the record and the PR's commits are witnesses the caller does not
+  # control. These assert on WHAT WAS EXCLUDED AND WHY, not on the chosen pair — a
+  # test that only reads `reviewers` passes on a lucky roll.
+
+  test "a none assertion the RECORD contradicts excludes the author it denies" do
+    task = task_for(shape: "backend")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "shannon" }))
+    decision = ReviewerSelector.new(task, builder: ReviewerSelector::NO_BUILDER).decision
+
+    assert_equal ["shannon"], decision["builder_none_contradicted_by"],
+      "the record names shannon, so the assertion is provably false"
+    assert_equal ["shannon"], decision["builders"],
+      "and the assertion yields the author set rather than emptying it"
+    refute_includes decision["candidates"], "shannon",
+      "the author the assertion denied is STILL excluded from the light pool"
+    assert_includes decision["builder_none_contradictions"].keys, "record",
+      "the refusal can name WHICH witness disagreed"
+  end
+
+  test "a none assertion the PR's commits contradict excludes the author it denies" do
+    # The incident's own shape: nothing on the record, the author only on the PR.
+    decision = ReviewerSelector.new(task_for(shape: "docs"), builder: ReviewerSelector::NO_BUILDER,
+                                                             pr_authors: ["xan"]).decision
+
+    assert_equal ["xan"], decision["builder_none_contradicted_by"]
+    assert_equal({ "pr_commits" => ["xan"] }, decision["builder_none_contradictions"],
+      "the PR is named as the witness, not the record")
+    refute_includes decision["candidates"], "xan", "xan cannot be a light candidate on her own PR"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "xan",
+      "and is not seated — the 2026-09-24 outcome, now impossible"
+  end
+
+  test "a none assertion the fix-forward ledger contradicts excludes the zapper" do
+    task = task_for(shape: "backend")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "fix_forward" => ["steffon"] }))
+    decision = ReviewerSelector.new(task, builder: ReviewerSelector::NO_BUILDER).decision
+
+    assert_equal ["steffon"], decision["builder_none_contradicted_by"],
+      "a recorded zap is a commit that provably exists; an assertion cannot deny it"
+    assert_equal ["steffon"], decision["builder_none_contradictions"]["fix_forward"],
+      "the ledger is named as a witness in its own right"
+    refute_includes decision["candidates"], "steffon"
+  end
+
+  test "NO soul in the pool can be seated via a none assertion on a diff it built" do
+    # THE PROPERTY the whole guard exists for, asserted over every pool soul and both
+    # witnesses — because the incident was one spelling of a general hole, and a test
+    # pinned to `xan` would pass while the next soul walked through it.
+    ReviewerSelector::POOL.each do |soul|
+      by_record = task_for(shape: "backend")
+      by_record.update!(metadata: by_record.metadata.deep_merge("devops" => { "built_by" => soul }))
+
+      [ReviewerSelector.new(by_record, builder: ReviewerSelector::NO_BUILDER),
+       ReviewerSelector.new(task_for(shape: "backend"), builder: ReviewerSelector::NO_BUILDER,
+                                                        pr_authors: [soul])].each do |selector|
+        decision = selector.decision
+        assert_includes decision["builder_none_contradicted_by"], soul,
+          "asserting none over a task #{soul} built must be contradicted"
+        refute_includes decision["reviewers"].map { |r| r["slug"] }, soul,
+          "#{soul} was seated on a diff #{soul} built, via --builder none"
+        assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a full pair still forms"
+      end
+    end
+  end
+
+  test "a none assertion whose PR could NOT be read is UNVERIFIED, not cleared" do
+    # THE CONFLATION THAT CAUSED THE INCIDENT. Task#derived_authors returns [] both
+    # when a PR names nobody and when the read fails, and the original run got a 401:
+    # measured 2026-09-27, the same PR's commits yield ["xan"] with a fresh token. An
+    # empty witness box must never read as an exonerating one.
+    task = task_for(shape: "docs")
+    task.define_singleton_method(:derived_authors_probe) do |**|
+      { "authors" => [], "unreadable" => "the commits on PR 1587 could not be read (HTTP 401)", "absent" => nil }
+    end
+    decision = ReviewerSelector.new(task, builder: ReviewerSelector::NO_BUILDER).decision
+
+    assert_match(/401/, decision["builder_none_unverified"], "the failure is quoted, not swallowed")
+    assert_nil decision["builder_none_unfalsifiable"],
+      "a FAILED read is not the same state as having no witness to ask"
+    assert_empty decision["builder_none_contradicted_by"],
+      "nothing was read, so nothing can be claimed contradicted either"
+  end
+
+  test "a none assertion whose PR was READ and names nobody is cross-checked" do
+    # The legitimate use, and it must stay usable: an operator-driven change whose
+    # commits carry no soul. An injected set counts as READ — the caller answered.
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: ReviewerSelector::NO_BUILDER,
+                                                                pr_authors: []).decision
+
+    assert_empty decision["builder_none_contradicted_by"]
+    assert_nil decision["builder_none_unverified"]
+    assert_nil decision["builder_none_unfalsifiable"], "every witness answered"
+    assert_equal true, decision["builder_known"], "the assertion still lifts the unknown-author refusal"
+    assert_empty decision["builders"], "and still excludes nobody"
+    assert_equal 2, decision["reviewers"].size
+  end
+
+  test "the none check is inert on every path that did not assert it" do
+    # A guard that fires on the ordinary path is a worse bug than the one it fixes.
+    task = task_for(shape: "backend")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "shannon" }))
+
+    [ReviewerSelector.new(task).decision,
+     ReviewerSelector.new(task, builder: "steffon").decision].each do |decision|
+      assert_empty decision["builder_none_contradicted_by"]
+      assert_empty decision["builder_none_contradictions"]
+      assert_empty decision["builder_none_record_names"]
+      assert_nil decision["builder_none_unverified"]
+      assert_nil decision["builder_none_unfalsifiable"]
+    end
+  end
+
+  test "the audit log tells the four none outcomes apart" do
+    # They all printed `builder=none(asserted)` — the audit line for the incident and
+    # the audit line for a correct assertion were character-for-character identical,
+    # so a log sweep could not find the self-review after the fact.
+    contradicted = task_for(shape: "backend")
+    contradicted.update!(metadata: contradicted.metadata.deep_merge("devops" => { "built_by" => "shannon" }))
+    unreadable = task_for(shape: "backend")
+    unreadable.define_singleton_method(:derived_authors_probe) do |**|
+      { "authors" => [], "unreadable" => "HTTP 401", "absent" => nil }
+    end
+
+    tokens = {
+      "CONTRADICTED-by-shannon" => [contradicted, {}],
+      "UNVERIFIED" => [unreadable, {}],
+      "no-witness" => [task_for(shape: "backend"), {}],
+      "cross-checked" => [task_for(shape: "backend"), { pr_authors: [] }]
+    }.transform_values do |(task, extra)|
+      logger = CapturingLogger.new
+      ReviewerSelector.new(task, builder: ReviewerSelector::NO_BUILDER, logger: logger, **extra).reviewers
+      logger.lines.last[/builder=(\S+)/, 1]
+    end
+
+    tokens.each do |expected, logged|
+      assert_equal "none(asserted:#{expected})", logged
+    end
+    assert_equal tokens.values.uniq.size, tokens.size, "four outcomes, four distinguishable tokens"
   end
 
   test "the audit log marks a known non-specialist builder as not-a-candidate" do

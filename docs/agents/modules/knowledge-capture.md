@@ -65,7 +65,7 @@ For each item, in order:
    A durable fact the item establishes (a code, a date, an address, an
    advisor) also gets its row in the quick reference,
    `business-data/FACTS.md` — cited back to this doc, with who asserted it;
-   see [`form-fill`](form-fill.md) §7.
+   see [the quick reference](#the-quick-reference--when-to-pull-from-facts-when-to-add-to-it).
 6. **Flag urgency:** a decision-changing fact (a moved date, a changed number)
    jumps the queue — surface it to Alex immediately rather than
    waiting for distillation.
@@ -100,6 +100,50 @@ For each awaiting item: run the intake protocol on its body and attachments
 then stamp the outcome — `status` to `filed` (or `ignored`) and one line in
 `filed_note` saying what was done and where it went. Quarantined items are
 REPORTED to Alex, never processed, never deleted.
+
+## The quick reference — when to pull from FACTS, when to add to it
+
+`business-data/FACTS.md`, in the private `mcritchie-industries` repo, holds the
+answers sessions keep reaching for. Every row gives the value, an as-of date,
+a source (a knowledge doc `KD #n`, a filed path, a public page, or Alex's own
+word with its date), **who asserted it**, and a History column. It is the fast
+answer; the source it cites holds the context behind it. This rule applies
+in **any** session, not only during capture.
+
+**Pull from it first** whenever your work needs a fact about Alex's companies:
+an entity's legal name, EIN, formation date, address, industry code,
+headcount, advisors, or the deal's key dates. That includes:
+
+- answering Alex's question in chat ("what's our EIN?");
+- filling any form or application (the [`form-fill`](form-fill.md) SOP);
+- drafting an email, letter, or brief that states a company fact;
+- checking a figure in a transcript or document against what is on file.
+
+Before you use a value, read its **History & notes** cell. A conflict recorded
+there is a question for Alex, not a value to copy. If the fact is missing,
+search the knowledge layer and filed originals, then add the row you had to
+dig for.
+
+**Add to it in the same pass** whenever a session learns a durable fact,
+however it arrived: capture (email, Slack, Gmail, file drop), a call
+transcript, a form-fill, research on a public page, or Alex telling you in chat.
+**Durable** means a reference fact someone will ask for again. A figure that
+moves weekly (a price, a peg, a balance) stays in its knowledge doc.
+
+- Record **who said it** ("the seller says", "Alex chose"). In an inline
+  email reply, name the speaker from the text, not from the layout.
+- When a fact changes, update the value and move the old one into History.
+  Don't overwrite it.
+- When two sources disagree, record both readings, which one is in use, and
+  why.
+- The source must be on file. If the fact came from an email or document the
+  layer doesn't hold yet, file it through this SOP's intake protocol first.
+
+**What never goes in:** privileged deal content (APA terms, negotiating
+positions, buyer-side arithmetic). It stays behind its knowledge doc's access
+map, because FACTS is readable by anyone with the repo. And **no FACTS value
+is ever copied into this public repo**, the task board, a PR body, or an
+Artifact.
 
 ## Boundaries
 

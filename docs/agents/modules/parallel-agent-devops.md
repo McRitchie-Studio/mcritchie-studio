@@ -214,8 +214,17 @@ honest, and **none of them needs a manual flag in the common case**:
   reviewer who might be the author. This is deliberate: an empty exclusion list is
   not the same answer as "nobody to exclude", and treating them alike put Carl on
   Carl's own PR on 2026-08-13. Resolve it by stating the fact —
-  `--builder <soul>` names the builder, `--builder none` asserts that no soul built
-  it — and fix it durably with `bin/task move <slug> building --actor <soul>`.
+  `--builder <soul>` names the builder — and fix it durably with
+  `bin/task move <slug> building --actor <soul>`.
+  **`--builder none` asserts that no soul built it, and the assertion is now
+  CHECKED, not taken on trust.** It was the one input that lifted the guard on the
+  caller's word alone: measured 2026-09-24 on `data-flow-doc-contradicts-code`, it
+  seated **xan** as the light on a PR Xan wrote and reported the property upheld. It
+  is cross-examined against the record, `devops.fix_forward`, and the PR's own
+  commits; a witness that disagrees REFUSES, and so does a PR read that FAILED —
+  because an unreadable PR is not an authorless one, and that exact conflation is
+  what produced the self-review. Reach for it last; a Pokémon build names
+  `--builder pokemon`.
   A **second line** backs it up: `TaskReviewClaim.acquire` refuses a review claim
   whose named reviewer is ANY recorded author (disposition `self_review`), so a
   review reached WITHOUT `reviewer-select` still can't be a self-review. It read

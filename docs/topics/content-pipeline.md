@@ -226,6 +226,173 @@ what keeps them apart: every degrade writes an `ErrorLog` row with the `Appearan
 as its target. So a thin gallery is read by looking for a row on that look FIRST,
 not by re-running the search.
 
+### Character sheets — one headshot in, a whole sheet out
+
+**Training is a stage that can refuse, and it kept refusing.** Six measured
+attempts against the live Higgsfield API on 2026-09-25/26: four failed at
+preparation, always *"We couldn't prepare your photos for training"*, and the
+only two that completed used a single tight ESPN headshot. The images FETCHED
+fine in every failure, so this is image CONTENT at the training step, never
+reachability. A vision pass over the six scouted Sutton photographs explains it:
+not one is a front-facing dominant single face.
+
+**So the lane moved to generators with no training step at all.** They carry the
+likeness at GENERATION time from ONE face image — and one excellent front-facing
+headshot is exactly what we hold for 2,043 athletes.
+
+#### The endpoint is the finding, and the obvious one is wrong
+
+| Path | Measured result |
+|---|---|
+| **`POST /v1/responses`, `tools: [{type: image_generation}]`** | **The whole sheet, same man in every panel** |
+| `POST /v1/images/edits`, 1 reference | Lost identity on a SINGLE portrait |
+| `POST /v1/images/edits`, 5 references | No better |
+| `fal-ai/flux-pulid`, 1 reference, one portrait | Identity held, scored 0.75, 4.3s |
+| `fal-ai/flux-pulid`, 6-panel grid | **Six different men** |
+| `fal-ai/flux-pulid`, 3 calls at one seed | 1 of 3 matched |
+| `fal-ai/ideogram/character`, one full body | Likeness held; wardrobe wrong (grey suit, cropped mid-thigh) |
+| Higgsfield custom-reference | 4 of 6 mints failed at training |
+
+`/v1/images/edits` **edits** a picture. The Responses tool **looks** at the
+reference, reasons, then generates — and that reasoning step is what carries a
+likeness across ten panels.
+
+**A PORTRAIT RESULT IS NOT A SHEET RESULT.** The two come apart, which is why
+`single_portrait` and `character_sheet` are separate capabilities in the registry
+rather than one "identity" flag. flux-pulid holds a portrait beautifully and
+returns six different men on a grid.
+
+#### One call, one image, one artifact
+
+A sheet is generated as a SINGLE image in a SINGLE call, and that is why it works:
+everything in the frame is generated together, so the panels cannot drift apart.
+Five separate calls is precisely the shape that fails. `Appearances::GenerateArtifact`
+first shipped generating one pose per call from a five-entry pose map; that was
+wrong and was removed.
+
+#### Measured, end to end through this app
+
+| | Measured 2026-09-27 |
+|---|---|
+| Input | ONE stored ESPN headshot. Five references measured NO BETTER than one |
+| Output | Eight panels, every one recognisably the subject, correct uniform, number and nameplate |
+| Latency | 121.8s |
+| Usage | `usage.total_tokens` 7629 — **tokens, not images** |
+| Cost | **Not reported.** No token rate is declared, and inventing one would put a figure on the artifact nobody could re-derive |
+
+#### The pads clause is NOT satisfied, and that is a live defect
+
+Measured twice independently — on the operator-approved v4 and again on this
+app's own run:
+
+```
+full_body_left_two_have_pads   true
+six_head_panels_have_pads      FALSE
+reads_as_photo_day_jersey      true
+```
+
+The two full-body figures carry pad structure; the six head views show a natural
+sloping shoulder line rather than the squared shelf a shoulder pad creates. The
+operator approved the LOOK, so this is not a blocker — but the claim that the
+prompt's must-hold clause was met is false, and `Appearances::CharacterSheetPrompt`
+says so at the top of the file.
+
+**Two transferable lessons.** First: a global styling rule stated ONCE is
+overridden by a local description that implies otherwise — "in full pads" at the
+top, then panels called "head-and-shoulders portraits", produced photo-day crops.
+So every must-hold attribute is repeated INSIDE each panel's own instruction
+(`PANEL_SUFFIX`). Second, and the reason the defect survived a check: **a vision
+judge answers the question you ask.** "pads visible in all panels" got a generous
+yes; "what does a football shoulder pad do to a silhouette" got a clear no. Write
+the criterion to describe the OBSERVABLE, never the intent.
+
+Still open: whether per-panel repetition is simply insufficient at a close crop,
+or whether the phrasing must describe the silhouette rather than name the
+equipment. Repetition alone did not fix it in either run.
+
+#### The generator is a registry row, not a hard-coded vendor
+
+`config/image_generators.yml` declares each generator's adapter, pinned endpoint,
+model snapshot, contract version, credential variable, reference-field shape,
+billing unit and capabilities. Callers ask for a CAPABILITY and never name a
+vendor. **The seam earned itself within a day**: the sheet generator moved from
+fal to OpenAI and no caller changed.
+
+**⚠ A ROW RECORDS WHAT WAS MEASURED FOR THAT ROW.** Every row carries a `measured:`
+block — what was run, when, and what came back, including the word NOT for
+anything untested. This rule exists because it was broken twice in one day:
+`fal_ideogram_character` shipped claiming `full_body`, `back_view` and
+`expressions` on one weak measurement (`back_view` had never been run at all), and
+a report then generalised a `flux-pulid` grid result to "fal", which is two
+different rows. A capability with no measurement behind it is a claim the code
+acts on that nobody checked.
+
+**Higgsfield stays a row.** It keeps `trained_identity` and the Kling
+`image_to_video` job that has never failed, and claims no sheet capability, so
+nothing routes it work its training step refuses.
+
+#### Provenance, and why the bytes are ours
+
+Every artifact records `generator`, `generator_endpoint`, `generator_version`
+(the pinned MODEL, not the door every model comes through), `seed`, `prompt`,
+`billable_units` and `cost_usd`.
+
+**`billable_units` holds two vocabularies**, so the unit is always named: fal bills
+a sheet at 3 IMAGE UNITS, OpenAI reports tens of thousands of TOKENS for the same
+picture. A bare "3" beside a bare "7,629" invites one conclusion and it is wrong.
+A nil cost renders as nothing, never as zero — not reported is not free.
+
+**A seed is recorded only when it means something.** The Responses image tool
+exposes no seed, so the adapter neither sends nor stores one; stamping a seed the
+vendor ignored would assert a reproducibility that does not exist.
+
+**The generated image is copied into our own S3 before the row is written**
+(`Appearances::StoreGeneratedImage`). Two reasons: OpenAI returns BASE64, and a
+multi-megabyte data URI cannot be the value of `artifacts.image_url`; and a vendor
+CDN link is not a library — one that 404s in a month is not something the operator
+can compare across generators.
+
+#### Where it lives in the app
+
+| Piece | File |
+|---|---|
+| The registry | `config/image_generators.yml` |
+| Loading it | `ImageGeneration::Registry` (`.for(:character_sheet)`, `.preferred`) |
+| The sheet vendor | `ImageGeneration::OpenAI` (Responses + `image_generation` tool) |
+| The portrait vendor | `ImageGeneration::Fal` — one class, many rows |
+| Choosing the class | `ImageGeneration::Adapter.for(row)` |
+| Shared failure type | `ImageGeneration::GenerationFailed` |
+| Normalised answer | `ImageGeneration::Result` |
+| The prompt | `Appearances::CharacterSheetPrompt` |
+| The use case | `Appearances::GenerateArtifact` |
+| Our copy of the bytes | `Appearances::StoreGeneratedImage` |
+| Route | `POST /people/:person_slug/models/:slug/generate` — `require_admin` |
+| Suite traps | `OPENAI_NO_LIVE_CALLS=1`, `FAL_NO_LIVE_CALLS=1`, armed in `test/test_helper.rb` |
+| Autoload | `open_ai.rb` needs the inflection in `config/initializers/inflections.rb` |
+
+**The identity photo reads the STORED `s3_key`, never a rebuilt path.**
+`Athlete#headshot_url` resolves the `ImageCache` row and calls `ImageCache#url`;
+`Athlete#headshot_key_prefix` is a WRITE-time builder. `Athletes::RekeyHeadshots`
+is actively moving athletes out of `headshots/nfl/free-agents/`, so a rebuilt path
+points at an object that has already moved. This path prefers the `original`
+variant — deliberately unlike `Appearances::ReferenceImages::HEADSHOT_VARIANTS`
+(`%w[400 100]`), because that list feeds a TRAINING set while this feeds a
+generator reading one image.
+
+**There is no jersey number in the data model.** Measured 2026-09-27: neither
+`athletes` nor `roster_spots` carries one, and the approved reference sheet's "14"
+was supplied by hand. The page offers an optional number field; left blank, the
+prompt omits the number and nameplate clauses rather than asking the model to
+render a placeholder.
+
+**⚠ `POST https://queue.fal.run/<model>` submits billable work on ANY body**,
+including an empty one. Probe fal with the GET status endpoint: a real key answers
+404 for an unknown request id, a bogus key answers 401. And fal's published
+OpenAPI status path is wrong for sub-path models — it documents
+`/fal-ai/ideogram/character/requests/{id}/status`, the live host answers 405, and
+the queue routes under the first TWO segments. The submit response returns
+`status_url` and `response_url` fully formed; use those.
+
 ### Ranking the candidates — why a helmet is not a reference photo
 
 The operator's words: *"we should prioritize pictures with no helmet so the face

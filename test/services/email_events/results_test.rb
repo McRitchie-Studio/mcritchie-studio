@@ -45,4 +45,18 @@ class EmailEvents::ResultsTest < ActiveSupport::TestCase
       end
     end
   end
+
+  test "a failed credit is logged with its goal and email even when ErrorLog is down too" do
+    logged = StringIO.new
+    original = Rails.logger
+    Rails.logger = ActiveSupport::Logger.new(logged)
+    BroadcastDelivery.stub(:find_by, ->(*) { raise ActiveRecord::ConnectionNotEstablished, "db down" }) do
+      ErrorLog.stub(:capture!, ->(*) { raise ActiveRecord::ConnectionNotEstablished, "db down" }) do
+        assert_nil Results.record!(@delivery.token, "played_match")
+      end
+    end
+    assert_match(/played_match for #{Regexp.escape(@delivery.token.first(8))}/, logged.string)
+  ensure
+    Rails.logger = original
+  end
 end

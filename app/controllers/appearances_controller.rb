@@ -88,6 +88,22 @@ class AppearancesController < ApplicationController
     redirect_to appearance_path, alert: "Higgsfield refused the request: #{e.message}"
   end
 
+  # BUY ONE GENERATED IMAGE, from ONE photograph, with no training step.
+  #
+  # THE OTHER PATH TO A PICTURE, and it does not touch #mint. #mint asks a vendor
+  # to TRAIN an identity from a photo set and then pins generations to it; this
+  # hands a zero-shot adapter a single headshot at generation time. They are
+  # alternatives, not stages — a look needs no character model for this to work,
+  # which is the entire point given four of six measured mints refused the photo
+  # set outright.
+  #
+  # ADMIN-GATED BY `except: [:show]` ABOVE, like every other spending action here.
+  def generate
+    rescue_and_log(target: @appearance) { generate_artifact }
+  rescue StandardError => e
+    redirect_to appearance_path, alert: "Could not generate the image: #{e.message}"
+  end
+
   # ASK THE VENDOR WHERE THE IDENTITY GOT TO. A read — free — and the only thing
   # that stops the stored status being a permanent `not_ready`. Free does not mean
   # it cannot fail, and a credential failure here is exactly as invisible as one in
@@ -112,6 +128,36 @@ class AppearancesController < ApplicationController
                         "photo(s). It is not usable until it reads ready — refresh to poll it."
   rescue Appearances::CreateCharacterReference::NoReferenceImages => e
     redirect_to appearance_path, alert: e.message
+  end
+
+  # THE GENERATION ITSELF, split out for the same reason #mint_identity is: the
+  # two EXPECTED refusals are states of the record and of the machine, not
+  # failures of ours, and an ErrorLog row for either is noise in the one place an
+  # operator goes to find real ones. "No generator is configured" and "this person
+  # has no headshot" both answer here. Everything else falls out and gets its row.
+  def generate_artifact
+    artifact = Appearances::GenerateArtifact.call(@appearance, number: params[:number].presence)
+    redirect_to appearance_path, notice: generated_message(artifact)
+  rescue Appearances::GenerateArtifact::NoGenerator,
+         Appearances::GenerateArtifact::NoIdentityPhoto => e
+    redirect_to appearance_path, alert: e.message
+  end
+
+  # NAMES WHAT MADE IT, in the flash as well as on the card. The operator is about
+  # to judge a picture, and "which model produced this" is the first thing he needs
+  # to know to judge it — especially while more than one generator is in play.
+  # NAMES WHAT MADE IT, in the flash as well as on the card. The operator is about
+  # to judge a picture, and "which model produced this" is the first thing he needs
+  # to judge it — especially while more than one generator is in play.
+  #
+  # THE UNIT IS PRINTED BESIDE THE COUNT because two generators count different
+  # things: fal bills image units, OpenAI reports tokens. A bare number invites
+  # comparing 3 with 18,000.
+  def generated_message(artifact)
+    parts = ["#{artifact.generator_label} generated one character sheet"]
+    parts << "seed #{artifact.seed}" if artifact.seed.present?
+    parts << artifact.billing_summary if artifact.billing_summary.present?
+    "#{parts.join(' · ')}. It is filed against this look below."
   end
 
   # "NOTHING TO POLL YET" IS ALSO A STATE RATHER THAN A FAILURE, so it answers here
@@ -151,6 +197,25 @@ class AppearancesController < ApplicationController
     # by face, and the operator is looking at last week's gallery.
     @face_ranked = @search_rows.any?(&:face_scored?)
     @face_ranking_available = Appearances::FaceVisibility.available?
+    set_generator
+  end
+
+  # WHAT THE OUTPUT PANEL NEEDS TO OFFER — OR TO REFUSE HONESTLY.
+  #
+  # TWO SEPARATE QUESTIONS, and collapsing them is what produces the useless
+  # "generation is off". `@generator_row` is the row that WOULD serve, read
+  # without regard to credentials, so the page can name the model; `@can_generate`
+  # is whether it can run right now. Together they let the panel say "Ideogram V3
+  # Character — set FAL_KEY to turn it on" instead of a shrug.
+  #
+  # `@identity_photo_url` IS READ EVEN WHEN GENERATION IS OFF, because "this
+  # person has no headshot" is a fact about the record that an operator should see
+  # before they go and buy a credential to discover it.
+  def set_generator
+    plan = Appearances::GenerateArtifact.new(@appearance)
+    @generator_row = Appearances::GenerateArtifact.preferred_row
+    @can_generate = Appearances::GenerateArtifact.available?
+    @identity_photo_url = plan.identity_photo_url
   end
 
   # THE MESSAGE THE UNCONFIGURED PATH PRINTS, and it names the env var on purpose.

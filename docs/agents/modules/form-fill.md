@@ -266,6 +266,9 @@ the answer sits right under the question it answers. So a list that looks like
 part of the question can be the other side's answer. Name the speaker from the
 text, not from the layout.
 
+The same pull-and-add rule applies outside forms too; it lives in
+[`knowledge-capture`](knowledge-capture.md#the-quick-reference--when-to-pull-from-facts-when-to-add-to-it).
+
 The filled PDF itself is **not** filed by default. It is a draft until he signs.
 File the signed copy through `knowledge-capture` when he sends it.
 
