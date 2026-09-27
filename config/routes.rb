@@ -178,6 +178,8 @@ Rails.application.routes.draw do
   # to authorize @turfmonstershow and capture refresh_token + open_id.
   # Resend inbound (email.received, svix-signed) -> the desk capture queue.
   post "webhooks/resend/inbound", to: "webhooks/resend_inbound#create"
+  # Delivery, bounce, complaint and engagement events for broadcast email.
+  post "webhooks/resend/events", to: "webhooks/resend_events#create"
 
   namespace :admin do
     get "dashboard", to: "dashboard#show", as: :dashboard

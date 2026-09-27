@@ -27,4 +27,27 @@ class UnsubscribesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert @contact.reload.subscribed?
   end
+
+  # [integration] The analytics credit an unsubscribe to the email it came from.
+  test "an unsubscribe from an email is logged against that email, once" do
+    broadcast = Broadcast.create!(subject: "Hi", template_key: "cyvasse_is_back")
+    delivery = broadcast.deliveries.create!(contact: @contact)
+
+    get unsubscribe_path(token: @contact.unsubscribe_token, d: delivery.token)
+    assert_select "form[action*='d=#{delivery.token}']"
+    2.times { post unsubscribe_path(token: @contact.unsubscribe_token, d: delivery.token) }
+
+    assert_equal 1, delivery.events.of_kind("unsubscribed").count
+    assert_not_nil delivery.reload.unsubscribed_at
+    assert_equal "requested", @contact.reload.unsubscribe_reason
+  end
+
+  test "a d token for someone else's email is ignored" do
+    other = Contact.create!(email: "other-#{SecureRandom.hex(3)}@example.com")
+    delivery = Broadcast.create!(subject: "Hi", template_key: "cyvasse_is_back").deliveries.create!(contact: other)
+
+    post unsubscribe_path(token: @contact.unsubscribe_token, d: delivery.token)
+    assert_not @contact.reload.subscribed?
+    assert_equal 0, EmailEvent.count
+  end
 end

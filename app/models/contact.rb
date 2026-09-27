@@ -19,8 +19,13 @@ class Contact < ApplicationRecord
     first_name.presence || "there"
   end
 
-  def unsubscribe!
-    update!(subscribed: false, unsubscribed_at: Time.current)
+  # reason: "requested" (the unsubscribe page), "bounced" (a permanent
+  # bounce) or "complained" (marked as spam). The first reason sticks.
+  def unsubscribe!(reason: "requested")
+    return if !subscribed? && unsubscribe_reason.present?
+
+    update!(subscribed: false, unsubscribed_at: unsubscribed_at || Time.current,
+            unsubscribe_reason: unsubscribe_reason.presence || reason)
   end
 
   private

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_26_234500) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_030000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -365,19 +365,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_234500) do
   end
 
   create_table "broadcast_deliveries", force: :cascade do |t|
+    t.string "bounce_kind"
+    t.datetime "bounced_at"
     t.bigint "broadcast_id", null: false
     t.integer "click_count", default: 0, null: false
     t.datetime "clicked_at"
+    t.datetime "complained_at"
     t.bigint "contact_id", null: false
     t.datetime "created_at", null: false
+    t.datetime "delivered_at"
+    t.datetime "human_clicked_at"
+    t.datetime "human_opened_at"
     t.integer "open_count", default: 0, null: false
     t.datetime "opened_at"
+    t.string "provider_message_id"
     t.datetime "sent_at"
     t.string "token", null: false
+    t.datetime "unsubscribed_at"
     t.datetime "updated_at", null: false
     t.index ["broadcast_id", "contact_id"], name: "index_broadcast_deliveries_on_broadcast_id_and_contact_id", unique: true
     t.index ["broadcast_id"], name: "index_broadcast_deliveries_on_broadcast_id"
     t.index ["contact_id"], name: "index_broadcast_deliveries_on_contact_id"
+    t.index ["provider_message_id"], name: "index_broadcast_deliveries_on_provider_message_id", unique: true, where: "(provider_message_id IS NOT NULL)"
     t.index ["token"], name: "index_broadcast_deliveries_on_token", unique: true
   end
 
@@ -519,6 +528,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_234500) do
     t.string "source"
     t.boolean "subscribed", default: true, null: false
     t.string "tags", default: [], null: false, array: true
+    t.string "unsubscribe_reason"
     t.string "unsubscribe_token", null: false
     t.datetime "unsubscribed_at"
     t.datetime "updated_at", null: false
@@ -756,6 +766,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_234500) do
     t.string "lane", null: false
     t.datetime "updated_at", null: false
     t.index ["lane"], name: "index_devops_shifts_on_lane", unique: true
+  end
+
+  create_table "email_events", force: :cascade do |t|
+    t.bigint "broadcast_delivery_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "data", default: {}, null: false
+    t.string "kind", null: false
+    t.string "link_key"
+    t.boolean "machine", default: false, null: false
+    t.datetime "occurred_at", null: false
+    t.string "provider_event_id"
+    t.string "source", null: false
+    t.datetime "updated_at", null: false
+    t.index ["broadcast_delivery_id", "kind"], name: "index_email_events_on_broadcast_delivery_id_and_kind"
+    t.index ["broadcast_delivery_id"], name: "index_email_events_on_broadcast_delivery_id"
+    t.index ["occurred_at"], name: "index_email_events_on_occurred_at"
+    t.index ["provider_event_id"], name: "index_email_events_on_provider_event_id", unique: true, where: "(provider_event_id IS NOT NULL)"
   end
 
   create_table "error_logs", force: :cascade do |t|
@@ -1898,6 +1925,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_26_234500) do
   add_foreign_key "broadcast_deliveries", "contacts"
   add_foreign_key "builders", "people"
   add_foreign_key "credential_records", "credential_vaults", column: "credential_vault_slug", primary_key: "slug"
+  add_foreign_key "email_events", "broadcast_deliveries"
   add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
   add_foreign_key "knowledge_sources", "workspace_accounts"
