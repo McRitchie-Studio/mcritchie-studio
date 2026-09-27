@@ -64,14 +64,48 @@ class AppearanceReferencePhoto < ApplicationRecord
   #                   1896 edition of The Rape of the Lock is not a reference at
   #                   all. Both were real hits for "Drew Lock" (measured 2026-09-26:
   #                   12 of 20 Wikimedia Commons results were scanned documents).
+  #   wrong_person  — the title names SOMEBODY ELSE. Measured 2026-09-25: a search
+  #                   for "Drew Lock" returned `Drew Hutton.jpg`, whose face scored
+  #                   90 and ranked SECOND in the identity. A photograph of a
+  #                   stranger is not a poor reference either — an identity trained
+  #                   on two men is a blended third man. See
+  #                   Appearances::PersonNaming for what a title check can and
+  #                   cannot catch.
+  #   mixed_subjects— the classifier counted more than one visible face, so nothing
+  #                   in the picture can be attributed to our person alone.
+  #   face_unscored — NOTHING LOOKED AT THIS PHOTOGRAPH. Measured on production
+  #                   2026-09-27 (`jaylen-waddle`): five candidates returned, three
+  #                   scored, all five chosen — and one of the two unjudged ones was
+  #                   titled "...Jaylen Waddle and L'Jarius Sneed", a correctly titled
+  #                   photograph of TWO men. An unjudged candidate cannot be shown to
+  #                   hold one person's face, so it is no longer chosen. Distinct from
+  #                   `face_size_unmeasured`: that one was examined and the answer was
+  #                   missing a field, this one was never examined.
+  #   face_too_small— something MEASURED how much of the frame the head fills and it
+  #                   is below Appearances::ReferenceEligibility::MINT_FACE_FILL. This is
+  #                   the variable four real mints turned on (2026-09-25).
+  #   face_size_unmeasured — nobody measured the face size, so there is no evidence
+  #                   this photograph survives Higgsfield's prepare step. The only
+  #                   reason here that judges US rather than the photograph, and NOTHING
+  #                   STAMPS IT ON A ROW: it is a verdict the MINT list applies at spend
+  #                   time (Appearances::ReferenceSet#call), never a reason a photograph
+  #                   was left out of the reference set. Declared so the helper can label
+  #                   it where it is shown.
   #   beyond_limit  — good enough, but past the number we build an identity from.
   REJECTED_UNFETCHABLE = "unfetchable".freeze
   REJECTED_DUPLICATE = "duplicate".freeze
   REJECTED_FACE_OBSCURED = "face_obscured".freeze
   REJECTED_NOT_A_PHOTO = "not_a_photo".freeze
+  REJECTED_WRONG_PERSON = "wrong_person".freeze
+  REJECTED_MIXED_SUBJECTS = "mixed_subjects".freeze
+  REJECTED_FACE_UNSCORED = "face_unscored".freeze
+  REJECTED_FACE_TOO_SMALL = "face_too_small".freeze
+  REJECTED_FACE_SIZE_UNMEASURED = "face_size_unmeasured".freeze
   REJECTED_BEYOND_LIMIT = "beyond_limit".freeze
   REJECTION_REASONS = [REJECTED_UNFETCHABLE, REJECTED_DUPLICATE, REJECTED_FACE_OBSCURED,
-                       REJECTED_NOT_A_PHOTO, REJECTED_BEYOND_LIMIT].freeze
+                       REJECTED_NOT_A_PHOTO, REJECTED_WRONG_PERSON, REJECTED_MIXED_SUBJECTS,
+                       REJECTED_FACE_UNSCORED, REJECTED_FACE_TOO_SMALL,
+                       REJECTED_FACE_SIZE_UNMEASURED, REJECTED_BEYOND_LIMIT].freeze
 
   # THE OPERATOR'S OWN VERDICT — the calibration half of the scouting page.
   #
@@ -134,8 +168,17 @@ class AppearanceReferencePhoto < ApplicationRecord
   # Chosen photographs lead, because the first question the page answers is "what
   # did the identity get built from".
   #
-  # Within each half, FACE SCORE leads and the provider's `position` only breaks
-  # ties. That order is the whole point of the ranking step: the provider ranks by
+  # Within each half, FACE SIZE leads, then face VISIBILITY, and the provider's
+  # `position` only breaks ties. Size leads because size is the variable four real
+  # mints turned on (2026-09-25: a bare-faced 556x780 sideline shot failed at prepare,
+  # a tight ESPN headshot completed) — ordering on visibility alone put a photograph
+  # that cannot mint at the top of the page with a confident 92 beside it.
+  #
+  # THE SORT AND Appearances::GatherReferencePhotos#final_score HAVE TO AGREE, because
+  # one of them chose the photographs and the other one shows them: a gallery ordered
+  # differently from the ranking reads as a ranking bug that is not there.
+  #
+  # That order is the whole point of the ranking step: the provider ranks by
   # its own idea of relevance, which says nothing about whether you can see the
   # person's face — and on the operator's own labelled example the provider's hit 1
   # was the only bare-faced photograph in a set of four while hits 2 and 3 were
@@ -147,7 +190,8 @@ class AppearanceReferencePhoto < ApplicationRecord
   # provider rank). Postgres sorts NULL HIGH in ascending order and FIRST in
   # descending, so without this an unscored row would lead the gallery.
   scope :gallery_order, -> {
-    order(Arel.sql("chosen DESC, face_score DESC NULLS LAST, position ASC NULLS LAST, created_at ASC, id ASC"))
+    order(Arel.sql("chosen DESC, face_fill DESC NULLS LAST, face_score DESC NULLS LAST, " \
+                   "position ASC NULLS LAST, created_at ASC, id ASC"))
   }
 
   def to_param = slug
@@ -274,24 +318,30 @@ class AppearanceReferencePhoto < ApplicationRecord
   #   1 ESPN headshot (tight face crop)         → COMPLETED in ~2 min
   #
   # So resolution is not the variable and the helmet is not the variable; face size
-  # in frame is. WE STILL CANNOT MEASURE FACE SIZE, and a live classifier does not give
-  # it to us either — which is a narrower claim than the one this comment used to make
-  # ("ANTHROPIC_API_KEY exists on no machine"; the credential now exists on production,
-  # measured 2026-09-26). Appearances::FaceVisibility's own prompt DOES fold size in —
-  # "small in frame" scores 0.6 and "far from camera" 0.3 — but it gives those same
-  # values to a turned head and a shadowed one, so a score cannot be read BACK as a face
-  # size. So nothing here claims to know whether a given photograph will mint. It reports two facts that ARE known, and
-  # the page labels them as evidence rather than as a verdict.
+  # in frame is. FACE SIZE IS NOW MEASURED WHERE A CLASSIFIER RAN — `face_fill` is
+  # Appearances::FaceVisibility's own answer to "how much of the frame does the head
+  # fill", asked as its own number precisely because `face_score` could not be read
+  # back for it ("small in frame" and "partly turned" both scored 0.6 on the old
+  # prompt). Where no classifier ran the column is NULL and that is reported as an
+  # absence of evidence, never as a small face.
+  #
+  # NOTHING HERE PREDICTS A MINT. It reports what is known and what is not, and
+  # Appearances::ReferenceEligibility turns that into a verdict the page can print.
   #
   # THE ONE INPUT MEASURED TO MINT. Our own mirrored ESPN headshot is a tight face
   # crop and is the only photograph that has ever completed a reference.
   def mint_proven? = source == SOURCE_HEADSHOT
 
   # THE SHAPE THAT FAILED EVERY TIME IT WAS TRIED. A wide crop is a sideline or
-  # crowd photograph, which is the shape all four failures shared. Judged with
+  # crowd photograph, which is the shape three of the four failures shared. Judged with
   # PhotoMerit's own ratio so the page and the ranker cannot disagree about what
   # "wide" means; false when the provider reported no dimensions, because an unknown
   # shape is not a wide one.
+  #
+  # ⚠ IT IS NOT THE MINT TEST, and reading it as one is the trap this comment exists to
+  # close: the FOURTH failure was 556x780, aspect 0.71 — portrait-shaped, the same
+  # shape as the headshot that minted. So a photograph that is not wide has NOT been
+  # shown to be mintable. `mint_verdict` is the test; this is one piece of evidence.
   def mint_shape_failed_before? = !mint_proven? && Appearances::PhotoMerit.wide?(self)
 
   # Was this photograph actually LOOKED AT by the classifier? Distinct from
@@ -302,7 +352,56 @@ class AppearanceReferencePhoto < ApplicationRecord
   # 0.0..1.0 as a percentage for the chip, or nil when nobody looked.
   def face_score_percent = face_scored? ? (face_score * 100).round : nil
 
+  # Did anybody MEASURE the face size? The question `face_scored?` does not answer:
+  # every row scored before the classifier was asked for a size has a visibility and
+  # no fill, and those rows are exactly the ones the mint must refuse.
+  def face_sized? = face_fill.present?
+
+  def face_fill_percent = face_sized? ? (face_fill * 100).round : nil
+
+  # MAY THIS PHOTOGRAPH BE A REFERENCE, AND MAY IT BE PAID TO A TRAINER — two
+  # questions, two readers, one rule (Appearances::ReferenceEligibility).
+  #
+  # THE FLOOR IS EXEMPT FROM BOTH AND ONLY THE FLOOR IS. Our mirrored headshot is the one
+  # input measured to complete a Higgsfield reference, and the operator's own URL is one
+  # a human chose deliberately; neither came from a search and neither is the defect
+  # this gate was built for. Every SEARCH hit has to earn its place.
+  #
+  # `person_name` IS PASSED IN RATHER THAN WALKED TO. The row can reach the person
+  # through `appearance.person`, but that is two queries per tile on a page that
+  # renders twenty of them, and the caller already holds the name.
+  def reference_verdict(person_name)
+    return Appearances::ReferenceEligibility::ELIGIBLE unless from_search?
+
+    Appearances::ReferenceEligibility.verdict(self, **measurements(person_name))
+  end
+
+  # THE STRICTER ONE — the zero-shot sheet reads the first, Higgsfield's trainer reads
+  # this. The difference is a measured face size, and the reason is that four of six
+  # measured mints failed at prepare while the sheet path has no stage that can refuse.
+  def mint_verdict(person_name)
+    return Appearances::ReferenceEligibility::ELIGIBLE unless from_search?
+
+    Appearances::ReferenceEligibility.mint_verdict(self, **measurements(person_name))
+  end
+
+  def reference_eligible?(person_name)
+    reference_verdict(person_name) == Appearances::ReferenceEligibility::ELIGIBLE
+  end
+
+  def mint_eligible?(person_name)
+    mint_verdict(person_name) == Appearances::ReferenceEligibility::ELIGIBLE
+  end
+
   private
+
+  # WHAT THIS ROW KNOWS, in the shape the rule asks for. Built once so the two verdicts
+  # provably ask about the same photograph — passing three columns positionally in two
+  # places is how one of them ends up reading `face_fill` into `subjects`.
+  def measurements(person_name)
+    { person_name: person_name, visibility: face_score, fill: face_fill,
+      subjects: face_subjects }
+  end
 
   def generate_slug
     self.slug ||= "refphoto-#{SecureRandom.hex(6)}"

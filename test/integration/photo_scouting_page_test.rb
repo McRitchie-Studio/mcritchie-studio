@@ -52,6 +52,38 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
                          face_score: 0.92)
   end
 
+  # ── THE WRONG-PERSON REFUSAL, ON THE TILE ────────────────────────────────────────
+
+  # CRITERION: "show why a photo was rejected as wrong person". The chip alone says "not
+  # this person", which is an assertion the operator has to take on faith; the note names
+  # the name we actually READ, so he can check it against the thumbnail and correct us when
+  # the ARCHIVE is what is wrong.
+  test "[component] a wrong-person reject names the name it was refused for" do
+    file_photo("https://example.com/keenan.jpg", position: 1, title: "Keenan Allen.jpg",
+               chosen: false, rejection_reason: Photo::REJECTED_WRONG_PERSON,
+               width: 700, height: 900)
+
+    get page_path
+
+    assert_select "[data-test='wrong-person-note']", count: 1 do |nodes|
+      assert_match "Keenan Allen", nodes.first.text
+      assert_match "Josh Allen", nodes.first.text,
+                   "naming only the stranger leaves the reader guessing who we wanted"
+    end
+    assert_select "figure[data-rejection='wrong_person']", count: 1
+  end
+
+  # THE CONTROL FOR THE CASE ABOVE. A tile for the right person must carry no accusation —
+  # a note that rendered on every tile would be furniture rather than evidence.
+  test "[component] a photograph of the right person carries no wrong-person note" do
+    file_photo("https://example.com/josh.jpg", position: 1, title: "Josh Allen, 22 October 2023",
+               chosen: true, width: 700, height: 900, face_score: 0.9, face_fill: 0.9)
+
+    get page_path
+
+    assert_select "[data-test='wrong-person-note']", count: 0
+  end
+
   # ── THE TRAP ─────────────────────────────────────────────────────────────────────
 
   class NetworkReached < StandardError; end
@@ -498,9 +530,17 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
   test "[integration] the classifier is shown our mirrored copy, never the provider's URL" do
     log_in_as(users(:alex))
     shown = []
-    scores = ->(urls) { urls.index_with { 0.9 } }
+    # THE REAL VALUE OBJECT, not a bare Float. Appearances::FaceVisibility answers a
+    # Judgement per image — a visibility, a face SIZE and a subject count — and a stub that
+    # answered the old scalar would keep this test green through a ranking that can no
+    # longer read the answer at all.
+    judged = ->(urls) {
+      urls.index_with do
+        Appearances::FaceVisibility::Judgement.new(visibility: 0.9, fill: 0.8, subjects: 1)
+      end
+    }
 
-    with_scouting_lane(provider: two_photo_provider, scores: scores, shown: shown) do
+    with_scouting_lane(provider: two_photo_provider, scores: judged, shown: shown) do
       post search_person_scouting_path(@person.slug)
     end
 
@@ -512,11 +552,15 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     refute shown.any? { |url| url.include?("upload.wikimedia.org") }
 
     # A HEALTHY LANE IS STILL A NOTICE, so the alert above means something.
-    assert_match(/2 scored for face visibility/, flash[:notice])
+    assert_match(/2 measured for face size/, flash[:notice])
     assert_nil flash[:alert]
-    # AND THE SCORE LANDS ON THE ROW KEYED BY THE PROVIDER'S URL, which is what the
-    # gallery and every rejection reason read.
-    assert_in_delta 0.9, Photo.find_by!(image_url: "https://upload.wikimedia.org/a.png").face_score, 0.001
+    # AND EVERY MEMBER OF THE ANSWER LANDS ON THE ROW KEYED BY THE PROVIDER'S URL, which is
+    # what the gallery, the rejection reasons and both eligibility verdicts read.
+    row = Photo.find_by!(image_url: "https://upload.wikimedia.org/a.png")
+    assert_in_delta 0.9, row.face_score, 0.001
+    assert_in_delta 0.8, row.face_fill, 0.001, "the face SIZE is the measurement a mint turns on"
+    assert_equal 1, row.face_subjects
+    assert row.mint_eligible?(@person.full_name), "a measured, visible, single face may train"
   end
 
   # A TOTAL MIRROR FAILURE IS THE SAME CLASS OF SILENCE and must be just as loud —

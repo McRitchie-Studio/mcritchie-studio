@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_27_070000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -193,7 +193,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_070000) do
     t.string "appearance_slug", null: false
     t.boolean "chosen", default: false, null: false
     t.datetime "created_at", null: false
+    t.float "face_fill"
     t.float "face_score"
+    t.integer "face_subjects"
     t.datetime "found_at"
     t.integer "height"
     t.text "image_url", null: false

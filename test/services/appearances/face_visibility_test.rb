@@ -148,12 +148,16 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
 
   def answer(json) = { "content" => [{ "type" => "text", "text" => json }] }
 
+  # THE OLDER SPELLING IS STILL READ. `visibility` was called `score` until face size
+  # was split out of it, so these fixtures are deliberately left in the old shape: they
+  # are the proof that a model echoing the word it was asked for last month is still
+  # understood rather than silently dropped.
   test "scores are keyed back to the url the echoed index names" do
     urls = ["https://cdn.example.com/a.jpg", "https://cdn.example.com/b.jpg"]
-    scores = parse(answer('[{"index":1,"score":0.9},{"index":0,"score":0.1}]'), urls)
+    judged = parse(answer('[{"index":1,"score":0.9},{"index":0,"score":0.1}]'), urls)
 
-    assert_in_delta 0.9, scores["https://cdn.example.com/b.jpg"], 0.001
-    assert_in_delta 0.1, scores["https://cdn.example.com/a.jpg"], 0.001
+    assert_in_delta 0.9, judged["https://cdn.example.com/b.jpg"].visibility, 0.001
+    assert_in_delta 0.1, judged["https://cdn.example.com/a.jpg"].visibility, 0.001
   end
 
   # THE REASON THE INDEX IS ECHOED AT ALL. Keying on array position would silently
@@ -161,25 +165,28 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
   # a mis-attribution no reviewer could see on the page.
   test "an out-of-order answer is attributed correctly, not by position" do
     urls = ["https://cdn.example.com/helmet.jpg", "https://cdn.example.com/bare.jpg"]
-    scores = parse(answer('[{"index":1,"score":0.95},{"index":0,"score":0.15}]'), urls)
+    judged = parse(answer('[{"index":1,"score":0.95},{"index":0,"score":0.15}]'), urls)
 
-    assert_operator scores["https://cdn.example.com/bare.jpg"], :>,
-                    scores["https://cdn.example.com/helmet.jpg"]
+    assert_operator judged["https://cdn.example.com/bare.jpg"].visibility, :>,
+                    judged["https://cdn.example.com/helmet.jpg"].visibility
   end
 
   test "prose around the JSON array is tolerated" do
     urls = ["https://cdn.example.com/a.jpg"]
-    scores = parse(answer("Here you go:\n[{\"index\":0,\"score\":0.5}]\nHope that helps."), urls)
+    judged = parse(answer("Here you go:\n[{\"index\":0,\"score\":0.5}]\nHope that helps."), urls)
 
-    assert_in_delta 0.5, scores["https://cdn.example.com/a.jpg"], 0.001
+    assert_in_delta 0.5, judged["https://cdn.example.com/a.jpg"].visibility, 0.001
   end
 
   test "scores outside the range are clamped rather than trusted" do
     urls = ["https://cdn.example.com/a.jpg", "https://cdn.example.com/b.jpg"]
-    scores = parse(answer('[{"index":0,"score":7},{"index":1,"score":-3}]'), urls)
+    judged = parse(answer('[{"index":0,"score":7,"fill":4},{"index":1,"score":-3,"fill":-1}]'), urls)
 
-    assert_in_delta 1.0, scores["https://cdn.example.com/a.jpg"], 0.001
-    assert_in_delta 0.0, scores["https://cdn.example.com/b.jpg"], 0.001
+    assert_in_delta 1.0, judged["https://cdn.example.com/a.jpg"].visibility, 0.001
+    assert_in_delta 0.0, judged["https://cdn.example.com/b.jpg"].visibility, 0.001
+    assert_in_delta 1.0, judged["https://cdn.example.com/a.jpg"].fill, 0.001,
+                    "a fill is on the same 0..1 scale and is clamped to it too"
+    assert_in_delta 0.0, judged["https://cdn.example.com/b.jpg"].fill, 0.001
   end
 
   # AN UNREADABLE SCORE IS AN ABSENT KEY, NEVER A ZERO. Zero means "there is no
@@ -187,10 +194,10 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
   # the strength of a parse failure would drop a good photograph silently.
   test "a row we cannot read is omitted rather than scored zero" do
     urls = ["https://cdn.example.com/a.jpg", "https://cdn.example.com/b.jpg"]
-    scores = parse(answer('[{"index":0,"score":"banana"},{"index":1,"score":0.4}]'), urls)
+    judged = parse(answer('[{"index":0,"score":"banana"},{"index":1,"score":0.4}]'), urls)
 
-    refute scores.key?("https://cdn.example.com/a.jpg")
-    assert_in_delta 0.4, scores["https://cdn.example.com/b.jpg"], 0.001
+    refute judged.key?("https://cdn.example.com/a.jpg")
+    assert_in_delta 0.4, judged["https://cdn.example.com/b.jpg"].visibility, 0.001
   end
 
   test "an index naming no image is dropped rather than raising" do
@@ -206,6 +213,75 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
     assert_equal({}, parse({ "content" => [] }, urls))
   end
 
+  # ---- the parser, on face SIZE -------------------------------------------------
+  #
+  # WHY THESE ARE FIXTURE TESTS AND NOT A LIVE CALL. `fill` and `faces` were added to
+  # the prompt by a task that forbade paid calls, so nothing here proves the live model
+  # answers in this shape. What they DO prove is the half that has to be right either
+  # way: a well-formed answer is read, and a malformed or missing field degrades to an
+  # absence rather than to a zero — because Appearances::ReferenceEligibility refuses an
+  # unmeasured photograph and would read a fabricated 0.0 as a measured tiny face.
+
+  # THE WHOLE REASON THE PROMPT CHANGED. Four real Higgsfield mints turned on face size
+  # in frame, and a visibility score cannot be read back for it.
+  test "a face size and a subject count ride home beside the visibility" do
+    urls = ["https://cdn.example.com/a.jpg"]
+    judged = parse(answer('[{"index":0,"visibility":0.9,"fill":0.82,"faces":1}]'), urls)
+    row = judged[urls.first]
+
+    assert_in_delta 0.9, row.visibility, 0.001
+    assert_in_delta 0.82, row.fill, 0.001
+    assert_equal 1, row.subjects
+    assert row.sized?, "a reported fill is a measured face size"
+  end
+
+  # THE SHAPE A MODEL THAT IGNORED THE NEW FIELDS RETURNS. It must degrade to the
+  # OLD behaviour — a usable visibility — rather than to no answer at all, or one
+  # unfamiliar field would turn a working classifier into a total outage.
+  test "an answer with no face size is kept, and says it has none" do
+    urls = ["https://cdn.example.com/a.jpg"]
+    row = parse(answer('[{"index":0,"visibility":0.9}]'), urls)[urls.first]
+
+    assert_in_delta 0.9, row.visibility, 0.001
+    assert_nil row.fill, "an absent fill is unknown, never a small face"
+    refute row.sized?
+  end
+
+  # A FILL WITHOUT A VISIBILITY IS NOT AN ANSWER. Every caller keys on visibility, so a
+  # row carrying only a size would rank a photograph nothing readable was said about.
+  test "a row with a face size but no readable visibility is dropped entirely" do
+    urls = ["https://cdn.example.com/a.jpg"]
+
+    assert_equal({}, parse(answer('[{"index":0,"fill":0.9}]'), urls))
+  end
+
+  test "an unreadable face size is absent rather than zero" do
+    urls = ["https://cdn.example.com/a.jpg"]
+    row = parse(answer('[{"index":0,"visibility":0.7,"fill":"big","faces":"lots"}]'), urls)[urls.first]
+
+    assert_in_delta 0.7, row.visibility, 0.001
+    assert_nil row.fill
+    assert_nil row.subjects
+  end
+
+  # THE TWO QUESTIONS HAVE TO BE ASKED SEPARATELY, and the prompt is the only place
+  # that can be checked without spending. A prompt that folded size back into the
+  # visibility score would make every `face_fill` null and the mint gate inert.
+  test "the prompt asks for face size and subject count as their own numbers" do
+    assert_match(/"fill"/, FV::SYSTEM_PROMPT)
+    assert_match(/"faces"/, FV::SYSTEM_PROMPT)
+    assert_match(/HOW MUCH OF THE FRAME THE HEAD OCCUPIES/, FV::SYSTEM_PROMPT)
+    assert_match(/how many DIFFERENT people's faces/, FV::SYSTEM_PROMPT)
+  end
+
+  # THE THRESHOLD AND THE PROMPT'S ANCHORS ARE ONE JUDGEMENT. MINT_FACE_FILL is set at
+  # the "head and shoulders" anchor; if the prompt stopped naming an anchor at that
+  # value the threshold would be a number against no scale at all.
+  test "the face-size threshold sits on an anchor the prompt actually names" do
+    assert_match(/0\.6\s+a head-and-shoulders portrait/, FV::SYSTEM_PROMPT)
+    assert_in_delta 0.6, Appearances::ReferenceEligibility::MINT_FACE_FILL, 0.0001
+  end
+
   # THE SPLIT THE PROMPT IS WRITTEN TO MAKE, and the caller's hard exclusion rests
   # on it: 0.15 is "your man, face hidden"; 0.0 is "not a photograph of anybody".
   # A prompt that stopped distinguishing them would silently start excluding every
@@ -213,7 +289,7 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
   test "the prompt distinguishes a hidden face from no person at all" do
     assert_match(/0\.15/, FV::SYSTEM_PROMPT)
     assert_match(/NO PERSON IS PRESENT AT ALL/, FV::SYSTEM_PROMPT)
-    assert_operator Appearances::GatherReferencePhotos::NO_PERSON_THRESHOLD, :<, 0.15,
+    assert_operator Appearances::ReferenceEligibility::NO_PERSON, :<, 0.15,
                     "the exclusion floor must sit BELOW the helmet band, or helmets are excluded"
   end
 

@@ -22,11 +22,12 @@ remove.
 ## What this act is NOT
 
 - **It never sends mail.** The grant includes `gmail.compose`, which *can*
-  send. "Never sends" is held in code (`test/lib/no_gmail_send_test.rb`), not
-  by the grant. Do not widen to `gmail.send`, `gmail.modify`, or
-  `mail.google.com`.
+  send, and a `:mail` token still asks for it because there is no draft-only
+  Gmail scope. "Never sends" is held in code
+  (`test/lib/no_gmail_send_test.rb`), not by the grant and not by the scope. Do
+  not widen to `gmail.send`, `gmail.modify`, or `mail.google.com`.
 - **It never edits a file we do not own.** `drive.readonly` plus `drive.file`;
-  never plain `drive`.
+  never plain `drive`. A mail token holds neither.
 - **It never creates the 1Password item.** The agent service account is
   READ-ONLY, measured. Alex files credentials; see
   [`./credential-filing.md`](./credential-filing.md).
@@ -236,6 +237,30 @@ which admits a mailbox row. Drive walks run with purpose `:workspace`, which
 admits only the workspace's own subject — so `Workspace::Credentials.authorizer_for`
 refuses to build a Drive authorizer for `alex@` even though the Google grant
 itself would allow it. The grant is domain-wide; the purpose is the boundary.
+
+The purpose is now the boundary **at the token as well as at the caller**. A
+`:mail` authorizer asks for `gmail.readonly` and `gmail.compose` only
+(`Credentials::MAIL_SCOPES`); `:workspace` asks for all four. What that is
+measured to mean, and what it is not:
+
+- **Measured:** the credential a Gmail caller receives names those two scopes
+  and no Drive scope. The suite reads it off a real `googleauth` object.
+- **Not measured:** what Google returns for a Drive call made with that token.
+  It should be an insufficient-scope refusal, and nobody has made the call — it
+  needs a live token against a live workspace. Do not write it down as proven.
+
+Two things it does NOT buy at all, so do not write that it does:
+
+- **Not "can draft, cannot send".** There is no draft-only Gmail scope;
+  `gmail.compose` covers drafts and send. "Never sends" is still a property of
+  our code, asserted by `test/lib/no_gmail_send_test.rb`.
+- **Not per-mailbox narrowing.** No scope says "this address only". The
+  `workspace_mailboxes` allow-list holds that, in Ruby.
+
+The cache is keyed on `[address, purpose]`. It was keyed on the address alone,
+which meant the first caller to ask for an address decided what every later
+caller got — `check_mailbox` probes `alex@` against the whole grant, and the
+`GmailClient` read two lines later was handed that same four-scope object.
 
 ```bash
 bin/rails 'workspace:add_mailbox[<address>]'           # SIGNATURE='markdown' optional

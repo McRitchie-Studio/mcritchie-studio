@@ -1,6 +1,6 @@
 module Appearances
-  # GENERATE ONE CHARACTER SHEET OF ONE PERSON FROM ONE PHOTOGRAPH, and file it
-  # with the stamp that says what made it.
+  # GENERATE ONE CHARACTER SHEET OF ONE PERSON FROM THE PHOTOGRAPHS WE HAVE VETTED, and
+  # file it with the stamp that says what made it.
   #
   # ONE CALL, ONE IMAGE, TEN PANELS — and that is a correction, not a shortcut.
   # This service first shipped generating ONE POSE per call from a five-entry pose
@@ -20,9 +20,30 @@ module Appearances
   # character model from a photo set, and a training step is a stage that can
   # refuse: six measured attempts produced four refusals, always "We couldn't
   # prepare your photos for training". A zero-shot generator carries the likeness
-  # at generation time from ONE face image, so there is no preparation stage to
-  # fail — and one excellent front-facing headshot is exactly what we hold for
+  # at generation time from the face images it is given, so there is no preparation
+  # stage to fail — and one excellent front-facing headshot is what we hold for
   # 2,043 athletes.
+  #
+  # AND IT NOW TAKES MORE THAN THAT ONE. The operator asked for it in these words on
+  # 2026-09-27: *"while the character sheet is good, it would be better if we provided a
+  # few headshots when submitting for the character model ... There needs to be a step for
+  # finding and distilling reference images so we can provide more context on facial
+  # structure and expressions to the model builder."*
+  #
+  # THE DISTILLING STEP ALREADY EXISTED AND FED THE WRONG GENERATOR. Appearances::
+  # GatherReferencePhotos scouts and ranks, Appearances::ReferenceSet composes floor-first,
+  # and both were wired only to the Higgsfield TRAINER — the path that refuses two thirds
+  # of what it is given. This file now reads the same composed set, through
+  # `ReferenceSet#generation_urls`, which is the sheet-side list: every vetted photograph,
+  # our own mirrored copy preferred, capped.
+  #
+  # ⚠ ONE NARROWING REMAINS AND IT IS NOT IN THIS FILE. The registry row for the sheet
+  # generator declares `reference_arity: one` (config/image_generators.yml), and
+  # ImageGeneration::OpenAI honours that declaration — so today this hands over a list and
+  # the adapter sends its first entry. The adapter is wired for the whole list; flipping
+  # that one word is a CLAIM about the vendor's API that no measured call in this repo
+  # supports, and no credential for it exists on the machine this was built on. It owes its
+  # own task with a measurement in it.
   #
   # IT ASKS THE REGISTRY FOR A CAPABILITY, NEVER FOR A VENDOR. `character_sheet`
   # is the requirement; which row satisfies it is config/image_generators.yml's
@@ -70,7 +91,7 @@ module Appearances
       raise NoGenerator, unconfigured_message if row.nil?
       raise NoIdentityPhoto, no_photo_message if identity_photo_url.blank?
 
-      result = client.generate_and_wait(prompt: prompt, reference_urls: [identity_photo_url])
+      result = client.generate_and_wait(prompt: prompt, reference_urls: references)
       raise ImageGeneration::GenerationFailed, "#{row.label} returned no image" unless result.any?
 
       # OUR COPY, BEFORE THE ROW EXISTS. The adapters answer in two different
@@ -95,11 +116,27 @@ module Appearances
       @prompt.presence || CharacterSheetPrompt.call(@appearance, number: @number)
     end
 
-    # THE ONE PHOTOGRAPH THE LIKENESS COMES FROM.
+    # THE PHOTOGRAPH THE LIKENESS IS GUARANTEED TO CARRY — our own cached headshot, or
+    # the operator's URL when there is no headshot.
     #
-    # ONE IS ENOUGH — measured, not assumed: five reference photos performed NO
-    # BETTER than one. That is what keeps the image-search lane off the critical
-    # path, because we already hold one good headshot for every athlete.
+    # STILL A SINGLE URL, AND STILL THE FLOOR. It is what `#references` leads with and it
+    # is what the "nothing to generate from" refusal is judged on: a look with no cached
+    # headshot and no typed URL has no face at all, and that is a state of the record the
+    # operator is owed a sentence about rather than a vendor error.
+    #
+    # ⚠ THE "FIVE WERE NO BETTER THAN ONE" CLAIM USED TO BE THE JUSTIFICATION FOR
+    # STOPPING HERE, AND IT CANNOT BE. That sentence was at one time carried in three
+    # places with three different subjects — this Responses row, /v1/images/edits (a
+    # different endpoint the registry tells you never to use), and the 2026-09-27
+    # operator relay's Higgsfield TRAINING path. Three attributions of one measurement
+    # is no measurement.
+    #
+    # THE ATTRIBUTION IS NOW SETTLED and the conclusion is unchanged: the measurement
+    # was made on /v1/images/edits ONLY, every site says so, and a guard
+    # (test/lib/generator_record_tripwire_test.rb) fails on a copy that drops the
+    # endpoint. What that buys is a smaller claim, not a bigger one — whether more
+    # references make a better sheet on THIS path is still UNMEASURED, and
+    # config/image_generators.yml's `reference_arity` note says what would settle it.
     #
     # READS THE STORED s3_key AND NEVER REBUILDS THE PATH. `Athlete#headshot_url`
     # resolves the ImageCache row and calls `ImageCache#url` on it; the sibling
@@ -119,6 +156,24 @@ module Appearances
       @identity_photo_url = [cached_headshot_url, @appearance&.reference_url]
                             .compact_blank
                             .find { |url| FetchableUrl.ok?(url) }
+    end
+
+    # EVERY PHOTOGRAPH THIS SHEET IS BUILT FROM, floor first.
+    #
+    # THE FLOOR LEADS AND IS GUARANTEED TO BE THERE. `ReferenceSet#generation_urls` already
+    # composes floor-first from the athlete's ImageCache row, but it resolves the headshot
+    # through Appearances::ReferenceImages, whose variant list is `%w[400 100]` — this path
+    # deliberately prefers `original` (IDENTITY_VARIANTS), because a zero-shot generator
+    # reading one face carries every pixel of it. So `identity_photo_url` is prepended and
+    # the set de-duplicates behind it.
+    #
+    # NEVER EMPTY WHEN #call PROCEEDS, because #call refuses first on a blank
+    # `identity_photo_url` — which is the honest refusal: no face on file at all.
+    def references
+      ([identity_photo_url] + Array(ReferenceSet.new(@appearance).generation_urls))
+        .compact_blank
+        .uniq
+        .first(ReferenceSet::GENERATION_LIMIT)
     end
 
     private

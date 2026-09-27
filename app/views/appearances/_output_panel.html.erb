@@ -105,7 +105,8 @@
                       would read as free, and free is the one thing this never is. %>
                   <%# THE UNIT IS ALWAYS NAMED. fal counts image units, OpenAI
                       counts tokens, and both land in one column, so a bare number
-                      would invite comparing 3 with 18,000. A nil cost prints
+                      would invite comparing 3 with a four-figure token count
+                      (the measured sheets ran 6,724 to 7,629). A nil cost prints
                       nothing rather than zero: not reported is not free. %>
                   <% if artifact.billing_summary.present? %>
                     <div class="flex gap-1 min-w-0">
@@ -158,11 +159,17 @@
     <% elsif admin? %>
       <%= form_with url: generate_person_appearance_path(@person.slug, @appearance.slug),
                     method: :post, class: "space-y-2" do |f| %>
-        <%# THE JERSEY NUMBER IS TYPED, because nothing stores it. Measured
-            2026-09-27: neither athletes nor roster_spots carries a number, and the
-            approved reference sheet's 14 was supplied by hand. Left blank the
-            prompt omits the number and nameplate clauses rather than asking the
-            model to render a placeholder. %>
+        <%# THE JERSEY NUMBER IS STILL TYPED, AND THAT IS NOW A CHOICE RATHER THAN A
+            LIMIT. This comment used to say nothing stored a number, measured the day
+            before `athletes.jersey_number` landed (Athletes::AcquireOrValidate, its
+            `:roster` policy) — the column exists, and the model-pipeline card already
+            prints it. What has not changed is that Appearances::CharacterSheetPrompt
+            does not READ it: doing so would change the text of every generated prompt,
+            and a prompt change costs money to evaluate and owes its own before/after
+            artifacts, so it is a task rather than a side effect of correcting a
+            comment. Until then this field is the only number the prompt sees, and left
+            blank the prompt omits the number and nameplate clauses rather than asking
+            the model to render a placeholder. %>
         <%= f.number_field :number, placeholder: "Jersey number (optional)",
               min: 0, max: 99, class: "input-field w-full text-xs" %>
         <%= f.submit "Generate character sheet", class: "btn btn-sm btn-primary w-full" %>

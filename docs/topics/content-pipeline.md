@@ -152,7 +152,22 @@ about the QUERY or the ARCHIVE now, never as a missing purchase.
 
 **Where the found photographs live.** `appearance_reference_photos` holds EVERY
 candidate a search returned, chosen or not, with the reason each was passed over
-(`unfetchable` / `duplicate` / `beyond_limit`) and the query that found it. The
+and the query that found it. `AppearanceReferencePhoto::REJECTION_REASONS` is the
+list and that constant is the source of truth — this doc once named only the first
+three of them and was seven behind by the time anybody noticed. So all ten are
+enumerated below, between markers, and `test/lib/generator_record_tripwire_test.rb`
+compares the block against the constant as a SET and fails on any disagreement in
+either direction. Edit the constant and this list goes red until you update it.
+
+<!-- REJECTION_REASONS:BEGIN — kept in sync with the constant by the tripwire test -->
+`unfetchable` · `duplicate` · `face_obscured` · `not_a_photo` · `wrong_person` ·
+`mixed_subjects` · `face_unscored` · `face_too_small` · `face_size_unmeasured` ·
+`beyond_limit`
+<!-- REJECTION_REASONS:END -->
+
+Read the constant's own comments for what each one means and which of them
+anything actually stamps — two of them are declared-but-unstamped, for stated
+reasons given there. The
 rejects are kept on purpose: the operator's question is "is the search any good?",
 and a table of winners cannot answer it — a search returning twenty stock
 thumbnails yields the same single winner as one returning twenty good portraits we
@@ -237,8 +252,16 @@ reachability. A vision pass over the six scouted Sutton photographs explains it:
 not one is a front-facing dominant single face.
 
 **So the lane moved to generators with no training step at all.** They carry the
-likeness at GENERATION time from ONE face image — and one excellent front-facing
-headshot is exactly what we hold for 2,043 athletes.
+likeness at GENERATION time from as little as ONE face image — and one excellent
+front-facing headshot is exactly what we hold for 2,043 athletes.
+
+**The sheet path now HANDS OVER a set and the ROW decides how much of it is sent.**
+`Appearances::GenerateArtifact#references` composes floor-first through
+`Appearances::ReferenceSet#generation_urls`, and `ImageGeneration::OpenAI` emits one
+`input_image` block per reference up to `row.reference_arity` — so "one face image" is
+today's registry DECLARATION, not a limit of the code. It was a silent `urls.first`
+until 2026-09-27, which dropped three of four distilled photographs with nothing
+logged or raised. The row still declares `one`; see the endpoint section below.
 
 #### The endpoint is the finding, and the obvious one is wrong
 
@@ -274,11 +297,31 @@ wrong and was removed.
 
 | | Measured 2026-09-27 |
 |---|---|
-| Input | ONE stored ESPN headshot. Five references measured NO BETTER than one |
-| Output | Eight panels, every one recognisably the subject, correct uniform, number and nameplate |
+| Input | ONE stored ESPN headshot — enough to produce an approved sheet. Whether MORE would be better is **unmeasured on this endpoint** (see below) |
+| Output | Ten grid cells carrying eight figures (2 full-body + 6 head views), every one recognisably the subject, correct uniform, number and nameplate |
 | Latency | 121.8s |
 | Usage | `usage.total_tokens` 7629 — **tokens, not images** |
 | Cost | **Not reported.** No token rate is declared, and inventing one would put a figure on the artifact nobody could re-derive |
+
+**Three sheets, not one, and the cost is a RANGE.** Measured through this app's own
+code path on 2026-09-27: 7,629 (Courtland Sutton), 7,423 (`bo-nix`), 6,724
+(`jaylen-waddle`). A sheet costs **single-digit thousands of tokens**, measured
+6,724–7,629. Quote the range or the order and never one sample — the three differ by
+900 tokens, so any single figure is stale by the next sheet. `config/image_generators.yml`
+owns these numbers.
+
+**"Five references were no better than one" is a finding about `/v1/images/edits`,
+and about nothing else.** That sentence was at one time attributed to three different
+paths in this repo — the Responses row, the edits endpoint, and the Higgsfield
+trainer. Only the edits measurement ever happened. No multi-reference call has ever
+been made to `/v1/responses` from this repo, so the sheet row keeps
+`reference_arity: one` as a stated, unmeasured belief rather than a finding, and the
+row says what would settle it.
+
+**Ten cells, eight figures — one layout, two correct counts.** The sheet is a 5×2
+grid, so there are ten CELLS; the two full-body figures each span both rows of their
+column, so there are eight FIGURES. "Ten-panel" in the code means the cells. Neither
+count is wrong and they are not the same measurement.
 
 #### The pads clause is NOT satisfied, and that is a live defect
 
@@ -338,9 +381,10 @@ Every artifact records `generator`, `generator_endpoint`, `generator_version`
 `billable_units` and `cost_usd`.
 
 **`billable_units` holds two vocabularies**, so the unit is always named: fal bills
-a sheet at 3 IMAGE UNITS, OpenAI reports tens of thousands of TOKENS for the same
-picture. A bare "3" beside a bare "7,629" invites one conclusion and it is wrong.
-A nil cost renders as nothing, never as zero — not reported is not free.
+a sheet at 3 IMAGE UNITS, OpenAI reports **single-digit thousands** of TOKENS for the
+same picture (6,724–7,629 measured). A bare "3" beside a bare four-figure token count
+invites one conclusion and it is wrong. A nil cost renders as nothing, never as zero —
+not reported is not free.
 
 **A seed is recorded only when it means something.** The Responses image tool
 exposes no seed, so the adapter neither sends nor stores one; stamping a seed the
@@ -365,6 +409,8 @@ can compare across generators.
 | Normalised answer | `ImageGeneration::Result` |
 | The prompt | `Appearances::CharacterSheetPrompt` |
 | The use case | `Appearances::GenerateArtifact` |
+| The reference set it sends | `Appearances::ReferenceSet#generation_urls` (floor first) |
+| How many of them go | `reference_arity` on the row, honoured by both adapters |
 | Our copy of the bytes | `Appearances::StoreGeneratedImage` |
 | Route | `POST /people/:person_slug/models/:slug/generate` — `require_admin` |
 | Suite traps | `OPENAI_NO_LIVE_CALLS=1`, `FAL_NO_LIVE_CALLS=1`, armed in `test/test_helper.rb` |

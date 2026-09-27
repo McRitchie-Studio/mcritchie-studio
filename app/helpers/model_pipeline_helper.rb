@@ -35,12 +35,49 @@ module ModelPipelineHelper
   # A LOOK'S OWN CHIP TONES. `warn` is not a failure: a blank physique description is
   # the normal state of every athlete until a separate backfill fills it, and styling
   # it red would make 2,000 correct rows look broken.
+  #
+  # ── `absent` IS A THIRD TREATMENT, AND IT CARRIES NO HUE AT ALL ───────────────
+  #
+  # It exists because `neutral` was BYTE-IDENTICAL CSS for a held fact and for a hole.
+  # A typical sports row was four chips sharing one class string — Buffalo Bills / QB /
+  # no # / 6'5" 237lb — so the only thing distinguishing a gap from data was a 10px
+  # word, and the prose that claimed a quieter treatment described styling that did not
+  # exist. Amber was the wrong fix and was correctly rejected: `athletes.jersey_number`
+  # is nil on nearly every athlete (it fills per athlete on demand via
+  # Athletes::AcquireOrValidate, never by backfill), so a warning chip would land on
+  # nearly every card and spend the contrast the traded card needs. The right fix is
+  # QUIETER than neutral, not louder — absence must read as absent, never as wrong.
+  #
+  # ALL THREE SIGNALS ARE STRUCTURAL, NEVER A HUE DELTA, so no theme can collapse them:
+  #   · the FILL IS REMOVED, so the card's own `bg-surface` shows through and the chip
+  #     recedes instead of sitting on a ground like a value does;
+  #   · the EDGE IS DASHED, and that idiom is NOT imported from elsewhere — it is
+  #     already on this page. The engine's own dropzone is `border-2 border-dashed
+  #     border-subtle` (studio/board/_column.html.erb), so an empty lane on this very
+  #     board draws a dashed outline around the words "No models here". A dashed edge
+  #     therefore already reads as "nothing here" to anyone looking at this screen, and
+  #     the chip inherits a vocabulary the board teaches rather than inventing one;
+  #   · the edge is `border-strong` rather than `border-subtle`, because `--color-border`
+  #     is a 0.2-alpha line in dark mode and a 1px dash drawn in it is invisible — the
+  #     stronger line is what makes the dash readable, not an emphasis.
+  # A TINTED GROUND WAS CONSIDERED AND REJECTED on the numbers rather than on taste:
+  # `bg-inset` is darken(light_base, 0.08) and `bg-surface-alt` is darken(light_base,
+  # 0.03) in light mode, a difference no 1000-foot scan can see, so it would have been a
+  # dark-mode-only treatment — the same theme-blindness this file's header forbids.
+  #
+  # AA IS SAFE BY CONSTRUCTION, NOT BY LUCK. `text-muted` is `--color-text-muted`, which
+  # Studio::ThemeResolver derives with a bounded contrast search targeting AA 4.5:1
+  # against EVERY surface it can land on — page, surface, surface-alt, inset — in both
+  # themes. Dropping the fill moves the ink from `--color-surface-alt` to
+  # `--color-surface`, and both are already in that search set, so the chip cannot lose
+  # contrast by losing its ground.
   CHIP_TONES = {
     good: "bg-success/10 text-success-ink border-success/40",
     warn: "bg-warning/10 text-warning-ink border-warning/40",
     bad: "bg-danger/10 text-danger-ink border-danger/40",
     info: "bg-primary/10 text-primary border-primary/40",
-    neutral: "bg-surface-alt text-muted border-subtle"
+    neutral: "bg-surface-alt text-muted border-subtle",
+    absent: "bg-transparent text-muted border-dashed border-strong"
   }.freeze
 
   def pipeline_chip_classes(tone) = CHIP_TONES.fetch(tone&.to_sym, CHIP_TONES[:neutral])

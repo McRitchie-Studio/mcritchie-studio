@@ -16,6 +16,37 @@
     <p class="text-xs text-muted">
       <%= pluralize(chosen.length, "photo") %> going into the model<%= ", #{rejected.length} found and passed over" if rejected.any? %>.
     </p>
+    <%# THE TWO GENERATORS DO NOT GET THE SAME SET, and one count would describe whichever
+        one the reader happened to be thinking about.
+
+        THREE STATES, NOT TWO, and conflating the last two is a count that lies. A chosen
+        photograph either goes to both generators, or to the character sheet only (nothing
+        measured its face SIZE, which is what Higgsfield's prepare step turns on — four of
+        six measured mints failed there), or to NEITHER (nothing looked at it at all, so
+        nothing can say whose face it is). The third state is a row an older ranking chose;
+        a line that folded it into the second would claim the sheet uses a photograph the
+        sheet refuses. Each renders only when it has members. %>
+    <% sheet_only = chosen.select { |p| p.reference_eligible?(@person.full_name) } %>
+    <% sheet_only = sheet_only.reject { |p| p.mint_eligible?(@person.full_name) } %>
+    <% offered_to_neither = chosen.reject { |p| p.reference_eligible?(@person.full_name) } %>
+    <% if sheet_only.any? %>
+      <p data-test="trainer-subset" class="text-2xs text-warning-ink">
+        <%= sheet_only.length %> of these <%= chosen.length %>
+        <%= sheet_only.length == 1 ? "is" : "are" %> used by the character sheet but NOT
+        offered to Higgsfield&rsquo;s trainer: no face size was measured for
+        <%= sheet_only.length == 1 ? "it" : "them" %>, and four of six measured mints
+        failed at prepare on that variable. The reason is on each tile.
+      </p>
+    <% end %>
+    <% if offered_to_neither.any? %>
+      <p data-test="offered-to-neither" class="text-2xs text-danger-ink">
+        <%= pluralize(offered_to_neither.length, "photo") %> here
+        <%= offered_to_neither.length == 1 ? "was" : "were" %> picked by an earlier ranking
+        and <%= offered_to_neither.length == 1 ? "is" : "are" %> now offered to NEITHER
+        generator. Re-run the search to re-judge
+        <%= offered_to_neither.length == 1 ? "it" : "them" %>.
+      </p>
+    <% end %>
   </header>
 
   <%# THE SEARCH CONTROL. Until the keyless Wikimedia Commons provider shipped, the
@@ -103,7 +134,11 @@
           a head taller than the one beside it. Two across on a phone keeps the
           source and verdict chips on one line each instead of wrapping every tile. %>
       <div data-test="chosen-gallery" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-        <%= render partial: "appearances/reference_photo", collection: chosen, as: :photo %>
+        <%# person_name IS PASSED HERE TOO, though this page shows no calibration block:
+            it is what lets a tile say WHICH name it read instead of only "not this
+            person". The partial reads it through local_assigns, so passing it is safe. %>
+        <%= render partial: "appearances/reference_photo", collection: chosen, as: :photo,
+                   locals: { person_name: @person.full_name } %>
       </div>
     </div>
   <% else %>
@@ -133,7 +168,8 @@
           three fit, but the caption chips then wrap to three lines each and the
           reject list becomes the tallest thing on the page. %>
       <div data-test="rejected-gallery" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2">
-        <%= render partial: "appearances/reference_photo", collection: rejected, as: :photo %>
+        <%= render partial: "appearances/reference_photo", collection: rejected, as: :photo,
+                   locals: { person_name: @person.full_name } %>
       </div>
     </div>
   <% end %>

@@ -13,11 +13,13 @@
 # would leave his taste in his head; #verdict is what gets it into a column.
 #
 # IT SHOWS THE PIPELINE'S OWN WORST RESULTS ON PURPOSE. Two measured defects live in
-# this lane (both owned by task `reference-photos-wrong-person`, neither fixed here):
-# a clear photograph of the WRONG MAN outranks a helmeted photograph of the right
-# one, and the top-ranked photograph is one Higgsfield REFUSES to mint. A calibration
-# page that hid either would be worse than no page, because the operator would
-# calibrate against a picture of the system that was not true.
+# this lane and `reference-photos-wrong-person` guarded both: a clear photograph of the
+# WRONG MAN outranked a helmeted photograph of the right one, and the top-ranked
+# photograph was one Higgsfield REFUSES to mint. The guards are a title check and a
+# measured face-size floor, and BOTH HAVE STATED LIMITS the honesty panel still prints —
+# a calibration page that replaced the warnings with a clean bill of health would be
+# worse than no page, because the operator would calibrate against a picture of the
+# system that was not true.
 #
 # ⚠ THE PAGE IS PUBLIC TO READ AND ADMIN-ONLY TO WRITE, and `require_admin` rather
 # than a session is the gate for the same reason it is on AppearancesController: hub
@@ -146,6 +148,11 @@ class PhotoScoutingController < ApplicationController
     # key that landed this morning says nothing about how the gallery on screen was
     # ordered, and the gallery on screen is what the operator is judging.
     @face_ranked = @found.any?(&:face_scored?)
+    # READ SEPARATELY FROM `@face_ranked`, because "something looked" and "something
+    # measured how big the face is" are different states of this gallery and the second is
+    # the one that decides what Higgsfield's trainer may be offered. A single flag would
+    # print "ranked by face" over a gallery ordered on the weaker signal.
+    @face_sized = @found.any?(&:face_sized?)
     @face_ranking_available = Appearances::FaceVisibility.available?
     @chosen_limit = Appearances::GatherReferencePhotos::CHOSEN_LIMIT
   end

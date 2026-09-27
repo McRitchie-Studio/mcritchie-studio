@@ -81,10 +81,19 @@ class Athlete < ApplicationRecord
   # statement about the DATA ON FILE rather than about a run, and why it lives
   # beside the other headshot facts rather than inline in the task that grades on
   # it. `nfl:upload_headshots` used to grade itself on every athlete short a
-  # variant; eight of those have no espn_headshot_url and never will, so the
-  # verdict accused the lane of declining work no run could ever have done and
-  # fired on every healthy re-run for ever. An athlete with no source is a data
-  # gap: reported by name, never counted against the lane.
+  # variant, so its verdict could accuse the lane of declining work no run could
+  # ever have done — work that could only be cleared by filling a column the lane
+  # does not write. An athlete with no source is a data gap: reported by name,
+  # never counted against the lane.
+  #
+  # MEASURED ON PRODUCTION 2026-09-27, because the figure this comment used to
+  # carry was wrong and had been carried by three readers: EIGHT athletes are short
+  # a variant, but only THREE have no `espn_headshot_url` — and all three of those
+  # also have no `espn_id`, so `Athlete.where.not(espn_id: nil)` never sees them
+  # and this predicate is never asked about them. The other five carry a source and
+  # every one of those sources answers 404, which is a DEAD source rather than a
+  # missing one; `Athletes::DeadHeadshotSource` holds that distinction, because it
+  # is a fact about a fetch and not about a row.
   #
   # FALSE FOR A COMPLETE ATHLETE even when a source is on file, because there is
   # nothing left to fetch. Any caller asking this AFTER a completeness gate gets

@@ -72,6 +72,65 @@ class ImageGeneration::OpenAITest < ActiveSupport::TestCase
     assert_equal "the sheet prompt", content[1]["text"]
   end
 
+  # ---- how many references ride, and why -----------------------------------------
+  #
+  # THE DEFECT THESE THREE CASES CLOSE. The signature was plural, the body took
+  # `urls.first`, and `request_body` emitted ONE `input_image` block — so a caller handing
+  # over a distilled set of four photographs had three dropped with nothing logged,
+  # nothing raised and nothing on the page. The truncation is now the ROW'S DECLARED
+  # ARITY, which is a sentence a reader can go and check.
+
+  # THE PLURAL PATH, BUILT AND TESTED THOUGH THE SHEET ROW DOES NOT YET USE IT. The
+  # registry row declares `one`; when a measurement justifies `many`, this is the shape
+  # that ships, and it is asserted now so the two never have to be written at once.
+  test "a row that accepts many references sends one input_image block per photograph" do
+    client = client_with_reference
+    client.row.define_singleton_method(:reference_arity) { "many" }
+    calls = recording(client)
+
+    client.generate_and_wait(prompt: "the sheet prompt",
+                             reference_urls: %w[https://example.com/a.png
+                                                https://example.com/b.png
+                                                https://example.com/c.png])
+
+    content = calls.sole.dig("input", 0, "content")
+    images = content.select { |block| block["type"] == "input_image" }
+    assert_equal 3, images.length, "every reference the caller vetted must actually ride"
+    assert images.all? { |block| block["image_url"].start_with?("data:image/png;base64,") }
+    assert_equal "input_text", content.last["type"],
+                 "the instruction refers to references it has just been shown, so it goes LAST"
+  end
+
+  # THE ROW'S WORD IS HONOURED, exactly as ImageGeneration::Fal honours it. This is the
+  # behaviour that ships today for the sheet generator.
+  test "a row that accepts one reference sends the first and only the first" do
+    client = client_with_reference
+    assert_equal "one", client.row.reference_arity,
+                 "if the registry row ever changes this, the case below is asserting nothing"
+    calls = recording(client)
+
+    client.generate_and_wait(prompt: "p",
+                             reference_urls: %w[https://example.com/a.png https://example.com/b.png])
+
+    images = calls.sole.dig("input", 0, "content").select { |b| b["type"] == "input_image" }
+    assert_equal 1, images.length
+  end
+
+  # AN UNDECLARED ARITY SENDS EVERYTHING, which is the opposite of the old default and is
+  # the safer way round: a row that forgot to declare it earns a loud vendor error rather
+  # than quietly building a likeness from a fifth of the evidence.
+  test "a row declaring no arity at all sends every reference" do
+    client = client_with_reference
+    client.row.define_singleton_method(:reference_arity) { nil }
+    calls = recording(client)
+
+    client.generate_and_wait(prompt: "p",
+                             reference_urls: %w[https://example.com/a.png https://example.com/b.png])
+
+    images = calls.sole.dig("input", 0, "content").select { |b| b["type"] == "input_image" }
+    assert_equal 2, images.length
+  end
+
   # A DATED SNAPSHOT, NOT THE ALIAS. An alias that silently rolls forward is
   # exactly what the operator's "deterministic" forbids.
   test "the pinned model snapshot is sent, not a moving alias" do

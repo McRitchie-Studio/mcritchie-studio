@@ -141,6 +141,76 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     refute_includes joined, "mail.google.com"
   end
 
+  test "MAIL_SCOPES is exactly the two Gmail grants, frozen, and a SUBSET of the grant" do
+    assert_equal [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.compose"
+    ], Workspace::Credentials::MAIL_SCOPES
+    assert Workspace::Credentials::MAIL_SCOPES.frozen?
+
+    # A purpose may only ask for scopes the delegation actually GRANTED; asking
+    # for more is not narrowing, it is a broken assertion. What Google returns
+    # for an over-broad request is UNMEASURED here: this repo's operator path
+    # already treats a missing delegation as `unauthorized_client`
+    # (lib/tasks/workspace.rake names it by that slug), and an ungranted scope
+    # should land in the same family — but nobody has probed it, so do not read
+    # this comment as proof of the response. The subset check is free; the
+    # round-trip needs a live workspace.
+    assert_empty Workspace::Credentials::MAIL_SCOPES - Workspace::Credentials::SCOPES,
+                 "a purpose can only ask for scopes the delegation actually granted"
+    refute_includes Workspace::Credentials::MAIL_SCOPES.join(" "), "auth/drive"
+  end
+
+  test "every purpose the model admits names its own scopes — a new one cannot inherit the grant" do
+    # The silent failure this closes: `SCOPES_BY_PURPOSE.fetch(p, SCOPES)` would
+    # hand a brand-new purpose the whole grant and pass every other test here.
+    assert_equal WorkspaceAccount::PURPOSES.sort, Workspace::Credentials::SCOPES_BY_PURPOSE.keys.sort,
+                 "add the purpose to SCOPES_BY_PURPOSE and say what it may reach"
+
+    error = assert_raises(ArgumentError) { Workspace::Credentials.scopes_for(:calendar) }
+    assert_includes error.message, "no scope list for purpose :calendar"
+  end
+
+  test "a mail-purpose token carries the two Gmail scopes and NOTHING else" do
+    # The criterion, read off the object a Gmail caller is actually handed.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    account = WorkspaceAccount.create!(domain: "narrow.test")
+    account.mark_verified!
+    account.workspace_mailboxes.create!(address: "alex@narrow.test").mark_verified!
+
+    authorizer = Workspace::Credentials.authorizer_for("alex@narrow.test", purpose: :mail)
+
+    assert_equal "alex@narrow.test", authorizer.sub
+    assert_equal Workspace::Credentials::MAIL_SCOPES, authorizer.scope
+  end
+
+  test "probe asks for the WHOLE grant, because it proves the grant and not one purpose" do
+    # workspace:check_mailbox leans on exactly this: a token minted for a
+    # MAILBOX proves the workspace's Drive grant too, which flips a pending
+    # workspace active. A :mail request would come back fine with the Drive
+    # scopes never granted, and that flip would be a lie.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    account = WorkspaceAccount.create!(domain: "probe-scope.test")
+    account.workspace_mailboxes.create!(address: "alex@probe-scope.test")
+
+    asked = []
+    creds = Object.new
+    creds.define_singleton_method(:fetch_access_token!) { nil }
+    creds.define_singleton_method(:sub) { "alex@probe-scope.test" }
+    # `purpose:` is named, not swallowed by **: a mis-spelled keyword has to
+    # raise here rather than be accepted by the double.
+    recorder = ->(subject, purpose:) { asked << [ subject, purpose ]; creds }
+
+    ok, error = Workspace::Credentials.stub(:build_authorizer, recorder) do
+      Workspace::Credentials.probe("alex@probe-scope.test")
+    end
+
+    assert ok, "probe should have succeeded: #{error}"
+    assert_equal [ [ "alex@probe-scope.test", :workspace ] ], asked
+    assert_equal Workspace::Credentials::SCOPES, Workspace::Credentials.scopes_for(:workspace),
+                 ":workspace is the whole grant, which is what makes the line above a proof of it"
+  end
+
   test "an unregistered subject is REFUSED — the allow-list replaces the old pinned constant" do
     # Delegation cannot be narrowed at the grant: it reaches any user in a
     # domain and the CALLER picks whom. That used to be held by a frozen
@@ -256,7 +326,7 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
       def enable_self_signed_jwt? = true
     end.new("team@selfsigned.test")
 
-    ok, error = Workspace::Credentials.stub(:build_authorizer, ->(_s) { liar }) do
+    ok, error = Workspace::Credentials.stub(:build_authorizer, ->(_s, **) { liar }) do
       Workspace::Credentials.probe("team@selfsigned.test")
     end
 
@@ -297,7 +367,7 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
 
   def probe_raising(error, domain:)
     WorkspaceAccount.create!(domain: domain)
-    Workspace::Credentials.stub(:build_authorizer, ->(_s) { raise error }) do
+    Workspace::Credentials.stub(:build_authorizer, ->(_s, **) { raise error }) do
       Workspace::Credentials.probe("team@#{domain}")
     end
   end
@@ -368,6 +438,31 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     end
     assert_includes error.message, "for workspace"
     assert Workspace::Credentials.authorizer_for("team@mail.test"), "the workspace subject still opens Drive"
+  end
+
+  test "the authorizer cache keys on address AND purpose" do
+    # THE BUG THIS PINS, and why narrowing the scope REQUEST alone would have
+    # bought nothing. Keyed on the address only, the FIRST caller to ask for an
+    # address decided what every later caller got:
+    #
+    #   workspace:check_mailbox probes alex@ against the whole grant, THEN
+    #   GmailClient asks for alex@ with purpose :mail — and was handed the
+    #   cached FOUR-scope object. (workspace:check does the same the other way
+    #   round: DriveClient reads first, GmailClient second, same subject.)
+    #
+    # So the broad token stayed in play at the one seam the purpose boundary
+    # exists to close.
+    ENV["GOOGLE_SERVICE_ACCOUNT_JSON"] = key_json
+    WorkspaceAccount.create!(domain: "both.test").mark_verified!
+
+    workspace = Workspace::Credentials.authorizer_for("team@both.test")
+    mail = Workspace::Credentials.authorizer_for("team@both.test", purpose: :mail)
+
+    # Scope first, object identity second: the scope assertion names the HARM
+    # in one line, where refute_same dumps the whole credential object.
+    refute_includes mail.scope.join(" "), "auth/drive",
+                    "a token minted for mail must not carry Drive, however it was cached"
+    refute_same workspace, mail, "one cache entry per (address, purpose), not per address"
   end
 
   test "GmailClient asks for :mail and DriveClient for the narrow default" do

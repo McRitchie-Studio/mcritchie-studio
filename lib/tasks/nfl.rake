@@ -36,14 +36,59 @@ namespace :nfl do
     # lane walked past this" from "nothing could ever have been fetched for it".
     fetchable = 0
 
-    # THE RESIDUE, BY NAME. Eight athletes on production have no espn_headshot_url
-    # and never will, so they appear on every run for ever. A count alone asks the
-    # operator to go and find out WHICH -- and a verdict that cannot be acted on is
-    # the verdict that gets ignored. Named, it is a chore with a list.
+    # A DEAD SOURCE IS NOT A FAILED UPLOAD, and counting them together is what
+    # made this task abort on a healthy production run. The fetch and the put are
+    # two different parties: a 404 from a.espncdn.com is a fact about ESPN, a
+    # failed `put_object` is a fact about us, and only the second one is the lane
+    # not working. Both used to arrive through the one bare `rescue => e` below
+    # and land in `failed`, which `failed > cached` then read as a broken
+    # uploader.
+    #
+    # MEASURED ON PRODUCTION 2026-09-27, read-only:
+    #
+    #     TOTAL=2051  WITH_ESPN_ID=2048  COMPLETE_CANDIDATES=2043
+    #     FETCHABLE=5  SOURCELESS_CANDIDATES=0
+    #
+    # Production's ENTIRE fetchable population is five athletes, every one of them
+    # WITH an espn_headshot_url on file, and every one of those five URLs answers
+    # 404 -- fetched the way this task fetches, `URI.open(url, read_timeout: 30,
+    # redirect: true)`, while a control espn_id answered 230,577 bytes through the
+    # same call. So the healthy steady state was `cached: 0, failed: 5`, the rule
+    # fired, and the operator was told to go and check AWS credentials that were
+    # fine. Athletes::DeadHeadshotSource carries the discrimination and the
+    # reasoning for which statuses qualify.
+    dead_source = 0
+
+    # THE TWO RESIDUES, BY NAME, because a count alone asks the operator to go and
+    # find out WHICH -- and a verdict that cannot be acted on is the verdict that
+    # gets ignored.
+    #
+    # TWO LISTS RATHER THAN ONE, because they are two different chores. A
+    # sourceless athlete needs the COLUMN filled (`rake nfl:players_seed`); a dead
+    # source needs the PHOTO to exist at ESPN, which no task of ours can arrange.
+    # Folding them together would print one list nobody can act on.
+    #
+    # MEASURED: on production `sourceless_slugs` is EMPTY. All three athletes with
+    # no espn_headshot_url also have no espn_id, so `Athlete.where.not(espn_id:
+    # nil)` never sees them and they are not candidates at all. The residue the
+    # lane does see is the five dead sources.
     sourceless_slugs = []
+    dead_source_notes = []
+
+    # THE CAUSES, CARRIED ONTO THE CHANNEL THAT SURVIVES. The per-athlete `[!]`
+    # lines below are `puts`, and the lane's only consumer runs this task with
+    # `>/dev/null` and keeps stderr (bin/ecosystem-build, phase 6c) -- so an abort
+    # saying "read the [!] lines above" pointed the operator at output the lane had
+    # already discarded. The verdicts now carry the first few causes in their own
+    # body, on stderr, where they can be read.
+    failure_notes = []
 
     candidates.find_each do |athlete|
-      break if limit && (cached + failed) >= limit
+      # THE LIMIT BOUNDS EVERY ATHLETE THIS RUN REACHED FOR, dead sources
+      # included. It is a politeness budget at a.espncdn.com, and a 404 costs the
+      # same request and the same `sleep pause` as a hit -- so leaving them out
+      # would let `HEADSHOT_LIMIT=10` walk a thousand retired photos.
+      break if limit && (cached + failed + dead_source) >= limit
 
       considered += 1
 
@@ -129,35 +174,63 @@ namespace :nfl do
         cached += 1
         puts "  [+] #{athlete.person_slug.ljust(28)} -> #{key_prefix}/{original,#{widths.join(',')}}.png" if cached <= 5 || (cached % 50).zero?
       rescue => e
-        failed += 1
-        puts "  [!] #{athlete.person_slug}: #{e.class}: #{e.message}"
+        # SPLIT HERE, WHERE THE DIFFERENCE IS KNOWN. The exception object is the
+        # only thing that can tell a dead source from a broken uploader; a count
+        # cannot, and a count is what the retired rule tried to reason from. So
+        # the classification happens with the exception in hand and the two
+        # outcomes never share a counter.
+        # ASKED THROUGH `dead?`, NEVER BY RE-TESTING THE STATUS HERE. The status
+        # is read only to PRINT it; spelling the rule a second time at the call
+        # site is how two definitions of one thing start to drift.
+        if Athletes::DeadHeadshotSource.dead?(e)
+          dead_source += 1
+          dead_source_notes << "#{athlete.person_slug} (espn_id #{athlete.espn_id}): " \
+                               "HTTP #{Athletes::DeadHeadshotSource.status(e)}"
+        else
+          failed += 1
+          failure_notes << "#{athlete.person_slug}: #{e.class}: #{e.message.to_s.truncate(60)}"
+          puts "  [!] #{athlete.person_slug}: #{e.class}: #{e.message}"
+        end
       end
 
       sleep pause if pause.positive?
     end
 
-    # READ THE LANE LEFT TO RIGHT: wanted it -> a source could answer -> something
-    # came back. Each step is a different question and only the LAST one grades the
-    # lane; a gap at the source step is a data gap and must be silent.
+    # READ THE LANE LEFT TO RIGHT: wanted it -> a source could answer -> the source
+    # answered -> the upload worked. Each step is a different question and only the
+    # LAST one grades the lane; a gap at either of the middle steps is a fact about
+    # ESPN and must be silent.
     #
     #   wanted       candidates that still LACKED a variant  (considered - complete)
     #   fetchable    of those, ones with a source on file    (accumulated above)
-    #   attempted    candidates this run actually tried      (cached + failed)
+    #   attempted    candidates this run reached for         (cached + failed + dead)
+    #   graded       attempts whose outcome is OURS          (cached + failed)
     #   unfetched    fetchable, and walked past anyway       (fetchable - attempted)
     #   unclassified wanted, skipped for no stated reason    (the subtraction guard)
     #
-    # `needed` IS RETIRED, and it is the whole defect. It was `wanted` -- every
-    # candidate short of a variant, INCLUDING the ones no source can ever complete
-    # -- and the rule below accused the lane of declining them. Eight athletes on
-    # production have no espn_headshot_url, so once the other 2,043 were cached
-    # `needed` sat at 8 for ever while `attempted` was legitimately 0, and the
-    # healthy steady-state re-run aborted every time. FOUND INDEPENDENTLY BY TWO
-    # BUILDERS a day apart, each of whom read it and correctly left it alone.
+    # `attempted` AND `graded` ARE DIFFERENT DENOMINATORS ON PURPOSE, and keeping
+    # them apart is this fix. `attempted` answers "did the run do the work it
+    # found", so a dead source belongs in it -- the request went out, the pause was
+    # paid, and there is nothing more the lane could have done. `graded` answers
+    # "did OUR half work", so a dead source must NOT be in it: 404s in that
+    # numerator are what made `failed > cached` fire on a healthy run.
     #
-    # A VERDICT MUST BE CLEARABLE BY FIXING WHAT IT ACCUSES. That one accused the
-    # lane and could only be cleared by filling a column the lane does not write,
-    # which is why it could never be cleared at all. So the graded population holds
-    # only athletes a source could have answered for, and the rest are NAMED below.
+    # `needed` IS RETIRED, and it was the first half of this defect. It was
+    # `wanted` -- every candidate short of a variant, INCLUDING the ones no source
+    # can ever complete -- so the decline rule below accused the lane of declining
+    # work no run could have done, and could only be cleared by filling a column
+    # the lane does not write. A VERDICT MUST BE CLEARABLE BY FIXING WHAT IT
+    # ACCUSES, so the graded population holds only athletes a source could have
+    # answered for.
+    #
+    # MEASURED, AND THE RETIREMENT'S OWN ACCOUNT OF PRODUCTION WAS WRONG: it said
+    # eight athletes had no espn_headshot_url and kept `needed` positive against
+    # `attempted` 0. Production 2026-09-27 says THREE have no espn_headshot_url,
+    # all three also have no espn_id, and so none of the three is a candidate --
+    # `skipped_no_source` is 0 there. The abort operators actually got was the
+    # OTHER rule: `needed` 5, `attempted` 5, `failed` 5 > `cached` 0, every failure
+    # a 404. The narrowing to `fetchable` is still right, as a property rather than
+    # as a reading of this data: it makes an unclearable verdict impossible.
     #
     # `unfetched` AND `unclassified` KEEP THE SUBTRACTION GUARD the old `needed`
     # had, which is worth preserving: a `next` added later lands in one of them
@@ -167,9 +240,25 @@ namespace :nfl do
     # reported. Hand-counting is how the original hole got dug: `skipped_no_team`
     # was faithfully counted AND printed, and no rule read it.
     wanted       = considered - skipped_complete
-    attempted    = cached + failed
+    graded       = cached + failed
+    attempted    = graded + dead_source
     unfetched    = fetchable - attempted
     unclassified = wanted - skipped_no_source - fetchable
+
+    # THE CAUSES AS ONE SENTENCE, built once because BOTH graded verdicts below say
+    # it and two spellings of one sentence drift. THREE is enough to tell
+    # `Aws::Errors::MissingCredentialsError` from `OpenURI::HTTPError: 503` and
+    # short enough to read in a rebuild log; anyone running the task by hand still
+    # has every `[!]` line on stdout. Empty when nothing failed, which is every run
+    # where neither verdict below fires.
+    cause_cap = 3
+    causes = if failure_notes.any?
+      more = failure_notes.size - cause_cap
+      "Causes: #{failure_notes.first(cause_cap).join('; ')}" \
+        "#{more.positive? ? " (and #{more} more)" : ''}. "
+    else
+      ""
+    end
 
     puts ""
     puts "considered:             #{considered}"
@@ -178,20 +267,30 @@ namespace :nfl do
     puts "  no espn_headshot_url: #{skipped_no_source}   (a data gap -- never graded)"
     puts "  fetchable:            #{fetchable}   (the population the rules below grade)"
     puts "cached:                 #{cached}"
+    puts "dead source (404/410):  #{dead_source}   (a data gap -- never graded)"
     puts "failed:                 #{failed}"
     puts "misfiled (stale key):   #{misfiled}"
 
+    # 25 IS A READABILITY CEILING SHARED BY BOTH INVENTORIES BELOW, not a claim
+    # about the data. A cold run before any seed has hundreds in either list, and a
+    # wall of slugs is how a report stops being read. MEASURED: production's two
+    # residues are 0 sourceless candidates and 5 dead sources, so the cap fires on
+    # neither and both lists print whole. A LOCAL rather than a constant, for the
+    # reason the widths list is one: nothing in this file needs it at definition
+    # time.
+    named_cap = 25
+
     if sourceless_slugs.any?
-      # ON STDOUT WITH THE COUNTERS, NOT ON STDERR WITH THE VERDICTS. This is the
-      # healthy steady state -- eight rows, every run, for ever -- and a signal
-      # printed on every healthy run is not a signal. It is inventory, so it sits
-      # with the inventory, and it names the task that can shorten the list.
-      # 25 IS A READABILITY CEILING, not a claim about the data. Production's
-      # residue is EIGHT, so the cap never fires there and the whole list prints;
-      # a cold run before any seed has hundreds, and a wall of slugs is how a
-      # report stops being read. A LOCAL rather than a constant, for the reason
-      # the widths list is one: nothing in this file needs it at definition time.
-      named_cap = 25
+      # ON STDOUT WITH THE COUNTERS, NOT ON STDERR WITH THE VERDICTS. A permanent
+      # data gap appears on every run for ever, and a signal printed on every
+      # healthy run is not a signal. It is inventory, so it sits with the
+      # inventory, and it names the task that can shorten the list.
+      #
+      # MEASURED: this list is EMPTY on production. All three athletes with no
+      # espn_headshot_url also have no espn_id, so they are not candidates and the
+      # loop never reaches them. The residue the lane DOES see is the dead-source
+      # list below. Kept because the column is nullable and a cold run before any
+      # seed fills it has thousands.
       shown = sourceless_slugs.first(named_cap)
       remaining = sourceless_slugs.size - shown.size
       puts ""
@@ -199,6 +298,34 @@ namespace :nfl do
       puts "  is graded on. `rake nfl:players_seed` fills the column where a source exists;"
       puts "  some of these have none and will appear here for ever:"
       shown.each { |slug| puts "    [-] #{slug}" }
+      puts "    ... and #{remaining} more" if remaining.positive?
+    end
+
+    if dead_source_notes.any?
+      # THE OTHER RESIDUE, AND ON PRODUCTION THE ONLY ONE. A SEPARATE LIST from the
+      # sourceless slugs above because it is a different chore with a different
+      # remedy: that one needs a COLUMN filled, this one needs a PHOTO to exist at
+      # ESPN. One merged list would be a list nobody can act on.
+      #
+      # ON STDOUT, for the same reason and with the same consequence: the lane
+      # discards it. That is correct for inventory that prints on every healthy run
+      # for ever, and it is why the espn_id and the status are ON each line -- the
+      # operator reading this report is the one who can go and look, and the status
+      # is what tells them whether looking is worth it (404 is permanent, and a 503
+      # would never have reached this list).
+      #
+      # NOTHING HERE REPAIRS THE DATA, deliberately. Chasing a fresh URL for a
+      # retired photo is a different job from grading a run correctly, and mixing
+      # the two would mean a verdict fix that also writes rows.
+      shown = dead_source_notes.first(named_cap)
+      remaining = dead_source_notes.size - shown.size
+      puts ""
+      puts "  athletes whose ESPN source ANSWERED 404/410 -- the URL is on file and this run"
+      puts "  fetched it, so the lane did its job and the shelf was empty. A dead source is a"
+      puts "  data gap, never a failed upload, and nothing here grades the lane."
+      puts "  `rake nfl:players_seed` re-derives the URL from espn_id; where ESPN has retired"
+      puts "  the photograph there is nothing to re-derive and these appear here for ever:"
+      shown.each { |note| puts "    [x] #{note}" }
       puts "    ... and #{remaining} more" if remaining.positive?
     end
 
@@ -223,40 +350,68 @@ namespace :nfl do
     # what a credential failure looks like from here: every attempt fails, so
     # `cached` is 0 and `failed` is everything.
     #
-    # THE MAJORITY IS ONLY AS GOOD AS THE SAMPLE, and on a WARM machine the
-    # sample is tiny. `skipped_complete` and `skipped_no_source` both `next`
-    # above WITHOUT touching either counter, so `failed + cached` counts only the
-    # newly-discovered espn_ids — often one. One new athlete whose ESPN headshot
-    # 404s is then `failed: 1, cached: 0`, which clears this rule and aborts. So
-    # "a single 404 is a normal afternoon" holds for the COLD rebuild and not for
-    # the warm one. Narrowing to a meaningful sample changes behaviour and owes
-    # its own test; until then the abort names both causes rather than one.
+    # THE DEFERRAL THAT USED TO SIT HERE IS DISCHARGED, and not by the answer it
+    # expected. It read: "THE MAJORITY IS ONLY AS GOOD AS THE SAMPLE... One new
+    # athlete whose ESPN headshot 404s is then failed: 1, cached: 0, which clears
+    # this rule and aborts... Narrowing to a meaningful sample changes behaviour
+    # and owes its own test." It was filed as hypothetical. MEASURED ON PRODUCTION
+    # 2026-09-27, it was the WHOLE fetchable population: 5 of 5, every one a 404,
+    # and this rule aborted the rebuild on a run where nothing was wrong.
+    #
+    # THE SAMPLE NEVER NEEDED NARROWING; THE NUMERATOR WAS WRONG. A 404 was never a
+    # failed upload, so the answer is not "how many failures are too few to
+    # believe" -- a threshold nobody could have defended from these counters -- but
+    # "that was not a failure". `graded` is `cached + failed` with the dead sources
+    # taken out at the point the exception said so, which is why this rule can stay
+    # a plain majority and still be quiet on the warm re-run.
+    #
+    # WHAT IS STILL TRUE OF THE SAMPLE, because the old comment was right about
+    # this part: on a warm machine `graded` counts only the newly-discovered
+    # espn_ids, so it is often one or two. A single REAL failure -- a transient 5xx
+    # from S3, say -- therefore still reddens a run. That is the correct trade now
+    # that a 404 cannot reach the numerator: a genuine upload failure on the only
+    # athlete this run tried IS a run that did not work, and the task is idempotent
+    # so the next run clears it.
+    #
+    # THE CAUSES TRAVEL WITH THE VERDICT. The `[!]` lines are on stdout and
+    # bin/ecosystem-build runs this task with `>/dev/null`, so "read the [!] lines
+    # above" pointed at output the lane had already thrown away. The first few
+    # `slug: ExceptionClass: message` pairs now ride in the abort body itself, on
+    # stderr, which the lane keeps -- one look tells an operator whether this is
+    # AWS or ESPN without changing a credential first.
     if failed > cached
-      warn "nfl:upload_headshots: #{failed} of #{failed + cached} attempted uploads failed"
-      abort "nfl:upload_headshots failed #{failed} of #{failed + cached} attempted uploads " \
-            "(cached #{cached}) — read the [!] lines above, which name the cause per athlete. " \
+      warn "nfl:upload_headshots: #{failed} of #{graded} attempted uploads failed"
+      abort "nfl:upload_headshots failed #{failed} of #{graded} attempted uploads " \
+            "(cached #{cached}#{dead_source.positive? ? "; #{dead_source} more had a dead " \
+            "source and are NOT counted here" : ""}) — #{causes}" \
             "Across MANY attempts this is usually AWS credentials: check AWS_ACCESS_KEY_ID / " \
-            "AWS_SECRET_ACCESS_KEY / AWS_REGION in .env. Across one or two it is more often a " \
-            "dead ESPN source URL, since only newly-discovered espn_ids are attempted."
+            "AWS_SECRET_ACCESS_KEY / AWS_REGION in .env. A 404 or 410 from a.espncdn.com is " \
+            "NOT in this count — dead sources are named in the report on stdout."
 
     # THE PARTIAL FAILURE, WARNED ABOUT RATHER THAN ABORTED ON, and it needs saying
     # at all BECAUSE the rule above grades a majority. Credentials revoked at
     # athlete 1,900 leave cached 1,900 / failed 143: the majority rule is false, the
     # run exits 0, and 143 [!] lines scroll past on STDOUT while the rebuild lane —
-    # which reads stderr — is told nothing. An abort would be wrong: 143 dead ESPN
-    # URLs among 2,043 good ones is a normal afternoon, and a rule that reddens on
-    # one gets switched off. A threshold would only swap the false positive for a
-    # number nobody can defend from these counters, and an exit code is the wrong
-    # place for a guess — it carries one bit and cannot say "partly worked". So the
-    # gap becomes a SENTENCE on the channel the lane reads. The task is idempotent,
-    # so a systemic failure this warning does not stop is caught by the next run one
-    # run late rather than never.
+    # which reads stderr — is told nothing. An abort would be wrong: 143 transient
+    # S3 errors among 2,043 good uploads is a normal afternoon, and a rule that
+    # reddens on one gets switched off. A threshold would only swap the false
+    # positive for a number nobody can defend from these counters, and an exit code
+    # is the wrong place for a guess — it carries one bit and cannot say "partly
+    # worked". So the gap becomes a SENTENCE on the channel the lane reads. The task
+    # is idempotent, so a systemic failure this warning does not stop is caught by
+    # the next run one run late rather than never.
+    #
+    # IT NO LONGER BLAMES ESPN. This warning used to say each failure was "more
+    # likely a dead ESPN source URL than a credential problem" — which was the same
+    # conflation the rule above carried, guessed instead of measured. A dead source
+    # cannot reach `failed` any more, so whatever is in here is OURS or a transient,
+    # and the causes say which.
     elsif failed.positive?
-      warn "WARNING: nfl:upload_headshots failed #{failed} of #{attempted} attempted uploads " \
-           "(cached #{cached}) — too few to be the uploader breaking, so each is more likely a " \
-           "dead ESPN source URL than a credential problem. Read the [!] lines above, which " \
-           "name the cause per athlete. The task is idempotent, so re-running it retries only " \
-           "these."
+      warn "WARNING: nfl:upload_headshots failed #{failed} of #{graded} attempted uploads " \
+           "(cached #{cached}) — too few to be the uploader breaking, so this is more likely a " \
+           "transient than a credential problem. #{causes}" \
+           "Dead ESPN sources are NOT in this count. The task is idempotent, so re-running it " \
+           "retries only these."
     end
 
     # THE SECOND HOLE, AND THE ONE THAT COST 2,048 ATHLETES THEIR AVATAR. The
@@ -276,13 +431,15 @@ namespace :nfl do
     # construction: `attempted.zero?` forces `failed == cached == 0`, so
     # `failed > cached` is false exactly when this can fire.
     #
-    # IT CANNOT CRY WOLF ON THE WARM RE-RUN, and this comment block used to make
-    # that claim about `needed` -- where it was FALSE, which is the defect. On a
-    # warm machine nearly every candidate is `skipped_complete`, and `needed`
-    # subtracted only THOSE out; the eight athletes with no espn_headshot_url are
-    # `skipped_no_source`, so `needed` never reached 0 and this fired on every
-    # healthy run. Graded on `fetchable`, the claim finally holds: an athlete with
-    # no source is not in the population at all, so the steady state says NOTHING.
+    # IT CANNOT CRY WOLF ON THE WARM RE-RUN, and an earlier version of this block
+    # argued that from a figure production does not carry. It said eight athletes
+    # had no espn_headshot_url, so `needed` never reached 0 and this fired on every
+    # healthy run. MEASURED 2026-09-27: THREE athletes have no espn_headshot_url,
+    # all three also have no espn_id, and so not one of them is a candidate --
+    # `skipped_no_source` is 0 on production and this rule never fired there at all.
+    # What fired was the OTHER rule, on five 404s. Graded on `fetchable` the
+    # quiet-on-a-warm-run claim is true as a PROPERTY of the population rather than
+    # as a reading of today's rows, which is the only way it was ever worth making.
     #
     # WHAT IT STAYS QUIET ABOUT -- and this list is the rule, not a footnote,
     # because a verdict that fires on a healthy run gets switched off within a week:
@@ -291,10 +448,39 @@ namespace :nfl do
     #     has wanted == 0 and this says nothing;
     #   * an athlete with NO espn_headshot_url is counted as WANTING a headshot and
     #     not as fetchable, so a permanent data gap is silent -- it is named in the
-    #     report above instead, which is where a chore belongs.
+    #     report above instead, which is where a chore belongs;
+    #   * an athlete whose source ANSWERED 404 counts as attempted, because the run
+    #     did reach for it and there was nothing there. Leaving dead sources out of
+    #     `attempted` would make this rule fire on exactly production's steady state
+    #     -- fetchable 5, every one dead -- which is the trap the other rule fell
+    #     into from the other side.
     #
     # A PARTIAL decline only warns, because a partial is not a lane that stopped
     # working and an exit code carries one bit that cannot say "partly".
+    #
+    # ── THIS RULE IS UNREACHABLE TODAY AND STAYS. VERDICT, 2026-09-27 ────────────
+    #
+    # Nothing sits between `fetchable += 1` and the attempt, and every path out of
+    # that attempt increments exactly one of `cached`, `dead_source` or `failed` --
+    # so `attempted` always equals `fetchable` and this condition cannot be true.
+    # (The `HEADSHOT_LIMIT` break does not reach it either: it breaks BEFORE
+    # `considered += 1`, so the athletes it skips were never counted as fetchable.)
+    # Two readers have now measured that independently.
+    #
+    # IT IS A GUARD AWAITING A FUTURE BRANCH, NOT DEAD CODE, and the difference is
+    # WHERE a future `next` would land. `unclassified` below catches one added ABOVE
+    # the source gate; this rule and `unfetched` catch one added BELOW it. Below the
+    # source gate is precisely where the historical defect lived -- the `next` past
+    # any athlete without an NFL contract, which cost 2,048 athletes their avatar
+    # and printed a clean summary while doing it. Deleting this would leave the half
+    # of the loop with a track record uncovered, and it would be deleted for the
+    # reason it was written: nothing has happened there yet.
+    #
+    # WHY THIS ONE ABORTS WHERE `unfetched` ONLY WARNS: declining EVERY fetchable
+    # athlete is the lane refusing its job wholesale, which is the 2,048 shape;
+    # declining some of them is a partial, and a partial is a sentence, not an exit
+    # code. Said plainly here so the next reader who measures it does not have to
+    # re-litigate it, and does not mistake "no test can reach it" for "no reason".
     if fetchable.positive? && attempted.zero?
       warn "nfl:upload_headshots: attempted 0 of #{fetchable} athletes it could have fetched"
       abort "nfl:upload_headshots attempted 0 of the #{fetchable} athletes that still needed a " \
@@ -423,8 +609,50 @@ namespace :nfl do
     end
   end
 
-  ESPN_TEAMS_INDEX_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams"
-  ESPN_TEAM_COACHES_URL = ->(team_id) { "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/#{team_id}/coaches" }
+  # ── HOW THIS LANE TALKS TO ESPN ─────────────────────────────────────────────
+  #
+  # The host, the name and the reads all come from Espn::Api, which is the ONE
+  # place this app spells a host. Read app/services/espn/api.rb before changing a
+  # word of the three constants below; the short version is that
+  # Espn::Api::FILTERED_HOST serves curl 200 and Ruby 403 from behind an Akamai
+  # deny page, so a URL you verify by hand is not a URL this task can read.
+  #
+  # MEASURED 2026-09-27 THROUGH `URI.open` -- the call this task makes, not curl,
+  # and not Net::HTTP as the sibling services use -- with the working host carried
+  # as a control so the 403 is pinned on the host rather than on how Ruby asks:
+  #
+  #     URI.open("https://<host>/apis/site/v2/sports/football/nfl/teams")
+  #
+  #     HOST                   UA CONDITION           STATUS         BYTES
+  #     site.api.espn.com      open-uri default       403 Forbidden     437
+  #     site.api.espn.com      Espn::Api::USER_AGENT  403 Forbidden     437
+  #     site.web.api.espn.com  open-uri default       200           148,848  <- control
+  #     site.web.api.espn.com  Espn::Api::USER_AGENT  200           148,848  <- control
+  #
+  # The user agent moves NEITHER host, which is the whole finding: the fix is the
+  # host, and no string we send can revive the other one.
+  #
+  # ── WHY THE INDEX URL IS A LAMBDA AND NOT A STRING ─────────────────────────
+  #
+  # Because a String would break every rake task in the repository. Rails loads
+  # lib/tasks/*.rake BEFORE the `:environment` task sets Zeitwerk up, so
+  # `Espn::Api` is not yet autoloadable at the moment this line is evaluated.
+  # MEASURED 2026-09-27 with a throwaway .rake file and `rake -T`:
+  #
+  #     PROBE: load-time reference FAILED -> NameError: uninitialized constant Espn
+  #
+  # So the sibling spelling -- `ESPN_TEAMS_INDEX_URL = "https://#{Espn::Api::WEB_HOST}/..."`,
+  # which is correct inside app/services because Zeitwerk is up by then -- cannot
+  # be copied here. The callable defers the constant lookup to run time, which is
+  # also the idiom ESPN_TEAM_COACHES_URL already used.
+  ESPN_TEAMS_INDEX_URL = -> { "https://#{Espn::Api::WEB_HOST}/apis/site/v2/sports/football/nfl/teams" }
+  ESPN_TEAM_COACHES_URL = ->(team_id) { "https://#{Espn::Api::CORE_HOST}/v2/sports/football/leagues/nfl/teams/#{team_id}/coaches" }
+
+  # ONE SPELLING OF WHO WE ARE, for every ESPN read this lane makes. Unset is not
+  # anonymous: measured off a local socket 2026-09-27, open-uri fills in
+  # `User-Agent: Ruby`, so the only choice available was between Ruby's name and
+  # our own, and an honest identifier with a contact URL is the better one.
+  ESPN_JSON_GET = ->(url) { URI.open(url, "User-Agent" => Espn::Api::USER_AGENT).read }
   COACH_HEADSHOT_WIDTHS = [100, 400].freeze
 
   desc "Pull NFL head coaches from ESPN; populate Coach espn_id + espn_headshot_url. No S3 traffic."
@@ -438,9 +666,51 @@ namespace :nfl do
     )
 
     puts "Fetching ESPN team index..."
-    teams_resp = JSON.parse(URI.open(ESPN_TEAMS_INDEX_URL).read)
-    espn_teams = teams_resp.dig("sports", 0, "leagues", 0, "teams").map { |t| t["team"] }
+    index_url = ESPN_TEAMS_INDEX_URL.call
+
+    # RESCUED HERE AND NOT THROUGH Espn::Api::TRANSPORT_ERRORS, DELIBERATELY. That
+    # constant is documented as "the failures that mean the network, not ESPN's
+    # answer", and an OpenURI::HTTPError is precisely ESPN's answer -- it carries a
+    # status. Adding it there would also be inert in both places the constant is
+    # actually read: Espn::ScrapeDepthCharts and Espn::PlayerProfile use Net::HTTP,
+    # which RETURNS a 4xx response rather than raising, so neither can raise this
+    # class. An addition that looks meaningful and does nothing is how the host
+    # divergence rotted in the first place, so the handling stays where the call is.
+    teams_resp =
+      begin
+        JSON.parse(ESPN_JSON_GET.call(index_url))
+      rescue OpenURI::HTTPError => e
+        # READ THE STATUS LINE, NOT THE MESSAGE. open-uri builds the message from
+        # the status so they usually agree, but a proxy may reword a reason phrase
+        # while the status line stays the protocol's. Falls back to the message
+        # when the io cannot be read, because a weaker abort beats no abort.
+        status = Array(e.io&.respond_to?(:status) ? e.io.status : nil).join(" ").presence || e.message
+        abort "nfl:link_coach_headshots: ESPN answered #{status} for #{index_url} -- no coach " \
+              "was read and nothing changed. If that status is 403, this lane has been pointed " \
+              "back at #{Espn::Api::FILTERED_HOST}, which answers curl with 200 and Ruby with " \
+              "403 from an Akamai deny page: CHECKING THAT URL BY HAND WILL SUCCEED WHILE THIS " \
+              "TASK FAILS. Read the note in app/services/espn/api.rb and dial " \
+              "Espn::Api::WEB_HOST instead."
+      end
+
+    # `Array(...)` so an index whose shape MOVED reaches the same guard as one that
+    # is merely empty: `dig` returns nil, `Array(nil)` is [], and both end in the
+    # abort below rather than in a NoMethodError backtrace.
+    espn_teams = Array(teams_resp.dig("sports", 0, "leagues", 0, "teams")).map { |t| t["team"] }
     puts "  #{espn_teams.size} ESPN teams"
+
+    # A RUN WITH NO TEAMS IS NOT A RUN WITH NOTHING TO DO. This list is the lane's
+    # ONLY source of work, so zero teams means zero coaches were considered -- and
+    # before this guard the loop walked zero times, printed a tidy column of zeros
+    # and exited 0. The dead host could therefore present as a clean run, which is
+    # the quieter half of the same defect.
+    if espn_teams.empty?
+      abort "nfl:link_coach_headshots: resolved 0 ESPN teams from #{index_url} -- no coach was " \
+            "read and none could be, so this run changed nothing despite exiting cleanly before " \
+            "this guard existed. ESPN answered, but its team list was empty or no longer lives " \
+            "at sports[0].leagues[0].teams. Re-read that URL FROM RUBY (curl agreeing proves " \
+            "nothing about this host) before concluding the document moved."
+    end
 
     matched = 0
     skipped_unchanged = 0
@@ -459,14 +729,14 @@ namespace :nfl do
         next
       end
 
-      coaches_resp = JSON.parse(URI.open(ESPN_TEAM_COACHES_URL.call(espn_team_id)).read)
+      coaches_resp = JSON.parse(ESPN_JSON_GET.call(ESPN_TEAM_COACHES_URL.call(espn_team_id)))
       ref = coaches_resp.dig("items", 0, "$ref")
       unless ref
         skipped_no_coach += 1
         next
       end
 
-      coach_resp = JSON.parse(URI.open(ref).read)
+      coach_resp = JSON.parse(ESPN_JSON_GET.call(ref))
       espn_id = coach_resp["id"].to_s
       headshot_url = coach_resp.dig("headshot", "href")
       first = coach_resp["firstName"]

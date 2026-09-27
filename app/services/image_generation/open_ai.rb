@@ -32,9 +32,25 @@ module ImageGeneration
   # handed the BYTES. So the adapter downloads our own S3 object and base64s it —
   # and that download is the only place this class touches a URL we did not build.
   #
-  # ONE REFERENCE IS ENOUGH. Five measured no better than one, so `reference_arity`
-  # is `one` and extra URLs are dropped rather than concatenated into a bigger,
-  # slower, no-better request.
+  # HOW MANY REFERENCES IT SENDS IS THE ROW'S DECLARATION, NOT THIS CLASS'S OPINION —
+  # `row.reference_arity`, read exactly the way ImageGeneration::Fal reads it.
+  #
+  # ⚠ IT USED TO BE A SILENT `urls.first`, and that is the defect this replaced. The
+  # signature was plural, the body took one, and `request_body` emitted a single
+  # `input_image` block — so a caller that correctly handed over a distilled set of four
+  # photographs had three of them dropped with nothing logged, nothing raised and nothing
+  # on the page. The arity check below does the same thing when the row says `one`, but it
+  # does it BECAUSE THE ROW SAYS SO, which is a sentence a reader can go and check.
+  #
+  # THE REGISTRY ROW FOR THE SHEET GENERATOR STILL SAYS `one` (config/image_generators.yml,
+  # `openai_gpt5_sheet`), so today that is still what ships — and that row now carries the
+  # reasoning and what would settle it, rather than leaving the value to be read as a
+  # vendor constraint. This repo holds no measured multi-image call to this endpoint. The
+  # "five references were no better than one" sentence was once carried with three
+  # different subjects (this row, /v1/images/edits, and the Higgsfield trainer); it is the
+  # /v1/images/edits measurement, it says so everywhere now, and it therefore settles
+  # nothing about the Responses path either way. When somebody measures it, the whole path
+  # below is already built for the plural answer.
   class OpenAI
     OPEN_TIMEOUT = 10
 
@@ -92,7 +108,7 @@ module ImageGeneration
       urls = Array(reference_urls).compact_blank
       raise GenerationError, "#{row.label} needs a reference image" if urls.empty?
 
-      payload = perform(body: request_body(prompt: prompt, reference_url: urls.first))
+      payload = perform(body: request_body(prompt: prompt, reference_urls: offered(urls)))
       images = extract_images(payload)
       raise GenerationError, "#{row.label} returned no image" if images.empty?
 
@@ -120,16 +136,33 @@ module ImageGeneration
 
     attr_reader :api_key, :clock
 
-    def request_body(prompt:, reference_url:)
+    # HOW MANY OF THE OFFERED REFERENCES THIS ROW ACCEPTS.
+    #
+    # DEFAULTS TO ALL OF THEM when the row declares nothing, which is the opposite of the
+    # old `.first` default and is the safer way round: a row that forgot to declare its
+    # arity now sends what the caller asked for and may earn a loud vendor 400, rather than
+    # quietly building an identity from a fifth of the evidence.
+    def offered(urls)
+      row.reference_arity.to_s == "one" ? urls.first(1) : urls
+    end
+
+    # ONE `input_image` BLOCK PER REFERENCE, ALL IN ONE USER MESSAGE, with the prompt LAST.
+    #
+    # THE PROMPT GOES AFTER THE IMAGES, and it stays there: the measured working shape put
+    # the reference first and the instruction second, and the instruction refers to "the
+    # reference" it has just been shown. Interleaving or reordering would be a change to the
+    # one request shape a ten-panel sheet has ever come back from.
+    def request_body(prompt:, reference_urls:)
+      images = Array(reference_urls).map do |url|
+        { type: "input_image", image_url: data_uri_for(url) }
+      end
+
       {
         model: row.model.presence || "gpt-5",
         tools: [{ type: "image_generation" }],
         input: [{
           role: "user",
-          content: [
-            { type: "input_image", image_url: data_uri_for(reference_url) },
-            { type: "input_text", text: prompt }
-          ]
+          content: images + [{ type: "input_text", text: prompt }]
         }]
       }
     end
