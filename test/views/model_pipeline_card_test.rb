@@ -50,6 +50,14 @@ class ModelPipelineCardViewTest < ActionView::TestCase
     render partial: "model_pipeline/look_card", locals: { reading: reading, draggable: draggable }
   end
 
+  # ONE CELL'S CLASS STRING, off THIS render's own HTML. A test that compares two renders
+  # cannot reach for `css_select` for the reason above, so it parses the returned markup.
+  def cell_class(html, key)
+    node = Nokogiri::HTML.fragment(html).at_css("[data-test='look-card-sports-#{key}']")
+    refute_nil node, "no #{key} cell rendered"
+    node["class"].to_s
+  end
+
   test "the card emits the board identity contract with the RENDERED lane" do
     render_card reading(look(colorway: "c", stage: "generation"), athlete: true, headshot: true)
 
@@ -114,18 +122,46 @@ class ModelPipelineCardViewTest < ActionView::TestCase
   end
 
   # AN ABSENT NUMBER IS RENDERED, not dropped: a row that left the cell out would read as
-  # complete. MUTED, NOT AMBER — `athletes.jersey_number` fills per athlete on demand and
-  # never by backfill, so an empty one is the ordinary state of an athlete nobody has
-  # acquired, and a warning chip on nearly every card is the contrast leak the physique
-  # chip was already fixed for. The board's legend carries the actionable version.
-  test "an absent jersey number is a muted cell that explains itself" do
+  # complete. NOT AMBER — `athletes.jersey_number` fills per athlete on demand and never
+  # by backfill, so an empty one is the ordinary state of an athlete nobody has acquired,
+  # and a warning chip on nearly every card is the contrast leak the physique chip was
+  # already fixed for. The board's legend carries the actionable version.
+  test "an absent jersey number is a quiet cell that explains itself" do
     render_card reading(jersey_number: nil)
 
     cell = css_select("[data-test='look-card-sports-number']").first
     assert_equal "no #", cell.text.strip
     assert_match(/acquired or re-validated/, cell["title"])
-    assert_includes cell["class"], pipeline_chip_classes(:neutral)
-    refute_includes cell["class"], "warning"
+    assert_includes cell["class"], pipeline_chip_classes(:absent)
+    refute_includes cell["class"], "warning", "absent must not read as wrong"
+    refute_includes cell["class"], "danger"
+  end
+
+  # THE ASSERTION THE OLD ONE COULD NOT MAKE, and the defect it closes. Until 2026-09-27
+  # the absent number carried CHIP_TONES[:neutral] — the SAME class string a held fact
+  # carries — so a typical row was four chips of identical styling (Buffalo Bills / QB /
+  # no # / 6'5" 237lb) and the only thing separating a hole from data was a 10px word.
+  # Asserting :neutral and refuting "warning" both passed throughout, because neither
+  # assertion COMPARED the two cells. This one does, which is the only shape that fails
+  # when they converge again.
+  #
+  # THE THREE SIGNALS ARE STRUCTURAL, so they are named individually: no fill, a dashed
+  # edge, and the stronger border that makes a 1px dash visible in dark mode. A hue would
+  # have read as a verdict, which is what amber was rejected for.
+  test "[component] the absent number cell is styled unlike a held one" do
+    absent = cell_class(render_card(reading(jersey_number: nil)), :number)
+    held = cell_class(render_card(reading(jersey_number: 17)), :number)
+
+    refute_equal held, absent,
+                 "a hole and a held fact rendered the same class string; a 1000-foot scan " \
+                 "cannot tell them apart"
+    assert_includes held, "bg-surface-alt", "a held fact keeps its filled ground"
+    refute_includes absent, "bg-surface-alt", "an absent cell must lose the held fact's ground"
+    assert_includes absent, "bg-transparent"
+    assert_includes absent, "border-dashed"
+    assert_includes absent, "border-strong"
+    assert_includes absent, "text-muted",
+                   "the ink stays the AA-derived muted role in both themes"
   end
 
   test "an absent sports value is named rather than dropped" do

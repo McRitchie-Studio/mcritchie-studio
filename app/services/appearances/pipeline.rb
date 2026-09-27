@@ -34,13 +34,21 @@ module Appearances
     # of an athlete nobody has acquired or re-validated yet, and `Defined` still does
     # not require the number — a gate over a field almost no row carries would demote
     # almost every look for a reason that is not about that look. The gap stays
-    # SURFACED instead: actionable here for the board, and as a muted `no #` cell in the
-    # sports row of any card with no number, which is where a reader looks for it and
-    # would otherwise read its absence as completeness.
+    # SURFACED instead: actionable here for the board, and as an `absent`-toned `no #`
+    # cell in the sports row of any card with no number (dashed and unfilled, so it does
+    # not read as a held fact — see ModelPipelineHelper::CHIP_TONES), which is where a
+    # reader looks for it and would otherwise read its absence as completeness.
+    #
+    # THE ACQUIRE IS NECESSARY, NOT SUFFICIENT, so this note may not say "until".
+    # Athletes::AcquireOrValidate writes the number only when ESPN's payload carries a
+    # readable one — a payload without it yields `:absent` from #blank_value? and nothing
+    # is written — so a card can still read `no #` after a SUCCESSFUL re-validate.
+    # "until X" promised an end state the act may not deliver, which sends an operator
+    # who did X and saw no change to read Ruby. It states the condition instead.
     DEFINITION_GAP_NOTE =
       "Jersey number fills per athlete on demand from ESPN, never by backfill, so a " \
-      "card reads \"no #\" until that athlete is acquired or re-validated. Defined " \
-      "does not require it.".freeze
+      "card reads \"no #\" for any athlete not yet acquired or re-validated — and still " \
+      "afterwards if ESPN published no number for him. Defined does not require it.".freeze
 
     Lane = Struct.new(:key, :label, :blurb, :cards, :total, :overflow, keyword_init: true)
 

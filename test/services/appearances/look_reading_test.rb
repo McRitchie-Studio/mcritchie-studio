@@ -372,30 +372,56 @@ class Appearances::LookReadingTest < ActiveSupport::TestCase
     assert_nil number[:title], "a value we hold needs no explanation"
   end
 
-  # MUTED, NOT AMBER, and the reason CHANGED without the styling changing. It used to be
-  # that no card could ever fill this cell; now it is that `athletes.jersey_number` fills
-  # per athlete on demand and never by backfill, so an empty one is the ordinary state of
-  # an athlete nobody has acquired. An amber chip on nearly every card would spend the
-  # contrast the traded card needs.
-  test "an absent jersey number is a muted named gap that says how to fill it" do
+  # :absent, NOT :neutral AND NOT :warn — a THIRD tone, and the reason each of the other
+  # two is wrong is different. :warn would land amber on nearly every card, because
+  # `athletes.jersey_number` fills per athlete on demand and never by backfill, so it is
+  # empty on athletes who are otherwise complete; that would spend the contrast the traded
+  # card needs. :neutral was the class string a HELD fact carries, so the absent cell was
+  # byte-identical CSS to data and only a 10px word told them apart. The cell's TONE is
+  # what this tier can see; the class strings that come out of it are compared against
+  # each other in ModelPipelineCardViewTest.
+  test "an absent jersey number is its own tone, neither a held fact nor an alarm" do
     number = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
                      jersey_number: nil).sports_facts.find { |f| f[:key] == :number }
 
     assert_equal "no #", number[:label]
-    assert_equal :neutral, number[:tone],
-                 "muted: an unacquired athlete is the normal case, not an alarm"
+    assert_equal :absent, number[:tone],
+                 "an absent number is neither a held fact (:neutral) nor an alarm (:warn)"
+    refute_equal :warn, number[:tone],
+                 "amber would indict every athlete acquired before the column existed"
     assert_match(/acquired or re-validated/, number[:title],
                  "the tooltip names the act that fills it, not the column")
+    assert_match(/if ESPN publishes one/, number[:title],
+                 "the act is NECESSARY, not sufficient — a payload with no number writes nothing")
   end
 
-  # 0 IS A LEGAL JERSEY NUMBER (the league has allowed it since 2023), so `presence` or a
-  # truthiness check here would print "no #" for the one man wearing it. This is the whole
-  # reason #number_cell asks `nil?`.
+  # A HELD NUMBER AND AN ABSENT ONE MUST NOT SHARE A TONE. Asserted as a COMPARISON rather
+  # than as two literals, because that is the property that actually failed: both cells
+  # were :neutral, so each assertion passed on its own and the row still could not be read.
+  test "the held number and the absent one do not share a tone" do
+    held = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
+                   jersey_number: 17).sports_facts.find { |f| f[:key] == :number }
+    absent = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
+                     jersey_number: nil).sports_facts.find { |f| f[:key] == :number }
+
+    refute_equal held[:tone], absent[:tone],
+                 "a hole and a fact must be tellable apart without reading the label"
+  end
+
+  # 0 IS A LEGAL JERSEY NUMBER (the league has allowed it since 2023), and #number_cell
+  # asks `nil?` so that the man wearing it reads as a fact.
+  #
+  # WHAT WOULD BREAK IT IS A ZERO-MINDED CHECK — `to_i.positive?`, `nonzero?`, `to_i > 0`
+  # — and NOT `presence`: measured, `0.present?` is true and `0.presence` is 0, so
+  # presence agrees with `nil?` here and mutating the guard to it leaves this file green.
+  # An earlier version of this comment claimed the opposite. The measurement itself lives
+  # in Appearances::JerseyNumberSemanticsTest so the claim cannot come back.
   test "zero is a jersey number and not an absence" do
     number = reading(look(colorway: "c"), athlete_team_slug: "buffalo-bills",
                      jersey_number: 0).sports_facts.find { |f| f[:key] == :number }
 
     assert_equal "#0", number[:label]
+    assert_equal :neutral, number[:tone], "a number we hold is a held fact, even 0"
     assert_nil number[:title]
   end
 
