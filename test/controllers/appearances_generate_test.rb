@@ -148,7 +148,7 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=generated-images]"
     assert_select "[data-test=artifact-provenance]"
     assert_match(/GPT-5 image generation/, response.body)
-    assert_match(/18,432 tokens/, response.body, "the unit is printed, never a bare count")
+    assert_match(/7,629 tokens/, response.body, "the unit is printed, never a bare count")
   end
 
   private

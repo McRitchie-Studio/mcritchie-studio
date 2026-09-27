@@ -203,9 +203,11 @@ class AppearancesController < ApplicationController
   # TWO SEPARATE QUESTIONS, and collapsing them is what produces the useless
   # "generation is off". `@generator_row` is the row that WOULD serve, read
   # without regard to credentials, so the page can name the model; `@can_generate`
-  # is whether it can run right now. Together they let the panel say
-  # "GPT-5 image generation (Responses) is not configured, so nothing was generated
-  # and nothing was spent. Set OPENAI_API_KEY to turn it on" instead of a shrug.
+  # is whether it can run right now. Together they let the panel say this, rather than
+  # a shrug:
+  #
+  #   "GPT-5 image generation (Responses) is not configured, so nothing was generated
+  #   and nothing was spent. Set OPENAI_API_KEY to turn it on."
   #
   # ⚠ THAT EXAMPLE IS THE ONE THE PANEL CAN ACTUALLY PRINT, and it did not used to be.
   # It named the fal Ideogram row and its FAL_KEY credential, which this path cannot
