@@ -58,21 +58,50 @@ module Athletes
     # The imperial BMI constant: 703 x lb / in^2.
     BMI_FACTOR = 703.0
 
-    # DOES THE RECORD CARRY THE INPUT THIS SOURCE READS? Lives here, beside the
-    # deriver that reads it, so the backfill's per-lane accounting cannot drift from
-    # what #describe actually requires.
-    #
-    # IT ASKS ABOUT THE DATA, NOT ABOUT THE VERDICT, and that distinction is the
-    # whole reason it exists. "Both measurements are on file" is a fact about the
-    # row; "#describe returned nil" is this module's own opinion about it. A grading
-    # rule that read the opinion would let a deriver which returns nil for every row
-    # declare that it had nothing to do — which is exactly how `nfl:upload_headshots`
-    # reported a total failure as exit 0. So the caller counts the input, then checks
-    # whether anything came of it (lib/tasks/athletes.rake, rule 2).
+    # DOES THE RECORD CARRY BOTH MEASUREMENTS AT ALL? Reported, never graded. It is
+    # the wider of the two predicates below and it exists to tell the two data gaps
+    # apart in the run report: "no measurement on file" from "a measurement on file
+    # that this source cannot use".
     def self.measured?(athlete)
       return false if athlete.nil?
 
       athlete.height_inches.present? && athlete.weight_lbs.present?
+    end
+
+    # CAN THIS SOURCE DERIVE A BUILD FOR THIS ROW? This is the population the free
+    # lane's verdict grades (lib/tasks/athletes.rake, rule 2), and it is narrower than
+    # #measured? on purpose.
+    #
+    # STILL A FACT ABOUT THE ROW, NOT A VERDICT ABOUT IT, which is the property the
+    # rule depends on. "Both values are integers inside a frozen constant range" is
+    # read off the record against HEIGHT_INCHES and WEIGHT_LBS; it never runs the BMI
+    # maths, never consults BANDS, and never formats a string. So a deriver whose
+    # judgement is broken — a band table that lost its catch-all, an inverted
+    # comparison, a formatting raise — still shows up to the caller as a lane that had
+    # derivable rows and wrote none of them, which is exactly what rule 2 is for. That
+    # is the `nfl:upload_headshots` defect the rule exists to make impossible:
+    # `candidates: 2048`, `cached: 0`, a clean summary, exit 0, for its whole life.
+    #
+    # WHY NOT GRADE ON #measured?, which the first cut did. Presence of the two columns
+    # is not the same question as usability of their values, and the gap between them
+    # is reachable: a unit mix-up (centimetres in an inches column: 180 "inches") is
+    # measured-but-underivable, so it was counted as a row the lane should have written
+    # and never could. On the warm re-run that row is the ONLY one left wanting a
+    # build, so the lane reported "had the input for 1, wrote 0" and aborted — on every
+    # run, for ever, with nothing wrong. Measured in the desk 2026-09-26: one 180in/200lb
+    # row beside three sound ones fills three on the cold pass, then every re-run
+    # reports build_measured=1 build_filled=0. A verdict that cannot be cleared by
+    # fixing the lane is a verdict that gets switched off.
+    #
+    # WHAT GUARDS THIS PREDICATE, since the rule can no longer. A broken #in_window?
+    # would silence rule 2 rather than trip it, so the window is pinned by the suite
+    # instead — test/services/athletes/build_from_measurements_test.rb walks both
+    # edges of both ranges through #derivable? and #describe together. The split is
+    # deliberate: the suite guards the precondition, the rule guards the judgement.
+    def self.derivable?(athlete)
+      return false if athlete.nil?
+
+      in_window?(height_inches: athlete.height_inches, weight_lbs: athlete.weight_lbs)
     end
 
     # Returns the build sentence, or NIL when the measurements cannot support one.
@@ -85,13 +114,30 @@ module Athletes
 
     # Split from #call so the bands can be exercised over literals, without
     # manufacturing an Athlete row per band.
+    #
+    # It re-checks the window rather than trusting the caller to have asked
+    # #derivable? first: this is also the entry point the suite and a console use over
+    # literals, and a deriver that formats whatever it is handed is how a
+    # centimetre-valued row gets described as "15 ft 0 in".
     def self.describe(height_inches:, weight_lbs:)
-      height = Integer(height_inches, exception: false)
-      weight = Integer(weight_lbs, exception: false)
-      return nil unless height && weight
-      return nil unless HEIGHT_INCHES.cover?(height) && WEIGHT_LBS.cover?(weight)
+      return nil unless in_window?(height_inches: height_inches, weight_lbs: weight_lbs)
+
+      height = Integer(height_inches)
+      weight = Integer(weight_lbs)
 
       "#{height / 12} ft #{height % 12} in, #{weight} lb; #{frame_for(height, weight)}"
+    end
+
+    # THE ONE READING OF THE WINDOW, shared by the predicate the caller grades on and
+    # the deriver the caller grades. Two copies would be two things to keep in
+    # agreement, and a rule that disagreed with its own deriver about the boundary is
+    # precisely the false positive this pass removed.
+    def self.in_window?(height_inches:, weight_lbs:)
+      height = Integer(height_inches, exception: false)
+      weight = Integer(weight_lbs, exception: false)
+      return false unless height && weight
+
+      HEIGHT_INCHES.cover?(height) && WEIGHT_LBS.cover?(weight)
     end
 
     # The first band whose ceiling the BMI is under. `BANDS` ends at INFINITY so

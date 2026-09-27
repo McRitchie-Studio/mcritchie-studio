@@ -55,16 +55,24 @@ module Athletes
     # two separate sources, because that is what the verdict rules do:
     #
     #   the run       considered, skipped_complete, updated, failed
-    #   free lane     build_wanted   -> build_measured -> build_filled
-    #   paid lane     vision_wanted  -> vision_asked   -> vision_billed -> described
+    #   free lane     build_wanted   -> build_measured -> build_derivable -> build_filled
+    #   paid lane     vision_wanted  -> vision_asked   -> vision_billed   -> described
     #
     # Each lane reads left to right as "wanted it" -> "a source could answer" ->
     # "something came back". A gap between the first two columns is a DATA gap and is
     # silent; a gap between the last two is the lane not working, and that is what
     # exits non-zero.
+    #
+    # THE FREE LANE HAS THREE STEPS, NOT TWO, and the middle one is the fix this pass
+    # carries. "Both columns are on file" (build_measured) and "this source can use
+    # what is on them" (build_derivable) are different questions, and the rows between
+    # them are real: a centimetre value in an inches column is measured and
+    # underivable. Grading on the wider count made a permanently bad row read as work
+    # the lane refused, on every run for ever. The rule grades the narrow count; the
+    # gap between them is reported as its own data gap so the bad row is still visible.
     Outcome = Data.define(
       :considered, :skipped_complete, :updated, :failed,
-      :build_wanted, :build_measured, :build_filled,
+      :build_wanted, :build_measured, :build_derivable, :build_filled,
       :vision_armed, :vision_wanted, :skipped_no_headshot,
       :vision_asked, :vision_billed, :described,
       :usage, :cost, :rows
@@ -72,6 +80,19 @@ module Athletes
       # Rows that wanted a build and carried no measurement to derive one from. A
       # data gap, reported rather than graded.
       def build_unmeasured = build_wanted - build_measured
+
+      # Rows that HAD both measurements and still could not be derived from: a value
+      # outside Athletes::BuildFromMeasurements' plausibility window. A DATA BUG rather
+      # than a data gap — unlike a missing measurement, somebody can fix it — so the
+      # run names each one in its log rather than only counting them here.
+      def build_implausible = build_measured - build_derivable
+
+      # Calls the run asked for that were never billed a token. NOT graded, and the
+      # comment at lib/tasks/athletes.rake rule 3 says why: one unreadable S3 object on
+      # an otherwise perfect pass lands here, so an abort on this would fire on a
+      # healthy run. Reported, and warned about, because the rows behind it are
+      # ErrorLog rows nobody has been told to read.
+      def vision_unbilled = vision_asked - vision_billed
 
       # Cost per call that was actually BILLED. Dividing by `vision_asked` would
       # under-report the price of a run whose calls mostly never left the process.
@@ -87,7 +108,7 @@ module Athletes
     # defect class this ledger exists to close is a counter nobody read.
     Ledger = Struct.new(
       :considered, :skipped_complete, :updated, :failed,
-      :build_wanted, :build_measured, :build_filled,
+      :build_wanted, :build_measured, :build_derivable, :build_filled,
       :vision_wanted, :skipped_no_headshot, :vision_asked, :vision_billed, :described
     ) do
       def self.zero = new(*Array.new(members.size, 0))
@@ -188,10 +209,16 @@ module Athletes
           # other two thousand their description.
           #
           # THE PAID DESCRIBER DOES NOT REACH HERE. It degrades to a blank Result by
-          # contract, so what this rescue actually catches is the WRITE path: a
-          # validation on a row that predates it, a database error, an ErrorLog insert
-          # that itself fails. That is why a total vision failure cannot be read off
-          # `failed`, and why the paid lane is graded on its own evidence instead.
+          # contract, so what this rescue actually catches is the WRITE path: a row that
+          # no longer satisfies a validation (a blank `sport`, say), or a database error.
+          # That is why a total vision failure cannot be read off `failed`, and why the
+          # paid lane is graded on its own evidence instead.
+          #
+          # NOT AN ErrorLog INSERT THAT ITSELF FAILS, which this comment used to name.
+          # Appearances::FailureLog.file rescues its own StandardError and returns nil
+          # (failure_log.rb:36-40) precisely so it cannot replace the real exception, so
+          # it can never reach this rescue — and `failed` below was already incremented
+          # by the original exception anyway.
           tally.failed += 1
           log(" [!] #{athlete.person_slug}: #{e.class}: #{e.message}")
           Appearances::FailureLog.file(e, target: athlete)
@@ -208,7 +235,7 @@ module Athletes
         considered: tally.considered, skipped_complete: tally.skipped_complete,
         updated: tally.updated, failed: tally.failed,
         build_wanted: tally.build_wanted, build_measured: tally.build_measured,
-        build_filled: tally.build_filled,
+        build_derivable: tally.build_derivable, build_filled: tally.build_filled,
         vision_armed: armed, vision_wanted: tally.vision_wanted,
         skipped_no_headshot: tally.skipped_no_headshot,
         vision_asked: tally.vision_asked, vision_billed: tally.vision_billed,
@@ -224,8 +251,16 @@ module Athletes
     # a second one in a WHERE clause is a second thing to keep in agreement; the
     # skip is counted instead, which is also what makes the warm re-run's "found no
     # work" verdict readable.
+    #
+    # NO `.order(:id)`, and its absence is the ordering being honoured rather than
+    # dropped. `find_each` imposes its own primary-key batch order and DISCARDS any
+    # scoped order, logging "Scoped order is ignored, use :cursor with :order to
+    # configure custom order." once per walk. Measured 2026-09-27 over the same
+    # relation both ways: with the clause, one warning and ids ascending; without it,
+    # no warning and THE SAME ids in THE SAME ascending order. The clause asked for
+    # exactly what `find_each` already does, so it only ever produced the warning.
     def candidates
-      Athlete.includes(:image_caches).order(:id)
+      Athlete.includes(:image_caches)
     end
 
     def complete?(athlete)
@@ -243,6 +278,12 @@ module Athletes
     # re-asking known-null rows looks identical, from the counters, to one that is
     # answering nothing. Recording "asked, and the answer was null" fixes both and is
     # a column rather than an accounting change, so it is not in this pass.
+    #
+    # THAT DEFERRAL COVERS THIS BLIND SPOT ONLY. The partial-failure case — a run that
+    # billed some of its asks and not the rest — needs no column at all: `vision_asked`
+    # and `vision_billed` are both already counted, and Outcome#vision_unbilled is the
+    # difference. It is warned about rather than aborted on, and rule 3 in
+    # lib/tasks/athletes.rake says why.
     def wants_vision?(athlete)
       athlete.skin_tone.blank? || athlete.hair_description.blank?
     end
@@ -268,11 +309,27 @@ module Athletes
 
       if athlete.build.blank?
         tally.build_wanted += 1
-        # THE INPUT, NOT THE VERDICT. Counted before the deriver runs and independently
-        # of what it says, so a deriver that answered nil for every row is visible as a
-        # lane that had its input and wrote nothing, rather than as a lane with nothing
-        # to do. See Athletes::BuildFromMeasurements.measured?.
-        tally.build_measured += 1 if BuildFromMeasurements.measured?(athlete)
+        # THE INPUT, NOT THE VERDICT. Both counted before the deriver runs and
+        # independently of what it says, so a deriver that answered nil for every
+        # derivable row is visible as a lane that had usable input and wrote nothing,
+        # rather than as a lane with nothing to do.
+        #
+        # TWO COUNTS BECAUSE THERE ARE TWO GAPS. `measured?` is "both columns are on
+        # file"; `derivable?` is "and their values are inside the plausibility window".
+        # Rule 2 grades the second — see Athletes::BuildFromMeasurements.derivable? for
+        # why the first made it cry wolf — and the difference between them is a data
+        # BUG, so it is named here per athlete rather than only totalled.
+        measured = BuildFromMeasurements.measured?(athlete)
+        derivable = BuildFromMeasurements.derivable?(athlete)
+        tally.build_measured += 1 if measured
+        tally.build_derivable += 1 if derivable
+
+        if measured && !derivable
+          log(" [?] #{athlete.person_slug.ljust(28)} height #{athlete.height_inches.inspect} " \
+              "weight #{athlete.weight_lbs.inspect} outside " \
+              "#{BuildFromMeasurements::HEIGHT_INCHES}in / #{BuildFromMeasurements::WEIGHT_LBS}lb " \
+              "— build not derived; fix the row")
+        end
 
         derived = BuildFromMeasurements.call(athlete)
         if derived.present?

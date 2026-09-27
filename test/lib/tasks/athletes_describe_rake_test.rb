@@ -20,11 +20,25 @@ require "rake"
 # summed counter reads healthy.
 #
 #   1. THE PASS BROKE DOWN — more raises than writes. Its population is the WRITE
-#      path — a row that no longer satisfies a validation, a database error — because
-#      the describer never raises. NOT an orphaned row: measured here, an athlete whose
-#      person is deleted is still `valid?`, since `belongs_to :person` is not required.
-#   2. THE FREE LANE HAD ITS INPUT AND WROTE NOTHING — graded on height and weight
-#      being on file, never on the deriver's own verdict.
+#      path — a row that no longer satisfies a validation (a blank `sport` raises
+#      RecordInvalid, which is what the tests below use), a database error — because the
+#      describer never raises.
+#
+#      NOT AN ORPHANED ROW, and the reason is narrower than this comment used to give.
+#      It said "`belongs_to :person` is not required"; it IS required —
+#      `belongs_to_required_by_default` is true under `load_defaults 8.1` and a
+#      PresenceValidator is registered on `:person`. What spares the row is
+#      `belongs_to_required_validates_foreign_key`, false since the 7.1 defaults, which
+#      wraps that validation in an `:if` that runs only when the foreign key is NIL or
+#      CHANGED. An athlete whose `person` row was deleted has `person_slug` present and
+#      unchanged, so the validation never runs and the row is `valid?` with `person` nil.
+#      Measured 2026-09-27, all three cells: fk present and unchanged -> valid; fk
+#      repointed -> "Person must exist"; fk nil -> invalid. So deleting the person does
+#      not put a row in rule 1's population, but touching `person_slug` would.
+#   2. THE FREE LANE COULD DERIVE A BUILD AND WROTE NOTHING — graded on both
+#      measurements being on file AND inside the plausibility window, never on the
+#      deriver's own verdict. Graded on presence alone it aborted for ever on one
+#      unit-mix-up row (see the re-run test below).
 #   3. THE PAID LANE NEVER REACHED THE API — graded on whether a single call was
 #      billed a token, which rules 1 and 2 are both structurally blind to.
 #
@@ -121,9 +135,72 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
     end
 
     refute_equal 0, status, "the input was on the record and nothing came of it"
-    assert_match "had height and weight on file for 1 athlete(s)", output
+    assert_match "could derive a build for 1 athlete(s)", output
     assert_match "wrote none of them", output
     assert_match "athletes:description_coverage", output, "the abort must name the next read"
+  end
+
+  # RULE 2'S OWN FALSE POSITIVE, which its comment used to declare impossible — "IT
+  # CANNOT CRY WOLF". It could, and this is the row that did it.
+  #
+  # `measured?` asked whether both COLUMNS were present; the deriver returns nil outside
+  # its plausibility window. So a unit mix-up (centimetres in an inches column: 180
+  # "inches") is measured-but-underivable. On the warm re-run it is the ONLY row still
+  # wanting a build, so the lane reported build_measured=1 build_filled=0 and aborted —
+  # on that run, and every run after it, with nothing wrong and nothing that fixing the
+  # lane could clear. Same defect class as the incompletable-athlete test above, in the
+  # other lane.
+  #
+  # NOT REACHABLE ON PRODUCTION TODAY — 2,051 athletes span 67..81in and 156..380lb with
+  # no out-of-window row, and the task is operator-run rather than scheduled — which is
+  # why it was a finding rather than a blocker. It becomes reachable on the first ingest
+  # that lands one bad row, which is the exact case the window exists for.
+  test "a re-run over an implausibly measured athlete exits zero, for ever" do
+    athlete = athlete_with_headshot(height_inches: 180, weight_lbs: 200)
+
+    first_status, first_output = run_task(describer: stub_describer)
+
+    assert_equal 0, first_status
+    assert_nil athlete.reload.build, "the deriver refuses the row, which is the correct answer"
+    assert_equal "medium-deep, warm undertone", athlete.skin_tone,
+                 "the paid lane still completed what it could, so only build is outstanding"
+    assert_match "measured but IMPLAUSIBLE: 1", first_output,
+                 "the bad row must be reported, not silently skipped — somebody has to fix it"
+    assert_match "[?]", first_output
+    assert_match "180", first_output, "the report must name the value that is wrong"
+
+    # THE STEADY STATE. This is the run the old rule aborted on, and it repeats for ever.
+    3.times do |n|
+      status, output = run_task(describer: stub_describer)
+
+      assert_equal 0, status,
+                   "re-run #{n + 1} must exit 0 — a verdict that cannot be cleared by " \
+                   "fixing the lane it accuses is a verdict that gets disabled"
+      refute_match "wrote none of them", output
+      assert_match "had the measurements:   1", output, "the wide count that used to fire"
+      assert_match "derivable from them:    0", output, "and the narrow count that grades"
+      assert_match "measured but IMPLAUSIBLE: 1", output
+    end
+  end
+
+  # AND THE RULE STILL BITES ONCE THE ROW IS FIXED, so the narrower population did not
+  # buy its silence by going blind. Same athlete, a plausible measurement, a deriver that
+  # answers nil: derivable, unwritten, non-zero.
+  test "correcting the measurement puts the row back in rule 2's population" do
+    athlete = athlete_with_headshot(height_inches: 180, weight_lbs: 200)
+
+    status, = run_task(describer: stub_describer)
+    assert_equal 0, status
+
+    athlete.update!(height_inches: 74)
+
+    fixed_status, output = Athletes::BuildFromMeasurements.stub(:call, nil) do
+      run_task(describer: stub_describer)
+    end
+
+    refute_equal 0, fixed_status,
+                 "a sound measurement the lane will not write is still the lane failing"
+    assert_match "could derive a build for 1 athlete(s)", output
   end
 
   # RULE 3 — A TOTAL VISION FAILURE, and the case that makes the per-lane split
@@ -146,6 +223,62 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
     assert_match "/admin/error_logs", output
     assert_equal "6 ft 0 in, 197 lb; athletic, well-built", athlete.reload.build,
                  "the free lane did its half, which is exactly what made the totals look healthy"
+  end
+
+  # RULE 3 IS ALL-OR-NOTHING, AND THE PARTIAL FAILURE IS WARNED ABOUT RATHER THAN
+  # ABORTED ON. A credential revoked part way through a pass, or a sustained 429 from
+  # there, leaves asked high and billed low: rule 3 is false (something WAS billed) and
+  # rule 1 is false (the describer degrades, so `failed` stays 0). The run exits 0 over
+  # ErrorLog rows nobody was told to read.
+  #
+  # WHY NOT ABORT ON `billed < asked`. Because one unreadable S3 object on an otherwise
+  # perfect pass lands in exactly that gap — the next test is that case — so the abort
+  # would fire on a healthy run, which is how a rule gets switched off. The information
+  # belongs in the report, where a wrong reading costs a line of noise instead of a red
+  # run, and the pass is resumable so the next run catches a systemic failure one run
+  # late rather than never.
+  test "a partly billed vision lane warns, names the logs, and still exits zero" do
+    sound = athlete_with_headshot(height_inches: 72, weight_lbs: 197)
+    athlete_with_headshot(height_inches: 74, weight_lbs: 240)
+    athlete_with_headshot(height_inches: 75, weight_lbs: 310)
+
+    # Bills the first athlete, then degrades to BLANK for the rest — the shape of a
+    # credential revoked mid-pass.
+    billed_once = describer_double do |athlete|
+      athlete.id == sound.id ? good_result : DFH::BLANK
+    end
+
+    status, output = run_task(describer: billed_once)
+
+    assert_equal 0, status,
+                 "the run did real work and is resumable, so a partial failure is a " \
+                 "warning rather than an exit status that carries one bit"
+    assert_match "asked but NOT billed:   2", output
+    assert_match "WARNING", output
+    assert_match "did not reach the API", output
+    assert_match "/admin/error_logs", output, "the warning must name where the rows are"
+    refute_match "not one call was billed", output, "rule 3 is false — something was billed"
+  end
+
+  # THE FALSE POSITIVE A `billed < asked` ABORT WOULD HAVE CAUSED, which is the whole
+  # argument for warning instead. One dead S3 object degrades to a blank Result with no
+  # usage, so a single bad image among sound ones is already asked 2 / billed 1 on a run
+  # with nothing wrong with the lane.
+  test "one unreadable image among sound ones does not fail the run" do
+    sound = athlete_with_headshot(height_inches: 72, weight_lbs: 197)
+    athlete_with_headshot(height_inches: 74, weight_lbs: 240)
+
+    one_bad_image = describer_double do |athlete|
+      athlete.id == sound.id ? good_result : DFH::BLANK
+    end
+
+    status, output = run_task(describer: one_bad_image)
+
+    assert_equal 0, status,
+                 "aborting here would fire on a healthy 2,043-row pass with one dead " \
+                 "object in it — a rule that fires on a sound run is a rule somebody disables"
+    assert_equal "medium-deep, warm undertone", sound.reload.skin_tone
+    assert_match "asked but NOT billed:   1", output
   end
 
   # THE FALSE POSITIVE THAT WOULD GET THE PER-LANE RULES DISABLED, part one: the warm
@@ -301,12 +434,18 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
     end.new(answer, armed)
   end
 
+  # A BILLED, USABLE ANSWER — both fields and the token usage that is the evidence the
+  # call actually happened.
+  def good_result
+    DFH::Result.new(skin_tone: "medium-deep, warm undertone",
+                    hair_description: "short black fade, full beard",
+                    person_visible: true,
+                    usage: { "input" => 505, "output" => 38 },
+                    model: DFH::MODEL)
+  end
+
   def stub_describer
-    result = DFH::Result.new(skin_tone: "medium-deep, warm undertone",
-                             hair_description: "short black fade, full beard",
-                             person_visible: true,
-                             usage: { "input" => 505, "output" => 38 },
-                             model: DFH::MODEL)
+    result = good_result
     describer_double { result }
   end
 

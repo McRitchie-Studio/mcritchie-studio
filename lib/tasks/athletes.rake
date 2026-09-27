@@ -79,7 +79,19 @@ namespace :athletes do
     puts "build lane — free, from the athlete's own height and weight"
     puts "  wanted a build:         #{outcome.build_wanted}"
     puts "  had the measurements:   #{outcome.build_measured}"
+    puts "  derivable from them:    #{outcome.build_derivable}   (the population rule 2 grades)"
     puts "  filled:                 #{outcome.build_filled}"
+    if outcome.build_implausible.positive?
+      # A DATA BUG, NAMED RATHER THAN GRADED. These rows carried both measurements and
+      # still could not be described, which means a value is outside
+      # Athletes::BuildFromMeasurements' window — a unit mix-up or a zero-filled import.
+      # Aborting on them is what rule 2 used to do and it could never be cleared by
+      # fixing the lane; the row has to be fixed instead, so say which row.
+      puts "  measured but IMPLAUSIBLE: #{outcome.build_implausible} — read the [?] line(s) above " \
+           "and fix the measurement; the window is " \
+           "#{Athletes::BuildFromMeasurements::HEIGHT_INCHES}in / " \
+           "#{Athletes::BuildFromMeasurements::WEIGHT_LBS}lb"
+    end
     puts ""
     if outcome.vision_armed
       puts "vision lane — paid, one call per athlete over the cached " \
@@ -88,6 +100,7 @@ namespace :athletes do
       puts "  no cached headshot:     #{outcome.skipped_no_headshot}"
       puts "  asked:                  #{outcome.vision_asked}"
       puts "  billed (call landed):   #{outcome.vision_billed}"
+      puts "  asked but NOT billed:   #{outcome.vision_unbilled}"
       puts "  described:              #{outcome.described}"
     else
       # NOT ASKED AT ALL, rather than asked 2,043 times for $0.00. The describer is
@@ -119,10 +132,16 @@ namespace :athletes do
     end
 
     # RULE 1 — THE PASS ITSELF BROKE DOWN. More raises than writes is not one dead
-    # row; it is the iteration failing. Its population is the WRITE path — a
-    # validation on a row that predates it, a database error, an ErrorLog insert that
-    # itself fails — and NOT the paid call, because Athletes::DescribeFromHeadshot
-    # degrades to a blank Result by contract and never raises into the loop's rescue.
+    # row; it is the iteration failing. Its population is the WRITE path — a row that
+    # no longer satisfies a validation (a blank `sport` raises RecordInvalid; measured
+    # 2026-09-27), or a database error — and NOT the paid call, because
+    # Athletes::DescribeFromHeadshot degrades to a blank Result by contract and never
+    # raises into the loop's rescue.
+    #
+    # NOT "an ErrorLog insert that itself fails", which this comment used to list:
+    # Appearances::FailureLog.file swallows its own StandardError and returns nil
+    # (failure_log.rb:36-40), so it cannot raise into the rescue that called it, and
+    # `failed` had already been incremented by the original exception regardless.
     # That is exactly why it cannot be the only rule: rules 2 and 3 grade the two
     # sources, and this one grades the walk over them. Ending on `puts` is what let
     # `nfl:upload_headshots` report a total credential failure as an exit-0 success.
@@ -134,24 +153,47 @@ namespace :athletes do
             "failing, not a description failing: the describer degrades rather than raising."
     end
 
-    # RULE 2 — THE FREE LANE HAD ITS INPUT AND WROTE NOTHING. Graded on the DATA
-    # (height and weight on file), never on the deriver's own verdict, because a
-    # deriver that returned nil for every row would otherwise grade itself as having
-    # had nothing to do. That is the `nfl:upload_headshots` shape precisely:
-    # `candidates: 2048`, `cached: 0`, a clean summary, exit 0, for its whole life.
+    # RULE 2 — THE FREE LANE COULD DERIVE A BUILD AND WROTE NOTHING. Graded on the DATA
+    # (`BuildFromMeasurements.derivable?` — two integer measurements inside a frozen
+    # constant window), never on the deriver's own verdict, because a deriver that
+    # returned nil for every row would otherwise grade itself as having had nothing to
+    # do. That is the `nfl:upload_headshots` shape precisely: `candidates: 2048`,
+    # `cached: 0`, a clean summary, exit 0, for its whole life.
     #
-    # IT CANNOT CRY WOLF. An athlete whose build is already filled is never counted as
-    # wanting one, so the warm re-run has build_measured == 0 and this says nothing.
-    # An athlete with no height or weight is counted as wanting a build and NOT as
-    # having the input, so a permanent data gap is silent — which is the distinction
-    # the old single rule got wrong, and the one that would have got it disabled.
-    if outcome.build_measured.positive? && outcome.build_filled.zero?
-      abort "athletes:describe_from_headshots had height and weight on file for " \
-            "#{outcome.build_measured} athlete(s) wanting a build and wrote none of them. " \
-            "The free lane needs no credential and no network, so this is either " \
-            "Athletes::BuildFromMeasurements rejecting every row as implausible or every " \
-            "write failing — read the [!] lines above, then " \
-            "`bin/rails athletes:description_coverage`."
+    # WHAT IT STAYS QUIET ABOUT — and this list is the rule, not a footnote, because a
+    # verdict that fires on a healthy run gets switched off within a week:
+    #
+    #   * a build already on file is never counted as wanted, so the warm re-run has
+    #     build_derivable == 0 and this says nothing;
+    #   * an athlete with NO height or weight is counted as wanting a build and not as
+    #     derivable, so a permanent data gap is silent (build_unmeasured reports it);
+    #   * an athlete whose measurement is present but IMPLAUSIBLE — centimetres in an
+    #     inches column — is likewise not derivable. It is reported as
+    #     build_implausible with a [?] line naming the row, and it does not abort.
+    #
+    # THE THIRD CASE IS WHY THIS RULE MOVED off `build_measured`, and the comment here
+    # used to claim the rule could not cry wolf. It could. `measured?` asks whether both
+    # COLUMNS are present; #describe returns nil outside its window, so a 180in/200lb row
+    # was counted as a row the lane should have written and never could. On the warm
+    # re-run it is the only row still wanting a build, so the lane reported
+    # build_measured=1 build_filled=0 and aborted — every run, for ever, with nothing
+    # wrong (measured in a desk 2026-09-26). Not reachable on production today: 2,051
+    # athletes span 67..81in and 156..380lb with no out-of-window row, and the task is
+    # operator-run rather than scheduled. It becomes reachable on the first ingest that
+    # lands one bad row, which is the exact case the window exists for.
+    #
+    # A VERDICT MUST BE CLEARABLE BY FIXING WHAT IT ACCUSES. This one accuses the lane,
+    # so its population can only contain rows the lane could actually have written. An
+    # implausible row is cleared by fixing the ROW, and saying so in the report is the
+    # honest way to ask for that.
+    if outcome.build_derivable.positive? && outcome.build_filled.zero?
+      abort "athletes:describe_from_headshots could derive a build for " \
+            "#{outcome.build_derivable} athlete(s) that wanted one — both measurements on " \
+            "file and inside the plausibility window — and wrote none of them. The free " \
+            "lane needs no credential and no network, so this is Athletes::BuildFromMeasurements " \
+            "failing on rows it accepts, or every write failing — read the [!] lines above, " \
+            "then `bin/rails athletes:description_coverage`. (Rows whose measurements are " \
+            "merely implausible are NOT in this count; they print as [?] above.)"
     end
 
     # RULE 3 — THE PAID LANE NEVER REACHED THE API, and this is the rule the task
@@ -174,6 +216,36 @@ namespace :athletes do
     # Separating them needs a record that we ASKED and the answer was null (noted at
     # Athletes::BackfillDescriptions#wants_vision?), which is a column rather than an
     # accounting change and is not in this pass.
+    #
+    # ALL OR NOTHING, DELIBERATELY, and the PARTIAL failure is warned about below rather
+    # than aborted on. A credential revoked at athlete 500, or a sustained 429 from
+    # there, leaves asked 2,043 / billed 499: this rule is false, rule 1 is false (the
+    # describer degrades, so `failed` stays 0), and the run exits 0 over ~1,544 ErrorLog
+    # rows nobody was told to read. A `billed < asked` abort would catch that — and would
+    # also fire on a HEALTHY pass, because one unreadable S3 object degrades to a blank
+    # Result with no usage, so a single dead image on 2,043 good ones is already
+    # asked 2,043 / billed 2,042. That is a guaranteed false positive on a sound run, and
+    # a rule that fires on a sound run is a rule somebody disables. A threshold ("more
+    # than a tenth unbilled") avoids that only by guessing a number nobody can defend
+    # from the counters, and an exit code is the wrong place for a guess: it carries one
+    # bit and cannot say "partly worked".
+    #
+    # SO THE GAP IS REPORTED AND WARNED, WHICH IS WHERE THE INFORMATION BELONGS. What
+    # the operator needs is "N asks never reached the API, go read them", and that is a
+    # sentence, not an exit status — a wrong guess there costs a line of noise instead of
+    # a red run. The pass is resumable, so a systemic failure the warning does not stop
+    # is caught by the next run one run late rather than never. This needed no new
+    # column: `vision_asked` and `vision_billed` were both already counted.
+    if outcome.vision_armed && outcome.vision_unbilled.positive? && outcome.vision_billed.positive?
+      warn "WARNING: #{outcome.vision_unbilled} of #{outcome.vision_asked} vision call(s) were " \
+           "asked for and never billed a token, so they did not reach the API — while " \
+           "#{outcome.vision_billed} did. A credential revoked or rate-limited part way " \
+           "through a pass looks like this, and so does a handful of unreadable S3 objects; " \
+           "/admin/error_logs has a row per athlete and tells them apart. Not an abort: the " \
+           "run did real work and is resumable, so re-running it after reading those rows " \
+           "costs only the calls it has not already paid for."
+    end
+
     if outcome.vision_asked.positive? && outcome.vision_billed.zero?
       abort "athletes:describe_from_headshots asked for #{outcome.vision_asked} vision " \
             "description(s) and not one call was billed a single token, so no call reached " \
