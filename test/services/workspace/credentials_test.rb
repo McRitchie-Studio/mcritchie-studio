@@ -148,8 +148,14 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
     ], Workspace::Credentials::MAIL_SCOPES
     assert Workspace::Credentials::MAIL_SCOPES.frozen?
 
-    # A requested scope outside the grant is not narrowing, it is a broken
-    # assertion: Google refuses the whole token.
+    # A purpose may only ask for scopes the delegation actually GRANTED; asking
+    # for more is not narrowing, it is a broken assertion. What Google returns
+    # for an over-broad request is UNMEASURED here: this repo's operator path
+    # already treats a missing delegation as `unauthorized_client`
+    # (lib/tasks/workspace.rake names it by that slug), and an ungranted scope
+    # should land in the same family — but nobody has probed it, so do not read
+    # this comment as proof of the response. The subset check is free; the
+    # round-trip needs a live workspace.
     assert_empty Workspace::Credentials::MAIL_SCOPES - Workspace::Credentials::SCOPES,
                  "a purpose can only ask for scopes the delegation actually granted"
     refute_includes Workspace::Credentials::MAIL_SCOPES.join(" "), "auth/drive"
