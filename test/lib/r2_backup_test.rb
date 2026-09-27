@@ -39,9 +39,9 @@ class R2BackupTest < Minitest::Test
   end
 
   def test_max_delete_has_a_floor_and_scales
-    assert_equal 10, R2Backup.max_delete(0)
-    assert_equal 10, R2Backup.max_delete(30)
-    assert_equal 200, R2Backup.max_delete(1000)
+    assert_equal 20, R2Backup.max_delete(0)
+    assert_equal 20, R2Backup.max_delete(30)
+    assert_equal 400, R2Backup.max_delete(1000)
   end
 
   def test_receipt_ok_reads_the_flag_when_present
@@ -106,7 +106,7 @@ class R2BackupTest < Minitest::Test
     def do_sync(args, _)
       src, dst = args[0], args[1]
       backup_dir = args[args.index("--backup-dir") + 1]
-      cap = args[args.index("--max-delete") + 1].to_i
+      cap = args.index("--max-delete") ? args[args.index("--max-delete") + 1].to_i : Float::INFINITY
       source = objects(src)
       dest = objects(dst)
       deletes = dest.keys - source.keys
@@ -194,10 +194,24 @@ class R2BackupTest < Minitest::Test
     refute(fake.calls.count { |c| c[1] == "sync" } > 1, "the refused run must not sync")
   end
 
+  def test_accept_drop_mirrors_a_deliberate_delete_and_says_so
+    production = (1..50).to_h { |i| ["f#{i}", "x"] }
+    fake = fresh_fake(production)
+    runner(fake, at: NOW).run
+    fake.buckets["moms-app-production"] = {}
+    receipt = runner(fake, at: NOW + 86_400).run(accept_drop: true)
+
+    assert receipt["ok"], receipt["reason"]
+    assert_equal true, receipt["accepted_drop"]
+    assert_empty fake.objects("r2:moms-app-backup/current")
+    assert_equal 50, fake.objects("r2:moms-app-backup/archive/#{R2Backup.stamp(NOW + 86_400)}").size,
+                 "the deliberately deleted objects still land in the archive"
+  end
+
   def test_max_delete_stops_a_mass_delete_the_count_guard_missed
-    # 12 objects -> 0 after an ok run, but the last OK receipt is gone (expired),
+    # 30 objects -> 0 after an ok run (cap 20), but the last OK receipt is gone (expired),
     # so the count guard has nothing to compare: --max-delete is the second net.
-    fake = fresh_fake((1..12).to_h { |i| ["f#{i}", "x"] })
+    fake = fresh_fake((1..30).to_h { |i| ["f#{i}", "x"] })
     runner(fake, at: NOW).run
     fake.buckets["moms-app-backup"].delete_if { |k, _| k.start_with?("_receipts/") }
     fake.buckets["moms-app-production"] = {}
@@ -205,7 +219,7 @@ class R2BackupTest < Minitest::Test
 
     refute receipt["ok"]
     assert_equal 7, receipt["rclone_exit"]
-    assert_equal 12, fake.objects("r2:moms-app-backup/current").size
+    assert_equal 30, fake.objects("r2:moms-app-backup/current").size
   end
 
   # rclone can exit 0 and still leave current/ short (an object written to

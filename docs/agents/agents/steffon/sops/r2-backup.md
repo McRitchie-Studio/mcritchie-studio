@@ -23,16 +23,22 @@ It has four acts, each runnable on its own:
 day. The archive keeps each overwritten or deleted object for **30 days**; the
 current mirror keeps the latest copy of every live object indefinitely.
 
-**Scheduling is not automated yet.** Until the nightly-automation task ships,
-Run is performed by hand. That gap is stated, not hidden: a production bucket
-with Enable done and no recent run receipt has a stale undo.
+**Run is automated nightly.** The workflow `.github/workflows/r2-backup.yml`
+runs `bin/r2-backup run <app>` for every app in its matrix at 09:00 UTC (03:00
+Denver in summer). A failed night opens an issue titled `R2 backup failing:
+<app>` on the hub repo, and the next good night closes it; no open issue and a
+fresh receipt means the undo is current. Run by hand (§3) only before a bulk
+operation or to recover from a failure. The automation landed in task
+`automate-nightly-r2-backup`.
 
 ## What this act is NOT
 
 - **It never writes production except in Restore**, and Restore uses the admin
   lane deliberately: no routine key can write production and read backup both.
-- **It never deletes `current/`.** Collection touches only `archive/<stamp>/`
-  folders, and only after a successful run in the last 48 hours.
+- **It never deletes `current/`.** Collection touches only `archive/` and
+  `_receipts/`. The manual collector (§4) also refuses unless a good run landed
+  in the last 48 hours; the lifecycle rules do not check, and expire the archive
+  on age alone, which is why a failed night must be noticed within 30 days.
 - **It never merges, deploys, or moves board tasks.**
 
 ## 1. Open the lane
@@ -109,11 +115,24 @@ p = subprocess.run(["op", "item", "edit", f"r2.{APP}", "--vault", "studio-agents
     f"access-key-id-backup[concealed]={t['id']}",
     f"secret-access-key-backup[concealed]={hashlib.sha256(t['value'].encode()).hexdigest()}"],
     capture_output=True, text=True)
-if p.returncode != 0: sys.exit(f"1Password write FAILED: {p.stderr.strip()[:200]} — revoke token r2-{APP}-backup")
+if p.returncode != 0: sys.exit(f"1Password write FAILED: {p.stderr.strip()[:200]} — revoke token r2-{APP}-backup; bucket {APP}-backup was created and is empty")
 print(f"token r2-{APP}-backup: minted and filed in r2.{APP}")
 PY
 python3 "$HOME/.mcr-r2/enable.py" "$APP"
 ```
+
+**Recovering a partial Enable.** The script creates the bucket before it mints
+the token, so a failure after that leaves `<app>-backup` behind and a re-run
+stops at bucket creation. Revoke any `r2-<app>-backup` token the run minted
+(**Manage Account → Account API Tokens**), confirm the bucket is empty, delete
+it (`DELETE /accounts/<id>/r2/buckets/<app>-backup`), and re-run. Like
+`bucket-provision`, the script hands the derived keys to `op item edit` as
+command-line arguments, visible to the same macOS user's `ps` for a second; run
+it on Alex's machine only.
+
+**Why the backup key lives in `r2.<app>`.** One item per app keeps every key
+for that app's storage in one record, and the backup key cannot write
+production, so filing it beside the app keys widens nothing.
 
 **Lifecycle rules are the garbage collector.** R2 deletes an object under a
 prefix once it is N days old, measured from when it was written into the
@@ -169,90 +188,63 @@ brought an object back.
 
 ## 3. Run — mirror plus archive, with a receipt
 
-`rclone sync` makes `<app>-backup/current/` equal production. Every object the
-sync would overwrite or delete is first moved to `archive/<stamp>/` by
-`--backup-dir`, so the archive holds exactly what changed, keyed by run. Each
-run writes a receipt to `_receipts/<stamp>.json` with counts and the rclone
-exit status; collection (§4) reads it.
+`bin/r2-backup run <app>` makes `<app>-backup/current/` equal production.
+Every object the sync would overwrite or delete is first moved into
+`archive/<stamp>/` by rclone's `--backup-dir`, so the archive holds exactly what
+changed, keyed by run. Each run writes `_receipts/<stamp>.json`. Logic and
+guards: `bin/lib/r2_backup.rb`, unit-tested in `test/lib/r2_backup_test.rb`.
 
 ```bash
-cat > "$HOME/.mcr-r2/backup.sh" <<'SH'
-#!/bin/zsh
-set -u
-APP=$1; I="op://studio-agents/r2.$APP"
-export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
-export RCLONE_CONFIG_R2_ENDPOINT=$(op read "$I/endpoint")
-export RCLONE_CONFIG_R2_ACCESS_KEY_ID=$(op read "$I/access-key-id-backup")
-export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=$(op read "$I/secret-access-key-backup")
-STAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
-rclone sync "r2:$APP-production" "r2:$APP-backup/current" --backup-dir "r2:$APP-backup/archive/$STAMP" -q
-RC=$?
-PROD=$(rclone size "r2:$APP-production" --json 2>/dev/null)
-CUR=$(rclone size "r2:$APP-backup/current" --json 2>/dev/null)
-ARC=$(rclone size "r2:$APP-backup/archive/$STAMP" --json 2>/dev/null || echo '{"count":0,"bytes":0}')
-printf '{"app":"%s","stamp":"%s","rclone_exit":%d,"production":%s,"current":%s,"archived":%s}\n' \
-  "$APP" "$STAMP" $RC "$PROD" "$CUR" "$ARC" | tee /dev/stderr | rclone rcat "r2:$APP-backup/_receipts/$STAMP.json"
-exit $RC
-SH
-zsh "$HOME/.mcr-r2/backup.sh" "$APP"
+cd /Users/alex/projects/mcritchie-studio
+bin/r2-backup run "$APP" --op   # --op reads the backup keys from r2.<app>
 ```
 
-Read the receipt it prints: `rclone_exit` must be `0` and `production.count`
-must equal `current.count`. A mismatch is a failed run whatever the exit code
-says. rclone's `Config file ... not found - using defaults` notice is expected:
-the remote is configured entirely from `RCLONE_CONFIG_R2_*` variables.
+A run is **ok** only when rclone exits 0 **and** `current/` holds as many
+objects as production; the receipt records `ok`, and a not-ok run exits 1 with
+the reason. Two guards stop a wipe in production from being copied into the
+mirror:
+
+- **The drop guard.** If production holds at least 20% fewer objects (and at
+  least 10 fewer, or none at all) than at the last ok run, the run refuses,
+  writes a not-ok receipt and exits 1. Nothing is synced.
+- **The delete cap.** Every sync carries `--max-delete`, set to twice a fifth of
+  `current/` (floor 20). Twice, because rclone counts more than one delete per
+  object when `--backup-dir` is set: measured on R2 2026-09-26, deleting 12
+  objects tripped a cap of 13 with only 3 gone. A tripped cap stops the sync
+  partway (rclone exit 7). That is safe: every object it touched is already in
+  the archive, and the next run finishes.
+
+**A deliberate large delete** in production refuses the next run by design.
+Once someone has confirmed the delete was intended, mirror it once:
+
+```bash
+bin/r2-backup run "$APP" --accept-drop --op
+```
+
+That lifts both guards for that run only and records `accepted_drop` in the
+receipt. The deleted objects still land in the archive for 30 days.
 
 **Before any bulk delete or rewrite on a production bucket, run a backup first
-and read its receipt.** That is the one moment the undo matters most.
+and read its output.** That is the one moment the undo matters most.
 
 ## 4. Collect — garbage collection
 
 **Automatic.** The lifecycle rules from §2 expire `archive/` at 30 days and
-`_receipts/` at 180. Verify them on every run of this act with the
-`get-bucket-lifecycle-configuration` command in §2; a missing rule is a leak,
-not an emergency.
+`_receipts/` at 180. Re-read them with the `get-bucket-lifecycle-configuration`
+command in §2 whenever this act runs; a missing rule is a leak, not an
+emergency.
 
-**Manual fallback** (a rule was removed, or the archive must shrink now). It
-deletes `archive/<stamp>/` folders older than N days, is a dry run unless given
-`--apply`, never touches anything but stamp-named archive folders, and
-**refuses** unless the newest receipt is under 48 hours old and records a
-successful run. A broken backup must never let collection eat the only history.
+**Manual fallback** (a rule was removed, or the archive must shrink now):
 
 ```bash
-cat > "$HOME/.mcr-r2/gc.sh" <<'SH'
-#!/bin/zsh
-set -u
-APP=$1; DAYS=${2:-30}; APPLY=${3:-}; I="op://studio-agents/r2.$APP"
-export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
-export RCLONE_CONFIG_R2_ENDPOINT=$(op read "$I/endpoint")
-export RCLONE_CONFIG_R2_ACCESS_KEY_ID=$(op read "$I/access-key-id-backup")
-export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=$(op read "$I/secret-access-key-backup")
-FRESH=$(date -u -v-48H +%Y-%m-%dT%H%M%SZ)
-LAST=$(rclone lsf "r2:$APP-backup/_receipts/" 2>/dev/null | sort | tail -1)
-if [[ -z "$LAST" || "${LAST%.json}" < "$FRESH" ]]; then echo "REFUSED: no run receipt newer than $FRESH (last: ${LAST:-none})"; exit 2; fi
-if ! rclone cat "r2:$APP-backup/_receipts/$LAST" | grep -q '"rclone_exit":0'; then echo "REFUSED: last run $LAST did not succeed"; exit 2; fi
-CUTOFF=$(date -u -v-${DAYS}d +%Y-%m-%dT%H%M%SZ)
-echo "last good run: ${LAST%.json}; expiring archive folders older than $CUTOFF"
-N=0
-for d in $(rclone lsf --dirs-only "r2:$APP-backup/archive/"); do
-  s=${d%/}
-  [[ "$s" =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z$' ]] || { echo "  skip (not a stamp): $d"; continue; }
-  [[ "$s" < "$CUTOFF" ]] || continue
-  N=$((N+1))
-  if [[ "$APPLY" == "--apply" ]]; then rclone purge "r2:$APP-backup/archive/$s" && echo "  deleted archive/$s"
-  else echo "  would delete archive/$s"; fi
-done
-echo "$N folder(s) $([[ "$APPLY" == "--apply" ]] && echo deleted || echo 'would be deleted (dry run)')"
-SH
-zsh "$HOME/.mcr-r2/gc.sh" "$APP"            # dry run, 30 days
-zsh "$HOME/.mcr-r2/gc.sh" "$APP" 30 --apply # only after reading the dry run
+bin/r2-backup gc "$APP" --op                    # dry run, 30 days
+bin/r2-backup gc "$APP" --days 30 --apply --op  # only after reading the dry run
 ```
 
-The `date -v` flags are BSD (macOS). Do not pipe the script into `grep`: a pipe
-reports grep's exit status, and the refusal's exit 2 disappears. During
-`--apply`, rclone logs one `Failed to read versioning status ... AccessDenied`
-line per folder; the backup token has no bucket-level read and R2 has no
-versioning, so the line is noise, and the `deleted` line after it is the result.
+It deletes only stamp-named `archive/<stamp>/` folders older than `--days`,
+never `current/`, and **refuses** (exit 2) unless the newest receipt is under 48
+hours old and ok, counts included. A broken backup must never let collection eat
+the only history.
 
 ## 5. Restore — and the drill
 
@@ -281,17 +273,38 @@ under `_backup-drill/` in production with the prod key, Run, overwrite one and
 delete the other, Run again, confirm `archive/<stamp>/_backup-drill/` holds the
 old version of the first and the deleted second, restore the second, read it
 back, then delete the drill objects from production and Run once more so the
-mirror is clean. The drill's archive expires with the rest.
+mirror is clean. The drill's archive expires with the rest. Seeding with the
+prod key, from the lane in §1:
+
+```bash
+export RCLONE_CONFIG_P_TYPE=s3 RCLONE_CONFIG_P_PROVIDER=Cloudflare RCLONE_CONFIG_P_NO_CHECK_BUCKET=true
+export RCLONE_CONFIG_P_ENDPOINT="$R2_ENDPOINT"
+export RCLONE_CONFIG_P_ACCESS_KEY_ID=$(op read "op://studio-agents/r2.$APP/access-key-id-prod")
+export RCLONE_CONFIG_P_SECRET_ACCESS_KEY=$(op read "op://studio-agents/r2.$APP/secret-access-key-prod")
+echo "version-1" | rclone rcat "p:$APP-production/_backup-drill/a.txt"
+echo "to be deleted" | rclone rcat "p:$APP-production/_backup-drill/b.txt"
+```
+
+Deleting the drill objects afterwards is a deliberate drop only if production
+held few other objects; if the next run refuses, confirm and use
+`--accept-drop` (§3).
 
 ## 6. Record
 
+- **Automate it.** File the backup keys as the hub repo's Actions secrets
+  `R2_BACKUP_<APP>_ACCESS_KEY_ID` and `R2_BACKUP_<APP>_SECRET_ACCESS_KEY`
+  (upper-cased, dashes to underscores; the deployer identity can write them,
+  the agent App cannot), and add the app to the matrix in
+  `.github/workflows/r2-backup.yml`. Pipe each value through `printf %s
+  "$(op read …)"`: `op read` ends in a newline, and a newline in a key breaks
+  it. `R2_ENDPOINT` is one secret for the whole account.
 - Mark the app's backup as enabled in the R2 census in
   [`../../../modules/object-storage.md`](../../../modules/object-storage.md),
   with the date of the drill.
 - The `r2.<app>` row in
   [`../../../modules/credential-inventory.md`](../../../modules/credential-inventory.md)
   already names the backup fields; nothing to add per app.
-- Remove the helper scripts: `rm -rf "$HOME/.mcr-r2"`.
+- Remove the Enable helpers: `rm -rf "$HOME/.mcr-r2"`.
 - Close the activity:
   `bin/agent-activity end --outcome "r2-backup <act> for <app>"`.
 
@@ -299,7 +312,11 @@ mirror is clean. The drill's archive expires with the rest.
 
 R2's gaps against the S3 rules (no versioning, why this act exists), the tiers,
 and the census: [`../../../modules/object-storage.md`](../../../modules/object-storage.md).
-The first live run was on `moms-app` on 2026-09-26: two runs, archive held the
+The first live run was on `moms-app` on 2026-09-26 with hand-written scripts:
+three runs, archive held the
 overwritten and deleted objects, restore brought the deleted one back, the
 collection refusal fired on a simulated failed run, and all five isolation
-probes were refused with `AccessDenied`.
+probes were refused with `AccessDenied`. The same evening `bin/r2-backup`
+replaced the scripts and was proven on the same bucket: an ok run, a wipe of 12
+objects refused with `current/` intact, and an `--accept-drop` run that
+mirrored the deliberate delete.

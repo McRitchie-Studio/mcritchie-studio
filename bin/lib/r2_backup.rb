@@ -62,7 +62,14 @@ module R2Backup
 
   # The --max-delete cap for a sync: a fifth of what current/ holds, never under
   # MIN_DROP, so ordinary deletes pass and a mass delete stops the sync.
-  def max_delete(current_count) = [MIN_DROP, (current_count.to_i * DROP_SHARE).ceil].max
+  #
+  # DOUBLED, because rclone counts more than one delete per object when
+  # --backup-dir is set (the object is moved into the archive, then removed).
+  # Measured on R2 2026-09-26 with rclone 1.75.1: deleting 12 objects tripped a
+  # cap of 13 after only 3 left current/. A tripped cap stops the sync partway
+  # (exit 7); that is safe, because every object it touched is already in the
+  # archive and the next run finishes the job.
+  def max_delete(current_count) = [MIN_DROP, (current_count.to_i * DROP_SHARE).ceil].max * 2
 
   # Whether a receipt records a good run. Receipts written before `ok` existed are
   # judged the way the SOP judged them: exit 0 and equal counts.
@@ -127,7 +134,10 @@ module R2Backup
     def backup = "#{REMOTE}:#{app}-backup"
 
     # One run. Returns the receipt hash; the caller exits non-zero unless ok.
-    def run
+    # `accept_drop` is the operator saying a large delete in production was
+    # deliberate: it lifts the wipe refusal and the --max-delete cap for this run
+    # only, and the receipt records that it did.
+    def run(accept_drop: false)
       stamp = R2Backup.stamp(@clock.call)
       last = newest_receipt(ok_only: true)
       now_count = count(production)
@@ -135,13 +145,13 @@ module R2Backup
         return finish(stamp, ok: false, rclone_exit: -1, reason: "could not count #{production}")
       end
 
-      refusal = R2Backup.wipe_refusal(last&.last&.dig("production", "count"), now_count)
+      refusal = accept_drop ? nil : R2Backup.wipe_refusal(last&.last&.dig("production", "count"), now_count)
       return finish(stamp, ok: false, rclone_exit: -1, reason: refusal, production: now_count) if refusal
 
       current_before = count("#{backup}/current") || 0
+      cap = accept_drop ? [] : ["--max-delete", R2Backup.max_delete(current_before).to_s]
       _out, rc = rclone("sync", production, "#{backup}/current",
-                        "--backup-dir", "#{backup}/archive/#{stamp}",
-                        "--max-delete", R2Backup.max_delete(current_before).to_s, "-q")
+                        "--backup-dir", "#{backup}/archive/#{stamp}", *cap, "-q")
       prod_after = count(production)
       current_after = count("#{backup}/current")
       archived = count("#{backup}/archive/#{stamp}") || 0
@@ -149,7 +159,7 @@ module R2Backup
       reason = if !rc.zero? then "rclone sync exited #{rc}"
                elsif !ok then "count mismatch: production #{prod_after.inspect}, current #{current_after.inspect}"
                end
-      finish(stamp, ok: ok, rclone_exit: rc, reason: reason,
+      finish(stamp, ok: ok, rclone_exit: rc, reason: reason, accepted_drop: accept_drop,
                     production: prod_after, current: current_after, archived: archived)
     end
 
@@ -176,11 +186,12 @@ module R2Backup
 
     private
 
-    def finish(stamp, ok:, rclone_exit:, reason: nil, production: nil, current: nil, archived: 0)
+    def finish(stamp, ok:, rclone_exit:, reason: nil, accepted_drop: false, production: nil, current: nil, archived: 0)
       receipt = { "app" => app, "stamp" => stamp, "ok" => ok, "rclone_exit" => rclone_exit,
                   "production" => { "count" => production }, "current" => { "count" => current },
                   "archived" => { "count" => archived } }
       receipt["reason"] = reason if reason
+      receipt["accepted_drop"] = true if accepted_drop
       json = JSON.generate(receipt)
       log.puts(json)
       _o, rc = rclone("rcat", "#{backup}/_receipts/#{stamp}.json", stdin: json)

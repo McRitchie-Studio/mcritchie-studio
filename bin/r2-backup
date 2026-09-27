@@ -10,13 +10,14 @@ require_relative "lib/cli_arg_guard"
 require_relative "lib/r2_backup"
 
 USAGE = <<~TXT
-  usage: bin/r2-backup run <app> [--op]
+  usage: bin/r2-backup run <app> [--accept-drop] [--op]
          bin/r2-backup gc <app> [--days N] [--apply] [--op]
 
   run   mirror <app>-production into <app>-backup/current/, archiving what changed
         into archive/<stamp>/, and write _receipts/<stamp>.json. Exits 1 unless the
         run is ok (rclone exit 0 AND equal counts), and refuses (exit 1, receipt
         written) when production dropped sharply since the last good run.
+        --accept-drop: the drop was deliberate; mirror it this once (recorded).
   gc    delete archive/<stamp>/ folders older than --days (default 30). Dry run
         unless --apply. Refuses unless the newest receipt is under 48h old and ok.
 
@@ -29,7 +30,7 @@ args = CliArgGuard.guard!(
   ARGV,
   program: "r2-backup",
   usage: USAGE,
-  bool: %w[--apply --op],
+  bool: %w[--apply --op --accept-drop],
   value: %w[--days],
   allow_positional: true,
   consequence: "NOTHING ran — no sync, no receipt, no deletion."
@@ -41,6 +42,10 @@ unless %w[run gc].include?(command) && args.positionals.length == 2
 end
 if command == "run" && (args.bool?("--apply") || args.first("--days"))
   warn("r2-backup: --apply and --days belong to gc — NOTHING ran.")
+  exit 2
+end
+if command == "gc" && args.bool?("--accept-drop")
+  warn("r2-backup: --accept-drop belongs to run — NOTHING ran.")
   exit 2
 end
 
@@ -73,7 +78,7 @@ ENV["RCLONE_CONFIG_R2_SECRET_ACCESS_KEY"] = ENV["R2_BACKUP_SECRET_ACCESS_KEY"]
 runner = R2Backup::Runner.new(app: app)
 case command
 when "run"
-  receipt = runner.run
+  receipt = runner.run(accept_drop: args.bool?("--accept-drop"))
   if receipt["ok"]
     puts("r2-backup: #{app} ok — #{receipt.dig('current', 'count')} object(s) mirrored, " \
          "#{receipt.dig('archived', 'count')} archived")
