@@ -6,9 +6,11 @@ require "test_helper"
 # THE MINT READERS REPORT MEASUREMENT, NEVER PREDICTION, and the tests below are written
 # to hold that line. Four real mints on 2026-09-25 showed wide action shots failing at
 # prepare at any resolution while a tight ESPN headshot completed, so face size in frame
-# is the variable — and face size is precisely what cannot be measured without a vision
-# credential that exists on no machine. Anything here that started answering "will this
-# mint?" would be inventing an answer.
+# is the variable — and no signal available to us MEASURES face size. A live classifier
+# (production has the credential as of 2026-09-26) does not supply it: FaceVisibility's
+# prompt folds size in ("small in frame" 0.6, "far from camera" 0.3) but gives those same
+# values to a turned head and a shadowed one, so a score cannot be read back as a size.
+# Anything here that started answering "will this mint?" would be inventing an answer.
 class AppearanceReferencePhotoScoutingTest < ActiveSupport::TestCase
   Photo = AppearanceReferencePhoto
 

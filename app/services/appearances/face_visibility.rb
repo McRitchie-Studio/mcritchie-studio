@@ -32,6 +32,18 @@ module Appearances
   # create sits behind, and it carries the same obligation: only ever pass URLs
   # that have already cleared Appearances::FetchableUrl. The caller does.
   #
+  # AND THAT OBLIGATION IS NOW STRICTER — PASS ONLY A URL WE SERVE. Measured on
+  # production 2026-09-26, the first real run answered 400 on every image ("Unable to
+  # download the file. Please verify the URL and try again") because Wikimedia refuses
+  # a request that sends no User-Agent and Anthropic's fetcher was the party being
+  # refused: against the exact failing URL, 403 with no UA and 200 with one. There is
+  # no header of ours to set on someone else's fetch, so
+  # Appearances::GatherReferencePhotos now mirrors every shortlisted candidate into our
+  # own S3 (Appearances::MirrorCandidates) and hands this object the copy. Handing it a
+  # remote URL again would reproduce the whole defect SILENTLY — the degrade below is
+  # indistinguishable from a set of photographs that simply scored badly, and on that
+  # run it put three photographs of AIRCRAFT into a character model.
+  #
   # DEGRADES, NEVER RAISES. No credential, a refusal, a timeout, an unparseable
   # answer — every one of them returns an empty Hash, and the caller falls back to
   # its free ranking. The same contract Appearances::ImageSearch already holds: an
@@ -146,6 +158,17 @@ module Appearances
     end
 
     def post(urls)
+      # THE ONLY PLACE IN THIS OBJECT THAT SPENDS MONEY, so it is where the trap sits.
+      # #call, #build_content and #parse are all reachable from a test for free and
+      # should stay that way; this method must not be, and the suite's protection was
+      # previously that every test remembered to inject a fake classifier.
+      LiveCallTrap.refuse!(
+        what: "A paid Anthropic face-classification call (#{self.class})",
+        remedy: "Inject a classifier at the caller's seam: " \
+                "Appearances::GatherReferencePhotos.new(look, faces: fake). To exercise " \
+                "this object itself, drive #build_content or #parse directly — neither spends."
+      )
+
       content = build_content(urls)
 
       uri = URI(API_URL)

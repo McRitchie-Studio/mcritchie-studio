@@ -3,7 +3,7 @@
 require "test_helper"
 
 # The swim-lane headers PIN — each stage keeps its name and count on screen while its
-# cards scroll under it, stacked beneath the app-ladder strip.
+# cards scroll under it, stacked beneath the site header.
 #
 # WHAT THIS TIER CAN PROVE, and what it deliberately leaves to e2e/deployments_lane_pin:
 # the header is `position: sticky`, it takes its top from the MEASURED stack rather than
@@ -28,12 +28,11 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
     headers.each do |el|
       assert_includes el["class"], "sticky", "#{el['data-stage']} header must pin"
       assert_includes el["class"], "z-30",
-                      "under the ladder strip (z-40) and the site nav (z-50), over the cards"
+                      "under the site nav (z-50), over the cards"
     end
   end
 
-  # COMPOSED, NEVER MEASURED HERE. The site header shrinks on scroll and the ladder
-  # strip comes and goes, so a fixed offset would leave the lane names floating in a
+  # COMPOSED, NEVER MEASURED HERE. The site header shrinks on scroll, so a fixed offset would leave the lane names floating in a
   # gap or tucked under the nav. This used to be solved by MEASURING both and summing
   # them into laneTop — and that is what made these headers chase the site header
   # through every intermediate height of its collapse, a frame behind, for the whole
@@ -52,8 +51,8 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
     assert_nil header[":style"],
                "an Alpine style bind would fight the CSS and put the lag back"
 
-    # max(), NOT a declared order: a hidden strip measures 0 and drops out on its own,
-    # so nothing here has to know which layer sits above which.
+    # One composed value, NOT a declared order: a hidden layer measures 0 and drops
+    # out on its own, so nothing here has to know which layer sits above which.
     assert_not_includes response.body, "this.laneTop",
                         "laneTop state must go with the writer that used it"
   end
@@ -72,29 +71,11 @@ class BoardLanePinTest < ActionDispatch::IntegrationTest
                     "the scroller switches itself on from a measurement, not a breakpoint"
   end
 
-  # THE BROADCAST REGRESSION, now handled a layer down. app-ladder-row is replaced
-  # wholesale and the strip rides inside it, so an init-bound observation watches a
-  # detached node from the first broadcast on. This board used to answer that itself,
-  # with watchStrip re-observing from init and from every measure.
-  #
-  # It no longer observes the strip at all: the strip is a data-pin layer, and the
-  # engine's publisher REBUILDS its registry from the document on
-  # turbo:before-stream-render — so a replaced node is re-registered rather than
-  # re-observed by hand. The regression is still guarded; it is guarded once, for
-  # every consumer, instead of once per board.
-  #
-  # What this app still owes is the OPT-IN. Drop data-pin and the strip silently
-  # leaves the registry, publishes nothing, and every lane header falls back to the
-  # site header's edge alone — which looks almost right and is wrong by the strip's
-  # height the moment it shows.
-  test "the strip opts into the pinned stack so a broadcast cannot strand it" do
-    strip = css_select("[data-test='app-ladder-pinned']").first
-    assert strip, "the board must render the pinned strip"
-
-    assert_equal "apps", strip["data-pin"],
-                 "the strip must be a named layer, or the lane headers cannot stack onto it"
-    assert_not_includes response.body, "watchStrip",
-                        "a second observer on the strip duplicates the engine's registry"
+  # THE LANE HEADERS OBSERVE NOTHING BUT THE LANE ROW. The site header publishes its
+  # own edge through the engine's pinned stack; observing it here would duplicate a
+  # measurement the engine already coalesces into one frame.
+  test "the board does not re-measure the chrome the engine publishes" do
+    assert_not_includes response.body, "watchStrip"
     assert_not_includes response.body, "_laneRo.observe(header)",
                         "observing the site header duplicates a measurement the engine coalesces"
   end

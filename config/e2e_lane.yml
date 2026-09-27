@@ -285,7 +285,12 @@
 # the two deltas by hand. If both land, the merged answer is 175.
 # 174 -> 175 on 2026-09-26: e2e/build_gallery.spec.js (/tasks/build-gallery-carousel); set from the
 # real test( count after merging accepted, not by adding one to either side.
-total_specs: 175
+# 175 -> 173 on 2026-09-26 (/tasks/tighten-deployments-summary-cards): the operator
+# retired the pinned applications strip, so e2e/app_ladder_pin_bridge.spec.js (TWO
+# specs) goes with it; the strip spec in app_ladder_row.spec.js is REPLACED one-for-one
+# by the list-scrolls-in-its-card spec. Coverage REMOVED with its feature.
+# MEASURED with the lister on THIS tree: `npx playwright test --list` => 173.
+total_specs: 173
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -460,7 +465,9 @@ quarantined: 10
 # whole delta lands in the executed set.
 # ⚠ Same collision as `total_specs`: PR #1636 moves this 160 -> 161. Merged answer 165.
 # 164 -> 165: total_specs - quarantined, the same build_gallery.spec.js spec.
-executed: 165
+# 165 -> 163: the same two app_ladder_pin_bridge specs; neither was quarantined.
+# MEASURED: `npx playwright test --list --grep-invert @quarantine` => 163.
+executed: 163
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

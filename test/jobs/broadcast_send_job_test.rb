@@ -47,4 +47,14 @@ class BroadcastSendJobTest < ActiveJob::TestCase
       end
     end
   end
+
+  # [integration] The send stores the id Resend's webhooks will name, and logs
+  # the send itself.
+  test "perform stores the message id and logs a sent event" do
+    BroadcastSendJob.perform_now(@broadcast.id, @contact.id)
+
+    delivery = @broadcast.deliveries.find_by!(contact: @contact)
+    assert_equal ActionMailer::Base.deliveries.last.message_id, delivery.provider_message_id
+    assert_equal ["sent"], delivery.events.pluck(:kind)
+  end
 end

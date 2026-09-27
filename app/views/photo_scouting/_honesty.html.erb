@@ -25,10 +25,33 @@
           <em>visibility</em>, not face <em>size</em>, and the two come apart below.
         <% else %>
           <strong>nothing looked at these photographs.</strong> They are ordered on
-          shape and relevance only, because the vision classifier needs
-          <span class="font-mono"><%= Appearances::FaceVisibility::API_KEY_ENV %></span>
-          and that credential exists on no machine. A high position here means
-          &ldquo;worth a closer look&rdquo;, never &ldquo;a face is visible&rdquo;.
+          shape and relevance only. A high position here means &ldquo;worth a closer
+          look&rdquo;, never &ldquo;a face is visible&rdquo;.
+          <% if @face_ranking_available %>
+            <%# CONFIGURED BUT SILENT, and this is the state that misled the operator %>
+            <%# on 2026-09-26: the classifier answered nothing, and the page said only %>
+            <%# that nothing looked, which reads as "no credential". Carries its own %>
+            <%# data-test so the assertion is on STRUCTURE rather than on this prose. %>
+            <span data-test="classifier-silent">
+              The classifier IS configured here, so it either found nothing it could
+              read or could not fetch these images &mdash; not the same thing as
+              having no classifier at all.
+              <% if admin? %>
+                <%# ADMINS ONLY. /error_logs is behind require_admin, and a link that %>
+                <%# bounces the reader to a sign-in wall is worse than no link. %>
+                Check <%= link_to "the error log", error_logs_path, class: "underline" %>
+                before trusting this order.
+              <% else %>
+                An admin can read why in the error log.
+              <% end %>
+            </span>
+          <% else %>
+            <span data-test="classifier-absent">
+              The classifier needs
+              <span class="font-mono"><%= Appearances::FaceVisibility::API_KEY_ENV %></span>
+              and this machine has no such credential.
+            </span>
+          <% end %>
         <% end %>
       </span>
     </li>
@@ -52,8 +75,10 @@
         Four real mints on 2026-09-25: three wide action shots failed at prepare, the
         same three at full resolution failed, a bare-faced sideline shot failed, and a
         tight ESPN headshot completed. Resolution is not the variable and the helmet is
-        not the variable &mdash; face size in frame is, and we cannot measure it without
-        the classifier above. Tiles carry the evidence we do have, never a prediction.
+        not the variable &mdash; face size in frame is, and nothing here measures it. The
+        classifier above folds size into its score but cannot be read back for it: a
+        small face and a turned head score the same. Tiles carry the evidence we do
+        have, never a prediction.
       </span>
     </li>
 

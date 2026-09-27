@@ -188,8 +188,9 @@ module ReleaseNotes
     end
 
     # The mascot's HD avatar as the embed thumbnail, or nil to omit it (no mascot).
+    # Shiny-aware: a shiny session's card shows the shiny art the board shows.
     def task_thumbnail(task)
-      url = mascot_for(task)&.avatar_url
+      url = mascot_for(task)&.display_avatar(shiny: task.mascot_shiny?)
       url.present? ? { url: url } : nil
     end
 

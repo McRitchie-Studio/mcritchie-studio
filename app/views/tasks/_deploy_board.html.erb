@@ -63,63 +63,6 @@
 <%= render "components/elapsed_label_script" %>
 <%# kanbanBoard must be defined inline (before Alpine CDN defer evaluates x-data) %>
 <script>
-// WHETHER THE APPLICATIONS ROW HAS SCROLLED AWAY — held HERE, outside the row.
-//
-// That fact is a property of the PAGE, not of the node that reads it, and the
-// distinction is the whole bug. DeploymentsBroadcaster.app_ladder replaces
-// #app-ladder-row wholesale (the pinned strip is rendered inside it on purpose,
-// so a pinned copy can never show a verdict the row beneath it has moved past).
-// The replace tears down the row's Alpine component and builds a fresh one, and a
-// fresh one starts at `pinned: false` — so the strip BLINKS OUT and back on every
-// broadcast, whatever the engine publishes. Measured on production, parked and
-// untouched for 20s: 4 broadcasts, 2 of them the ladder, and the board's lane
-// headers slammed 99px four times.
-//
-// A store outlives the node. The replaced row re-reads the same value on init and
-// comes up already pinned, so the strip never flickers through a state the page
-// was not in. THIS partial is the right home: it renders the row (through
-// tasks/_deploy_summary_row, where the row is the Applications summary card) and
-// is NOT itself a broadcast target, and the row may carry no <script> of its own
-// — a script inside a replaced fragment is a re-execution question nobody should
-// have to answer on a live board.
-// ARMED ON BOTH EVENTS, because either can be the one that happens.
-//
-// `alpine:init` fires ONCE, inside Alpine.start(). A Turbo Drive visit does not
-// re-fire it — Alpine is already up — and this layout documents that rule
-// verbatim at layouts/application.html.erb:109-113 for its own first-name hook.
-// Armed on alpine:init alone, ANY arrival at /deployments by clicking an in-app
-// link left the store undefined, `x-show="$store.appLadder.pinned"` threw, and the
-// strip never pinned at all. Measured on a review desk at scrollY=959: a direct
-// load gave {pinned:true}, strip pinned at y=53, 0 page errors; the Turbo visit
-// gave store UNDEFINED, strip display:none, and 13 page errors. measure() threw
-// before gauge() and before the ResizeObserver was built, so the fade mask froze
-// and every @scroll.window threw too.
-//
-// Same shape as studio-engine components/_link_sidebar.html.erb:31-45 and this
-// layout's askFirstName: a named ensure*, guarded on Alpine being present,
-// idempotent, armed on both events, plus one immediate call for the case where
-// Alpine has already started by the time this script runs.
-function ensureAppLadderStore() {
-  if (!window.Alpine || !Alpine.store) return null;
-  if (!Alpine.store('appLadder')) Alpine.store('appLadder', { pinned: false });
-  return Alpine.store('appLadder');
-}
-// ATTACHED ONCE PER DOCUMENT. Turbo Drive replaces the body, so this inline
-// script RE-EXECUTES on every visit to a page rendering this board — and without
-// the flag each visit adds another listener pair, accumulating for the life of
-// the tab. Same guard, and the same reason, as the engine's
-// __studioLinkSidebarBridge and this layout's own first-name hook.
-if (!window.__appLadderStoreBridge) {
-  window.__appLadderStoreBridge = true;
-  document.addEventListener('alpine:init', ensureAppLadderStore);
-  document.addEventListener('turbo:load', ensureAppLadderStore);
-}
-// The immediate call stays OUTSIDE the flag: it is per-execution, not per
-// document. A Turbo visit re-runs this script with Alpine already started and
-// both listeners already attached but neither about to fire again for THIS
-// document, so the visit that mattered would arm nothing without it.
-ensureAppLadderStore();
-
 function kanbanBoard(live) {
   return {
     live: !!live, // animate Turbo-Streamed card updates (turbo_stream_from "deployments")
@@ -130,10 +73,9 @@ function kanbanBoard(live) {
     toasts: [],
 
     // --- Sticky swim-lane headers ---------------------------------------------
-    // WHERE A LANE HEADER PINS — the bottom of whatever is already pinned above it:
-    // the site header, plus the app-ladder strip when that is showing. Measured, never
-    // hard-coded, for the same reason the strip measures: the site header TRANSITIONS
-    // its height as it shrinks on scroll, and the strip comes and goes.
+    // WHERE A LANE HEADER PINS — the bottom of whatever is already pinned above it
+    // (the site header today), read from the engine's --pin-stack-bottom rather than
+    // hard-coded, because the header TRANSITIONS its height as it shrinks on scroll.
     //
     // The headers themselves are `position: sticky` INSIDE their own column, so each one
     // is aligned with the lane it names by construction. A fixed clone would have to
@@ -143,9 +85,6 @@ function kanbanBoard(live) {
     // own comment for why that question decides whether the headers can pin at all.
     laneScroll: false,
     _laneRo: null,
-    // WHICH strip node _laneRo watches. The app-ladder broadcast replaces `app-ladder-row`
-    // and the strip WITH it, and a detached node never resizes — so a node captured once
-    // at init stops waking measureLanes(), and the headers pin behind the strip.
 
     stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
 
@@ -645,15 +584,13 @@ document.addEventListener('turbo:before-cache', function() {
            <% if collapsible %>:class="showAllCols ? '' : 'max-[1399px]:hidden'"<% end %>>
         <!-- Column Header -->
         <%# PINNED, so the lane you are reading keeps its name while you scroll its cards.
-            It sticks to the bottom of the pinned stack — max() over the site
-            header's and the app strip's own published edges — so the three
-            pinned things stack rather than overlap, and a hidden strip measures
-            0 and drops out of the max on its own. z-30 keeps it under the strip (z-40) and the nav (z-50) and over the
+            It sticks to the bottom of the engine's pinned stack, so it never
+            overlaps the site header. z-30 keeps it under the nav (z-50) and over the
             cards, which slide beneath it.
 
             IT NEEDS ITS OWN BACKGROUND. A sticky header with a transparent one shows the
             cards passing underneath through the text, which is worse than not pinning at
-            all — and OPAQUE, not the strip's 95%: a card sliding under a translucent
+            all — and OPAQUE, not translucent: a card sliding under a translucent
             header reads as a smear behind the lane name. The div already spans the lane,
             so `px-1` (unchanged) insets the label while the background covers the full
             width — a negative margin to "reach the
@@ -735,8 +672,8 @@ document.addEventListener('turbo:before-cache', function() {
                  (lead face on top, its badge above that). But nothing between them and the
                  root created a stacking context, so they were competing with the PAGE, and
                  a z-40 badge beat the z-30 header it should slide under.
-                 Raising the header instead would only move the collision: the ladder strip
-                 is z-40 and the site nav z-50, so the board would be bidding against its own
+                 Raising the header instead would only move the collision: the site nav is
+                 z-50, so the board would be bidding against its own
                  chrome for numbers. One stacking context per lane ends the auction — the
                  crew keeps its internal order and the whole zone paints below the header,
                  which is positioned and therefore above it. %>

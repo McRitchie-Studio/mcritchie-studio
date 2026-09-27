@@ -30,15 +30,16 @@
       return h + "h " + String(mm).padStart(2, "0") + "m";
     }
 
-    // The CI meter's SINGLE-UNIT ladder: "1s".."59s", "1m".."59m", then "1h 04m".
+    // The CI meter's SINGLE-UNIT ladder: "1s".."59s", "1m".."59m", "1h".."23h", then "1d".
     // MUST match ApplicationHelper#compact_elapsed_short, or the server-rendered
     // first paint and the first tick disagree.
     function shortFmt(secs) {
       if (secs < 60) return secs + "s";
       var m = Math.floor(secs / 60);
       if (m < 60) return m + "m";
-      var h = Math.floor(m / 60), mm = m % 60;
-      return h + "h " + String(mm).padStart(2, "0") + "m";
+      var h = Math.floor(m / 60);
+      if (h < 24) return h + "h";
+      return Math.floor(h / 24) + "d";
     }
 
     // The operator-window clock: "mm:ss" to the end, zero-padded both sides. MUST

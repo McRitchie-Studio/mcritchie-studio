@@ -223,7 +223,7 @@ function httpOrigin(value) {
 //      about this repo.
 //
 // So the remainder is NAMED rather than silently left: the specs that reach `/`
-// WITHOUT signing in — smoke, app_ladder_pin_bridge, qa_readonly and the
+// WITHOUT signing in — smoke, qa_readonly and the
 // collector itself — still load that widget and can still take a 30s
 // `page.goto` on a runner that cannot reach it. If one of them reds with
 // `waiting until "load"`, this is the first thing to check, and the recipe
