@@ -1,5 +1,19 @@
 require "test_helper"
 require "rake"
+# THE FETCH LIBRARY THE LANE ACTUALLY USES. Studio::ImageCache.fetch_remote calls
+# `URI.open`, so a retired ESPN headshot reaches the task as an
+# OpenURI::HTTPError. Required here because `dead_source_error` below builds the
+# genuine object rather than a double that would pass a weaker check.
+require "open-uri"
+require "stringio"
+# MEASURED 2026-09-27: WITHOUT THIS, `Aws` IS UNDEFINED IN THIS PROCESS. The
+# Gemfile carries `gem "aws-sdk-s3", require: false` and the one place the app
+# loads it is Studio::S3, which every stub below replaces. So every case here that
+# documented itself as raising "the real Aws::Errors::MissingCredentialsError" was
+# in fact raising a NameError, and passed because it only ever asserted on counts
+# and on the abort's own wording. The verdicts now print the exception CLASS, which
+# is what exposed it. Required so the cases mean what they say.
+require "aws-sdk-s3"
 
 # [integration] The three rebuild-lane rake tasks that could not fail, run for
 # real against the DB.
@@ -148,10 +162,17 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     end
 
     assert_match(/failed 1 of 3 attempted uploads/, err)
-    assert_match(/dead ESPN source URL/, err,
-                 "name the likelier cause for a minority — the majority rule already names " \
-                 "the credential, and pointing at AWS for one 404 is how the line stops " \
-                 "being read")
+    # THIS USED TO DEMAND THE WARNING SAY "dead ESPN source URL", which was the
+    # conflation this task exists to undo: the warning GUESSED that a minority
+    # failure was probably a 404, because a 404 could reach this counter. It cannot
+    # any more — dead sources are classified off the exception and counted
+    # separately — so whatever is in here is ours or a transient, and the warning
+    # says which by naming the actual cause instead of guessing at a category.
+    assert_match(/Causes: #{doomed}: Aws::Errors::MissingCredentialsError/, err,
+                 "the cause an operator acts on, not a guess at which party is at fault")
+    refute_match(/dead ESPN source URL/, err,
+                 "a dead source cannot reach this counter, so naming one here would send " \
+                 "the operator to look at ESPN for a failure that is ours")
   end
 
   # NOTHING TO DO IS NOT A FAILURE. With no candidate the counters are 0 and 0,
@@ -259,17 +280,27 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
                           "population subtracts the complete candidates out so this stays silent"
   end
 
-  # THE DEFECT THIS TASK EXISTS FOR, IN THE PRODUCTION SHAPE. The twin above holds
-  # only because its whole population is one complete athlete. Production's is
-  # 2,043 complete PLUS EIGHT that have no `espn_headshot_url` and never will —
-  # chris-manhertz, brandon-scherff, jack-plummer, jack-strand, james-thompson,
-  # gabe-rubio, blake-miller, brett-thorson, three of them without an `espn_id` at
-  # all. Those eight are `skipped_no_source`, NOT `skipped_complete`, so the old
-  # `needed = considered - skipped_complete` never subtracted them out: it stayed
-  # at 8 for ever, `attempted` was legitimately 0 because there was genuinely
-  # nothing to attempt, and the HEALTHY steady-state re-run aborted claiming the
-  # task had refused its job. Scaled to 1 + 1 here, which is the same shape and
-  # produced the same verdict. FOUND INDEPENDENTLY BY TWO BUILDERS, a day apart.
+  # A SOURCELESS ATHLETE IS INVENTORY, NOT A VERDICT — the property the decline
+  # rule's narrowing buys, asserted where a warm re-run can see it. The twin above
+  # holds only because its whole population is one complete athlete; this one adds
+  # the shape that used to abort.
+  #
+  # ITS PREMISE, RE-MEASURED ON PRODUCTION 2026-09-27, AND CORRECTED. This comment
+  # used to say production carried 2,043 complete PLUS EIGHT with no
+  # `espn_headshot_url`, which kept `needed` positive against `attempted` 0 so the
+  # healthy re-run aborted. The eight athletes are real — they are the ones short a
+  # variant — but they are TWO populations and only one of them is a candidate:
+  #
+  #   chris-manhertz brandon-scherff jack-plummer jack-strand brett-thorson
+  #     espn_id yes, espn_headshot_url yes -> CANDIDATE, FETCHABLE, source 404s
+  #   james-thompson gabe-rubio blake-miller
+  #     espn_id NO, espn_headshot_url NO   -> not a candidate at all
+  #
+  # So `skipped_no_source` is ZERO on production and this rule never fired there.
+  # The abort operators actually got was `failed > cached` on five 404s, which is
+  # what the dead-source tests below cover. This shape is still worth pinning: the
+  # column is nullable, a cold run before any seed has thousands of them, and the
+  # rule must be quiet as a property of its population rather than by luck.
   test "a warm re-run with a permanently sourceless athlete stays green" do
     complete = headshot_candidate(30, team_slug: "buffalo-bills")
     cache_variants(complete, %w[original 100 400])
@@ -333,6 +364,204 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
                  "the athlete with no source was never attempted, so it is not in this " \
                  "denominator — a data gap must not dilute a credential failure")
     assert_match(/AWS_ACCESS_KEY_ID/, err)
+  end
+
+  # --- nfl:upload_headshots: a dead SOURCE is not a broken UPLOADER ---------
+  #
+  # [integration] A 404 from a.espncdn.com is a fact about ESPN; a failed
+  # `put_object` is a fact about us. The task counted both in one `failed`
+  # counter through one bare `rescue => e`, so the rule `failed > cached` fired on
+  # a run where nothing was wrong with the uploader, and the abort's first named
+  # cause was "usually AWS credentials".
+
+  # THE DEFECT, MEASURED ON PRODUCTION 2026-09-27 (read-only, heroku run
+  # bin/rails runner):
+  #
+  #   TOTAL=2051  WITH_ESPN_ID=2048  COMPLETE_CANDIDATES=2043
+  #   FETCHABLE=5  SOURCELESS_CANDIDATES=0
+  #
+  # So production's whole fetchable population is five athletes, every one of them
+  # WITH an `espn_headshot_url` on file, and every one of those five URLs answers
+  # 404 when fetched the way the app fetches — `URI.open(url, read_timeout: 30,
+  # redirect: true)` — while a control espn_id answered 230,577 bytes through the
+  # same call. `curl` agreeing proves nothing about what Ruby sees, so it was
+  # asked in Ruby.
+  #
+  # The run is therefore cached 0, failed 5, and `failed > cached` aborts the
+  # rebuild and tells the operator to check AWS credentials that are fine. Scaled
+  # to 2 here, which is the same shape: 100% of attempts "failed", none of them
+  # ours. THIS IS NOT A REGRESSION FROM THE `fetchable` NARROWING — the retired
+  # `needed` code aborted identically on the same data, by the same rule.
+  test "a run whose every ESPN source answers 404 stays green and names them" do
+    a = headshot_candidate(40, team_slug: "buffalo-bills")
+    b = headshot_candidate(41, team_slug: "buffalo-bills")
+
+    out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { raise dead_source_error }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal "", err, "a retired ESPN photo is a data gap, exactly like a blank " \
+                          "espn_headshot_url — the uploader did its job and there was " \
+                          "nothing at the other end. Only OUR failure may redden a run"
+    assert_match(/dead source \(404\/410\):\s+2/, out)
+    assert_match(/failed:\s+0/, out,
+                 "a 404 must leave the graded counter untouched, not merely be excused " \
+                 "afterwards — a subtraction cannot tell the two apart")
+    assert_match(/#{a.person_slug}/, out, "name the athlete an operator goes and checks")
+    assert_match(/#{b.person_slug}/, out)
+    assert_match(/HTTP 404/, out, "carry the status, because 404 is permanent and 503 is not")
+  end
+
+  # THE GUARD THAT MUST SURVIVE THE SPLIT, and the reason it is a separate test.
+  # Taking 404s out of `failed` is only safe if a REAL wholesale failure still
+  # reddens — otherwise this fix trades one silent success for another, which is
+  # the defect the majority rule was written to catch in the first place.
+  test "a wholesale upload failure still exits non-zero beside dead sources" do
+    headshot_candidate(42, team_slug: "buffalo-bills")
+    headshot_candidate(43, team_slug: "buffalo-bills")
+    doomed = headshot_candidate(44, team_slug: "buffalo-bills").person_slug
+
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(owner:, **) {
+        raise Aws::Errors::MissingCredentialsError, "no creds" unless owner.person_slug == doomed
+        raise dead_source_error
+      }) do
+        assert_raises(SystemExit) { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_match(/failed 2 of 2 attempted uploads/, err,
+                 "the dead source was never OUR failure, so it is not in this denominator " \
+                 "— a data gap must not dilute a credential failure")
+    assert_match(/1 more had a dead source and are NOT counted here/, err,
+                 "say where the third attempt went, or the arithmetic looks like a bug")
+    assert_match(/AWS_ACCESS_KEY_ID/, err)
+  end
+
+  # A 5xx IS STILL OURS TO REPORT. Excusing every OpenURI::HTTPError would make the
+  # lane silent through an ESPN outage, which is a run that genuinely did not do
+  # its work. Only "the shelf is empty" is a data gap; "the shop is shut" is not.
+  test "a 503 from the source is still a failure that reddens the run" do
+    headshot_candidate(45, team_slug: "buffalo-bills")
+
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { raise dead_source_error("503", "Service Unavailable") }) do
+        assert_raises(SystemExit) { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_match(/failed 1 of 1 attempted uploads/, err)
+    assert_match(/503 Service Unavailable/, err,
+                 "the cause has to reach stderr, because the [!] line is on stdout and the " \
+                 "rebuild lane discards stdout")
+  end
+
+  # LOOSE END, MEASURED AND FIXED: the abort used to say "read the [!] lines above",
+  # and bin/ecosystem-build runs this task with `>/dev/null`, so it pointed the
+  # operator at output the lane had already discarded. The causes now ride in the
+  # verdict body itself, on the channel that survives.
+  test "the abort carries the per-athlete causes instead of pointing at discarded stdout" do
+    headshot_candidate(46, team_slug: "buffalo-bills")
+    headshot_candidate(47, team_slug: "buffalo-bills")
+
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { raise Aws::Errors::MissingCredentialsError, "no creds" }) do
+        assert_raises(SystemExit) { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_match(/Causes: /, err)
+    assert_match(/Aws::Errors::MissingCredentialsError/, err,
+                 "the exception CLASS is what tells an operator AWS from ESPN in one look")
+    refute_match(/read the \[!\] lines above/, err,
+                 "the lane discards stdout, so an instruction to read it is an instruction " \
+                 "the operator cannot follow")
+  end
+
+  # THE CAUSE LIST IS CAPPED. A credential failure across 2,043 athletes would put
+  # 2,043 pairs into a rebuild log line otherwise, and a line nobody can read is
+  # the same as a line nobody was given.
+  test "the cause list is capped at three with a remainder count" do
+    5.times { |i| headshot_candidate(50 + i, team_slug: "buffalo-bills") }
+
+    _out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { raise Aws::Errors::MissingCredentialsError, "no creds" }) do
+        assert_raises(SystemExit) { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_match(/\(and 2 more\)/, err)
+    assert_equal 3, err.scan(/Aws::Errors::MissingCredentialsError/).size,
+                 "three named causes, not five — the remainder is a count"
+  end
+
+  # THE WARM STEADY STATE, IN PRODUCTION'S ACTUAL SHAPE, which is the acceptance
+  # criterion: 2,043 complete plus 5 whose source 404s. Scaled to 1 + 2. This is
+  # the run that was reddening every rebuild.
+  test "a warm re-run whose only remaining work has dead sources stays green" do
+    complete = headshot_candidate(60, team_slug: "buffalo-bills")
+    cache_variants(complete, %w[original 100 400])
+    dead = headshot_candidate(61, team_slug: "buffalo-bills")
+
+    out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { raise dead_source_error }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal "", err, "this is production's healthy steady state — every headshot that " \
+                          "CAN be cached is cached, and a rebuild that reddens on it trains " \
+                          "an operator to ignore a red rebuild"
+    assert_match(/#{dead.person_slug}/, out, "the residue is named, which is the honest way " \
+                                             "to ask for the data to be fixed")
+    refute_match(/attempted 0 of/, out + err,
+                 "a dead source counts as ATTEMPTED — the request went out and the shelf was " \
+                 "empty, so the decline rule must not fire on it either")
+  end
+
+  # THE TWO RESIDUES ARE TWO LISTS, because they are two chores: a sourceless
+  # athlete needs the COLUMN filled and a dead source needs a PHOTOGRAPH to exist.
+  # One merged list would be a list nobody can act on.
+  test "a sourceless athlete and a dead source are reported as separate chores" do
+    gap = headshot_candidate(62, espn_headshot_url: nil)
+    dead = headshot_candidate(63, team_slug: "buffalo-bills")
+
+    out, err = capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { raise dead_source_error }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal "", err
+    assert_match(/no espn_headshot_url:\s+1/, out)
+    assert_match(/dead source \(404\/410\):\s+1/, out)
+    assert_match(/NO espn_headshot_url --.*\n.*\n.*\n\s+\[-\] #{gap.person_slug}/, out,
+                 "the sourceless athlete is under the list naming nfl:players_seed")
+    assert_match(/\[x\] #{dead.person_slug} \(espn_id .*\): HTTP 404/, out,
+                 "the dead source is under its own list, with the id and status an operator " \
+                 "needs to go and look")
+  end
+
+  # HEADSHOT_LIMIT BOUNDS EVERY ATHLETE THIS RUN REACHED FOR, dead sources
+  # included: it is a politeness budget at a.espncdn.com, and a 404 costs the same
+  # request and the same pause as a hit. Leaving them out would let a limit of 2
+  # walk the whole retired catalogue.
+  test "HEADSHOT_LIMIT counts a dead source against the wave" do
+    4.times { |i| headshot_candidate(70 + i, team_slug: "buffalo-bills") }
+    ENV["HEADSHOT_LIMIT"] = "2"
+
+    reached = 0
+    capture_io do
+      Studio::ImageCache.stub(:cache!, ->(**) { reached += 1; raise dead_source_error }) do
+        refute_aborts { Rake::Task["nfl:upload_headshots"].invoke }
+      end
+    end
+
+    assert_equal 2, reached,
+                 "a dead source is a request and a pause, so it spends the wave's budget " \
+                 "exactly as a successful upload does"
   end
 
   # "ALREADY DONE" HAS TO INCLUDE "original". Studio::ImageCache.cache! stores
@@ -603,6 +832,20 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     yield
   rescue SystemExit => e
     flunk "#{task} aborted a run it should have completed: #{e.message}"
+  end
+
+  # THE REAL EXCEPTION THE LANE SEES, not a stand-in. Studio::ImageCache.cache!
+  # fetches through open-uri (`fetch_remote` -> `URI.open`), so a retired ESPN
+  # headshot arrives as an OpenURI::HTTPError whose `io.status` is
+  # `["404", "Not Found"]`. Built genuinely rather than doubled, because a double
+  # carrying only a `message` would pass a classifier that reads the message and
+  # would prove nothing about one that reads the status — and the status is the
+  # reliable half: `e.message` is whatever the server's reason phrase said.
+  def dead_source_error(status = "404", reason = "Not Found")
+    io = StringIO.new("")
+    io.extend(OpenURI::Meta)
+    io.status = [status, reason]
+    OpenURI::HTTPError.new("#{status} #{reason}", io)
   end
 
   # A CANDIDATE IN THE PRODUCTION SHAPE: espn_id set, a team_slug on the athlete's

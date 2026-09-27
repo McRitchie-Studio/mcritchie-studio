@@ -726,9 +726,17 @@ phase_nfl_headshots() {
     # Aws::Errors::MissingCredentialsError: failed 3, cached 0, exit 0. This is
     # the failure phase 6c's own players_seed message tells operators to check
     # and that no phase could report. stderr kept, for the same reason as above.
+    # THIS LINE MUST NOT NAME A CAUSE, and it used to name the wrong one. The task
+    # has TWO aborts and they blame opposite parties: one is a wholesale upload
+    # failure and does name AWS credentials, the other says explicitly that it is
+    # NOT S3. An exit code carries one bit and cannot say which fired, so this
+    # phase asserted "usually AWS creds" over both — and an operator who trusts it
+    # goes and rotates a working credential. The task's own stderr survives
+    # (>/dev/null takes stdout only), it names the verdict AND the first few
+    # per-athlete causes, so the honest line points AT that rather than guessing.
     bundle exec rails nfl:upload_headshots >/dev/null \
       && log_ok "nfl:upload_headshots" "$(bundle exec rails runner 'puts ImageCache.where(owner_type: "Athlete", purpose: "headshot").count' 2>/dev/null | tail -1) cached variants" \
-      || log_fail "nfl:upload_headshots failed more uploads than it cached — usually AWS creds in .env (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION). The line above gives the failed/attempted split."
+      || log_fail "nfl:upload_headshots exited non-zero — READ ITS OWN stderr above, which names the verdict that fired and the first causes per athlete. It has two aborts: a wholesale upload failure names AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION in .env, and a run that declined fetchable work says it is NOT S3. A dead ESPN source (404/410) is not one of them and never reddens this phase."
   )
 }
 

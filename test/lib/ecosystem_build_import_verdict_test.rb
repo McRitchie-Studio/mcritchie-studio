@@ -140,7 +140,7 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
   def test_a_failing_headshot_upload_reaches_the_rebuild_log
     out = phase(fresh_success: true, headshots_exit: 1)
 
-    assert_match(/nfl:upload_headshots failed/i, out)
+    assert_match(/nfl:upload_headshots exited non-zero/i, out)
     assert_match(/AWS_ACCESS_KEY_ID/, out,
                  "the line has to name the credential an operator goes and checks")
     refute_match(/cached variants/, out,
@@ -148,12 +148,44 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
                  "untouched, so it must not print as this run's result")
   end
 
+  # THE PHASE MUST NOT ASSERT A CAUSE IT CANNOT KNOW. An exit code carries one
+  # bit, and the task has TWO aborts that blame opposite parties: a wholesale
+  # upload failure names AWS credentials, and a run that declined fetchable work
+  # says explicitly that it is NOT S3. This line used to state "failed more
+  # uploads than it cached — usually AWS creds" over both, so half the time it
+  # sent an operator to rotate a working credential. It may name the
+  # POSSIBILITIES; it may not pick one.
+  def test_the_headshot_failure_does_not_pick_one_of_the_two_causes
+    out = phase(fresh_success: true, headshots_exit: 1)
+
+    refute_match(/failed more uploads than it cached/, out,
+                 "that sentence is one of the two verdicts, asserted over both")
+    assert_match(/NOT S3/, out, "name the other abort, so the operator knows to read which fired")
+    assert_match(/stderr above/i, out,
+                 "point at the channel that actually carries the verdict")
+  end
+
+  # THE CHANNEL CLAIM, PROVEN RATHER THAN ASSERTED. `>/dev/null` takes stdout
+  # only, so the task's own verdict — which now carries the per-athlete causes in
+  # its body precisely because of this — reaches the rebuild log, and the `[!]`
+  # lines it used to tell operators to "read above" do not. Both halves are
+  # checked: a line that survived and a line that must not.
+  def test_the_headshot_verdict_survives_while_its_stdout_is_discarded
+    out = phase(fresh_success: true, headshots_exit: 1,
+                headshots_stderr: "nfl:upload_headshots failed 2 of 2 attempted uploads")
+
+    assert_match(/failed 2 of 2 attempted uploads/, out,
+                 "the task's own stderr is the only account of WHICH verdict fired")
+    refute_match(/headshot stdout that the phase discards/, out,
+                 "stdout is thrown away, which is why the causes had to move to stderr")
+  end
+
   # The green twin, differing by exactly the upload's exit code.
   def test_a_healthy_headshot_upload_still_logs_its_variant_count
     out = phase(fresh_success: true, headshots_exit: 0)
 
     assert_match(/cached variants/, out)
-    refute_match(/nfl:upload_headshots failed/i, out)
+    refute_match(/nfl:upload_headshots exited non-zero/i, out)
   end
 
   private
@@ -169,7 +201,8 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
   # pinned to this run's start; it defaults to `fresh_success` so every existing
   # case keeps describing the world it was written for.
   def phase(fresh_success:, refused: 0, seed_stderr: nil, seed_exit: 0,
-            bounded_fresh_success: nil, capture_boundary: nil, headshots_exit: 0)
+            bounded_fresh_success: nil, capture_boundary: nil, headshots_exit: 0,
+            headshots_stderr: nil)
     bounded_fresh_success = fresh_success if bounded_fresh_success.nil?
     Dir.mktmpdir("ecosystem-build-6c") do |tmp|
       stub = File.join(tmp, "bin")
@@ -201,7 +234,13 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
             printf '#{refused.positive? ? ", #{refused} namesake(s) REFUSED — see above" : ""}'
             exit 0 ;;
           *"Athlete.where"*) echo 1234; exit 0 ;;
-          *nfl:upload_headshots*) exit #{headshots_exit} ;;
+          *nfl:upload_headshots*)
+            # BOTH CHANNELS, so a test can tell which one the phase keeps. The
+            # phase redirects stdout to /dev/null and leaves stderr alone, and the
+            # task's verdicts rely on exactly that asymmetry.
+            #{headshots_stderr ? %(echo "#{headshots_stderr}" >&2) : ":"}
+            echo "headshot stdout that the phase discards"
+            exit #{headshots_exit} ;;
           *ImageCache*)      echo 99; exit 0 ;;
           *)                 exit 0 ;;
         esac
