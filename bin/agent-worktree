@@ -4386,9 +4386,11 @@ def discovered_git_hold(record)
     return "a release workspace (#{record[:task]}) in a discovered repo stays withheld — " \
            "the sweep never reclaims release infrastructure it has no conductor claim to consult for"
   end
+  dir = record[:dir].to_s
+  # git run with no directory answers for whatever tree the SWEEP stands in.
+  return "the desk directory #{dir.inspect} is missing, so git cannot vouch for it" if dir.empty? || !Dir.exist?(dir)
   return "tree is dirty (uncommitted changes)" if record[:dirty]
 
-  dir = record[:dir]
   unpushed = git_unpushed_count(dir)
   return "could not count commits unreachable from a remote, so unpushed work cannot be ruled out" if unpushed.nil?
   return "#{unpushed} commit(s) on HEAD are on no remote (unpushed)" if unpushed.positive?

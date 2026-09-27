@@ -1691,19 +1691,16 @@ class AgentWorktreeTest < Minitest::Test
                  "would orphan its server and its Redis DB"
   end
 
-  # THE WITHHOLD. Coverage alone moved ~12 real desks onto the destroy path where three of
-  # the four hold channels are structurally dead — permanently, by construction. A discovered
-  # repo's desk can never carry a bound task (bind-task routes through the registry), so
-  # claim_hold took its documented unbound FAIL-OPEN, review_hold and pr_hold_reason answer
-  # nil for want of the same record, and what was left was desk age plus mtimes over a tree
-  # whose tmp/log/coverage/vendor/.bundle are pruned — exactly and only what a gem builder
-  # writes while running a suite. Measured on the pre-split branch: `cleanup --reclaim
-  # studio-engine` nominated 4 desks that way.
+  # THE WITHHOLD, now judged by GIT. A discovered repo's desk can never carry a bound task
+  # (bind-task routes through the registry), so the board channels have nothing to read and
+  # mtimes alone cannot prove a gem desk abandoned. Until 2026-09 that meant EVERY discovered
+  # desk was withheld (66 of 70 held desks, ~50 clean and merged); now git decides
+  # (discovered_git_hold), and a desk git cannot even inspect — no directory — is withheld.
   #
-  # Both halves matter. Widening the fail-open to every unbound desk would wedge cleanup
-  # entirely (the fail-open exists for a reason), so this asserts the REGISTERED unbound desk
-  # still reads free in the same breath.
-  def test_a_discovered_desk_is_withheld_while_a_registered_unbound_desk_still_frees
+  # Both halves matter. Widening the hold to every unbound desk would wedge cleanup entirely
+  # (the registered fail-open exists for a reason), so this asserts the REGISTERED unbound
+  # desk still reads free in the same breath.
+  def test_a_discovered_desk_git_cannot_inspect_is_withheld_while_a_registered_unbound_desk_still_frees
     out = run_in_script(<<~RUBY)
       def worktree_label(_r) = "a-repo/a-desk"
       def cleanup_command(_r) = "bin/agent-worktree remove a-repo a-desk --yes"
@@ -1719,13 +1716,12 @@ class AgentWorktreeTest < Minitest::Test
     RUBY
 
     assert_equal '["HELD", "FREE"]', out,
-                 "a discovered repo's desk must WITHHOLD (its unbound state is permanent, so the " \
-                 "fail-open would be a standing licence to destroy on mtime evidence alone), while a " \
-                 "registered unbound desk must still fail open or cleanup wedges entirely"
+                 "a discovered desk git cannot inspect must WITHHOLD (no board record can vouch for " \
+                 "it either), while a registered unbound desk must still fail open or cleanup wedges"
   end
 
   # The hold has to survive the whole aggregator, not just its own channel — reclaim_hold
-  # chains claim -> review -> desk -> pr, and only the first is taught about discovery.
+  # chains origin -> claim -> stage -> review -> desk -> pr, and only claim knows about discovery.
   def test_the_discovered_hold_survives_the_full_reclaim_hold_chain
     out = run_in_script(<<~RUBY)
       def worktree_label(_r) = "studio-engine/a-desk"
@@ -1736,7 +1732,7 @@ class AgentWorktreeTest < Minitest::Test
       print reclaim_hold({ app: app, env: {}, task: "a-desk" }).to_s
     RUBY
 
-    assert_match(/discovered repo/, out,
+    assert_match(/git cannot vouch for it/, out,
                  "reclaim_hold is what the destroy path actually calls, and this must hold for the " \
                  "DISCOVERY reason. Asserting mere truthiness passed even with claim_hold deleted " \
                  "from the chain outright: the stub record has no :dir, so desk_hold held it for an " \
@@ -1805,25 +1801,25 @@ class AgentWorktreeTest < Minitest::Test
     end
   end
 
-  # The slug is printed INTO a shell command and written to the ledger, so it has to survive a
-  # shell. "(sibling)" did not: unquoted, bash answers "syntax error near unexpected token `('".
-  def test_the_sibling_disambiguator_is_shell_safe
+  # ONE repo, ONE app. The sibling tree used to become its own `studio-engine.sibling`
+  # config — a phantom app on the Desks panel. Its desks now carry the repo's own name, and
+  # the old spelling survives only as a sweep_app_for alias (the remove test above).
+  def test_a_sibling_tree_desk_is_labelled_with_its_real_repo
     Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "managed-desk"))
       FileUtils.mkdir_p(File.join(root, "studio-engine.worktrees", "a-desk"))
 
       out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
-        slug = discovered_worktree_configs.map { |c| c["slug"] }.find { |c| c.include?("sibling") }
-        print slug.to_s
+        configs = discovered_worktree_configs
+        print [configs.map { |c| c["slug"] }, stack_dirs(configs.first).map { |d| File.basename(d) }].inspect
       RUBY
 
-      assert_equal "studio-engine.sibling", out
-      refute_match(/[()\[\]{}*?$`!&;|<> ]/, out,
-                   "the sweep pastes this slug into `bin/agent-worktree remove <slug> ...`; a shell " \
-                   "metacharacter makes every remediation line it prints unrunnable")
+      assert_equal '[["studio-engine"], ["a-desk", "managed-desk"]]', out,
+                   "both trees belong to one repo: one config named by the repo, holding every desk"
     end
   end
 
-  # A repo with BOTH tree conventions yields two configs, each seeing only its own tree. The
+  # A repo with BOTH tree conventions yielded two configs, each seeing only its own tree. The
   # orphan reconciliation compares `git worktree list` — which returns every worktree for the
   # repo — against that per-config view, so each config reported the OTHER tree as untracked:
   # twelve "review then remove" advisories against desks including a DIRTY one and three
@@ -1841,7 +1837,7 @@ class AgentWorktreeTest < Minitest::Test
                  File.join(PROJECTS_DIR, "studio-engine.worktrees", "sibling-desk")]
                .map { |dir| canonical_path(dir) }
         def git_worktree_dirs(_repo) = DESKS
-        config = discovered_worktree_configs.find { |c| c["slug"] == "studio-engine.sibling" }
+        config = sweep_app_for("studio-engine.sibling")
         print orphan_worktree_issues(config).size
       RUBY
 
