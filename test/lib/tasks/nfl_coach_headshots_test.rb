@@ -68,6 +68,27 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     refute_includes url, Espn::Api::FILTERED_HOST
   end
 
+  # THE ASSERTION ABOVE CHECKS A VALUE, WHICH IS NOT THE WHOLE ACCEPTANCE. A
+  # hardcoded "site.web.api.espn.com" would satisfy every case above while
+  # re-creating the exact condition that killed this lane: a host spelled in two
+  # files, one of which somebody later edits. MEASURED by mutation -- replacing
+  # `Espn::Api::CORE_HOST` with its literal left the whole file green -- so the
+  # rule "the host comes from Espn::Api" needs a case that can see a literal.
+  #
+  # Comment lines are exempt on purpose: the measurement table in nfl.rake has to
+  # be able to NAME the dead host, and a rule that forbade that would be a rule
+  # against writing down what was measured.
+  test "no rake lane spells an ESPN host literally -- they come from Espn::Api" do
+    code = Rails.root.join("lib/tasks/nfl.rake").readlines.grep_v(/^\s*#/).join
+
+    [Espn::Api::WEB_HOST, Espn::Api::CORE_HOST, Espn::Api::FILTERED_HOST].each do |host|
+      refute_includes code, host,
+                      "#{host} is spelled out in lib/tasks/nfl.rake. Reference the " \
+                      "Espn::Api constant instead -- two copies of a host is the defect " \
+                      "this lane was fixed for, not a style preference."
+    end
+  end
+
   # LAZY BY NECESSITY, NOT BY TASTE, and asserted so nobody "tidies" it back into
   # a String. MEASURED 2026-09-27 with a throwaway .rake file and `rake -T`:
   # Rails loads lib/tasks/*.rake BEFORE the `:environment` task sets Zeitwerk up,
