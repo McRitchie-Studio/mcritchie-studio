@@ -57,8 +57,8 @@ lanes are rare, so the cost is one extra mint. Do not "fix" this.
 | **Token older than 50 min** | mint a replacement, cache it | automatic |
 | **Token rejected (401) on a `git` operation** | retire that token, next call mints once | automatic |
 | **Token rejected (401) on `gh` or an API call** | nothing retires it — it is served until it ages out | **you** — step 1 |
-| **1Password unreachable, quota spent, or the service account deleted** | `op` cannot serve the key, so `bin/gh-token` cannot mint — but you can, from the recorded app id plus a local `.pem`. **Two legs, `gh` and `git`, and both are yours to arm** | **you** — *When 1Password itself is down* |
-| **Token present, but the one in YOUR shell is stale** | the session inherited a revoked `OP_SERVICE_ACCOUNT_TOKEN` while `~/.zprofile` already holds the live one; `op` then fails as though the account were deleted | **you** — step 1a |
+| **1Password unreachable, quota spent, or the service account genuinely gone** | `op` cannot serve the key, so `bin/gh-token` cannot mint — but you can, from the recorded app id plus a local `.pem`. **Two legs, `gh` and `git`, and both are yours to arm** | **you** — *When 1Password itself is down* |
+| **Token present, but the one in YOUR shell is stale** | the session inherited a revoked `OP_SERVICE_ACCOUNT_TOKEN` while `~/.zprofile` already holds the live one; `op` then fails exactly as it would for a service account that no longer exists | **you** — step 1a |
 | **Deployer token needed, admin token absent, machine provisioned** | `source ~/.zprofile.admin` in this shell, then retry | **you** |
 | **Deployer token needed, and this machine has no `~/.zprofile.admin`** | install it once — `bin/setup-1pass-token --admin` | **Alex** |
 
