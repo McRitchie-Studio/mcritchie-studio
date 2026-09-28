@@ -45,16 +45,19 @@ directly in chat.
   `DESK_ALLOWED_SENDERS` lands `quarantined`, and a quarantined item is
   reported, never processed. Adding an address is a production config change
   that only Alex can approve.
-- **Type a line of text above the forward.** In the one case observed, a
-  blank re-forward of a thread that had already gone to team@ never reached
-  Resend. On 2026-09-28 (Denver time), a 12:30 PM forward arrived, a blank
-  1:02 PM re-forward of the same thread never did, and a 1:19 PM forward with one line of text arrived within a minute. The
-  likely cause is the team@ Google group dropping a near-duplicate; that was
-  not confirmed.
-- **Check Resend before debugging the hub.** If no desk item appears within a few
-  minutes, list Resend's received mail (`GET /emails/receiving` with the hub's
-  `RESEND_API_KEY`, from a dyno). If the message is not there, it stopped
-  before our pipeline, and nothing in the hub will show it.
+- **A forward can arrive late.** Wait about 20 minutes before
+  re-forwarding: a re-forward that lands later becomes a second desk
+  item for the same email. In the one case observed, on 2026-09-28 (Denver
+  time), a blank re-forward sent at 1:02 PM reached the desk at 1:20 PM. A
+  forward with a line of text, sent at 1:19 PM, arrived within a minute. The
+  cause of the delay is unknown, and one case does not show that a blank
+  forward is slower.
+- **Check Resend before debugging the hub.** If no desk item appears after
+  about 20 minutes, list Resend's received mail (`GET /emails/receiving` with
+  the hub's `RESEND_API_KEY`, from a dyno). A message missing from that list
+  has not reached our pipeline yet, and nothing in the hub will show it. An
+  empty list does not prove the message was dropped: in the case above, the
+  list was checked at about 1:14 PM, before the delayed message arrived.
 
 ## What the agent asks
 
