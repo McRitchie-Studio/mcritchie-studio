@@ -123,16 +123,21 @@ module Appearances
     #   answer for 12 images           523 tokens out   (measured, see MAX_TOKENS)
     #   answer for 24 images         1,039 tokens out
     #
-    # So at Haiku 4.5's $1/MTok in and $5/MTok out, per athlete per search:
+    # ⚠ THE SYSTEM PROMPT IS PAID ONCE PER REQUEST, AND THERE ARE NOW THREE.
+    # Appearances::FaceVisibility::BATCH_SIZE is 8, so a shortlist of 24 is three requests
+    # and 624 tokens of prompt is billed three times. Counting it once — which an earlier
+    # draft of this comment did — understates the bill by ~1,248 tokens. So at Haiku 4.5's
+    # $1/MTok in and $5/MTok out, per athlete per search:
     #
-    #   12 images   624 + 8,508 in, 523 out    = $0.0091 + $0.0026 = $0.012
-    #   24 images   624 + 17,016 in, 1,039 out = $0.0176 + $0.0052 = $0.023
+    #   12 images, 1 request     624 + 8,508 in, 523 out    = $0.0091 + $0.0026 = $0.012
+    #   24 images, 3 requests  1,872 + 17,016 in, 1,039 out = $0.0189 + $0.0052 = $0.024
     #
     # ONE FULL PASS OVER THE 2,051 ATHLETES IN PRODUCTION is therefore ~8,204 Serper
-    # queries (four each, and Serper bills per QUERY rather than per result) plus ~$47 of
-    # classification, against ~$24 at a ceiling of 12. The whole change costs about
-    # twenty-three dollars a pass. It is stated here rather than in a commit message
-    # because the next person to reach for this constant is the person who needs it.
+    # queries (four each, and Serper bills per QUERY rather than per result) plus ~$49 of
+    # classification, against ~$24 at a ceiling of 12 in one request. The whole change
+    # costs about twenty-five dollars a pass. It is stated here rather than in a commit
+    # message because the next person to reach for this constant is the person who needs
+    # it — and it is stated WITH the batching, because the two constants are one bill.
     #
     # ⚠ IT IS CAPPED BY Appearances::FaceVisibility::MAX_TOKENS, NOT ONLY BY MONEY, and
     # that ceiling had to move with this one — it was ALREADY TOO LOW FOR TWELVE. Every
