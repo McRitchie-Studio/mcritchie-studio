@@ -878,11 +878,13 @@ namespace :nfl do
     if applied.zero?
       abort "nfl:link_coach_headshots linked 0 of #{attempted} ESPN teams to a head coach " \
             "(#{failed} failed, #{skipped_no_team} no team match, #{skipped_no_coach} no coach) " \
-            "-- not one Coach row now carries an ESPN id from this run, so every coach avatar " \
-            "the rebuild goes on to upload has no source. #{causes}" \
+            "-- not one Coach row carries an ESPN id or an ESPN headshot URL from this run. " \
+            "#{causes}" \
             "If the failures are 403s, this lane has been pointed back at " \
-            "#{Espn::Api::FILTERED_HOST}: read the note in app/services/espn/api.rb. If they " \
-            "are 'no team match', the Team table was not seeded before this ran."
+            "#{Espn::Api::FILTERED_HOST}: read the note in app/services/espn/api.rb. " \
+            "'no team match' means ESPN's abbreviation found no Team row -- either the teams " \
+            "were not seeded before this ran, or ESPN renamed an abbreviation and the " \
+            "teams_by_abbrev overrides at the top of this task need the new spelling."
 
     # A PARTIAL RUN STAYS GREEN, DELIBERATELY. One dead team is a normal ESPN
     # afternoon and an exit code carries one bit that cannot say "partly worked", so
@@ -1080,9 +1082,15 @@ namespace :nfl do
     # both streams discarded and reads only the status, so the report above was
     # never going to reach anybody.
     #
-    # THIS LANE IS THE ONLY SOURCE OF A COORDINATOR'S HEADSHOT AT ALL -- ESPN's coach
-    # API carries no `headshot.href` for any of them -- so a silent total failure
-    # costs three of the four coaches on every team their avatar.
+    # THIS LANE IS THE ONLY WRITER OF A COORDINATOR'S HEADSHOT URL, so a silent total
+    # failure costs three of the four coaches on every team their avatar. MEASURED
+    # 2026-09-28 by grepping every write of `espn_headshot_url` in app/, lib/ and
+    # db/seeds/: on Coach there are exactly two, both in this file, and the other one
+    # (`nfl:link_coach_headshots`) looks up `role: "head_coach"` and nothing else --
+    # so it cannot reach a coordinator by construction, not merely by habit. The
+    # reason ESPN cannot cover the gap is this file's own older note, carried forward
+    # rather than re-measured: its coach API has no `headshot.href` for ~21 of 32 head
+    # coaches and none for any coordinator.
     #
     # GRADED ON `linked`, NOT ON `failed_team`, because that counter is blind to the
     # other way to link nothing: every page loads and none yields a coach card this
