@@ -686,7 +686,7 @@ apps:
     # APPLY to it (no dyno, no URL, no deploy of any kind). Cyvasse is a deployable
     # Rails app: a QA copy could exist. It is exempt on COST, by OPERATOR DECISION:
     #
-    #   Alex, 2026-09-25 (verbatim, typo kept; the guard matches it exactly):
+    #   Alex, 2026-09-25 (verbatim, typo kept; HISTORY since 2026-09-28):
     #   "No cyvasse-qa unless there is a free teir we can use"
     #   Heroku has no free tier (a QA copy is ~$12/mo), so there is no
     #   `cyvasse-qa` app.
@@ -697,10 +697,11 @@ apps:
     # stamp forever — no run can evidence a QA env that does not exist — so the
     # choice is exempt-by-decision or never ship.
     #
-    # THE GUARD STAYS FAIL-CLOSED for every other repo. repos_test.rb pins the
-    # exempt set to exactly turf-vault + cyvasse, and requires every exempt repo
-    # that HAS a prod_deploy (i.e. could have had a QA copy) to be on its
-    # operator-decision list with the decision cited. The day cyvasse gains a
+    # THE GUARD STAYS FAIL-CLOSED for every other repo. repos_test.rb requires
+    # every exempt repo that HAS a prod_deploy (i.e. could have had a QA copy) to
+    # carry a cited operator decision: since 2026-09-28 cyvasse is on profile
+    # standalone-heroku, whose fleet decision (config/app_profiles.yml →
+    # qa_decision, this quote kept under history) is that grant. The day cyvasse gains a
     # qa_test_cmd or a qa_environments entry, the "exempt repo really has no QA
     # target" test goes red and this key must come out. The exemption is QA-only:
     # the `shipped` stamp still needs cyvasse's real release -> main record.
