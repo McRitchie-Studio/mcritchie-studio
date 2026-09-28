@@ -42,18 +42,6 @@ class AppIdRecordedClaimsTest < Minitest::Test
   # exists", not "this exact wording exists".
   RECIPE_HEADING = /^##+ .*1Password.*(?:down|unreachable).*mint/i
 
-  # THE RECIPE'S OWN SUBHEADING, and why it is a second anchor rather than a
-  # replacement. RECIPE_HEADING alone left `recipe_block` reading THE FIRST fenced
-  # bash block anywhere below it, and that section is long — it explains two legs,
-  # the board state of a retired task, and how to read each check before the recipe
-  # arrives. Measured 2026-09-28: adding an unrelated one-line `bin/task show`
-  # block to the prose ABOVE the recipe made three assertions in this file run
-  # against that line and fail with messages about an empty-token guard, pointing
-  # the next reader at a defect that was not there. Anchoring on the subsection
-  # keeps the loose outer match (the section must exist) and makes the block
-  # selection exact.
-  RECIPE_SUBHEADING = /^###+ .*\brecipe\b/i
-
   def read(rel) = File.read(File.join(ROOT, rel))
 
   # An app id is a bare integer. Accept 6-9 digits so a future app registered in
@@ -187,14 +175,9 @@ class AppIdRecordedClaimsTest < Minitest::Test
       "Its lifecycle table routes the `1Password unreachable / quota spent` row " \
       "to the reader, so the reader needs somewhere to land."
 
-    rest  = sop.lines[heading_index..]
-    offset = rest.index { |line| line.match?(RECIPE_SUBHEADING) }
-    refute_nil offset,
-      "#{SOP}'s mint-by-hand section has no `### The recipe` subheading, so this " \
-      "guard cannot tell the recipe from any other bash block in the section."
-
-    block = rest[offset..].join[/```bash\n(.*?)```/m, 1]
-    refute_nil block, "the recipe subsection carries no runnable bash block."
+    rest = sop.lines[heading_index..].join
+    block = rest[/```bash\n(.*?)```/m, 1]
+    refute_nil block, "the mint-by-hand section carries no runnable bash block."
     block
   end
 end

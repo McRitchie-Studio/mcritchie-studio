@@ -270,7 +270,7 @@ and it is checkable: **`mcritchie-studio` is the only checkout on this machine
 carrying a repo-local `gh` fallback.** The sweep behind it, so you never have to
 take the number on trust:
 
-```bash
+```
 cd /Users/alex/projects
 for d in */; do r="${d%/}"; [ -e "$r/.git" ] || continue
   printf '%-24s %s\n' "$r" \
