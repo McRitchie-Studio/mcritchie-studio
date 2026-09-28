@@ -120,6 +120,22 @@ because FRED's `fredgraph.csv` endpoint is keyless. Repoint it at the keyed
 `api.stlouisfed.org`, whose key rides an `api_key=` query param, and those three
 lines become a live credential leak into Postgres on the first transport error.
 
+**A SECOND LIVE INSTANCE OF THAT SHAPE, IN THIS REPO, WITH THE SAME SOLE
+DEFENCE.** `app/services/espn/scrape_depth_charts.rb` and
+`app/services/espn/player_profile.rb` both interpolate the request URL into the
+`SourceUnavailable` they raise from `fetch_json`, and `espn-services-error-logs`
+(2026-09-27) is what made those exceptions reach `ErrorLog.capture!` — before it,
+nothing in `app/services/espn/` filed a row at all, so the URL never became durable.
+It is safe for FRED's exact reason and no other: every ESPN endpoint the app reads is
+public and takes no key, which `app/services/espn/api.rb` measures and records for all
+three hosts. Because "safe today, by a property of the vendor" is not a guarantee, a
+test in `test/services/espn/scrape_depth_charts_test.rb` refuses `ENV[`,
+`Rails.application.credentials`, `api_key`, `access_token` and a bearer token back into
+that directory — flattened after whole-line comments are dropped, so a read split over
+two lines cannot slip past a line regex. The lesson generalises: the moment a rescue
+starts FILING an exception whose message carries a URL, the endpoint's keylessness
+stops being a detail and becomes a load-bearing invariant that needs a guard.
+
 **Where the rule already lives in code** — three sites, which is why it belongs
 in prose:
 

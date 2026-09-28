@@ -146,23 +146,39 @@ module Espn
     # than returning nil — "he is on no roster in the league" and "I could not read
     # four rosters" are different facts, and the caller turns nil into "retired or
     # released", which would be a lie about a man ESPN still carries.
+    #
+    # THE ROSTERS IT COULD NOT READ ARE FILED EITHER WAY, which is the one thing this
+    # walk used to lose. The rescue below is the only place in this file that SWALLOWS
+    # a failure rather than translating and re-raising it, and on the branch where the
+    # man turns up on a later roster the census was dropped on the floor — not
+    # printed, not raised, not counted. So the search reported a clean success while
+    # four rosters were down and nothing anywhere recorded it.
+    #
+    # THE ATHLETE FETCH IS OUTSIDE THE RESCUE'S REACH NOW, and that is a correction,
+    # not a tidy-up: `return find(source_id: …)` sat INSIDE the block the rescue
+    # guards, so a 503 on the ATHLETE document was caught and written down as
+    # "could not read roster <abbr>" — a sentence about the wrong endpoint, which then
+    # became the raise's whole explanation. The id is carried out of the loop and the
+    # profile fetched after it, so an athlete-document failure raises as itself.
     def find_in_league(name:)
       wanted = Athletes::NameKey.for(name)
       return nil if wanted.empty?
 
       unreadable = []
+      found_id = nil
       TEAM_ABBREVS.each do |abbr|
         entry = roster(team: abbr).find { |candidate| Athletes::NameKey.for(candidate.name) == wanted }
-        return find(source_id: entry.source_id) if entry
+        if entry
+          found_id = entry.source_id
+          break
+        end
       rescue SourceUnavailable => e
         unreadable << "#{abbr} (#{e.message})"
       end
 
-      if unreadable.any?
-        raise SourceUnavailable,
-              "searched the league for #{name} and could not read #{unreadable.length} roster(s): " \
-              "#{unreadable.join('; ')} — not concluding they are unrostered"
-      end
+      record_unreadable_rosters(name, unreadable) if unreadable.any?
+      return find(source_id: found_id) if found_id
+      raise SourceUnavailable, "#{unreadable_census(name, unreadable)} — not concluding they are unrostered" if unreadable.any?
 
       nil
     end
@@ -181,6 +197,39 @@ module Espn
     end
 
     private
+
+    # ONE ROW PER CALL, NOT ONE PER DEAD ROSTER. The census is the finding; a row per
+    # roster would be up to 32 of them (TEAM_ABBREVS.size is 32, measured with
+    # `bin/rails runner 'puts Espn::PlayerProfile::TEAM_ABBREVS.size'`) all saying "ESPN
+    # is down" — the noise that teaches an operator to stop opening /admin/error_logs. It is filed on the RAISING branch too, because the
+    # exception's only reader today is Athletes::AcquireOrValidate#call, which turns
+    # Athletes::SourceUnavailable into a printed refusal — stdout again, and stdout is
+    # what `bundle exec rails … >/dev/null` throws away.
+    #
+    # RAISED AND IMMEDIATELY RESCUED so the row carries a real backtrace;
+    # ErrorLog.capture! cleans `exception.backtrace`, which is nil on an exception
+    # that was only constructed. Untargeted on purpose: the subject is a name this
+    # search could not resolve, so there is no record to hang it on yet, and
+    # Appearances::FailureLog files a slugged row regardless — which is what keeps it
+    # reachable in the admin list rather than invisible.
+    #
+    # Nothing credential-shaped can reach the row: every endpoint in this file is
+    # public and takes no key, and the census is built from an abbreviation and the
+    # SourceUnavailable messages this class writes itself (a status, a host and a
+    # path). Its own failure is swallowed by Appearances::FailureLog, so telemetry
+    # cannot veto a search that otherwise succeeded.
+    def record_unreadable_rosters(name, unreadable)
+      raise SourceUnavailable, unreadable_census(name, unreadable)
+    rescue SourceUnavailable => e
+      Appearances::FailureLog.file(e)
+    end
+
+    # ONE SENTENCE, TWO CONSUMERS — the row above and the raise in #find_in_league, so
+    # the two cannot drift into describing the same outage differently.
+    def unreadable_census(name, unreadable)
+      "searched the league for #{name} and could not read #{unreadable.length} roster(s): " \
+        "#{unreadable.join('; ')}"
+    end
 
     def fetch_roster(abbr)
       body = fetch_json(format(ROSTER_URL, abbr))

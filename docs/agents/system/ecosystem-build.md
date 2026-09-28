@@ -103,7 +103,7 @@ Measured 2026-09-23, each in a desk against the real code:
 
 | Lane | What a total failure used to look like | What it looks like now |
 |------|----------------------------------------|------------------------|
-| `espn:scrape_depth_charts` | `{:teams_failed=>32}` printed, exit 0, green entry count logged | refuses a run that applied NO teams; a partial run stays green and reports its per-bucket tally on stderr |
+| `espn:scrape_depth_charts` | `{:teams_failed=>32}` printed, exit 0, green entry count logged | refuses a run that applied NO teams; a partial run stays green and reports its per-bucket tally on stderr; every per-team failure ESPN RAISED on, and the refusal itself, file an `ErrorLog` row (`espn-services-error-logs`) |
 | `nfl:upload_headshots` | every candidate raised `Aws::Errors::MissingCredentialsError`, `failed: 3 cached: 0`, exit 0 | refuses a run where more uploads failed than succeeded, and names the AWS variables to check |
 | `nfl:rankings_compute` | wrote the SAME 448 rows a healthy run writes, every score `0.0`, exit 0 | refuses a ranking where every team scored zero, and names `GRADES_FROM` |
 | `nfl:players_seed` | exit 0 through a rescued feed outage | graded on the exit code AND an `ImportRun` success pinned to THIS run's start |
@@ -129,6 +129,30 @@ any `scrape_team` runs, so a TOTAL ESPN outage creates no charts at all rather t
 empty ones (asserted in `test/integration/espn_depth_chart_refresh_test.rb`). The
 defect itself is untouched — one team ESPN cannot serve still leaves one empty chart
 and still reports 0 spots through a green count.
+
+**AN EXIT CODE IS A VERDICT, NOT AN EXPLANATION — and this phase throws the
+explanation away.** Phase 6b runs `bundle exec rails espn:scrape_depth_charts
+>/dev/null`, so stdout is discarded by intent, and the per-team `puts` naming the
+exception for a team ESPN could not serve was the ONLY record that had ever carried a
+cause. The tally on stderr survives and carries counts. MEASURED 2026-09-27 against
+the ref itself, not a checkout — `git grep -cE "ErrorLog|rescue_and_log" origin/accepted
+-- app/services/espn lib/tasks/espn.rake`, which exits 1 with no output: zero hits in
+either path, while two sibling feed services
+(`Nflverse::SeedPlayers`, `Appearances::ImageSearch::WikimediaCommons`) file rows.
+`espn-services-error-logs` closed that: a tolerated per-team failure files one row
+targeted at the `DepthChart`, the zero-applied refusal files one before it aborts, and
+a raise out of the service files one and re-raises. Counting rules and grading rules
+answer "did it work"; a row is the only thing that answers "why not" a week later, and
+a lane that writes to a discarded stream has no answer at all.
+
+WHAT DELIBERATELY FILES NOTHING, because half of this is knowing where NOT to write. A
+partial run (the `warn` above) files no row of its own — the per-team rows already
+carry each cause. A depth chart ESPN answers 404 for on both seasons files no row
+either: `parse_response` turns a 404 into a nil rather than a raise, so a source with
+nothing to give is never recorded as our failure — the distinction
+`Athletes::DeadHeadshotSource` draws for the headshot lane, drawn here one layer lower
+by status. That is why the row sits in `fetch_groups`' rescue and not in
+`scrape_team`'s `unless groups`, which both cases reach.
 
 ### The same pattern in Phase 6, reached only through `db:seed`
 

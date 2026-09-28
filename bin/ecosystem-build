@@ -638,6 +638,12 @@ phase_nfl_data() {
     # this phase cannot know in advance and a bare "failed" cannot convey. The
     # per-team [!] lines stay on stdout and stay discarded; they are 32 lines of
     # detail behind a one-line verdict.
+    #
+    # AND THE DISCARD IS NOW SAFE, which it was not when the paragraph above was
+    # written. espn-services-error-logs files the cause of every per-team failure ESPN
+    # RAISED on, plus the zero-applied refusal and any raise out of the service, into
+    # error_logs. So the [!] lines are a convenience here rather than the only record,
+    # and the place to look when a chart is stale a week later is /error_logs.
     bundle exec rails espn:scrape_depth_charts >/dev/null \
       && log_ok "espn:scrape_depth_charts" "$(bundle exec rails runner 'puts DepthChartEntry.where.not(formation_slot: nil).count' 2>/dev/null | tail -1) entries with ESPN formation_slot" \
       || log_fail "espn:scrape_depth_charts applied no teams — depth charts are UNCHANGED (ESPN unreachable, or its JSON shape moved). Rosters snapshotted after this will be last week's. The summary line above has the per-bucket counts."

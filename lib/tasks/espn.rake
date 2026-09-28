@@ -1,7 +1,22 @@
 namespace :espn do
   desc "Scrape ESPN per-team depth charts and apply to DepthChart. TEAM=buf for one team. VERBOSE=1 for full match logs."
   task scrape_depth_charts: :environment do
-    stats = Espn::ScrapeDepthCharts.new(team_abbrev: ENV["TEAM"], verbose: ENV["VERBOSE"].present?).call
+    # THE LOUDEST FAILURE WAS THE LEAST FINDABLE. A raise out of `call` — an
+    # unreadable teams index, or a MissingTeamId escaping the per-team rescue — kills
+    # the task with a backtrace on stderr and leaves nothing in /admin/error_logs, so
+    # the one place an operator looks a week later is empty for the one failure that
+    # stopped the scrape dead. Filed and RE-RAISED: the lane must still go red, and
+    # the rescue adds a row and changes no verdict.
+    #
+    # NO DOUBLE ROW. The per-team rescue inside the service files and then returns nil
+    # rather than re-raising, and it lets MissingTeamId past WITHOUT filing, so an
+    # exception that reaches here has not been recorded anywhere yet.
+    begin
+      stats = Espn::ScrapeDepthCharts.new(team_abbrev: ENV["TEAM"], verbose: ENV["VERBOSE"].present?).call
+    rescue StandardError => e
+      Appearances::FailureLog.file(e)
+      raise
+    end
 
     applied   = stats[:teams_scraped].to_i
     failed    = stats[:teams_failed].to_i
@@ -33,9 +48,29 @@ namespace :espn do
     # legible without being fatal. Zero teams applied is the other thing: that
     # is not degradation, it is the scrape not happening.
     if applied.zero? && attempted.positive?
-      abort "espn:scrape_depth_charts applied 0 of #{attempted} teams — the scrape did " \
-            "not happen (ESPN unreachable, or its JSON shape moved). Depth charts are " \
-            "unchanged; rosters snapshotted after this will be last week's."
+      verdict = "espn:scrape_depth_charts applied 0 of #{attempted} teams — the scrape did " \
+                "not happen (ESPN unreachable, or its JSON shape moved). Depth charts are " \
+                "unchanged; rosters snapshotted after this will be last week's."
+
+      # THE ABORT IS FILED BEFORE IT IS TAKEN. `abort` writes the sentence to stderr
+      # and raises SystemExit; bin/ecosystem-build turns that into one `log_fail` line
+      # in a build log nobody keeps, and nothing durable records that the scrape did
+      # not happen. Raised and immediately rescued so the row carries a real class,
+      # message and backtrace — the shape Insights::DocFreshnessJob uses for its own
+      # receipt.
+      #
+      # ONLY THIS BRANCH. A PARTIAL run is a normal ESPN afternoon and deliberately
+      # stays green; the `warn` above reports it and the per-team rows the service
+      # filed already carry each cause, so a row for the tally would be a second
+      # spelling of facts already on file. Zero applied is the other thing: that is
+      # not degradation, it is the scrape not happening.
+      begin
+        raise Espn::ScrapeDepthCharts::ScrapeDidNotHappen, verdict
+      rescue Espn::ScrapeDepthCharts::ScrapeDidNotHappen => e
+        Appearances::FailureLog.file(e)
+      end
+
+      abort verdict
     end
   end
 end
