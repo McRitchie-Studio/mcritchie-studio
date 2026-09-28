@@ -35,11 +35,12 @@ Heroku, gated by its own CI, **with no QA copy**.
 | `test_cmd` | the app's CI `test` job command, verbatim (the last gate before production) |
 | `qa_evidence` | `exempt` |
 
-**The QA decision is the profile's, taken once.** Alex, 2026-09-28, asked
+**The QA decision is the profile's, taken once.** On 2026-09-28 Alex was asked
 "Confirm the fleet-wide QA rule: standalone apps ship without a QA copy unless
-there is a free tier", answered "Yes to both". The exact text lives in
-`config/app_profiles.yml` and `test/models/release/repos_test.rb` holds both to
-it. An app that needs a QA copy is not this shape: it gets a
+there is a free tier" and answered "Yes to both" (the other half: build this
+standard now). The exact text lives in `config/app_profiles.yml`;
+`test/models/release/repos_test.rb` pins the answer verbatim and requires the
+question to be recorded. An app that needs a QA copy is not this shape: it gets a
 `config/qa_environments.yml` entry and a `qa_test_cmd`, and drops `profile:`.
 
 **The contract** an app must meet before registration (checked live):

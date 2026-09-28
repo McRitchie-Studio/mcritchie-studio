@@ -44,7 +44,8 @@ profiles:
       - An app with a database runs migrations in its Procfile release phase
     # THE QA DECISION, taken ONCE for every app on this profile. It replaces the
     # per-app quotes the registry used to carry (those stay below as history).
-    # repos_test.rb requires this text verbatim, so change both together.
+    # repos_test.rb pins `answer` verbatim and requires `asked`, so change both
+    # together. "Both" = this rule, and building this standard now.
     qa_decision:
       rule: "standalone apps ship without a QA copy unless there is a free tier."
       asked: 'Confirm the fleet-wide QA rule: "standalone apps ship without a QA copy unless there is a free tier."'
