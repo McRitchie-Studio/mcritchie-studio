@@ -254,7 +254,11 @@ hub should expose it in satellite links.
 
 ## Future `bin/new-app`
 
-`bin/register-satellite` is the current contract. A future `bin/new-app` can
+`bin/register-satellite` is the current contract for `config/satellites.yml`.
+Release registration of a single-use app is `bin/register-app` (since
+2026-09-28; SOP [`app-deploy-standard`](../agents/steffon/sops/app-deploy-standard.md)),
+which checks the app and generates its `config/release_repos.yml` entry from a
+profile. A future `bin/new-app` can
 generate the Rails app, Heroku/GitHub resources, 1Password items, and docs, but
 it should call or preserve the same registry rules instead of inventing another
 app list.

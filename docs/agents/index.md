@@ -163,6 +163,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | `archive-completed` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
 | `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
+| `app-deploy-standard` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
 | `r2-backup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
 | `credential-filing` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | `credential-rotation` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
@@ -229,6 +230,7 @@ heartbeat may set attribution and act order; the SOP files do not depend on it.
 | `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
 | `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
+| `app-deploy-standard` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
 | `r2-backup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
 | `credential-filing` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | `credential-rotation` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |

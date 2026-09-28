@@ -54,9 +54,14 @@ deliberate decision, never a default.
   have a `status: reserved` row to protect a future port block, but remains an
   *unmanaged candidate*: app-specific docs live in its own repo, and it is
   excluded from `bin/ecosystem-build` and the hub navbar. If the studio owns
-  QA/prod hosting, add it to `config/release_repos.yml` and
-  `config/qa_environments.yml` as a **release-managed standalone** app — with a
-  `ladder:` declaration, and run `bin/release init` (see section 4). Record
+  QA/prod hosting, register it as a **release-managed standalone** app. A
+  single-use app on its own Heroku app with no QA copy follows Steffon's
+  [`app-deploy-standard`](../agents/steffon/sops/app-deploy-standard.md):
+  `bin/register-app` checks the contract and generates its
+  `config/release_repos.yml` entry on the `standalone-heroku` profile. Anything
+  else gets a hand-written entry with a `ladder:` declaration (and a
+  `config/qa_environments.yml` entry if it has QA); run `bin/release init`
+  (see section 4). Record
   the decision in
   [`../modules/app-registry.md`](../modules/app-registry.md) so the next agent
   doesn't re-litigate it.
