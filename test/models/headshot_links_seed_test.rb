@@ -68,17 +68,35 @@ class HeadshotLinksSeedTest < ActiveSupport::TestCase
 
   private
 
-  # RECORDS THE LANE NAMES WITHOUT RUNNING THEM, by standing in for `Rake::Task.[]`.
-  # The tasks themselves talk to ESPN and NFL.com, and what is under test here is
-  # the seed's branch, not either lane's behaviour -- those have their own files.
+  # RECORDS THE LANE NAMES WITHOUT RUNNING THEM. The tasks themselves talk to ESPN
+  # and NFL.com, and what is under test here is the seed's BRANCH, not either lane's
+  # behaviour -- those have their own files.
+  #
+  # ONLY THE TWO LANES ARE INTERCEPTED, and the narrowness is the fix rather than
+  # tidiness. A stub that answered EVERY name with the recorder made this file
+  # order-dependent: rake's own loader asks `Rake::Task.[]` for tasks while it
+  # defines them and then calls `clear_comments` on what it gets back, so whether
+  # these cases passed or raised `NoMethodError: undefined method 'clear_comments'`
+  # depended on whether some earlier test had already loaded the task list.
+  # MEASURED -- it surfaced as an ERROR rather than a failure under a mutation pass
+  # on the gate, which is what exposed it. `load_tasks` is therefore forced here and
+  # every other name is delegated to the real implementation, captured before the
+  # stub takes it.
   def invoked_tasks
+    Rails.application.load_tasks unless Rake::Task.task_defined?(LANES.first)
     seen = []
     recorder = Object.new
-    recorder.define_singleton_method(:invoke) { nil }
+    recorder.define_singleton_method(:invoke) { |*| nil }
+    real = Rake::Task.method(:[])
 
-    Rake::Task.stub(:[], ->(name) { seen << name; recorder }) do
-      capture_io { load SEED }
+    intercept = lambda do |name|
+      next real.call(name) unless LANES.include?(name.to_s)
+
+      seen << name.to_s
+      recorder
     end
+
+    Rake::Task.stub(:[], intercept) { capture_io { load SEED } }
     seen
   end
 end
