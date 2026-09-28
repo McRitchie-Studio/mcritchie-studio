@@ -114,7 +114,7 @@ class NflCoachTeamSitesTest < ActiveSupport::TestCase
 
     completed = false
     out, err = capture_io do
-      run_task(pages: { BILLS_URL => bills_coaches_page })
+      refute_aborts { run_task(pages: { BILLS_URL => bills_coaches_page }) }
       completed = true
     end
 
@@ -132,12 +132,12 @@ class NflCoachTeamSitesTest < ActiveSupport::TestCase
   # that fired there would fire on every rebuild after the first.
   test "a run where every coach was already on file is silent and green" do
     give_coaches_urls(bills: BILLS_URL)
-    capture_io { run_task(pages: { BILLS_URL => bills_coaches_page }) }
+    capture_io { refute_aborts { run_task(pages: { BILLS_URL => bills_coaches_page }) } }
     Rake::Task[TASK].reenable
 
     completed = false
     _out, err = capture_io do
-      run_task(pages: { BILLS_URL => bills_coaches_page })
+      refute_aborts { run_task(pages: { BILLS_URL => bills_coaches_page }) }
       completed = true
     end
 
@@ -153,7 +153,7 @@ class NflCoachTeamSitesTest < ActiveSupport::TestCase
     give_coaches_urls(bills: BILLS_URL)
 
     calls = nil
-    capture_io { calls = run_task(pages: { BILLS_URL => bills_coaches_page }) }
+    capture_io { calls = refute_aborts { run_task(pages: { BILLS_URL => bills_coaches_page }) } }
 
     refute_empty calls
     calls.each do |call|
@@ -172,7 +172,7 @@ class NflCoachTeamSitesTest < ActiveSupport::TestCase
 
     completed = false
     _out, err = capture_io do
-      run_task(pages: { BILLS_ALT => bills_coaches_page })
+      refute_aborts { run_task(pages: { BILLS_ALT => bills_coaches_page }) }
       completed = true
     end
 
@@ -181,6 +181,18 @@ class NflCoachTeamSitesTest < ActiveSupport::TestCase
   end
 
   private
+
+  # A BITE ON A GREEN TWIN MUST BE LEGIBLE, and without this it is not. `abort`
+  # raises SystemExit, which is not a StandardError, so an unexpected one escapes
+  # Minitest and KILLS THE RUNNER: measured while mutating `applied` to drop
+  # `skipped_unchanged`, the suite printed no summary line at all and `bin/rails
+  # test` merely exited 1. A guard that fires where it should not has to name
+  # itself. The idiom is lifted from test/lib/tasks/rebuild_lane_verdict_test.rb.
+  def refute_aborts(task = TASK)
+    yield
+  rescue SystemExit => e
+    flunk "#{task} aborted a run it should have completed: #{e.message}"
+  end
 
   def give_coaches_urls(bills: nil, dolphins: nil)
     Team.find_by!(slug: "buffalo-bills").update!(coaches_url: bills) if bills

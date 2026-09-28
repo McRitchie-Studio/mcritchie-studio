@@ -199,7 +199,7 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
   # 2026-09-27, it fills in `User-Agent: Ruby`. So "we set no UA" was never an
   # option -- the only choice was between Ruby's name and our own.
   test "every ESPN read carries the Espn::Api user agent" do
-    calls = run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc)
+    calls = refute_aborts { run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc) }
 
     assert_equal 3, calls.size, "the lane reads the index, the team's coaches, and the coach"
     calls.each do |call|
@@ -222,7 +222,7 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
   # per-team reads go through one lambda today, and a future second fetch site
   # that forgot the budget is exactly what this case is for.
   test "every ESPN read carries a read timeout" do
-    calls = run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc)
+    calls = refute_aborts { run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc) }
 
     assert_equal 3, calls.size
     calls.each do |call|
@@ -278,7 +278,7 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
   test "a run resolving one ESPN team completes" do
     completed = false
     capture_io do
-      run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc)
+      refute_aborts { run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc) }
       completed = true
     end
 
@@ -345,8 +345,10 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
   test "a run where one of two teams failed completes with a warning" do
     completed = false
     out, err = capture_io do
-      run_task(responses: [two_team_index_doc, coaches_doc, coach_doc,
-                           http_error("500", "Internal Server Error")])
+      refute_aborts do
+        run_task(responses: [two_team_index_doc, coaches_doc, coach_doc,
+                             http_error("500", "Internal Server Error")])
+      end
       completed = true
     end
 
@@ -368,7 +370,7 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
 
     completed = false
     _out, err = capture_io do
-      run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc)
+      refute_aborts { run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc) }
       completed = true
     end
 
@@ -377,6 +379,18 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
   end
 
   private
+
+  # A BITE ON A GREEN TWIN MUST BE LEGIBLE, and without this it is not. `abort`
+  # raises SystemExit, which is not a StandardError, so an unexpected one escapes
+  # Minitest and KILLS THE RUNNER: measured while mutating `applied` to drop
+  # `skipped_unchanged`, the suite printed no summary line at all and `bin/rails
+  # test` merely exited 1. A guard that fires where it should not has to name
+  # itself. The idiom is lifted from test/lib/tasks/rebuild_lane_verdict_test.rb.
+  def refute_aborts(task = TASK)
+    yield
+  rescue SystemExit => e
+    flunk "#{task} aborted a run it should have completed: #{e.message}"
+  end
 
   # Resolve whichever shape the constant has, so the red this test was written to
   # produce is about the HOST and not about a String failing to answer #call. The
