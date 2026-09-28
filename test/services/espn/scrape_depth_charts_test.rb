@@ -173,7 +173,7 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     )
 
     # Stub fetch_groups to simulate ESPN's broken Lions response: only defense
-    @service.define_singleton_method(:fetch_groups) { |_| [{ "name" => "Base 4-3 D", "rows" => [] }] }
+    @service.define_singleton_method(:fetch_groups) { |_, _ = nil| [{ "name" => "Base 4-3 D", "rows" => [] }] }
     @service.send(:scrape_team, "buf", @bills.slug)
 
     assert_equal 1, @service.stats[:teams_partial]
@@ -190,7 +190,7 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     # its row. fetch_groups is stubbed rather than left to fail: this test used to
     # depend on a LIVE 403 from site.api.espn.com for its nil, which made it a
     # network call that passed for the wrong reason.
-    @service.define_singleton_method(:fetch_groups) { |_| nil }
+    @service.define_singleton_method(:fetch_groups) { |_, _ = nil| nil }
     @service.send(:scrape_team, "buf", @bills.slug)
 
     assert DepthChart.exists?(team_slug: @bills.slug)
@@ -575,7 +575,121 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     assert_equal 0, stats[:teams_scraped]
   end
 
+  # ─── the cause of a tolerated failure ───────────────────────────────────────
+  #
+  # MEASURED on this branch's parent (6dbc6a93^): `grep -rE "ErrorLog|rescue_and_log"
+  # app/services/espn/ lib/tasks/espn.rake` returned ZERO hits, so the `puts` in
+  # fetch_groups' rescue was the whole record of a dead team — and
+  # bin/ecosystem-build runs the lane as
+  # `bundle exec rails espn:scrape_depth_charts >/dev/null`, which throws that away.
+
+  test "a tolerated per-team fetch failure files an ErrorLog carrying the cause" do
+    service = Stubbed.new(buffalo_with_dead_depth_chart, team_abbrev: "buf")
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      service.call
+    end
+
+    row = ErrorLog.order(:id).last
+    assert_match(/503/, row.message, "the row must carry WHY, not just that something failed")
+    assert_match(/SourceUnavailable/, row.inspect_field)
+    assert_equal DepthChart.find_by(team_slug: @bills.slug), row.target,
+                 "the chart is the target so /admin/error_logs renders the team on the row"
+    assert_equal "#{@bills.slug}-depth", row.target_name
+    assert row.slug.present?,
+           "a row with no slug is unreachable in /admin/error_logs — invisible to the " \
+           "person it was written for"
+  end
+
+  test "the run is still tolerated and tallied once the row is filed" do
+    # THE ROW MUST NOT COST THE OTHER 31 TEAMS THEIR REFRESH. A guard that filed by
+    # re-raising (rescue_and_log's shape) would pass the case above and is caught here.
+    service = Stubbed.new(buffalo_with_dead_depth_chart, team_abbrev: "buf")
+
+    stats = service.call
+
+    assert_equal 1, stats[:teams_failed]
+    assert_equal 0, stats[:teams_scraped]
+  end
+
+  test "a healthy team files no ErrorLog row at all" do
+    # THE GREEN TWIN. A row on every run is not a signal.
+    service = Stubbed.new(index_and_buffalo(teams_index({ "buf" => "2" })), team_abbrev: "buf")
+
+    assert_no_difference -> { ErrorLog.count } do
+      service.call
+    end
+  end
+
+  test "a depth chart ESPN does not publish is tallied and files NO row" do
+    # A DEAD SOURCE IS NOT OUR FAILURE — the distinction Athletes::DeadHeadshotSource
+    # draws for the headshot lane, drawn here one layer lower by parse_response, which
+    # turns a 404 into a nil and every other non-success into a raise. Both seasons
+    # answer 404, so fetch_groups returns nil WITHOUT raising and the row is not
+    # filed; the team is still counted. This is why the row belongs in the rescue and
+    # not in scrape_team's `unless groups`, which both cases reach.
+    responses = { TEAMS_INDEX => teams_index({ "buf" => "2" }) }
+    responses[Espn::ScrapeDepthCharts::ESPN_ROSTER_URL.call("2")] = { "athletes" => [] }
+    responses[Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(nfl_year, "2")] = nil
+    responses[Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(nfl_year - 1, "2")] = nil
+    service = Stubbed.new(responses, team_abbrev: "buf")
+
+    assert_no_difference -> { ErrorLog.count } do
+      assert_equal 1, service.call[:teams_failed]
+    end
+  end
+
+  test "a fault in our own abbreviation map is not filed as a tolerated team" do
+    # MissingTeamId is re-raised through the per-team rescue WITHOUT a row, so the one
+    # exception the lane's own rescue will file cannot be filed twice.
+    service = Stubbed.new({ TEAMS_INDEX => teams_index({ "mia" => "15" }) })
+
+    assert_no_difference -> { ErrorLog.count } do
+      assert_raises(Espn::ScrapeDepthCharts::MissingTeamId) { service.call }
+    end
+  end
+
+  # ─── no credential can reach a durable row ──────────────────────────────────
+
+  test "no ESPN service reads a credential, so no ErrorLog row can carry one" do
+    # WHY THIS IS A REAL RISK AND NOT DECORATION: fetch_json's SourceUnavailable
+    # message ends "for #{url_str}", that exception is what the rescue above files,
+    # and error_logs is a durable table that also fans out to Sentry. A key in a query
+    # string would therefore be written down permanently. Every ESPN endpoint this app
+    # reads is public and takes no key (measured 2026-09-27, recorded on Espn::Api),
+    # so the guard is that it STAYS that way.
+    #
+    # Flattened after dropping whole-line comments, not matched line by line: a
+    # multi-line string or a wrapped argument list puts the two halves of a read on
+    # different lines, and a line regex sees neither. Comments are dropped because the
+    # sentence you are reading names the literal it forbids; a trailing comment can
+    # only produce a FALSE POSITIVE here, which is the safe direction for a guard.
+    forbidden = ["ENV[", "Rails.application.credentials", "api_key", "access_token", "Bearer "]
+    Dir[Rails.root.join("app/services/espn/**/*.rb")].sort.each do |path|
+      code = File.readlines(path).reject { |line| line.strip.start_with?("#") }.join(" ").squeeze(" ")
+      forbidden.each do |needle|
+        assert_not code.include?(needle),
+                   "#{Pathname.new(path).relative_path_from(Rails.root)} reads #{needle.inspect}. " \
+                   "The ESPN lane is credential-free by design and its exceptions are filed " \
+                   "verbatim into error_logs (durable, and forwarded to Sentry) — a secret " \
+                   "reaching a message here cannot be taken back."
+      end
+    end
+  end
+
   private
+
+  # Buffalo's index and roster read cleanly and BOTH seasons' depth chart documents
+  # answer 503 — a team ESPN could not serve, which is the tolerated case.
+  def buffalo_with_dead_depth_chart
+    responses = { TEAMS_INDEX => teams_index({ "buf" => "2" }) }
+    responses[Espn::ScrapeDepthCharts::ESPN_ROSTER_URL.call("2")] = { "athletes" => [] }
+    [nfl_year, nfl_year - 1].each do |year|
+      responses[Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(year, "2")] =
+        Espn::ScrapeDepthCharts::SourceUnavailable.new("ESPN answered 503 for sports.core.api.espn.com")
+    end
+    responses
+  end
 
   def nfl_year
     today = Date.current
