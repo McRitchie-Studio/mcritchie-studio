@@ -403,8 +403,8 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
   # not one. Hub signup is OPEN — magic-link and Google are both create-or-login —
   # so "signed in" costs a member of the public one email address. Behind that, a
   # login-only #mint buys a Higgsfield identity per look and a login-only #search
-  # buys one query plus up to VISION_SHORTLIST vision classifications PER CLICK,
-  # uncapped. Before this lane, Appearances::CreateCharacterReference ran only from a
+  # buys one query per QUERY_VARIANTS entry — four — plus up to VISION_SHORTLIST
+  # vision classifications PER CLICK, uncapped. Before this lane, Appearances::CreateCharacterReference ran only from a
   # rake task; the page is what made the spend reachable from the web at all.
   #
   # THE REDIRECT IS THE WEAKER HALF OF THIS TEST. What it has to prove is that NO
