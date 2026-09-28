@@ -901,6 +901,28 @@ namespace :nfl do
     # was filed for was dug exactly here: `skipped_no_team` was faithfully counted
     # AND printed, and no rule read it. A `next` added to that loop later lands in
     # this number without anybody having to remember to report it.
+    #
+    # ── THIS RULE IS UNREACHABLE TODAY AND STAYS. VERDICT, 2026-09-28 ────────────
+    #
+    # Enumerated over the loop body: every path out of it increments exactly one of
+    # the five counters -- `skipped_no_team` (no Team row), `skipped_no_coach` (no
+    # `$ref`, or no Coach row), `skipped_unchanged`, `matched`, and `failed` for
+    # anything raised anywhere in the body, the per-team `rescue` being the last
+    # statement in it. So the five always sum to `espn_teams.size` and `unaccounted`
+    # is always 0. MEASURED BY MUTATION: disarming this branch left the file green,
+    # which is a fact about the branch's REACHABILITY and not about the test file --
+    # nothing can watch a warning that cannot fire.
+    #
+    # WHAT IS TESTED IS THE INVARIANT IT POLICES, not the firing: the case "every
+    # ESPN team the run walked is reported by exactly one counter" reads the printed
+    # report of a three-residue run and asserts the five counters partition the team
+    # list. A `next` added later breaks that case while this branch is still
+    # unreachable, which is the coverage that was actually wanted.
+    #
+    # IT IS A GUARD AWAITING A FUTURE BRANCH, NOT DEAD CODE, and the same argument
+    # keeps `unfetched` in nfl:upload_headshots. This loop's track record is exactly
+    # an unread counter, so the number nobody has to remember to report earns its
+    # place.
     if unaccounted.nonzero?
       warn "WARNING: nfl:link_coach_headshots walked #{attempted} ESPN teams but can account " \
            "for only #{attempted - unaccounted} of them -- #{unaccounted} left the loop by a " \

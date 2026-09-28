@@ -230,6 +230,14 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
       assert timeout, "#{call[:url]} was read with open-uri's inherited 60s default; a rebuild " \
                       "lane must name its own budget"
       assert_operator timeout, :<=, 30, "#{call[:url]} waits longer than the sibling scrape does"
+
+      # THE OTHER HALF OF THE BUDGET, and it is asserted because a mutation found it
+      # unasserted: dropping `open_timeout` left this whole file green. A read
+      # timeout bounds a socket that ANSWERED and then went quiet; a connect that
+      # never completes is a different stall with its own inherited 60s.
+      connect = call[:options]["open_timeout"]
+      assert connect, "#{call[:url]} would wait open-uri's inherited 60s to CONNECT"
+      assert_operator connect, :<=, 30
     end
   end
 
@@ -359,6 +367,39 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     assert_equal "1234", Coach.find_by(team_slug: "buffalo-bills", role: "head_coach").espn_id
   end
 
+  # THE INVARIANT THE SUBTRACTION GUARD POLICES, asserted here because the guard
+  # itself cannot fire today: every route out of the loop increments exactly one
+  # counter, so `unaccounted` is always 0 and no test can watch it warn. What CAN
+  # be watched is the property -- the counters partition the teams ESPN named --
+  # and a future `next` that forgot to report itself breaks this case even while
+  # the warning stays unreachable.
+  #
+  # ASKED OF THE PRINTED REPORT, not of locals, because the report is what an
+  # operator re-running the seed by hand reads, and a number that is right in a
+  # local and wrong on the page is still wrong.
+  test "every ESPN team the run walked is reported by exactly one counter" do
+    out, = capture_io do
+      refute_aborts do
+        run_task(responses: [three_team_index_doc, coaches_doc, coach_doc,
+                             http_error("500", "Internal Server Error")])
+      end
+    end
+
+    # THE LABELS AS DATA, not as one alternation. An `/x` pattern strips the literal
+    # spaces out of "skipped (no team)" and then matches nothing, which is how the
+    # first draft of this case reported `Actual: 0` residues on a healthy report.
+    labels = ["matched/updated", "skipped (unchanged)", "skipped (no team)",
+              "skipped (no Coach)", "failed"]
+    counts = labels.to_h { |l| [l, out[/^#{Regexp.escape(l)}: +(\d+)$/, 1]&.to_i] }
+    assert_empty counts.select { |_, v| v.nil? }.keys,
+                 "the report must still print every residue; missing: #{counts}"
+    assert_equal 3, out[/^ESPN teams: +(\d+)$/, 1].to_i
+    assert_equal 3, counts.values.sum,
+                 "the five counters must partition the teams ESPN named; a route out of the " \
+                 "loop that reports itself nowhere is how this defect was dug -- " \
+                 "skipped (no team) was counted and printed, and no rule read it. Got #{counts}"
+  end
+
   # THE WARM RE-RUN, WHICH MUST BE SILENT. `skipped (unchanged)` is the steady
   # state of a seeded machine -- ESPN says what we already have -- and it counts as
   # work on file, not as work declined. A verdict that fired here would fire on
@@ -477,6 +518,18 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     { "sports" => [{ "leagues" => [{ "teams" => [
       { "team" => { "id" => "2",  "abbreviation" => "BUF" } },
       { "team" => { "id" => "15", "abbreviation" => "MIA" } }
+    ] }] }] }
+  end
+
+  # THREE TEAMS ACROSS THREE DIFFERENT RESIDUES: one we hold and can link, one we
+  # hold whose read raises, one ESPN names that we have no row for. The mixed run
+  # the partition invariant needs, since a single-residue run cannot tell a
+  # partition from a coincidence.
+  def three_team_index_doc
+    { "sports" => [{ "leagues" => [{ "teams" => [
+      { "team" => { "id" => "2",  "abbreviation" => "BUF" } },
+      { "team" => { "id" => "15", "abbreviation" => "MIA" } },
+      { "team" => { "id" => "12", "abbreviation" => "KC"  } }
     ] }] }] }
   end
 
