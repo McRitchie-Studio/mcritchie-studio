@@ -665,7 +665,15 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     # every run. It builds no URL and files only exceptions the services raised, so the
     # leak shape this guards does not exist in it.
     forbidden = ["ENV[", "Rails.application.credentials", "api_key", "access_token", "Bearer "]
-    Dir[Rails.root.join("app/services/espn/**/*.rb")].sort.each do |path|
+    paths = Dir[Rails.root.join("app/services/espn/**/*.rb")].sort
+    # A GLOB THAT MATCHES NOTHING RUNS NO ASSERTIONS AND SCORES GREEN. Rename or move
+    # this directory and the guard below evaporates in silence — the one failure mode a
+    # credential guard may not have, because its whole value is being there later. The
+    # population is asserted before it is walked.
+    assert_equal 3, paths.size,
+                 "expected api.rb, player_profile.rb and scrape_depth_charts.rb — a moved or " \
+                 "renamed ESPN directory must FAIL this guard, never quietly empty it"
+    paths.each do |path|
       code = File.readlines(path).reject { |line| line.strip.start_with?("#") }.join(" ").squeeze(" ")
       forbidden.each do |needle|
         assert_not code.include?(needle),
