@@ -89,6 +89,8 @@ module Appearances
     # in /admin/error_logs, where somebody reading it a day later can find it.
     def call
       raise NoGenerator, unconfigured_message if row.nil?
+      refusal = inputs.refusal_for(:sheet)
+      raise NoIdentityPhoto, refusal if refusal
       raise NoIdentityPhoto, no_photo_message if identity_photo_url.blank?
 
       result = client.generate_and_wait(prompt: prompt, reference_urls: references)
@@ -116,8 +118,9 @@ module Appearances
       @prompt.presence || CharacterSheetPrompt.call(@appearance, number: @number)
     end
 
-    # THE PHOTOGRAPH THE LIKENESS IS GUARANTEED TO CARRY — our own cached headshot, or
-    # the operator's URL when there is no headshot.
+    # THE PHOTOGRAPH THE LIKENESS IS GUARANTEED TO CARRY — the build's ANCHOR, as
+    # Content::ArtifactPlan::ModelInputs#anchor defines it: an athlete's cached
+    # headshot, or the operator's URL for a person with no athlete profile.
     #
     # STILL A SINGLE URL, AND STILL THE FLOOR. It is what `#references` leads with and it
     # is what the "nothing to generate from" refusal is judged on: a look with no cached
@@ -145,18 +148,18 @@ module Appearances
     # athletes out of `headshots/nfl/free-agents/`, so a rebuilt path points at an
     # object that has already moved.
     #
-    # ORDER: the cached headshot leads, the operator's typed URL follows — the
-    # headshot is the one URL whose reachability we CONTROL and have measured,
-    # while `reference_url` is free text that could point anywhere. Both are
-    # fetchability-checked, because a private-range URL out of a form would be
-    # asking somebody else's server to probe our network.
+    # AN ATHLETE'S TYPED URL NO LONGER STANDS IN for a missing headshot: it is free
+    # text, and a wide action shot was measured to fail. Fetchability-checked,
+    # because a private-range URL would ask somebody else's server to probe ours.
     def identity_photo_url
       return @identity_photo_url if defined?(@identity_photo_url)
 
-      @identity_photo_url = [cached_headshot_url, @appearance&.reference_url]
-                            .compact_blank
-                            .find { |url| FetchableUrl.ok?(url) }
+      anchor = inputs.anchor
+      @identity_photo_url = (anchor.url if !anchor.acquire? && FetchableUrl.ok?(anchor.url))
     end
+
+    # WHAT THIS BUILD CONSUMES, each answering reuse / refresh / acquire.
+    def inputs = @inputs ||= Content::ArtifactPlan::ModelInputs.new(@appearance)
 
     # EVERY PHOTOGRAPH THIS SHEET IS BUILT FROM, floor first.
     #
@@ -177,13 +180,6 @@ module Appearances
     end
 
     private
-
-    def cached_headshot_url
-      athlete = @appearance&.person&.athlete_profile
-      return nil if athlete.nil?
-
-      IDENTITY_VARIANTS.filter_map { |v| athlete.headshot_url(width: v) }.first
-    end
 
     def client = ImageGeneration::Adapter.for(row).new(row)
 

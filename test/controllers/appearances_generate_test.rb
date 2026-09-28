@@ -151,6 +151,37 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     assert_match(/7,629 tokens/, response.body, "the unit is printed, never a bare count")
   end
 
+  # NO ANCHOR, NO BUILD. Both paid doors refuse, name what is missing and how to
+  # get it, and leave no ErrorLog row: a missing headshot is a state, not a failure.
+  test "the sheet build refuses and names the missing anchor" do
+    ImageCache.where(purpose: "headshot").delete_all
+    @look.update!(reference_url: "https://example.com/wide-action-shot.png")
+    log_in_as(@admin)
+
+    assert_no_difference -> { ErrorLog.count } do
+      with_generator { post generate_path }
+    end
+
+    assert_redirected_to person_appearance_path(@person.slug, @look.slug)
+    assert_match(/Josh Allen cannot be built: no cached headshot/, flash[:alert])
+    assert_match(/nothing was spent/, flash[:alert])
+    assert_equal 0, Artifact.count
+  end
+
+  test "the identity mint refuses and names the missing anchor" do
+    ImageCache.where(purpose: "headshot").delete_all
+    @look.update!(reference_url: "https://example.com/wide-action-shot.png")
+    log_in_as(@admin)
+
+    Higgsfield::Client.stub(:new, -> { flunk "no anchor must never reach the vendor" }) do
+      post mint_person_appearance_path(@person.slug, @look.slug)
+    end
+
+    assert_redirected_to person_appearance_path(@person.slug, @look.slug)
+    assert_match(/cached headshot/, flash[:alert])
+    assert_nil @look.reload.higgsfield_reference_id
+  end
+
   private
 
   def with_env(pairs)
