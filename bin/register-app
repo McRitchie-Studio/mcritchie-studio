@@ -34,6 +34,13 @@ unless args.positionals.length == 1 && args.first("--heroku-app") && args.first(
   exit 2
 end
 
+# --write appends to the registry beside THIS script. The fixed-path copy
+# (/Users/alex/projects/.agents/bin) is a tooling snapshot with no .git, so a
+# write there would edit the frozen config the fast lane reads, not the desk.
+if args.bool?("--write") && !File.exist?(File.join(ROOT, ".git"))
+  abort("register-app: #{ROOT} is not a git checkout — run the desk's own bin/register-app. NOTHING was written.")
+end
+
 slug = args.positionals.first
 abort("register-app: #{slug.inspect} is not a repo slug — NOTHING was written.") unless slug.match?(/\A[a-z0-9][a-z0-9-]*\z/)
 profile = args.first("--profile") || "standalone-heroku"

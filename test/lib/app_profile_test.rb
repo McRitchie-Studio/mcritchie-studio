@@ -6,6 +6,8 @@
 
 require "minitest/autorun"
 require "open3"
+require "tmpdir"
+require "fileutils"
 require "yaml"
 require_relative "../../bin/lib/app_profile"
 require_relative "../../bin/lib/app_contract"
@@ -132,6 +134,15 @@ class AppProfileTest < Minitest::Test
     out, status = Open3.capture2e("ruby", CLI, "demo", "--heroku-app", "x", "--smoke-url", "https://x", "--bogus")
     assert_equal 2, status.exitstatus
     assert_match(/NOTHING was checked or written/, out)
+  end
+
+  def test_write_refuses_outside_a_git_checkout
+    Dir.mktmpdir do |dir|
+      FileUtils.cp_r(%w[bin config].map { |d| File.expand_path("../../#{d}", __dir__) }, dir)
+      out, status = Open3.capture2e("ruby", File.join(dir, "bin/register-app"), "demo", "--heroku-app", "x", "--smoke-url", "https://x", "--write")
+      assert_equal 1, status.exitstatus
+      assert_match(/not a git checkout.*NOTHING was written/, out)
+    end
   end
 
   def test_missing_required_flags_prints_usage
