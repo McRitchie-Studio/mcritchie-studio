@@ -59,8 +59,20 @@ module Espn
   # THE THIRD COPY IS NOW REPAIRED, under `revive-coaches-seed-host`:
   # lib/tasks/nfl.rake's `nfl:link_coach_headshots` named site.api.espn.com and
   # read it with `URI.open`. It now resolves WEB_HOST and USER_AGENT from here, so no
-  # ESPN *API* host is spelled out in that lane, and a test refuses these three back
-  # into that file. NOT "no host at all": a.espncdn.com, the headshot CDN, is still
+  # ESPN *API* host is spelled out in that lane.
+  #
+  # THE GUARD NOW READS EVERY RAKE FILE, NOT THAT ONE (`coach-link-lane-false-green`,
+  # 2026-09-28). It used to read lib/tasks/nfl.rake alone, which made it a note about
+  # the file that had already rotted rather than a rule about the rake lane — and the
+  # defect was ONE HOST IN THREE PLACES, so a guard that can only see the place it
+  # knows about cannot catch the fourth. It sweeps Dir[lib/tasks/*.rake] and it
+  # FLATTENS before it searches, because Ruby concatenates adjacent string literals:
+  # a host split across the `" \` seam this codebase uses on nearly every message is
+  # one host at run time and two fragments to a line reader. Both spellings are
+  # proved by mutation in test/lib/tasks/nfl_coach_headshots_test.rb, including one
+  # planted in a DIFFERENT rake file.
+  #
+  # NOT "no host at all": a.espncdn.com, the headshot CDN, is still
   # spelled out there in nfl:upload_headshots's operator message, and is deliberately
   # NOT guarded — it is not an Espn::Api constant and it never filtered.
   # MEASURED 2026-09-27 through open-uri itself — the call that task makes —
@@ -74,6 +86,16 @@ module Espn
   #     `rescue StandardError`". The per-team rescue is real, but the INDEX fetch sat
   #     ABOVE the loop and was not covered by it, so the 403 propagated out of the
   #     task as a bare open-uri backtrace. It now aborts naming the host trap.
+  #
+  #     AND THE PER-TEAM RESCUE WAS ITSELF A FALSE GREEN, closed under
+  #     `coach-link-lane-false-green` (2026-09-28). It counted a failure and the task
+  #     then ended on `puts`, so a 403 arriving once per team exited 0 — measured,
+  #     `failed: 1` alongside `skipped (no team): 1` and exit 0 with a two-team index.
+  #     That task now aborts when it linked NO team's head coach, so a host moved back
+  #     to FILTERED_HOST reddens the rebuild by the per-team route as well as the index
+  #     one. Its reads also carry `read_timeout: 15` / `open_timeout: 10`; measured on
+  #     Ruby 3.3.11, an unset budget is Net::HTTP's inherited 60s, which is about 65
+  #     minutes across a 32-team run's 65 reads.
   #   * It pinned the task at :431 and the constant at :426. Those were CORRECT at
   #     fb95c5af, where this note was written, and went stale the same day when PR
   #     1685 added ~186 lines above them. Names are the durable handle; a line

@@ -409,7 +409,7 @@ bin/rails server                   # port 3000
 
 Visit http://localhost:3000 and sign in with a magic link to `alex@mcritchie.studio`.
 
-Seeds load 9 agents (Xan, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason), 35 skills, sample tasks, 32 NFL + 71 NCAA + 48 FIFA teams, ~2400 active contracts, ~570 PFF-graded athletes. The `db:seed` phase 32 (`32_headshot_links.rb`) makes network calls — safe to let it run, or skip with `SKIP_NETWORK_SEEDS=1` if behind a firewall.
+Seeds load 9 agents (Xan, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason), 35 skills, sample tasks, 32 NFL + 71 NCAA + 48 FIFA teams, ~2400 active contracts, ~570 PFF-graded athletes. The `db:seed` phase 32 (`32_headshot_links.rb`) makes network calls — let it run, or skip with `SKIP_NETWORK_SEEDS=1` if behind a firewall. **It is no longer safe to let it fail.** Both tasks it invokes now abort when they linked no coach (`coach-link-lane-false-green`, 2026-09-28), so a firewalled `db:seed` exits non-zero and `bin/ecosystem-build` `exit 1`s the rebuild. `SKIP_NETWORK_SEEDS=1` is the opt-out and is real code as of that change; until then it appeared in this sentence and nowhere else in the repository. A skipped run leaves every `Coach.espn_headshot_url` empty, so `nfl:upload_coach_headshots` caches nothing and every coach avatar falls back — the skip says so on stderr.
 
 For full NFL data (UDFAs, depth charts, ESPN headshots cached to S3), use the NFL rebuild workflow once it has been promoted into neutral agent docs. The underlying steps are `db:reset` -> `db:seed` -> `nfl:players_seed` -> `espn:scrape_depth_charts`. Requires AWS creds in `.env`.
 

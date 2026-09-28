@@ -130,6 +130,44 @@ empty ones (asserted in `test/integration/espn_depth_chart_refresh_test.rb`). Th
 defect itself is untouched — one team ESPN cannot serve still leaves one empty chart
 and still reports 0 spots through a green count.
 
+### The same pattern in Phase 6, reached only through `db:seed`
+
+`coach-link-lane-false-green` (2026-09-28) closed two more instances, and they are
+listed here rather than in the table above because they are **not in 6b or 6c** —
+they run inside Phase 6's `db:create db:migrate db:seed`, through `db/seeds.rb` and
+`db/seeds/32_headshot_links.rb`.
+
+| Lane | What a total failure used to look like | What it looks like now |
+|------|----------------------------------------|------------------------|
+| `nfl:link_coach_headshots` | two-team index, every per-team read raising `OpenURI::HTTPError 500`: `matched: 0, skipped (no team): 1, failed: 1`, exit 0 | refuses a run that linked NO team's head coach; a partial warns on stderr |
+| `nfl:link_coach_headshots_from_team_sites` | two teams with a `coaches_url`, every candidate URL 404: `failed (team page): 2`, exit 0 | refuses a run that linked no coach, and a population with no `coaches_url` at all; a partial warns |
+
+**A grep miss proves the string is absent, not that the code is unreached.** Both
+lanes were once parked as report-line defects rather than false greens because
+neither name appears anywhere in `bin/ecosystem-build`. They are reached through
+three hops that never spell them, and Phase 6 runs `db:seed` with **both streams
+sent to `/dev/null`**, `exit 1`ing the rebuild on a non-zero status. So the exit
+code is the only signal that phase can read, and a louder report line would have
+fixed nothing — which is why the causes now ride in the abort body on stderr.
+
+**Graded on what LANDED, not on the failure count**, and that is the transferable
+part. A count of failures is blind to the other ways a lane can do nothing: teams
+ESPN names that we hold no row for, or pages that load and match nothing. In the
+very run that demonstrated the first lane's defect, one of the two teams was lost
+that way, so a rule spelled `failed == attempted` would have read a total no-op as a
+partial and stayed green.
+
+**One escape hatch was fabricated, and making a lane loud is what exposed it.**
+`SKIP_NETWORK_SEEDS=1` had been documented as the way to skip the network seed
+behind a firewall, and measured 2026-09-28 a repo-wide grep found it in one sentence
+of prose and in no code. Inert and harmless while the lanes exited 0; a rebuild that
+cannot finish once they abort. It is implemented now.
+
+**Still ungraded: `nfl:upload_coach_headshots`**, which counts `failed` and prints
+it exactly as these two did. It needs the dead-source split `nfl:upload_headshots`
+carries, because a retired coach photo answering 404 is a fact about ESPN, and that
+population has not been measured. Known open, not measured clean.
+
 Three rules the next lane added here should copy.
 
 - **The verdict lives in the rake task, never in the service.** `lib/tasks/espn.rake`
