@@ -196,6 +196,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
+| `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 
 ## SOP Registry
 
@@ -260,6 +261,7 @@ heartbeat may set attribution and act order; the SOP files do not depend on it.
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
+| `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 
 ## LLM Adapters
 
