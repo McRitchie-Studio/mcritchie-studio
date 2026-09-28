@@ -232,12 +232,8 @@ broker: a quota-spent service account is still quota-spent afterwards.
 `restore-agent-service-account` was filed on the premise that the agent service
 account no longer existed. That premise measured false, and the task is `archived`
 — read the board rather than taking this sentence's word for it:
-
-```bash
-bin/task show restore-agent-service-account --json | jq -r .stage   # => archived
-```
-
-Both of its acceptance criteria measure true. Measured 2026-09-28 from a shell
+`bin/task show restore-agent-service-account --json | jq -r .stage` answers
+`archived`. Both of its acceptance criteria measure true. Measured 2026-09-28 from a shell
 where `op whoami` was answering the 403, after step 1a and nothing else:
 `bin/gh-auth-refresh --force --export` bypassed the shared cache and minted a
 fresh token (a new `sha256:` prefix on stderr, so it was a real mint and not a
