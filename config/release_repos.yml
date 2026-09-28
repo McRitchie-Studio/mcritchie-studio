@@ -761,8 +761,8 @@ apps:
     # EXEMPT, ON COST, BY OPERATOR DECISION. This is cyvasse's kind of exemption,
     # not turf-vault's: dads-app is a deployable app and a QA copy could exist.
     #
-    #   Alex's decision, verbatim (chat, 2026-09-26; the guard matches the cost
-    #   line exactly). Asking for the hosting: "anyway we can get it cheaper than $12/m"
+    #   Alex's decision, verbatim (chat, 2026-09-26; HISTORY since
+    #   2026-09-28, see caveat 1). Asking for the hosting: "anyway we can get it cheaper than $12/m"
     #   Offered A (GitHub Pages), B (inside moms-app) or C, he replied: "C"
     #   (the epic plan, .agents/epics/dads-app.md, records "Alex chose option C
     #   (Heroku Eco dyno)"). Option C was ONE Eco dyno, about $5/month, no database and no QA copy,
@@ -786,9 +786,9 @@ apps:
     # dads-app member at the QA stamp forever, since no run can evidence a QA
     # env that does not exist.
     #
-    # THE GUARD STAYS FAIL-CLOSED for every other repo: repos_test.rb pins the
-    # exempt set to exactly cyvasse + dads-app + turf-vault, and requires each
-    # exempt repo with a prod_deploy to carry a cited operator decision. The
+    # THE GUARD STAYS FAIL-CLOSED for every other repo: repos_test.rb requires
+    # each exempt repo with a prod_deploy to carry a cited operator decision;
+    # dads-app's is its profile's qa_decision in config/app_profiles.yml. The
     # exemption is QA-only: the `shipped` stamp still needs dads-app's real
     # release -> main record.
     qa_evidence: exempt
