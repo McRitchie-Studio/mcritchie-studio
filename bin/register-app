@@ -61,8 +61,17 @@ checks, test_cmd = AppContract.run(slug: slug, heroku_app: heroku_app, smoke_url
 puts "Contract for #{slug} on profile #{profile}:"
 checks.each { |c| puts "  #{c.ok ? 'PASS' : 'FAIL'}  #{c.name.ljust(20)} #{c.detail}#{c.ok ? '' : "  → #{c.remedy}"}" }
 puts "  #{already ? 'FAIL' : 'PASS'}  #{'not yet registered'.ljust(20)} #{already ? "#{slug} is already in release_repos.yml" : 'yes'}"
+# The hub draws a badge per registry repo from APP_EMOJIS, and
+# test/helpers/application_helper_test.rb fails CI for a repo with none (measured
+# 2026-09-28 registering moms-app). A glyph is a deliberate choice, so check it here
+# rather than learn it from CI.
+helper = File.read(File.join(ROOT, "app/helpers/application_helper.rb"))
+glyph = helper.match?(/^\s*"#{Regexp.escape(slug)}"\s*=>/)
+checks << AppContract::Check.new(name: "hub badge glyph", ok: glyph, detail: glyph ? "in APP_EMOJIS" : "none",
+                                 remedy: "add \"#{slug}\" => \"<emoji>\" to APP_EMOJIS in app/helpers/application_helper.rb")
+puts "  #{glyph ? 'PASS' : 'FAIL'}  #{'hub badge glyph'.ljust(20)} #{glyph ? 'in APP_EMOJIS' : "none → add \"#{slug}\" => \"<emoji>\" to APP_EMOJIS in app/helpers/application_helper.rb"}"
 
-engine = AppContract.engine_version(File.exist?(File.join(root, "Gemfile.lock")) ? File.read(File.join(root, "Gemfile.lock")) : nil)
+engine = AppContract.engine_version(AppContract::Probe.new.read_at(root, AppContract::REF, "Gemfile.lock"))
 notes = []
 if engine
   notes << "Consumes studio-engine #{engine}: a release that publishes the engine bumps this"

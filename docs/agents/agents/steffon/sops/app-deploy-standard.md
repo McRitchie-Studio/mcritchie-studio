@@ -82,6 +82,10 @@ ones:
 - **branches**: `git -C /Users/alex/projects/$SLUG push origin main:refs/heads/accepted main:refs/heads/release`
 - **.worktrees ignored**: add `.worktrees/` to the app's `.gitignore`.
 - **smoke /up**: route `get "up" => "rails/health#show"`.
+- **hub badge glyph** (checked in the hub, not the app): add
+  `"<slug>" => "<emoji>"` to `APP_EMOJIS` in `app/helpers/application_helper.rb`
+  in the same task as the registration. The board draws a badge per registry
+  repo, and CI fails a repo without one.
 
 ## 2. Mind the engine gap
 
