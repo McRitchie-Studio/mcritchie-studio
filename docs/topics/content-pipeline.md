@@ -711,11 +711,10 @@ heroku config --json --app mcritchie-studio | jq '(.ANTHROPIC_API_KEY // "") != 
 The same expression on a name that is absent answered false, which is the
 control that makes the true mean something. So key absence is NOT the reason,
 and never was the load-bearing one. Routing inference through a soul instead
-means prompts that
-live in SOP prose an agent can improve rather than frozen string literals in
-`.rb` files, inference that lands in the agent trajectory where the learning
-loop can grade it, and a real voice veto (Mason cannot veto a line a Rails
-service already sent). Those services stay in place as the LEGACY path for
+means prompts that live in SOP prose an agent can improve rather than frozen
+string literals in `.rb` files, inference that lands in the agent trajectory
+where the learning loop can grade it, and a real voice veto (Mason cannot veto
+a line a Rails service already sent). Those services stay in place as the LEGACY path for
 `workflow=video`; retiring them is its own task.
 
 **The board is already the queue.** A `Content` at `stage=idea` IS a pending
