@@ -502,6 +502,24 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     assert_equal 0, service.stats[:teams_failed]
   end
 
+  # TEAM=BUF once scraped nothing and blamed ESPN. Case is not a second team.
+  test "a mis-cased team code is normalised to the code it spells" do
+    service = Stubbed.new(index_and_buffalo(teams_index({ "buf" => "2" })), team_abbrev: " BUF ")
+
+    service.call
+
+    assert_equal 1, service.stats[:teams_scraped]
+  end
+
+  test "an unknown team code is refused before any request and names the valid codes" do
+    error = assert_raises(Espn::ScrapeDepthCharts::UnknownTeam) do
+      Stubbed.new({}, team_abbrev: "bfu")
+    end
+
+    assert_match(/bfu/, error.message)
+    assert_match(/\bbuf\b.*\bsea\b/, error.message, "the refusal names the codes it accepts")
+  end
+
   test "an unreadable teams index raises instead of blaming 32 abbreviations" do
     # THE LIE THIS REPLACES: the index 403ed, `body&.dig(...) || []` made an empty
     # map, and the log said "No ESPN team_id for abbrev" 32 times — a statement
@@ -594,10 +612,10 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     assert_match(/503/, row.message, "the row must carry WHY, not just that something failed")
     assert_match(/SourceUnavailable/, row.inspect_field)
     assert_equal DepthChart.find_by(team_slug: @bills.slug), row.target,
-                 "the chart is the target so /admin/error_logs renders the team on the row"
+                 "the chart is the target so /error_logs renders the team on the row"
     assert_equal "#{@bills.slug}-depth", row.target_name
     assert row.slug.present?,
-           "a row with no slug is unreachable in /admin/error_logs — invisible to the " \
+           "a row with no slug is unreachable in /error_logs — invisible to the " \
            "person it was written for"
   end
 

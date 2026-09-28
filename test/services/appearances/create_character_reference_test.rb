@@ -38,6 +38,39 @@ class Appearances::CreateCharacterReferenceTest < ActiveSupport::TestCase
     @athlete = athletes(:allen_athlete)
     @look = Appearance.create!(person_slug: @person.slug, descriptor: "Bills home")
     @client = FakeClient.new
+    cache_anchor
+  end
+
+  # THE ANCHOR. The mint refuses without it, whatever the injected list holds.
+  def cache_anchor
+    ImageCache.create!(owner: @athlete, purpose: "headshot", variant: "400",
+                       s3_key: "headshots/nfl/buffalo-bills/josh-allen/400.png", content_type: "image/png")
+  end
+
+  test "a missing anchor refuses before the vendor is called" do
+    ImageCache.where(purpose: "headshot").delete_all
+
+    error = assert_raises(Appearances::CreateCharacterReference::NoReferenceImages) do
+      service(references: ->(_look) { ["https://example.com/wide-action-shot.png"] }).call
+    end
+
+    assert_includes error.message, "cached headshot"
+    assert_empty @client.creates
+    assert_nil @look.reload.higgsfield_reference_id
+  end
+
+  test "the mint records when it was bought, and a poll does not move it" do
+    freeze_time do
+      service.call
+      assert_equal Time.current, @look.reload.higgsfield_reference_minted_at
+    end
+    minted_at = @look.higgsfield_reference_minted_at
+
+    travel 1.hour do
+      service.refresh_status!
+    end
+
+    assert_equal minted_at, @look.reload.higgsfield_reference_minted_at
   end
 
   def service(references: ->(_look) { ["https://example.com/a.png"] }, client: @client)
@@ -82,9 +115,6 @@ class Appearances::CreateCharacterReferenceTest < ActiveSupport::TestCase
   end
 
   test "the default supplier is the cached-headshot floor" do
-    ImageCache.create!(owner: @athlete, purpose: "headshot", variant: "400",
-                       s3_key: "headshots/nfl/buffalo-bills/josh-allen/400.png", content_type: "image/png")
-
     Appearances::CreateCharacterReference.new(@look.reload, client: @client).call
 
     assert_equal 1, @client.creates.length

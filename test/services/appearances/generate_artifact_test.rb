@@ -200,11 +200,27 @@ class Appearances::GenerateArtifactTest < ActiveSupport::TestCase
     assert_includes Appearances::GenerateArtifact.new(@look.reload).identity_photo_url, "/original.png"
   end
 
-  test "a typed URL serves a person with no cached headshot" do
-    @look.update!(reference_url: "https://example.com/courtland.png")
+  # FLIPPED (asset-readiness-before-model-build): this used to assert an ATHLETE'S
+  # typed URL stood in for a missing headshot. The headshot is the athlete's anchor;
+  # a typed URL now anchors only a person with no athlete profile.
+  test "a typed URL serves a person with no athlete profile" do
+    person = Person.create!(first_name: "Kendrick", last_name: "Lamar")
+    look = Appearance.create!(person_slug: person.slug, descriptor: "Stage",
+                              reference_url: "https://example.com/kendrick.png")
 
-    assert_equal "https://example.com/courtland.png",
-                 Appearances::GenerateArtifact.new(@look.reload).identity_photo_url
+    assert_equal "https://example.com/kendrick.png",
+                 Appearances::GenerateArtifact.new(look.reload).identity_photo_url
+  end
+
+  test "an athlete's typed URL does not stand in for the missing headshot" do
+    @look.update!(reference_url: "https://example.com/wide-action-shot.png")
+
+    assert_nil Appearances::GenerateArtifact.new(@look.reload).identity_photo_url
+    error = assert_raises(Appearances::GenerateArtifact::NoIdentityPhoto) do
+      with_fake_generator { Appearances::GenerateArtifact.call(@look.reload) }
+    end
+    assert_includes error.message, "cached headshot"
+    assert_empty FakeAdapter.calls, "no anchor, no paid call"
   end
 
   test "a typed URL we would not hand a remote fetcher is refused" do

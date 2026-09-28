@@ -3,7 +3,7 @@ namespace :espn do
   task scrape_depth_charts: :environment do
     # THE LOUDEST FAILURE WAS THE LEAST FINDABLE. A raise out of `call` — an
     # unreadable teams index, or a MissingTeamId escaping the per-team rescue — kills
-    # the task with a backtrace on stderr and leaves nothing in /admin/error_logs, so
+    # the task with a backtrace on stderr and leaves nothing in /error_logs, so
     # the one place an operator looks a week later is empty for the one failure that
     # stopped the scrape dead. Filed and RE-RAISED: the lane must still go red, and
     # the rescue adds a row and changes no verdict.
@@ -11,8 +11,15 @@ namespace :espn do
     # NO DOUBLE ROW. The per-team rescue inside the service files and then returns nil
     # rather than re-raising, and it lets MissingTeamId past WITHOUT filing, so an
     # exception that reaches here has not been recorded anywhere yet.
+    # A typo is not an outage: refuse it before any request, and file nothing.
     begin
-      stats = Espn::ScrapeDepthCharts.new(team_abbrev: ENV["TEAM"], verbose: ENV["VERBOSE"].present?).call
+      team = Espn::ScrapeDepthCharts.normalize_team!(ENV["TEAM"])
+    rescue Espn::ScrapeDepthCharts::UnknownTeam => e
+      abort "espn:scrape_depth_charts: #{e.message}"
+    end
+
+    begin
+      stats = Espn::ScrapeDepthCharts.new(team_abbrev: team, verbose: ENV["VERBOSE"].present?).call
     rescue StandardError => e
       Appearances::FailureLog.file(e)
       raise
@@ -21,8 +28,7 @@ namespace :espn do
     applied   = stats[:teams_scraped].to_i
     failed    = stats[:teams_failed].to_i
     partial   = stats[:teams_partial].to_i
-    unknown   = stats[:teams_skipped].to_i
-    missed    = failed + partial + unknown
+    missed    = failed + partial
     attempted = applied + missed
 
     # THE VERDICT LIVES HERE, NOT IN THE SERVICE. Espn::ScrapeDepthCharts
@@ -38,7 +44,7 @@ namespace :espn do
     # per-team tolerance and only the LANE gets an exit code that discriminates.
     if missed.positive?
       warn "espn:scrape_depth_charts: #{applied} of #{attempted} teams applied " \
-           "(#{failed} failed, #{partial} partial, #{unknown} unknown abbrev)"
+           "(#{failed} failed, #{partial} partial)"
     end
 
     # A PARTIAL RUN STAYS GREEN, DELIBERATELY. One dead team is a normal ESPN

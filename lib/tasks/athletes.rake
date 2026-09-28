@@ -149,7 +149,7 @@ namespace :athletes do
       abort "athletes:describe_from_headshots raised on #{outcome.failed} of the " \
             "#{outcome.failed + outcome.updated} athlete(s) it tried to write (wrote " \
             "#{outcome.updated}) — read the [!] lines above, which name the exception per " \
-            "athlete, and /admin/error_logs, which has the rows. A raise here is the write " \
+            "athlete, and /error_logs, which has the rows. A raise here is the write " \
             "failing, not a description failing: the describer degrades rather than raising."
     end
 
@@ -241,7 +241,7 @@ namespace :athletes do
            "asked for and never billed a token, so they did not reach the API — while " \
            "#{outcome.vision_billed} did. A credential revoked or rate-limited part way " \
            "through a pass looks like this, and so does a handful of unreadable S3 objects; " \
-           "/admin/error_logs has a row per athlete and tells them apart. Not an abort: the " \
+           "/error_logs has a row per athlete and tells them apart. Not an abort: the " \
            "run did real work and is resumable, so re-running it after reading those rows " \
            "costs only the calls it has not already paid for."
     end
@@ -251,7 +251,7 @@ namespace :athletes do
             "description(s) and not one call was billed a single token, so no call reached " \
             "the API. Check #{vision::API_KEY_ENV} (a key that is present but invalid " \
             "looks exactly like this), the rate limit, and the AWS keys that read the cached " \
-            "headshot out of S3. /admin/error_logs has a row per athlete. The free build lane " \
+            "headshot out of S3. /error_logs has a row per athlete. The free build lane " \
             "wrote #{outcome.build_filled}, which is why nothing else above looks wrong."
     end
   end

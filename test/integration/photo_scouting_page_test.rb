@@ -527,6 +527,40 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     refute Photo.find_by(image_url: "https://example.com/b.pdf").chosen?
   end
 
+  # Production 2026-09-28 (Justin Jefferson): every scored candidate refused on face size
+  # and the page flashed green without naming why.
+  test "[integration] a search whose every candidate is too small says why, as an alert" do
+    log_in_as(users(:alex))
+    fake = Class.new do
+      def self.provider_name = "fake-archive"
+      def self.available? = true
+      def self.search(query:, limit: 20)
+        results = [Appearances::ImageSearch::Result.new(image_url: "https://example.com/far.jpg",
+                                                        title: "Josh Allen", width: 700,
+                                                        height: 900, position: 1,
+                                                        mime: "image/jpeg")]
+        Appearances::ImageSearch::Answer.new(results: results, unparsed_count: 0,
+                                            provider_name: provider_name)
+      end
+    end
+    hosted = "https://bucket.example.com/far.png"
+    small = Appearances::FaceVisibility::Judgement.new(visibility: 0.9, fill: 0.2, subjects: 1)
+
+    Appearances::ImageSearch.stub(:providers, [fake]) do
+      Appearances::MirrorCandidates.stub(:call, ->(*, **) { { "https://example.com/far.jpg" => hosted } }) do
+        Appearances::FaceVisibility.stub(:available?, true) do
+          Appearances::FaceVisibility.stub(:call, ->(*, **) { { hosted => small } }) do
+            post search_person_scouting_path(@person.slug)
+          end
+        end
+      end
+    end
+
+    assert_redirected_to page_path
+    assert_no_match(/chosen as references/, flash[:notice].to_s, "the sentence must not flash green")
+    assert_match(/0 chosen as references: 1 of 1 scored refused as face_too_small/, flash[:alert])
+  end
+
   test "[integration] a search that finds nothing changes nothing and says so" do
     log_in_as(users(:alex))
     empty = Class.new do
@@ -666,7 +700,7 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     assert_match(/2 mirrored and sent/, flash[:alert],
                  "the numbers separate a classifier failure from a mirror failure")
     # AND THE DURABLE HALF. A flash lives for one redirect; the operator working out a
-    # week later why a gallery looks wrong is reading /admin/error_logs.
+    # week later why a gallery looks wrong is reading /error_logs.
     row = ErrorLog.order(:id).last
     assert_equal @look, row.target
     assert_match(/scored 0 of 2 shortlisted/, row.message)
@@ -741,5 +775,22 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test='no-look']", count: 1
     assert_select "[data-test='found-gallery']", count: 0
+  end
+
+  # THE MONEY IS SPENT BEFORE THE FILE LOOP RUNS, so an exception there must leave a row.
+  test "[integration] a scouting search that raises leaves an ErrorLog row on the look and a flash" do
+    log_in_as(users(:alex))
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      Appearances::GatherReferencePhotos.stub(:call, ->(*) { raise ActiveRecord::StatementInvalid, "upsert failed" }) do
+        post search_person_scouting_path(@person.slug)
+      end
+    end
+
+    assert_redirected_to page_path
+    assert_match(/The search failed: upsert failed/, flash[:alert])
+    row = ErrorLog.order(:id).last
+    assert_equal @look, row.target
+    assert_equal @look.slug, row.target_name
   end
 end

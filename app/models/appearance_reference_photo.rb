@@ -82,7 +82,8 @@ class AppearanceReferencePhoto < ApplicationRecord
   #                   `face_size_unmeasured`: that one was examined and the answer was
   #                   missing a field, this one was never examined.
   #   face_too_small— something MEASURED how much of the frame the head fills and it
-  #                   is below Appearances::ReferenceEligibility::MINT_FACE_FILL. This is
+  #                   is below Appearances::ReferenceEligibility::SHEET_FACE_FILL (the
+  #                   trainer's stricter MINT_FACE_FILL is applied at spend time). This is
   #                   the variable four real mints turned on (2026-09-25).
   #   face_size_unmeasured — nobody measured the face size, so there is no evidence
   #                   this photograph survives Higgsfield's prepare step. The only

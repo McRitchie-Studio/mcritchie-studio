@@ -123,12 +123,10 @@ module Appearances
     # `image/jpeg`, and it cost a tenth of a cent and no new fetch, which is why it went
     # first.
     #
-    # ⚠ THIS COMMENT ONCE SAID NO METADATA CHECK COULD HAVE CAUGHT THIS FILE. That was
-    # FALSE and it was the stated reason not to look. Re-measured 2026-09-28, one free
-    # HEAD: `content-type: text/html`, body beginning `<html>`. The host never declared
-    # `image/jpeg`; the RESPONSE's own Content-Type is a third signal and catches this
-    # outright. The pre-check is owed and carded — it needs the response, which
-    # MirrorCandidates does not hold, so it is a restructuring rather than a guard.
+    # THE DETECTOR NOW EXISTS: MirrorCandidates refuses a response whose own
+    # Content-Type is not an image (this host answered `text/html`). And a batch refused
+    # with a 400 is re-asked one image at a time (#judge), so a bad file the detector
+    # cannot see costs only itself.
     #
     # EIGHT, AND WHAT IT COSTS. The per-request overhead is the system prompt, measured at
     # 624 tokens with /v1/messages/count_tokens: three requests for a full shortlist of 24
@@ -142,6 +140,16 @@ module Appearances
     # overhead alone. Eight keeps the comparison meaningful and the overhead at a rounding
     # error.
     BATCH_SIZE = 8
+
+    # The vendor refused a request; `status` is its HTTP code.
+    class Refused < StandardError
+      attr_reader :status
+
+      def initialize(status, detail)
+        @status = status.to_i
+        super("Anthropic answered #{status}: #{detail}")
+      end
+    end
 
     # THREE NUMBERS PER IMAGE, AND THE SECOND ONE IS THE ONE THAT DECIDES A MINT.
     #
@@ -258,7 +266,7 @@ module Appearances
     # and "unreadable answer" alike, and on the page all four render as the same
     # sentence — "ranked on shape and relevance only (no face classifier)". That
     # sentence is TRUE of a machine with no key and MISLEADING of a machine whose key
-    # was rejected, and only a row in /admin/error_logs tells the operator which one
+    # was rejected, and only a row in /error_logs tells the operator which one
     # they are looking at.
     def call(image_urls, target: nil)
       urls = Array(image_urls).map(&:to_s).uniq.reject(&:empty?)
@@ -277,9 +285,17 @@ module Appearances
     # blast-radius control described at BATCH_SIZE. Around the loop, one refused batch
     # returns {} for everything and the caller reports a blind classifier over images the
     # vendor judged perfectly.
+    #
+    # A 400 ON A BATCH OF SEVERAL names the payload, not the vendor, so each image is
+    # re-asked alone and only the unreadable one is lost.
     def judge(urls, target:)
       parse(post(urls), urls, target: target)
     rescue StandardError => e
+      if e.is_a?(Refused) && e.status == 400 && urls.length > 1
+        Rails.logger.warn("[Appearances::FaceVisibility] 400 on a batch of #{urls.length}; re-asking singly")
+        return urls.each_with_object({}) { |url, out| out.merge!(judge([url], target: target)) }
+      end
+
       Rails.logger.warn(
         "[Appearances::FaceVisibility] #{e.class} on a batch of #{urls.length}: #{e.message}"
       )
@@ -344,7 +360,7 @@ module Appearances
         http.request(request)
       end
 
-      raise "Anthropic answered #{response.code}: #{response.body.to_s[0, 200]}" unless
+      raise Refused.new(response.code, response.body.to_s[0, 200]) unless
         response.is_a?(Net::HTTPSuccess)
 
       JSON.parse(response.body.to_s)

@@ -115,7 +115,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     assert_match(/applied 0 of 32 teams/, row.message)
     assert row.backtrace.present? && row.backtrace != "[]",
            "raised and rescued rather than constructed, so the row carries a real backtrace"
-    assert row.slug.present?, "a row with no slug is unreachable in /admin/error_logs"
+    assert row.slug.present?, "a row with no slug is unreachable in /error_logs"
   end
 
   # THE GREEN TWINS. A partial run stays green AND stays unfiled: the `warn` reports
@@ -135,7 +135,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
 
   # A RAISE OUT OF THE SERVICE — an unreadable teams index, or a MissingTeamId
   # escaping the per-team rescue — is the loudest failure and was the least findable:
-  # a backtrace on stderr and nothing in /admin/error_logs. Filed and RE-RAISED, so
+  # a backtrace on stderr and nothing in /error_logs. Filed and RE-RAISED, so
   # the lane still goes red.
   test "a raise out of the service is filed and still kills the lane" do
     assert_difference -> { ErrorLog.count }, 1 do
@@ -154,6 +154,34 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     end
 
     assert_match(/applied 0 of 1 teams/, err)
+  end
+
+  # A real one-team outage still files its row; only the typo stopped filing.
+  test "a single-team outage still files its ESPN row" do
+    ENV["TEAM"] = "buf"
+    assert_difference -> { ErrorLog.count }, 1 do
+      capture_io { assert_raises(SystemExit) { scrape(teams_failed: 1) } }
+    end
+    assert_match(/ScrapeDidNotHappen/, ErrorLog.order(:id).last.inspect_field)
+  end
+
+  # MEASURED: TEAM=BUF filed a Sentry-paged "ESPN unreachable" row for a typo.
+  test "a mis-cased TEAM reaches the service as its code and files nothing" do
+    ENV["TEAM"] = "BUF"
+    assert_no_difference -> { ErrorLog.count } do
+      capture_io { assert_equal "buf", scrape(teams_scraped: 1)[:team_abbrev] }
+    end
+  end
+
+  test "an unknown TEAM aborts naming the valid codes and files no outage row" do
+    ENV["TEAM"] = "bfu"
+    err = nil
+    assert_no_difference -> { ErrorLog.count } do
+      _out, err = capture_io { assert_raises(SystemExit) { scrape(teams_scraped: 1) } }
+    end
+    assert_match(/bfu/, err)
+    assert_match(/\bbuf\b/, err)
+    refute_match(/unreachable/i, err)
   end
 
   # --- nfl:upload_headshots ------------------------------------------------
@@ -881,9 +909,11 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     stats = Hash.new(0).merge(tally)
     fake = Object.new
     fake.define_singleton_method(:call) { stats }
-    Espn::ScrapeDepthCharts.stub(:new, ->(**) { fake }) do
+    received = {}
+    Espn::ScrapeDepthCharts.stub(:new, ->(**kwargs) { received = kwargs; fake }) do
       Rake::Task["espn:scrape_depth_charts"].invoke
     end
+    received
   end
 
   # Athletes the task will actually attempt: an espn_id, an NFL-league team

@@ -74,6 +74,20 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # A measured face between the sheet and trainer floors is sheet-only too; the line must
+  # not claim nothing measured it.
+  test "[component] a sheet-only photo under the trainer floor is not called unmeasured" do
+    cache_headshot
+    file_photo("https://example.com/half.jpg", chosen: true, position: 1,
+               title: "Josh Allen at camp", face_score: 0.9, face_subjects: 1, face_fill: 0.5)
+
+    get page_path
+
+    assert_select "[data-test='trainer-subset']", count: 1 do |nodes|
+      assert_match(/below the trainer.s 60% floor/, nodes.first.text.squish)
+    end
+  end
+
   # THE THIRD STATE, AND THE COUNT THAT WOULD HAVE LIED. A row an older ranking chose that
   # nothing ever looked at goes to NEITHER generator — so folding it into the sheet-only
   # line would have claimed the character sheet uses a photograph the sheet refuses.
@@ -460,7 +474,7 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
   # ---- where a failure goes --------------------------------------------------
 
   # A FLASH IS NOT A RECORD. It lives for one redirect and is then gone, and the
-  # operator asking "why did the mint refuse?" is reading /admin/error_logs a day
+  # operator asking "why did the mint refuse?" is reading /error_logs a day
   # later. `target` is what lets them find the row for THIS look rather than reading
   # every row since Tuesday.
   test "[integration] a vendor failure on mint leaves an ErrorLog row on the look" do
@@ -492,7 +506,8 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to page_path
-    assert_match(/no reference photographs/, flash[:alert])
+    # The anchor gate answers first now, and names the asset that is missing.
+    assert_match(/cannot be built: no cached headshot/, flash[:alert])
   end
 
   # ---- what a linked caption may point at ------------------------------------
@@ -530,5 +545,22 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     assert_redirected_to page_path
     assert_equal 0, AppearanceReferencePhoto.count
     assert_match(/#{Appearances::ImageSearch::Serper::API_KEY_ENV}/, flash[:alert])
+  end
+
+  # THE MONEY IS SPENT BEFORE THE FILE LOOP RUNS, so an exception there must leave a row.
+  test "[integration] a search that raises leaves an ErrorLog row on the look and a flash" do
+    log_in_as(users(:alex))
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      Appearances::GatherReferencePhotos.stub(:call, ->(*) { raise ActiveRecord::StatementInvalid, "upsert failed" }) do
+        post search_person_appearance_path(@person.slug, @look.slug)
+      end
+    end
+
+    assert_redirected_to page_path
+    assert_match(/The search failed: upsert failed/, flash[:alert])
+    row = ErrorLog.order(:id).last
+    assert_equal @look, row.target
+    assert_equal @look.slug, row.target_name
   end
 end

@@ -65,6 +65,10 @@ module Appearances
       existing = @appearance.higgsfield_reference_id
       return existing if existing.present? && !force
 
+      # NO ANCHOR, NO MINT — whatever the injected list holds.
+      refusal = Content::ArtifactPlan::ModelInputs.new(@appearance).refusal_for(:identity)
+      raise NoReferenceImages, refusal if refusal
+
       urls = Array(@references.call(@appearance))
       if urls.empty?
         raise NoReferenceImages,
@@ -76,7 +80,8 @@ module Appearances
       @appearance.update!(
         higgsfield_reference_id: id,
         higgsfield_reference_status: STATUS_REQUESTED,
-        higgsfield_reference_synced_at: Time.current
+        higgsfield_reference_synced_at: Time.current,
+        higgsfield_reference_minted_at: Time.current
       )
       id
     end

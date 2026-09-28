@@ -70,7 +70,7 @@ class EcosystemBuildNflDataVerdictTest < Minitest::Test
   # log_fail line is printed whether or not stderr survived, so an assertion on
   # its text passes in both worlds and proves nothing.
   def test_the_scrape_tally_reaches_the_rebuild_log
-    tally = "espn:scrape_depth_charts: 0 of 32 teams applied (32 failed, 0 partial, 0 unknown abbrev)"
+    tally = "espn:scrape_depth_charts: 0 of 32 teams applied (32 failed, 0 partial)"
     out = phase(espn_exit: 1, espn_stderr: tally)
 
     assert_match(/0 of 32 teams applied \(32 failed/, out,

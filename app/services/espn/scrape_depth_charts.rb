@@ -65,8 +65,21 @@ class Espn::ScrapeDepthCharts
   # than the empty one a bare `.new` would file. Insights::DocFreshness::StaleDocError
   # exists for the same reason and is built the same way. It changes no verdict: the
   # lane still aborts on the same condition, and this only makes the abort findable in
-  # /admin/error_logs a week later.
+  # /error_logs a week later.
   class ScrapeDidNotHappen < StandardError; end
+
+  # An operator typo in TEAM=, not an ESPN fact: refused up front, never filed.
+  class UnknownTeam < ArgumentError; end
+
+  # Nil for "all teams"; case and spaces are normalised, as Espn::PlayerProfile#roster does.
+  def self.normalize_team!(raw)
+    return nil if raw.to_s.strip.empty?
+
+    abbrev = raw.to_s.strip.downcase
+    return abbrev if TEAM_ABBREV_TO_SLUG.key?(abbrev)
+
+    raise UnknownTeam, "Unknown TEAM=#{raw.to_s.strip.inspect}. Valid codes: #{TEAM_ABBREV_TO_SLUG.keys.sort.join(' ')}"
+  end
 
   # WHO WE SAY WE ARE. Read from Espn::Api rather than spelled out, because a
   # second copy of this string is precisely how this service came to send a Chrome
@@ -77,7 +90,7 @@ class Espn::ScrapeDepthCharts
   attr_reader :stats
 
   def initialize(team_abbrev: nil, verbose: false)
-    @only_team = team_abbrev
+    @only_team = self.class.normalize_team!(team_abbrev)
     @verbose = verbose
     @stats = Hash.new(0)
   end
@@ -87,15 +100,7 @@ class Espn::ScrapeDepthCharts
   end
 
   def call
-    abbrevs = @only_team ? [@only_team] : TEAM_ABBREV_TO_SLUG.keys
-    known, unknown = abbrevs.partition { |abbrev| TEAM_ABBREV_TO_SLUG.key?(abbrev) }
-
-    # An abbrev WE do not know is a mistyped TEAM= and not an ESPN fact, so it is
-    # still only counted.
-    unknown.each do |abbrev|
-      puts "  [?] Unknown ESPN abbrev: #{abbrev}"
-      @stats[:teams_skipped] += 1
-    end
+    known = @only_team ? [@only_team] : TEAM_ABBREV_TO_SLUG.keys
 
     # EVERY ID RESOLVES BEFORE ANY CHART IS TOUCHED. Raising partway through would
     # leave a half-refreshed league behind a non-zero exit, which is worse than
@@ -325,7 +330,7 @@ class Espn::ScrapeDepthCharts
   # test/services/espn/scrape_depth_charts_test.rb refuses `ENV[` back into this
   # directory for that reason.
   #
-  # The DepthChart is the target so /admin/error_logs renders the team on the row, and
+  # The DepthChart is the target so /error_logs renders the team on the row, and
   # it is a REQUIRED argument rather than one defaulting to nil: scrape_team is the only
   # caller and it has already created the row with find_or_create_by!, so a nil default
   # would be an untestable branch dressed as caution. Appearances::FailureLog swallows

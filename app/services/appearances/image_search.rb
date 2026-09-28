@@ -168,7 +168,7 @@ module Appearances
     # searched fine and found nothing, so on the page a 401 and an empty result read
     # as the same sentence — "returned nothing" — and the operator spends an
     # afternoon looking for a photograph problem they do not have. The row in
-    # /admin/error_logs is what tells those two apart, and `target:` is what names
+    # /error_logs is what tells those two apart, and `target:` is what names
     # the look it happened on.
     #
     # `target:` IS OPTIONAL because this façade is reachable from a console and a

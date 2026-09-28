@@ -233,7 +233,7 @@ the public can buy a Higgsfield identity per look and, once `SERPER_API_KEY` lan
 an uncapped search plus up to `GatherReferencePhotos::VISION_SHORTLIST` vision
 classifications per click.
 
-**A provider failure lands in `/admin/error_logs`, filed against the look.** Both
+**A provider failure lands in `/error_logs`, filed against the look.** Both
 paid collaborators degrade to an empty answer rather than raising — which is right
 for the page and terrible for diagnosis, because "the key was rejected" and "the
 search found nothing" then print the same sentence. `Appearances::FailureLog` is

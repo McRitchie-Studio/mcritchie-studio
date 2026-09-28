@@ -49,7 +49,6 @@ class EspnDepthChartRefreshTest < ActionDispatch::IntegrationTest
                  "every team in the abbreviation map must be applied, not most of them"
     assert_equal 0, stats[:teams_failed]
     assert_equal 0, stats[:teams_partial]
-    assert_equal 0, stats[:teams_skipped]
 
     landed = DepthChart.where(team_slug: ABBREVS.values).count
     assert_equal 32, landed, "32 charts, counted in the database rather than in the tally"
