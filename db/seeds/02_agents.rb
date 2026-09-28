@@ -191,7 +191,7 @@ agents_data = [
     title: "General Builder",
     description: "The builder. Every task is built by one, and it is legion: each task gets its own mascot, and every mascot is the same soul. Builds whatever the task needs — UI, backend, Google Workspace, a shared gem, an on-chain instruction — to the standards the specialists review to. Builds; never reviews, releases, or deploys.",
     # Pikachu is the general soul's face; each task still wears its own mascot.
-    avatar: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/25-pikachu-cropped.png",
+    avatar: "/agents/pokemon.webp",
     position: 9,
     metadata: {
       "review_role" => nil,

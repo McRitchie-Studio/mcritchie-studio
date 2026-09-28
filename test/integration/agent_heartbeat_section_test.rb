@@ -24,7 +24,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
     Agent.find_or_create_by!(slug: "pokemon") do |a|
       a.name = "Pokemon"
-      a.avatar = "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/25-pikachu-cropped.png"
+      a.avatar = "/agents/pokemon.webp"
     end
   end
 
@@ -162,7 +162,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='action']", count: 1
     assert_select "[data-test='action'][data-action='wrap-it-up'][data-clip='wrap-it-up']"
     assert_match "Hand a stuck session to a fresh one, then clear its board", response.body
-    assert_select "img[src*='25-pikachu-cropped.png']"
+    assert_select "img[src='/agents/pokemon.webp']"
   end
 
   test "a non-heartbeat agent's page renders no heartbeat section" do
