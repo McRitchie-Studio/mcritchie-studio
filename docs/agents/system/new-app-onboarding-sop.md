@@ -17,7 +17,7 @@ Engine satellite; Rolio is the current reference case.
 |---|---|---|
 | Examples | turf-monster, the mcritchie-studio hub | app-owned client demos; Rolio is release-managed standalone |
 | Repo | own repo, inside the managed ecosystem | own repo, outside shared automation |
-| Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: unmanaged candidate; release-managed: `release_repos.yml` + `qa_environments.yml`; optional `status: reserved` row only |
+| Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: unmanaged candidate; release-managed: `release_repos.yml` (+ `qa_environments.yml` only with a QA copy; the `standalone-heroku` profile has none); optional `status: reserved` row only |
 | Runtime | `studio-engine` (auth, theme, `ErrorLog`, SSO) | standalone — **no `studio-engine`**; owns auth/UI/infra |
 | Branch model | three-rung ladder `accepted` → `release` → `main`; feature PRs target **`accepted`** | app-owned: PRs target **`main`**; release-managed: the same three-rung ladder |
 | DoR | full `bin/dor-check` (shape-tiered) | app-owned: **lite** — task + tests + error-logging; release-managed: release conductor gates apply |
