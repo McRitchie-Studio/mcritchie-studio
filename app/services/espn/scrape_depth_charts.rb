@@ -244,7 +244,7 @@ class Espn::ScrapeDepthCharts
 
   # The depth chart in the shape the downstream parser expects:
   #   [{ "name" => "Base 4-3 D", "rows" => [[position_label, athlete_hash, ...], ...] }, ...]
-  def fetch_groups(abbrev, chart = nil)
+  def fetch_groups(abbrev, chart)
     team_id = team_id_for(abbrev)
     names = fetch_roster_names(team_id) # espn_id (String) => display_name
 
@@ -318,11 +318,11 @@ class Espn::ScrapeDepthCharts
   # test/services/espn/scrape_depth_charts_test.rb refuses `ENV[` back into this
   # directory for that reason.
   #
-  # The DepthChart is the target so /admin/error_logs renders the team on the row.
-  # scrape_team creates it before it calls here, so it is present on that path; a
-  # caller driving fetch_groups some other way passes nothing, and
-  # Appearances::FailureLog files an untargeted row rather than refusing. Its own
-  # failure is swallowed there, so telemetry can never veto the tolerance it reports.
+  # The DepthChart is the target so /admin/error_logs renders the team on the row, and
+  # it is a REQUIRED argument rather than one defaulting to nil: scrape_team is the only
+  # caller and it has already created the row with find_or_create_by!, so a nil default
+  # would be an untestable branch dressed as caution. Appearances::FailureLog swallows
+  # its own failure, so telemetry can never veto the tolerance it reports.
   rescue MissingTeamId
     raise
   rescue StandardError => e

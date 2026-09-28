@@ -173,7 +173,7 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     )
 
     # Stub fetch_groups to simulate ESPN's broken Lions response: only defense
-    @service.define_singleton_method(:fetch_groups) { |_, _ = nil| [{ "name" => "Base 4-3 D", "rows" => [] }] }
+    @service.define_singleton_method(:fetch_groups) { |_, _| [{ "name" => "Base 4-3 D", "rows" => [] }] }
     @service.send(:scrape_team, "buf", @bills.slug)
 
     assert_equal 1, @service.stats[:teams_partial]
@@ -190,7 +190,7 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     # its row. fetch_groups is stubbed rather than left to fail: this test used to
     # depend on a LIVE 403 from site.api.espn.com for its nil, which made it a
     # network call that passed for the wrong reason.
-    @service.define_singleton_method(:fetch_groups) { |_, _ = nil| nil }
+    @service.define_singleton_method(:fetch_groups) { |_, _| nil }
     @service.send(:scrape_team, "buf", @bills.slug)
 
     assert DepthChart.exists?(team_slug: @bills.slug)
@@ -560,14 +560,12 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     # A GUARD THAT REFUSED EVERY DEGRADED RUN would pass every case above and is
     # caught here. One dead team is a normal ESPN afternoon; the LANE grades the
     # tally (lib/tasks/espn.rake), the service keeps its per-team tolerance.
-    index = teams_index({ "buf" => "2" })
-    responses = { TEAMS_INDEX => index }
-    responses[Espn::ScrapeDepthCharts::ESPN_ROSTER_URL.call("2")] = { "athletes" => [] }
-    responses[Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(nfl_year, "2")] =
-      Espn::ScrapeDepthCharts::SourceUnavailable.new("ESPN answered 503 for sports.core.api.espn.com")
-    responses[Espn::ScrapeDepthCharts::ESPN_DEPTHCHART_URL.call(nfl_year - 1, "2")] =
-      Espn::ScrapeDepthCharts::SourceUnavailable.new("ESPN answered 503 for sports.core.api.espn.com")
-    service = Stubbed.new(responses, team_abbrev: "buf")
+    #
+    # IT IS ALSO THE TWIN OF THE ErrorLog CASE BELOW: filing the cause must not change
+    # this answer. `rescue_and_log` would have — it RE-RAISES, so the row would arrive
+    # and the other 31 teams would lose their refresh, which is why the row is a direct
+    # Appearances::FailureLog call and not that wrapper.
+    service = Stubbed.new(buffalo_with_dead_depth_chart, team_abbrev: "buf")
 
     stats = service.call
 
@@ -599,17 +597,6 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     assert row.slug.present?,
            "a row with no slug is unreachable in /admin/error_logs — invisible to the " \
            "person it was written for"
-  end
-
-  test "the run is still tolerated and tallied once the row is filed" do
-    # THE ROW MUST NOT COST THE OTHER 31 TEAMS THEIR REFRESH. A guard that filed by
-    # re-raising (rescue_and_log's shape) would pass the case above and is caught here.
-    service = Stubbed.new(buffalo_with_dead_depth_chart, team_abbrev: "buf")
-
-    stats = service.call
-
-    assert_equal 1, stats[:teams_failed]
-    assert_equal 0, stats[:teams_scraped]
   end
 
   test "a healthy team files no ErrorLog row at all" do
@@ -671,6 +658,10 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     # different lines, and a line regex sees neither. Comments are dropped because the
     # sentence you are reading names the literal it forbids; a trailing comment can
     # only produce a FALSE POSITIVE here, which is the safe direction for a guard.
+    # lib/tasks/espn.rake is deliberately OUT of this glob: it reads ENV["TEAM"] and
+    # ENV["VERBOSE"] legitimately, so this needle list would false-positive there on
+    # every run. It builds no URL and files only exceptions the services raised, so the
+    # leak shape this guards does not exist in it.
     forbidden = ["ENV[", "Rails.application.credentials", "api_key", "access_token", "Bearer "]
     Dir[Rails.root.join("app/services/espn/**/*.rb")].sort.each do |path|
       code = File.readlines(path).reject { |line| line.strip.start_with?("#") }.join(" ").squeeze(" ")
