@@ -13,7 +13,7 @@ require "uri"
 # Every probe that leaves the process (git, HTTP, heroku) goes through an
 # injectable `probe`, so the unit tests drive each check without a network.
 #
-# Unit tests: test/lib/app_contract_test.rb
+# Unit tests: test/lib/app_profile_test.rb (the AppContract section)
 module AppContract
   Check = Struct.new(:name, :ok, :detail, :remedy, keyword_init: true)
   ORG = "McRitchie-Studio"
