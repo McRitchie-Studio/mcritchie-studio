@@ -313,9 +313,20 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
 
   # THE REGRESSION THIS TASK WAS FILED FOR, and the lowest tier that can see it:
   # the index guard is satisfied -- ESPN answered, two teams resolved -- and then
-  # every per-team read raises into the loop's `rescue => e; failed += 1`. Before
-  # the fix the task ended on `puts` and the process exited 0 with `failed: 2`,
-  # inside a `db:seed` whose only signal to bin/ecosystem-build is that status.
+  # every per-team read raises into the loop's `rescue => e; failed += 1`. The task
+  # then ended on `puts`, inside a `db:seed` whose only signal to bin/ecosystem-build
+  # is its exit status.
+  #
+  # MEASURED ON THIS EXACT INPUT, with the new abort disarmed so the old behaviour is
+  # reproduced rather than remembered -- `rake nfl:link_coach_headshots` through the
+  # same `URI.open` seam, both fixture teams raising OpenURI::HTTPError 500:
+  #
+  #     ESPN teams: 2   matched/updated: 0   failed: 2   EXIT CODE: 0
+  #
+  # which is the figure the review that filed this card reported. The header's
+  # `failed: 1 / skipped (no team): 1` measurement is a DIFFERENT input -- an index
+  # naming one abbrev we hold no Team row for -- and it is the reason this lane is
+  # graded on what landed rather than on this counter.
   test "a run whose every team failed exits non-zero" do
     out, err = capture_io do
       assert_raises(SystemExit) do
