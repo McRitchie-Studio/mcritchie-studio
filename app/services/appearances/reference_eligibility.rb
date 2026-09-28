@@ -99,6 +99,11 @@ module Appearances
     # single candidate that scored just under this, and record what prepare said.
     MINT_FACE_FILL = 0.6
 
+    # THE FREE SHEET'S FLOOR, lower because a zero-shot sheet has no prepare step to refuse.
+    # Above the prompt's 0.3 "upper body" anchor, so distant shots stay out; production
+    # (Justin Jefferson, 2026-09-28) refused a clear 0.5-fill portrait at 0.6.
+    SHEET_FACE_FILL = 0.4
+
     # BELOW THIS THE CLASSIFIER SAW NO USABLE FACE — a helmet, the back of a head, a
     # face lost in shadow.
     #
@@ -167,13 +172,13 @@ module Appearances
       # the photograph; "nobody looked" is a weaker and less useful thing to print on a tile
       # that is provably a scanned book.
       return FACE_UNSCORED if visibility.blank?
-      return FACE_TOO_SMALL if fill.present? && fill < MINT_FACE_FILL
+      return FACE_TOO_SMALL if fill.present? && fill < SHEET_FACE_FILL
 
       ELIGIBLE
     end
 
     # MAY THIS BE PAID TO HIGGSFIELD'S TRAINER — everything above, plus a MEASURED face
-    # size.
+    # size at or above MINT_FACE_FILL.
     #
     # THE ONE PLACE AN ABSENCE IS A REFUSAL, and the reasoning is the cost asymmetry
     # rather than a belief about the photograph:
@@ -182,13 +187,14 @@ module Appearances
     #     operator PHOTOGRAPHS IN A TRAINING SET, never the identity itself;
     #   · an unmeasured set costs real money for a `failed` reference and leaves the look
     #     with no identity at all;
-    #   · the same photograph still reaches the zero-shot sheet through `.verdict`, so
-    #     nothing is wasted — it is spent on the generator that cannot refuse it.
+    #   · a photograph the trainer refuses here still reaches the zero-shot sheet
+    #     through `.verdict`, whose floor is SHEET_FACE_FILL.
     def self.mint_verdict(candidate, person_name:, visibility: nil, fill: nil, subjects: nil)
       verdict = verdict(candidate, person_name: person_name, visibility: visibility,
                                    fill: fill, subjects: subjects)
       return verdict unless verdict == ELIGIBLE
       return FACE_SIZE_UNMEASURED if fill.blank?
+      return FACE_TOO_SMALL if fill < MINT_FACE_FILL
 
       ELIGIBLE
     end

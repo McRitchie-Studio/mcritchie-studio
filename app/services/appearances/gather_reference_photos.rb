@@ -192,7 +192,7 @@ module Appearances
     Summary = Struct.new(:configured, :provider_name, :queries, :returned, :unique,
                          :filed, :chosen, :rejected, :unfetchable, :unparsed, :ranked_by,
                          :scored, :sized, :mint_ready, :shortlisted, :attempted,
-                         :per_query, keyword_init: true) do
+                         :per_query, :refusals, keyword_init: true) do
       def configured? = !!self[:configured]
 
       def queries = (self[:queries] || [])
@@ -277,7 +277,16 @@ module Appearances
       # deliberate: the sheet path — the one the operator actually presses — got its
       # photographs, so the run really did succeed. `#trainer_clause` says what the trainer
       # will get in the same sentence, which is why there is no separate predicate for it.
-      def flash_key = face_classifier_blind? || face_size_blind? ? :alert : :notice
+      def flash_key
+        face_classifier_blind? || face_size_blind? || nothing_chosen? ? :alert : :notice
+      end
+
+      # THE CLASSIFIER LOOKED AND EVERY CANDIDATE WAS REFUSED — the sheet gets the headshot
+      # alone. Production 2026-09-28 (Justin Jefferson) reported this green.
+      def nothing_chosen? = self[:scored].to_i.positive? && self[:chosen].to_i.zero?
+
+      # Refusal reason => count, over the candidates the classifier scored.
+      def refusals = (self[:refusals] || {})
 
       # THE ONE SENTENCE BOTH SEARCH ACTIONS PRINT.
       #
@@ -291,7 +300,7 @@ module Appearances
         parts << "#{unparsed} in a shape we could not read" if self[:unparsed].to_i.positive?
         parts << "#{unfetchable} refused as unsafe to fetch" if self[:unfetchable].to_i.positive?
         parts << ranking_clause
-        parts << "#{chosen} chosen as references"
+        parts << chosen_clause
         parts << trainer_clause
         "#{parts.join(' · ')}."
       end
@@ -330,6 +339,16 @@ module Appearances
           "- so the trainer is offered the cached headshot alone"
       end
 
+      def chosen_clause
+        return "#{chosen} chosen as references" unless nothing_chosen? && refusals.any?
+
+        reason, count = refusals.max_by { |_reason, n| n }
+        clause = "0 chosen as references: #{count} of #{scored} scored refused as #{reason}"
+        return clause unless reason == ReferenceEligibility::FACE_TOO_SMALL.to_s
+
+        "#{clause}, below the #{(ReferenceEligibility::SHEET_FACE_FILL * 100).round}% floor"
+      end
+
       # WHAT EACH OF THE TWO GENERATORS ACTUALLY GETS, in one clause.
       #
       # THE TWO NUMBERS DIVERGE AND THE OPERATOR CANNOT SEE WHY WITHOUT THIS. Every
@@ -339,6 +358,7 @@ module Appearances
       # number labelled "chosen" would describe whichever generator the reader happened
       # to be thinking about.
       def trainer_clause
+        return "the trainer gets the cached headshot alone" if chosen.to_i.zero?
         return "all #{chosen} can also go to the trainer" if chosen.to_i.positive? &&
                                                              self[:mint_ready].to_i == chosen.to_i
 
@@ -557,7 +577,8 @@ module Appearances
       Summary.new(configured: configured, provider_name: configured ? @search.provider_name : nil,
                   queries: queries, returned: 0, unique: 0, filed: 0, chosen: 0,
                   rejected: 0, unfetchable: 0, unparsed: 0, ranked_by: nil, scored: 0,
-                  sized: 0, mint_ready: 0, shortlisted: 0, attempted: 0, per_query: {})
+                  sized: 0, mint_ready: 0, shortlisted: 0, attempted: 0, per_query: {},
+                  refusals: {})
     end
 
     # FILE THE ANSWER, IN RANK ORDER RATHER THAN IN THE PROVIDER'S ORDER.
@@ -598,7 +619,7 @@ module Appearances
       judgements = face_judgements(safe)
       ranked = safe.sort_by { |r| [-final_score(r, judgements), r.position.to_i] }
 
-      counts = { filed: 0, chosen: 0, rejected: 0, mint_ready: 0 }
+      counts = { filed: 0, chosen: 0, rejected: 0, mint_ready: 0, refusals: Hash.new(0) }
       taken = 0
       ranked.each do |result|
         verdict = reference_verdict(result, judgements)
@@ -629,7 +650,7 @@ module Appearances
                             sized: judgements.count { |_url, j| j.sized? },
                             mint_ready: counts[:mint_ready],
                             shortlisted: @shortlisted, attempted: @attempted,
-                            per_query: harvest.per_query)
+                            per_query: harvest.per_query, refusals: counts[:refusals].to_h)
       report_blind_classifier(summary)
       report_blind_face_size(summary)
       summary
@@ -719,6 +740,7 @@ module Appearances
       counts[:filed] += 1
       take ? counts[:chosen] += 1 : counts[:rejected] += 1
       counts[:mint_ready] += 1 if take && judgement&.sized?
+      counts[:refusals][reason] += 1 if judgement && !take
     end
 
     # PAY TO LOOK AT THE SHORTLIST, NOT AT EVERYTHING.

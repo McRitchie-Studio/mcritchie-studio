@@ -557,8 +557,8 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to page_path
-    assert_nil flash[:notice]
-    assert_match(/0 chosen as references - 1 of 1 scored refused as face_too_small/, flash[:alert])
+    assert_no_match(/chosen as references/, flash[:notice].to_s, "the sentence must not flash green")
+    assert_match(/0 chosen as references: 1 of 1 scored refused as face_too_small/, flash[:alert])
   end
 
   test "[integration] a search that finds nothing changes nothing and says so" do

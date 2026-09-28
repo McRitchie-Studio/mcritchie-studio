@@ -1263,12 +1263,12 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
       unique: 78, filed: 78, chosen: 0, rejected: 78, unfetchable: 0, unparsed: 0,
       ranked_by: :face_size, scored: 6, sized: 6, mint_ready: 0, shortlisted: 24,
       attempted: 14, per_query: {},
-      refusals: { "face_too_small" => 6, "face_unscored" => 72 }
+      refusals: { "face_too_small" => 6 }
     )
 
     assert summary.nothing_chosen?
     assert_equal :alert, summary.flash_key
-    assert_match(/0 chosen as references - 6 of 6 scored refused as face_too_small/,
+    assert_match(/0 chosen as references: 6 of 6 scored refused as face_too_small/,
                  summary.sentence)
     assert_match "below the #{(Appearances::ReferenceEligibility::SHEET_FACE_FILL * 100).round}% floor",
                  summary.sentence
