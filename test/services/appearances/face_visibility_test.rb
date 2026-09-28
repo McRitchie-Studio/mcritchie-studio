@@ -299,4 +299,49 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
     assert_equal "claude-haiku-4-5", FV::MODEL
     refute_match(/-\d{8}\z/, FV::MODEL, "date-suffixed ids are the stale spelling")
   end
+
+  # ---- MAX_TOKENS AGAINST THE CALLER'S SHORTLIST --------------------------------
+
+  # ⚠ TRUNCATION HERE IS NOT A SHORT ANSWER, IT IS NO ANSWER, and this is the assertion
+  # that ties two constants in two files into the one decision they actually are.
+  #
+  # `#parse` finds the array with a regex that needs the CLOSING bracket. An answer
+  # stopped at `max_tokens` has none, so the match is nil, `JSON.parse("")` raises, and
+  # the rescue returns an EMPTY hash — every image in the batch loses its judgement and
+  # the caller raises the alarm that says the VENDOR saw nothing, about a batch the
+  # vendor answered in full.
+  #
+  # MEASURED 2026-09-27 with /v1/messages/count_tokens, which is free: a realistic
+  # answer object runs about 43 tokens, so 12 images measured 523 and 24 measured 1,039.
+  # MAX_TOKENS was 512. The ceiling was ALREADY too low for the shortlist that shipped
+  # with it, which is how a latent version of this failure was in production.
+  #
+  # THE FLOOR IS DERIVED FROM THE CALLER'S CONSTANT rather than hard-coded, so raising
+  # Appearances::GatherReferencePhotos::VISION_SHORTLIST without raising MAX_TOKENS fails
+  # HERE instead of failing silently in front of the operator.
+  TOKENS_PER_ANSWER_OBJECT = 43
+
+  test "MAX_TOKENS can carry an answer for a full vision shortlist" do
+    shortlist = Appearances::GatherReferencePhotos::VISION_SHORTLIST
+    needed = shortlist * TOKENS_PER_ANSWER_OBJECT
+
+    assert_operator FV::MAX_TOKENS, :>=, needed,
+                    "#{shortlist} images need about #{needed} output tokens (measured " \
+                    "2026-09-27) and a truncated array parses to NO scores at all, not " \
+                    "to fewer — raise MAX_TOKENS with VISION_SHORTLIST"
+  end
+
+  # THE FAILURE THE FLOOR ABOVE PREVENTS, driven rather than described: a cut-off array
+  # is not a partial answer. Without this the floor is a number with no stated
+  # consequence, and a reader could reasonably assume truncation costs the tail alone.
+  test "an answer cut off mid-array scores NOTHING, not the rows that arrived" do
+    urls = (0..2).map { |i| "https://cdn.example.com/#{i}.jpg" }
+    whole = '[{"index":0,"visibility":0.9},{"index":1,"visibility":0.8},' \
+            '{"index":2,"visibility":0.7}]'
+    truncated = whole[0, whole.index('{"index":2')]
+
+    assert_equal 3, parse(answer(whole), urls).length, "the control: the whole answer reads"
+    assert_equal({}, parse(answer(truncated), urls),
+                 "two complete objects had arrived and every one of them is lost")
+  end
 end
