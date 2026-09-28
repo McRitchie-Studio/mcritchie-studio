@@ -73,12 +73,20 @@
                 saying "costs money" flatly was true only while the paid one was the only
                 one. Wikimedia Commons bills nothing per query; the vision classifier
                 bills per image either way, when it is configured at all. %>
-            Will search for &ldquo;<%= @search_query %>&rdquo;.
+            <%# ⚠ THE COUNT IS NAMED BECAUSE THE BUTTON'S PRICE CHANGED. A search now runs
+                one query per Appearances::GatherReferencePhotos::QUERY_VARIANTS entry —
+                the subject below plus &ldquo;smiling&rdquo;, &ldquo;no helmet&rdquo; and
+                &ldquo;laughing&rdquo; — and a control that said "one query" over four
+                purchases is the kind of stale cost claim an operator budgets against.
+                The queries themselves are listed on the scouting page, which is the
+                surface for judging them; this page owes the price. %>
+            Will run <%= pluralize(@search_query_count, "search") %> for
+            &ldquo;<%= @search_query %>&rdquo; and its expression variants.
             <% if @search_provider == Appearances::ImageSearch::WikimediaCommons.provider_name %>
-              The query itself is free; ranking the results costs money when a face
+              The queries themselves are free; ranking the results costs money when a face
               classifier is configured.
             <% else %>
-              Each search costs money.
+              Each of the <%= @search_query_count %> searches costs money.
             <% end %>
           </p>
         </div>

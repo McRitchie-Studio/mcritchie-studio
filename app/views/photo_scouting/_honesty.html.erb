@@ -115,28 +115,67 @@
       <li class="flex gap-2" data-test="commons-and-note">
         <span aria-hidden="true" class="shrink-0">&#9679;</span>
         <span>
-          <strong>The team in the query can collapse this search.</strong> The query
-          above is the person plus their team, which helps a general image search tell
-          a quarterback from a locksmith. Wikimedia Commons ANDs the terms instead, so
-          the team narrows rather than disambiguates. Measured 2026-09-26:
-          &ldquo;Drew Lock&rdquo; returns 20 candidates and &ldquo;Drew Lock Seattle
-          Seahawks&rdquo; returns <strong>2</strong>, while
+          <strong>The team in the query can collapse this search.</strong> The queries
+          above are the person plus their team plus one variant, which helps a general
+          image search tell a quarterback from a locksmith. Wikimedia Commons ANDs the
+          terms instead, so the team narrows rather than disambiguates. Measured
+          2026-09-26: &ldquo;Drew Lock&rdquo; returns 20 candidates and
+          &ldquo;Drew Lock Seattle Seahawks&rdquo; returns <strong>2</strong>, while
           &ldquo;Patrick Mahomes&rdquo; returns 20 either way. Precision goes up and
           recall goes down, and a 2-candidate answer cannot fill a cap of
           <%= @chosen_limit %>. If this page shows very few candidates, suspect the
-          query before the archive.
+          query before the archive &mdash; and note that a variant narrows it a second
+          time on top of the team.
         </span>
       </li>
     <% end %>
+
+    <%# THE FAN-OUT, ITS EVIDENCE, AND ITS LIMIT — the three facts an operator needs to
+        read this page's candidate count without over-reading it. It is FIRST among the
+        new notes because it is what changed. %>
+    <li class="flex gap-2" data-test="fan-out-note">
+      <span aria-hidden="true" class="shrink-0">&#9679;</span>
+      <span>
+        <strong>Four searches, not one, and they really do differ.</strong> Each query
+        above is bought separately &mdash; providers bill per query, not per result
+        &mdash; and duplicates are dropped by image URL before anything is classified,
+        so nothing is paid for twice. Measured against live Serper on 2026-09-27:
+        <strong>107 unique of 120</strong> across six variants for one athlete, and
+        <strong>73 of 80</strong> across these four for another. What did NOT hold across
+        the two is which variant wins: &ldquo;no helmet&rdquo; returned 11 tall
+        candidates of 20 against 3 for the bare name on the first athlete and only 8
+        against 6 on the second. So the variants are worth their queries; a ranking of
+        the variants is not something this page can yet claim, which is what the
+        breakdown below the galleries is for.
+      </span>
+    </li>
+
+    <li class="flex gap-2" data-test="vision-ceiling-note">
+      <span aria-hidden="true" class="shrink-0">&#9679;</span>
+      <span>
+        <strong>Only <%= @vision_shortlist %> of the candidates are ever looked at.</strong>
+        Four searches return roughly 72 unique photographs and the face classifier is
+        paid for <span class="font-mono">VISION_SHORTLIST = <%= @vision_shortlist %></span>
+        of them &mdash; about a third &mdash; because it bills per image while a search
+        bills per query. The shortlist is filled round by round across the four searches
+        rather than by taking the top <%= @vision_shortlist %> overall, so a variant
+        cannot be shut out by another variant's bigger, cleaner action shots; that is what
+        keeps the expressions you asked for in the running. Everything past the shortlist
+        is filed with a reason and <em>nobody looked at it</em>, which is why it reads
+        <span class="font-mono">face_unscored</span> rather than as a judgement.
+      </span>
+    </li>
 
     <li class="flex gap-2" data-test="chosen-limit-note">
       <span aria-hidden="true" class="shrink-0">&#9679;</span>
       <span>
         <strong>The cap is <%= @chosen_limit %>, not 5.</strong> You asked for the five
-        best; the pipeline shipped with
-        <span class="font-mono">CHOSEN_LIMIT = <%= @chosen_limit %></span> and this page
+        best; the pipeline shipped with six and the fan-out raised it to
+        <span class="font-mono">CHOSEN_LIMIT = <%= @chosen_limit %></span>, and this page
         reports what it actually does. Everything past the cap is filed with a reason
-        rather than dropped, so changing the number is a re-pick and not another search.
+        rather than dropped, so changing the number is a re-pick and not another search
+        &mdash; which is exactly why it is the cheap ceiling to move and the one above is
+        not.
       </span>
     </li>
   </ul>

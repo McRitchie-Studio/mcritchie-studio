@@ -23,7 +23,8 @@
         phone keeps each tile's chips on one line instead of wrapping every one. %>
     <div data-test="picks-gallery" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
       <%= render partial: "appearances/reference_photo", collection: @chosen, as: :photo,
-                 locals: { calibration: true, person_name: @person.full_name } %>
+                 locals: { calibration: true, person_name: @person.full_name,
+                           subject: @search_subject } %>
     </div>
   <% else %>
     <div data-test="no-picks" class="rounded-lg border border-subtle bg-surface-alt p-4">

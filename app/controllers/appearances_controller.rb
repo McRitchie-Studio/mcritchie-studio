@@ -7,10 +7,11 @@
 # URL they had to know.
 #
 # TWO OF THE THREE ACTIONS SPEND MONEY, AND THE ADMIN GATE IS WHAT STOPS THE
-# PUBLIC SPENDING IT. #show is free — it reads rows and renders. #search buys one
-# image-search query PLUS up to GatherReferencePhotos::VISION_SHORTLIST vision
-# classifications; #mint buys one character identity, per look, from a vendor that
-# serves no list endpoint to recall it from.
+# PUBLIC SPENDING IT. #show is free — it reads rows and renders. #search buys ONE
+# IMAGE-SEARCH QUERY PER GatherReferencePhotos::QUERY_VARIANTS ENTRY — four of them —
+# plus up to GatherReferencePhotos::VISION_SHORTLIST vision classifications; #mint buys
+# one character identity, per look, from a vendor that serves no list endpoint to recall
+# it from.
 #
 # A SESSION IS NOT A COST CONTROL, and this comment used to claim it was. Hub
 # signup is OPEN — both magic-link and Google are create-or-login — so "not
@@ -39,10 +40,13 @@ class AppearancesController < ApplicationController
     set_gallery
   end
 
-  # BUY ONE IMAGE-SEARCH QUERY and file every candidate it returns.
+  # BUY ONE IMAGE-SEARCH QUERY PER VARIANT and file every candidate they return.
+  #
+  # ⚠ FOUR QUERIES, NOT ONE, since the query fan-out landed — providers bill per query, so
+  # this action is four purchases. The summary's own sentence names the count.
   #
   # The summary goes into the flash rather than onto the record: it describes THIS
-  # search ("serper returned 20, we understood 20, chose 6"), and the durable
+  # search ("serper ran 4 searches for 80 results, 74 unique, chose 8"), and the durable
   # facts it mentions are already the rows themselves. The one number that exists
   # nowhere else is `unparsed` — results whose shape we could not read — and that
   # is exactly the number a silent empty gallery would otherwise hide.
@@ -54,7 +58,8 @@ class AppearancesController < ApplicationController
     elsif summary.returned.zero?
       redirect_to appearance_path,
                   alert: "#{summary.provider_name || 'The search'} returned nothing for " \
-                         "\"#{summary.query}\". Nothing was filed and nothing changed."
+                         "\"#{summary.query}\" or any of its #{summary.variant_count} " \
+                         "variant(s). Nothing was filed and nothing changed."
     else
       # THE SUMMARY CHOOSES THE FLASH KEY, because a blind face classifier is an
       # ALERT rather than a notice: the run "succeeded" -- candidates were filed and an
@@ -188,7 +193,12 @@ class AppearancesController < ApplicationController
                          .distinct
     @search_available = Appearances::ImageSearch.available?
     @search_provider = Appearances::ImageSearch.provider_name
+    # THE SUBJECT, not the whole list. This page is the LOOK, whose job is minting rather
+    # than calibrating a search; the variant list and the per-variant breakdown live on the
+    # scouting page, which is the surface the operator judges the search by. What this page
+    # owes is the honest COST, which the panel beside it now states as four queries.
     @search_query = Appearances::GatherReferencePhotos.new(@appearance).query
+    @search_query_count = Appearances::GatherReferencePhotos::QUERY_VARIANTS.length
     # WHETHER ANYTHING HAS ACTUALLY LOOKED AT THESE PHOTOGRAPHS. Read off the rows
     # rather than off the credential, because the two answer different questions:
     # a key that landed this morning does not mean last week's gallery was ranked

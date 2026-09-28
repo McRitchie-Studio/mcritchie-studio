@@ -467,8 +467,10 @@ classifier to save money.
 | Can it spot a helmet? | **no** | yes |
 | Runs when | always | only with `ANTHROPIC_API_KEY` |
 
-The classifier is asked once per search with every shortlisted image in ONE
-message (`GatherReferencePhotos::VISION_SHORTLIST`, currently 12), and Anthropic
+The classifier is asked in batches of `FaceVisibility::BATCH_SIZE` until the shortlist
+(`GatherReferencePhotos::VISION_SHORTLIST`, currently 24) is spent — three requests at a
+batch of 8, never one message, so a single unreadable file costs its own batch rather
+than every judgement in the shortlist. Anthropic
 fetches the images server-side from a `type: "url"` source — the same trust
 boundary Higgsfield's create sits behind, and the same obligation: only URLs that
 have cleared `Appearances::FetchableUrl` are ever passed.
@@ -647,7 +649,7 @@ showing a control that could not save.
 that flattered the machine would have the operator tune his judgement to a ranker that does
 not behave the way the page implied. It names: the wrong-person ranking defect; that the
 top-ranked photograph is usually one Higgsfield refuses to mint; that **the cap is
-`CHOSEN_LIMIT` = 6, not the 5 the operator asked for**; and whether anything actually
+`CHOSEN_LIMIT` = 8, not the 5 the operator asked for**; and whether anything actually
 looked at the photographs. Both ranking defects are owned by task
 `reference-photos-wrong-person` and neither is fixed here.
 

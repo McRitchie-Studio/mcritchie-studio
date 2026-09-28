@@ -326,4 +326,31 @@ module AppearancesHelper
           .transform_values(&:length)
           .sort_by { |_label, count| -count }
   end
+
+  # HOW THE OPERATOR REFERS TO ONE OF THE FOUR SEARCHES — "no helmet", not
+  # "Justin Jefferson Minnesota Vikings no helmet".
+  #
+  # THE SUBJECT IS STRIPPED RATHER THAN THE VARIANT LOOKED UP, and that is deliberate: a
+  # lookup against Appearances::GatherReferencePhotos::QUERY_VARIANTS would label a row
+  # filed by a variant that has since been REMOVED from the list as if it had no variant
+  # at all, and those rows are exactly the ones a reader is trying to account for after
+  # re-tuning the list. Stripping reads the row's own stored query, so a retired variant
+  # still names itself.
+  #
+  # `name only` FOR THE BARE SUBJECT, because "" on a page is indistinguishable from a
+  # missing value, and this variant is the one the other three are measured against.
+  #
+  # nil SUBJECT OR A QUERY THAT DOES NOT START WITH IT gives the query back whole. That
+  # happens for a row filed against a different team (the subject carries the team, and
+  # a traded player's old rows keep the old one), and showing the whole thing is the
+  # honest answer — it says the row came from a question we no longer ask.
+  def search_variant_label(query, subject:)
+    text = query.to_s.strip
+    return "an earlier search" if text.empty?
+
+    prefix = subject.to_s.strip
+    return text if prefix.empty? || !text.start_with?(prefix)
+
+    text.delete_prefix(prefix).strip.presence || "name only"
+  end
 end
