@@ -50,23 +50,13 @@ class AppearancesController < ApplicationController
   # facts it mentions are already the rows themselves. The one number that exists
   # nowhere else is `unparsed` — results whose shape we could not read — and that
   # is exactly the number a silent empty gallery would otherwise hide.
+  #
+  # LOGGED LIKE #mint: the queries are bought before the file loop runs, so an
+  # exception there must leave an ErrorLog row on the look, not a bare 500.
   def search
-    summary = Appearances::GatherReferencePhotos.call(@appearance)
-
-    if !summary.configured?
-      redirect_to appearance_path, alert: unconfigured_message
-    elsif summary.returned.zero?
-      redirect_to appearance_path,
-                  alert: "#{summary.provider_name || 'The search'} returned nothing for " \
-                         "\"#{summary.query}\" or any of its #{summary.variant_count} " \
-                         "variant(s). Nothing was filed and nothing changed."
-    else
-      # THE SUMMARY CHOOSES THE FLASH KEY, because a blind face classifier is an
-      # ALERT rather than a notice: the run "succeeded" -- candidates were filed and an
-      # identity can be built from them -- so a green notice is exactly what let a
-      # confidently wrong result read as a good one on 2026-09-26.
-      redirect_to appearance_path, summary.flash_key => summary.sentence
-    end
+    rescue_and_log(target: @appearance) { run_search }
+  rescue StandardError => e
+    redirect_to appearance_path, alert: "The search failed: #{e.message}"
   end
 
   # BUY ONE CHARACTER IDENTITY, built from the chosen photographs.
@@ -120,6 +110,25 @@ class AppearancesController < ApplicationController
   end
 
   private
+
+  def run_search
+    summary = Appearances::GatherReferencePhotos.call(@appearance)
+
+    if !summary.configured?
+      redirect_to appearance_path, alert: unconfigured_message
+    elsif summary.returned.zero?
+      redirect_to appearance_path,
+                  alert: "#{summary.provider_name || 'The search'} returned nothing for " \
+                         "\"#{summary.query}\" or any of its #{summary.variant_count} " \
+                         "variant(s). Nothing was filed and nothing changed."
+    else
+      # THE SUMMARY CHOOSES THE FLASH KEY, because a blind face classifier is an
+      # ALERT rather than a notice: the run "succeeded" -- candidates were filed and an
+      # identity can be built from them -- so a green notice is exactly what let a
+      # confidently wrong result read as a good one on 2026-09-26.
+      redirect_to appearance_path, summary.flash_key => summary.sentence
+    end
+  end
 
   # THE MINT ITSELF, split out so the one EXPECTED refusal is handled INSIDE the
   # logged block and therefore never reaches the logger. "This look has no

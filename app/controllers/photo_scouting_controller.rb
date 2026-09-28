@@ -60,23 +60,9 @@ class PhotoScoutingController < ApplicationController
                                 "Create one on the person page first."
     end
 
-    summary = Appearances::GatherReferencePhotos.call(@appearance)
-
-    if !summary.configured?
-      redirect_to scouting_path, alert: unconfigured_message
-    elsif summary.returned.zero?
-      redirect_to scouting_path,
-                  alert: "#{summary.provider_name || 'The search'} returned nothing for " \
-                         "\"#{summary.query}\" or any of its " \
-                         "#{summary.variant_count} variant(s). Nothing was filed and " \
-                         "nothing changed."
-    else
-      # THE SUMMARY CHOOSES THE FLASH KEY, because a blind face classifier is an
-      # ALERT rather than a notice: the run "succeeded" -- candidates were filed and an
-      # identity can be built from them -- so a green notice is exactly what let a
-      # confidently wrong result read as a good one on 2026-09-26.
-      redirect_to scouting_path, summary.flash_key => summary.sentence
-    end
+    rescue_and_log(target: @appearance) { run_search }
+  rescue StandardError => e
+    redirect_to scouting_path, alert: "The search failed: #{e.message}"
   end
 
   # RECORD THE OPERATOR'S VERDICT ON ONE CANDIDATE.
@@ -117,6 +103,27 @@ class PhotoScoutingController < ApplicationController
   end
 
   private
+
+  # Logged by #search: the queries are bought before the file loop runs.
+  def run_search
+    summary = Appearances::GatherReferencePhotos.call(@appearance)
+
+    if !summary.configured?
+      redirect_to scouting_path, alert: unconfigured_message
+    elsif summary.returned.zero?
+      redirect_to scouting_path,
+                  alert: "#{summary.provider_name || 'The search'} returned nothing for " \
+                         "\"#{summary.query}\" or any of its " \
+                         "#{summary.variant_count} variant(s). Nothing was filed and " \
+                         "nothing changed."
+    else
+      # THE SUMMARY CHOOSES THE FLASH KEY, because a blind face classifier is an
+      # ALERT rather than a notice: the run "succeeded" -- candidates were filed and an
+      # identity can be built from them -- so a green notice is exactly what let a
+      # confidently wrong result read as a good one on 2026-09-26.
+      redirect_to scouting_path, summary.flash_key => summary.sentence
+    end
+  end
 
   def set_person
     @person = Person.find_by!(slug: params[:person_slug])
