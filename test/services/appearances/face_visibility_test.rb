@@ -327,6 +327,26 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
     end
   end
 
+  # ⚠ THE GUARD THE OTHER BATCHING TESTS CANNOT BE. Every one of them derives its input
+  # from `FV::BATCH_SIZE`, so they stay green at ANY batch size — including a batch equal
+  # to the whole shortlist, which is the state this change exists to leave. Found by
+  # mutation on 2026-09-27: setting BATCH_SIZE to 100 kept all four green while restoring
+  # the exact all-or-nothing behaviour that scored 0 of 24 on the real run.
+  #
+  # THE PROPERTY IS A RELATIONSHIP BETWEEN TWO FILES' CONSTANTS, which is why it is pinned
+  # rather than described: batching is INERT unless a batch is smaller than the shortlist
+  # feeding it, and a reader of either constant alone cannot see that.
+  test "a batch is strictly smaller than the shortlist it serves" do
+    shortlist = Appearances::GatherReferencePhotos::VISION_SHORTLIST
+
+    assert_operator FV::BATCH_SIZE, :<, shortlist,
+                    "a batch as large as the shortlist is one request again, and one bad " \
+                    "file costs every judgement in it — measured 0 of 24 scored on " \
+                    "2026-09-27. Batching only bounds the blast radius while this holds."
+    assert_operator shortlist.fdiv(FV::BATCH_SIZE), :>=, 2,
+                    "at least two batches, or a single refusal still loses more than half"
+  end
+
   test "the shortlist is sent in batches rather than as one request" do
     urls = (1..(FV::BATCH_SIZE * 2 + 1)).map { |i| "https://cdn.example.com/#{i}.jpg" }
     sent = []
