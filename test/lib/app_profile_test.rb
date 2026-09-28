@@ -61,7 +61,14 @@ class AppProfileTest < Minitest::Test
 
   class FakeProbe
     def initialize(files: {}, runs: {}, http: {}) = (@files, @runs, @http = files, runs, http)
+    attr_reader :refs_read
+
     def read(path) = @files[File.basename(path) == "ci.yml" ? "ci.yml" : File.basename(path)]
+
+    def read_at(_root, ref, relpath)
+      (@refs_read ||= []) << ref
+      read(relpath)
+    end
     def http_status(url) = @http[url]
 
     def run(*argv)
@@ -103,6 +110,13 @@ class AppProfileTest < Minitest::Test
     assert_equal ["branches", ".worktrees ignored", "heroku app", "smoke /up", "migrations"], failed.map(&:name)
     assert(failed.all? { |c| !c.remedy.to_s.empty? }, "every failure says how to fix it")
     assert_match(/missing accepted, release/, failed.first.detail)
+  end
+
+  def test_every_file_check_reads_the_branch_a_release_ships
+    probe = healthy_probe
+    contract(probe)
+    assert_equal ["origin/accepted"], probe.refs_read.uniq,
+                 "the contract judges accepted, not the primary checkout's working tree"
   end
 
   def test_a_non_pg_app_is_not_asked_for_migrations

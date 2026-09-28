@@ -62,7 +62,7 @@ puts "Contract for #{slug} on profile #{profile}:"
 checks.each { |c| puts "  #{c.ok ? 'PASS' : 'FAIL'}  #{c.name.ljust(20)} #{c.detail}#{c.ok ? '' : "  → #{c.remedy}"}" }
 puts "  #{already ? 'FAIL' : 'PASS'}  #{'not yet registered'.ljust(20)} #{already ? "#{slug} is already in release_repos.yml" : 'yes'}"
 
-engine = AppContract.engine_version(File.exist?(File.join(root, "Gemfile.lock")) ? File.read(File.join(root, "Gemfile.lock")) : nil)
+engine = AppContract.engine_version(AppContract::Probe.new.read_at(root, AppContract::REF, "Gemfile.lock"))
 notes = []
 if engine
   notes << "Consumes studio-engine #{engine}: a release that publishes the engine bumps this"

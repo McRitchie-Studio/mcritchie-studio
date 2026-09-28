@@ -18,6 +18,9 @@ module AppContract
   Check = Struct.new(:name, :ok, :detail, :remedy, keyword_init: true)
   ORG = "McRitchie-Studio"
   RUNGS = %w[main accepted release].freeze
+  # The branch a release carries: feature PRs land on accepted and the sweep
+  # promotes it, so that is the tree the contract must hold for.
+  REF = "origin/accepted"
 
   # The default probe: real git / HTTP / heroku. Returns [stdout, success].
   class Probe
@@ -38,6 +41,15 @@ module AppContract
     end
 
     def read(path) = File.exist?(path) ? File.read(path) : nil
+
+    # A file as it stands at a ref, or nil. The contract judges the branch a
+    # release ships (REF), not whatever the primary checkout has on disk: a
+    # primary sitting on main would otherwise hide a fix that already landed on
+    # accepted (measured 2026-09-28 on moms-app's .gitignore).
+    def read_at(root, ref, relpath)
+      out, ok = run("git", "-C", root, "show", "#{ref}:#{relpath}")
+      ok ? out : nil
+    end
   end
 
   module_function
@@ -64,17 +76,18 @@ module AppContract
                         detail: origin.to_s.strip.empty? ? "no checkout at #{root}" : origin.strip,
                         remedy: "clone #{ORG}/#{slug} to #{root}")
 
+    probe.run("git", "-C", root, "fetch", "origin", "--quiet")
     heads, = probe.run("git", "-C", root, "ls-remote", "--heads", "origin")
     missing = RUNGS.reject { |b| heads.to_s.match?(%r{refs/heads/#{b}$}) }
     checks << Check.new(name: "branches", ok: missing.empty?,
                         detail: missing.empty? ? "main, accepted, release" : "missing #{missing.join(', ')}",
                         remedy: "create them off main first: git -C <repo> push origin main:refs/heads/accepted main:refs/heads/release")
 
-    test_cmd = ci_test_cmd(probe.read(File.join(root, ".github/workflows/ci.yml")))
+    test_cmd = ci_test_cmd(probe.read_at(root, REF, ".github/workflows/ci.yml"))
     checks << Check.new(name: "ci test job", ok: !test_cmd.nil?, detail: test_cmd || "no single bin/rails step in jobs.test",
                         remedy: "give .github/workflows/ci.yml a `test` job with one `bin/rails ...` step")
 
-    ignore = probe.read(File.join(root, ".gitignore")).to_s
+    ignore = probe.read_at(root, REF, ".gitignore").to_s
     checks << Check.new(name: ".worktrees ignored", ok: ignore.match?(%r{^/?\.worktrees/?$}),
                         detail: ignore.match?(%r{^/?\.worktrees/?$}) ? "yes" : "no",
                         remedy: "add .worktrees/ to .gitignore")
@@ -87,9 +100,9 @@ module AppContract
     checks << Check.new(name: "smoke /up", ok: code == 200, detail: "#{smoke_url.to_s.chomp('/')}/up -> #{code.inspect}",
                         remedy: "serve /up (rails/health#show) at the production host")
 
-    gemfile = probe.read(File.join(root, "Gemfile")).to_s
+    gemfile = probe.read_at(root, REF, "Gemfile").to_s
     if gemfile.match?(/^\s*gem ["']pg["']/)
-      procfile = probe.read(File.join(root, "Procfile")).to_s
+      procfile = probe.read_at(root, REF, "Procfile").to_s
       ok = procfile.match?(/^release:.*db:migrate/)
       checks << Check.new(name: "migrations", ok: ok, detail: ok ? "Procfile release phase runs db:migrate" : "no release phase migrate",
                           remedy: "add `release: bin/rails db:migrate` to the Procfile")
