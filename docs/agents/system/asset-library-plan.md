@@ -76,6 +76,52 @@ order, Cloudflare Stream for video and CAD in the business-document tier,
 | 6 | large media | proposed: video on Cloudflare Stream, CAD in the business-document tier, when the first one arrives |
 | 7 | leave AWS | after every app has cut over; inventory below |
 
+## Readiness review — measured 2026-09-28
+
+A read-only pass before Wave 2 execution: bucket listings with the admin AWS key,
+`SELECT`s against each production database, config-var **names** per Heroku
+app, and a grep of each app's `origin/main`. Numbers are true for that day.
+
+| S3 bucket | Objects | Size | What the database tracks |
+|---|---|---|---|
+| `mcritchie-studio-production` | 9,303 | 1.04 GB | 3 blobs, 6,146 `ImageCache` rows; the other ~3,150 objects (Pokémon sprites, broadcasts, character sheets) are referenced by stored URL or by nothing |
+| `mcritchie-studio-dev` | 11,131 | 1.46 GB | local desks only: `mcritchie-studio-qa` holds no AWS keys |
+| `turf-monster-production` | 8,416 | 1.06 GB | 17 blobs (all service `amazon`; none on `amazon_public` today), 8,399 `ImageCache` rows |
+| `turf-monster-dev` | 8,457 | 1.07 GB | local desks only: `turf-monster-qa` holds no AWS keys |
+| `mcritchie-industries-production` | 120 | 21 MB | 120 `KnowledgeDoc` rows, 0 blobs |
+| `moms-app-production` | 3 | 648 MB | 3 blobs (two covers, one audio file, a multipart object) |
+| `mcritchie-studio-desk` (`us-east-1`) | 80 | 17 MB | `DeskCapture` |
+| `commercial-welding-*`, `mcritchie-industries-dev` | 0 | 0 | nothing; no Commercial Welding app exists on Heroku |
+
+There is no `moms-app-dev` S3 bucket. Only `mcritchie-studio`,
+`turf-monster-mainnet`, `mcritchie-industries` (and its QA app) and `moms-app`
+hold AWS keys. No app holds SES credentials, so every app already sends mail
+through Resend.
+
+**Hard-coded S3 URLs** (columns whose text contains `amazonaws.com`, scanned in
+every text and JSON column): only the hub has any.
+
+| Hub column | Rows | Points at |
+|---|---|---|
+| `task_events.metadata` → `mascot` | 14,707 | `mcritchie-studio-production/pokemon/…` sprites, snapshotted per board event |
+| `pokemons` (8 URL columns: sprite, avatar, fallbacks, shiny, female) | 494 per column | the same `pokemon/` prefix, written by `lib/tasks/pokemon.rake`'s hard-coded `S3_BASE` |
+| `artifacts.image_url` | 3 | `character-sheets/` |
+| `agent_actions`, `agent_activities`, `action_grades`, `tasks.metadata` | a few hundred | URLs quoted inside agent logs and notes: history, not served; leave them |
+
+They keep resolving while the S3 bucket stays public. Before S3 is retired
+(Wave 7) the served ones need a rewrite to `assets.mcritchie.studio`: a rake task
+over those columns plus a `pokemon.rake` fix, in the hub's Wave 2 task.
+
+**Per-app verdict.**
+
+| App | Verdict | Why |
+|---|---|---|
+| `moms-app` | ready, but **outside the release pipeline** | Active Storage only, no `Studio::S3`, so no engine bump is needed (it runs 0.32.1). But it is not in `config/release_repos.yml`: production last deployed by a manual push on 2026-08-09, and `accepted` holds unshipped merges since. Its cutover needs either registration in the release ladder or a manual deploy by Alex |
+| `commercial-welding` | nothing to migrate | empty buckets, no writer; retire the S3 pair in Wave 7 |
+| `mcritchie-industries` | ready after an engine bump | runs 0.76.3; `s3_endpoint` arrived in 0.77. Private objects only |
+| `mcritchie-studio` | blocked | DNS for `assets.`, plus the URL rewrite above |
+| `turf-monster` | blocked | DNS for `assets.` |
+
 ## Wave 2 — the per-app cutover recipe
 
 One task per app. An app has **two kinds of writer**, and they move by
@@ -122,7 +168,10 @@ The recipe:
    ETag is the hex MD5 for a single-part upload, so compare after converting,
    and fall back to size for multipart objects). Active Storage misses must be
    zero. `Studio::S3` objects written after step 4 are expected to be missing
-   here; step 7 catches them up.
+   here; step 7 catches them up. **Also compare whole buckets**: `rclone size`
+   on the S3 bucket and the R2 bucket must agree on count and bytes, because a
+   database-key check cannot see objects no row names (about a third of the
+   hub's production bucket, measured 2026-09-28).
 6. **Public domain** (apps that serve public objects; needs the domain's DNS
    on Cloudflare first, see **Blocker for step 6** below). Attach
    `assets.<domain>` to the R2 production bucket (a dashboard step until the
@@ -168,12 +217,16 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 | all engine apps | `Studio::S3` (`ImageCache`, `KnowledgeDoc`, email banners and logos) | step 7; `url` raises on R2 without `s3_public_url`, which is why the switch sets both |
 | `mcritchie-studio` | `Broadcasts::Assets.publish` | expects `upload` to return a URL; on R2 it needs `s3_public_url`, which step 7 sets in the same deploy |
 | `mcritchie-studio` | `Content::GenerateLineupAssets`, `Appearances::ReferenceImages` | via `Studio::S3` |
-| `mcritchie-studio` | `lib/tasks/pokemon.rake` | builds its own `Aws::S3::Client` for `us-east-2`; port or retire |
+| `mcritchie-studio` | `lib/tasks/pokemon.rake` | builds its own `Aws::S3::Client` for `us-east-2` and hard-codes `S3_BASE` into `pokemons` URL columns; port, and rewrite the stored URLs |
+| `mcritchie-studio` | `Appearances::StoreGeneratedImage` | uploads via `Studio::S3` and **stores the returned URL** |
+| `mcritchie-studio` | `Athletes::DescribeFromHeadshot` | downloads via `Studio::S3` |
+| `mcritchie-studio` | `Athletes::RekeyHeadshots` | copies then deletes keys via `Studio::S3`; do not run it between step 4 and step 7 |
+| `mcritchie-studio` | board history | `task_events.metadata.mascot` snapshots sprite URLs; rewrite with the `pokemons` columns |
 | `mcritchie-studio` | `DeskCapture` | its own **private** bucket, `mcritchie-studio-desk` (`DESK_CAPTURE_BUCKET`, region `DESK_CAPTURE_REGION`, default `us-east-1`), deliberately not `Studio::S3`'s. The main inbound path is already Resend: `DeskCaptureResendIngestJob` stores the raw mail there with the app's AWS keys. SES inbound is only the manual fallback (`DeskCapturePollJob`). Its move is a private R2 bucket of its own plus retiring the SES fallback |
 | `turf-monster` | `OgImageAttachable` (`amazon_public` service) and contest, landing-page, site-setting attachments | public; needs `assets.` |
 | `mcritchie-industries` | `Slack::ChannelIngest` (storage defaults to `Studio::S3`) | private |
-| `moms-app` | book import and stitching (`BookImporter`, `BookStitcher`) | check how it serves images before choosing public or signed |
-| `commercial-welding` | none found: `projects/commercial-welding-llc/` is a diligence document repo, not an app. Find what writes the `commercial-welding-*` S3 buckets (census: recreated 2026-09-01) before its task; if nothing does, the cutover is a copy and the S3 pair retires | |
+| `moms-app` | Active Storage only: `Book.cover`, `Book.audio`, `User.avatar`; the bucket comes from `S3_BUCKET` in `config/storage.yml` | no `Studio::S3`; one multipart audio object, so verify by size |
+| `commercial-welding` | none: no app on Heroku, and both S3 buckets were empty on 2026-09-28 | nothing to cut over; retire the S3 pair in Wave 7 | |
 
 **Blocker for step 6.** R2 custom domains need the domain's DNS on Cloudflare
 in the same account. Measured 2026-09-26: `mcritchie.studio` is served by
@@ -245,9 +298,9 @@ account before starting; this is what the docs name today.
 |---|---|---|
 | S3 app buckets (`<app>-dev`, `<app>-production`) | Active Storage, `Studio::S3` | R2 (Wave 2) |
 | S3 desk-capture bucket `mcritchie-studio-desk` (`us-east-1` by default) and the **SES inbound** fallback | `team@mcritchie.studio` capture (`DeskCapture`); the main path is already Resend inbound, which writes into this bucket | a private R2 bucket for `DeskCapture` alone, then retire the SES fallback (`DeskCapturePollJob`) |
-| **SES outbound** (`agent.aws.mcritchie-ses`, `MAIL_TRANSPORT=ses`) | transactional mail wherever an app still selects SES | proposed: Resend, which `Studio::MailTransport` already supports |
+| **SES outbound** (`agent.aws.mcritchie-ses`) | nothing: on 2026-09-28 no app held `SES_SMTP_*`, so `Studio::MailTransport` selects Resend everywhere | retire the credential and the SES identity |
 | **S3 URLs already handed out** | full `amazonaws.com` URLs outside the key-to-URL path: stored columns (`Content#hook_image_url` and `#final_video_url` keep what `Studio::S3.upload` returned; `lib/tasks/pokemon.rake` hard-codes its `S3_BASE`), images in broadcasts already sent, and og:image URLs unfurlers cached | before deleting a bucket, rewrite stored URLs to `assets.<domain>` and decide whether sent mail's `email/` images keep an S3 copy; none of these move with the Wave 2 config |
-| IAM users (`mcritchie-s3`, `mcr-*`, `studio-agents-admin`) | the keys above | delete after their buckets are gone |
+| IAM users (`mcritchie-s3`, `mcr-*`, and the admin key's user, which answers as `agents-admin`) | the keys above | delete after their buckets are gone |
 | 1Password items (`agent.aws`, `AWS`, `mcritchie-industries.aws`, `agent.aws.mcritchie-ses`) | the keys above | mark RETIRED in the inventory's name or vault cell |
 
 ## Open decisions and blockers
