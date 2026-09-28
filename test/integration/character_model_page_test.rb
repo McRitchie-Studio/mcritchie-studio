@@ -74,6 +74,20 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # A measured face between the sheet and trainer floors is sheet-only too; the line must
+  # not claim nothing measured it.
+  test "[component] a sheet-only photo under the trainer floor is not called unmeasured" do
+    cache_headshot
+    file_photo("https://example.com/half.jpg", chosen: true, position: 1,
+               title: "Josh Allen at camp", face_score: 0.9, face_subjects: 1, face_fill: 0.5)
+
+    get page_path
+
+    assert_select "[data-test='trainer-subset']", count: 1 do |nodes|
+      assert_match(/below the trainer.s 60% floor/, nodes.first.text.squish)
+    end
+  end
+
   # THE THIRD STATE, AND THE COUNT THAT WOULD HAVE LIED. A row an older ranking chose that
   # nothing ever looked at goes to NEITHER generator — so folding it into the sheet-only
   # line would have claimed the character sheet uses a photograph the sheet refuses.
