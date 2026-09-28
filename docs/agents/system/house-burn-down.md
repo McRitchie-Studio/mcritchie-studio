@@ -343,8 +343,8 @@ GOOGLE_CLIENT_ID=...                  # Google Cloud Console
 GOOGLE_CLIENT_SECRET=...
 # ANTHROPIC_API_KEY is NOT FILED in any vault, but IT IS ON PROD. Ask by NAME, never by
 # printing the value — this answers true only when the name is present AND non-empty:
-heroku config --json --app mcritchie-studio | jq 'length'                        # control: 46; 0 = read failed
-heroku config --json --app mcritchie-studio | jq '(.ANTHROPIC_API_KEY // "") != ""'   # 2026-09-28: true
+#   heroku config --json --app mcritchie-studio | jq 'length'                      # control: 46; 0 = read failed
+#   heroku config --json --app mcritchie-studio | jq '(.ANTHROPIC_API_KEY // "") != ""'  # 2026-09-28: true
 # The same expression on a name that is absent answered false, which is the control that
 # makes the true mean something. (Drop the `// ""` and it answers TRUE for an absent name:
 # null != "" is true. Measured the same day.) So the "absent from prod" half of this line
