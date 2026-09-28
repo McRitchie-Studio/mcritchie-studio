@@ -26,9 +26,11 @@ For each desk item in the sweep, offer a contact when **all** of these hold:
    `quarantined`. That means Alex forwarded it himself. A `gmail` pull item
    is deal correspondence matched by a query, and there are too many of those
    to prompt on. Offer from one only if Alex asks.
-2. **The message carries a signature**: a block, usually at the foot of a
-   message, that gives a name plus at least one of title, company, phone or
-   address.
+2. **The message carries a signature**: a block that gives a name plus at
+   least one of title, company, phone or address. **Search the whole thread,
+   not just the newest message.** Quick replies are often signed with a first
+   name only, and the full block may appear only in the person's oldest
+   message, at the bottom of the forward.
 3. **The signature belongs to someone other than Alex.** Skip his own signatures
    and those of anyone at his addresses (`DESK_ALLOWED_SENDERS`). In a forwarded
    thread, the candidate is the **original sender** of the forwarded message.
@@ -36,6 +38,23 @@ For each desk item in the sweep, offer a contact when **all** of these hold:
 
 The same steps apply when Alex hands a session a screenshot of a signature
 directly in chat.
+
+### When a forward does not arrive
+
+- **Forward from an allowlisted address.** Mail from any address not in
+  `DESK_ALLOWED_SENDERS` lands `quarantined`, and a quarantined item is
+  reported, never processed. Adding an address is a production config change
+  that only Alex can approve.
+- **Type a line of text above the forward.** A blank re-forward of a thread
+  that had already gone to team@ never reached Resend. Measured 2026-09-28: a
+  12:30 PM forward arrived, a blank 1:02 PM re-forward of the same thread never
+  did, and a 1:19 PM forward with one line of text arrived within a minute. The
+  likely cause is the team@ Google group dropping a near-duplicate; that was
+  not confirmed.
+- **Check Resend before the hub.** If no desk item appears within a few
+  minutes, list Resend's received mail (`GET /emails/receiving` with the hub's
+  `RESEND_API_KEY`, from a dyno). If the message is not there, it stopped
+  before our pipeline, and nothing in the hub will show it.
 
 ## What the agent asks
 
@@ -89,7 +108,14 @@ guess a field:
   assistant's name, "prefers text". Leave out slogans, disclaimers and fraud
   warnings.
 - **Company.** Use the company as the signature spells it ("Example Title of
-  Colorado", not "ETC").
+  Colorado", not "ETC"). If the signature never names the company, you may
+  infer it from the website or email domain, but **say that it is inferred**
+  when you ask Alex. A footer naming another firm (a parent bank's security
+  disclaimer, say) is a clue to mention, not the company.
+- **Email.** Use the address as the signature displays it. If its `mailto:`
+  link points somewhere else (displayed `pat@example.com`, linked
+  `someone.else@example.com`), keep the displayed address and mention the
+  mismatch when you ask.
 - **Website.** Take the website from the link behind a globe icon. A tracking
   redirect is not the website; if the only URL is a redirect, leave `urls` out.
 
