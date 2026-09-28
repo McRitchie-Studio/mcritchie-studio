@@ -22,6 +22,62 @@ module Appearances
   # still stands and the page still renders. The unconfigured path is the one that
   # runs today, so it is the one that has to look finished.
   class GatherReferencePhotos
+    # FOUR SEARCHES PER LOOK, ONE PER EXPRESSION WE WANT THE MODEL TO HAVE SEEN.
+    #
+    # THE OPERATOR ASKED FOR THIS AND THE MEASUREMENT BACKED HIM. In his words:
+    # *"chunk up the searches into 'First name Last name', 'Name Smile', 'Name No
+    # Helmet', 'Name Laugh' and maybe pull 20 from each so 80 total — this should give
+    # good assets for the model."* The goal behind it is FACIAL STRUCTURE AND
+    # EXPRESSIONS: an identity built from six sideline photographs of one neutral face
+    # cannot render a laugh.
+    #
+    # MEASURED AGAINST LIVE SERPER TWICE, ON TWO ATHLETES, 2026-09-27.
+    #
+    #   `justin-jefferson`, six variants at 20 each: 107 UNIQUE of 120 (13 collisions).
+    #   `jaylen-waddle`, THESE FOUR at 20 each:       73 UNIQUE of 80  (7 collisions,
+    #     8.8%), and the marginal contribution ran 20 / 20 / 18 / 15 new — "smiling"
+    #     collided with the bare name on NOTHING at all.
+    #
+    # So variants reach genuinely different parts of the index, which is the premise the
+    # whole fan-out rests on and the one worth measuring before spending four times as
+    # much. It held on both athletes. The duplicate rate did NOT hold steady (10.8% then
+    # 8.8%), so nothing here assumes a number: the dedupe is unconditional.
+    #
+    # ⚠ "no helmet" IS NOT A NEGATION AND THE ARGUMENT AGAINST IT WAS WRONG. The
+    # prediction was that a search engine cannot negate, so the phrase would return
+    # helmets. It does not: the phrase matches how captions are WRITTEN ("pictured
+    # without his helmet"). On `justin-jefferson` it was the strongest variant of six by
+    # portrait shape, 11 of 20 against 3 for the bare name. ⚠ BUT THAT MARGIN IS ONE
+    # ATHLETE'S, not the variant's: on `jaylen-waddle` the same four ran 6 / 7 / 8 / 6
+    # portrait-shaped, which is flat. What generalises is that the variants return
+    # DIFFERENT photographs; which variant returns the BEST ones does not, and no code
+    # here weights one variant above another on the strength of it. The two variants
+    # proposed INSTEAD of the operator's — "press conference" (0 portrait-shaped) and
+    # "headshot" (3) — were the worst two of the six and are not here.
+    #
+    # AND NOTE WHAT `portrait-shaped` IS: height > width, a FREE PROXY for a
+    # face-filling crop, not a measurement of face fill. Only the classifier measures
+    # that. No sentence on the page quotes the proxy as if it were the measurement.
+    #
+    # THE WORDING IS THE MEASURED WORDING, NOT THE OPERATOR'S VERBATIM NOUNS, and the
+    # two are NOT interchangeable. He wrote "Smile" and "Laugh". Probed on
+    # `justin-jefferson` against live Serper the same day, 20 results each:
+    #
+    #   "smile" vs "smiling"   overlapped 17 of 20 — effectively the same search
+    #   "laugh" vs "laughing"  overlapped  7 of 20 — a materially DIFFERENT search
+    #
+    # The gerunds stay because they are the spelling every quality figure above was
+    # measured with, and his nouns have none. That is a statement about the evidence and
+    # not about his judgement: if he wants his own words, this constant is the one line
+    # to change, and what he gains and loses by it is the 7-of-20 above.
+    #
+    # THE FIRST VARIANT IS THE BARE SUBJECT and it stays first for a reason beyond
+    # order: it is the one every candidate is attributed to when several variants
+    # return the same photograph (see `#found_by`), so the later variants are credited
+    # only with what they UNIQUELY contributed — which is the number that decides
+    # whether a variant is worth its query.
+    QUERY_VARIANTS = ["", "smiling", "no helmet", "laughing"].freeze
+
     # HOW MANY PHOTOGRAPHS AN IDENTITY IS BUILT FROM.
     #
     # Higgsfield's minimum is 1 and it names no maximum. This cap is ours, and it
@@ -30,15 +86,62 @@ module Appearances
     # whatever the search got wrong. Everything past the cap is filed with a reason
     # rather than dropped, so raising the cap later is a re-pick rather than a
     # re-search — and a re-search is another purchase.
-    CHOSEN_LIMIT = 6
+    #
+    # RAISED FROM 6 TO 8 WITH THE FAN-OUT, and this is the CHEAP half of the two
+    # ceilings: everything past the cap is already filed, already classified and
+    # already paid for, so moving this number spends NOTHING at gather time. It costs
+    # only at mint time, where Higgsfield bills per training image. Eight is two per
+    # variant — enough that a laugh and a neutral portrait can both be in the set the
+    # operator asked to be richer, and still inside the "past a handful" judgement
+    # above, which was about a dozen rather than about six.
+    CHOSEN_LIMIT = 8
 
     # HOW MANY CANDIDATES WE PAY THE VISION CLASSIFIER TO LOOK AT.
     #
-    # Twice the number we keep, so the ranker has real losers to reject rather than
-    # merely ordering the set it was always going to take. It is a COST CEILING
-    # first: Appearances::FaceVisibility bills per image, and without this the bill
-    # would scale with whatever the provider felt like returning.
-    VISION_SHORTLIST = 12
+    # THIS IS THE EXPENSIVE CEILING, and it is the one the fan-out actually moves.
+    # Appearances::FaceVisibility sends every shortlisted image as input tokens on
+    # claude-haiku-4-5, so the bill scales with THIS number and not with how many
+    # queries ran — four searches cost four queries and one classification request.
+    #
+    # RAISED FROM 12 TO 24, WHICH IS A DELIBERATE DOUBLING RATHER THAN A MATCH FOR THE
+    # INPUT. Four variants at 20 each yield roughly 72 unique candidates, so 12 would
+    # judge 17% of what we had just paid to find, and the 83% nobody looked at is
+    # refused as `face_unscored` — the fan-out would have bought four queries and
+    # changed nothing that reaches the model. Judging ALL 72 is the other extreme and
+    # triples the classification bill for candidates the free merit score already ranks
+    # last. 24 is a third of the harvest, three times the cap, and the number the
+    # measured cost below was chosen against.
+    #
+    # THE COST THAT FOLLOWS, MEASURED 2026-09-27 so nobody has to re-derive it. Counted
+    # with /v1/messages/count_tokens — which is free — over FIVE REAL candidate rows
+    # already on file in production, base64'd from their own bytes (the endpoint refuses
+    # a URL image source, so the URLs this lane actually sends cannot be counted
+    # directly; the token count is a function of the pixels either way).
+    #
+    #   system prompt alone            624 tokens
+    #   per image, 5 real candidates   292 to ~1,200, averaging 709
+    #   answer for 12 images           523 tokens out   (measured, see MAX_TOKENS)
+    #   answer for 24 images         1,039 tokens out
+    #
+    # So at Haiku 4.5's $1/MTok in and $5/MTok out, per athlete per search:
+    #
+    #   12 images   624 + 8,508 in, 523 out    = $0.0091 + $0.0026 = $0.012
+    #   24 images   624 + 17,016 in, 1,039 out = $0.0176 + $0.0052 = $0.023
+    #
+    # ONE FULL PASS OVER THE 2,051 ATHLETES IN PRODUCTION is therefore ~8,204 Serper
+    # queries (four each, and Serper bills per QUERY rather than per result) plus ~$47 of
+    # classification, against ~$24 at a ceiling of 12. The whole change costs about
+    # twenty-three dollars a pass. It is stated here rather than in a commit message
+    # because the next person to reach for this constant is the person who needs it.
+    #
+    # ⚠ IT IS CAPPED BY Appearances::FaceVisibility::MAX_TOKENS, NOT ONLY BY MONEY, and
+    # that ceiling had to move with this one — it was ALREADY TOO LOW FOR TWELVE. Every
+    # image is answered with its own JSON object in ONE response, and a response cut off
+    # at `max_tokens` has no closing bracket, so `FaceVisibility#parse` matches no array,
+    # raises, and returns an EMPTY hash: total blindness for the whole look rather than a
+    # short answer. A realistic twelve-image answer measured 523 tokens against a
+    # MAX_TOKENS of 512. See MAX_TOKENS there for what it is now and why.
+    VISION_SHORTLIST = 24
 
     # WHICH CANDIDATES MAY GO INTO AN IDENTITY IS NOT DECIDED HERE ANY MORE.
     #
