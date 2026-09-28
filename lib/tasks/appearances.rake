@@ -88,4 +88,18 @@ namespace :appearances do
     puts "The model would now be built from:"
     Appearances::ReferenceSet.call(look.reload).each { |url| puts "  #{url}" }
   end
+
+  # BEFORE A BUILD: does anything need fetching or regenerating first? Reads only.
+  desc "Report whether each model-build asset is reused, refreshed or acquired — SLUG=look-xxx"
+  task readiness: :environment do
+    slug = ENV["SLUG"].presence or raise "SLUG=look-xxx is required"
+    inputs = Content::ArtifactPlan::ModelInputs.new(Appearance.find_by!(slug: slug))
+
+    inputs.assets.each do |asset|
+      flag = asset.stale? ? " STALE" : ""
+      puts format("%-11s %-8s%s  %s", asset.kind, asset.decision, flag, asset.detail)
+    end
+    refusal = inputs.refusal_for(:sheet)
+    puts refusal ? "Build: refused — #{refusal}" : "Build: ready"
+  end
 end

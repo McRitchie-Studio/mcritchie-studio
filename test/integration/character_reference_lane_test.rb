@@ -159,6 +159,28 @@ class CharacterReferenceLaneTest < ActionDispatch::IntegrationTest
     held.nil? ? ENV.delete("SLUG") : ENV["SLUG"] = held
   end
 
+  # THE OPERATOR'S "DO I NEED TO STOP AND FETCH?" — every asset, one line each,
+  # read-only, and a stale identity says so.
+  test "the readiness task reports every asset and flags a stale identity" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("appearances:readiness")
+    @look.update!(higgsfield_reference_id: IDENTITY, higgsfield_reference_status: "completed",
+                  higgsfield_reference_minted_at: 1.day.ago)
+    AppearanceReferencePhoto.create!(appearance_slug: @look.slug, image_url: "https://example.com/new.png",
+                                     source: "search", chosen: true)
+    ENV["SLUG"] = @look.slug
+
+    out, = capture_io { Rake::Task["appearances:readiness"].tap(&:reenable).invoke }
+
+    assert_match(/anchor\s+reuse/, out)
+    assert_match(/references\s+(reuse|refresh|acquire)/, out)
+    assert_match(/identity\s+refresh .*STALE.*reference photos changed after the identity was minted/, out)
+    assert_match(/sheet\s+acquire/, out)
+    assert_match(/Build: ready/, out)
+    assert_empty @vendor.creates
+  ensure
+    ENV.delete("SLUG")
+  end
+
   # `FORCE=0` is what an operator types to say NO, and `.present?` granted it —
   # buying a second identity and orphaning the first beyond recall.
   test "only FORCE=1 rebuilds an identity" do
