@@ -26,7 +26,8 @@ left.** Measure before you judge.
 ## Scope
 
 Triage every open task, ship what is finishable, archive what is not, sweep the
-infrastructure. **Ship-authority gated** — see Preconditions.
+infrastructure. One stuck session's work, rather than the whole board, is
+[`wrap-it-up`](../../pokemon/sops/wrap-it-up.md). **Ship-authority gated** — see Preconditions.
 
 ## Preconditions
 
