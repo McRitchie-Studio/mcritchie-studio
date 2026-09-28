@@ -359,12 +359,16 @@ ANTHROPIC_API_KEY=$(heroku config:get ANTHROPIC_API_KEY --app mcritchie-studio)
 # itself whenever the variable is set, which is every time it matters; the rule and the exact
 # form to avoid are in docs/agents/modules/credentials.md.
 #
-# config:get is the right verb HERE because this is RETRIEVAL, and the value is the thing you
-# came for. As a VERIFICATION method it is BANNED — see Steffon's credential-rotation SOP:
-# an absent key and a present-but-empty one both print one bare
-# newline, and a failed read prints nothing either, so "it came back empty" names three states
-# with three different next moves. If the capture is empty, ask the jq expression above which
-# one you are in, and reach for console.anthropic.com only when it answers false.
+# config:get is used HERE for RETRIEVAL — the value is the thing you came for, and the
+# check commented above is how you confirm it landed. Know what you are stepping
+# around: credential-rotation.md bans the verb under an UNQUALIFIED heading ("`heroku
+# config:get` is BANNED"), because an absent key and a present-but-empty one both print one
+# bare newline, and a failed read prints nothing either — so "it came back empty" names
+# three states with three different next moves. That SOP records no retrieval carve-out and
+# never retrieves with config:get itself (its own idiom is `config --json | jq`). So this
+# line is a deliberate LOCAL exception, not a reading of that SOP. If the capture is empty,
+# ask the jq expression above which of the three states you are in, and reach for
+# console.anthropic.com only when it answers false.
 X_BEARER_TOKEN=...                    # 1Password: "agent.turf.x" (studio-agents), field "Bearer Token"
 X_API_KEY=...                         # the same item — "Consumer Key" (needs a Read+Write app)
 X_API_SECRET=...
