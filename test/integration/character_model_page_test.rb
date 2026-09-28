@@ -506,7 +506,8 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to page_path
-    assert_match(/no reference photographs/, flash[:alert])
+    # The anchor gate answers first now, and names the asset that is missing.
+    assert_match(/cannot be built: no cached headshot/, flash[:alert])
   end
 
   # ---- what a linked caption may point at ------------------------------------
