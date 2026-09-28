@@ -825,20 +825,20 @@ class ApplicationHelperTest < ActionView::TestCase
 
     card = css_select("[data-test='agents-summary-card']").first
     refute_nil card, "the summary variant renders the Workflows summary card"
-    assert_equal "turf-monster,carl,avi,steffon,xan", card["data-agents"],
-                 "the wheel starts on Turf Monster and walks the rest in canonical order"
+    assert_equal "turf-monster,pokemon,carl,avi,steffon,xan", card["data-agents"],
+                 "the wheel starts on Turf Monster and walks the rest in canonical order, wrapping"
     assert_equal "turf-monster", card["data-active-agent"]
     assert_equal ApplicationHelper::AGENTS_CAROUSEL_ROTATE_MS.to_s, card["data-rotate-ms"]
     assert_equal 300_000, ApplicationHelper::AGENTS_CAROUSEL_ROTATE_MS, "the operator's spec: five minutes"
     assert_equal "agents", card["data-panel"], "a click opens the Workflows sidebar"
 
     slides = css_select("[data-test='soul-slide']")
-    assert_equal %w[turf-monster carl avi steffon xan], slides.map { |slide| slide["data-agent"] }
-    assert_equal %w[active waiting waiting waiting waiting], slides.map { |slide| slide["data-place"] }
+    assert_equal %w[turf-monster pokemon carl avi steffon xan], slides.map { |slide| slide["data-agent"] }
+    assert_equal %w[active waiting waiting waiting waiting waiting], slides.map { |slide| slide["data-place"] }
     assert_nil slides.first["inert"], "the soul in frame is interactive"
     slides.drop(1).each { |slide| refute_nil slide["inert"], "#{slide['data-agent']} is off-frame, so inert" }
-    assert_select "[data-test='soul-slide'] [data-test='heartbeat-launcher'][data-layout='slide']", count: 5
-    assert_select "[data-test='soul-carousel-dot']", count: 5
+    assert_select "[data-test='soul-slide'] [data-test='heartbeat-launcher'][data-layout='slide']", count: heartbeat_launchers.size
+    assert_select "[data-test='soul-carousel-dot']", count: heartbeat_launchers.size
     assert_select "[data-test='soul-carousel-dot'][data-active='true']", count: 1
     assert_select "[data-test='soul-carousel-dot'][data-active='true'][data-agent='turf-monster']", count: 1
     # No sidebar list in the summary: the detail is one click away, not duplicated.
@@ -862,7 +862,7 @@ class ApplicationHelperTest < ActionView::TestCase
     detail = chips_by_soul.call(render(partial: "tasks/heartbeats_card"))
     summary = chips_by_soul.call(render(partial: "tasks/heartbeats_card", locals: { variant: :summary }))
 
-    assert_equal 5, detail.size
+    assert_equal heartbeat_launchers.size, detail.size
     assert_equal detail, summary
   end
   test "[component] the DevOps card keeps its stage tiles but no longer carries the heartbeats" do
