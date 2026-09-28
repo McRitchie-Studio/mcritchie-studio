@@ -298,13 +298,14 @@ helper hands over whatever `gh`'s keyring holds for its active account, and when
 that token is stale GitHub answers `remote: Invalid username or token`.
 
 The same fallback is why exporting `GH_TOKEN` alone *appears* to fix `git` **in
-the hub**: it fixes it nowhere else, the config is undocumented, and every hub
-desk inherits it because worktrees share `.git/config`. Nothing in this repo wrote
-that line, and nothing in it can — **`bin/install-git-credential-helper` writes no
-git config at all.** Its own `--help` says so ("This command never edits
-~/.gitconfig. It prints the one-line change and its revert; you run them"), and
-`bin/lib/credential_helper_install.rb#git_config_command` only *builds the string*
-the CLI prints. The one-liner it prints is `--global`; the hub's line is
+the hub**: it fixes it nowhere else, this paragraph is the only place the config
+is documented, and every hub desk inherits it because worktrees share
+`.git/config`. Nothing in this repo wrote that line, and nothing in it can —
+**`bin/install-git-credential-helper` writes no git config at all.** Its own
+`--help` says so ("This command never edits ~/.gitconfig. It prints the one-line
+change and its revert; you run them"), and
+`bin/lib/credential_helper_install.rb#git_config_command` only *builds the
+string* the CLI prints. The one-liner it prints is `--global`; the hub's line is
 repo-local and was set by hand. Work around it; do not rely on it, and do not
 remove it — that config is Alex's call.
 
