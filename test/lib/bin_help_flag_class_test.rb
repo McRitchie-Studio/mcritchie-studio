@@ -82,6 +82,7 @@ class BinHelpFlagClassTest < Minitest::Test
     # Release::Cli::COMMANDS.
     "release.rb"             => :cli_arg_guard,
     "clean-artifacts"        => :cli_arg_guard,
+    "register-app"           => :cli_arg_guard,
     "r2-backup"              => :cli_arg_guard,
     # --- retrofitted 2026-08-31, /tasks/qa-server-help-provisions -------------
     # It sat in :subcommand looking classified while `provision <app> --yes --help`

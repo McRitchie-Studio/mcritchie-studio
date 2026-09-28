@@ -1,0 +1,97 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/register-app — register a single-use app on a deploy profile.
+#
+# Checks the app against the profile's contract (live, read-only), then prints
+# the config/release_repos.yml entry the profile generates. With --write, and
+# only when every check passes, appends that entry. The SOP:
+# docs/agents/agents/steffon/sops/app-deploy-standard.md.
+
+require_relative "lib/cli_arg_guard"
+require_relative "lib/app_profile"
+require_relative "lib/app_contract"
+require_relative "lib/projects_root"
+
+USAGE = <<~TXT
+  usage: bin/register-app <slug> --heroku-app NAME --smoke-url https://HOST [--profile NAME] [--write]
+
+  Checks <slug> against the profile's contract and prints the registry entry it
+  would write. Dry run unless --write; --write refuses unless every check passes
+  and <slug> is not registered yet. Default profile: standalone-heroku.
+TXT
+
+ROOT = File.expand_path("..", __dir__)
+REGISTRY = File.join(ROOT, "config", "release_repos.yml")
+
+args = CliArgGuard.guard!(
+  ARGV, program: "register-app", usage: USAGE,
+  bool: %w[--write], value: %w[--heroku-app --smoke-url --profile], allow_positional: true,
+  consequence: "NOTHING was checked or written."
+)
+unless args.positionals.length == 1 && args.first("--heroku-app") && args.first("--smoke-url")
+  warn(USAGE)
+  exit 2
+end
+
+# --write appends to the registry beside THIS script. The fixed-path copy
+# (/Users/alex/projects/.agents/bin) is a tooling snapshot with no .git, so a
+# write there would edit the frozen config the fast lane reads, not the desk.
+if args.bool?("--write") && !File.exist?(File.join(ROOT, ".git"))
+  abort("register-app: #{ROOT} is not a git checkout — run the desk's own bin/register-app. NOTHING was written.")
+end
+
+slug = args.positionals.first
+abort("register-app: #{slug.inspect} is not a repo slug — NOTHING was written.") unless slug.match?(/\A[a-z0-9][a-z0-9-]*\z/)
+profile = args.first("--profile") || "standalone-heroku"
+heroku_app = args.first("--heroku-app")
+smoke_url = args.first("--smoke-url").chomp("/")
+root = File.join(ENV.fetch("PROJECTS_DIR", ProjectsRoot.default_projects_dir), slug)
+
+begin
+  AppProfile.profile(profile)
+rescue AppProfile::Error => e
+  abort("register-app: #{e.message} — NOTHING was written.")
+end
+
+registry = YAML.safe_load_file(REGISTRY) || {}
+already = registry.fetch("apps", {}).key?(slug) || registry.fetch("gems", {}).key?(slug)
+
+checks, test_cmd = AppContract.run(slug: slug, heroku_app: heroku_app, smoke_url: smoke_url, root: root)
+puts "Contract for #{slug} on profile #{profile}:"
+checks.each { |c| puts "  #{c.ok ? 'PASS' : 'FAIL'}  #{c.name.ljust(20)} #{c.detail}#{c.ok ? '' : "  → #{c.remedy}"}" }
+puts "  #{already ? 'FAIL' : 'PASS'}  #{'not yet registered'.ljust(20)} #{already ? "#{slug} is already in release_repos.yml" : 'yes'}"
+
+engine = AppContract.engine_version(File.exist?(File.join(root, "Gemfile.lock")) ? File.read(File.join(root, "Gemfile.lock")) : nil)
+notes = []
+if engine
+  notes << "Consumes studio-engine #{engine}: a release that publishes the engine bumps this"
+  notes << "app's lock to the published version (bin/release.rb#bump_consumer_locks_for_qa)."
+  puts "\n  NOTE  #{slug} consumes studio-engine #{engine}. Its first release alongside an engine publish"
+  puts "        bumps its lock to the published version. Upgrade it deliberately first if the gap is large."
+end
+
+entry = begin
+  AppProfile.expand(profile, heroku_app: heroku_app, smoke_url: smoke_url, test_cmd: test_cmd.to_s)
+rescue AppProfile::Error => e
+  nil.tap { puts "\n  cannot build the entry yet: #{e.message}" }
+end
+block = entry && AppProfile.render(slug, entry, notes: notes)
+puts "\nEntry:\n#{block}" if block
+
+failed = checks.reject(&:ok) + (already ? [:registered] : [])
+unless args.bool?("--write")
+  puts "\nDry run: nothing written.#{failed.empty? ? ' Re-run with --write to register.' : ''}"
+  exit(failed.empty? ? 0 : 1)
+end
+if !failed.empty? || block.nil?
+  warn("\nregister-app: #{failed.length} check(s) failed — NOTHING was written.")
+  exit 1
+end
+
+File.open(REGISTRY, "a") { |f| f.write("#{File.read(REGISTRY).end_with?("\n") ? '' : "\n"}#{block}") }
+parsed = YAML.safe_load_file(REGISTRY).dig("apps", slug)
+drift = parsed ? AppProfile.drift(parsed) : ["entry not found after writing"]
+abort("register-app: wrote the entry but it does not read back as the profile: #{drift.join('; ')}") unless drift.empty?
+puts "\nWrote #{slug} to config/release_repos.yml (read back: matches profile #{profile})."
+puts "Next: run bin/rails test test/models/release/repos_test.rb, then ship the task."
