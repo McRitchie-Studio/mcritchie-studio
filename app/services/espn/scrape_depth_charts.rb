@@ -292,8 +292,13 @@ class Espn::ScrapeDepthCharts
   # IT IS FILED HERE AND NOT ON scrape_team'S `unless groups`, because those are two
   # different facts. fetch_groups also answers nil when ESPN served a 404 for BOTH the
   # current and the previous season's document — a source with nothing to give, which
-  # parse_response separates from every other non-success BY STATUS, exactly as
-  # Athletes::DeadHeadshotSource separates 404/410 from an uploader that broke. A row
+  # parse_response separates from every other non-success BY STATUS — the same move
+  # Athletes::DeadHeadshotSource makes for the headshot lane, though NOT the same LIST.
+  # It treats 404 AND 410 as dead; parse_response answers nil for 404 alone, so a 410
+  # raises here and files a row. The season fallback needs the 404 nil, and no 410 has
+  # been observed from these hosts — DeadHeadshotSource carries 410 on the protocol's
+  # word, not on a measurement — so the gap is tolerable. But it is a difference, not a
+  # parity: adding 410 to the nil branch owes that fallback a second look. A row
   # filed from `unless groups` would record that dead source as our failure; a row
   # filed in this rescue cannot, because the 404 became a nil and never raised.
   # (DeadHeadshotSource itself does not apply: it reads `io.status` off an
