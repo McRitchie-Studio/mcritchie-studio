@@ -218,6 +218,12 @@ class BinHelpFlagClassTest < Minitest::Test
     # it also REFUSES a leftover positional, so `bin/workspace-icon logo.png`
     # cannot render the default badge while the path typed is silently ignored.
     "workspace-icon"         => :optparse,
+    # Writes to the operator's Apple Contacts (create/update/photo), which syncs
+    # to his iPhone — outside this repo, and not undone by `git checkout`. One
+    # OptionParser with a -h arm serves every subcommand, an unknown subcommand
+    # prints usage and exits 1, and a leftover positional REFUSES, so
+    # `bin/apple-contact create card.json` cannot write while the path is ignored.
+    "apple-contact"          => :optparse,
     # --- shell scripts, same sweep, same defect, different idiom --------------
     "setup-1pass-token"      => :own_guard,
     "ecosystem-build"        => :own_guard,

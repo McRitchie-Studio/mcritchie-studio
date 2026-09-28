@@ -69,6 +69,10 @@ For each item, in order:
 6. **Flag urgency:** a decision-changing fact (a moved date, a changed number)
    jumps the queue — surface it to Alex immediately rather than
    waiting for distillation.
+7. **Offer the contact:** if a team@ item carries someone else's email
+   signature, run [`contact-capture`](contact-capture.md). It asks Alex
+   whether to create or update that person's Apple Contacts card, and writes
+   nothing without his answer.
 
 ## Distillation (batched — knowledge is relational)
 
