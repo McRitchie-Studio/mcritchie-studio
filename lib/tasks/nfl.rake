@@ -930,7 +930,27 @@ namespace :nfl do
     skipped_no_image = 0
     failed_team = 0
 
-    Team.where(league: "nfl").where.not(coaches_url: nil).find_each do |team|
+    # THE POPULATION, COUNTED IN THE LOOP rather than derived from a second query.
+    # A relation asked twice is two answers, and the verdict below is a ratio
+    # between this number and what landed -- so it has to be the number of teams
+    # this run actually walked.
+    teams_considered = 0
+    teams = Team.where(league: "nfl").where.not(coaches_url: nil)
+
+    # A RUN WITH NO SOURCE OF WORK IS NOT A RUN WITH NOTHING TO DO. `coaches_url` is
+    # written by db/seeds/10_teams_nfl.rb, which sorts BEFORE the seed that invokes
+    # this task, so an empty population here means the teams were never seeded --
+    # and before this guard the loop walked zero times, printed a column of zeros
+    # and exited 0, which the rebuild reads as a seeded database.
+    if teams.none?
+      abort "nfl:link_coach_headshots_from_team_sites: no NFL team carries a coaches_url, so " \
+            "this lane had nothing to scrape and no coordinator headshot can exist. " \
+            "db/seeds/10_teams_nfl.rb writes that column and sorts before this task's seed; " \
+            "if it ran, check Team.where(league: \"nfl\").where.not(coaches_url: nil)."
+    end
+
+    teams.find_each do |team|
+      teams_considered += 1
       team_slug = team.slug
       # Try Team.coaches_url first; if it 404s, try the alternate /team/coaches-roster/
       # path (Buccaneers and Titans use coaches-roster instead of coaches).
@@ -1013,12 +1033,66 @@ namespace :nfl do
       end
     end
 
+    # WHAT THIS LANE IS FOR, counted in COACHES because that is the unit it writes.
+    # `matched` is a URL this run put on file and `skipped_unchanged` is one NFL.com
+    # served again, and both mean the same thing about the database -- which is what
+    # keeps the warm re-run of a seeded machine silent.
+    linked = matched + skipped_unchanged
+    pages_read = teams_considered - failed_team
+
     puts ""
+    puts "teams considered:     #{teams_considered}"
     puts "matched/updated:      #{matched}"
     puts "skipped (unchanged):  #{skipped_unchanged}"
+    puts "linked (the two above):#{linked}  (the population the rules below grade)"
     puts "skipped (no Coach):   #{skipped_no_coach}"
     puts "skipped (no image):   #{skipped_no_image}"
     puts "failed (team page):   #{failed_team}"
+
+    # THE SAME DEFECT AS THE TASK ABOVE, ONE LINE LOWER IN THE SAME SEED. The
+    # per-team rescue is right -- one unreachable club must not cost the other 31
+    # their coordinators -- but `failed_team` was counted, printed, and read by
+    # nothing, so the task returned and `db:seed` exited 0. MEASURED before this
+    # guard, with two teams carrying a coaches_url and every candidate URL answering
+    # 404: `failed (team page): 2`, exit 0. bin/ecosystem-build runs that seed with
+    # both streams discarded and reads only the status, so the report above was
+    # never going to reach anybody.
+    #
+    # THIS LANE IS THE ONLY SOURCE OF A COORDINATOR'S HEADSHOT AT ALL -- ESPN's coach
+    # API carries no `headshot.href` for any of them -- so a silent total failure
+    # costs three of the four coaches on every team their avatar.
+    #
+    # GRADED ON `linked`, NOT ON `failed_team`, because that counter is blind to the
+    # other way to link nothing: every page loads and none yields a coach card this
+    # scrape can match, which is what a markup change at NFL.com looks like from in
+    # here. The abort names which of the two happened, since they are different
+    # chores -- one is NFL.com being down, the other is this selector being stale.
+    if linked.zero?
+      cause = if failed_team == teams_considered
+        "not one of their coaches pages could be read (tried both the /team/coaches/ and " \
+          "/team/coaches-roster/ spellings), so this is NFL.com or the network"
+      else
+        "#{pages_read} of their pages WERE read and yielded no coach this scrape could " \
+          "match (#{skipped_no_coach} #{'card'.pluralize(skipped_no_coach)} named a coach we " \
+          "have no row for, #{skipped_no_image} had no usable image), so the markup or our " \
+          "person_slugs moved"
+      end
+      abort "nfl:link_coach_headshots_from_team_sites linked 0 coaches across " \
+            "#{teams_considered} NFL teams -- #{cause}. Coordinator headshots come from " \
+            "nowhere else, so every one of them is now sourceless."
+
+    # A PARTIAL RUN STAYS GREEN, DELIBERATELY. Two clubs' pages down is a normal
+    # NFL.com afternoon; an exit code carries one bit and cannot say "partly", so a
+    # rule that reddened on one lost team would be switched off within a week. It
+    # becomes a sentence on stderr, the only channel the rebuild keeps, and the task
+    # is idempotent so the next run either clears it or says so again.
+    elsif failed_team.positive?
+      warn "WARNING: nfl:link_coach_headshots_from_team_sites read #{pages_read} of " \
+           "#{teams_considered} team coaches pages and linked #{linked} " \
+           "#{'coach'.pluralize(linked)} -- #{failed_team} " \
+           "#{'team'.pluralize(failed_team)} served neither candidate URL. Too few to be the " \
+           "lane breaking; the task is idempotent, so re-running it retries only these."
+    end
   end
 
   desc "For Coaches with espn_headshot_url (from ESPN or NFL.com), cache variants. Idempotent."

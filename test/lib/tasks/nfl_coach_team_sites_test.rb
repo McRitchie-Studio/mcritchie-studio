@@ -66,7 +66,8 @@ class NflCoachTeamSitesTest < ActiveSupport::TestCase
       assert_raises(SystemExit) { run_task(pages: {}) }
     end
 
-    assert_match(/0 of 2/, err, "say how much of the work landed, not just that it went wrong")
+    assert_match(/linked 0 coaches across 2 NFL teams/, err,
+                 "say how much of the work landed, not just that it went wrong")
     assert_match(/coaches page/i, err + out,
                  "name what could not be read, so the operator knows whether to look at " \
                  "NFL.com or at our own URLs")
@@ -86,10 +87,11 @@ class NflCoachTeamSitesTest < ActiveSupport::TestCase
       end
     end
 
-    assert_match(/0 of 2/, err)
-    assert_match(/markup|no coach/i, err,
+    assert_match(/linked 0 coaches across 2 NFL teams/, err)
+    assert_match(/2 of their pages WERE read/, err,
                  "a page that loads and yields nothing is a different chore from a page " \
                  "that will not load, and the verdict has to say which happened")
+    assert_match(/markup/i, err, "name the thing that moved, not just that nothing matched")
   end
 
   # A RUN WITH NO SOURCE OF WORK IS NOT A RUN WITH NOTHING TO DO. `Team.coaches_url`
