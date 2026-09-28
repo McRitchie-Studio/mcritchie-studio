@@ -71,7 +71,7 @@ class AppearancesController < ApplicationController
   #
   # THE FAILURE PATH IS AN ErrorLog ROW, NOT ONLY A FLASH. A flash lives for one
   # redirect and is then gone; the operator who has to work out WHY a mint refused
-  # is reading /admin/error_logs a day later, and `target: @appearance` is what puts
+  # is reading /error_logs a day later, and `target: @appearance` is what puts
   # the look's slug on the row so they can find the right one.
   #
   # `rescue_and_log` RE-RAISES by design — that is what lets the action keep its own

@@ -86,7 +86,7 @@ module Appearances
     # Returns the persisted Artifact. Raises rather than degrading, because the
     # one caller is an operator who pressed a button and is owed the reason —
     # AppearancesController wraps it in `rescue_and_log` so the reason also lands
-    # in /admin/error_logs, where somebody reading it a day later can find it.
+    # in /error_logs, where somebody reading it a day later can find it.
     def call
       raise NoGenerator, unconfigured_message if row.nil?
       raise NoIdentityPhoto, no_photo_message if identity_photo_url.blank?

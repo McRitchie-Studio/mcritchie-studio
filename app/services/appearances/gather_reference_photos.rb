@@ -380,7 +380,7 @@ module Appearances
     # WHAT GETS FILED WHEN THE LANE GOES BLIND. An exception class rather than a bare
     # string because Appearances::FailureLog files through ErrorLog.capture!, which
     # reads `#message` and `#backtrace` off an exception — and because the class name
-    # is what the operator scans for in /admin/error_logs.
+    # is what the operator scans for in /error_logs.
     #
     # NEVER RAISED, only filed. Raising it would cost the operator the page, which is
     # the opposite of what this lane promises.
@@ -388,7 +388,7 @@ module Appearances
 
     # WHAT GETS FILED WHEN THE CLASSIFIER ANSWERS BUT REPORTS NO FACE SIZE. Its own
     # class rather than a second message on ClassifierBlind, because the class name is
-    # what the operator scans /admin/error_logs for and the two failures have different
+    # what the operator scans /error_logs for and the two failures have different
     # remedies — one is the vendor's fetch, the other is our prompt.
     class FaceSizeBlind < StandardError; end
 

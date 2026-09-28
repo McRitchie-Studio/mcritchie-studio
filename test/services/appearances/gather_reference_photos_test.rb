@@ -1174,7 +1174,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
   end
 
   # THE DURABLE HALF OF LOUD. A flash lives for one redirect; the operator working out
-  # why a gallery looks wrong a day later is reading /admin/error_logs.
+  # why a gallery looks wrong a day later is reading /error_logs.
   test "a blind lane files exactly one ErrorLog row, against the look" do
     results = (1..5).map { |i| hit("https://cdn.example.com/#{i}.jpg", position: i) }
 
@@ -1189,7 +1189,7 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     assert_equal @look, row.target, "the look is the only handle for reading the right row back"
     assert_match Appearances::GatherReferencePhotos::ClassifierBlind.name,
                  row.read_attribute(:inspect),
-                 "the class name is what the operator scans /admin/error_logs for"
+                 "the class name is what the operator scans /error_logs for"
   end
 
   # HEALTHY NOW MEANS A FACE SIZE CAME BACK TOO. A run that scores every candidate for

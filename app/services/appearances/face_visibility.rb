@@ -266,7 +266,7 @@ module Appearances
     # and "unreadable answer" alike, and on the page all four render as the same
     # sentence — "ranked on shape and relevance only (no face classifier)". That
     # sentence is TRUE of a machine with no key and MISLEADING of a machine whose key
-    # was rejected, and only a row in /admin/error_logs tells the operator which one
+    # was rejected, and only a row in /error_logs tells the operator which one
     # they are looking at.
     def call(image_urls, target: nil)
       urls = Array(image_urls).map(&:to_s).uniq.reject(&:empty?)

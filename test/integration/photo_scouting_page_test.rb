@@ -700,7 +700,7 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     assert_match(/2 mirrored and sent/, flash[:alert],
                  "the numbers separate a classifier failure from a mirror failure")
     # AND THE DURABLE HALF. A flash lives for one redirect; the operator working out a
-    # week later why a gallery looks wrong is reading /admin/error_logs.
+    # week later why a gallery looks wrong is reading /error_logs.
     row = ErrorLog.order(:id).last
     assert_equal @look, row.target
     assert_match(/scored 0 of 2 shortlisted/, row.message)

@@ -113,7 +113,7 @@ working as designed, and the condition is sticky: the master keeps sending the
 same row, so every later run refuses it again identically. A non-zero exit would
 not signal that something new happened — it would be a permanently red cadence,
 and a permanently red cadence is one people stop reading. The signal is durable
-instead: the cursor's status and `detail`, plus one `/admin/error_logs` row per
+instead: the cursor's status and `detail`, plus one `/error_logs` row per
 refusal (`studio_sync.rake:38-57`).
 
 The skip exists so that a stack which is *not meant* to sync cannot redden a
@@ -320,7 +320,7 @@ are `00-0028946` and `00-0038602` — the hub side of both incidents above. **No
 durable record names them as refusals, because none existed on the day that run
 happened** — gap (d), closed afterwards by turf-monster PR #817 — so this is an
 inference. A run today would name them outright, in the cursor's `detail` and in
-one `/admin/error_logs` row each.
+one `/error_logs` row each.
 
 What carries the inference past the arithmetic is the refusal's precondition:
 `#build_for` declines exactly when the replica already holds that `person_slug`
@@ -335,7 +335,7 @@ disambiguated slug, because **slugs are the master's**. So it refuses, records w
 collided with whom, and the rake task prints every one with both league ids
 (`turf-monster/lib/tasks/studio_sync.rake:27-35`). Since PR #817 it also files
 one `ErrorLog` row per refusal, under the `Studio::SyncAthletes::CollisionRefused`
-facet at `/admin/error_logs` (`sync_athletes.rb:251-259`), so a collision
+facet at `/error_logs` (`sync_athletes.rb:251-259`), so a collision
 outlives the process that found it.
 
 **Three writers reach these tables and all three carry this predicate:** the hub's
@@ -528,7 +528,7 @@ carries the whole run.
 **The durable half is an `ErrorLog` row per refusal**, written by
 `#record_refusal` (`sync_athletes.rb:251-259`) under the
 `Studio::SyncAthletes::CollisionRefused` facet and browsable at
-`/admin/error_logs`. Three deliberate choices sit in that method and are worth
+`/error_logs`. Three deliberate choices sit in that method and are worth
 not re-litigating: it does **not** use `rescue_and_log` (a controller concern
 that re-raises, which would abandon the rest of the feed at the first refusal);
 it does **not** use `ErrorLog.capture!` (which fans out to Sentry — paging
@@ -540,14 +540,14 @@ run it only describes.
 run, 2026-09-24T05:37:07Z, refused two rows, and the cursor it left behind reads
 `status "ok", seen 2,051, written 626`. That reading is pre-fix. A run with the
 same two refusals today records `ok_with_collisions`, names both league ids in
-`detail`, and leaves two rows at `/admin/error_logs`.
+`detail`, and leaves two rows at `/error_logs`.
 
 **What did not change: the exit code.** A collided run still exits **zero**, and
 `studio:sync_athletes` still aborts only on `failed`
 (`turf-monster/lib/tasks/studio_sync.rake:57`). The reasoning is in "Three
 outcomes" under flow 1 — the refusal is sticky, and a permanently red cadence is
 one people stop reading. **So somebody still has to read it** — the rake
-output, or now the `/admin/error_logs` facet. Each refusal is a human the master
+output, or now the `/error_logs` facet. Each refusal is a human the master
 and the replica disagree about, and only the master can resolve it.
 
 ### e) Wave 5 is outstanding — retiring `Player`

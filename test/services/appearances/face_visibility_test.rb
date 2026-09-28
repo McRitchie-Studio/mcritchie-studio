@@ -68,7 +68,7 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
   # "unreadable answer" alike, and the page renders all four as one sentence —
   # "ranked on shape and relevance only (no face classifier)". That sentence is TRUE
   # of a machine with no key and MISLEADING of a machine whose key was rejected, and
-  # a row in /admin/error_logs is the only thing that tells the operator which he has.
+  # a row in /error_logs is the only thing that tells the operator which he has.
   test "a transport failure is filed against the look, not only warned about" do
     look = Appearance.create!(person_slug: people(:josh_allen).slug, descriptor: "Bills home")
     provider = classifier

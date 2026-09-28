@@ -12,7 +12,7 @@ module Appearances
   # WHY A LOG LINE ALONE WAS NOT ENOUGH. `Rails.logger.warn` is what both of those
   # did before, and the measurable result was that a credential failure and an empty
   # result produced the SAME page — "returned nothing for …". Nobody tails a log to
-  # find out why a search looked thin; /admin/error_logs is where they look, and a
+  # find out why a search looked thin; /error_logs is where they look, and a
   # row there is the only thing that tells a 401 apart from a genuine empty answer.
   #
   # ITS OWN FAILURE IS SWALLOWED, which is not defensive decoration. Every caller is
