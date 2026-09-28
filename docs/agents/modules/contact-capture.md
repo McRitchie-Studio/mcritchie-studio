@@ -51,7 +51,7 @@ directly in chat.
   1:02 PM re-forward of the same thread never did, and a 1:19 PM forward with one line of text arrived within a minute. The
   likely cause is the team@ Google group dropping a near-duplicate; that was
   not confirmed.
-- **Check Resend before the hub.** If no desk item appears within a few
+- **Check Resend before debugging the hub.** If no desk item appears within a few
   minutes, list Resend's received mail (`GET /emails/receiving` with the hub's
   `RESEND_API_KEY`, from a dyno). If the message is not there, it stopped
   before our pipeline, and nothing in the hub will show it.
