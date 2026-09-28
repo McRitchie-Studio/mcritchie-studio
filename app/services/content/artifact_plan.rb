@@ -6,6 +6,9 @@ class Content
   # scratch each week would be the obvious thing and the wrong one — a person's
   # face does not change, only what they are wearing does. So each slot answers:
   # reuse it, re-skin it, or make it.
+  #
+  # The upstream half — what a character-model build consumes — is
+  # ArtifactPlan::ModelInputs: reuse, refresh or acquire, before anything spends.
   class ArtifactPlan
     # A cell in the gate, and the TWO ARTIFACTS it can hold. They are named for
     # what they ARE, not for what any one reader wants from them:
