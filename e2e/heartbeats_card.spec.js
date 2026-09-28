@@ -1,13 +1,14 @@
 const { test, expect } = require("@playwright/test");
 const { openDeploySidebar } = require("./helpers");
 
-// The /deployments WORKFLOWS surface: FIVE soul launchers — Turf Monster (live scores),
-// Carl (review), Avi (assemble/QA), Steffon (ship + infra sweep) and Xan. Since the
+// The /deployments WORKFLOWS surface: SIX soul launchers — Turf Monster (live scores),
+// Carl (review), Avi (assemble/QA), Steffon (ship + infra sweep), Xan, and the general
+// Pokémon (wrap-it-up). Since the
 // summary row (2026-09-18) they are drawn twice: ONE soul at a time on the Workflows
 // summary card's carousel, and every soul with every command in the Workflows sidebar.
 // This is the browser-level check that the acts render under the RIGHT souls end to end,
 // in the sidebar the operator actually opens.
-test("the Workflows sidebar lists five soul launchers with their acts", async ({ page }) => {
+test("the Workflows sidebar lists six soul launchers with their acts", async ({ page }) => {
   await page.goto("/deployments");
 
   // The carousel starts on Turf Monster, the operator's spec.
@@ -19,7 +20,7 @@ test("the Workflows sidebar lists five soul launchers with their acts", async ({
   const card = page.locator("#deploy-sidebar-agents [data-test='heartbeats-card']");
   await expect(card).toBeVisible();
 
-  await expect(card.locator("[data-test='heartbeat-launcher']")).toHaveCount(5);
+  await expect(card.locator("[data-test='heartbeat-launcher']")).toHaveCount(6);
 
   // Carl owns review: his row carries the pr-review + pr-review-slow chips.
   const carl = card.locator("[data-test='heartbeat-launcher'][data-agent='carl']");
@@ -48,4 +49,9 @@ test("the Workflows sidebar lists five soul launchers with their acts", async ({
   const turf = card.locator("[data-test='heartbeat-launcher'][data-agent='turf-monster']");
   await expect(turf.locator("button[data-clip='Turf Monster Heartbeat']")).toBeVisible();
   await expect(turf.locator("button[data-clip='live-score-watch']")).toBeVisible();
+
+  // The general Pokémon has no HEARTBEAT: its row is the wrap-it-up act alone.
+  const pokemon = card.locator("[data-test='heartbeat-launcher'][data-agent='pokemon']");
+  await expect(pokemon.locator("button[data-clip='wrap-it-up']")).toBeVisible();
+  await expect(pokemon.locator("button[data-row='heartbeat']")).toHaveCount(0);
 });

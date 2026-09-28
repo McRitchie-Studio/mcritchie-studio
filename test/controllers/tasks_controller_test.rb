@@ -160,7 +160,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
-  test "[integration] deployments renders the five heartbeat launchers in the Workflows card" do
+  test "[integration] deployments renders every soul launcher in the Workflows card" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "xan") { |a| a.name = "Xan" }
@@ -172,7 +172,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # The launchers live in the Workflows card, NOT the current-release or DevOps cards.
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
     assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 0
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 5
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: ApplicationController.helpers.heartbeat_launchers.size
     # The card is launchers-only — a plain grid of the soul launchers, no release
     # tracker and no stage-ownership layout (that pairing was the rejected design; the
     # tracker stays in the Next Release card).
@@ -287,7 +287,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release code", { text: /Merge, Assemble, Deploy/, count: 0 }
     # The launchers now live in the Workflows card — one per soul, including
     # Carl's pr-review-slow and Xan's full-cycle acts.
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 5
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: ApplicationController.helpers.heartbeat_launchers.size
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] code", text: "pr-review-slow"
     assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] code", text: "full-cycle"
   end
@@ -517,7 +517,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # The four legacy chips were retired from the current-release card.
     assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
     # The Workflows card still offers the launchers even with no active release.
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 5
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: ApplicationController.helpers.heartbeat_launchers.size
     # With nothing shipped, Last Release shows its muted empty state (keeps the 2×2 cell).
     assert_select "#last-release", text: /none yet/
   end

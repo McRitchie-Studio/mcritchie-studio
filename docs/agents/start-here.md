@@ -58,6 +58,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | Steffon clean infra SOP (worktrees, disk, "no space") | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
 | Steffon bucket provision SOP (per-app R2 pair + tokens) | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
+| Steffon app deploy standard SOP (single-use apps: profile, contract, `bin/register-app`) | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
 | Steffon R2 backup SOP (backup bucket, nightly run, garbage collection, restore) | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
 | Steffon credential filing SOP (naming, logos, vault lanes) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | Steffon credential rotation SOP (rotate one secret everywhere) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
@@ -87,6 +88,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Rex heartbeat launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | Rex constraint diagnosis SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | Rex content sprint SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
+| Pokemon wrap it up SOP (hand a stuck session to a fresh one, then clear its board) | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane (`bin/task begin` / `bin/ship`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane entry rules (where each command runs, author set, ship-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |

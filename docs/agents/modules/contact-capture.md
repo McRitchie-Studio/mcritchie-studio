@@ -26,9 +26,11 @@ For each desk item in the sweep, offer a contact when **all** of these hold:
    `quarantined`. That means Alex forwarded it himself. A `gmail` pull item
    is deal correspondence matched by a query, and there are too many of those
    to prompt on. Offer from one only if Alex asks.
-2. **The message carries a signature**: a block, usually at the foot of a
-   message, that gives a name plus at least one of title, company, phone or
-   address.
+2. **The message carries a signature**: a block that gives a name plus at
+   least one of title, company, phone or address. **Search the whole thread,
+   not just the newest message.** Quick replies are often signed with a first
+   name only, and the full block may appear only in the person's oldest
+   message, at the bottom of the forward.
 3. **The signature belongs to someone other than Alex.** Skip his own signatures
    and those of anyone at his addresses (`DESK_ALLOWED_SENDERS`). In a forwarded
    thread, the candidate is the **original sender** of the forwarded message.
@@ -36,6 +38,26 @@ For each desk item in the sweep, offer a contact when **all** of these hold:
 
 The same steps apply when Alex hands a session a screenshot of a signature
 directly in chat.
+
+### When a forward does not arrive
+
+- **Forward from an allowlisted address.** Mail from any address not in
+  `DESK_ALLOWED_SENDERS` lands `quarantined`, and a quarantined item is
+  reported, never processed. Adding an address is a production config change
+  that only Alex can approve.
+- **A forward can arrive late.** Wait about 20 minutes before
+  re-forwarding: a re-forward that lands later becomes a second desk
+  item for the same email. In the one case observed, on 2026-09-28 (Denver
+  time), a blank re-forward sent at 1:02 PM reached the desk at 1:20 PM. A
+  forward with a line of text, sent at 1:19 PM, arrived within a minute. The
+  cause of the delay is unknown, and one case does not show that a blank
+  forward is slower.
+- **Check Resend before debugging the hub.** If no desk item appears after
+  about 20 minutes, list Resend's received mail (`GET /emails/receiving` with
+  the hub's `RESEND_API_KEY`, from a dyno). A message missing from that list
+  has not reached our pipeline yet, and nothing in the hub will show it. An
+  empty list does not prove the message was dropped: in the case above, the
+  list was checked at about 1:14 PM, before the delayed message arrived.
 
 ## What the agent asks
 
@@ -89,7 +111,14 @@ guess a field:
   assistant's name, "prefers text". Leave out slogans, disclaimers and fraud
   warnings.
 - **Company.** Use the company as the signature spells it ("Example Title of
-  Colorado", not "ETC").
+  Colorado", not "ETC"). If the signature never names the company, you may
+  infer it from the website or email domain, but **say that it is inferred**
+  when you ask Alex. A footer naming another firm (a parent bank's security
+  disclaimer, say) is a clue to mention, not the company.
+- **Email.** Use the address as the signature displays it. If its `mailto:`
+  link points somewhere else (displayed `pat@example.com`, linked
+  `someone.else@example.com`), keep the displayed address and mention the
+  mismatch when you ask.
 - **Website.** Take the website from the link behind a globe icon. A tracking
   redirect is not the website; if the only URL is a redirect, leave `urls` out.
 

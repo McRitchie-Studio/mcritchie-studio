@@ -22,6 +22,10 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     # The name must parameterize BACK to the slug — Agent includes Sluggable, which
     # re-derives the slug on save, so "Turf Monster" -> "turf-monster" round-trips.
     Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
+    Agent.find_or_create_by!(slug: "pokemon") do |a|
+      a.name = "Pokemon"
+      a.avatar = "/agents/pokemon.webp"
+    end
   end
 
   test "Carl's heartbeat soul renders the review acts + descriptions" do
@@ -145,6 +149,20 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='action'][data-action='contest-rehearsal'][data-clip='contest-rehearsal']"
     assert_match "Watch a live NFL slot", response.body
     assert_match "Rehearse a whole contest on QA", response.body
+  end
+
+  # The general Pokémon owns an SOP but no HEARTBEAT: its page lists the
+  # wrap-it-up act with no heartbeat chip above it, and wears Pikachu.
+  test "the general Pokemon renders wrap-it-up with no heartbeat chip" do
+    get agent_path("pokemon")
+    assert_response :success
+
+    assert_select "[data-test='agent-heartbeat-section'][data-agent='pokemon']", count: 1
+    assert_select "[data-test='heartbeat-name']", count: 0
+    assert_select "[data-test='action']", count: 1
+    assert_select "[data-test='action'][data-action='wrap-it-up'][data-clip='wrap-it-up']"
+    assert_match "Hand a stuck session to a fresh one, then clear its board", response.body
+    assert_select "img[src='/agents/pokemon.webp']"
   end
 
   test "a non-heartbeat agent's page renders no heartbeat section" do

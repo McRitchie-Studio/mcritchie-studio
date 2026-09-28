@@ -112,8 +112,8 @@ class AgentsSeedTest < ActiveSupport::TestCase
   # quite "every soul declares an avatar path". components/_agent_avatar always draws
   # the deterministic initials bubble and lays the <img> over it only when `avatar` is
   # present, removing it on a 404. So a soul with NO portrait renders exactly as one
-  # whose file is missing, and pokemon and rex ship without portraits on purpose —
-  # there is no artwork for them yet, and a path to a file that does not exist is a
+  # whose file is missing, and rex ships without a portrait on purpose —
+  # there is no artwork for it yet, and a path to a file that does not exist is a
   # dead request on every board render plus a claim the next reader has to disprove.
   #
   # Asserting the path alone could not tell those two cases apart, so this asks for

@@ -17,7 +17,7 @@ Engine satellite; Rolio is the current reference case.
 |---|---|---|
 | Examples | turf-monster, the mcritchie-studio hub | app-owned client demos; Rolio is release-managed standalone |
 | Repo | own repo, inside the managed ecosystem | own repo, outside shared automation |
-| Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: unmanaged candidate; release-managed: `release_repos.yml` + `qa_environments.yml`; optional `status: reserved` row only |
+| Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: unmanaged candidate; release-managed: `release_repos.yml` (+ `qa_environments.yml` only with a QA copy; the `standalone-heroku` profile has none); optional `status: reserved` row only |
 | Runtime | `studio-engine` (auth, theme, `ErrorLog`, SSO) | standalone — **no `studio-engine`**; owns auth/UI/infra |
 | Branch model | three-rung ladder `accepted` → `release` → `main`; feature PRs target **`accepted`** | app-owned: PRs target **`main`**; release-managed: the same three-rung ladder |
 | DoR | full `bin/dor-check` (shape-tiered) | app-owned: **lite** — task + tests + error-logging; release-managed: release conductor gates apply |
@@ -54,9 +54,16 @@ deliberate decision, never a default.
   have a `status: reserved` row to protect a future port block, but remains an
   *unmanaged candidate*: app-specific docs live in its own repo, and it is
   excluded from `bin/ecosystem-build` and the hub navbar. If the studio owns
-  QA/prod hosting, add it to `config/release_repos.yml` and
-  `config/qa_environments.yml` as a **release-managed standalone** app — with a
-  `ladder:` declaration, and run `bin/release init` (see section 4). Record
+  QA/prod hosting, register it as a **release-managed standalone** app. A
+  single-use app on its own Heroku app with no QA copy follows Steffon's
+  [`app-deploy-standard`](../agents/steffon/sops/app-deploy-standard.md):
+  `bin/register-app` checks the contract and generates its
+  `config/release_repos.yml` entry on the `standalone-heroku` profile; push
+  `accepted` and `release` off `main` **before** running it, because it refuses
+  a repo without them. That profile has no QA copy, so no
+  `config/qa_environments.yml` entry. Anything else gets a hand-written entry with
+  a `ladder:` declaration (and a `config/qa_environments.yml` entry if it has QA);
+  run `bin/release init` for it (see section 4). Record
   the decision in
   [`../modules/app-registry.md`](../modules/app-registry.md) so the next agent
   doesn't re-litigate it.
@@ -101,7 +108,9 @@ exactly that for months.
 - **Managed satellite / release-managed standalone** → add the app to
   `config/release_repos.yml` **with a `ladder:` declaration** (below), then run
   `bin/release init`, which creates **both** `accepted` and `release` off
-  `main`. Feature PRs target **`accepted`**. QA deploys via `bin/release
+  `main`. A single-use app on the `standalone-heroku` profile goes the other way
+  round: push both rungs first, then `bin/register-app` writes the entry
+  ([`app-deploy-standard`](../agents/steffon/sops/app-deploy-standard.md)). Feature PRs target **`accepted`**. QA deploys via `bin/release
   prepare`; production ships through the operator-gated `bin/release ship`.
 - **App-owned standalone** → **no ladder.** Feature PRs target **`main`** and
   the app team merges its own. (`bin/agent-worktree` falls back to
@@ -256,7 +265,8 @@ later cleanup task.
   **`accepted`** (the ladder's first rung).
 - Match the studio's Ruby/Rails versions. App-owned standalone apps own their
   Heroku app / pipeline / env vars; release-managed standalone apps declare
-  those targets in `config/release_repos.yml` and `config/qa_environments.yml`.
+  those targets in `config/release_repos.yml`, plus `config/qa_environments.yml`
+  only when they have a QA copy (the `standalone-heroku` profile has none).
 - **SQLite is fine for a demo**; move to Postgres when persistence matters.
 
 ### 8. Handoff

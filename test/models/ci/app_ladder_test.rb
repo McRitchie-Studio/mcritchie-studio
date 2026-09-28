@@ -71,9 +71,13 @@ module Ci
       # (task register-showcase-apps), registered three-rung like dads-app.
       # 10and5 and search-position followed the same day
       # (task register-two-more-showcase-apps), registered the same way.
-      assert_equal %w[10and5 cyvasse dads-app mcritchie-industries mcritchie-studio portfolio
-                      prisoners-dilemma rantly search-position solana-studio studio-engine turf-monster
-                      turf-vault weekly-lock],
+      # Since 2026-09-28 apps on a deploy profile (app-deploy-standard) are
+      # derived rather than pinned: bin/register-app adds them three-rung, and
+      # repos_test.rb holds each to its profile. The bespoke repos stay pinned.
+      profile_repos = Release::Repos.config.fetch("apps", {})
+                                    .select { |_repo, meta| meta.is_a?(Hash) && meta["profile"] }.keys
+      assert_equal (%w[mcritchie-industries mcritchie-studio solana-studio studio-engine turf-monster
+                       turf-vault] + profile_repos).sort,
                    Ci::AppLadder.reportable_repos.sort
     end
 
