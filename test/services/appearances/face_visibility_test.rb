@@ -311,16 +311,15 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
   # type and the URL path ended `.jpg`. The other THIRTEEN were valid JPEGs and not one of
   # them was judged: 74 candidates filed, 0 scored, 0 chosen.
   #
-  # NOTHING IN THE METADATA COULD HAVE CAUGHT IT — declared `image/jpeg`, path `.jpg`, our
-  # own mirrored copy served as `image/jpeg`. Only the bytes say otherwise and this lane
-  # never fetches them. So the control is the BATCH, and these tests pin it.
+  # The host's own response said `text/html`; Appearances::MirrorCandidates now refuses
+  # it. The batch is still the control for any bad file that check cannot see.
 
   # A fake vendor that refuses any batch containing the poison url and answers every
   # other batch in full. It is the shape of the real 400: a whole-request refusal, not a
   # per-image one.
   def poisoned_post(poison)
     lambda do |urls|
-      raise "Anthropic answered 400: The file format is invalid or unsupported" if urls.include?(poison)
+      raise FV::Refused.new(400, "The file format is invalid or unsupported") if urls.include?(poison)
 
       rows = urls.each_with_index.map { |_u, i| %({"index":#{i},"visibility":0.9,"fill":0.8,"faces":1}) }
       answer("[#{rows.join(',')}]")
@@ -363,17 +362,35 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
   # ⚠ THE ASSERTION THE WHOLE BATCHING CHANGE EXISTS FOR. Before it, the rescue sat
   # around the single request and one refused file returned {} for everything — which the
   # caller reports as a BLIND CLASSIFIER, naming the vendor for a payload fault of ours.
-  test "a batch refused over one bad file costs that batch and no other" do
+  #
+  # FLIPPED 2026-09-28: this once expected the poisoned batch's other seven to be lost.
+  # A 400 now re-asks each image of that batch alone, so only the bad file goes unjudged.
+  test "[unit] a batch refused over one bad file costs only that file" do
     urls = (1..(FV::BATCH_SIZE * 2)).map { |i| "https://cdn.example.com/#{i}.jpg" }
     poison = urls.first
     provider = classifier
 
     judged = provider.stub(:post, poisoned_post(poison)) { provider.call(urls) }
 
-    assert_equal FV::BATCH_SIZE, judged.length,
-                 "one unreadable file must cost its own batch, never the whole shortlist"
+    assert_equal urls.length - 1, judged.length,
+                 "one unreadable file must cost itself, never its batch-mates"
     refute_includes judged.keys, poison
+    assert_includes judged.keys, urls[1], "a batch-mate of the bad file is still judged"
     assert_includes judged.keys, urls.last, "a later batch is judged in full"
+  end
+
+  # Only a 400 names the payload. A timeout or a 5xx would fail the singles too, so
+  # re-asking eight times would buy nothing.
+  test "[unit] a transport failure is not retried image by image" do
+    urls = (1..FV::BATCH_SIZE).map { |i| "https://cdn.example.com/#{i}.jpg" }
+    sent = []
+    provider = classifier
+
+    provider.stub(:post, ->(batch) { sent << batch.length; raise IOError, "reset" }) do
+      provider.call(urls)
+    end
+
+    assert_equal [FV::BATCH_SIZE], sent
   end
 
   # AND IT IS STILL A FILED FAILURE. Degrading quietly is what put three photographs of

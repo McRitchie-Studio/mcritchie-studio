@@ -13,20 +13,31 @@ class Appearances::MirrorCandidatesTest < ActiveSupport::TestCase
   # A CACHE THAT CACHES NOTHING. Mimics Studio::ImageCache.cache!'s signature and its
   # return shape — a Hash keyed by variant, whose values answer #url — and records
   # every call so the test can assert on the arguments rather than only on the answer.
+  #
+  # `served:` is what the source host answers our own fetch with: [body, Content-Type].
   class FakeCache
     Row = Struct.new(:url)
+    JPEG = "\xFF\xD8\xFF\xE0fake-jpeg".b
 
-    attr_reader :calls
+    attr_reader :calls, :fetched
 
-    def initialize(raises: nil, variants: ["original"])
+    def initialize(raises: nil, variants: ["original"], served: [JPEG, "image/jpeg"])
       @raises = raises
       @variants = variants
+      @served = served
       @calls = []
+      @fetched = []
     end
 
-    def cache!(owner:, purpose:, key_prefix:, widths:, source_url:, content_type:)
+    def fetch(url)
+      @fetched << url
+      @served
+    end
+
+    def cache!(owner:, purpose:, key_prefix:, widths:, source_url:, source_path:, content_type:)
       @calls << { owner: owner, purpose: purpose, key_prefix: key_prefix, widths: widths,
-                  source_url: source_url, content_type: content_type }
+                  source_url: source_url, content_type: content_type,
+                  bytes: File.binread(source_path) }
       raise @raises if @raises
 
       @variants.index_with { |variant| Row.new("https://bucket.s3.test/#{key_prefix}/#{variant}.png") }
@@ -175,6 +186,80 @@ class Appearances::MirrorCandidatesTest < ActiveSupport::TestCase
     assert_empty unknown,
                  "#{Mirror}::CONTENT_TYPE_BY_EXTENSION would make cache! raise " \
                  "UnsupportedContentType on #{unknown.inspect}"
+  end
+
+  # ── WHAT THE HOST ACTUALLY SERVED ───────────────────────────────────────────────
+
+  # Measured 2026-09-28: a Facebook crawler URL ending `.jpg` answered `text/html`. Both
+  # claims said JPEG; the response's own Content-Type did not.
+  test "[unit] an HTML response behind an image URL is refused" do
+    row = photo(url: "https://lookaside.fbsbx.com/lookaside/crawler/media/x.jpg")
+    cache = FakeCache.new(served: ["<html><body>login</body></html>", "text/html"])
+
+    hosted = Mirror.call([row], target: @look, cache: cache)
+
+    assert_empty hosted, "a page is not a photograph and must never reach the classifier"
+    assert_empty cache.calls, "nothing is written to the bucket"
+  end
+
+  test "[unit] the refusal is filed against the look, naming the content type" do
+    row = photo(url: "https://x.test/player.jpg")
+    cache = FakeCache.new(served: ["<html>", "text/html"])
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      Mirror.call([row], target: @look, cache: cache)
+    end
+
+    log = ErrorLog.order(:id).last
+    assert_equal @look, log.target
+    assert_includes log.message, "text/html"
+    assert_includes log.message, row.image_url
+  end
+
+  test "[unit] a refused candidate does not cost the others" do
+    good = photo(url: "https://x.test/good.jpg")
+    bad = photo(url: "https://x.test/bad.jpg")
+    cache = FakeCache.new
+    cache.define_singleton_method(:fetch) do |url|
+      url == bad.image_url ? ["<html>", "text/html"] : [FakeCache::JPEG, "image/jpeg"]
+    end
+
+    hosted = Mirror.call([good, bad], target: @look, cache: cache)
+
+    assert_equal [good.image_url], hosted.keys
+  end
+
+  test "[unit] the bytes stored are the bytes whose content type was checked" do
+    cache = FakeCache.new
+    Mirror.call([photo], cache: cache)
+
+    assert_equal FakeCache::JPEG, cache.calls.first[:bytes],
+                 "a second fetch inside the cache could serve something the check never saw"
+  end
+
+  # A host that declares nothing specific is left to the claims below, as before.
+  test "[unit] a row we already mirrored is reused, never fetched again" do
+    row = photo
+    ImageCache.create!(owner: row, purpose: Mirror::PURPOSE, variant: "original",
+                       s3_key: "reference-photos/#{row.slug}/original.png", content_type: "image/png")
+    cache = FakeCache.new(served: ["<html>", "text/html"])
+
+    hosted = Mirror.call([row.reload], target: @look, cache: cache)
+
+    assert_equal [row.image_url], hosted.keys
+    assert_empty cache.fetched, "a dead or poisoned source must not drop a copy we hold"
+  end
+
+  test "[unit] a generic binary content type is not refused" do
+    cache = FakeCache.new(served: [FakeCache::JPEG, "application/octet-stream"])
+
+    assert_equal 1, Mirror.call([photo], cache: cache).length
+  end
+
+  test "[unit] an image type we cannot store is refused" do
+    cache = FakeCache.new(served: ["<svg/>", "image/svg+xml"])
+
+    assert_empty Mirror.call([photo(url: "https://x.test/a.png")], cache: cache)
   end
 
   # ── THE DEGRADE ─────────────────────────────────────────────────────────────────

@@ -37,7 +37,7 @@ module Appearances
   # apart.
   #
   # OUR OWN FETCHER IS NOT REFUSED, and that is the measurement the whole fix rests
-  # on rather than an assumption. Studio::ImageCache.fetch_remote goes through
+  # on rather than an assumption. LiveCache.fetch (like ImageCache.fetch_remote) uses
   # `URI.open`, which sends Net::HTTP's default `User-Agent: Ruby`; measured against
   # the failing URL on 2026-09-26 it answered 200 with 222,045 bytes. A UA Wikimedia
   # accepts is all its policy asks for.
@@ -88,7 +88,10 @@ module Appearances
   # mirrored is simply never classified, which the caller already reads as "nobody
   # looked" — the honest answer, and NOT the same as "looked and saw no face".
   #
-  # IT DOES NOT FILE ITS OWN ErrorLog ROWS, and that is a judgement about noise
+  # A RESPONSE THAT IS NOT AN IMAGE is the one exception: it is refused before any
+  # bytes are stored and filed as its own ErrorLog row naming the served content type.
+  #
+  # OTHERWISE IT DOES NOT FILE ITS OWN ErrorLog ROWS, and that is a judgement about noise
   # rather than an omission. A single S3 outage would file twelve identical rows and
   # bury the one fact worth reading. The caller knows how many it shortlisted and how
   # many came back, so it files ONE row naming both numbers when the lane went blind
@@ -119,6 +122,32 @@ module Appearances
       "gif" => "image/gif"
     }.freeze
 
+    # WHAT A SOURCE HOST MAY ANSWER WITH. Blank and generic binary types say nothing,
+    # so the claims below decide; anything else must be an image type we can store.
+    GENERIC_CONTENT_TYPES = ["", "application/octet-stream", "binary/octet-stream"].freeze
+
+    # A source host answered with something that is not an image.
+    class NotAnImage < StandardError; end
+
+    # THE LIVE CACHE: our own fetch, so the response's Content-Type is read before the
+    # bytes are handed to Studio::ImageCache as a local file.
+    module LiveCache
+      def self.fetch(url)
+        require "open-uri"
+        Studio::ImageCache.validate_source_url!(url)
+        URI.open(url, read_timeout: 30, redirect: true) do |io|
+          body = io.read(Studio::ImageCache::MAX_REMOTE_BYTES + 1).to_s
+          if body.bytesize > Studio::ImageCache::MAX_REMOTE_BYTES
+            raise Studio::ImageCache::SourceTooLarge, "remote payload exceeds #{Studio::ImageCache::MAX_REMOTE_BYTES} bytes"
+          end
+
+          [body, io.content_type]
+        end
+      end
+
+      def self.cache!(**) = Studio::ImageCache.cache!(**)
+    end
+
     def self.call(photos, target: nil, cache: nil) = new(photos, target: target, cache: cache).call
 
     # `photos` are persisted AppearanceReferencePhoto rows — this object never writes
@@ -127,7 +156,7 @@ module Appearances
     # exactly one place and cannot be half-applied by a second author.
     #
     # `cache:` IS INJECTED so the suite can hand over something that neither fetches
-    # nor uploads. Unresolved and armed, the trap refuses rather than reaching out.
+    # nor uploads: it answers `fetch(url) -> [body, content_type]` and `cache!`. Unresolved and armed, the trap refuses rather than reaching out.
     def initialize(photos, target: nil, cache: nil)
       @photos = Array(photos)
       @target = target
@@ -155,25 +184,33 @@ module Appearances
                 "or inject the whole mirror at the caller's seam: " \
                 "Appearances::GatherReferencePhotos.new(look, mirror: fake)."
       )
-      Studio::ImageCache
+      LiveCache
     end
 
     def mirror(photo)
+      # A copy we already hold is reused: re-fetching would let a dead source drop it.
+      return photo.hosted_url if photo.mirrored?
+
       content_type = content_type_for(photo)
       return nil if content_type.nil?
 
-      variants = @cache.cache!(
-        owner: photo,
-        purpose: PURPOSE,
-        key_prefix: key_prefix(photo),
-        widths: [],
-        source_url: photo.image_url,
-        content_type: content_type
-      )
+      body, served = @cache.fetch(photo.image_url)
+      refuse_unless_image!(photo, served)
+
       # `cache!` RETURNS A HASH KEYED BY VARIANT, both when it uploaded and when it
       # found the object already cached — it is idempotent per (owner, purpose,
-      # variant), so a re-search re-uses the copy rather than re-fetching it.
+      # variant), so a re-search re-uses the stored copy.
+      variants = Tempfile.create(["mirror", ".bin"], binmode: true) do |file|
+        file.write(body)
+        file.flush
+        @cache.cache!(owner: photo, purpose: PURPOSE, key_prefix: key_prefix(photo), widths: [],
+                      source_url: photo.image_url, source_path: file.path, content_type: content_type)
+      end
       variants["original"]&.url
+    rescue NotAnImage => e
+      Rails.logger.warn("[#{self.class}] refused: #{e.message}")
+      FailureLog.file(e, target: @target)
+      nil
     rescue StandardError => e
       Rails.logger.warn(
         "[#{self.class}] could not mirror #{photo.image_url}: #{e.class}: #{e.message}"
@@ -181,42 +218,22 @@ module Appearances
       nil
     end
 
+    def refuse_unless_image!(photo, served)
+      type = served.to_s.split(";").first.to_s.strip.downcase
+      return if GENERIC_CONTENT_TYPES.include?(type) || Studio::ImageCache::ALLOWED_CONTENT_TYPES.include?(type)
+
+      raise NotAnImage, "#{photo.image_url} served #{type.inspect}, not an image we store"
+    end
+
     def key_prefix(photo) = "#{KEY_ROOT}/#{photo.appearance_slug}/#{photo.slug}"
 
-    # WHAT WE TELL S3 THE BYTES ARE, and why it is derived rather than read.
+    # WHAT WE TELL S3 THE BYTES ARE: the archive's own `mime_type` first, then the
+    # URL path's extension. NEITHER RESOLVES -> NO MIRROR, and the candidate goes
+    # unclassified; guessing would put a wrong Content-Type on an object we serve.
     #
-    # Studio::ImageCache.cache! demands an allowlisted content_type and does not
-    # sniff: `fetch_remote` returns a String and throws the response away, so the
-    # fetch's own Content-Type header never reaches us. The caller has to supply one
-    # from the only two things it holds.
-    #
-    # THE ARCHIVE'S OWN CLAIM LEADS. `mime_type` is what the provider said the file
-    # is — Wikimedia Commons reports one, Serper does not — and a statement by the
-    # archive about its own file outranks an extension parsed out of a URL.
-    #
-    # NEITHER RESOLVES -> NO MIRROR, and the candidate goes unclassified. That is the
-    # honest answer: guessing `image/png` over an unknown file would put a wrong
-    # Content-Type on an object we serve, and falling back to the remote URL would
-    # reintroduce the exact bug this object exists to fix.
-    #
-    # ⚠ KNOWN GAP, MEASURED 2026-09-27, AND THE REASON Appearances::FaceVisibility NOW
-    # BATCHES. Both signals here are CLAIMS ABOUT the bytes and neither reads them, so a
-    # host that serves an HTML page from a URL path ending `.jpg` is mirrored into our
-    # bucket as `original.jpg` with `content_type: "image/jpeg"`. It happened on the first
-    # real four-variant run for `justin-jefferson`: `lookaside.fbsbx.com/lookaside/crawler/`
-    # returned a page beginning `<html`, Anthropic answered
-    # `400 ... The file format is invalid or unsupported`, and because all 14 mirrored
-    # images rode ONE request, THIRTEEN valid JPEGs went unjudged with it — 74 candidates
-    # filed, 0 scored, 0 chosen.
-    #
-    # WHY THE FIX IS NOT HERE. Catching it needs the BYTES, and this object never holds
-    # them: Studio::ImageCache.cache! does the fetch internally and throws the response
-    # away. Sniffing would mean either fetching every candidate a second time or fetching
-    # once and handing `cache!` a local `source_path` instead of a `source_url` — a real
-    # restructuring of the one path that must not break. Batching bounds the damage for a
-    # tenth of a cent and needed no new fetch, so it went first. The byte check is the
-    # right next move and is still owed: with it, this run would have scored 23 of 24
-    # rather than 16.
+    # Both are claims ABOUT the bytes. The response's own Content-Type is checked
+    # separately (#refuse_unless_image!): on 2026-09-27 a `.jpg` URL served
+    # `text/html`, and an earlier comment here wrongly called that uncatchable.
     def content_type_for(photo)
       claimed = photo.mime_type.to_s.downcase.strip
       return claimed if Studio::ImageCache::ALLOWED_CONTENT_TYPES.include?(claimed)
