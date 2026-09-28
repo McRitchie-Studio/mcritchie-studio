@@ -21,7 +21,7 @@
 
         THREE STATES, NOT TWO, and conflating the last two is a count that lies. A chosen
         photograph either goes to both generators, or to the character sheet only (nothing
-        measured its face SIZE, which is what Higgsfield's prepare step turns on — four of
+        measured its face SIZE, or it is under the trainer's floor; size is what Higgsfield's prepare step turns on — four of
         six measured mints failed there), or to NEITHER (nothing looked at it at all, so
         nothing can say whose face it is). The third state is a row an older ranking chose;
         a line that folded it into the second would claim the sheet uses a photograph the
@@ -33,9 +33,10 @@
       <p data-test="trainer-subset" class="text-2xs text-warning-ink">
         <%= sheet_only.length %> of these <%= chosen.length %>
         <%= sheet_only.length == 1 ? "is" : "are" %> used by the character sheet but NOT
-        offered to Higgsfield&rsquo;s trainer: no face size was measured for
-        <%= sheet_only.length == 1 ? "it" : "them" %>, and four of six measured mints
-        failed at prepare on that variable. The reason is on each tile.
+        offered to Higgsfield&rsquo;s trainer: its face size was not measured or is below
+        the trainer&rsquo;s <%= (Appearances::ReferenceEligibility::MINT_FACE_FILL * 100).round %>%
+        floor, and four of six measured mints failed at prepare on that variable. The reason
+        is on each tile.
       </p>
     <% end %>
     <% if offered_to_neither.any? %>

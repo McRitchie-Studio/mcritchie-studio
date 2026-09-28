@@ -1253,6 +1253,74 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     assert_match "all 1 can also go to the trainer", summary.sentence
   end
 
+  # ---- the everything-refused alarm ----------------------------------------------
+  #
+  # Production 2026-09-28, Justin Jefferson: 6 scored, 6 sized, 6 refused face_too_small,
+  # 0 chosen — and the flash was a green notice that never named the cause.
+  test "a run whose every scored candidate was refused alerts and names the dominant refusal" do
+    summary = Appearances::GatherReferencePhotos::Summary.new(
+      configured: true, provider_name: "serper", queries: %w[a b c d], returned: 80,
+      unique: 78, filed: 78, chosen: 0, rejected: 78, unfetchable: 0, unparsed: 0,
+      ranked_by: :face_size, scored: 6, sized: 6, mint_ready: 0, shortlisted: 24,
+      attempted: 14, per_query: {},
+      refusals: { "face_too_small" => 6 }
+    )
+
+    assert summary.nothing_chosen?
+    assert_equal :alert, summary.flash_key
+    assert_match(/0 chosen as references: 6 of 6 scored refused as face_too_small/,
+                 summary.sentence)
+    assert_match "below the #{(Appearances::ReferenceEligibility::SHEET_FACE_FILL * 100).round}% floor",
+                 summary.sentence
+    assert_no_match(/0 of 0 carry/, summary.sentence, "a zero denominator reads as a contradiction")
+  end
+
+  test "a run that chose something is not the everything-refused alarm" do
+    photo = hit("https://cdn.example.com/a.jpg", position: 1)
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [photo]),
+      faces: FakeFaces.new({ photo.image_url => { visibility: 0.9, fill: 0.8 } }), mirror: mirror
+    )
+
+    refute summary.nothing_chosen?
+    assert_equal :notice, summary.flash_key
+  end
+
+  test "a run where face size refused everything is filed as an alert naming face size" do
+    tiny = hit("https://cdn.example.com/tiny.jpg", position: 1)
+    distant = hit("https://cdn.example.com/distant.jpg", position: 2)
+    below = Appearances::ReferenceEligibility::SHEET_FACE_FILL - 0.1
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [tiny, distant]),
+      faces: FakeFaces.new({ tiny.image_url => { visibility: 0.9, fill: below },
+                             distant.image_url => { visibility: 0.9, fill: below } }),
+      mirror: mirror
+    )
+
+    assert_equal 0, summary.chosen
+    assert_equal({ "face_too_small" => 2 }, summary.refusals)
+    assert_equal :alert, summary.flash_key
+    assert_match "2 of 2 scored refused as face_too_small", summary.sentence
+  end
+
+  # The trainer's floor no longer starves the free sheet: a clear half-frame portrait is
+  # a reference, and only the trainer refuses it.
+  test "a face between the two floors is chosen for the sheet but not mint-ready" do
+    photo = hit("https://cdn.example.com/portrait.jpg", position: 1)
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(results: [photo]),
+      faces: FakeFaces.new({ photo.image_url => { visibility: 0.85, fill: 0.5 } }), mirror: mirror
+    )
+
+    assert_equal 1, summary.chosen
+    assert_equal 0, summary.mint_ready, "a sheet-only face is not trainer-ready"
+    assert_match "0 of 1 clear the trainer's face-size floor", summary.sentence
+    assert_equal :notice, summary.flash_key
+  end
+
   # THE SENTENCE IS THE SUMMARY'S, not each controller's. It lived twice, verbatim, in
   # PhotoScoutingController and AppearancesController — so the clause above would have
   # had to be added in two places, and could have been added in one.
