@@ -771,8 +771,10 @@ apps:
     #
     # HONEST CAVEATS. (1) Alex's words choose the Eco dyno on cost; "no QA
     # copy" is that choice read through his cyvasse rule, not a separate
-    # sentence of his. Change the quote here AND in repos_test.rb's
-    # QA_EXEMPT_BY_OPERATOR_DECISION together. (2) Eco
+    # sentence of his. Since 2026-09-28 this quote is HISTORY: dads-app is on
+    # profile standalone-heroku, whose single fleet decision (config/app_profiles.yml
+    # → qa_decision) is the grant repos_test.rb checks; the quote is kept there too,
+    # under history. (2) Eco
     # dyno hours are one pool per Heroku account, so a sleeping `dads-app-qa`
     # Eco dyno may cost nothing extra; if Alex takes that as his free tier, this
     # key comes out and dads-app earns QA evidence like any app.
@@ -831,9 +833,10 @@ apps:
   #   "Should the four showcase apps get QA copies, or ship straight to
   #   production like Cyvasse and dads-app?", he selected the option
   #   "No QA copies (Recommended)".
-  #   The option text was written by the agent; the choice was his. The guard
-  #   matches that string exactly, in repos_test.rb's
-  #   QA_EXEMPT_BY_OPERATOR_DECISION; change both together.
+  #   The option text was written by the agent; the choice was his. Since
+  #   2026-09-28 this is HISTORY: these apps are on profile standalone-heroku,
+  #   whose fleet decision (config/app_profiles.yml → qa_decision) is the grant
+  #   repos_test.rb checks; this selection is kept there under history.
   #
   # WHAT THE EXEMPTION COSTS, said plainly: a change to any of the four reaches
   # production without a human-reviewable QA deploy. Its gates are CI (every
@@ -909,9 +912,10 @@ apps:
   # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
   # EXEMPT under the SAME operator decision as the four: Alex selected
   # "No QA copies (Recommended)" for the showcase apps, and on 2026-09-26 asked
-  # for these two to be migrated the same way. No new decision was taken, so
-  # repos_test.rb's QA_EXEMPT_BY_OPERATOR_DECISION cites the same string for
-  # both; change it everywhere together. The cost is the four's: a change
+  # for these two to be migrated the same way. No new decision was taken. Since
+  # 2026-09-28 both are on profile standalone-heroku, whose fleet decision
+  # (config/app_profiles.yml → qa_decision) is the grant repos_test.rb checks.
+  # The cost is the four's: a change
   # reaches production without a human-reviewable QA deploy, gated by CI and
   # review, and the `shipped` stamp still needs each app's release -> main record.
   10and5:
