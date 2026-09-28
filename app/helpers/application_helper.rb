@@ -1136,7 +1136,7 @@ module ApplicationHelper
     }
   end
 
-  # The five soul-avatar heartbeat launchers shown on the standalone Workflows
+  # The six soul-avatar launchers shown on the standalone Workflows
   # card (tasks/_heartbeats_card on /deployments, one tasks/_heartbeat_launcher
   # per soul): a soul face (linking to /agents/<slug>) over a
   # PROMPT-LIKE row 1 plus one or more copyable atom acts. Every row is an
@@ -1183,7 +1183,9 @@ module ApplicationHelper
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task"],                label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra", "workspace-launch"], label: "Ship + sweep", title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
       { agent_slug: "xan",     heartbeat: "Xan Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Xan — grade, share insights, + full DevOps cycle heartbeat" },
-      { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" }
+      { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" },
+      # The general builder has no HEARTBEAT, so its row carries acts only.
+      { agent_slug: "pokemon", heartbeat: nil, actions: ["wrap-it-up"], label: "Build + wrap up", title: "Pokémon — hand a stuck session to a fresh one, then clear its board" }
     ]
   end
 
@@ -1204,7 +1206,8 @@ module ApplicationHelper
     "grade-events"      => "Grade 10 recent events for quality",
     "share-insights"    => "Share the banked insights into the docs",
     "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
-    "deploy-with-task"  => "Expedite ONE task to prod (asks: what task?)"
+    "deploy-with-task"  => "Expedite ONE task to prod (asks: what task?)",
+    "wrap-it-up"        => "Hand a stuck session to a fresh one, then clear its board"
   }.freeze
 
   def action_description(act)
@@ -1248,7 +1251,8 @@ module ApplicationHelper
     "grade-events"      => "🧑🏻‍🏫",
     "share-insights"    => "📡",
     "full-cycle"        => "🌎",
-    "deploy-with-task"  => "⚡"
+    "deploy-with-task"  => "⚡",
+    "wrap-it-up"        => "🎁"
   }.freeze
 
   def action_icon(act)

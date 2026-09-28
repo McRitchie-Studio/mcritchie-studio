@@ -22,6 +22,11 @@ feel free to do each without waiting to be asked:
 
 **Always be closing** — toward the *right* close, never a hurried one.
 
+**Looping, not finishing?** If this session's `designed` column keeps growing while
+little ships, this ceremony is the wrong close. Run `wrap-it-up`
+(`/Users/alex/projects/mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md`)
+instead: it hands the work to a fresh session.
+
 Absolute paths used below:
 - McRitchie studio: `/Users/alex/projects/mcritchie-studio`
 - Claude memory dir, when running under Claude:

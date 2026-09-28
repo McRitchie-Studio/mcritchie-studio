@@ -179,8 +179,9 @@ test("the Workflows carousel turns every five minutes, sliding up, and holds whi
   await expect(card).toHaveAttribute("data-active-agent", order[2]);
 
   // The dots turn it by hand, and wrap round: the last dot's soul, then the first again.
-  await card.locator(`[data-test='soul-carousel-dot'][data-agent='${order[4]}']`).click();
-  await expect(card).toHaveAttribute("data-active-agent", order[4]);
+  const last = order[order.length - 1];
+  await card.locator(`[data-test='soul-carousel-dot'][data-agent='${last}']`).click();
+  await expect(card).toHaveAttribute("data-active-agent", last);
   await page.mouse.move(0, 0);
   await page.clock.fastForward(ms);
   await expect(card).toHaveAttribute("data-active-agent", order[0]);

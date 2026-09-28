@@ -23,7 +23,9 @@
     </div>
     <p class="text-muted text-xs mb-3">Copy any phrase to launch it as <%= agent.name %>.</p>
 
-    <%# The soul heartbeat phrase itself — a copyable header chip. %>
+    <%# The soul heartbeat phrase itself — a copyable header chip. The general
+        Pokémon has no HEARTBEAT, so its section lists acts only. %>
+    <% if launcher[:heartbeat].present? %>
     <button type="button"
             x-data="{ copied: false }"
             class="group relative flex w-full items-center gap-2 rounded-lg border border-subtle bg-inset px-3 py-2 mb-3 text-left transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
@@ -37,6 +39,7 @@
       <span class="ml-auto shrink-0 text-[10px] text-muted group-hover:text-body" x-show="!copied">Copy</span>
       <span class="ml-auto shrink-0 text-[10px] text-mint-300" x-show="copied" x-cloak x-transition.opacity>Copied &#10003;</span>
     </button>
+    <% end %>
 
     <%# One copyable row per launcher act: phrase chip + one-line description. %>
     <div class="space-y-2">
