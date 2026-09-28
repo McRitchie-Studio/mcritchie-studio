@@ -126,8 +126,8 @@ Anything already on the app's `accepted` rides the first release, so read
 ## Changing or leaving the profile
 
 - **To change every app of the shape** (say, a new deploy branch): edit the
-  profile in `config/app_profiles.yml`, re-run `bin/register-app` for each app
-  (or edit each entry to match), and let the guard prove them equal.
+  profile in `config/app_profiles.yml`, edit each app's entry to match
+  (`bin/register-app` only adds a new slug), and let the guard prove them equal.
 - **To give one app a QA copy**, or any bespoke key: remove its `profile:` line
   and edit its entry by hand. It is then a bespoke entry again, and the
   QA-exemption guard requires either QA evidence or a cited decision.

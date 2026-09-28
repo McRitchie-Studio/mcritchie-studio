@@ -94,7 +94,7 @@ module AppProfile
     header = ["  #{slug}:",
               "    # Registered by bin/register-app on profile #{entry['profile']}. The contract, the",
               "    # QA decision and how to leave the profile: config/app_profiles.yml and the",
-              "    # app-deploy-standard SOP. Re-run bin/register-app to change it; repos_test.rb",
+              "    # app-deploy-standard SOP. To change it, edit it by hand; repos_test.rb",
               "    # fails if this entry drifts from the profile."]
     header += notes.map { |note| "    # #{note}" }
     "#{header.join("\n")}\n#{body}"
