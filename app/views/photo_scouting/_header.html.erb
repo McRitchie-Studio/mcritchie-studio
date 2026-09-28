@@ -27,10 +27,10 @@
   </div>
 
   <p class="text-sm text-body max-w-2xl">
-    What the search found, what the ranking picked, and
+    What the searches found, what the ranking picked, and
     <strong class="text-heading">what you would have picked instead</strong>.
-    Judge the search as well as the pick: every candidate it returned is below, in the
-    order it returned them.
+    Judge the searches as well as the pick: every candidate they returned is below, each
+    one carrying the search that found it.
   </p>
 
   <% if @appearance %>
@@ -39,7 +39,7 @@
         <% if @search_available %>
           <p class="text-xs text-heading font-bold">
             Searching with <span class="font-mono"><%= @search_provider %></span>
-            &middot; <%= pluralize(@search_queries.length, "query") %> per search
+            &middot; one press buys <%= pluralize(@search_queries.length, "query") %>
           </p>
           <ul data-test="search-queries" class="text-2xs text-muted break-words space-y-0.5 mt-0.5">
             <% @search_queries.each do |query| %>
