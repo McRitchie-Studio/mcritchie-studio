@@ -198,9 +198,10 @@ module Espn
 
     private
 
-    # ONE ROW PER CALL, NOT ONE PER DEAD ROSTER. The census is the finding; 32 rows
-    # saying "ESPN is down" is the noise that teaches an operator to stop opening
-    # /admin/error_logs. It is filed on the RAISING branch too, because the
+    # ONE ROW PER CALL, NOT ONE PER DEAD ROSTER. The census is the finding; a row per
+    # roster would be up to 32 of them (TEAM_ABBREVS.size is 32, measured with
+    # `bin/rails runner 'puts Espn::PlayerProfile::TEAM_ABBREVS.size'`) all saying "ESPN
+    # is down" — the noise that teaches an operator to stop opening /admin/error_logs. It is filed on the RAISING branch too, because the
     # exception's only reader today is Athletes::AcquireOrValidate#call, which turns
     # Athletes::SourceUnavailable into a printed refusal — stdout again, and stdout is
     # what `bundle exec rails … >/dev/null` throws away.

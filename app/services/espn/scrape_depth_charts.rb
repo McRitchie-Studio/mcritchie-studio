@@ -284,9 +284,9 @@ class Espn::ScrapeDepthCharts
   # `bundle exec rails espn:scrape_depth_charts >/dev/null` — stdout discarded by
   # intent. The tally lib/tasks/espn.rake prints survives on stderr and carries
   # COUNTS, never causes, so by the time anyone asks why a chart is stale the answer
-  # is gone. MEASURED on this branch before the change: grep -rE "ErrorLog" over
-  # app/services/espn/ and lib/tasks/espn.rake returned zero hits while two sibling
-  # feed services file rows (Nflverse::SeedPlayers#record_outage,
+  # is gone. MEASURED with `git grep -cE "ErrorLog|rescue_and_log" origin/accepted --
+  # app/services/espn lib/tasks/espn.rake`, which exits 1 with no output: zero hits,
+  # while two sibling feed services file rows (Nflverse::SeedPlayers#record_outage,
   # Appearances::ImageSearch::WikimediaCommons).
   #
   # IT IS FILED HERE AND NOT ON scrape_team'S `unless groups`, because those are two
@@ -305,8 +305,10 @@ class Espn::ScrapeDepthCharts
   # which would end a 32-team walk on the first dead team — the exact failure this
   # rescue exists to prevent.
   #
-  # BOUNDED AT ONE ROW PER TEAM, so 32 in the worst run, and the worst run does not
-  # reach here: an unreadable teams index raises out of resolve_team_ids! before the
+  # BOUNDED AT ONE ROW PER TEAM, so 32 in the worst run — TEAM_ABBREV_TO_SLUG.size is
+  # 32, measured with `bin/rails runner 'puts
+  # Espn::ScrapeDepthCharts::TEAM_ABBREV_TO_SLUG.size'`. The worst run does not reach
+  # here at all: an unreadable teams index raises out of resolve_team_ids! before the
   # loop starts, which is ONE row from the lane rather than 32 from this line.
   #
   # NOTHING CREDENTIAL-SHAPED CAN REACH THE ROW, structurally rather than by

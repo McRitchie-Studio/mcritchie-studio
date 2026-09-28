@@ -575,11 +575,13 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
 
   # ─── the cause of a tolerated failure ───────────────────────────────────────
   #
-  # MEASURED on this branch's parent (6dbc6a93^): `grep -rE "ErrorLog|rescue_and_log"
-  # app/services/espn/ lib/tasks/espn.rake` returned ZERO hits, so the `puts` in
-  # fetch_groups' rescue was the whole record of a dead team — and
-  # bin/ecosystem-build runs the lane as
-  # `bundle exec rails espn:scrape_depth_charts >/dev/null`, which throws that away.
+  # MEASURED at this branch's base with
+  # `git grep -cE "ErrorLog|rescue_and_log" origin/accepted -- app/services/espn
+  # lib/tasks/espn.rake`, which exits 1 with no output: ZERO hits. So the `puts` in
+  # fetch_groups' rescue was the whole record of a dead team — and bin/ecosystem-build
+  # runs the lane as `bundle exec rails espn:scrape_depth_charts >/dev/null`, which
+  # throws that away. The ref is named rather than a SHA pinned; the SHA it resolved to
+  # while this was written was 69ee226c.
 
   test "a tolerated per-team fetch failure files an ErrorLog carrying the cause" do
     service = Stubbed.new(buffalo_with_dead_depth_chart, team_abbrev: "buf")
