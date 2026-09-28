@@ -642,10 +642,17 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
   test "a fault in our own abbreviation map is not filed as a tolerated team" do
     # MissingTeamId is re-raised through the per-team rescue WITHOUT a row, so the one
     # exception the lane's own rescue will file cannot be filed twice.
+    #
+    # DRIVEN THROUGH scrape_team, NOT `call`, AND THAT IS THE WHOLE TEST. Through
+    # `call`, resolve_team_ids! raises before the loop, so fetch_groups is never
+    # entered and the `rescue MissingTeamId` this case is about never executes —
+    # measured: adding a FailureLog.file call to that rescue left the `call` form
+    # GREEN. scrape_team is the entry point when a caller drives one team, and it is
+    # the only way in that reaches the rescue.
     service = Stubbed.new({ TEAMS_INDEX => teams_index({ "mia" => "15" }) })
 
     assert_no_difference -> { ErrorLog.count } do
-      assert_raises(Espn::ScrapeDepthCharts::MissingTeamId) { service.call }
+      assert_raises(Espn::ScrapeDepthCharts::MissingTeamId) { service.send(:scrape_team, "buf", @bills.slug) }
     end
   end
 
