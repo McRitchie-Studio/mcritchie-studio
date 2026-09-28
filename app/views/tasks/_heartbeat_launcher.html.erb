@@ -20,7 +20,8 @@
           Agent.new(slug: launcher[:agent_slug], name: launcher[:agent_slug].titleize) %>
 <% actions = local_assigns[:actions] || launcher[:actions] %>
 <% layout = local_assigns.fetch(:layout, :row) %>
-<% rows = [["heartbeat", launcher[:heartbeat]]] + actions.map { |a| ["action", a] } %>
+<%# A soul with no HEARTBEAT (the general Pokémon) renders its acts only. %>
+<% rows = (launcher[:heartbeat].present? ? [["heartbeat", launcher[:heartbeat]]] : []) + actions.map { |a| ["action", a] } %>
 <% avatar = capture do %>
   <%= link_to agent_path(launcher[:agent_slug]),
               class: "inline-flex shrink-0 rounded-full ring-2 ring-surface transition hover:ring-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",

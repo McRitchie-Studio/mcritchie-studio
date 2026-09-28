@@ -630,14 +630,15 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_not_includes plain, "<span"
   end
 
-  test "[unit] heartbeat_launchers maps the five souls to prompt + atom-act launchers" do
+  test "[unit] heartbeat_launchers maps the six souls to prompt + atom-act launchers" do
     launchers = heartbeat_launchers
 
-    assert_equal 5, launchers.size
-    assert_equal %w[carl avi steffon xan turf-monster], launchers.map { |l| l[:agent_slug] }
+    assert_equal 6, launchers.size
+    assert_equal %w[carl avi steffon xan turf-monster pokemon], launchers.map { |l| l[:agent_slug] }
     # Row 1 is the prompt-like soul heartbeat phrase; acts are the launcher atoms.
+    # The general Pokémon owns no HEARTBEAT, so its row 1 is nil and it renders acts only.
     assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Xan Heartbeat",
-                  "Turf Monster Heartbeat"],
+                  "Turf Monster Heartbeat", nil],
                  launchers.map { |l| l[:heartbeat] }
     # Acts read across the souls in pipeline order: review → assemble → ship.
     # deploy-with-task trails Avi's list — direct-invoke only, never composed.
@@ -651,6 +652,8 @@ class ApplicationHelperTest < ActionView::TestCase
     # an operator asked to be able to kick the whole contest cycle off from the
     # card rather than remembering a command.
     assert_equal ["live-score-watch", "contest-rehearsal"], launchers[4][:actions]
+    # The general Pokémon carries the wrap-it-up takeover, a registered SOP.
+    assert_equal ["wrap-it-up"], launchers[5][:actions]
 
     # archive-shipped is NOT a launcher act any more: production-deploy runs it as
     # its final step. It stays a registered SOP invocable by name — this asserts the
@@ -731,7 +734,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # The sidebar variant: one card, every soul stacked vertically, nothing tucked
     # behind a toggle — the sidebar has the room the half-width card never did.
     assert_select "[data-test='heartbeats-card']", count: 1
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeats-list'] [data-test='heartbeat-launcher'][data-layout='row']", count: 5
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeats-list'] [data-test='heartbeat-launcher'][data-layout='row']", count: heartbeat_launchers.size
     assert_select "[data-test='heartbeat-compact-toggle']", count: 0
     assert_select "[x-show='heartbeatsExpanded']", count: 0
     # Steffon's column swapped archive-shipped for clean-infra; the archive now
@@ -748,18 +751,24 @@ class ApplicationHelperTest < ActionView::TestCase
       scope = "[data-test='heartbeat-launcher'][data-agent='#{launcher[:agent_slug]}']"
       assert_select "#{scope} a[data-test='heartbeat-avatar-link'][href=?]", "/agents/#{launcher[:agent_slug]}"
       assert_select "#{scope} [data-test='heartbeat-soul-name']", count: 1
-      assert_select "#{scope} button[data-row='heartbeat'][data-clip=?]", launcher[:heartbeat] do
-        assert_select "code", text: launcher[:heartbeat]
+      heartbeat_rows = launcher[:heartbeat].present? ? 1 : 0
+      if heartbeat_rows == 1
+        assert_select "#{scope} button[data-row='heartbeat'][data-clip=?]", launcher[:heartbeat] do
+          assert_select "code", text: launcher[:heartbeat]
+        end
+      else
+        # A soul with no HEARTBEAT (the general Pokémon) renders no row 1 at all.
+        assert_select "#{scope} button[data-row='heartbeat']", count: 0
       end
       launcher[:actions].each do |act|
         assert_select "#{scope} button[data-row='action'][data-clip=?]", act do
           assert_select "code", text: act
         end
       end
-      # Exactly (1 heartbeat + N acts) independently-copyable rows per launcher, and a
+      # Exactly (heartbeat + N acts) independently-copyable rows per launcher, and a
       # description beside every one of them.
-      assert_select "#{scope} button[data-clip]", count: 1 + launcher[:actions].size
-      assert_select "#{scope} [data-test='heartbeat-row-description']", count: 1 + launcher[:actions].size
+      assert_select "#{scope} button[data-clip]", count: heartbeat_rows + launcher[:actions].size
+      assert_select "#{scope} [data-test='heartbeat-row-description']", count: heartbeat_rows + launcher[:actions].size
     end
     # A described act says what it does (ACTION_DESCRIPTIONS), and the heartbeat row
     # says what the soul does, without repeating the soul's name.
@@ -775,7 +784,11 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='clean-infra']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] [data-copy-row-index='4'] button[data-clip='full-cycle']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] [data-copy-row-index='2'] button[data-clip='live-score-watch']"
-    # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly five.
+    # Pokémon has no heartbeat, so wrap-it-up is its FIRST row, described by what it does.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='pokemon'] [data-copy-row-index='1'] button[data-clip='wrap-it-up']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='pokemon'] [data-copy-row-index='1'] [data-test='heartbeat-row-description']",
+                  text: action_description("wrap-it-up")
+    # Each soul heartbeat row (row 1) carries a leading ❤️; Pokémon has none, so five.
     assert_select "[data-test='heartbeat-heart']", count: 5
     assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 5
     # Every act carries a leading icon — a 1️⃣–3️⃣ keycap for the three ordered release
@@ -790,6 +803,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "button[data-row='action'][data-clip='share-insights'] [data-test='action-icon']", text: "📡"
     assert_select "button[data-row='action'][data-clip='full-cycle'] [data-test='action-icon']", text: "🌎"
     assert_select "button[data-row='action'][data-clip='deploy-with-task'] [data-test='action-icon']", text: "⚡"
+    assert_select "button[data-row='action'][data-clip='wrap-it-up'] [data-test='action-icon']", text: "🎁"
     # One icon per act row. DERIVED, not counted by hand: the literal 10 here had
     # to be edited every time a soul gained an act, and an assertion whose only
     # failure mode is "someone added a launcher" teaches the next person to bump
@@ -1268,7 +1282,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
   def seed_workflow_souls
     { "carl" => "Carl", "avi" => "Avi", "steffon" => "Steffon", "xan" => "Xan",
-      "turf-monster" => "Turf Monster" }.each do |slug, name|
+      "turf-monster" => "Turf Monster", "pokemon" => "Pokémon" }.each do |slug, name|
       Agent.find_or_create_by!(slug: slug) { |agent| agent.name = name }
     end
   end
