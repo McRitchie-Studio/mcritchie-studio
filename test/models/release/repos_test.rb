@@ -1,4 +1,5 @@
 require "test_helper"
+require Rails.root.join("bin/lib/app_profile").to_s
 require "shellwords"
 require "open3"
 # The seam that answers "what does CI's Ruby suite amount to, as one command?" — a
@@ -498,16 +499,24 @@ class Release::ReposTest < ActiveSupport::TestCase
   # asked for 10and5 and search-position to be migrated the same way, so they
   # cite the same selection: no new decision was taken.
   SHOWCASE_QA_DECISION = "No QA copies (Recommended)".freeze
-  QA_EXEMPT_BY_OPERATOR_DECISION = {
-    "cyvasse" => "No cyvasse-qa unless there is a free teir we can use",
-    "dads-app" => "anyway we can get it cheaper than $12/m",
-    "prisoners-dilemma" => SHOWCASE_QA_DECISION,
-    "weekly-lock" => SHOWCASE_QA_DECISION,
-    "rantly" => SHOWCASE_QA_DECISION,
-    "portfolio" => SHOWCASE_QA_DECISION,
-    "10and5" => SHOWCASE_QA_DECISION,
-    "search-position" => SHOWCASE_QA_DECISION
+  #
+  # SINCE 2026-09-28 THESE ARE HISTORY, NOT THE GRANT. Every app above now declares
+  # `profile: standalone-heroku`, and the profile carries ONE fleet decision
+  # (config/app_profiles.yml → qa_decision), so the grant is read from there and
+  # this list only has to name deployable exempt apps that are NOT on a profile.
+  # The per-app quotes stay in release_repos.yml's comments and in the profile's
+  # history.
+  QA_EXEMPT_BY_OPERATOR_DECISION = {}.freeze
+
+  # The fleet decision a profile carries, verbatim. Change it here and in
+  # config/app_profiles.yml together.
+  PROFILE_QA_DECISIONS = {
+    "standalone-heroku" => "Yes to both"
   }.freeze
+
+  def profile_repos
+    Release::Repos.config.fetch("apps", {}).select { |_repo, meta| meta.is_a?(Hash) && meta["profile"] }.keys
+  end
 
   test "[unit] a DEPLOYABLE exempt repo is exempt only by a cited operator decision" do
     raw = File.read(Rails.root.join("config/release_repos.yml"))
@@ -518,7 +527,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     SHOWCASE_APPS.each_key do |repo|
       assert_includes deployable_exempt, repo, "#{repo} is exempt by decision, not by QA not applying"
     end
-    deployable_exempt.each do |repo|
+    (deployable_exempt - profile_repos).each do |repo|
       decision = QA_EXEMPT_BY_OPERATOR_DECISION[repo]
       assert decision, "#{repo} has a prod_deploy and declares qa_evidence: exempt without an operator " \
                        "decision — a deployable app must earn QA evidence unless the operator ruled otherwise"
@@ -531,8 +540,38 @@ class Release::ReposTest < ActiveSupport::TestCase
   test "[unit] every cited operator decision belongs to a deployable exempt repo" do
     deployable_exempt = Release::Repos.qa_evidence_exempt_repos.select { |repo| Release::Repos.prod_deploy(repo) }
 
-    assert_equal QA_EXEMPT_BY_OPERATOR_DECISION.keys.sort, deployable_exempt.sort,
+    assert_equal QA_EXEMPT_BY_OPERATOR_DECISION.keys.sort, (deployable_exempt - profile_repos).sort,
                  "the operator-decision list and the deployable exempt set must name the same repos"
+  end
+
+  # --- deploy profiles (config/app_profiles.yml, bin/register-app) ---
+  #
+  # An entry that declares `profile:` is GENERATED from that profile, and must
+  # stay exactly what the profile expands to: the readers of this registry see
+  # only the expanded keys, so a hand edit that drifts would change a deploy
+  # while the profile, the SOP and bin/register-app still describe the old one.
+  test "[unit] every entry declaring a profile is exactly that profile's expansion" do
+    assert_operator profile_repos.length, :>=, 8, "guards the guard: the eight standalone apps declare the profile"
+    profile_repos.each do |repo|
+      drift = AppProfile.drift(Release::Repos.config.dig("apps", repo))
+      assert_empty drift, "#{repo} drifted from profile #{Release::Repos.config.dig('apps', repo, 'profile')}: #{drift.join('; ')}"
+    end
+  end
+
+  # A profile that makes its apps QA-exempt carries ONE operator decision, quoted
+  # verbatim in config/app_profiles.yml. The grant is the profile's, so a profile
+  # app needs no per-app quote, but the profile's own quote must be real.
+  test "[unit] a QA-exempt profile carries a verbatim operator decision" do
+    AppProfile.profiles.each do |name, profile|
+      next unless profile.dig("entry", "qa_evidence") == Release::Repos::QA_EVIDENCE_EXEMPT
+
+      decision = profile.dig("qa_decision", "answer")
+      assert_equal PROFILE_QA_DECISIONS[name], decision,
+                   "#{name} exempts its apps from QA, so it must carry the operator's decision verbatim"
+      refute_empty profile.dig("qa_decision", "asked").to_s, "#{name}: record what was asked, not just the answer"
+    end
+    assert_equal PROFILE_QA_DECISIONS.keys.sort,
+                 AppProfile.profiles.select { |_n, p| p.dig("entry", "qa_evidence") == Release::Repos::QA_EVIDENCE_EXEMPT }.keys.sort
   end
 
   test "[unit] the Anchor-program exemption is not a deployable app's" do

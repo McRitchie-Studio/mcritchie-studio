@@ -647,6 +647,7 @@ apps:
       branch: main
       smoke_url: https://www.mcritchie.industries
   cyvasse:
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     # Managed studio-engine satellite (epic cyvasse-revival, registered
     # 2026-09-25): Alex's first app (2014-15), rebuilt fresh on Rails 8.1.
@@ -705,6 +706,7 @@ apps:
     # the `shipped` stamp still needs cyvasse's real release -> main record.
     qa_evidence: exempt
   dads-app:
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     # RELEASE-MANAGED STANDALONE (epic dads-app, registered 2026-09-26): a public
     # photo slideshow of Greig McRitchie, Alex's dad, at greigmcritchie.com. It
@@ -839,6 +841,7 @@ apps:
   # member at the QA stamp forever. The exemption is QA-only: the `shipped`
   # stamp still needs each app's real release -> main record.
   prisoners-dilemma:
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     prod_deploy:
       strategy: git_push_heroku
@@ -849,6 +852,7 @@ apps:
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
   weekly-lock:
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     prod_deploy:
       strategy: git_push_heroku
@@ -859,6 +863,7 @@ apps:
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
   rantly:
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     prod_deploy:
       strategy: git_push_heroku
@@ -869,6 +874,7 @@ apps:
     # Alex selected "No QA copies (Recommended)" (see the block above).
     qa_evidence: exempt
   portfolio:
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     prod_deploy:
       strategy: git_push_heroku
@@ -909,6 +915,7 @@ apps:
   # reaches production without a human-reviewable QA deploy, gated by CI and
   # review, and the `shipped` stamp still needs each app's release -> main record.
   10and5:
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     prod_deploy:
       strategy: git_push_heroku
@@ -920,6 +927,7 @@ apps:
     # Alex selected "No QA copies (Recommended)" (see the four's block above).
     qa_evidence: exempt
   search-position:
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     prod_deploy:
       strategy: git_push_heroku
