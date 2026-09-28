@@ -45,10 +45,10 @@ directly in chat.
   `DESK_ALLOWED_SENDERS` lands `quarantined`, and a quarantined item is
   reported, never processed. Adding an address is a production config change
   that only Alex can approve.
-- **Type a line of text above the forward.** A blank re-forward of a thread
-  that had already gone to team@ never reached Resend. Measured 2026-09-28: a
-  12:30 PM forward arrived, a blank 1:02 PM re-forward of the same thread never
-  did, and a 1:19 PM forward with one line of text arrived within a minute. The
+- **Type a line of text above the forward.** In the one case observed, a
+  blank re-forward of a thread that had already gone to team@ never reached
+  Resend. On 2026-09-28 (Denver time), a 12:30 PM forward arrived, a blank
+  1:02 PM re-forward of the same thread never did, and a 1:19 PM forward with one line of text arrived within a minute. The
   likely cause is the team@ Google group dropping a near-duplicate; that was
   not confirmed.
 - **Check Resend before the hub.** If no desk item appears within a few
