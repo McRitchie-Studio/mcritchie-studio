@@ -341,24 +341,30 @@ The Rails apps read `.env` via Rails' default dotenv (or the `dotenv-rails` gem)
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app mcritchie-studio)
 GOOGLE_CLIENT_ID=...                  # Google Cloud Console
 GOOGLE_CLIENT_SECRET=...
-# ANTHROPIC_API_KEY is NOT FILED in any vault, but IT IS ON PROD. Re-measured 2026-09-28:
-#   heroku config --json --app mcritchie-studio | jq 'length'   # 46 — the control; 0 means the read failed
-#   heroku config --json --app mcritchie-studio | jq '.ANTHROPIC_API_KEY != null and .ANTHROPIC_API_KEY != ""'
-# answered true, and the same expression on a name that is absent answered false. The
-# "absent from prod" half of this line was wrong; the vault half stands (no "anthropic" item
-# in any vault the agent token reads — credential-inventory.md records where it is NOT).
-# So a rebuild copies it off prod in the CAPTURE form the RAILS_MASTER_KEY line above uses,
-# which puts the value in the variable instead of your scrollback:
+# ANTHROPIC_API_KEY is NOT FILED in any vault, but IT IS ON PROD. Ask by NAME, never by
+# printing the value — this answers true only when the name is present AND non-empty:
+heroku config --json --app mcritchie-studio | jq 'length'                        # control: 46; 0 = read failed
+heroku config --json --app mcritchie-studio | jq '(.ANTHROPIC_API_KEY // "") != ""'   # 2026-09-28: true
+# The same expression on a name that is absent answered false, which is the control that
+# makes the true mean something. (Drop the `// ""` and it answers TRUE for an absent name:
+# null != "" is true. Measured the same day.) So the "absent from prod" half of this line
+# was wrong. The vault half stands: no "anthropic" item in any vault the agent token reads,
+# and docs/agents/modules/credential-inventory.md records where it is NOT.
+#
+# A rebuild copies it off prod in the CAPTURE form the RAILS_MASTER_KEY line above uses,
+# which puts the value in the variable instead of in your scrollback:
 ANTHROPIC_API_KEY=$(heroku config:get ANTHROPIC_API_KEY --app mcritchie-studio)
-# Read the capture back by PRESENCE, never by printing it: [ -n "$ANTHROPIC_API_KEY" ], or
-# ${ANTHROPIC_API_KEY:+set} when you want a word. Never a default expansion — the ':-' form
-# prints the secret itself whenever the variable is set, which is every time it matters, and
-# credentials.md carries that rule with the form spelled out.
-# config:get is the right verb HERE because this is RETRIEVAL. As a VERIFICATION method it is
-# BANNED (credential-rotation.md): an absent key and a present-but-empty one both print one
-# bare newline, so "it came back empty" names two states with two different next moves. If the
-# capture is empty, ask the jq presence expression above which state you are in, and fall back
-# to console.anthropic.com only when it answers false.
+# Read the capture back by PRESENCE: [ -n "$ANTHROPIC_API_KEY" ], or ${ANTHROPIC_API_KEY:+set}
+# when you want a word out of it. NEVER a default expansion — the ":-" form prints the secret
+# itself whenever the variable is set, which is every time it matters; the rule and the exact
+# form to avoid are in docs/agents/modules/credentials.md.
+#
+# config:get is the right verb HERE because this is RETRIEVAL, and the value is the thing you
+# came for. As a VERIFICATION method it is BANNED — see Steffon's credential-rotation SOP:
+# an absent key and a present-but-empty one both print one bare
+# newline, and a failed read prints nothing either, so "it came back empty" names three states
+# with three different next moves. If the capture is empty, ask the jq expression above which
+# one you are in, and reach for console.anthropic.com only when it answers false.
 X_BEARER_TOKEN=...                    # 1Password: "agent.turf.x" (studio-agents), field "Bearer Token"
 X_API_KEY=...                         # the same item — "Consumer Key" (needs a Read+Write app)
 X_API_SECRET=...
