@@ -156,6 +156,34 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     assert_match(/applied 0 of 1 teams/, err)
   end
 
+  # A real one-team outage still files its row; only the typo stopped filing.
+  test "a single-team outage still files its ESPN row" do
+    ENV["TEAM"] = "buf"
+    assert_difference -> { ErrorLog.count }, 1 do
+      capture_io { assert_raises(SystemExit) { scrape(teams_failed: 1) } }
+    end
+    assert_match(/ScrapeDidNotHappen/, ErrorLog.order(:id).last.inspect_field)
+  end
+
+  # MEASURED: TEAM=BUF filed a Sentry-paged "ESPN unreachable" row for a typo.
+  test "a mis-cased TEAM reaches the service as its code and files nothing" do
+    ENV["TEAM"] = "BUF"
+    assert_no_difference -> { ErrorLog.count } do
+      capture_io { assert_equal "buf", scrape(teams_scraped: 1)[:team_abbrev] }
+    end
+  end
+
+  test "an unknown TEAM aborts naming the valid codes and files no outage row" do
+    ENV["TEAM"] = "bfu"
+    err = nil
+    assert_no_difference -> { ErrorLog.count } do
+      _out, err = capture_io { assert_raises(SystemExit) { scrape(teams_scraped: 1) } }
+    end
+    assert_match(/bfu/, err)
+    assert_match(/\bbuf\b/, err)
+    refute_match(/unreachable/i, err)
+  end
+
   # --- nfl:upload_headshots ------------------------------------------------
 
   # MEASURED BEFORE THE FIX with the real Aws::Errors::MissingCredentialsError
@@ -881,9 +909,11 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     stats = Hash.new(0).merge(tally)
     fake = Object.new
     fake.define_singleton_method(:call) { stats }
-    Espn::ScrapeDepthCharts.stub(:new, ->(**) { fake }) do
+    received = {}
+    Espn::ScrapeDepthCharts.stub(:new, ->(**kwargs) { received = kwargs; fake }) do
       Rake::Task["espn:scrape_depth_charts"].invoke
     end
+    received
   end
 
   # Athletes the task will actually attempt: an espn_id, an NFL-league team
