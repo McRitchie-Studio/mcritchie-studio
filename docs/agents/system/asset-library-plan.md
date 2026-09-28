@@ -168,10 +168,12 @@ The recipe:
    ETag is the hex MD5 for a single-part upload, so compare after converting,
    and fall back to size for multipart objects). Active Storage misses must be
    zero. `Studio::S3` objects written after step 4 are expected to be missing
-   here; step 7 catches them up. **Also compare whole buckets**: `rclone size`
-   on the S3 bucket and the R2 bucket must agree on count and bytes, because a
+   here; step 7 catches them up. **Also compare whole buckets**, because a
    database-key check cannot see objects no row names (about a third of the
-   hub's production bucket, measured 2026-09-28).
+   hub's production bucket, measured 2026-09-28): `rclone check --one-way` S3 →
+   R2 may miss only `Studio::S3` keys written after step 4, and `rclone size`
+   on each bucket must show R2's count and bytes at or above S3's. At step 7's
+   re-run the one-way check must miss nothing.
 6. **Public domain** (apps that serve public objects; needs the domain's DNS
    on Cloudflare first, see **Blocker for step 6** below). Attach
    `assets.<domain>` to the R2 production bucket (a dashboard step until the
