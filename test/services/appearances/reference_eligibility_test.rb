@@ -119,17 +119,24 @@ class Appearances::ReferenceEligibilityTest < ActiveSupport::TestCase
     assert_equal RE::FACE_OBSCURED, verdict(visibility: 0.15, fill: 1.0, subjects: 1)
   end
 
-  test "a measured face too small in frame is refused by both" do
-    small = RE::MINT_FACE_FILL - 0.01
+  test "a measured face below the sheet floor is refused by both" do
+    small = RE::SHEET_FACE_FILL - 0.01
 
     assert_equal RE::FACE_TOO_SMALL, verdict(visibility: 0.9, fill: small)
     assert_equal RE::FACE_TOO_SMALL, mint(visibility: 0.9, fill: small)
   end
 
-  # THE THRESHOLD IS INCLUSIVE, which matters because MINT_FACE_FILL is set exactly ON
-  # the prompt's "head and shoulders" anchor rather than above it.
-  test "a face exactly at the threshold is big enough" do
-    assert_equal RE::ELIGIBLE, verdict(visibility: 0.9, fill: RE::MINT_FACE_FILL)
+  # Production 2026-09-28, Justin Jefferson: a clear 0.5-fill portrait was refused by
+  # the trainer's floor and never reached the free sheet.
+  test "a face between the two floors is a sheet reference but not a training input" do
+    assert_equal RE::ELIGIBLE, verdict(visibility: 0.85, fill: 0.5)
+    assert_equal RE::FACE_TOO_SMALL, mint(visibility: 0.85, fill: 0.5)
+  end
+
+  # BOTH THRESHOLDS ARE INCLUSIVE, which matters because each is set exactly on a value.
+  test "a face exactly at each threshold is big enough for that generator" do
+    assert_equal RE::ELIGIBLE, verdict(visibility: 0.9, fill: RE::SHEET_FACE_FILL)
+    assert_equal RE::ELIGIBLE, mint(visibility: 0.9, fill: RE::MINT_FACE_FILL)
   end
 
   # ---- the vocabularies that must not drift -------------------------------------
@@ -149,5 +156,7 @@ class Appearances::ReferenceEligibilityTest < ActiveSupport::TestCase
     assert_operator RE::NO_PERSON, :<, RE::FACE_VISIBLE,
                     "no-person must sit below the helmet band or every helmet reads as empty"
     assert_operator RE::FACE_VISIBLE, :<=, RE::MINT_FACE_FILL
+    assert_operator RE::SHEET_FACE_FILL, :<, RE::MINT_FACE_FILL,
+                    "the free sheet must never be stricter than the paid trainer"
   end
 end
