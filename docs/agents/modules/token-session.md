@@ -128,8 +128,8 @@ the whole time.
 **Do not gate this on the profile's mtime.** The file's timestamp is not a
 precondition for anything on this page: run the reset, then read
 `ls -la ~/.zprofile*` afterwards if you want to know which profiles exist and when
-each was written. A profile older than today still holds
-the good token, and that is now measured twice on the very cases the gate was
+each was written. A profile older than today can still hold the
+good token, and that is now measured twice on the very cases the gate was
 drawn from. On 2026-09-27 `~/.zprofile` was dated two days earlier and the reset
 worked anyway; on 2026-09-28 a shell was answering the same 403 with the file
 dated **three** days earlier, and the reset recovered it again. What goes stale is
@@ -137,7 +137,7 @@ the long-lived process the session was spawned from, not the file — no file cl
 can see that, so a reader who treats the mtime as a condition concludes "the
 environment is fine" and walks on to the `.pem` bypass at the bottom of this
 document. That is the exact wrong turn this step exists to prevent. Run the reset
-rather than predicting it; it is two commands.
+rather than predicting it; it is two commands and a check.
 
 **This is the agent lane's twin of a remedy this file already gave the deployer
 lane.** `source ~/.zprofile.admin` appears in the lifecycle table above, in the
