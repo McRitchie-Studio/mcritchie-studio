@@ -60,6 +60,14 @@ class Espn::ScrapeDepthCharts
   # applied — is how a chart goes a week stale behind a green lane.
   class MissingTeamId < StandardError; end
 
+  # RAISED AND IMMEDIATELY RESCUED BY lib/tasks/espn.rake, so the ErrorLog receipt for
+  # a scrape that applied nothing carries a real class, message and backtrace rather
+  # than the empty one a bare `.new` would file. Insights::DocFreshness::StaleDocError
+  # exists for the same reason and is built the same way. It changes no verdict: the
+  # lane still aborts on the same condition, and this only makes the abort findable in
+  # /admin/error_logs a week later.
+  class ScrapeDidNotHappen < StandardError; end
+
   # WHO WE SAY WE ARE. Read from Espn::Api rather than spelled out, because a
   # second copy of this string is precisely how this service came to send a Chrome
   # UA while its neighbour sent an honest one. The browser string was not merely
@@ -108,7 +116,7 @@ class Espn::ScrapeDepthCharts
     chart = DepthChart.find_or_create_by!(team_slug: team_slug)
     @stats[:depth_charts_created] += 1 if chart.previously_new_record?
 
-    groups = fetch_groups(abbrev)
+    groups = fetch_groups(abbrev, chart)
     unless groups
       puts "  [!] Failed to parse depth chart for #{abbrev}"
       @stats[:teams_failed] += 1
@@ -236,7 +244,7 @@ class Espn::ScrapeDepthCharts
 
   # The depth chart in the shape the downstream parser expects:
   #   [{ "name" => "Base 4-3 D", "rows" => [[position_label, athlete_hash, ...], ...] }, ...]
-  def fetch_groups(abbrev)
+  def fetch_groups(abbrev, chart = nil)
     team_id = team_id_for(abbrev)
     names = fetch_roster_names(team_id) # espn_id (String) => display_name
 
@@ -269,10 +277,57 @@ class Espn::ScrapeDepthCharts
   # on purpose: it is a fault in our own abbreviation map, it will still be there
   # next run, and turning it into one more tolerated team is the defect this service
   # was revived to remove.
+  #
+  # AND THE CAUSE GOES WHERE SOMEONE WILL FIND IT. The tolerance above is right and
+  # stays; what was missing was the CAUSE. The `puts` below was the only place a dead
+  # team's exception had ever been written, and bin/ecosystem-build runs this lane as
+  # `bundle exec rails espn:scrape_depth_charts >/dev/null` — stdout discarded by
+  # intent. The tally lib/tasks/espn.rake prints survives on stderr and carries
+  # COUNTS, never causes, so by the time anyone asks why a chart is stale the answer
+  # is gone. MEASURED on this branch before the change: grep -rE "ErrorLog" over
+  # app/services/espn/ and lib/tasks/espn.rake returned zero hits while two sibling
+  # feed services file rows (Nflverse::SeedPlayers#record_outage,
+  # Appearances::ImageSearch::WikimediaCommons).
+  #
+  # IT IS FILED HERE AND NOT ON scrape_team'S `unless groups`, because those are two
+  # different facts. fetch_groups also answers nil when ESPN served a 404 for BOTH the
+  # current and the previous season's document — a source with nothing to give, which
+  # parse_response separates from every other non-success BY STATUS, exactly as
+  # Athletes::DeadHeadshotSource separates 404/410 from an uploader that broke. A row
+  # filed from `unless groups` would record that dead source as our failure; a row
+  # filed in this rescue cannot, because the 404 became a nil and never raised.
+  # (DeadHeadshotSource itself does not apply: it reads `io.status` off an
+  # OpenURI::HTTPError and this service is Net::HTTP throughout, so calling it would
+  # answer "not dead" for every ESPN error. The distinction it draws is already drawn
+  # here, one layer lower, and a second classifier would be the duplication.)
+  #
+  # NOT `rescue_and_log`: that is the controller concern's wrapper and it RE-RAISES,
+  # which would end a 32-team walk on the first dead team — the exact failure this
+  # rescue exists to prevent.
+  #
+  # BOUNDED AT ONE ROW PER TEAM, so 32 in the worst run, and the worst run does not
+  # reach here: an unreadable teams index raises out of resolve_team_ids! before the
+  # loop starts, which is ONE row from the lane rather than 32 from this line.
+  #
+  # NOTHING CREDENTIAL-SHAPED CAN REACH THE ROW, structurally rather than by
+  # scrubbing. Every endpoint this service reads is public and takes no key (Espn::Api
+  # names all three hosts and no token), and the exception is filed exactly as raised
+  # with nothing added — no response body, no headers, no request. That matters
+  # because fetch_json's message carries the URL, so a key in a query string would
+  # land in a durable table that also reaches Sentry; a test in
+  # test/services/espn/scrape_depth_charts_test.rb refuses `ENV[` back into this
+  # directory for that reason.
+  #
+  # The DepthChart is the target so /admin/error_logs renders the team on the row.
+  # scrape_team creates it before it calls here, so it is present on that path; a
+  # caller driving fetch_groups some other way passes nothing, and
+  # Appearances::FailureLog files an untargeted row rather than refusing. Its own
+  # failure is swallowed there, so telemetry can never veto the tolerance it reports.
   rescue MissingTeamId
     raise
   rescue StandardError => e
     puts "  [!] Fetch error for #{abbrev}: #{e.class}: #{e.message}"
+    Appearances::FailureLog.file(e, target: chart)
     nil
   end
 
