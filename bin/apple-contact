@@ -1,0 +1,121 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/apple-contact — find, create and update a card in the operator's Apple
+# Contacts from a signature read out of a forwarded email. It runs on the
+# operator's Mac only (it drives Contacts.app through osascript), and a card
+# it writes syncs to his iPhone through iCloud.
+#
+#   bin/apple-contact find   --file card.json                # matches + a field-by-field diff (JSON)
+#   bin/apple-contact create --file card.json [--allow-duplicate]
+#   bin/apple-contact update --id ID --file card.json [--skip FIELD ...]
+#   bin/apple-contact photo  --id ID --image headshot.png
+#   bin/apple-contact show   --id ID                         # the card as Contacts holds it (JSON)
+#
+# card.json is the signature, not the card:
+#   { "first_name": "…", "last_name": "…", "organization": "…", "job_title": "…",
+#     "phones": [{"label": "work", "value": "…"}], "emails": [...], "urls": [...],
+#     "addresses": [{"label": "work", "street": "…", "city": "…", "state": "…", "zip": "…", "country": "…"}],
+#     "note": "…" }
+#
+# It never deletes a card and never removes a value. Every value reaches
+# Contacts as JSON data, never as script (bin/lib/apple_contact.rb says why).
+# Nothing here decides WHETHER to write: the operator does, per the SOP.
+#
+# SOP: docs/agents/modules/contact-capture.md
+
+require "optparse"
+require "json"
+require_relative "lib/apple_contact"
+
+USAGE = <<~TEXT
+  usage: bin/apple-contact find   --file CARD.json
+         bin/apple-contact create --file CARD.json [--allow-duplicate]
+         bin/apple-contact update --id ID --file CARD.json [--skip FIELD ...]
+         bin/apple-contact photo  --id ID --image PATH
+         bin/apple-contact show   --id ID
+  SOP: docs/agents/modules/contact-capture.md
+TEXT
+
+COMMANDS = %w[find create update photo show].freeze
+
+command = ARGV.shift
+if command.nil? || %w[-h --help help].include?(command)
+  puts USAGE
+  exit(command.nil? ? 1 : 0)
+end
+unless COMMANDS.include?(command)
+  warn "unknown subcommand #{command.inspect}\n#{USAGE}"
+  exit 1
+end
+
+options = { skip: [] }
+parser = OptionParser.new do |o|
+  o.banner = USAGE
+  o.on("--file PATH", "the signature as JSON") { |v| options[:file] = v }
+  o.on("--id ID", "the Contacts card id (from find)") { |v| options[:id] = v }
+  o.on("--image PATH", "headshot to set as the card photo") { |v| options[:image] = v }
+  o.on("--skip FIELD", "leave this field as the card has it (repeatable)") { |v| options[:skip] << v }
+  o.on("--allow-duplicate", "create even though a card already matches") { options[:allow_duplicate] = true }
+  o.on("-h", "--help", "print this help") do
+    puts o
+    exit 0
+  end
+end
+parser.parse!(ARGV)
+
+# OptionParser refuses an unknown FLAG on its own but leaves a stray positional
+# in ARGV. A write that silently ignored a path the operator typed is the
+# failure the bin/ manifest exists to stop, so refuse it.
+unless ARGV.empty?
+  warn "unrecognized argument(s): #{ARGV.join(' ')}\n#{USAGE}"
+  exit 1
+end
+
+def need(options, *keys)
+  missing = keys.reject { |k| options[k] }
+  return if missing.empty?
+
+  warn "#{missing.map { |k| "--#{k}" }.join(' and ')} required\n#{USAGE}"
+  exit 1
+end
+
+def card(options)
+  AppleContact.normalize(JSON.parse(File.read(options[:file])))
+rescue Errno::ENOENT
+  raise AppleContact::Error, "no card file at #{options[:file]}"
+rescue JSON::ParserError
+  raise AppleContact::Error, "#{options[:file]} is not valid JSON"
+end
+
+unknown_skip = options[:skip] - AppleContact::KEYS
+unless unknown_skip.empty?
+  warn "--skip names unknown field(s): #{unknown_skip.join(', ')} (known: #{AppleContact::KEYS.join(', ')})"
+  exit 1
+end
+
+book = AppleContact::Book.new
+begin
+  result =
+    case command
+    when "find"
+      need(options, :file)
+      { "matches" => book.find(card(options)) }
+    when "create"
+      need(options, :file)
+      { "created" => book.create(card(options), allow_duplicate: options[:allow_duplicate]) }
+    when "update"
+      need(options, :id, :file)
+      book.update(options[:id], card(options), skip: options[:skip])
+    when "photo"
+      need(options, :id, :image)
+      { "photo_set" => book.photo(options[:id], options[:image]) }
+    when "show"
+      need(options, :id)
+      book.detail(options[:id])
+    end
+  puts JSON.pretty_generate(result)
+rescue AppleContact::Error => e
+  warn "apple-contact: #{e.message}"
+  exit 1
+end
