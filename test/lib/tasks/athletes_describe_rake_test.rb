@@ -117,7 +117,7 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
 
     refute_equal 0, status, "a run that could not write a single row must not exit 0"
     assert_match "raised on 1 of the 1 athlete(s) it tried to write", output
-    assert_match "/admin/error_logs", output, "and where the rows are"
+    assert_match "/error_logs", output, "and where the rows are"
     assert_match "degrades rather than raising", output,
                  "the abort must say a raise here is the WRITE failing, not a description"
   end
@@ -220,7 +220,7 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
                  "here is nfl:upload_headshots reproduced for the half that costs money"
     assert_match "not one call was billed", output
     assert_match DFH::API_KEY_ENV, output, "the abort must name the credential to check"
-    assert_match "/admin/error_logs", output
+    assert_match "/error_logs", output
     assert_equal "6 ft 0 in, 197 lb; athletic, well-built", athlete.reload.build,
                  "the free lane did its half, which is exactly what made the totals look healthy"
   end
@@ -256,7 +256,7 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
     assert_match "asked but NOT billed:   2", output
     assert_match "WARNING", output
     assert_match "did not reach the API", output
-    assert_match "/admin/error_logs", output, "the warning must name where the rows are"
+    assert_match "/error_logs", output, "the warning must name where the rows are"
     refute_match "not one call was billed", output, "rule 3 is false — something was billed"
   end
 

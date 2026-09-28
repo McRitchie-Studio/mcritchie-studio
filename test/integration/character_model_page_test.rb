@@ -474,7 +474,7 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
   # ---- where a failure goes --------------------------------------------------
 
   # A FLASH IS NOT A RECORD. It lives for one redirect and is then gone, and the
-  # operator asking "why did the mint refuse?" is reading /admin/error_logs a day
+  # operator asking "why did the mint refuse?" is reading /error_logs a day
   # later. `target` is what lets them find the row for THIS look rather than reading
   # every row since Tuesday.
   test "[integration] a vendor failure on mint leaves an ErrorLog row on the look" do

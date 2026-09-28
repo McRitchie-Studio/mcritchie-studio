@@ -290,7 +290,7 @@ class Espn::PlayerProfileTest < ActiveSupport::TestCase
     assert_match(/could not read 1 roster/, row.message)
     assert_match(/buf/, row.message, "the row must name WHICH roster")
     assert_match(/503/, row.message, "and WHY it could not be read")
-    assert row.slug.present?, "a row with no slug is unreachable in /admin/error_logs"
+    assert row.slug.present?, "a row with no slug is unreachable in /error_logs"
   end
 
   test "a complete search that finds the man files nothing" do
@@ -330,7 +330,7 @@ class Espn::PlayerProfileTest < ActiveSupport::TestCase
 
   test "one row per walk, not one per dead roster" do
     # 32 rows saying "ESPN is down" is the noise that teaches an operator to stop
-    # opening /admin/error_logs. The census is the finding.
+    # opening /error_logs. The census is the finding.
     responses = Espn::PlayerProfile::TEAM_ABBREVS.to_h do |abbr|
       url = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/#{abbr}/roster"
       [url, Espn::PlayerProfile::SourceUnavailable.new("503")]

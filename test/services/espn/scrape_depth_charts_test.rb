@@ -612,10 +612,10 @@ class Espn::ScrapeDepthChartsTest < ActiveSupport::TestCase
     assert_match(/503/, row.message, "the row must carry WHY, not just that something failed")
     assert_match(/SourceUnavailable/, row.inspect_field)
     assert_equal DepthChart.find_by(team_slug: @bills.slug), row.target,
-                 "the chart is the target so /admin/error_logs renders the team on the row"
+                 "the chart is the target so /error_logs renders the team on the row"
     assert_equal "#{@bills.slug}-depth", row.target_name
     assert row.slug.present?,
-           "a row with no slug is unreachable in /admin/error_logs — invisible to the " \
+           "a row with no slug is unreachable in /error_logs — invisible to the " \
            "person it was written for"
   end
 

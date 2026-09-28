@@ -124,7 +124,7 @@ class Appearances::ImageSearchTest < ActiveSupport::TestCase
     assert_equal "connection reset", row.message
     assert_equal look, row.target, "a row with no subject cannot be read back from the look"
     assert_equal look.slug, row.target_name
-    assert row.slug.present?, "a slugless row is unreachable in /admin/error_logs"
+    assert row.slug.present?, "a slugless row is unreachable in /error_logs"
   end
 
   # NO RECORD TO FILE AGAINST IS NOT A REASON TO FILE NOTHING. This façade is

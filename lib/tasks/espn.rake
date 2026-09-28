@@ -3,7 +3,7 @@ namespace :espn do
   task scrape_depth_charts: :environment do
     # THE LOUDEST FAILURE WAS THE LEAST FINDABLE. A raise out of `call` — an
     # unreadable teams index, or a MissingTeamId escaping the per-team rescue — kills
-    # the task with a backtrace on stderr and leaves nothing in /admin/error_logs, so
+    # the task with a backtrace on stderr and leaves nothing in /error_logs, so
     # the one place an operator looks a week later is empty for the one failure that
     # stopped the scrape dead. Filed and RE-RAISED: the lane must still go red, and
     # the rescue adds a row and changes no verdict.

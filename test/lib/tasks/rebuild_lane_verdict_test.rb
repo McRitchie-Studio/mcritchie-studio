@@ -115,7 +115,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     assert_match(/applied 0 of 32 teams/, row.message)
     assert row.backtrace.present? && row.backtrace != "[]",
            "raised and rescued rather than constructed, so the row carries a real backtrace"
-    assert row.slug.present?, "a row with no slug is unreachable in /admin/error_logs"
+    assert row.slug.present?, "a row with no slug is unreachable in /error_logs"
   end
 
   # THE GREEN TWINS. A partial run stays green AND stays unfiled: the `warn` reports
@@ -135,7 +135,7 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
 
   # A RAISE OUT OF THE SERVICE — an unreadable teams index, or a MissingTeamId
   # escaping the per-team rescue — is the loudest failure and was the least findable:
-  # a backtrace on stderr and nothing in /admin/error_logs. Filed and RE-RAISED, so
+  # a backtrace on stderr and nothing in /error_logs. Filed and RE-RAISED, so
   # the lane still goes red.
   test "a raise out of the service is filed and still kills the lane" do
     assert_difference -> { ErrorLog.count }, 1 do

@@ -65,7 +65,7 @@ class Espn::ScrapeDepthCharts
   # than the empty one a bare `.new` would file. Insights::DocFreshness::StaleDocError
   # exists for the same reason and is built the same way. It changes no verdict: the
   # lane still aborts on the same condition, and this only makes the abort findable in
-  # /admin/error_logs a week later.
+  # /error_logs a week later.
   class ScrapeDidNotHappen < StandardError; end
 
   # An operator typo in TEAM=, not an ESPN fact: refused up front, never filed.
@@ -330,7 +330,7 @@ class Espn::ScrapeDepthCharts
   # test/services/espn/scrape_depth_charts_test.rb refuses `ENV[` back into this
   # directory for that reason.
   #
-  # The DepthChart is the target so /admin/error_logs renders the team on the row, and
+  # The DepthChart is the target so /error_logs renders the team on the row, and
   # it is a REQUIRED argument rather than one defaulting to nil: scrape_team is the only
   # caller and it has already created the row with find_or_create_by!, so a nil default
   # would be an untestable branch dressed as caution. Appearances::FailureLog swallows
