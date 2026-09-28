@@ -776,4 +776,21 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='no-look']", count: 1
     assert_select "[data-test='found-gallery']", count: 0
   end
+
+  # THE MONEY IS SPENT BEFORE THE FILE LOOP RUNS, so an exception there must leave a row.
+  test "[integration] a scouting search that raises leaves an ErrorLog row on the look and a flash" do
+    log_in_as(users(:alex))
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      Appearances::GatherReferencePhotos.stub(:call, ->(*) { raise ActiveRecord::StatementInvalid, "upsert failed" }) do
+        post search_person_scouting_path(@person.slug)
+      end
+    end
+
+    assert_redirected_to page_path
+    assert_match(/The search failed: upsert failed/, flash[:alert])
+    row = ErrorLog.order(:id).last
+    assert_equal @look, row.target
+    assert_equal @look.slug, row.target_name
+  end
 end
