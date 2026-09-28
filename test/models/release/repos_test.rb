@@ -101,10 +101,13 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # --- apps as a hash: app_meta / prod_deploy / qa_app ---
 
+  # The BESPOKE apps are pinned by name, so one arriving unreviewed fails here.
+  # Apps on a deploy profile are derived instead: bin/register-app adds them,
+  # and the profile guards below hold each one to its profile, so a registration
+  # needs no edit to this file (app-deploy-standard).
   test "app_repos lists the registry's app hash keys" do
-    assert_equal %w[mcritchie-studio turf-monster turf-vault mcritchie-industries cyvasse dads-app rolio
-                    tax-studio chain-ops prisoners-dilemma weekly-lock rantly portfolio
-                    10and5 search-position].sort,
+    assert_equal (%w[mcritchie-studio turf-monster turf-vault mcritchie-industries rolio
+                     tax-studio chain-ops] + profile_repos).sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -425,9 +428,12 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   test "[unit] an unregistered repo defaults to REQUIRED, not exempt" do
-    assert_not Release::Repos.qa_evidence_exempt?("moms-app"),
+    # A slug that can never be registered (moms-app served here until it joined
+    # the registry on 2026-09-28).
+    assert_nil Release::Repos.config.dig("apps", "never-registered-app")
+    assert_not Release::Repos.qa_evidence_exempt?("never-registered-app"),
                "a repo the registry has never heard of must fail CLOSED"
-    assert_equal Release::Repos::QA_EVIDENCE_REQUIRED, Release::Repos.qa_evidence("moms-app")
+    assert_equal Release::Repos::QA_EVIDENCE_REQUIRED, Release::Repos.qa_evidence("never-registered-app")
   end
 
   test "[unit] an unrecognised qa_evidence value fails CLOSED to required" do
@@ -475,8 +481,10 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # Guards the guard: every assertion above would pass vacuously over an empty list.
   test "[unit] the QA-evidence exemption guard actually has a repo to check" do
-    assert_equal %w[10and5 cyvasse dads-app portfolio prisoners-dilemma rantly search-position turf-vault
-                    weekly-lock],
+    # turf-vault is the one exemption that is not a profile's (QA does not apply
+    # to it); every other exempt repo takes its exemption from its profile's
+    # recorded decision, and is derived rather than pinned.
+    assert_equal (%w[turf-vault] + profile_repos).sort,
                  Release::Repos.qa_evidence_exempt_repos.sort,
                  "exactly these repos are declared exempt — a third one arriving unreviewed " \
                  "is what this pin is here to surface"

@@ -997,3 +997,19 @@ apps:
     #
     # Planned app; test/integration is still empty — qa_test_cmd stays UNSET
     # until it has a real integration tier to run.
+  moms-app:
+    # Registered by bin/register-app on profile standalone-heroku. The contract, the
+    # QA decision and how to leave the profile: config/app_profiles.yml and the
+    # app-deploy-standard SOP. To change it, edit it by hand; repos_test.rb
+    # fails if this entry drifts from the profile.
+    # Consumes studio-engine 0.77.3: a release that publishes the engine bumps this
+    # app's lock to the published version (bin/release.rb#bump_consumer_locks_for_qa).
+    profile: standalone-heroku
+    ladder: three-rung
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/moms-app.git
+      branch: main
+      smoke_url: https://karenmcritchie.com
+    test_cmd: bin/rails db:test:prepare test
+    qa_evidence: exempt
