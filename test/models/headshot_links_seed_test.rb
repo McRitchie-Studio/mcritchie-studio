@@ -66,6 +66,27 @@ class HeadshotLinksSeedTest < ActiveSupport::TestCase
                  "produce a coach-less database"
   end
 
+  # THE CALLER'S PRINTED REMEDY, which this change made incomplete. Phase 6 of
+  # bin/ecosystem-build runs `db:seed` with both streams discarded and prints one
+  # line when the status is non-zero; that line used to say "check RAILS_MASTER_KEY
+  # and re-run db:seed", which for a firewalled operator is advice to run the command
+  # that just failed, for a reason it does not name. A remedy is a causal claim, and
+  # the abort this change added is the one cause re-running cannot clear.
+  #
+  # FLATTEN, THEN SUBSTRING. A line regex would miss the phrase the moment somebody
+  # wraps that message, and it is long enough to invite wrapping.
+  test "the rebuild's db:seed failure line names the firewall opt-out" do
+    flat = Rails.root.join("bin/ecosystem-build").read
+                .lines.grep_v(/^\s*#/).join
+                .gsub(/\\\n\s*/, "").gsub(/\s+/, " ")
+
+    assert_includes flat, "SKIP_NETWORK_SEEDS=1 bin/rails db:seed",
+                    "an operator behind a firewall must be told the one command that " \
+                    "gets past the abort, on the line they actually see"
+    assert_includes flat, "32_headshot_links.rb",
+                    "name the seed that aborts, so the advice is checkable"
+  end
+
   private
 
   # RECORDS THE LANE NAMES WITHOUT RUNNING THEM. The tasks themselves talk to ESPN

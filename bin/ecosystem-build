@@ -573,8 +573,16 @@ phase_bundles_dbs() {
         log_ok "$app DB" "$db_name ($user_count users)"
       else
         log_act "$app: db:create db:migrate db:seed"
+        # BOTH STREAMS ARE DISCARDED, SO THE EXIT CODE IS THE WHOLE SIGNAL, and as of
+        # `coach-link-lane-false-green` db/seeds/32_headshot_links.rb can produce a
+        # non-zero one: the two coach-link tasks it invokes now abort when they linked
+        # no coach. That is the point -- a rebuild that silently seeds no coach avatar
+        # used to log this phase green. The remedy therefore has to name the ONE cause
+        # an operator cannot fix by re-running the same command: no network. Without
+        # SKIP_NETWORK_SEEDS=1 in this line, a firewalled rebuild's printed advice is
+        # to run the command that just failed, for a reason it does not mention.
         if ! bundle exec rails db:create db:migrate db:seed >/dev/null 2>&1; then
-          log_fail "$app DB setup failed" "check .env has RAILS_MASTER_KEY + try: cd $path && bin/rails db:seed"
+          log_fail "$app DB setup failed" "check .env has RAILS_MASTER_KEY + try: cd $path && bin/rails db:seed — behind a firewall the network seed (32_headshot_links.rb) aborts, so: SKIP_NETWORK_SEEDS=1 bin/rails db:seed"
           exit 1
         fi
         log_ok "$app DB" "seeded"
