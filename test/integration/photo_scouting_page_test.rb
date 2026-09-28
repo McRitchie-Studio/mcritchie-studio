@@ -341,6 +341,148 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     assert_nil stranger.reload.operator_verdict
   end
 
+  # ── WHICH VARIANT FOUND EACH PHOTOGRAPH ──────────────────────────────────────────
+  #
+  # THE OPERATOR'S REQUIREMENT, and he judges this pipeline by this page: a candidate with
+  # no provenance is one he cannot calibrate a variant against. A tile carrying a laugh he
+  # likes is an argument for keeping "laughing"; the same tile with no label argues nothing.
+  #
+  # THE FIXTURE SPELLS THE QUERIES THE WAY THE SERVICE WOULD, from the constant, so a test
+  # here cannot pass against a stale copy of the variant list.
+
+  def queries_for(subject)
+    Appearances::GatherReferencePhotos::QUERY_VARIANTS.map do |variant|
+      [subject, variant].compact_blank.join(" ")
+    end
+  end
+
+  # THE SUBJECT AS THIS LOOK ACTUALLY RESOLVES IT — the athlete fixture carries a
+  # `team_slug`, and the subject now carries the team it humanises to, so a hard-coded
+  # "Josh Allen" would file rows whose query the page could not shorten.
+  def look_subject = Appearances::GatherReferencePhotos.new(@look).query
+
+  def file_one_per_variant
+    queries_for(look_subject).each_with_index.map do |query, i|
+      file_photo("https://example.com/v#{i}.jpg", position: i + 1, title: "Josh Allen",
+                 query: query, chosen: i.zero?, width: 700, height: 900)
+    end
+  end
+
+  test "[component] every tile names the search that found it" do
+    file_one_per_variant
+    get page_path
+
+    # SCOPED TO THE RAW COLUMN, because a chosen candidate appears in BOTH galleries and
+    # carries its provenance in each — which is right, and is why the count is scoped
+    # rather than the chip made conditional.
+    assert_select "[data-test='found-gallery'] [data-test='found-by-variant']", count: 4
+    assert_select "[data-test='picks-gallery'] [data-test='found-by-variant']", count: 1
+    text = css_select("[data-test='found-gallery'] [data-test='found-by-variant']").map { |n| n.text.squish }
+    # THE VARIANT, NOT THE WHOLE QUERY. "Josh Allen Buffalo Bills no helmet" on a
+    # thumbnail-sized tile is unreadable; "no helmet" is what he says out loud.
+    assert_includes text, "found by no helmet"
+    assert_includes text, "found by laughing"
+    assert_includes text, "found by smiling"
+    assert_includes text, "found by name only",
+                    "the bare-name variant must be named, not rendered as a blank"
+  end
+
+  # THE WHOLE QUERY IS STILL REACHABLE, in the tooltip, because the subject carries the
+  # TEAM — and the team silently leaving the query is the defect this task also fixed. A
+  # page that showed only the suffix could not show that it is back.
+  test "[component] the tile's tooltip carries the whole query, team and all" do
+    file_one_per_variant
+    get page_path
+
+    titles = css_select("[data-test='found-by-variant']").map { |n| n["title"].to_s }
+    assert titles.all? { |t| t.include?(look_subject) },
+           "the subject, which carries the team, has to be readable somewhere on the tile"
+  end
+
+  # THE ROW THE OPERATOR TUNES THE VARIANT LIST FROM. Counts per variant, over the rows
+  # rather than over a summary, because the summary exists only inside the request that
+  # ran the search and he reads this page long afterwards.
+  test "[component] a per-variant breakdown counts what each search contributed" do
+    file_one_per_variant
+    get page_path
+
+    assert_select "[data-test='variant-breakdown']", count: 1
+    rows = css_select("[data-test='variant-row']")
+    assert_equal 4, rows.length
+    assert_equal %w[1 1 1 1], rows.map { |r| r["data-variant-found"] }
+    assert_equal %w[1 0 0 0], rows.map { |r| r["data-variant-chosen"] },
+                 "only the first tile was chosen, and the breakdown must say so per variant"
+  end
+
+  # ⚠ A VARIANT THAT FOUND NOTHING IS THE MOST USEFUL LINE ON THE PAGE — it is the query
+  # to drop — so it is rendered as a zero rather than omitted. Grouping the ROWS alone
+  # would render it as absence, which reads as "not asked" rather than "asked and came
+  # back empty", and those two have opposite remedies.
+  test "[component] a variant that contributed nothing still gets a row, at zero" do
+    queries = queries_for(look_subject)
+    file_photo("https://example.com/only.jpg", position: 1, query: queries.first, chosen: true)
+
+    get page_path
+
+    rows = css_select("[data-test='variant-row']")
+    assert_equal 4, rows.length, "all four are listed even though three found nothing"
+    assert_equal %w[1 0 0 0], rows.map { |r| r["data-variant-found"] }
+  end
+
+  # A ROW FILED BEFORE THE FAN-OUT LANDED carries the OLD single query, which is the
+  # bare-name variant's spelling exactly — so it groups under it rather than into a
+  # mystery bucket, and a gallery of pre-fan-out rows reads as one variant's work because
+  # that is what it was.
+  test "[component] rows from before the fan-out group under the bare-name variant" do
+    file_photo("https://example.com/old.jpg", position: 1, query: look_subject, chosen: true)
+
+    get page_path
+
+    rows = css_select("[data-test='variant-row']")
+    assert_equal "1", rows.first["data-variant-found"]
+    assert_equal %w[0 0 0], rows.drop(1).map { |r| r["data-variant-found"] }
+  end
+
+  # A ROW WHOSE QUERY MATCHES NO CURRENT VARIANT IS COLLECTED, NOT DROPPED. A traded
+  # player's old rows carry the old team in their subject, and a candidate visible in the
+  # gallery but in no breakdown row would make the counts disagree with the tiles.
+  test "[component] a row from a query we no longer ask is still accounted for" do
+    file_photo("https://example.com/stale.jpg", position: 1, chosen: false,
+               query: "Josh Allen Denver Broncos winking")
+
+    get page_path
+
+    rows = css_select("[data-test='variant-row']")
+    assert_equal 5, rows.length, "four variants plus one row for the query we retired"
+    assert_equal "1", rows.last["data-variant-found"]
+  end
+
+  # EVERY QUERY THE BUTTON WOULD BUY IS PRINTED. He cannot judge searches whose questions
+  # he cannot see, and the count alone would hide both the expression words and the team.
+  test "[component] the header lists all four queries, not a count" do
+    get page_path
+
+    assert_select "[data-test='search-queries'] li", count: 4
+    listed = css_select("[data-test='search-queries'] li").map { |n| n.text.squish }
+    queries_for(look_subject).each do |query|
+      assert listed.any? { |line| line.include?(query) }, "#{query.inspect} is not on the page"
+    end
+  end
+
+  # THE TWO CEILINGS, STATED WITH THEIR CONSTANTS. The operator's calibration depends on
+  # knowing that most of what a search found was never looked at — otherwise he reads
+  # `face_unscored` as a judgement of the photograph.
+  test "[component] the page states the vision ceiling as well as the chosen cap" do
+    file_three
+    get page_path
+
+    assert_select "[data-test='vision-ceiling-note']", count: 1
+    assert_select "[data-test='fan-out-note']", count: 1
+    body = response.body
+    assert_includes body, Appearances::GatherReferencePhotos::VISION_SHORTLIST.to_s
+    assert_includes body, "CHOSEN_LIMIT = #{Appearances::GatherReferencePhotos::CHOSEN_LIMIT}"
+  end
+
   # ── THE SEARCH ACTION ────────────────────────────────────────────────────────────
 
   test "[integration] an admin search files every candidate and reports the count" do
@@ -349,6 +491,10 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     # A FAKE PROVIDER THROUGH THE FAÇADE'S OWN REGISTRY SEAM — the reason
     # `ImageSearch.providers` is a method and not a frozen constant. Nothing here can
     # reach a network even if the trap were removed.
+    # ⚠ IT ANSWERS EVERY QUERY WITH THE SAME TWO ROWS, which is why the counts below are
+    # 8 bought and 2 filed: four searches really do cost four queries, and the dedupe
+    # really does collapse their identical answers to two photographs. A fake that
+    # answered once would hide both halves.
     fake = Class.new do
       def self.provider_name = "fake-archive"
       def self.available? = true
@@ -373,7 +519,8 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to page_path
-    assert_match(/fake-archive returned 2 result/, flash[:notice])
+    assert_match(/fake-archive ran 4 search\(es\) for 8 result\(s\)/, flash[:notice])
+    assert_match(/2 unique after dropping 6 duplicate\(s\)/, flash[:notice])
     # THE MIME TYPE IS PERSISTED, so the page can print the archive's own claim.
     assert_equal "application/pdf", Photo.find_by(image_url: "https://example.com/b.pdf").mime_type
     # AND THE DOCUMENT IS NOT IN THE MODEL. A scanned page is not a poor reference.

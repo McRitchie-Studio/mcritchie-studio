@@ -28,6 +28,15 @@ require "aws-sdk-s3"
 # not cost the other 31 their refresh, one dead headshot URL must not cost the
 # other thousand theirs — and then ended by returning, so the process exited 0
 # no matter how much had failed. The rescue is right; ending on it was not.
+#
+# THREE IS THIS FILE'S COVERAGE, NOT THE REPOSITORY'S INVENTORY. Two more lanes of
+# the same shape were closed under `coach-link-lane-false-green` (2026-09-28) and
+# live in test/lib/tasks/nfl_coach_headshots_test.rb and
+# test/lib/tasks/nfl_coach_team_sites_test.rb, because they sit in a different phase:
+# they are reached only through `db:seed` and db/seeds/32_headshot_links.rb, not
+# through 6b or 6c. `nfl:upload_coach_headshots` is the one still ungraded —
+# it counts `failed` and prints it, and it needs the dead-source split
+# nfl:upload_headshots carries. Known open, not measured clean.
 class RebuildLaneVerdictTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("espn:scrape_depth_charts")

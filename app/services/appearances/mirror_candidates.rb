@@ -44,8 +44,11 @@ module Appearances
   #
   # ── WHAT IS MIRRORED, AND WHAT IS DELIBERATELY NOT ──────────────────────────────
   #
-  # THE SHORTLIST ONLY (GatherReferencePhotos::VISION_SHORTLIST, 12), not every
-  # candidate the provider returned. The choice, stated because the cheaper option
+  # THE SHORTLIST ONLY (GatherReferencePhotos::VISION_SHORTLIST), not every
+  # candidate the provider returned. The number is NOT repeated here: it moved from 12 to
+  # 24 with the query fan-out, and a figure copied into prose beside a constant is a
+  # figure that goes stale without failing anything. The choice, stated because the
+  # cheaper option
   # gives something up:
   #
   #   * The shortlist IS the set handed to the classifier, so it is exactly the set
@@ -195,6 +198,25 @@ module Appearances
     # honest answer: guessing `image/png` over an unknown file would put a wrong
     # Content-Type on an object we serve, and falling back to the remote URL would
     # reintroduce the exact bug this object exists to fix.
+    #
+    # ⚠ KNOWN GAP, MEASURED 2026-09-27, AND THE REASON Appearances::FaceVisibility NOW
+    # BATCHES. Both signals here are CLAIMS ABOUT the bytes and neither reads them, so a
+    # host that serves an HTML page from a URL path ending `.jpg` is mirrored into our
+    # bucket as `original.jpg` with `content_type: "image/jpeg"`. It happened on the first
+    # real four-variant run for `justin-jefferson`: `lookaside.fbsbx.com/lookaside/crawler/`
+    # returned a page beginning `<html`, Anthropic answered
+    # `400 ... The file format is invalid or unsupported`, and because all 14 mirrored
+    # images rode ONE request, THIRTEEN valid JPEGs went unjudged with it — 74 candidates
+    # filed, 0 scored, 0 chosen.
+    #
+    # WHY THE FIX IS NOT HERE. Catching it needs the BYTES, and this object never holds
+    # them: Studio::ImageCache.cache! does the fetch internally and throws the response
+    # away. Sniffing would mean either fetching every candidate a second time or fetching
+    # once and handing `cache!` a local `source_path` instead of a `source_url` — a real
+    # restructuring of the one path that must not break. Batching bounds the damage for a
+    # tenth of a cent and needed no new fetch, so it went first. The byte check is the
+    # right next move and is still owed: with it, this run would have scored 23 of 24
+    # rather than 16.
     def content_type_for(photo)
       claimed = photo.mime_type.to_s.downcase.strip
       return claimed if Studio::ImageCache::ALLOWED_CONTENT_TYPES.include?(claimed)

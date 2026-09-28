@@ -648,11 +648,33 @@ namespace :nfl do
   ESPN_TEAMS_INDEX_URL = -> { "https://#{Espn::Api::WEB_HOST}/apis/site/v2/sports/football/nfl/teams" }
   ESPN_TEAM_COACHES_URL = ->(team_id) { "https://#{Espn::Api::CORE_HOST}/v2/sports/football/leagues/nfl/teams/#{team_id}/coaches" }
 
+  # HOW LONG THIS LANE WILL WAIT ON ONE SOCKET. Not a guess at a safe number, and
+  # not a claim that open-uri would otherwise hang: MEASURED 2026-09-28 on Ruby
+  # 3.3.11, `Net::HTTP.new(host, port)` reports `open_timeout=60 read_timeout=60`,
+  # so an unset budget here is 60 seconds per read, inherited rather than chosen.
+  #
+  # IT IS THE WRONG NUMBER *HERE*, and the arithmetic is the argument. The task
+  # makes 1 index read plus 2 reads per team, so a 32-team run is 65 reads; at the
+  # inherited default a stalled ESPN holds `db:seed` for about 65 minutes on read
+  # alone, and the lane it sits inside discards both streams, so an operator
+  # watching the rebuild sees nothing at all for that hour. 15s caps the same 65
+  # reads at about 16 minutes, and it is not a new opinion: the sibling scrape in
+  # this same file already reads NFL.com with `read_timeout: 15`.
+  #
   # ONE SPELLING OF WHO WE ARE, for every ESPN read this lane makes. Unset is not
   # anonymous: measured off a local socket 2026-09-27, open-uri fills in
   # `User-Agent: Ruby`, so the only choice available was between Ruby's name and
   # our own, and an honest identifier with a contact URL is the better one.
-  ESPN_JSON_GET = ->(url) { URI.open(url, "User-Agent" => Espn::Api::USER_AGENT).read }
+  ESPN_READ_TIMEOUT = 15
+  ESPN_OPEN_TIMEOUT = 10
+  ESPN_JSON_GET = lambda do |url|
+    URI.open(
+      url,
+      read_timeout: ESPN_READ_TIMEOUT,
+      open_timeout: ESPN_OPEN_TIMEOUT,
+      "User-Agent" => Espn::Api::USER_AGENT
+    ).read
+  end
   COACH_HEADSHOT_WIDTHS = [100, 400].freeze
 
   desc "Pull NFL head coaches from ESPN; populate Coach espn_id + espn_headshot_url. No S3 traffic."
@@ -718,6 +740,15 @@ namespace :nfl do
     skipped_no_coach = 0
     failed = 0
 
+    # THE CAUSES, CARRIED ONTO THE CHANNEL THAT SURVIVES. Every `[!]` and `[?]`
+    # line below is a `puts`, and this lane's only automated consumer runs it
+    # through `rails db:seed` with BOTH streams sent to /dev/null -- so "read the
+    # lines above" would point an operator at output that was already discarded.
+    # The verdict carries the first few causes in its own body, on stderr, which is
+    # where a person re-running the seed by hand will look first.
+    failure_notes = []
+    skip_notes = []
+
     espn_teams.each do |et|
       espn_team_id = et["id"]
       espn_abbrev  = et["abbreviation"]
@@ -725,6 +756,7 @@ namespace :nfl do
 
       unless our_team
         skipped_no_team += 1
+        skip_notes << "no team match for ESPN abbrev=#{espn_abbrev}"
         puts "  [?] No team match for ESPN abbrev=#{espn_abbrev}"
         next
       end
@@ -733,6 +765,7 @@ namespace :nfl do
       ref = coaches_resp.dig("items", 0, "$ref")
       unless ref
         skipped_no_coach += 1
+        skip_notes << "#{our_team.slug}: ESPN listed no coach for team id #{espn_team_id}"
         next
       end
 
@@ -748,6 +781,7 @@ namespace :nfl do
 
       unless coach
         skipped_no_coach += 1
+        skip_notes << "#{our_team.slug}: no Coach row to attach ESPN HC #{first} #{last} to"
         puts "  [?] #{our_team.slug.ljust(25)} no Coach record (ESPN HC: #{first} #{last})"
         next
       end
@@ -765,15 +799,137 @@ namespace :nfl do
       end
     rescue => e
       failed += 1
+      failure_notes << "#{espn_abbrev}: #{e.class}: #{e.message.to_s.truncate(60)}"
       puts "  [!] error for #{espn_abbrev}: #{e.class}: #{e.message}"
     end
 
+    # READ THE LANE LEFT TO RIGHT: ESPN named N teams -> for how many of them is a
+    # head coach now linked in our database? That second number is the only thing
+    # this task is for, and `applied` is it.
+    #
+    #   attempted   teams ESPN named, so teams this run walked
+    #   applied     teams whose HC is ON FILE after this run (fresh link OR unchanged)
+    #   missed      walked and left unlinked, by any route
+    #   unaccounted walked and reported by no counter at all (the subtraction guard)
+    #
+    # AN UNCHANGED TEAM COUNTS AS APPLIED, and that is what keeps this verdict quiet
+    # on a seeded machine. The steady state of this lane is ESPN agreeing with what
+    # we already hold, so `skipped (unchanged): 32` IS the healthy warm re-run; a
+    # rule that read `matched` alone would fire on every rebuild after the first,
+    # and a verdict that fires on a healthy run is a verdict operators switch off.
+    #
+    # GRADED ON WHAT LANDED, NOT ON `failed`, and the difference is measured rather
+    # than argued. Reproduced in a desk before this guard existed, with a two-team
+    # index and every per-team read raising OpenURI::HTTPError 500:
+    #
+    #     matched/updated: 0   skipped (no team): 1   failed: 1   EXIT CODE: 0
+    #
+    # One team raised; the other was an abbrev we hold no Team row for. So "every
+    # team failed" -- the sentence this defect was filed under -- was already only
+    # HALF of the no-op in the very first run that demonstrated it, and a rule
+    # spelled `failed == attempted` would have read that run as a partial failure
+    # and stayed green. Every route out of the loop that leaves a team unlinked is
+    # the same fact about the database, so they are graded together.
+    attempted   = espn_teams.size
+    applied     = matched + skipped_unchanged
+    missed      = attempted - applied
+    unaccounted = attempted - applied - skipped_no_team - skipped_no_coach - failed
+
+    # THE CAUSES AS ONE SENTENCE, built once because both verdicts below say it and
+    # two spellings of one sentence drift. Failures first: a raised exception names
+    # a cause an operator can act on, where a skip names a row we do not have. THREE
+    # is enough to tell `OpenURI::HTTPError: 403` from "no team match for abbrev"
+    # and short enough to read in a rebuild log.
+    cause_cap = 3
+    notes  = failure_notes + skip_notes
+    causes = if notes.any?
+      more = notes.size - cause_cap
+      "Causes: #{notes.first(cause_cap).join('; ')}#{more.positive? ? " (and #{more} more)" : ''}. "
+    else
+      ""
+    end
+
     puts ""
+    puts "ESPN teams:           #{attempted}"
     puts "matched/updated:      #{matched}"
     puts "skipped (unchanged):  #{skipped_unchanged}"
+    puts "linked (matched+unchanged): #{applied}   (the population the rules below grade)"
     puts "skipped (no team):    #{skipped_no_team}"
     puts "skipped (no Coach):   #{skipped_no_coach}"
     puts "failed:               #{failed}"
+
+    # THE DEFECT THIS GUARD EXISTS FOR. The per-team `rescue` above is RIGHT -- one
+    # unreachable team must not cost the other 31 their link -- but the task then
+    # ended on `puts`, so nothing ever read `failed` and the process exited 0 no
+    # matter how little the run achieved. MEASURED before the guard: 0 of 2 teams
+    # linked, exit 0.
+    #
+    # THE EXIT CODE IS THE WHOLE SIGNAL, which is why this had to be an abort and
+    # not a louder report line. The only automated caller is `db:seed`, reached
+    # through db/seeds.rb and db/seeds/32_headshot_links.rb, and bin/ecosystem-build
+    # runs that with BOTH streams sent to /dev/null and `exit 1`s the rebuild on a
+    # non-zero status. Every `puts` in this task is invisible there. That is also
+    # why this lane was first mis-read as unreachable: its name appears nowhere in
+    # bin/ecosystem-build, and three hops of indirection never spell it.
+    #
+    # ZERO LINKED IS NOT DEGRADATION, IT IS THE TASK NOT HAPPENING, and that is the
+    # line between this rule and the warning below. `Espn::ScrapeDepthCharts`'s lane
+    # in lib/tasks/espn.rake draws it in the same place for the same reason.
+    if applied.zero?
+      abort "nfl:link_coach_headshots linked 0 of #{attempted} ESPN teams to a head coach " \
+            "(#{failed} failed, #{skipped_no_team} no team match, #{skipped_no_coach} no coach) " \
+            "-- not one Coach row carries an ESPN id or an ESPN headshot URL from this run. " \
+            "#{causes}" \
+            "If the failures are 403s, this lane has been pointed back at " \
+            "#{Espn::Api::FILTERED_HOST}: read the note in app/services/espn/api.rb. " \
+            "'no team match' means ESPN's abbreviation found no Team row -- either the teams " \
+            "were not seeded before this ran, or ESPN renamed an abbreviation and the " \
+            "teams_by_abbrev overrides at the top of this task need the new spelling."
+
+    # A PARTIAL RUN STAYS GREEN, DELIBERATELY. One dead team is a normal ESPN
+    # afternoon and an exit code carries one bit that cannot say "partly worked", so
+    # a rule that reddened on a single failure would be switched off within a week
+    # -- the same defect in the other costume. It becomes a SENTENCE on stderr, the
+    # only channel the rebuild lane keeps, and the task is idempotent so the next
+    # run either clears it or says so again.
+    elsif missed.positive?
+      warn "WARNING: nfl:link_coach_headshots linked #{applied} of #{attempted} ESPN teams " \
+           "(#{failed} failed, #{skipped_no_team} no team match, #{skipped_no_coach} no coach) " \
+           "-- too few missed to be the lane breaking. #{causes}" \
+           "The task is idempotent, so re-running it retries only these."
+    end
+
+    # THE SUBTRACTION GUARD, which is worth its two lines because the hole this task
+    # was filed for was dug exactly here: `skipped_no_team` was faithfully counted
+    # AND printed, and no rule read it. A `next` added to that loop later lands in
+    # this number without anybody having to remember to report it.
+    #
+    # ── THIS RULE IS UNREACHABLE TODAY AND STAYS. VERDICT, 2026-09-28 ────────────
+    #
+    # Enumerated over the loop body: every path out of it increments exactly one of
+    # the five counters -- `skipped_no_team` (no Team row), `skipped_no_coach` (no
+    # `$ref`, or no Coach row), `skipped_unchanged`, `matched`, and `failed` for
+    # anything raised anywhere in the body, the per-team `rescue` being the last
+    # statement in it. So the five always sum to `espn_teams.size` and `unaccounted`
+    # is always 0. MEASURED BY MUTATION: disarming this branch left the file green,
+    # which is a fact about the branch's REACHABILITY and not about the test file --
+    # nothing can watch a warning that cannot fire.
+    #
+    # WHAT IS TESTED IS THE INVARIANT IT POLICES, not the firing: the case "every
+    # ESPN team the run walked is reported by exactly one counter" reads the printed
+    # report of a three-residue run and asserts the five counters partition the team
+    # list. A `next` added later breaks that case while this branch is still
+    # unreachable, which is the coverage that was actually wanted.
+    #
+    # IT IS A GUARD AWAITING A FUTURE BRANCH, NOT DEAD CODE, and the same argument
+    # keeps `unfetched` in nfl:upload_headshots. This loop's track record is exactly
+    # an unread counter, so the number nobody has to remember to report earns its
+    # place.
+    if unaccounted.nonzero?
+      warn "WARNING: nfl:link_coach_headshots walked #{attempted} ESPN teams but can account " \
+           "for only #{attempted - unaccounted} of them -- #{unaccounted} left the loop by a " \
+           "route no counter names, so the verdict above graded fewer teams than it read."
+    end
   end
 
   # Maps our team_slug to the team's official NFL.com subdomain.
@@ -798,7 +954,27 @@ namespace :nfl do
     skipped_no_image = 0
     failed_team = 0
 
-    Team.where(league: "nfl").where.not(coaches_url: nil).find_each do |team|
+    # THE POPULATION, COUNTED IN THE LOOP rather than derived from a second query.
+    # A relation asked twice is two answers, and the verdict below is a ratio
+    # between this number and what landed -- so it has to be the number of teams
+    # this run actually walked.
+    teams_considered = 0
+    teams = Team.where(league: "nfl").where.not(coaches_url: nil)
+
+    # A RUN WITH NO SOURCE OF WORK IS NOT A RUN WITH NOTHING TO DO. `coaches_url` is
+    # written by db/seeds/10_teams_nfl.rb, which sorts BEFORE the seed that invokes
+    # this task, so an empty population here means the teams were never seeded --
+    # and before this guard the loop walked zero times, printed a column of zeros
+    # and exited 0, which the rebuild reads as a seeded database.
+    if teams.none?
+      abort "nfl:link_coach_headshots_from_team_sites: no NFL team carries a coaches_url, so " \
+            "this lane had nothing to scrape and no coordinator headshot can exist. " \
+            "db/seeds/10_teams_nfl.rb writes that column and sorts before this task's seed; " \
+            "if it ran, check Team.where(league: \"nfl\").where.not(coaches_url: nil)."
+    end
+
+    teams.find_each do |team|
+      teams_considered += 1
       team_slug = team.slug
       # Try Team.coaches_url first; if it 404s, try the alternate /team/coaches-roster/
       # path (Buccaneers and Titans use coaches-roster instead of coaches).
@@ -881,12 +1057,72 @@ namespace :nfl do
       end
     end
 
+    # WHAT THIS LANE IS FOR, counted in COACHES because that is the unit it writes.
+    # `matched` is a URL this run put on file and `skipped_unchanged` is one NFL.com
+    # served again, and both mean the same thing about the database -- which is what
+    # keeps the warm re-run of a seeded machine silent.
+    linked = matched + skipped_unchanged
+    pages_read = teams_considered - failed_team
+
     puts ""
+    puts "teams considered:     #{teams_considered}"
     puts "matched/updated:      #{matched}"
     puts "skipped (unchanged):  #{skipped_unchanged}"
+    puts "linked (matched+unchanged): #{linked}   (the population the rules below grade)"
     puts "skipped (no Coach):   #{skipped_no_coach}"
     puts "skipped (no image):   #{skipped_no_image}"
     puts "failed (team page):   #{failed_team}"
+
+    # THE SAME DEFECT AS THE TASK ABOVE, ONE LINE LOWER IN THE SAME SEED. The
+    # per-team rescue is right -- one unreachable club must not cost the other 31
+    # their coordinators -- but `failed_team` was counted, printed, and read by
+    # nothing, so the task returned and `db:seed` exited 0. MEASURED before this
+    # guard, with two teams carrying a coaches_url and every candidate URL answering
+    # 404: `failed (team page): 2`, exit 0. bin/ecosystem-build runs that seed with
+    # both streams discarded and reads only the status, so the report above was
+    # never going to reach anybody.
+    #
+    # THIS LANE IS THE ONLY WRITER OF A COORDINATOR'S HEADSHOT URL, so a silent total
+    # failure costs three of the four coaches on every team their avatar. MEASURED
+    # 2026-09-28 by grepping every write of `espn_headshot_url` in app/, lib/ and
+    # db/seeds/: on Coach there are exactly two, both in this file, and the other one
+    # (`nfl:link_coach_headshots`) looks up `role: "head_coach"` and nothing else --
+    # so it cannot reach a coordinator by construction, not merely by habit. The
+    # reason ESPN cannot cover the gap is this file's own older note, carried forward
+    # rather than re-measured: its coach API has no `headshot.href` for ~21 of 32 head
+    # coaches and none for any coordinator.
+    #
+    # GRADED ON `linked`, NOT ON `failed_team`, because that counter is blind to the
+    # other way to link nothing: every page loads and none yields a coach card this
+    # scrape can match, which is what a markup change at NFL.com looks like from in
+    # here. The abort names which of the two happened, since they are different
+    # chores -- one is NFL.com being down, the other is this selector being stale.
+    if linked.zero?
+      cause = if failed_team == teams_considered
+        "not one of their coaches pages could be read (tried both the /team/coaches/ and " \
+          "/team/coaches-roster/ spellings), so this is NFL.com or the network"
+      else
+        "#{pages_read} of their pages WERE read and yielded no coach this scrape could " \
+          "match (#{skipped_no_coach} #{'card'.pluralize(skipped_no_coach)} named a coach we " \
+          "have no row for, #{skipped_no_image} had no usable image), so the markup or our " \
+          "person_slugs moved"
+      end
+      abort "nfl:link_coach_headshots_from_team_sites linked 0 coaches across " \
+            "#{teams_considered} NFL teams -- #{cause}. Coordinator headshots come from " \
+            "nowhere else, so every one of them is now sourceless."
+
+    # A PARTIAL RUN STAYS GREEN, DELIBERATELY. Two clubs' pages down is a normal
+    # NFL.com afternoon; an exit code carries one bit and cannot say "partly", so a
+    # rule that reddened on one lost team would be switched off within a week. It
+    # becomes a sentence on stderr, the only channel the rebuild keeps, and the task
+    # is idempotent so the next run either clears it or says so again.
+    elsif failed_team.positive?
+      warn "WARNING: nfl:link_coach_headshots_from_team_sites read #{pages_read} of " \
+           "#{teams_considered} team coaches pages and linked #{linked} " \
+           "#{'coach'.pluralize(linked)} -- #{failed_team} " \
+           "#{'team'.pluralize(failed_team)} served neither candidate URL. Too few to be the " \
+           "lane breaking; the task is idempotent, so re-running it retries only these."
+    end
   end
 
   desc "For Coaches with espn_headshot_url (from ESPN or NFL.com), cache variants. Idempotent."

@@ -25,7 +25,7 @@ module Appearances
   # WHAT IT COSTS, and why it is not the first thing that runs. Every image scored
   # is billed. So the caller shortlists on a free metadata score first
   # (GatherReferencePhotos::VISION_SHORTLIST) and only the survivors are sent, in
-  # ONE request rather than one request per photograph.
+  # batches of BATCH_SIZE rather than one request per photograph.
   #
   # ANTHROPIC FETCHES THE IMAGES SERVER-SIDE, from a `type: "url"` image source —
   # we never download the bytes. That is the same trust boundary Higgsfield's
@@ -65,12 +65,83 @@ module Appearances
     MODEL = "claude-haiku-4-5".freeze
     ANTHROPIC_VERSION = "2023-06-01".freeze
 
-    # A one-line JSON answer per image. Small on purpose — a classifier that can
-    # run long is a classifier that can bill long.
-    MAX_TOKENS = 512
+    # ONE JSON OBJECT PER IMAGE, IN ONE ANSWER — so this ceiling scales with the
+    # caller's shortlist and not with anything about this file.
+    #
+    # ⚠ IT WAS 512 AND THAT WAS ALREADY TOO LOW FOR TWELVE IMAGES. Measured 2026-09-27
+    # with /v1/messages/count_tokens, which is free, over a realistic answer object
+    # ({"index", "visibility", "fill", "faces", "reason"} with a short reason):
+    #
+    #   12 images  1,259 characters   523 tokens   against a MAX_TOKENS of 512
+    #   24 images  2,519 characters  1,039 tokens
+    #
+    # AND TRUNCATION HERE IS NOT A SHORT ANSWER, IT IS NO ANSWER. `#parse` finds the
+    # array with `text[/\[.*\]/m]`, which needs the CLOSING bracket; a response stopped
+    # at `max_tokens` has none, the match is nil, `JSON.parse("")` raises, and the rescue
+    # returns an EMPTY hash. Every image in the batch loses its judgement, the caller
+    # reports `face_classifier_blind?`, and the page raises the alarm that says the
+    # vendor saw nothing — for a batch the vendor saw perfectly and answered in full. The
+    # failure names the wrong party, which is the one kind of alarm worse than silence.
+    #
+    # 2,048 IS TWICE WHAT 24 IMAGES MEASURED, and the headroom is free: output is billed
+    # on tokens GENERATED, never on the ceiling, so a generous limit costs nothing and a
+    # tight one costs the whole answer. It still bounds the run — "a classifier that can
+    # run long is a classifier that can bill long" was the right instinct and the wrong
+    # number.
+    #
+    # SIZED FOR A WHOLE SHORTLIST RATHER THAN FOR ONE BATCH, deliberately. Only BATCH_SIZE
+    # objects ride in any one response today, so 8 images need about 344 tokens and even
+    # the old 512 would have covered them. Sizing it to
+    # Appearances::GatherReferencePhotos::VISION_SHORTLIST instead costs nothing and makes
+    # the ceiling immune to a BATCH_SIZE change — raising the batch back to the whole
+    # shortlist must not be the edit that silently reintroduces truncation.
+    MAX_TOKENS = 2048
 
     OPEN_TIMEOUT = 5
     READ_TIMEOUT = 30
+
+    # HOW MANY IMAGES RIDE IN ONE REQUEST — the blast radius of a single bad file.
+    #
+    # ⚠ MEASURED ON A REAL RUN, 2026-09-27, `justin-jefferson` against live Serper and
+    # this classifier. Four query variants shortlisted 24 candidates, 14 mirrored, and all
+    # 14 rode one request. The vendor answered:
+    #
+    #   400 messages.0.content.15.image.source.base64.data:
+    #       The file format is invalid or unsupported
+    #
+    # Content index 15 is image 7, and image 7's bytes begin `3c68746d6c` — `<html`. A
+    # Facebook crawler endpoint (`lookaside.fbsbx.com/lookaside/crawler/...`) had served an
+    # HTML page, and because Serper reports no mime type and the URL path ended `.jpg`,
+    # Appearances::MirrorCandidates derived `image/jpeg` from the extension and mirrored an
+    # HTML document into our bucket as `original.jpg`. Every one of the OTHER THIRTEEN
+    # images was a valid JPEG and NONE of them was judged: the run filed 74 candidates,
+    # scored 0, chose 0, and raised the alarm that says the VENDOR saw nothing.
+    #
+    # ONE BAD FILE MUST NOT COST THE WHOLE SHORTLIST, and batching bounds that blast
+    # radius whatever the cause. It is the blast-radius control, never the detector: it
+    # also bounds causes no pre-check sees, such as a truncated file that really is
+    # `image/jpeg`, and it cost a tenth of a cent and no new fetch, which is why it went
+    # first.
+    #
+    # ⚠ THIS COMMENT ONCE SAID NO METADATA CHECK COULD HAVE CAUGHT THIS FILE. That was
+    # FALSE and it was the stated reason not to look. Re-measured 2026-09-28, one free
+    # HEAD: `content-type: text/html`, body beginning `<html>`. The host never declared
+    # `image/jpeg`; the RESPONSE's own Content-Type is a third signal and catches this
+    # outright. The pre-check is owed and carded — it needs the response, which
+    # MirrorCandidates does not hold, so it is a restructuring rather than a guard.
+    #
+    # EIGHT, AND WHAT IT COSTS. The per-request overhead is the system prompt, measured at
+    # 624 tokens with /v1/messages/count_tokens: three requests for a full shortlist of 24
+    # instead of one adds ~1,248 input tokens, about $0.0012 per athlete on Haiku 4.5. For
+    # that tenth of a cent, the run above would have scored 16 of 24 instead of 0 — the
+    # lane degrades rather than going blind, and references still reach the model.
+    #
+    # NOT ONE IMAGE PER REQUEST, which would make every bad file cost only itself: the
+    # comparison between images IS part of the judgement (see #build_content), 24 requests
+    # multiply the 624-token overhead by 24, and the same run would cost ~$0.032 of
+    # overhead alone. Eight keeps the comparison meaningful and the overhead at a rounding
+    # error.
+    BATCH_SIZE = 8
 
     # THREE NUMBERS PER IMAGE, AND THE SECOND ONE IS THE ONE THAT DECIDES A MINT.
     #
@@ -193,19 +264,38 @@ module Appearances
       urls = Array(image_urls).map(&:to_s).uniq.reject(&:empty?)
       return {} if urls.empty? || @api_key.blank?
 
-      parse(post(urls), urls, target: target)
-    rescue StandardError => e
-      Rails.logger.warn("[Appearances::FaceVisibility] #{e.class}: #{e.message}")
-      FailureLog.file(e, target: target)
-      {}
+      urls.each_slice(BATCH_SIZE).each_with_object({}) do |batch, judgements|
+        judgements.merge!(judge(batch, target: target))
+      end
     end
 
     private
 
-    # ONE REQUEST, EVERY IMAGE. N requests would multiply the per-call overhead by
-    # N for an answer the model can give in one pass, and the images are all of the
-    # same person — the comparison is part of the judgement.
-    # ONE MESSAGE, EVERY IMAGE, each behind its own index label.
+    # ONE BATCH, ONE REQUEST, AND A FAILURE THAT COSTS ONLY ITS OWN BATCH.
+    #
+    # THE RESCUE IS HERE RATHER THAN AROUND THE WHOLE LOOP, and that placement IS the
+    # blast-radius control described at BATCH_SIZE. Around the loop, one refused batch
+    # returns {} for everything and the caller reports a blind classifier over images the
+    # vendor judged perfectly.
+    def judge(urls, target:)
+      parse(post(urls), urls, target: target)
+    rescue StandardError => e
+      Rails.logger.warn(
+        "[Appearances::FaceVisibility] #{e.class} on a batch of #{urls.length}: #{e.message}"
+      )
+      FailureLog.file(e, target: target)
+      {}
+    end
+
+    # ONE REQUEST PER BATCH, EVERY IMAGE IN THE BATCH. A request per image would multiply
+    # the per-call overhead by N for an answer the model can give in one pass, and the
+    # images are all of the same person — the comparison is part of the judgement. BATCH_SIZE
+    # is where that argument stops being worth its blast radius.
+    #
+    # THE INDEX IS BATCH-LOCAL, and `#parse` is handed the same batch it was built from, so
+    # a score is keyed back through that batch's own array. Global indices would be a second
+    # spelling of the same fact and the first thing a batching change would get wrong.
+    # ONE MESSAGE, EVERY IMAGE IN THE BATCH, each behind its own index label.
     #
     # Split out from #post so the suite can assert the REQUEST SHAPE without
     # stubbing the method that builds it — a test that stubs `post` and then

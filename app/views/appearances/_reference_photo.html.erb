@@ -13,6 +13,10 @@
                   wrong-person note. WORTH PASSING ON EVERY PAGE: without it a tile
                   can print "not this person" and not say who, which is an
                   assertion the operator cannot check.
+      subject     optional, calibration only. The bare person-plus-team query every
+                  variant is built from, used to shorten this row's stored query into
+                  the variant that found it. Absent, the tile prints the whole query,
+                  which is longer but never wrong.
 
     READ THROUGH local_assigns RATHER THAN A BARE NAME. An undefined local raises
     in a partial, and these two are absent on the look page by design, so the
@@ -21,6 +25,7 @@
     passed a block here at all. %>
 <% calibration = local_assigns[:calibration] %>
 <% person_name = local_assigns[:person_name] %>
+<% subject = local_assigns[:subject] %>
 <% chip = reference_source_chip(photo) %>
 <% host = reference_photo_host(photo) %>
 <%# data-test / data-source / data-chosen are the handles the component and e2e
@@ -155,6 +160,32 @@
           operator reads them: can it mint, why did it score what it scored, and what
           do YOU think. %>
       <div class="pt-1.5 mt-1.5 border-t border-subtle space-y-1.5">
+        <%# WHICH OF THE FOUR SEARCHES FOUND THIS PHOTOGRAPH.
+
+            THE OPERATOR ASKED FOR THIS DIRECTLY and it is what makes a variant arguable
+            rather than a line in a constant: he judges this pipeline by this page, and a
+            candidate with no provenance is one he cannot calibrate a variant against. A
+            tile carrying a laugh he likes is an argument for keeping "laughing"; the same
+            tile with no label is an argument for nothing.
+
+            THE VARIANT, WITH THE WHOLE QUERY IN THE TOOLTIP. The label is what he would
+            say out loud; the full query is what was actually bought, and the two differ
+            by the subject — which itself carries the team, so the tooltip is also where a
+            wrong team shows up.
+
+            ON A PERSISTED SEARCH ROW ONLY. The two floor rows are built in memory and
+            were never returned by a search, so a variant chip on one would credit a
+            search with a photograph we supplied ourselves. %>
+        <% if photo.from_search? && photo.query.present? %>
+          <p data-test="found-by-variant" class="text-3xs text-muted truncate"
+             title="Found by the search &ldquo;<%= photo.query %>&rdquo;">
+            found by
+            <span class="font-mono text-body">
+              <%= search_variant_label(photo.query, subject: subject) %>
+            </span>
+          </p>
+        <% end %>
+
         <% if photo.mime_type.present? %>
           <%# THE ARCHIVE'S OWN ADMISSION OF WHAT THE FILE IS. On a real Commons
               answer more than half the rows report a document mime type, and this is

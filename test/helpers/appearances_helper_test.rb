@@ -141,4 +141,56 @@ class AppearancesHelperTest < ActionView::TestCase
       assert_not_equal "not chosen", label, "#{reason} has no label, so its tile says nothing"
     end
   end
+
+  # ---- which of the four searches found a photograph ------------------------------
+  #
+  # THE LABEL IS HOW THE OPERATOR REFERS TO A VARIANT — "no helmet", not
+  # "Josh Allen Buffalo Bills no helmet", which is unreadable on a thumbnail-sized tile.
+
+  test "a variant query is shortened to the words that make it a variant" do
+    subject = "Josh Allen Buffalo Bills"
+
+    assert_equal "no helmet", search_variant_label("#{subject} no helmet", subject: subject)
+    assert_equal "laughing", search_variant_label("#{subject} laughing", subject: subject)
+  end
+
+  # THE BARE SUBJECT IS NAMED RATHER THAN RENDERED BLANK. An empty string on a page is
+  # indistinguishable from a missing value, and this is the variant the other three are
+  # measured against — the one whose row a reader most needs to find.
+  test "the bare-subject query is labelled rather than left empty" do
+    assert_equal "name only", search_variant_label("Josh Allen", subject: "Josh Allen")
+  end
+
+  # ⚠ STRIPPED, NOT LOOKED UP AGAINST QUERY_VARIANTS, and this is the case that decides
+  # between the two. A row filed by a variant since REMOVED from the list is exactly the
+  # row a reader is trying to account for after re-tuning the list; a lookup would label it
+  # as having no variant at all. Stripping reads the row's own stored query, so a retired
+  # variant still names itself.
+  test "a query from a variant we no longer ship still names its own variant" do
+    assert_equal "winking", search_variant_label("Josh Allen winking", subject: "Josh Allen")
+    refute_includes Appearances::GatherReferencePhotos::QUERY_VARIANTS, "winking",
+                    "the precondition: this variant is not in the shipped list"
+  end
+
+  # A QUERY THAT DOES NOT START WITH THE SUBJECT IS GIVEN BACK WHOLE. It happens for real:
+  # the subject carries the TEAM, so a traded player's older rows carry his old team. The
+  # whole query is the honest answer — it says the row came from a question we no longer ask
+  # — and truncating it against a subject it never contained would invent a variant.
+  test "a query for a different subject is shown whole rather than mangled" do
+    stale = "Josh Allen Denver Broncos no helmet"
+
+    assert_equal stale, search_variant_label(stale, subject: "Josh Allen Buffalo Bills")
+  end
+
+  test "a row with no query at all says where it came from instead of nothing" do
+    assert_equal "an earlier search", search_variant_label(nil, subject: "Josh Allen")
+    assert_equal "an earlier search", search_variant_label("  ", subject: "Josh Allen")
+  end
+
+  # A MISSING SUBJECT MUST NOT SWALLOW THE QUERY. The partial reads `subject` through
+  # local_assigns, so a caller that forgets to pass it gets the whole query — longer, never
+  # wrong — rather than a stripped-to-nothing label.
+  test "with no subject to strip the whole query is shown" do
+    assert_equal "Josh Allen no helmet", search_variant_label("Josh Allen no helmet", subject: nil)
+  end
 end

@@ -220,6 +220,30 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
                   "the unconfigured note is unreachable while a keyless provider ships"
   end
 
+  # ⚠ A SPENDING CONTROL MUST NOT UNDERSTATE ITS PRICE, and this panel did the moment the
+  # query fan-out landed: it said "Will search for X" and "Each search costs money" over a
+  # button that now buys one query per
+  # Appearances::GatherReferencePhotos::QUERY_VARIANTS entry. Providers bill per QUERY, so
+  # the count is the price, and a stale "one query" is the kind of figure an operator
+  # budgets against.
+  #
+  # DERIVED FROM THE CONSTANT, so shortening or lengthening the variant list cannot leave
+  # the copy behind. This page deliberately does NOT list the queries — that is the
+  # scouting page's job, because that is the surface the search is judged on — so what it
+  # owes is the number.
+  test "[component] the search panel names how many queries the button buys" do
+    cache_headshot
+    get page_path
+
+    count = Appearances::GatherReferencePhotos::QUERY_VARIANTS.length
+    assert_operator count, :>, 1, "the precondition: a fan-out is what makes the count load-bearing"
+    assert_select "[data-test='search-configured']" do |nodes|
+      text = nodes.first.text.squish
+      assert_match(/Will run #{count} searches/, text,
+                   "the panel must name the number of queries, not imply one")
+    end
+  end
+
   # A PERSON WITH NO PHOTOGRAPHS AT ALL is a real state, not a failure: the mint
   # service raises rather than building an identity from nothing, so the page has to
   # say so instead of offering a button that cannot work.
@@ -379,8 +403,8 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
   # not one. Hub signup is OPEN — magic-link and Google are both create-or-login —
   # so "signed in" costs a member of the public one email address. Behind that, a
   # login-only #mint buys a Higgsfield identity per look and a login-only #search
-  # buys one query plus up to VISION_SHORTLIST vision classifications PER CLICK,
-  # uncapped. Before this lane, Appearances::CreateCharacterReference ran only from a
+  # buys one query per QUERY_VARIANTS entry — four — plus up to VISION_SHORTLIST
+  # vision classifications PER CLICK, uncapped. Before this lane, Appearances::CreateCharacterReference ran only from a
   # rake task; the page is what made the spend reachable from the web at all.
   #
   # THE REDIRECT IS THE WEAKER HALF OF THIS TEST. What it has to prove is that NO

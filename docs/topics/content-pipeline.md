@@ -467,8 +467,10 @@ classifier to save money.
 | Can it spot a helmet? | **no** | yes |
 | Runs when | always | only with `ANTHROPIC_API_KEY` |
 
-The classifier is asked once per search with every shortlisted image in ONE
-message (`GatherReferencePhotos::VISION_SHORTLIST`, currently 12), and Anthropic
+The classifier is asked in batches of `FaceVisibility::BATCH_SIZE` until the shortlist
+(`GatherReferencePhotos::VISION_SHORTLIST`, currently 24) is spent — three requests at a
+batch of 8, never one message, so a single unreadable file costs its own batch rather
+than every judgement in the shortlist. Anthropic
 fetches the images server-side from a `type: "url"` source — the same trust
 boundary Higgsfield's create sits behind, and the same obligation: only URLs that
 have cleared `Appearances::FetchableUrl` are ever passed.
@@ -647,7 +649,7 @@ showing a control that could not save.
 that flattered the machine would have the operator tune his judgement to a ranker that does
 not behave the way the page implied. It names: the wrong-person ranking defect; that the
 top-ranked photograph is usually one Higgsfield refuses to mint; that **the cap is
-`CHOSEN_LIMIT` = 6, not the 5 the operator asked for**; and whether anything actually
+`CHOSEN_LIMIT` = 8, not the 5 the operator asked for**; and whether anything actually
 looked at the photographs. Both ranking defects are owned by task
 `reference-photos-wrong-person` and neither is fixed here.
 
@@ -697,13 +699,25 @@ using its OWN inference.
 
 **Why this and not an API key.** The in-app agents (`Content::ScriptAgent`,
 `MetadataAgent`, `PrepForTiktok`, and the three `News::*Agent`s) each do a raw
-`Net::HTTP` call to `api.anthropic.com` keyed on `ENV["ANTHROPIC_API_KEY"]` —
-which **production does not have**. Routing inference through a soul instead
-means no model key in prod, prompts that live in SOP prose an agent can improve
-rather than frozen string literals in `.rb` files, inference that lands in the
-agent trajectory where the learning loop can grade it, and a real voice veto
-(Mason cannot veto a line a Rails service already sent). Those services stay in
-place as the LEGACY path for `workflow=video`; retiring them is its own task.
+`Net::HTTP` call to `api.anthropic.com` keyed on `ENV["ANTHROPIC_API_KEY"]`.
+**Production HAS that key.** This paragraph used to end *"which production does
+not have"*, which made the file contradict its own two corrections above — the
+classifier section and the mint-evidence rule both record the key arriving on
+2026-09-26. Re-measured 2026-09-28, by name and never by value:
+
+```bash
+heroku config --json --app mcritchie-studio | jq 'length'                        # control: 46; 0 = read failed
+heroku config --json --app mcritchie-studio | jq '(.ANTHROPIC_API_KEY // "") != ""'   # true
+```
+
+The same expression on a name that is absent answered false, which is the
+control that makes the true mean something. So key absence is NOT the reason,
+and never was the load-bearing one. Routing inference through a soul instead
+means prompts that live in SOP prose an agent can improve rather than frozen
+string literals in `.rb` files, inference that lands in the agent trajectory
+where the learning loop can grade it, and a real voice veto (Mason cannot veto
+a line a Rails service already sent). Those services stay in place as the LEGACY path for
+`workflow=video`; retiring them is its own task.
 
 **The board is already the queue.** A `Content` at `stage=idea` IS a pending
 work item, so nothing new queues anything — the only missing primitives were a
