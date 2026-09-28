@@ -686,7 +686,7 @@ apps:
     # APPLY to it (no dyno, no URL, no deploy of any kind). Cyvasse is a deployable
     # Rails app: a QA copy could exist. It is exempt on COST, by OPERATOR DECISION:
     #
-    #   Alex, 2026-09-25 (verbatim, typo kept; the guard matches it exactly):
+    #   Alex, 2026-09-25 (verbatim, typo kept; HISTORY since 2026-09-28):
     #   "No cyvasse-qa unless there is a free teir we can use"
     #   Heroku has no free tier (a QA copy is ~$12/mo), so there is no
     #   `cyvasse-qa` app.
@@ -697,10 +697,11 @@ apps:
     # stamp forever — no run can evidence a QA env that does not exist — so the
     # choice is exempt-by-decision or never ship.
     #
-    # THE GUARD STAYS FAIL-CLOSED for every other repo. repos_test.rb pins the
-    # exempt set to exactly turf-vault + cyvasse, and requires every exempt repo
-    # that HAS a prod_deploy (i.e. could have had a QA copy) to be on its
-    # operator-decision list with the decision cited. The day cyvasse gains a
+    # THE GUARD STAYS FAIL-CLOSED for every other repo. repos_test.rb requires
+    # every exempt repo that HAS a prod_deploy (i.e. could have had a QA copy) to
+    # carry a cited operator decision: since 2026-09-28 cyvasse is on profile
+    # standalone-heroku, whose fleet decision (config/app_profiles.yml →
+    # qa_decision, this quote kept under history) is that grant. The day cyvasse gains a
     # qa_test_cmd or a qa_environments entry, the "exempt repo really has no QA
     # target" test goes red and this key must come out. The exemption is QA-only:
     # the `shipped` stamp still needs cyvasse's real release -> main record.
@@ -760,8 +761,8 @@ apps:
     # EXEMPT, ON COST, BY OPERATOR DECISION. This is cyvasse's kind of exemption,
     # not turf-vault's: dads-app is a deployable app and a QA copy could exist.
     #
-    #   Alex's decision, verbatim (chat, 2026-09-26; the guard matches the cost
-    #   line exactly). Asking for the hosting: "anyway we can get it cheaper than $12/m"
+    #   Alex's decision, verbatim (chat, 2026-09-26; HISTORY since
+    #   2026-09-28, see caveat 1). Asking for the hosting: "anyway we can get it cheaper than $12/m"
     #   Offered A (GitHub Pages), B (inside moms-app) or C, he replied: "C"
     #   (the epic plan, .agents/epics/dads-app.md, records "Alex chose option C
     #   (Heroku Eco dyno)"). Option C was ONE Eco dyno, about $5/month, no database and no QA copy,
@@ -771,8 +772,10 @@ apps:
     #
     # HONEST CAVEATS. (1) Alex's words choose the Eco dyno on cost; "no QA
     # copy" is that choice read through his cyvasse rule, not a separate
-    # sentence of his. Change the quote here AND in repos_test.rb's
-    # QA_EXEMPT_BY_OPERATOR_DECISION together. (2) Eco
+    # sentence of his. Since 2026-09-28 this quote is HISTORY: dads-app is on
+    # profile standalone-heroku, whose single fleet decision (config/app_profiles.yml
+    # → qa_decision) is the grant repos_test.rb checks; the quote is kept there too,
+    # under history. (2) Eco
     # dyno hours are one pool per Heroku account, so a sleeping `dads-app-qa`
     # Eco dyno may cost nothing extra; if Alex takes that as his free tier, this
     # key comes out and dads-app earns QA evidence like any app.
@@ -783,9 +786,9 @@ apps:
     # dads-app member at the QA stamp forever, since no run can evidence a QA
     # env that does not exist.
     #
-    # THE GUARD STAYS FAIL-CLOSED for every other repo: repos_test.rb pins the
-    # exempt set to exactly cyvasse + dads-app + turf-vault, and requires each
-    # exempt repo with a prod_deploy to carry a cited operator decision. The
+    # THE GUARD STAYS FAIL-CLOSED for every other repo: repos_test.rb requires
+    # each exempt repo with a prod_deploy to carry a cited operator decision;
+    # dads-app's is its profile's qa_decision in config/app_profiles.yml. The
     # exemption is QA-only: the `shipped` stamp still needs dads-app's real
     # release -> main record.
     qa_evidence: exempt
@@ -831,9 +834,10 @@ apps:
   #   "Should the four showcase apps get QA copies, or ship straight to
   #   production like Cyvasse and dads-app?", he selected the option
   #   "No QA copies (Recommended)".
-  #   The option text was written by the agent; the choice was his. The guard
-  #   matches that string exactly, in repos_test.rb's
-  #   QA_EXEMPT_BY_OPERATOR_DECISION; change both together.
+  #   The option text was written by the agent; the choice was his. Since
+  #   2026-09-28 this is HISTORY: these apps are on profile standalone-heroku,
+  #   whose fleet decision (config/app_profiles.yml → qa_decision) is the grant
+  #   repos_test.rb checks; this selection is kept there under history.
   #
   # WHAT THE EXEMPTION COSTS, said plainly: a change to any of the four reaches
   # production without a human-reviewable QA deploy. Its gates are CI (every
@@ -909,9 +913,10 @@ apps:
   # ⛔ NO qa_test_cmd AND NO qa_environments.yml ENTRY — DECLARED QA-EVIDENCE
   # EXEMPT under the SAME operator decision as the four: Alex selected
   # "No QA copies (Recommended)" for the showcase apps, and on 2026-09-26 asked
-  # for these two to be migrated the same way. No new decision was taken, so
-  # repos_test.rb's QA_EXEMPT_BY_OPERATOR_DECISION cites the same string for
-  # both; change it everywhere together. The cost is the four's: a change
+  # for these two to be migrated the same way. No new decision was taken. Since
+  # 2026-09-28 both are on profile standalone-heroku, whose fleet decision
+  # (config/app_profiles.yml → qa_decision) is the grant repos_test.rb checks.
+  # The cost is the four's: a change
   # reaches production without a human-reviewable QA deploy, gated by CI and
   # review, and the `shipped` stamp still needs each app's release -> main record.
   10and5:
