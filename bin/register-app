@@ -94,4 +94,4 @@ parsed = YAML.safe_load_file(REGISTRY).dig("apps", slug)
 drift = parsed ? AppProfile.drift(parsed) : ["entry not found after writing"]
 abort("register-app: wrote the entry but it does not read back as the profile: #{drift.join('; ')}") unless drift.empty?
 puts "\nWrote #{slug} to config/release_repos.yml (read back: matches profile #{profile})."
-puts "Next: commit it in a task, then run bin/release init if the branches check failed."
+puts "Next: run bin/rails test test/models/release/repos_test.rb, then ship the task."

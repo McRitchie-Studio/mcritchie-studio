@@ -37,7 +37,7 @@ profiles:
     # is missing.
     contract:
       - The repo is McRitchie-Studio/<slug>, cloned at /Users/alex/projects/<slug>
-      - origin has main, accepted and release (bin/release init creates the last two)
+      - origin has main, accepted and release (push the last two from main first)
       - .github/workflows/ci.yml has a `test` job; its command becomes test_cmd
       - .gitignore ignores .worktrees/
       - The Heroku app exists and <smoke_url>/up answers 200
