@@ -215,7 +215,9 @@ fi
 # scripts resolve the tree they ACT on from the cwd (RepoRoot.code_root), so the
 # installed copy still certifies and ships the desk you stand in. The one untracked
 # file they read beside themselves, the hub's .env (the board secret), is a symlink
-# to the runtime hub's own .env, never a copy.
+# to the runtime hub's own .env, never a copy. The few scripts in bin/ that boot the
+# Rails APPLICATION are installed as hub shims instead of copies — see SCRIPTS THAT
+# CANNOT RUN FROM THE TOOLING TREE below.
 #
 # ATOMIC: the tree is staged under a scratch name and renamed into place, then
 # $PROJECTS_DIR/.agents/bin is swapped with rename(2) onto a fresh symlink — a reader
@@ -229,6 +231,105 @@ TOOLING_KEEP=3
 
 tooling_sha() {
   git -C "$ROOT" rev-parse --verify --quiet HEAD 2>/dev/null
+}
+
+# ── SCRIPTS THAT CANNOT RUN FROM THE TOOLING TREE ─────────────────────────────
+#
+# `git archive HEAD -- bin` copies ALL of bin/, and a handful of those scripts boot
+# the Rails APPLICATION rather than require_relative-ing pure Ruby. The tooling tree
+# is not a Rails app and was never meant to be: TOOLING_PATHS is bin/, lib/, config/
+# and the pure app/models/{release,devops}. There is no Gemfile, no Gemfile.lock, no
+# app/assets, no db/. A direct copy of such a script therefore died on first boot:
+#
+#   $ /Users/alex/projects/.agents/bin/reviewer-select --help
+#   bundler/definition.rb:38:in 'build': .../tooling/<sha>/Gemfile not found
+#     (Bundler::GemfileNotFound)
+#
+# — measured 2026-09-27, and true of every tooling tree since the fixed path was
+# born (45c83556, 2026-09-25). Five scripts were affected: rails, rake, jobs,
+# reviewer-select, reap-cert-databases. A reviewer following CLAUDE.md, which names
+# the fixed path FIRST, read that trace as a broken Ruby install rather than a wrong
+# path and fell back to the hub by hand.
+#
+# ADDING A Gemfile IS NOT THE FIX, and the reason is sharper than "Rails needs the
+# whole checkout" — it needs a CWD. Rails derives Rails.root by climbing from the
+# CWD for config.ru, not from the script's location, so a Gemfile here makes the
+# answer depend on where the CALLER stands. Both arms measured 2026-09-27:
+#
+#   cwd with no checkout above it  -> Sprockets::Railtie::ManifestNeededError
+#   cwd inside ANY checkout (a desk) -> boots fine, Rails.root = THAT checkout
+#
+# The second arm is the dangerous one, and it is why a Gemfile is worse than no
+# Gemfile: the fast lane's rule is "the path picks the SCRIPT, the cwd picks the
+# TREE", so agents stand in their desk — and a Gemfile would have these scripts
+# silently boot the DESK's application instead of the hub's, varying per caller.
+# A shim PINS the tree it delegates to; a Gemfile would let the cwd pick it.
+#
+# SO THE FIXED PATH DELEGATES. Each such script is installed as a shim that execs
+# the hub primary's copy — the one checkout that IS a Rails app. The documented
+# entry point stays the fixed path (demoting it in the docs would trade this loud
+# failure for the quiet `cannot load such file` the fixed path exists to remove),
+# and the scripts that do NOT need Rails keep running from the tooling tree, immune
+# to a hub `git checkout` as designed.
+#
+# The set is DERIVED, never enumerated: an enumerated list goes stale the first time
+# someone adds a Rails-booting script to bin/, and goes stale silently.
+TOOLING_RAILS_BOOT_RE='require_relative[[:space:]]+"\.\./config/(boot|environment)"'
+
+# `return 0` is load-bearing under `set -euo pipefail`: the loop's last command is a
+# grep that FAILS on any non-matching file, so the function would exit non-zero, and a
+# `var="$(this | tr ...)"` assignment that fails aborts the whole script. Measured: the
+# check silently stopped mid-run, printing nothing after the OK line.
+tooling_rails_booting_scripts() {
+  local dir="$1" script
+  for script in "$dir"/*; do
+    [ -f "$script" ] || continue
+    grep -qE "$TOOLING_RAILS_BOOT_RE" "$script" 2>/dev/null && basename "$script"
+  done
+  return 0
+}
+
+# The shim. `$hub` is baked at install time; everything else is resolved at run time.
+write_tooling_hub_shim() {
+  local path="$1" name="$2"
+  {
+    printf '#!/bin/sh\n'
+    printf '# Installed by bin/install-agent-docs. NOT a copy of bin/%s.\n#\n' "$name"
+    printf '# bin/%s boots the Rails application, which this tooling tree is not (no\n' "$name"
+    printf '# Gemfile, no app/assets, no db/). A direct copy died with\n'
+    printf '# Bundler::GemfileNotFound naming this directory. See the FAST-LANE TOOLING\n'
+    printf '# block in bin/install-agent-docs for the measurement. So the fixed path stays\n'
+    printf '# the entry point and delegates to the hub primary, the checkout that IS the app.\n'
+    printf 'hub=%q\n' "$RUNTIME_ROOT"
+    printf 'name=%q\n' "$name"
+    cat <<'SHIM'
+target="$hub/bin/$name"
+# A `git checkout` in the hub hides a tracked file for ~0.4-0.7s — the very window
+# the fixed path exists to survive. Wait it out before giving up.
+waited=0
+while [ ! -x "$target" ] && [ "$waited" -lt 30 ]; do
+  sleep 0.1
+  waited=$((waited + 1))
+done
+if [ ! -x "$target" ]; then
+  echo "$name: needs the Rails app, which the fast-lane tooling tree is not." >&2
+  echo "  it delegates to $target, which is missing or not executable." >&2
+  echo "  is $hub a checkout of mcritchie-studio? Re-run its bin/install-agent-docs install." >&2
+  exit 127
+fi
+exec "$target" "$@"
+SHIM
+  } > "$path"
+  chmod +x "$path"
+}
+
+install_tooling_hub_shims() {
+  local stage="$1" name
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    write_tooling_hub_shim "$stage/bin/$name" "$name"
+    echo "  shimmed $name -> $RUNTIME_ROOT/bin/$name (boots Rails; cannot run from the tooling tree)"
+  done < <(tooling_rails_booting_scripts "$stage/bin")
 }
 
 install_fast_lane_tooling() {
@@ -266,6 +367,7 @@ install_fast_lane_tooling() {
     rm -rf "$stage"
     mkdir -p "$stage"
     git -C "$ROOT" archive --format=tar HEAD -- "${paths[@]}" | tar -x -C "$stage"
+    install_tooling_hub_shims "$stage"
     ln -s "$RUNTIME_ROOT/.env" "$stage/.env"
     printf '%s\n' "$sha" > "$stage/.complete"
     rm -rf "$dest"
@@ -313,11 +415,28 @@ prune_fast_lane_tooling() {
 # Check mode: is the fixed path installed and intact? A report, never drift — the
 # installed SHA is the last SHIPPED one, so it differs from every desk's HEAD by
 # design, and a missing install means only that no ship has run the installer yet.
+#
+# It used to check only that `ship` is executable, and so said OK about the tree that
+# shipped reviewer-select, rails, rake and jobs as Rails-booting copies that died on
+# Bundler::GemfileNotFound. Presence is not runnability. An installed script that
+# still boots Rails from inside the tooling tree is now NAMED — one WARN line, all of
+# them, because bin/session-preflight keeps only 8 lines of a passing check and a line
+# per script would truncate the warning away.
+#
+# It WARNS and does not change the exit code, deliberately. Every tooling tree already
+# on disk is a copy install, and the shims only arrive with the next production ship;
+# failing the check would block every desk's preflight until then over a condition no
+# builder can fix. The gate that BLOCKS is in CI — test/commands/install_fast_lane_tooling_test.rb.
 check_fast_lane_tooling() {
-  local target
+  local target unrunnable
   if [ -L "$TOOLING_LINK" ] && [ -x "$TOOLING_LINK/ship" ] && [ -f "$TOOLING_LINK/../.complete" ]; then
     target="$(readlink "$TOOLING_LINK")"
     echo "OK: $TOOLING_LINK -> $target (fast-lane tooling installed)"
+    unrunnable="$(tooling_rails_booting_scripts "$TOOLING_LINK" | tr '\n' ' ')"
+    unrunnable="${unrunnable% }"
+    if [ -n "$unrunnable" ]; then
+      echo "WARN: $TOOLING_LINK installs Rails-booting COPIES that die on Bundler::GemfileNotFound: $unrunnable — use $RUNTIME_ROOT/bin for those until the next production ship reinstalls them as hub shims."
+    fi
   else
     echo "NOTE: $TOOLING_LINK is not installed yet; the next production ship installs it. The hub path $RUNTIME_ROOT/bin still works."
   fi
