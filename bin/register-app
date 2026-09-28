@@ -58,18 +58,20 @@ registry = YAML.safe_load_file(REGISTRY) || {}
 already = registry.fetch("apps", {}).key?(slug) || registry.fetch("gems", {}).key?(slug)
 
 checks, test_cmd = AppContract.run(slug: slug, heroku_app: heroku_app, smoke_url: smoke_url, root: root)
+# The badge glyph lives in the HUB, not the app (measured 2026-09-28 registering
+# moms-app: CI failed application_helper_test for a missing glyph). The fixed-path
+# tooling copy (bin/install-agent-docs) carries no app/helpers, so a run from there
+# says so as a FAIL instead of crashing.
+helper_path = File.join(ROOT, "app/helpers/application_helper.rb")
+checks << if File.exist?(helper_path)
+            AppContract.glyph_check(File.read(helper_path), slug)
+          else
+            AppContract::Check.new(name: "hub badge glyph", ok: false, detail: "no app/helpers here (fixed-path tooling copy?)",
+                                   remedy: "run bin/register-app from a hub desk")
+          end
 puts "Contract for #{slug} on profile #{profile}:"
 checks.each { |c| puts "  #{c.ok ? 'PASS' : 'FAIL'}  #{c.name.ljust(20)} #{c.detail}#{c.ok ? '' : "  → #{c.remedy}"}" }
 puts "  #{already ? 'FAIL' : 'PASS'}  #{'not yet registered'.ljust(20)} #{already ? "#{slug} is already in release_repos.yml" : 'yes'}"
-# The hub draws a badge per registry repo from APP_EMOJIS, and
-# test/helpers/application_helper_test.rb fails CI for a repo with none (measured
-# 2026-09-28 registering moms-app). A glyph is a deliberate choice, so check it here
-# rather than learn it from CI.
-helper = File.read(File.join(ROOT, "app/helpers/application_helper.rb"))
-glyph = helper.match?(/^\s*"#{Regexp.escape(slug)}"\s*=>/)
-checks << AppContract::Check.new(name: "hub badge glyph", ok: glyph, detail: glyph ? "in APP_EMOJIS" : "none",
-                                 remedy: "add \"#{slug}\" => \"<emoji>\" to APP_EMOJIS in app/helpers/application_helper.rb")
-puts "  #{glyph ? 'PASS' : 'FAIL'}  #{'hub badge glyph'.ljust(20)} #{glyph ? 'in APP_EMOJIS' : "none → add \"#{slug}\" => \"<emoji>\" to APP_EMOJIS in app/helpers/application_helper.rb"}"
 
 engine = AppContract.engine_version(AppContract::Probe.new.read_at(root, AppContract::REF, "Gemfile.lock"))
 notes = []

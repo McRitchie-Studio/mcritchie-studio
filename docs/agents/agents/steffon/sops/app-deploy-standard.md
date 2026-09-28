@@ -76,7 +76,14 @@ It prints one PASS or FAIL per contract line, each FAIL with its remedy, then th
 entry it would write. It also reports whether the app consumes `studio-engine`
 and at which version.
 
-Fix every FAIL **in the app's own repo** (its own task) and re-run. The usual
+The file checks (CI job, `.gitignore`, `Gemfile`, `Procfile`) read the app at
+`origin/accepted`, the branch a release ships, never the primary checkout on
+disk, so a fix counts only once it is **merged to the app's `accepted`**. Fix an
+app-side FAIL in the app's own task and merge it, then re-run; the `fetch` check
+fails if the app's remote cannot be fetched, rather than letting the rest read a
+stale branch. The glyph FAIL is the exception: it is fixed **in the hub**, in this
+registration task. Run the command from a hub desk: the fixed-path tooling copy
+has no `app/helpers`, so there it reports the glyph check as FAIL. The usual
 ones:
 
 - **branches**: `git -C /Users/alex/projects/$SLUG push origin main:refs/heads/accepted main:refs/heads/release`

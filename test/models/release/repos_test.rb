@@ -506,7 +506,6 @@ class Release::ReposTest < ActiveSupport::TestCase
   # option text was written by the agent; the choice was his. On 2026-09-26 he
   # asked for 10and5 and search-position to be migrated the same way, so they
   # cite the same selection: no new decision was taken.
-  SHOWCASE_QA_DECISION = "No QA copies (Recommended)".freeze
   #
   # SINCE 2026-09-28 THESE ARE HISTORY, NOT THE GRANT. Every app above now declares
   # `profile: standalone-heroku`, and the profile carries ONE fleet decision
@@ -559,7 +558,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # only the expanded keys, so a hand edit that drifts would change a deploy
   # while the profile, the SOP and bin/register-app still describe the old one.
   test "[unit] every entry declaring a profile is exactly that profile's expansion" do
-    assert_operator profile_repos.length, :>=, 8, "guards the guard: the eight standalone apps declare the profile"
+    assert_operator profile_repos.length, :>=, 9, "guards the guard: the nine standalone apps (moms-app since 2026-09-28) declare the profile"
     profile_repos.each do |repo|
       drift = AppProfile.drift(Release::Repos.config.dig("apps", repo))
       assert_empty drift, "#{repo} drifted from profile #{Release::Repos.config.dig('apps', repo, 'profile')}: #{drift.join('; ')}"

@@ -35,13 +35,16 @@ profiles:
     # What an app must already be before it can be registered on this profile.
     # bin/register-app checks every line live and refuses with the list of what
     # is missing.
+    # File lines are judged at origin/accepted (the branch a release ships), so an
+    # app-side fix counts once it is merged there. The glyph is fixed in the hub.
     contract:
-      - The repo is McRitchie-Studio/<slug>, cloned at /Users/alex/projects/<slug>
+      - The repo is McRitchie-Studio/<slug>, cloned at /Users/alex/projects/<slug>, and origin fetches
       - origin has main, accepted and release (push the last two from main first)
       - .github/workflows/ci.yml has a `test` job; its command becomes test_cmd
       - .gitignore ignores .worktrees/
       - The Heroku app exists and <smoke_url>/up answers 200
       - An app with a database runs migrations in its Procfile release phase
+      - The hub's APP_EMOJIS names the app (added in the registration task)
     # THE QA DECISION, taken ONCE for every app on this profile. It replaces the
     # per-app quotes the registry used to carry (those stay below as history).
     # repos_test.rb pins `answer` verbatim and requires `asked`, so change both
