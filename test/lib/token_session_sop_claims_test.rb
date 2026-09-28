@@ -43,17 +43,95 @@ class TokenSessionSopClaimsTest < Minitest::Test
   INSTALL      = "bin/setup-1pass-token --admin"
 
   # Language that hands the job to the operator.
-  # NOTE the `escalat(e|ion)` alternation. Written as bare /escalate/ this missed
-  # the original defect's own heading, "The one honest escalation" — the exact
-  # string it was written to catch. Caught by mutation, not by review.
-  # ROUTING language, not every mention of his name. A bare /Mr\. McRitchie/ also
-  # matched "two merges landed under Mr. McRitchie's own account" — narrative, in a
-  # section about a different trap entirely. A rule that flags prose nobody would
-  # act on gets deleted by the next person, taking the real guard with it.
-  ESCALATION = /escalat(?:e|ion|ing)|needs? Mr\. McRitchie|Mr\. McRitchie (?:must|has to|needs? to)|
-                needs? .{0,25}to supply|ask (?:him|the operator|Mr\. McRitchie)/xi
+  # EVERY LITERAL SPACE IS `\s+`, AND THAT IS THE WHOLE POINT. `/x` is free-spacing
+  # mode: it DELETES literal whitespace from the pattern. Written with plain spaces —
+  # as this constant was from the day it shipped until 2026-09-28 — the alternations
+  # compiled to `needs?Mr\.McRitchie`, `Mr\.McRitchie(?:must|hasto|needs?to)`,
+  # `needs?.{0,25}tosupply` and `ask(?:him|theoperator|Mr\.McRitchie)`, none of which
+  # can match English. MEASURED: four of the five alternations matched NOTHING, so
+  # `escalat(?:e|ion|ing)` was carrying this regex alone, and the narrowing the
+  # comment below describes was never in force. The sibling guard records the same
+  # trap in its own header (test/lib/credential_isolation_claims_test.rb, RETRACTED)
+  # — it was written there and not applied here.
+  #
+  # BOTH SPELLINGS OF THE OPERATOR. The soul rename landed 2026-09-24 and this SOP
+  # was reworded to "Alex" with it, while the pattern still named only
+  # "Mr. McRitchie"; the archive snapshots still carry the old spelling, so neither
+  # can be dropped.
+  #
+  # NOTE the `escalat(?:e|ion)` alternation. Written as bare /escalate/ this missed
+  # the original defect's own heading, "The one honest escalation" — the exact string
+  # it was written to catch. Caught by mutation, not by review.
+  # ROUTING language, not every mention of a name. A bare /Alex/ also matches
+  # "two merges landed under Alex's own account" — narrative, in a section about a
+  # different trap entirely. A rule that flags prose nobody would act on gets
+  # deleted by the next person, taking the real guard with it.
+  ESCALATION = /escalat(?:e|ion|ing)|
+                needs?\s+(?:Mr\.\s+McRitchie|Alex)|
+                (?:Mr\.\s+McRitchie|Alex)\s+(?:must|has\s+to|needs?\s+to)|
+                needs?\s+.{0,25}to\s+supply|
+                ask\s+(?:him|the\s+operator|Mr\.\s+McRitchie|Alex)/xi
 
   def read(rel) = File.read(File.join(ROOT, rel))
+
+  # ── 0. THE GUARD'S OWN VOCABULARY MUST BE ABLE TO MATCH ─────────────────────
+  #
+  # A control for ESCALATION, added 2026-09-28 after measuring that four of its five
+  # alternations had never matched anything: `/x` strips the literal spaces, and every
+  # multi-word alternation was silently unreachable. Nothing failed, because a regex
+  # that cannot match reports the same green as prose that is clean.
+  #
+  # Each row is a phrase the alternation above EXISTS for. A row that stops matching
+  # means the alternation went dead again, whatever the comment beside it claims.
+  ESCALATION_MUST_MATCH = [
+    "The one honest escalation",
+    "escalate to the operator",
+    "this needs Alex",
+    "this needs Mr. McRitchie",
+    "Alex must supply it",
+    "Mr. McRitchie has to run it",
+    "Alex needs to run it",
+    "it needs the admin profile to supply it",
+    "ask him",
+    "ask the operator",
+    "ask Alex"
+  ].freeze
+
+  # Prose the regex must LEAVE ALONE. The narrowing is the reason a bare name match
+  # was rejected, and until this control existed the narrowing was untested too.
+  ESCALATION_MUST_NOT_MATCH = [
+    "two merges landed under Alex's own account",
+    "that config is Alex's call",
+    "Do not hand it to Alex",
+    "everything else here is yours"
+  ].freeze
+
+  def test_every_ownership_alternation_can_actually_match
+    OWNERSHIP_MUST_MATCH.each do |phrase|
+      assert_match TASK_OWNERSHIP, phrase,
+                   "TASK_OWNERSHIP cannot see #{phrase.inspect} — a dead branch under /x"
+    end
+
+    refute_match TASK_OWNERSHIP, "the account was live the whole time",
+                 "ownership language only; this is narrative"
+  end
+
+  def test_every_escalation_alternation_can_actually_match
+    ESCALATION_MUST_MATCH.each do |phrase|
+      assert_match ESCALATION, phrase,
+                   "ESCALATION cannot see #{phrase.inspect}. Under /x a literal space is " \
+                   "DELETED from the pattern, so every multi-word alternation must spell " \
+                   "its spaces \\s+ — that is how this regex spent its whole life with " \
+                   "four dead branches"
+    end
+
+    ESCALATION_MUST_NOT_MATCH.each do |phrase|
+      refute_match ESCALATION, phrase,
+                   "ESCALATION flags #{phrase.inspect}, which is narrative or a config " \
+                   "decision, not a routing instruction. A rule that flags prose nobody " \
+                   "would act on is the rule the next editor deletes"
+    end
+  end
 
   # ── 1. THE SOP MUST NAME THE COMMAND THE TOOL NAMES ─────────────────────────
   #
@@ -225,12 +303,176 @@ class TokenSessionSopClaimsTest < Minitest::Test
                  "nothing at all on the deployer lane, which mints fresh per push"
   end
 
+  # ── 7. A NAMED TASK MAY NOT STAND IN AS AN OPEN ESCALATION ──────────────────
+  #
+  # FOUND IN REVIEW of PR 1691 (Carl, 2026-09-27). The bypass section said
+  # "Restoring one is the `restore-agent-service-account` task, it is Alex's, and
+  # arming this recipe does not close it" — while the board already reported that
+  # task ARCHIVED, archived precisely because its premise (a destroyed service
+  # account) was the stale environment step 1a resets. So the SOP pointed a reader
+  # at a ticket that was closed, for a fault that was never real, in the one
+  # section a reader arrives at when they are already out of ideas.
+  #
+  # NOT A GREP FOR THE DELETED SENTENCE. The rule: name a task here and you owe its
+  # state in the same breath. FLATTEN-THEN-SUBSTRING, not a line regex — the
+  # offending clause wrapped across three lines and `\s+` does not save a line
+  # pattern, because the claim and its subject never share a line.
+  TASK_SLUG = "restore-agent-service-account"
+
+  # OWNERSHIP OF A UNIT OF WORK, which is how the retired clause actually routed:
+  # "it is Alex's", with no escalation verb anywhere near it. MEASURED — restoring
+  # that exact clause left this test green until this pattern was added, because
+  # ESCALATION matches verbs and the defect was a possessive.
+  #
+  # DELIBERATELY NOT FOLDED INTO ESCALATION. That regex is shared by the
+  # section-level and routing-row tests, and a bare possessive there flags
+  # "that config is Alex's call" — a true sentence about a config decision, in a
+  # section with no business naming the unprovisioned machine. A rule that flags
+  # prose nobody would act on is the rule the next editor deletes.
+  # SPACES SPELLED `\s+`, for the reason ESCALATION documents above. Written with
+  # plain spaces this compiled `belongs?to`, `Mr\.McRitchie` and `theoperator` —
+  # three dead branches out of seven, in a pattern added in the same commit that
+  # fixed the same bug ten lines up. Measured, then fixed.
+  TASK_OWNERSHIP = /\b(?:is|are|remains?|stays?|belongs?\s+to)\s+
+                     (?:still\s+)?
+                     (?:Alex(?:'s)?|Mr\.\s+McRitchie(?:'s)?|his|the\s+operator(?:'s)?)\b/xi
+
+  # Every branch of TASK_OWNERSHIP, with the phrase it exists for. Same control as
+  # ESCALATION_MUST_MATCH, same reason.
+  OWNERSHIP_MUST_MATCH = [
+    "it is Alex's",
+    "the task is Alex",
+    "these are Alex's",
+    "it remains Alex's",
+    "it stays Alex's",
+    "it belongs to Alex",
+    "it is still Alex's",
+    "it is Mr. McRitchie's",
+    "that step is his",
+    "it is the operator's"
+  ].freeze
+
+  def test_a_named_task_carries_its_board_state_and_is_not_routed_to_the_operator
+    flat = flatten(read(SOP))
+
+    assert_includes flat, TASK_SLUG, "guard the guard: the SOP still names the task"
+
+    flat.to_enum(:scan, TASK_SLUG).each do
+      window = Regexp.last_match.post_match[0, 320]
+
+      assert_includes window, "archived",
+                       "#{TASK_SLUG} is archived. A mention that does not say so reads as " \
+                       "an open blocker, which is what sent four agents to the .pem bypass"
+      refute_match ESCALATION, window,
+                   "a closed task may not be handed to the operator — that is the " \
+                   "escalation this SOP exists to remove, wearing a slug"
+      refute_match TASK_OWNERSHIP, window,
+                   "\"it is Alex's\" is the retired clause's own wording, and it routes " \
+                   "without a single escalation verb. An archived task is nobody's"
+    end
+  end
+
+  # ── 8. THE INSTALLER CLAUSE MUST NAME THE INSTALLER'S MECHANISM ─────────────
+  #
+  # The same review: the SOP described the hub's repo-local fallback as "not
+  # written by bin/install-git-credential-helper (which writes `--global` only)".
+  # MEASURED: that CLI writes NO git config, in either scope. It PRINTS a
+  # `--global` one-liner and the operator runs it, which is stated in its own
+  # --help and in the module behind it. A reader who believes the doc goes looking
+  # for a writer that does not exist, and the config they are chasing was set by
+  # hand.
+  #
+  # DERIVED FROM THE SOURCE rather than pinned as prose, so the day the CLI does
+  # start writing config this fails instead of vindicating a stale sentence.
+  INSTALLER = "bin/install-git-credential-helper"
+  INSTALLER_LIB = "bin/lib/credential_helper_install.rb"
+
+  def test_the_installer_clause_agrees_with_the_installer
+    cli = read(INSTALLER)
+
+    assert_includes cli, "never edits ~/.gitconfig",
+                    "guard the guard: #{INSTALLER} must still disclaim writing config"
+    refute_match(/^\s*(?:system|exec|`|IO\.popen).*git config --(?:global|local|replace)/, cli,
+                 "#{INSTALLER} must still only PRINT the wiring — if it starts writing " \
+                 "config, the SOP sentence this guards becomes the true one")
+
+    flat = flatten(read(SOP))
+
+    assert_includes flat, "writes no git config at all",
+                     "#{SOP} must name the real mechanism: #{INSTALLER} prints, never writes"
+    refute_match(/#{Regexp.escape(INSTALLER)}[^.]{0,60}\bwrites\b[^.]{0,40}--global/, flat,
+                 "the retired claim, in any rewording: the CLI does not write a --global " \
+                 "config. See #{INSTALLER_LIB} — git_config_command only builds a string")
+  end
+
+  # ── 9. THE HUB FALLBACK IS QUOTED AT ITS REAL, ABSOLUTE LITERAL ─────────────
+  #
+  # The SOP quoted the hub's repo-local helper as `!gh auth git-credential`. The
+  # value in the hub's .git/config is `!/opt/homebrew/bin/gh auth git-credential`
+  # — an absolute path. A reader who greps for the short form finds nothing and
+  # concludes the fallback is not there, which inverts the whole paragraph.
+  #
+  # PINNED, NOT READ. The real value lives in a working copy's .git/config, which
+  # a CI runner does not have, so this guard cannot measure it. The command that
+  # does is recorded beside the claim in the SOP. What IS checkable in CI is that
+  # the short form never comes back.
+  HUB_FALLBACK = "!/opt/homebrew/bin/gh auth git-credential"
+
+  def test_the_hub_fallback_is_quoted_at_its_absolute_path
+    flat = flatten(read(SOP))
+
+    assert_includes flat, HUB_FALLBACK,
+                     "quote the value the hub's .git/config really holds. Re-read it with " \
+                     "`git config --local --get-all credential.https://github.com.helper`"
+    refute_includes flat, "`!gh auth git-credential`",
+                    "the bare form is not a value anything holds — a reader greps for it, " \
+                    "misses, and decides the fallback is imaginary"
+  end
+
+  # ── 10. THE REPO CENSUS IS ONE CHECKABLE CLAIM, WITH ITS COMMAND ────────────
+  #
+  # The SOP enumerated "the six other repos on this machine" and named six. A
+  # reviewer swept ALL NINETEEN checkouts under /Users/alex/projects and found one
+  # repo-local `gh` fallback; `chain-ops` was missing from the six entirely. A
+  # count nobody can re-run is the format that rots, so the rule is: no fixed
+  # count of sibling repos in prose, and the narrowed claim ships with the sweep
+  # that settles it.
+  REPO_COUNT_WORDS = /\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|
+                          thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|
+                          twenty|\d+)\s+(?:other\s+)?(?:repos|repositories|checkouts)\b/xi
+
+  def test_the_repo_census_is_one_claim_and_carries_its_command
+    body = read(SOP)
+    flat = flatten(body)
+
+    offenders = flat.scan(REPO_COUNT_WORDS).reject { |hit| hit.match?(/\b19\b/) }
+
+    assert_empty offenders,
+                 "a spelled-out count of sibling repos cannot be re-run and went stale " \
+                 "within a day (the six omitted chain-ops). State the one checkable " \
+                 "claim and show the sweep"
+
+    assert_includes flat, "the only checkout on this machine",
+                     "narrow the census to one claim about one repo"
+    assert_includes body, "--get-all credential.https://github.com.helper",
+                     "every number in this paragraph needs the command beside it — the " \
+                     "sweep that produced it must be in the doc, runnable as written"
+  end
+
   REMEDY_SOURCES = [
     "bin/release.rb",
     "docs/agents/modules/token-session.md"
   ].freeze
 
   private
+
+  # WHOLE-FILE FLATTEN, then substring. Measured twice on 2026-09-28: every claim
+  # corrected in this pass wrapped across lines, and two of them put their subject
+  # and their predicate on different lines, so no line-anchored pattern could see
+  # them. Widening a line pattern to `\s+` does not help — it cannot cross the
+  # newline a markdown paragraph puts there, and in a Ruby or shell source the
+  # continuation line opens with a comment marker.
+  def flatten(text) = text.gsub(/\s+/, " ")
 
   # The lines a reader ACTS on: markdown table rows.
   def routing_lines(text) = text.lines.select { |l| l.strip.start_with?("|") }
