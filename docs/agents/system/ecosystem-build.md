@@ -103,7 +103,7 @@ Measured 2026-09-23, each in a desk against the real code:
 
 | Lane | What a total failure used to look like | What it looks like now |
 |------|----------------------------------------|------------------------|
-| `espn:scrape_depth_charts` | `{:teams_failed=>32}` printed, exit 0, green entry count logged | refuses a run that applied NO teams; a partial run stays green and reports its per-bucket tally on stderr; every tolerated per-team failure, and the refusal itself, file an `ErrorLog` row (`espn-services-error-logs`) |
+| `espn:scrape_depth_charts` | `{:teams_failed=>32}` printed, exit 0, green entry count logged | refuses a run that applied NO teams; a partial run stays green and reports its per-bucket tally on stderr; every per-team failure ESPN RAISED on, and the refusal itself, file an `ErrorLog` row (`espn-services-error-logs`) |
 | `nfl:upload_headshots` | every candidate raised `Aws::Errors::MissingCredentialsError`, `failed: 3 cached: 0`, exit 0 | refuses a run where more uploads failed than succeeded, and names the AWS variables to check |
 | `nfl:rankings_compute` | wrote the SAME 448 rows a healthy run writes, every score `0.0`, exit 0 | refuses a ranking where every team scored zero, and names `GRADES_FROM` |
 | `nfl:players_seed` | exit 0 through a rescued feed outage | graded on the exit code AND an `ImportRun` success pinned to THIS run's start |
