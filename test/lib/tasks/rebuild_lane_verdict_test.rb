@@ -28,6 +28,15 @@ require "aws-sdk-s3"
 # not cost the other 31 their refresh, one dead headshot URL must not cost the
 # other thousand theirs — and then ended by returning, so the process exited 0
 # no matter how much had failed. The rescue is right; ending on it was not.
+#
+# THREE IS THIS FILE'S COVERAGE, NOT THE REPOSITORY'S INVENTORY. Two more lanes of
+# the same shape were closed under `coach-link-lane-false-green` (2026-09-28) and
+# live in test/lib/tasks/nfl_coach_headshots_test.rb and
+# test/lib/tasks/nfl_coach_team_sites_test.rb, because they sit in a different phase:
+# they are reached only through `db:seed` and db/seeds/32_headshot_links.rb, not
+# through 6b or 6c. `nfl:upload_coach_headshots` is the one still ungraded —
+# it counts `failed` and prints it, and it needs the dead-source split
+# nfl:upload_headshots carries. Known open, not measured clean.
 class RebuildLaneVerdictTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("espn:scrape_depth_charts")
@@ -89,6 +98,51 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     _out, err = capture_io { scrape(teams_scraped: 32) }
 
     assert_equal "", err
+  end
+
+  # A REFUSAL NOBODY CAN FIND LATER IS HALF A REFUSAL. `abort` writes to stderr and
+  # raises SystemExit; bin/ecosystem-build turns that into one `log_fail` line in a
+  # build log nobody keeps, and nothing durable recorded that the scrape did not
+  # happen. MEASURED on this branch's parent: zero ErrorLog references anywhere in
+  # app/services/espn/ or lib/tasks/espn.rake.
+  test "the depth chart scrape files an ErrorLog before it refuses the run" do
+    assert_difference -> { ErrorLog.count }, 1 do
+      capture_io { assert_raises(SystemExit) { scrape(teams_failed: 32) } }
+    end
+
+    row = ErrorLog.order(:id).last
+    assert_match(/ScrapeDidNotHappen/, row.inspect_field)
+    assert_match(/applied 0 of 32 teams/, row.message)
+    assert row.backtrace.present? && row.backtrace != "[]",
+           "raised and rescued rather than constructed, so the row carries a real backtrace"
+    assert row.slug.present?, "a row with no slug is unreachable in /admin/error_logs"
+  end
+
+  # THE GREEN TWINS. A partial run stays green AND stays unfiled: the `warn` reports
+  # it and the service already filed a row per dead team, so a second row for the
+  # tally would be one more spelling of facts already on file.
+  test "a partial scrape files no lane row" do
+    assert_no_difference -> { ErrorLog.count } do
+      capture_io { scrape(teams_scraped: 1, teams_failed: 31) }
+    end
+  end
+
+  test "a clean scrape files no lane row" do
+    assert_no_difference -> { ErrorLog.count } do
+      capture_io { scrape(teams_scraped: 32) }
+    end
+  end
+
+  # A RAISE OUT OF THE SERVICE — an unreadable teams index, or a MissingTeamId
+  # escaping the per-team rescue — is the loudest failure and was the least findable:
+  # a backtrace on stderr and nothing in /admin/error_logs. Filed and RE-RAISED, so
+  # the lane still goes red.
+  test "a raise out of the service is filed and still kills the lane" do
+    assert_difference -> { ErrorLog.count }, 1 do
+      assert_raises(Espn::ScrapeDepthCharts::SourceUnavailable) { scrape_raising }
+    end
+
+    assert_match(/teams index/, ErrorLog.order(:id).last.message)
   end
 
   # The single-team form (TEAM=buf) has to be gradeable too — its whole run is
@@ -810,6 +864,19 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
   # handing it the service double directly would invoke the double's own `call`
   # with `new`'s keyword arguments and hand the task a tally where it expects a
   # service. The lambda absorbs `new`'s arguments and returns the double.
+  # The service raising rather than returning a tally — what an unreadable ESPN teams
+  # index does, since it raises out of resolve_team_ids! before the per-team loop and
+  # therefore before any per-team row could be filed.
+  def scrape_raising
+    fake = Object.new
+    fake.define_singleton_method(:call) do
+      raise Espn::ScrapeDepthCharts::SourceUnavailable, "ESPN has no teams index at https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams (404)"
+    end
+    Espn::ScrapeDepthCharts.stub(:new, ->(**) { fake }) do
+      Rake::Task["espn:scrape_depth_charts"].invoke
+    end
+  end
+
   def scrape(**tally)
     stats = Hash.new(0).merge(tally)
     fake = Object.new

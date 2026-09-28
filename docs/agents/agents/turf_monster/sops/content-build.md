@@ -255,11 +255,20 @@ rendering — which needs Higgsfield credits, and is not this SOP's act.
 ## Background — not needed to execute
 
 Why inference lives here and not in the app: the in-app agents
-(`Content::ScriptAgent` and friends) call the Anthropic API directly on a key
-production does not have, with prompts frozen as string literals in `.rb` files.
-Routing the judgment through a soul means no model key in production, prompts
-that improve as prose, inference visible to the learning loop, and a voice veto
-that can actually fire.
+(`Content::ScriptAgent` and friends) call the Anthropic API directly, with
+prompts frozen as string literals in `.rb` files. This paragraph used to say
+they call it *"on a key production does not have"*. Production HAS it —
+re-measured 2026-09-28, by name and never by value:
+
+```bash
+heroku config --json --app mcritchie-studio | jq 'length'                        # control: 46; 0 = read failed
+heroku config --json --app mcritchie-studio | jq '(.ANTHROPIC_API_KEY // "") != ""'   # true
+```
+
+The same expression on a name that is absent answered false. So the reason is
+not key absence. Routing the judgment through a soul means prompts that improve
+as prose, inference visible to the learning loop, and a voice veto that can
+actually fire.
 
 Architecture: `mcritchie-studio/docs/topics/content-pipeline.md`, named rather
 than linked. The docs route serves from `docs/agents` only, so a relative link

@@ -271,4 +271,115 @@ class Espn::PlayerProfileTest < ActiveSupport::TestCase
     assert_nil provider.find_in_league(name: "  ")
     assert_empty provider.requested
   end
+
+  # ─── the rosters the walk could not read ────────────────────────────────────
+
+  test "an unreadable roster is filed even when the man is found on a later one" do
+    # THE BRANCH THAT USED TO DESTROY ITS OWN EVIDENCE. `unreadable` was built and then
+    # dropped the moment the search succeeded — not printed, not raised, not counted —
+    # so a walk over 32 rosters with four of them down reported a clean success and
+    # nothing anywhere recorded the outage. "buf" sorts before "den" in TEAM_ABBREVS,
+    # so the dead roster is read BEFORE the hit.
+    provider = Stubbed.new(league_finding_bo_nix(dead: "buf"))
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      assert_equal "4426338", provider.find_in_league(name: "Bo Nix").source_id
+    end
+
+    row = ErrorLog.order(:id).last
+    assert_match(/could not read 1 roster/, row.message)
+    assert_match(/buf/, row.message, "the row must name WHICH roster")
+    assert_match(/503/, row.message, "and WHY it could not be read")
+    assert row.slug.present?, "a row with no slug is unreachable in /admin/error_logs"
+  end
+
+  test "a complete search that finds the man files nothing" do
+    # THE GREEN TWIN. A guard that filed on every walk would pass the case above.
+    provider = Stubbed.new(league_finding_bo_nix)
+
+    assert_no_difference -> { ErrorLog.count } do
+      assert_equal "4426338", provider.find_in_league(name: "Bo Nix").source_id
+    end
+  end
+
+  test "a complete search that finds nobody files nothing" do
+    responses = Espn::PlayerProfile::TEAM_ABBREVS.to_h do |abbr|
+      ["https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/#{abbr}/roster", roster_body({})]
+    end
+
+    assert_no_difference -> { ErrorLog.count } do
+      assert_nil Stubbed.new(responses).find_in_league(name: "Nobody Here")
+    end
+  end
+
+  test "the census is filed on the raising branch too" do
+    # The raise reaches Athletes::AcquireOrValidate#call, which turns
+    # Athletes::SourceUnavailable into a PRINTED refusal — so without the row the cause
+    # of an incomplete search lives on stdout, which is where this whole task started.
+    responses = Espn::PlayerProfile::TEAM_ABBREVS.to_h do |abbr|
+      url = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/#{abbr}/roster"
+      [url, abbr == "lv" ? Espn::PlayerProfile::SourceUnavailable.new("503") : roster_body({})]
+    end
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      assert_raises(Athletes::SourceUnavailable) { Stubbed.new(responses).find_in_league(name: "Nobody Here") }
+    end
+
+    assert_match(/could not read 1 roster\(s\): lv \(503\)/, ErrorLog.order(:id).last.message)
+  end
+
+  test "one row per walk, not one per dead roster" do
+    # 32 rows saying "ESPN is down" is the noise that teaches an operator to stop
+    # opening /admin/error_logs. The census is the finding.
+    responses = Espn::PlayerProfile::TEAM_ABBREVS.to_h do |abbr|
+      url = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/#{abbr}/roster"
+      [url, Espn::PlayerProfile::SourceUnavailable.new("503")]
+    end
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      assert_raises(Athletes::SourceUnavailable) { Stubbed.new(responses).find_in_league(name: "Bo Nix") }
+    end
+
+    assert_match(/could not read 32 roster/, ErrorLog.order(:id).last.message)
+  end
+
+  test "a failure on the athlete document is not written down as a roster failure" do
+    # THE MISLABEL THIS BRANCH CORRECTS. `return find(source_id: …)` used to sit INSIDE
+    # the block the per-team rescue guards, so a 503 on the ATHLETE endpoint was caught
+    # and recorded as "could not read roster den" — a sentence about the wrong
+    # endpoint, which then became the raise's entire explanation. Every roster here
+    # reads cleanly; only the athlete document is down.
+    responses = league_finding_bo_nix
+    responses[format(ATHLETE, "4426338")] = Espn::PlayerProfile::SourceUnavailable.new("ESPN answered 503 for athletes/4426338")
+    provider = Stubbed.new(responses)
+
+    error = assert_no_difference -> { ErrorLog.count } do
+      assert_raises(Athletes::SourceUnavailable) { provider.find_in_league(name: "Bo Nix") }
+    end
+
+    assert_match(/athletes\/4426338/, error.message)
+    assert_no_match(/could not read/, error.message,
+                    "no roster failed — saying one did points the operator at the wrong endpoint")
+  end
+
+  private
+
+  # Every roster readable and Bo Nix on Denver's, with his athlete document stubbed.
+  # `dead:` makes ONE roster answer 503 instead.
+  def league_finding_bo_nix(dead: nil)
+    responses = Espn::PlayerProfile::TEAM_ABBREVS.to_h do |abbr|
+      url = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams/#{abbr}/roster"
+      body = if abbr == dead
+               Espn::PlayerProfile::SourceUnavailable.new("503")
+             elsif abbr == "den"
+               roster_body("offense" => [player("4426338", "Bo Nix", "10", "QB")])
+             else
+               roster_body({})
+             end
+      [url, body]
+    end
+    responses[format(ATHLETE, "4426338")] =
+      athlete_body("id" => "4426338", "displayName" => "Bo Nix", "firstName" => "Bo", "lastName" => "Nix")
+    responses
+  end
 end

@@ -87,15 +87,25 @@ eval "$(bin/gh-auth-refresh --export)"
 ```
 
 **1a. If step 1 fails, reset a stale environment BEFORE you blame the broker.**
-Two commands, no 1Password read, and on 2026-09-27 it was the whole fix for four
-agents who had already walked past it to the hand-mint at the bottom of this file.
+Two commands and a check, no 1Password read, and on 2026-09-27 it was the whole
+fix for four agents who had already walked past it to the hand-mint at the bottom
+of this file.
 
 ```bash
-ls -la ~/.zprofile*              # context: which profiles exist, and when each was written
 unset OP_SERVICE_ACCOUNT_TOKEN   # the AGENT lane; deployer: OP_ADMIN_SERVICE_ACCOUNT_TOKEN
 source ~/.zprofile               # the AGENT lane; deployer: ~/.zprofile.admin
-op whoami                        # `User Type: SERVICE_ACCOUNT` => recovered. STOP HERE.
+op whoami                        # `User Type: SERVICE_ACCOUNT` => recovered
 ```
+
+The reset repaired `op`, not your `GH_TOKEN` — they are two separate values — so
+finish by re-running step 1 in the same shell:
+
+```bash
+eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"
+```
+
+Once `gh` answers, **stop here.** Everything below step 1a is written for a broker
+that genuinely cannot serve, which is not the case you are in.
 
 **A service-account token lives in two places, and the stale one wins.** Your
 shell inherited `OP_SERVICE_ACCOUNT_TOKEN` when the session was spawned;
@@ -115,12 +125,19 @@ five vaults including `studio-agents`, `bin/gh-token` minted, and
 read that 403 as a dead account and reached for the bypass. The account was live
 the whole time.
 
-**Do not gate this on the profile's mtime.** `ls -la ~/.zprofile*` is worth
-running for context, but a profile older than today can still hold the good
-token: on 2026-09-27 `~/.zprofile` was dated two days earlier and the reset
-worked anyway, because what had gone stale was the long-lived process the session
-was spawned from, not the file. Run the reset rather than predicting it — it is
-two commands.
+**Do not gate this on the profile's mtime.** The file's timestamp is not a
+precondition for anything on this page: run the reset, then read
+`ls -la ~/.zprofile*` afterwards if you want to know which profiles exist and when
+each was written. A profile older than today can still hold the
+good token, and that is now measured twice on the very cases the gate was
+drawn from. On 2026-09-27 `~/.zprofile` was dated two days earlier and the reset
+worked anyway; on 2026-09-28 a shell was answering the same 403 with the file
+dated **three** days earlier, and the reset recovered it again. What goes stale is
+the long-lived process the session was spawned from, not the file — no file clock
+can see that, so a reader who treats the mtime as a condition concludes "the
+environment is fine" and walks on to the `.pem` bypass at the bottom of this
+document. That is the exact wrong turn this step exists to prevent. Run the reset
+rather than predicting it; it is two commands and a check.
 
 **This is the agent lane's twin of a remedy this file already gave the deployer
 lane.** `source ~/.zprofile.admin` appears in the lifecycle table above, in the
@@ -138,8 +155,8 @@ op service-account ratelimit
 It reports remaining and reset **directly**, which turns an indefinite wait into
 a decision. A `(403) Forbidden (Service Account Deleted)` here is not a quota
 line at all, and almost never a dead account — go back to **step 1a**. A retry
-loop against a quota-limited broker **must** query the quota before it sleeps. ⚠️ **The command ITSELF COSTS A READ**, so never poll it in a
-loop.
+loop against a quota-limited broker **must** query the quota before it sleeps.
+⚠️ **The command ITSELF COSTS A READ**, so never poll it in a loop.
 
 **2a. Then ask WHAT SPENT IT — that part is a query now, not an investigation.**
 
@@ -187,9 +204,9 @@ shell's `GH_TOKEN`, so `gh` should now answer.
 Use `bin/gh-auth-refresh --force`, **not** `bin/gh-token --force`. `bin/gh-token`
 mints into the shared cache and writes the token to *stdout*; discarding that
 output leaves your `GH_TOKEN` exactly as broken as it was, so `gh` keeps failing
-and the reader loops. `--force` bypasses the broker cache
-(`bin/gh-auth-refresh:41`) and `--export` is the half that repairs **this
-shell**.
+and the reader loops. `--force` bypasses the broker cache (it is
+`bin/gh-auth-refresh`'s own flag, forwarded to the broker) and `--export` is the
+half that repairs **this shell**.
 
 ## When 1Password itself is down — mint by hand, on BOTH legs
 
@@ -209,11 +226,20 @@ the environment and never touches 1Password:
 **This is a bypass, not a repair.** It works only on a machine that already has
 the `.pem` on disk, so it does not generalise — not to a fresh Mac, not to CI,
 not to an agent whose box never held the key. It also fixes nothing about the
-broker: a deleted or quota-spent service account is still deleted or quota-spent
-afterwards. Restoring one is the `restore-agent-service-account` task, it is
-Alex's, and **arming this recipe does not close it.** Check step 1a before you
-assume that task is the blocker: on 2026-09-27 its premise turned out to be a
-stale environment, and the account it was filed against was live.
+broker: a quota-spent service account is still quota-spent afterwards.
+
+**No open ticket sits behind this, and nothing here waits on Alex.**
+`restore-agent-service-account` was filed on the premise that the agent service
+account no longer existed. That premise measured false, and the task is `archived`
+— read the board rather than taking this sentence's word for it:
+`bin/task show restore-agent-service-account --json | jq -r .stage` answers
+`archived`. Both of its acceptance criteria measure true. Measured 2026-09-28 from a shell
+where `op whoami` was answering the 403, after step 1a and nothing else:
+`bin/gh-auth-refresh --force --export` bypassed the shared cache and minted a
+fresh token (a new `sha256:` prefix on stderr, so it was a real mint and not a
+cache hit), and `gh api /installation/repositories --jq '.total_count'` answered
+18. So when this recipe is what gets you moving, the follow-up is step 1a — not a
+ticket, and not Alex.
 
 ### There are two legs, and they are armed separately
 
@@ -239,20 +265,49 @@ looks identical to an unarmed one, because the fallback below answers either way
 unarmed, so arm leg 2 below. *Neither* answers ⇒ you have not minted at all, so
 start at leg 1.
 
-**Why the hub's symptom differs, and why its green does not travel.** Measured on
-2026-09-27 with the shared session cold and nothing exported. In the six other
-repos on this machine — `turf-monster`, `rolio`, `studio-engine`, `solana-studio`,
-`turf-vault`, `mcritchie-industries` — `bin/gh-app-git-credential` is the *only*
-helper git has, so the push ends at `could not read Username`. The hub's
-`.git/config` carries a second, repo-**local** helper, `!gh auth git-credential`, which git tries *after* the App
-helper comes up empty — a local value appends to the global list rather than
-replacing it. That helper hands over whatever `gh`'s keyring holds for its active
-account, and when that token is stale GitHub answers `remote: Invalid username or
-token`. The same fallback is why exporting `GH_TOKEN` alone *appears* to fix
-`git` **in the hub**: it fixes it nowhere else, the config is undocumented, it is
-not written by `bin/install-git-credential-helper` (which writes `--global`
-only), and every hub desk inherits it because worktrees share `.git/config`. Work
-around it; do not rely on it, and do not remove it — that config is Alex's call.
+**Why the hub's symptom differs, and why its green does not travel.** One claim,
+and it is checkable: **`mcritchie-studio` is the only checkout on this machine
+carrying a repo-local `gh` fallback.** The sweep behind it, so you never have to
+take the number on trust:
+
+```
+cd /Users/alex/projects
+for d in */; do r="${d%/}"; [ -e "$r/.git" ] || continue
+  printf '%-24s %s\n' "$r" \
+    "$(git -C "$r" config --local --get-all credential.https://github.com.helper)"
+done
+```
+
+19 checkouts, one `gh` fallback (re-measured 2026-09-28). Quote its value as it
+really reads — an **absolute** path, not a bare `gh`:
+
+```
+helper = !/opt/homebrew/bin/gh auth git-credential
+```
+
+`moms-app` answers with a repo-local line too, but it duplicates the App helper
+the global config already names, so it is not a fallback. Every other checkout has
+no local line at all: `bin/gh-app-git-credential` is then the only helper git can
+reach, and a push with the shared session cold ends at `could not read Username`.
+
+Git tries the hub's fallback *after* the App helper comes up empty, because a
+local value appends to the global list rather than replacing it. Measured in the
+hub, where `git config --get-all credential."https://github.com".helper` answers
+three values in order — an empty reset, the App helper, then the `gh` one. That
+helper hands over whatever `gh`'s keyring holds for its active account, and when
+that token is stale GitHub answers `remote: Invalid username or token`.
+
+The same fallback is why exporting `GH_TOKEN` alone *appears* to fix `git` **in
+the hub**: it fixes it nowhere else, this paragraph is the only place the config
+is documented, and every hub desk inherits it because worktrees share
+`.git/config`. Nothing in this repo wrote that line, and nothing in it can —
+**`bin/install-git-credential-helper` writes no git config at all.** Its own
+`--help` says so ("This command never edits ~/.gitconfig. It prints the one-line
+change and its revert; you run them"), and
+`bin/lib/credential_helper_install.rb#git_config_command` only *builds the
+string* the CLI prints. The one-liner it prints is `--global`; the hub's line is
+repo-local and was set by hand. Work around it; do not rely on it, and do not
+remove it — that config is Alex's call.
 
 ### The recipe
 
@@ -316,8 +371,8 @@ Two consequences of arming leg 2:
   `bin/gh-app-mint-token` reads neither `GH_APP_ITEM` nor the `--reject` argument
   the helper's `erase` branch passes it (`bin/gh-app-git-credential#REJECTED`), so
   a rejected credential costs one minted token nobody reads — wasteful, never
-  fatal. For the **ship** lane,
-  swap the app id to `4431542` and the PEM to the deployer `.pem`; exporting
+  fatal. For the **ship** lane, swap the app id to `4431542` and the PEM to the
+  deployer `.pem`; exporting
   `GH_APP_ITEM` on its own would leave leg 2 on the agent identity, which is a
   wrong-identity *success* and harder to notice than a refusal.
 
@@ -363,7 +418,7 @@ Two traps in that check:
 | `Bad credentials`, 401 on `gh` | session aged out | step 1 |
 | `could not read Username for 'https://github.com'` | the git credential helper could not mint, and no other helper answered | step 1, then **step 1a**, then step 2 — and if `op` still cannot serve, *When 1Password itself is down* → **leg 2**. Exporting `GH_TOKEN` never reaches `git` |
 | `gh` answers but `git push` still fails | **only the `gh` leg is armed.** They are two legs with two routes | **step 1a** first if you have not run it — a broken `op` starves the git leg while an exported `GH_TOKEN` keeps `gh` answering. Then *When 1Password itself is down* → **leg 2** (`GH_APP_TOKEN_CMD`), and re-check with `git push --dry-run` |
-| `remote: Invalid username or token` on a push **in the hub** | the App helper came up empty and the hub's repo-local `!gh auth git-credential` fallback answered with a stale keyring token. Other repos have no such fallback and say `could not read Username` instead | **step 1a** first — an empty App helper is usually a stale `OP_SERVICE_ACCOUNT_TOKEN`, not a broker that cannot serve. Only then arm **leg 2**. Do not chase the local config; leave it alone |
+| `remote: Invalid username or token` on a push **in the hub** | the App helper came up empty and the hub's repo-local `!/opt/homebrew/bin/gh auth git-credential` fallback answered with a stale keyring token. No other checkout on this machine has that fallback, so they say `could not read Username` instead | **step 1a** first — an empty App helper is usually a stale `OP_SERVICE_ACCOUNT_TOKEN`, not a broker that cannot serve. Only then arm **leg 2**. Do not chase the local config; leave it alone |
 | `op` answers `(403) Forbidden (Service Account Deleted)` | **almost never a deleted account.** The token in your shell is stale — it names a service account that no longer exists, while `~/.zprofile` already holds the live one. The variable is still *set*, so it reads as a broken credential rather than a missing one | **step 1a** — `unset OP_SERVICE_ACCOUNT_TOKEN`, `source ~/.zprofile`, `op whoami`. Only if it STILL 403s after that is the account genuinely gone, and only then the hand-mint |
 | `"agents" isn't a vault` | **the hub primary is stale** | fast-forward `main`; the fix shipped as `bin/lib/op_vaults.rb` |
 | `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, mint by hand rather than wait |

@@ -14,10 +14,24 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
 
     attr_reader :targets
 
-    def initialize(results: [], unparsed: 0, available: true)
+    # TWO WAYS TO BUILD IT, AND THE SECOND ONE IS WHAT THE FAN-OUT NEEDS.
+    #
+    # `results:` answers EVERY query with the same list, which is what the cases about
+    # the cap, the SSRF guard and the ranking want — they are about one answer's fate and
+    # not about which query produced it. ⚠ Note what it means for the COUNTS: four
+    # queries each returning the same twenty rows is `returned: 80` and `unique: 20`,
+    # because that is exactly what four identical searches would really cost.
+    #
+    # `per_query:` answers each query from its own list, keyed by the FULL query string,
+    # and is the only way to test the fan-out at all: attribution, the marginal dedupe,
+    # and the round-robin shortlist are all statements about WHICH query returned a
+    # photograph. A query with no entry answers empty, which is also the honest shape for
+    # a variant that found nothing.
+    def initialize(results: [], unparsed: 0, available: true, per_query: nil)
       @answer = Appearances::ImageSearch::Answer.new(
         results: results, unparsed_count: unparsed, provider_name: "fake"
       )
+      @per_query = per_query
       @available = available
       @asked = []
       @targets = []
@@ -32,7 +46,22 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     def search(query:, limit:, target: nil)
       @asked << [query, limit]
       @targets << target
-      @answer
+      return @answer if @per_query.nil?
+
+      Appearances::ImageSearch::Answer.new(
+        results: Array(@per_query[query]), unparsed_count: 0, provider_name: "fake"
+      )
+    end
+  end
+
+  # THE FOUR QUERIES ONE SUBJECT PRODUCES, spelled the way the object spells them.
+  #
+  # DERIVED FROM THE CONSTANT rather than typed out, so a test asserting "every variant
+  # ran" cannot pass by agreeing with a stale copy of the list. The one test that pins
+  # the WORDS pins them literally, on purpose, and is the only one that should.
+  def queries_for(subject)
+    Appearances::GatherReferencePhotos::QUERY_VARIANTS.map do |variant|
+      [subject, variant].compact_blank.join(" ")
     end
   end
 
@@ -237,14 +266,16 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
                  "the unsafe hit must not have eaten a slot a good photograph wanted"
   end
 
-  test "the unreadable-row count rides home on the summary" do
-    summary = Appearances::GatherReferencePhotos.call(
-      @look, search: FakeSearch.new(results: [hit("https://cdn.example.com/a.jpg")], unparsed: 7),
-      faces: NoFaces
-    )
+  # SUMMED ACROSS THE VARIANTS, not taken from one of them. Each query is its own parse,
+  # so a shape the parser cannot read fails once PER SEARCH — and reporting only the last
+  # search's count would under-report a total parser failure by three quarters.
+  test "the unreadable-row count rides home on the summary, added up across the searches" do
+    search = FakeSearch.new(results: [hit("https://cdn.example.com/a.jpg")], unparsed: 7)
+    summary = Appearances::GatherReferencePhotos.call(@look, search: search, faces: NoFaces)
 
-    assert_equal 7, summary.unparsed,
+    assert_equal 7 * search.asked.length, summary.unparsed,
                  "a silent zero and a silent parse failure are the same empty list without this"
+    assert_operator summary.unparsed, :>, 7, "one search's count is not four searches' count"
   end
 
   # A SEARCH IS RE-JUDGED, NOT DUPLICATED. The unique index makes it safe; this
@@ -333,6 +364,259 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     look = Appearance.create!(person_slug: carrey.slug, descriptor: "1994 Ace Ventura")
 
     assert_equal "Jim Carrey", Appearances::GatherReferencePhotos.new(look).query
+  end
+
+  # ── THE TEAM THAT SILENTLY LEFT THE QUERY ────────────────────────────────────────
+  #
+  # THE DEFECT, MEASURED ON PRODUCTION 2026-09-27. `teams` has ZERO rows there against
+  # 2,051 athletes, every one of which carries a populated `team_slug`. `#team_name` read
+  # only the ASSOCIATION, which resolved nil, and `compact_blank` dropped the nil without
+  # a word — so the effective query for a Vikings receiver was his bare name and the
+  # search came back a wall of his LSU college photographs. Nothing raised and nothing
+  # logged: the page printed a query that looked deliberate.
+  #
+  # THESE FOUR TESTS RUN WITH `Team.delete_all`, which is the production state and NOT the
+  # seeded one. A test against the seeded teams table would have passed before the fix.
+
+  test "the team joins the query from the slug when the teams table is empty" do
+    Team.delete_all
+    athlete = athletes(:allen_athlete)
+    athlete.update!(team_slug: "minnesota-vikings")
+    assert_nil athlete.reload.team, "the precondition IS the defect: the association resolves nil"
+
+    query = Appearances::GatherReferencePhotos.new(@look).query
+
+    assert_equal "Josh Allen Minnesota Vikings", query
+  end
+
+  # EVERY ONE OF THE FOUR CARRIES THE TEAM, not just the first. The subject is built once
+  # and the variants are appended to it, so a regression that dropped the team from the
+  # subject would show up here as four bare-name queries.
+  test "every variant carries the team the slug supplied" do
+    Team.delete_all
+    athletes(:allen_athlete).update!(team_slug: "minnesota-vikings")
+
+    queries = Appearances::GatherReferencePhotos.new(@look).queries
+
+    assert_equal queries_for("Josh Allen Minnesota Vikings"), queries
+    assert queries.all? { |q| q.include?("Minnesota Vikings") }
+  end
+
+  # THE SLUG IS A FALLBACK, NOT A REPLACEMENT. A row is an authority and a slug is a
+  # reconstruction, so the day somebody seeds `teams` the record has to win — otherwise
+  # this fix quietly becomes the thing that ignores the real data.
+  test "a team RECORD still beats the slug it would have been rebuilt from" do
+    team = Team.create!(slug: "minnesota-vikings", name: "Minnesota Vikings FOOTBALL CLUB",
+                        league: "NFL")
+    athletes(:allen_athlete).update!(team_slug: team.slug)
+
+    assert_equal "Josh Allen #{team.name}", Appearances::GatherReferencePhotos.new(@look).query
+  end
+
+  # THE TWO SLUGS THAT COULD HAVE GONE WRONG, and the reason this asserts the whole
+  # sentence rather than `titleize` in isolation: swapping `titleize` for `humanize` — the
+  # neighbouring method, and the one a reader reaches for — gives "San francisco 49ers",
+  # which is a worse search term and a green test under any looser assertion. All 32
+  # distinct production slugs were checked by hand on 2026-09-27; these are the two whose
+  # digits and multi-word cities make them the ones worth pinning.
+  test "a numeric or multi-word team slug humanises to the team's actual name" do
+    Team.delete_all
+    athlete = athletes(:allen_athlete)
+
+    {
+      "san-francisco-49ers" => "San Francisco 49ers",
+      "washington-commanders" => "Washington Commanders",
+      "new-england-patriots" => "New England Patriots"
+    }.each do |slug, expected|
+      athlete.update!(team_slug: slug)
+      assert_equal "Josh Allen #{expected}",
+                   Appearances::GatherReferencePhotos.new(@look.reload).query
+    end
+  end
+
+  # ── THE FAN-OUT ──────────────────────────────────────────────────────────────────
+
+  # THE OPERATOR'S OWN FOUR, PINNED LITERALLY. The only test here that spells the words
+  # out: every other one derives them from the constant, so this is the single place a
+  # reviewer can check that what shipped is what he asked for — "First name Last name",
+  # "Name Smile", "Name No Helmet", "Name Laugh" — and the single place that fails if
+  # somebody quietly swaps one for a variant of their own. His two nouns ship as the
+  # gerunds the 107-of-120 measurement used; see QUERY_VARIANTS for what that trades.
+  test "the four searches are the operator's four, in his order" do
+    assert_equal ["", "smiling", "no helmet", "laughing"],
+                 Appearances::GatherReferencePhotos::QUERY_VARIANTS
+    assert_equal ["Josh Allen", "Josh Allen smiling", "Josh Allen no helmet",
+                  "Josh Allen laughing"],
+                 Appearances::GatherReferencePhotos.new(@look).queries
+    refute_includes Appearances::GatherReferencePhotos::QUERY_VARIANTS, "press conference",
+                    "the variant that measured 0 portrait-shaped of 20 is not shipped"
+  end
+
+  # A BLANK SUBJECT BUYS NOTHING. With no name there is no subject, so the variants would
+  # degrade to asking the internet for the bare word "smiling" — four purchases for an
+  # answer about nobody, which is worse than not searching at all.
+  test "a look with no person in it spends no queries" do
+    orphan = Appearance.new(person_slug: "nobody-at-all", descriptor: "x")
+    search = FakeSearch.new(results: [hit("https://cdn.example.com/a.jpg")])
+
+    summary = Appearances::GatherReferencePhotos.call(orphan, search: search, faces: NoFaces)
+
+    assert_empty search.asked, "no subject means no purchase"
+    assert summary.configured?, "the credential is fine — it is the LOOK that has no subject"
+    assert_equal 0, summary.returned
+    assert_equal 0, AppearanceReferencePhoto.count
+  end
+
+  # ── THE DEDUPE ───────────────────────────────────────────────────────────────────
+
+  # ONE PHOTOGRAPH, ONE ROW, HOWEVER MANY VARIANTS RETURNED IT. Measured 2026-09-27 on
+  # `jaylen-waddle`: 7 of 80 collided. Without this the same photograph would occupy two
+  # slots in one identity, so an identity built from eight would hold seven faces and
+  # report eight.
+  test "a photograph two variants return is filed once" do
+    shared = hit("https://cdn.example.com/shared.jpg", position: 1)
+    queries = queries_for("Josh Allen")
+    per_query = {
+      queries[0] => [shared, hit("https://cdn.example.com/only-base.jpg", position: 2)],
+      queries[1] => [shared],
+      queries[2] => [shared],
+      queries[3] => [hit("https://cdn.example.com/only-laugh.jpg", position: 1)]
+    }
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(per_query: per_query), faces: NoFaces
+    )
+
+    assert_equal 5, summary.returned, "five rows were bought"
+    assert_equal 3, summary.unique, "three photographs were bought"
+    assert_equal 2, summary.duplicates
+    assert_equal 3, AppearanceReferencePhoto.count
+  end
+
+  # THE COST CONTROL, NOT THE TIDINESS. A duplicate that reaches the classifier is money
+  # spent twice for one answer, and the classifier bills per image.
+  test "a duplicate is never paid to be classified twice" do
+    shared = hit("https://cdn.example.com/shared.jpg", position: 1)
+    per_query = queries_for("Josh Allen").to_h { |q| [q, [shared]] }
+    faces = FakeFaces.new({ shared.image_url => 0.9 })
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(per_query: per_query), faces: faces, mirror: mirror
+    )
+
+    assert_equal 1, faces.asked.length, "four searches found it; it is classified once"
+    assert_equal 1, faces.asked.uniq.length
+    assert_equal 1, mirror.owners.length, "and mirrored once"
+  end
+
+  # ── THE PROVENANCE THE OPERATOR ASKED FOR ────────────────────────────────────────
+
+  # "the scouting page should let him see WHICH variant found each photo". The column
+  # already existed and held the only query there was; with four of them the per-ROW
+  # answer is the one he calibrates a variant against, and the page reads it off here.
+  test "each row records which of the four searches found it" do
+    queries = queries_for("Josh Allen")
+    per_query = {
+      queries[0] => [hit("https://cdn.example.com/base.jpg", position: 1)],
+      queries[2] => [hit("https://cdn.example.com/bare-faced.jpg", position: 1)],
+      queries[3] => [hit("https://cdn.example.com/grinning.jpg", position: 1)]
+    }
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(per_query: per_query), faces: NoFaces
+    )
+
+    assert_equal queries[0], AppearanceReferencePhoto.find_by!(image_url: per_query[queries[0]].first.image_url).query
+    assert_equal queries[2], AppearanceReferencePhoto.find_by!(image_url: per_query[queries[2]].first.image_url).query
+    assert_equal queries[3], AppearanceReferencePhoto.find_by!(image_url: per_query[queries[3]].first.image_url).query
+  end
+
+  # THE FIRST VARIANT WINS, AND THAT IS THE ACCOUNTING RATHER THAN AN ACCIDENT OF
+  # ITERATION. A photograph the bare name would have found anyway is not evidence that
+  # "no helmet" earns its query, so crediting it to the FIRST variant makes each variant's
+  # number on the page its MARGINAL contribution — what dropping that query would cost.
+  # Credit it to the LAST variant instead and the page would tell the operator to keep the
+  # wrong query.
+  test "a photograph several variants return is credited to the first of them" do
+    shared = hit("https://cdn.example.com/shared.jpg", position: 1)
+    queries = queries_for("Josh Allen")
+    per_query = { queries[0] => [shared], queries[1] => [shared], queries[3] => [shared] }
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(per_query: per_query), faces: NoFaces
+    )
+
+    assert_equal queries[0], AppearanceReferencePhoto.find_by!(image_url: shared.image_url).query
+    assert_equal 1, summary.per_query[queries[0]][:unique]
+    assert_equal 0, summary.per_query[queries[1]][:unique],
+                    "a variant is credited with what it alone found, not with what it echoed"
+    assert_equal 1, summary.per_query[queries[1]][:returned],
+                    "and still reports what it cost, so a useless query is visible"
+  end
+
+  # ── WHO GETS CLASSIFIED: THE ROUND-ROBIN ─────────────────────────────────────────
+
+  # ⚠ THE TEST THE WHOLE CHANGE TURNS ON. A global `sort_by(&:merit).first(24)` is the
+  # obvious shortlist and it defeats the purpose of the fan-out: `#merit` scores shape,
+  # size and title and knows NOTHING about expression, so the bare-name variant's big
+  # clean action shots can take every slot, everything from "laughing" is refused as
+  # `face_unscored` because nobody looked at it, and the identity is the one we had before
+  # — after buying four searches instead of one.
+  #
+  # THE FIXTURE MAKES THE BARE NAME WIN ON MERIT ON PURPOSE: its candidates carry the
+  # person's name in the title and portrait dimensions, the variants' do not. Under a
+  # global sort every slot goes to the bare name. Under the round-robin every variant is
+  # classified before any variant gets a second look.
+  test "every variant reaches the classifier even when one variant outranks them all" do
+    queries = queries_for("Josh Allen")
+    ceiling = Appearances::GatherReferencePhotos::VISION_SHORTLIST
+    per_query = queries.each_with_index.to_h do |query, index|
+      rows = (1..ceiling).map do |i|
+        if index.zero?
+          hit("https://cdn.example.com/base-#{i}.jpg", position: i, title: "Josh Allen portrait",
+              width: 800, height: 1200)
+        else
+          hit("https://cdn.example.com/v#{index}-#{i}.jpg", position: i, width: 1600, height: 400)
+        end
+      end
+      [query, rows]
+    end
+    faces = FakeFaces.new({})
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(per_query: per_query), faces: faces, mirror: mirror
+    )
+
+    assert_equal ceiling, faces.asked.length, "the ceiling still binds"
+    seen = mirror.owners.group_by(&:query).transform_values(&:length)
+    assert_equal queries.sort, seen.keys.sort,
+                 "a variant with nothing classified is a variant that bought a query for nothing"
+    assert_equal [ceiling / queries.length], seen.values.uniq,
+                 "four equally-supplied variants split the shortlist evenly"
+  end
+
+  # A THIN VARIANT GIVES UP ITS SLOTS RATHER THAN WASTING THEM, which is why the shortlist
+  # is an interleave and not a quota of VISION_SHORTLIST / 4. Measured 2026-09-26 on a real
+  # Commons answer: 12 of 20 candidates were scanned documents, so thin variants are the
+  # normal case. Under a hard quota this run would classify 1 + 3 + 3 + 3 and leave 14 paid
+  # slots empty.
+  test "a variant that found almost nothing does not waste the slots it cannot fill" do
+    queries = queries_for("Josh Allen")
+    ceiling = Appearances::GatherReferencePhotos::VISION_SHORTLIST
+    per_query = {
+      queries[0] => [hit("https://cdn.example.com/thin.jpg", position: 1)],
+      queries[1] => (1..ceiling).map { |i| hit("https://cdn.example.com/b#{i}.jpg", position: i) },
+      queries[2] => (1..ceiling).map { |i| hit("https://cdn.example.com/c#{i}.jpg", position: i) },
+      queries[3] => (1..ceiling).map { |i| hit("https://cdn.example.com/d#{i}.jpg", position: i) }
+    }
+    faces = FakeFaces.new({})
+
+    Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(per_query: per_query), faces: faces, mirror: mirror
+    )
+
+    assert_equal ceiling, faces.asked.length,
+                 "the thin variant's unused slots go to variants that can fill them"
   end
 
   # ---- ranking by face visibility --------------------------------------------
@@ -685,11 +969,12 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     assert_in_delta 0.77, AppearanceReferencePhoto.find_by!(image_url: photo.image_url).face_score, 0.001
   end
 
-  test "the provider is asked for the query the summary reports" do
+  test "the provider is asked for every query the summary reports" do
     search = FakeSearch.new(results: [])
     summary = Appearances::GatherReferencePhotos.call(@look, search: search, faces: NoFaces, limit: 11)
 
-    assert_equal [[summary.query, 11]], search.asked
+    assert_equal summary.queries.map { |q| [q, 11] }, search.asked
+    assert_equal queries_for("Josh Allen"), summary.queries
   end
 
   # WHO THE FAILURE GETS FILED AGAINST. Both collaborators degrade to an empty
@@ -705,8 +990,11 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
 
     Appearances::GatherReferencePhotos.call(@look, search: search, faces: faces, mirror: mirror)
 
-    assert_equal [@look], search.targets
-    assert_equal [@look], faces.targets
+    # ONE TARGET PER SEARCH, because there is one HTTP call per query and each can fail
+    # on its own — a variant that 429s has to file a row naming the look it failed on,
+    # and passing the target on only the first query would lose the other three.
+    assert_equal [@look] * search.asked.length, search.targets
+    assert_equal [@look], faces.targets, "the classifier is one request for the whole shortlist"
   end
   # ── THE MIRROR: NOTHING THIRD-PARTY IS HANDED TO A THIRD-PARTY FETCHER ───────────
   #
@@ -977,10 +1265,33 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
       faces: FakeFaces.new({ photo.image_url => { visibility: 0.9, fill: 0.7 } }), mirror: mirror
     )
 
-    assert_match "fake returned 2 result(s)", summary.sentence
-    assert_match "2 in a shape we could not read", summary.sentence
+    # FOUR SEARCHES, EIGHT ROWS, TWO UNIQUE. The fake answers every query with the same
+    # pair, so this asserts the harvest arithmetic as well as the copy: `returned` counts
+    # what the searches handed back and `unique` what survived the dedupe, and the clause
+    # has to name both or the dedupe is invisible.
+    assert_match "fake ran 4 search(es) for 8 result(s)", summary.sentence
+    assert_match "2 unique after dropping 6 duplicate(s)", summary.sentence
+    assert_match "in a shape we could not read", summary.sentence
     assert_match "1 refused as unsafe to fetch", summary.sentence
     assert_match "1 measured for face size", summary.sentence
     assert_match "1 chosen as references", summary.sentence
+  end
+
+  # THE DEDUPE IS NAMED ONLY WHEN IT DID SOMETHING. "0 duplicate(s)" on the happy path is
+  # noise in the one sentence the operator reads after every click, and the happy path is
+  # now the common one — measured 2026-09-27, "smiling" collided with the bare name on
+  # nothing at all for one athlete.
+  test "the sentence stays quiet about a dedupe that removed nothing" do
+    per_query = queries_for("Josh Allen").each_with_index.to_h do |query, i|
+      [query, [hit("https://cdn.example.com/#{i}.jpg", position: 1)]]
+    end
+
+    summary = Appearances::GatherReferencePhotos.call(
+      @look, search: FakeSearch.new(per_query: per_query), faces: NoFaces
+    )
+
+    assert_equal 0, summary.duplicates
+    assert_match "fake ran 4 search(es) for 4 result(s)", summary.sentence
+    refute_match "duplicate", summary.sentence
   end
 end
