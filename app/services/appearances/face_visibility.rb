@@ -25,7 +25,7 @@ module Appearances
   # WHAT IT COSTS, and why it is not the first thing that runs. Every image scored
   # is billed. So the caller shortlists on a free metadata score first
   # (GatherReferencePhotos::VISION_SHORTLIST) and only the survivors are sent, in
-  # ONE request rather than one request per photograph.
+  # batches of BATCH_SIZE rather than one request per photograph.
   #
   # ANTHROPIC FETCHES THE IMAGES SERVER-SIDE, from a `type: "url"` image source —
   # we never download the bytes. That is the same trust boundary Higgsfield's
@@ -117,12 +117,18 @@ module Appearances
     # images was a valid JPEG and NONE of them was judged: the run filed 74 candidates,
     # scored 0, chose 0, and raised the alarm that says the VENDOR saw nothing.
     #
-    # ONE BAD FILE MUST NOT COST THE WHOLE SHORTLIST, and batching is the only lever that
-    # does not require sniffing bytes. Nothing in the metadata could have caught this file:
-    # it declared `image/jpeg`, its URL path ended `.jpg`, and our own mirrored copy is
-    # stored and served as `image/jpeg`. Only the BYTES say otherwise, and this lane
-    # deliberately never fetches them — the whole point of the `type: "url"` source is that
-    # the vendor fetches server-side.
+    # ONE BAD FILE MUST NOT COST THE WHOLE SHORTLIST, and batching bounds that blast
+    # radius whatever the cause. It is the blast-radius control, never the detector: it
+    # also bounds causes no pre-check sees, such as a truncated file that really is
+    # `image/jpeg`, and it cost a tenth of a cent and no new fetch, which is why it went
+    # first.
+    #
+    # ⚠ THIS COMMENT ONCE SAID NO METADATA CHECK COULD HAVE CAUGHT THIS FILE. That was
+    # FALSE and it was the stated reason not to look. Re-measured 2026-09-28, one free
+    # HEAD: `content-type: text/html`, body beginning `<html>`. The host never declared
+    # `image/jpeg`; the RESPONSE's own Content-Type is a third signal and catches this
+    # outright. The pre-check is owed and carded — it needs the response, which
+    # MirrorCandidates does not hold, so it is a restructuring rather than a guard.
     #
     # EIGHT, AND WHAT IT COSTS. The per-request overhead is the system prompt, measured at
     # 624 tokens with /v1/messages/count_tokens: three requests for a full shortlist of 24
