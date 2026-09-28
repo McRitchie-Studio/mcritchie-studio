@@ -134,9 +134,10 @@ and still reports 0 spots through a green count.
 explanation away.** Phase 6b runs `bundle exec rails espn:scrape_depth_charts
 >/dev/null`, so stdout is discarded by intent, and the per-team `puts` naming the
 exception for a team ESPN could not serve was the ONLY record that had ever carried a
-cause. The tally on stderr survives and carries counts. MEASURED 2026-09-27 on
-`accepted`: `grep -rE "ErrorLog|rescue_and_log"` over `app/services/espn/` and
-`lib/tasks/espn.rake` returned zero hits, while two sibling feed services
+cause. The tally on stderr survives and carries counts. MEASURED 2026-09-27 against
+the ref itself, not a checkout — `git grep -cE "ErrorLog|rescue_and_log" origin/accepted
+-- app/services/espn lib/tasks/espn.rake`, which exits 1 with no output: zero hits in
+either path, while two sibling feed services
 (`Nflverse::SeedPlayers`, `Appearances::ImageSearch::WikimediaCommons`) file rows.
 `espn-services-error-logs` closed that: a tolerated per-team failure files one row
 targeted at the `DepthChart`, the zero-applied refusal files one before it aborts, and
