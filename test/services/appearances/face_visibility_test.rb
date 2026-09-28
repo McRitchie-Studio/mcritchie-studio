@@ -300,6 +300,94 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
     refute_match(/-\d{8}\z/, FV::MODEL, "date-suffixed ids are the stale spelling")
   end
 
+  # ---- BATCHING: ONE BAD FILE MUST NOT COST THE SHORTLIST ------------------------
+  #
+  # ⚠ THE FAILURE THESE WERE WRITTEN FROM, MEASURED ON A REAL RUN 2026-09-27 against
+  # live Serper and this classifier (`justin-jefferson`). Four variants shortlisted 24
+  # candidates, 14 mirrored, all 14 rode one request, and the vendor answered
+  # `400 ... content.15.image.source.base64.data: The file format is invalid or
+  # unsupported`. Image 7's bytes begin `<html` — a Facebook crawler endpoint served an
+  # HTML page and the mirror stored it as `original.jpg`, because Serper reports no mime
+  # type and the URL path ended `.jpg`. The other THIRTEEN were valid JPEGs and not one of
+  # them was judged: 74 candidates filed, 0 scored, 0 chosen.
+  #
+  # NOTHING IN THE METADATA COULD HAVE CAUGHT IT — declared `image/jpeg`, path `.jpg`, our
+  # own mirrored copy served as `image/jpeg`. Only the bytes say otherwise and this lane
+  # never fetches them. So the control is the BATCH, and these tests pin it.
+
+  # A fake vendor that refuses any batch containing the poison url and answers every
+  # other batch in full. It is the shape of the real 400: a whole-request refusal, not a
+  # per-image one.
+  def poisoned_post(poison)
+    lambda do |urls|
+      raise "Anthropic answered 400: The file format is invalid or unsupported" if urls.include?(poison)
+
+      rows = urls.each_with_index.map { |_u, i| %({"index":#{i},"visibility":0.9,"fill":0.8,"faces":1}) }
+      answer("[#{rows.join(',')}]")
+    end
+  end
+
+  test "the shortlist is sent in batches rather than as one request" do
+    urls = (1..(FV::BATCH_SIZE * 2 + 1)).map { |i| "https://cdn.example.com/#{i}.jpg" }
+    sent = []
+    provider = classifier
+
+    provider.stub(:post, ->(batch) { sent << batch.length; answer("[]") }) do
+      provider.call(urls)
+    end
+
+    assert_equal 3, sent.length, "17 images at a batch of #{FV::BATCH_SIZE} is three requests"
+    assert_equal [FV::BATCH_SIZE, FV::BATCH_SIZE, 1], sent
+  end
+
+  # ⚠ THE ASSERTION THE WHOLE BATCHING CHANGE EXISTS FOR. Before it, the rescue sat
+  # around the single request and one refused file returned {} for everything — which the
+  # caller reports as a BLIND CLASSIFIER, naming the vendor for a payload fault of ours.
+  test "a batch refused over one bad file costs that batch and no other" do
+    urls = (1..(FV::BATCH_SIZE * 2)).map { |i| "https://cdn.example.com/#{i}.jpg" }
+    poison = urls.first
+    provider = classifier
+
+    judged = provider.stub(:post, poisoned_post(poison)) { provider.call(urls) }
+
+    assert_equal FV::BATCH_SIZE, judged.length,
+                 "one unreadable file must cost its own batch, never the whole shortlist"
+    refute_includes judged.keys, poison
+    assert_includes judged.keys, urls.last, "a later batch is judged in full"
+  end
+
+  # AND IT IS STILL A FILED FAILURE. Degrading quietly is what put three photographs of
+  # aircraft into a character model on 2026-09-26; a batch that was refused has to leave a
+  # row naming it, even though the run now survives.
+  test "a refused batch still files a row, once, naming its size" do
+    urls = (1..(FV::BATCH_SIZE + 1)).map { |i| "https://cdn.example.com/#{i}.jpg" }
+    look = Appearance.create!(person_slug: people(:josh_allen).slug, descriptor: "Bills home")
+    provider = classifier
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      provider.stub(:post, poisoned_post(urls.first)) { provider.call(urls, target: look) }
+    end
+
+    assert_equal look, ErrorLog.order(:id).last.target
+  end
+
+  # THE INDEX IS BATCH-LOCAL, so a score in the SECOND batch keys back through the second
+  # batch's own array. A global index would attribute every score past the first batch to
+  # the wrong photograph — silently, and in favour of whatever the first batch contained.
+  test "a score in a later batch is keyed to the right photograph" do
+    urls = (1..(FV::BATCH_SIZE + 2)).map { |i| "https://cdn.example.com/#{i}.jpg" }
+    provider = classifier
+
+    judged = provider.stub(:post, ->(batch) {
+      answer(%([{"index":1,"visibility":0.42,"fill":0.5,"faces":1}]))
+    }) { provider.call(urls) }
+
+    # Batch one's index 1 is urls[1]; batch two's index 1 is urls[BATCH_SIZE + 1].
+    assert_in_delta 0.42, judged[urls[1]].visibility, 0.001
+    assert_in_delta 0.42, judged[urls[FV::BATCH_SIZE + 1]].visibility, 0.001
+    assert_equal 2, judged.length
+  end
+
   # ---- MAX_TOKENS AGAINST THE CALLER'S SHORTLIST --------------------------------
 
   # ⚠ TRUNCATION HERE IS NOT A SHORT ANSWER, IT IS NO ANSWER, and this is the assertion
@@ -319,6 +407,13 @@ class Appearances::FaceVisibilityTest < ActiveSupport::TestCase
   # THE FLOOR IS DERIVED FROM THE CALLER'S CONSTANT rather than hard-coded, so raising
   # Appearances::GatherReferencePhotos::VISION_SHORTLIST without raising MAX_TOKENS fails
   # HERE instead of failing silently in front of the operator.
+  #
+  # AGAINST THE WHOLE SHORTLIST AND NOT AGAINST BATCH_SIZE, deliberately. Only BATCH_SIZE
+  # objects ride in any one response today, so the weaker floor is 8 × 43 = 344 and the
+  # old 512 would have satisfied it. Pinning the STRONGER invariant costs nothing —
+  # output is billed on tokens generated, never on the ceiling — and it means raising
+  # BATCH_SIZE back to the whole shortlist cannot be the edit that silently reintroduces
+  # truncation.
   TOKENS_PER_ANSWER_OBJECT = 43
 
   test "MAX_TOKENS can carry an answer for a full vision shortlist" do
