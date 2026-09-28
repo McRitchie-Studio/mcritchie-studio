@@ -362,7 +362,7 @@ module Appearances
         return "all #{chosen} can also go to the trainer" if chosen.to_i.positive? &&
                                                              self[:mint_ready].to_i == chosen.to_i
 
-        "#{self[:mint_ready].to_i} of #{chosen} carry a measured face size, so the trainer " \
+        "#{self[:mint_ready].to_i} of #{chosen} clear the trainer's face-size floor, so it " \
           "gets that many plus the cached headshot"
       end
 
@@ -739,7 +739,8 @@ module Appearances
 
       counts[:filed] += 1
       take ? counts[:chosen] += 1 : counts[:rejected] += 1
-      counts[:mint_ready] += 1 if take && judgement&.sized?
+      counts[:mint_ready] += 1 if take && judgement&.sized? &&
+                                  judgement.fill >= ReferenceEligibility::MINT_FACE_FILL
       counts[:refusals][reason] += 1 if judgement && !take
     end
 

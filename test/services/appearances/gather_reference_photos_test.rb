@@ -1316,6 +1316,8 @@ class Appearances::GatherReferencePhotosTest < ActiveSupport::TestCase
     )
 
     assert_equal 1, summary.chosen
+    assert_equal 0, summary.mint_ready, "a sheet-only face is not trainer-ready"
+    assert_match "0 of 1 clear the trainer's face-size floor", summary.sentence
     assert_equal :notice, summary.flash_key
   end
 
