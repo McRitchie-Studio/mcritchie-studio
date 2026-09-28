@@ -61,7 +61,7 @@ decided; the Waves states, the writer checklist, the DNS measurements and the
 Wave 7 inventory record what exists. These are proposals until Alex says
 otherwise: the Wave 2 recipe, the catalog's shape and where it lives, the Wave 4
 order, Cloudflare Stream for video and CAD in the business-document tier,
-`DeskCapture`'s private R2 bucket, and Resend as SES's outbound replacement.
+and `DeskCapture`'s private R2 bucket.
 
 ## Waves
 
@@ -95,8 +95,9 @@ app, and a grep of each app's `origin/main`. Numbers are true for that day.
 
 There is no `moms-app-dev` S3 bucket. Only `mcritchie-studio`,
 `turf-monster-mainnet`, `mcritchie-industries` (and its QA app) and `moms-app`
-hold AWS keys. No app holds SES credentials, so every app already sends mail
-through Resend.
+hold AWS keys. No app holds `SES_SMTP_*`, so none can select SES: the hub,
+`turf-monster-mainnet` and `mcritchie-industries` hold `RESEND_API_KEY`, and
+`moms-app` holds no mail credential at all.
 
 **Hard-coded S3 URLs** (columns whose text contains `amazonaws.com`, scanned in
 every text and JSON column): only the hub has any.
@@ -300,7 +301,7 @@ account before starting; this is what the docs name today.
 |---|---|---|
 | S3 app buckets (`<app>-dev`, `<app>-production`) | Active Storage, `Studio::S3` | R2 (Wave 2) |
 | S3 desk-capture bucket `mcritchie-studio-desk` (`us-east-1` by default) and the **SES inbound** fallback | `team@mcritchie.studio` capture (`DeskCapture`); the main path is already Resend inbound, which writes into this bucket | a private R2 bucket for `DeskCapture` alone, then retire the SES fallback (`DeskCapturePollJob`) |
-| **SES outbound** (`agent.aws.mcritchie-ses`) | nothing: on 2026-09-28 no app held `SES_SMTP_*`, so `Studio::MailTransport` selects Resend everywhere | retire the credential and the SES identity |
+| **SES outbound** (`agent.aws.mcritchie-ses`) | nothing: on 2026-09-28 no app held `SES_SMTP_*`; the three apps that send mail hold `RESEND_API_KEY` | retire the credential and the SES identity |
 | **S3 URLs already handed out** | full `amazonaws.com` URLs outside the key-to-URL path: stored columns (`Content#hook_image_url` and `#final_video_url` keep what `Studio::S3.upload` returned; `lib/tasks/pokemon.rake` hard-codes its `S3_BASE`), images in broadcasts already sent, and og:image URLs unfurlers cached | before deleting a bucket, rewrite stored URLs to `assets.<domain>` and decide whether sent mail's `email/` images keep an S3 copy; none of these move with the Wave 2 config |
 | IAM users (`mcritchie-s3`, `mcr-*`, and the admin key's user, which answers as `agents-admin`) | the keys above | delete after their buckets are gone |
 | 1Password items (`agent.aws`, `AWS`, `mcritchie-industries.aws`, `agent.aws.mcritchie-ses`) | the keys above | mark RETIRED in the inventory's name or vault cell |
@@ -318,4 +319,4 @@ account before starting; this is what the docs name today.
 | Release the `studio-engine` version carrying `s3_endpoint` (Wave 2's gate) | Avi (`qa-release`) and Steffon (`production-deploy`) |
 | Does Commercial Welding carry CMMC or ITAR obligations? | Alex |
 | What writes the `commercial-welding-*` S3 buckets | Steffon, at the start of that app's Wave 2 task |
-| Approve or amend the proposals (Wave 2 recipe, catalog, Wave 4 order, Stream and CAD, `DeskCapture` bucket, Resend) | Alex |
+| Approve or amend the proposals (Wave 2 recipe, catalog, Wave 4 order, Stream and CAD, `DeskCapture` bucket) | Alex |
