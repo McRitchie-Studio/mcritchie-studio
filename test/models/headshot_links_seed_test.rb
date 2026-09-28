@@ -47,7 +47,7 @@ class HeadshotLinksSeedTest < ActiveSupport::TestCase
   test "the skip says on stderr what the database will be missing" do
     ENV["SKIP_NETWORK_SEEDS"] = "1"
 
-    out, err = capture_io { load SEED }
+    _seen, out, err = load_seed
 
     assert_match(/SKIP_NETWORK_SEEDS=1/, err)
     assert_match(/espn_headshot_url/, err, "name the column that stays empty")
@@ -82,7 +82,13 @@ class HeadshotLinksSeedTest < ActiveSupport::TestCase
   # on the gate, which is what exposed it. `load_tasks` is therefore forced here and
   # every other name is delegated to the real implementation, captured before the
   # stub takes it.
-  def invoked_tasks
+  # EVERY CASE GOES THROUGH THIS SEAM, including the ones that only read the
+  # report. A bare `load SEED` was reaching the real tasks whenever the gate under
+  # test was broken -- MEASURED under a mutation that disarmed the gate: the case
+  # made live ESPN and NFL.com requests, both lanes then aborted, and the SystemExit
+  # killed the runner with no summary line at all. A unit test must not be one
+  # `if` away from the network.
+  def load_seed
     Rails.application.load_tasks unless Rake::Task.task_defined?(LANES.first)
     seen = []
     recorder = Object.new
@@ -96,7 +102,12 @@ class HeadshotLinksSeedTest < ActiveSupport::TestCase
       recorder
     end
 
-    Rake::Task.stub(:[], intercept) { capture_io { load SEED } }
-    seen
+    out = err = nil
+    Rake::Task.stub(:[], intercept) { out, err = capture_io { load SEED } }
+    [seen, out, err]
+  end
+
+  def invoked_tasks
+    load_seed.first
   end
 end
