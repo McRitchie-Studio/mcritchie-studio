@@ -42,12 +42,17 @@ class PhotoScoutingController < ApplicationController
     load_scouting
   end
 
-  # BUY ONE QUERY and re-file every candidate it returns.
+  # BUY ONE QUERY PER VARIANT and re-file every candidate they return.
   #
   # This is the action the operator's "the AI goes out and pulls images" names, and
   # until Appearances::ImageSearch::WikimediaCommons shipped it could not run on any
   # machine: Serper was the only provider and `SERPER_API_KEY` exists nowhere. The
   # keyless provider is what makes this button real rather than decorative.
+  #
+  # ⚠ IT NOW COSTS FOUR QUERIES RATHER THAN ONE — one per
+  # Appearances::GatherReferencePhotos::QUERY_VARIANTS entry, because providers bill per
+  # query and the fan-out is four questions rather than a bigger answer to one. The
+  # flash sentence names the count for that reason.
   def search
     if @appearance.nil?
       return redirect_to scouting_path,
@@ -62,7 +67,9 @@ class PhotoScoutingController < ApplicationController
     elsif summary.returned.zero?
       redirect_to scouting_path,
                   alert: "#{summary.provider_name || 'The search'} returned nothing for " \
-                         "\"#{summary.query}\". Nothing was filed and nothing changed."
+                         "\"#{summary.query}\" or any of its " \
+                         "#{summary.variant_count} variant(s). Nothing was filed and " \
+                         "nothing changed."
     else
       # THE SUMMARY CHOOSES THE FLASH KEY, because a blind face classifier is an
       # ALERT rather than a notice: the run "succeeded" -- candidates were filed and an
@@ -143,7 +150,20 @@ class PhotoScoutingController < ApplicationController
 
     @search_available = Appearances::ImageSearch.available?
     @search_provider = Appearances::ImageSearch.provider_name
-    @search_query = @appearance && Appearances::GatherReferencePhotos.new(@appearance).query
+    # ALL FOUR QUERIES, NOT THE ONE. A search now buys one query per
+    # Appearances::GatherReferencePhotos::QUERY_VARIANTS entry, and the operator cannot
+    # judge a search whose questions he cannot see — nor calibrate a variant list he
+    # cannot read. The page prints every query the button would buy.
+    @search_queries = @appearance ? Appearances::GatherReferencePhotos.new(@appearance).queries : []
+    # THE SUBJECT, which is what every variant is built from and what the per-variant
+    # breakdown strips off each row's stored query to label it.
+    @search_subject = @search_queries.first
+    # WHAT EACH VARIANT ACTUALLY CONTRIBUTED, off the ROWS rather than off a summary.
+    # The summary exists only inside the request that ran the search; the page is a GET
+    # after a redirect and on every later visit, so the persisted `query` column is the
+    # only source that can answer this at all — and it is the honest one, because it says
+    # which variant found the photograph rather than which variant we hoped would.
+    @variant_breakdown = variant_breakdown(@found)
     # READ OFF THE ROWS, NOT OFF THE CREDENTIAL. These answer different questions: a
     # key that landed this morning says nothing about how the gallery on screen was
     # ordered, and the gallery on screen is what the operator is judging.
@@ -155,6 +175,32 @@ class PhotoScoutingController < ApplicationController
     @face_sized = @found.any?(&:face_sized?)
     @face_ranking_available = Appearances::FaceVisibility.available?
     @chosen_limit = Appearances::GatherReferencePhotos::CHOSEN_LIMIT
+    @vision_shortlist = Appearances::GatherReferencePhotos::VISION_SHORTLIST
+  end
+
+  # ONE ROW PER VARIANT: what it found, and how much of it survived to the model.
+  #
+  # ⚠ EVERY VARIANT APPEARS, INCLUDING THE ONES THAT FOUND NOTHING, and that is the whole
+  # reason this is built from `#queries` rather than by grouping the rows. A variant with
+  # no row is the most useful line on the page — it is the query to drop — and grouping
+  # rows alone would render it as absence, which reads as "not asked" rather than "asked
+  # and came back empty".
+  #
+  # ROWS FILED BEFORE THE FAN-OUT LANDED CARRY THE OLD SINGLE QUERY, which matches the
+  # bare-name variant's spelling exactly, so they group under it rather than into a
+  # mystery bucket. Anything that matches no current variant is collected under a final
+  # "an earlier search" row rather than dropped, because a candidate in the gallery that
+  # appears in no breakdown row would make the counts disagree with the tiles.
+  def variant_breakdown(found)
+    by_query = found.group_by { |photo| photo.query.to_s }
+    rows = @search_queries.map do |query|
+      photos = by_query.delete(query) || []
+      { query: query, found: photos.length, chosen: photos.count(&:chosen?) }
+    end
+    leftover = by_query.values.flatten
+    return rows if leftover.empty?
+
+    rows + [{ query: nil, found: leftover.length, chosen: leftover.count(&:chosen?) }]
   end
 
   def candidates

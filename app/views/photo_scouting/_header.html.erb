@@ -1,9 +1,14 @@
 <%# THE PAGE'S OWN HEADING, plus the one control that spends money.
 
-    THE QUERY IS PRINTED, not merely implied by the person's name. It is assembled
-    from the person plus their team (Appearances::GatherReferencePhotos#query), so it
-    is not what the operator would have typed — and he cannot judge a search whose
-    question he cannot see. %>
+    EVERY QUERY IS PRINTED, not merely implied by the person's name. Each is assembled
+    from the person plus their team plus one variant
+    (Appearances::GatherReferencePhotos#queries), so none of them is what the operator
+    would have typed — and he cannot judge searches whose questions he cannot see, nor
+    decide which variant to drop from a list he cannot read.
+
+    ALL FOUR, NOT A COUNT. "4 searches" would hide the two things he actually checks
+    here: that the TEAM made it into the subject (it silently did not until
+    2026-09-27), and which expression words are being bought. %>
 <header class="space-y-3">
   <div>
     <p class="label-upper text-muted">Photo scouting</p>
@@ -34,10 +39,21 @@
         <% if @search_available %>
           <p class="text-xs text-heading font-bold">
             Searching with <span class="font-mono"><%= @search_provider %></span>
+            &middot; <%= pluralize(@search_queries.length, "query") %> per search
           </p>
-          <p class="text-2xs text-muted break-words">
-            Query: &ldquo;<%= @search_query %>&rdquo;
-          </p>
+          <ul data-test="search-queries" class="text-2xs text-muted break-words space-y-0.5 mt-0.5">
+            <% @search_queries.each do |query| %>
+              <li>
+                &ldquo;<%= query %>&rdquo;
+                <%# THE VARIANT, NAMED. The full query is what is bought and what is stored
+                    on every row it finds, so it is what the page shows; the label beside it
+                    is how the operator refers to the variant when he asks for one to change. %>
+                <span class="text-3xs opacity-70">
+                  <%= search_variant_label(query, subject: @search_subject) %>
+                </span>
+              </li>
+            <% end %>
+          </ul>
         <% else %>
           <p data-test="search-unconfigured" class="text-xs text-heading font-bold">
             No provider is configured
@@ -51,10 +67,11 @@
         <% end %>
       </div>
 
-      <%# ADMINS ONLY, matching the controller. A search buys one provider query plus
-          up to VISION_SHORTLIST vision classifications, and hub signup is open — so a
-          button shown to everyone is a purchase offered to everyone. A control nobody
-          but an admin may use is furniture on every other reader's page. %>
+      <%# ADMINS ONLY, matching the controller. A search buys ONE PROVIDER QUERY PER
+          VARIANT — four of them, listed above — plus up to VISION_SHORTLIST vision
+          classifications in one request, and hub signup is open, so a button shown to
+          everyone is a purchase offered to everyone. A control nobody but an admin may
+          use is furniture on every other reader's page. %>
       <% if admin? && @search_available %>
         <%= button_to "Search the web", search_person_scouting_path(@person.slug),
               method: :post, class: "btn btn-sm btn-primary shrink-0",

@@ -65,9 +65,31 @@ module Appearances
     MODEL = "claude-haiku-4-5".freeze
     ANTHROPIC_VERSION = "2023-06-01".freeze
 
-    # A one-line JSON answer per image. Small on purpose — a classifier that can
-    # run long is a classifier that can bill long.
-    MAX_TOKENS = 512
+    # ONE JSON OBJECT PER IMAGE, IN ONE ANSWER — so this ceiling scales with the
+    # caller's shortlist and not with anything about this file.
+    #
+    # ⚠ IT WAS 512 AND THAT WAS ALREADY TOO LOW FOR TWELVE IMAGES. Measured 2026-09-27
+    # with /v1/messages/count_tokens, which is free, over a realistic answer object
+    # ({"index", "visibility", "fill", "faces", "reason"} with a short reason):
+    #
+    #   12 images  1,259 characters   523 tokens   against a MAX_TOKENS of 512
+    #   24 images  2,519 characters  1,039 tokens
+    #
+    # AND TRUNCATION HERE IS NOT A SHORT ANSWER, IT IS NO ANSWER. `#parse` finds the
+    # array with `text[/\[.*\]/m]`, which needs the CLOSING bracket; a response stopped
+    # at `max_tokens` has none, the match is nil, `JSON.parse("")` raises, and the rescue
+    # returns an EMPTY hash. Every image in the batch loses its judgement, the caller
+    # reports `face_classifier_blind?`, and the page raises the alarm that says the
+    # vendor saw nothing — for a batch the vendor saw perfectly and answered in full. The
+    # failure names the wrong party, which is the one kind of alarm worse than silence.
+    #
+    # 2,048 IS TWICE WHAT 24 IMAGES MEASURED, and the headroom is free: output is billed
+    # on tokens GENERATED, never on the ceiling, so a generous limit costs nothing and a
+    # tight one costs the whole answer. It still bounds the run — "a classifier that can
+    # run long is a classifier that can bill long" was the right instinct and the wrong
+    # number. Raise it with Appearances::GatherReferencePhotos::VISION_SHORTLIST; the two
+    # are one decision made in two files.
+    MAX_TOKENS = 2048
 
     OPEN_TIMEOUT = 5
     READ_TIMEOUT = 30

@@ -171,11 +171,42 @@ module Appearances
     # half broke: eight sent and none scored is a classifier failure, eight
     # shortlisted and none sent is a mirror failure, and the operator's next move is
     # different for each.
-    Summary = Struct.new(:configured, :provider_name, :query, :returned, :filed,
-                         :chosen, :rejected, :unfetchable, :unparsed, :ranked_by,
+    # `queries` AND `returned` AND `unique` ARE THREE DIFFERENT NUMBERS, and the fan-out
+    # is what made them three:
+    #
+    #   queries  — the searches that ran. THIS IS THE BILL: providers charge per query.
+    #   returned — rows those searches handed back, added up. What we paid to find.
+    #   unique   — what is left after deduping by image_url. What anything downstream
+    #              sees, and therefore what `filed`, `chosen` and `scored` are counted
+    #              against.
+    #
+    # COLLAPSING `returned` INTO `unique` WOULD HIDE THE DEDUPE, which is the one figure
+    # that says whether a variant was worth its query: four searches whose answers
+    # overlapped completely would report the same `unique` as one search, and the page
+    # would read as a success.
+    Summary = Struct.new(:configured, :provider_name, :queries, :returned, :unique,
+                         :filed, :chosen, :rejected, :unfetchable, :unparsed, :ranked_by,
                          :scored, :sized, :mint_ready, :shortlisted, :attempted,
-                         keyword_init: true) do
+                         :per_query, keyword_init: true) do
       def configured? = !!self[:configured]
+
+      def queries = (self[:queries] || [])
+
+      # THE ONE QUERY A SENTENCE CAN NAME. Four searches ran and a flash message cannot
+      # carry four strings, so the SUBJECT — the bare-name variant every other one is
+      # built from — is what gets printed, with `#queries` available to anything that
+      # can show the whole list. Never the joined four: a reader would take the joined
+      # string for a query that was actually run.
+      def query = queries.first
+
+      # HOW MANY VARIANTS RAN BESIDE THE BARE SUBJECT. Clamped at zero so a look with no
+      # subject at all — which runs no searches — reports "0 variants" rather than the
+      # "-1" a bare subtraction gives, on the one path where `queries` is empty.
+      def variant_count = [queries.length - 1, 0].max
+
+      # HOW MANY PHOTOGRAPHS THE VARIANTS AGREED ON. Zero is the interesting answer, not
+      # the boring one — it means every variant found something the others did not.
+      def duplicates = [self[:returned].to_i - self[:unique].to_i, 0].max
 
       # WHAT ACTUALLY DID THE ORDERING — `:face_size` when the classifier reported how
       # much of the frame the head fills, `:face` when it reported only visibility,
@@ -251,13 +282,26 @@ module Appearances
       # would have had to be added in two places — which is to say it could have been
       # added in one and left the other page still reading the old reassurance.
       def sentence
-        parts = ["#{provider_name} returned #{returned} result(s)"]
+        parts = [harvest_clause]
         parts << "#{unparsed} in a shape we could not read" if self[:unparsed].to_i.positive?
         parts << "#{unfetchable} refused as unsafe to fetch" if self[:unfetchable].to_i.positive?
         parts << ranking_clause
         parts << "#{chosen} chosen as references"
         parts << trainer_clause
         "#{parts.join(' · ')}."
+      end
+
+      # WHAT THE SEARCHES COST AND WHAT SURVIVED THEM, in one clause.
+      #
+      # THE QUERY COUNT LEADS BECAUSE IT IS THE BILL. "returned 80 result(s)" reads as
+      # generosity; "4 searches returned 80" reads as what it is, four purchases. And the
+      # dedupe is named only when it removed something, because "0 duplicates" is noise
+      # on the happy path and the happy path is now the common one.
+      def harvest_clause
+        clause = "#{provider_name} ran #{queries.length} search(es) for #{returned} result(s)"
+        return clause if duplicates.zero?
+
+        "#{clause}, #{self[:unique]} unique after dropping #{duplicates} duplicate(s)"
       end
 
       # NAMES WHAT DID THE ORDERING. "6 chosen" reads the same whether a vision
@@ -356,38 +400,159 @@ module Appearances
 
     def call
       return unconfigured_summary unless @search.available?
+      # A LOOK WITH NOBODY IN IT BUYS NOTHING. With no name there is no subject, so
+      # `#queries` is empty and the variants would degrade to searching the internet for
+      # the bare word "smiling". Spending four queries on that is worse than spending
+      # none, and the empty summary renders exactly as a search that found nothing.
+      return empty_summary if queries.empty?
 
-      # `target:` IS WHAT MAKES A PROVIDER FAILURE FINDABLE. Both collaborators
-      # degrade to an empty answer rather than raising, so the look they were
-      # working on is the only handle the operator has for reading the row back.
-      answer = @search.search(query: query, limit: @limit, target: @appearance)
-      file(answer)
+      file(harvest)
     end
 
-    # WHAT WE ASK THE INTERNET FOR. The person's name, plus the team when we know
-    # it, because "Drew Lock" alone collects a locksmith and a 2019 Broncos rookie
-    # in the same twenty results.
+    # WHAT WE ASK THE INTERNET FOR — FOUR QUESTIONS, NOT ONE.
+    #
+    # Each is the SUBJECT plus one variant from QUERY_VARIANTS. The subject is the
+    # person's name plus the team when we know it, because "Drew Lock" alone collects a
+    # locksmith and a 2019 Broncos rookie in the same twenty results.
     #
     # The DESCRIPTOR is deliberately left out. It is free text the operator typed
     # to name a look ("navy suit", "1994 Ace Ventura") and it is about how we want
     # the person RENDERED, not about how they appear in photographs on the internet
     # — folding it into the query narrows the search with a term no photograph is
     # tagged with.
-    def query
-      [@appearance&.person&.full_name, team_name].compact_blank.join(" ")
+    #
+    # `uniq` IS NOT DECORATION. A duplicate query would be bought twice and answered
+    # identically, and the only thing that could produce one — a blank entry added to
+    # QUERY_VARIANTS beside the one already there — is exactly the edit somebody makes
+    # while re-tuning the list.
+    def queries
+      @queries ||= begin
+        subject = search_subject
+        subject.blank? ? [] : QUERY_VARIANTS.map { |v| [subject, v].compact_blank.join(" ") }.uniq
+      end
     end
+
+    # THE ONE QUERY THE PAGE NAMES AS "the search", kept as a method because the header
+    # and the failure rows both want the subject rather than the whole list.
+    def query = queries.first
 
     private
 
+    # THE PERSON PLUS THEIR TEAM, and the team is the half that used to vanish.
+    def search_subject
+      [@appearance&.person&.full_name, team_name].compact_blank.join(" ")
+    end
+
+    # THE TEAM'S NAME, FROM THE RECORD IF THERE IS ONE AND FROM THE SLUG IF THERE IS NOT.
+    #
+    # ⚠ THE SLUG FALLBACK IS THE WHOLE POINT OF THIS METHOD, and without it the team
+    # silently left every query. `teams` HAS ZERO ROWS IN PRODUCTION (re-measured
+    # 2026-09-27: `Team.count` is 0 against 2,051 athletes, every one of which carries a
+    # populated `team_slug`). So both associations resolved nil, `compact_blank` dropped
+    # the nil without a word, and the effective query for a Vikings receiver was his bare
+    # name — which is why the search came back a wall of his LSU college photographs. The
+    # failure was invisible: nothing raised, nothing logged, and the page printed a query
+    # that looked deliberate.
+    #
+    # THE RECORD STILL WINS WHERE THERE IS ONE, because a row is an authority and a slug
+    # is a reconstruction. This is a fallback, not a replacement, and it keeps working
+    # unchanged on the day somebody seeds `teams`.
+    #
+    # `titleize` IS MEASURED RATHER THAN ASSUMED, on all 32 distinct slugs in production
+    # (2026-09-27): every one round-trips to the team's actual name, including the two
+    # that could have gone wrong — "san-francisco-49ers" to "San Francisco 49ers" and
+    # "washington-commanders" to "Washington Commanders". A slug this does not suit would
+    # degrade to a slightly odd search term, never to a raised page.
     def team_name
+      team_record_name.presence || team_slug&.titleize.presence
+    end
+
+    def team_record_name
       @appearance&.team&.name.presence || @appearance&.person&.athlete_profile&.team&.name.presence
     end
 
-    def unconfigured_summary
-      Summary.new(configured: false, provider_name: nil, query: query, returned: 0,
-                  filed: 0, chosen: 0, rejected: 0, unfetchable: 0, unparsed: 0,
-                  ranked_by: nil, scored: 0, sized: 0, mint_ready: 0, shortlisted: 0,
-                  attempted: 0)
+    def team_slug
+      @appearance&.team_slug.presence || @appearance&.person&.athlete_profile&.team_slug.presence
+    end
+
+    # RUN EVERY VARIANT, THEN DEDUPE BEFORE ANYTHING IS PAID FOR.
+    #
+    # THE DEDUPE IS NOT AN OPTIMISATION, IT IS THE COST CONTROL. Two variants returning
+    # the same photograph is one answer, and letting both copies through would mirror it
+    # twice, classify it twice and let it occupy two slots in one identity — money spent
+    # twice for one answer, and an identity that thinks it has eight faces when it has
+    # seven. Measured on `jaylen-waddle` 2026-09-27: 7 of 80 collided.
+    #
+    # FIRST VARIANT WINS, AND THAT IS THE ATTRIBUTION THE OPERATOR NEEDS. A photograph
+    # the bare name would have found anyway is not evidence that "no helmet" earns its
+    # query; crediting it to the FIRST variant that returned it makes each variant's
+    # column on the page its MARGINAL contribution — the photographs we would lose if
+    # that query were dropped. That is the number a decision about the variant list turns
+    # on, and it is why QUERY_VARIANTS is ordered rather than a Set.
+    #
+    # THE PROVIDER'S OWN `position` IS KEPT, NOT RENUMBERED ACROSS THE HARVEST. It is the
+    # rank WITHIN its own search, which is the only thing it ever meant, and it survives
+    # as the tiebreak in both sorts below. Renumbering it globally would push the fourth
+    # variant's best hit behind the first variant's twentieth and quietly undo the
+    # fan-out.
+    #
+    # ONE FAILED VARIANT DOES NOT COST THE OTHERS. The façade answers an empty Answer for
+    # a provider that raised (and files the ErrorLog row), so a 429 on the third search
+    # leaves the first two harvested.
+    def harvest
+      answers = queries.map do |q|
+        # `target:` IS WHAT MAKES A PROVIDER FAILURE FINDABLE. Both collaborators
+        # degrade to an empty answer rather than raising, so the look they were
+        # working on is the only handle the operator has for reading the row back.
+        [q, @search.search(query: q, limit: @limit, target: @appearance)]
+      end
+
+      @found_by = {}
+      results = []
+      per_query = {}
+      answers.each do |q, answer|
+        rows = answer.results
+        per_query[q] = { returned: rows.length, unique: 0 }
+        rows.each do |result|
+          url = result.image_url
+          next if url.blank? || @found_by.key?(url)
+
+          @found_by[url] = q
+          per_query[q][:unique] += 1
+          results << result
+        end
+      end
+
+      Harvest.new(results: results,
+                  returned: answers.sum { |_q, a| a.results.length },
+                  unparsed_count: answers.sum { |_q, a| a.unparsed_count },
+                  provider_name: answers.filter_map { |_q, a| a.provider_name }.first,
+                  per_query: per_query)
+    end
+
+    # WHAT FOUR SEARCHES ADD UP TO. Deliberately NOT an ImageSearch::Answer: an Answer is
+    # one provider's reply to one query and carries no idea of how many queries there
+    # were, and widening it would push the fan-out into the façade every provider is
+    # written against. This object belongs to this one caller.
+    Harvest = Struct.new(:results, :returned, :unparsed_count, :provider_name, :per_query,
+                         keyword_init: true)
+
+    # WHICH VARIANT FOUND THIS PHOTOGRAPH — the provenance the scouting page prints, and
+    # the value stored in the row's `query` column.
+    def query_for(result) = @found_by&.[](result.image_url) || query
+
+    def unconfigured_summary = blank_summary(configured: false)
+
+    # A REAL SEARCH THAT COULD NOT BE ASKED, which is not the same as no provider: the
+    # page must say "nothing was found" rather than "search is off", because the
+    # credential is fine and the LOOK is what is missing a subject.
+    def empty_summary = blank_summary(configured: true)
+
+    def blank_summary(configured:)
+      Summary.new(configured: configured, provider_name: configured ? @search.provider_name : nil,
+                  queries: queries, returned: 0, unique: 0, filed: 0, chosen: 0,
+                  rejected: 0, unfetchable: 0, unparsed: 0, ranked_by: nil, scored: 0,
+                  sized: 0, mint_ready: 0, shortlisted: 0, attempted: 0, per_query: {})
     end
 
     # FILE THE ANSWER, IN RANK ORDER RATHER THAN IN THE PROVIDER'S ORDER.
@@ -421,8 +586,8 @@ module Appearances
     # a slot and is never paid to be classified. Ordering it the other way would
     # let a single private-range URL at rank 1 push a good photograph out of the
     # identity AND bill us to look at it.
-    def file(answer)
-      results = answer.results
+    def file(harvest)
+      results = harvest.results
       safe, unsafe = results.partition { |r| FetchableUrl.ok?(r.image_url) }
 
       judgements = face_judgements(safe)
@@ -450,14 +615,16 @@ module Appearances
       end
 
       summary = Summary.new(configured: true,
-                            provider_name: answer.provider_name || @search.provider_name,
-                            query: query, returned: results.length, filed: counts[:filed],
+                            provider_name: harvest.provider_name || @search.provider_name,
+                            queries: queries, returned: harvest.returned,
+                            unique: results.length, filed: counts[:filed],
                             chosen: counts[:chosen], rejected: counts[:rejected],
-                            unfetchable: unsafe.length, unparsed: answer.unparsed_count,
+                            unfetchable: unsafe.length, unparsed: harvest.unparsed_count,
                             ranked_by: ranked_by(judgements), scored: judgements.length,
                             sized: judgements.count { |_url, j| j.sized? },
                             mint_ready: counts[:mint_ready],
-                            shortlisted: @shortlisted, attempted: @attempted)
+                            shortlisted: @shortlisted, attempted: @attempted,
+                            per_query: harvest.per_query)
       report_blind_classifier(summary)
       report_blind_face_size(summary)
       summary
@@ -501,7 +668,8 @@ module Appearances
       FailureLog.file(
         ClassifierBlind.new(
           "face classifier scored 0 of #{summary.shortlisted} shortlisted candidate(s) " \
-          "(#{summary.attempted} mirrored and sent) for \"#{summary.query}\" — the " \
+          "(#{summary.attempted} mirrored and sent) across #{summary.queries.length} " \
+          "search(es) for \"#{summary.query}\" — the " \
           "photographs now filed were ranked on shape and relevance only"
         ),
         target: @appearance
@@ -521,7 +689,8 @@ module Appearances
 
       FailureLog.file(
         FaceSizeBlind.new(
-          "the face classifier scored #{summary.scored} photograph(s) for \"#{summary.query}\" " \
+          "the face classifier scored #{summary.scored} photograph(s) across " \
+          "#{summary.queries.length} search(es) for \"#{summary.query}\" " \
           "and reported a face SIZE for none of them — face size is what " \
           "Appearances::ReferenceEligibility.mint_verdict demands, so Higgsfield's trainer " \
           "gets the cached headshot alone (the zero-shot sheet still gets the set). Check " \
@@ -578,7 +747,7 @@ module Appearances
       # size turns out to keep it away from the trainer, because the measurement is what
       # decides that.
       eligible = results.reject { |r| PhotoMerit.document?(r) || wrong_person?(r) }
-      shortlist = eligible.sort_by { |r| [-merit(r), r.position.to_i] }.first(VISION_SHORTLIST)
+      shortlist = shortlist_from(eligible)
       return {} if shortlist.empty?
 
       @shortlisted = shortlist.length
@@ -613,6 +782,51 @@ module Appearances
         value = judged[our_url]
         out[remote_url] = value unless value.nil?
       end
+    end
+
+    # WHO GETS CLASSIFIED — EVERY VARIANT, ROUND BY ROUND, NOT THE GLOBAL TOP 24.
+    #
+    # THE GLOBAL SORT IS WHAT WOULD MAKE THE FAN-OUT POINTLESS, and this is the one place
+    # in the change where a plausible implementation defeats the whole purpose of it. The
+    # operator's goal is EXPRESSIONS — a laugh, a smile, a bare face. `#merit` is a free
+    # metadata score over shape, resolution and the title, and it knows nothing about
+    # expression. So a global `sort_by(&:merit).first(24)` can hand all 24 slots to the
+    # bare-name variant's big clean action shots, refuse everything from "laughing" as
+    # `face_unscored` because nobody looked at it, and produce an identity indistinguishable
+    # from the one before this change — after buying four searches instead of one.
+    #
+    # ROUND-ROBIN, IN VARIANT ORDER, EACH VARIANT'S OWN BEST FIRST. Round one takes the
+    # best candidate from each of the four, round two the second best, and so on until the
+    # ceiling is reached: every variant that found anything gets classified before any
+    # variant gets a second look.
+    #
+    # EXHAUSTED VARIANTS GIVE UP THEIR SLOTS RATHER THAN WASTING THEM, which is why this is
+    # an interleave and not a quota of VISION_SHORTLIST / 4. A variant that returned three
+    # candidates takes three; the other nine slots it would have held under a quota go to
+    # variants that have something to put in them. Measured 2026-09-26 on a real Commons
+    # answer, 12 of 20 candidates were scanned documents — thin variants are the normal
+    # case, not the edge one.
+    #
+    # THE ORDER WITHIN A ROUND IS QUERY_VARIANTS' ORDER, so when the ceiling falls in the
+    # middle of a round the earlier variants win the last slots. That is the same
+    # preference the attribution uses, and it is a tiebreak rather than a weighting.
+    def shortlist_from(eligible)
+      by_query = eligible.group_by { |r| query_for(r) }
+      ranked = queries.filter_map do |q|
+        by_query[q]&.sort_by { |r| [-merit(r), r.position.to_i] }
+      end
+
+      interleave(ranked).first(VISION_SHORTLIST)
+    end
+
+    # ONE FROM EACH GROUP, THEN THE NEXT FROM EACH. `filter_map` on the index is what lets
+    # a short group drop out of later rounds instead of contributing a nil that would have
+    # to be compacted away — and a nil reaching `#file_candidate` is a NoMethodError on a
+    # paid path.
+    def interleave(groups)
+      return [] if groups.empty?
+
+      (0...groups.map(&:length).max).flat_map { |round| groups.filter_map { |g| g[round] } }
     end
 
     # FILE THE EVIDENCE, WITHOUT A VERDICT, and return the row the mirror will own.
@@ -668,7 +882,16 @@ module Appearances
         # what MirrorCandidates asks first when it needs a content type.
         mime_type: result.mime,
         thumb_url: result.thumb_url,
-        query: query,
+        # WHICH OF THE FOUR SEARCHES FOUND THIS PHOTOGRAPH, not "the query" — the column
+        # already existed and held the only query there was, and with four of them the
+        # per-row answer is the one the operator has to be able to read. It is what the
+        # scouting page prints beside each tile and what its per-variant breakdown counts,
+        # and without it a candidate has no provenance he can calibrate a variant against.
+        #
+        # THE FIRST VARIANT THAT RETURNED IT, by `#harvest`'s rule, so the breakdown reads
+        # as each variant's MARGINAL contribution rather than crediting four variants with
+        # one photograph.
+        query: query_for(result),
         found_at: Time.current
       }
     end
