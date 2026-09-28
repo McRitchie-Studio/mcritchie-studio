@@ -238,6 +238,18 @@ class Appearances::MirrorCandidatesTest < ActiveSupport::TestCase
   end
 
   # A host that declares nothing specific is left to the claims below, as before.
+  test "[unit] a row we already mirrored is reused, never fetched again" do
+    row = photo
+    ImageCache.create!(owner: row, purpose: Mirror::PURPOSE, variant: "original",
+                       s3_key: "reference-photos/#{row.slug}/original.png", content_type: "image/png")
+    cache = FakeCache.new(served: ["<html>", "text/html"])
+
+    hosted = Mirror.call([row.reload], target: @look, cache: cache)
+
+    assert_equal [row.image_url], hosted.keys
+    assert_empty cache.fetched, "a dead or poisoned source must not drop a copy we hold"
+  end
+
   test "[unit] a generic binary content type is not refused" do
     cache = FakeCache.new(served: [FakeCache::JPEG, "application/octet-stream"])
 

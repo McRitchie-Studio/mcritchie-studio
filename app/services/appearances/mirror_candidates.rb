@@ -188,6 +188,9 @@ module Appearances
     end
 
     def mirror(photo)
+      # A copy we already hold is reused: re-fetching would let a dead source drop it.
+      return photo.hosted_url if photo.mirrored?
+
       content_type = content_type_for(photo)
       return nil if content_type.nil?
 
