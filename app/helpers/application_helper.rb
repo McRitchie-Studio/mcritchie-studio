@@ -1080,7 +1080,8 @@ module ApplicationHelper
     "rantly"               => "📣",
     "portfolio"            => "🗂️",
     "10and5"               => "🍽️",
-    "search-position"      => "🔎"
+    "search-position"      => "🔎",
+    "moms-app"             => "📚"
   }.freeze
 
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.
