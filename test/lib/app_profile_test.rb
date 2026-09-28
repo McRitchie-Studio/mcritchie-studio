@@ -9,6 +9,8 @@ require "open3"
 require "tmpdir"
 require "fileutils"
 require "yaml"
+require "tmpdir"
+require "fileutils"
 require_relative "../../bin/lib/app_profile"
 require_relative "../../bin/lib/app_contract"
 
@@ -72,7 +74,11 @@ class AppProfileTest < Minitest::Test
     def http_status(url) = @http[url]
 
     def run(*argv)
-      key = argv.include?("get-url") ? :origin : argv.include?("ls-remote") ? :heads : argv.first.to_sym
+      key = if argv.include?("get-url") then :origin
+            elsif argv.include?("ls-remote") then :heads
+            elsif argv.include?("fetch") then :fetch
+            else argv.first.to_sym
+            end
       @runs.fetch(key, ["", false])
     end
   end
@@ -86,7 +92,7 @@ class AppProfileTest < Minitest::Test
                "Procfile" => "web: puma\nrelease: bin/rails db:migrate\n" }.merge(over.fetch(:files, {})),
       runs: { origin: ["https://github.com/McRitchie-Studio/demo.git\n", true],
               heads: ["a\trefs/heads/main\nb\trefs/heads/accepted\nc\trefs/heads/release\n", true],
-              heroku: ["=== demo", true] }.merge(over.fetch(:runs, {})),
+              fetch: ["", true], heroku: ["=== demo", true] }.merge(over.fetch(:runs, {})),
       http: { "https://demo.example.com/up" => 200 }.merge(over.fetch(:http, {}))
     )
   end
@@ -117,6 +123,44 @@ class AppProfileTest < Minitest::Test
     contract(probe)
     assert_equal ["origin/accepted"], probe.refs_read.uniq,
                  "the contract judges accepted, not the primary checkout's working tree"
+  end
+
+  def test_a_failed_fetch_fails_the_contract
+    failed = contract(healthy_probe(runs: { fetch: ["fatal: could not read Username", false] })).first.reject(&:ok)
+    assert_equal ["fetch"], failed.map(&:name), "a stale origin/accepted must not pass silently"
+  end
+
+  HELPER = <<~RUBY
+    module ApplicationHelper
+      OTHER = {
+        "demo" => "not a glyph"
+      }.freeze
+
+      APP_EMOJIS = {
+        "rantly" => "📣",
+        "moms-app" => "📚"
+      }.freeze
+    end
+  RUBY
+
+  def test_glyph_check_reads_only_the_app_emojis_hash
+    assert AppContract.glyph_check(HELPER, "moms-app").ok
+    refute AppContract.glyph_check(HELPER, "demo").ok, "a match in another hash must not pass"
+    refute AppContract.glyph_check("module X; end", "moms-app").ok
+  end
+
+  def test_register_app_from_a_tree_without_app_helpers_fails_the_glyph_check_instead_of_crashing
+    Dir.mktmpdir do |dir|
+      FileUtils.cp_r(File.expand_path("../../bin", __dir__), dir)
+      FileUtils.mkdir_p(File.join(dir, "config"))
+      FileUtils.cp(File.expand_path("../../config/app_profiles.yml", __dir__), File.join(dir, "config"))
+      File.write(File.join(dir, "config", "release_repos.yml"), "apps: {}\n")
+      out, status = Open3.capture2e({ "PROJECTS_DIR" => dir }, "ruby", File.join(dir, "bin", "register-app"),
+                                    "nope-app", "--heroku-app", "nope-app", "--smoke-url", "https://127.0.0.1:9")
+      refute_match(/Errno::ENOENT/, out)
+      assert_match(/FAIL  hub badge glyph\s+no app\/helpers here/, out)
+      assert_equal 1, status.exitstatus
+    end
   end
 
   def test_a_non_pg_app_is_not_asked_for_migrations

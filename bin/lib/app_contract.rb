@@ -65,6 +65,20 @@ module AppContract
     nil
   end
 
+  # Whether the hub's APP_EMOJIS hash names this slug. Read inside that hash
+  # only: a `"<slug>" =>` line in any other hash in the helper must not pass.
+  # The board draws a badge per registry repo from APP_EMOJIS, and
+  # test/helpers/application_helper_test.rb fails CI for a repo with none.
+  def glyph_check(helper_text, slug)
+    block = helper_text.to_s[/^\s*APP_EMOJIS = \{\n(.*?)^\s*\}\.freeze/m, 1]
+    return Check.new(name: "hub badge glyph", ok: false, detail: "APP_EMOJIS not found in the helper",
+                     remedy: "run bin/register-app from a hub desk") if block.nil?
+
+    ok = block.match?(/^\s*"#{Regexp.escape(slug)}"\s*=>/)
+    Check.new(name: "hub badge glyph", ok: ok, detail: ok ? "in APP_EMOJIS" : "none",
+              remedy: "add \"#{slug}\" => \"<emoji>\" to APP_EMOJIS in app/helpers/application_helper.rb (in the hub, in the registration task)")
+  end
+
   # The studio-engine version in a Gemfile.lock, or nil when the app does not
   # consume the engine.
   def engine_version(lock) = lock.to_s[/^    studio-engine \(([0-9.]+)\)/, 1]
@@ -76,7 +90,11 @@ module AppContract
                         detail: origin.to_s.strip.empty? ? "no checkout at #{root}" : origin.strip,
                         remedy: "clone #{ORG}/#{slug} to #{root}")
 
-    probe.run("git", "-C", root, "fetch", "origin", "--quiet")
+    # A failed fetch would leave every file check below reading a STALE
+    # origin/accepted and passing or failing on old news, so it is a check.
+    _fetch_out, fetched = probe.run("git", "-C", root, "fetch", "origin", "--quiet")
+    checks << Check.new(name: "fetch", ok: fetched, detail: fetched ? "origin fetched" : "git fetch origin failed",
+                        remedy: "fix the checkout's remote or GitHub auth, then re-run (file checks read #{REF})")
     heads, = probe.run("git", "-C", root, "ls-remote", "--heads", "origin")
     missing = RUNGS.reject { |b| heads.to_s.match?(%r{refs/heads/#{b}$}) }
     checks << Check.new(name: "branches", ok: missing.empty?,
