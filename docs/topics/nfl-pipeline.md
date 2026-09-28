@@ -34,6 +34,7 @@ Behaviors of note:
 - **Verbatim ESPN order** — apply_row preserves ESPN's listed order for new vs existing entries. Brand-new players ESPN promotes above an existing one get the higher slot (Will Campbell at LT1 over Hudson, post-fix).
 - **Partial-response guard** — if ESPN returns < 3 sides for a team (e.g. only "Base 4-3 D" with no offense or special teams — Lions hit this on 2026-05-01), skip the team entirely instead of half-overwriting. teams_partial counter on stats hash.
 - **THE HOST IS THE WHOLE BUG, AND IT IS FIXED (`revive-dead-depth-scraper`, 2026-09-27).** `ESPN_TEAMS_INDEX_URL` and `ESPN_ROSTER_URL` named `site.api.espn.com`, which filters on User-Agent and rejects everything Ruby's `Net::HTTP` can send — including this service's Chrome string. `fetch_json` returned nil on any non-success, so `team_id_for` answered nil, all 32 teams landed in **`teams_failed`** with "No ESPN team_id for abbrev", and `call` returned a tally. MEASURED at `accepted`'s head against live ESPN on 2026-09-27: `{:teams_failed=>32}` and 0 entries touched. After the fix, the same run in the same minute: **32 of 32 teams applied, 2,572 entries**. BE PRECISE ABOUT WHAT WAS SILENT: the lane was already loud for a TOTAL outage — `lib/tasks/espn.rake` aborts on zero teams applied, measured firing with a non-zero exit. What was silent was the CAUSE, reported as "No ESPN team_id for abbrev" (a sentence about our own map, for an ESPN outage), and a PARTIAL loss: 31 of 32 applied stays green by design, so one missing id was invisible. Both hosts and the honest User-Agent now come from `Espn::Api`, which `Espn::PlayerProfile` reads too — the two services holding separate copies is what let one rot while the other worked. The depth-chart URL (`sports.core.api.espn.com`) never filtered. The third copy, `lib/tasks/nfl.rake`'s `nfl:link_coach_headshots`, IS NOW ALSO FIXED (`revive-coaches-seed-host`, 2026-09-27): it read the dead host with `URI.open` and measured 403, and it now resolves `Espn::Api::WEB_HOST` and `USER_AGENT` like the two services do, behind a test that refuses the three `Espn::Api` host literals back into that file. No line pins for it here on purpose — the pins this sentence used to carry (`:431`, constant at `:426`) were correct when written and went stale the same day, when PR 1685 added 186 lines above them.
+- **A TOLERATED FAILURE'S CAUSE IS NOW DURABLE (`espn-services-error-logs`, 2026-09-27).** The per-team rescue in `fetch_groups` keeps its tolerance — one team ESPN cannot serve must not cost the other 31 their refresh — but its `puts` was the only place the exception had ever been written, and `bin/ecosystem-build` runs this lane with stdout redirected to `/dev/null`. MEASURED before the change: zero `ErrorLog` references anywhere in `app/services/espn/` or `lib/tasks/espn.rake`. Now a tolerated per-team failure files one row targeted at that team's `DepthChart` (so `/admin/error_logs` shows the team), the zero-applied refusal in `lib/tasks/espn.rake` files one before it aborts, and a raise out of `call` files one and re-raises. Three things deliberately file NOTHING: a partial run (the per-team rows already carry its causes), a `MissingTeamId` inside `fetch_groups` (it is re-raised unfiled, and the lane files it once), and a depth chart ESPN answers 404 for on both seasons — `parse_response` turns a 404 into a nil rather than a raise, so a dead source is never recorded as our failure. That is the `Athletes::DeadHeadshotSource` distinction, drawn here one layer lower by status rather than by a second classifier; `DeadHeadshotSource` itself reads `io.status` off an `OpenURI::HTTPError` and this service is `Net::HTTP` throughout, so calling it would answer "not dead" for every ESPN error.
 - **`espn_id` backfill on name match** — when ESPN places a player who was found via name fallback (not espn_id lookup), persist the `espn_id` from ESPN's href on the Athlete + derive `espn_headshot_url`. Pre-fix, those athletes had a depth chart entry but no espn_id, so `nfl:upload_headshots` couldn't cache their headshot. Backfilled ~110 athletes per scrape with this added.
 
 ## Athlete Cross-Ref IDs
@@ -198,6 +199,22 @@ It answers `#find`, `#find_on_roster`, `#find_in_league` and `#roster` with
 `Athletes::SourceProfile` values already in our units, our position vocabulary and our
 team slugs. A second source is a second provider and no change to the act — the
 operator's framing was "we can always add supliment data sourses later".
+
+**`#find_in_league` FILES THE ROSTERS IT COULD NOT READ (`espn-services-error-logs`,
+2026-09-27).** Its per-roster rescue is the only one in the file that swallows rather
+than re-raising, and on the branch where the man turns up on a later roster the census
+of unreadable ones was dropped — not printed, not raised, not counted — so a walk with
+four rosters down reported a clean success. It now files exactly one `ErrorLog` row per
+walk naming which rosters failed and why, on the raising branch too: that raise reaches
+`Athletes::AcquireOrValidate#call`, which turns it into a PRINTED refusal, and stdout is
+what the rebuild lane discards. One row per walk, not one per roster — 32 rows saying
+"ESPN is down" is the noise that teaches an operator to stop opening `/admin/error_logs`.
+
+The same pass corrected a mislabel underneath it: `return find(source_id: …)` sat inside
+the block the per-roster rescue guards, so a failure on the ATHLETE document was caught
+and written down as "could not read roster `<abbr>`" — a sentence about the wrong
+endpoint, which then became the raise's whole explanation. The id is carried out of the
+loop and the profile fetched after it, so an athlete-document failure raises as itself.
 
 ### Who wins a disagreement
 
