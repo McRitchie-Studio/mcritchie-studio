@@ -323,6 +323,57 @@ account before starting; this is what the docs name today.
 | IAM users (`mcritchie-s3`, `mcr-*`, and the admin key's user, which answers as `agents-admin`) | the keys above | delete after their buckets are gone |
 | 1Password items (`agent.aws`, `AWS`, `mcritchie-industries.aws`, `agent.aws.mcritchie-ses`) | the keys above | mark RETIRED in the inventory's name or vault cell |
 
+### Measured from the account, 2026-09-29
+
+Read-only, account `534727954137`, with the admin key (`AWS` in
+`studio-agents-admin`) and, for SES, `agent.aws.mcritchie-ses`. A re-run before
+the exit must re-measure every row.
+
+**Buckets (10, all `us-east-2`).** R2 copy state is from an `rclone copy`
+S3 → R2 the same morning; `rclone size` matched on both sides unless noted.
+
+| Bucket | S3 versioning | On R2 |
+|---|---|---|
+| `mcritchie-studio-production` | Enabled | 9,313 objects, 1.05 GB, equal |
+| `mcritchie-studio-dev` | none | all 11,131 S3 objects copied; R2 holds 14 more (writes since, and copy never deletes). The bucket's archive lifecycle gives old objects a storage class R2 refuses, so the copy needs `storage_class = STANDARD` on the R2 side |
+| `turf-monster-production` | Enabled | 8,416 objects, 1.06 GB, equal |
+| `turf-monster-dev` | none | 8,457 objects, 1.07 GB, equal |
+| `mcritchie-industries-production` / `-dev` | Enabled / none | production mid-cutover: R2 primary, S3 still mirrored |
+| `moms-app-production` | Enabled | mid-cutover: R2 primary, S3 still mirrored. There is no `moms-app-dev` on S3 |
+| `commercial-welding-production` / `-dev` | Enabled / none | empty; nothing to copy |
+| `mcritchie-studio-desk` | none | `DeskCapture`'s bucket; its R2 replacement is the private desk bucket |
+
+These copies are a head start, not a cutover: every app still writes to S3
+until its Wave 2 steps run, so each cutover still runs its own catch-up copy.
+
+**IAM users (5).** Access-key last use, as AWS reports it:
+
+| User | Path | Last used | Retire when |
+|---|---|---|---|
+| `mcritchie-s3` | `/` | 2026-09-29, S3 | every app's Active Storage is on `r2` and its AWS config vars are unset |
+| `mcr-mcritchie-industries-prod` | `/mcr/` | 2026-09-28, S3 | Industries reaches `ACTIVE_STORAGE_BACKEND=r2` |
+| `mcr-mcritchie-industries-dev` | `/mcr/` | 2026-09-03, S3 | with the prod user |
+| `mcritchie-ses` | `/` | 2026-07-16, SES | now: see SES below |
+| `agents-admin` | `/` | 2026-09-29, S3 | last, after the buckets are gone |
+
+No roles outside AWS's own service roles.
+
+**SES.** Two identities, `mcritchie.studio` and `turfmonster.media`, both with
+sending disabled; production access is on, and the last 24 hours sent nothing.
+Outbound mail rides Resend. The one live use is the inbound fallback into
+`mcritchie-studio-desk` (the row above).
+
+**Spend.** Cost Explorer reports about $0.01 a month for S3 in August and
+September, and no other service above half a cent. The exit buys nimbleness, not savings.
+
+**Not visible to the admin key.** Its policy grants S3, IAM reads and Cost
+Explorer, and refuses EC2, Lambda, RDS, Route 53 (zones and registered domains),
+CloudFront and SES. Cost Explorer shows no measurable spend on any of them, which argues
+they are empty but does not prove it: Route 53 domain registrations and free-tier
+resources cost nothing and still tie the account. Before closing the account,
+Alex checks those consoles with his root login, or grants the admin key
+read-only on them for one audit.
+
 ## Open decisions and blockers
 
 | Item | Owner |
