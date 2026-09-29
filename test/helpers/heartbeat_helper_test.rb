@@ -528,9 +528,9 @@ class HeartbeatHelperTest < ActionView::TestCase
       Nokogiri::HTML::DocumentFragment.parse(heartbeat_agent_cell(**kw)).at_css(".hb-names .hb-nameprimary").text
     end
 
-    assert_equal "Mawile♂", name.call(mascot_slug: "mawile", pokemon: mawile, gender: "male")
+    assert_equal "Mawile ♂", name.call(mascot_slug: "mawile", pokemon: mawile, gender: "male")
     assert_equal "Mawile", name.call(mascot_slug: "mawile", pokemon: mawile), "a pre-gender session stays bare"
-    assert_equal "Magnemite⚥", name.call(mascot_slug: "magnemite", pokemon: magnemite)
+    assert_equal "Magnemite ⚥", name.call(mascot_slug: "magnemite", pokemon: magnemite)
     assert_equal "Jasper", name.call(mascot_slug: "jasper", gender: "male"), "an unseeded (persona) slug never takes a sign"
   end
 

@@ -1930,7 +1930,7 @@ class TaskCliTest < Minitest::Test
   # tasks/show-mascot-gender-symbol: the session-mascot endpoint's display gender
   # lands in the marker ("genderless" included) and the printed title signs the name.
   def test_session_mascot_records_the_display_gender_and_prints_the_sign
-    { "male" => "🔶 Snorlax♂", "genderless" => "🔶 Snorlax⚥", nil => "🔶 Snorlax" }.each do |gender, head|
+    { "male" => "🔶 Snorlax ♂", "genderless" => "🔶 Snorlax ⚥", nil => "🔶 Snorlax" }.each do |gender, head|
       Dir.mktmpdir do |projects|
         marker_path = File.join(projects, ".agents", "sessions", "#{MARKER_SESSION}.json")
 

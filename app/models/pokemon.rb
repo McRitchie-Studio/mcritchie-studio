@@ -32,6 +32,8 @@ class Pokemon < ApplicationRecord
   # bin/statusline can show ⚥ rather than a bare pre-gender name.
   GENDERLESS = "genderless".freeze
   DISPLAY_SIGNS = GENDER_SYMBOLS.merge(GENDERLESS => "⚥").freeze
+  # A display sign at the end of a name, with any space before it (Nidoran♀).
+  TRAILING_SIGN = /\s*([#{DISPLAY_SIGNS.values.join}])\z/
   # PokéAPI's gender_rate is in EIGHTHS female: -1 genderless, 0 always male,
   # 8 always female, n in between = an n/8 chance of female.
   GENDER_RATE_EIGHTHS = 8
@@ -264,16 +266,17 @@ class Pokemon < ApplicationRecord
     where(gender_rate: ..GENDERLESS_RATE).pluck(:slug).to_set
   end
 
-  # `name` followed by the sign for `gender`: ♂ male, ♀ female, ⚥ "genderless".
-  # nil, blank or junk leaves it bare, and a name that already ends in a sign
-  # (Nidoran♀, a snapshot baked after this rule) comes back unchanged, so it is
-  # idempotent. For surfaces holding only a name and a gender (an event snapshot).
+  # `name`, a space, then the sign for `gender`: ♂ male, ♀ female, ⚥ "genderless"
+  # (Mawile ♂). nil, blank or junk leaves it bare. A name that already ends in a
+  # sign (the Nidoran♀ species name, or a snapshot baked before the space) keeps
+  # its own sign and gains the space, so it is idempotent and never doubles.
   def self.gendered_name(name, gender)
     name = name.to_s
-    sign = DISPLAY_SIGNS[gender.to_s.strip.downcase]
-    return name if sign.nil? || name.empty? || name.end_with?(*DISPLAY_SIGNS.values)
+    return name if name.empty?
+    return name.sub(TRAILING_SIGN, ' \\1') if name.match?(TRAILING_SIGN)
 
-    "#{name}#{sign}"
+    sign = DISPLAY_SIGNS[gender.to_s.strip.downcase]
+    sign ? "#{name} #{sign}" : name
   end
 
   # { type_key => Studio::Enumeral } for every seeded type, in ONE query — build
