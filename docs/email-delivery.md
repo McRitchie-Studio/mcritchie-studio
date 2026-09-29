@@ -107,6 +107,55 @@ Do not overwrite the app's S3/ImageCache `AWS_ACCESS_KEY_ID` or
 `AWS_SECRET_ACCESS_KEY` for SES proof. Use the `SES_AWS_*` variables from
 `agent.aws.mcritchie-ses` for account/domain checks.
 
+## Verifying a List Before a Broadcast
+
+An old list bounces. The Cyvasse relaunch's first 101 sends on 2026-09-29
+hard-bounced 12 (11.9%), which threatens the sending domain's reputation, so
+`cyvasse-legacy` is now a **verified-only audience**
+(`Broadcast::VERIFIED_AUDIENCES`): `broadcasts:send_batch` and the editor's
+send reach only contacts that ZeroBounce called `valid`. `catch-all`,
+`unknown` and unchecked contacts wait. `ONLY_VERIFIED=0` turns the filter off
+for one batch run; `ONLY_VERIFIED=1` turns it on for any audience.
+
+`bin/rails "contacts:verify[limit,source_csv]"` (`Contacts::Verification`)
+submits one bulk file to ZeroBounce, polls it, and stores each verdict on the
+contact (`verification_status`, `verification_sub_status`, `verified_at`).
+`invalid`, `spamtrap`, `abuse` and `do_not_mail` are unsubscribed with reason
+`verification`, and `BroadcastSendJob` never mails such an address, even one
+resubscribed since. A verified contact is never resubmitted, the balance is
+checked before submitting, and `FILE_ID=<id>` resumes a submitted file without
+spending again. `DRY_RUN=1` picks and reports only. The key is
+`ZEROBOUNCE_API_KEY` (`zerobounce.studio.applications`).
+
+Who goes first is the most recently active player.
+`script/contacts/cyvasse_last_active.rb` runs read-only on the cyvasse app and
+prints `email,last_active_at`, where the time is the later of `users.updated_at`
+and the player's last match move. The legacy import kept the old app's
+`updated_at`, which tracked its `last_active` stamp; the script's header has the
+measurements. From the hub checkout:
+
+```bash
+# 1. Recency, read-only from cyvasse (about 18.8k rows).
+heroku run -a cyvasse --no-tty -- bash -c 'cat > /tmp/a.rb; bin/rails runner /tmp/a.rb' \
+  < script/contacts/cyvasse_last_active.rb | grep '^CYV,' | cut -c5- > tmp/cyvasse-last-active.csv
+
+# 2. Dry run on production: the pick and the balance, nothing spent or written.
+heroku run -a mcritchie-studio --no-tty -e DRY_RUN=1 -- \
+  bash -c 'cat > /tmp/recency.csv; bin/rails "contacts:verify[10000,/tmp/recency.csv]"' < tmp/cyvasse-last-active.csv
+
+# 3. The real run (about 10k credits; it waits for ZeroBounce, which can take an hour).
+heroku run -a mcritchie-studio --no-tty -- \
+  bash -c 'cat > /tmp/recency.csv; bin/rails "contacts:verify[10000,/tmp/recency.csv]"' < tmp/cyvasse-last-active.csv
+
+# If the dyno dies after "submitted … as file <id>", resume without resubmitting:
+heroku run -a mcritchie-studio --no-tty -e FILE_ID=<id> -- bin/rails "contacts:verify[10000]"
+
+# 4. Then send as before; only verified-valid contacts are picked.
+heroku run -a mcritchie-studio -- bin/rails "broadcasts:batch_status[cyvasse-is-back]"
+```
+
+Delete `tmp/cyvasse-last-active.csv` afterwards: it holds every player's email.
+
 ## Current Production Status
 
 Last checked: 2026-06-15.
