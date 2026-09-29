@@ -2,7 +2,7 @@
 
 # Per-video looks on /music_videos/:slug (pipeline stage 4): make a look for a
 # labelled performer, and build its character sheet. Admin only. The sheet
-# SPENDS MONEY, so it runs only when the operator presses the button.
+# SPENDS MONEY, so it runs only when the operator presses the button, in a job.
 class MusicVideoLooksController < ApplicationController
   before_action :require_admin
   before_action :set_video
@@ -18,18 +18,17 @@ class MusicVideoLooksController < ApplicationController
     back(alert: "No look made: #{e.message}.")
   end
 
+  # Enqueues the build (Appearances::SheetBuild) and returns at once; the card
+  # shows building / done / failed.
   def sheet
     look = @video.looks.live.find_by!(slug: params[:look_slug])
     return back(alert: "Not yet: the cast is not confirmed.", look: look) unless @video.cast_confirmed?
 
-    artifact = rescue_and_log(target: look) { Appearances::GenerateArtifact.call(look) }
-    back(notice: sheet_message(artifact), look: look)
-  rescue Appearances::GenerateArtifact::NoGenerator, Appearances::GenerateArtifact::NoIdentityPhoto => e
-    back(alert: e.message, look: look)
+    rescue_and_log(target: look) { start_build(look) }
   rescue StandardError => e
     raise if e.is_a?(ActiveRecord::RecordNotFound)
 
-    back(alert: "Could not build the sheet: #{e.message}", look: look)
+    back(alert: "Could not start the sheet build: #{e.message}", look: look)
   end
 
   private
@@ -42,9 +41,12 @@ class MusicVideoLooksController < ApplicationController
     redirect_to music_video_path(@video, anchor: look ? "look-#{look.slug}" : "looks"), **flash
   end
 
-  def sheet_message(artifact)
-    parts = ["#{artifact.generator_label} built one character sheet"]
-    parts << artifact.billing_summary if artifact.billing_summary.present?
-    "#{parts.join(' · ')}."
+  # The refusals and the busy guard are answers, not ErrorLog rows.
+  def start_build(look)
+    Appearances::SheetBuild.start!(look)
+    back(notice: Appearances::SheetBuild::STARTED_NOTICE, look: look)
+  rescue Appearances::GenerateArtifact::NoGenerator, Appearances::GenerateArtifact::NoIdentityPhoto,
+         Appearances::SheetBuild::Busy => e
+    back(alert: e.message, look: look)
   end
 end

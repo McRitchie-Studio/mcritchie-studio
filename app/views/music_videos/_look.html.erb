@@ -66,7 +66,10 @@
     </div>
 
     <div class="mt-auto pt-3 border-t border-subtle space-y-2" data-test="look-build">
-      <% if sheet_row.nil? %>
+      <%= render "appearances/sheet_build_status", look: look %>
+      <% if look.sheet_building? %>
+        <%# One build at a time; the server refuses a second press too. %>
+      <% elsif sheet_row.nil? %>
         <p class="text-sm text-muted">No image generator can build a character sheet.</p>
       <% elsif !sheet_ready %>
         <p class="text-sm text-muted" data-test="look-generator-off"><%= sheet_row.unconfigured_message %></p>
@@ -76,8 +79,8 @@
         <%= form_with url: sheet_music_video_look_path(video, look), method: :post, local: true,
                       html: { "x-data": "{ busy: false }", "@submit": "busy = true", data: { test: "build-sheet-form" } } do %>
           <button type="submit" class="btn btn-primary btn-sm w-full" :disabled="busy">
-            <span x-show="!busy"><%= sheet ? "Rebuild character sheet" : "Build character sheet" %></span>
-            <span x-show="busy" x-cloak>Building, this takes a few minutes…</span>
+            <span x-show="!busy"><%= if look.sheet_build_failed? then "Retry character sheet" elsif sheet then "Rebuild character sheet" else "Build character sheet" end %></span>
+            <span x-show="busy" x-cloak>Starting the build…</span>
           </button>
         <% end %>
       <% end %>

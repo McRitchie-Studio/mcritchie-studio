@@ -74,7 +74,11 @@ class MusicVideoLooksControllerTest < ActionDispatch::IntegrationTest
     make_look
     look = @video.looks.sole
 
-    with_fake_generator { post sheet_music_video_look_path(@video, look) }
+    with_fake_generator do
+      post sheet_music_video_look_path(@video, look)
+      assert_empty FakeAdapter.calls, "the request only enqueues"
+      perform_enqueued_jobs
+    end
 
     assert_equal 1, FakeAdapter.calls.size
     urls = FakeAdapter.calls.first[:reference_urls]
@@ -84,10 +88,69 @@ class MusicVideoLooksControllerTest < ActionDispatch::IntegrationTest
     assert_no_match(/football|jersey/i, FakeAdapter.calls.first[:prompt])
     sheet = Artifact.joins(:subjects).find_by!(artifact_subjects: { appearance_slug: look.slug })
     assert_equal [STORED_URL, "character_sheet"], [sheet.image_url, sheet.kind]
-    assert_match(/built one character sheet/, flash[:notice])
+    assert_equal "done", look.reload.sheet_build_state
 
-    follow_redirect!
+    get music_video_path(@video)
     assert_select "[data-test='look-card'] img[data-test='look-sheet-image'][src=?]", STORED_URL
+    assert_select "[data-test='sheet-build-status'][data-state='done']"
+  end
+
+  test "a press enqueues exactly one build and returns at once" do
+    log_in_as users(:alex)
+    make_look
+    look = @video.looks.sole
+
+    with_fake_generator do
+      assert_enqueued_jobs(1, only: SheetBuildJob) { post sheet_music_video_look_path(@video, look) }
+    end
+
+    assert_redirected_to music_video_path(@video, anchor: "look-#{look.slug}")
+    assert_match(/Building the character sheet/, flash[:notice])
+    assert_empty FakeAdapter.calls
+    assert look.reload.sheet_building?
+  end
+
+  test "a second press while building enqueues nothing; the card shows building" do
+    log_in_as users(:alex)
+    make_look
+    look = @video.looks.sole
+
+    with_fake_generator do
+      post sheet_music_video_look_path(@video, look)
+      assert_no_enqueued_jobs(only: SheetBuildJob) { post sheet_music_video_look_path(@video, look) }
+      assert_match(/already building/, flash[:alert])
+      get music_video_path(@video)
+    end
+
+    assert_select "[data-test='look-card'] [data-test='sheet-build-status'][data-state='building']"
+    assert_select "[data-test='build-sheet-form']", 0
+  end
+
+  test "a failed build shows the error and a retry button" do
+    log_in_as users(:alex)
+    make_look
+    look = @video.looks.sole
+    look.update_columns(sheet_build_state: "failed", sheet_build_started_at: 3.minutes.ago,
+                        sheet_build_finished_at: 1.minute.ago, sheet_build_error: "vendor said no")
+
+    with_fake_generator { get music_video_path(@video) }
+
+    assert_select "[data-test='sheet-build-status'][data-state='failed']", text: /vendor said no/
+    assert_select "[data-test='build-sheet-form'] button", text: /Retry character sheet/
+  end
+
+  test "a stale building no longer blocks the button" do
+    log_in_as users(:alex)
+    make_look
+    look = @video.looks.sole
+    look.update_columns(sheet_build_state: "building", sheet_build_started_at: 20.minutes.ago)
+
+    with_fake_generator do
+      get music_video_path(@video)
+      assert_select "[data-test='sheet-build-status'][data-state='stale']"
+      assert_select "[data-test='build-sheet-form']", 1
+      assert_enqueued_jobs(1, only: SheetBuildJob) { post sheet_music_video_look_path(@video, look) }
+    end
   end
 
   test "building refuses before the cast is confirmed and calls no generator" do
@@ -99,6 +162,7 @@ class MusicVideoLooksControllerTest < ActionDispatch::IntegrationTest
     with_fake_generator { post sheet_music_video_look_path(@video, look) }
 
     assert_equal "Not yet: the cast is not confirmed.", flash[:alert]
+    assert_no_enqueued_jobs only: SheetBuildJob
     assert_empty FakeAdapter.calls
     assert_equal 0, Artifact.count
   end

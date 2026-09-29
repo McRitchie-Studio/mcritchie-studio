@@ -69,6 +69,7 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     with_generator { post generate_path }
 
     assert_response :redirect
+    assert_no_enqueued_jobs only: SheetBuildJob
     assert_equal 0, Artifact.count, "a paid endpoint must not be reachable without a session"
   end
 
@@ -79,36 +80,82 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     with_generator { post generate_path }
 
     assert_redirected_to root_path
+    assert_no_enqueued_jobs only: SheetBuildJob
     assert_equal 0, Artifact.count, "hub signup is open, so a session is not a cost control"
   end
 
-  test "an admin generates one image and it is filed against the look" do
+  # THE REQUEST ENQUEUES AND RETURNS. The paid call runs in SheetBuildJob, never
+  # inside the request Heroku cuts at 30 s.
+  test "an admin press enqueues exactly one build and returns at once" do
     log_in_as(@admin)
 
-    with_generator { post generate_path, params: { number: "17" } }
+    with_generator do
+      FakeAdapter.stub(:instance, -> { flunk "the request must not call the generator" }) do
+        assert_enqueued_jobs 1, only: SheetBuildJob do
+          post generate_path, params: { number: "17" }
+        end
+      end
+    end
 
     assert_redirected_to person_appearance_path(@person.slug, @look.slug)
+    assert_match(/Building the character sheet/, flash[:notice])
+    assert_equal 0, Artifact.count
+    assert @look.reload.sheet_building?
+  end
+
+  test "the job files the sheet against the look and records done" do
+    log_in_as(@admin)
+
+    with_generator do
+      post generate_path, params: { number: "17" }
+      perform_enqueued_jobs
+    end
+
     artifact = Artifact.sole
     assert_equal STORED_URL, artifact.image_url
     assert_equal "openai_gpt5_sheet", artifact.generator
     assert_includes artifact.prompt, "jersey number 17", "the typed number reaches the prompt"
     assert_equal @look.slug, artifact.subjects.sole.appearance_slug
+    assert_equal "done", @look.reload.sheet_build_state
   end
 
-  # THE FLASH NAMES WHAT MADE IT. The operator is about to judge a picture, and
-  # "which model produced this" is the first thing he needs to judge it —
-  # especially while more than one generator is in play.
-  #
-  # THE UNIT IS NAMED BESIDE THE COUNT. fal bills image units and OpenAI reports
-  # tokens into the same column, so a bare number invites comparing 3 with a
-  # four-figure token count.
-  test "the flash names the generator and the billed amount with its unit" do
+  # THE DOUBLE-SPEND GUARD, server side: the second press starts nothing.
+  test "a second press while building enqueues nothing and says so" do
     log_in_as(@admin)
 
-    with_generator { post generate_path }
+    with_generator do
+      post generate_path
+      assert_no_enqueued_jobs(only: SheetBuildJob) { post generate_path }
+    end
 
-    assert_match(/GPT-5 image generation/, flash[:notice])
-    assert_match(/7,629 tokens/, flash[:notice])
+    assert_match(/already building/, flash[:alert])
+    assert_enqueued_jobs 1, only: SheetBuildJob
+  end
+
+  test "a failed build shows its error and a retry button" do
+    log_in_as(@admin)
+
+    with_generator do
+      FakeAdapter.result = ImageGeneration::Result.new(image_urls: [], seed: nil, request_id: "r",
+                                                       generator_key: "openai_gpt5_sheet", version: "v")
+      post generate_path
+      perform_enqueued_jobs
+      get person_appearance_path(@person.slug, @look.slug)
+    end
+
+    assert_equal "failed", @look.reload.sheet_build_state
+    assert_select "[data-test=sheet-build-status][data-state=failed]", text: /returned no image/
+    assert_select "form[action=?] input[type=submit][value=?]", generate_path, "Retry character sheet"
+  end
+
+  test "a building look shows the elapsed time and no build button" do
+    @look.update_columns(sheet_build_state: "building", sheet_build_started_at: 90.seconds.ago)
+    log_in_as(@admin)
+
+    with_env("OPENAI_API_KEY" => "sk-test") { get person_appearance_path(@person.slug, @look.slug) }
+
+    assert_select "[data-test=sheet-build-status][data-state=building]", text: /1m 3\ds/
+    assert_select "form[action=?]", generate_path, count: 0
   end
 
   # A REFUSAL IS A FLASH, NOT A 500, and it names the variable to set.
@@ -119,6 +166,8 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to person_appearance_path(@person.slug, @look.slug)
     assert_match(/OPENAI_API_KEY/, flash[:alert])
+    assert_no_enqueued_jobs only: SheetBuildJob
+    assert_nil @look.reload.sheet_build_state, "a refusal claims nothing"
     assert_equal 0, Artifact.count
   end
 
@@ -138,7 +187,10 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
   # reads a library, not a schema.
   test "a generated image renders its generator and seed on the card" do
     log_in_as(@admin)
-    with_generator { post generate_path }
+    with_generator do
+      post generate_path
+      perform_enqueued_jobs
+    end
 
     with_env("OPENAI_API_KEY" => "sk-test") do
       get person_appearance_path(@person.slug, @look.slug)
@@ -165,6 +217,7 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     assert_redirected_to person_appearance_path(@person.slug, @look.slug)
     assert_match(/Josh Allen cannot be built: no cached headshot/, flash[:alert])
     assert_match(/nothing was spent/, flash[:alert])
+    assert_no_enqueued_jobs only: SheetBuildJob
     assert_equal 0, Artifact.count
   end
 

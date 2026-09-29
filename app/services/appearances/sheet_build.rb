@@ -14,6 +14,9 @@ module Appearances
     DONE = "done"
     FAILED = "failed"
 
+    STARTED_NOTICE = "Building the character sheet in the background; it takes about two minutes. " \
+                     "The page refreshes itself until it is done."
+
     class Busy < StandardError; end
 
     # The readiness refusals (NoGenerator, NoIdentityPhoto) raise here, before

@@ -1,0 +1,24 @@
+<%# The look's character-sheet build (Appearances::SheetBuild): building with
+    the elapsed time and a self-refresh, stale, done, or failed with the error.
+    Renders nothing for a look that has never been built this way. %>
+<% state = look.sheet_build_stale? ? "stale" : look.sheet_build_state %>
+<% if state.present? %>
+  <div data-test="sheet-build-status" data-state="<%= state %>" role="status"
+       class="rounded-lg border p-2 text-2xs space-y-1 <%= state == 'failed' ? 'border-danger/40 bg-danger/10 text-danger-ink' : 'border-subtle bg-surface text-body' %>"
+       <% if state == "building" %>x-data x-init="setTimeout(() => window.location.reload(), 15000)"<% end %>>
+    <% case state %>
+    <% when "building" %>
+      <p class="font-semibold text-heading">
+        Building the character sheet &middot; <%= sheet_build_duration(look.sheet_build_seconds) %> elapsed
+      </p>
+      <p class="text-muted">Takes about two minutes. This refreshes itself; <%= link_to "refresh now", request.path, class: "underline" %>.</p>
+    <% when "stale" %>
+      <p>The last build started <%= time_ago_in_words(look.sheet_build_started_at) %> ago and never finished. You can build again.</p>
+    <% when "done" %>
+      <p>Built in <%= sheet_build_duration(look.sheet_build_seconds) %>, <%= time_ago_in_words(look.sheet_build_finished_at) %> ago.</p>
+    <% when "failed" %>
+      <p class="font-semibold">The last build failed<% if look.sheet_build_finished_at %> <%= time_ago_in_words(look.sheet_build_finished_at) %> ago<% end %>.</p>
+      <p class="break-words"><%= look.sheet_build_error.presence || "No reason was recorded." %></p>
+    <% end %>
+  </div>
+<% end %>
