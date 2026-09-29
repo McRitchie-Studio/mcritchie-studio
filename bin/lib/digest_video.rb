@@ -92,7 +92,14 @@ module DigestVideo
     id or raise Failure, "no video id in #{url}"
   end
 
-  def shell = ->(*cmd) { out, err, status = Open3.capture3(*cmd); [out, err, status.success?] }
+  def shell
+    lambda do |*cmd|
+      out, err, status = Open3.capture3(*cmd)
+      [out, err, status.success?]
+    rescue Errno::ENOENT
+      raise Failure, "#{File.basename(cmd.first)} not found"
+    end
+  end
 
   # One run: download (or reuse --from-dir), make it playable, store, record.
   class Runner
