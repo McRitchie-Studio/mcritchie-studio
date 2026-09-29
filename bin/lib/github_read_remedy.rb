@@ -33,7 +33,7 @@ require_relative "fast_lane"
 #
 # `eval "$(bin/gh-auth-refresh --export)"` is not a wrong string. It is the RIGHT
 # string for a caller whose reader is `gh`, and the house is full of those:
-# bin/task's archive guard shells `gh pr view` (bin/task:613), so
+# bin/task's archive guard shells `gh pr view` (bin/task#archive_pr_state), so
 # lib/open_pr_guard.rb's remedy names GH_TOKEN correctly; bin/lib/acting_identity.rb
 # probes `gh api user`, likewise. What makes a remedy true or false is not its
 # text but WHICH PROCESS will read the variable it sets. So this module takes the
