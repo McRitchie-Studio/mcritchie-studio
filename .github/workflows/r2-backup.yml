@@ -44,9 +44,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A pinned upstream release, checksum-verified, NOT apt: Ubuntu's rclone is
+      # 1.60.1, which exits 1 on uploads to R2 (a 501 NotImplemented on a request
+      # after the PUT; the object lands), reproduced 2026-09-29. Bump both lines together:
+      # the sum is SHA256SUMS' line for rclone-v<version>-linux-amd64.zip.
       - name: Install rclone
-        timeout-minutes: 13
-        run: .github/scripts/apt-retry rclone
+        timeout-minutes: 5
+        env:
+          RCLONE_VERSION: "1.75.1"
+          RCLONE_SHA256: 982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
+        run: |
+          zip="rclone-v${RCLONE_VERSION}-linux-amd64.zip"
+          curl -fsSL --retry 5 -o "$zip" "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/$zip"
+          echo "${RCLONE_SHA256}  $zip" | sha256sum -c -
+          unzip -q "$zip"
+          sudo install -m 0755 "rclone-v${RCLONE_VERSION}-linux-amd64/rclone" /usr/local/bin/rclone
 
       - name: Run backup
         env:
