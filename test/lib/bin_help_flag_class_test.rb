@@ -309,6 +309,8 @@ class BinHelpFlagClassTest < Minitest::Test
     "review-autopilot"       => :optparse,
     "verify-review-hop"      => :optparse,
     "measure-client-surface" => :optparse,
+    # Exactly one URL; a second positional aborts before any download.
+    "digest-video"           => :optparse,
     # --- subcommand dispatch that falls through to usage (BARE form) ----------
     #
     # Read the legend above before trusting this bucket: it says what the BARE

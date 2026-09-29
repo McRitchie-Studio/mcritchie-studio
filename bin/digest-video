@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# digest video <url>: download a music video, store the H.264 MP4 and its
+# info.json in R2, and record it through the hub API. Agent side of the
+# digest-video SOP (docs/agents/agents/pokemon/sops/digest-video.md).
+#
+#   bin/digest-video <url>                     # dev bucket, local API (localhost:3000)
+#   bin/digest-video <url> --api URL           # another hub, e.g. a desk server
+#   bin/digest-video <url> --from-dir DIR      # reuse a download already on disk
+#   bin/digest-video <url> --dry-run           # download and plan; no upload, no record
+#   bin/digest-video <url> --production        # production bucket and https://mcritchie.studio
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup" # aws-sdk-s3 for the R2 upload; before any gem loads
+require "optparse"
+require_relative "lib/digest_video"
+
+options = { production: false, dry_run: false, workdir: File.expand_path("~/projects/.corpus/music_videos"),
+            encoder: RUBY_PLATFORM.include?("darwin") ? "h264_videotoolbox" : "libx264" }
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/digest-video <url> [options]"
+  opts.on("--production", "write the production bucket and API (default: dev)") { options[:production] = true }
+  opts.on("--api URL", "hub API base (default: localhost:3000, or mcritchie.studio with --production)") { |v| options[:api] = v }
+  opts.on("--workdir DIR", "download folder (default #{options[:workdir]})") { |v| options[:workdir] = File.expand_path(v) }
+  opts.on("--from-dir DIR", "skip the download; use the MP4 and info.json already in DIR") { |v| options[:from_dir] = File.expand_path(v) }
+  opts.on("--encoder NAME", "ffmpeg H.264 encoder for a VP9 source (default #{options[:encoder]})") { |v| options[:encoder] = v }
+  opts.on("--dry-run", "download and print the plan; upload and record nothing") { options[:dry_run] = true }
+  opts.on("-h", "--help") do
+    puts opts
+    exit 0
+  end
+end
+parser.parse!
+
+if ARGV.size != 1
+  warn parser.banner
+  abort(ARGV.empty? ? "digest-video: a URL is required" : "digest-video: exactly one URL, got #{ARGV.size}")
+end
+url = ARGV.first
+
+begin
+  DigestVideo.platform_for(url) # fail fast on an unbuilt platform, before any credential read
+  target = DigestVideo.target(production: options[:production])
+  runner = DigestVideo::Runner.new(
+    workdir: options[:workdir], shell: DigestVideo.shell, out: $stdout,
+    storage: DigestVideo::R2Storage.new(bucket: target[:bucket], suffix: target[:suffix]),
+    api: DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__)),
+    from_dir: options[:from_dir], dry_run: options[:dry_run], encoder: options[:encoder], bucket: target[:bucket],
+    ytdlp: ENV.fetch("YT_DLP", File.exist?(File.expand_path("~/.local/bin/yt-dlp")) ? File.expand_path("~/.local/bin/yt-dlp") : "yt-dlp")
+  )
+  runner.call(url)
+rescue DigestVideo::Failure => e
+  abort "digest-video: #{e.message}"
+end
