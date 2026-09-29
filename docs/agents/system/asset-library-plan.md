@@ -372,8 +372,9 @@ September, and no other service above half a cent. The exit buys nimbleness, not
 **Not visible to the admin key.** Its policy grants S3, IAM reads and Cost
 Explorer, and refuses EC2, Lambda, RDS, Route 53 (zones and registered domains),
 CloudFront and SES. Cost Explorer shows no measurable spend on any of them, which argues
-they are empty but does not prove it: Route 53 domain registrations and free-tier
-resources cost nothing and still tie the account. Before closing the account,
+they are empty but does not prove it: Route 53 domain registrations bill once a
+year, and free-tier resources cost nothing, so either can tie the account
+without showing in August or September. Before closing the account,
 Alex checks those consoles with his root login, or grants the admin key
 read-only on them for one audit.
 
