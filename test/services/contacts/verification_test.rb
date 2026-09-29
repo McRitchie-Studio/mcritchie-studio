@@ -180,6 +180,21 @@ class Contacts::VerificationTest < ActiveSupport::TestCase
     file&.unlink
   end
 
+  test "contacts:verify logs any failure and says to resume, not rerun" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("contacts:verify")
+    zb = FakeZeroBounce.new(polls_until_complete: 0)
+    def zb.results(_file_id) = raise(ActiveRecord::ConnectionNotEstablished, "db blip")
+    task = Rake::Task["contacts:verify"]
+    task.reenable
+    out, err = Contacts::ZeroBounce.stub(:from_env, zb) do
+      assert_difference("ErrorLog.count", 1) { capture_io { assert_raises(SystemExit) { task.invoke("1") } } }
+    end
+
+    assert_match "resume with FILE_ID=file-1", out
+    assert_match "ActiveRecord::ConnectionNotEstablished: db blip", err
+    assert_match "never rerun without it", err
+  end
+
   private
 
   def state(contact)

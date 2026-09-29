@@ -67,9 +67,10 @@ namespace :contacts do
                                               file_id: ENV["FILE_ID"])
     begin
       s = verification.run
-    rescue Contacts::ZeroBounce::Error => e
+    rescue StandardError => e
       ErrorLog.capture!(e)
-      abort "contacts:verify: #{e.message}"
+      abort "contacts:verify: #{e.class}: #{e.message}\n" \
+            "If a line above says it submitted a file, resume with FILE_ID=<that id>; never rerun without it."
     end
 
     puts "#{"DRY RUN: " if s.dry_run}#{audience}#{" minus #{broadcast.slug} recipients" if broadcast}: " \
