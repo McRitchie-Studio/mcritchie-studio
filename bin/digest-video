@@ -11,6 +11,8 @@
 #   bin/digest-video <url> --dry-run           # download and plan; no upload, no record
 #   bin/digest-video <url> --production        # production bucket and https://mcritchie.studio
 
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup" # aws-sdk-s3 for the R2 upload; before any gem loads
 require "optparse"
 require_relative "lib/digest_video"
 

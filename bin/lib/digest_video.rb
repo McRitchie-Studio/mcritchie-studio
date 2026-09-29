@@ -189,11 +189,10 @@ module DigestVideo
     end
 
     def put(key, path, content_type)
-      ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../../Gemfile", __dir__)
-      require "bundler/setup"
       require "aws-sdk-s3"
-      Aws::S3::Resource.new(client: client).bucket(@bucket).object(key)
-                       .upload_file(path, content_type: content_type) or raise Failure, "upload failed: #{key}"
+      Aws::S3::TransferManager.new(client: client)
+                              .upload_file(path, bucket: @bucket, key: key, content_type: content_type) or
+        raise Failure, "upload failed: #{key}"
     end
 
     private
