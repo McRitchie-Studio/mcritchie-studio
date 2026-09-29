@@ -43,4 +43,9 @@ class MusicVideosClipPromptTest < Minitest::Test
     prompt = P.fill(target: "desk", others: ["couch", "armchair", "couch", "long-haired man"])
     assert_includes prompt, "keep the person in the couch scenes, the person in the armchair scenes and the long-haired man the same"
   end
+
+  def test_background_people_are_everyone_else
+    prompt = P.fill(target: "desk", others: ["long-haired man"], background: true)
+    assert_includes prompt, "Please keep the long-haired man and everyone else the same."
+  end
 end

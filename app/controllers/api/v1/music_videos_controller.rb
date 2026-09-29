@@ -8,6 +8,7 @@ module Api
                   source_object_key info_object_key caption_timing].freeze
       TIMING_KEYS = %w[cues sections].freeze
       PERFORMER_FIELDS = %w[ordinal label artist_slug extra still_object_keys sightings confidence_note].freeze
+      CLIP_FIELDS = (MusicVideos::ReplaceClips::FIELDS + %w[prompt status]).freeze
 
       def show
         render_data(serialize(MusicVideo.find_by!(slug: params[:slug])))
@@ -38,6 +39,19 @@ module Api
                                 error_code: e.code)
       end
 
+      # Stage 5: bin/find-clips replaces the video's clip set. Clip files are
+      # already in R2; the hub fills each prompt from the confirmed cast.
+      def clips
+        video = MusicVideo.find_by!(slug: params[:slug])
+        replace = MusicVideos::ReplaceClips.new(video, params.to_unsafe_h["clips"])
+        replace.check! # a refusal is an answer, not an ErrorLog
+        outcome = rescue_and_log(target: video) { replace.call }
+        render_data(serialize(video.reload), meta: { dropped_approvals: outcome.dropped_approvals })
+      rescue MusicVideos::ReplaceClips::Refused => e
+        render_error(e.message, status: e.code == "CAST_NOT_CONFIRMED" ? :conflict : :unprocessable_entity,
+                                error_code: e.code)
+      end
+
       private
 
       def unpermitted_keys(raw)
@@ -54,7 +68,8 @@ module Api
              .merge("artists" => credits.map do |c|
                { "slug" => c.artist_slug, "name" => c.artist.name, "kind" => c.artist.kind,
                  "role" => c.role, "position" => c.position }
-             end, "performers" => video.video_performers.map { |p| p.as_json(only: PERFORMER_FIELDS) })
+             end, "performers" => video.video_performers.map { |p| p.as_json(only: PERFORMER_FIELDS) },
+                  "clips" => video.video_clips.map { |c| c.as_json(only: CLIP_FIELDS) })
       end
     end
   end

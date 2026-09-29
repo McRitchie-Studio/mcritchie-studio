@@ -18,12 +18,13 @@ module MusicVideos
 
     module_function
 
-    # target: a performer's cast label (or nil); others: the labels of everyone
-    # else present in the window.
-    def fill(target:, others: [])
+    # target: the target performer's cast label (or nil); others: the labels of
+    # the other labelled performers in the window; background: anyone else is there.
+    def fill(target:, others: [], background: false)
       keep = others.map { |label| describe(label) }.uniq
+      keep << NO_OTHERS if background || keep.empty?
       TEMPLATE.gsub("{target_description}", target ? describe(target) : NO_TARGET)
-              .gsub("{keep_others}", keep.empty? ? NO_OTHERS : sentence(keep))
+              .gsub("{keep_others}", sentence(keep))
     end
 
     # A cast label is the agent's visible cue: "long-haired man" reads as a

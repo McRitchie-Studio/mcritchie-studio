@@ -1,17 +1,20 @@
 # frozen_string_literal: true
 
-# /music_videos/:slug — the cast panel (music video pipeline, stage 2). Admin
-# only: stills are private objects shown through short-lived signed URLs.
+# /music_videos/:slug — the cast panel (music video pipeline, stage 2) and the
+# clips (stage 5). Admin only: stills and clips are private objects shown
+# through short-lived signed URLs.
 class MusicVideosController < ApplicationController
   before_action :require_admin
   before_action :set_video
 
-  STILL_URL_TTL = 15.minutes.to_i
+  SIGNED_URL_TTL = 15.minutes.to_i
 
   def show
     @credits = @video.music_video_artists.includes(:artist).sort_by { |c| [c.role == "primary" ? 0 : 1, c.position] }
     @performers = @video.video_performers.includes(:artist).to_a
-    @still_urls = still_urls(@performers.flat_map(&:still_object_keys))
+    @still_urls = signed_urls(@performers.flat_map(&:still_object_keys))
+    @clips = @video.video_clips.to_a
+    @clip_urls = signed_urls(@clips.map(&:object_key))
   end
 
   def confirm_cast
@@ -31,8 +34,8 @@ class MusicVideosController < ApplicationController
   end
 
   # key => signed URL, or nil when the store is not reachable (the card says so).
-  def still_urls(keys)
-    keys.index_with { |key| AssetBrowser.source.signed_url(key: key, expires_in: STILL_URL_TTL) }
+  def signed_urls(keys)
+    keys.index_with { |key| AssetBrowser.source.signed_url(key: key, expires_in: SIGNED_URL_TTL) }
   rescue AssetBrowser::Unavailable
     {}
   end
