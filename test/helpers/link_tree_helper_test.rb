@@ -20,7 +20,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     assert_equal "Site", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
-    assert_equal ["Dashboard", "Deployments", "Theme", "Design System", "Schema", "Emails"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
+    assert_equal ["Dashboard", "Deployments", "Theme", "Design System", "Schema", "Emails", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
     refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
   end
 
@@ -36,6 +36,15 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert emails, "the Site section should carry an Emails link"
     assert_equal "/admin/emails", emails.fetch(:href)
     refute links.any? { |link| link[:href] == "/admin/email_images" }
+  end
+
+  test "admin sidebar links the object store browser" do
+    self.admin_enabled = true
+
+    assets = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.find { |link| link[:label] == "Assets" }
+
+    assert_equal "/assets", assets&.fetch(:href)
+    assert_equal "/assets", Rails.application.routes.url_helpers.asset_browser_path
   end
 
   test "admin sidebar includes the Activities feed link" do
@@ -207,6 +216,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_design_system_path = "/admin/design_system"
   def admin_schema_path = "/admin/schema"
   def admin_emails_path = "/admin/emails"
+  def asset_browser_path = "/assets"
   def toast_test_path = "/toast_test"
   def admin_tiktok_connect_path = "/admin/tiktok/connect"
   def activities_agents_path = "/agents/activities"
