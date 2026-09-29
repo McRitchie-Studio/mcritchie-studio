@@ -150,8 +150,9 @@ class DigestVideoTest < Minitest::Test
   end
 
   def test_dry_run_touches_neither_r2_nor_the_api
-    run_digest(dry_run: true) do |_shell, storage, api, out, log|
+    run_digest(dry_run: true) do |_shell, storage, api, out, log, dir|
       assert_empty log
+      refute_empty Dir.glob(File.join(dir, "*.vtt")), "a later --from-dir run still needs the captions"
       assert_empty storage.puts
       assert_empty api.payloads
       assert_includes out, "dry run"

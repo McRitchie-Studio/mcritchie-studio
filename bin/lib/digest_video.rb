@@ -96,7 +96,6 @@ module DigestVideo
       info = JSON.parse(File.read(find(dir, id, ".info.json")))
       vtts = Dir.glob(File.join(dir, "*#{id}*.vtt"))
       timing = MusicVideos::VttTiming.parse(vtts.min && File.read(vtts.min))
-      FileUtils.rm_f(vtts) # lyric text; only the timings are kept
       credits = MusicVideos::CreditParser.new.parse(title: info["title"], uploader: info["uploader"],
                                                     artists: info["artists"] || info["artist"].to_s.split(", "))
       keys = MusicVideos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
@@ -111,6 +110,7 @@ module DigestVideo
       @api.authenticate # before any upload, so a failed login leaves nothing in R2
       store(keys, mp4, info)
       data = @api.create(payload)
+      FileUtils.rm_f(vtts) # lyric text; kept until recorded so a --from-dir retry still has timings
       report(data, payload)
       data
     end
