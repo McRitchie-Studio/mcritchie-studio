@@ -1,4 +1,9 @@
 namespace :broadcasts do
+  # The relaunch note's subject, and the one it replaced (a draft still carrying
+  # the old default is moved to the new one; an edited subject is left alone).
+  CYVASSE_IS_BACK_SUBJECT = "\u{1F409} Cyvasse is back \u2014 now with live matches".freeze
+  CYVASSE_IS_BACK_OLD_SUBJECTS = [ "Cyvasse is back" ].freeze
+
   desc "Publish broadcast email images (public/email/*) to S3 for use in sent emails"
   task publish_assets: :environment do
     urls = Broadcasts::Assets.publish_all!
@@ -17,10 +22,30 @@ namespace :broadcasts do
   task draft_cyvasse_is_back: :environment do
     broadcast = Broadcast.find_or_create_by!(slug: "cyvasse-is-back") do |b|
       b.template_key = "cyvasse_is_back"
-      b.subject      = "Cyvasse is back"
+      b.subject      = CYVASSE_IS_BACK_SUBJECT
       b.target_list  = "cyvasse-legacy"
       b.status       = "draft"
     end
     puts "#{broadcast.slug}: #{broadcast.status} (#{broadcast.template_label}) -> /broadcasts/#{broadcast.slug}/edit"
+  end
+
+  # Post-deploy for task cyvasse-email-live-copy: moves the existing draft to
+  # the new subject. Idempotent; never touches a sent broadcast or a subject
+  # someone edited in the editor, and never sends.
+  desc "Refresh the Cyvasse Is Back draft's subject to the live-matches one"
+  task refresh_cyvasse_is_back: :environment do
+    broadcast = Broadcast.find_by(slug: "cyvasse-is-back")
+    if broadcast.nil?
+      puts "cyvasse-is-back: no row (run broadcasts:draft_cyvasse_is_back)"
+    elsif broadcast.status != "draft" || broadcast.sent_at.present?
+      puts "cyvasse-is-back: #{broadcast.status}, left as it is"
+    elsif CYVASSE_IS_BACK_OLD_SUBJECTS.include?(broadcast.subject)
+      broadcast.update!(subject: CYVASSE_IS_BACK_SUBJECT)
+      puts "cyvasse-is-back: subject -> #{broadcast.subject}"
+    else
+      puts "cyvasse-is-back: subject already #{broadcast.subject.inspect}, left as it is"
+    end
+    overrides = %w[header subheader preview_text].select { |f| broadcast&.public_send(f).present? }
+    puts "cyvasse-is-back: editor overrides in use: #{overrides.join(", ")}" if overrides.any?
   end
 end

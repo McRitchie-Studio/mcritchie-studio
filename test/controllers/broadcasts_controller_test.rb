@@ -56,7 +56,9 @@ class BroadcastsControllerTest < ActionDispatch::IntegrationTest
   end
 
   # [component] The Cyvasse relaunch note renders in the email shell with its
-  # copy, the Cyvasse header art, the play link and the app-builder P.S.
+  # short live-matches copy, the new board header (alt text its own, not the
+  # layout's old "World Cup"), the MS violet Play Now button to the landing
+  # page and the app-builder P.S.
   test "the cyvasse_is_back preview renders its copy and links" do
     cyvasse = Broadcast.create!(slug: "cyvasse-is-back", subject: "Cyvasse is back", template_key: "cyvasse_is_back")
     log_in_as(@admin)
@@ -64,10 +66,15 @@ class BroadcastsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes response.body, "Cyvasse is back"
-    assert_includes response.body, "/email/cyvasse_header.jpg"
-    assert_select "a[href='https://cyvasse.mcritchie.studio/play']", text: /Play Cyvasse/
+    assert_select "img[src$='/email/cyvasse_header_live.jpg'][alt^='A Cyvasse board mid-game']"
+    assert_not_includes response.body, "World Cup"
+    assert_select "a[href='https://cyvasse.mcritchie.studio/']", text: /Play Now/
+    assert_select "td[bgcolor='#8E82FE'] a", text: /Play Now/
     assert_select "a[href='https://mcritchie.studio/build']"
-    assert_includes response.body, "more than 100,000 matches"
+    assert_includes response.body, "Hi &#128075;&#127995;"
+    assert_includes response.body, "<strong>live matches</strong>"
+    assert_includes response.body, "<strong>leaderboard</strong>"
+    assert_not_includes response.body, "100,000 matches", "the copy was cut to the live-matches pitch"
     assert_includes response.body, "because you have an account on Cyvasse"
     assert_not_includes response.body, "joined the McRitchie Studio mailing list"
   end
