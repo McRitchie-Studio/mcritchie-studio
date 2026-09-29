@@ -23,11 +23,15 @@ class BroadcastsController < ApplicationController
       return redirect_to edit_broadcast_path(@broadcast), alert: "Already sent — duplicate send blocked."
     end
 
-    # Anyone a batch already reached is left out (Broadcast#send_batch!).
-    contacts = audience_scope(params[:audience]).where.not(id: @broadcast.sent_contact_ids)
+    # Anyone a batch already reached is left out, and a verified-only audience
+    # (Broadcast::VERIFIED_AUDIENCES) sends only to verified-valid contacts,
+    # the same set Broadcast#send_batch! draws from.
+    contacts = @broadcast.unsent_contacts(params[:audience])
     count = contacts.count
     if count.zero?
-      return redirect_to edit_broadcast_path(@broadcast), alert: "No subscribed contacts in that audience."
+      alert = "No subscribed contacts in that audience."
+      alert += " It sends only to verified-valid contacts; run contacts:verify first." if Broadcast.verification_required?(params[:audience])
+      return redirect_to edit_broadcast_path(@broadcast), alert: alert
     end
 
     contacts.find_each { |c| BroadcastSendJob.perform_later(@broadcast.id, c.id) }
@@ -59,10 +63,6 @@ class BroadcastsController < ApplicationController
 
   def load_broadcast
     @broadcast = Broadcast.find_by!(slug: params[:id])
-  end
-
-  def audience_scope(audience)
-    audience.to_s == "all" ? Contact.subscribed : Contact.subscribed.with_tag(audience.to_s)
   end
 
   def audience_counts

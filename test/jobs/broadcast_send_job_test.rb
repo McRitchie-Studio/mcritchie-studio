@@ -85,4 +85,13 @@ class BroadcastSendJobTest < ActiveJob::TestCase
     assert_equal same.concurrency_key, BroadcastSendJob.new(@broadcast.id, @contact.id).concurrency_key
     assert_not_equal same.concurrency_key, BroadcastSendJob.new(@broadcast.id, @contact.id + 1).concurrency_key
   end
+
+  test "perform never mails an address a verification called undeliverable, even resubscribed" do
+    @contact.record_verification!(status: "spamtrap")
+    @contact.resubscribe!
+
+    assert_no_emails do
+      BroadcastSendJob.perform_now(@broadcast.id, @contact.id)
+    end
+  end
 end

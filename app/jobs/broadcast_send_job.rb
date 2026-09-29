@@ -1,6 +1,7 @@
 # Sends one broadcast to one contact. Creates the per-recipient BroadcastDelivery
 # (which carries the tracking token), then delivers. Re-checks subscription at
-# send time so a late unsubscribe is honored, and never sends one broadcast to
+# send time so a late unsubscribe is honored, never mails an address a
+# verification called undeliverable (even one resubscribed since), and never sends one broadcast to
 # one contact twice: a delivery already stamped sent is skipped. sent_at is
 # stamped only after the mailer returns, so a send that fails (a Resend rate
 # limit, say) is retried rather than recorded as sent. Two jobs for the same
@@ -13,6 +14,7 @@ class BroadcastSendJob < ApplicationJob
     broadcast = Broadcast.find(broadcast_id)
     contact   = Contact.find(contact_id)
     return unless contact.subscribed?
+    return if contact.undeliverable?
 
     delivery = broadcast.deliveries.find_or_create_by!(contact: contact)
     return if delivery.sent_at.present?
