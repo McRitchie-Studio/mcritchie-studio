@@ -26,9 +26,9 @@ inputs complete in the UI.
 
 ### 1. Digest
 
-`digest video <url>` downloads through a platform sub-SOP (YouTube, TikTok,
-Instagram; all yt-dlp), stores the source MP4 in R2 and creates a `MusicVideo`
-record: type `music_video` (the only type for now), platform, source URL and id,
+`digest video <url>` (`bin/digest-video`) downloads through a platform sub-SOP
+(YouTube built; TikTok and Instagram not yet; all yt-dlp), stores the source MP4
+in R2 and creates a `MusicVideo` record through `POST /api/v1/music_videos`: type `music_video` (the only type for now), platform, source URL and id,
 title, duration and stage. It links the credited primary and featured artists.
 
 Captions are read for **timing and section structure only**. Lyric text is never
@@ -103,7 +103,8 @@ Record slugs stay kebab-case, the app's existing convention.
 
 ## R2 storage
 
-Writes go to the hub's existing R2 bucket (`r2.mcritchie-studio`). Names and
+Writes go to the hub's existing R2 buckets, `mcritchie-studio-dev` and
+`mcritchie-studio-production` (credentials: 1Password item `r2.mcritchie-studio`). Names and
 folders are human-readable **snake_case**. Alex amended the asset library's
 "object keys carry no meaning" rule for this content on 2026-09-29
 ([`asset-library-plan.md`](asset-library-plan.md)).
