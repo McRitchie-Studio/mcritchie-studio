@@ -28,15 +28,22 @@ module MusicVideos
     end
 
     # Moments where the one principal on screen hands over to another: the
-    # midpoint between consecutive lone-principal sightings of different people.
-    def singer_changes(performers)
+    # midpoint between two runs of lone-principal sightings, each run at least
+    # two samples long so a cutaway is not a handover.
+    def singer_changes(performers, min_run: 2)
       at = Hash.new { |h, k| h[k] = [] }
       performers.select { |p| principal?(p) }.each do |p|
         Array(p["sightings"]).each { |s| at[s["t_ms"]] << p["ordinal"] if s["visibility"] == "clear" }
       end
-      lone = at.select { |_t, who| who.uniq.size == 1 }.sort
-      lone.each_cons(2).filter_map do |(t1, a), (t2, b)|
-        (t1 + t2) / 2 if a.first != b.first && t2 - t1 <= SINGER_GAP_MS
+      lone = at.select { |_t, who| who.uniq.size == 1 }.sort.map { |t, who| [t, who.first] }
+      runs = lone.chunk_while { |(t1, a), (t2, b)| a == b && t2 - t1 <= SINGER_GAP_MS }.to_a
+      runs.each_cons(2).filter_map do |before, after|
+        t1 = before.last.first
+        t2 = after.first.first
+        next unless before.size >= min_run && after.size >= min_run && t2 - t1 <= SINGER_GAP_MS
+        next if before.last.last == after.first.last
+
+        (t1 + t2) / 2
       end
     end
 

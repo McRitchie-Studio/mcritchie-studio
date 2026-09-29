@@ -52,4 +52,9 @@ class MusicVideosClipCastTest < Minitest::Test
 
     assert_equal [17_500], C.singer_changes(cast), "22 s has a lone principal (an extra does not count); 22 -> 40 is too far apart"
   end
+
+  def test_a_one_sample_cutaway_is_not_a_handover
+    cast = [person(1, clear: [10, 13, 19, 22]), person(2, clear: [16])]
+    assert_empty C.singer_changes(cast)
+  end
 end
