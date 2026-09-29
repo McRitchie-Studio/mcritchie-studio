@@ -413,6 +413,23 @@ class Release < ApplicationRecord
     @mascot ||= Pokemon.find_by(slug: slug)
   end
 
+  # The conductor mascot's recorded gender: devops.mascot_gender, stamped beside
+  # the mascot since the sign rule; a release stamped before it falls back to its
+  # conductor session's SessionMascot (one memoized read). nil = pre-gender.
+  def mascot_gender
+    return Pokemon.normalize_gender(devops["mascot_gender"]) if devops.key?("mascot_gender")
+    return @mascot_gender if defined?(@mascot_gender)
+
+    sid = devops_field("mascot_session")
+    @mascot_gender = sid && SessionMascot.find_by(session_id: sid, mascot_slug: devops_field("mascot"))&.gender
+  end
+
+  # The conductor's name as every surface shows it (Pokemon#display_name: Mawile♂,
+  # Magnemite⚥, or bare for a pre-gender draw); nil with no mascot.
+  def mascot_name
+    mascot&.display_name(gender: mascot_gender)
+  end
+
   # Stamp the conductor session's mascot onto the release, drawing/reusing it via
   # SessionMascot.for (the same race-safe lookup tasks use). Idempotent and
   # handoff-aware, mirroring Task#sync_session_mascot: it (re)assigns only when no
@@ -426,15 +443,18 @@ class Release < ApplicationRecord
     return self unless Pokemon.table_exists?
     return self unless devops_field("mascot").blank? || devops_field("mascot_session") != sid
 
-    slug = SessionMascot.for(sid)&.mascot_slug
+    session_mascot = SessionMascot.for(sid)
+    slug = session_mascot&.mascot_slug
     return self unless slug
 
     meta = (metadata.presence || {}).deep_dup
     d = (meta["devops"] ||= {})
     d["mascot"] = slug
     d["mascot_session"] = sid
+    d["mascot_gender"] = session_mascot.gender # the name's sign (#mascot_name)
     update!(metadata: meta)
     @mascot = nil # bust the memo so a re-read reflects the swap
+    remove_instance_variable(:@mascot_gender) if defined?(@mascot_gender)
     self
   end
 

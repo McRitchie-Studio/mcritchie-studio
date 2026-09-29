@@ -96,6 +96,7 @@
         23m" while active, "took 18m" once shipped. Mirrors the per-task mascot
         chip. Omitted entirely when there is no mascot and no timing. %>
     <% mascot = rel.mascot %>
+    <% mascot_name = rel.mascot_name %>
     <%# Active release ticks LIVE down to the second ("in progress · 7m 23s") so the
         operator watches the clock climb — data-since drives the _release_ticker JS,
         and the server-rendered value avoids a flash before the first tick. A shipped
@@ -105,11 +106,11 @@
     <% if mascot || ticking || static_timing %>
       <div class="mt-2 flex items-center gap-2 text-xs <%= meta_color %>" data-test="release-mascot-row">
         <% if mascot %>
-          <span class="flex items-center gap-1.5 min-w-0" data-test="release-mascot" title="Conductor: <%= mascot.name %>">
+          <span class="flex items-center gap-1.5 min-w-0" data-test="release-mascot" title="Conductor: <%= mascot_name %>">
             <% if mascot.sprite_url.present? %>
-              <img src="<%= mascot.sprite_url %>" alt="<%= mascot.name %>" width="24" height="24" loading="lazy" class="w-6 h-6 shrink-0" style="image-rendering: pixelated;">
+              <img src="<%= mascot.sprite_url %>" alt="<%= mascot_name %>" width="24" height="24" loading="lazy" class="w-6 h-6 shrink-0" style="image-rendering: pixelated;">
             <% end %>
-            <span class="font-medium truncate" style="<%= "color: #{mascot.signature_color};" if mascot.signature_color.present? %>"><%= mascot.name %></span>
+            <span class="font-medium truncate" style="<%= "color: #{mascot.signature_color};" if mascot.signature_color.present? %>"><%= mascot_name %></span>
           </span>
         <% end %>
         <% if ticking %>

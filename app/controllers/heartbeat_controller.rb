@@ -50,6 +50,7 @@ class HeartbeatController < ApplicationController
 
     @sessions = session_options
     @pokemon_by_slug = pokemon_lookup(@actions, @activities)
+    @mascot_genders = mascot_gender_lookup(@actions, @activities)
     @agents_by_slug = agent_soul_lookup(@activities)
     @activity_grades = activity_grade_lookup(@activities)
     @stage_transitions = stage_transitions_for(@activities)
@@ -76,6 +77,7 @@ class HeartbeatController < ApplicationController
     page_actions = actions_by_activity.values.flatten
     @shared_turn_ids = helpers.heartbeat_shared_turn_ids(page_actions)
     @pokemon_by_slug = pokemon_lookup(page_actions, @activities)
+    @mascot_genders = mascot_gender_lookup(page_actions, @activities)
     @agents_by_slug  = agent_soul_lookup(@activities)
     @activity_grades    = activity_grade_lookup(@activities)
     @stage_transitions = stage_transitions_for(@activities)
@@ -104,6 +106,7 @@ class HeartbeatController < ApplicationController
                                   .chronological.to_a.group_by(&:agent_activity_id)
     @activity_rows       = @activities.map { |activity| [activity, actions_by_activity[activity.id] || []] }
     @pokemon_by_slug = pokemon_lookup(actions_by_activity.values.flatten, @activities)
+    @mascot_genders = mascot_gender_lookup(actions_by_activity.values.flatten, @activities)
     @agents_by_slug  = agent_soul_lookup(@activities)
     @activity_grades     = activity_grade_lookup(@activities)
 

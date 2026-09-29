@@ -6,10 +6,12 @@
     capped at AgentAction::FEED_ACTIONS_PER_ACTIVITY newest; action_counts maps
     activity_id => the TRUE total, so the count line and the "N more actions omitted" row
     stay honest for an over-cap activity. Locals: activity, actions, pokemon_by_slug,
+    mascot_genders ({ session_id => gender }, for the mascot's sign),
     agents_by_slug, activity_grades, action_grades, shared_turn_ids, stage_transitions,
     action_counts. %>
 <% actions ||= [] %>
 <% pokemon_by_slug ||= {} %>
+<% mascot_genders ||= {} %>
 <% agents_by_slug ||= {} %>
 <% activity_grades ||= {} %>
 <% action_grades ||= {} %>
@@ -46,7 +48,8 @@
                                  agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
                                  supervisor_slug: activity.supervisor_agent,
                                  supervisor: agents_by_slug[activity.supervisor_agent],
-                                 mascot_test: "aa-activity-mascot", size: "sm") %></td>
+                                 mascot_test: "aa-activity-mascot", size: "sm",
+                                 gender: mascot_genders[activity.session_id]) %></td>
 
     <td class="aa-activity">
       <div class="aa-stack">
@@ -154,7 +157,7 @@
     <% turn_rows = heartbeat_turn_rows(actions) %>
     <%= render partial: "agents/activity_turn_row", collection: turn_rows, as: :turn_row,
           locals: { activity: activity, agents_by_slug: agents_by_slug, pokemon_by_slug: pokemon_by_slug,
-                    action_grades: action_grades } %>
+                    mascot_genders: mascot_genders, action_grades: action_grades } %>
     <% if total_actions > actions.size %>
       <%# CAPPED — the drill-down shows only the newest FEED_ACTIONS_PER_ACTIVITY rows,
           so name the tail instead of rendering it (the reasoning/TOTAL reconciliation

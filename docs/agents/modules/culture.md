@@ -29,6 +29,11 @@ and make product calls, not to operate the terminal on behalf of the agent.
   look wears the female pixel sprite. Gender also picks the evolution branch, so
   Nidoran is one drawable family: a female one evolves into Nidorina and a male one
   into Nidorino. A subagent session inherits its parent's gender.
+  Every surface names the mascot with its sign: `Mawile♂`, `Gardevoir♀`, and `⚥`
+  for a genderless species (`Magnemite⚥`), on the status line, the tab title, the
+  board, the activity feed and the Pokédex. A pre-gender draw (one from before the
+  roll) shows the bare name, and Nidoran never doubles its sign. The Ruby rule is
+  `Pokemon#display_name`, and `bin/statusline` mirrors it.
 - **Mascot for identity, soul for expertise.** When the work wants a specific soul —
   Carl (backend), Shannon (UI), Jasper (Web3), Steffon (platform), Xan (docs) — act
   *as* that soul: the agent handle drives the review pool and domain fit. The Pokémon

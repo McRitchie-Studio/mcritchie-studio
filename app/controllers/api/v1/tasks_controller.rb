@@ -56,7 +56,12 @@ module Api
       # waits on GitHub (TaskDerivedFacts#recorded_pr_url_enqueuing_fill).
       def show
         derived = derived_facts_json(@task)
-        render_data(task_json(@task).merge(derived))
+        # The mascot's DISPLAY gender (Pokemon#display_gender): devops.mascot_gender,
+        # or "genderless" for a gender_rate -1 species, which the stored nil cannot
+        # tell from a pre-gender draw. bin/agent-worktree writes it into the desk
+        # context so bin/statusline can show ⚥. Derived per read, never stored, and
+        # on show only (one row), so the index pays no per-task Pokémon read.
+        render_data(task_json(@task).merge(derived, "mascot_display_gender" => mascot_display_gender(@task)))
       end
 
       def create
@@ -135,6 +140,13 @@ module Api
         return if @task
 
         render_error("task not found", status: :not_found, error_code: "NOT_FOUND")
+      end
+
+      # The task mascot's display gender — see #show. nil for no mascot or a persona.
+      def mascot_display_gender(task)
+        slug = task.devops["mascot"].presence
+        pokemon = slug && Pokemon.find_by(slug: slug)
+        pokemon ? pokemon.display_gender(task.mascot_gender) : task.mascot_gender
       end
 
       # The facts the board DERIVES from GitHub (devops-v3 4c-i), beside the stamps

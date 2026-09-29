@@ -46,7 +46,7 @@
         <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Next</span>
         <% if rel %>
           <span class="min-w-0 truncate text-[11px] font-medium text-heading" data-test="release-summary-next-state"><%= release_state_label(rel, current: true) %><span class="font-normal text-muted" title="in progress" data-test="release-summary-next-clock" data-release-ticker data-since="<%= rel.created_at.to_i %>" data-prefix=" · "> · <%= release_elapsed_clock(rel) %></span></span>
-          <%= render "tasks/release_summary_mascot", mascot: rel.mascot, test_id: "release-summary-next-mascot" %>
+          <%= render "tasks/release_summary_mascot", mascot: rel.mascot, name: rel.mascot_name, test_id: "release-summary-next-mascot" %>
         <% else %>
           <span class="text-[11px] italic text-muted" data-test="release-summary-next-state">none active</span>
         <% end %>
@@ -90,7 +90,7 @@
             <% end %>
             <span class="truncate"><%= release_state_label(last) %><% if (timing = release_timing_label(last)) %><span class="font-normal text-muted" data-test="release-summary-last-timing"> · <%= timing %></span><% end %></span>
           </span>
-          <%= render "tasks/release_summary_mascot", mascot: last.mascot, test_id: "release-summary-last-mascot" %>
+          <%= render "tasks/release_summary_mascot", mascot: last.mascot, name: last.mascot_name, test_id: "release-summary-last-mascot" %>
         <% else %>
           <span class="text-[11px] italic text-muted">none yet</span>
         <% end %>

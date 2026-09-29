@@ -252,6 +252,21 @@ class StageAgentsHelperTest < ActionView::TestCase
 
   # --- Build-lane mascot (the task's Pokémon is the feature agent's face) -------
 
+  # tasks/show-mascot-gender-symbol: an event snapshot baked before the sign rule
+  # holds a bare name; the face signs it by the snapshot's gender, or ⚥ for a
+  # genderless species, and never doubles a sign already baked in.
+  test "event_mascot_agent signs a legacy snapshot's name exactly once" do
+    Pokemon.create!(dex: 81, name: "Magnemite", slug: "magnemite", types: %w[electric], generation: 1, gender_rate: -1)
+    evt = Struct.new(:mascot_snapshot)
+    name = ->(snapshot) { event_mascot_agent(evt.new(snapshot), nil).name }
+
+    assert_equal "Mawile♂", name.call("slug" => "mawile", "name" => "Mawile", "gender" => "male")
+    assert_equal "Mawile♂", name.call("slug" => "mawile", "name" => "Mawile♂", "gender" => "male")
+    assert_equal "Magnemite⚥", name.call("slug" => "magnemite", "name" => "Magnemite")
+    assert_equal "Bulbasaur", name.call("slug" => "bulbasaur", "name" => "Bulbasaur")
+    assert_equal "Nidoran♀", name.call("slug" => "nidoran", "name" => "Nidoran♀", "gender" => "female")
+  end
+
   test "build-lane stages wear the task mascot when one is given" do
     mon = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
                           sprite_url: "https://example.test/snorlax-sprite.png")

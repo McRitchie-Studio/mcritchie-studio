@@ -53,6 +53,7 @@ module Admin
       actions = @activity_rows.flat_map(&:last)
 
       @pokemon_by_slug   = pokemon_lookup(actions, activities)
+      @mascot_genders = mascot_gender_lookup(actions, activities)
       @agents_by_slug    = agent_soul_lookup(activities)
       @activity_grades   = activity_grade_lookup(activities)
       @action_grades     = action_grade_lookup(actions)

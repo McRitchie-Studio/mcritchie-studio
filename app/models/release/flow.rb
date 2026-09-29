@@ -46,7 +46,7 @@ class Release
     # ordinary releases sit within 2x of the median, the two long ones past 8x.
     OUTLIER_FACTOR = 3
 
-    Entry = Struct.new(:slug, :mascot, :shipped_at, :total, :phases, keyword_init: true) do
+    Entry = Struct.new(:slug, :mascot, :mascot_name, :shipped_at, :total, :phases, keyword_init: true) do
       def phase(key) = phases.fetch(key.to_s, 0)
 
       # The phase that ate most of this release's time — what an outlier is named for.
@@ -63,13 +63,29 @@ class Release
                         .limit(limit).to_a
       mascots = Pokemon.where(slug: releases.filter_map { |release| release.devops_field("mascot") })
                        .index_by(&:slug)
-      new(releases.map { |release| entry_for(release, mascots[release.devops_field("mascot")]) })
+      genders = conductor_genders(releases)
+      new(releases.map do |release|
+        entry_for(release, mascots[release.devops_field("mascot")], gender: genders[release.slug])
+      end)
     end
 
-    def self.entry_for(release, mascot = nil)
-      Entry.new(slug: release.slug, mascot: mascot, shipped_at: release.shipped_at,
+    def self.entry_for(release, mascot = nil, gender: release.mascot_gender)
+      Entry.new(slug: release.slug, mascot: mascot, mascot_name: mascot&.display_name(gender: gender),
+                shipped_at: release.shipped_at,
                 total: [(release.shipped_at - release.created_at).to_i, 0].max,
                 phases: phases_for(release))
+    end
+
+    # { release slug => conductor gender } in ONE query: the stamped
+    # devops.mascot_gender, else (a release stamped before the sign rule) its
+    # conductor session's SessionMascot gender — Release#mascot_gender, batched.
+    def self.conductor_genders(releases)
+      stamped, unstamped = releases.partition { |release| release.devops.key?("mascot_gender") }
+      by_session = SessionMascot.where(session_id: unstamped.filter_map { |r| r.devops_field("mascot_session") })
+                                .pluck(:session_id, :mascot_slug, :gender)
+                                .to_h { |sid, slug, gender| [[sid, slug], gender] }
+      stamped.to_h { |release| [release.slug, release.mascot_gender] }
+             .merge(unstamped.to_h { |release| [release.slug, by_session[[release.devops_field("mascot_session"), release.devops_field("mascot")]]] })
     end
 
     # The four phase durations, in seconds, keyed by PHASE_KEYS. Each boundary is

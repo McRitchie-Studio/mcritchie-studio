@@ -61,6 +61,7 @@ class AgentsController < ApplicationController
     # scan never rides this render.
     @active_session_chips = @session_ids.any? ? selected_session_chips(@session_ids) : []
     @pokemon_by_slug = pokemon_lookup(page_actions, @activities)
+    @mascot_genders = mascot_gender_lookup(page_actions, @activities)
     @agents_by_slug  = agent_soul_lookup(@activities)
     @activity_grades = activity_grade_lookup(@activities)
     @action_grades   = action_grade_lookup(page_actions)

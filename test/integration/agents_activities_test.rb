@@ -306,6 +306,29 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_select "a[data-test=aa-filter-session][data-turbo-frame=aa-activities-frame]"
   end
 
+  # tasks/show-mascot-gender-symbol: the feed names each mascot with its session's
+  # gender sign — the row's agent cell AND the filter sidebar — and a genderless
+  # species wears ⚥ with no gender recorded at all.
+  test "the feed row and the filter sidebar sign the mascot by its session's gender" do
+    a = "aaaaaaaa-1111-2222-3333-444444444444"
+    b = "bbbbbbbb-1111-2222-3333-444444444444"
+    Pokemon.create!(dex: 303, name: "Mawile", slug: "mawile", types: %w[steel], generation: 3, gender_rate: 4)
+    Pokemon.create!(dex: 81, name: "Magnemite", slug: "magnemite", types: %w[electric], generation: 1, gender_rate: -1)
+    SessionMascot.create!(session_id: a, mascot_slug: "mawile", gender: "male")
+    SessionMascot.create!(session_id: b, mascot_slug: "magnemite", gender: nil)
+    activity(session: a, reason_slug: "mawile activity", mascot: "mawile", at: 1.minute.ago)
+    activity(session: b, reason_slug: "magnemite activity", mascot: "magnemite", at: 2.minutes.ago)
+
+    get activities_agents_path
+    assert_response :success
+    assert_select "tbody[data-test=aa-activity] .hb-names span", text: "Mawile♂"
+    assert_select "tbody[data-test=aa-activity] .hb-names span", text: "Magnemite⚥"
+
+    get activities_filter_agents_path
+    assert_select "a[data-test=aa-filter-session][data-session-id=?]", a, text: /Mawile♂/
+    assert_select "a[data-test=aa-filter-session][data-session-id=?]", b, text: /Magnemite⚥/
+  end
+
   test "falls back to the activity mascot when a session has no SessionMascot row" do
     Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1)
     activity(session: "no-mascot-sess", reason_slug: "activity here", mascot: "snorlax", at: 1.minute.ago)

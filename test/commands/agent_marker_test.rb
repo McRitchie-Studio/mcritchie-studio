@@ -114,6 +114,24 @@ class AgentMarkerTest < Minitest::Test
     assert_equal "Nidoran♀ · mcritchie-studio", out.strip
   end
 
+  # tasks/show-mascot-gender-symbol: every mascot's title carries its sign by the
+  # marker's mascot_gender — ⚥ for a genderless species — and a pre-gender marker
+  # (no mascot_gender) stays bare. Nidoran keeps exactly one sign.
+  def test_current_names_every_mascot_by_its_gender_sign
+    { { "mascot" => "mawile", "mascot_gender" => "male" } => "Mawile♂",
+      { "mascot" => "gardevoir", "mascot_gender" => "female" } => "Gardevoir♀",
+      { "mascot" => "magnemite", "mascot_gender" => "genderless" } => "Magnemite⚥",
+      { "mascot" => "bulbasaur" } => "Bulbasaur",
+      { "mascot" => "nidoran-f", "mascot_gender" => "female" } => "Nidoran♀",
+      { "mascot" => "nidoran-m", "mascot_gender" => "male" } => "Nidoran♂",
+      { "mascot" => "nidoran", "mascot_gender" => "female" } => "Nidoran♀" }.each do |marker, name|
+      write_session("thread-123", marker.merge("app" => "mcritchie-studio"))
+      out, err, status = run_marker("current", "--no-kickoff")
+      assert status.success?, err
+      assert_equal "#{name} · mcritchie-studio", out.strip, marker.inspect
+    end
+  end
+
   def test_current_normalizes_legacy_prefixed_shiny_marker
     write_session("thread-123",
       "mascot" => "rattata",

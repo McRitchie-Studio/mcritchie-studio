@@ -25,7 +25,9 @@
 # family sighting with no recorded gender resolves to no species and drops out,
 # exactly like a persona mascot.
 class PokemonPokedex
-  RecentAction = Struct.new(:action, :pokemon, keyword_init: true)
+  # name: the mascot as every surface shows it (Pokemon#display_name — its session's
+  # gender sign, ⚥ for a genderless species, bare for a pre-gender draw).
+  RecentAction = Struct.new(:action, :pokemon, :name, keyword_init: true)
 
   # One species' FIRST sighting. first_seen_at is the earliest moment it was seen;
   # task + shiny describe that first sighting (the task it was spawned/evolved in,
@@ -152,17 +154,21 @@ class PokemonPokedex
   def recent_actions
     return [] if pokemon_slugs.empty?
 
-    # An action carries no gender, so a family mascot's row shows the family
-    # (Nidoran) rather than guessing a form.
-    AgentAction.where(mascot: pokemon_slugs + family_rows.keys)
-               .includes(:task)
-               .order(occurred_at: :desc, id: :desc)
-               .limit(recent_limit)
-               .map do |action|
-                 RecentAction.new(action: action,
-                                  pokemon: pokemon_by_slug[action.mascot] || family_rows[action.mascot])
-               end
-               .select(&:pokemon)
+    # An action carries no gender; its SESSION does (SessionMascot.gender, one
+    # query for the page), and that picks the sign and a family's form name
+    # (Nidoran♀). The row keeps the family's own sprite.
+    actions = AgentAction.where(mascot: pokemon_slugs + family_rows.keys)
+                         .includes(:task)
+                         .order(occurred_at: :desc, id: :desc)
+                         .limit(recent_limit).to_a
+    genders = SessionMascot.where(session_id: actions.map(&:session_id).uniq).pluck(:session_id, :gender).to_h
+    actions.filter_map do |action|
+      pokemon = pokemon_by_slug[action.mascot] || family_rows[action.mascot]
+      next unless pokemon
+
+      RecentAction.new(action: action, pokemon: pokemon,
+                       name: pokemon.display_name(gender: genders[action.session_id]))
+    end
   end
 
   private
