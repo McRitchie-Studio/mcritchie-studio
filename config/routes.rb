@@ -124,6 +124,10 @@ Rails.application.routes.draw do
   # page renders deal correspondence.
   get "communications", to: "communications#index", as: :communications
 
+  # /assets — the object store as a folder tree (AssetsController, require_admin).
+  # Query params only: Sprockets owns /assets/*, and cascades /assets itself here.
+  get "assets", to: "assets#index", as: :asset_browser
+
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from
   # the nav dropdown (Admin Links shows only to admins).
