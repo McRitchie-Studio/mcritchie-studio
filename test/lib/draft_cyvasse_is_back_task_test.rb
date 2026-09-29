@@ -67,4 +67,3 @@ class DraftCyvasseIsBackTaskTest < ActiveSupport::TestCase
     assert_match "no row", refresh
   end
 end
-
