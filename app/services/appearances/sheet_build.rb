@@ -46,19 +46,34 @@ module Appearances
       now
     end
 
-    # Runs in the job. Never re-raises: ApplicationJob retries, and a retry is a
-    # second paid call.
+    # Runs in the job. Takes the build before the paid call, so a re-run of the
+    # same job or a job left behind by a stale reclaim returns without spending.
     def self.run(appearance, started_at:, number: nil)
-      Appearances::GenerateArtifact.call(appearance, number: number)
-      finish(appearance, started_at, DONE)
-    rescue Appearances::GenerateArtifact::NoGenerator, Appearances::GenerateArtifact::NoIdentityPhoto => e
-      finish(appearance, started_at, FAILED, e.message)
-    rescue StandardError => e
-      log = ErrorLog.capture!(e)
-      log.target = appearance
-      log.target_name = appearance.slug
-      log.save!
-      finish(appearance, started_at, FAILED, e.message)
+      running_at = take(appearance, started_at)
+      return unless running_at
+
+      begin
+        Appearances::GenerateArtifact.call(appearance, number: number)
+        finish(appearance, running_at, DONE)
+      rescue Appearances::GenerateArtifact::NoGenerator, Appearances::GenerateArtifact::NoIdentityPhoto => e
+        finish(appearance, running_at, FAILED, e.message)
+      rescue StandardError => e
+        log = ErrorLog.capture!(e)
+        log.target = appearance
+        log.target_name = appearance.slug
+        log.save!
+        finish(appearance, running_at, FAILED, e.message)
+      end
+    end
+
+    # Swaps the claim's started_at for the run's own: the new value is the token
+    # this run finishes against, and the stale window restarts from here, not
+    # from enqueue. Returns nil when the claim is no longer this job's.
+    def self.take(appearance, started_at)
+      running_at = [Time.current.floor(6), started_at + 0.000001].max
+      taken = Appearance.where(id: appearance.id, sheet_build_state: BUILDING, sheet_build_started_at: started_at)
+                        .update_all(sheet_build_started_at: running_at, updated_at: Time.current)
+      running_at if taken == 1
     end
 
     # Only the build that holds the claim may close it; a stale build that
