@@ -145,6 +145,8 @@
       <% end %>
     </div>
 
+    <%= render "appearances/sheet_build_status", look: @appearance %>
+
     <% if @identity_photo_url.blank? %>
       <p class="text-2xs text-warning-ink">
         No cached headshot for this person, so there is no face to build from.
@@ -156,6 +158,8 @@
           and set it, and "not configured" without the name sends them to ask
           someone. %>
       <p class="text-2xs text-muted"><%= @generator_row.unconfigured_message %></p>
+    <% elsif @appearance.sheet_building? %>
+      <%# One build at a time; the server refuses a second press too. %>
     <% elsif admin? %>
       <%= form_with url: generate_person_appearance_path(@person.slug, @appearance.slug),
                     method: :post, class: "space-y-2" do |f| %>
@@ -172,7 +176,8 @@
             the model to render a placeholder. %>
         <%= f.number_field :number, placeholder: "Jersey number (optional)",
               min: 0, max: 99, class: "input-field w-full text-xs" %>
-        <%= f.submit "Generate character sheet", class: "btn btn-sm btn-primary w-full" %>
+        <%= f.submit(@appearance.sheet_build_failed? ? "Retry character sheet" : "Generate character sheet",
+                     class: "btn btn-sm btn-primary w-full") %>
       <% end %>
       <p class="text-3xs text-muted">
         Costs money &mdash; one full sheet per press. No character model needed.

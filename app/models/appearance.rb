@@ -33,6 +33,9 @@ class Appearance < ApplicationRecord
 
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug, inverse_of: :appearances, optional: true
   belongs_to :team, foreign_key: :team_slug, primary_key: :slug, optional: true
+  # A music-video look: this artist as they appear in one video (music video
+  # pipeline, stage 4). Nil on athlete looks.
+  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, optional: true
   has_many :artifact_subjects, foreign_key: :appearance_slug, primary_key: :slug, dependent: :nullify
 
   # THE PHOTOGRAPHS WE FOUND OF THIS PERSON, chosen and rejected both. DESTROYED
@@ -61,6 +64,32 @@ class Appearance < ApplicationRecord
 
   def to_param = slug
   def retired? = retired_at.present?
+
+  def music_video_look? = music_video_slug.present?
+
+  # The character-sheet build (Appearances::SheetBuild owns the rules).
+  def sheet_build_stale?
+    sheet_build_state == Appearances::SheetBuild::BUILDING &&
+      (sheet_build_started_at.nil? || sheet_build_started_at < Appearances::SheetBuild::STALE_AFTER.ago)
+  end
+
+  def sheet_building? = sheet_build_state == Appearances::SheetBuild::BUILDING && !sheet_build_stale?
+  def sheet_build_failed? = sheet_build_state == Appearances::SheetBuild::FAILED
+  def sheet_build_done? = sheet_build_state == Appearances::SheetBuild::DONE
+
+  # Seconds the build ran, or has run so far.
+  def sheet_build_seconds
+    return unless sheet_build_started_at
+
+    ((sheet_build_finished_at || Time.current) - sheet_build_started_at).round
+  end
+
+  # The on-screen performer a music-video look was built from.
+  def video_performer
+    return unless music_video_look?
+
+    @video_performer ||= VideoPerformer.find_by(music_video_slug:, ordinal: performer_ordinal)
+  end
 
   def default?
     person&.default_appearance_slug == slug
@@ -217,7 +246,6 @@ class Appearance < ApplicationRecord
     end
     candidate
   end
-  private_class_method :available_descriptor
 
   private
 

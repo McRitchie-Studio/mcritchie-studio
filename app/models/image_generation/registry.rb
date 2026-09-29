@@ -85,6 +85,21 @@ module ImageGeneration
       def measured_result = measured.is_a?(Hash) ? measured[:result].to_s.presence : nil
       def not_measured = measured.is_a?(Hash) ? measured[:not_measured].to_s.presence : nil
 
+      # WHAT ONE PRESS IS EXPECTED TO COST, from the measured range: dollars when
+      # a unit price is declared, otherwise the vendor's own unit. Nil when
+      # nothing was measured, because a guessed range is worse than none.
+      def expected_cost_hint
+        low, high = measured.is_a?(Hash) ? Array(measured[:units_range]) : []
+        return nil if low.blank? || high.blank?
+
+        if unit_price_usd.present?
+          "about $#{price_for(low).round(2)}–$#{price_for(high).round(2)} per sheet (measured)"
+        else
+          "about #{low.to_fs(:delimited)}–#{high.to_fs(:delimited)} #{billing_unit_name} per sheet " \
+            "(measured); no dollar rate is declared"
+        end
+      end
+
       # WHAT AN OPERATOR IS TOLD WHEN THE ROW IS OFF. It names the variable on
       # purpose — the person reading it is the person who will go and set it, and
       # "not configured" without the name sends them to ask someone.

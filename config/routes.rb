@@ -133,6 +133,9 @@ Rails.application.routes.draw do
     post :confirm_cast, on: :member
     resources :performers, only: [:update], param: :ordinal, controller: "video_performers"
     resources :clips, only: [:update], param: :ordinal, controller: "video_clips"
+    resources :looks, only: [:create], param: :look_slug, controller: "music_video_looks" do
+      post :sheet, on: :member
+    end
   end
 
   # Public link hub — general (non-admin) destinations. The admin counterpart
