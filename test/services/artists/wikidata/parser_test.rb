@@ -78,6 +78,21 @@ class Artists::Wikidata::ParserTest < ActiveSupport::TestCase
     ], stints, "sorted by numeric member id, group id, then start year"
   end
 
+  test "pairs a statement's several start and end qualifiers instead of crossing them" do
+    # Maroon 5 / Jesse Carmichael (Q459375): one statement, starts 1994 and
+    # 2014, end 2012. SPARQL returns the cross product, including 2014-2012.
+    st = { "type" => "uri", "value" => "http://www.wikidata.org/entity/statement/Q182223-abc" }
+    rows = [[1994, 2012], [2014, 2012]].map do |start, finish|
+      { "member" => uri("Q459375"), "group" => uri("Q182223"), "via" => lit("part"), "st" => st,
+        "start" => date(start), "end" => date(finish) }
+    end
+
+    assert_equal [
+      { "member" => "Q459375", "group" => "Q182223", "start_year" => 1994, "end_year" => 2012 },
+      { "member" => "Q459375", "group" => "Q182223", "start_year" => 2014, "end_year" => nil }
+    ], Artists::Wikidata::Parser.memberships(rows)
+  end
+
   test "qid and year read the raw values" do
     assert_equal "Q62766", Artists::Wikidata::Parser.qid("#{E}Q62766")
     assert_nil Artists::Wikidata::Parser.qid("_:t1")

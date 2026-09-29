@@ -46,17 +46,25 @@ module Artists
       end
 
       # rows: member, group, via ("part" = the group's has-part statement,
-      # "member_of" = the member's member-of statement), start, end.
+      # "member_of" = the member's member-of statement), st (the statement),
+      # start, end. A statement with several start/end qualifiers comes back
+      # as their cross product, so qualifiers are re-paired per statement.
       # Per member/group pair, keep the direction whose statements carry more
       # dates (ties go to the group's own); each distinct stint in it survives.
       def memberships(rows)
-        stints = rows.filter_map do |row|
+        statements = rows.each_with_index.group_by { |row, index| row.dig("st", "value") || index }.values
+        stints = statements.flat_map do |pairs|
+          row = pairs.first.first
           member = qid(row.dig("member", "value"))
           group = qid(row.dig("group", "value"))
-          next if member.nil? || group.nil? || member == group
+          next [] if member.nil? || group.nil? || member == group
 
-          { "member" => member, "group" => group, "via" => row.dig("via", "value"),
-            "start_year" => year(row.dig("start", "value")), "end_year" => year(row.dig("end", "value")) }
+          starts = pairs.filter_map { |r, _| year(r.dig("start", "value")) }.uniq.sort
+          ends = pairs.filter_map { |r, _| year(r.dig("end", "value")) }.uniq.sort
+          pair_years(starts, ends).map do |start, finish|
+            { "member" => member, "group" => group, "via" => row.dig("via", "value"),
+              "start_year" => start, "end_year" => finish }
+          end
         end
 
         stints.group_by { |s| [s["member"], s["group"]] }.flat_map do |_pair, pair_stints|
@@ -68,6 +76,16 @@ module Artists
           # One stint per start year (the table's key); the widest one wins.
           dated.sort_by { |s| -(s["end_year"] || 9999) }.uniq { |s| s["start_year"] }
         end.sort_by { |s| [qid_number(s["member"]), qid_number(s["group"]), s["start_year"] || 0] }
+      end
+
+      # Each start takes the first end at or after it and before the next start.
+      def pair_years(starts, ends)
+        return ends.empty? ? [[nil, nil]] : ends.map { |e| [nil, e] } if starts.empty?
+
+        starts.each_with_index.map do |start, i|
+          after = starts[i + 1]
+          [start, ends.find { |e| e >= start && (after.nil? || e <= after) }]
+        end
       end
 
       def kind_for(rows)

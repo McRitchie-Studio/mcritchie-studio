@@ -115,7 +115,7 @@ module Artists
       # (P463) pointing at the group, with start (P580) and end (P582) dates.
       def membership_query(values)
         <<~SPARQL
-          SELECT ?member ?group ?via ?start ?end WHERE {
+          SELECT ?member ?group ?via ?st ?start ?end WHERE {
             VALUES ?group { #{values} }
             { ?group p:P527 ?st . ?st ps:P527 ?member . BIND("part" AS ?via) }
             UNION
