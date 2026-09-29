@@ -260,11 +260,11 @@ class StageAgentsHelperTest < ActionView::TestCase
     evt = Struct.new(:mascot_snapshot)
     name = ->(snapshot) { event_mascot_agent(evt.new(snapshot), nil).name }
 
-    assert_equal "Mawile♂", name.call("slug" => "mawile", "name" => "Mawile", "gender" => "male")
-    assert_equal "Mawile♂", name.call("slug" => "mawile", "name" => "Mawile♂", "gender" => "male")
-    assert_equal "Magnemite⚥", name.call("slug" => "magnemite", "name" => "Magnemite")
+    assert_equal "Mawile ♂", name.call("slug" => "mawile", "name" => "Mawile", "gender" => "male")
+    assert_equal "Mawile ♂", name.call("slug" => "mawile", "name" => "Mawile ♂", "gender" => "male")
+    assert_equal "Magnemite ⚥", name.call("slug" => "magnemite", "name" => "Magnemite")
     assert_equal "Bulbasaur", name.call("slug" => "bulbasaur", "name" => "Bulbasaur")
-    assert_equal "Nidoran♀", name.call("slug" => "nidoran", "name" => "Nidoran♀", "gender" => "female")
+    assert_equal "Nidoran ♀", name.call("slug" => "nidoran", "name" => "Nidoran ♀", "gender" => "female")
   end
 
   test "build-lane stages wear the task mascot when one is given" do

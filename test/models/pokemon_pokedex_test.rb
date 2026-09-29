@@ -52,7 +52,7 @@ class PokemonPokedexTest < ActiveSupport::TestCase
     AgentAction.create!(session_id: "s-m", mascot: mawile.slug, kind: "bash", outcome: "ok", occurred_at: 1.minute.ago)
     AgentAction.create!(session_id: "s-g", mascot: magnemite.slug, kind: "bash", outcome: "ok", occurred_at: 2.minutes.ago)
 
-    assert_equal %w[Mawile♂ Magnemite⚥], PokemonPokedex.new(recent_limit: 5).recent_actions.map(&:name)
+    assert_equal ["Mawile ♂", "Magnemite ⚥"], PokemonPokedex.new(recent_limit: 5).recent_actions.map(&:name)
   end
 
   test "[unit] newest unique is the species first seen most recently, not the latest spawn" do

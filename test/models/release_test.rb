@@ -418,7 +418,7 @@ class ReleaseTest < ActiveSupport::TestCase
     rel.stamp_conductor_mascot!("sess-g")
 
     assert_equal "male", rel.reload.devops_field("mascot_gender")
-    assert_equal "Mawile♂", rel.mascot_name
+    assert_equal "Mawile ♂", rel.mascot_name
   end
 
   test "a release stamped before the sign rule reads its gender off the conductor session" do
@@ -427,7 +427,7 @@ class ReleaseTest < ActiveSupport::TestCase
     rel = Release.open!
     rel.update!(metadata: { "devops" => { "mascot" => "mawile", "mascot_session" => "sess-old" } })
 
-    assert_equal "Mawile♀", rel.reload.mascot_name
+    assert_equal "Mawile ♀", rel.reload.mascot_name
     assert_equal({ rel.slug => "female" }, Release::Flow.conductor_genders([rel]))
   end
 

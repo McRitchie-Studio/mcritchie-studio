@@ -302,7 +302,8 @@ mascot_display_emoji() {  # emoji shiny -> emoji, normalizing legacy sparkles to
 # writes "genderless" for a gender_rate -1 species). No mascot_gender — a
 # pre-gender session — stays bare. Nidoran carries exactly ONE sign: the two
 # legacy species slugs name theirs, and the `nidoran` family takes it from the
-# gender, so none renders as "Nidoran f" or "Nidoran♀♀".
+# gender, so none renders as "Nidoran f" or "Nidoran ♀♀". A space always
+# separates the name from its sign (Mawile ♂).
 mascot_gender_sign() {  # gender -> sign ("" when none)
   case "$1" in
     female) printf '%s' "♀" ;;
@@ -312,14 +313,15 @@ mascot_gender_sign() {  # gender -> sign ("" when none)
 }
 
 mascot_display_name() {  # mascot gender -> name
-  local mascot="$1" gender="$2" first rest
+  local mascot="$1" gender="$2" first rest sign
   case "$mascot" in
-    nidoran-f) printf '%s' "Nidoran♀"; return 0 ;;
-    nidoran-m) printf '%s' "Nidoran♂"; return 0 ;;
+    nidoran-f) printf '%s' "Nidoran ♀"; return 0 ;;
+    nidoran-m) printf '%s' "Nidoran ♂"; return 0 ;;
   esac
   first=$(printf '%s' "$mascot" | cut -c1 | tr '[:lower:]' '[:upper:]')
   rest=$(printf '%s' "${mascot:1}" | tr '-' ' ')
-  printf '%s%s' "${first}${rest}" "$(mascot_gender_sign "$gender")"
+  sign=$(mascot_gender_sign "$gender")
+  if [ -n "$sign" ]; then printf '%s %s' "${first}${rest}" "$sign"; else printf '%s' "${first}${rest}"; fi
 }
 
 render() {  # app feature task url stage mascot mascot_color mascot_emoji mascot_shiny app_color mascot_gender

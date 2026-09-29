@@ -70,7 +70,7 @@ end
 # mascot_gender appends its sign (male ♂, female ♀, genderless ⚥); no gender (a
 # pre-gender session) stays bare. Nidoran carries exactly ONE sign: the two
 # legacy species slugs name theirs, and the `nidoran` family takes the gender's.
-NIDORAN_NAMES = { "nidoran-f" => "Nidoran♀", "nidoran-m" => "Nidoran♂" }.freeze
+NIDORAN_NAMES = { "nidoran-f" => "Nidoran ♀", "nidoran-m" => "Nidoran ♂" }.freeze
 GENDER_SIGNS = { "female" => "♀", "male" => "♂", "genderless" => "⚥" }.freeze
 
 def mascot_name(data)
@@ -78,7 +78,8 @@ def mascot_name(data)
   return NIDORAN_NAMES.fetch(slug) if NIDORAN_NAMES.key?(slug)
 
   name = titleize(slug)
-  name.empty? ? name : "#{name}#{GENDER_SIGNS[compact(data['mascot_gender']).downcase]}"
+  sign = GENDER_SIGNS[compact(data["mascot_gender"]).downcase]
+  name.empty? || sign.nil? ? name : "#{name} #{sign}"
 end
 
 def marker_from_data(data)
