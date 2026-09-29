@@ -20,6 +20,7 @@ module DigestVideo
   class NotBuilt < Failure; end
 
   H264 = "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]"
+  TIKTOK_H264 = "b[vcodec^=h264]/b[vcodec^=avc1]" # TikTok serves muxed files; the rest are H.265
   ANY = "bv*[height<=1080]+ba/b[height<=1080]/b"
   R2_ITEM = "r2.mcritchie-studio"
   TARGETS = {
@@ -32,7 +33,13 @@ module DigestVideo
   # and caption tracks carry signed URLs that embed the operator's public IP.
   INFO_ALLOWLIST = %w[id title uploader channel channel_id upload_date duration webpage_url
                       extractor width height fps vcodec acodec].freeze
+  # A TikTok title is the caption, free text: dropped. uploader_id keeps the
+  # creator findable after a handle change.
+  TIKTOK_INFO_ALLOWLIST = (INFO_ALLOWLIST - %w[title] + %w[uploader_id]).freeze
   CANONICAL_PAGE = %r{\Ahttps://(?:www\.)?youtube\.com/watch\?v=[\w-]{11}\z}
+  TIKTOK_HOSTS = %w[tiktok.com vm.tiktok.com vt.tiktok.com].freeze
+  TIKTOK_PAGE = %r{\Ahttps://www\.tiktok\.com/@[\w.-]+/video/(\d+)\z}
+  CREDIT_WORDS = 4 # a longer "ft. …" run is caption prose, not a name
   QUERY_URL = %r{https?://\S*\?}
 
   module_function
@@ -43,7 +50,7 @@ module DigestVideo
     host = URI.parse(url.to_s).host.to_s.downcase.sub(/\A(?:www|m|music)\./, "")
     case host
     when "youtube.com", "youtu.be" then "youtube"
-    when "tiktok.com" then raise NotBuilt, "not built yet: download-tiktok"
+    when *TIKTOK_HOSTS then "tiktok"
     when "instagram.com" then raise NotBuilt, "not built yet: download-instagram"
     else raise Failure, "unsupported host #{host.inspect}: ask Alex"
     end
@@ -51,14 +58,31 @@ module DigestVideo
     raise Failure, "not a URL: #{url}"
   end
 
+  def info_allowlist(platform) = platform == "tiktok" ? TIKTOK_INFO_ALLOWLIST : INFO_ALLOWLIST
+
   # Allowlisted scalars only; a URL with a query string survives only as the canonical watch page.
-  def sanitize_info(info)
-    info.slice(*INFO_ALLOWLIST).select do |key, value|
+  def sanitize_info(info, platform: "youtube")
+    info.slice(*info_allowlist(platform)).select do |key, value|
       next false unless value.is_a?(String) || value.is_a?(Numeric)
       next true unless value.is_a?(String) && value.match?(QUERY_URL)
 
       key == "webpage_url" && value.match?(CANONICAL_PAGE)
     end
+  end
+
+  # The id is in a page URL; a short link (vm.tiktok.com) gets it from info.json.
+  def tiktok_id(url) = URI.parse(url).path[%r{/video/(\d+)}, 1]
+
+  # The creator, then feat.-style names from the caption's first line. The
+  # caption itself is never kept: only names the parser pulls out of it.
+  def tiktok_credits(info)
+    creator = [info["channel"], info["creator"], info["uploader"]].map { |n| n.to_s.strip }.find { |n| !n.empty? }
+    return [] unless creator # a caption name is never the primary
+
+    caption = info["title"].to_s.lines.first.to_s.gsub(/#\S+/, "").gsub(/@([\w.]+)/, '\\1').squeeze(" ").strip
+    featured = MusicVideos::CreditParser.new.parse(title: caption).featured
+                                        .reject { |n| n.split.size > CREDIT_WORDS }
+    [creator, *featured].compact.uniq(&:downcase)
   end
 
   def youtube_id(url)
@@ -88,27 +112,24 @@ module DigestVideo
 
     def call(url)
       platform = DigestVideo.platform_for(url)
-      id = DigestVideo.youtube_id(url)
-      dir = @from_dir || File.join(@workdir, id).tap { |d| FileUtils.mkdir_p(d) }
-      download(url, dir) unless @from_dir
+      tiktok = platform == "tiktok"
+      id = tiktok ? DigestVideo.tiktok_id(url) : DigestVideo.youtube_id(url)
+      dir = @from_dir || File.join(@workdir, id || short_code(url)).tap { |d| FileUtils.mkdir_p(d) }
+      download(url, dir, tiktok: tiktok) unless @from_dir
 
+      info = JSON.parse(File.read(find(dir, id.to_s, ".info.json")))
+      id ||= info["id"].to_s
       mp4 = playable(find(dir, id, ".mp4"))
-      info = JSON.parse(File.read(find(dir, id, ".info.json")))
       vtts = Dir.glob(File.join(dir, "*#{id}*.vtt"))
       timing = MusicVideos::VttTiming.parse(vtts.min && File.read(vtts.min))
-      credits = MusicVideos::CreditParser.new.parse(title: info["title"], uploader: info["uploader"],
-                                                    artists: info["artists"] || info["artist"].to_s.split(", "))
-      keys = MusicVideos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
-      payload = {
-        platform: platform, source_url: info["webpage_url"] || url, source_id: id,
-        title: info["title"], uploader: info["uploader"], credited_artists: Array(info["artists"]),
-        duration_ms: duration_ms(mp4), source_object_key: keys.source_mp4, info_object_key: keys.info_json,
-        caption_timing: timing
-      }
+      payload = tiktok ? tiktok_fields(info, id) : youtube_fields(info, url, id)
+      keys = object_keys(payload)
+      payload.merge!(platform: platform, source_id: id, duration_ms: duration_ms(mp4),
+                     source_object_key: keys.source_mp4, info_object_key: keys.info_json, caption_timing: timing)
       return report_dry_run(payload, mp4) if @dry_run
 
       @api.authenticate # before any upload, so a failed login leaves nothing in R2
-      store(keys, mp4, info)
+      store(keys, mp4, DigestVideo.sanitize_info(info, platform: platform))
       data = @api.create(payload)
       FileUtils.rm_f(vtts) # lyric text; kept until recorded so a --from-dir retry still has timings
       report(data, payload)
@@ -117,11 +138,38 @@ module DigestVideo
 
     private
 
-    def download(url, dir)
+    def youtube_fields(info, url, _id)
+      { source_url: info["webpage_url"] || url, title: info["title"], uploader: info["uploader"],
+        credited_artists: Array(info["artists"]),
+        credits: [info["title"], info["uploader"], info["artists"] || info["artist"].to_s.split(", ")] }
+    end
+
+    # The caption never leaves: the record's title is "TikTok <id>", and the
+    # hub reads credits from credited_artists (creator first, then feat. names).
+    def tiktok_fields(info, id)
+      artists = DigestVideo.tiktok_credits(info)
+      raise Failure, "no creator in the TikTok info.json for #{id}" if artists.empty?
+
+      page = info["webpage_url"].to_s
+      page = "https://www.tiktok.com/@#{info['uploader']}/video/#{id}" unless page.match?(TIKTOK_PAGE)
+      { source_url: page, title: "TikTok #{id}", uploader: info["uploader"], credited_artists: artists,
+        credits: ["TikTok #{id}", nil, artists] }
+    end
+
+    # Same parse the hub runs, so the key matches the record's credits.
+    def object_keys(payload)
+      title, uploader, artists = payload.delete(:credits)
+      credits = MusicVideos::CreditParser.new.parse(title: title, uploader: uploader, artists: artists)
+      MusicVideos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
+    end
+
+    def short_code(url) = URI.parse(url).path.scan(/[\w-]+/).last || "tiktok"
+
+    def download(url, dir, tiktok: false)
       @out.puts "downloading #{url} (H.264 first)"
-      common = ["--merge-output-format", "mp4", "--write-info-json", "--write-subs", "--write-auto-subs",
-                "--sub-format", "vtt", "--sub-langs", "en.*,en", "-P", dir, "-o", "%(id)s.%(ext)s", url]
-      _o, err, ok = @shell.call(@ytdlp, "-f", H264, *common)
+      subs = tiktok ? [] : ["--write-subs", "--write-auto-subs", "--sub-format", "vtt", "--sub-langs", "en.*,en"]
+      common = ["--merge-output-format", "mp4", "--write-info-json", *subs, "-P", dir, "-o", "%(id)s.%(ext)s", url]
+      _o, err, ok = @shell.call(@ytdlp, "-f", tiktok ? TIKTOK_H264 : H264, *common)
       return if ok
 
       @out.puts "no H.264 format (#{err.to_s.lines.last&.strip}); downloading best and converting"
@@ -165,11 +213,11 @@ module DigestVideo
       JSON.parse(out)
     end
 
-    def store(keys, mp4, info)
+    def store(keys, mp4, stored_info)
       @out.puts "uploading to r2://#{@bucket}/#{keys.source_mp4}"
       @storage.put(keys.source_mp4, mp4, "video/mp4")
       Tempfile.create(["info", ".json"]) do |file|
-        file.write(JSON.generate(DigestVideo.sanitize_info(info)))
+        file.write(JSON.generate(stored_info))
         file.flush
         @storage.put(keys.info_json, file.path, "application/json")
       end
