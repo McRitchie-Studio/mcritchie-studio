@@ -246,9 +246,9 @@ class Pokemon < ApplicationRecord
   end
 
   # A species PokéAPI records as having no gender (gender_rate -1). An
-  # unrecorded rate (nil) is not genderless — it is unknown.
+  # unrecorded rate (nil → 0) is not genderless — it is unknown.
   def genderless?
-    !gender_rate.nil? && gender_rate.to_i <= GENDERLESS_RATE
+    gender_rate.to_i <= GENDERLESS_RATE
   end
 
   # The gender a DISPLAY surface carries for a draw: the recorded gender, else
