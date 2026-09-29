@@ -56,6 +56,24 @@ module AppContract
 
   # The `test` job's single `bin/rails ...` step in .github/workflows/ci.yml, or
   # nil. That command, verbatim, is the registry's test_cmd.
+  # The branches whose pushes run the CI workflow, or :all when push has no
+  # branch filter, or [] when push is not a trigger. YAML reads the bare key
+  # `on:` as boolean true, so both spellings are looked up.
+  def ci_push_branches(ci_yaml)
+    doc = YAML.safe_load(ci_yaml.to_s, aliases: true) || {}
+    triggers = doc.key?("on") ? doc["on"] : doc[true]
+    return [] unless triggers
+    return (Array(triggers).map(&:to_s).include?("push") ? :all : []) unless triggers.is_a?(Hash)
+    return [] unless triggers.key?("push")
+
+    push = triggers["push"]
+    return :all unless push.is_a?(Hash) && push.key?("branches")
+
+    Array(push["branches"]).map(&:to_s)
+  rescue Psych::Exception
+    []
+  end
+
   def ci_test_cmd(ci_yaml)
     jobs = (YAML.safe_load(ci_yaml.to_s, aliases: true) || {})["jobs"] || {}
     runs = Array(jobs.dig("test", "steps")).filter_map { |s| s.is_a?(Hash) ? s["run"].to_s.strip : nil }
@@ -102,6 +120,14 @@ module AppContract
                         remedy: "create them off main first: git -C <repo> push origin main:refs/heads/accepted main:refs/heads/release")
 
     test_cmd = ci_test_cmd(probe.read_at(root, REF, ".github/workflows/ci.yml"))
+    # bin/release prepare refuses to promote a rung CI never builds
+    # (refuse_blind_accepted!): measured 2026-09-28, when moms-app passed every
+    # other check here and was then refused because its CI ran on main only.
+    branches = ci_push_branches(probe.read_at(root, REF, ".github/workflows/ci.yml"))
+    rungs_missing = branches == :all ? [] : (%w[accepted release] - branches)
+    checks << Check.new(name: "ci on release rungs", ok: rungs_missing.empty?,
+                        detail: rungs_missing.empty? ? "push runs CI on accepted and release" : "push skips #{rungs_missing.join(', ')}",
+                        remedy: "set `push: branches: [ main, release, accepted ]` in .github/workflows/ci.yml and merge it to accepted")
     checks << Check.new(name: "ci test job", ok: !test_cmd.nil?, detail: test_cmd || "no single bin/rails step in jobs.test",
                         remedy: "give .github/workflows/ci.yml a `test` job with one `bin/rails ...` step")
 

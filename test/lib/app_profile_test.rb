@@ -1,16 +1,15 @@
 # frozen_string_literal: true
 
 # [unit] AppProfile and AppContract — the deploy-profile expansion bin/register-app
-# writes, and the contract checks it runs first. Every AppContract probe is a fake,
-# so no test here touches git, HTTP or Heroku.
+# writes, and the contract checks it runs first. The contract tests drive fake
+# probes; the one subprocess test (bin/register-app from a tree without
+# app/helpers) runs the real CLI, which calls git and heroku for real.
 
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
 require "fileutils"
 require "yaml"
-require "tmpdir"
-require "fileutils"
 require_relative "../../bin/lib/app_profile"
 require_relative "../../bin/lib/app_contract"
 
@@ -83,7 +82,8 @@ class AppProfileTest < Minitest::Test
     end
   end
 
-  CI = { "jobs" => { "test" => { "steps" => [{ "uses" => "actions/checkout@v4" },
+  CI = { "on" => { "pull_request" => nil, "push" => { "branches" => %w[main release accepted] } },
+         "jobs" => { "test" => { "steps" => [{ "uses" => "actions/checkout@v4" },
                                              { "run" => "bin/rails db:test:prepare test" }] } } }.to_yaml
 
   def healthy_probe(**over)
@@ -123,6 +123,22 @@ class AppProfileTest < Minitest::Test
     contract(probe)
     assert_equal ["origin/accepted"], probe.refs_read.uniq,
                  "the contract judges accepted, not the primary checkout's working tree"
+  end
+
+  def test_ci_that_skips_the_release_rungs_fails_the_contract
+    main_only = { "on" => { "push" => { "branches" => ["main"] } },
+                  "jobs" => { "test" => { "steps" => [{ "run" => "bin/rails test" }] } } }.to_yaml
+    failed = contract(healthy_probe(files: { "ci.yml" => main_only })).first.reject(&:ok)
+    assert_equal ["ci on release rungs"], failed.map(&:name)
+    assert_match(/push skips accepted, release/, failed.first.detail)
+  end
+
+  def test_ci_push_branches_reads_every_spelling
+    assert_equal %w[main release accepted], AppContract.ci_push_branches("on:\n  push:\n    branches: [ main, release, accepted ]\n")
+    assert_equal :all, AppContract.ci_push_branches("on:\n  push:\n  pull_request:\n")
+    assert_equal :all, AppContract.ci_push_branches("on: [push, pull_request]\n")
+    assert_equal [], AppContract.ci_push_branches("on:\n  pull_request:\n")
+    assert_equal [], AppContract.ci_push_branches(nil)
   end
 
   def test_a_failed_fetch_fails_the_contract
