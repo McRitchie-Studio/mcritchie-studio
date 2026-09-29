@@ -7,6 +7,7 @@ module Api
       FIELDS = %w[platform source_url source_id title uploader credited_artists duration_ms
                   source_object_key info_object_key caption_timing].freeze
       TIMING_KEYS = %w[cues sections].freeze
+      PERFORMER_FIELDS = %w[ordinal label artist_slug extra still_object_keys sightings confidence_note].freeze
 
       def show
         render_data(serialize(MusicVideo.find_by!(slug: params[:slug])))
@@ -22,6 +23,19 @@ module Api
 
         outcome = MusicVideos::Digest.new(raw).call
         render_data(serialize(outcome.video), status: outcome.created? ? :created : :ok)
+      end
+
+      # Stage 2: the vision pass replaces the video's performer set. Stills are
+      # already in R2; only their keys arrive. Artists are the operator's call.
+      def performers
+        video = MusicVideo.find_by!(slug: params[:slug])
+        replace = MusicVideos::ReplacePerformers.new(video, params.to_unsafe_h["performers"])
+        replace.check! # a refusal is an answer, not an ErrorLog
+        outcome = rescue_and_log(target: video) { replace.call }
+        render_data(serialize(video.reload), meta: { dropped_labels: outcome.dropped_labels })
+      rescue MusicVideos::ReplacePerformers::Refused => e
+        render_error(e.message, status: e.code == "CAST_CONFIRMED" ? :conflict : :unprocessable_entity,
+                                error_code: e.code)
       end
 
       private
@@ -40,7 +54,7 @@ module Api
              .merge("artists" => credits.map do |c|
                { "slug" => c.artist_slug, "name" => c.artist.name, "kind" => c.artist.kind,
                  "role" => c.role, "position" => c.position }
-             end)
+             end, "performers" => video.video_performers.map { |p| p.as_json(only: PERFORMER_FIELDS) })
       end
     end
   end

@@ -302,7 +302,7 @@
 # `npx playwright test --list` => 180.
 # 180 -> 181 on 2026-09-29 (/tasks/asset-tree-browser): e2e/asset_browser.spec.js, the
 # admin folder drill-down, clip preview and search (one spec, not quarantined).
-total_specs: 181
+total_specs: 182
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -483,7 +483,7 @@ quarantined: 10
 # Same collision as `total_specs`, and the same remedy — MEASURED on the MERGED tree:
 # `npx playwright test --list --grep-invert @quarantine` => 170.
 # 170 -> 171: total_specs - quarantined, the same asset_browser.spec.js spec.
-executed: 171
+executed: 172
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

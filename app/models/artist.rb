@@ -33,6 +33,15 @@ class Artist < ApplicationRecord
     name.to_s.match(/\AThe\s+(.+)\z/i) { |m| "#{m[1]}, The" } || name.to_s
   end
 
+  # A free slug for a new artist: the name's, then -2, -3 and so on.
+  def self.available_slug(name)
+    base = name.to_s.parameterize.presence || "artist"
+    taken = where("slug = :b OR slug LIKE :p", b: base, p: "#{sanitize_sql_like(base)}-%").pluck(:slug).to_set
+    return base unless taken.include?(base)
+
+    (2..).each { |n| return "#{base}-#{n}" unless taken.include?("#{base}-#{n}") }
+  end
+
   private
 
   def default_sort_name
