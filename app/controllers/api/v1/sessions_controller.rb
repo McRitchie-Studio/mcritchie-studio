@@ -22,9 +22,11 @@ module Api
         render_data({
           "mascot"       => session_mascot.mascot_slug,
           "mascot_shiny" => session_mascot.shiny?,
-          # The session's gender roll ("female"/"male"/nil). bin/statusline reads it
-          # to name a gender family's form (nidoran → Nidoran♀ / Nidoran♂).
-          "mascot_gender" => session_mascot.gender,
+          # The session's DISPLAY gender: its roll ("female"/"male"), "genderless"
+          # for a gender_rate -1 species, nil for a pre-gender draw
+          # (Pokemon#display_gender). bin/statusline turns it into the name's
+          # sign — Mawile♂, Magnemite⚥ — and names Nidoran's form by it.
+          "mascot_gender" => pokemon ? pokemon.display_gender(session_mascot.gender) : session_mascot.gender,
           "mascot_color" => pokemon&.signature_color,
           "mascot_emoji" => pokemon&.status_emoji(shiny: session_mascot.shiny?),
           "app"          => app&.slug || App::DEFAULT_SLUG,
