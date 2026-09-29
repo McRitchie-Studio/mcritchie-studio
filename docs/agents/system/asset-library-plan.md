@@ -33,6 +33,9 @@ Agent knowledge (SOPs, runbooks, insights) stays in git and `KnowledgeDoc`.
 2. Code never reads tier 2 at request time. Drives are for people.
 3. Object keys carry no meaning (a UUID or content hash); meaning lives in the
    catalog.
+   *Amended 2026-09-29 (Alex):* music video and artist content uses
+   human-readable snake_case keys; see
+   [`music-video-pipeline-plan.md`](music-video-pipeline-plan.md#r2-storage).
 4. Dev/production split everywhere, enforced by keys, not discipline.
 
 ## Decisions (Alex, 2026-09-26)
