@@ -12,7 +12,7 @@ The acts live in Pokémon's SOPs, starting with
 | # | Pipeline | State |
 |---|---|---|
 | 1 | Tasks and deployments | exists: the DevOps cycle |
-| 2 | Athlete model creation: acquire → look → reference search → character sheet | exists: [`content-pipeline.md`](../../topics/content-pipeline.md) |
+| 2 | Athlete model creation: acquire → look → reference search → character sheet | exists: `docs/topics/content-pipeline.md` |
 | 3 | Music video processing and artist model creation | **new: this plan** |
 | 4 | AI video creation | manual step, below |
 
