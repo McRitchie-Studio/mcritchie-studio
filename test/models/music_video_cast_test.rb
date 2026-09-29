@@ -7,7 +7,7 @@ class MusicVideoCastTest < ActiveSupport::TestCase
     @video = MusicVideo.create!(slug: "night-call", platform: "youtube", source_url: "https://www.youtube.com/watch?v=Sa7",
                                 source_id: "Sa7", title: "Night Call",
                                 source_object_key: "music_videos/steve_aoki/night_call/source/a.mp4")
-    Artist.create!(slug: "lil-yachty", name: "Lil Yachty", kind: "person")
+    Artist.create!(slug: "test-artist-a", name: "Test Artist A", kind: "person")
   end
 
   def add(ordinal, **attrs) = @video.video_performers.create!(ordinal:, label: "person #{ordinal}", **attrs)
@@ -20,7 +20,7 @@ class MusicVideoCastTest < ActiveSupport::TestCase
   end
 
   test "an open performer blocks the confirm and is named" do
-    add(1, artist_slug: "lil-yachty")
+    add(1, artist_slug: "test-artist-a")
     add(2)
     add(3)
 
@@ -30,7 +30,7 @@ class MusicVideoCastTest < ActiveSupport::TestCase
   end
 
   test "artists and extras together confirm the cast, once" do
-    add(1, artist_slug: "lil-yachty")
+    add(1, artist_slug: "test-artist-a")
     add(2, extra: true)
 
     assert @video.cast_ready?
