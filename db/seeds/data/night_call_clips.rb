@@ -6,7 +6,9 @@ require_relative "night_call_cast"
 module NightCallClips
   SLUG = "steve-aoki-night-call-clips".freeze
   SOURCE = "music_videos/steve_aoki/night_call_clips/source/steve_aoki_night_call_clips.mp4".freeze
-  LINKS = { 1 => "Lil Yachty", 3 => "Quavo", 4 => "Offset", 7 => "Takeoff" }.freeze
+  # Synthetic artists only: the operator, never the agent, names who is on screen,
+  # so this fixture links its performers to made-up test artists.
+  LINKS = { 1 => "Test Artist A", 3 => "Test Artist B", 4 => "Test Artist C", 7 => "Test Artist D" }.freeze
   CLIPS = [
     { ordinal: 1, start_ms: 17_500, end_ms: 42_084, seam: "chorus_to_verse", seam_ms: 33_500,
       cast_shape: "solo_plus_background", target_performer: 1, performer_ordinals: [1, 2, 5, 6] },
@@ -25,6 +27,10 @@ module NightCallClips
       v.source_object_key = SOURCE
     end
     return video if video.video_performers.exists?
+
+    LINKS.each_value do |name|
+      Artist.find_or_create_by!(name:) { |a| a.assign_attributes(slug: Artist.available_slug(name), kind: "person") }
+    end
 
     MusicVideos::ReplacePerformers.new(video, NightCallCast::PERFORMERS.map do |ordinal, label, _still, note, seen|
       { "ordinal" => ordinal, "label" => label, "confidence_note" => note, "sightings" => seen, "still_object_keys" => [] }

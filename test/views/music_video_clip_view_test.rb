@@ -29,7 +29,7 @@ class MusicVideoClipViewTest < ActionView::TestCase
       assert_select "[data-test='clip-window']", /1:48–2:12\s+· 24\.8 s · seam at 2:03/
       assert_select "[data-test='clip-seam']", "Singer change"
       assert_select "[data-test='clip-shape']", "Duo + background"
-      assert_select "[data-test='clip-target']", /Person 4 · Offset\s+\(couch\)/
+      assert_select "[data-test='clip-target']", /Person 4 · Test Artist C\s+\(couch\)/
       assert_select "[data-test='clip-status']", "Proposed"
     end
   end

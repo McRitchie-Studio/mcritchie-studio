@@ -84,7 +84,7 @@ class FindClipsTest < Minitest::Test
   def video(stage: "cast_confirmed")
     { "slug" => "steve-aoki-night-call", "stage" => stage, "source_id" => "Sa7GSJJ_lOo",
       "source_object_key" => SOURCE_KEY, "caption_timing" => { "cues" => [], "sections" => [] },
-      "performers" => [{ "ordinal" => 1, "label" => "desk", "artist_slug" => "lil-yachty", "extra" => false,
+      "performers" => [{ "ordinal" => 1, "label" => "desk", "artist_slug" => "test-artist-a", "extra" => false,
                          "sightings" => [{ "t_ms" => 45_000, "visibility" => "clear" }] }] }
   end
 
