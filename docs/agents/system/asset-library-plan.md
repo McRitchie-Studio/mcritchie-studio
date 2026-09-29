@@ -338,8 +338,8 @@ R2 copy state is from an `rclone copy` S3 → R2 the same morning; `rclone size`
 | `mcritchie-studio-dev` | none | all 11,131 S3 objects copied; R2 holds 14 objects (about 144 MB) that S3 does not; `rclone copy` never deletes, and the extras are not yet traced. The bucket's archive lifecycle gives old objects a storage class R2 refuses, so the copy needs `storage_class = STANDARD` on the R2 side |
 | `turf-monster-production` | Enabled | 8,416 objects, 1.06 GB, equal |
 | `turf-monster-dev` | none | 8,457 objects, 1.07 GB, equal |
-| `mcritchie-industries-production` / `-dev` | Enabled / none | production mid-cutover: R2 primary, S3 still mirrored |
-| `moms-app-production` | Enabled | mid-cutover: R2 primary, S3 still mirrored. There is no `moms-app-dev` on S3 |
+| `mcritchie-industries-production` / `-dev` | Enabled / none | production mid-cutover: R2 primary, S3 still mirrored (`ACTIVE_STORAGE_BACKEND=mirror_to_s3` on Heroku) |
+| `moms-app-production` | Enabled | mid-cutover: R2 primary, S3 still mirrored (`ACTIVE_STORAGE_BACKEND=mirror_to_s3` on Heroku). There is no `moms-app-dev` on S3 |
 | `commercial-welding-production` / `-dev` | Enabled / none | empty; nothing to copy |
 | `mcritchie-studio-desk` | none | `DeskCapture`'s bucket; its R2 replacement is the private desk bucket |
 
