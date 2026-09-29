@@ -358,8 +358,11 @@ until its Wave 2 steps run, so each cutover still runs its own catch-up copy.
 
 No roles outside AWS's own service roles.
 
-**SES.** Two identities, `mcritchie.studio` and `turfmonster.media`, both with
-sending disabled; production access is on, and the last 24 hours sent nothing.
+**SES.** In `us-east-2`, two domain identities, `mcritchie.studio` and
+`turfmonster.media`, neither enabled for sending; production access is on. In
+`us-east-1` (still in the sandbox), `mcritchie.studio` is not enabled for
+sending and the address `alex@mcritchie.studio` is. Neither region sent
+anything in the last 24 hours.
 Outbound mail rides Resend. The one live use is the inbound fallback into
 `mcritchie-studio-desk` (the row above).
 
