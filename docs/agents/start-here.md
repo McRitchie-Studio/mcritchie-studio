@@ -41,6 +41,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Building SOP (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | Focus session (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | Pokémon builder soul (the general builder every task is built by) | `mcritchie-studio/docs/agents/agents/pokemon/role.md` |
+| Tywin, the Cyvasse admin soul (character, admin charter, playbook and five setups) | `mcritchie-studio/docs/agents/agents/tywin/soul.md` |
 | Modal lifecycle (build in the app, graduate to a gem) | `mcritchie-studio/docs/agents/modules/modal-lifecycle.md` |
 | Process backlog (groom designed, build four wide) | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | Work backlog (your own tasks, two-three wide) | `mcritchie-studio/docs/agents/modules/work-backlog.md` |

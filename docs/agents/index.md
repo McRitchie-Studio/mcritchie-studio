@@ -18,6 +18,7 @@ Alex is the human owner. Xan is the orchestrator agent.
 | Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
 | Steffon | Infrastructure light; runs `production-deploy`, credentials, desks | `docs/agents/agents/steffon/` |
 | Turf Monster | The Turf Monster app's operator: scores, contests, markets | `docs/agents/agents/turf_monster/` |
+| Tywin | The Cyvasse app's operator and admin; its house player | `docs/agents/agents/tywin/` |
 | Rex · Mason · Mack | Marketing strategy (CMO) · brand voice and launches · general worker | `docs/agents/agents/<soul>/` |
 
 ## SOP Invocation Standard
