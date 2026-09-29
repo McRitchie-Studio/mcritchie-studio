@@ -1,0 +1,21 @@
+{
+  "source": "Wikidata",
+  "license": "CC0-1.0",
+  "fetched_at": "2026-09-29T00:00:00Z",
+  "artists": [
+    {"wikidata_id": "Q62766", "name": "Jay-Z", "kind": "person", "musicbrainz_id": "f82bcf78-5b69-4622-a5ef-73800768d9ac", "discogs_id": "21742", "spotify_id": "3nFkdlSjzX9mRTtwJOzDYB", "aliases": [{"name": "Hova", "locale": "mul"}, {"name": "Shawn Corey Carter", "locale": "mul"}]},
+    {"wikidata_id": "Q15777045", "name": "Migos", "kind": "group", "musicbrainz_id": "0221734a-35a8-40f7-b5c5-2f61a200bc7c", "discogs_id": "3232613", "spotify_id": "6oMuImdp5ZcFhWP0ESe6mG", "aliases": []},
+    {"wikidata_id": "Q30072039", "name": "Quavo", "kind": "person", "aliases": []},
+    {"wikidata_id": "Q30612480", "name": "Offset", "kind": "person", "aliases": []},
+    {"wikidata_id": "Q48719890", "name": "Takeoff", "kind": "person", "aliases": []},
+    {"wikidata_id": "Q100", "name": "Nirvana", "kind": "group", "aliases": []},
+    {"wikidata_id": "Q200", "name": "Nirvana", "kind": "group", "aliases": []},
+    {"wikidata_id": "Q300", "name": "The Roots", "kind": "group", "aliases": []}
+  ],
+  "memberships": [
+    {"member": "Q30072039", "group": "Q15777045", "start_year": 2008, "end_year": 2022},
+    {"member": "Q30612480", "group": "Q15777045", "start_year": 2008, "end_year": 2022},
+    {"member": "Q48719890", "group": "Q15777045", "start_year": 2008, "end_year": 2022},
+    {"member": "Q999999", "group": "Q15777045", "start_year": null, "end_year": null}
+  ]
+}

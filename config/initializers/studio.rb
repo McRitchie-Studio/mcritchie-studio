@@ -87,4 +87,8 @@ Studio.configure do |config|
   # S3 (Studio::S3 — upload/url/delete against "<prefix>-<dev|production>").
   # Engine default is nil, so set it explicitly. Region defaults to us-east-2.
   config.s3_bucket_prefix = "mcritchie-studio"
+
+  # Cloudflare R2 when STUDIO_S3_BACKEND=r2 (with R2_PUBLIC_URL), AWS S3 otherwise
+  # (no settings, the engine's defaults): config/initializers/00_storage_backend.rb.
+  StorageBackend.studio_s3_settings.each { |name, value| config.public_send("#{name}=", value) }
 end

@@ -100,7 +100,7 @@ heroku run -a mcritchie-studio --no-tty rails runner \
 ```
 
 For each awaiting item: run the intake protocol on its body and attachments
-(raw + parsed parts live in the `mcritchie-studio-desk` bucket, us-east-1; raw arrives via the Resend ingest job — Resend's own download URLs are temporary, the bucket copy is the durable one),
+(raw + parsed parts live in the private `mcritchie-studio-desk` bucket: S3 us-east-1, or R2 once `DESK_CAPTURE_BACKEND=r2`; raw arrives via the Resend ingest job — Resend's own download URLs are temporary, the bucket copy is the durable one),
 then stamp the outcome — `status` to `filed` (or `ignored`) and one line in
 `filed_note` saying what was done and where it went. Quarantined items are
 REPORTED to Alex, never processed, never deleted.

@@ -33,6 +33,9 @@ Agent knowledge (SOPs, runbooks, insights) stays in git and `KnowledgeDoc`.
 2. Code never reads tier 2 at request time. Drives are for people.
 3. Object keys carry no meaning (a UUID or content hash); meaning lives in the
    catalog.
+   *Amended 2026-09-29 (Alex):* music video and artist content uses
+   human-readable snake_case keys; see
+   [`music-video-pipeline-plan.md`](music-video-pipeline-plan.md#r2-storage).
 4. Dev/production split everywhere, enforced by keys, not discipline.
 
 ## Decisions (Alex, 2026-09-26)
@@ -110,8 +113,18 @@ every text and JSON column): only the hub has any.
 | `agent_actions`, `agent_activities`, `action_grades`, `tasks.metadata` | a few hundred | URLs quoted inside agent logs and notes: history, not served; leave them |
 
 They keep resolving while the S3 bucket stays public. Before S3 is retired
-(Wave 7) the served ones need a rewrite to `assets.mcritchie.studio`: a rake task
-over those columns plus a `pokemon.rake` fix, in the hub's Wave 2 task.
+(Wave 7) the served ones need a rewrite to `assets.mcritchie.studio`. The hub's
+Wave 2 task built it: `S3UrlRewrite` (`rake s3_urls:rewrite`) covers the
+`pokemons` columns, the mascot avatar, `artifacts.image_url` and
+`contents.hook_image_url`/`final_video_url`, touching only URLs that start with
+our bucket's host. `pokemon.rake` now builds its URLs from `Studio::S3`. At the
+hub's cutover, after the objects are on R2 and `assets.` answers:
+
+```bash
+heroku run -a mcritchie-studio -- bin/rails "s3_urls:rewrite[https://assets.mcritchie.studio]"          # dry run: counts per column
+heroku run -a mcritchie-studio -- APPLY=1 bin/rails "s3_urls:rewrite[https://assets.mcritchie.studio]"  # write; re-run is a no-op
+APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  # locally, then commit pokemon.json so a re-seed keeps them
+```
 
 **Per-app verdict.**
 
@@ -225,7 +238,7 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 | `mcritchie-studio` | `Athletes::DescribeFromHeadshot` | downloads via `Studio::S3` |
 | `mcritchie-studio` | `Athletes::RekeyHeadshots` | copies then deletes keys via `Studio::S3`; do not run it between step 4 and step 7 |
 | `mcritchie-studio` | board history | `task_events.metadata.mascot` snapshots sprite URLs; rewrite with the `pokemons` columns |
-| `mcritchie-studio` | `DeskCapture` | its own **private** bucket, `mcritchie-studio-desk` (`DESK_CAPTURE_BUCKET`, region `DESK_CAPTURE_REGION`, default `us-east-1`), deliberately not `Studio::S3`'s. The main inbound path is already Resend: `DeskCaptureResendIngestJob` stores the raw mail there with the app's AWS keys. SES inbound is only the manual fallback (`DeskCapturePollJob`). Its move is a private R2 bucket of its own plus retiring the SES fallback |
+| `mcritchie-studio` | `DeskCapture` | its own **private** bucket, `mcritchie-studio-desk` (`DESK_CAPTURE_BUCKET`, region `DESK_CAPTURE_REGION`, default `us-east-1`), deliberately not `Studio::S3`'s. The main inbound path is already Resend: `DeskCaptureResendIngestJob` stores the raw mail there with the app's AWS keys. SES inbound is only the manual fallback (`DeskCapturePollJob`). Its move is a private R2 bucket of its own plus retiring the SES fallback. Since 2026-09-29 that bucket exists on R2 (`mcritchie-studio-desk`, one bucket, not a pair; keys `r2.mcritchie-studio-desk`) and the code switches on `DESK_CAPTURE_BACKEND=r2`; the copy and flip are an ops step |
 | `turf-monster` | `OgImageAttachable` (`amazon_public` service) and contest, landing-page, site-setting attachments | public; needs `assets.` |
 | `mcritchie-industries` | `Slack::ChannelIngest` (storage defaults to `Studio::S3`) | private |
 | `moms-app` | Active Storage only: `Book.cover`, `Book.audio`, `User.avatar`; the bucket comes from `S3_BUCKET` in `config/storage.yml` | no `Studio::S3`; one multipart audio object, so verify by size |
@@ -282,6 +295,10 @@ becomes a read-through onto the catalog, then folds into it.
 **Access.**
 
 - **People**: a hub `/assets` browser — search, upload, approve, retire.
+  The read-only first cut is built (`asset-tree-browser`): an admin folder
+  tree over the bucket's key prefixes, read through `Studio::S3`, with a name
+  search bounded to 5,000 keys under the open folder and signed previews.
+  It has no catalog table yet; upload, approve and retire wait on this wave.
 - **Apps**: `Studio::Asset.find_by(subject:, category:)`, with URLs from
   `Studio::S3` (public) or `signed_url` (private).
 - **Agents**: a read API and an agent tool (search by subject, category and
@@ -300,7 +317,7 @@ account before starting; this is what the docs name today.
 | AWS piece | Used for | Replacement |
 |---|---|---|
 | S3 app buckets (`<app>-dev`, `<app>-production`) | Active Storage, `Studio::S3` | R2 (Wave 2) |
-| S3 desk-capture bucket `mcritchie-studio-desk` (`us-east-1` by default) and the **SES inbound** fallback | `team@mcritchie.studio` capture (`DeskCapture`); the main path is already Resend inbound, which writes into this bucket | a private R2 bucket for `DeskCapture` alone, then retire the SES fallback (`DeskCapturePollJob`) |
+| S3 desk-capture bucket `mcritchie-studio-desk` (`us-east-1` by default) and the **SES inbound** fallback | `team@mcritchie.studio` capture (`DeskCapture`); the main path is already Resend inbound, which writes into this bucket | a private R2 bucket for `DeskCapture` alone (provisioned 2026-09-29), then retire the SES fallback (`DeskCapturePollJob`) with the AWS exit: SES inbound drops into S3 only, so once the desk reads R2 the poll has nothing to read |
 | **SES outbound** (`agent.aws.mcritchie-ses`) | nothing: on 2026-09-28 no app held `SES_SMTP_*`; the three apps that send mail hold `RESEND_API_KEY` | retire the credential and the SES identity |
 | **S3 URLs already handed out** | full `amazonaws.com` URLs outside the key-to-URL path: stored columns (`Content#hook_image_url` and `#final_video_url` keep what `Studio::S3.upload` returned; `lib/tasks/pokemon.rake` hard-codes its `S3_BASE`), images in broadcasts already sent, and og:image URLs unfurlers cached | before deleting a bucket, rewrite stored URLs to `assets.<domain>` and decide whether sent mail's `email/` images keep an S3 copy; none of these move with the Wave 2 config |
 | IAM users (`mcritchie-s3`, `mcr-*`, and the admin key's user, which answers as `agents-admin`) | the keys above | delete after their buckets are gone |
@@ -315,7 +332,7 @@ account before starting; this is what the docs name today.
 | Which domain serves Turf Monster publicly (`turfmonster.media` appears in code) | Alex |
 | Automate the nightly `r2-backup` run (task `automate-nightly-r2-backup`, filed 2026-09-26) | Steffon |
 | Commercial Welding's document tier (Egnyte or Drive) | Alex, after the compliance question |
-| Move `DeskCapture` to a private R2 bucket and retire its SES fallback | Steffon, before Wave 7 |
+| Copy `DeskCapture`'s objects to its R2 bucket and flip `DESK_CAPTURE_BACKEND=r2` (bucket and code ready 2026-09-29); retire the SES fallback with the AWS exit | Steffon, before Wave 7 |
 | Release the `studio-engine` version carrying `s3_endpoint` (Wave 2's gate) | Avi (`qa-release`) and Steffon (`production-deploy`) |
 | Does Commercial Welding carry CMMC or ITAR obligations? | Alex |
 | What writes the `commercial-welding-*` S3 buckets | Steffon, at the start of that app's Wave 2 task |

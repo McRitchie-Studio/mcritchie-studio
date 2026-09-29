@@ -1,0 +1,35 @@
+<%# locals: (folders:, files:, prefix:, selected_key:, link_params:, show_folder:) %>
+<% if folders.empty? && files.empty? %>
+  <p class="px-4 py-10 text-center text-muted" data-test="asset-empty">No objects here.</p>
+<% else %>
+  <ul class="divide-y divide-subtle" data-test="asset-listing">
+    <% folders.each do |folder| %>
+      <li data-test="asset-folder" data-prefix="<%= folder %>">
+        <%= link_to asset_browser_path(prefix: folder), class: "flex items-center gap-3 px-4 py-3 hover:bg-surface-alt min-w-0" do %>
+          <span aria-hidden="true">📁</span>
+          <span class="font-medium text-heading truncate"><%= folder.delete_prefix(prefix).delete_suffix("/") %></span>
+        <% end %>
+      </li>
+    <% end %>
+    <% files.each do |file| %>
+      <% current = file.key == selected_key %>
+      <li data-test="asset-file" data-key="<%= file.key %>" <%= "aria-current=true" if current %>
+          class="<%= current ? 'bg-primary/10' : '' %>">
+        <%= link_to asset_browser_path(link_params.merge(key: file.key)), class: "flex items-center gap-3 px-4 py-3 hover:bg-surface-alt min-w-0" do %>
+          <span aria-hidden="true"><%= { image: "🖼️", video: "🎞️" }.fetch(file.kind, "📄") %></span>
+          <span class="flex-1 min-w-0">
+            <span class="block text-body truncate"><%= file.name %></span>
+            <% if show_folder %>
+              <span class="block text-xs text-muted truncate" data-test="asset-file-folder"><%= file.folder %></span>
+            <% end %>
+          </span>
+          <span class="hidden sm:inline text-xs text-muted" data-test="asset-kind"><%= file.kind %></span>
+          <span class="text-xs text-muted tabular-nums whitespace-nowrap" data-test="asset-size"><%= number_to_human_size(file.size) %></span>
+          <% if file.last_modified %>
+            <time class="hidden md:inline text-xs text-muted whitespace-nowrap" datetime="<%= file.last_modified.utc.iso8601 %>"><%= file.last_modified.utc.strftime("%Y-%m-%d") %></time>
+          <% end %>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+<% end %>

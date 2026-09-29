@@ -45,11 +45,7 @@ namespace :pokemon do
   DATA_FILE = Rails.root.join("db/seeds/data/pokemon.json")
   # Deterministic-by-dex sources on the PokéAPI sprite CDN.
   SPRITE_CDN = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon".freeze
-  # Final home — the existing S3 bucket, under a pokemon/ prefix. PATH-STYLE
-  # (bucket in the path) on purpose: the virtual-hosted host
-  # `mcritchie-studio-production.s3…` trips Chrome's lookalike-domain warning
-  # (resembles mcritchie.studio); the generic `s3…amazonaws.com` host does not.
-  S3_BASE = "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon".freeze
+  # Final home: the bucket's pokemon/ prefix. URLs come from pokemon_image_base.
 
   # Every JSON field that names an S3 image key.
   IMAGE_URL_FIELDS = %w[
@@ -167,14 +163,14 @@ namespace :pokemon do
         "generation" => generation_for(dex),
         # Primary = the tightly-cropped avatar (rake pokemon:crop_and_upload);
         # fallback = the original uncropped official-artwork (rake pokemon:upload_images).
-        "avatar_url" => "#{S3_BASE}/#{dex}-#{slug}-cropped.png",
-        "avatar_fallback_url" => "#{S3_BASE}/#{dex}-#{slug}.png",
-        "sprite_url" => "#{S3_BASE}/#{dex}-#{slug}-sprite.png",
+        "avatar_url" => "#{pokemon_image_base}/#{dex}-#{slug}-cropped.png",
+        "avatar_fallback_url" => "#{pokemon_image_base}/#{dex}-#{slug}.png",
+        "sprite_url" => "#{pokemon_image_base}/#{dex}-#{slug}-sprite.png",
         # The shiny mirror of the same three — worn when a mascot DRAW rolls
         # shiny (Pokemon.roll_shiny?), provisioned by the same two rakes.
-        "shiny_avatar_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny-cropped.png",
-        "shiny_avatar_fallback_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny.png",
-        "shiny_sprite_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny-sprite.png"
+        "shiny_avatar_url" => "#{pokemon_image_base}/#{dex}-#{slug}-shiny-cropped.png",
+        "shiny_avatar_fallback_url" => "#{pokemon_image_base}/#{dex}-#{slug}-shiny.png",
+        "shiny_sprite_url" => "#{pokemon_image_base}/#{dex}-#{slug}-shiny-sprite.png"
         # gender_rate / has_gender_differences / the female sprites are stamped
         # from the species record in stamp_family_fields.
       }
@@ -199,8 +195,8 @@ namespace :pokemon do
   desc "Mirror the avatars (official-artwork + pixel sprite, normal + shiny, + female sprites) into S3, additively (RANGE=252-493 narrows)"
   task upload_images: :environment do
     require "aws-sdk-s3"
-    bucket = ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
-    s3 = Aws::S3::Client.new(region: "us-east-2")
+    bucket = pokemon_bucket
+    s3 = Studio::S3.client
     # Slug-keyed for self-describing URLs (e.g. pokemon/73-tentacruel.png). Slugs
     # come from the committed JSON; the source images are still dex-keyed on the CDN.
     # Family rows (nidoran) wear their forms' art, so they own no keys to mirror.
@@ -234,13 +230,13 @@ namespace :pokemon do
   desc "Crop each avatar to its non-transparent bbox (+margin); upload to <dex>-<slug>-cropped.png (additive)"
   task crop_and_upload: :environment do
     require "aws-sdk-s3"
-    bucket = ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
+    bucket = pokemon_bucket
     margin = ENV.fetch("CROP_MARGIN", "5%") # border added after the trim (≈ uniform 5%)
     limit  = ENV["LIMIT"].to_i              # 0 = all; >0 crops only the first N
     cache  = Rails.root.join("tmp/pokemon_crops")
     FileUtils.mkdir_p(cache)
 
-    s3 = Aws::S3::Client.new(region: "us-east-2")
+    s3 = Studio::S3.client
     range = dex_range
     rows = image_rows(range)
     rows = rows.first(limit) if limit.positive?
@@ -258,7 +254,7 @@ namespace :pokemon do
       slug = row.fetch("slug")
       suffixes.each do |suffix|
         base = "#{dex}-#{slug}#{suffix}"
-        original_url = "#{S3_BASE}/#{base}.png"    # the backup — read only
+        original_url = "#{pokemon_image_base}/#{base}.png"    # the backup — read only
         src_path = cache.join("#{base}.png")
         out_path = cache.join("#{base}-cropped.png")
         key = "pokemon/#{base}-cropped.png"        # the NEW crop key
@@ -337,6 +333,22 @@ namespace :pokemon do
   # GET PokéAPI JSON, retrying a 429, a 5xx or a dropped connection with
   # exponential backoff (honouring Retry-After) — the API is shared and
   # rate-limited. Any other non-2xx, or FETCH_ATTEMPTS failures, raises.
+  # Where the mirrored images are served from, built from the storage adapter:
+  # its public base once one is set (R2), else the PATH-STYLE AWS URL of the
+  # upload bucket. Path-style on purpose: the virtual-hosted host
+  # `mcritchie-studio-production.s3…` trips Chrome's lookalike-domain warning.
+  def pokemon_image_base
+    return Studio::S3.url(key: "pokemon") if Studio.s3_public_url.present? || Studio::S3.endpoint
+
+    "https://s3.#{Studio::S3.region}.amazonaws.com/#{pokemon_bucket}/pokemon"
+  end
+
+  # The committed JSON serves every environment, so images live in the
+  # production bucket unless POKEMON_S3_BUCKET says otherwise.
+  def pokemon_bucket
+    ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
+  end
+
   def get_json(url)
     (1..FETCH_ATTEMPTS).each do |attempt|
       begin
@@ -490,8 +502,8 @@ namespace :pokemon do
     differs = species["has_gender_differences"] == true
     row["gender_rate"] = species.fetch("gender_rate")
     row["has_gender_differences"] = differs
-    row["female_sprite_url"] = (differs ? "#{S3_BASE}/#{dex}-#{slug}-female-sprite.png" : nil)
-    row["shiny_female_sprite_url"] = (differs ? "#{S3_BASE}/#{dex}-#{slug}-shiny-female-sprite.png" : nil)
+    row["female_sprite_url"] = (differs ? "#{pokemon_image_base}/#{dex}-#{slug}-female-sprite.png" : nil)
+    row["shiny_female_sprite_url"] = (differs ? "#{pokemon_image_base}/#{dex}-#{slug}-shiny-female-sprite.png" : nil)
   end
 
   # Add each GENDER_FAMILIES row, built from its female form (its dex, types,

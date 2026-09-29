@@ -187,7 +187,10 @@ gem "sentry-rails"
 #
 # The old `~> 0.65` already RESOLVED past this, so the resolver never sees the
 # bump; it is the FLOOR that moved, which is what this comment records.
-gem "studio-engine", "~> 0.72"
+#
+# 0.77.4 for the R2 move (config/initializers/00_storage_backend.rb): 0.77 added
+# Studio.s3_endpoint, and 0.77.4 keeps sign-in email banners working on R2.
+gem "studio-engine", "~> 0.77", ">= 0.77.4"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the

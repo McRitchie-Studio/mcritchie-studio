@@ -6,19 +6,24 @@ local:
   service: Disk
   root: <%= Rails.root.join("storage") %>
 
-amazon:
-  service: S3
-  access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
-  secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
-  region: us-east-2
-  # QA apps boot RAILS_ENV=production, so they load this service; QA_ENV is the
-  # one signal separating them from production (Studio.qa_environment?, the same
-  # read Studio::S3 keys on). Unset or unrecognised resolves PRODUCTION.
-  bucket: <%= Studio.qa_environment? ? "mcritchie-studio-dev" : "mcritchie-studio-production" %>
-
-amazon_dev:
-  service: S3
-  access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
-  secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
-  region: us-east-2
-  bucket: mcritchie-studio-dev
+# Two durable services: `amazon` (production.rb) and `amazon_dev` (development.rb,
+# local desks). QA apps boot RAILS_ENV=production, so they load `amazon`; QA_ENV
+# is the one signal separating them from production (Studio.qa_environment?, the
+# same read Studio::S3 keys on). Unset or unrecognised resolves PRODUCTION.
+#
+# THE MOVE TO CLOUDFLARE R2. Blob rows record the service NAME, so both names are
+# kept at every stage and ACTIVE_STORAGE_BACKEND decides what they resolve to
+# (config/initializers/00_storage_backend.rb):
+#   s3            S3, exactly as before (the default; renders only these services)
+#   mirror_to_r2  <name>_s3 primary, every write mirrored to <name>_r2
+#   mirror_to_s3  <name>_r2 primary, every write mirrored back to <name>_s3
+#   r2            R2 alone
+# Same bucket names on both stores. The services are built in that initializer.
+<% buckets = {
+     "amazon" => Studio.qa_environment? ? "mcritchie-studio-dev" : "mcritchie-studio-production",
+     "amazon_dev" => "mcritchie-studio-dev"
+   } %>
+<%# JSON is YAML flow syntax, so each service renders as one quoted line. %>
+<% StorageBackend.active_storage_services(buckets).each do |name, config| %>
+<%= name %>: <%= config.to_json %>
+<% end %>
