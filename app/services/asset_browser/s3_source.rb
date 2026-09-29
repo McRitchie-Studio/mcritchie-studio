@@ -61,7 +61,8 @@ module AssetBrowser
       yield
     rescue Studio::S3::NotConfigured
       raise Unavailable, "Object storage is not configured for this app"
-    rescue Aws::Errors::ServiceError, Aws::Errors::MissingCredentialsError, Seahorse::Client::NetworkingError => e
+    rescue Aws::Errors::ServiceError, Aws::Errors::MissingCredentialsError, Aws::Sigv4::Errors::MissingCredentialsError,
+           Seahorse::Client::NetworkingError => e
       raise Unavailable, e.class.name.demodulize
     end
   end

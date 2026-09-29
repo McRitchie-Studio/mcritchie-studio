@@ -82,8 +82,9 @@ class AssetBrowserS3SourceTest < ActiveSupport::TestCase
 end
 
 # [unit] Regression (music-video-cast-panel): the cast panel signs a still before
-# anything has listed or headed, so signed_url must load aws-sdk-s3 itself. This
-# file requires the gem, so the check runs in a fresh process where it is not loaded.
+# anything has listed or headed, so signed_url must load aws-sdk-s3 itself, and a
+# missing credential must read as Unavailable. This file requires the gem, so the
+# check runs in a fresh process where it is not loaded.
 class AssetBrowserS3SourceColdSignTest < ActiveSupport::TestCase
   test "signed_url works in a process where aws-sdk-s3 is not loaded yet" do
     script = <<~RUBY
@@ -95,9 +96,12 @@ class AssetBrowserS3SourceColdSignTest < ActiveSupport::TestCase
         print "unavailable"
       end
     RUBY
-    out, status = Open3.capture2e({ "RAILS_ENV" => "test" }, "bin/rails", "runner", script, chdir: Rails.root.to_s)
+    # No credentials anywhere, as on CI: signing must degrade to Unavailable, not raise.
+    env = { "RAILS_ENV" => "test", "AWS_ACCESS_KEY_ID" => "", "AWS_SECRET_ACCESS_KEY" => "",
+            "AWS_EC2_METADATA_DISABLED" => "true", "AWS_PROFILE" => "no-such-profile" }
+    out, status = Open3.capture2e(env, "bin/rails", "runner", script, chdir: Rails.root.to_s)
 
     assert status.success?, out
-    assert_match(/cold (signed|unavailable)\z/, out.strip)
+    assert out.strip.end_with?("cold unavailable"), out
   end
 end
