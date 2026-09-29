@@ -83,8 +83,10 @@ module Contacts
     end
 
     # The results file as Results. The CSV keeps our "email" column and adds
-    # ZeroBounce's own; the status columns are found by header ("ZB Status",
-    # "ZB Sub Status"), tolerant of case, spacing and underscores.
+    # ZeroBounce's own; the status columns are found by header, tolerant of
+    # case, spacing and underscores. Measured 2026-09-29 (one-address smoke):
+    #   "email","ZB Status","ZB Sub status","ZB Account","ZB Domain",
+    #   "ZB Domain Age Days","ZB Catch-All Domain","ZB First Name",… 15 columns
     def results(file_id)
       parse_results(get_file(file_id))
     end
@@ -100,7 +102,10 @@ module Contacts
     end
 
     def parse_results(csv_text)
-      rows = CSV.parse(csv_text.to_s.sub(/\A﻿/, ""), headers: true)
+      # Net::HTTP returns the file as ASCII-8BIT, led by a UTF-8 byte-order mark
+      # (measured 2026-09-29): read it as UTF-8 and drop the mark.
+      text = csv_text.to_s.dup.force_encoding(Encoding::UTF_8).scrub.delete_prefix("\uFEFF")
+      rows = CSV.parse(text, headers: true)
       headers = rows.headers.compact
       key = ->(h) { h.to_s.downcase.gsub(/[^a-z]/, "") }
       email_col = headers.find { |h| %w[email emailaddress].include?(key.(h)) } || headers.first

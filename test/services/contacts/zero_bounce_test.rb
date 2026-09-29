@@ -120,8 +120,20 @@ class Contacts::ZeroBounceTest < ActiveSupport::TestCase
 
   test "results tolerate header spelling and a byte-order mark" do
     zb = client
-    results = zb.parse_results("﻿Email Address,zb_status,zb_sub_status\nx@example.com,Spamtrap,\n")
+    results = zb.parse_results("\uFEFFEmail Address,zb_status,zb_sub_status\nx@example.com,Spamtrap,\n")
     assert_equal [ [ "x@example.com", "spamtrap", nil ] ], results.map { [ _1.email, _1.status, _1.sub_status ] }
+  end
+
+  # Regression, found by the 2026-09-29 one-address smoke: Net::HTTP hands the
+  # file back as ASCII-8BIT, led by a UTF-8 byte-order mark, and a UTF-8 regexp
+  # on that body raised Encoding::CompatibilityError. Header and row are the
+  # real file's.
+  test "results parse the real file: binary body, byte-order mark, ZB Sub status" do
+    real = "\uFEFF\"email\",\"ZB Status\",\"ZB Sub status\",\"ZB Account\",\"ZB Domain\",\"ZB Domain Age Days\"\r\n" \
+           "\"valid@example.com\",\"valid\",\"\",\"\",\"example.com\",\"9692\"\r\n"
+    zb = client([ 200, real.b ])
+    results = zb.results("f1")
+    assert_equal [ [ "valid@example.com", "valid", nil ] ], results.map { [ _1.email, _1.status, _1.sub_status ] }
   end
 
   test "a results file with no status column raises rather than guessing" do
