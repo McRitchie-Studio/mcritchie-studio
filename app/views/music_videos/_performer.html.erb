@@ -1,0 +1,136 @@
+<%# One person on the cast panel: stills, sightings, and the operator's answer. %>
+<% sightings = performer.sightings_by_time %>
+<% editable = !video.cast_confirmed? %>
+<article id="person-<%= performer.ordinal %>" class="card overflow-hidden flex flex-col min-w-0 scroll-mt-24"
+         data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>">
+  <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset">
+    <% performer.still_object_keys.each do |key| %>
+      <% url = still_urls[key] %>
+      <figure class="relative bg-inset aspect-video" data-test="performer-still" data-key="<%= key %>">
+        <% if url %>
+          <img src="<%= url %>" alt="<%= performer.name %>, still <%= key.split('/').last %>" loading="lazy"
+               class="block w-full h-full object-cover">
+        <% else %>
+          <figcaption class="absolute inset-0 flex items-center justify-center p-3 text-xs text-muted text-center break-all">
+            Still not reachable: <%= key.split("/").last %>
+          </figcaption>
+        <% end %>
+      </figure>
+    <% end %>
+    <% if performer.still_object_keys.empty? %>
+      <div class="aspect-video flex items-center justify-center text-xs text-muted" data-test="performer-no-still">No still</div>
+    <% end %>
+  </div>
+
+  <div class="p-4 flex flex-col gap-3 flex-1 min-w-0">
+    <header class="flex items-start justify-between gap-2 min-w-0">
+      <div class="min-w-0">
+        <h2 class="text-lg font-bold text-heading"><%= performer.name %></h2>
+        <p class="text-sm text-body break-words" data-test="performer-label"><%= performer.label %></p>
+      </div>
+      <% if performer.artist %>
+        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40 shrink-0">Labelled</span>
+      <% elsif performer.extra? %>
+        <span class="badge text-3xs bg-surface-alt text-secondary border-subtle shrink-0">Extra</span>
+      <% else %>
+        <span class="badge text-3xs bg-warning/10 text-warning-ink border-warning/40 shrink-0">Open</span>
+      <% end %>
+    </header>
+
+    <% if performer.confidence_note.present? %>
+      <p class="text-sm text-muted" data-test="performer-note"><%= performer.confidence_note %></p>
+    <% end %>
+
+    <% { "clear" => "Clearly visible", "partial" => "Partly in frame or background" }.each do |visibility, heading| %>
+      <% group = sightings.select { |s| s["visibility"] == visibility } %>
+      <% next if group.empty? %>
+      <div data-test="sightings-<%= visibility %>">
+        <p class="label-upper mb-1.5"><%= heading %> <span class="normal-case tracking-normal">· <%= group.size %></span></p>
+        <div class="flex flex-wrap gap-1.5">
+          <% group.each do |s| %>
+            <% href = video.timecode_url(s["t_ms"]) %>
+            <% chip = visibility == "clear" ? "bg-primary/10 text-heading border-primary/20" : "bg-surface-alt text-muted border-subtle" %>
+            <% if href %>
+              <%= link_to video_timecode(s["t_ms"]), href, target: "_blank", rel: "noopener",
+                          class: "font-mono tabular-nums text-xs px-2 py-1 rounded-md border hover:border-primary #{chip}",
+                          data: { test: "sighting", t_ms: s["t_ms"] } %>
+            <% else %>
+              <span class="font-mono tabular-nums text-xs px-2 py-1 rounded-md border <%= chip %>" data-test="sighting" data-t-ms="<%= s["t_ms"] %>"><%= video_timecode(s["t_ms"]) %></span>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <div class="mt-auto pt-3 border-t border-subtle" data-test="performer-resolution">
+      <% if performer.resolved? %>
+        <div class="flex items-center justify-between gap-2 min-w-0">
+          <% if performer.artist %>
+            <p class="min-w-0" data-test="performer-artist" data-slug="<%= performer.artist_slug %>">
+              <span class="font-semibold text-heading"><%= performer.artist.name %></span>
+              <span class="text-xs text-muted"><%= performer.artist.kind %> · <span class="font-mono"><%= performer.artist_slug %></span></span>
+            </p>
+          <% else %>
+            <p class="text-sm text-muted" data-test="performer-extra">Extra, not a named artist</p>
+          <% end %>
+          <% if editable %>
+            <%= button_to "Change", music_video_performer_path(video, performer.ordinal), method: :patch,
+                          params: { clear: "1" }, class: "btn btn-outline btn-sm shrink-0" %>
+          <% end %>
+        </div>
+      <% elsif editable %>
+        <div x-data="castTypeahead()" data-search-url="<%= search_artists_path(format: :json) %>"
+             @click.outside="open = false" class="relative" data-test="performer-typeahead">
+          <%= form_with url: music_video_performer_path(video, performer.ordinal), method: :patch, local: true,
+                        html: { "x-ref": "form" } do %>
+            <input type="hidden" name="artist_slug" :value="artistSlug">
+            <input type="hidden" name="person_slug" :value="personSlug">
+            <label class="sr-only" for="artist-search-<%= performer.ordinal %>">Who is <%= performer.name %>?</label>
+            <input id="artist-search-<%= performer.ordinal %>" type="text" autocomplete="off" role="combobox"
+                   aria-autocomplete="list" :aria-expanded="open" aria-controls="artist-results-<%= performer.ordinal %>"
+                   placeholder="Who is this? Search artists and people"
+                   class="input-field py-2 text-sm" x-model="query" @input.debounce.250ms="search()"
+                   @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
+                   @keydown.enter.prevent="pickActive()" @keydown.escape="open = false">
+
+            <div x-show="open" x-cloak id="artist-results-<%= performer.ordinal %>" role="listbox"
+                 class="absolute z-20 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1" data-test="typeahead-results">
+              <template x-for="(r, i) in results" :key="r.type + r.slug">
+                <button type="button" role="option" :aria-selected="i === active" @click="choose(r)" @mouseenter="active = i"
+                        class="w-full text-left rounded-lg px-3 py-2 flex items-start justify-between gap-2"
+                        :class="i === active ? 'bg-surface-alt' : ''" data-test="typeahead-option">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-semibold text-heading truncate" x-text="r.name"></span>
+                    <span class="block text-xs text-muted truncate" x-text="[r.hint, r.slug].filter(Boolean).join(' · ')"></span>
+                  </span>
+                  <span class="badge text-3xs shrink-0" :class="r.kind === 'group' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-secondary border-subtle'" x-text="r.type === 'person' ? 'people' : r.kind"></span>
+                </button>
+              </template>
+              <p x-show="!loading && failed" class="px-3 py-2 text-sm text-warning-ink">Search failed. Try again.</p>
+              <p x-show="!loading && !failed && results.length === 0" class="px-3 py-2 text-sm text-muted">No artist or person matches.</p>
+              <button type="button" x-show="!loading && query.trim().length > 0 && !exactMatch" @click="startCreate()"
+                      class="w-full text-left rounded-lg px-3 py-2 text-sm text-primary hover:bg-surface-alt" data-test="typeahead-create">
+                Create new artist “<span x-text="query.trim()"></span>”
+              </button>
+            </div>
+
+            <div x-show="creating" x-cloak class="mt-2 flex flex-col sm:flex-row gap-2" data-test="create-artist">
+              <input type="text" name="new_artist_name" x-model="newName" :disabled="!creating" aria-label="New artist name"
+                     class="input-field py-2 text-sm flex-1 min-w-0">
+              <select name="new_artist_kind" x-model="newKind" :disabled="!creating" aria-label="Kind"
+                      class="input-field py-2 text-sm sm:w-auto">
+                <option value="person">Person</option>
+                <option value="group">Group</option>
+              </select>
+              <button type="submit" class="btn btn-primary btn-sm" :disabled="newName.trim().length === 0">Create and link</button>
+            </div>
+          <% end %>
+        </div>
+        <%= button_to "Extra, not a named artist", music_video_performer_path(video, performer.ordinal), method: :patch,
+                      params: { extra: "1" }, class: "btn btn-outline btn-sm w-full mt-2", data: { test: "mark-extra" } %>
+      <% else %>
+        <p class="text-sm text-muted">Not labelled.</p>
+      <% end %>
+    </div>
+  </div>
+</article>

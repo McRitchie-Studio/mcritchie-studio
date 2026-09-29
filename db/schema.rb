@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1976,6 +1976,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_180000) do
     t.datetime "updated_at", null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["slug"], name: "index_users_on_slug", unique: true
+  end
+
+  create_table "video_performers", force: :cascade do |t|
+    t.string "artist_slug"
+    t.text "confidence_note"
+    t.datetime "created_at", null: false
+    t.boolean "extra", default: false, null: false
+    t.string "label", null: false
+    t.string "music_video_slug", null: false
+    t.integer "ordinal", null: false
+    t.jsonb "sightings", default: [], null: false
+    t.jsonb "still_object_keys", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["artist_slug"], name: "index_video_performers_on_artist_slug"
+    t.index ["music_video_slug", "ordinal"], name: "index_video_performers_on_music_video_slug_and_ordinal", unique: true
   end
 
   create_table "workspace_accounts", force: :cascade do |t|

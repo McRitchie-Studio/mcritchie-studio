@@ -4,7 +4,7 @@
 class MusicVideo < ApplicationRecord
   KINDS = %w[music_video].freeze
   PLATFORMS = %w[youtube tiktok instagram].freeze
-  STAGES = %w[digested].freeze
+  STAGES = %w[digested cast_confirmed].freeze
   SECTION_KINDS = %w[vocal instrumental].freeze
   CUE_KEYS = %w[start_ms end_ms].freeze
   SECTION_KEYS = %w[kind start_ms end_ms].freeze
@@ -12,6 +12,10 @@ class MusicVideo < ApplicationRecord
   has_many :music_video_artists, foreign_key: :music_video_slug,
            primary_key: :slug, inverse_of: :music_video, dependent: :destroy
   has_many :artists, through: :music_video_artists
+  has_many :video_performers, -> { order(:ordinal) }, foreign_key: :music_video_slug,
+           primary_key: :slug, inverse_of: :music_video, dependent: :destroy
+
+  class CastNotReady < StandardError; end
 
   validates :slug, :platform, :source_url, :source_id, :title, :source_object_key, presence: true
   validates :slug, uniqueness: true, format: { with: /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/ }
@@ -24,6 +28,36 @@ class MusicVideo < ApplicationRecord
   validate :caption_timing_is_timing_only
 
   def to_param = slug
+
+  def cast_confirmed? = stage == "cast_confirmed"
+
+  # Ready once the vision pass has left people and each one is an artist or an extra.
+  def cast_ready?
+    stage == "digested" && video_performers.any? && video_performers.all?(&:resolved?)
+  end
+
+  def confirm_cast!
+    with_lock do
+      raise CastNotReady, cast_blocker unless cast_ready?
+
+      update!(stage: "cast_confirmed")
+    end
+  end
+
+  def cast_blocker
+    return "the cast is already confirmed" if cast_confirmed?
+    return "no performers yet: the vision pass has not posted any" if video_performers.none?
+
+    open = video_performers.reject(&:resolved?).map(&:name)
+    "#{open.to_sentence} #{open.one? ? 'is' : 'are'} neither an artist nor an extra" if open.any?
+  end
+
+  # A timecode link into the source video. YouTube only for now.
+  def timecode_url(t_ms)
+    return unless platform == "youtube"
+
+    "#{source_url}#{source_url.include?('?') ? '&' : '?'}t=#{t_ms / 1000}s"
+  end
 
   private
 
