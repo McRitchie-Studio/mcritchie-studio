@@ -3,7 +3,7 @@
 # THE E2E LANE'S STAND-IN SHEET GENERATOR. Only in the test env, and only when
 # the Playwright server sets E2E_FAKE_IMAGE_GENERATION=1: every image adapter
 # becomes a fake that returns a grey placeholder, and the upload keeps it as a
-# data URI. No vendor or bucket is reached.
+# data URI. No vendor or bucket is reached. SheetBuildJob runs async.
 if Rails.env.test? && ENV["E2E_FAKE_IMAGE_GENERATION"] == "1"
   Rails.application.config.to_prepare do
     ENV["OPENAI_API_KEY"] ||= "e2e-fake"
@@ -22,5 +22,8 @@ if Rails.env.test? && ENV["E2E_FAKE_IMAGE_GENERATION"] == "1"
 
     ImageGeneration::Adapter.define_singleton_method(:for) { |_row| fake }
     Appearances::StoreGeneratedImage.define_singleton_method(:call) { |source, **| source.to_s }
+    # The test adapter only records jobs; run the sheet build in-process so the
+    # page can reach done. Scoped to this one job.
+    SheetBuildJob.queue_adapter = :async
   end
 end
