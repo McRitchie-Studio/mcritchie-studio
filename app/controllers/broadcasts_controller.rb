@@ -23,7 +23,8 @@ class BroadcastsController < ApplicationController
       return redirect_to edit_broadcast_path(@broadcast), alert: "Already sent — duplicate send blocked."
     end
 
-    contacts = audience_scope(params[:audience])
+    # Anyone a batch already reached is left out (Broadcast#send_batch!).
+    contacts = audience_scope(params[:audience]).where.not(id: @broadcast.sent_contact_ids)
     count = contacts.count
     if count.zero?
       return redirect_to edit_broadcast_path(@broadcast), alert: "No subscribed contacts in that audience."

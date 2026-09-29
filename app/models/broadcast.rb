@@ -16,7 +16,7 @@ class Broadcast < ApplicationRecord
   # template_key => { link key => URL }. Tracked like TRACKED_LINKS.
   TEMPLATE_LINKS = {
     "cyvasse_is_back" => {
-      "play" => "https://cyvasse.mcritchie.studio/play",
+      "play" => "https://cyvasse.mcritchie.studio/",
       "build" => "https://mcritchie.studio/build"
     }.freeze
   }.freeze
@@ -61,6 +61,42 @@ class Broadcast < ApplicationRecord
   # Every link key this broadcast's email can carry.
   def link_keys
     TRACKED_LINKS.keys + TEMPLATE_LINKS.fetch(template_key, {}).keys
+  end
+
+  # --- batch sends -----------------------------------------------------------
+  # A broadcast can go out in batches (task broadcast-batch-send): each batch
+  # takes N random subscribed contacts on the audience who have not yet been
+  # sent this broadcast, so a list is worked down gradually and nobody gets it
+  # twice. Sends are spaced BATCH_SPACING apart to stay under Resend's rate
+  # limit (about 2 a second). A batch leaves the broadcast a draft; the editor's
+  # full send still marks it sent.
+  BATCH_SPACING = 0.6.seconds
+
+  # Contacts with a delivery this broadcast actually sent.
+  def sent_contact_ids
+    deliveries.where.not(sent_at: nil).select(:contact_id)
+  end
+
+  # Subscribed contacts on `audience` (a tag, or "all") still to be sent this.
+  def unsent_contacts(audience = target_list)
+    scope = audience.to_s == "all" ? Contact.subscribed : Contact.subscribed.with_tag(audience.to_s)
+    scope.where.not(id: sent_contact_ids)
+  end
+
+  # Queue this broadcast to `size` random unsent contacts; returns their ids.
+  def send_batch!(size:, audience: target_list, spacing: BATCH_SPACING)
+    raise ArgumentError, "no audience: set the broadcast's target list or pass one" if audience.blank?
+    raise ArgumentError, "batch size must be positive" unless size.to_i.positive?
+
+    ids = unsent_contacts(audience).order(Arel.sql("RANDOM()")).limit(size.to_i).pluck(:id)
+    ids.each_with_index { |contact_id, i| BroadcastSendJob.set(wait: spacing * i).perform_later(id, contact_id) }
+    ids
+  end
+
+  # Where a batched send stands on `audience`.
+  def batch_status(audience = target_list)
+    { sent: deliveries.where.not(sent_at: nil).count, remaining: unsent_contacts(audience).count,
+      opened: opened_count, clicked: clicked_count }
   end
 
   # --- engagement ------------------------------------------------------------
