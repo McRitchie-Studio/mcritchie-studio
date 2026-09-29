@@ -99,14 +99,26 @@ module StageAgentsHelper
     name = snapshot["name"].presence || snapshot["slug"].presence
     return fallback if name.blank?
 
-    # A snapshot baked before the sign rule holds the bare name beside its gender;
-    # gendered_name signs it (and leaves an already-signed name alone).
+    # A snapshot baked before the sign rule holds the bare name beside its gender
+    # (and a genderless species, no gender at all); gendered_name signs it, and
+    # leaves an already-signed name alone.
     MascotAgent.new(
-      name: Pokemon.gendered_name(name, snapshot["gender"]),
+      name: Pokemon.gendered_name(name, snapshot_display_gender(snapshot)),
       avatar: snapshot["avatar"].presence,
       color: snapshot["color"].presence,
       shiny: snapshot["shiny"] == true
     )
+  end
+
+  # The display gender for a baked event snapshot: its recorded gender, else
+  # "genderless" when its slug is a genderless species (read off gender_rate —
+  # one memoized query per render, never per event), else nil (pre-gender).
+  def snapshot_display_gender(snapshot)
+    gender = Pokemon.normalize_gender(snapshot["gender"])
+    return gender if gender
+
+    @genderless_mascot_slugs ||= Pokemon.table_exists? ? Pokemon.genderless_slugs : Set.new
+    Pokemon::GENDERLESS if @genderless_mascot_slugs.include?(snapshot["slug"].to_s)
   end
 
   # The task's CURRENT mascot as a board face — the single construction point for
