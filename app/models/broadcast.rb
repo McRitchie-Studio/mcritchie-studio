@@ -16,7 +16,7 @@ class Broadcast < ApplicationRecord
   # template_key => { link key => URL }. Tracked like TRACKED_LINKS.
   TEMPLATE_LINKS = {
     "cyvasse_is_back" => {
-      "play" => "https://cyvasse.mcritchie.studio/play",
+      "play" => "https://cyvasse.mcritchie.studio/",
       "build" => "https://mcritchie.studio/build"
     }.freeze
   }.freeze

@@ -7,8 +7,9 @@
 <% build_url = broadcast_link(:build, Broadcast::TEMPLATE_LINKS["cyvasse_is_back"]["build"]) %>
 <% content_for :email_reason, "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
 <%= render "broadcasts/email_head",
-      hero_file: "cyvasse_header.jpg",
-      preheader: "Your account, your old matches and your saved lineups came across. The board is waiting.",
+      hero_file: "cyvasse_header_live.jpg",
+      hero_alt:  "A Cyvasse board mid-game: a horse lines up its double jump",
+      preheader: "Live matches, a leaderboard, and your old account came across. Hit Play Now.",
       title:     "Cyvasse is back",
       subtitle:  "Same board, same pieces &mdash; rebuilt, and your account came with it." %>
 
@@ -17,14 +18,15 @@
     <td style="padding:28px 32px 8px 32px;">
       <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">Hi <%= broadcast_greeting_name %>,</p>
       <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">You played Cyvasse with us a while back &mdash; the hex-board strategy game from <em>A Song of Ice and Fire</em>. Together, players on the old site played more than 100,000 matches.</p>
-      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">I&rsquo;ve rebuilt it from the ground up, and it&rsquo;s live again. Your account, your old matches and your saved lineups all came across, so you can pick up where you left off.</p>
-      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">Play the computer right in your browser, challenge a friend to an online match, or load one of twenty opening setups if you want a head start.</p>
+      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">I&rsquo;ve rebuilt it from the ground up, and it&rsquo;s live again &mdash; with <strong>live matches</strong>. Hit <strong>Play Now</strong> and you&rsquo;re paired with whoever else is looking for a game: 60 seconds to set up your army, 30 seconds a move. No one around? A computer opponent steps in.</p>
+      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">Win and you&rsquo;re on the <strong>leaderboard</strong>. Your old account, matches and saved lineups all came across, so sign in and pick up where you left off.</p>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">A few rules got sharper, too: trebuchets now reach four hexes, and a king can finally strike down a dragon that strays too close.</p>
     </td>
   </tr>
 
   <tr>
     <td style="padding:22px 32px 8px 32px;text-align:center;">
-      <%= render "broadcasts/button", url: play_url, label: "Play Cyvasse &rarr;".html_safe, color: "#7c3aed", full_width: true %>
+      <%= render "broadcasts/button", url: play_url, label: "Play Now &rarr;".html_safe, color: "#7c3aed", full_width: true %>
     </td>
   </tr>
 
