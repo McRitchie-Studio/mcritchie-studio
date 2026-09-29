@@ -234,6 +234,21 @@ class R2BackupTest < Minitest::Test
     end
   end
 
+  # A receipt write that exits non-zero, as CI's apt rclone 1.60.1 did on every
+  # run 2026-09-27 to -29 (a 501 after the upload), while the copy succeeded.
+  class ReceiptlessR2 < FakeR2
+    def do_rcat(_args, _stdin) = ["", 1]
+  end
+
+  def test_a_run_whose_receipt_write_fails_is_not_ok
+    fake = ReceiptlessR2.new("moms-app-production" => { "a" => "1" }, "moms-app-backup" => {})
+    receipt = runner(fake).run
+
+    refute receipt["ok"], "a clean copy with no receipt must still fail the run"
+    assert_match(/receipt write failed \(rclone exit 1\)/, receipt["reason"])
+    assert_equal({ "a" => "1" }, fake.objects("r2:moms-app-backup/current"), "the copy itself still happened")
+  end
+
   def test_exit_zero_with_a_count_mismatch_is_not_ok
     fake = LossyR2.new("moms-app-production" => { "a" => "1", "b" => "1" }, "moms-app-backup" => {})
     receipt = runner(fake).run

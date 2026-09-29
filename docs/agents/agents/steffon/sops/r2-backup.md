@@ -24,8 +24,9 @@ day. The archive keeps each overwritten or deleted object for **30 days**; the
 current mirror keeps the latest copy of every live object indefinitely.
 
 **Run is automated nightly.** The workflow `.github/workflows/r2-backup.yml`
-runs `bin/r2-backup run <app>` for every app in its matrix at 09:00 UTC (03:00
-Denver in summer). A failed night opens an issue titled `R2 backup failing:
+runs `bin/r2-backup run <app>` for every app in its matrix at 09:37 UTC (03:37
+Denver in summer; off the hour, because GitHub runs top-of-hour schedules hours
+late). A failed night opens an issue titled `R2 backup failing:
 <app>` on the hub repo, and the next good night closes it; no open issue and a
 fresh receipt means the undo is current. Run by hand (§3) only before a bulk
 operation or to recover from a failure. The automation landed in task
