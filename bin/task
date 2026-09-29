@@ -1839,7 +1839,7 @@ def write_feature_marker(task)
     "mascot_color" => mascot_color, # …tinted with the mascot's least-common type color, riding with the name
     "mascot_emoji" => marker_display_emoji("mascot_emoji" => mascot_emoji, "mascot_shiny" => mascot_shiny), # …and carries its type emoji(s), with ✨ when shiny
     "mascot_shiny" => (true if truthy_marker_value?(mascot_shiny)),
-    "mascot_gender" => mascot_gender, # the session's gender roll — bin/statusline names Nidoran♀/♂ by it
+    "mascot_gender" => mascot_gender, # the display gender — bin/statusline signs the name by it (Mawile♂, Magnemite⚥)
     "persona" => dv["persona"],     # present only for a deliberate "act as <soul>" override
     "app_color" => dv["app_color"]  # the app's status-line tint (App#color, stamped server-side by Task#sync_app_identity)
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
@@ -1890,15 +1890,24 @@ def marker_mascot_attrs(task, path)
   disk = existing_marker(path)
   if disk && FeatureMarker.present?(disk["persona"]) &&
      !FeatureMarker.present?(dv["persona"]) && FeatureMarker.present?(dv["mascot"])
-    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], dv["mascot_gender"]]
+    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], task_display_gender(task)]
   end
   if disk && FeatureMarker.present?(disk["mascot"])
     return [disk["mascot"], disk["mascot_color"], disk["mascot_emoji"], disk["mascot_shiny"], disk["mascot_gender"]]
   end
 
-  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], dv["mascot_gender"]] if FeatureMarker.present?(dv["mascot"])
+  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], task_display_gender(task)] if FeatureMarker.present?(dv["mascot"])
 
   [board_mascot(task["slug"]), nil, nil, nil, nil] # a board read carries the name only
+end
+
+# A task record's mascot DISPLAY gender for the marker: the show endpoint's
+# derived mascot_display_gender ("genderless" for a gender_rate -1 species, which
+# bin/statusline shows as ⚥), else the stored devops.mascot_gender (a create/move
+# response carries only that). nil = pre-gender, rendered bare.
+def task_display_gender(task)
+  derived = task["mascot_display_gender"].to_s.strip
+  derived.empty? ? task.dig("metadata", "devops", "mascot_gender") : derived
 end
 
 def existing_marker(path)
