@@ -16,7 +16,7 @@ module Artists
 
       def initialize(client: Client.new, logger: nil)
         @client = client
-        @logger = logger || ->(_msg) {}
+        @logger = logger || ->(_msg) { }
       end
 
       def call
