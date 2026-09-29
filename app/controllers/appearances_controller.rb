@@ -83,7 +83,8 @@ class AppearancesController < ApplicationController
     redirect_to appearance_path, alert: "Higgsfield refused the request: #{e.message}"
   end
 
-  # BUY ONE GENERATED IMAGE, from ONE photograph, with no training step.
+  # BUY ONE GENERATED IMAGE, from ONE photograph, with no training step. Enqueued:
+  # the build outlives Heroku's 30 s request limit (Appearances::SheetBuild).
   #
   # THE OTHER PATH TO A PICTURE, and it does not touch #mint. #mint asks a vendor
   # to TRAIN an identity from a photo set and then pins generations to it; this
@@ -96,7 +97,7 @@ class AppearancesController < ApplicationController
   def generate
     rescue_and_log(target: @appearance) { generate_artifact }
   rescue StandardError => e
-    redirect_to appearance_path, alert: "Could not generate the image: #{e.message}"
+    redirect_to appearance_path, alert: "Could not start the sheet build: #{e.message}"
   end
 
   # ASK THE VENDOR WHERE THE IDENTITY GOT TO. A read — free — and the only thing
@@ -145,31 +146,16 @@ class AppearancesController < ApplicationController
   end
 
   # THE GENERATION ITSELF, split out for the same reason #mint_identity is: the
-  # two EXPECTED refusals are states of the record and of the machine, not
-  # failures of ours, and an ErrorLog row for either is noise in the one place an
-  # operator goes to find real ones. "No generator is configured" and "this person
-  # has no headshot" both answer here. Everything else falls out and gets its row.
+  # EXPECTED refusals (no generator, no headshot, a build already running) are
+  # states, not failures, and get no ErrorLog row. The paid call runs in
+  # SheetBuildJob; this only claims the look and enqueues.
   def generate_artifact
-    artifact = Appearances::GenerateArtifact.call(@appearance, number: params[:number].presence)
-    redirect_to appearance_path, notice: generated_message(artifact)
+    Appearances::SheetBuild.start!(@appearance, number: params[:number].presence)
+    redirect_to appearance_path, notice: Appearances::SheetBuild::STARTED_NOTICE
   rescue Appearances::GenerateArtifact::NoGenerator,
-         Appearances::GenerateArtifact::NoIdentityPhoto => e
+         Appearances::GenerateArtifact::NoIdentityPhoto,
+         Appearances::SheetBuild::Busy => e
     redirect_to appearance_path, alert: e.message
-  end
-
-  # NAMES WHAT MADE IT, in the flash as well as on the card. The operator is about
-  # to judge a picture, and "which model produced this" is the first thing he needs
-  # to know to judge it — especially while more than one generator is in play.
-  #
-  # THE UNIT IS PRINTED BESIDE THE COUNT because two generators count different
-  # things: fal bills image units, OpenAI reports tokens. A bare number invites
-  # comparing 3 with a four-figure token count — the measured sheets ran 6,724 to
-  # 7,629 (config/image_generators.yml owns those figures).
-  def generated_message(artifact)
-    parts = ["#{artifact.generator_label} generated one character sheet"]
-    parts << "seed #{artifact.seed}" if artifact.seed.present?
-    parts << artifact.billing_summary if artifact.billing_summary.present?
-    "#{parts.join(' · ')}. It is filed against this look below."
   end
 
   # "NOTHING TO POLL YET" IS ALSO A STATE RATHER THAN A FAILURE, so it answers here

@@ -67,6 +67,23 @@ class Appearance < ApplicationRecord
 
   def music_video_look? = music_video_slug.present?
 
+  # The character-sheet build (Appearances::SheetBuild owns the rules).
+  def sheet_build_stale?
+    sheet_build_state == Appearances::SheetBuild::BUILDING &&
+      (sheet_build_started_at.nil? || sheet_build_started_at < Appearances::SheetBuild::STALE_AFTER.ago)
+  end
+
+  def sheet_building? = sheet_build_state == Appearances::SheetBuild::BUILDING && !sheet_build_stale?
+  def sheet_build_failed? = sheet_build_state == Appearances::SheetBuild::FAILED
+  def sheet_build_done? = sheet_build_state == Appearances::SheetBuild::DONE
+
+  # Seconds the build ran, or has run so far.
+  def sheet_build_seconds
+    return unless sheet_build_started_at
+
+    ((sheet_build_finished_at || Time.current) - sheet_build_started_at).round
+  end
+
   # The on-screen performer a music-video look was built from.
   def video_performer
     return unless music_video_look?

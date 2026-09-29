@@ -24,8 +24,14 @@ test("operator makes a look and builds its sheet from the video stills", async (
   await expect(look.locator("[data-test='look-sheet-empty']")).toBeVisible();
   await expect(look.locator("[data-test='look-cost-hint']")).toContainText("Costs money");
 
+  // The build runs in a job: the press returns at once, and the card shows the state.
   await look.getByRole("button", { name: "Build character sheet" }).click();
   const built = page.locator("[data-test='look-card'][data-ordinal='2']");
+  await expect(built.locator("[data-test='sheet-build-status']")).toBeVisible();
+  await expect(async () => {
+    await page.reload();
+    await expect(built.locator("[data-test='sheet-build-status']")).toHaveAttribute("data-state", "done", { timeout: 1000 });
+  }).toPass({ timeout: 20000 });
   await expect(built.locator("[data-test='look-sheet-image']")).toBeVisible();
   await expect(built.getByRole("button", { name: "Rebuild character sheet" })).toBeVisible();
 });

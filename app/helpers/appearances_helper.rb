@@ -353,4 +353,12 @@ module AppearancesHelper
 
     text.delete_prefix(prefix).strip.presence || "name only"
   end
+
+  # "1m 30s" / "45s": how long a sheet build ran, or has run so far.
+  def sheet_build_duration(seconds)
+    return "" if seconds.nil?
+
+    minutes, secs = seconds.divmod(60)
+    minutes.positive? ? "#{minutes}m #{secs}s" : "#{secs}s"
+  end
 end
