@@ -25,7 +25,7 @@ It writes the dev bucket unless `--production` is passed.
 | Host | Sub-SOP | State |
 |---|---|---|
 | `youtube.com`, `youtu.be` | [`download-youtube`](download-youtube.md) | measured 2026-09-28 |
-| `tiktok.com` | [`download-tiktok`](download-tiktok.md) | UNMEASURED; the script prints `not built yet` |
+| `tiktok.com`, `vm.tiktok.com`, `vt.tiktok.com` | [`download-tiktok`](download-tiktok.md) | built; download UNMEASURED |
 | `instagram.com` | [`download-instagram`](download-instagram.md) | UNMEASURED; the script prints `not built yet` |
 
 Any other host: stop and ask Alex.
@@ -52,7 +52,8 @@ music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.info.json
 
 Keys come from 1Password item `r2.mcritchie-studio` in `studio-agents`, read
 through `bin/secret`; no value is printed. The stored `.info.json` keeps only
-the allowlist in [`download-youtube`](download-youtube.md); lyrics and signed URLs are dropped.
+the allowlist in [`download-youtube`](download-youtube.md) (a TikTok's in
+[`download-tiktok`](download-tiktok.md), which drops the caption); lyrics and signed URLs are dropped.
 
 ## 4. Create the MusicVideo record
 
