@@ -33,6 +33,9 @@ class Appearance < ApplicationRecord
 
   belongs_to :person, foreign_key: :person_slug, primary_key: :slug, inverse_of: :appearances, optional: true
   belongs_to :team, foreign_key: :team_slug, primary_key: :slug, optional: true
+  # A music-video look: this artist as they appear in one video (music video
+  # pipeline, stage 4). Nil on athlete looks.
+  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, optional: true
   has_many :artifact_subjects, foreign_key: :appearance_slug, primary_key: :slug, dependent: :nullify
 
   # THE PHOTOGRAPHS WE FOUND OF THIS PERSON, chosen and rejected both. DESTROYED
@@ -61,6 +64,15 @@ class Appearance < ApplicationRecord
 
   def to_param = slug
   def retired? = retired_at.present?
+
+  def music_video_look? = music_video_slug.present?
+
+  # The on-screen performer a music-video look was built from.
+  def video_performer
+    return unless music_video_look?
+
+    @video_performer ||= VideoPerformer.find_by(music_video_slug:, ordinal: performer_ordinal)
+  end
 
   def default?
     person&.default_appearance_slug == slug
@@ -217,7 +229,6 @@ class Appearance < ApplicationRecord
     end
     candidate
   end
-  private_class_method :available_descriptor
 
   private
 

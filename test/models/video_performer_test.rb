@@ -50,4 +50,18 @@ class VideoPerformerTest < ActiveSupport::TestCase
 
     assert_not performer(still_object_keys: []).valid?
   end
+
+  test "reference stills rank clear before partial before unsighted, posted order breaking ties" do
+    dir = "music_videos/steve_aoki/night_call/stills/person_01_"
+    p = performer(
+      still_object_keys: %W[#{dir}0306.jpg #{dir}0500.jpg #{dir}0042.jpg #{dir}0230.jpg],
+      sightings: [{ "t_ms" => 186_000, "visibility" => "partial" }, { "t_ms" => 42_000, "visibility" => "clear" },
+                  { "t_ms" => 150_000, "visibility" => "partial" }, { "t_ms" => 150_000, "visibility" => "clear" }]
+    )
+
+    assert_equal %W[#{dir}0042.jpg #{dir}0230.jpg #{dir}0306.jpg #{dir}0500.jpg], p.reference_still_keys
+    assert_equal "clear", p.still_visibility("#{dir}0230.jpg"), "the clearest sighting at that second wins"
+    assert_equal "partial", p.still_visibility("#{dir}0306.jpg")
+    assert_nil p.still_visibility("#{dir}0500.jpg")
+  end
 end

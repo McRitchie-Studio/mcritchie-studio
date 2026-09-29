@@ -84,7 +84,7 @@ if (!externalBaseURL) {
     // wired (PR #543): green on a laptop that had run test:prepare by hand, red on
     // every clean runner.
     command:
-      `bin/rails db:test:prepare && bin/rails tailwindcss:build && bin/rails runner e2e/seed.rb && bin/rails server -p ${port} -e test`,
+      `bin/rails db:test:prepare && bin/rails tailwindcss:build && bin/rails runner e2e/seed.rb && E2E_FAKE_IMAGE_GENERATION=1 bin/rails server -p ${port} -e test`,
     url: `http://127.0.0.1:${port}/up`,
     reuseExistingServer: !process.env.CI,
     // The command above chains FOUR Rails boots (db:test:prepare, tailwindcss:build,

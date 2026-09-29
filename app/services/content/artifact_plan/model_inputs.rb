@@ -38,7 +38,10 @@ class Content
       end
 
       def anchor
-        @anchor ||= athlete ? headshot_anchor : operator_anchor
+        @anchor ||= if @appearance.music_video_look? then video_still_anchor
+                    elsif athlete then headshot_anchor
+                    else operator_anchor
+                    end
       end
 
       def references
@@ -131,6 +134,15 @@ class Content
         else
           "no cached headshot and no ESPN headshot source on file — re-validate the athlete from ESPN first"
         end
+      end
+
+      # A MUSIC-VIDEO LOOK IS ANCHORED BY ITS CLEAREST STILL from that video, not
+      # by a headshot: the look is how they appear in this video.
+      def video_still_anchor
+        url = Appearances::VideoStills.urls(@appearance).first
+        Asset.new(kind: "anchor", label: "Anchor still", decision: url ? :reuse : :acquire,
+                  occupant: url, url: url,
+                  detail: url ? "clearest still from the video" : "no reachable still of this performer from the video")
       end
 
       def operator_anchor

@@ -1543,6 +1543,7 @@ Broadcast.create!(slug: "e2e-cyvasse-is-back", subject: "Cyvasse is back", templ
 # /music_videos/steve-aoki-night-call — the cast panel with its seven unlabelled
 # people (e2e/music_video_cast.spec.js). Its labels are synthetic: the spec finds
 # Test Artist A by its alias Test Alias A, and creates Test Artist E itself.
+Appearance.where.not(music_video_slug: nil).destroy_all
 VideoClip.delete_all
 VideoPerformer.delete_all
 MusicVideoArtist.delete_all
@@ -1558,3 +1559,7 @@ ArtistAlias.find_or_create_by!(artist_slug: test_artist_a.slug, name: "Test Alia
 # (e2e/music_video_clips.spec.js).
 require Rails.root.join("db/seeds/data/night_call_clips.rb").to_s
 NightCallClips.seed!
+# /music_videos/steve-aoki-night-call-looks — a confirmed cast with two labelled
+# test artists and their stills, no looks yet (e2e/music_video_looks.spec.js).
+require Rails.root.join("db/seeds/data/night_call_looks.rb").to_s
+NightCallLooks.seed!

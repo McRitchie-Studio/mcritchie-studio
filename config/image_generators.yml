@@ -131,6 +131,8 @@ generators:
         them, faithful to the reference. Operator verdict "I think you are there"
         on v4. NOTE: this row claims nothing about reference COUNT — see the
         reference_arity comment above for why that question is still open.
+      # The measured low and high below, as numbers for the page's cost hint.
+      units_range: [6724, 7629]
       cost: >
         MEASURED through this app's own code path, three sheets, each one image of
         ten cells / eight figures from a stored ESPN headshot. usage.total_tokens:

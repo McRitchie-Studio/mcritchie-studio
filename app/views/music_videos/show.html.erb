@@ -128,6 +128,43 @@
     </div>
   <% end %>
 
+  <section class="mt-10" data-test="looks-panel" id="looks">
+    <header class="mb-4">
+      <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Music video · Looks</p>
+      <h2 class="text-xl font-bold text-heading">Artist looks</h2>
+      <p class="text-sm text-muted mt-1">One look per labelled artist for this video, built from their stills.</p>
+    </header>
+    <% if !@video.cast_confirmed? %>
+      <div class="empty-state text-muted" data-test="looks-locked">Looks come after the cast is confirmed.</div>
+    <% else %>
+      <% if @look_candidates.any? %>
+        <div class="card p-4 mb-4 flex flex-col gap-2" data-test="look-candidates">
+          <p class="label-upper">Labelled, no look yet</p>
+          <% @look_candidates.each do |performer| %>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0" data-test="look-candidate" data-ordinal="<%= performer.ordinal %>">
+              <p class="text-sm text-body min-w-0 break-words">
+                <span class="font-semibold text-heading"><%= performer.artist.name %></span>
+                <span class="text-muted">· <%= performer.name %> · <%= pluralize(performer.still_object_keys.size, "still") %></span>
+              </p>
+              <%= button_to "Make look", music_video_looks_path(@video), method: :post, params: { ordinal: performer.ordinal },
+                            class: "btn btn-outline btn-sm shrink-0", disabled: performer.still_object_keys.empty? %>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+      <% if @looks.any? %>
+        <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+          <% @looks.each do |look| %>
+            <%= render "music_videos/look", look: look, video: @video, still_urls: @still_urls,
+                       sheet: @look_sheets[look.slug], sheet_row: @sheet_row, sheet_ready: @sheet_ready %>
+          <% end %>
+        </div>
+      <% elsif @look_candidates.empty? %>
+        <div class="empty-state text-muted" data-test="looks-empty">No labelled artists in this cast, so no looks to make.</div>
+      <% end %>
+    <% end %>
+  </section>
+
   <section class="mt-10" data-test="clips-panel" id="clips">
     <header class="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
       <div>
