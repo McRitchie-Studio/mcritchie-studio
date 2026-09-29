@@ -12,13 +12,18 @@ The Pokémon's `download-youtube` SOP: the YouTube sub-SOP of
 
 ## 1. Download the whole video
 
-Prefer H.264 at up to 1080p, and keep the info JSON for provenance:
+`bin/digest-video` runs this step and step 3 for you. Prefer H.264 at up to
+1080p, keep the info JSON for provenance, and fetch captions for timing:
 
 ```bash
 yt-dlp -f "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]" \
   --merge-output-format mp4 --write-info-json \
+  --write-subs --write-auto-subs --sub-format vtt --sub-langs "en.*,en" \
   -o "%(id)s.%(ext)s" "<url>"
 ```
+
+A video with no captions (Night Call, measured 2026-09-29) gets no `.vtt`; its
+timing is empty.
 
 ## 2. Or download one section
 
@@ -32,14 +37,16 @@ yt-dlp -f "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]" \
 ## 3. If only VP9 exists
 
 QuickTime cannot play VP9. When the H.264 format selector finds nothing, download
-the best format and convert:
+the best format and convert. Audio goes to AAC, never `copy`: Opus in an MP4
+will not play in QuickTime.
 
 ```bash
-ffmpeg -i <input> -c:v h264_videotoolbox -b:v 8M -c:a copy \
+ffmpeg -i <input> -c:v h264_videotoolbox -b:v 8M -c:a aac -b:a 192k \
   -movflags +faststart <output>.mp4
 ```
 
-`h264_videotoolbox` is the Mac's hardware encoder. Off the Mac, use `libx264`.
+`h264_videotoolbox` is the Mac's hardware encoder. Off the Mac, use `libx264`
+(`bin/digest-video --encoder libx264`).
 
 ## 4. Hand back
 

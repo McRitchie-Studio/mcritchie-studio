@@ -436,6 +436,8 @@ Rails.application.routes.draw do
       # design: MS masters durable facts, TM masters events, and neither writes
       # into the other's master.
       resources :athletes, only: [:index]
+      # Written by bin/digest-video (music-video pipeline, stage 1).
+      resources :music_videos, only: [:show, :create], param: :slug
       # The content pipeline's AGENT surface. Non-deterministic steps (the take,
       # the scenes, the caption) are written by a soul during an SOP with its own
       # inference, so production needs no model key. `claim_next` is the atomic
