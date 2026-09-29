@@ -37,7 +37,34 @@
       startCreate() { this.newName = this.query.trim(); this.artistSlug = ""; this.personSlug = ""; this.open = false; this.creating = true; },
     };
   };
+
+  // One clip row: load the signed clip only when asked, and copy its prompt.
+  window.clipRow = function () {
+    return {
+      open: false, failed: false, copied: false, manual: false,
+      preview() {
+        const player = this.$refs.player;
+        player.src = this.$root.dataset.src;
+        this.open = true;
+        player.play().catch(() => {});
+      },
+      async copy() {
+        const ok = await window.copyText(this.$refs.prompt.textContent.trim());
+        if (ok === false) { this.selectPrompt(); this.manual = true; return; }
+        this.copied = true; this.manual = false;
+        setTimeout(() => { this.copied = false; }, 1400);
+      },
+      selectPrompt() {
+        const range = document.createRange();
+        range.selectNodeContents(this.$refs.prompt);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      },
+    };
+  };
 </script>
+<%= render "components/copy_text_script" %>
 
 <section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="cast-panel">
   <header class="mb-6 min-w-0">
@@ -100,4 +127,32 @@
       <% end %>
     </div>
   <% end %>
+
+  <section class="mt-10" data-test="clips-panel" id="clips">
+    <header class="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Music video · Clips</p>
+        <h2 class="text-xl font-bold text-heading">Clip candidates</h2>
+      </div>
+      <% if @clips.any? %>
+        <p class="text-sm text-body" data-test="clips-approved-count">
+          <span class="font-semibold text-heading"><%= @clips.count(&:approved?) %> of <%= @clips.size %></span> approved.
+          <span class="text-muted">One approved clip makes the video clips ready.</span>
+        </p>
+      <% end %>
+    </header>
+    <% if @clips.any? %>
+      <div class="flex flex-col gap-4">
+        <% @clips.each do |clip| %>
+          <%= render "music_videos/clip", clip: clip, video: @video, clip_urls: @clip_urls %>
+        <% end %>
+      </div>
+    <% elsif @video.cast_confirmed? %>
+      <div class="empty-state text-muted" data-test="clips-empty">
+        No clips yet. Run <span class="font-mono">bin/find-clips <%= @video.slug %></span> on the Mac.
+      </div>
+    <% else %>
+      <div class="empty-state text-muted" data-test="clips-locked">Clips come after the cast is confirmed.</div>
+    <% end %>
+  </section>
 </section>

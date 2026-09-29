@@ -208,6 +208,14 @@ module DigestVideo
       @suffix = suffix
     end
 
+    def get(key, path)
+      require "aws-sdk-s3"
+      client.get_object(bucket: @bucket, key: key, response_target: path)
+      path
+    rescue Aws::S3::Errors::ServiceError => e
+      raise Failure, "download failed: #{key} (#{e.class.name.split('::').last})"
+    end
+
     def put(key, path, content_type)
       require "aws-sdk-s3"
       Aws::S3::TransferManager.new(client: client)
@@ -245,10 +253,18 @@ module DigestVideo
       end
     end
 
-    def create(payload)
-      res = request(Net::HTTP::Post, "/api/v1/music_videos", { music_video: payload }, authenticate)
+    def create(payload) = post("/api/v1/music_videos", { music_video: payload })
+
+    def show(slug) = data(request(Net::HTTP::Get, "/api/v1/music_videos/#{slug}", nil, authenticate))
+
+    def post(path, payload) = data(request(Net::HTTP::Post, path, payload, authenticate))
+
+    # The data of a success; a refusal raises with the API's own code.
+    def data(res)
       body = JSON.parse(res.body) rescue {}
-      raise Failure, "API #{res.code}: #{body['error'] || res.body.to_s[0, 200]}" unless res.is_a?(Net::HTTPSuccess)
+      unless res.is_a?(Net::HTTPSuccess)
+        raise Failure, "API #{res.code}: #{[body['error_code'], body['error'] || res.body.to_s[0, 200]].compact.join(' ')}"
+      end
 
       body["data"]
     end
@@ -259,7 +275,7 @@ module DigestVideo
       uri = URI.join("#{@base}/", path.delete_prefix("/"))
       req = klass.new(uri, "Content-Type" => "application/json")
       req["Authorization"] = "Bearer #{bearer}" if bearer
-      req.body = JSON.generate(body)
+      req.body = JSON.generate(body) if body
       Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 10, read_timeout: 60) do |http|
         http.request(req)
       end

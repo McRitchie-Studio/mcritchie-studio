@@ -1542,9 +1542,14 @@ Broadcast.create!(slug: "e2e-cyvasse-is-back", subject: "Cyvasse is back", templ
 
 # /music_videos/steve-aoki-night-call — the cast panel with its seven unlabelled
 # people (e2e/music_video_cast.spec.js). Steve Aoki is the artist the spec creates.
+VideoClip.delete_all
 VideoPerformer.delete_all
 MusicVideoArtist.delete_all
 MusicVideo.delete_all
 Artist.where(name: "Steve Aoki").destroy_all
 require Rails.root.join("db/seeds/data/night_call_cast.rb").to_s
 NightCallCast.seed!
+# /music_videos/steve-aoki-night-call-clips — a confirmed cast and two clips
+# (e2e/music_video_clips.spec.js).
+require Rails.root.join("db/seeds/data/night_call_clips.rb").to_s
+NightCallClips.seed!
