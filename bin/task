@@ -418,8 +418,23 @@ def marker_display_emoji(marker)
   base.empty? ? SHINY_EMOJI : "#{base}#{SHINY_EMOJI}"
 end
 
+# The marker's mascot as every surface names it — the same rule as
+# Pokemon#display_name, bin/statusline and bin/agent-marker: mascot_gender appends
+# its sign (male ♂, female ♀, genderless ⚥), none (pre-gender) stays bare, and
+# Nidoran carries exactly one sign (the legacy slugs name theirs).
+MARKER_NIDORAN_NAMES = { "nidoran-f" => "Nidoran♀", "nidoran-m" => "Nidoran♂" }.freeze
+MARKER_GENDER_SIGNS = { "female" => "♀", "male" => "♂", "genderless" => "⚥" }.freeze
+
+def marker_mascot_name(marker)
+  slug = marker["mascot"].to_s.strip
+  return MARKER_NIDORAN_NAMES.fetch(slug) if MARKER_NIDORAN_NAMES.key?(slug)
+
+  name = titleize_marker_name(slug)
+  name.empty? ? name : "#{name}#{MARKER_GENDER_SIGNS[marker['mascot_gender'].to_s.strip.downcase]}"
+end
+
 def print_session_marker(marker)
-  mascot = titleize_marker_name(marker["mascot"])
+  mascot = marker_mascot_name(marker)
   head = [marker_display_emoji(marker), mascot].map(&:to_s).map(&:strip).reject(&:empty?).join(" ").strip
   parts = [head, marker["app"], marker["worktree_slug"] || marker["feature"]].map(&:to_s).map(&:strip).reject(&:empty?)
   puts parts.join(" · ")
