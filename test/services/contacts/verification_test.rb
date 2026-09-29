@@ -63,7 +63,7 @@ class Contacts::VerificationTest < ActiveSupport::TestCase
 
   def verification(client, limit: 10, **opts)
     Contacts::Verification.new(client: client, limit: limit, broadcast: @broadcast, recency: @recency,
-                               sleeper: ->(_s) {}, out: StringIO.new, **opts)
+                               sleeper: ->(_s) { }, out: StringIO.new, **opts)
   end
 
   test "picks unverified subscribed list contacts never sent, most recently active first" do
