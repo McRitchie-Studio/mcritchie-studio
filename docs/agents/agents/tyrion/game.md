@@ -101,7 +101,7 @@ repeats one of the panel's twenty openings. "Moves first" counts the eighteen
 legacy computer armies (`app/javascript/cyvasse/setups.js`) his king starts
 nearer the middle than.
 
-### 1. Casterly Rock
+### 1. The Drains
 
 ```
      row 7   L.SE..ES.L
@@ -117,8 +117,9 @@ The fortress. The king takes the back right corner under a catapult and a
 crossbow, with the trebuchet on the same diagonal behind them, and the board's
 edge closes the rest. Elephants and spearmen hold the front, horses the wings.
 It moves first against only 7 of 18 computer armies and does not care: it is
-built to be attacked. His choice against an aggressive stranger, and the setup
-he calls "paying the Iron Bank in advance".
+built to be attacked. His choice against an aggressive stranger. His father
+once gave him the Rock's drains and cisterns to manage, meaning it as an
+insult; he did the job well, and he named his most solid setup after it.
 
 ### 2. The Lannister Debt (his gamble)
 
