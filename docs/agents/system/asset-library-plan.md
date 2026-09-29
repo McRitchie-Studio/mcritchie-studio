@@ -329,8 +329,8 @@ Read-only, account `534727954137`, with the admin key (`AWS` in
 `studio-agents-admin`) and, for SES, `agent.aws.mcritchie-ses`. A re-run before
 the exit must re-measure every row.
 
-**Buckets (10, all `us-east-2`).** R2 copy state is from an `rclone copy`
-S3 → R2 the same morning; `rclone size` matched on both sides unless noted.
+**Buckets (10: nine in `us-east-2`, `mcritchie-studio-desk` in `us-east-1`).**
+R2 copy state is from an `rclone copy` S3 → R2 the same morning; `rclone size` matched on both sides unless noted.
 
 | Bucket | S3 versioning | On R2 |
 |---|---|---|
