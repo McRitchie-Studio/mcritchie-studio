@@ -1,9 +1,9 @@
 <%# One person on the cast panel: stills, sightings, and the operator's answer. %>
 <% sightings = performer.sightings_by_time %>
 <% editable = !video.cast_confirmed? %>
-<article id="person-<%= performer.ordinal %>" class="card overflow-hidden flex flex-col min-w-0 scroll-mt-24"
+<article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
          data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>">
-  <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset">
+  <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset rounded-t-xl overflow-hidden">
     <% performer.still_object_keys.each do |key| %>
       <% url = still_urls[key] %>
       <figure class="relative bg-inset aspect-video" data-test="performer-still" data-key="<%= key %>">

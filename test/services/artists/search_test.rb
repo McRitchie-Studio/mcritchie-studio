@@ -48,7 +48,8 @@ module Artists
 
     test "groups name their members and members name their groups" do
       assert_equal "members: Quavo", Search.call("migos").first.hint
-      assert_match "member of Migos", Search.call("quavo").first.hint
+      ArtistMembership.create!(member_artist_slug: "quavo", group_artist_slug: "migos", start_year: 2020)
+      assert_equal "member of Migos", Search.call("quavo").first.hint
     end
 
     test "people not yet artists are found, after an artist of equal rank" do

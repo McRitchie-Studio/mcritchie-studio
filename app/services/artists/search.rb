@@ -78,10 +78,10 @@ module Artists
       parts = []
       parts << "aka #{via_alias}" if via_alias
       if artist.group?
-        members = artist.members.map(&:name).first(3)
+        members = artist.members.map(&:name).uniq.first(3)
         parts << "members: #{members.join(', ')}" if members.any?
       elsif artist.groups.any?
-        parts << "member of #{artist.groups.map(&:name).first(2).join(', ')}"
+        parts << "member of #{artist.groups.map(&:name).uniq.first(2).join(', ')}"
       end
       parts.join(" · ").presence
     end
