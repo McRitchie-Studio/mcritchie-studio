@@ -116,14 +116,13 @@ module AppContract
                         detail: missing.empty? ? "main, accepted, release" : "missing #{missing.join(', ')}",
                         remedy: "create them off main first: git -C <repo> push origin main:refs/heads/accepted main:refs/heads/release")
 
-    ci_yaml = probe.read_at(root, REF, ".github/workflows/ci.yml")
-    test_cmd = ci_test_cmd(ci_yaml)
     # bin/release prepare refuses to promote a rung CI never builds
     # (refuse_blind_accepted!): measured 2026-09-28, when moms-app passed every
     # other check here and was then refused because its CI ran on main only. The
     # decision is Release::AcceptedCertification's, over EVERY workflow file, so
     # the name match, branches-ignore and path filters all agree with the sweep.
     workflows = workflow_files(root, probe)
+    test_cmd = ci_test_cmd(workflows[".github/workflows/ci.yml"])
     blind = %w[accepted release].reject do |rung|
       Release::AcceptedCertification.certified?(workflows, Release::AcceptedCertification::DEFAULT_SUITE_WORKFLOW, rung)
     end

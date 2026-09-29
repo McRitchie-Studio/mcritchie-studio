@@ -51,8 +51,10 @@ question to be recorded. An app that needs a QA copy is not this shape: it gets 
    workflow named `CI` builds pushes to `accepted` and `release` with no path
    filter or `branches-ignore`. That second half is `bin/release prepare`'s own
    guard (`Release::AcceptedCertification`), reused by the contract, so an app
-   the contract passes cannot be refused at its first release (as `moms-app` was
-   on 2026-09-28).
+   the contract passes is not refused by that guard at its first release (as
+   `moms-app` was on 2026-09-28). The contract checks `release` too, with the
+   same rule. Prepare's other refusals, such as red CI or a merge conflict, can
+   still stop a release.
 4. `.gitignore` ignores `.worktrees/`.
 5. The Heroku app exists and `<smoke_url>/up` answers 200.
 6. An app with a database (`gem "pg"`) runs `bin/rails db:migrate` in its
