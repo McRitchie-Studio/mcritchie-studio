@@ -6,6 +6,14 @@ namespace :broadcasts do
 
   desc "Publish broadcast email images (public/email/*) to S3 for use in sent emails"
   task publish_assets: :environment do
+    # The release runs a task's post-deploy on QA before production, and QA has
+    # no AWS credentials or bucket. Sent email only ever uses production's
+    # copies, so QA has nothing to publish (task publish-assets-skips-qa).
+    if Studio.qa_environment?
+      puts "QA: skipping broadcast asset publish (sent email uses production's copies)"
+      next
+    end
+
     urls = Broadcasts::Assets.publish_all!
     if urls.empty?
       puts "No images found in #{Broadcasts::Assets::SOURCE_DIR}"
