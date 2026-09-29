@@ -1539,3 +1539,12 @@ Contact.delete_all
 unsubscribe_reader = Contact.create!(email: "reader@example.com", unsubscribe_token: "e2e-unsubscribe-token")
 Broadcast.create!(slug: "e2e-cyvasse-is-back", subject: "Cyvasse is back", template_key: "cyvasse_is_back")
   .deliveries.create!(contact: unsubscribe_reader, token: "e2e-delivery-token", sent_at: Time.current)
+
+# /music_videos/steve-aoki-night-call — the cast panel with its seven unlabelled
+# people (e2e/music_video_cast.spec.js). Steve Aoki is the artist the spec creates.
+VideoPerformer.delete_all
+MusicVideoArtist.delete_all
+MusicVideo.delete_all
+Artist.where(name: "Steve Aoki").destroy_all
+require Rails.root.join("db/seeds/data/night_call_cast.rb").to_s
+NightCallCast.seed!
