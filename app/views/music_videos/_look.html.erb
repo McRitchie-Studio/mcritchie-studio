@@ -1,0 +1,91 @@
+<%# One per-video look: its reference stills (clearest first), its sheet, and the
+    button that builds one. The button spends money, so it says so and what. %>
+<% performer = look.video_performer %>
+<% keys = performer ? performer.reference_still_keys : [] %>
+<article id="look-<%= look.slug %>" class="card flex flex-col min-w-0 scroll-mt-24"
+         data-test="look-card" data-slug="<%= look.slug %>" data-ordinal="<%= look.performer_ordinal %>">
+  <div class="p-4 flex flex-col gap-4 flex-1 min-w-0">
+    <header class="flex items-start justify-between gap-2 min-w-0">
+      <div class="min-w-0">
+        <h3 class="text-lg font-bold text-heading break-words" data-test="look-artist"><%= performer&.artist&.name || look.person&.full_name %></h3>
+        <p class="text-sm text-body break-words"><%= look.descriptor %></p>
+      </div>
+      <span class="badge text-3xs bg-surface-alt text-secondary border-subtle shrink-0">Person <%= look.performer_ordinal %></span>
+    </header>
+
+    <div data-test="look-references">
+      <p class="label-upper mb-1.5">References <span class="normal-case tracking-normal">· <%= keys.size %> still<%= "s" unless keys.size == 1 %>, clearest first</span></p>
+      <% if sheet_row&.reference_arity == "one" && keys.size > 1 %>
+        <p class="text-3xs text-muted mb-1.5">The generator takes one reference today, so only the anchor is sent.</p>
+      <% end %>
+      <% if keys.empty? %>
+        <p class="text-sm text-muted" data-test="look-no-references">No stills of this person from the video.</p>
+      <% else %>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <% keys.each_with_index do |key, i| %>
+            <% url = still_urls[key] %>
+            <% visibility = performer.still_visibility(key) %>
+            <figure class="relative bg-inset aspect-video rounded-lg overflow-hidden" data-test="look-reference"
+                    data-key="<%= key %>" data-visibility="<%= visibility %>">
+              <% if url %>
+                <img src="<%= url %>" alt="<%= performer.name %>, still <%= key.split('/').last %>" loading="lazy"
+                     class="block w-full h-full object-cover" onerror="this.hidden = true; this.nextElementSibling.hidden = false">
+              <% end %>
+              <figcaption class="absolute inset-0 flex items-center justify-center p-2 text-3xs text-muted text-center break-all"
+                          <%= "hidden" if url %> data-test="still-unreachable">
+                Still not reachable: <%= key.split("/").last %>
+              </figcaption>
+              <span class="absolute top-1 left-1 badge text-3xs <%= visibility == 'clear' ? 'bg-primary/10 text-heading border-primary/20' : 'bg-surface-alt text-muted border-subtle' %>">
+                <%= i == 0 ? "Anchor" : i + 1 %> · <%= visibility || "unsighted" %>
+              </span>
+            </figure>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+
+    <div data-test="look-sheet">
+      <p class="label-upper mb-1.5">Character sheet</p>
+      <% if sheet %>
+        <figure class="rounded-lg overflow-hidden border border-subtle bg-inset">
+          <%= link_to sheet.image_url, target: "_blank", rel: "noopener" do %>
+            <img src="<%= sheet.image_url %>" alt="Character sheet of <%= performer&.artist&.name %>" loading="lazy"
+                 class="block w-full h-auto" data-test="look-sheet-image">
+          <% end %>
+          <figcaption class="px-3 py-2 text-3xs text-muted flex flex-wrap gap-x-3 gap-y-1">
+            <span><%= sheet.generator_label || "Unknown generator" %></span>
+            <% if sheet.billing_summary.present? %><span class="font-mono"><%= sheet.billing_summary %></span><% end %>
+            <span><%= l(sheet.created_at, format: :short) %></span>
+          </figcaption>
+        </figure>
+      <% else %>
+        <div class="rounded-lg border border-dashed border-subtle bg-surface-alt p-4 text-center text-sm text-muted" data-test="look-sheet-empty">
+          No character sheet yet.
+        </div>
+      <% end %>
+    </div>
+
+    <div class="mt-auto pt-3 border-t border-subtle space-y-2" data-test="look-build">
+      <% if sheet_row.nil? %>
+        <p class="text-sm text-muted">No image generator can build a character sheet.</p>
+      <% elsif !sheet_ready %>
+        <p class="text-sm text-muted" data-test="look-generator-off"><%= sheet_row.unconfigured_message %></p>
+      <% elsif keys.empty? %>
+        <p class="text-sm text-muted">Nothing to build from: no stills.</p>
+      <% else %>
+        <%= form_with url: sheet_music_video_look_path(video, look), method: :post, local: true,
+                      html: { "x-data": "{ busy: false }", "@submit": "busy = true", data: { test: "build-sheet-form" } } do %>
+          <button type="submit" class="btn btn-primary btn-sm w-full" :disabled="busy">
+            <span x-show="!busy"><%= sheet ? "Rebuild character sheet" : "Build character sheet" %></span>
+            <span x-show="busy" x-cloak>Building, this takes a few minutes…</span>
+          </button>
+        <% end %>
+      <% end %>
+      <% if sheet_row %>
+        <p class="text-3xs text-muted" data-test="look-cost-hint">
+          Costs money: one sheet per press on <%= sheet_row.label %><% if (hint = sheet_row.expected_cost_hint) %>, <%= hint %><% end %>.
+        </p>
+      <% end %>
+    </div>
+  </div>
+</article>

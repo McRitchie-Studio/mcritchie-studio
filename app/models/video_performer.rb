@@ -27,10 +27,16 @@ class VideoPerformer < ApplicationRecord
   # sighting, then a partial one, then one no sighting names. Posted order breaks
   # ties. Visibility is the agent's grouping call, never face analysis.
   def reference_still_keys
-    rank = sightings.group_by { |s| s["t_ms"] / 1000 }
-                    .transform_values { |seen| seen.map { |s| VISIBILITIES.index(s["visibility"]) }.min }
-    still_object_keys.each_with_index.sort_by { |key, i| [rank.fetch(still_second(key), VISIBILITIES.size), i] }
+    still_object_keys.each_with_index
+                     .sort_by { |key, i| [VISIBILITIES.index(still_visibility(key)) || VISIBILITIES.size, i] }
                      .map(&:first)
+  end
+
+  # "clear", "partial", or nil: the clearest sighting at the second a still was taken.
+  def still_visibility(key)
+    second = still_second(key)
+    sightings.select { |s| s["t_ms"] / 1000 == second }.map { |s| s["visibility"] }
+             .min_by { |v| VISIBILITIES.index(v) }
   end
 
   private
