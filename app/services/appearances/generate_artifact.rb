@@ -88,11 +88,7 @@ module Appearances
     # AppearancesController wraps it in `rescue_and_log` so the reason also lands
     # in /error_logs, where somebody reading it a day later can find it.
     def call
-      raise NoGenerator, unconfigured_message if row.nil?
-      refusal = inputs.refusal_for(:sheet)
-      raise NoIdentityPhoto, refusal if refusal
-      raise NoIdentityPhoto, no_photo_message if identity_photo_url.blank?
-
+      check!
       result = client.generate_and_wait(prompt: prompt, reference_urls: references)
       raise ImageGeneration::GenerationFailed, "#{row.label} returned no image" unless result.any?
 
@@ -102,6 +98,15 @@ module Appearances
       # artifact pointing at an object that was never written.
       stored_url = StoreGeneratedImage.call(result.primary_url, person_slug: @appearance.person_slug)
       persist(result, stored_url)
+    end
+
+    # THE FREE REFUSALS, raised before any spend. Appearances::SheetBuild runs
+    # this in the request so the operator reads a refusal at once.
+    def check!
+      raise NoGenerator, unconfigured_message if row.nil?
+      refusal = inputs.refusal_for(:sheet)
+      raise NoIdentityPhoto, refusal if refusal
+      raise NoIdentityPhoto, no_photo_message if identity_photo_url.blank?
     end
 
     # THE ROW THAT WOULD SERVE, so the page can say WHICH generator is off rather
