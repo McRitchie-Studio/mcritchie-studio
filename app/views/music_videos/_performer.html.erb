@@ -9,12 +9,12 @@
       <figure class="relative bg-inset aspect-video" data-test="performer-still" data-key="<%= key %>">
         <% if url %>
           <img src="<%= url %>" alt="<%= performer.name %>, still <%= key.split('/').last %>" loading="lazy"
-               class="block w-full h-full object-cover">
-        <% else %>
-          <figcaption class="absolute inset-0 flex items-center justify-center p-3 text-xs text-muted text-center break-all">
-            Still not reachable: <%= key.split("/").last %>
-          </figcaption>
+               class="block w-full h-full object-cover" onerror="this.hidden = true; this.nextElementSibling.hidden = false">
         <% end %>
+        <figcaption class="absolute inset-0 flex items-center justify-center p-3 text-xs text-muted text-center break-all"
+                    <%= "hidden" if url %> data-test="still-unreachable">
+          Still not reachable: <%= key.split("/").last %>
+        </figcaption>
       </figure>
     <% end %>
     <% if performer.still_object_keys.empty? %>

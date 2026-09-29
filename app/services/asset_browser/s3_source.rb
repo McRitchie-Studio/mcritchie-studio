@@ -36,9 +36,12 @@ module AssetBrowser
       nil
     end
 
+    # Inside `storage` so aws-sdk-s3 is loaded even when no list or head ran first.
     def signed_url(key:, expires_in:)
-      Aws::S3::Presigner.new(client: client)
-                        .presigned_url(:get_object, bucket: bucket, key: Studio::S3.full_key(key), expires_in: expires_in)
+      storage do
+        Aws::S3::Presigner.new(client: client)
+                          .presigned_url(:get_object, bucket: bucket, key: Studio::S3.full_key(key), expires_in: expires_in)
+      end
     end
 
     private

@@ -21,6 +21,7 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
 
     assert_select "[data-test='performer-card'][data-ordinal='2'][data-resolved='false']" do
       assert_select "[data-test='performer-still'][data-key='#{@key}'] img[src='https://signed.example/p2.jpg?X-Amz-Signature=abc']"
+      assert_select "[data-test='still-unreachable'][hidden]"
       assert_select "h2", "Person 2"
       assert_select "[data-test='performer-label']", "armchair"
     end
@@ -30,7 +31,7 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     render_card(urls: {})
 
     assert_select "[data-test='performer-still'] img", 0
-    assert_select "[data-test='performer-still']", /person_02_0042\.jpg/
+    assert_select "[data-test='still-unreachable']:not([hidden])", /person_02_0042\.jpg/
   end
 
   test "sightings split into clear and partial, each a timecode link to that second" do
