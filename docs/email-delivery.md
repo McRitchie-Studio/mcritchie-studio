@@ -147,14 +147,22 @@ heroku run -a mcritchie-studio --no-tty -e DRY_RUN=1 -- \
 heroku run -a mcritchie-studio --no-tty -- \
   bash -c 'cat > /tmp/recency.csv; bin/rails "contacts:verify[10000,/tmp/recency.csv]"' < tmp/cyvasse-last-active.csv
 
-# If the dyno dies after "submitted … as file <id>", resume without resubmitting:
-heroku run -a mcritchie-studio --no-tty -e FILE_ID=<id> -- bin/rails "contacts:verify[10000]"
+# If the dyno dies after "submitted … as file <id>", resume without resubmitting.
+# Detached survives a dropped session; read it with `heroku logs -a mcritchie-studio --tail`.
+heroku run:detached -a mcritchie-studio -e FILE_ID=<id> -- bin/rails "contacts:verify[10000]"
 
-# 4. Then send as before; only verified-valid contacts are picked.
+# 4. Check what a batch would now take; only verified-valid contacts are picked.
 heroku run -a mcritchie-studio -- bin/rails "broadcasts:batch_status[cyvasse-is-back]"
 ```
 
+**Never rerun a real run to recover one that failed; that spends the credits
+twice.** A submit that errors (a timeout, say) may still have landed, and a
+dropped session can lose the id. Before any rerun, open the ZeroBounce
+dashboard's bulk file list: if the file is there, resume it with `FILE_ID`.
+
 Delete `tmp/cyvasse-last-active.csv` afterwards: it holds every player's email.
+Delete the uploaded file in the ZeroBounce dashboard too, once its results are
+applied: ZeroBounce keeps the roughly 10k addresses otherwise.
 
 ## Current Production Status
 
