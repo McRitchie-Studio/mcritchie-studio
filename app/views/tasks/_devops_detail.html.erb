@@ -88,7 +88,7 @@
         <li class="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)_3.5rem] items-center gap-2" data-test="devops-release-row"
             data-release="<%= entry.slug %>" data-slow="<%= slow %>">
           <%= link_to deployment_path(entry.slug), class: "flex min-w-0 items-center gap-1.5 text-xs hover:underline",
-                      title: [entry.slug, entry.mascot&.name, entry.shipped_at&.in_time_zone&.strftime("%b %-d %-l:%M%P")].compact.join(" · ") do %>
+                      title: [entry.slug, entry.mascot_name, entry.shipped_at&.in_time_zone&.strftime("%b %-d %-l:%M%P")].compact.join(" · ") do %>
             <% if entry.mascot&.sprite_url.present? %>
               <img src="<%= entry.mascot.sprite_url %>" alt="" width="20" height="20" loading="lazy" class="h-5 w-5 shrink-0" style="image-rendering: pixelated;">
             <% else %>
