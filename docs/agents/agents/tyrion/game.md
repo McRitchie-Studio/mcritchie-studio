@@ -93,13 +93,16 @@ across down to six, one letter a hex:
 The legacy string under each is what `Game#loadLineup` and the match setup
 endpoint take, from the player's own seat.
 
-All five were checked against the engine on `cyvasse` `origin/main` (854c40d),
-2026-09-29, with the same harness as `test/javascript/openings_test.js`: each
-loads as the whole nineteen-piece army on the player's rows; in each, no enemy
-dragon on any of its forty hexes can take the king on the first turn; none
-repeats one of the panel's twenty openings. "Moves first" counts the eighteen
-legacy computer armies (`app/javascript/cyvasse/setups.js`) his king starts
-nearer the middle than.
+All five are the ones his runner plays (`cyvasse` `script/tyrion/brain.mjs`)
+and are held to the engine by `test/javascript/tyrion_brain_test.js`: each loads
+as the whole nineteen-piece army on the player's rows; none repeats one of the
+panel's twenty openings; and **no enemy dragon, light horse, heavy horse,
+elephant or rabble on any of their forty hexes can take the king on the first
+turn**, both cavalry jumps included. That last check was added after the first
+drafts failed it: a light horse can take a front piece with its first jump and
+the king with its second, so a king needs walls, not only dragon-proof
+diagonals. "Moves first" counts the eighteen legacy computer armies
+(`app/javascript/cyvasse/setups.js`) his king starts nearer the middle than.
 
 ### 1. The Drains
 
@@ -124,42 +127,45 @@ insult; he did the job well, and he named his most solid setup after it.
 ### 2. The Lannister Debt (his gamble)
 
 ```
-     row 7   L.E.XX.E.L
-     row 8   H.S.K.S.H
-     row 9   M..CT..M
-     row 10  R..D..R
-     row 11  ..R...
+     row 7   L.E.X..E.L
+     row 8   H.STD..SH
+     row 9   M.XKRC.M
+     row 10  R.....R
+     row 11  ......
 ```
 
-`1:79|2:85|3:88|4:64|5:68|6:54|7:59|8:52|9:61|10:62|11:70|12:56|13:57|14:75|15:74|16:82|17:66|18:71|19:78|`
+`1:75|2:79|3:85|4:64|5:69|6:54|7:59|8:52|9:61|10:62|11:70|12:56|13:73|14:65|15:76|16:66|17:74|18:71|19:78|`
 
-The king stands on row 8, so it moves first against all 18 computer armies.
-Both of its forward diagonals meet a crossbow first, so no dragon reaches it.
-That is the bait: a dragon that takes either crossbow lands beside the king,
-and the engine confirms it is then taken back by the trebuchet, the catapult
-or the king himself, who trumps the dragon since the September 2026 rules. A
-crossbow for a dragon: a Lannister always pays his debts, and he collects them
-too. His named gamble in most games he opens with it.
+The king stands on row 9 behind the trebuchet and his own dragon, the one
+pair on the board that stops an enemy dragon and that no horse can take (the
+trebuchet trumps a light horse, and a heavy horse cannot reach row 8 in one
+jump). He moves first against all 18 computer armies. The bait is the
+crossbow on the front row: a dragon that takes it is taken back by the
+trebuchet, the catapult or his dragon, and one that takes the crossbow beside
+the king is taken by the king himself, who trumps the dragon since the
+September 2026 rules. A crossbow for a dragon: a Lannister always pays his
+debts, and he collects them too. His favourite, and the setup he opens with
+most.
 
 ### 3. Too Far Forward
 
 ```
-     row 7   L.R..R..RL
+     row 7   L.R..R...L
      row 8   .E.CTX.E.
-     row 9   H.S.XS.H
-     row 10  M..K..M
+     row 9   H..RX..H
+     row 10  M.SKS.M
      row 11  ..D...
 ```
 
-`1:54|2:57|3:60|4:73|5:76|6:63|7:69|8:52|9:61|10:71|11:78|12:67|13:75|14:66|15:65|16:88|17:82|18:79|19:85|`
+`1:54|2:57|3:74|4:81|5:83|6:63|7:69|8:52|9:61|10:71|11:78|12:67|13:75|14:66|15:65|16:88|17:82|18:79|19:85|`
 
 The lesson he once taught a young prince on the Rhoyne, built into a lineup.
-Three rabble stand on the front row as the offer; behind them the catapult,
+Two rabble stand on the front row as the offer; behind them the catapult,
 trebuchet and a crossbow wait on row 8, so whatever steps up to take the
-rabble is itself in range (every front hex from 53 to 60 is answered by at
-least one of his pieces against a dragon, elephant or heavy horse). His own
-dragon waits in the back row until someone has flown theirs too far forward.
-The king sits on row 10 behind the trebuchet and a crossbow.
+rabble is itself in range. His own dragon waits in the back row until someone
+has flown theirs too far forward. The king sits on row 10 between two
+spearmen, behind the trebuchet, a crossbow and the third rabble, which shuts
+the one lane a light horse could have used to reach him.
 
 ### 4. Small Folk
 
