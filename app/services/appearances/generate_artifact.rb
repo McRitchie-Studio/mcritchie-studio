@@ -115,7 +115,10 @@ module Appearances
     # which carries the operator-approved layout and the per-panel repetition rule
     # that layout depends on.
     def prompt
-      @prompt.presence || CharacterSheetPrompt.call(@appearance, number: @number)
+      return @prompt if @prompt.present?
+      return ArtistSheetPrompt.call(@appearance) if @appearance.music_video_look?
+
+      CharacterSheetPrompt.call(@appearance, number: @number)
     end
 
     # THE PHOTOGRAPH THE LIKENESS IS GUARANTEED TO CARRY — the build's ANCHOR, as
@@ -173,6 +176,11 @@ module Appearances
     # NEVER EMPTY WHEN #call PROCEEDS, because #call refuses first on a blank
     # `identity_photo_url` — which is the honest refusal: no face on file at all.
     def references
+      # A music-video look's floor IS its ranked stills, anchor first. Signed URLs
+      # carry a timestamp, so prepending a second signing of the anchor could
+      # slip past `uniq`.
+      return ReferenceSet.new(@appearance).generation_urls if @appearance.music_video_look?
+
       ([identity_photo_url] + Array(ReferenceSet.new(@appearance).generation_urls))
         .compact_blank
         .uniq

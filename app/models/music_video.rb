@@ -18,6 +18,9 @@ class MusicVideo < ApplicationRecord
   has_many :video_clips, -> { order(:ordinal) }, foreign_key: :music_video_slug,
            primary_key: :slug, inverse_of: :music_video, dependent: :destroy
 
+  has_many :looks, class_name: "Appearance", foreign_key: :music_video_slug, primary_key: :slug,
+           inverse_of: :music_video, dependent: :nullify
+
   class CastNotReady < StandardError; end
 
   validates :slug, :platform, :source_url, :source_id, :title, :source_object_key, presence: true

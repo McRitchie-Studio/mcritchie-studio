@@ -23,7 +23,23 @@ class VideoPerformer < ApplicationRecord
 
   def sightings_by_time = sightings.sort_by { |s| s["t_ms"] }
 
+  # Stills for this person's look, clearest first: a still taken at a clear
+  # sighting, then a partial one, then one no sighting names. Posted order breaks
+  # ties. Visibility is the agent's grouping call, never face analysis.
+  def reference_still_keys
+    rank = sightings.group_by { |s| s["t_ms"] / 1000 }
+                    .transform_values { |seen| seen.map { |s| VISIBILITIES.index(s["visibility"]) }.min }
+    still_object_keys.each_with_index.sort_by { |key, i| [rank.fetch(still_second(key), VISIBILITIES.size), i] }
+                     .map(&:first)
+  end
+
   private
+
+  # person_01_0230.jpg -> 150 (the frame's mm:ss in the video).
+  def still_second(key)
+    mmss = key[/_(\d{4,})\.jpg\z/, 1] or return
+    mmss[0..-3].to_i * 60 + mmss[-2..].to_i
+  end
 
   def sightings_are_times_and_visibility
     ok = sightings.is_a?(Array) && sightings.all? do |s|
