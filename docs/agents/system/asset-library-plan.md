@@ -353,7 +353,7 @@ until its Wave 2 steps run, so each cutover still runs its own catch-up copy.
 | `mcritchie-s3` | `/` | 2026-09-29, S3 | every app's Active Storage is on `r2` and its AWS config vars are unset |
 | `mcr-mcritchie-industries-prod` | `/mcr/` | 2026-09-28, S3 | Industries reaches `ACTIVE_STORAGE_BACKEND=r2` |
 | `mcr-mcritchie-industries-dev` | `/mcr/` | 2026-09-03, S3 | with the prod user |
-| `mcritchie-ses` | `/` | 2026-07-16, SES | now: see SES below |
+| `mcritchie-ses` | `/` | 2026-07-16, SES (before this audit, whose own SES read now shows as its last use) | now: SES inbound delivers as the service, not as this user (see SES below) |
 | `agents-admin` | `/` | 2026-09-29, S3 | last, after the buckets are gone |
 
 No roles outside AWS's own service roles.
