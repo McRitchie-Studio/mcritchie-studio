@@ -3,7 +3,7 @@
 
 # find clips <music_video_slug>: propose 25 s clip windows at verse, chorus or
 # singer seams, cut them to R2 and post them to the hub. Stage 5 of the music
-# video pipeline (docs/agents/agents/pokemon/sops/digest-video.md#stage-5-clips).
+# video pipeline (docs/agents/agents/pokemon/sops/digest-video.md, "Stage 5: Clips").
 #
 #   bin/find-clips <slug>                  # dev bucket, local API (localhost:3000)
 #   bin/find-clips <slug> --api URL        # another hub, e.g. a desk server
