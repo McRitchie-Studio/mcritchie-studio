@@ -162,6 +162,58 @@ class PokemonGenderTest < ActiveSupport::TestCase
     assert_equal ["nidorina"], female.evolution_for(nil), "an old nidoran-f task still evolves to Nidorina"
   end
 
+  # --- the gender sign on every name (tasks/show-mascot-gender-symbol) -------------
+
+  test "a gendered draw's name carries its sign" do
+    mawile = make(303, "mawile", name: "Mawile", gender_rate: 4)
+
+    assert_equal "Mawile♂", mawile.display_name(gender: "male")
+    assert_equal "Mawile♀", mawile.display_name(gender: "female")
+    assert_equal "Mawile♀", mawile.display_name(gender: " Female ")
+  end
+
+  test "a draw with no recorded gender, or a junk one, shows the bare name" do
+    mawile = make(303, "mawile", name: "Mawile", gender_rate: 4)
+
+    assert_equal "Mawile", mawile.display_name
+    assert_equal "Mawile", mawile.display_name(gender: nil)
+    assert_equal "Mawile", mawile.display_name(gender: "")
+    assert_equal "Mawile", mawile.display_name(gender: "unknown")
+  end
+
+  test "a genderless species stays bare even when a gender is passed" do
+    magnemite = make(81, "magnemite", name: "Magnemite", gender_rate: -1)
+
+    assert_equal "Magnemite", magnemite.display_name(gender: "male")
+    assert_equal "Magnemite", magnemite.display_name
+  end
+
+  test "an unrecorded gender rate is not genderless" do
+    unknown = make(999, "missingno", name: "Missingno", gender_rate: nil)
+
+    assert_equal "Missingno♂", unknown.display_name(gender: "male")
+  end
+
+  test "nidoran shows exactly one sign for the family and both legacy slugs" do
+    seed_nidoran!
+
+    { %w[nidoran female] => "Nidoran♀", %w[nidoran male] => "Nidoran♂",
+      %w[nidoran-f female] => "Nidoran♀", %w[nidoran-f male] => "Nidoran♀", ["nidoran-f", nil] => "Nidoran♀",
+      %w[nidoran-m male] => "Nidoran♂", %w[nidoran-m female] => "Nidoran♂", ["nidoran-m", nil] => "Nidoran♂" }
+      .each do |(slug, gender), expected|
+        assert_equal expected, Pokemon.find_by!(slug: slug).display_name(gender: gender), "#{slug} / #{gender.inspect}"
+      end
+  end
+
+  test "gendered_name signs a bare name and leaves a signed one alone" do
+    assert_equal "Mawile♂", Pokemon.gendered_name("Mawile", "male")
+    assert_equal "Mawile♀", Pokemon.gendered_name("Mawile", "female")
+    assert_equal "Mawile", Pokemon.gendered_name("Mawile", nil)
+    assert_equal "Mawile♂", Pokemon.gendered_name("Mawile♂", "male"), "a snapshot baked with the sign is idempotent"
+    assert_equal "Nidoran♀", Pokemon.gendered_name("Nidoran♀", "female")
+    assert_equal "", Pokemon.gendered_name(nil, "male")
+  end
+
   # --- the female sprite ------------------------------------------------------------
 
   test "a female draw of a species with gender differences wears the female sprite" do
