@@ -44,7 +44,8 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
   The undo is Steffon's [`r2-backup`](../agents/steffon/sops/r2-backup.md)
   SOP: a per-app `<app>-backup` bucket holding a mirror of production plus a
   30-day archive of everything overwritten or deleted, collected by R2
-  lifecycle rules. Its nightly run is not automated yet. On a production
+  lifecycle rules. Its nightly run is `.github/workflows/r2-backup.yml`, for the
+  apps in its matrix. On a production
   bucket without backup enabled, a destructive bulk operation needs Alex's
   explicit yes; with it enabled, run a backup first and read its receipt.
 - **No tags, ACLs, or bucket policies.** Cost lines come from bucket names, and
@@ -78,9 +79,11 @@ never borrow agent keys; agents never borrow app keys.
 Provisioned and verified by `bucket-provision` on 2026-09-26: every pair passed
 the positive probes and the three negative ones (prod key refused on dev, dev
 key refused a production write and a production delete). All buckets are
-private, and no app reads them yet. They were empty at provisioning; since then
-`moms-app-backup` holds drill receipts and archives (they expire under its
-lifecycle rules).
+private. They were empty at provisioning. Since 2026-09-28
+`mcritchie-industries` serves from its production bucket; no other app reads
+them yet. Each enabled `<app>-backup` holds its mirror, drill receipts and
+archives (archives and receipts expire under its lifecycle rules). Rows carry
+their own dates where they changed after the census.
 
 | App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
 |---|---|---|---|---|
