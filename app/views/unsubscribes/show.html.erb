@@ -5,12 +5,12 @@
       <h1 class="text-2xl font-extrabold text-heading mb-4">Unsubscribe?</h1>
       <%= render "context", contact: @contact, delivery: @delivery %>
       <p class="text-secondary mt-4 mb-6">You'll stop getting McRitchie Studio emails at this address.</p>
-      <%= button_to "Unsubscribe", unsubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, form: { data: { turbo: false } }, class: "btn btn-primary w-full" %>
+      <%= button_to "Unsubscribe", unsubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, form: { data: { turbo: false } }, class: "btn btn-danger w-full" %>
     <% elsif @contact %>
       <h1 class="text-2xl font-extrabold text-heading mb-4">You're already unsubscribed</h1>
       <%= render "context", contact: @contact, delivery: @delivery %>
       <p class="text-secondary mt-4 mb-6">No more McRitchie Studio emails are sent here.</p>
-      <%= button_to "Resubscribe", resubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, form: { data: { turbo: false } }, class: "btn btn-secondary w-full" %>
+      <%= button_to "Resubscribe", resubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, form: { data: { turbo: false } }, class: "btn btn-primary w-full" %>
     <% else %>
       <%= render "not_found" %>
     <% end %>

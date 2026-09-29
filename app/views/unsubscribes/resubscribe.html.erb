@@ -4,6 +4,6 @@
     <h1 class="text-2xl font-extrabold text-heading mb-4">Welcome back</h1>
     <%= render "context", contact: @contact, delivery: @delivery %>
     <p class="text-secondary mt-4 mb-6">You're subscribed again. You can unsubscribe from any email, any time.</p>
-    <%= button_to "Unsubscribe again", unsubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, form: { data: { turbo: false } }, class: "btn btn-secondary w-full" %>
+    <%= button_to "Unsubscribe again", unsubscribe_path(token: @contact.unsubscribe_token, d: params[:d].presence), method: :post, form: { data: { turbo: false } }, class: "btn btn-danger w-full" %>
   </div>
 </div>

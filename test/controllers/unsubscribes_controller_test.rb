@@ -64,13 +64,13 @@ class UnsubscribesControllerTest < ActionDispatch::IntegrationTest
     Broadcast.create!(subject: "Cyvasse is back", template_key: "cyvasse_is_back").deliveries.create!(contact: @contact)
   end
 
-  test "the confirm page shows the address and the email it came from" do
+  test "the confirm page shows the address, not the email, and keeps the email in the form" do
     delivery = cyvasse_delivery
     get unsubscribe_path(token: @contact.unsubscribe_token, d: delivery.token)
 
     assert_select "[data-unsubscribe-email]", text: @contact.email
-    assert_select "[data-unsubscribe-broadcast]", text: "“Cyvasse is back”"
-    assert_select "form[action*='d=#{delivery.token}'][data-turbo=false] button", text: "Unsubscribe"
+    assert_not_includes response.body, "Cyvasse is back", "which email it came from is captured, not shown"
+    assert_select "form[action*='d=#{delivery.token}'][data-turbo=false] button.btn-danger", text: "Unsubscribe"
     assert @contact.reload.subscribed?, "the page alone changes nothing"
   end
 
@@ -87,10 +87,11 @@ class UnsubscribesControllerTest < ActionDispatch::IntegrationTest
     delivery = cyvasse_delivery
     post unsubscribe_path(token: @contact.unsubscribe_token, d: delivery.token)
     assert_select "h1", text: "You're unsubscribed"
-    assert_select "form[action^='/unsubscribe/#{@contact.unsubscribe_token}/resubscribe'] button", text: "Resubscribe"
+    assert_select "form[action^='/unsubscribe/#{@contact.unsubscribe_token}/resubscribe'] button.btn-primary", text: "Resubscribe"
 
     post resubscribe_path(token: @contact.unsubscribe_token, d: delivery.token)
     assert_select "h1", text: "Welcome back"
+    assert_select "button.btn-danger", text: "Unsubscribe again"
     assert @contact.reload.subscribed?
     assert_nil @contact.unsubscribe_reason
     assert_equal %w[unsubscribed resubscribed], delivery.events.order(:id).pluck(:kind)
@@ -100,7 +101,7 @@ class UnsubscribesControllerTest < ActionDispatch::IntegrationTest
     @contact.unsubscribe!
     get unsubscribe_path(token: @contact.unsubscribe_token)
     assert_select "h1", text: "You're already unsubscribed"
-    assert_select "button", text: "Resubscribe"
+    assert_select "button.btn-primary", text: "Resubscribe"
   end
 
   test "resubscribe with a bad token changes nothing" do
