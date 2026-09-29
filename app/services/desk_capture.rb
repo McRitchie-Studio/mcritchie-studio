@@ -6,6 +6,9 @@
 # forwarded mail with deal attachments must never land there. The desk bucket
 # is its own PRIVATE bucket in us-east-1 (SES inbound's region), reachable with
 # the app's existing AWS credentials.
+#
+# DESK_CAPTURE_BACKEND=r2 moves it to its own private R2 bucket (same name),
+# with its own bucket-scoped keys; never the app's AWS_* keys.
 module DeskCapture
   INCOMING_PREFIX = "incoming/"
   PARSED_PREFIX   = "parsed/"
@@ -31,22 +34,38 @@ module DeskCapture
       ENV.fetch("DESK_CAPTURE_BUCKET", "mcritchie-studio-desk")
     end
 
+    def r2?
+      ENV["DESK_CAPTURE_BACKEND"].to_s.casecmp?("r2")
+    end
+
     def region
+      return "auto" if r2?
+
       ENV.fetch("DESK_CAPTURE_REGION", "us-east-1")
     end
 
     # Whether this environment can touch the capture bucket at all. Local desks
     # without AWS credentials skip polling rather than erroring every 5 minutes;
-    # production misconfiguration still fails loudly inside the job.
+    # production misconfiguration still fails loudly inside the job. Choosing
+    # R2 is itself the configuration: a missing R2 key raises in `client`.
     def configured?
-      ENV["AWS_ACCESS_KEY_ID"].present?
+      r2? || ENV["AWS_ACCESS_KEY_ID"].present?
     end
 
     def client
       @client ||= begin
         require "aws-sdk-s3"
-        Aws::S3::Client.new(region: region)
+        Aws::S3::Client.new(**client_options)
       end
+    end
+
+    def client_options
+      return { region: region } unless r2?
+
+      { region: region,
+        endpoint: ENV.fetch("DESK_CAPTURE_R2_ENDPOINT"),
+        access_key_id: ENV.fetch("DESK_CAPTURE_R2_ACCESS_KEY_ID"),
+        secret_access_key: ENV.fetch("DESK_CAPTURE_R2_SECRET_ACCESS_KEY") }
     end
 
     def reset!
