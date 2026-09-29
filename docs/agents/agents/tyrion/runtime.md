@@ -62,7 +62,8 @@ the API adds no power, only a door for one account.
 
 - **Node, importing the engine.** The rules' source of truth is plain ES
   modules (`app/javascript/cyvasse`) that already run under Node for
-  `bin/test-js`. The runner vendors a pinned copy, so its legal moves are the
+  `bin/test-js`. The runner lives beside them in the `cyvasse` repo
+  (`script/tyrion/`) and imports them unchanged, so its legal moves are the
   server's legal moves by construction, and scores them with his evaluation
   ([`game.md`](game.md#the-numbers-for-the-runtime)), two plies deep to start.
 - **Setups** from his five, chosen as [`game.md`](game.md#phase-by-phase) says.
@@ -83,7 +84,7 @@ him". There are two ways that could happen, and each has its own guard.
 | Threat | Guard |
 |---|---|
 | **Talking a secret out of him** (prompt injection in chat) | He holds none. His prompt contains his soul and the game, no keys, no internals. The output filter drops any line containing the runner's own secrets or a URL. The Cyvasse token can only play his own games |
-| **Running up the bill** (chatting endlessly to burn model credits: the real way to reach a card) | A dedicated model API key in its own workspace with a **hard monthly spend limit**; a small, cheap chat model (Haiku 4.5, `claude-haiku-4-5-20251001`) with replies capped at about 150 tokens; at most one reply per opponent message, 20 replies per match, and a per-player daily cap, after which he plays on in silence. **Alex:** set the monthly cap |
+| **Running up the bill** (chatting endlessly to burn model credits: the real way to reach a card) | A dedicated model API key in its own workspace with a **hard monthly spend limit**; the chat model set by `TYRION_CHAT_MODEL` (default `claude-opus-5-5` at low effort; **Alex** may choose the cheaper `claude-haiku-4-5`), each line cut to 280 characters; at most one reply per opponent message, 20 replies per match, and a per-player daily cap, after which he plays on in silence. **Alex:** set the monthly cap |
 | **The machine is stolen or compromised** | It holds two revocable things: the Cyvasse bot token (revoke with the rake task) and the capped model key (revoke in the console). Nothing else lives on it |
 | **The token leaks** | Worst case, someone plays Tyrion's games badly. Revoke and reissue |
 | **Abuse in chat** | He stops talking and flags the match (`/flag`); admins read it on `/admin/matches/:id` |
@@ -91,10 +92,10 @@ him". There are two ways that could happen, and each has its own guard.
 
 ## Build order
 
-1. **cyvasse `bot-api`** — tokens, the `/api/bot` endpoints, the heartbeat and
+1. **cyvasse bot API** (task `tyrion-bot-api`) — tokens, the `/api/bot` endpoints, the heartbeat and
    the Play Now switch; backend shape, request tests for every refusal.
-2. **Tyrion runner** — the Node program, its engine pin, setups, two-ply
-   search, chat and filter; where it lives is **Alex's** call (a small private
-   repo is the default, so the isolated machine clones one thing).
+2. **Tyrion runner** (task `tyrion-runner`) — the Node program in
+   `cyvasse/script/tyrion/`: setups, search, chat and filter. **Alex** may
+   still prefer a separate repo for the isolated machine.
 3. **Tune** — play him against the legacy bot and against people; adjust the
    weights in [`game.md`](game.md) from what he loses.
