@@ -36,6 +36,8 @@ jobs:
         include:
           - app: moms-app
             secret: MOMS_APP
+          - app: mcritchie-industries
+            secret: MCRITCHIE_INDUSTRIES
     steps:
       - uses: actions/checkout@v4
 

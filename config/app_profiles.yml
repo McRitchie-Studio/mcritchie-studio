@@ -41,6 +41,7 @@ profiles:
       - The repo is McRitchie-Studio/<slug>, cloned at /Users/alex/projects/<slug>, and origin fetches
       - origin has main, accepted and release (push the last two from main first)
       - .github/workflows/ci.yml has a `test` job; its command becomes test_cmd
+      - A workflow named CI builds pushes to accepted and release (no path filter or branches-ignore), as bin/release prepare requires
       - .gitignore ignores .worktrees/
       - The Heroku app exists and <smoke_url>/up answers 200
       - An app with a database runs migrations in its Procfile release phase

@@ -47,7 +47,12 @@ question to be recorded. An app that needs a QA copy is not this shape: it gets 
 
 1. The repo is `McRitchie-Studio/<slug>`, cloned at `/Users/alex/projects/<slug>`.
 2. `origin` has `main`, `accepted` and `release`.
-3. `.github/workflows/ci.yml` has a `test` job with one `bin/rails …` step.
+3. `.github/workflows/ci.yml` has a `test` job with one `bin/rails …` step, and a
+   workflow named `CI` builds pushes to `accepted` and `release` with no path
+   filter or `branches-ignore`. That second half is `bin/release prepare`'s own
+   guard (`Release::AcceptedCertification`), reused by the contract, so an app
+   the contract passes cannot be refused at its first release (as `moms-app` was
+   on 2026-09-28).
 4. `.gitignore` ignores `.worktrees/`.
 5. The Heroku app exists and `<smoke_url>/up` answers 200.
 6. An app with a database (`gem "pg"`) runs `bin/rails db:migrate` in its
@@ -88,6 +93,8 @@ ones:
 
 - **branches**: `git -C /Users/alex/projects/$SLUG push origin main:refs/heads/accepted main:refs/heads/release`
 - **.worktrees ignored**: add `.worktrees/` to the app's `.gitignore`.
+- **ci on release rungs**: set `push: branches: [ main, release, accepted ]` in
+  the `CI` workflow, with no `paths`, `paths-ignore` or `branches-ignore`.
 - **smoke /up**: route `get "up" => "rails/health#show"`.
 - **hub badge glyph** (checked in the hub, not the app): add
   `"<slug>" => "<emoji>"` to `APP_EMOJIS` in `app/helpers/application_helper.rb`

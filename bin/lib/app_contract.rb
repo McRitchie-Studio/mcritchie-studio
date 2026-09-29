@@ -4,6 +4,10 @@ require "yaml"
 require "net/http"
 require "open3"
 require "uri"
+# The release sweep's own guard, reused so the contract can never pass a workflow
+# bin/release prepare refuses (Carl, review of contract-checks-ci-triggers). It does
+# no I/O and bin/release.rb already loads it standalone.
+require_relative "../../app/models/release/accepted_certification"
 
 # AppContract — checks, live and read-only, that an app already meets the
 # standalone deploy contract (config/app_profiles.yml → contract) before
@@ -79,6 +83,17 @@ module AppContract
               remedy: "add \"#{slug}\" => \"<emoji>\" to APP_EMOJIS in app/helpers/application_helper.rb (in the hub, in the registration task)")
   end
 
+  # Every workflow file at REF, as { path => yaml_text }: the shape
+  # Release::AcceptedCertification.certified? reads, since the sweep matches the
+  # suite workflow by NAME across all of them, not by the filename ci.yml.
+  def workflow_files(root, probe)
+    listing, ok = probe.run("git", "-C", root, "ls-tree", "--name-only", REF, ".github/workflows/")
+    return {} unless ok
+
+    listing.lines.map(&:strip).select { |p| p.end_with?(".yml", ".yaml") }
+           .to_h { |p| [p, probe.read_at(root, REF, p).to_s] }
+  end
+
   # The studio-engine version in a Gemfile.lock, or nil when the app does not
   # consume the engine.
   def engine_version(lock) = lock.to_s[/^    studio-engine \(([0-9.]+)\)/, 1]
@@ -101,7 +116,20 @@ module AppContract
                         detail: missing.empty? ? "main, accepted, release" : "missing #{missing.join(', ')}",
                         remedy: "create them off main first: git -C <repo> push origin main:refs/heads/accepted main:refs/heads/release")
 
-    test_cmd = ci_test_cmd(probe.read_at(root, REF, ".github/workflows/ci.yml"))
+    ci_yaml = probe.read_at(root, REF, ".github/workflows/ci.yml")
+    test_cmd = ci_test_cmd(ci_yaml)
+    # bin/release prepare refuses to promote a rung CI never builds
+    # (refuse_blind_accepted!): measured 2026-09-28, when moms-app passed every
+    # other check here and was then refused because its CI ran on main only. The
+    # decision is Release::AcceptedCertification's, over EVERY workflow file, so
+    # the name match, branches-ignore and path filters all agree with the sweep.
+    workflows = workflow_files(root, probe)
+    blind = %w[accepted release].reject do |rung|
+      Release::AcceptedCertification.certified?(workflows, Release::AcceptedCertification::DEFAULT_SUITE_WORKFLOW, rung)
+    end
+    checks << Check.new(name: "ci on release rungs", ok: blind.empty?,
+                        detail: blind.empty? ? "workflow \"CI\" builds pushes to accepted and release" : "no workflow named \"CI\" builds pushes to #{blind.join(', ')}",
+                        remedy: "name the suite workflow `CI`, give it `push: branches: [ main, release, accepted ]` with no path filter or branches-ignore, and merge it to accepted")
     checks << Check.new(name: "ci test job", ok: !test_cmd.nil?, detail: test_cmd || "no single bin/rails step in jobs.test",
                         remedy: "give .github/workflows/ci.yml a `test` job with one `bin/rails ...` step")
 
