@@ -226,10 +226,33 @@ class Pokemon < ApplicationRecord
     (@gender_forms_by_gender ||= {})[gender] ||= self.class.find_by(slug: slug)
   end
 
-  # The name to show for a draw of this Pokémon: a family wears its form's name
-  # (Nidoran♀ / Nidoran♂); everyone else is just their name.
+  # The name to show for a draw of this Pokémon — THE one rule every surface
+  # shares (board, crew, release faces, activity feed, Pokédex; bin/statusline and
+  # bin/agent-marker mirror it in bash/plain Ruby): a gendered draw wears its sign
+  # (Mawile♂, Gardevoir♀); a genderless species or an unrecorded gender stays bare.
+  # A family wears its form's name (Nidoran♀ / Nidoran♂), which already carries
+  # the sign, so Nidoran never doubles it.
   def display_name(gender: nil)
-    gender_form(gender)&.name.presence || name
+    base = gender_form(gender)&.name.presence || name
+    genderless? ? base : self.class.gendered_name(base, gender)
+  end
+
+  # A species PokéAPI records as having no gender (Magnemite, Staryu, the
+  # legendaries). An unrecorded rate (nil) is not genderless — it is unknown.
+  def genderless?
+    !gender_rate.nil? && gender_rate.to_i <= GENDERLESS_RATE
+  end
+
+  # `name` followed by the sign for `gender` (♂/♀) — nil, blank or junk gender
+  # leaves it bare, and a name that already ends in a sign (Nidoran♀, a snapshot
+  # baked after this rule) is returned unchanged, so it is idempotent. For
+  # surfaces holding only a name and a gender (an event's baked snapshot).
+  def self.gendered_name(name, gender)
+    name = name.to_s
+    sign = GENDER_SYMBOLS[normalize_gender(gender)]
+    return name if sign.nil? || name.empty? || name.end_with?(*GENDER_SYMBOLS.values)
+
+    "#{name}#{sign}"
   end
 
   # { type_key => Studio::Enumeral } for every seeded type, in ONE query — build
