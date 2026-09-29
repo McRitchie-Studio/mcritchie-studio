@@ -195,8 +195,18 @@ module R2Backup
       json = JSON.generate(receipt)
       log.puts(json)
       _o, rc = rclone("rcat", "#{backup}/_receipts/#{stamp}.json", stdin: json)
-      log.puts("WARNING: receipt write failed (rclone exit #{rc})") unless rc.zero?
-      receipt
+      return receipt if rc.zero?
+
+      # A run whose receipt write fails is NOT ok, however clean the copy: gc
+      # reads only receipts, so a missing one would stall collection while the
+      # job stayed green. This used to be a warning nobody read. From 2026-09-27
+      # to -29 CI's apt rclone 1.60.1 exited 1 on every receipt (a 501
+      # NotImplemented AFTER the upload; the objects landed intact), so the
+      # warning cried wolf nightly and would have hidden a real loss. Failing
+      # the run is what opens the alert issue.
+      failure = "receipt write failed (rclone exit #{rc})"
+      log.puts("ERROR: #{failure}")
+      receipt.merge("ok" => false, "reason" => [receipt["reason"], failure].compact.join("; "))
     end
 
     # [name, hash] of the newest receipt (optionally the newest OK one), or nil.

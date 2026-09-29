@@ -31,6 +31,19 @@ class R2BackupWorkflowTest < Minitest::Test
     crons.each { |cron| refute_equal "0", cron.split.first, "#{cron} runs on the hour" }
   end
 
+  # apt's rclone (1.60.1 on ubuntu-latest) exits 1 on every upload to R2 (a 501
+  # after the PUT), reproduced 2026-09-29. The install must be a
+  # pinned release whose zip is checksum-verified.
+  def test_rclone_is_a_pinned_verified_release_not_apt
+    step = YAML.safe_load_file(WORKFLOW).dig("jobs", "backup", "steps").find { |st| st["name"] == "Install rclone" }
+    refute_nil step
+    refute_match(/apt/, step["run"])
+    assert_match(/\A\d+\.\d+\.\d+\z/, step.dig("env", "RCLONE_VERSION"))
+    assert_operator Gem::Version.new(step.dig("env", "RCLONE_VERSION")), :>, Gem::Version.new("1.60.1")
+    assert_match(/\A\h{64}\z/, step.dig("env", "RCLONE_SHA256"))
+    assert_match(/sha256sum -c/, step["run"])
+  end
+
   def test_the_apps_backed_up_nightly
     assert_equal %w[mcritchie-industries moms-app], matrix.map { |row| row["app"] }.sort
   end
