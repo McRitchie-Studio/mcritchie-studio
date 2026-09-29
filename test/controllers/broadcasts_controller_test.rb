@@ -36,6 +36,17 @@ class BroadcastsControllerTest < ActionDispatch::IntegrationTest
     assert @broadcast.reload.sent?
   end
 
+  # [integration] The editor's full send leaves out anyone a batch reached.
+  test "deliver skips contacts a batch already sent to" do
+    reached = Contact.subscribed.first
+    @broadcast.deliveries.create!(contact: reached, sent_at: 1.hour.ago)
+    log_in_as(@admin)
+    assert_enqueued_jobs 1, only: BroadcastSendJob do
+      post deliver_broadcast_path(@broadcast), params: { audience: "all" }
+    end
+    assert_not_equal reached.id, enqueued_jobs.last["arguments"].last
+  end
+
   test "deliver blocks a duplicate send" do
     @broadcast.update!(status: "sent", sent_at: Time.current)
     log_in_as(@admin)
