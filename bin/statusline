@@ -294,27 +294,32 @@ mascot_display_emoji() {  # emoji shiny -> emoji, normalizing legacy sparkles to
   fi
 }
 
-# The display name for a mascot slug. Title-cases the slug (BSD-sed / bash-3.2
+# The display name for a mascot slug — the bash mirror of Pokemon#display_name,
+# the ONE rule every surface shares. Title-cases the slug (BSD-sed / bash-3.2
 # safe: cap first char, hyphens->spaces — snorlax -> "Snorlax"; an agent name like
-# "Jasper" is already cased), except Nidoran: the two species slugs carry their
-# sign, and the `nidoran` gender family takes it from the session's gender roll
-# (mascot_gender), so none of them renders as "Nidoran f".
+# "Jasper" is already cased), then appends the draw's sign from the marker's
+# mascot_gender: male ♂, female ♀, genderless ⚥ (the session-mascot endpoint
+# writes "genderless" for a gender_rate -1 species). No mascot_gender — a
+# pre-gender session — stays bare. Nidoran carries exactly ONE sign: the two
+# legacy species slugs name theirs, and the `nidoran` family takes it from the
+# gender, so none renders as "Nidoran f" or "Nidoran♀♀".
+mascot_gender_sign() {  # gender -> sign ("" when none)
+  case "$1" in
+    female) printf '%s' "♀" ;;
+    male) printf '%s' "♂" ;;
+    genderless) printf '%s' "⚥" ;;
+  esac
+}
+
 mascot_display_name() {  # mascot gender -> name
   local mascot="$1" gender="$2" first rest
   case "$mascot" in
     nidoran-f) printf '%s' "Nidoran♀"; return 0 ;;
     nidoran-m) printf '%s' "Nidoran♂"; return 0 ;;
-    nidoran)
-      case "$gender" in
-        female) printf '%s' "Nidoran♀" ;;
-        male) printf '%s' "Nidoran♂" ;;
-        *) printf '%s' "Nidoran" ;;
-      esac
-      return 0 ;;
   esac
   first=$(printf '%s' "$mascot" | cut -c1 | tr '[:lower:]' '[:upper:]')
   rest=$(printf '%s' "${mascot:1}" | tr '-' ' ')
-  printf '%s' "${first}${rest}"
+  printf '%s%s' "${first}${rest}" "$(mascot_gender_sign "$gender")"
 }
 
 render() {  # app feature task url stage mascot mascot_color mascot_emoji mascot_shiny app_color mascot_gender

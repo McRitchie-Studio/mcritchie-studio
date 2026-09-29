@@ -260,10 +260,46 @@ class StatuslineTest < Minitest::Test
     refute_includes unknown, "♂"
   end
 
-  def test_gender_never_renames_an_ordinary_mascot
-    out = render_in(session: SESSION, extra: { "mascot" => "mr-mime", "mascot_gender" => "male" })
-    assert_includes out, "Mr mime"
-    refute_includes out, "♂"
+  # tasks/show-mascot-gender-symbol: EVERY mascot wears its sign, not just Nidoran —
+  # the bash mirror of Pokemon#display_name. The session marker (the path Alex's
+  # fresh `⚙️🌈 Mawile · mcritchie-studio` session read) and the desk context both.
+  def test_session_marker_renders_mawile_with_the_male_sign
+    out = render_session_marker_in(session: SESSION, provider: :claude,
+                                   extra: { "mascot" => "mawile", "mascot_gender" => "male",
+                                            "mascot_emoji" => "⚙️🌈" })
+
+    assert_includes out, "Mawile♂"
+    assert_includes out, "\e]0;⚙️🌈 Mawile♂\a", "the tab title carries the sign too"
+  end
+
+  def test_an_ordinary_mascot_wears_its_gender_sign
+    male = render_in(session: SESSION, extra: { "mascot" => "mr-mime", "mascot_gender" => "male" })
+    female = render_in(session: SESSION, extra: { "mascot" => "gardevoir", "mascot_gender" => "female" })
+
+    assert_includes male, "Mr mime♂"
+    assert_includes female, "Gardevoir♀"
+  end
+
+  def test_a_genderless_species_wears_the_genderless_sign
+    out = render_in(session: SESSION, extra: { "mascot" => "magnemite", "mascot_gender" => "genderless" })
+
+    assert_includes out, "Magnemite⚥"
+    assert_includes out, "\e]0;Magnemite⚥\a"
+  end
+
+  def test_a_pre_gender_mascot_stays_bare
+    out = render_in(session: SESSION, extra: { "mascot" => "bulbasaur" })
+
+    assert_includes out, "Bulbasaur"
+    %w[♀ ♂ ⚥].each { |sign| refute_includes out, sign }
+  end
+
+  def test_nidoran_never_doubles_its_sign
+    { "nidoran-f" => "female", "nidoran-m" => "male", "nidoran" => "female" }.each do |slug, gender|
+      out = render_in(session: SESSION, extra: { "mascot" => slug, "mascot_gender" => gender })
+
+      refute_match(/Nidoran[♀♂][♀♂]/, out, slug)
+    end
   end
 
   # --- No build-claim heartbeat: the desk is the claim -------------------------
