@@ -58,7 +58,7 @@
         <div class="flex items-center justify-between gap-2 mb-1.5">
           <p class="label-upper">Swap prompt</p>
           <button type="button" @click="copy()" class="btn btn-outline btn-sm" data-test="clip-copy">
-            <span x-show="!copied">Copy</span><span x-show="copied" x-cloak>Copied</span>
+            <span x-text="copied ? 'Copied' : 'Copy'">Copy</span>
           </button>
         </div>
         <p x-ref="prompt" class="text-sm text-body bg-surface-alt border border-subtle rounded-lg p-3 whitespace-pre-wrap break-words select-all"
