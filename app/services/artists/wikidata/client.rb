@@ -21,29 +21,29 @@ module Artists
 
       # Returns the result bindings (an array of hashes).
       def select(query)
-        attempt = 0
-        begin
-          attempt += 1
+        (1..@attempts).each do |attempt|
           sleep(@pause) if @pause.positive?
-          response = post(query)
-          code = response.code.to_i
-          return JSON.parse(response.body).dig("results", "bindings") if code == 200
-          raise Error, "HTTP #{code}: #{response.body.to_s[0, 200]}" unless RETRYABLE.include?(code)
+          result = attempt_select(query)
+          return result[:bindings] if result.key?(:bindings)
+          raise Error, "#{result[:reason]} after #{attempt} attempts" if attempt == @attempts
 
-          wait = response["Retry-After"].to_i
-          raise Error, "HTTP #{code} after #{attempt} attempts" if attempt >= @attempts
-
-          backoff(attempt, wait, "HTTP #{code}")
-          retry
-        rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET, JSON::ParserError => e
-          raise Error, "#{e.class} after #{attempt} attempts" if attempt >= @attempts
-
-          backoff(attempt, 0, e.class.name)
-          retry
+          backoff(attempt, result[:wait], result[:reason])
         end
       end
 
       private
+
+      # { bindings: } on success, or { reason:, wait: } for a retryable failure.
+      def attempt_select(query)
+        response = post(query)
+        code = response.code.to_i
+        return { bindings: JSON.parse(response.body).dig("results", "bindings") } if code == 200
+        raise Error, "HTTP #{code}: #{response.body.to_s[0, 200]}" unless RETRYABLE.include?(code)
+
+        { reason: "HTTP #{code}", wait: response["Retry-After"].to_i }
+      rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET, JSON::ParserError => e
+        { reason: e.class.name, wait: 0 }
+      end
 
       def post(query)
         Net::HTTP.start(ENDPOINT.host, ENDPOINT.port, use_ssl: true, open_timeout: 15, read_timeout: 90) do |http|
