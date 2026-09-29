@@ -241,9 +241,9 @@ class StatuslineTest < Minitest::Test
     female = render_in(session: SESSION, extra: { "mascot" => "nidoran-f" })
     male = render_in(session: SESSION, extra: { "mascot" => "nidoran-m" })
 
-    assert_includes female, "Nidoran♀"
+    assert_includes female, "Nidoran ♀"
     refute_includes female, "Nidoran f", "the slug's -f is not a word"
-    assert_includes male, "Nidoran♂"
+    assert_includes male, "Nidoran ♂"
     refute_includes male, "Nidoran m"
   end
 
@@ -252,9 +252,9 @@ class StatuslineTest < Minitest::Test
     male = render_in(session: SESSION, extra: { "mascot" => "nidoran", "mascot_gender" => "male" })
     unknown = render_in(session: SESSION, extra: { "mascot" => "nidoran" })
 
-    assert_includes female, "Nidoran♀"
-    assert_includes female, "\e]0;Nidoran♀\a", "the tab title carries the sign too"
-    assert_includes male, "Nidoran♂"
+    assert_includes female, "Nidoran ♀"
+    assert_includes female, "\e]0;Nidoran ♀\a", "the tab title carries the sign too"
+    assert_includes male, "Nidoran ♂"
     assert_includes unknown, "Nidoran"
     refute_includes unknown, "♀"
     refute_includes unknown, "♂"
@@ -268,23 +268,23 @@ class StatuslineTest < Minitest::Test
                                    extra: { "mascot" => "mawile", "mascot_gender" => "male",
                                             "mascot_emoji" => "⚙️🌈" })
 
-    assert_includes out, "Mawile♂"
-    assert_includes out, "\e]0;⚙️🌈 Mawile♂\a", "the tab title carries the sign too"
+    assert_includes out, "Mawile ♂"
+    assert_includes out, "\e]0;⚙️🌈 Mawile ♂\a", "the tab title carries the sign too"
   end
 
   def test_an_ordinary_mascot_wears_its_gender_sign
     male = render_in(session: SESSION, extra: { "mascot" => "mr-mime", "mascot_gender" => "male" })
     female = render_in(session: SESSION, extra: { "mascot" => "gardevoir", "mascot_gender" => "female" })
 
-    assert_includes male, "Mr mime♂"
-    assert_includes female, "Gardevoir♀"
+    assert_includes male, "Mr mime ♂"
+    assert_includes female, "Gardevoir ♀"
   end
 
   def test_a_genderless_species_wears_the_genderless_sign
     out = render_in(session: SESSION, extra: { "mascot" => "magnemite", "mascot_gender" => "genderless" })
 
-    assert_includes out, "Magnemite⚥"
-    assert_includes out, "\e]0;Magnemite⚥\a"
+    assert_includes out, "Magnemite ⚥"
+    assert_includes out, "\e]0;Magnemite ⚥\a"
   end
 
   def test_a_pre_gender_mascot_stays_bare

@@ -422,7 +422,7 @@ end
 # Pokemon#display_name, bin/statusline and bin/agent-marker: mascot_gender appends
 # its sign (male ♂, female ♀, genderless ⚥), none (pre-gender) stays bare, and
 # Nidoran carries exactly one sign (the legacy slugs name theirs).
-MARKER_NIDORAN_NAMES = { "nidoran-f" => "Nidoran♀", "nidoran-m" => "Nidoran♂" }.freeze
+MARKER_NIDORAN_NAMES = { "nidoran-f" => "Nidoran ♀", "nidoran-m" => "Nidoran ♂" }.freeze
 MARKER_GENDER_SIGNS = { "female" => "♀", "male" => "♂", "genderless" => "⚥" }.freeze
 
 def marker_mascot_name(marker)
@@ -430,7 +430,8 @@ def marker_mascot_name(marker)
   return MARKER_NIDORAN_NAMES.fetch(slug) if MARKER_NIDORAN_NAMES.key?(slug)
 
   name = titleize_marker_name(slug)
-  name.empty? ? name : "#{name}#{MARKER_GENDER_SIGNS[marker['mascot_gender'].to_s.strip.downcase]}"
+  sign = MARKER_GENDER_SIGNS[marker["mascot_gender"].to_s.strip.downcase]
+  name.empty? || sign.nil? ? name : "#{name} #{sign}"
 end
 
 def print_session_marker(marker)

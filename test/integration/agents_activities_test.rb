@@ -321,12 +321,12 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
 
     get activities_agents_path
     assert_response :success
-    assert_select "tbody[data-test=aa-activity] .hb-names span", text: "Mawile♂"
-    assert_select "tbody[data-test=aa-activity] .hb-names span", text: "Magnemite⚥"
+    assert_select "tbody[data-test=aa-activity] .hb-names span", text: "Mawile ♂"
+    assert_select "tbody[data-test=aa-activity] .hb-names span", text: "Magnemite ⚥"
 
     get activities_filter_agents_path
-    assert_select "a[data-test=aa-filter-session][data-session-id=?]", a, text: /Mawile♂/
-    assert_select "a[data-test=aa-filter-session][data-session-id=?]", b, text: /Magnemite⚥/
+    assert_select "a[data-test=aa-filter-session][data-session-id=?]", a, text: /Mawile ♂/
+    assert_select "a[data-test=aa-filter-session][data-session-id=?]", b, text: /Magnemite ⚥/
   end
 
   test "falls back to the activity mascot when a session has no SessionMascot row" do
