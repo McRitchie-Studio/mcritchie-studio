@@ -101,6 +101,10 @@ class StorageBackendTest < ActiveSupport::TestCase
     }
     assert_equal expected, storage_configs("s3").deep_stringify_keys
     assert_equal expected, storage_configs(nil).deep_stringify_keys
+
+    blank = storage_configs("s3", "AWS_ACCESS_KEY_ID" => "", "AWS_SECRET_ACCESS_KEY" => " ")
+    assert_equal [ nil, nil ], blank["amazon"].values_at("access_key_id", "secret_access_key"),
+                 "a blank key rendered nil in the old YAML, so the SDK's default chain applied"
   end
 
   %i[amazon amazon_dev].each do |name|
