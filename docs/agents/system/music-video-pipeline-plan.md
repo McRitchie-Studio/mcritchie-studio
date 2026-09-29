@@ -45,6 +45,11 @@ stored.
   creating a new one is allowed.
 - "Cast confirmed" advances the video.
 
+Built by `music-video-cast-panel`: the `video_performers` table,
+`POST /api/v1/music_videos/:slug/performers`, and the panel at
+`/music_videos/:slug`. The agent's steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#stage-2-cast).
+
 ### 3. Artist references
 
 For this video's look, the best references are stills of the performer from the

@@ -81,8 +81,54 @@ that carries more than times and a section kind.
 ## 6. Report
 
 Report the video's title, duration, the R2 key, the credited artists and any
-unresolved credits; the script prints all of them. The next act is the cast stage, built by
-`music-video-cast-panel`.
+unresolved credits; the script prints all of them. The next act is stage 2, the cast.
+
+## Stage 2: Cast
+
+The agent finds the people on screen; the operator names them. No script runs
+steps 1 to 3 yet: **PLANNED** is a `bin/cast-video` that does them in one go.
+Until then the agent runs them by hand on the Mac, from the source MP4.
+
+1. **Sample frames with accurate seeks.** One frame every 3 seconds, each taken
+   with `-ss` before `-i`, so the timestamp is the frame's real time:
+
+   ```bash
+   ffmpeg -v error -ss <seconds> -i <file>.mp4 -frames:v 1 -q:v 3 f_<mmss>.jpg
+   ```
+
+   Never take timestamps from the `fps=` filter: in the founding run it drifted
+   from the real timeline.
+2. **Group people by visible cues** (outfit, hair, eyewear, jewelry) into
+   Person 1..N, numbered by first appearance. **Never face recognition**, and
+   no names: naming is the operator's. Each sighting is a time and `clear` or
+   `partial` (partly in frame, or background). Note what a sample cannot tell
+   apart (two people always together, a mannequin, a figure too small).
+3. **Upload one still per person** to the same bucket as the source, at
+   `music_videos/<artist>/<video>/stills/person_<NN>_<mmss>.jpg`. The API refuses
+   a still outside the video's own folder or numbered for another person.
+4. **Post the set**, which replaces any set already there:
+
+   ```bash
+   POST /api/v1/music_videos/<slug>/performers
+   { "performers": [ { "ordinal": 1, "label": "desk",
+       "still_object_keys": ["music_videos/steve_aoki/night_call/stills/person_01_0230.jpg"],
+       "sightings": [ { "t_ms": 18000, "visibility": "clear" } ],
+       "confidence_note": "Desk scenes throughout." } ] }
+   ```
+
+   The agent never sends an artist: any key beyond these five is refused
+   (`UNPERMITTED_KEYS`). A replace drops the operator's labels on the old set and
+   says how many (`meta.dropped_labels`); a confirmed cast answers `409
+   CAST_CONFIRMED`.
+5. **Hand the operator the cast panel**, `/music_videos/<slug>` (admin). Each card
+   shows the still, the sightings as links to that second of the video, and a
+   typeahead over artists (names and aliases) and People. Picking a person from
+   People makes them an artist; "Create new artist" adds one; "Extra, not a named
+   artist" closes a card. **Cast confirmed** unlocks when every card is closed and
+   moves the video from `digested` to `cast_confirmed`.
+
+The Night Call proof is the dev seed (`db/seeds/data/night_call_cast.rb`): seven
+people, stills and sightings, no names.
 
 ## Related
 
