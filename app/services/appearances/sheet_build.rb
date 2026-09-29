@@ -70,7 +70,7 @@ module Appearances
     # this run finishes against, and the stale window restarts from here, not
     # from enqueue. Returns nil when the claim is no longer this job's.
     def self.take(appearance, started_at)
-      running_at = [Time.current.floor(6), started_at + 0.000001].max
+      running_at = [Time.current.floor(6), started_at + Rational(1, 1_000_000)].max
       taken = Appearance.where(id: appearance.id, sheet_build_state: BUILDING, sheet_build_started_at: started_at)
                         .update_all(sheet_build_started_at: running_at, updated_at: Time.current)
       running_at if taken == 1

@@ -93,4 +93,19 @@ class SheetBuildJobTest < ActiveJob::TestCase
 
     assert_equal false, stale_mid_call
   end
+
+  # A Float 0.000001 is just under a microsecond and truncates away on save,
+  # so the take must still move the token when the job runs in the claim's
+  # microsecond (a worker clock at or behind the web's).
+  test "a re-run spends nothing when the job runs in the claim's microsecond" do
+    freeze_time do
+      @look.update_columns(sheet_build_state: nil, sheet_build_started_at: nil)
+      started_at = Appearances::SheetBuild.claim!(@look)
+      calls = 0
+      rerun = -> { SheetBuildJob.perform_now(@look.slug, started_at.iso8601(6)) }
+      Appearances::GenerateArtifact.stub(:call, ->(*, **) { calls += 1; rerun.call if calls == 1 }) { rerun.call }
+
+      assert_equal 1, calls
+    end
+  end
 end
