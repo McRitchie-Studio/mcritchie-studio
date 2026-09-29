@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1079,6 +1079,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
     t.decimal "output_rate", precision: 12, scale: 4, null: false
     t.datetime "updated_at", null: false
     t.index ["model"], name: "index_model_rate_overrides_on_model", unique: true
+  end
+
+  create_table "music_video_artists", force: :cascade do |t|
+    t.string "artist_slug", null: false
+    t.datetime "created_at", null: false
+    t.string "music_video_slug", null: false
+    t.integer "position", default: 1, null: false
+    t.string "role", null: false
+    t.datetime "updated_at", null: false
+    t.index ["artist_slug"], name: "index_music_video_artists_on_artist_slug"
+    t.index ["music_video_slug", "artist_slug"], name: "index_music_video_artists_on_music_video_slug_and_artist_slug", unique: true
+  end
+
+  create_table "music_videos", force: :cascade do |t|
+    t.jsonb "caption_timing", default: {"cues"=>[], "sections"=>[]}, null: false
+    t.datetime "created_at", null: false
+    t.integer "duration_ms"
+    t.string "info_object_key"
+    t.string "kind", default: "music_video", null: false
+    t.string "platform", null: false
+    t.string "slug", null: false
+    t.string "source_id", null: false
+    t.string "source_object_key", null: false
+    t.string "source_url", null: false
+    t.string "stage", default: "digested", null: false
+    t.string "title", null: false
+    t.jsonb "unresolved_credits", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["platform", "source_id"], name: "index_music_videos_on_platform_and_source_id", unique: true
+    t.index ["slug"], name: "index_music_videos_on_slug", unique: true
   end
 
   create_table "news", force: :cascade do |t|
