@@ -2,6 +2,8 @@
 # DeskCaptureItem. Idempotent on s3_key — a re-poll of the same object creates
 # nothing. No cron entry — the Resend webhook is the primary transport; run
 # this manually (DeskCapturePollJob.perform_now) as the SES fallback.
+# RETIRING with the AWS exit (asset-library-plan Wave 7): SES drops land in
+# S3 only, so under DESK_CAPTURE_BACKEND=r2 this poll has nothing to read.
 #
 # Failure posture: NO silent rescues (the QA-shared-bucket scar). A missing
 # credential in dev skips politely via DeskCapture.configured?; anything else
