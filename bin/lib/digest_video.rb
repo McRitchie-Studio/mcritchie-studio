@@ -27,6 +27,14 @@ module DigestVideo
     true => { bucket: "mcritchie-studio-production", suffix: "prod", api: "https://mcritchie.studio" }
   }.freeze
 
+  # The stored info.json keeps only these. Everything else is dropped: the
+  # description, tags and chapters can quote lyrics, and formats, thumbnails
+  # and caption tracks carry signed URLs that embed the operator's public IP.
+  INFO_ALLOWLIST = %w[id title uploader channel channel_id upload_date duration webpage_url
+                      extractor width height fps vcodec acodec].freeze
+  CANONICAL_PAGE = %r{\Ahttps://(?:www\.)?youtube\.com/watch\?v=[\w-]{11}\z}
+  QUERY_URL = %r{https?://\S*\?}
+
   module_function
 
   def target(production:) = TARGETS.fetch(production ? true : false)
@@ -41,6 +49,16 @@ module DigestVideo
     end
   rescue URI::InvalidURIError
     raise Failure, "not a URL: #{url}"
+  end
+
+  # Allowlisted scalars only; a URL with a query string survives only as the canonical watch page.
+  def sanitize_info(info)
+    info.slice(*INFO_ALLOWLIST).select do |key, value|
+      next false unless value.is_a?(String) || value.is_a?(Numeric)
+      next true unless value.is_a?(String) && value.match?(QUERY_URL)
+
+      key == "webpage_url" && value.match?(CANONICAL_PAGE)
+    end
   end
 
   def youtube_id(url)
@@ -76,7 +94,8 @@ module DigestVideo
 
       mp4 = playable(find(dir, id, ".mp4"))
       info = JSON.parse(File.read(find(dir, id, ".info.json")))
-      vtt = Dir.glob(File.join(dir, "*#{id}*.vtt")).min
+      vtts = Dir.glob(File.join(dir, "*#{id}*.vtt"))
+      timing = MusicVideos::VttTiming.parse(vtts.min && File.read(vtts.min))
       credits = MusicVideos::CreditParser.new.parse(title: info["title"], uploader: info["uploader"],
                                                     artists: info["artists"] || info["artist"].to_s.split(", "))
       keys = MusicVideos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
@@ -84,12 +103,14 @@ module DigestVideo
         platform: platform, source_url: info["webpage_url"] || url, source_id: id,
         title: info["title"], uploader: info["uploader"], credited_artists: Array(info["artists"]),
         duration_ms: duration_ms(mp4), source_object_key: keys.source_mp4, info_object_key: keys.info_json,
-        caption_timing: MusicVideos::VttTiming.parse(vtt && File.read(vtt))
+        caption_timing: timing
       }
       return report_dry_run(payload, mp4) if @dry_run
 
+      @api.authenticate # before any upload, so a failed login leaves nothing in R2
       store(keys, mp4, info)
       data = @api.create(payload)
+      FileUtils.rm_f(vtts) # lyric text; kept until recorded so a --from-dir retry still has timings
       report(data, payload)
       data
     end
@@ -144,12 +165,11 @@ module DigestVideo
       JSON.parse(out)
     end
 
-    # The description can quote lyrics, so the stored info.json drops it.
     def store(keys, mp4, info)
       @out.puts "uploading to r2://#{@bucket}/#{keys.source_mp4}"
       @storage.put(keys.source_mp4, mp4, "video/mp4")
       Tempfile.create(["info", ".json"]) do |file|
-        file.write(JSON.generate(info.except("description")))
+        file.write(JSON.generate(DigestVideo.sanitize_info(info)))
         file.flush
         @storage.put(keys.info_json, file.path, "application/json")
       end
@@ -188,6 +208,14 @@ module DigestVideo
       @suffix = suffix
     end
 
+    def get(key, path)
+      require "aws-sdk-s3"
+      client.get_object(bucket: @bucket, key: key, response_target: path)
+      path
+    rescue Aws::S3::Errors::ServiceError => e
+      raise Failure, "download failed: #{key} (#{e.class.name.split('::').last})"
+    end
+
     def put(key, path, content_type)
       require "aws-sdk-s3"
       Aws::S3::TransferManager.new(client: client)
@@ -214,28 +242,40 @@ module DigestVideo
       @repo_root = repo_root
     end
 
-    def create(payload)
-      res = request(Net::HTTP::Post, "/api/v1/music_videos", { music_video: payload }, token)
+    def authenticate
+      @token ||= begin
+        res = request(Net::HTTP::Post, "/api/v1/auth", { secret: agent_secret }, nil)
+        raise Failure, "API auth #{res.code} at #{@base}" unless res.is_a?(Net::HTTPSuccess)
+
+        JSON.parse(res.body).fetch("token")
+      rescue JSON::ParserError, KeyError, TypeError
+        raise Failure, "API auth at #{@base} answered #{res.code} but not JSON with a token"
+      end
+    end
+
+    def create(payload) = post("/api/v1/music_videos", { music_video: payload })
+
+    def show(slug) = data(request(Net::HTTP::Get, "/api/v1/music_videos/#{slug}", nil, authenticate))
+
+    def post(path, payload) = data(request(Net::HTTP::Post, path, payload, authenticate))
+
+    # The data of a success; a refusal raises with the API's own code.
+    def data(res)
       body = JSON.parse(res.body) rescue {}
-      raise Failure, "API #{res.code}: #{body['error'] || res.body.to_s[0, 200]}" unless res.is_a?(Net::HTTPSuccess)
+      unless res.is_a?(Net::HTTPSuccess)
+        raise Failure, "API #{res.code}: #{[body['error_code'], body['error'] || res.body.to_s[0, 200]].compact.join(' ')}"
+      end
 
       body["data"]
     end
 
     private
 
-    def token
-      res = request(Net::HTTP::Post, "/api/v1/auth", { secret: agent_secret }, nil)
-      raise Failure, "API auth #{res.code} at #{@base}" unless res.is_a?(Net::HTTPSuccess)
-
-      JSON.parse(res.body)["token"]
-    end
-
     def request(klass, path, body, bearer)
       uri = URI.join("#{@base}/", path.delete_prefix("/"))
       req = klass.new(uri, "Content-Type" => "application/json")
       req["Authorization"] = "Bearer #{bearer}" if bearer
-      req.body = JSON.generate(body)
+      req.body = JSON.generate(body) if body
       Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 10, read_timeout: 60) do |http|
         http.request(req)
       end

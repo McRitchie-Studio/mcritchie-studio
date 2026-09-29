@@ -11,6 +11,17 @@ module MusicVideos
           .gsub(/[^a-z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
     end
 
+    # music_videos/<artist>/<video>/clips/<video>_clip_<NN>_<seam>_<shape>_<mmss>_<mmss>.mp4,
+    # in the source's own folder.
+    def self.clip(source_key:, ordinal:, seam:, cast_shape:, start_ms:, end_ms:)
+      m = %r{\A(#{PREFIX}[a-z0-9_]+/([a-z0-9_]+)/)source/}.match(source_key.to_s)
+      raise ArgumentError, "#{source_key.inspect} is not a music video source key" unless m
+
+      "#{m[1]}clips/#{m[2]}_clip_#{format('%02d', ordinal)}_#{seam}_#{cast_shape}_#{mmss(start_ms)}_#{mmss(end_ms)}.mp4"
+    end
+
+    def self.mmss(ms) = format("%02d%02d", ms.to_i / 60_000, ms.to_i / 1000 % 60)
+
     def initialize(primary:, featured:, song:)
       @primary = Array(primary).map { |n| segment(n) }
       @featured = Array(featured).map { |n| segment(n) }

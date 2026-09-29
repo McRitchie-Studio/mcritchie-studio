@@ -1,0 +1,158 @@
+<% content_for :title, "#{@video.title} · Cast · McRitchie Studio" %>
+<% resolved = @performers.count(&:resolved?) %>
+<script>
+  // The cast typeahead: debounced search over artists and People, then one form submit.
+  window.castTypeahead = function () {
+    return {
+      query: "", results: [], open: false, loading: false, failed: false, active: -1, creating: false,
+      artistSlug: "", personSlug: "", newName: "", newKind: "person",
+      async search() {
+        const q = this.query.trim();
+        this.creating = false;
+        if (q.length === 0) { this.results = []; this.open = false; return; }
+        this.loading = true; this.failed = false;
+        try {
+          const resp = await fetch(this.$root.dataset.searchUrl + "?q=" + encodeURIComponent(q),
+                                   { headers: { Accept: "application/json" } });
+          if (!resp.ok) throw new Error(String(resp.status));
+          if (q === this.query.trim()) { this.results = await resp.json(); this.active = this.results.length ? 0 : -1; }
+        } catch (e) { this.results = []; this.failed = true; }
+        this.loading = false; this.open = true;
+      },
+      get exactMatch() {
+        const q = this.query.trim().toLowerCase();
+        return this.results.some((r) => r.name.toLowerCase() === q);
+      },
+      move(step) {
+        if (!this.open || this.results.length === 0) return;
+        this.active = (this.active + step + this.results.length) % this.results.length;
+      },
+      pickActive() { if (this.open && this.results[this.active]) this.choose(this.results[this.active]); },
+      choose(r) {
+        this.artistSlug = r.type === "artist" ? r.slug : "";
+        this.personSlug = r.type === "person" ? r.slug : "";
+        this.newName = ""; this.query = r.name; this.open = false;
+        this.$nextTick(() => this.$refs.form.requestSubmit());
+      },
+      startCreate() { this.newName = this.query.trim(); this.artistSlug = ""; this.personSlug = ""; this.open = false; this.creating = true; },
+    };
+  };
+
+  // One clip row: load the signed clip only when asked, and copy its prompt.
+  window.clipRow = function () {
+    return {
+      open: false, failed: false, copied: false, manual: false,
+      preview() {
+        const player = this.$refs.player;
+        player.src = this.$root.dataset.src;
+        this.open = true;
+        player.play().catch(() => {});
+      },
+      async copy() {
+        const ok = await window.copyText(this.$refs.prompt.textContent.trim());
+        if (ok === false) { this.selectPrompt(); this.manual = true; return; }
+        this.copied = true; this.manual = false;
+        setTimeout(() => { this.copied = false; }, 1400);
+      },
+      selectPrompt() {
+        const range = document.createRange();
+        range.selectNodeContents(this.$refs.prompt);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      },
+    };
+  };
+</script>
+<%= render "components/copy_text_script" %>
+
+<section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="cast-panel">
+  <header class="mb-6 min-w-0">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Music video · Cast</p>
+    <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2 break-words"><%= @video.title %></h1>
+    <p class="text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span><%= @video.platform.titleize %></span>
+      <% if @video.duration_ms %><span><%= video_timecode(@video.duration_ms) %></span><% end %>
+      <span class="badge text-3xs <%= @video.cast_confirmed? ? 'bg-success/10 text-success-ink border-success/40' : 'bg-primary/10 text-primary border-primary/20' %>" data-test="video-stage"><%= @video.stage.humanize %></span>
+      <%= link_to "Watch source", @video.source_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline" %>
+    </p>
+  </header>
+
+  <div class="card p-4 mb-6" data-test="cast-credits">
+    <p class="label-upper mb-2">Credited — who should be here</p>
+    <div class="flex flex-wrap gap-2">
+      <% @credits.each do |credit| %>
+        <span class="badge bg-surface-alt text-body border-subtle text-xs gap-1" data-test="credited-artist" data-slug="<%= credit.artist_slug %>">
+          <span class="font-semibold text-heading"><%= credit.artist.name %></span>
+          <span class="text-muted"><%= credit.role %> · <%= credit.artist.kind %></span>
+        </span>
+      <% end %>
+      <% @video.unresolved_credits.each do |credit| %>
+        <span class="badge bg-warning/10 text-warning-ink border-warning/40 text-xs gap-1" data-test="unresolved-credit">
+          <span class="font-semibold"><%= credit["name"] %></span>
+          <span><%= credit["role"] %> · <%= credit["reason"] == "ambiguous" ? "several artists match" : "no artist yet" %></span>
+        </span>
+      <% end %>
+      <% if @credits.empty? && @video.unresolved_credits.empty? %>
+        <span class="text-sm text-muted">No credits were parsed for this video.</span>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="card p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3 justify-between" data-test="cast-progress">
+    <p class="text-sm text-body">
+      <span class="font-semibold text-heading" data-test="cast-resolved-count"><%= resolved %> of <%= @performers.size %></span>
+      people labelled or marked as extras.
+      <% unless @video.cast_confirmed? || @video.cast_ready? %>
+        <span class="text-muted">Cast confirmed unlocks when every person is one or the other.</span>
+      <% end %>
+    </p>
+    <% if @video.cast_confirmed? %>
+      <span class="badge bg-success/10 text-success-ink border-success/40 text-xs" data-test="cast-confirmed">Cast confirmed</span>
+    <% else %>
+      <%= button_to "Cast confirmed", confirm_cast_music_video_path(@video), method: :post,
+                    class: "btn btn-primary w-full sm:w-auto", disabled: !@video.cast_ready?,
+                    form: { data: { test: "confirm-cast-form" } } %>
+    <% end %>
+  </div>
+
+  <% if @performers.empty? %>
+    <div class="empty-state text-muted" data-test="cast-empty">
+      No people yet. The cast vision pass posts them (the <span class="font-mono">digest-video</span> SOP, stage 2).
+    </div>
+  <% else %>
+    <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+      <% @performers.each do |performer| %>
+        <%= render "music_videos/performer", performer: performer, video: @video, still_urls: @still_urls %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <section class="mt-10" data-test="clips-panel" id="clips">
+    <header class="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Music video · Clips</p>
+        <h2 class="text-xl font-bold text-heading">Clip candidates</h2>
+      </div>
+      <% if @clips.any? %>
+        <p class="text-sm text-body" data-test="clips-approved-count">
+          <span class="font-semibold text-heading"><%= @clips.count(&:approved?) %> of <%= @clips.size %></span> approved.
+          <span class="text-muted">One approved clip makes the video clips ready.</span>
+        </p>
+      <% end %>
+    </header>
+    <% if @clips.any? %>
+      <div class="flex flex-col gap-4">
+        <% @clips.each do |clip| %>
+          <%= render "music_videos/clip", clip: clip, video: @video, clip_urls: @clip_urls %>
+        <% end %>
+      </div>
+    <% elsif @video.cast_confirmed? %>
+      <div class="empty-state text-muted" data-test="clips-empty">
+        No clips yet. Run <span class="font-mono">bin/find-clips <%= @video.slug %></span> on the Mac.
+      </div>
+    <% else %>
+      <div class="empty-state text-muted" data-test="clips-locked">Clips come after the cast is confirmed.</div>
+    <% end %>
+  </section>
+</section>

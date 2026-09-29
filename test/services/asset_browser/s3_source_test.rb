@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "aws-sdk-s3"
+require "open3"
 
 # [unit] AssetBrowser::S3Source against a stubbed Aws client: it asks
 # ListObjectsV2 for one page with the delimiter and token, and maps the answer
@@ -77,5 +78,30 @@ class AssetBrowserS3SourceTest < ActiveSupport::TestCase
 
     assert_match %r{mcritchie-studio-dev.*artists/drake/portrait_01\.jpg}, url
     assert_includes url, "X-Amz-Expires=900"
+  end
+end
+
+# [unit] Regression (music-video-cast-panel): the cast panel signs a still before
+# anything has listed or headed, so signed_url must load aws-sdk-s3 itself, and a
+# missing credential must read as Unavailable. This file requires the gem, so the
+# check runs in a fresh process where it is not loaded.
+class AssetBrowserS3SourceColdSignTest < ActiveSupport::TestCase
+  test "signed_url works in a process where aws-sdk-s3 is not loaded yet" do
+    script = <<~RUBY
+      print(defined?(Aws::S3::Presigner) ? "preloaded" : "cold", " ")
+      begin
+        url = AssetBrowser::S3Source.new(bucket: "mcritchie-studio-dev").signed_url(key: "a/b.jpg", expires_in: 60)
+        print(url.include?("X-Amz-Signature") ? "signed" : "unsigned")
+      rescue AssetBrowser::Unavailable
+        print "unavailable"
+      end
+    RUBY
+    # No credentials anywhere, as on CI: signing must degrade to Unavailable, not raise.
+    env = { "RAILS_ENV" => "test", "AWS_ACCESS_KEY_ID" => "", "AWS_SECRET_ACCESS_KEY" => "",
+            "AWS_EC2_METADATA_DISABLED" => "true", "AWS_PROFILE" => "no-such-profile" }
+    out, status = Open3.capture2e(env, "bin/rails", "runner", script, chdir: Rails.root.to_s)
+
+    assert status.success?, out
+    assert out.strip.end_with?("cold unavailable"), out
   end
 end

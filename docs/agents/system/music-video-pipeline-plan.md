@@ -45,6 +45,11 @@ stored.
   creating a new one is allowed.
 - "Cast confirmed" advances the video.
 
+Built by `music-video-cast-panel`: the `video_performers` table,
+`POST /api/v1/music_videos/:slug/performers`, and the panel at
+`/music_videos/:slug`. The agent's steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#stage-2-cast).
+
 ### 3. Artist references
 
 For this video's look, the best references are stills of the performer from the
@@ -68,6 +73,11 @@ Several 25-second candidates per video. Each one:
   with blanks for the target performer's description, the athlete, and who stays
   the same.
 
+Built by `music-video-clip-finder`: `bin/find-clips`, the `video_clips` table,
+`POST /api/v1/music_videos/:slug/clips`, and the clips list below the cast panel.
+One approved clip moves the video to `clips_ready`. The agent's steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#stage-5-clips).
+
 ## Where it runs
 
 The SOPs are agent-driven and run on Alex's Mac: YouTube often blocks cloud IPs,
@@ -88,7 +98,7 @@ Record slugs stay kebab-case, the app's existing convention.
 | `music_video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
 | `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence |
 | `appearances` | gains a nullable music video link |
-| `video_clips` | start, end, cast shape, target performer, prompt, asset |
+| `video_clips` | start, end, seam, cast shape, target performer, prompt, asset, status |
 
 ## Artist seed
 

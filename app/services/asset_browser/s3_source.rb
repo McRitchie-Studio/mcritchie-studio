@@ -36,9 +36,12 @@ module AssetBrowser
       nil
     end
 
+    # Inside `storage` so aws-sdk-s3 is loaded even when no list or head ran first.
     def signed_url(key:, expires_in:)
-      Aws::S3::Presigner.new(client: client)
-                        .presigned_url(:get_object, bucket: bucket, key: Studio::S3.full_key(key), expires_in: expires_in)
+      storage do
+        Aws::S3::Presigner.new(client: client)
+                          .presigned_url(:get_object, bucket: bucket, key: Studio::S3.full_key(key), expires_in: expires_in)
+      end
     end
 
     private
@@ -58,7 +61,8 @@ module AssetBrowser
       yield
     rescue Studio::S3::NotConfigured
       raise Unavailable, "Object storage is not configured for this app"
-    rescue Aws::Errors::ServiceError, Aws::Errors::MissingCredentialsError, Seahorse::Client::NetworkingError => e
+    rescue Aws::Errors::ServiceError, Aws::Errors::MissingCredentialsError, Aws::Sigv4::Errors::MissingCredentialsError,
+           Seahorse::Client::NetworkingError => e
       raise Unavailable, e.class.name.demodulize
     end
   end

@@ -311,6 +311,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "measure-client-surface" => :optparse,
     # Exactly one URL; a second positional aborts before any download.
     "digest-video"           => :optparse,
+    "find-clips"             => :optparse,
     # --- subcommand dispatch that falls through to usage (BARE form) ----------
     #
     # Read the legend above before trusting this bucket: it says what the BARE

@@ -1539,3 +1539,22 @@ Contact.delete_all
 unsubscribe_reader = Contact.create!(email: "reader@example.com", unsubscribe_token: "e2e-unsubscribe-token")
 Broadcast.create!(slug: "e2e-cyvasse-is-back", subject: "Cyvasse is back", template_key: "cyvasse_is_back")
   .deliveries.create!(contact: unsubscribe_reader, token: "e2e-delivery-token", sent_at: Time.current)
+
+# /music_videos/steve-aoki-night-call — the cast panel with its seven unlabelled
+# people (e2e/music_video_cast.spec.js). Its labels are synthetic: the spec finds
+# Test Artist A by its alias Test Alias A, and creates Test Artist E itself.
+VideoClip.delete_all
+VideoPerformer.delete_all
+MusicVideoArtist.delete_all
+MusicVideo.delete_all
+Artist.where(name: ["Steve Aoki", "Test Artist E"]).destroy_all
+require Rails.root.join("db/seeds/data/night_call_cast.rb").to_s
+NightCallCast.seed!
+test_artist_a = Artist.find_or_create_by!(name: "Test Artist A") do |a|
+  a.assign_attributes(slug: Artist.available_slug("Test Artist A"), kind: "person")
+end
+ArtistAlias.find_or_create_by!(artist_slug: test_artist_a.slug, name: "Test Alias A", locale: "en")
+# /music_videos/steve-aoki-night-call-clips — a confirmed cast and two clips
+# (e2e/music_video_clips.spec.js).
+require Rails.root.join("db/seeds/data/night_call_clips.rb").to_s
+NightCallClips.seed!

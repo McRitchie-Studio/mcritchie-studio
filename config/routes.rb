@@ -127,6 +127,13 @@ Rails.application.routes.draw do
   # /assets — the object store as a folder tree (AssetsController, require_admin).
   # Query params only: Sprockets owns /assets/*, and cascades /assets itself here.
   get "assets", to: "assets#index", as: :asset_browser
+  # Music video pipeline: the cast panel (stage 2) and clips (stage 5), admin only.
+  get "artists/search", to: "artists#search", as: :search_artists
+  resources :music_videos, only: [:show], param: :slug do
+    post :confirm_cast, on: :member
+    resources :performers, only: [:update], param: :ordinal, controller: "video_performers"
+    resources :clips, only: [:update], param: :ordinal, controller: "video_clips"
+  end
 
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from
@@ -436,8 +443,11 @@ Rails.application.routes.draw do
       # design: MS masters durable facts, TM masters events, and neither writes
       # into the other's master.
       resources :athletes, only: [:index]
-      # Written by bin/digest-video (music-video pipeline, stage 1).
-      resources :music_videos, only: [:show, :create], param: :slug
+      # Written by bin/digest-video (stage 1), the cast vision pass (stage 2) and bin/find-clips (stage 5).
+      resources :music_videos, only: [:show, :create], param: :slug do
+        post :performers, on: :member
+        post :clips, on: :member
+      end
       # The content pipeline's AGENT surface. Non-deterministic steps (the take,
       # the scenes, the caption) are written by a soul during an SOP with its own
       # inference, so production needs no model key. `claim_next` is the atomic
