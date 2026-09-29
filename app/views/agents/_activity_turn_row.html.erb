@@ -12,6 +12,7 @@
 <% primary = turn_row[:primary] %>
 <% outcome = heartbeat_outcome_meta(primary.outcome) %>
 <% turn_pokemon = pokemon_by_slug[primary.mascot] %>
+<% mascot_genders = local_assigns[:mascot_genders] || {} %>
 <% grades_for = action_grades[primary.id] || {} %>
 <% xan_g = grades_for[ActionGrade::XAN] %>
 <% mcr_g  = grades_for[ActionGrade::MCR] %>
@@ -32,7 +33,7 @@
                                                  supervisor_slug: activity.supervisor_agent,
                                                  supervisor: agents_by_slug[activity.supervisor_agent],
                                                  show_mascot: activity.supervisor_agent.blank?,
-                                                 submascot: true) %></td>
+                                                 submascot: true, gender: mascot_genders[primary.session_id]) %></td>
   <td class="aa-activity">
     <div class="aa-stack">
       <div class="aa-r aa-r-wrap aa-actionhead">

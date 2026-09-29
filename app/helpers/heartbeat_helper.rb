@@ -535,13 +535,15 @@ module HeartbeatHelper
   # signature_color is never hit per row). `submascot` dims the mascot on the
   # drill-down rows; `mascot_test` stamps the base mascot's data-test hook (e.g.
   # "event-mascot"). Faces are the compact agent_avatar "xxs" (24px) size.
+  # `gender` is the session's recorded gender (ActivityFeed#mascot_gender_lookup);
+  # the seeded Pokémon's display_name turns it into the sign (Mawile♂, Magnemite⚥).
   def heartbeat_agent_cell(mascot_slug: nil, pokemon: nil, agent_slug: nil, agent: nil,
                            supervisor_slug: nil, supervisor: nil, show_mascot: true,
-                           submascot: false, mascot_test: nil, size: "xxs")
+                           submascot: false, mascot_test: nil, size: "xxs", gender: nil)
     mascot_slug = mascot_slug.presence
     agent_slug  = agent_slug.presence
     supervisor_slug = supervisor_slug.presence
-    mascot_name = pokemon&.name.presence || mascot_slug&.titleize
+    mascot_name = pokemon&.display_name(gender: gender).presence || mascot_slug&.titleize
     soul = (agent || Agent.new(slug: agent_slug, name: agent_slug.titleize)) if agent_slug
     supervisor_soul = (supervisor || Agent.new(slug: supervisor_slug, name: supervisor_slug.titleize)) if supervisor_slug
 

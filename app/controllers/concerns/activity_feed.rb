@@ -58,7 +58,7 @@ module ActivityFeed
       {
         id:         id,
         short:      id.to_s.first(8),
-        name:       mon&.name || id.to_s.first(8),
+        name:       mon&.display_name(gender: mascots[id]&.gender) || id.to_s.first(8),
         sprite_url: mon&.sprite_url,
         shiny:      !!mascots[id]&.shiny,
         type_color: type && type_colors[type],
@@ -90,7 +90,7 @@ module ActivityFeed
     ids.map do |id|
       mon  = pokemon[slug_for.call(id)]
       type = mon && (mon.primary_type.presence || mon.types&.first)
-      { id: id, name: mon&.name || id.first(8), type_color: type && type_colors[type] }
+      { id: id, name: mon&.display_name(gender: mascots[id]&.gender) || id.first(8), type_color: type && type_colors[type] }
     end
   end
 
@@ -103,7 +103,7 @@ module ActivityFeed
     mascots = SessionMascot.where(session_id: ids).index_by(&:session_id)
     pokemon = Pokemon.where(slug: mascots.values.map(&:mascot_slug).uniq).index_by(&:slug)
     ids.each_with_object({}) do |id, labels|
-      name = pokemon[mascots[id]&.mascot_slug]&.name
+      name = pokemon[mascots[id]&.mascot_slug]&.display_name(gender: mascots[id]&.gender)
       labels[id] = "#{name} · #{id.first(8)}" if name
     end
   end
@@ -118,6 +118,17 @@ module ActivityFeed
     return {} if slugs.empty?
 
     Pokemon.where(slug: slugs).index_by(&:slug)
+  end
+
+  # { session_id => gender } for every session on the page, in ONE query, so each
+  # row's mascot name wears its sign (Pokemon#display_name) — actions and
+  # activities record only the mascot slug; the gender lives on the session's
+  # SessionMascot. A session with no row (pre-mascot) is simply absent.
+  def mascot_gender_lookup(actions, activities = [])
+    ids = (Array(actions).map(&:session_id) + Array(activities).map(&:session_id)).compact.uniq
+    return {} if ids.empty?
+
+    SessionMascot.where(session_id: ids).where.not(gender: nil).pluck(:session_id, :gender).to_h
   end
 
   # One query for every acting/supervising SOUL on the page so the stacked Agent column reuses
@@ -182,6 +193,7 @@ module ActivityFeed
       actions: actions,
       action_counts: { activity.id => activity.agent_actions.count },
       pokemon_by_slug: pokemon_lookup(actions, [activity]),
+      mascot_genders: mascot_gender_lookup(actions, [activity]),
       agents_by_slug: agent_soul_lookup([activity]),
       activity_grades: activity_grade_lookup([activity]),
       action_grades: action_grade_lookup(actions),
