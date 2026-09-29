@@ -52,4 +52,23 @@ class S3UrlRewriteTest < ActiveSupport::TestCase
       assert_raises(ArgumentError, bad.inspect) { S3UrlRewrite.new(base: bad) }
     end
   end
+
+  test "rewrite_seed_rows rewrites every image field of the pokemon seed rows" do
+    rows = [{ "slug" => "pikachu", "name" => "Pikachu",
+              "sprite_url" => "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/25-pikachu-sprite.png",
+              "shiny_female_sprite_url" => "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/25-f.png",
+              "avatar_url" => "https://raw.githubusercontent.com/x.png", "female_sprite_url" => nil }]
+    rewrite = S3UrlRewrite.new(base: BASE)
+
+    assert_equal 2, rewrite.rewrite_seed_rows(rows)
+    assert_equal "#{BASE}/pokemon/25-pikachu-sprite.png", rows[0]["sprite_url"]
+    assert_equal "#{BASE}/pokemon/25-f.png", rows[0]["shiny_female_sprite_url"]
+    assert_equal "https://raw.githubusercontent.com/x.png", rows[0]["avatar_url"]
+    assert_nil rows[0]["female_sprite_url"]
+    assert_equal 0, rewrite.rewrite_seed_rows(rows), "a re-run is a no-op"
+  end
+
+  test "the pokemon columns it covers are the ones the rake writes and the table has" do
+    assert_equal S3UrlRewrite::POKEMON_IMAGE_COLUMNS.sort, Pokemon.column_names.grep(/_url\z/).sort
+  end
 end
