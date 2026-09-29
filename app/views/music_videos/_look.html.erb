@@ -21,7 +21,7 @@
       <% if keys.empty? %>
         <p class="text-sm text-muted" data-test="look-no-references">No stills of this person from the video.</p>
       <% else %>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div class="grid grid-cols-2 gap-2">
           <% keys.each_with_index do |key, i| %>
             <% url = still_urls[key] %>
             <% visibility = performer.still_visibility(key) %>
@@ -31,7 +31,7 @@
                 <img src="<%= url %>" alt="<%= performer.name %>, still <%= key.split('/').last %>" loading="lazy"
                      class="block w-full h-full object-cover" onerror="this.hidden = true; this.nextElementSibling.hidden = false">
               <% end %>
-              <figcaption class="absolute inset-0 flex items-center justify-center p-2 text-3xs text-muted text-center break-all"
+              <figcaption class="absolute inset-0 flex items-center justify-center p-2 pt-7 text-3xs text-muted text-center break-all"
                           <%= "hidden" if url %> data-test="still-unreachable">
                 Still not reachable: <%= key.split("/").last %>
               </figcaption>
