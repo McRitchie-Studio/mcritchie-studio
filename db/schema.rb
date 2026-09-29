@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -595,9 +595,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_100000) do
     t.string "unsubscribe_token", null: false
     t.datetime "unsubscribed_at"
     t.datetime "updated_at", null: false
+    t.string "verification_status"
+    t.string "verification_sub_status"
+    t.datetime "verified_at"
     t.index "lower((email)::text)", name: "index_contacts_on_lower_email", unique: true
     t.index ["tags"], name: "index_contacts_on_tags", using: :gin
     t.index ["unsubscribe_token"], name: "index_contacts_on_unsubscribe_token", unique: true
+    t.index ["verification_status"], name: "index_contacts_on_verification_status"
   end
 
   create_table "contents", force: :cascade do |t|

@@ -47,6 +47,29 @@ class BroadcastsControllerTest < ActionDispatch::IntegrationTest
     assert_not_equal reached.id, enqueued_jobs.last["arguments"].last
   end
 
+  # [integration] The editor's send to a verified-only audience takes the same
+  # set a batch would: contacts verified valid.
+  test "deliver to cyvasse-legacy sends only to contacts verified valid" do
+    good = Contact.create!(email: "good@example.com", tags: [ "cyvasse-legacy" ])
+    good.record_verification!(status: "valid")
+    Contact.create!(email: "unchecked@example.com", tags: [ "cyvasse-legacy" ])
+    log_in_as(@admin)
+    assert_enqueued_jobs 1, only: BroadcastSendJob do
+      post deliver_broadcast_path(@broadcast), params: { audience: "cyvasse-legacy" }
+    end
+    assert_equal good.id, enqueued_jobs.last["arguments"].last
+  end
+
+  test "deliver to cyvasse-legacy with nobody verified says why" do
+    Contact.create!(email: "unchecked@example.com", tags: [ "cyvasse-legacy" ])
+    log_in_as(@admin)
+    assert_no_enqueued_jobs(only: BroadcastSendJob) do
+      post deliver_broadcast_path(@broadcast), params: { audience: "cyvasse-legacy" }
+    end
+    assert_match "run contacts:verify first", flash[:alert]
+    assert_not @broadcast.reload.sent?
+  end
+
   test "deliver blocks a duplicate send" do
     @broadcast.update!(status: "sent", sent_at: Time.current)
     log_in_as(@admin)
