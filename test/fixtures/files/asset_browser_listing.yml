@@ -1,0 +1,23 @@
+# The object listing /assets browses in the test env (config/initializers/asset_browser.rb).
+# Minitest and the e2e lane both read it, so no test ever calls a live bucket.
+- key: artists/drake/portrait_01.jpg
+  size: 245760
+  last_modified: 2026-09-20T14:05:00Z
+- key: artists/drake/portrait_02.png
+  size: 98304
+  last_modified: 2026-09-21T09:30:00Z
+- key: music_videos/drake/hotline_bling/source/drake_hotline_bling.mp4
+  size: 52428800
+  last_modified: 2026-09-28T18:00:00Z
+- key: music_videos/drake/hotline_bling/clips/hotline_bling_clip_01_chorus_vertical_0045_0102.mp4
+  size: 4194304
+  last_modified: 2026-09-28T18:10:00Z
+- key: music_videos/drake/hotline_bling/stills/person_01_0230.jpg
+  size: 180224
+  last_modified: 2026-09-28T18:12:00Z
+- key: music_videos/drake/hotline_bling/notes.txt
+  size: 512
+  last_modified: 2026-09-28T18:15:00Z
+- key: readme.txt
+  size: 64
+  last_modified: 2026-09-01T00:00:00Z
