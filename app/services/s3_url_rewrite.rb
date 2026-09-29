@@ -22,7 +22,11 @@ class S3UrlRewrite
   # [model, column] pairs holding one URL each.
   COLUMN_TARGETS = [
     *POKEMON_IMAGE_COLUMNS.map { |column| ["Pokemon", column] },
-    ["Artifact", "image_url"]
+    ["Artifact", "image_url"],
+    # Empty today, but Content::GenerateLineupAssets stores what Studio::S3.upload
+    # returns, so rows written before the cutover carry S3 URLs.
+    ["Content", "hook_image_url"],
+    ["Content", "final_video_url"]
   ].freeze
 
   # [model, jsonb column, path] — one URL at a path inside a jsonb document.

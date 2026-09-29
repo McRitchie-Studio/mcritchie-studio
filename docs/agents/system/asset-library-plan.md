@@ -110,8 +110,18 @@ every text and JSON column): only the hub has any.
 | `agent_actions`, `agent_activities`, `action_grades`, `tasks.metadata` | a few hundred | URLs quoted inside agent logs and notes: history, not served; leave them |
 
 They keep resolving while the S3 bucket stays public. Before S3 is retired
-(Wave 7) the served ones need a rewrite to `assets.mcritchie.studio`: a rake task
-over those columns plus a `pokemon.rake` fix, in the hub's Wave 2 task.
+(Wave 7) the served ones need a rewrite to `assets.mcritchie.studio`. The hub's
+Wave 2 task built it: `S3UrlRewrite` (`rake s3_urls:rewrite`) covers the
+`pokemons` columns, the mascot avatar, `artifacts.image_url` and
+`contents.hook_image_url`/`final_video_url`, touching only URLs that start with
+our bucket's host. `pokemon.rake` now builds its URLs from `Studio::S3`. At the
+hub's cutover, after the objects are on R2 and `assets.` answers:
+
+```bash
+heroku run -a mcritchie-studio -- bin/rails "s3_urls:rewrite[https://assets.mcritchie.studio]"          # dry run: counts per column
+heroku run -a mcritchie-studio -- APPLY=1 bin/rails "s3_urls:rewrite[https://assets.mcritchie.studio]"  # write; re-run is a no-op
+APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  # locally, then commit pokemon.json so a re-seed keeps them
+```
 
 **Per-app verdict.**
 

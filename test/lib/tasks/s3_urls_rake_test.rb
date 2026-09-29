@@ -23,6 +23,8 @@ class S3UrlsRakeTest < ActiveSupport::TestCase
     @sheet = Artifact.create!(kind: "character_sheet", image_url: "#{VHOST}/character-sheets/sheet.png")
     @external = Artifact.create!(kind: "character_sheet",
                                  image_url: "https://ca-times.brightspotcdn.com/dims4/x?url=#{CGI.escape(VHOST)}%2Fa.png")
+    @content = Content.create!(title: "Lineup graphic", stage: "idea", workflow: "game_recap",
+                               hook_image_url: "#{VHOST}/content/lineup.png", final_video_url: "#{VHOST}/content/lineup.mp4")
   end
 
   def run_rake(apply: false, base: BASE)
@@ -36,7 +38,7 @@ class S3UrlsRakeTest < ActiveSupport::TestCase
 
   def snapshot
     [@pikachu.reload.attributes, @event.reload.metadata, @plain_event.reload.metadata,
-     @sheet.reload.image_url, @external.reload.image_url]
+     @sheet.reload.image_url, @external.reload.image_url, @content.reload.attributes]
   end
 
   test "dry run reports counts per column and writes nothing" do
@@ -49,6 +51,7 @@ class S3UrlsRakeTest < ActiveSupport::TestCase
     assert_match(/pokemons\.avatar_fallback_url\s+0\b/, out)
     assert_match(/task_events\.metadata->mascot->avatar\s+1\b/, out)
     assert_match(/artifacts\.image_url\s+1\b/, out)
+    assert_match(/contents\.final_video_url\s+1\b/, out)
   end
 
   test "APPLY=1 rewrites every covered column; a re-run is a no-op" do
@@ -69,6 +72,8 @@ class S3UrlsRakeTest < ActiveSupport::TestCase
 
     assert_equal "#{BASE}/character-sheets/sheet.png", @sheet.reload.image_url
     assert_match(/brightspotcdn/, @external.reload.image_url)
+    assert_equal "#{BASE}/content/lineup.png", @content.reload.hook_image_url
+    assert_equal "#{BASE}/content/lineup.mp4", @content.final_video_url
 
     after = snapshot
     rerun = run_rake(apply: true)
