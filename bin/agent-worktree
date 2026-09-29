@@ -1827,18 +1827,21 @@ def resolve_mascot_shiny(values, dir, task, mascot)
   nil
 end
 
-# The mascot's gender ("female"/"male"), for the one family whose status-line
-# NAME depends on it (nidoran → Nidoran♀ / Nidoran♂; see bin/statusline
-# mascot_display_name). Every other mascot skips the lookup, so no desk write
-# pays a board read it would never render.
-GENDER_NAMED_MASCOTS = %w[nidoran].freeze
+# The mascot's DISPLAY gender for the desk context — "female", "male", or
+# "genderless" (a gender_rate -1 species) — which bin/statusline turns into the
+# name's sign (Mawile♂, Magnemite⚥; see its mascot_display_name). nil for a
+# pre-gender draw, which stays bare. The last-good on-disk value for the SAME
+# mascot wins; otherwise one board read of the task's mascot_display_gender (the
+# show endpoint derives "genderless" from the species, which the stored
+# devops.mascot_gender nil cannot tell from pre-gender).
+DISPLAY_GENDERS = %w[female male genderless].freeze
 
 def resolve_mascot_gender(values, dir, task, mascot)
-  return nil unless GENDER_NAMED_MASCOTS.include?(compact_value(mascot))
+  return nil unless compact_value(mascot)
 
   gender = existing_context_attr(dir, mascot, "mascot_gender") ||
-           record_mascot_field(task_record_slug(values) || task, "mascot_gender")
-  %w[female male].include?(gender) ? gender : nil
+           record_mascot_field(task_record_slug(values) || task, "mascot_display_gender")
+  DISPLAY_GENDERS.include?(gender) ? gender : nil
 end
 
 # The on-disk context's <key>, but only when its mascot matches `mascot`, so an

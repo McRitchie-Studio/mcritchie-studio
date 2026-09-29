@@ -65,18 +65,20 @@ def mascot_display_emoji(data)
   base.empty? ? SHINY_EMOJI : "#{base}#{SHINY_EMOJI}"
 end
 
-# Nidoran's names carry the sign: the two species slugs have one each, and the
-# `nidoran` gender family takes it from the session's gender roll — the same rule
-# as bin/statusline's mascot_display_name.
+# The mascot's name as every surface shows it — the same rule as
+# Pokemon#display_name and bin/statusline's mascot_display_name: the marker's
+# mascot_gender appends its sign (male ♂, female ♀, genderless ⚥); no gender (a
+# pre-gender session) stays bare. Nidoran carries exactly ONE sign: the two
+# legacy species slugs name theirs, and the `nidoran` family takes the gender's.
 NIDORAN_NAMES = { "nidoran-f" => "Nidoran♀", "nidoran-m" => "Nidoran♂" }.freeze
-NIDORAN_SIGNS = { "female" => "♀", "male" => "♂" }.freeze
+GENDER_SIGNS = { "female" => "♀", "male" => "♂", "genderless" => "⚥" }.freeze
 
 def mascot_name(data)
   slug = compact(data["mascot"])
   return NIDORAN_NAMES.fetch(slug) if NIDORAN_NAMES.key?(slug)
-  return "Nidoran#{NIDORAN_SIGNS[compact(data['mascot_gender'])]}" if slug == "nidoran"
 
-  titleize(slug)
+  name = titleize(slug)
+  name.empty? ? name : "#{name}#{GENDER_SIGNS[compact(data['mascot_gender']).downcase]}"
 end
 
 def marker_from_data(data)

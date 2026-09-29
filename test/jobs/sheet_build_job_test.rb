@@ -2,8 +2,8 @@
 
 require "test_helper"
 
-# [unit] The job records the outcome and never raises, so ApplicationJob's
-# retry_on cannot turn one press into a second paid call.
+# [unit] One claim pays for at most one generator call: the job is never
+# retried, and a run that no longer holds its build returns before the call.
 class SheetBuildJobTest < ActiveJob::TestCase
   setup do
     Appearance.delete_all
@@ -34,5 +34,78 @@ class SheetBuildJobTest < ActiveJob::TestCase
     @look.destroy!
 
     assert_nothing_raised { SheetBuildJob.perform_now(@look.slug, @started_at.iso8601(6)) }
+  end
+
+  test "a job whose build no longer matches returns before the generator" do
+    @look.update_columns(sheet_build_started_at: @started_at - 1.minute)
+    called = false
+
+    Appearances::GenerateArtifact.stub(:call, ->(*, **) { called = true }) do
+      SheetBuildJob.perform_now(@look.slug, @started_at.iso8601(6))
+    end
+
+    assert_not called
+    assert_equal "building", @look.reload.sheet_build_state
+  end
+
+  test "running the same job twice calls the generator once" do
+    calls = 0
+    Appearances::GenerateArtifact.stub(:call, ->(*, **) { calls += 1 }) do
+      2.times { SheetBuildJob.perform_now(@look.slug, @started_at.iso8601(6)) }
+    end
+
+    assert_equal 1, calls
+  end
+
+  # A restart re-runs the job while the first run is still mid-call.
+  test "a re-run while the first run is mid-call spends nothing" do
+    calls = 0
+    rerun = -> { SheetBuildJob.perform_now(@look.slug, @started_at.iso8601(6)) }
+    Appearances::GenerateArtifact.stub(:call, ->(*, **) { calls += 1; rerun.call if calls == 1 }) do
+      rerun.call
+    end
+
+    assert_equal 1, calls
+    assert_equal "done", @look.reload.sheet_build_state
+  end
+
+  test "a job left behind after a stale reclaim spends nothing" do
+    @look.update_columns(sheet_build_started_at: (Appearances::SheetBuild::STALE_AFTER + 1.minute).ago)
+    old = @look.reload.sheet_build_started_at
+    Appearances::SheetBuild.claim!(@look)
+    called = false
+
+    Appearances::GenerateArtifact.stub(:call, ->(*, **) { called = true }) do
+      SheetBuildJob.perform_now(@look.slug, old.iso8601(6))
+    end
+
+    assert_not called
+  end
+
+  # The stale window counts from when the job runs, not from the claim.
+  test "the stale window restarts when the job begins running" do
+    stale_mid_call = nil
+    travel 10.minutes do
+      Appearances::GenerateArtifact.stub(:call, ->(look, **) { travel(6.minutes); stale_mid_call = look.reload.sheet_build_stale? }) do
+        SheetBuildJob.perform_now(@look.slug, @started_at.iso8601(6))
+      end
+    end
+
+    assert_equal false, stale_mid_call
+  end
+
+  # A Float 0.000001 is just under a microsecond and truncates away on save,
+  # so the take must still move the token when the job runs in the claim's
+  # microsecond (a worker clock at or behind the web's).
+  test "a re-run spends nothing when the job runs in the claim's microsecond" do
+    freeze_time do
+      @look.update_columns(sheet_build_state: nil, sheet_build_started_at: nil)
+      started_at = Appearances::SheetBuild.claim!(@look)
+      calls = 0
+      rerun = -> { SheetBuildJob.perform_now(@look.slug, started_at.iso8601(6)) }
+      Appearances::GenerateArtifact.stub(:call, ->(*, **) { calls += 1; rerun.call if calls == 1 }) { rerun.call }
+
+      assert_equal 1, calls
+    end
   end
 end

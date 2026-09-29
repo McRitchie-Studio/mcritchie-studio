@@ -63,12 +63,13 @@ class AppProfileTest < Minitest::Test
 
   class FakeProbe
     def initialize(files: {}, runs: {}, http: {}) = (@files, @runs, @http = files, runs, http)
-    attr_reader :refs_read
+    attr_reader :refs_read, :paths_read
 
     def read(path) = @files[File.basename(path) == "ci.yml" ? "ci.yml" : File.basename(path)]
 
     def read_at(_root, ref, relpath)
       (@refs_read ||= []) << ref
+      (@paths_read ||= []) << relpath
       read(relpath)
     end
     def http_status(url) = @http[url]
@@ -108,6 +109,15 @@ class AppProfileTest < Minitest::Test
     assert(checks.all?(&:ok), checks.reject(&:ok).map(&:name).inspect)
     assert_equal "bin/rails db:test:prepare test", test_cmd
     assert_includes checks.map(&:name), "migrations", "a pg app is checked for its release-phase migrate"
+  end
+
+  def test_ci_yml_is_read_once_through_the_workflow_listing
+    probe = healthy_probe
+    contract(probe)
+    assert_equal 1, probe.paths_read.count(".github/workflows/ci.yml")
+
+    _, test_cmd = contract(healthy_probe(runs: { ls_tree: ["", true] }))
+    assert_nil test_cmd, "a ci.yml absent from the listing at origin/accepted names no test command"
   end
 
   def test_each_gap_fails_its_own_check_with_a_remedy

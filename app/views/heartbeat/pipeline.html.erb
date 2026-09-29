@@ -156,7 +156,8 @@
                 <%= heartbeat_agent_cell(mascot_slug: activity.mascot, pokemon: @pokemon_by_slug[activity.mascot],
                                          agent_slug: activity.agent, agent: @agents_by_slug[activity.agent],
                                          supervisor_slug: activity.supervisor_agent,
-                                         supervisor: @agents_by_slug[activity.supervisor_agent]) %>
+                                         supervisor: @agents_by_slug[activity.supervisor_agent],
+                                         gender: @mascot_genders&.dig(activity.session_id)) %>
               </div>
             </div>
             <div class="pl-meta">

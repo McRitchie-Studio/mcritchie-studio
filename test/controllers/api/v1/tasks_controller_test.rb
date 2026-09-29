@@ -18,6 +18,25 @@ module Api
         }
       end
 
+      # [integration] tasks/show-mascot-gender-symbol: show derives the mascot's
+      # DISPLAY gender, so a desk context can tell a genderless species (⚥) from a
+      # pre-gender draw (bare) — the stored devops.mascot_gender is nil for both.
+      test "show serves the mascot display gender, genderless read off the species" do
+        Pokemon.create!(dex: 81, name: "Magnemite", slug: "magnemite", types: %w[electric], generation: 1, gender_rate: -1)
+        Pokemon.create!(dex: 303, name: "Mawile", slug: "mawile", types: %w[steel], generation: 3, gender_rate: 4)
+        shown = lambda do |devops|
+          @task.update_columns(metadata: { "devops" => devops })
+          get api_v1_task_path(@task.slug), headers: @headers
+          assert_response :success
+          JSON.parse(response.body).dig("data", "mascot_display_gender")
+        end
+
+        assert_equal "genderless", shown.call("mascot" => "magnemite")
+        assert_equal "male", shown.call("mascot" => "mawile", "mascot_gender" => "male")
+        assert_nil shown.call("mascot" => "mawile")
+        assert_nil shown.call({})
+      end
+
       # [integration] devops-v3 4c-i: the board DERIVES the PR url and caches it into
       # a blank `devops.pr_url`, so bin/ship can skip its write and its read-back still
       # pins the exact PR. The derivation runs in TaskPrUrlCacheJob, never in the

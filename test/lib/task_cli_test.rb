@@ -1927,6 +1927,30 @@ class TaskCliTest < Minitest::Test
     end
   end
 
+  # tasks/show-mascot-gender-symbol: the session-mascot endpoint's display gender
+  # lands in the marker ("genderless" included) and the printed title signs the name.
+  def test_session_mascot_records_the_display_gender_and_prints_the_sign
+    { "male" => "🔶 Snorlax♂", "genderless" => "🔶 Snorlax⚥", nil => "🔶 Snorlax" }.each do |gender, head|
+      Dir.mktmpdir do |projects|
+        marker_path = File.join(projects, ".agents", "sessions", "#{MARKER_SESSION}.json")
+
+        _req, out, _err, status = run_task(
+          ["session-mascot", "--print"],
+          env: { "CODEX_THREAD_ID" => MARKER_SESSION,
+                 "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+          chdir: projects,
+          stub_session_mascot: { "mascot" => "snorlax", "mascot_emoji" => "🔶", "mascot_gender" => gender,
+                                 "app" => "mcritchie-studio" }
+        )
+
+        assert status.success?
+        marker = JSON.parse(File.read(marker_path))
+        gender ? assert_equal(gender, marker["mascot_gender"]) : refute(marker.key?("mascot_gender"))
+        assert_equal "#{head} · mcritchie-studio", out.strip, gender.inspect
+      end
+    end
+  end
+
   def test_session_mascot_sends_parent_session_context_when_present
     Dir.mktmpdir do |projects|
       requests, _out, _err, status = run_task(

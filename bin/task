@@ -418,8 +418,23 @@ def marker_display_emoji(marker)
   base.empty? ? SHINY_EMOJI : "#{base}#{SHINY_EMOJI}"
 end
 
+# The marker's mascot as every surface names it — the same rule as
+# Pokemon#display_name, bin/statusline and bin/agent-marker: mascot_gender appends
+# its sign (male ♂, female ♀, genderless ⚥), none (pre-gender) stays bare, and
+# Nidoran carries exactly one sign (the legacy slugs name theirs).
+MARKER_NIDORAN_NAMES = { "nidoran-f" => "Nidoran♀", "nidoran-m" => "Nidoran♂" }.freeze
+MARKER_GENDER_SIGNS = { "female" => "♀", "male" => "♂", "genderless" => "⚥" }.freeze
+
+def marker_mascot_name(marker)
+  slug = marker["mascot"].to_s.strip
+  return MARKER_NIDORAN_NAMES.fetch(slug) if MARKER_NIDORAN_NAMES.key?(slug)
+
+  name = titleize_marker_name(slug)
+  name.empty? ? name : "#{name}#{MARKER_GENDER_SIGNS[marker['mascot_gender'].to_s.strip.downcase]}"
+end
+
 def print_session_marker(marker)
-  mascot = titleize_marker_name(marker["mascot"])
+  mascot = marker_mascot_name(marker)
   head = [marker_display_emoji(marker), mascot].map(&:to_s).map(&:strip).reject(&:empty?).join(" ").strip
   parts = [head, marker["app"], marker["worktree_slug"] || marker["feature"]].map(&:to_s).map(&:strip).reject(&:empty?)
   puts parts.join(" · ")
@@ -1839,7 +1854,7 @@ def write_feature_marker(task)
     "mascot_color" => mascot_color, # …tinted with the mascot's least-common type color, riding with the name
     "mascot_emoji" => marker_display_emoji("mascot_emoji" => mascot_emoji, "mascot_shiny" => mascot_shiny), # …and carries its type emoji(s), with ✨ when shiny
     "mascot_shiny" => (true if truthy_marker_value?(mascot_shiny)),
-    "mascot_gender" => mascot_gender, # the session's gender roll — bin/statusline names Nidoran♀/♂ by it
+    "mascot_gender" => mascot_gender, # the display gender — bin/statusline signs the name by it (Mawile♂, Magnemite⚥)
     "persona" => dv["persona"],     # present only for a deliberate "act as <soul>" override
     "app_color" => dv["app_color"]  # the app's status-line tint (App#color, stamped server-side by Task#sync_app_identity)
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
@@ -1890,15 +1905,24 @@ def marker_mascot_attrs(task, path)
   disk = existing_marker(path)
   if disk && FeatureMarker.present?(disk["persona"]) &&
      !FeatureMarker.present?(dv["persona"]) && FeatureMarker.present?(dv["mascot"])
-    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], dv["mascot_gender"]]
+    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], task_display_gender(task)]
   end
   if disk && FeatureMarker.present?(disk["mascot"])
     return [disk["mascot"], disk["mascot_color"], disk["mascot_emoji"], disk["mascot_shiny"], disk["mascot_gender"]]
   end
 
-  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], dv["mascot_gender"]] if FeatureMarker.present?(dv["mascot"])
+  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"], dv["mascot_shiny"], task_display_gender(task)] if FeatureMarker.present?(dv["mascot"])
 
   [board_mascot(task["slug"]), nil, nil, nil, nil] # a board read carries the name only
+end
+
+# A task record's mascot DISPLAY gender for the marker: the show endpoint's
+# derived mascot_display_gender ("genderless" for a gender_rate -1 species, which
+# bin/statusline shows as ⚥), else the stored devops.mascot_gender (a create/move
+# response carries only that). nil = pre-gender, rendered bare.
+def task_display_gender(task)
+  derived = task["mascot_display_gender"].to_s.strip
+  derived.empty? ? task.dig("metadata", "devops", "mascot_gender") : derived
 end
 
 def existing_marker(path)

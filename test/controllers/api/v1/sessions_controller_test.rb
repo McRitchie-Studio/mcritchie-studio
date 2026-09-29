@@ -46,6 +46,25 @@ module Api
         assert_equal "female", JSON.parse(response.body).dig("data", "mascot_gender")
       end
 
+      # tasks/show-mascot-gender-symbol: a genderless species is told apart from a
+      # pre-gender draw, so bin/statusline can show Magnemite⚥ yet a legacy draw bare.
+      test "POST mascot returns genderless for a gender_rate -1 species" do
+        Pokemon.find_by!(slug: "snorlax").update!(gender_rate: -1)
+        post "/api/v1/sessions/sess-genderless/mascot", headers: @headers
+
+        assert_response :success
+        assert_equal "genderless", JSON.parse(response.body).dig("data", "mascot_gender")
+      end
+
+      test "POST mascot returns no gender for a pre-gender draw of a gendered species" do
+        Pokemon.find_by!(slug: "snorlax").update!(gender_rate: 1)
+        SessionMascot.create!(session_id: "sess-legacy", mascot_slug: "snorlax", gender: nil)
+        post "/api/v1/sessions/sess-legacy/mascot", headers: @headers
+
+        assert_response :success
+        assert_nil JSON.parse(response.body).dig("data", "mascot_gender")
+      end
+
       test "POST mascot also returns the default app so a fresh session shows it" do
         post "/api/v1/sessions/sess-1/mascot", headers: @headers
 

@@ -44,6 +44,17 @@ class PokemonPokedexTest < ActiveSupport::TestCase
     assert_equal ["ran focused tests", "loaded context"], pokedex.recent_actions.map { |row| row.action.summary }
   end
 
+  test "[unit] recent actions name each mascot with its session's gender sign" do
+    mawile = Pokemon.create!(dex: 303, name: "Mawile", slug: "mawile", generation: 3, gender_rate: 4)
+    magnemite = Pokemon.create!(dex: 81, name: "Magnemite", slug: "magnemite", generation: 1, gender_rate: -1)
+    SessionMascot.create!(session_id: "s-m", mascot_slug: mawile.slug, gender: "male")
+    SessionMascot.create!(session_id: "s-g", mascot_slug: magnemite.slug)
+    AgentAction.create!(session_id: "s-m", mascot: mawile.slug, kind: "bash", outcome: "ok", occurred_at: 1.minute.ago)
+    AgentAction.create!(session_id: "s-g", mascot: magnemite.slug, kind: "bash", outcome: "ok", occurred_at: 2.minutes.ago)
+
+    assert_equal %w[Mawile♂ Magnemite⚥], PokemonPokedex.new(recent_limit: 5).recent_actions.map(&:name)
+  end
+
   test "[unit] newest unique is the species first seen most recently, not the latest spawn" do
     snorlax = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1)
     eevee = Pokemon.create!(dex: 133, name: "Eevee", slug: "eevee", generation: 1)
