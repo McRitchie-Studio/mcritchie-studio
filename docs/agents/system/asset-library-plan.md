@@ -335,7 +335,7 @@ R2 copy state is from an `rclone copy` S3 → R2 the same morning; `rclone size`
 | Bucket | S3 versioning | On R2 |
 |---|---|---|
 | `mcritchie-studio-production` | Enabled | 9,313 objects, 1.05 GB, equal |
-| `mcritchie-studio-dev` | none | all 11,131 S3 objects copied; R2 holds 14 more (writes since, and copy never deletes). The bucket's archive lifecycle gives old objects a storage class R2 refuses, so the copy needs `storage_class = STANDARD` on the R2 side |
+| `mcritchie-studio-dev` | none | all 11,131 S3 objects copied; R2 holds 14 objects (about 144 MB) that S3 does not; `rclone copy` never deletes, and the extras are not yet traced. The bucket's archive lifecycle gives old objects a storage class R2 refuses, so the copy needs `storage_class = STANDARD` on the R2 side |
 | `turf-monster-production` | Enabled | 8,416 objects, 1.06 GB, equal |
 | `turf-monster-dev` | none | 8,457 objects, 1.07 GB, equal |
 | `mcritchie-industries-production` / `-dev` | Enabled / none | production mid-cutover: R2 primary, S3 still mirrored |
