@@ -99,8 +99,10 @@ module StageAgentsHelper
     name = snapshot["name"].presence || snapshot["slug"].presence
     return fallback if name.blank?
 
+    # A snapshot baked before the sign rule holds the bare name beside its gender;
+    # gendered_name signs it (and leaves an already-signed name alone).
     MascotAgent.new(
-      name: name,
+      name: Pokemon.gendered_name(name, snapshot["gender"]),
       avatar: snapshot["avatar"].presence,
       color: snapshot["color"].presence,
       shiny: snapshot["shiny"] == true

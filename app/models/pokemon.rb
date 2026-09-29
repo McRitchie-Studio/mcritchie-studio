@@ -27,6 +27,11 @@ class Pokemon < ApplicationRecord
   # Staryu, the legendaries) or a legacy draw that predates the roll.
   GENDERS = %w[female male].freeze
   GENDER_SYMBOLS = { "female" => "♀", "male" => "♂" }.freeze
+  # A genderless species is not a gender a draw records (GENDERS stays the
+  # stored vocabulary); it is a DISPLAY value — the session marker carries it so
+  # bin/statusline can show ⚥ rather than a bare pre-gender name.
+  GENDERLESS = "genderless".freeze
+  DISPLAY_SIGNS = GENDER_SYMBOLS.merge(GENDERLESS => "⚥").freeze
   # PokéAPI's gender_rate is in EIGHTHS female: -1 genderless, 0 always male,
   # 8 always female, n in between = an n/8 chance of female.
   GENDER_RATE_EIGHTHS = 8
@@ -228,29 +233,45 @@ class Pokemon < ApplicationRecord
 
   # The name to show for a draw of this Pokémon — THE one rule every surface
   # shares (board, crew, release faces, activity feed, Pokédex; bin/statusline and
-  # bin/agent-marker mirror it in bash/plain Ruby): a gendered draw wears its sign
-  # (Mawile♂, Gardevoir♀); a genderless species or an unrecorded gender stays bare.
-  # A family wears its form's name (Nidoran♀ / Nidoran♂), which already carries
-  # the sign, so Nidoran never doubles it.
+  # bin/agent-marker mirror it): a gendered draw wears its sign (Mawile♂,
+  # Gardevoir♀); a GENDERLESS species (gender_rate -1: Magnemite, Staryu, the
+  # legendaries) always wears ⚥; a species that has genders but whose draw
+  # recorded none (a pre-gender task or session) stays bare. Genderless is read
+  # off the species, never off a nil gender — nil means pre-gender too. A family
+  # wears its form's name (Nidoran♀ / Nidoran♂), which already carries the sign,
+  # so Nidoran never doubles it.
   def display_name(gender: nil)
     base = gender_form(gender)&.name.presence || name
-    genderless? ? base : self.class.gendered_name(base, gender)
+    self.class.gendered_name(base, genderless? ? GENDERLESS : gender)
   end
 
-  # A species PokéAPI records as having no gender (Magnemite, Staryu, the
-  # legendaries). An unrecorded rate (nil) is not genderless — it is unknown.
+  # A species PokéAPI records as having no gender (gender_rate -1). An
+  # unrecorded rate (nil) is not genderless — it is unknown.
   def genderless?
     !gender_rate.nil? && gender_rate.to_i <= GENDERLESS_RATE
   end
 
-  # `name` followed by the sign for `gender` (♂/♀) — nil, blank or junk gender
-  # leaves it bare, and a name that already ends in a sign (Nidoran♀, a snapshot
-  # baked after this rule) is returned unchanged, so it is idempotent. For
-  # surfaces holding only a name and a gender (an event's baked snapshot).
+  # The gender a DISPLAY surface carries for a draw: the recorded gender, else
+  # "genderless" for a genderless species, else nil (pre-gender). What the
+  # session marker's mascot_gender holds, so bin/statusline can tell ⚥ from bare.
+  def display_gender(gender)
+    genderless? ? GENDERLESS : self.class.normalize_gender(gender)
+  end
+
+  # Slugs of every genderless species — one query, for a surface that holds only
+  # a baked name + slug (an event snapshot) and must still show ⚥.
+  def self.genderless_slugs
+    where(gender_rate: ..GENDERLESS_RATE).pluck(:slug).to_set
+  end
+
+  # `name` followed by the sign for `gender`: ♂ male, ♀ female, ⚥ "genderless".
+  # nil, blank or junk leaves it bare, and a name that already ends in a sign
+  # (Nidoran♀, a snapshot baked after this rule) comes back unchanged, so it is
+  # idempotent. For surfaces holding only a name and a gender (an event snapshot).
   def self.gendered_name(name, gender)
     name = name.to_s
-    sign = GENDER_SYMBOLS[normalize_gender(gender)]
-    return name if sign.nil? || name.empty? || name.end_with?(*GENDER_SYMBOLS.values)
+    sign = DISPLAY_SIGNS[gender.to_s.strip.downcase]
+    return name if sign.nil? || name.empty? || name.end_with?(*DISPLAY_SIGNS.values)
 
     "#{name}#{sign}"
   end
