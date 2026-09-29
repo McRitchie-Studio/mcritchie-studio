@@ -139,6 +139,12 @@ class Contacts::VerificationTest < ActiveSupport::TestCase
     assert_equal "valid", @recent.reload.verification_status
   end
 
+  test "the resume line is flushed the moment the file is submitted" do
+    out = Class.new(StringIO) { attr_reader :flushed; def flush = (@flushed = string.dup) }.new
+    verification(FakeZeroBounce.new, limit: 1, out: out).run
+    assert_match "submitted 1 as file file-1 (resume with FILE_ID=file-1)", out.flushed
+  end
+
   test "a status ZeroBounce adds later is stored as unknown, keeping the raw value" do
     zb = FakeZeroBounce.new(verdicts: { "recent@example.com" => "shiny_new" })
     verification(zb, limit: 1).run

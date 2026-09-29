@@ -149,8 +149,11 @@ module Contacts
                   credits_before: credits_before, credits_after: credits_after, newest: times.max, oldest: times.min)
     end
 
+    # Flushed at once: over `heroku run --no-tty` stdout is a buffered pipe, and
+    # the "resume with FILE_ID" line must reach the operator before a long poll.
     def say(line)
       @out.puts(line)
+      @out.flush
     end
   end
 end
