@@ -76,4 +76,13 @@ class BroadcastSendJobTest < ActiveJob::TestCase
 
     assert_emails(1) { BroadcastSendJob.perform_now(@broadcast.id, @contact.id) }
   end
+
+  # [unit] Jobs for one (broadcast, contact) share a solid_queue semaphore of 1,
+  # so two can never both pass the sent_at check mid-send; other pairs do not.
+  test "one broadcast to one contact runs one job at a time" do
+    same = BroadcastSendJob.new(@broadcast.id, @contact.id)
+    assert_equal 1, same.concurrency_limit
+    assert_equal same.concurrency_key, BroadcastSendJob.new(@broadcast.id, @contact.id).concurrency_key
+    assert_not_equal same.concurrency_key, BroadcastSendJob.new(@broadcast.id, @contact.id + 1).concurrency_key
+  end
 end

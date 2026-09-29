@@ -3,8 +3,12 @@
 # send time so a late unsubscribe is honored, and never sends one broadcast to
 # one contact twice: a delivery already stamped sent is skipped. sent_at is
 # stamped only after the mailer returns, so a send that fails (a Resend rate
-# limit, say) is retried rather than recorded as sent.
+# limit, say) is retried rather than recorded as sent. Two jobs for the same
+# pair (overlapping batches, or a batch plus the editor's send) never run at
+# once: the second waits for the first, then sees sent_at and skips.
 class BroadcastSendJob < ApplicationJob
+  limits_concurrency to: 1, key: ->(broadcast_id, contact_id) { "#{broadcast_id}-#{contact_id}" }
+
   def perform(broadcast_id, contact_id)
     broadcast = Broadcast.find(broadcast_id)
     contact   = Contact.find(contact_id)
