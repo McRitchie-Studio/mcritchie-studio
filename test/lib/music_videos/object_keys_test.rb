@@ -23,3 +23,21 @@ class MusicVideosObjectKeysTest < Minitest::Test
     assert_raises(ArgumentError) { MusicVideos::ObjectKeys.new(primary: ["A"], featured: [], song: "!!").source_mp4 }
   end
 end
+
+# [unit] Clip keys sit in the source's folder and spell out the window.
+class MusicVideosClipKeyTest < Minitest::Test
+  SOURCE = "music_videos/steve_aoki/night_call/source/steve_aoki_night_call_feat_lil_yachty_migos.mp4"
+
+  def test_clip_key_names_ordinal_seam_shape_and_times
+    key = MusicVideos::ObjectKeys.clip(source_key: SOURCE, ordinal: 3, seam: "verse_to_chorus",
+                                       cast_shape: "duo_plus_background", start_ms: 93_400, end_ms: 118_400)
+    assert_equal "music_videos/steve_aoki/night_call/clips/night_call_clip_03_verse_to_chorus_duo_plus_background_0133_0158.mp4", key
+  end
+
+  def test_refuses_a_key_outside_the_tree
+    assert_raises(ArgumentError) do
+      MusicVideos::ObjectKeys.clip(source_key: "other/x.mp4", ordinal: 1, seam: "unknown", cast_shape: "solo",
+                                   start_ms: 0, end_ms: 25_000)
+    end
+  end
+end
