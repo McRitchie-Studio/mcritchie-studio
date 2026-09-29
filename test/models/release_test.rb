@@ -411,6 +411,26 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal expected, rel.mascot.slug, "#mascot resolves the stamped Pokémon"
   end
 
+  test "stamp_conductor_mascot! stamps the session's gender and mascot_name wears its sign" do
+    Pokemon.create!(dex: 303, name: "Mawile", slug: "mawile", types: %w[steel], generation: 3, gender_rate: 4)
+    SessionMascot.create!(session_id: "sess-g", mascot_slug: "mawile", gender: "male")
+    rel = Release.open!
+    rel.stamp_conductor_mascot!("sess-g")
+
+    assert_equal "male", rel.reload.devops_field("mascot_gender")
+    assert_equal "Mawile♂", rel.mascot_name
+  end
+
+  test "a release stamped before the sign rule reads its gender off the conductor session" do
+    Pokemon.create!(dex: 303, name: "Mawile", slug: "mawile", types: %w[steel], generation: 3, gender_rate: 4)
+    SessionMascot.create!(session_id: "sess-old", mascot_slug: "mawile", gender: "female")
+    rel = Release.open!
+    rel.update!(metadata: { "devops" => { "mascot" => "mawile", "mascot_session" => "sess-old" } })
+
+    assert_equal "Mawile♀", rel.reload.mascot_name
+    assert_equal({ rel.slug => "female" }, Release::Flow.conductor_genders([rel]))
+  end
+
   test "stamp_conductor_mascot! is idempotent for the same session (never re-rolls)" do
     seed_pokemon
     rel = Release.open!

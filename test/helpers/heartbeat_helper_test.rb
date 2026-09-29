@@ -521,6 +521,19 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_nil frag.at_css(".hb-namesub"), "a solo cell has no subordinate name"
   end
 
+  test "[unit] agent cell signs the mascot by the session gender, genderless by its species" do
+    mawile = Pokemon.new(slug: "mawile", name: "Mawile", gender_rate: 4)
+    magnemite = Pokemon.new(slug: "magnemite", name: "Magnemite", gender_rate: -1)
+    name = lambda do |**kw|
+      Nokogiri::HTML::DocumentFragment.parse(heartbeat_agent_cell(**kw)).at_css(".hb-names .hb-nameprimary").text
+    end
+
+    assert_equal "Mawile♂", name.call(mascot_slug: "mawile", pokemon: mawile, gender: "male")
+    assert_equal "Mawile", name.call(mascot_slug: "mawile", pokemon: mawile), "a pre-gender session stays bare"
+    assert_equal "Magnemite⚥", name.call(mascot_slug: "magnemite", pokemon: magnemite)
+    assert_equal "Jasper", name.call(mascot_slug: "jasper", gender: "male"), "an unseeded (persona) slug never takes a sign"
+  end
+
   test "[unit] agent cell falls back to a titleized soul stand-in when the Agent is unseeded" do
     html = heartbeat_agent_cell(mascot_slug: "shellder", agent_slug: "carl", agent: nil)
     frag = Nokogiri::HTML::DocumentFragment.parse(html)
