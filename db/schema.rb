@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_28_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -301,6 +301,47 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_090000) do
     t.index ["generator", "retired_at"], name: "index_artifacts_on_generator_and_retired_at", where: "(generator IS NOT NULL)"
     t.index ["kind", "retired_at"], name: "index_artifacts_on_kind_and_retired_at"
     t.index ["slug"], name: "index_artifacts_on_slug", unique: true
+  end
+
+  create_table "artist_aliases", force: :cascade do |t|
+    t.string "artist_slug", null: false
+    t.datetime "created_at", null: false
+    t.string "locale", default: "en", null: false
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["artist_slug", "name", "locale"], name: "index_artist_aliases_on_artist_slug_and_name_and_locale", unique: true
+    t.index ["name"], name: "index_artist_aliases_on_name"
+  end
+
+  create_table "artist_memberships", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "end_year"
+    t.string "group_artist_slug", null: false
+    t.string "member_artist_slug", null: false
+    t.integer "start_year"
+    t.datetime "updated_at", null: false
+    t.index "member_artist_slug, group_artist_slug, COALESCE(start_year, 0)", name: "index_artist_memberships_on_stint", unique: true
+    t.index ["group_artist_slug"], name: "index_artist_memberships_on_group_artist_slug"
+  end
+
+  create_table "artists", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "discogs_id"
+    t.string "kind", null: false
+    t.string "musicbrainz_id"
+    t.string "name", null: false
+    t.string "person_slug"
+    t.string "slug", null: false
+    t.string "sort_name", null: false
+    t.string "spotify_id"
+    t.datetime "updated_at", null: false
+    t.string "wikidata_id"
+    t.index ["musicbrainz_id"], name: "index_artists_on_musicbrainz_id"
+    t.index ["name"], name: "index_artists_on_name"
+    t.index ["person_slug"], name: "index_artists_on_person_slug"
+    t.index ["slug"], name: "index_artists_on_slug", unique: true
+    t.index ["spotify_id"], name: "index_artists_on_spotify_id"
+    t.index ["wikidata_id"], name: "index_artists_on_wikidata_id", unique: true
   end
 
   create_table "athlete_grades", force: :cascade do |t|
