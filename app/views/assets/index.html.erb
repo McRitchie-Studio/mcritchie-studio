@@ -1,0 +1,98 @@
+<% content_for :title, "Assets · McRitchie Studio" %>
+<% link_params = { prefix: @prefix.presence, token: @token, q: @query.presence }.compact %>
+<% crumbs = AssetBrowser.breadcrumbs(@prefix) %>
+
+<section class="max-w-6xl mx-auto px-4 py-10" data-test="assets-page">
+  <header class="mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Assets</p>
+    <h1 class="text-3xl font-bold text-heading mb-2">Object store</h1>
+    <p class="text-muted max-w-2xl">
+      The hub's bucket as a folder tree. Admin only; previews use signed links.
+      <span class="whitespace-nowrap">Store: <span class="font-mono text-body" data-test="asset-store"><%= @store %></span></span>
+    </p>
+  </header>
+
+  <%= form_with url: asset_browser_path, method: :get, local: true, class: "flex flex-wrap gap-2 mb-4", data: { test: "asset-search" } do %>
+    <% if @prefix.present? %><input type="hidden" name="prefix" value="<%= @prefix %>"><% end %>
+    <input type="search" name="q" value="<%= @query %>" aria-label="Search file names"
+           placeholder="Search file names under <%= @prefix.presence || 'the whole bucket' %>"
+           class="input-field flex-1 min-w-0">
+    <button type="submit" class="btn btn-primary">Search</button>
+    <% if @query.present? %>
+      <%= link_to "Clear", asset_browser_path(prefix: @prefix.presence), class: "btn btn-outline" %>
+    <% end %>
+  <% end %>
+
+  <nav aria-label="Folder" class="mb-4 text-sm min-w-0" data-test="asset-breadcrumbs">
+    <ol class="flex flex-wrap items-center gap-1">
+      <li>
+        <% if crumbs.empty? %>
+          <span aria-current="page" class="font-semibold text-heading">Root</span>
+        <% else %>
+          <%= link_to "Root", asset_browser_path, class: "text-primary hover:underline" %>
+        <% end %>
+      </li>
+      <% crumbs.each_with_index do |(label, path), i| %>
+        <li class="text-muted" aria-hidden="true">/</li>
+        <li class="min-w-0 break-all">
+          <% if i == crumbs.size - 1 %>
+            <span aria-current="page" class="font-semibold text-heading"><%= label %></span>
+          <% else %>
+            <%= link_to label, asset_browser_path(prefix: path), class: "text-primary hover:underline" %>
+          <% end %>
+        </li>
+      <% end %>
+    </ol>
+  </nav>
+
+  <% if @error %>
+    <p class="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning-ink mb-4" role="status" data-test="asset-unavailable">
+      The object store did not answer (<%= @error %>). Check the storage credentials for this environment.
+    </p>
+  <% end %>
+
+  <div class="grid gap-6 <%= 'lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]' if @key %>">
+    <% if @key %>
+      <aside class="lg:order-last min-w-0">
+        <% if @preview %>
+          <%= render "assets/preview", preview: @preview %>
+        <% elsif !@error %>
+          <p class="rounded-2xl border border-subtle bg-surface p-4 text-sm text-muted" data-test="asset-preview-missing">No object at <span class="font-mono break-all"><%= @key %></span>.</p>
+        <% end %>
+      </aside>
+    <% end %>
+
+    <div class="min-w-0">
+      <% if @search %>
+        <p class="text-sm text-muted mb-2" data-test="asset-search-bound">
+          <% if @search.complete %>
+            Searched all <%= number_with_delimiter(@search.scanned) %> objects under <%= @prefix.presence || "the bucket" %>.
+          <% else %>
+            Searched the first <%= number_with_delimiter(@search.scanned) %> objects under <%= @prefix.presence || "the bucket" %> (the limit); open a folder to search deeper.
+          <% end %>
+          <% if @search.truncated_matches %>Showing the first <%= @search.matches.size %> matches.<% end %>
+        </p>
+      <% end %>
+
+      <% if @listing || @search %>
+        <div class="rounded-2xl border border-subtle bg-surface overflow-hidden">
+          <%= render "assets/listing",
+                     folders: @listing ? @listing.folders : [],
+                     files: @listing ? @listing.files : @search.matches,
+                     prefix: @prefix, selected_key: @key, link_params: link_params, show_folder: @search.present? %>
+        </div>
+      <% end %>
+
+      <% if @listing && (@token || @listing.next_token) %>
+        <div class="flex gap-2 mt-4" data-test="asset-pager">
+          <% if @token %>
+            <%= link_to "First page", asset_browser_path(prefix: @prefix.presence), class: "btn btn-outline btn-sm" %>
+          <% end %>
+          <% if @listing.next_token %>
+            <%= link_to "Next page", asset_browser_path(prefix: @prefix.presence, token: @listing.next_token), class: "btn btn-outline btn-sm", data: { test: "asset-next-page" } %>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</section>

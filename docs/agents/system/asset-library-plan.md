@@ -295,6 +295,10 @@ becomes a read-through onto the catalog, then folds into it.
 **Access.**
 
 - **People**: a hub `/assets` browser — search, upload, approve, retire.
+  The read-only first cut is built (`asset-tree-browser`): an admin folder
+  tree over the bucket's key prefixes, read through `Studio::S3`, with a name
+  search bounded to 5,000 keys under the open folder and signed previews.
+  It has no catalog table yet; upload, approve and retire wait on this wave.
 - **Apps**: `Studio::Asset.find_by(subject:, category:)`, with URLs from
   `Studio::S3` (public) or `signed_url` (private).
 - **Agents**: a read API and an agent tool (search by subject, category and
