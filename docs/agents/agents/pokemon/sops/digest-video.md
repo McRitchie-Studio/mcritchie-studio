@@ -51,8 +51,8 @@ music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.info.json
 ```
 
 Keys come from 1Password item `r2.mcritchie-studio` in `studio-agents`, read
-through `bin/secret`; no value is printed. The stored `.info.json` drops the
-`description`, which can quote lyrics.
+through `bin/secret`; no value is printed. The stored `.info.json` keeps only
+the allowlist in [`download-youtube`](download-youtube.md); lyrics and signed URLs are dropped.
 
 ## 4. Create the MusicVideo record
 

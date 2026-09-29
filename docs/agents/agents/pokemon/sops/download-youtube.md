@@ -25,8 +25,8 @@ yt-dlp -f "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]" \
 A video with no captions (Night Call, measured 2026-09-29) gets no `.vtt`; its
 timing is empty.
 
-The script deletes each `.vtt` once it has parsed the timings, since the file
-holds lyric text. It stores a copy of the `.info.json` that keeps only `id`,
+The script deletes each `.vtt` once the record is created, since the file holds
+lyric text; a dry run or a failed run keeps it for a `--from-dir` retry. It stores a copy of the `.info.json` that keeps only `id`,
 `title`, `uploader`, `channel`, `channel_id`, `upload_date`, `duration`,
 `webpage_url`, `extractor`, `width`, `height`, `fps`, `vcodec` and `acodec`. It
 drops the description, tags and chapters, which can quote lyrics, and every
