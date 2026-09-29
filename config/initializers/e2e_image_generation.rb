@@ -16,7 +16,7 @@ if Rails.env.test? && ENV["E2E_FAKE_IMAGE_GENERATION"] == "1"
         raise ImageGeneration::GenerationFailed, "no references" if Array(reference_urls).empty?
 
         ImageGeneration::Result.new(image_urls: [placeholder], seed: nil, request_id: "e2e-fake",
-                                    generator_key: @row.key, version: @row.provenance_version, billable_units: 7_000)
+                                    generator_key: @row.key, version: @row.provenance_version, billable_units: 7_629)
       end
     end
 
