@@ -42,7 +42,7 @@ module Api
 
       test "the agent may not set an artist, and nothing changes" do
         rows = two_people
-        rows[0][:artist_slug] = "lil-yachty"
+        rows[0][:artist_slug] = "test-artist-a"
 
         assert_no_changes -> { @video.video_performers.pluck(:id) } do
           post_performers(rows)

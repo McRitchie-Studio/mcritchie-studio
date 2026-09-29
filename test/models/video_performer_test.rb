@@ -38,11 +38,11 @@ class VideoPerformerTest < ActiveSupport::TestCase
   end
 
   test "an artist or an extra resolves it, never both" do
-    Artist.create!(slug: "lil-yachty", name: "Lil Yachty", kind: "person")
+    Artist.create!(slug: "test-artist-a", name: "Test Artist A", kind: "person")
 
-    assert performer(artist_slug: "lil-yachty").resolved?
+    assert performer(artist_slug: "test-artist-a").resolved?
     assert performer(extra: true).resolved?
-    assert_not performer(artist_slug: "lil-yachty", extra: true).valid?
+    assert_not performer(artist_slug: "test-artist-a", extra: true).valid?
   end
 
   test "ordinal is unique within a video" do

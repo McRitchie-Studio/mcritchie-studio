@@ -58,12 +58,13 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_includes rendered, %(@input.debounce.250ms="search()")
   end
 
+  # A synthetic artist: only the operator maps an on-screen person to a real one.
   test "a labelled performer shows its artist and a Change control, not the typeahead" do
-    @performer.update!(artist_slug: Artist.find_by!(name: "Lil Yachty").slug)
+    @performer.update!(artist_slug: Artist.create!(slug: "test-artist-a", name: "Test Artist A", kind: "person").slug)
     render_card
 
     assert_select "[data-test='performer-card'][data-resolved='true']"
-    assert_select "[data-test='performer-artist']", /Lil Yachty/
+    assert_select "[data-test='performer-artist']", /Test Artist A/
     assert_select "[data-test='performer-typeahead']", 0
     assert_select "input[name='clear'][value='1']"
   end
