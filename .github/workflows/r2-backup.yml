@@ -15,7 +15,10 @@ name: R2 Backup
 
 on:
   schedule:
-    - cron: "0 9 * * *" # 09:00 UTC = 03:00 Denver (MDT), 02:00 (MST)
+    # Off the hour on purpose: GitHub queues top-of-hour schedules behind
+    # everyone else's, and at "0 9" the runs of 2026-09-27 and -28 started 5.5
+    # and 8.3 hours late (09-29's had not started by 14:21 UTC).
+    - cron: "37 9 * * *" # 09:37 UTC = 03:37 Denver (MDT), 02:37 (MST)
   workflow_dispatch:
 
 concurrency:
