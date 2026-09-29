@@ -72,30 +72,47 @@ class Broadcast < ApplicationRecord
   # full send still marks it sent.
   BATCH_SPACING = 0.6.seconds
 
+  # Audiences whose sends go only to contacts an email check called valid
+  # (task verify-contacts-with-zerobounce). The Cyvasse relaunch's first 101
+  # sends hard-bounced 11.9%, so the old player list is mailed verified-only
+  # unless a caller says otherwise; catch-all, unknown and unchecked contacts
+  # wait. Verify with `contacts:verify`.
+  VERIFIED_AUDIENCES = %w[cyvasse-legacy].freeze
+
+  # Whether a send to `audience` is verified-only by default.
+  def self.verification_required?(audience)
+    VERIFIED_AUDIENCES.include?(audience.to_s)
+  end
+
   # Contacts with a delivery this broadcast actually sent.
   def sent_contact_ids
     deliveries.where.not(sent_at: nil).select(:contact_id)
   end
 
   # Subscribed contacts on `audience` (a tag, or "all") still to be sent this.
-  def unsent_contacts(audience = target_list)
+  # `verified: true` keeps only contacts verified valid; nil takes the
+  # audience's default (VERIFIED_AUDIENCES).
+  def unsent_contacts(audience = target_list, verified: nil)
+    verified = self.class.verification_required?(audience) if verified.nil?
     scope = audience.to_s == "all" ? Contact.subscribed : Contact.subscribed.with_tag(audience.to_s)
+    scope = scope.verified_valid if verified
     scope.where.not(id: sent_contact_ids)
   end
 
   # Queue this broadcast to `size` random unsent contacts; returns their ids.
-  def send_batch!(size:, audience: target_list, spacing: BATCH_SPACING)
+  def send_batch!(size:, audience: target_list, spacing: BATCH_SPACING, verified: nil)
     raise ArgumentError, "no audience: set the broadcast's target list or pass one" if audience.blank?
     raise ArgumentError, "batch size must be positive" unless size.to_i.positive?
 
-    ids = unsent_contacts(audience).order(Arel.sql("RANDOM()")).limit(size.to_i).pluck(:id)
+    ids = unsent_contacts(audience, verified: verified).order(Arel.sql("RANDOM()")).limit(size.to_i).pluck(:id)
     ids.each_with_index { |contact_id, i| BroadcastSendJob.set(wait: spacing * i).perform_later(id, contact_id) }
     ids
   end
 
-  # Where a batched send stands on `audience`.
-  def batch_status(audience = target_list)
-    { sent: deliveries.where.not(sent_at: nil).count, remaining: unsent_contacts(audience).count,
+  # Where a batched send stands on `audience`. `remaining` counts only who a
+  # batch would take (verified-only where that applies).
+  def batch_status(audience = target_list, verified: nil)
+    { sent: deliveries.where.not(sent_at: nil).count, remaining: unsent_contacts(audience, verified: verified).count,
       opened: opened_count, clicked: clicked_count }
   end
 
