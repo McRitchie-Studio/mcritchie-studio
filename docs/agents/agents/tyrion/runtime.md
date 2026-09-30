@@ -12,7 +12,7 @@ Two processes, both calling out only; nothing on the NUC listens.
 
 | Process | What | Needs |
 |---|---|---|
-| OpenClaw, agent `tyrion` | Talks to people on Discord, with no tools | His workspace (`bin/openclaw-workspace tyrion ~/.openclaw/workspace-tyrion`, from a clone of `mcritchie-studio`), his own Discord bot token, the model key; config from [`openclaw.json5.example`](openclaw.json5.example) |
+| OpenClaw, agent `tyrion` | Talks to people on Discord, with no tools | His workspace (`bin/openclaw-workspace tyrion ~/.openclaw/workspace-tyrion`, from a clone of `mcritchie-studio`), his own Discord bot token, the model key; config from `openclaw.json5.example` in this folder |
 | `bin/tyrion` (cyvasse) | Plays his matches on the site and talks in their chat | A clone of `cyvasse`, Node 20+, `CYVASSE_BOT_TOKEN` (issued with `bin/rails "bot_tokens:issue[tyrion]"` on the server), optionally the model key and `npm install @anthropic-ai/sdk` in `script/tyrion` |
 
 The NUC reaches three hosts: Discord, the model API and the Cyvasse site.

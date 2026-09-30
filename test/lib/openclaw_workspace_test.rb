@@ -47,8 +47,11 @@ class OpenclawWorkspaceTest < Minitest::Test
   end
 
   def test_every_fleet_soul_fits_the_defaults
-    Dir.children(DOCS).select { |soul| File.file?(File.join(DOCS, soul, "soul.md")) && File.file?(File.join(DOCS, soul, "role.md")) }.each do |soul|
-      OpenclawWorkspace.new(soul, docs_root: DOCS).files
+    souls = Dir.children(DOCS).select { |soul| File.file?(File.join(DOCS, soul, "soul.md")) && File.file?(File.join(DOCS, soul, "role.md")) }
+    assert_operator souls.size, :>=, 10, "the fleet's souls are found"
+    souls.each do |soul|
+      files = OpenclawWorkspace.new(soul, docs_root: DOCS).files
+      assert_operator files.values.sum(&:length), :<=, OpenclawWorkspace::TOTAL_CAP, soul
     end
   end
 
