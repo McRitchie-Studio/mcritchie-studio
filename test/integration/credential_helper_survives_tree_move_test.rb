@@ -227,6 +227,18 @@ class CredentialHelperSurvivesTreeMoveTest < ActiveSupport::TestCase
     CredentialHelperInstall.point_current_at!(@install_root, first)
     assert_path_exists stable, "the control did not restore `current`"
 
+    # THE HARNESS guarantees the overlap it measures (CI flake, PR 1784,
+    # 2026-09-30: a fixed 2,000 reads finished before the swapper thread was
+    # ever scheduled, so `swaps` read 1). So: (1) the reads do not start until
+    # the swapper has provably run, and (2) they do not stop until BOTH a
+    # minimum read count AND a minimum number of swaps landed DURING the reads
+    # — each bounded by a deadline that fails loudly rather than passing a run
+    # that exercised nothing.
+    min_reads = 2_000
+    min_swaps_during_reads = 200
+    warmup_swaps = 5
+    deadline_seconds = 15
+
     stop = false
     swaps = 0
     swapper = Thread.new do
@@ -236,22 +248,48 @@ class CredentialHelperSurvivesTreeMoveTest < ActiveSupport::TestCase
       end
     end
 
-    vanished = 0
-    2_000.times do
-      File.stat(stable)
-    rescue Errno::ENOENT
-      vanished += 1
-    rescue Errno::EINVAL
-      nil # see the note above — transient resolution, not a missing file
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    elapsed = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) - started }
+    until swaps >= warmup_swaps
+      if elapsed.call > deadline_seconds || !swapper.alive?
+        stop = true
+        swapper.join(20)
+        flunk "the swapper completed only #{swaps}/#{warmup_swaps} warm-up swaps in #{deadline_seconds}s; " \
+              "the concurrency could not be set up"
+      end
+      Thread.pass
     end
+
+    swaps_at_start = swaps
+    reads = 0
+    vanished = 0
+    until reads >= min_reads && swaps - swaps_at_start >= min_swaps_during_reads
+      break if elapsed.call > deadline_seconds || !swapper.alive?
+
+      begin
+        File.stat(stable)
+      rescue Errno::ENOENT
+        vanished += 1
+      rescue Errno::EINVAL
+        nil # see the note above — transient resolution, not a missing file
+      end
+      reads += 1
+      Thread.pass if (reads % 16).zero?
+    end
+    swaps_during_reads = swaps - swaps_at_start
     stop = true
     swapper.join(20)
 
     assert_operator swaps, :>, 1, "the swapper never ran; the concurrency was not exercised"
+    assert_operator reads, :>=, min_reads,
+                    "only #{reads}/#{min_reads} reads ran before the #{deadline_seconds}s deadline"
+    assert_operator swaps_during_reads, :>=, min_swaps_during_reads,
+                    "only #{swaps_during_reads}/#{min_swaps_during_reads} swaps landed while the reads ran " \
+                    "(deadline #{deadline_seconds}s); the reads and the swaps did not overlap enough to measure"
     assert_equal 0, vanished,
-                 "the stable helper path returned ENOENT #{vanished}/2000 times while `current` was " \
-                 "repointed — that is the defect's own signature, so a re-install would reopen the " \
-                 "window this closes. Repoint with rename(2), never rm + symlink."
+                 "the stable helper path returned ENOENT #{vanished}/#{reads} times while `current` was " \
+                 "repointed #{swaps_during_reads} times — that is the defect's own signature, so a " \
+                 "re-install would reopen the window this closes. Repoint with rename(2), never rm + symlink."
   end
 
   private
