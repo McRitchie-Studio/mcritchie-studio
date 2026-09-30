@@ -79,7 +79,7 @@ rewrite step.
 | 2. `ACTIVE_STORAGE_BACKEND=mirror_to_r2` | v295; probe mirrored to R2 by the worker |
 | 3. `rclone copy -M --ignore-times` and verify | 8,418 files, 0 differences; all 8,418 DB keys on R2 and 200 on the assets domain; `Cache-Control` restored |
 | 4. `STUDIO_S3_BACKEND=r2`, catch-up copy | v296; headshots and the email banner resolve to the assets domain and answer 200 |
-| 5. Re-scan for stored bucket URLs | 0 (only 251 old Redis errors in `error_logs` mention `amazonaws.com`) |
+| 5. Re-scan for stored bucket URLs: the pre-step-1 column scan less its per-service lines (`.bucket` raises on a `MirrorService`), run at `r2`/`mirror_to_r2` | 0 URLs naming either bucket or the assets domain (only 251 old Redis errors in `error_logs` mention `amazonaws.com`); no record of the runbook's `SiteSetting.bust_og_defaults_cache!`, a no-op today |
 | 6. `ACTIVE_STORAGE_BACKEND=mirror_to_s3` | v297; probe on R2 at once and mirrored to S3; a contest image's signed URL answers 200 |
 
 ## Step 7 — owed around 2026-10-07 (Steffon)
