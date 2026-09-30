@@ -53,8 +53,8 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
 - **Custom domains need the domain on Cloudflare.** R2 attaches
   `assets.<domain>` only to a domain whose DNS Cloudflare serves in this
   account. Since 2026-09-30 `mcritchie.studio` and `turfmonster.media` both
-  are (zones Active, every record DNS only, so traffic still reaches Heroku
-  directly), and `assets.mcritchie.studio` / `assets.turfmonster.media` serve
+  are (zones Active, every app record DNS only, so traffic still reaches
+  Heroku directly; R2 proxies the `assets.` CNAME it manages), and `assets.mcritchie.studio` / `assets.turfmonster.media` serve
   the two production buckets. `cloudflare.studio.provision` can do the whole
   attach by API: it listed both zones and created both custom domains
   (`POST /accounts/<id>/r2/buckets/<bucket>/domains/custom` with the zone id),

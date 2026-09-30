@@ -262,7 +262,7 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 2026-09-30.** R2 custom domains need the domain's DNS on Cloudflare in the same
 account. On 2026-09-26 `mcritchie.studio` was served by Google's nameservers
 and `turfmonster.media` by Squarespace's; since 2026-09-30 both zones are
-Active on Cloudflare with every record DNS only, and both `assets.` domains
+Active on Cloudflare with every app record DNS only, and both `assets.` domains
 serve their production buckets. `turfmonster.media` is the domain Turf
 Monster serves from: it is the production `smoke_url` in
 `config/release_repos.yml` (app `turf-monster-mainnet`). Moving each domain's DNS to Cloudflare is the CDN rollout
