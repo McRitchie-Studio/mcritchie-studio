@@ -132,7 +132,7 @@ spaces the sends for Resend's rate limit (`app/models/broadcast.rb#send_batch!`)
 A personalized email (the reader's own stats in it) is staged, reviewed and
 approved first, then sent with `broadcasts:execute`, which holds itself to the
 same bounce and complaint limits as the table below
-([`docs/email-delivery.md`](../../../../email-delivery.md#staged-sends-review-before-execute)).
+(`docs/email-delivery.md`, "Staged Sends: Review Before Execute").
 
 | Stage | Who gets it | Links point at | Size |
 |---|---|---|---|
