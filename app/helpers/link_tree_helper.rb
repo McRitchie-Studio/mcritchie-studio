@@ -71,6 +71,12 @@ module LinkTreeHelper
         { label: "Stack", href: stack_path, emoji: "🥞", hover_emoji: "🧭", desc: "Each client's tier and software" },
         { label: "Credentials", href: credentials_path, emoji: "🔐", hover_emoji: "🗝️", desc: "Software by entity, with vault icons" },
       ] },
+      # The mailing list and what is sent to it.
+      { title: "Email", links: [
+        { label: "Broadcasts", href: broadcasts_path, emoji: "📣", hover_emoji: "✉️", desc: "Compose, send and measure marketing email" },
+        { label: "Contacts", href: contacts_path, emoji: "📇", hover_emoji: "✅", desc: "The mailing list, verified and watched live" },
+        { label: "Email analytics", href: broadcast_analytics_path, emoji: "📬", hover_emoji: "📈", desc: "Delivery, opens, clicks and list health" },
+      ] },
       { title: "Ops", links: [
         { label: "Error logs", href: "/error_logs", emoji: "🚨", hover_emoji: "🔍", desc: "Captured errors" },
         { label: "Toast test", href: toast_test_path, emoji: "🔔", hover_emoji: "✨", desc: "Notification harness" },

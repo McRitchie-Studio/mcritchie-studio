@@ -155,6 +155,16 @@ heroku run:detached -a mcritchie-studio -e FILE_ID=<id> -- bin/rails "contacts:v
 heroku run -a mcritchie-studio -- bin/rails "broadcasts:batch_status[cyvasse-is-back]"
 ```
 
+To watch a run land, open **`/contacts`** (admin; the sidebar's Email section and
+the admin dashboard link it). Its tiles and verification breakdown for one list
+(default `cyvasse-legacy`, or all) reload every 10 seconds while the tab is
+visible: total, subscribed, verified valid, undeliverable, not yet verified,
+emailed, and when the last result was stored. They come from three grouped
+queries (`Contacts::Dashboard`), about 17 ms on 18,745 contacts. Below them, the
+contacts table (`Contacts::Directory`) searches by email and filters by list,
+subscription, verification status and whether a broadcast was sent; a row
+expands into its deliveries and events.
+
 **Never rerun a real run to recover one that failed; that spends the credits
 twice.** A submit that errors (a timeout, say) may still have landed, and a
 dropped session can lose the id. Before any rerun, open the ZeroBounce
