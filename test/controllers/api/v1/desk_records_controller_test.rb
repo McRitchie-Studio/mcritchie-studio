@@ -221,6 +221,30 @@ module Api
                      "an open record the newest snapshot did not see is the defect this table exists to catch"
       end
 
+      # desk-ledger-stops-ghosting. The CLI's `managed` flag crosses the wire as a JSON
+      # boolean; a reviewer's scratch worktree is counted but never opens an episode, so
+      # when it is deleted with plain git nothing is left behind to read as vanished.
+      test "[integration] a sync lists an unmanaged worktree without ledgering it" do
+        scratch = "/private/tmp/claude-501/x/scratchpad/wt-carl-mutate"
+        desks = [registry_desk("managed" => true),
+                 registry_desk("worktree" => scratch, "label" => "wt", "managed" => false, "cleanup_candidate" => false)]
+        payload = registry_payload(desks: desks)
+        payload["summary"] = payload["summary"].merge("unmanaged" => 1)
+        post sync_api_v1_desk_records_url, params: { registry: payload }, headers: @headers, as: :json
+
+        assert_response :created
+        assert_equal 2, response.parsed_body["data"]["desks"], "both desks are listed"
+        assert_equal [SHIP], DeskRecord.open_episodes.pluck(:worktree_path), "only the managed desk is ledgered"
+        assert_equal 1, DeskSnapshot.latest.unmanaged_desks
+
+        post sync_api_v1_desk_records_url,
+             params: { registry: registry_payload(desks: [], generated_at: "2026-08-31T22:39:33Z") },
+             headers: @headers, as: :json
+
+        assert_equal 1, response.parsed_body["data"]["vanished"],
+                     "the managed desk that left is still reported; the scratch tree left no ghost"
+      end
+
       test "[integration] a sync with no registry is refused" do
         post sync_api_v1_desk_records_url, params: { registry: {} }, headers: @headers, as: :json
 
