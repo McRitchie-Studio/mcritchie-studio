@@ -187,10 +187,10 @@ row 11       . . . M X K
 `[".R..R..R..", "L.SE.ES.L", "H..T..H.", "..D.MXC", "...MXK"]`
 
 Casterly Rock's back rows with its front pushed out: three rabble alone on the
-front row, and the army a row behind them. The rabble are bait. Almost
-whatever takes one is itself taken: an enemy dragon on any rabble's hex by the
-trebuchet, a horse by his own horses or an elephant, an elephant by one of his
-elephants, except on the leftmost rabble's hex.
+front row, and the army a row behind them. The rabble are bait. Nearly
+anything that takes one is itself taken: an enemy dragon on any rabble's hex by
+the trebuchet, a horse by his own horses or an elephant, and an elephant by one
+of his elephants on any rabble's hex but the leftmost.
 It costs rabble and wins pieces. It is what the Rock does to those who come
 out to fight it. Against a player who takes every free piece, it is his
 favourite.
