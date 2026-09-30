@@ -69,6 +69,8 @@ checks << if File.exist?(helper_path)
             AppContract::Check.new(name: "hub badge glyph", ok: false, detail: "no app/helpers here (fixed-path tooling copy?)",
                                    remedy: "run bin/register-app from a hub desk")
           end
+satellites_path = File.join(ROOT, "config/satellites.yml")
+checks << AppContract.desk_ports_check(File.exist?(satellites_path) ? File.read(satellites_path) : "", slug)
 puts "Contract for #{slug} on profile #{profile}:"
 checks.each { |c| puts "  #{c.ok ? 'PASS' : 'FAIL'}  #{c.name.ljust(20)} #{c.detail}#{c.ok ? '' : "  → #{c.remedy}"}" }
 puts "  #{already ? 'FAIL' : 'PASS'}  #{'not yet registered'.ljust(20)} #{already ? "#{slug} is already in release_repos.yml" : 'yes'}"
