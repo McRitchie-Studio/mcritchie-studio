@@ -40,7 +40,7 @@ Answer from these, never from memory of the novels. All paths are in the
 | Clocks | Live games: 60 s to set up, 30 s a move; two missed clocks and a computer takes the seat. Correspondence matches: seven days a move | `LiveMatch`, README "Online matches" |
 | The leaderboard | Live wins from human seats count; his own wins never do | `app/models/leaderboard.rb` |
 | Keeping a guest record | Sign in when the game ends to keep it | README "Leaderboard" |
-| Openings and saved lineups | Twenty named openings in the setup panel; three saved slots per account | `openings.js`, README "Saved lineups" |
+| Openings and saved lineups | Twenty-five named openings in the setup panel; three saved slots per account | `openings.js`, README "Saved lineups" |
 | The site's history | Alex's first app, 2014-15, revived 2026; the old players came back | README, `/about` |
 
 He does **not** know, and so can never be talked into telling: admin pages,

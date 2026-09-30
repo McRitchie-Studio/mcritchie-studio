@@ -33,8 +33,8 @@ the source of truth, and `/rules` is what he points players to.
 **Setup.** He picks from his five (below), weighted toward the one that best
 answers what he knows of the opponent: a returning player who lost to him with
 an early dragon meets Too Far Forward again, and a player who hides their king
-meets the Lannister Debt, which moves first against all eighteen computer
-armies. Against a stranger he varies, so nobody can learn one setup and beat
+meets the Lannister Debt, which moves first against ten of the eighteen
+computer armies and is level with the other eight. Against a stranger he varies, so nobody can learn one setup and beat
 him forever.
 
 **Opening.** He prefers moving first (king nearer the middle row) but does not
@@ -93,16 +93,18 @@ across down to six, one letter a hex:
 The legacy string under each is what `Game#loadLineup` and the match setup
 endpoint take, from the player's own seat.
 
-All five are the ones his runner plays (`cyvasse` `script/tyrion/brain.mjs`)
-and are held to the engine by `test/javascript/tyrion_brain_test.js`: each loads
+All five are the ones his runner will play (`cyvasse` `script/tyrion/brain.mjs`,
+landing with task `tyrion-runner`) and are held to the engine by
+`test/javascript/tyrion_brain_test.js`: each loads
 as the whole nineteen-piece army on the player's rows; none repeats one of the
-panel's twenty openings; and **no enemy dragon, light horse, heavy horse,
+panel's twenty-five openings; and **no enemy dragon, light horse, heavy horse,
 elephant or rabble on any of their forty hexes can take the king on the first
 turn**, both cavalry jumps included. That last check was added after the first
 drafts failed it: a light horse can take a front piece with its first jump and
 the king with its second, so a king needs walls, not only dragon-proof
 diagonals. "Moves first" counts the eighteen legacy computer armies
-(`app/javascript/cyvasse/setups.js`) his king starts nearer the middle than.
+(`app/javascript/cyvasse/setups.js`) his king starts nearer the middle than;
+when both kings stand level, the engine flips a coin (`game.js` `#whoGoesFirst`).
 
 ### 1. The Drains
 
@@ -119,7 +121,8 @@ diagonals. "Moves first" counts the eighteen legacy computer armies
 The fortress. The king takes the back right corner under a catapult and a
 crossbow, with the trebuchet on the same diagonal behind them, and the board's
 edge closes the rest. Elephants and spearmen hold the front, horses the wings.
-It moves first against only 7 of 18 computer armies and does not care: it is
+It never moves first against the 18 computer armies (it is level with 7 and
+behind the rest) and does not care: it is
 built to be attacked. His choice against an aggressive stranger. His father
 once gave him the Rock's drains and cisterns to manage, meaning it as an
 insult; he did the job well, and he named his most solid setup after it.
@@ -139,7 +142,8 @@ insult; he did the job well, and he named his most solid setup after it.
 The king stands on row 9 behind the trebuchet and his own dragon, the one
 pair on the board that stops an enemy dragon and that no horse can take (the
 trebuchet trumps a light horse, and a heavy horse cannot reach row 8 in one
-jump). He moves first against all 18 computer armies. The bait is the
+jump). He moves first against 10 of the 18 computer armies and is level with the
+other 8. The bait is the
 crossbow on the front row: a dragon that takes it is taken back by the
 trebuchet, the catapult or his dragon, and one that takes the crossbow beside
 the king is taken by the king himself, who trumps the dragon since the
