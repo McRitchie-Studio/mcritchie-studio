@@ -1546,7 +1546,7 @@ Broadcast.create!(slug: "e2e-cyvasse-is-back", subject: "Cyvasse is back", templ
 # unsubscribe spec's walk never moves these counts.
 contacts_broadcast = Broadcast.find_by!(slug: "e2e-cyvasse-is-back")
 { "valid@example.com" => "valid", "catchall@example.com" => "catch-all", "unknown@example.com" => "unknown",
-  "invalid@example.com" => "invalid", "fresh-one@example.com" => nil, "fresh-two@example.com" => nil }.each do |email, status|
+  "undeliverable@example.com" => "invalid", "fresh-one@example.com" => nil, "fresh-two@example.com" => nil }.each do |email, status|
   contact = Contact.create!(email: email, first_name: email.split("@").first.capitalize, source: "cyvasse", tags: ["cyvasse-legacy"])
   contact.record_verification!(status: status, sub_status: ("mailbox_not_found" if status == "invalid"), at: 1.hour.ago) if status
 end
