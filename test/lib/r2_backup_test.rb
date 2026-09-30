@@ -249,6 +249,16 @@ class R2BackupTest < Minitest::Test
     assert_equal({ "a" => "1" }, fake.objects("r2:moms-app-backup/current"), "the copy itself still happened")
   end
 
+  def test_the_log_prints_the_final_verdict_never_ok_above_a_failed_write
+    fake = ReceiptlessR2.new("moms-app-production" => { "a" => "1" }, "moms-app-backup" => {})
+    log = StringIO.new
+    receipt = R2Backup::Runner.new(app: "moms-app", shell: fake, log: log, clock: -> { NOW }).run
+
+    logged = log.string.lines.filter_map { |line| JSON.parse(line) rescue nil }.select { |h| h.is_a?(Hash) && h.key?("stamp") }
+    assert_equal [receipt], logged, "exactly one receipt line, and it is the returned verdict"
+    refute(log.string.include?('"ok":true'), "no ok:true line for a run that failed")
+  end
+
   def test_exit_zero_with_a_count_mismatch_is_not_ok
     fake = LossyR2.new("moms-app-production" => { "a" => "1", "b" => "1" }, "moms-app-backup" => {})
     receipt = runner(fake).run

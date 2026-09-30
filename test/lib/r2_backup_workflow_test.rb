@@ -44,6 +44,14 @@ class R2BackupWorkflowTest < Minitest::Test
     assert_match(/sha256sum -c/, step["run"])
   end
 
+  # The alert must not send the reader to a receipt that a failed write never
+  # left (Carl, review of backup-receipt-write-fix).
+  def test_the_alert_allows_for_a_missing_receipt
+    step = YAML.safe_load_file(WORKFLOW).dig("jobs", "backup", "steps").find { |st| st["name"] == "Alert on failure" }
+    assert_match(/may be missing/, step["run"])
+    refute_match(/the receipt it wrote/, step["run"])
+  end
+
   def test_the_apps_backed_up_nightly
     assert_equal %w[mcritchie-industries moms-app], matrix.map { |row| row["app"] }.sort
   end
