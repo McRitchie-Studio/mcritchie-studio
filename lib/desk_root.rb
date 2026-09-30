@@ -3,13 +3,20 @@
 # DeskRoot — where a MANAGED desk lives, stated once for both sides of the desk ledger.
 #
 # `bin/agent-worktree` cuts every desk into `<repo>/.worktrees/<desk>` or, for the gem repos,
-# `<repo>.worktrees/<desk>`. Anything else `git worktree list` shows (a reviewer's
-# `carl-review-*-mutation`, a session scratchpad's `wt-*`, Claude Code's
-# `<repo>/.claude/worktrees/*`) was cut by something that binds no task and tears it down
-# with plain `git worktree remove`. The sweep LISTS those and never nominates them
+# `<repo>.worktrees/<desk>`. Anything else `git worktree list` shows (a reviewer's mutation
+# or zap throwaway cut in its session scratchpad, a session scratchpad's `wt-*`, Claude
+# Code's `<repo>/.claude/worktrees/*`) was cut by something that binds no task and tears it
+# down with plain `git worktree remove`. The sweep LISTS those and never nominates them
 # (bin/agent-worktree#managed_desk_hold), and since 2026-09-30 the board LISTS them and
-# never opens a ledger episode for them (DeskRecord.sync!). Before that, each one became a
-# `vanished` ghost on the Desks panel the moment its reviewer deleted it.
+# never opens a ledger episode for them (DeskRecord.sync!).
+#
+# THE RULE IS THE PATH, NOT WHO CUT IT. A throwaway cut INSIDE `<repo>/.worktrees/` is
+# managed by this test however hand-made it is (the review recipes said to cut mutation
+# checkouts there until 2026-09-30: `carl-review-1698-mutation` and `carl-mutate-355` were
+# two of the six ghosts on 2026-09-29), so removing one with plain git still leaves a
+# `vanished` ghost. The review recipes (docs/agents/modules/worktrees.md, zap-protocol.md)
+# now cut throwaways in the session scratchpad; one cut inside comes down with
+# `bin/agent-worktree remove`.
 #
 # TWO QUESTIONS, ONE RULE.
 #
