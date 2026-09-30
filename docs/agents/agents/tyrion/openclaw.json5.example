@@ -15,9 +15,24 @@
         agentDir: "~/.openclaw/agents/tyrion/agent",
         model: "anthropic/claude-opus-5-5",   // the chat model (Alex left the call to us, 2026-09-29)
         sandbox: { mode: "all", scope: "agent" },
+        // NO TOOLS, BY DEFAULT-DENY. OpenClaw: "deny always wins", and "if
+        // allow is NON-EMPTY, everything else is treated as blocked" — so an
+        // EMPTY allow blocks nothing, while an allowlist that leaves no
+        // callable tool makes OpenClaw stop before prompting the model rather
+        // than chat. A non-empty allow of the one tool he needs is real
+        // default-deny, covering names no blocklist can enumerate; the group
+        // denies are belt-and-braces (a name list had missed apply_patch,
+        // terminal, computer and sessions_spawn). crossContext holds `message`
+        // to the conversation he is in, as OpenClaw's own restricted
+        // channel-bound example does.
         tools: {
-          allow: [],
-          deny: ["exec", "write", "edit", "read", "browser", "web_fetch", "web_search", "sessions_send", "cron"]
+          allow: ["message"],
+          deny: [
+            "group:runtime", "group:fs", "group:sessions", "group:web",
+            "group:ui", "group:automation", "group:nodes", "group:agents",
+            "group:media", "group:memory", "group:openclaw", "group:plugins"
+          ],
+          message: { crossContext: { allowWithinProvider: false, allowAcrossProviders: false } }
         }
       }
     }
