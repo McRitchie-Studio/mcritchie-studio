@@ -193,9 +193,11 @@ module R2Backup
       receipt["reason"] = reason if reason
       receipt["accepted_drop"] = true if accepted_drop
       json = JSON.generate(receipt)
-      log.puts(json)
       _o, rc = rclone("rcat", "#{backup}/_receipts/#{stamp}.json", stdin: json)
-      return receipt if rc.zero?
+      if rc.zero?
+        log.puts(json)
+        return receipt
+      end
 
       # A run whose receipt write fails is NOT ok, however clean the copy: gc
       # reads only receipts, so a missing one would stall collection while the
@@ -204,9 +206,14 @@ module R2Backup
       # NotImplemented AFTER the upload; the objects landed intact), so the
       # warning cried wolf nightly and would have hidden a real loss. Failing
       # the run is what opens the alert issue.
+      # The log prints the run as finally judged, after the write, so it never
+      # shows ok:true above the failure. A receipt that landed despite the exit
+      # still reads as the copy judged it; the log line says so.
       failure = "receipt write failed (rclone exit #{rc})"
-      log.puts("ERROR: #{failure}")
-      receipt.merge("ok" => false, "reason" => [receipt["reason"], failure].compact.join("; "))
+      judged = receipt.merge("ok" => false, "reason" => [receipt["reason"], failure].compact.join("; "))
+      log.puts("ERROR: #{failure}; any receipt that landed reads ok:#{receipt['ok']} and is not this run's verdict")
+      log.puts(JSON.generate(judged))
+      judged
     end
 
     # [name, hash] of the newest receipt (optionally the newest OK one), or nil.

@@ -196,6 +196,39 @@ class AppProfileTest < Minitest::Test
     refute AppContract.glyph_check("module X; end", "moms-app").ok
   end
 
+  SATELLITES = <<~YAML
+    satellites:
+      - slug: rantly
+        port: 4000
+        status: reserved
+      - slug: moms-app
+        port: 4400
+        status: reserved
+  YAML
+
+  def test_desk_ports_check_needs_a_satellites_row_with_a_port
+    check = AppContract.desk_ports_check(SATELLITES, "moms-app")
+    assert check.ok
+    assert_equal "4400-4499 (reserved)", check.detail
+
+    missing = AppContract.desk_ports_check(SATELLITES, "demo")
+    refute missing.ok, "an app with no row cannot get a desk"
+    assert_match(/bin\/register-satellite/, missing.remedy)
+    refute AppContract.desk_ports_check("", "moms-app").ok
+    refute AppContract.desk_ports_check("satellites: [\n", "moms-app").ok, "an unparseable file fails, not raises"
+  end
+
+  # Every app registered on a profile can get a desk (bin/agent-worktree reads
+  # satellites.yml for its port block).
+  def test_every_profile_app_in_the_registry_holds_a_port_block
+    root = File.expand_path("../..", __dir__)
+    registry = YAML.safe_load_file(File.join(root, "config/release_repos.yml"))
+    satellites = File.read(File.join(root, "config/satellites.yml"))
+    profiled = registry.fetch("apps").select { |_slug, entry| entry["profile"] }.keys
+    refute_empty profiled
+    profiled.each { |slug| assert AppContract.desk_ports_check(satellites, slug).ok, "#{slug} has no desk port block" }
+  end
+
   # The fixed-path tooling tree bin/install-agent-docs builds: TOOLING_PATHS
   # (bin lib config app/models/release app/models/devops .ruby-version), and no
   # app/helpers. The contract requires Release::AcceptedCertification from

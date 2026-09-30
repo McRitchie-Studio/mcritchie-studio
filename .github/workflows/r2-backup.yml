@@ -78,7 +78,7 @@ jobs:
         run: |
           title="R2 backup failing: $APP"
           body="The nightly R2 backup for \`$APP\` did not finish ok: $RUN_URL
-          Read the run log and the receipt it wrote under \`$APP-backup/_receipts/\`. Procedure: docs/agents/agents/steffon/sops/r2-backup.md. A refused wipe is fixed by finding out why production shrank, or, if the delete was deliberate, by \`bin/r2-backup run $APP --accept-drop --op\`."
+          Read the run log first: its last receipt line is the verdict. The receipt under \`$APP-backup/_receipts/\` may be missing, or may predate the verdict, when the receipt write itself failed. Procedure: docs/agents/agents/steffon/sops/r2-backup.md. A refused wipe is fixed by finding out why production shrank, or, if the delete was deliberate, by \`bin/r2-backup run $APP --accept-drop --op\`."
           existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"

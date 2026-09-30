@@ -71,8 +71,8 @@ and `DeskCapture`'s private R2 bucket.
 | Wave | Goal | State |
 |---|---|---|
 | 0 | credentials | **done**: `cloudflare.studio.provision` filed and verified |
-| 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, merged to `accepted`, not yet released); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md) merged, enabled on `moms-app` only |
-| 2 | per-app S3 → R2 cutover | next, in the order above; blocked until the engine release carrying `s3_endpoint` ships |
+| 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, released in `studio-engine` 0.77); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md), run nightly for `moms-app` and `mcritchie-industries` |
+| 2 | per-app S3 → R2 cutover | **in progress** (2026-09-29): `moms-app` and `mcritchie-industries` R2-primary with an S3 mirror, soaking; `mcritchie-studio` and `turf-monster` code shipped and inert, objects pre-copied, waiting on DNS for `assets.` |
 | 3 | asset catalog | proposal below |
 | 4 | load the collections | after 3 |
 | 5 | business documents | **done for McRitchie Studio** (Shared Drives); Commercial Welding open |
@@ -108,7 +108,7 @@ every text and JSON column): only the hub has any.
 | Hub column | Rows | Points at |
 |---|---|---|
 | `task_events.metadata` → `mascot` | 14,707 | `mcritchie-studio-production/pokemon/…` sprites, snapshotted per board event |
-| `pokemons` (8 URL columns: sprite, avatar, fallbacks, shiny, female) | 494 per column | the same `pokemon/` prefix, written by `lib/tasks/pokemon.rake`'s hard-coded `S3_BASE` |
+| `pokemons` (8 URL columns: sprite, avatar, fallbacks, shiny, female) | 494 per column | the same `pokemon/` prefix, written by `lib/tasks/pokemon.rake` before it moved to `Studio::S3` |
 | `artifacts.image_url` | 3 | `character-sheets/` |
 | `agent_actions`, `agent_activities`, `action_grades`, `tasks.metadata` | a few hundred | URLs quoted inside agent logs and notes: history, not served; leave them |
 
@@ -130,9 +130,9 @@ APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  
 
 | App | Verdict | Why |
 |---|---|---|
-| `moms-app` | ready, but **outside the release pipeline** | Active Storage only, no `Studio::S3`, so no engine bump is needed (it runs 0.32.1). But it is not in `config/release_repos.yml`: production last deployed by a manual push on 2026-08-09, and `accepted` holds unshipped merges since. Its cutover needs either registration in the release ladder or a manual deploy by Alex |
+| `moms-app` | **cutting over**: `ACTIVE_STORAGE_BACKEND=mirror_to_s3` (R2 primary), soaking before step 9 (2026-09-29) | Active Storage only, no `Studio::S3`; now registered in `config/release_repos.yml` (profile `standalone-heroku`) and on `studio-engine` 0.77.3 |
 | `commercial-welding` | nothing to migrate | empty buckets, no writer; retire the S3 pair in Wave 7 |
-| `mcritchie-industries` | ready after an engine bump | runs 0.76.3; `s3_endpoint` arrived in 0.77. Private objects only |
+| `mcritchie-industries` | **cutting over**: `ACTIVE_STORAGE_BACKEND=mirror_to_s3` and `STUDIO_S3_BACKEND=r2`, soaking before step 9 (2026-09-29) | on `studio-engine` 0.77.4. Private objects only |
 | `mcritchie-studio` | blocked | DNS for `assets.`, plus the URL rewrite above |
 | `turf-monster` | blocked | DNS for `assets.` |
 
@@ -158,7 +158,8 @@ The recipe:
    `Studio::S3` setting (`s3_endpoint`, `s3_region`, both keys,
    `s3_public_url`) **only when one switch is on**, e.g.
    `ENV["STUDIO_S3_BACKEND"] == "r2"`, and leave it off. Do not add
-   `R2_PUBLIC_URL` yet. Keep the `AWS_*` variables.
+   `R2_PUBLIC_URL` yet (an app with public services is the exception: see
+   step 3). Keep the `AWS_*` variables.
 3. **Mirror Active Storage, keeping the service names.** Every blob row
    records its service by name (`amazon`, and turf-monster's `amazon_public`),
    so rename, do not add: move the existing S3 definition to `amazon_s3`, add
@@ -167,10 +168,17 @@ The recipe:
    for `amazon_public`, but its R2 half is **not** a stock `S3` service with
    `public: true`: Rails builds a public URL from the client endpoint, so on R2
    it names `<account>.r2.cloudflarestorage.com`, which answers no anonymous
-   read, and `public: true` also sends a `public-read` ACL, which R2 does not
-   support. It needs a small custom service (an `S3Service` subclass whose
-   `public_url` is `assets.<domain>` plus the key, and no ACL); without it,
-   step 8 turns every og:image into a dead link. From here every new upload
+   read. It needs a small custom service, an `S3Service` subclass whose
+   `public_url` is `R2_PUBLIC_URL` plus the key (turf-monster's
+   `R2PublicService`). The `public-read` ACL `public: true` sends is harmless:
+   R2 accepts the header and ignores it (measured 2026-09-29). Because the
+   mirror serves URLs from S3 only until step 8, it is tempting to defer the
+   domain, but **an app with a public service needs `R2_PUBLIC_URL`, and so
+   the step 6 domain, before this step**: turf-monster's storage config
+   refuses to boot any non-`s3` stage without it. In the apps built so far this
+   step is the config var `ACTIVE_STORAGE_BACKEND` walking `s3` →
+   `mirror_to_r2` → `mirror_to_s3` → `r2` (steps 3, 8 and 9 here), not a rewrite of
+   `storage.yml` per step. From here every new upload
    lands in both stores (the mirror copy is an `ActiveStorage::MirrorJob`, so
    the app's job queue must be running).
 4. **Bulk copy.** `rclone copy` the S3 production bucket into the R2 production
@@ -192,8 +200,13 @@ The recipe:
    on Cloudflare first, see **Blocker for step 6** below). Attach
    `assets.<domain>` to the R2 production bucket (a dashboard step until the
    provisioning token has Zone Read) and fetch one copied object through it.
-   Still no `R2_PUBLIC_URL`.
-7. **Flip `Studio::S3` — one deploy.** Set `R2_PUBLIC_URL` and turn the switch
+   Still no `R2_PUBLIC_URL`. An app with a public Active Storage service
+   (turf-monster) runs this step **before step 3**, fetches a test object
+   instead, and sets `R2_PUBLIC_URL` here: its storage config needs it on
+   every non-`s3` stage, while `Studio::S3` still reads it only once step 7
+   turns the switch on.
+7. **Flip `Studio::S3` — one deploy.** Set `R2_PUBLIC_URL` (already set on an
+   app with a public service, see step 6) and turn the switch
    on in the same config change, so writes and URLs move together. A
    private-object app has no `assets.` domain and sets no `R2_PUBLIC_URL`; it
    must first confirm nothing calls `Studio::S3.url`, which raises on R2
@@ -233,7 +246,7 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 | all engine apps | `Studio::S3` (`ImageCache`, `KnowledgeDoc`, email banners and logos) | step 7; `url` raises on R2 without `s3_public_url`, which is why the switch sets both |
 | `mcritchie-studio` | `Broadcasts::Assets.publish` | expects `upload` to return a URL; on R2 it needs `s3_public_url`, which step 7 sets in the same deploy |
 | `mcritchie-studio` | `Content::GenerateLineupAssets`, `Appearances::ReferenceImages` | via `Studio::S3` |
-| `mcritchie-studio` | `lib/tasks/pokemon.rake` | builds its own `Aws::S3::Client` for `us-east-2` and hard-codes `S3_BASE` into `pokemons` URL columns; port, and rewrite the stored URLs |
+| `mcritchie-studio` | `lib/tasks/pokemon.rake` | ported to `Studio::S3` (client and URL base); the `pokemons` URL columns it wrote before the port still need the rewrite above |
 | `mcritchie-studio` | `Appearances::StoreGeneratedImage` | uploads via `Studio::S3` and **stores the returned URL** |
 | `mcritchie-studio` | `Athletes::DescribeFromHeadshot` | downloads via `Studio::S3` |
 | `mcritchie-studio` | `Athletes::RekeyHeadshots` | copies then deletes keys via `Studio::S3`; do not run it between step 4 and step 7 |
@@ -244,11 +257,12 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 | `moms-app` | Active Storage only: `Book.cover`, `Book.audio`, `User.avatar`; the bucket comes from `S3_BUCKET` in `config/storage.yml` | no `Studio::S3`; one multipart audio object, so verify by size |
 | `commercial-welding` | none: no app on Heroku, and both S3 buckets were empty on 2026-09-28 | nothing to cut over; retire the S3 pair in Wave 7 | |
 
-**Blocker for step 6.** R2 custom domains need the domain's DNS on Cloudflare
-in the same account. Measured 2026-09-26: `mcritchie.studio` is served by
-Google's nameservers and `turfmonster.media` by Squarespace's (whether
-`turfmonster.media` is the domain Turf Monster serves from is an open
-question below). Moving each domain's DNS to Cloudflare is the CDN rollout
+**Blocker for step 6** (and so for turf-monster's step 3, above). R2 custom
+domains need the domain's DNS on Cloudflare in the same account. Measured
+2026-09-26: `mcritchie.studio` is served by Google's nameservers and
+`turfmonster.media` by Squarespace's. `turfmonster.media` is the domain Turf
+Monster serves from: it is the production `smoke_url` in
+`config/release_repos.yml` (app `turf-monster-mainnet`). Moving each domain's DNS to Cloudflare is the CDN rollout
 ([`cdn-rollout.md`](cdn-rollout.md)) and Steffon's `domain-dns` SOP; it must
 carry the Google Workspace mail records across. The three private-object apps
 do not need it; `mcritchie-studio` and `turf-monster` go last partly for this
@@ -319,8 +333,8 @@ account before starting; this is what the docs name today.
 | S3 app buckets (`<app>-dev`, `<app>-production`) | Active Storage, `Studio::S3` | R2 (Wave 2) |
 | S3 desk-capture bucket `mcritchie-studio-desk` (`us-east-1` by default) and the **SES inbound** fallback | `team@mcritchie.studio` capture (`DeskCapture`); the main path is already Resend inbound, which writes into this bucket | a private R2 bucket for `DeskCapture` alone (provisioned 2026-09-29), then retire the SES fallback (`DeskCapturePollJob`) with the AWS exit: SES inbound drops into S3 only, so once the desk reads R2 the poll has nothing to read |
 | **SES outbound** (`agent.aws.mcritchie-ses`) | nothing: on 2026-09-28 no app held `SES_SMTP_*`; the three apps that send mail hold `RESEND_API_KEY` | retire the credential and the SES identity |
-| **S3 URLs already handed out** | full `amazonaws.com` URLs outside the key-to-URL path: stored columns (`Content#hook_image_url` and `#final_video_url` keep what `Studio::S3.upload` returned; `lib/tasks/pokemon.rake` hard-codes its `S3_BASE`), images in broadcasts already sent, and og:image URLs unfurlers cached | before deleting a bucket, rewrite stored URLs to `assets.<domain>` and decide whether sent mail's `email/` images keep an S3 copy; none of these move with the Wave 2 config |
-| IAM users (`mcritchie-s3`, `mcr-*`, and the admin key's user, which answers as `agents-admin`) | the keys above | delete after their buckets are gone |
+| **S3 URLs already handed out** | full `amazonaws.com` URLs outside the key-to-URL path: stored columns (`Content#hook_image_url` and `#final_video_url` keep what `Studio::S3.upload` returned; the `pokemons` URL columns `pokemon.rake` wrote before it moved to `Studio::S3`), images in broadcasts already sent, and og:image URLs unfurlers cached | before deleting a bucket, rewrite stored URLs to `assets.<domain>` and decide whether sent mail's `email/` images keep an S3 copy; none of these move with the Wave 2 config |
+| IAM users (`mcritchie-s3`, `mcr-*`, `mcritchie-ses`, and the admin key's user, which answers as `agents-admin`) | the keys above | delete after their buckets are gone; `mcritchie-ses` now (see **IAM users** below) |
 | 1Password items (`agent.aws`, `AWS`, `mcritchie-industries.aws`, `agent.aws.mcritchie-ses`) | the keys above | mark RETIRED in the inventory's name or vault cell |
 
 ### Measured from the account, 2026-09-29
@@ -350,8 +364,8 @@ until its Wave 2 steps run, so each cutover still runs its own catch-up copy.
 
 | User | Path | Last used | Retire when |
 |---|---|---|---|
-| `mcritchie-s3` | `/` | 2026-09-29, S3 | every app's Active Storage is on `r2` and its AWS config vars are unset |
-| `mcr-mcritchie-industries-prod` | `/mcr/` | 2026-09-28, S3 | Industries reaches `ACTIVE_STORAGE_BACKEND=r2` |
+| `mcritchie-s3` | `/` | 2026-09-29, S3 | every app's Active Storage is on `r2`, every `Studio::S3` is on `r2`, the hub's `DeskCapture` is on `DESK_CAPTURE_BACKEND=r2` (on S3 all three sign with this key through `AWS_ACCESS_KEY_ID`), and the AWS config vars are unset |
+| `mcr-mcritchie-industries-prod` | `/mcr/` | 2026-09-28, S3 | Industries' Active Storage is on `r2`, its `Studio::S3` (`KnowledgeDoc`, `Slack::ChannelIngest`) is on `STUDIO_S3_BACKEND=r2` (on S3 both sign through `AWS_ACCESS_KEY_ID`), and its AWS config vars are unset |
 | `mcr-mcritchie-industries-dev` | `/mcr/` | 2026-09-03, S3 | with the prod user |
 | `mcritchie-ses` | `/` | 2026-07-16, SES (before this audit, whose own SES read now shows as its last use) | now: SES inbound delivers as the service, not as this user (see SES below) |
 | `agents-admin` | `/` | 2026-09-29, S3 | last, after the buckets are gone |
@@ -384,11 +398,9 @@ read-only on them for one audit.
 |---|---|
 | Move `mcritchie.studio` DNS to Cloudflare (hub first), then Turf Monster's app domain | Alex + Steffon (`domain-dns`, CDN rollout) |
 | Add **Zone → Read** to the provisioning token | Alex (dashboard) |
-| Which domain serves Turf Monster publicly (`turfmonster.media` appears in code) | Alex |
-| Automate the nightly `r2-backup` run (task `automate-nightly-r2-backup`, filed 2026-09-26) | Steffon |
 | Commercial Welding's document tier (Egnyte or Drive) | Alex, after the compliance question |
 | Copy `DeskCapture`'s objects to its R2 bucket and flip `DESK_CAPTURE_BACKEND=r2` (bucket and code ready 2026-09-29); retire the SES fallback with the AWS exit | Steffon, before Wave 7 |
-| Release the `studio-engine` version carrying `s3_endpoint` (Wave 2's gate) | Avi (`qa-release`) and Steffon (`production-deploy`) |
 | Does Commercial Welding carry CMMC or ITAR obligations? | Alex |
 | What writes the `commercial-welding-*` S3 buckets | Steffon, at the start of that app's Wave 2 task |
+| Before closing the AWS account, check EC2, Lambda, RDS, Route 53 (zones and registered domains) and CloudFront with the root login: the admin key cannot read them (Wave 7, **Not visible to the admin key**) | Alex |
 | Approve or amend the proposals (Wave 2 recipe, catalog, Wave 4 order, Stream and CAD, `DeskCapture` bucket) | Alex |

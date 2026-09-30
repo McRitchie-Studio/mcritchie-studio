@@ -181,3 +181,14 @@ satellites:
     description: "Showcase rebuild of the Google search position checker, a free project; release-managed standalone (no studio-engine, no database)"
     deploy_provider: "heroku"
     status: "reserved"
+
+  - slug: moms-app
+    display_name: "Moms App"
+    emoji: "📚"
+    port: 4400
+    heroku_app: "moms-app"
+    production_url: "https://karenmcritchie.com"
+    role: "viewer"
+    description: "Karen McRitchie's family audiobook and slideshow site; release-managed standalone on the standalone-heroku profile"
+    deploy_provider: "heroku"
+    status: "reserved"

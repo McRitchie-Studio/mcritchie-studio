@@ -83,6 +83,20 @@ module AppContract
               remedy: "add \"#{slug}\" => \"<emoji>\" to APP_EMOJIS in app/helpers/application_helper.rb (in the hub, in the registration task)")
   end
 
+  # Whether the hub's config/satellites.yml gives this slug a port block. Desks
+  # take their ports from it, so bin/agent-worktree refuses an app without a
+  # row ("unknown app"); measured 2026-09-29, when moms-app registered on this
+  # profile without one and every desk had to be cut by hand.
+  def desk_ports_check(satellites_text, slug)
+    rows = (YAML.safe_load(satellites_text.to_s) || {}).fetch("satellites", [])
+    row = rows.find { |r| r["slug"] == slug }
+    ok = row && row["port"].is_a?(Integer)
+    Check.new(name: "desk ports", ok: !!ok, detail: ok ? "#{row['port']}-#{row['port'] + 99} (#{row['status']})" : "no config/satellites.yml row",
+              remedy: "reserve a block in the hub, in the registration task: bin/register-satellite --list, then --slug #{slug} --port <next open> --status reserved --write")
+  rescue Psych::Exception
+    Check.new(name: "desk ports", ok: false, detail: "config/satellites.yml does not parse", remedy: "fix config/satellites.yml")
+  end
+
   # Every workflow file at REF, as { path => yaml_text }: the shape
   # Release::AcceptedCertification.certified? reads, since the sweep matches the
   # suite workflow by NAME across all of them, not by the filename ci.yml.
