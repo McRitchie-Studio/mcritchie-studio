@@ -200,8 +200,13 @@ The recipe:
    on Cloudflare first, see **Blocker for step 6** below). Attach
    `assets.<domain>` to the R2 production bucket (a dashboard step until the
    provisioning token has Zone Read) and fetch one copied object through it.
-   Still no `R2_PUBLIC_URL`.
-7. **Flip `Studio::S3` — one deploy.** Set `R2_PUBLIC_URL` and turn the switch
+   Still no `R2_PUBLIC_URL`. An app with a public Active Storage service
+   (turf-monster) runs this step **before step 3**, fetches a test object
+   instead, and sets `R2_PUBLIC_URL` here: its storage config needs it on
+   every non-`s3` stage, while `Studio::S3` still reads it only once step 7
+   turns the switch on.
+7. **Flip `Studio::S3` — one deploy.** Set `R2_PUBLIC_URL` (already set on an
+   app with a public service, see step 6) and turn the switch
    on in the same config change, so writes and URLs move together. A
    private-object app has no `assets.` domain and sets no `R2_PUBLIC_URL`; it
    must first confirm nothing calls `Studio::S3.url`, which raises on R2
