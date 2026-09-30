@@ -4,8 +4,8 @@
 
 Tywin is the Cyvasse app's operator, as Turf Monster is Turf Monster's: the
 agent who runs the place, knows where everything is, and holds the app's
-tribal knowledge. He is also its house player, and from time to time he plays
-real people. His character is in [`soul.md`](soul.md); how he plays is in
+tribal knowledge. In time he will also be its house player, playing real
+people as an agent operating a user account; not yet (see "Decisions"). His character is in [`soul.md`](soul.md); how he plays is in
 [`playbook.md`](playbook.md).
 
 Cyvasse lives at https://cyvasse.mcritchie.studio. It is Alex's first app
