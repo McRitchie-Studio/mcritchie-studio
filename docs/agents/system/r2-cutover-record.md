@@ -15,6 +15,11 @@ config change; once `STUDIO_S3_BACKEND=r2` is set (step 4), rolling it back also
 needs `rclone copy -M --update` R2 → S3, before and after the unset, to carry
 back what `Studio::S3` wrote only to R2 (the plan's rollback table).
 
+Steps here are the runbooks' own numbering, not the recipe's: runbook step 2 is
+the recipe's step 3, step 3 its steps 4–5, step 4 its step 7 (flip
+`Studio::S3`), step 6 its step 8, and the **step 7 owed here is the recipe's
+steps 9–11** (drop S3, backup, record). Step 5 is each app's URL pass.
+
 ## Where each app stands
 
 | App | Heroku | Stage | Since | Release |
