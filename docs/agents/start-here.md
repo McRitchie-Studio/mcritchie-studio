@@ -26,6 +26,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Object storage (R2 buckets and tokens; legacy S3) | `mcritchie-studio/docs/agents/modules/object-storage.md` |
 | Asset library plan (storage tiers, Wave 2 cutover recipe, asset catalog, AWS exit) | `mcritchie-studio/docs/agents/system/asset-library-plan.md` |
+| R2 cutover record: the hub and Turf Monster cutovers as run, and the step 7 checklist | `mcritchie-studio/docs/agents/system/r2-cutover-record.md` |
 | Music video pipeline plan (four pipelines, pipeline 3 stages, data model, R2 tree) | `mcritchie-studio/docs/agents/system/music-video-pipeline-plan.md` |
 | Knowledge capture (team@, intake protocol, sweep) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
 | Slack capture (connect, read, categorize a channel) | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
