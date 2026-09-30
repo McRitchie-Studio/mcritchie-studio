@@ -91,7 +91,7 @@ class BroadcastsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Cyvasse is back"
     assert_select "img[src$='/email/cyvasse_header_live.jpg'][alt^='A Cyvasse board mid-game']"
     assert_not_includes response.body, "World Cup"
-    assert_select "a[href='https://cyvasse.mcritchie.studio/']", text: /Play Now/
+    assert_select "a[href='https://cyvasse.xyz/']", text: /Play Now/
     assert_select "td[bgcolor='#8E82FE'] a", text: /Play Now/
     assert_select "a[href='https://mcritchie.studio/build']"
     assert_includes response.body, "Hi &#128075;&#127995;"
