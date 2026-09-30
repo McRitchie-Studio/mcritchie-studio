@@ -280,10 +280,14 @@ registry keeps the DS record (TTL 3600) until the registrar pushes its removal,
 about 15 minutes here. Every validating resolver (1.1.1.1, 8.8.8.8, 9.9.9.9)
 failed the domain in between and for up to an hour after, from cache. The same
 dialog also saved the wrong nameserver pair; Squarespace pushes each save about
-15 minutes later, in order. For any domain with a DS record (`dig DS <domain>`
-at the TLD server): disable DNSSEC as its own step, wait until the TLD no
-longer publishes the DS plus its TTL, then change nameservers; confirm the
-domain name on the page before every save.
+15 minutes later, in order. Splitting the steps does not remove the outage:
+where the registrar stops signing before the registry drops the DS (Squarespace
+does), the domain is dark from that save until the DS is gone plus its TTL. So
+for any domain with a DS record (`dig DS <domain>` at the TLD server), schedule
+that window with Alex, disable DNSSEC as its own save, confirm the TLD no
+longer returns a DS, wait one DS TTL, then change nameservers; confirm the
+domain name on the page before every save. `mcritchie.industries` has a DS
+today (measured 2026-09-30).
 
 ## Wave 3 — the asset catalog
 

@@ -103,6 +103,11 @@ because browsers terminate at Cloudflare. It also removes the renewal treadmill.
 
 ### Step 4 — Cut the nameservers
 
+**DNSSEC first.** Run `dig DS <domain>` at the TLD server. If it answers, follow
+the DNSSEC rule in [`asset-library-plan.md`](asset-library-plan.md) (under
+"Blocker for step 6") before touching nameservers: it cost `turfmonster.media`
+an hour of outage on 2026-09-29.
+
 Change them at the registrar, then wait for Cloudflare to report the zone active.
 Registrars differ per domain — see the inventory below.
 
