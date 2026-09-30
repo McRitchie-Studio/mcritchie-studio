@@ -1540,6 +1540,22 @@ unsubscribe_reader = Contact.create!(email: "reader@example.com", unsubscribe_to
 Broadcast.create!(slug: "e2e-cyvasse-is-back", subject: "Cyvasse is back", template_key: "cyvasse_is_back")
   .deliveries.create!(contact: unsubscribe_reader, token: "e2e-delivery-token", sent_at: Time.current)
 
+# /contacts — six contacts on the default list (cyvasse-legacy), one per state the
+# stat tiles count, and one of them emailed with an open and a click
+# (e2e/contacts_page.spec.js). The unsubscribe reader above carries no tag, so the
+# unsubscribe spec's walk never moves these counts.
+contacts_broadcast = Broadcast.find_by!(slug: "e2e-cyvasse-is-back")
+{ "valid@example.com" => "valid", "catchall@example.com" => "catch-all", "unknown@example.com" => "unknown",
+  "undeliverable@example.com" => "invalid", "fresh-one@example.com" => nil, "fresh-two@example.com" => nil }.each do |email, status|
+  contact = Contact.create!(email: email, first_name: email.split("@").first.capitalize, source: "cyvasse", tags: ["cyvasse-legacy"])
+  contact.record_verification!(status: status, sub_status: ("mailbox_not_found" if status == "invalid"), at: 1.hour.ago) if status
+end
+Contact.find_by!(email: "valid@example.com").then do |contact|
+  delivery = contacts_broadcast.deliveries.create!(contact: contact, sent_at: 50.minutes.ago)
+  delivery.record_open!(at: 40.minutes.ago)
+  delivery.record_click!(link_key: "play", at: 30.minutes.ago)
+end
+
 # /music_videos/steve-aoki-night-call — the cast panel with its seven unlabelled
 # people (e2e/music_video_cast.spec.js). Its labels are synthetic: the spec finds
 # Test Artist A by its alias Test Alias A, and creates Test Artist E itself.

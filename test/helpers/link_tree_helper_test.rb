@@ -47,6 +47,16 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "/assets", Rails.application.routes.url_helpers.asset_browser_path
   end
 
+  # task contacts-admin-page: the mailing list sits beside the broadcasts sent to it.
+  test "admin sidebar has an Email section with Broadcasts then Contacts" do
+    self.admin_enabled = true
+
+    email = sidebar_link_sections.find { |section| section[:title] == "Email" }
+
+    assert email&.fetch(:admin), "expected an admin Email section"
+    assert_equal [ "/broadcasts", "/contacts", "/broadcasts/analytics" ], email.fetch(:links).map { |link| link.fetch(:href) }
+  end
+
   test "admin sidebar includes the Activities feed link" do
     self.admin_enabled = true
 
@@ -199,6 +209,9 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # defined for it — a new link raises NameError in EVERY test in this file, which is how
   # the Models link took CI red on 2026-09-27 while the page itself was green.
   def model_pipeline_path = "/model_pipeline"
+  def broadcasts_path = "/broadcasts"
+  def contacts_path = "/contacts"
+  def broadcast_analytics_path = "/broadcasts/analytics"
   def nfl_hub_path = "/nfl"
   def games_season_path(year) = "/games/#{year}"
   def teams_path = "/teams"

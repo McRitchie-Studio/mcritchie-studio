@@ -37,6 +37,10 @@ Rails.application.routes.draw do
     end
   end
 
+  # The mailing list, watched live (admin). `stats` is the polled stats frame.
+  get "contacts/stats", to: "contacts#stats", as: :contacts_stats
+  resources :contacts, only: %i[index show]
+
   # One-click-safe unsubscribe: GET shows an inert confirm page, POST unsubscribes.
   get  "unsubscribe/:token", to: "unsubscribes#show",   as: :unsubscribe
   post "unsubscribe/:token", to: "unsubscribes#create"
