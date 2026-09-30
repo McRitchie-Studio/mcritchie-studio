@@ -58,7 +58,8 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
   the two production buckets. `cloudflare.studio.provision` can do the whole
   attach by API: it listed both zones and created both custom domains
   (`POST /accounts/<id>/r2/buckets/<bucket>/domains/custom` with the zone id),
-  measured 2026-09-30. A new certificate took hours, not minutes: attached
+  measured 2026-09-30, with no Zone Read: its policies, read back that day,
+  hold DNS read/write and none. A new certificate took hours, not minutes: attached
   00:25 MDT, first 200 at 08:09.
 
 ## R2 — credential tiers

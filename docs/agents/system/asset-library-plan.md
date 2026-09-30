@@ -198,9 +198,9 @@ The recipe:
    re-run the one-way check must miss nothing.
 6. **Public domain** (apps that serve public objects; needs the domain's DNS
    on Cloudflare first, see **Blocker for step 6** below). Attach
-   `assets.<domain>` to the R2 production bucket (a dashboard step until the
-   provisioning token can do it by API, see **Blocker for step 6**) and fetch
-   one copied object through it.
+   `assets.<domain>` to the R2 production bucket (by API with
+   `cloudflare.studio.provision`, see [`object-storage.md`](../modules/object-storage.md))
+   and fetch one copied object through it.
    Still no `R2_PUBLIC_URL`. An app with a public Active Storage service
    (turf-monster) runs this step **before step 3**, fetches a test object
    instead, and sets `R2_PUBLIC_URL` here: its storage config needs it on
