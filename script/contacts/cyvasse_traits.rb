@@ -47,7 +47,7 @@
 require "csv"
 
 module CyvasseTraits
-  HEADER = %w[email username games finished_games wins losses joined_on last_active_on all_time_rank synced_at].freeze
+  HEADER = %w[email username games finished_games wins losses joined_on last_active_on all_time_rank synced_at].freeze unless const_defined?(:HEADER)
 
   # computers: the computer players' legacy ids (a Range).
   # results:   the finish reasons that are a result (king resigned forfeit draw).
