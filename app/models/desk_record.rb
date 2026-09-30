@@ -182,15 +182,27 @@ class DeskRecord < ApplicationRecord
   # A desk already carrying an OPEN candidate row is NOT downgraded back to `live` by a
   # later snapshot — the nomination is a decision, and a sweep that re-reads the desk a
   # minute later must not silently un-file it. Its facts still refresh.
+  #
+  # AN UNMANAGED DESK IS LISTED, NOT LEDGERED. A worktree outside every managed root
+  # (DeskRoot) was cut by something that binds no task (a reviewer's mutation checkout, a
+  # session scratchpad), and it is deleted with plain `git worktree remove`, never through
+  # this ledger. Opening an episode for one guarantees a `vanished` ghost the moment its
+  # owner cleans up: six appeared on 2026-09-29 and were closed by hand. So it opens none.
+  # The snapshot still counts it (summary "unmanaged"), and an episode it ALREADY has is
+  # refreshed while it stays, then closed by `close_departed_unmanaged!` once it goes.
   def self.sync!(payload)
     snapshot = DeskSnapshot.record!(payload)
     desks = Array(payload["worktrees"])
+    seen = []
 
     desks.each do |desk|
       path = desk["worktree"].to_s
       next if path.empty?
 
+      seen << path
       open = open_for(path)
+      next if open.nil? && !managed_desk?(desk)
+
       # `candidate` survives a resync; anything else (including a brand-new desk) is live.
       status = open&.status == "candidate" ? "candidate" : "live"
       file!(**registry_attributes(desk),
@@ -199,7 +211,43 @@ class DeskRecord < ApplicationRecord
             last_seen_at: snapshot.generated_at)
     end
 
+    close_departed_unmanaged!(seen)
     snapshot
+  end
+
+  # Is this registry desk one the ledger tracks? The CLI's own verdict (`managed`, from the
+  # repo-aware DeskRoot.roots_for check the reclaim hold reads) wins when the snapshot
+  # carries it; a record or a snapshot from before the flag falls back to the path rule,
+  # which errs toward MANAGED — the loud side.
+  def self.managed_desk?(desk)
+    flag = desk["managed"]
+    return ActiveModel::Type::Boolean.new.cast(flag) unless flag.nil?
+
+    DeskRoot.managed_path?(desk["worktree"])
+  end
+
+  # The statuses an unmanaged episode may be auto-closed from. `removing` is left out on
+  # purpose: it means THIS tooling began a teardown (an explicit `remove` of that path) and
+  # never recorded the outcome, which is the defect the vanished report exists to show.
+  AUTO_CLOSABLE_STATUSES = %w[live candidate].freeze
+
+  UNMANAGED_DEPARTURE_REASON =
+    "unmanaged worktree (outside <repo>/.worktrees and <repo>.worktrees) left the snapshot; " \
+    "its owner removed it with git, which never writes this ledger, so the snapshot closed it"
+
+  # Close every OPEN episode for an unmanaged path the snapshot no longer lists. Such a desk
+  # is never torn down through this ledger, so its record would otherwise read as vanished
+  # forever. A MANAGED desk that vanished is never closed here: it stays open and reported
+  # by `vanished`, because it is the real defect detector.
+  def self.close_departed_unmanaged!(seen_paths)
+    open_episodes.where(status: AUTO_CLOSABLE_STATUSES).where.not(worktree_path: seen_paths).find_each do |record|
+      next if managed_desk?((record.payload || {}).merge("worktree" => record.worktree_path))
+
+      file!(worktree_path: record.worktree_path,
+            status: RESOLVED_STATUS,
+            source: "snapshot",
+            reason: UNMANAGED_DEPARTURE_REASON)
+    end
   end
 
   # The registry record (bin/agent-worktree's stack_record_snapshot) mapped onto columns.

@@ -8245,6 +8245,39 @@ def reclaimed_count(out)
   out.to_s[/reclaimed (\d+) worktree/, 1].to_i
 end
 
+# The desks a guard HELD in that same run: one `withheld <desk>: <reason>` line per desk
+# the partition held, plus one `skipping <desk>: …` per candidate the under-lock re-check
+# refused. Dirty or unmerged desks never enter the partition, so they are not counted.
+def reclaim_held_count(out)
+  out.to_s.scan(/^(?:withheld|skipping) \S+: /).size
+end
+
+# Archive step 8: the FULL fail-closed sweep, exactly `bin/agent-worktree cleanup
+# --reclaim --yes` (every desk, bound or not, each re-verified under the worktree lock).
+# There is no bypass here and there must not be one: the sweep's holds are the safety.
+#
+# IT NEVER FAILS THE ARCHIVE. The board write already landed, and the sweep is
+# idempotent, so a broken sweep costs only desks left standing until the next run. It
+# used to cost more: a non-zero exit was dropped without a word, and a raise (the tool
+# missing from the cwd) killed the run before the artifact sweep, the doc retirement and
+# the ledger commit. Either now prints a warning naming the re-run, and the rest goes on.
+#
+# Returns the reclaimed count for the Exit Seam line.
+def archive_reclaim
+  out, ok = reclaim_worktrees(apply: true)
+  unless ok
+    say("⚠ worktree reclaim exited non-zero; archive continues. Its output is above. " \
+        "Re-run `bin/agent-worktree cleanup --reclaim --yes` (clean-infra) once it is fixed.")
+  end
+  reclaimed = reclaimed_count(out)
+  say("  worktree reclaim: reclaimed #{reclaimed}, held #{reclaim_held_count(out)}")
+  reclaimed
+rescue StandardError => e
+  say("⚠ worktree reclaim failed (#{e.class}: #{e.message}); archive continues with nothing reclaimed. " \
+      "Re-run `bin/agent-worktree cleanup --reclaim --yes` (clean-infra) once it is fixed.")
+  0
+end
+
 # The regenerable-artifact sweep, run exactly like the worktree reclaim above:
 # apply: false is the tool's own --dry-run (report only, mutates nothing, so it
 # runs for real even under bin/release --dry-run); apply: true performs it.
@@ -8448,13 +8481,12 @@ def archive
   archived_count = result["count"] || (result["archived"] || []).size
   kept_count     = (result["kept"] || kept).size
 
-  # 8. Reclaim the merged/shipped feature worktrees (--yes = real teardown,
-  #    squash-merged legacy worktrees included). The board archive already
-  #    succeeded, so a reclaim hiccup just means fewer worktrees freed this run.
+  # 8. The full reclaim sweep (--yes = real teardown of every desk the guards clear,
+  #    bound or not). The board archive already succeeded, so a reclaim failure is a
+  #    warning and fewer desks freed this run, never a failed archive (archive_reclaim).
   say("")
   step("worktree reclaim: bin/agent-worktree cleanup --reclaim --yes")
-  reclaim_out, = reclaim_worktrees(apply: true)
-  reclaimed = reclaimed_count(reclaim_out)
+  reclaimed = archive_reclaim
 
   # 9. Sweep the regenerable artifacts — AFTER the reclaim, so the worktrees that
   #    just went away are not swept first and counted twice. Machine-local, and

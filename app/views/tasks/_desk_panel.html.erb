@@ -75,6 +75,16 @@
       </div>
     </div>
 
+    <%# UNMANAGED WORKTREES are counted, never ledgered: a reviewer's scratch checkout lives
+        outside <repo>/.worktrees and is removed with plain git, so a record for it could only
+        ever end as a false "left without a teardown record" (DeskRecord.sync!). %>
+    <% if panel.unmanaged_count.to_i.positive? %>
+      <p class="mt-2 text-[11px] text-muted" data-test="desk-panel-unmanaged">
+        Plus <%= pluralize(panel.unmanaged_count, "unmanaged worktree") %> outside the desk roots:
+        listed in the snapshot, not tracked by the ledger.
+      </p>
+    <% end %>
+
     <%# --- desks that left without a record --------------------------------------- %>
     <%# THE DEFECT DETECTOR. An open episode the newest snapshot did not see is a desk that
         went away outside `bin/agent-worktree remove` — the exact class of loss this whole

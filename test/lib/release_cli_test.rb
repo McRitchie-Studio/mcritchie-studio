@@ -4516,6 +4516,66 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "SHIPPED → 1"
   end
 
+  # desk-ledger-stops-ghosting. Archive runs the FULL sweep (`cleanup --reclaim --yes`) and
+  # says in one line what it took and what the guards held.
+  def test_archive_runs_the_full_reclaim_sweep_and_prints_its_tally
+    stub = <<~RUBY
+      #{ARCHIVE_RUN_STUB}
+      def reclaim_worktrees(apply:)
+        return ["reclaim candidates:", true] unless apply
+        out = "withheld mcritchie-studio/live-desk: the bound task landed a durable artifact 2m ago\n" \
+              "withheld turf-monster/other: a builder is live-claiming it\n" \
+              "skipping mcritchie-studio/raced: no longer a safe candidate\n" \
+              "reclaimed 2 worktree(s); freed redis DBs: 11, 12\n"
+        puts "SWEEP-APPLIED"
+        [out, true]
+      end
+    RUBY
+    out = run_cli(["--yes"], call: "archive", setup: stub)
+
+    assert_includes out, "SWEEP-APPLIED", "archive applies the reclaim sweep"
+    assert_includes out, "worktree reclaim: reclaimed 2, held 3"
+    assert_includes out, "reclaimed 2 worktrees"
+    refute_includes out, "⚠ worktree reclaim"
+  end
+
+  # A reclaim that RAISES must not kill the archive: the board write has landed, and the
+  # artifact sweep, doc retirement and summary still run behind a warning.
+  def test_archive_survives_a_reclaim_that_raises_with_a_warning
+    stub = <<~RUBY
+      #{ARCHIVE_RUN_STUB}
+      def reclaim_worktrees(apply:)
+        return ["reclaim candidates:", true] unless apply
+        raise Errno::ENOENT, "bin/agent-worktree"
+      end
+    RUBY
+    out = run_cli(["--yes"], call: "archive", setup: stub)
+
+    assert_match(/⚠ worktree reclaim failed \(Errno::ENOENT.*archive continues/, out)
+    assert_includes out, "Archived 2 tasks; reclaimed 0 worktrees", "the archive reaches its summary"
+    assert_includes out, "Swept 1 KB", "the steps after the reclaim still run"
+  end
+
+  # A reclaim that exits non-zero was dropped without a word; it now warns and archive goes on.
+  def test_archive_warns_on_a_reclaim_that_exits_non_zero
+    stub = <<~RUBY
+      #{ARCHIVE_RUN_STUB}
+      def reclaim_worktrees(apply:)
+        apply ? ["error: board unreachable\n", false] : ["reclaim candidates:", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], call: "archive", setup: stub)
+
+    assert_includes out, "⚠ worktree reclaim exited non-zero; archive continues"
+    assert_includes out, "worktree reclaim: reclaimed 0, held 0"
+    assert_includes out, "Archived 2 tasks; reclaimed 0 worktrees"
+  end
+
+  def test_reclaim_held_count_counts_partition_holds_and_under_lock_skips
+    out = "withheld a/b: x\nskipping c/d: y\nnote: a/b: withholding z\nreclaimed 1 worktree(s)"
+    assert_equal "2", eval_helper(%(reclaim_held_count(#{out.inspect}).to_s))
+  end
+
   def test_reclaimed_count_parses_the_agent_worktree_summary
     assert_equal "5", eval_helper(%(reclaimed_count("reclaimed 5 worktree(s); freed redis DBs: 9").to_s))
     assert_equal "0", eval_helper(%(reclaimed_count("reclaim: nothing reclaimed").to_s))
