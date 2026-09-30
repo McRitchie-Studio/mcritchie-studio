@@ -978,8 +978,8 @@ TaskEvent.create!(task_slug: hb_task, from_stage: "designed", to_stage: "buildin
  [160, "feraligatr", []]].each do |dex, slug, evolution|
   Pokemon.create!(dex: dex, name: slug.capitalize, slug: slug, generation: 2,
                   base: "totodile", evolution: evolution, baby: [],
-                  sprite_url: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/#{dex}-#{slug}-sprite.png",
-                  avatar_url: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/#{dex}-#{slug}-cropped.png")
+                  sprite_url: "https://assets.mcritchie.studio/pokemon/#{dex}-#{slug}-sprite.png",
+                  avatar_url: "https://assets.mcritchie.studio/pokemon/#{dex}-#{slug}-cropped.png")
 end
 SessionMascot.create!(session_id: "sess-evolution-demo", mascot_slug: "totodile")
 evolution_task = Task.create!(
