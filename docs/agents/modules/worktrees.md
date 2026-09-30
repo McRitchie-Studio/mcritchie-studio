@@ -122,6 +122,12 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
   [/deployments](https://mcritchie.studio/deployments)). A teardown files its record
   **before** destroying anything, so **when the board is unreachable the teardown
   REFUSES**. [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history.
+- The ledger tracks **managed desks only** (the root rule lives once, in `lib/desk_root.rb`).
+  `snapshot` marks each desk `managed: true|false` and counts the rest as `unmanaged`; the
+  board lists those but opens no ledger record for them, and closes an older open record
+  for an unmanaged path once the path leaves the snapshot (`removed`, source `snapshot`). A
+  **managed** desk that leaves without a teardown record stays open and is reported as
+  vanished on the Desks panel; that report is the defect detector.
 
 ### The reclaim safety rule
 
