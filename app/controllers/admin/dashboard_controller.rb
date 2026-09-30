@@ -12,6 +12,10 @@ module Admin
 
       @request_logs = ErrorLog.order(created_at: :desc).limit(REQUEST_LOG_LIMIT)
       @request_log_count = ErrorLog.count
+
+      # One query: the Contacts card's "verified valid of total".
+      @contact_count, @contact_valid_count =
+        Contact.pick(Arel.sql("COUNT(*)"), Arel.sql("COUNT(*) FILTER (WHERE verification_status = 'valid')"))
     end
   end
 end
