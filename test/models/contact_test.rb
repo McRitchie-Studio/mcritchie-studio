@@ -61,4 +61,19 @@ class ContactTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { @contact.unsubscribe!(reason: "whim") }
     assert_nil @contact.reload.verified_at
   end
+
+  test "cyvasse reads traits['cyvasse'], empty when never synced" do
+    assert_equal({}, @contact.cyvasse)
+    assert_equal 0, @contact.cyvasse_games
+    @contact.update!(traits: { "cyvasse" => { "username" => "veyjin", "games" => 27 } })
+    assert_equal "veyjin", @contact.reload.cyvasse["username"]
+    assert_equal 27, @contact.cyvasse_games
+  end
+
+  test "with_cyvasse_games is contacts with at least one game" do
+    one = Contact.create!(email: "one@example.com", traits: { "cyvasse" => { "games" => 1 } })
+    Contact.create!(email: "zero@example.com", traits: { "cyvasse" => { "games" => 0 } })
+    Contact.create!(email: "other@example.com", traits: { "turf" => { "games" => 9 } })
+    assert_equal [ one ], Contact.with_cyvasse_games.to_a
+  end
 end
