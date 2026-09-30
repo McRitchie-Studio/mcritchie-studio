@@ -187,8 +187,8 @@ Registrar access is Alex's; the nameserver change cannot be done by an agent.
 
 | Domain | DNS host today | Heroku app | Records | Status |
 |---|---|---|---|---|
-| `mcritchie.studio` | Cloudflare since 2026-09-30, every record DNS only (was Google Cloud DNS) | `mcritchie-studio` | apex + `www` + `app` + eight app subdomains | **pilot**: DNS moved, not yet proxied (steps 3, 5, 6 still owed) |
-| `turfmonster.media` | Cloudflare since 2026-09-30, every record DNS only (was Squarespace DNS; registrar Squarespace) | `turf-monster-mainnet` | apex + `app` + `qa` | DNS moved, not yet proxied; DNSSEC off (see the asset-library plan's Blocker for step 6) |
+| `mcritchie.studio` | Cloudflare since 2026-09-30, app records DNS only; only R2's `assets.` CNAME is proxied (was Google Cloud DNS) | `mcritchie-studio` | apex + `www` + `app` + eight app subdomains | **pilot**: DNS moved, not yet proxied; owed: step 2's proxy flip, step 3, step 4's `cf-ray` check, steps 5-6 |
+| `turfmonster.media` | Cloudflare since 2026-09-30, app records DNS only; only R2's `assets.` CNAME is proxied (was Squarespace DNS; registrar Squarespace) | `turf-monster-mainnet` | apex + `app` + `qa` | DNS moved, not yet proxied; DNSSEC off (see [the DNSSEC rule](asset-library-plan.md), under "Blocker for step 6") |
 | `mcritchie.industries` | Squarespace DNS | `mcritchie-industries` | `www` only | after pilot |
 | `karenmcritchie.com` | name.com | `obscure-plains-6405` | apex + `www` | after pilot |
 
