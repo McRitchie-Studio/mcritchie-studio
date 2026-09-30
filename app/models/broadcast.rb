@@ -23,7 +23,17 @@ class Broadcast < ApplicationRecord
     "cyvasse_is_back" => {
       "play" => "https://cyvasse.xyz/",
       "build" => "https://mcritchie.studio/build"
+    }.freeze,
+    "cyvasse_your_games" => {
+      "play" => "https://cyvasse.xyz/"
     }.freeze
+  }.freeze
+
+  # Merge fields a template's body needs (task staged-email-queue): a contact
+  # without one is skipped at staging, never rendered with a blank. Fields a
+  # subject names (%{username}) are required too; see #required_merge_fields.
+  TEMPLATE_MERGE_FIELDS = {
+    "cyvasse_your_games" => %w[username games].freeze
   }.freeze
 
   # Registry of available copy templates: key => human label. Each key maps to
@@ -32,9 +42,11 @@ class Broadcast < ApplicationRecord
     "world_cup_kickoff"     => "World Cup Kickoff",
     "new_game_announcement" => "New Game Announcement",
     "cyvasse_is_back"       => "Cyvasse Is Back",
+    "cyvasse_your_games"    => "Cyvasse: Your Games",
   }.freeze
 
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy
+  has_many :staged_emails, dependent: :destroy
 
   validates :subject, presence: true
   validates :template_key, inclusion: { in: TEMPLATES.keys }
@@ -108,6 +120,7 @@ class Broadcast < ApplicationRecord
   def send_batch!(size:, audience: target_list, spacing: BATCH_SPACING, verified: nil)
     raise ArgumentError, "no audience: set the broadcast's target list or pass one" if audience.blank?
     raise ArgumentError, "batch size must be positive" unless size.to_i.positive?
+    raise ArgumentError, "#{slug} uses merge fields: stage it (broadcasts:stage) and send from the queue" if requires_staging?
 
     ids = unsent_contacts(audience, verified: verified).order(Arel.sql("RANDOM()")).limit(size.to_i).pluck(:id)
     ids.each_with_index { |contact_id, i| BroadcastSendJob.set(wait: spacing * i).perform_later(id, contact_id) }
@@ -119,6 +132,106 @@ class Broadcast < ApplicationRecord
   def batch_status(audience = target_list, verified: nil)
     { sent: deliveries.where.not(sent_at: nil).count, remaining: unsent_contacts(audience, verified: verified).count,
       opened: opened_count, clicked: clicked_count }
+  end
+
+  # --- staged sends ----------------------------------------------------------
+  # A staged send (task staged-email-queue) renders each recipient's email with
+  # their merge fields and holds it for review: stage!, then approve, then
+  # execute_staged!. See StagedEmail.
+
+  # Every merge field this broadcast needs: those its subject names plus those
+  # its template's body uses.
+  def required_merge_fields
+    (Broadcasts::MergeFields.fields_in(subject) + TEMPLATE_MERGE_FIELDS.fetch(template_key, [])).uniq
+  end
+
+  # A personalized broadcast goes out only through the queue: the editor's
+  # send and a batch would mail "%{username}" as written.
+  def requires_staging?
+    required_merge_fields.any?
+  end
+
+  # The subject for one reader.
+  def subject_for(fields)
+    Broadcasts::MergeFields.interpolate(subject.presence || "(no subject)", fields)
+  end
+
+  StageResult = Data.define(:staged, :skipped) do
+    def total = staged + skipped
+  end
+
+  # Render and hold this broadcast for up to `limit` contacts on `audience`
+  # who have neither been sent it nor staged for it; nothing is sent.
+  # Idempotent: a contact is staged once (re-render one with StagedEmail#render_snapshot!).
+  # The audience rules are Broadcast#unsent_contacts': subscribed only,
+  # verified-only where the audience requires it, never someone already sent.
+  # `filter` narrows the contacts further: a Hash for `where`, or a callable
+  # taking and returning the relation.
+  def stage!(audience: target_list, limit: nil, filter: nil, verified: nil, now: Time.current)
+    raise ArgumentError, "no audience: set the broadcast's target list or pass one" if audience.blank?
+
+    scope = unsent_contacts(audience, verified: verified).where.not(id: staged_emails.select(:contact_id))
+    scope = filter.respond_to?(:call) ? filter.call(scope) : scope.where(filter) if filter.present?
+    scope = scope.order(:id)
+    scope = scope.limit(limit.to_i) if limit.present?
+
+    staged = skipped = 0
+    scope.each do |contact|
+      # One transaction per contact: a render that raises leaves no row, never
+      # a "staged" email with nothing in it.
+      row = transaction(requires_new: true) do
+        staged_emails.create!(contact: contact, status: "staged", staged_at: now).render_snapshot!(now: now)
+      end
+      row.skipped? ? skipped += 1 : staged += 1
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+      next # staged by a concurrent run
+    end
+    StageResult.new(staged: staged, skipped: skipped)
+  end
+
+  # Approve the `count` longest-held staged emails (all of them when nil), or
+  # exactly `ids` when given. Returns how many were approved.
+  def approve_staged!(count: nil, ids: nil, now: Time.current)
+    scope = staged_emails.of_status("staged").order(:staged_at, :id)
+    scope = scope.where(id: ids) if ids
+    scope = scope.limit(count.to_i) if count
+    scope.update_all(status: "approved", approved_at: now, updated_at: now)
+  end
+
+  ExecuteResult = Data.define(:queued, :gate)
+
+  # Hand up to `limit` approved staged emails to BroadcastSendJob, spaced for
+  # Resend's rate limit, within the daily cap and only while the send gate is
+  # open (Broadcasts::SendGate). Each job sends the stored snapshot exactly;
+  # the job's per-recipient lock and sent_at check keep it to once.
+  def execute_staged!(limit:, spacing: BATCH_SPACING, now: Time.current, gate: Broadcasts::SendGate.status(now: now))
+    raise ArgumentError, "limit must be positive" unless limit.to_i.positive?
+    return ExecuteResult.new(queued: 0, gate: gate) if gate.paused?
+
+    take = [ limit.to_i, gate.remaining ].min
+    queued = 0
+    staged_emails.ready_to_send(now).order(:approved_at, :id).limit(take).pluck(:id, :contact_id).each do |staged_id, contact_id|
+      # Claim the row first, so two executes can never both queue it.
+      next unless StagedEmail.where(id: staged_id, status: "approved", queued_at: nil).update_all(queued_at: now, updated_at: now) == 1
+
+      BroadcastSendJob.set(wait: spacing * queued).perform_later(id, contact_id, staged_id)
+      queued += 1
+    end
+    ExecuteResult.new(queued: queued, gate: gate)
+  end
+
+  STAGED_COUNT_KEYS = %w[staged approved sent skipped cancelled].freeze
+
+  # Counts by status for the queue page, plus approved rows already queued.
+  def queue_counts
+    counts = staged_emails.group(:status).count
+    STAGED_COUNT_KEYS.index_with { |s| counts.fetch(s, 0) }
+                     .merge("queued" => staged_emails.of_status("approved").where.not(queued_at: nil).count)
+  end
+
+  # Why each skipped row was skipped, most common first.
+  def skip_reasons
+    staged_emails.of_status("skipped").group(:skip_reason).count.sort_by { |_r, n| -n }.to_h
   end
 
   # --- engagement ------------------------------------------------------------

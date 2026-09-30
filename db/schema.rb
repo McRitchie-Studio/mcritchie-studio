@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1612,6 +1612,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_120000) do
     t.index ["slug"], name: "index_stack_clients_on_slug", unique: true
   end
 
+  create_table "staged_emails", force: :cascade do |t|
+    t.datetime "approved_at"
+    t.bigint "broadcast_delivery_id"
+    t.bigint "broadcast_id", null: false
+    t.datetime "cancelled_at"
+    t.bigint "contact_id", null: false
+    t.datetime "created_at", null: false
+    t.string "delivery_token"
+    t.string "email"
+    t.jsonb "merge_fields", default: {}, null: false
+    t.datetime "queued_at"
+    t.text "rendered_html"
+    t.string "rendered_subject"
+    t.text "rendered_text"
+    t.datetime "scheduled_for"
+    t.datetime "sent_at"
+    t.string "skip_reason"
+    t.datetime "staged_at"
+    t.string "status", default: "staged", null: false
+    t.datetime "updated_at", null: false
+    t.index ["broadcast_delivery_id"], name: "index_staged_emails_on_broadcast_delivery_id"
+    t.index ["broadcast_id", "contact_id"], name: "index_staged_emails_on_broadcast_id_and_contact_id", unique: true
+    t.index ["broadcast_id", "status"], name: "index_staged_emails_on_broadcast_id_and_status"
+    t.index ["broadcast_id"], name: "index_staged_emails_on_broadcast_id"
+    t.index ["contact_id"], name: "index_staged_emails_on_contact_id"
+    t.index ["delivery_token"], name: "index_staged_emails_on_delivery_token", unique: true, where: "(delivery_token IS NOT NULL)"
+  end
+
   create_table "studio_email_deliveries", force: :cascade do |t|
     t.string "action", null: false
     t.jsonb "args", default: [], null: false
@@ -2075,6 +2103,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_120000) do
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "source_documents", "knowledge_sources"
+  add_foreign_key "staged_emails", "broadcast_deliveries", on_delete: :nullify
+  add_foreign_key "staged_emails", "broadcasts"
+  add_foreign_key "staged_emails", "contacts"
   add_foreign_key "studio_email_deliveries", "users"
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
   add_foreign_key "workspace_mailboxes", "workspace_accounts"

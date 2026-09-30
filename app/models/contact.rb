@@ -3,6 +3,7 @@
 # token. Sending suppresses anyone not `subscribed`.
 class Contact < ApplicationRecord
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy
+  has_many :staged_emails, dependent: :destroy
 
   before_validation :normalize_email
   before_validation :ensure_unsubscribe_token, on: :create
