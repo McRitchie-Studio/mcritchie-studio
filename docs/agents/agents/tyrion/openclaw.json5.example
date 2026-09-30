@@ -1,0 +1,60 @@
+// Tyrion's OpenClaw agent, Discord account and binding: a template for the
+// isolated NUC. Copy the three blocks into ~/.openclaw/openclaw.json and fill
+// the placeholders. Config shape from docs.openclaw.ai/concepts/multi-agent;
+// check the tool names against the OpenClaw version on the box, because the
+// point of this block is that he has NO tools on Discord.
+//
+// Secrets live here, in OpenClaw's config, never in the workspace (the
+// workspace is built by bin/openclaw-workspace and may be kept in git).
+// Give the model key its own workspace with a hard monthly spend limit.
+{
+  agents: {
+    entries: {
+      tyrion: {
+        workspace: "~/.openclaw/workspace-tyrion",
+        agentDir: "~/.openclaw/agents/tyrion/agent",
+        model: "anthropic/claude-opus-5-5",   // the chat model (Alex left the call to us, 2026-09-29)
+        sandbox: { mode: "all", scope: "agent" },
+        // NO TOOLS, BY DEFAULT-DENY. OpenClaw: "deny always wins", and "if
+        // allow is NON-EMPTY, everything else is treated as blocked" — so an
+        // EMPTY allow blocks nothing, while an allowlist that leaves no
+        // callable tool makes OpenClaw stop before prompting the model rather
+        // than chat. A non-empty allow of the one tool he needs is real
+        // default-deny, covering names no blocklist can enumerate; the group
+        // denies are belt-and-braces (a name list had missed apply_patch,
+        // terminal, computer and sessions_spawn). crossContext holds `message`
+        // to the conversation he is in, as OpenClaw's own restricted
+        // channel-bound example does.
+        tools: {
+          allow: ["message"],
+          deny: [
+            "group:runtime", "group:fs", "group:sessions", "group:web",
+            "group:ui", "group:automation", "group:nodes", "group:agents",
+            "group:media", "group:memory", "group:openclaw", "group:plugins"
+          ],
+          message: { crossContext: { allowWithinProvider: false, allowAcrossProviders: false } }
+        }
+      }
+    }
+  },
+  channels: {
+    discord: {
+      accounts: {
+        tyrion: {
+          token: "<Tyrion's own Discord bot token; enable Message Content Intent>",
+          guilds: {
+            "<guild id>": {
+              channels: {
+                "<#play-tyrion channel id>": { enabled: true, requireMention: false },
+                "<any other channel id>": { enabled: true, requireMention: true }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  bindings: [
+    { agentId: "tyrion", match: { channel: "discord", accountId: "tyrion" } }
+  ]
+}

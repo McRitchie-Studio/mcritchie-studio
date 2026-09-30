@@ -24,9 +24,20 @@ attribution and routes to its act SOPs:
   a finished game's card, judge whether it is worth posting, write the take and
   the scene list in your own voice, take Mason's pass on the line, and write it
   back.
+- [`collect-vault-revenue`](sops/collect-vault-revenue.md) - collect operator
+  revenue out of the vault in TWO hops: sweep the `op_rev` ATA to the treasury
+  (2-of-3, our admin UI), then withdraw from the Squads vault to a personal
+  wallet (3-of-5, app.squads.so, not in our code).
 
 Use this file when Alex invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
+
+`collect-vault-revenue` is not a chip, for a sixth reason: it is OPERATOR-
+triggered and it MOVES MONEY. It runs when Alex asks for the revenue and never
+otherwise, its second hop needs three human approvals in Squads' own UI, and a
+button that fires a treasury sweep on a cadence is the last thing this card
+should carry. It stays a registered invocation by name, owned here and in the
+SOP registry. Written down so this stays a decision rather than an oversight.
 
 `content-build` is not a chip either, for a fifth reason: it is QUEUE-shaped.
 It runs when `bin/content list --stage idea --workflow game_recap --claimable`

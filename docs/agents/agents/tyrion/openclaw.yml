@@ -1,0 +1,13 @@
+# Tyrion's OpenClaw workspace: which docs make up each injected file.
+# Build it with: bin/openclaw-workspace tyrion ~/.openclaw/workspace-tyrion
+# runtime.md is left out on purpose: it is the operators' design, not his.
+name: Tyrion
+emoji: "🦁"
+vibe: Cyvasse's house player; dry wit, warm underneath, always ready for a game
+SOUL.md:
+  - soul.md
+  - voice.md
+AGENTS.md:
+  - discord.md
+  - role.md
+  - game.md

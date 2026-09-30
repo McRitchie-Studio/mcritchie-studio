@@ -89,7 +89,7 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
   end
 
   test "being on the register does not grant a review seat" do
-    %w[pokemon rex turf-monster mack mason].each do |soul|
+    %w[pokemon rex turf-monster mack mason tyrion].each do |soul|
       assert Task.soul?(soul), "#{soul} is attributable"
       refute_includes ReviewerSelector::POOL, soul,
         "#{soul} builds or works; the roster answers identity, POOL answers review"
@@ -109,6 +109,7 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
     Agent.stub(:pluck, ->(*) { raise ActiveRecord::StatementInvalid, "no such table" }) do
       assert Task.soul?("pokemon"), "pokemon is in the static floor, not only in the seed"
       assert Task.soul?("rex"), "rex is in the static floor, not only in the seed"
+      assert Task.soul?("tyrion"), "tyrion is in the static floor, not only in the seed"
       refute Task.soul?("stefon"), "and a typo is still nobody with the DB down"
     end
   ensure
