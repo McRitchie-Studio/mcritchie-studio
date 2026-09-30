@@ -114,7 +114,8 @@ Rex owns what the email asks for. Mason owns every sentence in it.
    admin!", no urgency, and no money language. The Cyvasse sign-in email that
    went to spam had all of the first three. Mostly text, with one or two links.
 4. **Send in the morning, recipient time.** Cyvasse's morning batches clicked
-   far better than the midnight one. The card's window is 10–12 and 1–3.
+   far better than the midnight one. Send between 10:00 and 12:00 or 13:00 and
+   15:00, recipient local time.
 5. **The click has to land somewhere that pays off.** Cyvasse: 52 Play Now
    clicks, 12 arrivals, 9 plays, all as guests. There is no email-to-account
    handoff yet, so a returning player never sees their old account. A leak after
