@@ -94,8 +94,11 @@ class StagedEmail < ApplicationRecord
   end
 
   # The personal values worth a glance in the queue table.
+  # Cyvasse stats first, in their own order (jsonb does not keep insertion order).
   def key_merge_fields
-    merge_fields.except("email", "first_name").presence || merge_fields.slice("first_name")
+    fields = merge_fields.except("email", "first_name").presence || merge_fields.slice("first_name")
+    order = Broadcasts::MergeFields::CYVASSE_KEYS
+    fields.sort_by { |k, _v| order.index(k) || order.size }.to_h
   end
 
   private
