@@ -103,6 +103,11 @@ because browsers terminate at Cloudflare. It also removes the renewal treadmill.
 
 ### Step 4 — Cut the nameservers
 
+**DNSSEC first.** Run `dig DS <domain>` at the TLD server. If it answers, follow
+the DNSSEC rule in [`asset-library-plan.md`](asset-library-plan.md) (under
+"Blocker for step 6") before touching nameservers: it cost `turfmonster.media`
+an hour of outage on 2026-09-29.
+
 Change them at the registrar, then wait for Cloudflare to report the zone active.
 Registrars differ per domain — see the inventory below.
 
@@ -182,8 +187,8 @@ Registrar access is Alex's; the nameserver change cannot be done by an agent.
 
 | Domain | DNS host today | Heroku app | Records | Status |
 |---|---|---|---|---|
-| `mcritchie.studio` | Google Cloud DNS | `mcritchie-studio` | apex + `www` + `app` | **pilot** |
-| `turfmonster.media` | name.com | `turf-monster-mainnet` | apex + `app` | after pilot |
+| `mcritchie.studio` | Cloudflare since 2026-09-30, app records DNS only; only R2's `assets.` CNAME is proxied (was Google Cloud DNS) | `mcritchie-studio` | apex + `www` + `app` + eight app subdomains | **pilot**: DNS moved, not yet proxied; owed: step 2's proxy flip, step 3, step 4's `cf-ray` check, steps 5-6 |
+| `turfmonster.media` | Cloudflare since 2026-09-30, app records DNS only; only R2's `assets.` CNAME is proxied (was Squarespace DNS; registrar Squarespace) | `turf-monster-mainnet` | apex + `app` + `qa` | DNS moved, not yet proxied; DNSSEC off (see [the DNSSEC rule](asset-library-plan.md), under "Blocker for step 6") |
 | `mcritchie.industries` | Squarespace DNS | `mcritchie-industries` | `www` only | after pilot |
 | `karenmcritchie.com` | name.com | `obscure-plains-6405` | apex + `www` | after pilot |
 

@@ -52,14 +52,15 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
   every grant lives on a token.
 - **Custom domains need the domain on Cloudflare.** R2 attaches
   `assets.<domain>` only to a domain whose DNS Cloudflare serves in this
-  account. Measured 2026-09-26: neither `mcritchie.studio` (Google
-  nameservers) nor `turfmonster.media` (Squarespace; whether it is Turf
-  Monster's serving domain is open in the plan) is, so the CDN rollout's
-  nameserver move comes first. `cloudflare.studio.provision` gained DNS read
-  and write across every domain in the account that evening (read back from
-  the token's own policies); it still lacks Zone Read, so until that is added
-  attaching a domain is a dashboard step (**R2 → bucket → Settings → Custom
-  Domains**).
+  account. Since 2026-09-30 `mcritchie.studio` and `turfmonster.media` both
+  are (zones Active, every app record DNS only, so traffic still reaches
+  Heroku directly; R2 proxies the `assets.` CNAME it manages), and `assets.mcritchie.studio` / `assets.turfmonster.media` serve
+  the two production buckets. `cloudflare.studio.provision` can do the whole
+  attach by API: it listed both zones and created both custom domains
+  (`POST /accounts/<id>/r2/buckets/<bucket>/domains/custom` with the zone id),
+  measured 2026-09-30, with no Zone Read: its policies, read back that day,
+  hold DNS read/write and none. A new certificate took hours, not minutes: attached
+  00:25 MDT, first 200 at 08:09.
 
 ## R2 — credential tiers
 
@@ -87,9 +88,9 @@ their own dates where they changed after the census.
 
 | App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
 |---|---|---|---|---|
-| `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | not yet (Wave 2) | not enabled |
+| `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | `Studio::S3` on R2 and Active Storage R2-primary with S3 mirror since 2026-09-30 (release v530), soaking to about 2026-10-07; `assets.mcritchie.studio` serves production | not enabled |
 | `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | not yet: the code reads it once `DESK_CAPTURE_BACKEND=r2` is set | not enabled |
-| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | not yet (Wave 2) | not enabled |
+| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | not yet; `assets.turfmonster.media` attached to production 2026-09-30, objects pre-copied | not enabled |
 | `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | knowledge docs (`Studio::S3`) since 2026-09-28; Active Storage R2-primary with S3 mirror during the soak | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
 | `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
 | `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | not yet (Wave 2) | enabled 2026-09-26, `moms-app-backup`; drill passed; nightly via `.github/workflows/r2-backup.yml` |
