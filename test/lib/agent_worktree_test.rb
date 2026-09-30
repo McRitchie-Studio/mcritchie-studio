@@ -471,11 +471,18 @@ class AgentWorktreeTest < Minitest::Test
                  "a cert on a terminal task is work, not lifecycle — it still holds")
   end
 
+  # Asked of desk_hold itself: reclaim_verdict's stage guard would hold a `building` desk
+  # before this channel is reached, and this pins the channel on its own.
   def test_a_live_task_whose_newest_progress_is_a_stage_move_is_still_withheld
     task = ARCHIVED_BY_THE_SWEEP.gsub("archived", "building")
-    out = desk_verdict(age: 6 * 3_600, touched: false, task_json: task)
+    out = run_in_script(<<~RUBY)
+      def desk_age_seconds(_r); #{6 * 3_600}; end
+      def desk_touched_recently?(_r); false; end
+      def task_record_for_pr(_r, fresh: false); #{task}; end
+      print desk_hold({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t", dir: "/repo/.worktrees/t" }).inspect
+    RUBY
 
-    assert_match(/\A\[false, "the bound task landed a durable artifact/, out,
+    assert_match(/\A"the bound task landed a durable artifact/, out,
                  "on a live stage a move is the builder's own act — only a TERMINAL move is exempt")
   end
 
