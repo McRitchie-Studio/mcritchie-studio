@@ -47,6 +47,16 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "/assets", Rails.application.routes.url_helpers.asset_browser_path
   end
 
+  # task contacts-admin-page: the mailing list sits beside the broadcasts sent to it.
+  test "admin sidebar has an Email section with Broadcasts then Contacts" do
+    self.admin_enabled = true
+
+    email = sidebar_link_sections.find { |section| section[:title] == "Email" }
+
+    assert email&.fetch(:admin), "expected an admin Email section"
+    assert_equal [ "/broadcasts", "/contacts", "/broadcasts/analytics" ], email.fetch(:links).map { |link| link.fetch(:href) }
+  end
+
   test "admin sidebar includes the Activities feed link" do
     self.admin_enabled = true
 
