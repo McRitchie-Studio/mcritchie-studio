@@ -31,6 +31,15 @@ class ContactsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a search never writes the address it searched for to the log" do
+    log_in_as(@admin)
+    get contacts_path(q: "valid@example", query: "kept")
+    assert_response :success
+    assert_includes request.filtered_path, "q=[FILTERED]"
+    assert_includes request.filtered_path, "query=kept", "the filter is anchored to q"
+    assert_equal "[FILTERED]", request.filtered_parameters["q"]
+  end
+
   test "the tiles and breakdown show the default list's counts" do
     log_in_as(@admin)
     get contacts_path

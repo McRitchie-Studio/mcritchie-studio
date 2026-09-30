@@ -4,5 +4,8 @@
 # Use this to limit dissemination of sensitive information.
 # See the ActiveSupport::ParameterFilter documentation for supported notations and behaviors.
 Rails.application.config.filter_parameters += [
-  :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn
+  :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn,
+  # /contacts searches by part of an email in `q`. Anchored: a bare :q would
+  # partial-match every key containing a "q" (request, query, sequence).
+  /\Aq\z/
 ]
