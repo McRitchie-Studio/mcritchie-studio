@@ -39,10 +39,10 @@ or `main`, never promotes, and never deploys.
 
 | Hop | Instruction / action | From → To | Where you run it | Signers | In our codebase? |
 |---|---|---|---|---|---|
-| **1** | `sweep_operator_revenue` (turf-vault) | `op_rev` ATA → **treasury** ATA | `/admin/currencies` → `/admin/pending_transactions` | **2-of-3** VaultState multisig | **Yes** |
-| **2** | Squads transfer | treasury (Squads vault PDA) → personal wallet | `app.squads.so` | **3-of-5** Squads multisig | **No — nothing in turf-monster or turf-vault performs or prepares it** |
+| **1** | `sweep_operator_revenue` (turf-vault) | `op_rev` ATA → **Squads Treasury** ATA | `/admin/currencies` → `/admin/pending_transactions` | **2-of-3** VaultState multisig | **Yes** |
+| **2** | Squads transfer | **Squads Treasury** (the treasury vault PDA) → personal wallet | `app.squads.so`, reached from `/admin/hub` | **3-of-5** Squads multisig | **No — nothing in turf-monster or turf-vault performs or prepares it** |
 
-**Hop 1 ends inside the Squads vault, not in a wallet.** The program pins the
+**Hop 1 ends inside the Squads Treasury, not in a wallet.** The program pins the
 destination to the treasury authority — which IS the Squads vault PDA — so a
 successful sweep moves the money from one account nobody can spend from to
 another account nobody can spend from alone. It is now under 3-of-5 control
@@ -70,7 +70,7 @@ phrase is what produced the wrong-address claims it now forbids.
 | Threshold today | **2 of 3** | **3 of 5** |
 | Members | three, named below | **five**; read them from chain, do not assume they are the three below plus two |
 | Lives in | `VaultState`, the turf-vault PDA at seeds `[b"vault"]` | the Squads V4 program, multisig account `4H3fP3otjMtupk1DQDjKXYY1dWjT6LNM4H4ZWZ1XcKSX` (mainnet) |
-| Interface | our admin UI (`/admin/currencies`, `/admin/pending_transactions`) | `app.squads.so` |
+| Interface | our admin UI — the Link Hub is `/admin/hub` (`/admin` alone is a 404), and the screens are `/admin/currencies` and `/admin/pending_transactions` | `app.squads.so`, linked from the `Squads Treasury` tile |
 | Changed by | `update_signers` | Squads' own config transaction |
 
 The three VaultState signers on mainnet, as `Solana::Config::MULTISIG_SIGNERS`
@@ -110,7 +110,7 @@ program pins where a sweep can go; Squads pins who may approve the withdrawal.
 | Deterministic — the code | Agentic — you |
 |---|---|
 | The sweep destination (`treasury_ata.owner == vault_state.treasury_authority`) | Whether to collect at all, and when |
-| Sweeping the FULL balance (the admin path always sends `amount: 0`) | How much should leave the Squads vault on hop 2 |
+| Sweeping the FULL balance (the admin path always sends `amount: 0`) | How much should leave the Squads Treasury on hop 2 |
 | Refusing an empty `op_rev` account, and a wrong-owner treasury ATA | Reading a refusal and choosing its remedy |
 | Deriving both ATAs from the mint and the live `VaultState` | Confirming the destination wallet address with Alex |
 | Enforcing 2-of-3 on hop 1, 3-of-5 on hop 2 | Collecting the other two Squads approvals |
@@ -124,7 +124,9 @@ that reasoning — see the refusals table.
 - Alex asked for the collection, and **named the destination wallet** for hop 2.
 - You know which **mint** you are collecting. One mint per call; in practice USDC,
   `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` on mainnet.
-- You can reach `/admin/currencies` on the target app as an admin.
+- You can reach `/admin/hub` on the target app as an admin — the Link Hub, from
+  which `Currencies`, `Treasury` and `Squads Treasury` all hang. `/admin` alone is
+  a 404 in turf-monster.
 - **Alex has his Phantom available** — hop 1 needs his cosign, and hop 2 needs
   his plus two more Squads approvals.
 - The turf-vault program on that cluster is not paused.
@@ -299,22 +301,49 @@ not read that extra as an accounting error.
 which on a program that pins its destination should be impossible — treat it as
 an escalation, not a retry.
 
-### Step 5 — Hop 2: move it out of the Squads vault
+### Step 5 — Hop 2: move it out of the Squads Treasury
 
-The money is now in the Squads vault, under 3-of-5 control. **This hop is not in
-our code.** It is Squads' own web app:
+The money is now in the **Squads Treasury**, under 3-of-5 control. **This hop is
+not in our code.** It is Squads' own web app, and the app's name for the door is
+the **Squads Treasury** tile in the **Hub** section of the admin Link Hub:
 
 ```text
-https://app.squads.so/squads/Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm/home
+/admin/hub          # the Link Hub. `/admin` alone is a 404 in turf-monster
 ```
 
-**Use that URL. Do not click through from our app.** Squads keys the route on the
-**vault PDA** plus `/home`, while `Solana::Config.squads_app_url` interpolates the
-**multisig** address and no trailing path — so the link rendered on
-`/admin/authorities` and on the admin hub tile **404s**. That was the second lost
-round trip of the live run, and it is worse than a plain dead link because the URL
-comes from our own code and therefore reads as authoritative. A sibling task fixes
-the helper; until it ships, this SOP carries the working link.
+The link that tile renders comes from **`Solana::Config.squads_app_url`**, which
+is where this URL belongs: it is cluster-keyed, so it cannot serve a devnet Squad
+to a mainnet operator the way a hardcoded address can. Squads keys the route on
+the **vault PDA** plus a `/home` suffix — the same value the program holds as
+`vault_state.treasury_authority`:
+
+| Cluster | Squads Treasury home |
+|---|---|
+| `mainnet-beta` | `https://app.squads.so/squads/Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm/home` |
+| `devnet` | `https://app.squads.so/squads/BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC/home` |
+
+**⚠️ THE HELPER IS FIXED ON A PR THAT HAS NOT MERGED — so today the rendered link
+still 404s.** `link-squads-from-admin` (turf-monster PR #829) repoints
+`squads_app_url` at the vault PDA and adds the `/home` suffix, and adds the
+`Squads Treasury` tile. As of 2026-09-29 that PR is **open into `accepted`, not
+merged**: `accepted` and `main` both still interpolate the **multisig** address
+with no trailing path, so every deployed environment renders a dead link on
+`/admin/hub` and on `/admin/authorities` alike. **Until #829 merges and deploys,
+paste the literal from the table above rather than clicking through.** Re-read
+the helper before trusting this paragraph — it is a statement about a moment, and
+the whole point of the fix is that it stops being true.
+
+That 404 was the second lost round trip of the live run, and it is worse than a
+plain dead link because the URL comes from our own code and therefore reads as
+authoritative.
+
+**Two tiles point at the same Squad home, and that is deliberate — do not tidy
+one away.** A Squads link already existed on the Link Hub before #829, under
+**Signing & Multisig**, labelled `Squads Multisig` for changing program-upgrade
+MEMBERSHIP. That reads like a different errand, which is exactly why the money
+hop was hard to find. #829 adds `Squads Treasury` under **Hub**, beside the
+`Treasury` tile that co-signs hop 1, so the second hop sits next to the hop it
+follows. Same destination, two jobs, two starting points.
 
 Before initiating, confirm the Squads side from chain rather than from the page —
 the same discipline as step 4:
@@ -347,7 +376,7 @@ execute until `N` is 3.
 **Three approvals means three separate wallets, and this SOP cannot supply them.**
 Whose they are is Squads membership, which the read above prints. If the other
 two approvers are not reachable, the collection stops here with the money safely
-in the vault — that is a wait, not a failure.
+in the Squads Treasury — that is a wait, not a failure.
 
 **The exact button labels in Squads are Squads', and they change.** Nothing in
 this repo pins them, so read the page rather than trusting a remembered caption;
@@ -360,7 +389,7 @@ Report both hops separately, and say which one you got to. Give:
 
 - the mint, and the amount swept on hop 1, read from chain in step 4;
 - the `PendingTransaction` slug and the hop-1 signature;
-- the treasury balance now sitting in the Squads vault;
+- the treasury balance now sitting in the Squads Treasury;
 - for hop 2: initiated / `Voting N/3` / executed, and the destination wallet;
 - if you stopped after hop 1, **say so in those words** — "swept to the treasury,
   not yet withdrawn" — because "collected" will be read as "in his wallet".
@@ -376,7 +405,7 @@ Report both hops separately, and say which one you got to. Give:
 | `Unauthorized` | the program's multisig constraint | the signers are not two distinct members of the VaultState set | Cosign as a real member; the three addresses are in the table above |
 | `InsufficientSigners` (6046) | the program, on v0.26 | the action's threshold rose to 3 and the transaction carries 2 | Pick the extra wallet on `/admin/pending_transactions` and **Rebuild** the row (only while it is `pending`). See the timing warning |
 | `Solana::Vault::ThresholdUnreachableError` | Rails, locally | a server-signed path cannot reach the threshold, refused before broadcast | The same remedy, caught before a fee was spent — this is the good outcome |
-| a 404 on the Squads link | `Solana::Config.squads_app_url` | the helper interpolates the multisig, not the vault PDA, and omits `/home` | Use the URL in step 5 |
+| a 404 on the Squads link | `Solana::Config.squads_app_url`, on any environment that has not taken turf-monster PR #829 | the deployed helper interpolates the **multisig** address and omits `/home`; Squads keys on the **vault PDA** plus `/home` | Paste the cluster literal from step 5. Once #829 merges and deploys, the tile's own link is correct and this row retires |
 
 ## ⚠️ turf-vault v0.26 raises the sweep from 2 signers to 3
 
@@ -447,7 +476,7 @@ For a blocker that stops the run, run
 **Why the destination is pinned at all.** A parameterised destination would make
 the 2-of-3 that guards a sweep the only thing standing between two signers and an
 arbitrary wallet. Pinning it to `vault_state.treasury_authority` means the most a
-compromised pair can do is move revenue into a 3-of-5 vault — which is to say,
+compromised pair can do is move revenue into a 3-of-5 Squads Treasury — which is to say,
 nowhere useful. The two hops are the custody design, not an inconvenience in it.
 
 **Why hop 2 is deliberately absent from our code.** Squads ships its own web UI
