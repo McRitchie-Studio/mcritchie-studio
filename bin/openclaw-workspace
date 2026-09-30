@@ -1,0 +1,32 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Build (or refresh) an OpenClaw agent workspace from a fleet soul's docs.
+#
+#   bin/openclaw-workspace tyrion ~/.openclaw/workspace-tyrion
+#
+# Writes SOUL.md, AGENTS.md and IDENTITY.md only (lib/openclaw_workspace.rb);
+# the agent's own memory in that directory is left alone. Reads
+# docs/agents/agents/<soul>/ and its optional openclaw.yml. Writes no secret:
+# credentials belong in OpenClaw's own config, never in the workspace.
+
+require "optparse"
+require_relative "../lib/openclaw_workspace"
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/openclaw-workspace <soul> <workspace-dir>"
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit 0
+  end
+end
+args = parser.parse(ARGV)
+abort parser.banner unless args.size == 2
+
+soul, out = args
+begin
+  written = OpenclawWorkspace.new(soul, docs_root: File.expand_path("../docs/agents/agents", __dir__)).write(File.expand_path(out))
+  puts "#{soul}: wrote #{written.join(', ')} to #{File.expand_path(out)}"
+rescue OpenclawWorkspace::Error => e
+  abort e.message
+end

@@ -98,6 +98,8 @@ class BinHelpFlagClassTest < Minitest::Test
     # through the parser and exits before dispatch — verified against a dead
     # base URL, so no subcommand reached the network.
     "content"                => :optparse,
+    # Leftover positionals beyond <soul> <dir> abort with the usage line.
+    "openclaw-workspace"     => :optparse,
     "control-check"          => :cli_arg_guard,
     # Read-only: it runs the JS dependency audit and reports a verdict; it takes
     # no options and mutates nothing, so there is no first mutation for --help to

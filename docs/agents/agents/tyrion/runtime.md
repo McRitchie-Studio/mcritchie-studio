@@ -1,9 +1,24 @@
-# Tyrion — Runtime (design, not built)
+# Tyrion — Runtime
 
-How Tyrion plays real people: a small program on an isolated machine of
-Alex's that takes Play-Now games from the Cyvasse server, picks setups and
-moves, and talks in the match chat. Nothing on this page exists yet; it is the
-plan the build tasks will follow, and each open decision is marked **Alex**.
+How Tyrion plays real people and talks to them: on an isolated NUC of Alex's,
+OpenClaw carries his Discord conversation, and his runner (`cyvasse`
+`bin/tyrion`) plays his games on the site over the bot API. The bot API
+(task `tyrion-bot-api`) and the runner (task `tyrion-runner`) are built; the
+NUC setup is below.
+
+## On the NUC
+
+Two processes, both calling out only; nothing on the NUC listens.
+
+| Process | What | Needs |
+|---|---|---|
+| OpenClaw, agent `tyrion` | Talks to people on Discord, with no tools | His workspace (`bin/openclaw-workspace tyrion ~/.openclaw/workspace-tyrion`, from a clone of `mcritchie-studio`), his own Discord bot token, the model key; config from [`openclaw.json5.example`](openclaw.json5.example) |
+| `bin/tyrion` (cyvasse) | Plays his matches on the site and talks in their chat | A clone of `cyvasse`, Node 20+, `CYVASSE_BOT_TOKEN` (issued with `bin/rails "bot_tokens:issue[tyrion]"` on the server), optionally the model key and `npm install @anthropic-ai/sdk` in `script/tyrion` |
+
+The NUC reaches three hosts: Discord, the model API and the Cyvasse site.
+To refresh his character after a docs change, pull `mcritchie-studio` and
+re-run `bin/openclaw-workspace`; it rewrites SOUL.md, AGENTS.md and
+IDENTITY.md and leaves his memory alone.
 
 ## The shape
 
@@ -29,9 +44,9 @@ A live move clock is 30 s and the in-app computer already takes 5-13 s to move
 (`LiveMatch::BOT_PACING`), so a two-second poll costs nothing a player can see.
 
 A literally air-gapped machine (no network at all) cannot play an online game.
-The workable reading is an **isolated** one: outbound HTTPS to two hosts only
-(the Cyvasse site and the model API), nothing inbound, nothing else installed
-or signed in. **Alex:** confirm that reading, and which machine.
+The workable reading is an **isolated** one: outbound connections only (the
+Cyvasse site, the model API and Discord), nothing inbound, nothing else
+installed or signed in. The machine is a NUC running OpenClaw.
 
 ### If the runner is off
 
@@ -84,8 +99,9 @@ him". There are two ways that could happen, and each has its own guard.
 | Threat | Guard |
 |---|---|
 | **Talking a secret out of him** (prompt injection in chat) | He holds none. His prompt contains his soul and the game, no keys, no internals. The output filter drops any line containing the runner's own secrets or a URL. The Cyvasse token can only play his own games |
-| **Running up the bill** (chatting endlessly to burn model credits: the real way to reach a card) | A dedicated model API key in its own workspace with a **hard monthly spend limit**; the chat model set by `TYRION_CHAT_MODEL` (default `claude-opus-5-5` at low effort; **Alex** may choose the cheaper `claude-haiku-4-5`), each line cut to 280 characters; at most one reply per opponent message, 20 replies per match, and a per-player daily cap, after which he plays on in silence. **Alex:** set the monthly cap |
-| **The machine is stolen or compromised** | It holds two revocable things: the Cyvasse bot token (revoke with the rake task) and the capped model key (revoke in the console). Nothing else lives on it |
+| **Running up the bill** (chatting endlessly to burn model credits: the real way to reach a card) | A dedicated model API key in its own workspace with a **hard monthly spend limit** (Discord chat through OpenClaw spends from the same key, so the limit covers both); the chat model set by `TYRION_CHAT_MODEL` (default `claude-opus-5-5` at low effort, the call Alex left to us), each line cut to 280 characters; at most one reply per opponent message, 20 replies per match, and a per-player daily cap, after which he plays on in silence. **Alex:** set the monthly cap |
+| **The machine is stolen or compromised** | It holds three revocable things: the Cyvasse bot token (revoke with the rake task), his Discord bot token (reset in the Discord developer portal) and the capped model key (revoke in the console). Nothing else lives on it |
+| **Talking him out of something on Discord** | The same answer as in match chat: he holds nothing, and his OpenClaw agent has no tools, so there is nothing to run, read or send |
 | **The token leaks** | Worst case, someone plays Tyrion's games badly. Revoke and reissue |
 | **Abuse in chat** | He stops talking and flags the match (`/flag`); admins read it on `/admin/matches/:id` |
 | **Name and likeness** | Characters are George R. R. Martin's. The app already names its computer players after them; the portrait rule (original art, no likeness) stands, and he never quotes the books at length. **Alex:** if Tyrion becomes a marketing face rather than a table opponent, that is a legal question worth asking first |

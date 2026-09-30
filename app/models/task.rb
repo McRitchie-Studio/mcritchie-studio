@@ -3109,7 +3109,7 @@ class Task < ApplicationRecord
   # roster that empties with the DB would turn every soul into an unknown. A soul
   # added HERE and not to the seed breaks that promise in the other direction, so
   # keep the two in lockstep — test/models/agents_seed_test.rb asserts both ways.
-  SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason pokemon rex].freeze
+  SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason pokemon rex tyrion].freeze
 
   # RETIRED SLUGS THAT STILL RESOLVE — a READ alias, one release wide. The
   # orchestrator seat `alex` became `xan` on 2026-09-24 (the human operator takes

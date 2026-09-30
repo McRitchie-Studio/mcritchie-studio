@@ -1,0 +1,45 @@
+// Tyrion's OpenClaw agent, Discord account and binding: a template for the
+// isolated NUC. Copy the three blocks into ~/.openclaw/openclaw.json and fill
+// the placeholders. Config shape from docs.openclaw.ai/concepts/multi-agent;
+// check the tool names against the OpenClaw version on the box, because the
+// point of this block is that he has NO tools on Discord.
+//
+// Secrets live here, in OpenClaw's config, never in the workspace (the
+// workspace is built by bin/openclaw-workspace and may be kept in git).
+// Give the model key its own workspace with a hard monthly spend limit.
+{
+  agents: {
+    entries: {
+      tyrion: {
+        workspace: "~/.openclaw/workspace-tyrion",
+        agentDir: "~/.openclaw/agents/tyrion/agent",
+        model: "anthropic/claude-opus-5-5",   // the chat model (Alex left the call to us, 2026-09-29)
+        sandbox: { mode: "all", scope: "agent" },
+        tools: {
+          allow: [],
+          deny: ["exec", "write", "edit", "read", "browser", "web_fetch", "web_search", "sessions_send", "cron"]
+        }
+      }
+    }
+  },
+  channels: {
+    discord: {
+      accounts: {
+        tyrion: {
+          token: "<Tyrion's own Discord bot token; enable Message Content Intent>",
+          guilds: {
+            "<guild id>": {
+              channels: {
+                "<#play-tyrion channel id>": { enabled: true, requireMention: false },
+                "<any other channel id>": { enabled: true, requireMention: true }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  bindings: [
+    { agentId: "tyrion", match: { channel: "discord", accountId: "tyrion" } }
+  ]
+}
