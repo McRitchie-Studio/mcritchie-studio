@@ -27,7 +27,7 @@ class EmailEvents::ResultsTest < ActiveSupport::TestCase
   end
 
   test "the ref is added only to links on our own sites" do
-    assert_equal "https://www.cyvasse.xyz/play?ref=tok", Results.with_ref("https://www.cyvasse.xyz/play", "tok")
+    assert_equal "https://cyvasse.xyz/play?ref=tok", Results.with_ref("https://cyvasse.xyz/play", "tok")
     assert_equal "https://cyvasse.mcritchie.studio/play?ref=tok", Results.with_ref("https://cyvasse.mcritchie.studio/play", "tok"),
                  "the old Cyvasse host stays ours: emails already sent link to it"
     assert_equal "https://mcritchie.studio/build?a=1&ref=tok", Results.with_ref("https://mcritchie.studio/build?a=1&ref=old", "tok")

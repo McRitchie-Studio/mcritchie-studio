@@ -54,8 +54,8 @@ module EmailEvents
     # Our own apps only. Customer apps also live on *.mcritchie.studio, and
     # an email's token is not theirs to receive, so this is a list, not a
     # suffix match. Add an app here when an email links to it. Cyvasse is on
-    # www.cyvasse.xyz; its old host stays for the emails already sent.
-    APP_HOSTS = %w[mcritchie.studio www.mcritchie.studio www.cyvasse.xyz cyvasse.mcritchie.studio].freeze
+    # cyvasse.xyz; its old host stays for the emails already sent.
+    APP_HOSTS = %w[mcritchie.studio www.mcritchie.studio cyvasse.xyz cyvasse.mcritchie.studio].freeze
 
     def our_host?(host)
       APP_HOSTS.include?(host.to_s.downcase.delete_suffix("."))

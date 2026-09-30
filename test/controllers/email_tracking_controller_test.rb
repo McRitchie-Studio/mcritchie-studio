@@ -75,7 +75,7 @@ class EmailTrackingControllerTest < ActionDispatch::IntegrationTest
     delivery = cyvasse.deliveries.create!(contact: @contact)
     get email_click_path(token: delivery.token, l: "play")
 
-    assert_redirected_to "https://www.cyvasse.xyz/?ref=#{delivery.token}"
+    assert_redirected_to "https://cyvasse.xyz/?ref=#{delivery.token}"
     assert_equal "play", delivery.events.of_kind("clicked").sole.link_key
   end
 

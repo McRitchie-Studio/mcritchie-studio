@@ -8,7 +8,7 @@ tribal knowledge. In time he will also be its house player, playing real
 people as an agent operating a user account; not yet (see "Decisions"). His character is in [`soul.md`](soul.md); how he plays is in
 [`playbook.md`](playbook.md).
 
-Cyvasse lives at https://www.cyvasse.xyz. It is Alex's first app
+Cyvasse lives at https://cyvasse.xyz. It is Alex's first app
 (2014–15), rebuilt as a managed McRitchie Studio satellite and relaunched on
 2026-09-29 to a legacy community of about 18,800 players who played between
 2015 and 2023.

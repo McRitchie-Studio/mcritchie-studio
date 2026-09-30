@@ -19,7 +19,7 @@ class Broadcast < ApplicationRecord
     # already sent 301 there with their ?ref= intact (cyvasse's
     # Cyvasse::CanonicalHostRedirect).
     "cyvasse_is_back" => {
-      "play" => "https://www.cyvasse.xyz/",
+      "play" => "https://cyvasse.xyz/",
       "build" => "https://mcritchie.studio/build"
     }.freeze
   }.freeze
