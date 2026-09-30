@@ -259,10 +259,15 @@ the `MULTISIG_COSIGNER` default) and signs. The server already holds the admin
 slot, so on v0.25 that is the second of two signatures and the transaction
 broadcasts.
 
-**On v0.26 it will not be enough** — see the timing warning below. The page names
-the eligible extra wallets, and the extra slots are part of the transaction
-message: they cannot be added after the first wallet has signed. If the queue
-tells you a third signature is needed, the row must be rebuilt, not patched.
+**On v0.26 it will not be enough** — see the timing warning below. **Pick the
+extra wallet on the page BEFORE anyone clicks sign.** The extra signer slots are
+part of the transaction message, so they cannot be added afterwards without
+invalidating the signature already on it; a row built for two and then handed a
+third wallet is short before Phantom even opens. The remedy is the page's
+**Rebuild**, which re-derives the whole transaction with the extra slots reserved
+(`PendingTransactionsController#rebuild` handles `sweep_operator_revenue`
+explicitly, and re-reads the treasury ATA while it is there). Rebuild works only
+while the row is still `pending`.
 
 Note the row's slug and its transaction signature from the page. The live run
 recorded `ptx-398`, signature `4VETTK6dy3nZhNNFH8WovW6XGf6u…`.
@@ -369,7 +374,7 @@ Report both hops separately, and say which one you got to. Give:
 | `EmptyRevenueAccount` | the program, `handle_sweep_operator_revenue` | same condition, reached on chain — the balance emptied between preflight and broadcast | Re-read both balances (step 4). Someone else's sweep may already have landed |
 | `TreasuryAuthorityMismatch` | the program | the destination ATA is not owned by `vault_state.treasury_authority` | **Do not pick a different address.** The destination is pinned; a mismatch means you built the transaction by hand with the wrong ATA, or `treasury_authority` is not what you assumed. Re-read `VaultState` |
 | `Unauthorized` | the program's multisig constraint | the signers are not two distinct members of the VaultState set | Cosign as a real member; the three addresses are in the table above |
-| `InsufficientSigners` (6046) | the program, on v0.26 | the action's threshold rose to 3 and the transaction carries 2 | Rebuild the row with an extra cosigner slot. See the timing warning |
+| `InsufficientSigners` (6046) | the program, on v0.26 | the action's threshold rose to 3 and the transaction carries 2 | Pick the extra wallet on `/admin/pending_transactions` and **Rebuild** the row (only while it is `pending`). See the timing warning |
 | `Solana::Vault::ThresholdUnreachableError` | Rails, locally | a server-signed path cannot reach the threshold, refused before broadcast | The same remedy, caught before a fee was spent — this is the good outcome |
 | a 404 on the Squads link | `Solana::Config.squads_app_url` | the helper interpolates the multisig, not the vault PDA, and omits `/home` | Use the URL in step 5 |
 
