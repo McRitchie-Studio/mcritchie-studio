@@ -7,9 +7,9 @@ This is Turf Monster's `collect-vault-revenue` SOP. It takes accumulated
 delivers it to Alex's own wallet.
 
 **It is TWO hops, and the first one does not reach his wallet.** Read the next
-section before running anything; a reader who believes one sweep finishes the job
-will watch a confirmed transaction land money somewhere he cannot spend it, and
-conclude something broke.
+section before running anything. Whoever believes one sweep finishes the job will
+watch a confirmed transaction land the money somewhere nobody can spend it from,
+and conclude something broke.
 
 Run it when entry fees have accumulated and Alex asks for them — after a slate
 settles, at the end of a month, or on request. Nothing schedules it and nothing
@@ -46,8 +46,7 @@ or `main`, never promotes, and never deploys.
 destination to the treasury authority — which IS the Squads vault PDA — so a
 successful sweep moves the money from one account nobody can spend from to
 another account nobody can spend from alone. It is now under 3-of-5 control
-instead of 2-of-3, which is the point: the sweep is the bookkeeping move, hop 2
-is the withdrawal.
+instead of 2-of-3, and that is the point: hop 1 consolidates, hop 2 withdraws.
 
 **Hop 2 has no code, no job, no rake task, and no admin button.** Do not go
 looking for one and do not build one in the middle of this SOP. It is a human in
