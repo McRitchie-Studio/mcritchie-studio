@@ -15,8 +15,10 @@ class Broadcast < ApplicationRecord
   # Links a template fixes in its copy rather than taking from a column:
   # template_key => { link key => URL }. Tracked like TRACKED_LINKS.
   TEMPLATE_LINKS = {
-    # Cyvasse lives on its own domain; the old cyvasse.mcritchie.studio links
-    # already sent 301 there with their ?ref= intact (cyvasse's
+    # Cyvasse lives on its own domain. Sent emails carry hub tracker links,
+    # which resolve this URL at click time (EmailTrackingController#click),
+    # so they follow this change. A direct cyvasse.mcritchie.studio link 301s
+    # here with its path and ?ref= intact (cyvasse's
     # Cyvasse::CanonicalHostRedirect).
     "cyvasse_is_back" => {
       "play" => "https://cyvasse.xyz/",
