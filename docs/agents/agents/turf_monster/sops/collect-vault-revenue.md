@@ -93,10 +93,11 @@ dangerous is entry fees being part of a prize pool. They are not:
 
 | Fact | Where |
 |---|---|
-| The entry fee transfers **user ATA → `op_rev` ATA** at entry time | `turf-vault/programs/turf_vault/src/instructions/enter_contest.rs` — the SPL transfer in `handle_enter_contest`; `enter_contest_with_token.rs` does the same |
+| The entry fee transfers **user ATA → `op_rev` ATA** at entry time | `turf-vault/programs/turf_vault/src/instructions/enter_contest.rs` — the SPL transfer in `handle_enter_contest` |
 | It never enters the prize pool | `settle_contest.rs` header: *"Entry fees are NOT included anymore — they sit in op_rev ATAs, separate from the prize pool"* |
 | Payouts are a **fixed schedule per format**, not a share of fees | `Contest::FORMATS` in `turf-monster/app/models/contest.rb` |
-| Pools are funded separately, at contest creation | the `prize_pool` PDA, seeded at `create_contest` — a different account from `op_rev`, reachable only by `settle_contest` and `cancel_contest` |
+| Pools are funded separately, at contest creation | the creator's USDC → the per-contest `prize_pool` PDA at seeds `[b"prize_pool", contest_id]`, in `create_contest.rs` — a different account from `op_rev`, reachable only by `settle_contest` and `cancel_contest` |
+| A **free entry pays no fee at all** | `enter_contest_with_token.rs` performs no SPL transfer and touches no `op_rev` account — it burns a token instead. So a contest full of free entries adds nothing to sweep |
 
 So the balance in `op_rev` is operator revenue already, and sweeping it **strands
 no payout**. That is a fact about the accounts, not a judgment — but see the
@@ -370,9 +371,17 @@ Report both hops separately, and say which one you got to. Give:
 **Today mainnet and devnet both run v0.25.0, and `sweep_operator_revenue` is
 2-of-3.** v0.26 makes signature thresholds DATA (`GovernanceConfig`) and raises
 this action to **3**, alongside `settle_contest`, `cancel_contest`,
-`register_currency`, `deactivate_currency` and `unpause`. The table is in
-`turf-monster/docs/SOLANA.md` under *"v0.26 signature thresholds"*; the same
-change is noted in `Solana::Vault` above `build_sweep_operator_revenue`.
+`register_currency`, `deactivate_currency` and `unpause`. Three places say so and
+they agree: `turf-monster/docs/SOLANA.md` under *"v0.26 signature thresholds"*;
+`Solana::Vault`'s own section comment above `build_sweep_operator_revenue`
+(*"2 on v0.25, SWEEP_OPERATOR_REVENUE 3 from v0.26"*); and the program itself,
+where `DEFAULT_THRESHOLDS` in `turf-vault`'s `state.rs` sets
+`gov_action::SWEEP_OPERATOR_REVENUE` to `3` and the instruction header reads
+*"Auth: `gov_action::SWEEP_OPERATOR_REVENUE` (default 3)"*.
+
+**What does NOT change at v0.26: the pinned destination.** The `accepted` build
+still requires `treasury_ata.owner == vault_state.treasury_authority` and still
+reads `amount == 0` as sweep-all. Only the signer count moves.
 
 **v0.26 is on `accepted` and NOT deployed.** So the signer count can change under
 a reader of this SOP without a word of this file changing. What that costs you:
