@@ -144,6 +144,25 @@ class StagedEmailTest < ActiveJob::TestCase
     assert_no_emails { BroadcastSendJob.perform_now(@broadcast.id, @ann.id, row(@ann).id) }
   end
 
+  test "the queued_at claim is atomic: a row claimed between this run's read and its claim is not queued twice" do
+    stage!
+    row(@ann).approve!
+    ann_id = row(@ann).id
+    raced = false
+    # A second execute claims Ann's row just after this one reads the ready rows.
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      next if raced || payload[:sql] !~ /SELECT "staged_emails"\."id", "staged_emails"\."contact_id"/
+
+      raced = true
+      StagedEmail.where(id: ann_id).update_all(queued_at: Time.current)
+    end
+    assert_equal 0, @broadcast.execute_staged!(limit: 10).queued, "UPDATE … WHERE queued_at IS NULL must touch nothing"
+    assert raced, "the race never ran, so this test proved nothing"
+    assert_no_enqueued_jobs(only: BroadcastSendJob)
+  ensure
+    ActiveSupport::Notifications.unsubscribe(sub) if sub
+  end
+
   test "a reader who unsubscribes after approval is skipped at send" do
     stage!
     row(@ann).approve!
