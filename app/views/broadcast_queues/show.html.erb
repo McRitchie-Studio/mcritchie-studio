@@ -1,0 +1,214 @@
+<% content_for(:title, "Queue · #{@broadcast.subject.presence || @broadcast.slug}") %>
+<%# The staged email queue (task staged-email-queue): every row is an email
+    already rendered for its reader and held. Nothing on this page sends except
+    the confirmed Execute form at the bottom of the confirm panel. %>
+<div class="max-w-6xl mx-auto px-4 py-8 space-y-6" data-broadcast-queue>
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div class="min-w-0">
+      <p class="text-secondary text-sm"><%= link_to "← All broadcasts", broadcasts_path, class: "text-primary underline" %></p>
+      <h1 class="text-2xl font-extrabold text-heading mt-1">Queue</h1>
+      <p class="text-secondary text-sm mt-1 break-words"><%= @broadcast.subject.presence || "(no subject)" %> · <%= @broadcast.template_label %> · <%= @broadcast.target_list.presence || "no list" %></p>
+    </div>
+    <nav class="flex gap-2" aria-label="Broadcast">
+      <%= link_to "Editor", edit_broadcast_path(@broadcast), class: "btn btn-secondary" %>
+      <span class="btn btn-primary" aria-current="page">Queue</span>
+    </nav>
+  </div>
+
+  <%# The page's one message: these are loaded, not fired. %>
+  <section class="card p-4 border-l-4 border-warning flex flex-wrap items-start gap-3" data-locked-banner>
+    <div class="text-2xl leading-none" aria-hidden="true">&#128274;</div>
+    <div class="min-w-0 flex-1">
+      <h2 class="font-bold text-heading">Locked and loaded, not sent</h2>
+      <p class="text-sm text-secondary mt-1">Each row is one reader's email, rendered with their own subject and fields and held here. Nothing leaves until it is approved <em>and</em> you execute. Preview shows the exact stored email.</p>
+    </div>
+    <div class="text-sm" data-gate-status="<%= @gate.paused? ? "paused" : "open" %>">
+      <% if @gate.paused? %>
+        <span class="inline-block px-2 py-0.5 rounded border text-xs bg-danger/10 text-danger-ink border-danger/40">Send gate paused</span>
+        <div class="text-xs text-danger-ink mt-1"><%= @gate.reasons.join("; ") %></div>
+      <% else %>
+        <span class="inline-block px-2 py-0.5 rounded border text-xs bg-success/10 text-success-ink border-success/40">Send gate open</span>
+        <div class="text-xs text-secondary mt-1"><%= number_with_delimiter(@gate.remaining) %> of <%= number_with_delimiter(@gate.daily_cap) %> left today</div>
+      <% end %>
+    </div>
+  </section>
+
+  <section aria-labelledby="queue-counts-heading">
+    <h2 id="queue-counts-heading" class="sr-only">Counts</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <% [ [ "staged", "held for review" ],
+           [ "approved", "#{number_with_delimiter(@counts["queued"])} queued to send" ],
+           [ "sent", "delivered to the mail service" ],
+           [ "skipped", "never rendered or dropped" ],
+           [ "cancelled", "will not be sent" ] ].each do |key, detail| %>
+        <%= link_to broadcast_queue_path(@broadcast, status: key), class: "card p-4 min-w-0 block hover:border-primary #{'ring-2 ring-primary' if @filter == key}", data: { count: key } do %>
+          <div class="text-xs font-semibold uppercase tracking-widest text-muted"><%= staged_status_label(key) %></div>
+          <div class="text-2xl sm:text-3xl font-extrabold text-heading tabular-nums mt-1" data-count-value><%= number_with_delimiter(@counts[key]) %></div>
+          <div class="text-xs text-secondary mt-1 truncate" title="<%= detail %>"><%= detail %></div>
+        <% end %>
+      <% end %>
+    </div>
+    <% if @skip_reasons.any? %>
+      <ul class="mt-3 flex flex-wrap gap-2 text-xs" data-skip-reasons aria-label="Skip reasons">
+        <% @skip_reasons.each do |reason, n| %>
+          <li class="px-2 py-0.5 rounded border bg-danger/10 text-danger-ink border-danger/40"><%= reason.presence || "no reason" %> · <%= number_with_delimiter(n) %></li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <%# Actions. Staging and approving send nothing; Execute only opens the confirm step. %>
+  <section class="card p-4 grid gap-4 md:grid-cols-3" aria-label="Queue actions">
+    <%= form_with url: stage_broadcast_queue_path(@broadcast), method: :post, class: "min-w-0 space-y-2" do %>
+      <div class="text-xs font-semibold uppercase tracking-widest text-muted">1 · Stage</div>
+      <p class="text-xs text-secondary">Render for readers on <strong><%= @broadcast.target_list.presence || "—" %></strong> not yet staged or sent.</p>
+      <div class="flex gap-2">
+        <input type="number" name="limit" min="1" placeholder="All" aria-label="How many to stage" class="input-field w-24 min-w-0">
+        <button class="btn btn-secondary">Stage</button>
+      </div>
+    <% end %>
+    <%= form_with url: approve_broadcast_queue_path(@broadcast), method: :post, class: "min-w-0 space-y-2" do %>
+      <div class="text-xs font-semibold uppercase tracking-widest text-muted">2 · Approve</div>
+      <p class="text-xs text-secondary">Approve the longest-held staged emails, or tick rows below.</p>
+      <div class="flex gap-2">
+        <input type="number" name="count" min="1" value="<%= [ @counts["staged"], 50 ].min.clamp(1, 50) %>" aria-label="How many to approve" class="input-field w-24 min-w-0">
+        <button class="btn btn-secondary" <%= "disabled" if @counts["staged"].zero? %>>Approve next N</button>
+      </div>
+    <% end %>
+    <%= form_with url: broadcast_queue_path(@broadcast), method: :get, class: "min-w-0 space-y-2" do %>
+      <div class="text-xs font-semibold uppercase tracking-widest text-muted">3 · Execute</div>
+      <p class="text-xs text-secondary"><%= number_with_delimiter(@ready) %> approved and ready. Sends are spaced for the rate limit.</p>
+      <input type="hidden" name="confirm" value="execute">
+      <div class="flex gap-2">
+        <input type="number" name="limit" min="1" max="<%= Broadcasts::SendGate::DAILY_CAP %>" value="<%= [ @ready, @gate.remaining ].min.clamp(1, Broadcasts::SendGate::DAILY_CAP) %>" aria-label="Most to send" class="input-field w-24 min-w-0">
+        <button class="btn btn-primary" <%= "disabled" if @ready.zero? %>>Execute approved…</button>
+      </div>
+    <% end %>
+  </section>
+
+  <% if @confirm_execute %>
+    <section class="card p-5 border-2 <%= @gate.paused? ? 'border-danger' : 'border-warning' %>" role="alertdialog" aria-labelledby="confirm-execute-heading" data-confirm-execute>
+      <h2 id="confirm-execute-heading" class="text-lg font-bold text-heading">
+        <% if @gate.paused? %>
+          Execute is paused
+        <% else %>
+          Send <span data-confirm-count><%= number_with_delimiter(@execute_limit) %></span> approved email<%= "s" unless @execute_limit == 1 %> now?
+        <% end %>
+      </h2>
+      <dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div><dt class="text-xs text-muted">Approved, ready</dt><dd class="font-semibold text-heading tabular-nums"><%= number_with_delimiter(@ready) %></dd></div>
+        <div><dt class="text-xs text-muted">Sent, last 24h</dt><dd class="font-semibold text-heading tabular-nums"><%= number_with_delimiter(@gate.sent) %> / <%= number_with_delimiter(@gate.daily_cap) %></dd></div>
+        <div><dt class="text-xs text-muted">Bounce rate</dt><dd class="font-semibold tabular-nums <%= @gate.bounce_rate > Broadcasts::SendGate::MAX_BOUNCE_RATE ? 'text-danger-ink' : 'text-heading' %>"><%= number_to_percentage(100 * @gate.bounce_rate, precision: 1) %> <span class="text-xs text-muted">(max 2%)</span></dd></div>
+        <div><dt class="text-xs text-muted">Complaint rate</dt><dd class="font-semibold tabular-nums <%= @gate.complaint_rate > Broadcasts::SendGate::MAX_COMPLAINT_RATE ? 'text-danger-ink' : 'text-heading' %>"><%= number_to_percentage(100 * @gate.complaint_rate, precision: 2) %> <span class="text-xs text-muted">(max 0.05%)</span></dd></div>
+      </dl>
+      <% if @gate.paused? %>
+        <p class="mt-3 text-sm text-danger-ink" data-gate-reasons><%= @gate.reasons.join("; ") %>. Nothing can be sent until the gate reopens.</p>
+      <% end %>
+      <div class="mt-4 flex flex-wrap gap-2">
+        <%= link_to "Back", broadcast_queue_path(@broadcast), class: "btn btn-secondary" %>
+        <% unless @gate.paused? || @execute_limit.zero? %>
+          <%= form_with url: execute_broadcast_queue_path(@broadcast), method: :post do %>
+            <input type="hidden" name="limit" value="<%= @execute_limit %>">
+            <button class="btn btn-primary">Yes, send <%= number_with_delimiter(@execute_limit) %></button>
+          <% end %>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+
+  <nav class="flex flex-wrap gap-2 text-sm" aria-label="Filter by status">
+    <% BroadcastQueuesController::FILTERS.each do |key| %>
+      <%= link_to (key == "all" ? "All" : staged_status_label(key)), broadcast_queue_path(@broadcast, status: (key unless key == "all")),
+            class: "px-3 py-1 rounded-full border #{@filter == key ? 'bg-primary text-white border-primary' : 'border-subtle text-secondary hover:text-heading'}",
+            "aria-current": (@filter == key ? "page" : nil) %>
+    <% end %>
+  </nav>
+
+  <%# The bulk form stands alone; the table's checkboxes and buttons join it
+      with form=, so each row's Re-stage form is not nested inside it. %>
+  <%= form_with url: approve_broadcast_queue_path(@broadcast, status: (@filter unless @filter == "all")), method: :post, id: "queue-bulk" do %><input type="hidden" name="bulk" value="1"><% end %>
+  <% shown_staged = @rows.select(&:staged?) %>
+
+  <section class="card overflow-hidden" aria-label="Staged emails">
+    <div class="flex flex-wrap items-center justify-between gap-2 p-3 border-b border-subtle">
+      <p class="text-xs text-secondary" data-row-count>
+        <%= number_with_delimiter(@total) %> email<%= "s" unless @total == 1 %><%= " · first #{BroadcastQueuesController::ROW_LIMIT} shown" if @total > BroadcastQueuesController::ROW_LIMIT %>
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <button form="queue-bulk" class="btn btn-secondary text-xs">Approve selected</button>
+        <button form="queue-bulk" formaction="<%= cancel_broadcast_queue_path(@broadcast, status: (@filter unless @filter == "all")) %>" class="btn btn-secondary text-xs">Cancel selected</button>
+        <% if shown_staged.any? %>
+          <%= form_with url: approve_broadcast_queue_path(@broadcast, status: (@filter unless @filter == "all")), method: :post, class: "contents" do %>
+            <% shown_staged.each do |row| %><input type="hidden" name="ids[]" value="<%= row.id %>"><% end %>
+            <button class="btn btn-primary text-xs" data-approve-shown>Approve all <%= shown_staged.size %> shown</button>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[56rem]">
+        <thead class="text-secondary border-b border-subtle text-xs">
+          <tr>
+            <th class="p-3 w-8"><span class="sr-only">Select</span></th>
+            <th class="text-left p-3">Recipient</th>
+            <th class="text-left p-3">Personal subject</th>
+            <th class="text-left p-3">Merge fields</th>
+            <th class="text-left p-3">Status</th>
+            <th class="text-right p-3"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if @rows.empty? %>
+            <tr><td colspan="6" class="p-6 text-center text-secondary">Nothing <%= @filter == "all" ? "staged yet. Stage the list above; nothing is sent." : "#{staged_status_label(@filter).downcase}." %></td></tr>
+          <% end %>
+          <% @rows.each do |row| %>
+            <% key = staged_status_key(row) %>
+            <tr class="border-b border-subtle/50 align-top" data-staged-row="<%= row.id %>" data-status="<%= key %>">
+              <td class="p-3">
+                <% if row.staged? || (row.approved? && !row.queued?) %>
+                  <input type="checkbox" name="ids[]" value="<%= row.id %>" form="queue-bulk" aria-label="Select <%= row.email %>" class="rounded border-subtle">
+                <% end %>
+              </td>
+              <td class="p-3 text-heading font-medium break-all max-w-[16rem]"><%= row.email || row.contact.email %></td>
+              <td class="p-3 text-body max-w-[22rem]">
+                <% if row.rendered_subject %>
+                  <span class="break-words"><%= row.rendered_subject %></span>
+                <% else %>
+                  <span class="text-muted">—</span>
+                <% end %>
+              </td>
+              <td class="p-3 text-xs text-secondary">
+                <% if row.key_merge_fields.any? %>
+                  <dl class="flex flex-wrap gap-x-3 gap-y-0.5">
+                    <% row.key_merge_fields.first(4).each do |k, v| %>
+                      <div class="whitespace-nowrap"><dt class="inline text-muted"><%= k %></dt> <dd class="inline text-heading"><%= v %></dd></div>
+                    <% end %>
+                  </dl>
+                <% else %>
+                  <span class="text-muted">—</span>
+                <% end %>
+              </td>
+              <td class="p-3">
+                <span class="inline-block px-2 py-0.5 rounded border text-xs whitespace-nowrap <%= staged_status_classes(key) %>"><%= staged_status_label(key) %></span>
+                <% if row.skip_reason.present? %><div class="text-xs text-danger-ink mt-0.5"><%= row.skip_reason %></div><% end %>
+                <% if row.sent_at %><div class="text-xs text-muted mt-0.5"><%= contact_time(row.sent_at) %></div><% end %>
+              </td>
+              <td class="p-3 text-right whitespace-nowrap">
+                <% if row.rendered_html.present? %>
+                  <%= link_to "Preview", preview_broadcast_queue_path(@broadcast, email_id: row.id), target: "_blank", rel: "noopener", class: "text-primary underline" %>
+                <% end %>
+                <% unless row.sent? || row.queued? %>
+                  <button form="<%= dom_id(row, :restage) %>" class="ml-3 text-secondary underline hover:text-heading">Re-stage</button>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <% @rows.each do |row| %>
+    <% next if row.sent? || row.queued? %>
+    <%= form_with url: restage_broadcast_queue_path(@broadcast, email_id: row.id, status: (@filter unless @filter == "all")), method: :post, id: dom_id(row, :restage), class: "hidden" do %><% end %>
+  <% end %>
+</div>

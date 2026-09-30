@@ -39,6 +39,8 @@ class BroadcastQueuesController < ApplicationController
 
   # POST .../queue/approve — the selected rows (ids[]), or the next N held.
   def approve
+    return redirect_to(back_to_queue, alert: "Select rows first.") if params[:bulk].present? && params[:ids].blank?
+
     rescue_and_log(target: @broadcast) do
       count = if params[:ids].present?
         @broadcast.approve_staged!(ids: Array(params[:ids]))
@@ -52,6 +54,8 @@ class BroadcastQueuesController < ApplicationController
   # POST .../queue/cancel — the selected rows. A row already handed to the
   # send job is left alone.
   def cancel
+    return redirect_to(back_to_queue, alert: "Select rows first.") if params[:ids].blank?
+
     rescue_and_log(target: @broadcast) do
       rows = @broadcast.staged_emails.where(id: Array(params[:ids]))
       cancelled = rows.count { |row| cancellable?(row) && row.cancel! }

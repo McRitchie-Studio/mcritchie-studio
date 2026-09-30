@@ -39,6 +39,7 @@
               <td class="p-3 text-secondary"><%= b.updated_at.strftime("%b %-d, %Y") %></td>
               <td class="p-3 text-right whitespace-nowrap">
                 <%= link_to "Edit", edit_broadcast_path(b), class: "text-primary underline" %>
+                <%= link_to "Queue", broadcast_queue_path(b), class: "text-primary underline ml-3" %>
               </td>
             </tr>
           <% end %>

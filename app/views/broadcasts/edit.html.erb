@@ -4,7 +4,8 @@
       <h1 class="text-2xl font-extrabold text-heading">Edit broadcast</h1>
       <p class="text-secondary text-sm mt-1"><%= link_to "← All broadcasts", broadcasts_path, class: "text-primary underline" %></p>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <%= link_to "Queue", broadcast_queue_path(@broadcast), class: "btn btn-secondary" %>
       <%= link_to "Open preview ↗", preview_broadcast_path(@broadcast), target: "_blank", class: "btn btn-outline" %>
       <button type="button" id="copy-html-btn"
               data-export-url="<%= preview_broadcast_path(@broadcast, assets: 's3') %>"
