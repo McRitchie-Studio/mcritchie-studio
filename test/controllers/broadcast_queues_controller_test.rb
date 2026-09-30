@@ -127,5 +127,13 @@ class BroadcastQueuesControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@admin)
     assert_no_enqueued_jobs { post deliver_broadcast_path(@broadcast), params: { audience: "cyvasse-legacy" } }
     assert_redirected_to broadcast_queue_path(@broadcast)
+
+    get edit_broadcast_path(@broadcast)
+    assert_select "input[type=submit][value='Send now']", count: 0
+    assert_select "a[data-personalized-send][href=?]", broadcast_queue_path(@broadcast)
+
+    plain = Broadcast.create!(slug: "plain", subject: "Hi", template_key: "cyvasse_is_back")
+    get edit_broadcast_path(plain)
+    assert_select "input[type=submit][value='Send now']", count: 1
   end
 end
