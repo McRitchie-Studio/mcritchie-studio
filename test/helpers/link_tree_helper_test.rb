@@ -209,6 +209,9 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # defined for it — a new link raises NameError in EVERY test in this file, which is how
   # the Models link took CI red on 2026-09-27 while the page itself was green.
   def model_pipeline_path = "/model_pipeline"
+  def broadcasts_path = "/broadcasts"
+  def contacts_path = "/contacts"
+  def broadcast_analytics_path = "/broadcasts/analytics"
   def nfl_hub_path = "/nfl"
   def games_season_path(year) = "/games/#{year}"
   def teams_path = "/teams"
