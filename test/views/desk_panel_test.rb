@@ -56,6 +56,27 @@ class DeskPanelTest < ActionView::TestCase
     assert_equal "57", css_select("[data-test='desk-tile-held'] .font-mono").first.text.strip
   end
 
+  # desk-ledger-stops-ghosting. A scratch worktree is still visible, as a count, without a
+  # ledger row that could only ever end as a false "left without a teardown record".
+  test "[component] unmanaged worktrees are counted beside the tiles, not ledgered" do
+    scratch = desk(path: "/private/tmp/scratchpad/wt-review", "managed" => false)
+    DeskRecord.sync!(registry(desks: [desk, scratch], summary: { "unmanaged" => 1 }))
+
+    render_panel
+
+    assert_equal "1", css_select("[data-test='desk-tile-desks'] .font-mono").first.text.strip
+    assert_includes css_select("[data-test='desk-panel-unmanaged']").first.text.squish,
+                    "Plus 1 unmanaged worktree outside the desk roots"
+  end
+
+  test "[component] no unmanaged line when the snapshot counted none" do
+    DeskRecord.sync!(registry(desks: [desk]))
+
+    render_panel
+
+    assert_empty css_select("[data-test='desk-panel-unmanaged']")
+  end
+
   # A capacity number with no age on it is the kind of number people trust for a week.
   test "[component] the panel stamps the age of its answer and calls out a stale one" do
     DeskRecord.sync!(registry(desks: [desk], generated_at: 8.hours.ago.utc.iso8601))
