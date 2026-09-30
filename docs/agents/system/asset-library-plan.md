@@ -365,7 +365,7 @@ until its Wave 2 steps run, so each cutover still runs its own catch-up copy.
 | User | Path | Last used | Retire when |
 |---|---|---|---|
 | `mcritchie-s3` | `/` | 2026-09-29, S3 | every app's Active Storage is on `r2`, every `Studio::S3` is on `r2`, the hub's `DeskCapture` is on `DESK_CAPTURE_BACKEND=r2` (on S3 all three sign with this key through `AWS_ACCESS_KEY_ID`), and the AWS config vars are unset |
-| `mcr-mcritchie-industries-prod` | `/mcr/` | 2026-09-28, S3 | Industries reaches `ACTIVE_STORAGE_BACKEND=r2` |
+| `mcr-mcritchie-industries-prod` | `/mcr/` | 2026-09-28, S3 | Industries' Active Storage is on `r2`, its `Studio::S3` (`KnowledgeDoc`, `Slack::ChannelIngest`) is on `STUDIO_S3_BACKEND=r2` (on S3 both sign through `AWS_ACCESS_KEY_ID`), and its AWS config vars are unset |
 | `mcr-mcritchie-industries-dev` | `/mcr/` | 2026-09-03, S3 | with the prod user |
 | `mcritchie-ses` | `/` | 2026-07-16, SES (before this audit, whose own SES read now shows as its last use) | now: SES inbound delivers as the service, not as this user (see SES below) |
 | `agents-admin` | `/` | 2026-09-29, S3 | last, after the buckets are gone |
