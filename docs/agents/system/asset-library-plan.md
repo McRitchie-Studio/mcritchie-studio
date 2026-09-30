@@ -72,7 +72,7 @@ and `DeskCapture`'s private R2 bucket.
 |---|---|---|
 | 0 | credentials | **done**: `cloudflare.studio.provision` filed and verified |
 | 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, released in `studio-engine` 0.77); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md), run nightly for `moms-app` and `mcritchie-industries` |
-| 2 | per-app S3 → R2 cutover | **in progress** (2026-09-29): `moms-app` and `mcritchie-industries` R2-primary with an S3 mirror, soaking; `mcritchie-studio` the same since 2026-09-30 (soak to about 2026-10-07); `turf-monster` code shipped and inert, objects pre-copied, DNS on Cloudflare and `assets.turfmonster.media` serving (2026-09-30), cutover next |
+| 2 | per-app S3 → R2 cutover | **in progress** (2026-09-29): `moms-app` and `mcritchie-industries` R2-primary with an S3 mirror, soaking; `mcritchie-studio` the same since 2026-09-30 (soak to about 2026-10-07); `turf-monster` the same since 2026-09-30 (release v297, soak to about 2026-10-07); record in [`r2-cutover-record.md`](r2-cutover-record.md) |
 | 3 | asset catalog | proposal below |
 | 4 | load the collections | after 3 |
 | 5 | business documents | **done for McRitchie Studio** (Shared Drives); Commercial Welding open |
@@ -134,7 +134,7 @@ APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  
 | `commercial-welding` | nothing to migrate | empty buckets, no writer; retire the S3 pair in Wave 7 |
 | `mcritchie-industries` | **cutting over**: `ACTIVE_STORAGE_BACKEND=mirror_to_s3` and `STUDIO_S3_BACKEND=r2`, soaking before step 9 (2026-09-29) | on `studio-engine` 0.77.4. Private objects only |
 | `mcritchie-studio` | **cutting over**: `STUDIO_S3_BACKEND=r2` and `ACTIVE_STORAGE_BACKEND=mirror_to_s3`, soaking before step 9 (2026-09-30, release v530) | DNS for `assets.` cleared 2026-09-30; the URL rewrite above precedes Wave 7 |
-| `turf-monster` | ready: DNS for `assets.` cleared 2026-09-30 | cutover next |
+| `turf-monster` | **cutting over**: `STUDIO_S3_BACKEND=r2` and `ACTIVE_STORAGE_BACKEND=mirror_to_s3`, soaking before step 9 (2026-09-30, release v297) | DNS for `assets.` cleared 2026-09-30; no stored S3 URL, so no rewrite |
 
 ## Wave 2 — the per-app cutover recipe
 
