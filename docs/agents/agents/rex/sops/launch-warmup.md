@@ -35,7 +35,7 @@ does the step by hand.
 | Launch | Run phases | Skip |
 |---|---|---|
 | **(a) New app** on a new domain | 0, 1, 2, 3, 4 | — |
-| **(a′) New app** on a `*.mcritchie.studio` subdomain | 1, 2, 3 (link migration off) | 0 and 4: it inherits an established domain |
+| **(a′) New app** on a `*.mcritchie.studio` subdomain | 1, 2, 3 (link migration off), 4 | 0: it inherits an established domain, which is why it needs Phase 4's own sending subdomain |
 | **(b) New domain** for an existing app | 0, 3 (link migration on), 4 | 1 and 2 if the list is already warm |
 | **(c) New or imported list** | 1, 2, 3 (link migration off) | 0 and 4 unless a new domain is also involved |
 
