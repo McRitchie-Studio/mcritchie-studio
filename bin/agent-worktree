@@ -48,6 +48,9 @@ require_relative "../lib/claim_lease"
 # with bin/statusline's heartbeat, which asks the same filesystem question about the
 # same directories — see desk_hold.
 require_relative "../lib/desk_activity"
+# The managed desk root rule, shared with the board (DeskRecord.sync!) so the two sides
+# cannot disagree about which desks the ledger tracks.
+require_relative "../lib/desk_root"
 # THE DESK LEDGER, on the board. This script no longer writes
 # docs/agents/maintenance/delete-later.md: that file is resolved against HUB_DIR, so a
 # teardown run from the PRIMARY checkout landed its audit row on `main` — a branch nobody
@@ -2496,7 +2499,7 @@ end
 # cut by something that never binds a task, so the unbound fail-open would read it FREE
 # while a session is working in it. Those are LISTED, never nominated (managed_desk_hold).
 def managed_desk_roots(repo)
-  [File.join(repo, ".worktrees"), "#{repo}.worktrees"].map { |root| canonical_path(root) }
+  DeskRoot.roots_for(repo).map { |root| canonical_path(root) }
 end
 
 def inside_managed_desk_root?(record)
@@ -3165,6 +3168,10 @@ def stack_record_snapshot(record, issues_by_label)
     "behind_origin_main" => record.fetch(:behind),
     "pidfile_state" => record.fetch(:pidfile_state),
     "sidekiq_pidfile_state" => record.fetch(:sidekiq_pidfile_state),
+    # The board's cut: a desk outside every managed root is LISTED (the panel counts it as
+    # unmanaged) but opens no ledger episode, because nothing here tears it down and so
+    # nothing would ever close one (DeskRecord.sync!). Same verdict the reclaim hold reads.
+    "managed" => inside_managed_desk_root?(record),
     "cleanup_candidate" => candidate,
     "withheld_reason" => withheld_reason,
     "cleanup_rationale" => evidence[:rationale],
@@ -3235,6 +3242,7 @@ def snapshot_payload(app = nil)
       "issues" => issues_by_label.values.sum(&:size),
       "cleanup_candidates" => worktrees.count { |worktree| worktree["cleanup_candidate"] },
       "withheld" => worktrees.count { |worktree| worktree["withheld_reason"] },
+      "unmanaged" => worktrees.count { |worktree| !worktree["managed"] },
       "dirty_worktrees" => records.count { |record| record.fetch(:dirty) },
       "running_or_port_busy" => records.count { |record| !record.fetch(:port_pid).empty? },
       "behind_origin_main" => records.count { |record| !cleanup_ready?(record) && !%w[0 ?].include?(record.fetch(:behind).to_s) }
