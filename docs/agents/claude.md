@@ -11,11 +11,11 @@ McRitchie SOPs live in `/Users/alex/projects/AGENTS.md`'s **SOP Invocation
 Standard**. SOPs are first-class registered commands with finite names and stable
 files. If Alex's prompt names an SOP or heartbeat act such as `pr-review`,
 `qa-release`, `production-deploy`, `focus-session`, `building-sop`,
-`arbitrate-block`, `credential-rotation`, `clean-up`, `process-backlog`,
-`work-backlog`, or `full-cycle`, resolve that phrase through the SOP registry,
-read the mapped SOP, then execute it. For example, `pr-review` means read
-`mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` first; do not start
-with `bin/pr-review --help`, `bin/qa-intake`, or GitHub PR discovery.
+`arbitrate-block`, `credential-rotation`, `collect-vault-revenue`, `clean-up`,
+`process-backlog`, `work-backlog`, or `full-cycle`, resolve that phrase through
+the SOP registry, read the mapped SOP, then execute it. For example, `pr-review`
+means read `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` first; do
+not start with `bin/pr-review --help`, `bin/qa-intake`, or GitHub PR discovery.
 
 ## ⛔ STOP — before writing ANY code
 
