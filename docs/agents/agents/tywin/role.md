@@ -41,7 +41,7 @@ fuller map and wins where they differ.
 | The server's copy of the rules | `app/models/cyvasse_rules/`, held to the engine by `bin/rules-agreement` |
 | The computer opponent | `app/javascript/cyvasse/ai.js` (greedy: best capture by `KILL_PRIORITY`, else a random move) |
 | The computer's 18 lineups, six named opponents | `app/javascript/cyvasse/setups.js` |
-| The 20 openings in the setup panel | `app/javascript/cyvasse/openings.js`, held by `test/javascript/openings_test.js` |
+| The 25 openings in the setup panel | `app/javascript/cyvasse/openings.js`, held by `test/javascript/openings_test.js` |
 | The rules page's unit card and rule changes | `app/models/rulebook.rb` (the 2015 and 2026-09-29 changes) |
 | Online matches, the clock, forfeits | `app/models/match.rb` (seven days a move) |
 | Leaderboard rule | `app/models/leaderboard.rb` |

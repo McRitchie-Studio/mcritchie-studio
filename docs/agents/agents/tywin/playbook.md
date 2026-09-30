@@ -79,9 +79,10 @@ half a hex in from the one above, as on the board.
 | The Hand of the King | The standard | Back row, left of centre | 0 | 50.0% |
 | The Rains of Castamere | Bait and punish | Back corner, right | 0 | 44.1% |
 
-For comparison, the 20 existing openings win 31.0% on average by the same
-measure; the best, Horse Lords, wins 55.6%. Casterly Rock and the Blackwater
-beat all twenty. See "How the numbers were made" for what this measures and
+For comparison, the 20 openings in the panel when these were measured win
+31.0% on average by the same measure; the best, Horse Lords, wins 55.6%.
+Casterly Rock and the Blackwater beat all twenty. The five front-line elephant
+openings added since were not measured. See "How the numbers were made" for what this measures and
 what it does not.
 
 ### Casterly Rock — the fortress
