@@ -10,7 +10,10 @@ two apps whose objects are public and which needed the DNS move first.
 
 Both runbooks were drafted and verified read-only against production by Carl
 before any change, then executed one step at a time with a pre-check on a one-off
-dyno before every stage change. Rollback at every step is a config change.
+dyno before every stage change. Rolling back an Active Storage stage is a
+config change; once `STUDIO_S3_BACKEND=r2` is set (step 4), rolling it back also
+needs `rclone copy -M --update` R2 → S3, before and after the unset, to carry
+back what `Studio::S3` wrote only to R2 (the plan's rollback table).
 
 ## Where each app stands
 
@@ -95,8 +98,10 @@ failed; `/up` 200):
 5. Update this page and the census in
    [`../modules/object-storage.md`](../modules/object-storage.md).
 
-**Rollback after step 7** (R2 alone): copy R2 → S3 for all blob keys first (new
-uploads exist only on R2), then set `ACTIVE_STORAGE_BACKEND=mirror_to_s3`.
+**Rollback after step 7** (R2 alone): `rclone copy -M --update` R2 → S3 for all
+blob keys first (new uploads exist only on R2), then set
+`ACTIVE_STORAGE_BACKEND=mirror_to_s3`. Rolling back `Studio::S3` as well needs
+the step 4 reverse copy above.
 
 ## Still owed
 
