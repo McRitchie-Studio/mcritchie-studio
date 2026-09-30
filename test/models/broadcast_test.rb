@@ -5,7 +5,7 @@ require "test_helper"
 class BroadcastTest < ActiveSupport::TestCase
   test "the Cyvasse email's play and build links resolve and are tracked" do
     broadcast = Broadcast.new(subject: "Hi", template_key: "cyvasse_is_back")
-    assert_equal "https://cyvasse.mcritchie.studio/", broadcast.link_for(:play)
+    assert_equal "https://cyvasse.xyz/", broadcast.link_for(:play)
     assert_equal "https://mcritchie.studio/build", broadcast.link_for("build")
     assert_includes broadcast.link_keys, "play"
     assert_nil broadcast.link_for("https://evil.example")
