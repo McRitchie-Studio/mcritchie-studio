@@ -1550,6 +1550,11 @@ contacts_broadcast = Broadcast.find_by!(slug: "e2e-cyvasse-is-back")
   contact = Contact.create!(email: email, first_name: email.split("@").first.capitalize, source: "cyvasse", tags: ["cyvasse-legacy"])
   contact.record_verification!(status: status, sub_status: ("mailbox_not_found" if status == "invalid"), at: 1.hour.ago) if status
 end
+# One Cyvasse player among them, for the "has Cyvasse games" filter
+# (task contact-traits-from-cyvasse).
+Contact.find_by!(email: "catchall@example.com").update!(traits: { "cyvasse" => {
+  "username" => "e2e_veyjin", "games" => 27, "finished_games" => 25, "wins" => 20, "losses" => 7,
+  "joined_on" => "2014-03-02", "last_active_on" => "2026-09-01", "all_time_rank" => 12, "synced_at" => "2026-09-30T12:00:00Z" } })
 Contact.find_by!(email: "valid@example.com").then do |contact|
   delivery = contacts_broadcast.deliveries.create!(contact: contact, sent_at: 50.minutes.ago)
   delivery.record_open!(at: 40.minutes.ago)

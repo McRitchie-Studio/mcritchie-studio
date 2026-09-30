@@ -71,6 +71,16 @@ test("the filters narrow the table", async ({ page }) => {
   await expect(page.locator("[data-stat=total] [data-stat-count]")).toHaveText("6");
 });
 
+test("the has-Cyvasse-games filter leaves the one player, with username, games and wins", async ({ page }) => {
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/contacts");
+  await page.locator("select[name=cyvasse]").selectOption("games");
+  await page.getByRole("button", { name: "Filter" }).click();
+  await expect(page).toHaveURL(/cyvasse=games/);
+  await expect(page.locator("[data-contact-row]")).toHaveCount(1);
+  await expect(page.locator("[data-contact-row] [data-cyvasse]")).toHaveText("e2e_veyjin · 27 games · 20 wins");
+});
+
 test("at 375px the page itself never scrolls sideways", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await loginWithMagicLink(page, "alex@test.com");
