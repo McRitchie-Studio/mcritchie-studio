@@ -1,0 +1,34 @@
+<%# locals: (contact:, deliveries:) %>
+<%# One contact's send history, loaded lazily into its expanded table row. %>
+<%= turbo_frame_tag dom_id(contact, :detail) do %>
+  <div class="p-3 text-xs space-y-3" data-contact-detail>
+    <div class="text-secondary">
+      Added <%= contact_time(contact.created_at) %>
+      <% if contact.unsubscribed_at %> · off the list <%= contact_time(contact.unsubscribed_at) %><% end %>
+    </div>
+    <% if deliveries.empty? %>
+      <p class="text-secondary">No broadcast has been sent to this contact.</p>
+    <% end %>
+    <% deliveries.each do |d| %>
+      <div class="rounded border border-subtle p-2 min-w-0">
+        <div class="font-semibold text-heading break-words"><%= d.broadcast.subject.presence || d.broadcast.slug %></div>
+        <div class="text-secondary">
+          Sent <%= contact_time(d.sent_at) %> · delivered <%= contact_time(d.delivered_at) %> ·
+          <%= d.open_count %> open<%= "s" unless d.open_count == 1 %> · <%= d.click_count %> click<%= "s" unless d.click_count == 1 %>
+          <% if d.bounced_at %> · <span class="text-danger-ink">bounced (<%= d.bounce_kind.presence || "unknown" %>)</span><% end %>
+        </div>
+        <% events = d.events.sort_by(&:occurred_at) %>
+        <% if events.any? %>
+          <ul class="mt-1 space-y-0.5">
+            <% events.each do |e| %>
+              <li class="text-muted">
+                <%= contact_time(e.occurred_at) %> · <span class="text-body"><%= e.kind.humanize %></span>
+                <span>(<%= e.source %><%= ", program" if e.machine %><%= ", #{e.link_key}" if e.link_key.present? %>)</span>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+<% end %>

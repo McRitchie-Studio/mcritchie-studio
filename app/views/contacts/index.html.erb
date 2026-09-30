@@ -1,0 +1,168 @@
+<% content_for(:title, "Contacts") %>
+<% d = @directory %>
+<% f = d.params %>
+<div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-extrabold text-heading">Contacts</h1>
+      <p class="text-secondary text-sm mt-1">The mailing list as it stands: verification results and sends land here as they happen.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <%= link_to "Broadcasts", broadcasts_path, class: "btn btn-secondary" %>
+      <%= link_to "Analytics", broadcast_analytics_path, class: "btn btn-secondary" %>
+    </div>
+  </div>
+
+  <%= render "stats", dashboard: @dashboard, stats: @stats %>
+
+  <%# Filters: a plain GET form, so a filtered view is a shareable URL. %>
+  <%= form_with url: contacts_path, method: :get, class: "card p-4 grid grid-cols-2 md:grid-cols-6 gap-3 items-end", data: { turbo_frame: "_top" } do %>
+    <label class="col-span-2 min-w-0 text-xs text-secondary space-y-1">
+      <span class="block">Search email</span>
+      <input type="search" name="q" value="<%= f[:q] %>" placeholder="name@example.com" class="input-field w-full min-w-0" autocomplete="off">
+    </label>
+    <label class="min-w-0 text-xs text-secondary space-y-1">
+      <span class="block">List</span>
+      <select name="list" class="input-field w-full min-w-0">
+        <option value="<%= Contacts::Dashboard::ALL %>" <%= "selected" if f[:list] == Contacts::Dashboard::ALL %>>All contacts</option>
+        <% list_names = @lists.map(&:first) %>
+        <% (list_names.include?(f[:list]) || f[:list] == Contacts::Dashboard::ALL ? @lists : @lists + [ [ f[:list], 0 ] ]).each do |tag, count| %>
+          <option value="<%= tag %>" <%= "selected" if f[:list] == tag %>><%= tag %> (<%= number_with_delimiter(count) %>)</option>
+        <% end %>
+      </select>
+    </label>
+    <label class="min-w-0 text-xs text-secondary space-y-1">
+      <span class="block">Subscribed</span>
+      <select name="subscribed" class="input-field w-full min-w-0">
+        <% [ [ "", "Any" ], [ "yes", "Subscribed" ], [ "no", "Unsubscribed" ] ].each do |value, label| %>
+          <option value="<%= value %>" <%= "selected" if f[:subscribed].to_s == value %>><%= label %></option>
+        <% end %>
+      </select>
+    </label>
+    <label class="min-w-0 text-xs text-secondary space-y-1">
+      <span class="block">Verification</span>
+      <select name="status" class="input-field w-full min-w-0">
+        <option value="">Any</option>
+        <option value="verified" <%= "selected" if f[:status] == "verified" %>>Any result</option>
+        <% Contacts::Dashboard::STATUS_ROWS.each do |status| %>
+          <option value="<%= status %>" <%= "selected" if f[:status] == status %>><%= contact_status_label(status) %></option>
+        <% end %>
+      </select>
+    </label>
+    <label class="min-w-0 text-xs text-secondary space-y-1">
+      <span class="block">Emailed</span>
+      <select name="emailed" class="input-field w-full min-w-0">
+        <% [ [ "", "Any" ], [ "yes", "Emailed" ], [ "no", "Never emailed" ] ].each do |value, label| %>
+          <option value="<%= value %>" <%= "selected" if f[:emailed].to_s == value %>><%= label %></option>
+        <% end %>
+      </select>
+    </label>
+    <div class="col-span-2 md:col-span-6 flex flex-wrap items-center justify-between gap-2">
+      <p class="text-xs text-secondary" data-result-count>
+        <%= number_with_delimiter(d.total) %> match<%= "es" unless d.total == 1 %><%= " · newest verification first" if d.verified_order? %>
+      </p>
+      <div class="flex gap-2">
+        <%= link_to "Reset", contacts_path, class: "btn btn-secondary" %>
+        <button class="btn btn-primary">Filter</button>
+      </div>
+    </div>
+  <% end %>
+
+  <section class="card overflow-hidden" aria-label="Contacts table">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[64rem]">
+        <thead class="text-secondary border-b border-subtle text-xs">
+          <tr>
+            <th class="text-left p-3">Email</th>
+            <th class="text-left p-3">Name</th>
+            <th class="text-left p-3">Source</th>
+            <th class="text-left p-3">Tags</th>
+            <th class="text-left p-3">List status</th>
+            <th class="text-left p-3">Verification</th>
+            <th class="text-left p-3">Verified</th>
+            <th class="text-right p-3">Sent</th>
+            <th class="text-left p-3">Last opened</th>
+            <th class="text-left p-3">Last clicked</th>
+          </tr>
+        </thead>
+        <% if d.rows.empty? %>
+          <tbody><tr><td colspan="10" class="p-6 text-center text-secondary">No contacts match.</td></tr></tbody>
+        <% end %>
+        <% d.rows.each do |row| %>
+          <% c = row.contact %>
+          <tbody class="border-b border-subtle/50" x-data="{ open: false }" data-contact-row="<%= c.id %>">
+            <tr class="align-top">
+              <td class="p-3 max-w-[18rem]">
+                <button type="button" class="text-left text-heading font-medium break-all hover:text-primary" @click="open = !open" :aria-expanded="open.toString()" aria-controls="<%= dom_id(c, :row_detail) %>">
+                  <span class="text-muted inline-block w-3" x-text="open ? '▾' : '▸'" aria-hidden="true">▸</span> <%= c.email %>
+                </button>
+              </td>
+              <td class="p-3 text-body whitespace-nowrap"><%= [ c.first_name, c.last_name ].compact_blank.join(" ").presence || tag.span("—", class: "text-muted") %></td>
+              <td class="p-3 text-secondary whitespace-nowrap"><%= c.source.presence || "—" %></td>
+              <td class="p-3 text-secondary"><%= c.tags.join(", ").presence || "—" %></td>
+              <td class="p-3 whitespace-nowrap">
+                <% if c.subscribed? %>
+                  <span class="text-success-ink">Subscribed</span>
+                <% else %>
+                  <span class="text-danger-ink"><%= contact_reason_label(c.unsubscribe_reason.presence || "requested") %></span>
+                <% end %>
+              </td>
+              <td class="p-3">
+                <% status = c.verified_at ? c.verification_status : Contacts::Dashboard::UNVERIFIED %>
+                <span class="inline-block px-2 py-0.5 rounded border text-xs whitespace-nowrap <%= contact_status_classes(status) %>"><%= contact_status_label(status) %></span>
+                <% if c.verification_sub_status.present? %><div class="text-xs text-muted mt-0.5"><%= c.verification_sub_status %></div><% end %>
+              </td>
+              <td class="p-3 text-secondary whitespace-nowrap"><%= contact_time(c.verified_at) %></td>
+              <td class="p-3 text-right tabular-nums text-heading"><%= row.sent %></td>
+              <td class="p-3 text-secondary whitespace-nowrap"><%= contact_time(row.last_opened_at) %></td>
+              <td class="p-3 text-secondary whitespace-nowrap"><%= contact_time(row.last_clicked_at) %></td>
+            </tr>
+            <tr id="<%= dom_id(c, :row_detail) %>" x-show="open" x-cloak>
+              <td colspan="10" class="bg-surface-alt/60">
+                <%= turbo_frame_tag dom_id(c, :detail), src: contact_path(c), loading: "lazy" do %>
+                  <p class="p-3 text-xs text-muted">Loading sends…</p>
+                <% end %>
+              </td>
+            </tr>
+          </tbody>
+        <% end %>
+      </table>
+    </div>
+  </section>
+
+  <% if d.pages > 1 %>
+    <nav class="flex flex-wrap items-center justify-between gap-2 text-sm" aria-label="Pages">
+      <% if d.page > 1 %>
+        <%= link_to "← Newer", contacts_path(f.merge(page: d.page - 1)), class: "btn btn-secondary", rel: "prev" %>
+      <% else %><span></span><% end %>
+      <span class="text-secondary" data-page>Page <%= d.page %> of <%= number_with_delimiter(d.pages) %></span>
+      <% if d.page < d.pages %>
+        <%= link_to "Older →", contacts_path(f.merge(page: d.page + 1)), class: "btn btn-secondary", rel: "next" %>
+      <% else %><span></span><% end %>
+    </nav>
+  <% end %>
+</div>
+
+<%# The live watch: reload the stats frame every 10s, never while the tab is hidden,
+    and once at once when it comes back. Stops when the frame leaves the page. %>
+<script>
+  (() => {
+    if (window.__contactsStatsPoll) clearInterval(window.__contactsStatsPoll);
+    const tick = () => {
+      const frame = document.getElementById("contacts-stats");
+      if (!frame) { clearInterval(window.__contactsStatsPoll); window.__contactsStatsPoll = null; return; }
+      if (document.hidden) return;
+      if (frame.getAttribute("src")) frame.reload(); else frame.setAttribute("src", frame.dataset.pollUrl);
+    };
+    window.__contactsStatsPoll = setInterval(tick, 10000);
+    if (!window.__contactsStatsVisibility) {
+      window.__contactsStatsVisibility = true;
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && window.__contactsStatsPoll) {
+          const frame = document.getElementById("contacts-stats");
+          if (frame) { if (frame.getAttribute("src")) frame.reload(); else frame.setAttribute("src", frame.dataset.pollUrl); }
+        }
+      });
+    }
+  })();
+</script>

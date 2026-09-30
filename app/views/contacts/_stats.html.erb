@@ -1,0 +1,70 @@
+<%# locals: (dashboard:, stats:) %>
+<%# The polled half of /contacts: tiles plus the verification breakdown. The index
+    page reloads this frame from contacts_stats_path every 10s while the tab is shown. %>
+<%= turbo_frame_tag "contacts-stats", class: "block space-y-6", data: { poll_url: contacts_stats_path(list: dashboard.list) } do %>
+  <% pct = ->(n) { stats.total.zero? ? "—" : number_to_percentage(100.0 * n / stats.total, precision: 1) } %>
+  <section aria-labelledby="contacts-tiles-heading">
+    <h2 id="contacts-tiles-heading" class="sr-only">Totals</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <% [ [ "total", "Contacts", stats.total, dashboard.list == Contacts::Dashboard::ALL ? "every list" : dashboard.list ],
+           [ "subscribed", "Subscribed", stats.subscribed, pct.(stats.subscribed) ],
+           [ "mailable", "Verified valid", stats.mailable, "mailable · #{number_with_delimiter(stats.valid)} valid" ],
+           [ "undeliverable", "Invalid", stats.undeliverable, "undeliverable · #{pct.(stats.undeliverable)}" ],
+           [ "unverified", "Not verified", stats.unverified, pct.(stats.unverified) ],
+           [ "emailed", "Emailed", stats.emailed, "sent at least once" ] ].each do |key, label, count, detail| %>
+        <div class="card p-4 min-w-0" data-stat="<%= key %>">
+          <div class="text-xs font-semibold uppercase tracking-widest text-muted truncate"><%= label %></div>
+          <div class="text-2xl sm:text-3xl font-extrabold text-heading tabular-nums mt-1" data-stat-count><%= number_with_delimiter(count) %></div>
+          <div class="text-xs text-secondary mt-1 truncate" title="<%= detail %>"><%= detail %></div>
+        </div>
+      <% end %>
+    </div>
+  </section>
+
+  <div class="grid gap-6 md:grid-cols-3">
+    <section class="card p-4 md:col-span-2 min-w-0" aria-labelledby="verification-heading">
+      <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h2 id="verification-heading" class="text-sm font-semibold uppercase tracking-widest text-muted">Verification</h2>
+        <span class="text-xs text-secondary" data-last-verified>
+          <% if stats.last_verified_at %>
+            Last result <%= time_ago_in_words(stats.last_verified_at) %> ago · <%= contact_time(stats.last_verified_at) %>
+          <% else %>
+            No verification has run on this list.
+          <% end %>
+        </span>
+      </div>
+      <%# Progress: one bar, each status a segment of the whole list. %>
+      <div class="flex h-3 rounded bg-inset overflow-hidden" role="img"
+           aria-label="<%= number_to_percentage(stats.verified_pct, precision: 1) %> of the list verified" data-verified-pct="<%= stats.verified_pct.round(1) %>">
+        <% (Contacts::Dashboard::STATUS_ROWS - [ Contacts::Dashboard::UNVERIFIED ]).each do |status| %>
+          <% width = stats.status_pct(status) %>
+          <% next if width.zero? %>
+          <div class="h-full <%= contact_status_bar(status) %>" style="width: <%= width.round(2) %>%" title="<%= contact_status_label(status) %>"></div>
+        <% end %>
+      </div>
+      <p class="text-xs text-secondary mt-1 mb-3">
+        <%= number_to_percentage(stats.verified_pct, precision: 1) %> verified ·
+        <%= number_with_delimiter(stats.verified) %> of <%= number_with_delimiter(stats.total) %>
+      </p>
+      <dl class="grid grid-cols-[minmax(0,8rem)_1fr_auto] items-center gap-x-3 gap-y-1.5 text-sm">
+        <% Contacts::Dashboard::STATUS_ROWS.each do |status| %>
+          <% count = stats.by_status.fetch(status, 0) %>
+          <dt class="text-secondary truncate"><%= contact_status_label(status) %></dt>
+          <dd class="h-2 rounded bg-inset overflow-hidden"><div class="h-full rounded <%= status == Contacts::Dashboard::UNVERIFIED ? 'bg-primary/40' : contact_status_bar(status) %>" style="width: <%= stats.status_pct(status).round(2) %>%"></div></dd>
+          <dd class="text-right tabular-nums text-heading" data-status-count="<%= status %>"><%= number_with_delimiter(count) %></dd>
+        <% end %>
+      </dl>
+    </section>
+
+    <section class="card p-4 min-w-0" aria-labelledby="unsubscribes-heading">
+      <h2 id="unsubscribes-heading" class="text-sm font-semibold uppercase tracking-widest text-muted mb-3">Off the list</h2>
+      <dl class="grid grid-cols-[1fr_auto] gap-y-1.5 text-sm">
+        <% stats.unsubscribed.each do |reason, count| %>
+          <dt class="text-secondary"><%= contact_reason_label(reason) %></dt>
+          <dd class="text-right tabular-nums text-heading" data-reason-count="<%= reason %>"><%= number_with_delimiter(count) %></dd>
+        <% end %>
+      </dl>
+      <p class="text-xs text-muted mt-3" data-stats-updated>Updated <time datetime="<%= Time.current.iso8601 %>"><%= Time.current.strftime("%H:%M:%S %Z") %></time> · refreshes every 10s</p>
+    </section>
+  </div>
+<% end %>
