@@ -8248,8 +8248,27 @@ end
 # The desks a guard HELD in that same run: one `withheld <desk>: <reason>` line per desk
 # the partition held, plus one `skipping <desk>: …` per candidate the under-lock re-check
 # refused. Dirty or unmerged desks never enter the partition, so they are not counted.
+# A desk withheld only for sitting OUTSIDE the managed root (a reviewer's scratch checkout,
+# a Claude Code worktree) is not one the guards are protecting from this sweep — the sweep
+# never touches it — so it is tallied apart (reclaim_outside_count), not as held.
 def reclaim_held_count(out)
-  out.to_s.scan(/^(?:withheld|skipping) \S+: /).size
+  out.to_s.scan(/^(?:withheld|skipping) \S+: /).size - reclaim_outside_count(out)
+end
+
+RECLAIM_OUTSIDE_ROOT_LINE = /^withheld \S+: outside the managed desk root /
+
+def reclaim_outside_count(out)
+  out.to_s.scan(RECLAIM_OUTSIDE_ROOT_LINE).size
+end
+
+RECLAIM_RERUN = "bin/agent-worktree cleanup --reclaim --yes"
+
+# The line that CLOSES an archive whose reclaim failed. The mid-run warning scrolls away
+# above the artifact sweep, the doc retirement and the summary; this is the one the operator
+# reads last. The archive still exits 0 — the board write landed — so this is the only place
+# the failure survives to the end of the run.
+def reclaim_failed_closing_line
+  "⚠ worktree reclaim failed — run `#{RECLAIM_RERUN}` (clean-infra) to free the desks this archive left standing"
 end
 
 # Archive step 8: the FULL fail-closed sweep, exactly `bin/agent-worktree cleanup
@@ -8262,20 +8281,24 @@ end
 # missing from the cwd) killed the run before the artifact sweep, the doc retirement and
 # the ledger commit. Either now prints a warning naming the re-run, and the rest goes on.
 #
-# Returns the reclaimed count for the Exit Seam line.
+# Returns an ArchiveReclaim: the reclaimed count for the Exit Seam line, and whether the
+# sweep failed, which the archive's closing line repeats (reclaim_failed_closing_line).
+ArchiveReclaim = Struct.new(:reclaimed, :failed, keyword_init: true)
+
 def archive_reclaim
   out, ok = reclaim_worktrees(apply: true)
   unless ok
     say("⚠ worktree reclaim exited non-zero; archive continues. Its output is above. " \
-        "Re-run `bin/agent-worktree cleanup --reclaim --yes` (clean-infra) once it is fixed.")
+        "Re-run `#{RECLAIM_RERUN}` (clean-infra) once it is fixed.")
   end
   reclaimed = reclaimed_count(out)
-  say("  worktree reclaim: reclaimed #{reclaimed}, held #{reclaim_held_count(out)}")
-  reclaimed
+  say("  worktree reclaim: reclaimed #{reclaimed}, held #{reclaim_held_count(out)}, " \
+      "outside managed root #{reclaim_outside_count(out)}")
+  ArchiveReclaim.new(reclaimed: reclaimed, failed: !ok)
 rescue StandardError => e
   say("⚠ worktree reclaim failed (#{e.class}: #{e.message}); archive continues with nothing reclaimed. " \
-      "Re-run `bin/agent-worktree cleanup --reclaim --yes` (clean-infra) once it is fixed.")
-  0
+      "Re-run `#{RECLAIM_RERUN}` (clean-infra) once it is fixed.")
+  ArchiveReclaim.new(reclaimed: 0, failed: true)
 end
 
 # The regenerable-artifact sweep, run exactly like the worktree reclaim above:
@@ -8486,7 +8509,8 @@ def archive
   #    warning and fewer desks freed this run, never a failed archive (archive_reclaim).
   say("")
   step("worktree reclaim: bin/agent-worktree cleanup --reclaim --yes")
-  reclaimed = archive_reclaim
+  reclaim = archive_reclaim
+  reclaimed = reclaim.reclaimed
 
   # 9. Sweep the regenerable artifacts — AFTER the reclaim, so the worktrees that
   #    just went away are not swept first and counted twice. Machine-local, and
@@ -8568,6 +8592,9 @@ def archive
     say("⚠ Left in place, still referenced (fix the referrer first, then they retire on the next run):")
     docs[:skipped].each { |s| say("    #{s[:path]} — cited by #{s[:referrers].join(', ')}") }
   end
+  # The CLOSING line: a failed reclaim is the last thing the run says (see
+  # reclaim_failed_closing_line). Exit stays 0 — the archive itself succeeded.
+  say(reclaim_failed_closing_line) if reclaim.failed
 end
 
 # --- retro -----------------------------------------------------------------
