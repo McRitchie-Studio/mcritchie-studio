@@ -130,9 +130,9 @@ APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  
 
 | App | Verdict | Why |
 |---|---|---|
-| `moms-app` | ready, but **outside the release pipeline** | Active Storage only, no `Studio::S3`, so no engine bump is needed (it runs 0.32.1). But it is not in `config/release_repos.yml`: production last deployed by a manual push on 2026-08-09, and `accepted` holds unshipped merges since. Its cutover needs either registration in the release ladder or a manual deploy by Alex |
+| `moms-app` | **cutting over**: `ACTIVE_STORAGE_BACKEND=mirror_to_s3` (R2 primary), soaking before step 9 (2026-09-29) | Active Storage only, no `Studio::S3`; now registered in `config/release_repos.yml` (profile `standalone-heroku`) and on `studio-engine` 0.77.3 |
 | `commercial-welding` | nothing to migrate | empty buckets, no writer; retire the S3 pair in Wave 7 |
-| `mcritchie-industries` | ready after an engine bump | runs 0.76.3; `s3_endpoint` arrived in 0.77. Private objects only |
+| `mcritchie-industries` | **cutting over**: `ACTIVE_STORAGE_BACKEND=mirror_to_s3` and `STUDIO_S3_BACKEND=r2`, soaking before step 9 (2026-09-29) | on `studio-engine` 0.77.4. Private objects only |
 | `mcritchie-studio` | blocked | DNS for `assets.`, plus the URL rewrite above |
 | `turf-monster` | blocked | DNS for `assets.` |
 
