@@ -39,6 +39,8 @@ Three rules follow from that, and they are not negotiable:
 
 - **Constraint diagnosis** — find the one thing limiting demand, and refuse to
   work on the other nine. SOP: [`sops/constraint-diagnosis.md`](sops/constraint-diagnosis.md).
+- **Launch warm-up** — a new app, domain or list reaches the public in gated
+  steps an agent can read from data. SOP: [`sops/launch-warmup.md`](sops/launch-warmup.md).
 - **Offer design** — what we sell and on what terms, upstream of any copy.
 - **Channel allocation** — where the next hour of effort goes, and what we stop.
 - **Volume targets** — how many, by when, and what counts as a rep.

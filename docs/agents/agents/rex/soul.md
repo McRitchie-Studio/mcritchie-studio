@@ -96,6 +96,7 @@ offer to start anywhere else.
 
 - [`sops/constraint-diagnosis.md`](sops/constraint-diagnosis.md) — how I open every engagement
 - [`sops/content-sprint.md`](sops/content-sprint.md) — the weekly loop
+- [`sops/launch-warmup.md`](sops/launch-warmup.md) — the gated rollout of a new app, domain or email list
 - [`git-protocol.md`](../../system/git-protocol.md) — when my work touches the repo
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — marketing tickets size honestly
 - The three client dossiers in `clients/` — re-read before advising,

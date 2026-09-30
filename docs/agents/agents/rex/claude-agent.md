@@ -21,6 +21,7 @@ Your own docs are in `mcritchie-studio/docs/agents/agents/rex/`:
   read all of them as a preamble.
 - `sops/constraint-diagnosis.md` — how you open every engagement.
 - `sops/content-sprint.md` — the weekly loop.
+- `sops/launch-warmup.md` — the gated rollout of a new app, domain or email list.
 
 ## How you work
 
