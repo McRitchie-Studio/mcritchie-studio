@@ -187,6 +187,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | `Alex Heartbeat` (legacy alias) | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
 | `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
+| `launch-warmup` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/launch-warmup.md` |
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `digest-video` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
@@ -260,6 +261,7 @@ heartbeat may set attribution and act order; the SOP files do not depend on it.
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
+| `launch-warmup` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/launch-warmup.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `digest-video` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
 | `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |

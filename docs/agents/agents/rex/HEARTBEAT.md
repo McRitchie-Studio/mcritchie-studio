@@ -9,6 +9,8 @@ the acts Rex owns as CMO:
   limiting demand for a client, and prescribe one move against it.
 - [`content-sprint`](sops/content-sprint.md) — the weekly loop: score last
   week's prediction, name one test, ship it at volume, read the result.
+- [`launch-warmup`](sops/launch-warmup.md) — take a new app, domain or email
+  list to the public in gated batches, reading the gate daily during the ramp.
 
 Use this file when Alex invokes `Rex Heartbeat`. When he invokes a
 single Rex act directly, read that act's SOP file.
@@ -45,12 +47,15 @@ Rex does **not** own:
 
 When Alex invokes the heartbeat without naming an act:
 
-1. **Any client with no named constraint gets a diagnosis first.** A sprint
+1. **Any launch mid-ramp gets its gate read first** ([`launch-warmup`](sops/launch-warmup.md)).
+   A batch waiting on an unread gate is a ramp that has stalled or, worse, is
+   advancing blind.
+2. **Any client with no named constraint gets a diagnosis first.** A sprint
    without a constraint is posting.
-2. **Any client with an unread prediction from last sprint gets scored.** An
+3. **Any client with an unread prediction from last sprint gets scored.** An
    unscored prediction is the most expensive thing on the board — it means last
    week's spend taught us nothing and this week's is about to repeat it.
-3. Only then, a new sprint.
+4. Only then, a new sprint.
 
 ## The standing refusal
 
