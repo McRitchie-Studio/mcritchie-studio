@@ -438,6 +438,55 @@ class AgentWorktreeTest < Minitest::Test
                  "a holder working through the board rather than the filesystem is still working")
   end
 
+  # THE ARCHIVE-WINDOW STALL (2026-09-29). `bin/release archive` step 7 archives the shipped
+  # tasks, and Task#record_transition_event writes a TaskEvent for each move — which became
+  # that task's NEWEST durable artifact. Step 8's reclaim then read "landed a durable artifact
+  # seconds ago" and held every desk it had just made reclaimable for the whole idle window,
+  # and nothing swept again until clean-infra. A task reaching a terminal stage is not use of
+  # its desk, so on a terminal task that transition alone does not hold.
+  ARCHIVED_BY_THE_SWEEP = %({ "stage" => "archived", "last_progress_label" => "moved to archived", ) +
+                          %("holder_liveness_seconds_ago" => 20, "progress_seconds_ago" => 20, ) +
+                          %("metadata" => { "devops" => {} } })
+
+  def test_an_archived_task_whose_only_recent_progress_is_the_archive_move_frees_its_idle_desk
+    out = desk_verdict(age: 6 * 3_600, touched: false, task_json: ARCHIVED_BY_THE_SWEEP)
+
+    assert_match(/\A\[true, /, out,
+                 "the archive transition is lifecycle, not work — it must not hold the desk the same " \
+                 "archive run is about to reclaim for another 1h29m")
+  end
+
+  def test_an_archived_task_whose_desk_was_written_to_recently_is_still_withheld
+    out = desk_verdict(age: 6 * 3_600, touched: true, task_json: ARCHIVED_BY_THE_SWEEP)
+
+    assert_match(/\A\[false, "the desk was written to within the last/, out,
+                 "only the lifecycle event is ignored — a desk someone is writing into is still in use")
+  end
+
+  def test_an_archived_task_with_recent_non_lifecycle_progress_is_still_withheld
+    task = ARCHIVED_BY_THE_SWEEP.sub('"moved to archived"', '"g1_cert passed"')
+    out = desk_verdict(age: 6 * 3_600, touched: false, task_json: task)
+
+    assert_match(/\A\[false, "the bound task landed a durable artifact/, out,
+                 "a cert on a terminal task is work, not lifecycle — it still holds")
+  end
+
+  def test_a_live_task_whose_newest_progress_is_a_stage_move_is_still_withheld
+    task = ARCHIVED_BY_THE_SWEEP.gsub("archived", "building")
+    out = desk_verdict(age: 6 * 3_600, touched: false, task_json: task)
+
+    assert_match(/\A\[false, "the bound task landed a durable artifact/, out,
+                 "on a live stage a move is the builder's own act — only a TERMINAL move is exempt")
+  end
+
+  def test_a_terminal_task_whose_label_is_unknown_is_still_withheld
+    task = ARCHIVED_BY_THE_SWEEP.sub('"last_progress_label" => "moved to archived", ', "")
+    out = desk_verdict(age: 6 * 3_600, touched: false, task_json: task)
+
+    assert_match(/\A\[false, "the bound task landed a durable artifact/, out,
+                 "a board that does not say WHAT landed cannot prove it was only lifecycle; unknown holds")
+  end
+
   # UNKNOWNS PROTECT, both of them, and they say so honestly — "we could not check" is
   # never dressed up as "somebody is here".
   def test_an_undatable_desk_is_withheld_rather_than_guessed_at
