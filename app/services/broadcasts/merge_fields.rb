@@ -37,8 +37,13 @@ module Broadcasts
 
     # `text` with each %{field} replaced by its value. Callers check the
     # required fields first; a field that is still missing is left as written.
+    # A value's line breaks and tabs collapse to a space: this fills a subject
+    # header, and a username is the reader's own input.
     def interpolate(text, fields)
-      text.to_s.gsub(/%\{(\w+)\}/) { fields.key?(Regexp.last_match(1)) ? fields[Regexp.last_match(1)].to_s : Regexp.last_match(0) }
+      text.to_s.gsub(/%\{(\w+)\}/) do
+        key = Regexp.last_match(1)
+        fields.key?(key) ? fields[key].to_s.gsub(/[\r\n\t]+/, " ") : Regexp.last_match(0)
+      end
     end
   end
 end

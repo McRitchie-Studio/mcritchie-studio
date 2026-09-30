@@ -224,5 +224,8 @@ class StagedEmailTest < ActiveJob::TestCase
     assert_equal({ "email" => "nameless@example.com" }, Broadcasts::MergeFields.for(@nameless))
     assert_equal %w[username games], Broadcasts::MergeFields.fields_in("%{username} %{games} %{username}")
     assert_equal "Ann, {x}", Broadcasts::MergeFields.interpolate("%{username}, {x}", { "username" => "Ann" })
+    assert_equal "Hi Tom Bcc: x@y.z, %{games}",
+                 Broadcasts::MergeFields.interpolate("Hi %{username}, %{games}", { "username" => "Tom\r\nBcc: x@y.z" }),
+                 "a line break in a value never reaches the subject header; a missing field stays as written"
   end
 end
