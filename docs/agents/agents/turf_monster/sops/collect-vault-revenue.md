@@ -323,8 +323,16 @@ ms[:members].each { |m| puts "  MEMBER #{m[:address]} vote=#{m[:can_vote]} execu
 puts "VOTING_MEMBERS #{ms[:voting_members].length}"
 ```
 
-Expect `THRESHOLD 3 of 5`. **`VOTING_MEMBERS` is the number that matters**, not
-the member count: a member who cannot vote cannot help you reach three.
+Two things to read out of it, and the second is the one that ties the hops
+together:
+
+- **`THRESHOLD 3 of 5`**, and `VOTING_MEMBERS` at least 3. **`VOTING_MEMBERS` is
+  the number that matters**, not the member count: a member who cannot vote
+  cannot help you reach three.
+- **`VAULT_PDA` must EQUAL the `TREASURY_AUTHORITY` step 1 printed.** That is the
+  proof that this Squad is the one holding the money you just swept. If they
+  differ, you are looking at the wrong multisig — a devnet Squad on a mainnet
+  read, most likely — and nothing you initiate here will move the swept balance.
 
 Then, in Squads: connect a member wallet, initiate a token transfer of the mint
 and amount Alex named from the vault to his destination wallet, collect
