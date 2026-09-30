@@ -138,6 +138,9 @@ APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  
 
 ## Wave 2 — the per-app cutover recipe
 
+The hub and Turf Monster cutovers of 2026-09-30, as run and measured, and the
+step 7 checklist they still owe: [`r2-cutover-record.md`](r2-cutover-record.md).
+
 One task per app. An app has **two kinds of writer**, and they move by
 different mechanisms:
 
