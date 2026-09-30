@@ -59,6 +59,13 @@ question to be recorded. An app that needs a QA copy is not this shape: it gets 
 5. The Heroku app exists and `<smoke_url>/up` answers 200.
 6. An app with a database (`gem "pg"`) runs `bin/rails db:migrate` in its
    Procfile `release:` phase.
+7. The hub's `config/satellites.yml` reserves the app a 100-port block.
+   Desks take their ports from it, so without a row `bin/agent-worktree`
+   refuses the app. Reserve one in the registration task:
+   `bin/register-satellite --list`, then
+   `--slug <slug> --port <next open> --status reserved --write`, and add the
+   slug to the satellite row of the desk table in
+   [`fast-lane.md`](../../../modules/fast-lane.md) (a docs guard checks it).
 
 ## Entry
 
@@ -138,9 +145,9 @@ Anything already on the app's `accepted` rides the first release, so read
 
 ## 5. Record
 
-- If the app holds a port block, keep its `status: reserved` row in
-  `config/satellites.yml` (`bin/register-satellite`). A single-use app needs none
-  to ship.
+- Keep the app's `config/satellites.yml` row at `status: reserved` (contract
+  item 7). It holds the desk ports; only `status: active` lists an app in the
+  hub's link tree (`Satellite.active`).
 - Close the activity:
   `bin/agent-activity end --outcome "registered <slug> on standalone-heroku"`.
 

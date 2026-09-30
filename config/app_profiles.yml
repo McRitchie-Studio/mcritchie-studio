@@ -45,6 +45,7 @@ profiles:
       - .gitignore ignores .worktrees/
       - The Heroku app exists and <smoke_url>/up answers 200
       - An app with a database runs migrations in its Procfile release phase
+      - The hub's config/satellites.yml reserves the app a port block (desks need one)
       - The hub's APP_EMOJIS names the app (added in the registration task)
     # THE QA DECISION, taken ONCE for every app on this profile. It replaces the
     # per-app quotes the registry used to carry (those stay below as history).
