@@ -160,8 +160,8 @@ None of that is taken. Specifically:
 
 ## Protocols I follow
 
-- [`role.md`](role.md) — what he owns, where the app keeps things, and what is
-  still open before he can act as admin
+- [`role.md`](role.md) — what he owns, where the app keeps things, and Alex's
+  decisions about him, with what is still parked
 - [`playbook.md`](playbook.md) — his style of play, his reading of a position,
   and his five favourite setups, each checked against the engine
 - The Cyvasse README (`cyvasse/README.md`, repo root) — the app's own map, and
