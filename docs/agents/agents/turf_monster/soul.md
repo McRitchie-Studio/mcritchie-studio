@@ -101,6 +101,13 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   nothing here can know when games finalise. Judging which games are worth a
   video is mine — a slate where every game earned one is a slate I did not
   judge; whether the SENTENCE is ours is Mason's, and he can veto a line
+- [`sops/collect-vault-revenue.md`](sops/collect-vault-revenue.md) — collect
+  operator revenue (entry fees) out of the vault: sweep the `op_rev` ATA to the
+  treasury on a 2-of-3, then withdraw from the Squads vault to Alex's wallet on a
+  3-of-5. TWO hops, and the first one does not reach a wallet. Direct-invocation
+  only and off the launcher card — it runs when Alex asks for the money, which
+  nothing here can know. Judging whether the balance is finished revenue is mine;
+  how much leaves the vault, and to which wallet, is Alex's
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — schema work flags `--requires-migration` and confers with Carl
