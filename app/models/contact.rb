@@ -35,12 +35,16 @@ class Contact < ApplicationRecord
   #
   # traits["cyvasse"], from the cyvasse app (script/contacts/cyvasse_traits.rb):
   #   username        the public username
-  #   games           every match the player sat in: human or computer
-  #                   opponent, legacy or new, any status
-  #   finished_games  the part of `games` that reached a result
+  #   games           matches the player actually played (at least one move
+  #                   was made), against a person or a computer, legacy or
+  #                   new. An unanswered challenge, a match never started and
+  #                   one that expired before play are not games.
+  #   finished_games  the part of `games` that ended with a result: king,
+  #                   resigned, forfeit or draw (not expired or abandoned)
   #   wins, losses    the all-time record on the account (users.wins/losses)
   #   joined_on       the account's creation date (legacy dates carried over)
-  #   last_active_on  the later of the account's updated_at and its last move
+  #   last_active_on  the later of the account's updated_at and the last move
+  #                   of a game it played
   #   all_time_rank   the place on cyvasse's all-time leaderboard (wins, then
   #                   fewest losses, then oldest account); nil with no wins
   #   synced_at       when the cyvasse app was read

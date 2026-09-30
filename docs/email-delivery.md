@@ -184,17 +184,17 @@ column namespaced by source (task contact-traits-from-cyvasse). The reader is
 | Key | Meaning |
 |-----|---------|
 | `username` | the public username |
-| `games` | every match the player sat in: person or computer opponent, legacy or new, any status |
-| `finished_games` | the part of `games` that reached a result |
+| `games` | matches the player actually played: at least one move made (`matches.last_move` set), against a person or a computer, legacy or new. An unanswered challenge, a match accepted but never started, and one that expired before play are not games. A legacy match the import closed as `abandoned` counts only if it had a move |
+| `finished_games` | the part of `games` that ended with a result: king, resigned, forfeit or draw. A forfeit or resignation before the first move is in neither count |
 | `wins`, `losses` | the account's all-time record (`users.wins`/`users.losses`) |
 | `joined_on` | the account's creation date (legacy dates carried over) |
-| `last_active_on` | the later of `users.updated_at` and the player's last move |
+| `last_active_on` | the later of `users.updated_at` and the last move of a game the player played |
 | `all_time_rank` | place on `/leaderboard?board=all-time`: wins, then fewest losses, then oldest account; blank with no win |
 | `synced_at` | when the cyvasse app was read |
 
 Guests, merged accounts and the computer players (`User::COMPUTER_LEGACY_IDS`)
 are left out. The "Your games" audience is `Contact.with_cyvasse_games` (at least
-one game), which `/contacts` offers as the **Cyvasse: Has Cyvasse games** filter
+one game), which `/contacts` offers as the **Cyvasse: Has games** filter
 beside a Cyvasse column (username · games · wins, rank on hover).
 
 To refresh, stream the traits from cyvasse straight into the hub. Nothing lands

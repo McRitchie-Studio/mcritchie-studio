@@ -60,7 +60,7 @@
     <label class="min-w-0 text-xs text-secondary space-y-1">
       <span class="block">Cyvasse</span>
       <select name="cyvasse" class="input-field w-full min-w-0">
-        <% [ [ "", "Any" ], [ "games", "Has Cyvasse games" ] ].each do |value, label| %>
+        <% [ [ "", "Any" ], [ "games", "Has games" ] ].each do |value, label| %>
           <option value="<%= value %>" <%= "selected" if f[:cyvasse].to_s == value %>><%= label %></option>
         <% end %>
       </select>
