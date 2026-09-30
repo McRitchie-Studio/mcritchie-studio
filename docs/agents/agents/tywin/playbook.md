@@ -82,8 +82,8 @@ half a hex in from the one above, as on the board.
 For comparison, the 25 existing openings win 34.6% on average by the same
 measure. All five of his beat that average. The best existing openings, Horse
 Lords (66.5%) and Centre Column (62.0%), beat all of his. The numbers were
-measured after the rule change that has elephants move 2. See "How the numbers were made" for what this measures and
-what it does not.
+measured after the rule change that has elephants move 2. See "How the
+numbers were made" for what this measures and what it does not.
 
 ### Casterly Rock — the fortress
 
