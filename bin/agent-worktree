@@ -4665,7 +4665,7 @@ def desk_hold(record, announce: false)
   task_record = task_record_for_pr(record)
   channels = {
     desk_touched: touched,
-    progress_age: ClaimLease.holder_scoped(task_record, "holder_liveness_seconds_ago", "progress_seconds_ago"),
+    progress_age: desk_progress_age(task_record),
     gate_in_flight: ClaimLease.holder_scoped(task_record, "holder_gate_in_flight", "gate_in_flight") ? true : false,
     awaiting_approval: task_devops_for_pr(task_record)["approval_status"].to_s.strip == "waiting"
   }
@@ -4674,6 +4674,40 @@ def desk_hold(record, announce: false)
   reason = desk_hold_reason(channels)
   warn "warning: #{worktree_label(record)}: #{reason}" if announce && touched.nil?
   reason
+end
+
+# The progress channel's age for desk_hold — the holder-scoped fact, MINUS one event that is
+# not use of the desk: the move that put a task on a terminal stage.
+#
+# THE ARCHIVE-WINDOW STALL (2026-09-29). `bin/release archive` step 7 archives every shipped
+# task, and Task#record_transition_event writes a TaskEvent for each move, which becomes the
+# task's newest durable artifact. Step 8's reclaim then read "landed a durable artifact 20s
+# ago" and held every desk step 7 had just made reclaimable for the whole 1h29m idle window;
+# nothing swept again until clean-infra on Steffon's heartbeat, and ~25 reclaim-safe desks
+# sat for a day. The idle window protects a desk someone is USING; a board transition to a
+# terminal stage is bookkeeping about finished work, not use.
+#
+# NARROW ON PURPOSE. Only the progress channel is touched, and only when the board says the
+# task sits on a terminal stage AND its newest artifact is exactly the move onto that stage.
+# A desk written to inside the window (desk_touched), a gate in flight, an approval wait, a
+# cert or checkpoint on a terminal task, a live stage, and a board that does not name its
+# newest artifact (no label: unknown) all still hold — and every fail-closed guard outside
+# desk_hold (dirty, unpushed, open PR, release claim, managed root, ignored work, the
+# under-lock re-verify) runs exactly as before.
+#
+# On a terminal task the claim has been cleared, so nothing is disowned and the holder-scoped
+# age and last_progress_label describe the same newest event. The terminal stages are
+# RECLAIMABLE_STAGES, the stage guard's own set, so the two cannot disagree.
+
+def desk_progress_age(task_record)
+  age = ClaimLease.holder_scoped(task_record, "holder_liveness_seconds_ago", "progress_seconds_ago")
+  return age unless task_record.is_a?(Hash)
+
+  stage = task_record["stage"].to_s.strip
+  return age unless RECLAIMABLE_STAGES.include?(stage)
+  return age unless task_record["last_progress_label"].to_s.strip == "moved to #{stage}"
+
+  nil
 end
 
 # Name the channel that spoke. The DECISION is ClaimLease.abandoned?'s and only its —

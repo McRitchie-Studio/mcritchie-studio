@@ -88,17 +88,17 @@ reviewer's mutation pass, for the same reason in reverse: a mutation is a write,
 and a write into an occupied desk corrupts whatever else is reading it (see
 [The Desk Writer Convention](worktrees.md#the-desk-writer-convention)).
 
-**Cut it under `.worktrees/`, carry `.env.test.local` across, and build the
-repo's gitignored artifacts.** All three are load-bearing the moment your zap
-runs a test tier:
+**Cut it in a scratch directory outside the managed root, carry
+`.env.test.local` across and check it landed, and build the repo's gitignored
+artifacts.** All three are load-bearing the moment your zap runs a test tier:
 
 ```bash
-REPO="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")"   # the PRIMARY checkout, from anywhere
-ZAP="$REPO/.worktrees/zap-<slug>"
+ZAP="$(mktemp -d)/zap-<slug>"           # your session scratchpad, OUTSIDE <repo>/.worktrees/
 git worktree add "$ZAP" --detach <base>
 cp <desk>/.env.test.local "$ZAP"/       # 1 of 2 untracked classes: the test-DB env
+test -s "$ZAP/.env.test.local" || echo "STOP: no .env.test.local, so this tree runs on the SHARED test DB"
 (cd "$ZAP" && bin/rails test:prepare)   # 2 of 2: the gitignored build output (Rails apps)
-# or, instead of both lines: bin/agent-worktree new <app> zap-<slug>
+# or, instead of all three lines: bin/agent-worktree new <app> zap-<slug>
 ```
 
 `.env.test.local` is **untracked**, so no `git worktree add` carries it. Without
@@ -108,15 +108,18 @@ test database used by the primary checkout, CI, and every concurrent suite —
 polluting them and being polluted by them. Verified 2026-08-31: a detached
 worktree off `origin/accepted` resolves to `mcritchie_studio_test`.
 
-Cutting it under `.worktrees/` is what lets `bin/lib/desk_guard.rb` catch that
-for you. Its `desk?` predicate returns true **only** for a path whose parent
-directory is `.worktrees`, and where `../zap-<slug>` lands depends on the seat
-you hold. From the primary checkout — the reviewer and conductor seats — it
-resolves *outside* `.worktrees/`, so it is **never refused** and fails silently.
-From a desk — the builder seat — it resolves to a sibling *inside* `.worktrees/`,
-where the guard does fire. Cutting under `.worktrees/` deliberately stops the
-answer depending on where you happened to be standing: the tree is refused by
-name, with the missing file called out.
+**Why outside `.worktrees/`, and why the `test -s` line.** Anything directly
+under `<repo>/.worktrees/` is a MANAGED desk (`lib/desk_root.rb`): the board opens
+a desk-ledger episode for it, and a throwaway removed with plain `git worktree
+remove` leaves that episode open as a `vanished` ghost on the Desks panel (two of
+the six ghosts on 2026-09-29 were reviewer throwaways cut there). A scratch
+directory is outside every managed root, so the sweep and the ledger list it and
+never track it. The cost is that `bin/lib/desk_guard.rb`, whose `desk?`
+predicate fires only under `.worktrees/`, no longer refuses the tree by name when
+`.env.test.local` is missing, so the recipe's `test -s` line is that check now:
+it names the missing file before a test tier can run on the shared database.
+A throwaway you already cut under `.worktrees/` is a managed desk; tear it down
+with `bin/agent-worktree remove <app> <name> --yes`, never plain git.
 
 **`.env.test.local` is one of TWO classes of untracked file a worktree cannot
 carry**, and the second is the repo's **gitignored build output**. `git
@@ -182,9 +185,10 @@ desk may hold uncommitted work a cleanup must never touch — and land it as
 its own commit:
 
 ```bash
-ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/zap-<slug>"
+ZAP="$(mktemp -d)/zap-<slug>"                  # scratchpad, outside the managed root
 git worktree add "$ZAP" --detach HEAD          # throwaway desk off your feat head
 cp .env.test.local "$ZAP"/                     # REQUIRED before any test tier
+test -s "$ZAP/.env.test.local" || echo "STOP: no .env.test.local"
 cd "$ZAP"
 bin/rails test:prepare                         # AND the gitignored build output
 # …fix, then:
@@ -220,9 +224,10 @@ the PR head, run its test tier, and **lease-push** the `zap:` commit to the PR
 branch:
 
 ```bash
-ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/zap-<slug>"
+ZAP="$(mktemp -d)/zap-<slug>"                         # scratchpad, outside the managed root
 git worktree add "$ZAP" --detach FETCH_HEAD           # off the PR head you fetched
 cp <desk>/.env.test.local "$ZAP"/                     # REQUIRED before any test tier
+test -s "$ZAP/.env.test.local" || echo "STOP: no .env.test.local"
 cd "$ZAP"
 bin/rails test:prepare                                # AND the gitignored build output
 BASE=$(git rev-parse HEAD)                            # the head you zap FROM — pin the lease to it
@@ -354,8 +359,8 @@ Distance is not the test; **ref sharing** is:
 - **A worktree SHARES that ref, so the stamp correctly goes STALE.** Every
   worktree of a repo keeps ONE ref store, in the common git dir (`git rev-parse
   --git-common-dir`); only `HEAD` and a few per-worktree refs are private. The
-  throwaway `.worktrees/zap-<slug>` desk this protocol tells you to cut hangs off
-  the same primary checkout the builder's desk does, so your push moves the very
+  throwaway `zap-<slug>` desk this protocol tells you to cut is a worktree of
+  the same primary checkout the builder's desk is, wherever it sits on disk, so your push moves the very
   ref the stamp is graded against, the desk resolves the new tree with no fetch,
   and the lane reads STALE. **That is the house case**, and the refusal is the
   guard working rather than a bug in the gate. If the zap was yours, re-run the
@@ -453,7 +458,7 @@ but the head.
 **The re-run belongs in the DESK, and the two runners punish a wrong root
 differently — one loudly, one silently.** `bin/fast-check` takes
 `TaskTree.refusal` and **exits 1** from a tree that is not the task's, with **no
-reviewer override**: a reviewer standing in the throwaway `.worktrees/zap-<slug>`
+reviewer override**: a reviewer standing in the throwaway `zap-<slug>`
 desk this protocol told them to cut cannot pre-flight from it, and that refusal
 is the guard working. `bin/control-check` has no such refusal — it roots at the
 cwd's git toplevel (`RepoRoot.code_root`, overridable with `CONTROL_CHECK_ROOT`)
@@ -489,13 +494,12 @@ touch):
 
 ```bash
 git fetch origin accepted
-ZAP="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")/.worktrees/zap-<slug>"
+ZAP="$(mktemp -d)/zap-<slug>"                   # scratchpad, outside the managed root
 git worktree add "$ZAP" --detach origin/accepted   # throwaway desk
 cd "$ZAP"
 # Running a test tier here? This throwaway has NO desk to copy .env.test.local
-# from and no built assets either, and under .worktrees/ desk_guard refuses the
-# pre-flight by name — which is the right failure, but it leaves you holding a
-# refusal. Provision a real desk instead, which does BOTH for you:
+# from and no built assets either, so its tests would run on the SHARED test DB.
+# Provision a real desk instead, which does BOTH for you:
 #   bin/agent-worktree new <app> zap-<slug>
 # …fix, then:
 git add -p
@@ -618,11 +622,12 @@ because the revert is another commit:
 ```bash
 ZAPPED=<feat/your-slug | accepted>       # the branch the zap landed on
 git fetch origin "$ZAPPED"
-git worktree add ../unzap-<slug> --detach origin/"$ZAPPED"
-cd ../unzap-<slug>
+UNZAP="$(mktemp -d)/unzap-<slug>"        # scratchpad, outside the managed root
+git worktree add "$UNZAP" --detach origin/"$ZAPPED"
+cd "$UNZAP"
 git revert --no-edit <zap-sha>
 git push origin HEAD:refs/heads/"$ZAPPED"   # fast-forward; rejects if stale
-cd - && git worktree remove ../unzap-<slug>
+cd - && git worktree remove "$UNZAP"
 ```
 
 Record the rollback on the same record that carries the zap — the ledger
