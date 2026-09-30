@@ -84,7 +84,7 @@ class BroadcastQueuesController < ApplicationController
       if result.gate.paused? && result.queued.zero?
         redirect_to broadcast_queue_path(@broadcast), alert: "Paused: #{result.gate.reasons.join('; ')}. Nothing was sent."
       else
-        redirect_to broadcast_queue_path(@broadcast, status: "queued"),
+        redirect_to broadcast_queue_path(@broadcast),
                     notice: "Queued #{result.queued} to send, #{Broadcast::BATCH_SPACING.in_milliseconds.to_i}ms apart."
       end
     end
