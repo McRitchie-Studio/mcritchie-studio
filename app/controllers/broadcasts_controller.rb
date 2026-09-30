@@ -22,6 +22,11 @@ class BroadcastsController < ApplicationController
     if @broadcast.sent?
       return redirect_to edit_broadcast_path(@broadcast), alert: "Already sent — duplicate send blocked."
     end
+    # A personalized broadcast (merge fields) sends only from its queue, where
+    # each reader's email is rendered, reviewed and approved first.
+    if @broadcast.requires_staging?
+      return redirect_to broadcast_queue_path(@broadcast), alert: "This email is personalized: stage and approve it here, then execute."
+    end
 
     # Anyone a batch already reached is left out, and a verified-only audience
     # (Broadcast::VERIFIED_AUDIENCES) sends only to verified-valid contacts,

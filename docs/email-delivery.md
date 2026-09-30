@@ -220,6 +220,31 @@ unknown, updated, unchanged, stale) and the size of the has-games audience. Reru
 it whenever the numbers should be fresh; the dyno's `/tmp` copy dies with the
 one-off dyno.
 
+## Staged Sends: Review Before Execute
+
+A personalized broadcast (a subject with `%{field}`s, or a template listed in
+`Broadcast::TEMPLATE_MERGE_FIELDS`) goes out only through its queue at
+`/broadcasts/<slug>/queue`; the editor's send and `broadcasts:send_batch` refuse
+it. Each reader's email is rendered once and held as a `StagedEmail`: recipient,
+subject, HTML and the merge fields used. What is previewed and approved is what
+the send job delivers, byte for byte (`BroadcastMailer#staged`).
+
+```bash
+bin/rails "broadcasts:stage[<slug>,<audience>,<limit>]"   # render and hold; sends nothing
+bin/rails "broadcasts:approve[<slug>,<count|all>]"        # approve the longest held
+bin/rails "broadcasts:execute[<slug>,<limit>]"            # send approved, within the gate
+bin/rails "broadcasts:queue_status[<slug>]"
+```
+
+- Staging takes the same readers a batch would (subscribed, verified-only for a
+  verified audience, never one already sent) and stages each contact once. A
+  reader missing a required field is `skipped` with the field named.
+- Merge fields come from `Broadcasts::MergeFields`: the contact's email and first
+  name, plus Cyvasse stats from `contacts.traits["cyvasse"]` when present.
+- Execute is held by `Broadcasts::SendGate`, over the last 24 hours across every
+  broadcast: at most 500 sent or queued, and a pause when bounces pass 2% or
+  complaints pass 0.05% of sends. The page shows the gate before its confirm.
+
 ## Current Production Status
 
 Last checked: 2026-06-15.

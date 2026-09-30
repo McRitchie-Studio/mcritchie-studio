@@ -68,6 +68,9 @@ class ContactTest < ActiveSupport::TestCase
     @contact.update!(traits: { "cyvasse" => { "username" => "veyjin", "games" => 27 } })
     assert_equal "veyjin", @contact.reload.cyvasse["username"]
     assert_equal 27, @contact.cyvasse_games
+
+    @contact.update_columns(traits: { "cyvasse" => "not a hash" })
+    assert_equal({}, @contact.reload.cyvasse)
   end
 
   test "with_cyvasse_games is contacts with at least one game" do

@@ -230,15 +230,21 @@ bin/task begin <slug> --steal --agent <soul>   # takes over a LIVE holder, delib
 **Run every mutation pass on a throwaway desk** (the [zap protocol's](zap-protocol.md) rule):
 
 ```bash
-REPO="$(dirname "$(cd "$(git rev-parse --git-common-dir)" && pwd)")"   # the PRIMARY checkout, from anywhere
-MUT="$REPO/.worktrees/mut-<slug>"
+MUT="$(mktemp -d)/mut-<slug>"                            # scratchpad, OUTSIDE <repo>/.worktrees/
 git worktree add "$MUT" --detach <pr-head>
 cp <desk>/.env.test.local "$MUT"/                        # REQUIRED — see below
+test -s "$MUT/.env.test.local" || echo "STOP: no .env.test.local"
 (cd "$MUT" && bin/rails test:prepare)                    # REQUIRED — see below
+# done: git worktree remove --force "$MUT"
 ```
 
 - **`.env.test.local` is untracked**; without it the throwaway runs on the SHARED test DB.
-- **Put it under `.worktrees/`**, so `bin/lib/desk_guard.rb` recognizes it as a desk.
+  Outside `.worktrees/`, `bin/lib/desk_guard.rb` does not refuse the tree, so the
+  `test -s` line is that check.
+- **Cut it in your session scratchpad, never under `.worktrees/`.** Anything there is a
+  managed desk (`lib/desk_root.rb`) with a desk-ledger episode, and removing it with plain
+  git leaves a `vanished` ghost on the Desks panel. One already cut there comes down with
+  `bin/agent-worktree remove <app> <name> --yes`.
 - **`bin/rails test:prepare` builds the gitignored assets**; without it a mutant reads as
   caught when the tree only lacks `tailwind.css`.
 

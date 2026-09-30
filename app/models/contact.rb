@@ -3,6 +3,7 @@
 # token. Sending suppresses anyone not `subscribed`.
 class Contact < ApplicationRecord
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy
+  has_many :staged_emails, dependent: :destroy
 
   before_validation :normalize_email
   before_validation :ensure_unsubscribe_token, on: :create
@@ -53,9 +54,11 @@ class Contact < ApplicationRecord
   # The "Your games" audience: a Cyvasse player with at least one game.
   scope :with_cyvasse_games, -> { where("COALESCE((contacts.traits #>> '{cyvasse,games}')::integer, 0) >= 1") }
 
-  # The cyvasse traits (string keys), or an empty hash when never synced.
+  # The cyvasse traits (string keys), or an empty hash when never synced or
+  # when the stored value is not a hash (Broadcasts::MergeFields reads this).
   def cyvasse
-    traits.to_h.fetch("cyvasse", nil).presence || {}
+    value = traits.is_a?(Hash) ? traits["cyvasse"] : nil
+    value.is_a?(Hash) ? value : {}
   end
 
   def cyvasse_games
