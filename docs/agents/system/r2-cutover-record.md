@@ -92,9 +92,9 @@ failed; `/up` 200):
    first. Turf: none in Sidekiq retry or dead.
 3. **Hub only:** a last `s3_urls:rewrite` dry run, expecting all 0.
 4. **Enable nightly backups** per [`r2-backup`](../agents/steffon/sops/r2-backup.md):
-   a `<app>-backup` bucket and keys through
-   [`bucket-provision`](../agents/steffon/sops/bucket-provision.md), repo
-   secrets `R2_BACKUP_<APP>_*`, and a row in the workflow matrix.
+   its §2 Enable creates the `<app>-backup` bucket and the `r2-<app>-backup`
+   token; then repo secrets `R2_BACKUP_<APP>_*`, a row in the workflow matrix,
+   and its §5 drill.
 5. Update this page and the census in
    [`../modules/object-storage.md`](../modules/object-storage.md).
 
