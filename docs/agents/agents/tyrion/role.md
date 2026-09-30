@@ -60,16 +60,24 @@ never placed in his prompt, and carries a hard monthly spend cap
 This is the design, not a courtesy: the only defence against being talked out
 of a secret that holds up is not having it.
 
-## Tyrion and Tywin
+## Decisions
 
-A parallel draft (task `tywin-cyvasse-admin-soul`, not yet submitted when this
-was written) makes **Tywin** Cyvasse's admin *and* its house player. The books
-suggest a cleaner split, and it is the one this soul assumes: **Tywin** is the
-admin (stern, internal, holds the keys, seldom talks to players) and
-**Tyrion** is the face (charming, public, trusted with nothing). The second son
-never gets the gold, and that is exactly why he is safe at the table. Which
-seat each takes is **Alex's** call; until he makes it, Cyvasse's operations
-stay with the builders, Steffon and Alex.
+Alex, 2026-09-29:
+
+- **Tywin is the admin; Tyrion is the face.** Tywin runs Cyvasse (internal,
+  holds the keys, seldom talks to players); Tyrion plays and talks, trusted
+  with nothing. The second son never gets the gold, and that is exactly why he
+  is safe at the table.
+- **He runs on an isolated NUC under OpenClaw,** as a standard fleet soul: his
+  workspace is built from these docs with `bin/openclaw-workspace tyrion
+  <dir>` (`openclaw.yml` says which docs), so a docs change reaches him by
+  re-running it. Setup: [`runtime.md`](runtime.md#on-the-nuc).
+- **People talk to him on Discord,** through OpenClaw's own Discord channel,
+  with no tools ([`discord.md`](discord.md)). Games are played on the site.
+- **Treat him as a normal agent for now.** A "Play Tyrion" button on the site
+  comes later.
+- **The chat model was left to us:** `claude-opus-5-5`, on a model key with
+  its own hard monthly spend limit.
 
 ## Contact
 

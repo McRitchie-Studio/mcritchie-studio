@@ -216,6 +216,24 @@ agents_data = [
       "review_role" => nil,
       "reviewer" => false
     }
+  },
+  # Cyvasse's house player (task tyrion-fleet-onboarding): client-facing, plays
+  # and talks with visitors, and by design holds no credential beyond his own
+  # game token (docs/agents/agents/tyrion/role.md). Tywin is Cyvasse's admin;
+  # Tyrion is the face. Non-reviewing.
+  {
+    name: "Tyrion",
+    slug: "tyrion",
+    status: "active",
+    agent_type: "specialist",
+    title: "Cyvasse House Player",
+    description: "Cyvasse's client-facing player: plays visitors, talks with them across the board, and teaches the game. Holds no credentials beyond his own game token, so nothing can be talked out of him. Runs on an isolated machine; Tywin runs the place.",
+    avatar: nil,
+    position: 11,
+    metadata: {
+      "review_role" => nil,
+      "reviewer" => false
+    }
   }
 ]
 
@@ -226,12 +244,14 @@ agents_data = [
 AGENT_EMOJI = {
   "xan" => "🧭", "avi" => "📋", "carl" => "🛠", "shannon" => "🎨",
   "jasper" => "🧪", "steffon" => "🚀", "turf-monster" => "🐲",
-  "mack" => "📦", "mason" => "📣", "pokemon" => "⚡", "rex" => "📈"
+  "mack" => "📦", "mason" => "📣", "pokemon" => "⚡", "rex" => "📈",
+  "tyrion" => "🦁"
 }.freeze
 AGENT_COLOR = {
   "xan" => "#818CF8", "avi" => "#FB7185", "carl" => "#F97316", "shannon" => "#EC4899",
   "jasper" => "#9945FF", "steffon" => "#06B6D4", "turf-monster" => "#84CC16",
-  "mack" => "#9CA3AF", "mason" => "#EF4444", "pokemon" => "#FACC15", "rex" => "#14B8A6"
+  "mack" => "#9CA3AF", "mason" => "#EF4444", "pokemon" => "#FACC15", "rex" => "#14B8A6",
+  "tyrion" => "#B45309"
 }.freeze
 
 # `alex` → `xan`, IN PLACE. db/migrate/20260924210000_rename_alex_soul_to_xan.rb
