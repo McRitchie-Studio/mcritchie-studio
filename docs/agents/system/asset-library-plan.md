@@ -108,7 +108,7 @@ every text and JSON column): only the hub has any.
 | Hub column | Rows | Points at |
 |---|---|---|
 | `task_events.metadata` → `mascot` | 14,707 | `mcritchie-studio-production/pokemon/…` sprites, snapshotted per board event |
-| `pokemons` (8 URL columns: sprite, avatar, fallbacks, shiny, female) | 494 per column | the same `pokemon/` prefix, written by `lib/tasks/pokemon.rake`'s hard-coded `S3_BASE` |
+| `pokemons` (8 URL columns: sprite, avatar, fallbacks, shiny, female) | 494 per column | the same `pokemon/` prefix, written by `lib/tasks/pokemon.rake` before it moved to `Studio::S3` |
 | `artifacts.image_url` | 3 | `character-sheets/` |
 | `agent_actions`, `agent_activities`, `action_grades`, `tasks.metadata` | a few hundred | URLs quoted inside agent logs and notes: history, not served; leave them |
 
@@ -246,7 +246,7 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 | all engine apps | `Studio::S3` (`ImageCache`, `KnowledgeDoc`, email banners and logos) | step 7; `url` raises on R2 without `s3_public_url`, which is why the switch sets both |
 | `mcritchie-studio` | `Broadcasts::Assets.publish` | expects `upload` to return a URL; on R2 it needs `s3_public_url`, which step 7 sets in the same deploy |
 | `mcritchie-studio` | `Content::GenerateLineupAssets`, `Appearances::ReferenceImages` | via `Studio::S3` |
-| `mcritchie-studio` | `lib/tasks/pokemon.rake` | builds its own `Aws::S3::Client` for `us-east-2` and hard-codes `S3_BASE` into `pokemons` URL columns; port, and rewrite the stored URLs |
+| `mcritchie-studio` | `lib/tasks/pokemon.rake` | ported to `Studio::S3` (client and URL base); the `pokemons` URL columns it wrote before the port still need the rewrite above |
 | `mcritchie-studio` | `Appearances::StoreGeneratedImage` | uploads via `Studio::S3` and **stores the returned URL** |
 | `mcritchie-studio` | `Athletes::DescribeFromHeadshot` | downloads via `Studio::S3` |
 | `mcritchie-studio` | `Athletes::RekeyHeadshots` | copies then deletes keys via `Studio::S3`; do not run it between step 4 and step 7 |
@@ -333,7 +333,7 @@ account before starting; this is what the docs name today.
 | S3 app buckets (`<app>-dev`, `<app>-production`) | Active Storage, `Studio::S3` | R2 (Wave 2) |
 | S3 desk-capture bucket `mcritchie-studio-desk` (`us-east-1` by default) and the **SES inbound** fallback | `team@mcritchie.studio` capture (`DeskCapture`); the main path is already Resend inbound, which writes into this bucket | a private R2 bucket for `DeskCapture` alone (provisioned 2026-09-29), then retire the SES fallback (`DeskCapturePollJob`) with the AWS exit: SES inbound drops into S3 only, so once the desk reads R2 the poll has nothing to read |
 | **SES outbound** (`agent.aws.mcritchie-ses`) | nothing: on 2026-09-28 no app held `SES_SMTP_*`; the three apps that send mail hold `RESEND_API_KEY` | retire the credential and the SES identity |
-| **S3 URLs already handed out** | full `amazonaws.com` URLs outside the key-to-URL path: stored columns (`Content#hook_image_url` and `#final_video_url` keep what `Studio::S3.upload` returned; `lib/tasks/pokemon.rake` hard-codes its `S3_BASE`), images in broadcasts already sent, and og:image URLs unfurlers cached | before deleting a bucket, rewrite stored URLs to `assets.<domain>` and decide whether sent mail's `email/` images keep an S3 copy; none of these move with the Wave 2 config |
+| **S3 URLs already handed out** | full `amazonaws.com` URLs outside the key-to-URL path: stored columns (`Content#hook_image_url` and `#final_video_url` keep what `Studio::S3.upload` returned; the `pokemons` URL columns `pokemon.rake` wrote before it moved to `Studio::S3`), images in broadcasts already sent, and og:image URLs unfurlers cached | before deleting a bucket, rewrite stored URLs to `assets.<domain>` and decide whether sent mail's `email/` images keep an S3 copy; none of these move with the Wave 2 config |
 | IAM users (`mcritchie-s3`, `mcr-*`, `mcritchie-ses`, and the admin key's user, which answers as `agents-admin`) | the keys above | delete after their buckets are gone; `mcritchie-ses` now (see **IAM users** below) |
 | 1Password items (`agent.aws`, `AWS`, `mcritchie-industries.aws`, `agent.aws.mcritchie-ses`) | the keys above | mark RETIRED in the inventory's name or vault cell |
 
