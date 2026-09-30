@@ -72,7 +72,7 @@ and `DeskCapture`'s private R2 bucket.
 |---|---|---|
 | 0 | credentials | **done**: `cloudflare.studio.provision` filed and verified |
 | 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, released in `studio-engine` 0.77); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md), run nightly for `moms-app` and `mcritchie-industries` |
-| 2 | per-app S3 → R2 cutover | **in progress** (2026-09-29): `moms-app` and `mcritchie-industries` R2-primary with an S3 mirror, soaking; `mcritchie-studio` and `turf-monster` code shipped and inert, objects pre-copied, waiting on DNS for `assets.` |
+| 2 | per-app S3 → R2 cutover | **in progress** (2026-09-29): `moms-app` and `mcritchie-industries` R2-primary with an S3 mirror, soaking; `mcritchie-studio` and `turf-monster` code shipped and inert, objects pre-copied, DNS on Cloudflare and `assets.` domains serving (2026-09-30), cutovers next |
 | 3 | asset catalog | proposal below |
 | 4 | load the collections | after 3 |
 | 5 | business documents | **done for McRitchie Studio** (Shared Drives); Commercial Welding open |
@@ -133,8 +133,8 @@ APPLY=1 bin/rails "s3_urls:rewrite_seed_json[https://assets.mcritchie.studio]"  
 | `moms-app` | **cutting over**: `ACTIVE_STORAGE_BACKEND=mirror_to_s3` (R2 primary), soaking before step 9 (2026-09-29) | Active Storage only, no `Studio::S3`; now registered in `config/release_repos.yml` (profile `standalone-heroku`) and on `studio-engine` 0.77.3 |
 | `commercial-welding` | nothing to migrate | empty buckets, no writer; retire the S3 pair in Wave 7 |
 | `mcritchie-industries` | **cutting over**: `ACTIVE_STORAGE_BACKEND=mirror_to_s3` and `STUDIO_S3_BACKEND=r2`, soaking before step 9 (2026-09-29) | on `studio-engine` 0.77.4. Private objects only |
-| `mcritchie-studio` | blocked | DNS for `assets.`, plus the URL rewrite above |
-| `turf-monster` | blocked | DNS for `assets.` |
+| `mcritchie-studio` | blocked (cleared 2026-09-30) | DNS for `assets.`, plus the URL rewrite above |
+| `turf-monster` | blocked (cleared 2026-09-30) | DNS for `assets.` |
 
 ## Wave 2 — the per-app cutover recipe
 
@@ -199,7 +199,8 @@ The recipe:
 6. **Public domain** (apps that serve public objects; needs the domain's DNS
    on Cloudflare first, see **Blocker for step 6** below). Attach
    `assets.<domain>` to the R2 production bucket (a dashboard step until the
-   provisioning token has Zone Read) and fetch one copied object through it.
+   provisioning token can do it by API, see **Blocker for step 6**) and fetch
+   one copied object through it.
    Still no `R2_PUBLIC_URL`. An app with a public Active Storage service
    (turf-monster) runs this step **before step 3**, fetches a test object
    instead, and sets `R2_PUBLIC_URL` here: its storage config needs it on
@@ -257,18 +258,32 @@ A grep proves a binding, not completeness; re-grep each app for `Aws::S3`,
 | `moms-app` | Active Storage only: `Book.cover`, `Book.audio`, `User.avatar`; the bucket comes from `S3_BUCKET` in `config/storage.yml` | no `Studio::S3`; one multipart audio object, so verify by size |
 | `commercial-welding` | none: no app on Heroku, and both S3 buckets were empty on 2026-09-28 | nothing to cut over; retire the S3 pair in Wave 7 | |
 
-**Blocker for step 6** (and so for turf-monster's step 3, above). R2 custom
-domains need the domain's DNS on Cloudflare in the same account. Measured
-2026-09-26: `mcritchie.studio` is served by Google's nameservers and
-`turfmonster.media` by Squarespace's. `turfmonster.media` is the domain Turf
+**Blocker for step 6** (and so for turf-monster's step 3, above), **cleared
+2026-09-30.** R2 custom domains need the domain's DNS on Cloudflare in the same
+account. On 2026-09-26 `mcritchie.studio` was served by Google's nameservers
+and `turfmonster.media` by Squarespace's; since 2026-09-30 both zones are
+Active on Cloudflare with every record DNS only, and both `assets.` domains
+serve their production buckets. `turfmonster.media` is the domain Turf
 Monster serves from: it is the production `smoke_url` in
 `config/release_repos.yml` (app `turf-monster-mainnet`). Moving each domain's DNS to Cloudflare is the CDN rollout
 ([`cdn-rollout.md`](cdn-rollout.md)) and Steffon's `domain-dns` SOP; it must
 carry the Google Workspace mail records across. The three private-object apps
 do not need it; `mcritchie-studio` and `turf-monster` go last partly for this
-reason. Measured on the provisioning token the same day: it holds DNS read and
-write across every domain in the account, and no Zone Read, which R2 needs to
-resolve a domain.
+reason. The provisioning token attached both `assets.` domains itself by API
+(2026-09-30), so no dashboard step remains.
+
+**The move cost Turf Monster about an hour of outage (2026-09-29 23:17 →
+2026-09-30 00:23 MDT), and the lesson binds the next domain.**
+`turfmonster.media` had DNSSEC published at the `.media` registry. Squarespace's
+"disable DNSSEC to change nameservers" dialog stops signing at once, while the
+registry keeps the DS record (TTL 3600) until the registrar pushes its removal,
+about 15 minutes here. Every validating resolver (1.1.1.1, 8.8.8.8, 9.9.9.9)
+failed the domain in between and for up to an hour after, from cache. The same
+dialog also saved the wrong nameserver pair; Squarespace pushes each save about
+15 minutes later, in order. For any domain with a DS record (`dig DS <domain>`
+at the TLD server): disable DNSSEC as its own step, wait until the TLD no
+longer publishes the DS plus its TTL, then change nameservers; confirm the
+domain name on the page before every save.
 
 ## Wave 3 — the asset catalog
 
@@ -396,8 +411,6 @@ read-only on them for one audit.
 
 | Item | Owner |
 |---|---|
-| Move `mcritchie.studio` DNS to Cloudflare (hub first), then Turf Monster's app domain | Alex + Steffon (`domain-dns`, CDN rollout) |
-| Add **Zone → Read** to the provisioning token | Alex (dashboard) |
 | Commercial Welding's document tier (Egnyte or Drive) | Alex, after the compliance question |
 | Copy `DeskCapture`'s objects to its R2 bucket and flip `DESK_CAPTURE_BACKEND=r2` (bucket and code ready 2026-09-29); retire the SES fallback with the AWS exit | Steffon, before Wave 7 |
 | Does Commercial Welding carry CMMC or ITAR obligations? | Alex |

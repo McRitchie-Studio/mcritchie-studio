@@ -182,8 +182,8 @@ Registrar access is Alex's; the nameserver change cannot be done by an agent.
 
 | Domain | DNS host today | Heroku app | Records | Status |
 |---|---|---|---|---|
-| `mcritchie.studio` | Google Cloud DNS | `mcritchie-studio` | apex + `www` + `app` | **pilot** |
-| `turfmonster.media` | name.com | `turf-monster-mainnet` | apex + `app` | after pilot |
+| `mcritchie.studio` | Cloudflare since 2026-09-30, every record DNS only (was Google Cloud DNS) | `mcritchie-studio` | apex + `www` + `app` + eight app subdomains | **pilot**: DNS moved, not yet proxied (steps 3, 5, 6 still owed) |
+| `turfmonster.media` | Cloudflare since 2026-09-30, every record DNS only (was Squarespace DNS; registrar Squarespace) | `turf-monster-mainnet` | apex + `app` + `qa` | DNS moved, not yet proxied; DNSSEC off (see the asset-library plan's Blocker for step 6) |
 | `mcritchie.industries` | Squarespace DNS | `mcritchie-industries` | `www` only | after pilot |
 | `karenmcritchie.com` | name.com | `obscure-plains-6405` | apex + `www` | after pilot |
 
