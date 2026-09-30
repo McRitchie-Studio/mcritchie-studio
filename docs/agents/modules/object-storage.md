@@ -90,7 +90,7 @@ their own dates where they changed after the census.
 |---|---|---|---|---|
 | `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | `Studio::S3` on R2 and Active Storage R2-primary with S3 mirror since 2026-09-30 (release v530), soaking to about 2026-10-07; `assets.mcritchie.studio` serves production | not enabled |
 | `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | not yet: the code reads it once `DESK_CAPTURE_BACKEND=r2` is set | not enabled |
-| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | not yet; `assets.turfmonster.media` attached to production 2026-09-30, objects pre-copied | not enabled |
+| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | `Studio::S3` on R2 and Active Storage R2-primary with S3 mirror since 2026-09-30 (release v297), soaking to about 2026-10-07; `assets.turfmonster.media` serves production | not enabled |
 | `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | knowledge docs (`Studio::S3`) since 2026-09-28; Active Storage R2-primary with S3 mirror during the soak | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
 | `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
 | `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | not yet (Wave 2) | enabled 2026-09-26, `moms-app-backup`; drill passed; nightly via `.github/workflows/r2-backup.yml` |
