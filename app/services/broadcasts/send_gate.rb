@@ -34,11 +34,11 @@ module Broadcasts
 
     def status
       since = @now - WINDOW
-      delivered = BroadcastDelivery.where(sent_at: since..@now).count
+      delivered = BroadcastDelivery.where(sent_at: since..).count
       # Queued but not yet sent: a second execute before the jobs run must not
       # take the cap twice.
-      queued = StagedEmail.where(status: "approved", sent_at: nil, queued_at: since..@now).count
-      events = EmailEvent.where(occurred_at: since..@now)
+      queued = StagedEmail.where(status: "approved", sent_at: nil, queued_at: since..).count
+      events = EmailEvent.where(occurred_at: since..)
       bounces = events.of_kind("bounced").count
       complaints = events.of_kind("complained").count
 
