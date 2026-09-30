@@ -141,7 +141,7 @@ spaces the sends for Resend's rate limit (`app/models/broadcast.rb#send_batch!`)
 **Link migration applies only to launch (b), and to (a) on a new domain.** For a
 list launch (c), run the sizes with every link on the established domain.
 
-Cyvasse ran 100 → 1,000 → 2,000 with no link migration, so stages 2–5's link
+Cyvasse ran 100 → 1,000 → 2,000 and up with no link migration, so stages 2–5's link
 steps are untested. The first launch to run them owes a note on whether they
 held.
 
@@ -206,8 +206,8 @@ weekly [`content-sprint`](content-sprint.md).
 |---|---|
 | List | 18,745 legacy players imported, tagged `cyvasse-legacy` |
 | First unverified batch | 101 sends, 13 bounced (12.9%) |
-| Verification of 10,000 | 81% valid, 16% invalid, 1.5% abuse, 1.3% do-not-mail, 1 spam trap |
-| Verified batches | 100 → 1,000 → 2,000; bounce 0.8–2.4%, oldest addresses highest |
+| Verification of 10,000 | 81% kept (valid, catch-all or unknown), 16% invalid, 1.5% abuse, 1.3% do-not-mail, 1 spam trap |
+| Verified batches | 100 → 1,000 → 2,000, then larger, to 8,239 sends by 2026-09-30; bounce 0.8–2.4%, oldest addresses highest |
 | Complaints | 0 across 8,239 sends |
 | Clicks | 52 Play Now, 34 on the P.S. (40% of clicks) |
 | Funnel | 52 clicks → 12 arrivals → 9 plays, all as guests; 1 human-versus-human game |
