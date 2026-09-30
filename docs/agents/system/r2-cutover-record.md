@@ -105,12 +105,15 @@ the step 4 reverse copy above.
 
 ## Still owed
 
-- **QA passes.** `mcritchie-studio-qa` (dev bucket, mirror stages like
-  production) and `turf-monster-qa` (holds no AWS keys, so it goes `s3` → `r2`
-  in one move). Each needs a public URL on its R2 dev bucket (for example
-  `assets-dev.<domain>`, never the production domain), a catch-up
-  `rclone copy -M` of the dev bucket, a key-presence check, and one
-  `config:set` of all five variables after a one-off-dyno pre-check.
+- **QA passes.** `mcritchie-studio-qa` and `turf-monster-qa` both hold no AWS
+  keys (measured on one-off dynos 2026-09-30), so there is no mirror stage to
+  run: each goes `s3` → `r2` in one move on its dev bucket. Each needs a public
+  URL on its R2 dev bucket (for example `assets-dev.<domain>`, never the
+  production domain), a catch-up `rclone copy -M` of the dev bucket, a
+  key-presence check, and one `config:set` of all six variables (`R2_ENDPOINT`,
+  `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL`,
+  `STUDIO_S3_BACKEND=r2`, `ACTIVE_STORAGE_BACKEND=r2`) after a one-off-dyno
+  pre-check.
 - **DeskCapture** stays on its own S3 bucket (`mcritchie-studio-desk`) until
   `DESK_CAPTURE_BACKEND=r2`, a separate step in the plan's open decisions.
 - **AWS keys stay** on both apps until the AWS exit: the S3 half of the mirror
