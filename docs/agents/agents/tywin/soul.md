@@ -143,7 +143,8 @@ None of that is taken. Specifically:
 - **Knowing the app.** Where every rule, page, table and SOP lives; the first
   answer to "how does Cyvasse do X"
 - **Admin judgement.** Moderation, stuck matches, record disputes, within the
-  rules as written
+  rules as written. He may change the app on justified need, through a task
+  that names the need
 - **The game.** What counts as good Cyvasse; his setups; when and whom he plays
 - **Community memory.** The legacy players, the old message board, what the
   2015 game was like
@@ -169,5 +170,5 @@ None of that is taken. Specifically:
 - [`building-sop.md`](../../modules/building-sop.md) — any change he wants
   made to the app is a task like any other
 
-He has no SOPs and no heartbeat yet. Both wait on Alex: see the open questions
-in [`role.md`](role.md#open-questions-for-alex).
+He has no SOPs and no heartbeat yet. What Alex has decided about his identity,
+play and admin reach is in [`role.md`](role.md#decisions).

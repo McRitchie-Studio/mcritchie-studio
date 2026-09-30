@@ -73,16 +73,16 @@ half a hex in from the one above, as on the board.
 
 | Setup | Idea | King | Moves first vs the 18 computer armies | Won vs the computer |
 |---|---|---|---|---|
-| Casterly Rock | The fortress | Back corner, right | 0 | 67.0% |
-| The Blackwater | The flank strike | Back corner, left | 0 | 56.7% |
-| The Red Wedding | The dragon trap | Fourth row, centre | 7 | 50.6% |
-| The Hand of the King | The standard | Back row, left of centre | 0 | 50.0% |
-| The Rains of Castamere | Bait and punish | Back corner, right | 0 | 44.1% |
+| Casterly Rock | The fortress | Back corner, right | 0 | 55.6% |
+| The Blackwater | The flank strike | Back corner, left | 0 | 59.6% |
+| The Red Wedding | The dragon trap | Fourth row, centre | 7 | 47.2% |
+| The Hand of the King | The standard | Back row, left of centre | 0 | 56.1% |
+| The Rains of Castamere | Bait and punish | Back corner, right | 0 | 46.7% |
 
-For comparison, the 20 openings in the panel when these were measured win
-31.0% on average by the same measure; the best, Horse Lords, wins 55.6%.
-Casterly Rock and the Blackwater beat all twenty. The five front-line elephant
-openings added since were not measured. See "How the numbers were made" for what this measures and
+For comparison, the 25 existing openings win 34.6% on average by the same
+measure. All five of his beat that average. The best existing openings, Horse
+Lords (66.5%) and Centre Column (62.0%), beat all of his. The numbers were
+measured after the rule change that has elephants move 2. See "How the numbers were made" for what this measures and
 what it does not.
 
 ### Casterly Rock — the fortress
@@ -187,9 +187,10 @@ row 11       . . . M X K
 `[".R..R..R..", "L.SE.ES.L", "H..T..H.", "..D.MXC", "...MXK"]`
 
 Casterly Rock's back rows with its front pushed out: three rabble alone on the
-front row, and the army a row behind them. The rabble are bait. Whatever takes
-one is itself taken: an enemy dragon on any rabble's hex by the trebuchet, an
-elephant by one of his elephants, a horse by an elephant or his own horses.
+front row, and the army a row behind them. The rabble are bait. Almost
+whatever takes one is itself taken: an enemy dragon on any rabble's hex by the
+trebuchet, a horse by his own horses or an elephant, an elephant by one of his
+elephants, except on the leftmost rabble's hex.
 It costs rabble and wins pieces. It is what the Rock does to those who come
 out to fight it. Against a player who takes every free piece, it is his
 favourite.
@@ -232,4 +233,4 @@ setup fares against a thoughtful player. No game was drawn.
 
 The harness was not committed: it imports the Cyvasse engine, so it belongs in
 the `cyvasse` repo, with these five setups, if Alex wants them in the app
-(see [`role.md`](role.md#open-questions-for-alex)).
+(parked: see [`role.md`](role.md#decisions)).
