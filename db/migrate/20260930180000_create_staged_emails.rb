@@ -8,7 +8,7 @@ class CreateStagedEmails < ActiveRecord::Migration[8.1]
     create_table :staged_emails do |t|
       t.references :broadcast, null: false, foreign_key: true
       t.references :contact, null: false, foreign_key: true
-      t.references :broadcast_delivery, foreign_key: true
+      t.references :broadcast_delivery, foreign_key: { on_delete: :nullify }
       t.string :status, null: false, default: "staged"
       t.string :skip_reason
       t.string :email
