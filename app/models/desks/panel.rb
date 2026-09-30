@@ -56,6 +56,8 @@ module Desks
     def band_size = snapshot&.band_size
     def dirty_count = snapshot&.dirty_desks || live.count(&:dirty)
     def held_count = snapshot&.withheld_desks
+    # Worktrees the snapshot listed outside every managed root: counted, never ledgered.
+    def unmanaged_count = snapshot&.unmanaged_desks
 
     def generated_at = snapshot&.generated_at
 

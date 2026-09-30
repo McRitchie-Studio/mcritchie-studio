@@ -57,6 +57,7 @@ class DeskSnapshot < ApplicationRecord
 
   def dirty_desks = summary["dirty_worktrees"]
   def withheld_desks = summary["withheld"]
+  def unmanaged_desks = summary["unmanaged"]
   def cleanup_candidates = summary["cleanup_candidates"]
   def running_desks = summary["running_or_port_busy"]
 end

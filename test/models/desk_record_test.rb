@@ -277,6 +277,85 @@ class DeskRecordTest < ActiveSupport::TestCase
                  "with no snapshot to compare against, the honest answer is not `gone`"
   end
 
+  # ---- [unit] unmanaged worktrees: listed, never ledgered ---------------------------
+  #
+  # desk-ledger-stops-ghosting. Since the snapshot enumerates `git worktree list`, a
+  # reviewer's scratch checkout reaches this sync; it is deleted with plain git, so an
+  # episode opened for it can only ever end as a vanished ghost (six on 2026-09-29).
+
+  SCRATCH = "/private/tmp/claude-501/-Users-alex-projects/abc/scratchpad/wt-carl-review-mutation"
+
+  def scratch_desk(**overrides)
+    REGISTRY_DESK.merge("worktree" => SCRATCH, "label" => "mcritchie-studio/wt-carl-review-mutation",
+                        "task" => "wt-carl-review-mutation", "cleanup_candidate" => false).merge(overrides)
+  end
+
+  test "[unit] a sync opens no episode for a desk outside the managed root, but one for a managed desk" do
+    snapshot = DeskRecord.sync!(registry(desks: [REGISTRY_DESK.merge("managed" => true), scratch_desk("managed" => false)]))
+
+    assert_equal 2, snapshot.desk_count, "the unmanaged desk is still LISTED in the snapshot"
+    assert_nil DeskRecord.open_for(SCRATCH), "an unmanaged worktree must not open a ledger episode"
+    assert_not DeskRecord.exists?(worktree_path: SCRATCH)
+    assert DeskRecord.open_for(SHIP), "a managed desk still opens its episode"
+  end
+
+  # A snapshot from a CLI that predates the `managed` flag: the board derives it from the
+  # path with the same rule (DeskRoot), rather than opening episodes for every scratch tree.
+  test "[unit] with no managed flag the path decides, through the shared DeskRoot rule" do
+    DeskRecord.sync!(registry(desks: [REGISTRY_DESK, scratch_desk]))
+
+    assert_nil DeskRecord.open_for(SCRATCH)
+    assert DeskRecord.open_for(SHIP)
+  end
+
+  test "[unit] a sync closes an open unmanaged episode whose desk is gone, and reports a vanished managed one" do
+    # Both opened before this fix, as the six ghosts of 2026-09-29 were.
+    DeskRecord.file!(**DeskRecord.registry_attributes(scratch_desk), status: "live", source: "snapshot")
+    DeskRecord.file!(**DeskRecord.registry_attributes(REGISTRY_DESK), status: "live", source: "snapshot")
+
+    DeskRecord.sync!(registry(generated_at: "2026-08-31T22:39:33Z", desks: []))
+
+    closed = DeskRecord.where(worktree_path: SCRATCH).sole
+    assert_equal "removed", closed.status, "the departed unmanaged desk resolves itself"
+    assert_equal Date.current, closed.resolved_on, "a resolved row carries its date"
+    assert_equal "snapshot", closed.source
+    assert_match(/unmanaged worktree/, closed.reason, "the reason says why the snapshot closed it")
+
+    managed = DeskRecord.open_for(SHIP)
+    assert managed, "a vanished MANAGED desk is never auto-closed"
+    assert_equal [managed.id], DeskRecord.vanished.map(&:id), "…and it is still reported as vanished"
+  end
+
+  test "[unit] an unmanaged episode still on disk is refreshed, not closed and not vanished" do
+    DeskRecord.file!(**DeskRecord.registry_attributes(scratch_desk), status: "live", source: "snapshot")
+
+    snapshot = DeskRecord.sync!(registry(generated_at: "2026-08-31T22:39:33Z", desks: [scratch_desk("managed" => false)]))
+
+    open = DeskRecord.open_for(SCRATCH)
+    assert open, "a desk still listed is not closed"
+    assert_equal snapshot.generated_at, open.last_seen_at
+    assert_empty DeskRecord.vanished.to_a
+  end
+
+  # `removing` means THIS tooling began a teardown and never recorded its outcome: that is
+  # the defect the vanished report exists for, managed root or not.
+  test "[unit] an unmanaged episode left mid-teardown stays open and reported" do
+    DeskRecord.file!(**DeskRecord.registry_attributes(scratch_desk), status: "removing", source: "remove")
+
+    DeskRecord.sync!(registry(generated_at: "2026-08-31T22:39:33Z", desks: []))
+
+    assert_equal "removing", DeskRecord.open_for(SCRATCH)&.status
+    assert_equal 1, DeskRecord.vanished.count
+  end
+
+  test "[unit] a sync never rewrites a resolved unmanaged episode" do
+    DeskRecord.file!(worktree_path: SCRATCH, status: "removed", resolved_on: Date.new(2026, 9, 29), reason: "closed by hand")
+
+    DeskRecord.sync!(registry(desks: []))
+
+    assert_equal ["closed by hand"], DeskRecord.where(worktree_path: SCRATCH).pluck(:reason)
+  end
+
   # ---- [unit] the reader's vocabulary ---------------------------------------------
 
   test "[unit] the status label reads as the markdown ledger's Status cell did" do

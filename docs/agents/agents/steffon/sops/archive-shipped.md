@@ -100,7 +100,10 @@ cleanup guards.
 5. **`--dry-run` stops here.** Everything above mutates nothing.
 6. One confirm authorizes every mutation below.
 7. Archives on the board (`shipped → archived`).
-8. Reclaims the merged/shipped worktrees (`--reclaim --yes`).
+8. Runs the full reclaim sweep (`bin/agent-worktree cleanup --reclaim --yes`: every desk,
+   bound or not, re-verified under the lock) and prints `worktree reclaim: reclaimed N,
+   held M`. A failed sweep is a warning, never a failed archive; re-run it via
+   [`clean-infra`](clean-infra.md).
 9. Sweeps the regenerable artifacts (`bin/clean-artifacts`) — **after** the
    reclaim, so worktrees that just went away are not swept and counted twice.
 10. Retires frozen docs + rolls the ledger (`bin/archive-docs`), then commits

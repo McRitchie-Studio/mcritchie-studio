@@ -155,6 +155,24 @@ class AgentWorktreeDeskDiscoveryTest < Minitest::Test
     assert_match %r{HELD gem-lib/projects-root-desk: outside the managed desk root}, gem_out
   end
 
+  # desk-ledger-stops-ghosting. The registry the board syncs from marks each desk with the
+  # SAME verdict the reclaim hold reads, so the board can list a scratch worktree without
+  # opening a ledger episode it would never see closed (DeskRecord.sync!).
+  def test_the_snapshot_marks_each_desk_managed_or_not_and_counts_the_unmanaged
+    hub = repo_with_origin("mcritchie-studio")
+    desk(hub, "cc-session", at: File.join(hub, ".claude", "worktrees", "cc-session")) { |_dir| nil }
+    desk(hub, "managed-twin") { |_dir| nil }
+
+    out = run_in_script(<<~RUBY, env: { "AGENT_WORKTREE_OPEN_PR" => "none", "AGENT_WORKTREE_TASK_JSON" => nil })
+      payload = snapshot_payload
+      flags = payload["worktrees"].map { |w| [w["label"], w["managed"]] }.sort
+      print({ flags: flags, unmanaged: payload["summary"]["unmanaged"] }.inspect)
+    RUBY
+
+    assert_equal({ flags: [["mcritchie-studio/cc-session", false], ["mcritchie-studio/managed-twin", true]],
+                   unmanaged: 1 }.inspect, out)
+  end
+
   # Steffon's reproduction. A two-repo task cuts `feat/<slug>` in both repos; a cache keyed
   # on the branch alone handed the hub's "no open PR" to the gem desk.
   def test_the_open_pr_answer_is_never_shared_across_repos_on_one_branch_name
