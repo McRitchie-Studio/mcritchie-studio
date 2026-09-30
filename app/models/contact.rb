@@ -29,6 +29,35 @@ class Contact < ApplicationRecord
   scope :unverified,     -> { where(verified_at: nil) }
   scope :verified_valid, -> { where(verification_status: "valid") }
 
+  # --- traits (task contact-traits-from-cyvasse) ------------------------------
+  # What other apps know about this contact, one key per source. Each importer
+  # writes only its own key (Contacts::CyvasseTraitsImport owns "cyvasse").
+  #
+  # traits["cyvasse"], from the cyvasse app (script/contacts/cyvasse_traits.rb):
+  #   username        the public username
+  #   games           every match the player sat in: human or computer
+  #                   opponent, legacy or new, any status
+  #   finished_games  the part of `games` that reached a result
+  #   wins, losses    the all-time record on the account (users.wins/losses)
+  #   joined_on       the account's creation date (legacy dates carried over)
+  #   last_active_on  the later of the account's updated_at and its last move
+  #   all_time_rank   the place on cyvasse's all-time leaderboard (wins, then
+  #                   fewest losses, then oldest account); nil with no wins
+  #   synced_at       when the cyvasse app was read
+  CYVASSE_TRAITS = %w[username games finished_games wins losses joined_on last_active_on all_time_rank synced_at].freeze
+
+  # The "Your games" audience: a Cyvasse player with at least one game.
+  scope :with_cyvasse_games, -> { where("COALESCE((contacts.traits #>> '{cyvasse,games}')::integer, 0) >= 1") }
+
+  # The cyvasse traits (string keys), or an empty hash when never synced.
+  def cyvasse
+    traits.to_h.fetch("cyvasse", nil).presence || {}
+  end
+
+  def cyvasse_games
+    cyvasse["games"].to_i
+  end
+
   def first_name_or_default
     first_name.presence || "there"
   end

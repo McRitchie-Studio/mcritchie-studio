@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -591,6 +591,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_120000) do
     t.string "source"
     t.boolean "subscribed", default: true, null: false
     t.string "tags", default: [], null: false, array: true
+    t.jsonb "traits", default: {}, null: false
     t.string "unsubscribe_reason"
     t.string "unsubscribe_token", null: false
     t.datetime "unsubscribed_at"
