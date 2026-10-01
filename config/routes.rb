@@ -21,7 +21,9 @@ Rails.application.routes.draw do
   patch "build/:token", to: "build#update"
   # The public contact form, which is also the SMS opt-in page carriers review.
   get  "contact", to: "contact_submissions#new", as: :contact_form
-  post "contact", to: "contact_submissions#create"
+  # Both routes are named. An unnamed `post "contact"` is auto-named `contact`
+  # and takes `contact_path` away from the mailing list's /contacts/:id.
+  post "contact", to: "contact_submissions#create", as: :contact_form_submit
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.
   get "credentials", to: "credential_vaults#index", as: :credentials
