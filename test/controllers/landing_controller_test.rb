@@ -36,7 +36,9 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Chat Right Now"
   end
 
-  test "contact section links to the correct social profiles" do
+  # The home page's own "Get In Touch" section is gone; the site footer carries
+  # these links now, and the same handles are pinned there.
+  test "the home page links to the correct social profiles" do
     get root_path
 
     assert_response :success
