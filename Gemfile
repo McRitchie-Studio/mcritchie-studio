@@ -193,7 +193,11 @@ gem "sentry-rails"
 #
 # 0.82 for site identity and link previews (Studio::SiteIdentity, the
 # /admin/link_preview page, Studio::LinkPreviewBots): task hub-adopts-link-preview.
-gem "studio-engine", "~> 0.82"
+#
+# 0.83 for the site footer and booking primitives (Studio.site_footer,
+# Studio.booking_url, studio_site_footer, studio_booking_frame): task
+# hub-adopts-engine-footer. It also carries Leaflet, which this app used to vendor.
+gem "studio-engine", "~> 0.83"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the

@@ -4,7 +4,9 @@
 #   build               /build, the App Builder
 #   schedule            /schedule, opened as the booking popup (the studio's
 #                       Google Calendar appointment page in a dialog; the href is
-#                       the no-script fallback)
+#                       the no-script fallback). Written with the engine's
+#                       `studio_booking_link`, which marks it as a link the
+#                       engine's popup script answers to.
 #   enterprise_booking  the configured enterprise_booking_url in a new tab, or —
 #                       while it is blank — the same booking popup as `schedule`
 module PackagesHelper
@@ -18,7 +20,7 @@ module PackagesHelper
     elsif action == "build"
       link_to label, build_path, **options, data: data.merge(cta_target: "build")
     else
-      link_to label, schedule_index_path, **options, data: data.merge(cta_target: "schedule", booking_popup: true)
+      studio_booking_link label, schedule_index_path, **options, data: data.merge(cta_target: "schedule")
     end
   end
 

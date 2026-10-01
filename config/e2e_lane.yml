@@ -324,7 +324,14 @@
 # 197 -> 199 on 2026-10-01 (/tasks/tiered-packages-and-full-stack): e2e/packages_pages.spec.js,
 # the /packages cards and booking popup, and the /packages/stack phone matrix (two specs,
 # not quarantined). Set from `npx playwright test --list` on the desk tree.
-total_specs: 199
+# 199 -> 204 on 2026-10-01 (/tasks/hub-adopts-engine-footer): five specs, none quarantined.
+# Two in e2e/booking_frame.spec.js for the wiring the engine's booking links need on this
+# app's pages: the About page's button opening the popup, and the home page's footer link
+# going to the inline frame instead. Three in e2e/site_footer.spec.js: the footer's email
+# address on one line at desktop, tablet and phone width. No spec was retired: the five
+# that were there still run, against the engine's markers. Set from
+# `npx playwright test --list` on the desk tree.
+total_specs: 204
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -510,7 +517,10 @@ quarantined: 10
 # 182 -> 183: total_specs - quarantined, the site_footer.spec.js spec.
 # 183 -> 187: the four booking_frame.spec.js specs.
 # 187 -> 189: the two packages_pages.spec.js specs.
-executed: 189
+# 189 -> 194: the five specs added by /tasks/hub-adopts-engine-footer (two in
+# booking_frame.spec.js, three in site_footer.spec.js). Measured on the desk tree:
+# `npx playwright test --list --grep-invert @quarantine` => 194.
+executed: 194
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

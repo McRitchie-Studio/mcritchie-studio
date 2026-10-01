@@ -9,7 +9,7 @@
 - `/privacy` — Combined Privacy Policy and Messaging Terms and Conditions. Carriers read it during SMS registration; its sending number and consent wording must agree with `ContactSubmission`.
 - `/dashboard` — Dashboard (agents, task pipeline, activity feed)
 - `/chat` — AI chat with Alex agent (Claude Haiku, session-based conversation history). Chat widget partial (`chat/_chat_widget`) also embedded in landing page.
-- `/schedule` — public booking page: Google Calendar appointment schedule, embedded inline (`ScheduleController::BOOKING_URL`); the footer and About page link here
+- `/schedule` — public booking page (`ScheduleController#index`): the engine's `studio_booking_frame` showing the Google Calendar appointment schedule in `Studio.booking_url` (`config/initializers/studio.rb`), under this app's own title and copy. The footer, the About page and the package cards link here; with scripts on those links open the booking popup instead. The engine's own `/schedule` route (`config.draw_booking_routes`) stays off so this page keeps its words
 - `/docs` — Agent docs viewer (read-only, markdown rendered)
 - `/docs/*path` — Individual doc viewer
 - `/agents` — Agent grid

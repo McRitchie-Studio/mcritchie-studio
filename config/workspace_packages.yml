@@ -57,7 +57,7 @@ billing:
 
 # The Google Calendar appointment page the Enterprise "Book a call" opens, in a
 # new tab. Blank until Mr. McRitchie supplies it: the button then opens the
-# studio's own booking calendar (ScheduleController::BOOKING_URL) in the
+# studio's own booking calendar (Studio.booking_url, config/initializers/studio.rb) in the
 # booking popup, so it is never a dead link.
 enterprise_booking_url:
 

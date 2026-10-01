@@ -53,6 +53,13 @@ test("a cross-origin subresource is refused rather than waited on", async ({ pag
   // the wait below is a poll. If the footer map ever leaves the landing page,
   // retire this pair rather than letting it pass on an empty set.
   //
+  // THE MAP MUST BE SCROLLED TO. Since the footer became studio-engine's
+  // (/tasks/hub-adopts-engine-footer) Leaflet and its tiles are fetched only
+  // once the map is within 400px of the viewport, and the footer is at the
+  // bottom of the landing page. Without the scroll the page asks no third party
+  // for anything, and this control would be the empty set named above.
+  await page.locator("footer[data-site-footer] [data-footer-map]").scrollIntoViewIfNeeded();
+  //
   // KNOW WHICH WAY THIS ONE BITES. `succeeded` goes non-empty only when the third
   // party ANSWERS, so deleting the fix reds this the way it red in review — on a
   // machine that reaches sprintful (measured: HTTP 200 in ~0.15s). On a runner
