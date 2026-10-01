@@ -1,0 +1,27 @@
+<% content_for(:title, "Footer candidates · McRitchie Studio") %>
+<% content_for(:full_width, true) %>
+<% facts = site_footer_facts %>
+<% variants = [
+     [ "blueprint", "Blueprint",  "The classic four-column footer, with the map as a card. The safe pick." ],
+     [ "map_stage", "Map Stage",  "The map is the footer. The facts float over it on glass." ],
+     [ "terminal",  "Terminal",   "The studio builds software, so the footer answers like a shell." ],
+     [ "mile_high", "Mile High",  "A Front Range ridgeline, the map in a porthole, a giant wordmark." ],
+     [ "postcard",  "Postcard",   "Greetings from Denver: map on the picture side, address on the address side." ]
+   ] %>
+
+<%= render "footers/assets" %>
+
+<section class="max-w-3xl mx-auto px-4 py-10 text-center">
+  <h1 class="text-4xl font-extrabold text-heading tracking-tight">Five footers</h1>
+  <p class="text-secondary mt-3 text-lg">Same facts, five treatments. Each map is live: drag it, zoom it, flip the theme.</p>
+</section>
+
+<% variants.each_with_index do |(partial, name, pitch), index| %>
+  <section class="mt-16" id="footer-<%= partial.dasherize %>">
+    <div class="max-w-7xl mx-auto px-4 pb-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <h2 class="text-2xl font-extrabold text-heading"><span class="text-primary"><%= index + 1 %></span> · <%= name %></h2>
+      <p class="text-secondary"><%= pitch %></p>
+    </div>
+    <%= render "footers/#{partial}", facts: facts %>
+  </section>
+<% end %>

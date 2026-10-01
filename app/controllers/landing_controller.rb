@@ -16,4 +16,7 @@ class LandingController < ApplicationController
 
   def privacy
   end
+
+  def footers
+  end
 end

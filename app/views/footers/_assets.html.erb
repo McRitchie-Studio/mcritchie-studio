@@ -1,0 +1,138 @@
+<%# Styles and the map mount shared by every footer variant. Render once per page. %>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+
+<style>
+  .ftr { --ftr-primary: var(--color-primary, #8b5cf6); --ftr-primary-rgb: var(--color-primary-500-rgb, 139 92 246); }
+  .ftr a { transition: color .15s ease, opacity .15s ease; }
+  .ftr-link { color: inherit; opacity: .78; }
+  .ftr-link:hover { opacity: 1; color: var(--ftr-primary); }
+  .ftr-eyebrow { font-size: .7rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+
+  /* The map. isolation keeps Leaflet's internal z-indexes (up to 1000) under
+     the pinned navbar and every modal. */
+  .ftr-map { position: relative; isolation: isolate; overflow: hidden; background: rgb(var(--ftr-primary-rgb) / .08); }
+  .ftr-map-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 1rem; text-align: center; font-size: .85rem; }
+  .ftr-map .leaflet-container { position: absolute; inset: 0; background: transparent; font: inherit; }
+  .ftr-map .leaflet-control-attribution { font-size: 9px; background: rgb(0 0 0 / .45); color: #ddd; }
+  .ftr-map .leaflet-control-attribution a { color: #fff; }
+  .ftr-map .leaflet-bar a { background: var(--color-surface, #fff); color: var(--color-text, #111); border-color: rgb(127 127 127 / .3); }
+  .ftr-pin { position: relative; width: 18px; height: 18px; }
+  .ftr-pin::before, .ftr-pin::after { content: ""; position: absolute; inset: 0; border-radius: 9999px; background: var(--ftr-primary); }
+  .ftr-pin::before { animation: ftr-ping 2.2s cubic-bezier(0, 0, .2, 1) infinite; opacity: .6; }
+  .ftr-pin::after { border: 3px solid #fff; box-shadow: 0 2px 8px rgb(0 0 0 / .45); }
+  @keyframes ftr-ping { 75%, 100% { transform: scale(3.2); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .ftr-pin::before { animation: none; } }
+
+  /* 2 · Map Stage */
+  .ftr-stage-veil { background: linear-gradient(90deg, var(--color-page, #0f0c1f) 0%, rgb(0 0 0 / 0) 62%); }
+  .ftr-glass { background: color-mix(in srgb, var(--color-surface, #1a1535) 82%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgb(var(--ftr-primary-rgb) / .28); box-shadow: 0 24px 60px rgb(0 0 0 / .35); }
+
+  /* 3 · Terminal */
+  .ftr-term { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .ftr-term-window { border: 1px solid rgb(127 127 127 / .28); border-radius: .75rem; overflow: hidden; background: var(--color-surface, #1a1535); }
+  .ftr-term-bar { display: flex; align-items: center; gap: .4rem; padding: .55rem .8rem; border-bottom: 1px solid rgb(127 127 127 / .22); font-size: .72rem; }
+  .ftr-term-bar i { width: .65rem; height: .65rem; border-radius: 9999px; display: inline-block; }
+  .ftr-caret { display: inline-block; width: .55em; height: 1.05em; vertical-align: text-bottom; background: var(--ftr-primary); animation: ftr-blink 1.1s steps(1) infinite; }
+  @keyframes ftr-blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .ftr-caret { animation: none; } }
+
+  /* 4 · Mile High */
+  .ftr-ridge { display: block; width: 100%; height: clamp(56px, 9vw, 120px); color: var(--color-surface-alt, #1a1535); }
+  .ftr-ridge .back { fill: rgb(var(--ftr-primary-rgb) / .22); }
+  .ftr-ridge .front { fill: currentColor; }
+  .ftr-orb { width: clamp(200px, 26vw, 280px); aspect-ratio: 1; border-radius: 9999px;
+    box-shadow: 0 0 0 6px var(--color-surface-alt, #1a1535), 0 0 0 8px rgb(var(--ftr-primary-rgb) / .55), 0 0 60px rgb(var(--ftr-primary-rgb) / .3); }
+  .ftr-wordmark { font-weight: 900; letter-spacing: -.04em; line-height: .8; font-size: clamp(3rem, 15vw, 13rem);
+    white-space: nowrap; text-align: center; user-select: none; margin-bottom: -.16em;
+    background: linear-gradient(180deg, rgb(var(--ftr-primary-rgb) / .34), rgb(var(--ftr-primary-rgb) / 0) 88%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  /* 5 · Postcard */
+  .ftr-card { background: var(--color-surface, #fff); border: 1px solid rgb(127 127 127 / .25); border-radius: .5rem;
+    box-shadow: 0 30px 60px -20px rgb(0 0 0 / .45), 0 2px 0 rgb(127 127 127 / .12); transform: rotate(-.6deg); }
+  @media (prefers-reduced-motion: no-preference) { .ftr-card { transition: transform .35s ease; } .ftr-card:hover { transform: rotate(0deg); } }
+  .ftr-card-rule { background-image: linear-gradient(rgb(127 127 127 / .3) 1px, transparent 1px); background-size: 100% 2.4rem; }
+  .ftr-stamp { width: 4.6rem; height: 5.6rem; padding: .3rem; background: var(--ftr-primary);
+    -webkit-mask: radial-gradient(circle at 4px 4px, transparent 3px, #000 3.5px) -4px -4px / 8px 8px;
+            mask: radial-gradient(circle at 4px 4px, transparent 3px, #000 3.5px) -4px -4px / 8px 8px; }
+  .ftr-postmark { width: 5.5rem; height: 5.5rem; border: 2px solid currentColor; border-radius: 9999px; opacity: .5;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: .55rem; font-weight: 700;
+    letter-spacing: .12em; line-height: 1.35; text-align: center; transform: rotate(-14deg); }
+  .ftr-hand { font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive; }
+</style>
+
+<script>
+  // Mounts a Leaflet map on every [data-footer-map]. Leaflet is fetched once,
+  // on demand, so a page with no footer map pays nothing for it. The basemap
+  // follows the site theme: the engine's toggle flips `dark` on <html>, and each
+  // map swaps its tile layer when it does.
+  (function () {
+    if (window.__footerMapsArmed) return;
+    window.__footerMapsArmed = true;
+
+    var TILES = {
+      dark:  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+    };
+    var ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+    var maps = [];
+    var loading = null;
+
+    function theme() { return document.documentElement.classList.contains('dark') ? 'dark' : 'light'; }
+
+    function loadLeaflet() {
+      if (window.L) return Promise.resolve();
+      if (loading) return loading;
+      loading = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        s.crossOrigin = '';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      return loading;
+    }
+
+    function mount(el) {
+      if (el.__footerMap) return;
+      var at = [parseFloat(el.dataset.lat), parseFloat(el.dataset.lng)];
+      var map = L.map(el, { center: at, zoom: parseInt(el.dataset.zoom, 10) || 15,
+                            scrollWheelZoom: false, attributionControl: true });
+      map.attributionControl.setPrefix(false);
+      var layer = L.tileLayer(TILES[theme()], { attribution: ATTRIBUTION, maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+      L.marker(at, { icon: L.divIcon({ className: '', html: '<div class="ftr-pin"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+                     keyboard: false }).addTo(map);
+      // Page scroll stays page scroll until the visitor commits to the map.
+      map.on('click', function () { map.scrollWheelZoom.enable(); });
+      map.on('mouseout', function () { map.scrollWheelZoom.disable(); });
+      var fallback = el.querySelector('.ftr-map-fallback');
+      if (fallback) fallback.remove();
+      el.__footerMap = { map: map, layer: layer };
+      maps.push(el);
+    }
+
+    function mountAll() {
+      var targets = document.querySelectorAll('[data-footer-map]');
+      if (!targets.length) return;
+      loadLeaflet().then(function () { targets.forEach(mount); }).catch(function () { /* the fallback link stays */ });
+    }
+
+    new MutationObserver(function () {
+      maps = maps.filter(function (el) { return document.contains(el); });
+      maps.forEach(function (el) { el.__footerMap.layer.setUrl(TILES[theme()]); });
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    // A cached Turbo snapshot would restore Leaflet's DOM without its state.
+    document.addEventListener('turbo:before-cache', function () {
+      maps.forEach(function (el) { el.__footerMap.map.remove(); el.__footerMap = null; });
+      maps = [];
+    });
+    document.addEventListener('turbo:load', mountAll);
+    if (document.readyState !== 'loading') mountAll();
+    else document.addEventListener('DOMContentLoaded', mountAll);
+  })();
+</script>

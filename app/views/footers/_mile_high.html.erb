@@ -1,0 +1,52 @@
+<%# 4 · Mile High — a Front Range ridgeline, the map in a porthole, a giant wordmark. %>
+<footer class="ftr bg-page text-body overflow-hidden" data-footer="mile-high">
+  <svg class="ftr-ridge" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true">
+    <path class="back" d="M0 120 L0 78 L120 40 L210 70 L330 18 L430 62 L520 34 L640 80 L760 26 L850 58 L960 12 L1080 66 L1190 38 L1300 72 L1440 30 L1440 120 Z"/>
+    <path class="front" d="M0 120 L0 96 L90 70 L180 92 L290 52 L380 86 L500 60 L600 98 L720 56 L820 90 L930 48 L1040 88 L1150 64 L1270 96 L1380 62 L1440 80 L1440 120 Z"/>
+  </svg>
+
+  <div class="bg-surface-alt">
+    <div class="max-w-7xl mx-auto px-4 pt-8 pb-4 grid grid-cols-1 lg:grid-cols-3 gap-10 items-center">
+      <div class="text-center lg:text-left">
+        <p class="ftr-eyebrow text-primary mb-3">The studio</p>
+        <address class="not-italic text-2xl font-extrabold text-heading leading-tight tracking-tight">
+          <%= facts[:street] %><br><%= facts[:city_line] %>
+        </address>
+        <p class="text-muted mt-2"><%= facts[:neighborhood] %> · <%= facts[:hours] %></p>
+        <p class="mt-5 text-lg"><a href="<%= facts[:phone_href] %>" class="ftr-link font-semibold"><%= facts[:phone] %></a></p>
+        <p><a href="mailto:<%= facts[:email] %>" class="ftr-link"><%= facts[:email] %></a></p>
+      </div>
+
+      <div class="flex flex-col items-center">
+        <%= render "footers/map", facts: facts, classes: "ftr-orb" %>
+        <a href="<%= facts[:directions_url] %>" target="_blank" rel="noopener" class="ftr-link mt-5 text-sm font-semibold">Get directions →</a>
+      </div>
+
+      <div class="grid grid-cols-2 gap-6 text-center lg:text-right">
+        <div>
+          <h2 class="ftr-eyebrow text-primary mb-3">Explore</h2>
+          <ul class="space-y-2">
+            <% facts[:explore].each do |label, path| %>
+              <li><%= link_to label, path, class: "ftr-link" %></li>
+            <% end %>
+          </ul>
+        </div>
+        <div>
+          <h2 class="ftr-eyebrow text-primary mb-3">Legal</h2>
+          <ul class="space-y-2">
+            <% facts[:legal].each do |label, path| %>
+              <li><%= link_to label, path, class: "ftr-link" %></li>
+            <% end %>
+          </ul>
+          <dl class="mt-6 text-sm">
+            <dt class="text-muted">Elevation</dt>
+            <dd class="text-heading font-bold text-xl">5,280 ft</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-center text-muted text-sm pt-6">© <%= Time.current.year %> <%= facts[:name] %>. All rights reserved.</p>
+    <div class="ftr-wordmark" aria-hidden="true">McRitchie Studio</div>
+  </div>
+</footer>

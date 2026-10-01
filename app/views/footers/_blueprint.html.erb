@@ -1,0 +1,48 @@
+<%# 1 · Blueprint — the classic: brand, visit, explore, legal, with the map as a card. %>
+<footer class="ftr bg-surface-alt border-t border-subtle text-body" data-footer="blueprint">
+  <div class="max-w-7xl mx-auto px-4 py-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-10">
+    <div class="lg:col-span-3">
+      <%= link_to root_path, class: "inline-flex items-center gap-3" do %>
+        <%= image_tag "logo-icon.svg", class: "w-8 h-8 invert dark:invert-0", alt: "" %>
+        <span class="text-xl font-extrabold text-heading tracking-tight">McRitchie <span class="text-primary">Studio</span></span>
+      <% end %>
+      <p class="text-secondary mt-4 leading-relaxed"><%= facts[:tagline] %></p>
+      <a href="mailto:<%= facts[:email] %>" class="btn btn-primary mt-6">Start a conversation</a>
+    </div>
+
+    <div class="lg:col-span-2">
+      <h2 class="ftr-eyebrow text-primary mb-4">Explore</h2>
+      <ul class="space-y-2.5">
+        <% facts[:explore].each do |label, path| %>
+          <li><%= link_to label, path, class: "ftr-link" %></li>
+        <% end %>
+      </ul>
+    </div>
+
+    <div class="lg:col-span-3">
+      <h2 class="ftr-eyebrow text-primary mb-4">Visit</h2>
+      <address class="not-italic space-y-2.5">
+        <p class="text-heading font-semibold"><%= facts[:street] %><br><%= facts[:city_line] %></p>
+        <p><a href="<%= facts[:phone_href] %>" class="ftr-link"><%= facts[:phone] %></a></p>
+        <p><a href="mailto:<%= facts[:email] %>" class="ftr-link"><%= facts[:email] %></a></p>
+        <p class="text-muted text-sm"><%= facts[:hours] %></p>
+      </address>
+      <a href="<%= facts[:directions_url] %>" target="_blank" rel="noopener" class="ftr-link inline-block mt-3 text-sm font-semibold">Get directions →</a>
+    </div>
+
+    <div class="md:col-span-2 lg:col-span-4">
+      <%= render "footers/map", facts: facts, classes: "h-56 rounded-xl border border-subtle" %>
+    </div>
+  </div>
+
+  <div class="border-t border-subtle">
+    <div class="max-w-7xl mx-auto px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-muted">
+      <p>© <%= Time.current.year %> <%= facts[:name] %>. All rights reserved.</p>
+      <ul class="flex items-center gap-5">
+        <% facts[:legal].each do |label, path| %>
+          <li><%= link_to label, path, class: "ftr-link" %></li>
+        <% end %>
+      </ul>
+    </div>
+  </div>
+</footer>
