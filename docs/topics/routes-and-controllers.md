@@ -5,6 +5,8 @@
 ## HTML Routes (public monitoring, auth-gated mutations)
 
 - `/` — Landing page (hero with Denver bg, about, get in touch with Sprintful + AI chat, acquisition criteria, contact)
+- `/contact` — Public contact form and SMS opt-in page (`ContactSubmissionsController`). GET renders the form, three unticked consent boxes and the carrier disclosure; POST stores a `ContactSubmission` and emails alex@mcritchie.studio through the engine outbox. Bounded by `rate_limit` (5 per minute per IP) and a honeypot field. The app sends no SMS; the phone provider does. This URL is registered with the carrier, so do not move it.
+- `/privacy` — Combined Privacy Policy and Messaging Terms and Conditions. Carriers read it during SMS registration; its sending number and consent wording must agree with `ContactSubmission`.
 - `/dashboard` — Dashboard (agents, task pipeline, activity feed)
 - `/chat` — AI chat with Alex agent (Claude Haiku, session-based conversation history). Chat widget partial (`chat/_chat_widget`) also embedded in landing page.
 - `/schedule` — Sprintful calendar embed (full-page)
