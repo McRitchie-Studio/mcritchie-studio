@@ -1,0 +1,152 @@
+<% content_for :title, "Client matrix · McRitchie Studio" %>
+<% columns = @clients.size + 1 %>
+
+<section class="max-w-7xl mx-auto px-4 py-10" data-test="stack-matrix-page">
+  <header class="mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Stack</p>
+    <h1 class="text-3xl font-bold text-heading mb-2">Client matrix</h1>
+    <p class="text-muted max-w-2xl">
+      Every client against its stack: the tier each is on, then every piece of software any of them runs.
+      <%= link_to "List view", stack_path, class: "text-primary hover:underline whitespace-nowrap", data: { test: "stack-list-link" } %>
+      <span class="text-muted" aria-hidden="true">·</span>
+      <%= link_to "Credential detail", credentials_path, class: "text-primary hover:underline whitespace-nowrap" %>
+    </p>
+  </header>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+    <div class="rounded-2xl border border-subtle bg-surface px-5 py-4" data-test="matrix-mrr">
+      <p class="text-xs font-semibold uppercase tracking-wider text-muted">Total MRR</p>
+      <p class="text-2xl font-bold text-heading tabular-nums" data-test="matrix-mrr-value"><%= number_to_currency(@matrix.mrr, precision: 0) %></p>
+      <p class="text-[11px] text-muted">At list price; internal and custom tiers add nothing.</p>
+    </div>
+    <div class="rounded-2xl border border-subtle bg-surface px-5 py-4">
+      <p class="text-xs font-semibold uppercase tracking-wider text-muted">Paying clients</p>
+      <p class="text-2xl font-bold text-heading tabular-nums" data-test="matrix-paying-count"><%= @matrix.paying_clients.size %></p>
+      <p class="text-[11px] text-muted">of <%= pluralize(@clients.size, "client") %> on the page</p>
+    </div>
+    <div class="rounded-2xl border border-subtle bg-surface px-5 py-4">
+      <p class="text-xs font-semibold uppercase tracking-wider text-muted">Software in use</p>
+      <p class="text-2xl font-bold text-heading tabular-nums"><%= @matrix.groups.sum { |group| group.software.size } %></p>
+      <p class="text-[11px] text-muted">across <%= pluralize(@matrix.groups.size, "category") %></p>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mb-4 text-xs text-muted" data-test="matrix-legend">
+    <% sample = WorkspaceIconConfig.asset("google", "studio") %>
+    <span class="inline-flex items-center gap-1.5">
+      <%= image_tag sample, alt: "", class: "w-6 h-6" if sample %> Hosted by McRitchie Studio
+    </span>
+    <span class="inline-flex items-center gap-1.5">
+      <span class="text-success-ink text-base font-bold leading-none">✓</span> The client's own account
+    </span>
+    <span class="inline-flex items-center gap-1.5">
+      <span class="text-base leading-none">—</span> Not in the stack
+    </span>
+  </div>
+
+  <%# Header row and software column stay put; the table scrolls inside its own box, the page never does. %>
+  <div class="overflow-auto max-h-[80vh] rounded-2xl border border-subtle bg-surface" data-test="client-matrix">
+    <table class="w-full text-sm border-separate border-spacing-0">
+      <thead>
+        <tr class="text-xs font-semibold uppercase tracking-wider text-muted">
+          <th scope="col" class="sticky top-0 left-0 z-30 bg-surface border-b border-subtle px-4 py-3 text-left align-bottom min-w-[9rem] sm:min-w-[12rem]">Client</th>
+          <% @clients.each do |client| %>
+            <th scope="col" class="sticky top-0 z-20 bg-surface border-b border-subtle px-3 py-3 align-bottom text-center normal-case tracking-normal min-w-[8rem]"
+                data-test="matrix-client" data-client="<%= client.slug %>">
+              <div class="flex flex-col items-center gap-1.5">
+                <% if (badge = client.badge_icon) %>
+                  <%= image_tag badge, alt: "", class: "w-9 h-9" %>
+                <% else %>
+                  <span class="w-9 h-9 rounded-full border-2 border-dashed border-subtle" aria-hidden="true"></span>
+                <% end %>
+                <span class="text-sm font-semibold text-heading leading-tight"><%= client.name %></span>
+              </div>
+            </th>
+          <% end %>
+        </tr>
+      </thead>
+
+      <%# The summary band: one row per fact, a column per client. %>
+      <tbody data-test="matrix-summary">
+        <% band = {
+             "Tier" => ->(c) { c.tier_name },
+             "Price" => ->(c) { @matrix.price_label(c) },
+             "Hosting" => ->(c) { @matrix.hosting_mode(c) },
+             "Domain" => ->(c) { c.domain },
+             "Google users" => ->(c) { c.google_users },
+             "Resend" => ->(c) { { "ms" => "McRitchie Studio", "white_label" => "White label" }[c.resend_mode] }
+           } %>
+        <% band.each do |label, value_of| %>
+          <tr data-test="matrix-summary-row" data-field="<%= label.parameterize %>">
+            <th scope="row" class="sticky left-0 z-10 bg-surface-alt border-b border-subtle px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted"><%= label %></th>
+            <% @clients.each do |client| %>
+              <% value = value_of.call(client) %>
+              <td class="bg-surface-alt border-b border-subtle px-3 py-2 text-center whitespace-nowrap <%= label == 'Domain' ? 'font-mono text-xs' : '' %>"
+                  data-test="matrix-summary-cell" data-client="<%= client.slug %>">
+                <% if value.blank? %>
+                  <span class="text-muted">—</span>
+                <% elsif label == "Tier" && !client.internal? %>
+                  <span class="inline-block rounded-full border border-primary text-primary px-2.5 py-0.5 text-xs font-semibold"><%= value %></span>
+                <% else %>
+                  <span class="<%= label == 'Price' ? 'font-semibold text-heading tabular-nums' : 'text-body' %>"><%= value %></span>
+                <% end %>
+              </td>
+            <% end %>
+          </tr>
+        <% end %>
+      </tbody>
+
+      <% @matrix.groups.each do |group| %>
+        <tbody data-test="matrix-category" data-category="<%= group.category.parameterize %>">
+          <tr>
+            <th scope="colgroup" class="sticky left-0 z-10 bg-surface border-b border-subtle px-4 pt-4 pb-1.5 text-left text-xs font-semibold uppercase tracking-wider text-primary"><%= group.category %></th>
+            <td colspan="<%= columns - 1 %>" class="bg-surface border-b border-subtle"></td>
+          </tr>
+          <% group.software.each do |software| %>
+            <% name = WorkspaceIconConfig.software_name(software) %>
+            <% tile = WorkspaceIconConfig.tile(software) %>
+            <tr data-test="matrix-software" data-software="<%= software %>">
+              <th scope="row" class="sticky left-0 z-10 bg-surface border-b border-subtle px-4 py-2 text-left font-semibold text-heading">
+                <div class="flex items-center gap-2">
+                  <% if tile %>
+                    <%= image_tag tile, alt: "", class: "w-6 h-6 shrink-0" %>
+                  <% end %>
+                  <span class="truncate"><%= name %></span>
+                </div>
+              </th>
+              <% @clients.each do |client| %>
+                <% state = @matrix.cell(client, software) %>
+                <td class="border-b border-subtle px-3 py-2 text-center align-middle" data-test="matrix-cell" data-client="<%= client.slug %>" data-state="<%= state || 'none' %>">
+                  <% case state %>
+                  <% when "ms" %>
+                    <% label = "#{name} · hosted by McRitchie Studio for #{client.name}" %>
+                    <% if (chest = WorkspaceIconConfig.asset(software, "studio")) %>
+                      <%= image_tag chest, alt: label, title: label, class: "inline-block w-8 h-8" %>
+                    <% else %>
+                      <span class="text-xs font-semibold text-primary" title="<%= label %>">✓ MS</span>
+                    <% end %>
+                  <% when "own" %>
+                    <span class="text-success-ink text-lg font-bold" title="<%= name %> · <%= client.name %>'s own account">✓</span>
+                  <% else %>
+                    <span class="text-muted">—</span>
+                  <% end %>
+                </td>
+              <% end %>
+            </tr>
+          <% end %>
+        </tbody>
+      <% end %>
+
+      <% if @clients.empty? %>
+        <tbody><tr><td colspan="<%= columns %>" class="px-4 py-6 text-center text-muted">No clients recorded yet.</td></tr></tbody>
+      <% end %>
+    </table>
+  </div>
+
+  <% unused = @matrix.unused_software %>
+  <% if unused.any? %>
+    <p class="mt-4 text-xs text-muted" data-test="matrix-unused">
+      Configured, but in no client's stack yet: <%= unused.map { |key| WorkspaceIconConfig.software_name(key) }.join(", ") %>.
+    </p>
+  <% end %>
+</section>

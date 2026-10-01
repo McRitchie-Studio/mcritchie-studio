@@ -7,6 +7,8 @@
     <p class="text-muted max-w-2xl">
       Each client's tier and the software it runs on. The McRitchie Studio chest in a logo's corner means
       we host it for them; a plain logo is the client's own account.
+      <%= link_to "Client matrix", stack_matrix_path, class: "text-primary hover:underline whitespace-nowrap", data: { test: "stack-matrix-link" } %>
+      <span class="text-muted" aria-hidden="true">·</span>
       <%= link_to "Credential detail", credentials_path, class: "text-primary hover:underline whitespace-nowrap" %>
     </p>
   </header>
