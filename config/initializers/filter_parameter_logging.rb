@@ -7,5 +7,11 @@ Rails.application.config.filter_parameters += [
   :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn,
   # /contacts searches by part of an email in `q`. Anchored: a bare :q would
   # partial-match every key containing a "q" (request, query, sequence).
-  /\Aq\z/
+  /\Aq\z/,
+  # The public /contact form: a visitor's mobile number and message stay out of
+  # the request log. Matched on the nested key (a regexp containing "\." is
+  # tested against the full dotted path), because a bare :message would also
+  # mask every other `message` param and, through filter_attributes, every
+  # model's `message` column in an inspect. ContactSubmission filters its own.
+  /\Acontact_submission\.(phone|message)\z/
 ]
