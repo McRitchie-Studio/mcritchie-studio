@@ -140,6 +140,7 @@ npm run test:headed             # with visible browser
 - **Expense tracker** with CSV/XLSX parsing and AI categorization (admin-only)
 - **Agent docs** viewer at `/docs` with Markdown rendering
 - **Dark/light theme** toggle with dynamic color system
+- **Link previews** from studio-engine's site identity: every page unfurls with the default title, description and image set at `/admin/link_preview` (drafted in `config/initializers/studio.rb`; last-resort image `public/og.png`). Preview fetchers, iMessage included, get a slim page under Apple's 1 MiB limit and skip the `allow_browser` guard. See studio-engine `docs/LINK_PREVIEW.md`
 
 ## Deploy
 
