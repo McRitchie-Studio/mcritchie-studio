@@ -29,6 +29,16 @@
   @keyframes ftr-ping { 75%, 100% { transform: scale(3.2); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .ftr-pin::before { animation: none; } }
 
+  /* Brand, then four link columns. The first link column holds an email
+     address, so it gets the widest link track at every breakpoint. */
+  .ftr-cols { display: grid; gap: 3rem 2rem; grid-template-columns: 1.2fr 1fr; }
+  .ftr-brand { grid-column: 1 / -1; }
+  @media (min-width: 768px) { .ftr-cols { grid-template-columns: 1.7fr 1fr 1fr 1fr; } }
+  @media (min-width: 1024px) {
+    .ftr-cols { grid-template-columns: 1.7fr 1.5fr 1fr 1fr 1fr; }
+    .ftr-brand { grid-column: auto; }
+  }
+
   .ftr-social { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem;
     border-radius: 9999px; background: var(--ftr-primary); color: #fff; transition: transform .15s ease, filter .15s ease; }
   a.ftr-social:hover { transform: translateY(-2px); filter: brightness(1.12); }
