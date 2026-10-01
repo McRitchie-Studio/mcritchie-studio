@@ -67,4 +67,19 @@ class SchedulePageTest < ActionDispatch::IntegrationTest
       assert_no_match(/sprintful/i, response.body, path)
     end
   end
+
+  # The crop declaration is written for the engine version AFTER 0.83.0, and
+  # must be inert on 0.83.0, which has no setter for it.
+  test "the booking crop is declared for this schedule, behind a setter guard" do
+    source = Rails.root.join("config/initializers/studio.rb").read
+
+    assert_match(/config\.booking_crop = \{ top: 211, bottom: 757, frame_height: 869 \} if config\.respond_to\?\(:booking_crop=\)/,
+                 source)
+    if Studio.respond_to?(:booking_crop)
+      assert_equal({ top: 211, bottom: 757, frame_height: 869 }, Studio.booking_crop)
+    else
+      assert_operator Gem::Version.new(Studio::VERSION), :<=, Gem::Version.new("0.83.0"),
+                      "an engine above 0.83.0 must expose booking_crop"
+    end
+  end
 end
