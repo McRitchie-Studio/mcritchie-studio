@@ -3,6 +3,7 @@
 # same queue is at /broadcasts/<slug>/queue.
 #
 #   bin/rails "broadcasts:stage[your-games,cyvasse-legacy,200]"   # render + hold; sends nothing
+#   bin/rails "broadcasts:restage[your-games]"                    # re-render every staged row with today's copy
 #   bin/rails "broadcasts:approve[your-games,50]"                 # approve the 50 longest held (or all)
 #   bin/rails "broadcasts:execute[your-games,50]"                 # send up to 50 approved, within the gate
 #   bin/rails "broadcasts:queue_status[your-games]"
@@ -23,6 +24,15 @@ namespace :broadcasts do
     verified = { "1" => true, "true" => true, "0" => false, "false" => false }[ENV["ONLY_VERIFIED"].to_s]
     result = broadcast.stage!(audience: audience, limit: args[:limit].presence&.then { Integer(_1) }, verified: verified)
     puts "#{broadcast.slug}: staged #{result.staged}, skipped #{result.skipped} on #{audience} (nothing sent)"
+    puts queue_line.call(broadcast)
+  end
+
+  desc "Re-render every staged (not approved, sent or cancelled) email of a broadcast with the current copy"
+  task :restage, %i[slug] => :environment do |_t, args|
+    broadcast = Broadcast.find_by!(slug: args[:slug])
+    result = broadcast.restage!
+    puts "#{broadcast.slug}: restaged #{result.restaged}, skipped #{result.skipped}, " \
+         "left #{result.left} (approved, sent and cancelled rows untouched; nothing sent)"
     puts queue_line.call(broadcast)
   end
 

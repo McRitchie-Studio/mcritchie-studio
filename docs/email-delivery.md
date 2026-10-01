@@ -231,6 +231,7 @@ the send job delivers, byte for byte (`BroadcastMailer#staged`).
 
 ```bash
 bin/rails "broadcasts:stage[<slug>,<audience>,<limit>]"   # render and hold; sends nothing
+bin/rails "broadcasts:restage[<slug>]"                    # re-render every staged row with today's copy
 bin/rails "broadcasts:approve[<slug>,<count|all>]"        # approve the longest held
 bin/rails "broadcasts:execute[<slug>,<limit>]"            # send approved, within the gate
 bin/rails "broadcasts:queue_status[<slug>]"
@@ -241,6 +242,18 @@ bin/rails "broadcasts:queue_status[<slug>]"
   reader missing a required field is `skipped` with the field named.
 - Merge fields come from `Broadcasts::MergeFields`: the contact's email and first
   name, plus Cyvasse stats from `contacts.traits["cyvasse"]` when present.
+- A template can pick its subject per reader: `Broadcast::SUBJECT_RESOLVERS`
+  names a module whose `subject_template(fields, default:)` returns the
+  `%{field}` line, `default` being the stored subject. Subjects may also use a
+  pluralized `%{games_count}`, `%{wins_count}` or `%{losses_count}` ("1 game",
+  "7 games"; `Broadcasts::MergeFields.with_counts`). `cyvasse_your_games` tiers by
+  games (`Broadcasts::CyvasseYourGames`): 20+ sends the stored subject; 5-19
+  sends "your 7 games and 3 wins", or the stored subject with no wins; 1-4 sends
+  "your Cyvasse account is still here". Its body follows the same tier.
+- After a copy change, `broadcasts:restage` re-renders every `staged` row with
+  the current subject and template, keeping each row's tracking token. Approved,
+  sent, cancelled and skipped rows are never touched, a row approved mid-run
+  keeps its approval, and nothing is sent.
 - Execute is held by `Broadcasts::SendGate`, over the last 24 hours across every
   broadcast: at most 500 sent or queued, and a pause when bounces pass 2% or
   complaints pass 0.05% of sends. The page shows the gate before its confirm.
