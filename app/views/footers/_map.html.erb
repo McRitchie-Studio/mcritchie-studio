@@ -5,6 +5,7 @@
      data-footer-map
      data-lat="<%= facts[:lat] %>" data-lng="<%= facts[:lng] %>"
      data-zoom="<%= local_assigns[:zoom] || 15 %>"
+     data-controls="<%= local_assigns.fetch(:controls, true) %>"
      role="region" aria-label="Map of <%= facts[:street] %>, <%= facts[:city_line] %>">
   <a href="<%= facts[:directions_url] %>" target="_blank" rel="noopener" class="ftr-map-fallback">
     <%= facts[:street] %>, <%= facts[:city_line] %> · Open in Maps

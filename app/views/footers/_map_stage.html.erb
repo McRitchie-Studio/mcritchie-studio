@@ -1,7 +1,7 @@
 <%# 2 · Map Stage — the map IS the footer; the facts float over it on glass. %>
 <footer class="ftr relative bg-page border-t border-subtle text-body" data-footer="map-stage">
   <div class="relative md:h-[30rem]">
-    <%= render "footers/map", facts: facts, zoom: 16, classes: "h-64 md:h-auto md:absolute md:inset-0" %>
+    <%= render "footers/map", facts: facts, zoom: 16, classes: "ftr-map-fill h-64" %>
     <div class="ftr-stage-veil hidden md:block absolute inset-0 pointer-events-none z-10"></div>
 
     <div class="relative z-20 max-w-7xl mx-auto px-4 md:h-full flex items-center pointer-events-none">
