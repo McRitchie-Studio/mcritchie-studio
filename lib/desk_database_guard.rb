@@ -8,6 +8,14 @@
 # development env at its own DB. bin/agent-worktree now writes .env.development.local
 # (see write_dev_env_local); this guard is the net for a desk that predates that, or
 # whose pointer was deleted. Pure: config/initializers/desk_database_guard.rb feeds it.
+#
+# SCRATCH WORKTREES TOO (2026-09-30, /tasks/harden-scratch-worktree-recipes). The review
+# recipes moved reviewer, zap and arbitration throwaways to `$(mktemp -d)/<name>`, outside
+# `.worktrees/`, so the desk path no longer matched and a bare `bin/rails runner` or
+# `db:migrate` there reached the shared DB unrefused. The guard now also fires in ANY
+# linked git worktree (its `.git` is a pointer FILE, not a directory) — every desk and
+# every throwaway — and only the primary checkout, whose `.git` is the repository itself,
+# is exempt. ALLOW_SHARED_DEV_DB=1 stays the one override.
 require "uri"
 
 module DeskDatabaseGuard
@@ -17,11 +25,16 @@ module DeskDatabaseGuard
   module_function
 
   # -> nil (proceed) or the refusal message.
-  def refusal(root:, rails_env:, database_url:, shared_database:, override: nil)
+  # `linked_worktree:` is linked_worktree?(root), passed in so this stays pure.
+  def refusal(root:, rails_env:, database_url:, shared_database:, override: nil, linked_worktree: false)
     return nil unless rails_env.to_s == "development"
-    return nil unless (match = DESK_ROOT.match(root.to_s))
+
+    match = DESK_ROOT.match(root.to_s)
+    return nil unless match || linked_worktree
     return nil unless override.to_s.strip.empty?
     return nil unless effective_database(database_url, shared_database) == shared_database
+
+    return scratch_refusal(root, shared_database, database_url) unless match
 
     slug = match[:slug]
     <<~MSG
@@ -31,6 +44,26 @@ module DeskDatabaseGuard
           bin/agent-worktree new mcritchie-studio #{slug}
         (Test work needs no pointer: prefix it with RAILS_ENV=test. Meant it? #{OVERRIDE}=1.)
     MSG
+  end
+
+  # A linked worktree outside `.worktrees/`: a reviewer, zap or arbitration throwaway. It
+  # has no slug bin/agent-worktree could re-provision, so the fix is RAILS_ENV=test.
+  def scratch_refusal(root, shared_database, database_url)
+    <<~MSG
+      ✗ refusing to run against the SHARED development database (#{shared_database}) from the
+        scratch worktree #{root}.
+        #{why(database_url).sub("This desk", "This worktree")}
+        A throwaway is for tests: prefix every rails command with RAILS_ENV=test.
+        (Need a development env? Provision a desk: bin/agent-worktree new mcritchie-studio <slug>.
+        Meant it? #{OVERRIDE}=1.)
+    MSG
+  end
+
+  # A LINKED git worktree keeps a `.git` FILE (`gitdir: <common>/worktrees/<name>`); the
+  # primary checkout's `.git` is a directory. A stat, not a `git rev-parse` subprocess,
+  # because this runs on every development boot.
+  def linked_worktree?(root)
+    File.file?(File.join(root.to_s, ".git"))
   end
 
   # The refusal names the cause it actually saw: no pointer at all, or a pointer that

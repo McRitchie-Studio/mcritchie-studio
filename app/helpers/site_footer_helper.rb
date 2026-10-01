@@ -25,11 +25,11 @@ module SiteFooterHelper
       lat: 39.7614786,
       lng: -104.978957,
       directions_url: "https://www.google.com/maps/dir/?api=1&destination=3000+Lawrence+St%2C+Denver%2C+CO+80205",
-      # /contact is a literal: the page is the SMS opt-in form, added by
-      # /tasks/sms-opt-in-contact-page, whose route helper is `contact_form_path`.
+      # Contact is the SMS opt-in form. Its helper is `contact_form_path`;
+      # `contact_path` belongs to the mailing list's /contacts/:id.
       columns: [
         [ "Contact",   [ [ SITE_FOOTER_EMAIL, "mailto:#{SITE_FOOTER_EMAIL}" ], [ "Schedule a call", schedule_index_path ],
-                         [ "Contact", "/contact" ] ] ],
+                         [ "Contact", contact_form_path ] ] ],
         [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
         # Career has no page yet: a nil path renders the label disabled.
         [ "Company",   [ [ "Home", root_path ], [ "About", about_path ], [ "Career", nil ] ] ],

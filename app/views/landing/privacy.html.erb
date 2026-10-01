@@ -1,78 +1,118 @@
-<% content_for :title, "Privacy Policy · McRitchie Studio" %>
+<% content_for :title, "Privacy Policy and Messaging Terms · McRitchie Studio" %>
+<%# Carriers read this page when they review the SMS registration. Sections 6
+    to 8 are the text message program terms; the sending number and the
+    consent wording must stay in step with ContactSubmission. %>
 
-<section class="max-w-3xl mx-auto px-4 py-10 prose-custom">
-  <h1 class="text-3xl font-bold text-heading mb-2">Privacy Policy</h1>
-  <p class="text-muted text-sm mb-8">Last updated: June 14, 2026</p>
+<section class="max-w-3xl mx-auto px-4 py-10 prose-custom" data-test="privacy-page">
+  <h1 class="text-3xl font-bold text-heading mb-2">Privacy Policy and Messaging Terms and Conditions</h1>
+  <p class="text-muted text-sm mb-8">Last updated: September 30, 2026</p>
 
   <div class="space-y-6 text-body leading-relaxed">
     <section>
       <h2 class="text-xl font-semibold text-heading mb-2">1. Who We Are</h2>
-      <p>McRitchie Studio ("we", "us") is an internal content production tool operated by Alex McRitchie. The Service is invitation-only and is used to produce and publish social media content for the @turfmonstershow brand and related projects.</p>
+      <p>McRitchie Studio LLC (doing business as McRitchie Studio) ("McRitchie Studio", "we", "us") operates this website, <a href="https://mcritchie.studio" class="text-primary hover:underline">mcritchie.studio</a>, and the services offered through it (together, the "Service"). Our address is 3000 Lawrence St, Denver, CO 80205.</p>
+      <p>This page is both our Privacy Policy and the Terms and Conditions of our text message program. It explains what information we collect from customers and visitors, how we use it, and when we share it.</p>
     </section>
 
     <section>
       <h2 class="text-xl font-semibold text-heading mb-2">2. Information We Collect</h2>
-      <p><strong>Account information:</strong> When an authorized user signs in (via magic link or Google OAuth), we store the user's name, email address, authentication metadata, and session records needed to keep the account secure.</p>
-      <p><strong>Third-party platform credentials:</strong> When the operator authorizes the Service to post on behalf of brand accounts on X or TikTok, we store the OAuth tokens (access token, refresh token) and account identifier (open_id) issued by those platforms. These tokens are stored in environment variables on our server, not in the application database.</p>
-      <p><strong>Content data:</strong> We store content you create through the Service — titles, captions, hashtags, video URLs, and references to sports data (player names, team names, statistics) sourced from public sports-data providers.</p>
+      <p><strong>Contact form:</strong> When you send us a message through our <%= link_to "contact form", contact_form_path, class: "text-primary hover:underline" %>, we collect your name, email address, your message and, if you give it, your mobile phone number. We also record whether you consented to or declined text messages, the consent wording you were shown, and the date, time, IP address and browser (user agent) of the submission. We keep this as a record of your choice.</p>
+      <p><strong>Text messages:</strong> If you opt in to text messages, we collect your mobile number, the messages you send us, and your opt-in and opt-out history.</p>
+      <p><strong>Account information:</strong> When you sign in (by a magic link emailed to you, or Google sign-in), we store your name, email address, authentication metadata and session records needed to keep the account secure.</p>
+      <p><strong>Requests and mailing list:</strong> When you ask us to build an app or join our mailing list, we store what you submit (for example your description of the app) and your email address. Our emails record whether they were opened and which links were clicked.</p>
+      <p><strong>Third-party platform credentials:</strong> When an account holder authorizes the Service to post to social media accounts they control, we store the access tokens and account identifiers those platforms issue.</p>
+      <p><strong>Content data:</strong> We store content created through the Service, such as titles, captions, images, video links and references to public sports data.</p>
       <p><strong>Usage data:</strong> Standard server logs (IP address, request path, timestamp, user agent) for operational monitoring and security.</p>
     </section>
 
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">3. What We Don't Collect</h2>
-      <p>The Service is not open to the public and does not collect data from end users of TikTok, X, or any other social platform. We do not track viewers of the content we publish.</p>
-    </section>
-
-    <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">4. How We Use Information</h2>
-      <p>We use the information described above solely to (a) authenticate authorized users; (b) generate and publish content to the brand accounts we operate; (c) maintain operational security; and (d) communicate with authorized users about the Service.</p>
-    </section>
-
-    <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">5. How We Share Information</h2>
-      <p>We do not sell or rent your information. We share information only with:</p>
+      <h2 class="text-xl font-semibold text-heading mb-2">3. How We Use Information</h2>
+      <p>We use the information described above to:</p>
       <ul class="list-disc pl-6 space-y-1">
-        <li><strong>Infrastructure providers:</strong> Heroku (application hosting + Postgres) and Amazon Web Services (S3 in us-east-2 for media storage and SES for email delivery).</li>
-        <li><strong>Third-party APIs we publish to:</strong> X and TikTok, when you instruct the Service to publish content.</li>
-        <li><strong>AI providers:</strong> Anthropic (for content generation) when you invoke an AI agent.</li>
-        <li><strong>Authentication providers:</strong> Google (for OAuth sign-in).</li>
-        <li><strong>Legal:</strong> if required by law or to protect rights, safety, and property.</li>
+        <li>respond to your messages and requests;</li>
+        <li>send text messages to people who have consented to them, and honor opt-outs;</li>
+        <li>keep a record of consent;</li>
+        <li>provide, secure and maintain the Service and its accounts;</li>
+        <li>send email you have asked for, and measure whether it is read;</li>
+        <li>meet legal obligations.</li>
       </ul>
     </section>
 
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">6. Data Retention</h2>
-      <p>We retain account, content, and credential data for as long as the Service is operated, or until you request deletion. Server logs are retained for up to 90 days.</p>
+      <h2 class="text-xl font-semibold text-heading mb-2">4. How We Share Information</h2>
+      <p>We do not sell or rent your information.</p>
+      <p data-test="sms-no-sharing"><strong>Mobile information is not shared for marketing.</strong> We do not share your mobile opt-in information with anyone. Mobile phone numbers, text messaging opt-in data and consent are not shared with or sold to third parties or affiliates for marketing or promotional purposes.</p>
+      <p>We share other information only with:</p>
+      <ul class="list-disc pl-6 space-y-1">
+        <li><strong>Service providers</strong> that host the Service, store its files, deliver its email, and carry its phone calls and text messages. They process information for us, only to provide that service.</li>
+        <li><strong>Sign-in providers:</strong> Google, when you choose Google sign-in.</li>
+        <li><strong>Platforms you direct us to:</strong> social media platforms, when an account holder instructs the Service to publish content.</li>
+        <li><strong>AI providers:</strong> when an account holder uses an AI feature, the content of that request is sent to the AI provider to produce the result. Contact form submissions and mobile numbers are not sent to AI providers.</li>
+        <li><strong>Legal:</strong> if required by law or to protect rights, safety and property.</li>
+      </ul>
     </section>
 
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">7. Security</h2>
-      <p>We use industry-standard practices: TLS for all transport, passwordless sign-in links, encrypted secrets (Rails encrypted credentials, AWS KMS, 1Password), and access controls limiting application secrets to a single service account.</p>
+      <h2 class="text-xl font-semibold text-heading mb-2">5. Scheduling</h2>
+      <p>Our home page embeds a booking calendar provided by Sprintful. Information you enter there is handled by Sprintful under its own privacy policy.</p>
+    </section>
+
+    <section data-test="messaging-terms">
+      <h2 class="text-xl font-semibold text-heading mb-2">6. Text Message Program</h2>
+      <p><strong>Program:</strong> McRitchie Studio LLC (doing business as McRitchie Studio) provides software solutions. We send general conversational messaging to answer questions and provide support to customers, as well as marketing messages to promote our products and services. Messages are sent from <strong>(303) 222-2113</strong>.</p>
+      <p><strong>How you opt in:</strong> You opt in on our <%= link_to "contact page", contact_form_path, class: "text-primary hover:underline" %> by providing your mobile phone number and checking a consent box. No box is checked for you.</p>
+      <p><strong>Message types:</strong> Customer care messages may include responses to messages you send us, as well as information relevant to your relationship with us. Marketing messages may include discount codes, special deals or texts promoting our products and services. You choose which of these you receive, and you can choose neither.</p>
+      <p><strong>Consent:</strong> Consent is not a condition of purchase. You can contact us and use the Service without agreeing to receive text messages.</p>
+      <p><strong>Frequency:</strong> Message frequency varies.</p>
+      <p><strong>Cost:</strong> Message and data rates may apply, depending on your mobile plan. We do not charge for the messages.</p>
+      <p><strong>Opt out:</strong> Reply <strong>STOP</strong> or <strong>CANCEL</strong> to any message to unsubscribe at any time. We will send one message confirming that you are unsubscribed, and then no more unless you opt in again.</p>
+      <p><strong>Help:</strong> Reply <strong>HELP</strong> for assistance or more information, email <a href="mailto:alex@mcritchie.studio" class="text-primary hover:underline">alex@mcritchie.studio</a>, or call (303) 222-2113.</p>
+      <p><strong>Delivery:</strong> Mobile carriers are not liable for delayed or undelivered messages.</p>
     </section>
 
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">8. Cookies</h2>
-      <p>We use a single first-party session cookie to keep authorized users signed in. We do not use advertising or analytics cookies.</p>
+      <h2 class="text-xl font-semibold text-heading mb-2">7. Privacy of Your Mobile Information</h2>
+      <p>We use your mobile number only to send the kinds of messages you agreed to and to answer you. Mobile opt-in data and consent are not shared with or sold to third parties or affiliates for marketing or promotional purposes. Your number is passed only to the phone and messaging providers that deliver our messages, for that purpose alone.</p>
     </section>
 
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">9. Your Rights</h2>
-      <p>If you are an authorized user, you may request access to, correction of, or deletion of your data at any time by emailing <a href="mailto:alex@mcritchie.studio" class="text-primary hover:underline">alex@mcritchie.studio</a>. We will respond within 30 days.</p>
+      <h2 class="text-xl font-semibold text-heading mb-2">8. Changing Your Choices</h2>
+      <p>Reply STOP or CANCEL to stop text messages. Use the unsubscribe link in any email to stop marketing email. For anything else, email <a href="mailto:alex@mcritchie.studio" class="text-primary hover:underline">alex@mcritchie.studio</a>.</p>
     </section>
 
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">10. Children</h2>
+      <h2 class="text-xl font-semibold text-heading mb-2">9. Data Retention</h2>
+      <p>We keep account, content and credential data for as long as the Service is operated, or until you ask us to delete it. We keep contact form submissions and consent records for as long as we need them to answer you and to show that consent was given or withdrawn. Server logs are retained for up to 90 days.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-heading mb-2">10. Security</h2>
+      <p>We use industry-standard practices: TLS for all transport, passwordless sign-in links, encrypted secrets, and access controls on application data.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-heading mb-2">11. Cookies</h2>
+      <p>We use first-party cookies to keep you signed in and to remember site preferences. We do not use advertising cookies. The embedded booking calendar may set its own cookies.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-heading mb-2">12. Your Rights</h2>
+      <p>You may request access to, correction of, or deletion of your information at any time by emailing <a href="mailto:alex@mcritchie.studio" class="text-primary hover:underline">alex@mcritchie.studio</a>. We will respond within 30 days. We may keep a record of an opt-out so that we continue to honor it.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-heading mb-2">13. Children</h2>
       <p>The Service is not directed to children under 13 and we do not knowingly collect data from children.</p>
     </section>
 
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">11. Changes to This Policy</h2>
-      <p>We may update this Privacy Policy from time to time. The "Last updated" date at the top of this page indicates when the Policy was last revised.</p>
+      <h2 class="text-xl font-semibold text-heading mb-2">14. Changes to This Policy</h2>
+      <p>We may update this page from time to time. The "Last updated" date at the top shows when it was last revised.</p>
     </section>
 
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">12. Contact</h2>
-      <p>Privacy questions or data requests: <a href="mailto:alex@mcritchie.studio" class="text-primary hover:underline">alex@mcritchie.studio</a>.</p>
+      <h2 class="text-xl font-semibold text-heading mb-2">15. Contact</h2>
+      <p>McRitchie Studio LLC (doing business as McRitchie Studio)<br>3000 Lawrence St, Denver, CO 80205<br>Email: <a href="mailto:alex@mcritchie.studio" class="text-primary hover:underline">alex@mcritchie.studio</a><br>Phone: (303) 222-2113</p>
     </section>
   </div>
 </section>

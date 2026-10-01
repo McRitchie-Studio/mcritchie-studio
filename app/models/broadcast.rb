@@ -25,7 +25,8 @@ class Broadcast < ApplicationRecord
       "build" => "https://mcritchie.studio/build"
     }.freeze,
     "cyvasse_your_games" => {
-      "play" => "https://cyvasse.xyz/"
+      "play" => "https://cyvasse.xyz/",
+      "night" => "https://cyvasse.xyz/night"
     }.freeze
   }.freeze
 
@@ -34,6 +35,13 @@ class Broadcast < ApplicationRecord
   # subject names (%{username}) are required too; see #required_merge_fields.
   TEMPLATE_MERGE_FIELDS = {
     "cyvasse_your_games" => %w[username games].freeze
+  }.freeze
+
+  # Templates whose subject depends on the reader (task tiered-your-games-copy):
+  # template_key => a module answering subject_template(fields, default:), where
+  # default is the broadcast's stored subject. See #subject_for.
+  SUBJECT_RESOLVERS = {
+    "cyvasse_your_games" => "Broadcasts::CyvasseYourGames"
   }.freeze
 
   # Registry of available copy templates: key => human label. Each key maps to
@@ -91,9 +99,9 @@ class Broadcast < ApplicationRecord
 
   # Audiences whose sends go only to contacts an email check called valid
   # (task verify-contacts-with-zerobounce). The Cyvasse relaunch's first 101
-  # sends hard-bounced 11.9%, so the old player list is mailed verified-only
-  # unless a caller says otherwise; catch-all, unknown and unchecked contacts
-  # wait. Verify with `contacts:verify`.
+  # sends hard-bounced 12.9% (13 of 101), so the old player list is mailed
+  # verified-only unless a caller says otherwise; catch-all, unknown and
+  # unchecked contacts wait. Verify with `contacts:verify`.
   VERIFIED_AUDIENCES = %w[cyvasse-legacy].freeze
 
   # Whether a send to `audience` is verified-only by default.
@@ -140,9 +148,14 @@ class Broadcast < ApplicationRecord
   # execute_staged!. See StagedEmail.
 
   # Every merge field this broadcast needs: those its subject names plus those
-  # its template's body uses.
+  # its template's body uses. A subject's "<key>_count" phrase (MergeFields.
+  # with_counts) needs its base count, never a stored "games_count" field.
   def required_merge_fields
-    (Broadcasts::MergeFields.fields_in(subject) + TEMPLATE_MERGE_FIELDS.fetch(template_key, [])).uniq
+    subject_fields = Broadcasts::MergeFields.fields_in(subject).map do |field|
+      base = field.delete_suffix("_count")
+      Broadcasts::MergeFields::COUNTED.key?(base) ? base : field
+    end
+    (subject_fields + TEMPLATE_MERGE_FIELDS.fetch(template_key, [])).uniq
   end
 
   # A personalized broadcast goes out only through the queue: the editor's
@@ -151,9 +164,15 @@ class Broadcast < ApplicationRecord
     required_merge_fields.any?
   end
 
-  # The subject for one reader.
+  # The subject for one reader: the template's resolver picks the line
+  # (SUBJECT_RESOLVERS), else the stored subject; then its %{field}s are
+  # filled, the "<key>_count" phrases (Broadcasts::MergeFields.with_counts)
+  # included.
   def subject_for(fields)
-    Broadcasts::MergeFields.interpolate(subject.presence || "(no subject)", fields)
+    stored = subject.presence || "(no subject)"
+    resolver = SUBJECT_RESOLVERS[template_key]&.constantize
+    line = resolver ? resolver.subject_template(fields, default: stored) : stored
+    Broadcasts::MergeFields.interpolate(line, Broadcasts::MergeFields.with_counts(fields))
   end
 
   StageResult = Data.define(:staged, :skipped) do
@@ -187,6 +206,35 @@ class Broadcast < ApplicationRecord
       next # staged by a concurrent run
     end
     StageResult.new(staged: staged, skipped: skipped)
+  end
+
+  RestageResult = Data.define(:restaged, :skipped, :left) do
+    def total = restaged + skipped
+  end
+
+  # Re-render every still-`staged` email with the current template and subject
+  # (task tiered-your-games-copy), so a copy fix reaches what is held. Only
+  # `staged` rows are touched: an approved, sent, cancelled or skipped row is
+  # left exactly as it is. Each row is locked and re-checked first, so one
+  # approved while this runs keeps its approval and its snapshot. A reader who
+  # now lacks a required field is stored `skipped`, as at staging. `left`
+  # counts rows that stopped being staged before their turn.
+  def restage!(now: Time.current)
+    restaged = skipped = left = 0
+    staged_emails.of_status("staged").find_each do |row|
+      outcome = transaction(requires_new: true) do
+        row.lock!
+        next :left unless row.staged?
+
+        row.render_snapshot!(now: now).skipped? ? :skipped : :restaged
+      end
+      case outcome
+      when :restaged then restaged += 1
+      when :skipped then skipped += 1
+      else left += 1
+      end
+    end
+    RestageResult.new(restaged: restaged, skipped: skipped, left: left)
   end
 
   # Approve the `count` longest-held staged emails (all of them when nil), or
