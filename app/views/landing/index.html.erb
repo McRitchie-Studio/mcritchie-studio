@@ -67,13 +67,18 @@
 </section>
 
 <!-- Get in Touch -->
-<section class="max-w-4xl mx-auto px-4 section-padding">
-  <div class="text-center" style="margin-bottom: 1.75rem;">
-    <h2 class="text-4xl font-extrabold text-heading mb-2">Get in Touch</h2>
-    <p class="text-secondary text-lg">Book a video call to start a conversation.</p>
-  </div>
+<%# Its own band: a wash of the primary colour, so the booking section reads as
+    separate from the plain page above and the surface-alt band below. %>
+<section class="border-t border-subtle" data-get-in-touch
+         style="background: linear-gradient(180deg, rgb(var(--color-primary-500-rgb, 139 92 246) / .16), rgb(var(--color-primary-500-rgb, 139 92 246) / .05));">
+  <div class="max-w-4xl mx-auto px-4 section-padding">
+    <div class="text-center" style="margin-bottom: 1.75rem;">
+      <h2 class="text-4xl font-extrabold text-heading mb-2">Get in Touch</h2>
+      <p class="text-secondary text-lg">Book a video call to start a conversation.</p>
+    </div>
 
-  <%= render "schedule/booking_frame" %>
+    <%= render "schedule/booking_frame" %>
+  </div>
 </section>
 
 <!-- Acquisition Criteria -->
