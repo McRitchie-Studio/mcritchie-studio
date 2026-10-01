@@ -25,6 +25,15 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   await expect(cards).toHaveCount(4);
   await expect(cards.locator("h2")).toHaveText(["Vibe", "Pro", "Growth", "Enterprise"]);
 
+  // Each card names its brands in full-color logos that actually load.
+  const vibeLogos = page.locator("[data-package='vibe'] [data-test='package-powered-by'] [data-test='brand-logo']");
+  await expect(vibeLogos).toHaveCount(3);
+  await expect(vibeLogos.first()).toHaveAttribute("aria-label", "GitHub");
+  const loaded = await page.locator("[data-test='package-powered-by'] img").evaluateAll((imgs) =>
+    imgs.map((img) => img.complete && img.naturalWidth > 0));
+  expect(loaded.length).toBeGreaterThan(10);
+  expect(loaded.every(Boolean)).toBe(true);
+
   // Vibe builds; it never opens the popup.
   await expect(page.locator("[data-package='vibe'] [data-test='package-cta']")).toHaveAttribute("href", "/build");
 
@@ -61,6 +70,17 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
 
   const box = page.locator("[data-test='stack-matrix-scroll']");
   await expect(page.locator("[data-test='stack-row']").first()).toBeVisible();
+
+  // The narrow feature column leaves two tiers in view, row descriptions hide,
+  // and a one-brand row leads with that brand's logo.
+  const boxRight = await box.evaluate((el) => el.getBoundingClientRect().right);
+  const proRight = await page.locator("[data-test='stack-tier-header'][data-package='pro']")
+    .evaluate((el) => el.getBoundingClientRect().right);
+  expect(proRight).toBeLessThanOrEqual(boxRight);
+  await expect(page.locator("[data-test='stack-blurb']").first()).toBeHidden();
+  const serverLogo = page.locator("[data-feature='server'] [data-test='stack-lead'] [data-brand='heroku'] img");
+  await expect(serverLogo).toBeVisible();
+  expect(await serverLogo.evaluate((img) => img.naturalWidth)).toBeGreaterThan(0);
 
   // The page never scrolls sideways; the matrix box does.
   const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
