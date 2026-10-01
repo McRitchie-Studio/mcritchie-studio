@@ -13,7 +13,7 @@ test("admin reads each client's tier and software, with hosted logos badged", as
   await expect(page.getByRole("heading", { name: "Every client's stack" })).toBeVisible();
 
   const turf = page.locator("[data-test='stack-client'][data-client='turf-monster']");
-  await expect(turf.locator("[data-test='stack-tier']")).toContainText("Agentic");
+  await expect(turf.locator("[data-test='stack-tier']")).toContainText("Growth");
 
   // Google is ours on every client: it wears the Studio chest, and the image loaded.
   const google = turf.locator("[data-test='stack-software-icon'][data-software='google']");

@@ -11,7 +11,8 @@ Squarespace", "now approve our key" — then verifies the result before moving o
 
 Every step is its own registered SOP. This file is the order, the hand-offs, and
 the package each step belongs to. The package contents live in
-`config/workspace_packages.yml` and render at `/packages`; when a package
+`config/workspace_packages.yml` and render at `/packages` (the full stack at
+`/packages/stack`); when a package
 changes, change that file and this file together.
 
 ## What this act is NOT
@@ -53,7 +54,8 @@ Ask for the three inputs, and nothing else, before step 0:
 
 1. **Domain** — e.g. `example.com`. Check it is free first (step 1 does).
 2. **Company name + entity slug** — e.g. `Example Co` / `example-co`.
-3. **Package** — `basic` or `pro` (see `/packages`). Default `basic`.
+3. **Package** — `growth` or `enterprise` (see `/packages`; Growth is the first
+   tier with Google Workspace). Default `growth`.
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -64,20 +66,21 @@ bin/agent-activity heartbeat steffon
 
 | # | Step | SOP | Who acts | Package |
 |---|------|-----|----------|---------|
-| 0 | Open the launch task | this file | Steffon | basic |
-| 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Alex** buys · Steffon checks | basic |
-| 2 | Sign up for Google Workspace, create `alex@` + `team@` (Pro: up to 10 users) | [`workspace-signup`](./workspace-signup.md) | **Alex** · Steffon checks | basic |
-| 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC) | [`domain-dns`](./domain-dns.md) | Steffon writes records · **Alex** pastes · Steffon checks | basic |
-| 4 | Launch the hosted website (Basic: Squarespace site · Pro: our app + database) | [`website-launch`](./website-launch.md) | **Alex** approves cost · Steffon builds and checks | basic |
-| 5 | Agentic control: approve our key, register, prove mailboxes | [`workspace-provision`](./workspace-provision.md) §1-3 and §7 | **Alex** approves · Steffon does the rest | basic |
-| 6 | File the new logins in 1Password | [`credential-filing`](./credential-filing.md) | Steffon prepares · **Alex** pastes passwords | basic |
-| 7 | Add a Chrome profile for the new identity | [`chrome-profiles`](./chrome-profiles.md) | Steffon | basic |
-| 8 | First draft — a test draft to `alex@` | [`workspace-provision`](./workspace-provision.md) §7 | Steffon | basic |
-| 9 | Knowledge base — attach and walk Drive folders | [`workspace-provision`](./workspace-provision.md) §4-5 | Steffon · **Alex** names the folders | pro |
-| 10 | File storage bucket | [`bucket-provision`](./bucket-provision.md) | Steffon | pro |
-| 11 | Close out: report, record, close the task | this file | Steffon | basic |
+| 0 | Open the launch task | this file | Steffon | growth |
+| 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Alex** buys · Steffon checks | growth |
+| 2 | Sign up for Google Workspace, create `alex@` + `team@` (Growth: 2 seats included) | [`workspace-signup`](./workspace-signup.md) | **Alex** · Steffon checks | growth |
+| 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC) | [`domain-dns`](./domain-dns.md) | Steffon writes records · **Alex** pastes · Steffon checks | growth |
+| 4 | Launch the hosted website (our app + database) | [`website-launch`](./website-launch.md) | **Alex** approves cost · Steffon builds and checks | growth |
+| 5 | Agentic control: approve our key, register, prove mailboxes | [`workspace-provision`](./workspace-provision.md) §1-3 and §7 | **Alex** approves · Steffon does the rest | growth |
+| 6 | File the new logins in 1Password | [`credential-filing`](./credential-filing.md) | Steffon prepares · **Alex** pastes passwords | growth |
+| 7 | Add a Chrome profile for the new identity | [`chrome-profiles`](./chrome-profiles.md) | Steffon | growth |
+| 8 | First draft — a test draft to `alex@` | [`workspace-provision`](./workspace-provision.md) §7 | Steffon | growth |
+| 9 | Knowledge base — attach and walk Drive folders | [`workspace-provision`](./workspace-provision.md) §4-5 | Steffon · **Alex** names the folders | growth |
+| 10 | File storage bucket | [`bucket-provision`](./bucket-provision.md) | Steffon | growth |
+| 11 | Close out: report, record, close the task | this file | Steffon | growth |
 
-A `basic` launch runs 0-8 and 11. A `pro` launch runs all of them.
+A `growth` launch runs all of them; `enterprise` runs the same steps, and its custom
+connectors are scoped per client on their own task.
 
 ### Step 0 — Open the launch task
 
@@ -85,7 +88,7 @@ A `basic` launch runs 0-8 and 11. A `pro` launch runs all of them.
 bin/task create --title "Launch <Company> Workspace" --kind chore --shape docs \
   --repo mcritchie-studio --agent steffon \
   --accept "Domain, Workspace, DNS, key and mailboxes all verified" \
-  --agent-context "workspace-launch for <domain>, package <basic|pro>"
+  --agent-context "workspace-launch for <domain>, package <growth|enterprise>"
 ```
 
 Record each finished step on the task (`bin/task update <slug> --checks "…"`) so
@@ -120,5 +123,5 @@ human half may already be done.
 
 ## Related
 
-- `config/workspace_packages.yml` — which steps are Basic and which are Pro.
-- `/packages` — the customer-facing comparison, with the SOP map for admins.
+- `config/workspace_packages.yml` — what each tier includes (Vibe, Pro, Growth, Enterprise).
+- `/packages` — the customer-facing tiers; `/packages/stack` — the full stack, with the SOP map for admins.

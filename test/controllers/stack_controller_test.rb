@@ -6,7 +6,7 @@ class StackControllerTest < ActionDispatch::IntegrationTest
   setup do
     vault = CredentialVault.create!(slug: "studio-agents", name: "Studio agents", entity: "studio", lane: "agents")
     CredentialRecord.create!(credential_vault: vault, title: "turf.stripe", service: "stripe", entity: "turf-monster")
-    StackClient.create!(slug: "turf-monster", name: "Turf Monster", tier: "host")
+    StackClient.create!(slug: "turf-monster", name: "Turf Monster", tier: "pro")
   end
 
   test "a visitor who is not signed in is sent to log in" do
@@ -27,10 +27,10 @@ class StackControllerTest < ActionDispatch::IntegrationTest
     get stack_path
 
     assert_response :success
-    assert_select "[data-client='turf-monster'] [data-test='stack-tier']", text: /Host/
-    assert_select "[data-client='turf-monster'] [data-software='heroku'][data-hosting='ms']", 1, "Host tier provisions Heroku"
+    assert_select "[data-client='turf-monster'] [data-test='stack-tier']", text: /Pro/
+    assert_select "[data-client='turf-monster'] [data-software='heroku'][data-hosting='ms']", 1, "Pro tier provisions Heroku"
     assert_select "[data-client='turf-monster'] [data-software='stripe'][data-hosting='own']", 1, "the record brings Stripe"
-    assert_select "[data-client='turf-monster'] [data-software='google']", 0, "Host does not include Google"
+    assert_select "[data-client='turf-monster'] [data-software='google']", 0, "Pro does not include Google"
   end
 
   # [component] GET /stack/matrix — the same clients as columns, software rows

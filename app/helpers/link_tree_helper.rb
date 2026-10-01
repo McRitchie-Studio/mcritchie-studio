@@ -32,7 +32,7 @@ module LinkTreeHelper
     # without an account.
     sections << { title: "Services", links: [
       { label: "App Builder", href: build_path, emoji: "🧱", hover_emoji: "✨", desc: "Describe an app and we build it" },
-      { label: "Packages", href: packages_path, emoji: "📦", hover_emoji: "🏢", desc: "Launch, Host, Workspace and Agentic tiers" },
+      { label: "Packages", href: packages_path, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Pro, Growth and Enterprise tiers" },
     ] }
 
     if defined?(Satellite) && Satellite.active.any?

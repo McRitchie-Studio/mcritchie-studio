@@ -5,13 +5,14 @@ require "test_helper"
 # default unless this client overrides it. The page draws exactly this.
 class StackClientTest < ActiveSupport::TestCase
   def client(**attrs)
-    StackClient.new({ slug: "commercial-welding", name: "Commercial Welding", tier: "workspace" }.merge(attrs))
+    StackClient.new({ slug: "commercial-welding", name: "Commercial Welding", tier: "growth" }.merge(attrs))
   end
 
   test "the tier must be a package key or internal" do
     assert client.valid?
     assert client(tier: "internal").valid?
     refute client(tier: "basic").valid?, "Basic was retired for Workspace on 2026-09-25"
+    refute client(tier: "agentic").valid?, "Agentic became Growth on 2026-09-30"
   end
 
   test "the slug must be a workspace in config/workspace_icons.yml" do
@@ -21,7 +22,7 @@ class StackClientTest < ActiveSupport::TestCase
   test "a tier's software comes first, in config order" do
     keys = client.software_keys([])
 
-    assert_equal WorkspacePackage.find(:workspace).software_keys.sort, keys.sort
+    assert_equal WorkspacePackage.find(:growth).software_keys.sort, keys.sort
     order = WorkspaceIconConfig.softwares.keys
     assert_equal keys.sort_by { |k| order.index(k) }, keys, "the strip reads in config order"
   end

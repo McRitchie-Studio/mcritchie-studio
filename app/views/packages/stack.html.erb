@@ -1,0 +1,181 @@
+<% content_for :title, "Full stack by tier · McRitchie Studio" %>
+<% groups = WorkspacePackage.features_by_category %>
+<% features = groups.flat_map(&:last) %>
+<% price_short = ->(package) {
+     if package.free? then "Free"
+     elsif package.priced? then "#{number_to_currency(package.price_monthly, precision: 0)}/mo"
+     else package.price_label || "Pricing coming soon"
+     end
+   } %>
+
+<%# The matrix scrolls INSIDE its own box on a phone (both axes, so the tier
+    header can stick to the box's top while the page itself never scrolls
+    sideways), and in the page from md up, where it fits: there the header
+    sticks under the engine's pinned navbar via --pin-stack-bottom. The first
+    column sticks left so a row keeps its name while the tiers scroll. %>
+<style>
+  .pkg-matrix-wrap { overflow: auto; max-height: 75vh; }
+  .pkg-matrix { border-collapse: separate; border-spacing: 0; }
+  .pkg-matrix thead th { position: sticky; top: 0; z-index: 2; }
+  .pkg-matrix .pkg-sticky-col { position: sticky; left: 0; z-index: 1; }
+  .pkg-matrix thead th.pkg-sticky-col { z-index: 3; }
+  @media (min-width: 768px) {
+    .pkg-matrix-wrap { overflow: visible; max-height: none; }
+    .pkg-matrix thead th { top: var(--pin-stack-bottom, 0px); }
+  }
+</style>
+
+<section class="max-w-6xl mx-auto px-4 py-10" data-test="packages-stack-page">
+  <%= link_to packages_path, class: "text-sm font-semibold text-primary hover:underline", data: { test: "back-to-packages" } do %>
+    <span aria-hidden="true">←</span> Back to packages
+  <% end %>
+
+  <header class="mt-4 mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">The full stack</p>
+    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">Everything in every tier</h1>
+    <p class="text-muted max-w-2xl">
+      Every server, database, service and agent behind each package, side by side. Each tier includes
+      everything in the one before it; a highlighted value is where tiers differ.
+    </p>
+  </header>
+
+  <ul class="mb-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted" data-test="stack-legend" aria-label="Legend">
+    <li><span class="font-semibold text-primary">✓</span> Included</li>
+    <li><span class="inline-block rounded-full border border-primary px-2 text-xs font-semibold text-primary">Value</span> What that tier gets</li>
+    <li><span class="font-semibold">—</span> Not included</li>
+    <li><span class="rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium">Coming soon</span> Not delivered yet</li>
+    <li><span class="font-semibold text-body">Add-on</span> Priced per contract</li>
+  </ul>
+
+  <div class="pkg-matrix-wrap rounded-2xl border border-subtle bg-surface" data-test="stack-matrix-scroll">
+    <table class="pkg-matrix w-full min-w-[680px] text-sm" data-test="stack-matrix">
+      <thead>
+        <tr>
+          <th scope="col" class="pkg-sticky-col w-44 md:w-[34%] border-b border-subtle bg-surface px-4 py-3 text-left align-bottom font-medium text-muted">Feature</th>
+          <% @packages.each do |package| %>
+            <th scope="col" class="border-b border-subtle bg-surface px-3 py-3 text-left align-bottom <%= 'bg-surface-alt' if package.featured? %>"
+                data-test="stack-tier-header" data-package="<%= package.key %>">
+              <span class="block text-base font-bold text-heading"><%= package.name %></span>
+              <span class="block text-xs font-medium text-muted"><%= price_short.call(package) %></span>
+            </th>
+          <% end %>
+        </tr>
+      </thead>
+      <% groups.each do |category, heading, rows| %>
+        <tbody data-test="stack-category" data-category="<%= category %>">
+          <tr>
+            <th scope="colgroup" colspan="<%= @packages.size + 1 %>"
+                class="border-b border-subtle bg-surface-alt px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-primary">
+              <%= heading %>
+            </th>
+          </tr>
+          <% rows.each do |feature| %>
+            <tr class="align-top" data-test="stack-row" data-feature="<%= feature.name.parameterize %>" data-status="<%= feature.status %>">
+              <th scope="row" class="pkg-sticky-col border-b border-subtle bg-surface px-4 py-3 text-left font-normal">
+                <div class="flex gap-3">
+                  <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-base" aria-hidden="true">
+                    <% if feature.logo? %>
+                      <span class="flex items-center gap-0.5">
+                        <% feature.logos.each do |logo| %><%= render "packages/logos/#{logo}", size: feature.logos.size > 1 ? "h-3.5 w-3.5" : "h-4 w-4" %><% end %>
+                      </span>
+                    <% else %>
+                      <%= feature.icon %>
+                    <% end %>
+                  </span>
+                  <div class="min-w-0">
+                    <p class="font-semibold text-heading">
+                      <%= feature.name %>
+                      <% if feature.planned? %>
+                        <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-muted" data-test="coming-soon">Coming soon</span>
+                      <% end %>
+                    </p>
+                    <p class="mt-0.5 text-xs text-muted"><%= feature.blurb %></p>
+                    <% software = feature.display_software.filter_map { |key| [ key, WorkspaceIconConfig.tile(key) ] if WorkspaceIconConfig.tile(key) } %>
+                    <% if software.any? %>
+                      <span class="mt-1.5 flex flex-wrap items-center gap-1.5" data-test="stack-software">
+                        <% software.each do |key, tile| %>
+                          <%= image_tag tile, alt: WorkspaceIconConfig.software_name(key), title: WorkspaceIconConfig.software_name(key),
+                                class: "h-6 w-6", loading: "lazy", data: { software: key } %>
+                        <% end %>
+                      </span>
+                    <% end %>
+                  </div>
+                </div>
+              </th>
+              <% @packages.each do |package| %>
+                <% value = feature.value_for(package.key) %>
+                <td class="border-b border-subtle px-3 py-3 <%= 'bg-surface-alt' if package.featured? %>"
+                    data-test="stack-cell" data-package="<%= package.key %>" data-included="<%= !value.nil? %>">
+                  <% if value.nil? %>
+                    <span class="text-muted" aria-label="Not included">—</span>
+                  <% elsif value == true %>
+                    <span class="font-semibold text-primary" aria-label="Included">✓</span>
+                  <% else %>
+                    <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold"><%= value %></span>
+                  <% end %>
+                </td>
+              <% end %>
+            </tr>
+          <% end %>
+        </tbody>
+      <% end %>
+      <tfoot>
+        <tr>
+          <td class="pkg-sticky-col bg-surface px-4 py-4"></td>
+          <% @packages.each do |package| %>
+            <td class="px-3 py-4 <%= 'bg-surface-alt' if package.featured? %>">
+              <%= package_cta_link package, class: "btn #{package.featured? ? 'btn-primary' : 'btn-neutral'} btn-sm w-full justify-center whitespace-nowrap" %>
+            </td>
+          <% end %>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <p class="mt-2 text-xs text-muted md:hidden">Swipe the table sideways to compare tiers.</p>
+
+  <% if admin? %>
+    <section class="mt-14 rounded-2xl border border-subtle bg-surface p-6" data-test="sop-map" aria-labelledby="sop-map-title">
+      <div class="flex flex-wrap items-baseline justify-between gap-3 mb-4">
+        <h2 id="sop-map-title" class="text-xl font-semibold text-heading">SOP map <span class="text-sm font-normal text-muted">· admins only</span></h2>
+        <% if @launch_sop_path %>
+          <%= link_to "🏢 workspace-launch — the master SOP", doc_path(@launch_sop_path), class: "text-sm font-semibold text-primary hover:underline", data: { test: "sop-map-master" } %>
+        <% end %>
+      </div>
+      <p class="text-sm text-muted mb-3">
+        Which registered SOP delivers each feature; edit <code>config/workspace_packages.yml</code> to change what a package gets.
+      </p>
+      <p class="text-sm text-muted mb-5" data-test="sop-map-comps">
+        Comps: <%= safe_join(@packages.map { |package| "#{package.name} — #{package.comp}" }, " · ") %>
+      </p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-muted border-b border-subtle">
+              <th class="py-2 pr-4 font-medium">Feature</th>
+              <th class="py-2 pr-4 font-medium">SOP</th>
+              <th class="py-2 pr-4 font-medium">You do</th>
+              <th class="py-2 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% features.each do |feature| %>
+              <tr class="border-b border-subtle last:border-0 align-top" data-test="sop-map-row" data-sop="<%= feature.sop %>">
+                <td class="py-2 pr-4 text-heading"><%= feature.name %></td>
+                <td class="py-2 pr-4">
+                  <% if feature.doc_path %>
+                    <%= link_to feature.sop, doc_path(feature.doc_path), class: "font-mono text-primary hover:underline" %>
+                    <% if feature.section %><span class="text-muted"> · §<%= feature.section %></span><% end %>
+                  <% else %>
+                    <span class="text-muted">— <%= feature.planned? ? "no SOP yet" : "built in" %></span>
+                  <% end %>
+                </td>
+                <td class="py-2 pr-4 text-body"><%= feature.you_do.presence || "Nothing" %></td>
+                <td class="py-2 text-muted"><%= feature.status %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  <% end %>
+</section>
