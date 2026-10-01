@@ -27,6 +27,13 @@ module SiteFooterHelper
         [ "Meet Alex", "#{root_path}#about" ],
         [ "Say hi", login_path ]
       ],
+      # [ label, icon, url ]. A nil url renders the icon unlinked: the handle
+      # is not on record yet.
+      social: [
+        [ "LinkedIn", :linkedin, "https://www.linkedin.com/in/amcritchie/" ],
+        [ "Instagram", :instagram, nil ],
+        [ "X", :x, "https://x.com/mcritchiealex" ]
+      ],
       legal: [
         [ "Privacy Policy", privacy_path ],
         [ "Terms of Service", terms_path ]

@@ -15,13 +15,17 @@
           <%= image_tag "logo-icon.svg", class: "w-12 h-12 invert dark:invert-0", alt: "" %>
           <span class="text-2xl font-extrabold text-heading uppercase leading-tight" style="letter-spacing: .14em;">McRitchie<br><span class="text-primary">Studio</span></span>
         <% end %>
-        <p class="mt-8 font-bold text-heading">Denver, CO</p>
-        <address class="not-italic mt-2 leading-relaxed">
-          <%= facts[:street] %><br><%= facts[:city_line] %><br>
-          <a href="<%= facts[:phone_href] %>" class="ftr-link"><%= facts[:phone] %></a>
-        </address>
-        <a href="mailto:<%= facts[:email] %>" aria-label="Email <%= facts[:name] %>"
-           class="mt-8 inline-flex items-center justify-center w-10 h-10 rounded-full bg-primary text-white font-bold">@</a>
+        <p class="mt-6 text-secondary leading-relaxed"><%= facts[:tagline] %></p>
+        <ul class="mt-8 flex items-center gap-3" aria-label="Social profiles">
+          <% facts[:social].each do |label, icon, url| %>
+            <li>
+              <%= content_tag(url ? :a : :span,
+                    render("footers/social_icon", icon: icon),
+                    { class: "ftr-social", title: url ? label : "#{label} (handle needed)", "aria-label": label }
+                      .merge(url ? { href: url, target: "_blank", rel: "noopener" } : { "data-pending": true })) %>
+            </li>
+          <% end %>
+        </ul>
       </div>
 
       <% columns.each do |heading, links| %>

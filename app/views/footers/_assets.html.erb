@@ -59,6 +59,12 @@
   .ftr-orb .leaflet-bottom.leaflet-right { right: 50%; transform: translateX(50%); bottom: 12px; }
   .ftr-orb .leaflet-control-attribution { border-radius: 9999px; padding: 0 8px; white-space: nowrap; }
 
+  /* 6 · Directory */
+  .ftr-social { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem;
+    border-radius: 9999px; background: var(--ftr-primary); color: #fff; transition: transform .15s ease, filter .15s ease; }
+  a.ftr-social:hover { transform: translateY(-2px); filter: brightness(1.12); }
+  .ftr-social[data-pending] { background: transparent; color: inherit; opacity: .5; border: 1px dashed currentColor; }
+
   /* 5 · Postcard */
   .ftr-card { background: var(--color-surface, #fff); border: 1px solid rgb(127 127 127 / .25); border-radius: .5rem;
     box-shadow: 0 30px 60px -20px rgb(0 0 0 / .45), 0 2px 0 rgb(127 127 127 / .12); transform: rotate(-.6deg); }
