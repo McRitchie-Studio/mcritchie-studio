@@ -93,13 +93,20 @@ and a write into an occupied desk corrupts whatever else is reading it (see
 artifacts.** All three are load-bearing the moment your zap runs a test tier:
 
 ```bash
-ZAP="$(mktemp -d)/zap-<slug>"           # your session scratchpad, OUTSIDE <repo>/.worktrees/
-git worktree add "$ZAP" --detach <base>
-cp <desk>/.env.test.local "$ZAP"/       # 1 of 2 untracked classes: the test-DB env
-test -s "$ZAP/.env.test.local" || echo "STOP: no .env.test.local, so this tree runs on the SHARED test DB"
-(cd "$ZAP" && bin/rails test:prepare)   # 2 of 2: the gitignored build output (Rails apps)
-# or, instead of all three lines: bin/agent-worktree new <app> zap-<slug>
+ZAP="$(mktemp -d)/zap-<slug>"
+git worktree add "$ZAP" --detach <base> &&
+  cp <desk>/.env.test.local "$ZAP"/ &&
+  test -s "$ZAP/.env.test.local" &&
+  (cd "$ZAP" && RAILS_ENV=test bin/rails test:prepare) ||
+  echo "STOP: setup failed (no .env.test.local?), so this tree would run on the SHARED test DB; run nothing in it"
 ```
+
+The `cp` carries the first of two untracked classes (the test-DB env), `test:prepare`
+builds the second (the gitignored build output), and `bin/agent-worktree new <app>
+zap-<slug>` does all of it instead. The block is ONE `&&` chain: a link that fails stops
+everything after it, and the last line names the stop. A bare `test -s … || echo` only
+printed a warning while the next pasted line ran anyway. It has no inline comments,
+because an interactive zsh without `interactivecomments` reads `#` as an argument.
 
 `.env.test.local` is **untracked**, so no `git worktree add` carries it. Without
 it `TEST_DATABASE_URL` renders empty, `config/database.yml` falls back to
@@ -108,16 +115,26 @@ test database used by the primary checkout, CI, and every concurrent suite —
 polluting them and being polluted by them. Verified 2026-08-31: a detached
 worktree off `origin/accepted` resolves to `mcritchie_studio_test`.
 
-**Why outside `.worktrees/`, and why the `test -s` line.** Anything directly
-under `<repo>/.worktrees/` is a MANAGED desk (`lib/desk_root.rb`): the board opens
-a desk-ledger episode for it, and a throwaway removed with plain `git worktree
-remove` leaves that episode open as a `vanished` ghost on the Desks panel (two of
-the six ghosts on 2026-09-29 were reviewer throwaways cut there). A scratch
+**Why outside `.worktrees/`, and why the `test -s` link and `RAILS_ENV=test`.**
+Anything directly under `<repo>/.worktrees/` is a MANAGED desk (`lib/desk_root.rb`):
+the board opens a desk-ledger episode for it, and a throwaway removed with plain `git
+worktree remove` leaves that episode open as a `vanished` ghost on the Desks panel (two
+of the six ghosts on 2026-09-29 were reviewer throwaways cut there). A scratch
 directory is outside every managed root, so the sweep and the ledger list it and
-never track it. The cost is that `bin/lib/desk_guard.rb`, whose `desk?`
-predicate fires only under `.worktrees/`, no longer refuses the tree by name when
-`.env.test.local` is missing, so the recipe's `test -s` line is that check now:
-it names the missing file before a test tier can run on the shared database.
+never track it. Two guards bear on the move, and they cover different databases:
+
+- **The TEST database.** `bin/lib/desk_guard.rb` is the pre-flight's check, loaded only
+  by `bin/fast-check`, and its `desk?` predicate fires only under `.worktrees/`. It never
+  sees a scratch throwaway, so the recipe's `test -s` link is that check now: a missing
+  `.env.test.local` stops the chain before a test tier can run on the shared test DB.
+- **The DEVELOPMENT database.** `DeskDatabaseGuard` (`lib/desk_database_guard.rb`, run
+  by a hub initializer on every development boot) refuses a rails command whose database
+  resolves to the shared `mcritchie_studio_development`. It fires in every linked git
+  worktree of the hub (a desk or a scratch throwaway, told apart from the primary checkout
+  by the `.git` FILE a linked worktree keeps), so a bare `bin/rails runner` or `db:migrate`
+  in a throwaway aborts instead of writing. It does not run in the satellites, so the rule
+  stands everywhere: **every rails command in a throwaway carries `RAILS_ENV=test`**.
+  `ALLOW_SHARED_DEV_DB=1` overrides it, deliberately.
 A throwaway you already cut under `.worktrees/` is a managed desk; tear it down
 with `bin/agent-worktree remove <app> <name> --yes`, never plain git.
 
@@ -185,13 +202,14 @@ desk may hold uncommitted work a cleanup must never touch — and land it as
 its own commit:
 
 ```bash
-ZAP="$(mktemp -d)/zap-<slug>"                  # scratchpad, outside the managed root
-git worktree add "$ZAP" --detach HEAD          # throwaway desk off your feat head
-cp .env.test.local "$ZAP"/                     # REQUIRED before any test tier
-test -s "$ZAP/.env.test.local" || echo "STOP: no .env.test.local"
-cd "$ZAP"
-bin/rails test:prepare                         # AND the gitignored build output
-# …fix, then:
+ZAP="$(mktemp -d)/zap-<slug>"
+git worktree add "$ZAP" --detach HEAD &&
+  cp .env.test.local "$ZAP"/ &&
+  test -s "$ZAP/.env.test.local" &&
+  cd "$ZAP" &&
+  RAILS_ENV=test bin/rails test:prepare ||
+  echo "STOP: setup failed (no .env.test.local?); do not fix or commit until it passes"
+# …fix (every rails command RAILS_ENV=test), then:
 git add -p
 git commit -m "zap: <what was broken, one line>"
 git push origin HEAD:refs/heads/feat/<slug>    # fast-forward; rejects loudly if stale
@@ -224,14 +242,15 @@ the PR head, run its test tier, and **lease-push** the `zap:` commit to the PR
 branch:
 
 ```bash
-ZAP="$(mktemp -d)/zap-<slug>"                         # scratchpad, outside the managed root
-git worktree add "$ZAP" --detach FETCH_HEAD           # off the PR head you fetched
-cp <desk>/.env.test.local "$ZAP"/                     # REQUIRED before any test tier
-test -s "$ZAP/.env.test.local" || echo "STOP: no .env.test.local"
-cd "$ZAP"
-bin/rails test:prepare                                # AND the gitignored build output
+ZAP="$(mktemp -d)/zap-<slug>"
+git worktree add "$ZAP" --detach FETCH_HEAD &&
+  cp <desk>/.env.test.local "$ZAP"/ &&
+  test -s "$ZAP/.env.test.local" &&
+  cd "$ZAP" &&
+  RAILS_ENV=test bin/rails test:prepare ||
+  echo "STOP: setup failed (no .env.test.local?); do not zap until it passes"
 BASE=$(git rev-parse HEAD)                            # the head you zap FROM — pin the lease to it
-# ...one bounded fix...
+# ...one bounded fix (every rails command RAILS_ENV=test)...
 # Name the ZAPPING soul (on a review zap, the reviewer), not the builder's stamp this throwaway may have inherited:
 git -c user.name="<Soul>" -c user.email=<soul>@mcritchie.studio \
   commit -m "zap: <what was broken, one line>"

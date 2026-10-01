@@ -471,6 +471,20 @@ class AgentWorktreeTest < Minitest::Test
                  "a cert on a terminal task is work, not lifecycle — it still holds")
   end
 
+  # THE MATCH IS EXACT, and this is the case that pins it (/tasks/harden-scratch-worktree-recipes).
+  # The exemption is the move onto the stage the task sits on NOW, not any move: a task
+  # archived WITHOUT a fresh archive event — its newest artifact is the earlier move to
+  # shipped — has no proof its last artifact was the terminal bookkeeping, so it holds.
+  # Loosening the match to `start_with?("moved to")` frees this desk, and this goes red.
+  def test_an_archived_task_whose_newest_event_is_a_move_to_another_stage_is_still_withheld
+    task = ARCHIVED_BY_THE_SWEEP.sub('"moved to archived"', '"moved to shipped"')
+    out = desk_verdict(age: 6 * 3_600, touched: false, task_json: task)
+
+    assert_match(/\A\[false, "the bound task landed a durable artifact/, out,
+                 "only the move onto the task's CURRENT terminal stage is lifecycle; a move to a " \
+                 "different stage is not the archive transition and still holds")
+  end
+
   # Asked of desk_hold itself: reclaim_verdict's stage guard would hold a `building` desk
   # before this channel is reached, and this pins the channel on its own.
   def test_a_live_task_whose_newest_progress_is_a_stage_move_is_still_withheld
