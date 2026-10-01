@@ -148,9 +148,14 @@ class Broadcast < ApplicationRecord
   # execute_staged!. See StagedEmail.
 
   # Every merge field this broadcast needs: those its subject names plus those
-  # its template's body uses.
+  # its template's body uses. A subject's "<key>_count" phrase (MergeFields.
+  # with_counts) needs its base count, never a stored "games_count" field.
   def required_merge_fields
-    (Broadcasts::MergeFields.fields_in(subject) + TEMPLATE_MERGE_FIELDS.fetch(template_key, [])).uniq
+    subject_fields = Broadcasts::MergeFields.fields_in(subject).map do |field|
+      base = field.delete_suffix("_count")
+      Broadcasts::MergeFields::COUNTED.key?(base) ? base : field
+    end
+    (subject_fields + TEMPLATE_MERGE_FIELDS.fetch(template_key, [])).uniq
   end
 
   # A personalized broadcast goes out only through the queue: the editor's

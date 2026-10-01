@@ -91,6 +91,11 @@ class Broadcasts::CyvasseYourGamesTest < ActiveSupport::TestCase
     assert_not fields.key?("losses_count"), "no phrase for a count the reader lacks"
   end
 
+  test "a stored subject's %{games_count} requires games, not a games_count field" do
+    @broadcast.subject = "%{username}, your %{games_count} are still here"
+    assert_equal %w[username games], @broadcast.required_merge_fields
+  end
+
   test "joined_year reads the year of joined_on, or nil" do
     assert_equal "2014", Broadcasts::CyvasseYourGames.joined_year("joined_on" => "2014-03-02")
     assert_nil Broadcasts::CyvasseYourGames.joined_year({})
