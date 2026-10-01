@@ -137,4 +137,4 @@ Public-facing chat interface powered by Claude API. Users can chat with an AI Al
 ### Landing Page
 - **Hero** — Denver skyline background with Ken Burns pan animation (15s linear), dark overlay for text contrast.
 - **Get in Touch section** — the booking frame (`schedule/_booking_frame`): Google Calendar's inline appointment page, also the whole of `/schedule`.
-- **Booking frame** — an iframe whose URL waits in `data-src`; an inline script assigns `src` only after the window's `load` event and once the frame is near the viewport, so Google never holds a page's `load` open. It fills its column. Its height fits Google's content; the header inside the frame cannot be cropped, because the booking dialog centres in the frame's full height.
+- **Booking frame** — an iframe whose URL waits in `data-src`; an inline script assigns `src` only after the window's `load` event and once the frame is near the viewport, so Google never holds a page's `load` open. It fills its column. From 640px up it is cropped at rest to Google's slot-picker box, and opens to the full frame when focus moves into it, because the booking dialog centres in the frame's full height.

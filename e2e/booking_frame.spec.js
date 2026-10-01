@@ -18,7 +18,8 @@ async function stubGoogle(page) {
   const asked = [];
   await page.route("https://calendar.google.com/**", (route) => {
     asked.push(route.request().url());
-    return route.fulfill({ contentType: "text/html", body: "<p id='stub'>booking stub</p>" });
+    return route.fulfill({ contentType: "text/html", // 300px down: inside the window the cropped frame shows, so it can be clicked.
+      body: "<p id='stub' style='margin-top:300px'>booking stub</p>" });
   });
   return asked;
 }
@@ -49,4 +50,23 @@ test("/schedule shows the frame without scrolling, as wide as its column", async
   const box = await frame(page).boundingBox();
   expect(box.width).toBeGreaterThanOrEqual(820);
   expect(box.width).toBeLessThanOrEqual(896);
+});
+
+test("the frame is cropped to the slot picker at rest and opens fully once it is used", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await stubGoogle(page);
+  await page.goto("/schedule");
+  await expect(frame(page)).toHaveAttribute("src", /gv=true$/);
+
+  const wrap = page.locator("[data-booking-wrap]");
+  const heights = () =>
+    wrap.evaluate((el) => [Math.round(el.getBoundingClientRect().height), el.querySelector("iframe").offsetHeight]);
+
+  // At rest the wrapper shows a 414px window onto a 732px frame.
+  expect(await heights()).toEqual([414, 732]);
+
+  // A click inside the frame moves focus into it; the parent sees only a blur.
+  await page.frameLocator("iframe[data-booking-frame]").locator("#stub").click();
+  await expect(wrap).toHaveClass(/is-open/);
+  await expect.poll(async () => (await heights())[0]).toBe(732);
 });
