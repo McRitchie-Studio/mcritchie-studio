@@ -62,6 +62,7 @@ module LinkTreeHelper
         { label: "Design System", href: admin_style_path, emoji: "🎨", hover_emoji: "🧩", desc: "Theme · Modals · Tricks · Tasks" },
         { label: "Schema", href: admin_schema_path, emoji: "🗂️", hover_emoji: "🔎", desc: "DB schema browser" },
         { label: "Emails", href: admin_emails_path, emoji: "✉️", hover_emoji: "🖼️", desc: "Transactional emails + their banners" },
+        { label: "Link preview", href: admin_link_preview_path, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls" },
         { label: "Assets", href: asset_browser_path, emoji: "🗄️", hover_emoji: "🎞️", desc: "Object store as a folder tree" },
       ] },
       # The client side of the business: what the funnel brought in, what each
