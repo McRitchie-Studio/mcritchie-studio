@@ -110,7 +110,7 @@ Do not overwrite the app's S3/ImageCache `AWS_ACCESS_KEY_ID` or
 ## Verifying a List Before a Broadcast
 
 An old list bounces. The Cyvasse relaunch's first 101 sends on 2026-09-29
-hard-bounced 12 (11.9%), which threatens the sending domain's reputation, so
+hard-bounced 13 (12.9%), which threatens the sending domain's reputation, so
 `cyvasse-legacy` is now a **verified-only audience**
 (`Broadcast::VERIFIED_AUDIENCES`): `broadcasts:send_batch` and the editor's
 send reach only contacts that ZeroBounce called `valid`. `catch-all`,
