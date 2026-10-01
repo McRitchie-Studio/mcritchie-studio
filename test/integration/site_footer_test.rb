@@ -51,7 +51,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     assert_select "footer[data-site-footer] ul[aria-label='Social profiles']" do
       assert_select "a[href='https://www.linkedin.com/in/amcritchie/'][aria-label='LinkedIn']", 1
       assert_select "a[href='https://x.com/mcritchiealex'][aria-label='X']", 1
-      assert_select "[aria-label='Instagram']", 1
+      assert_select "a[href='https://www.instagram.com/alexmcritchie/'][aria-label='Instagram']", 1
     end
   end
 

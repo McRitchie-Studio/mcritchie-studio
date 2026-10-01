@@ -44,8 +44,11 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "a[href=?]", "https://www.linkedin.com/in/amcritchie/"
     assert_select "a[href=?]", "https://x.com/mcritchiealex"
-    # the stale "alexmcritchie" handles must not come back
-    assert_select "a[href*=?]", "alexmcritchie", count: 0
+    # The stale "alexmcritchie" LinkedIn and X handles must not come back. Scoped
+    # to those two hosts: on Instagram, "alexmcritchie" IS the right handle.
+    assert_select "a[href*='linkedin.com'][href*='alexmcritchie']", 0
+    assert_select "a[href*='x.com'][href*='alexmcritchie']", 0
+    assert_select "a[href*='twitter.com'][href*='alexmcritchie']", 0
   end
 
   test "pwa manifest renders the corrected app name" do

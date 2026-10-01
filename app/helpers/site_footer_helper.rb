@@ -43,7 +43,7 @@ module SiteFooterHelper
       # is not on record yet.
       social: [
         [ "LinkedIn", :linkedin, "https://www.linkedin.com/in/amcritchie/" ],
-        [ "Instagram", :instagram, nil ],
+        [ "Instagram", :instagram, "https://www.instagram.com/alexmcritchie/" ],
         [ "X", :x, "https://x.com/mcritchiealex" ]
       ],
       legal: [
