@@ -1,4 +1,4 @@
-<!-- Google's multicolour G (the paths from app/views/packages/logos/_google.html.erb),
+<!-- Google's multicolour G (the 48-unit paths the /packages pages once drew inline),
      FILLS ONLY: ImageMagick's internal SVG renderer drops strokes (measured
      2026-09-25: a 6px stroke rendered as nothing), so the disc behind it is
      drawn by the tiles step of bin/workspace-icon, like every other software tile. -->

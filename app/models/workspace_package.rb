@@ -21,7 +21,7 @@ class WorkspacePackage
   LEGACY_TIERS = { "launch" => "vibe", "host" => "pro", "workspace" => "growth", "agentic" => "growth" }.freeze
 
   Feature = Struct.new(:name, :category, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, :shows,
-                       keyword_init: true) do
+                       :brand_from, keyword_init: true) do
     def live? = status == "live"
 
     def planned? = status == "planned"
@@ -48,8 +48,15 @@ class WorkspacePackage
     def strip_brands = display_software - [ brand ]
 
     # The brands a package card names for this row: the lead brand and every
-    # software it shows. A planned row is a promise, so it names none.
-    def card_brands = planned? ? [] : ([ brand ].compact + display_software).uniq
+    # software it shows. A planned row is a promise, so it names none, and a
+    # tier below `brand_from` gets the row but not the brand (Vibe's web
+    # address is a mcritchie.studio subdomain, not a Squarespace domain).
+    def card_brands(package_key = nil)
+      return [] if planned?
+      return [] if package_key && brand_from && WorkspacePackage.keys.index(package_key.to_s) < WorkspacePackage.keys.index(brand_from)
+
+      ([ brand ].compact + display_software).uniq
+    end
 
     # The package's value for this row: a string ("Basic dyno"), true
     # (included, nothing to quantify), or nil (not included).
@@ -148,7 +155,7 @@ class WorkspacePackage
 
   # Every brand this tier's delivered features put in front of the customer, in
   # row order: what its card's "Powered by" row draws.
-  def brand_keys = features.flat_map(&:card_brands).uniq
+  def brand_keys = features.flat_map { |feature| feature.card_brands(key) }.uniq
 
   # The brands a card draws: all of them on the first tier, and on every later
   # tier only those it adds, since each tier includes the one before it.

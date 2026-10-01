@@ -35,6 +35,8 @@
 #             emoji: the neutral lead of a row no single brand owns (Hosting
 #             mode, Support). Use a logo only where the customer gets that
 #             brand's product.
+#   brand_from  optional — the first tier that gets the `icon` brand's product, when a
+#             lower tier has the row without it: its card then names no logo for it
 #   blurb     one customer-facing sentence: what they get, not how
 #   vibe/pro/growth/enterprise
 #             what that tier gets, shown IN the row:
@@ -235,6 +237,7 @@ features:
     sop: domain-purchase
     you_do: Approve the domain
     status: live
+    brand_from: pro
   - name: SEO and link previews
     category: domain
     icon: "🔎"
