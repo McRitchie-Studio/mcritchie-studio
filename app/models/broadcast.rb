@@ -99,9 +99,9 @@ class Broadcast < ApplicationRecord
 
   # Audiences whose sends go only to contacts an email check called valid
   # (task verify-contacts-with-zerobounce). The Cyvasse relaunch's first 101
-  # sends hard-bounced 11.9%, so the old player list is mailed verified-only
-  # unless a caller says otherwise; catch-all, unknown and unchecked contacts
-  # wait. Verify with `contacts:verify`.
+  # sends hard-bounced 12.9% (13 of 101), so the old player list is mailed
+  # verified-only unless a caller says otherwise; catch-all, unknown and
+  # unchecked contacts wait. Verify with `contacts:verify`.
   VERIFIED_AUDIENCES = %w[cyvasse-legacy].freeze
 
   # Whether a send to `audience` is verified-only by default.

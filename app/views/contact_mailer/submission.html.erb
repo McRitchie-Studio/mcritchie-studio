@@ -1,0 +1,13 @@
+<h2>New contact form submission</h2>
+<p><strong>Name:</strong> <%= @submission.name %></p>
+<p><strong>Email:</strong> <%= @submission.email %></p>
+<p><strong>Mobile:</strong> <%= @submission.phone.presence || "not given" %></p>
+<p><strong>Text messages:</strong> <%= @submission.consent_summary %></p>
+<p><strong>Message:</strong></p>
+<%= simple_format(@submission.message) %>
+<hr>
+<p style="color:#666;font-size:12px;">
+  Submission #<%= @submission.id %> at <%= @submission.created_at.utc.iso8601 %>,
+  disclosure version <%= @submission.disclosure_version %>.
+  Only text a number whose submission consented.
+</p>
