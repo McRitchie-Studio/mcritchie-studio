@@ -69,7 +69,7 @@ class SchedulePageTest < ActionDispatch::IntegrationTest
   end
 
   test "the booking crop is this schedule's measured window" do
-    assert_equal({ top: 211, bottom: 757, frame_height: 869 }, Studio.booking_crop)
+    assert_equal({ top: 211, bottom: 613, frame_height: 869 }, Studio.booking_crop)
 
     get schedule_index_path
     assert_select "[data-booking-wrap].booking-frame-cropped", 1

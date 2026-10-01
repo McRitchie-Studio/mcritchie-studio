@@ -145,15 +145,15 @@ test("the frame is cropped to the slot picker at rest and opens fully once it is
   const wrap = page.locator("[data-booking-wrap][data-studio-booking]");
   // clientHeight is the WINDOW onto the frame: the wrapper's height inside its
   // border. The numbers come from this app's declared crop (config.booking_crop:
-  // top 211, bottom 757, frame 869): the engine shows top-6 to bottom+6, a 558px
-  // window. Engine 0.83.0 fixed it at 414px onto a 732px frame, which hid the
-  // last three slots of this schedule's fullest day.
+  // top 211, bottom 613, frame 869): the engine shows top-6 to bottom+6, a 414px
+  // window, onto a frame as tall as Google's page on the fullest day. Engine
+  // 0.83.0 fixed the frame at 732px, shorter than that page.
   const heights = () =>
     wrap.evaluate((el) => [el.clientHeight, el.querySelector("iframe").offsetHeight,
                            Math.round(el.getBoundingClientRect().height)]);
 
-  // At rest the wrapper shows a 558px window onto an 869px frame (560px with its borders).
-  expect(await heights()).toEqual([558, 869, 560]);
+  // At rest the wrapper shows a 414px window onto an 869px frame (416px with its borders).
+  expect(await heights()).toEqual([414, 869, 416]);
 
   // A click inside the frame moves focus into it; the parent sees only a blur.
   await page.frameLocator("iframe[data-booking-frame]").locator("#stub").click();

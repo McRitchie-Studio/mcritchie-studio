@@ -137,13 +137,19 @@ Studio.configure do |config|
 
   # Where Google's "Select an appointment time" box sits inside ITS page for
   # THIS schedule, so the frame can show only that box at rest. Measured with
-  # the engine's bin/booking-crop-measure on 2026-10-01: the box starts at 211px
-  # and, on the fullest bookable day (8 slots), ends at 757px of an 869px page.
-  # Re-measure when the schedule's header or hours change. The 0.83.0 crop was
-  # fixed at 205-619px, which hides the last three slots of a full day.
+  # the engine's bin/booking-crop-measure on 2026-10-01: the box starts at 211px;
+  # it ends at 613px on a five-slot day and at 757px on the fullest bookable day
+  # (8 slots); Google's page is 869px tall on that day.
   #
-  # Without this line the engine shows the frame whole.
-  config.booking_crop = { top: 211, bottom: 757, frame_height: 869 }
+  # `bottom` is the FIVE-slot box on purpose. That is the compact window the
+  # operator approved (414px), and it is what a typical day fills exactly. On a
+  # fuller day the sixth to eighth slots sit below the window until the visitor
+  # clicks into the calendar, which opens the whole frame. Setting bottom: 757
+  # shows every slot at rest, at the cost of 144px of Google's credit lines
+  # under the box on a typical day. The operator's call; ask before changing.
+  # `frame_height` is the fullest day's, so the opened frame never scrolls.
+  # Re-measure when the schedule's header or hours change.
+  config.booking_crop = { top: 211, bottom: 613, frame_height: 869 }
 
   # /schedule is this app's own page (ScheduleController), not the engine's
   # drawn one, so the engine has to be told where it is: booking links fall
