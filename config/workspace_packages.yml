@@ -1,162 +1,443 @@
-# What each McRitchie Studio workspace package includes — and which SOP delivers
-# each feature. This is the ONE place package contents live: the public /packages
-# page renders it as one swim lane per tier, one row per feature, so the
-# difference between tiers reads across the row ("2 users" vs "10 users").
-# Steffon's workspace-launch SOP runs the features a package includes.
+# What each McRitchie Studio package tier includes — and which SOP delivers
+# each feature. This is the ONE place package contents live. Two pages render it:
 #
-# Tiers set by Mr. McRitchie 2026-09-25, a ladder where each includes the one
-# below: Launch free, Host $100/mo, Workspace $200/mo, Agentic $500/mo; 10% off
-# billed annually. (They replaced Basic $100 and Pro $500 of 2026-09-24.) A
-# `price_monthly` of 0 renders "Free"; a blank one "Pricing coming soon".
+#   /packages        the marketing page: one card per tier, its promise, its
+#                    `highlights` and its call to action
+#   /packages/stack  the full stack: every feature row below, grouped by
+#                    `category`, one column per tier, so the difference between
+#                    tiers reads across the row ("Eco dyno" / "Basic dyno" / ...)
+#
+# Tiers approved by Mr. McRitchie 2026-09-30 (epic: pricing-tiers-v2), a ladder
+# where each includes the one below: Vibe free, Pro $100/mo, Growth $500/mo,
+# Enterprise custom; 10% off billed annually. They replaced Launch, Host,
+# Workspace and Agentic of 2026-09-25 (Workspace folded into Growth); migration
+# RemapPackageTiers moved every stored tier to the new keys.
+#
+# Package keys:
+#   key, name       the tier; `key` is what stack_clients.tier and app_requests.tier store
+#   tagline         the one-line promise on its card
+#   price_monthly   0 renders "Free"; a number "$N/month"; blank renders `price_label`
+#                   ("Custom"), or "Pricing coming soon" without one
+#   comp            the real client the tier was worked back from. Internal: the
+#                   cards do not name clients; the admin SOP map does
+#   highlights      the 4-6 inclusions the card leads with, customer-facing
+#   cta             label + action: `build` (/build), `schedule` (the studio's
+#                   booking calendar) or `enterprise_booking` (enterprise_booking_url
+#                   below, else the studio's booking calendar)
+#   featured        true on the one card the page highlights
 #
 # Feature keys:
 #   name      customer-facing label
+#   category  the group it sits under on /packages/stack (see `categories`)
 #   icon      an emoji, a brand logo key (google, tiktok, instagram — partials in
 #             app/views/packages/logos/), or a list of logo keys shown side by side.
 #             Use a logo only where the customer gets that brand's product.
 #   blurb     one customer-facing sentence: what they get, not how
-#   launch/host/workspace/agentic
+#   vibe/pro/growth/enterprise
 #             what that tier gets, shown IN the row:
-#               a string  → the package's value ("2 users")
+#               a string  → the package's value ("Basic dyno")
 #               true      → included, nothing to quantify
-#               omitted   → not included (the lane shows "Not included")
+#               omitted   → not included (the cell shows "—")
 #   sop       registered SOP invocation that delivers it (docs/agents/agents/*/sops/<sop>.md)
 #   section   optional — the part of that SOP that applies
 #   you_do    what the CUSTOMER / operator does themselves (blank = nothing)
-#   status    live (an SOP delivers it today) or planned (no SOP yet: "Coming soon")
+#   status    live     an SOP delivers it today (names that SOP)
+#             builtin  part of the app template or the service itself: nothing to
+#                      provision, so no SOP step
+#             planned  not delivered today: "Coming soon", names no SOP. Keep this
+#                      honest — a planned row is a promise, not a feature.
 #   software  the software keys (config/workspace_icons.yml) the feature puts in a
-#             client's stack — what /stack draws for a client on that tier
+#             client's stack — what /stack draws for a client on that tier. Only a
+#             delivered (live or builtin) feature provisions; a planned one does not.
+#   shows     software keys drawn beside the row on /packages/stack WITHOUT
+#             provisioning them: an add-on a client takes per contract, recorded
+#             on the client (stack_clients.extra_software), not by its tier
 billing:
   annual_discount_percent: 10
 
+# The Google Calendar appointment page the Enterprise "Book a call" opens, in a
+# new tab. Blank until Mr. McRitchie supplies it: the button then opens the
+# studio's own booking calendar (ScheduleController::BOOKING_URL) in the
+# booking popup, so it is never a dead link.
+enterprise_booking_url:
+
+categories:
+  hosting: Hosting
+  data: Data
+  domain: Domain
+  email: Email
+  auth: Sign-in
+  storage: Storage and backup
+  marketing: Marketing
+  agents: Agents and service
+  security: Security
+  connectors: Connectors
+  add_ons: Add-ons
+
 packages:
-  - key: launch
-    name: Launch
-    tagline: Start from our app template and ship through our pipeline.
+  - key: vibe
+    name: Vibe
+    tagline: A real app built by our agents, live at you.mcritchie.studio.
     price_monthly: 0
-  - key: host
-    name: Host
-    tagline: Your app live in production, deployed and watched for you.
+    comp: 10and5
+    highlights:
+      - An app built by our agents from your description
+      - Live at you.mcritchie.studio
+      - Hosted for you on an Eco server
+      - HTTPS and deploys handled for you
+    cta: { label: Build your app, action: build }
+  - key: pro
+    name: Pro
+    tagline: Your app on your own domain, with real data behind it.
     price_monthly: 100
-  - key: workspace
-    name: Workspace
-    tagline: Your company on its own domain, with an agent that drafts your email.
-    price_monthly: 200
-  - key: agentic
-    name: Agentic
-    tagline: An agent that knows your business, not just your inbox.
+    comp: Cyvasse
+    highlights:
+      - Your app on your own domain
+      - A Postgres database and realtime updates
+      - Sign-in links and app email from your domain
+      - File storage with nightly backups
+      - Small changes after launch, by email
+    cta: { label: Talk to us about Pro, action: schedule }
+  - key: growth
+    name: Growth
+    tagline: Your app, your email, Google Workspace and a marketing team.
     price_monthly: 500
+    comp: Turf Monster, Commercial Welding
+    featured: true
+    highlights:
+      - Web and worker servers, Postgres and Redis
+      - Google Workspace with 2 seats included
+      - An agent that drafts your email
+      - Email marketing with list cleaning and analytics
+      - A marketing team for strategy, content and launches
+      - Monthly build requests and priority support
+    cta: { label: Talk to us about Growth, action: schedule }
+  - key: enterprise
+    name: Enterprise
+    tagline: Your systems connected, with a team that knows your business.
+    price_label: Custom
+    comp: McRitchie Industries
+    highlights:
+      - Custom connectors to the systems you already use
+      - Multiple apps and domains, white label
+      - Credential rotation with compliance review
+      - Payments, crypto and AI as add-ons
+      - A dedicated build team and a named contact
+    cta: { label: Book a call, action: enterprise_booking }
 
 features:
-  - name: App template and pipeline
+  # --- hosting -------------------------------------------------------------
+  - name: Apps
+    category: hosting
     icon: "🧩"
-    blurb: Our Rails app template and the build, review and ship pipeline we use ourselves.
-    launch: true
-    host: true
-    workspace: true
-    agentic: true
+    blurb: Built by our agents from your description, then reviewed and shipped through our own pipeline.
+    vibe: 1 app
+    pro: 1 app
+    growth: 1 app + workers
+    enterprise: Multiple apps
+    sop: app-deploy-standard
     you_do: Describe what you want built
-    status: planned
-    software: [github]
-  - name: Production hosting
+    status: live
+    software: [github, rails]
+  - name: Server
+    category: hosting
     icon: "🚀"
-    blurb: Your app live on its own URL, with a database, deploys and error logs handled.
-    host: 1 app
-    workspace: 1 app
-    agentic: 1 app · more power + database space
+    blurb: Where your app runs. Bigger tiers stay awake and add a worker for background jobs.
+    vibe: Eco dyno (sleeps when idle)
+    pro: Basic dyno
+    growth: Basic web + worker
+    enterprise: Sized to need
+    sop: app-deploy-standard
+    status: live
+    software: [heroku]
+  - name: Hosting mode
+    category: hosting
+    icon: "🏷️"
+    blurb: On McRitchie Studio's accounts, or white label on your own.
+    vibe: McRitchie Studio hosted
+    pro: McRitchie Studio hosted
+    growth: Hosted or white label
+    enterprise: White label
     sop: website-launch
     you_do: Approve the hosting costs
     status: live
-    software: [heroku]
-  - name: Hosted domain
+  - name: HTTPS and deploys
+    category: hosting
+    icon: "🛡️"
+    blurb: Certificates and continuous integration on every app, from day one.
+    vibe: true
+    pro: true
+    growth: true
+    enterprise: true
+    status: builtin
+  - name: Error log
+    category: hosting
+    icon: "🧾"
+    blurb: Every error your app raises, recorded with what the visitor was doing.
+    pro: true
+    growth: true
+    enterprise: true
+    status: builtin
+  - name: Error alerts
+    category: hosting
+    icon: "🚨"
+    blurb: Errors reported with their full context the moment they happen, not when a customer writes in.
+    growth: true
+    enterprise: true
+    status: builtin
+    software: [sentry]
+
+  # --- data ----------------------------------------------------------------
+  - name: Database
+    category: data
+    icon: "🐘"
+    blurb: A Postgres database for your app's records. Vibe apps keep their data in files.
+    pro: Postgres, small
+    growth: Postgres, larger
+    enterprise: Custom
+    sop: app-deploy-standard
+    status: live
+    software: [postgres]
+  - name: Cache and job queue
+    category: data
+    icon: "🧰"
+    blurb: Redis for caching and the background jobs your worker runs.
+    growth: Redis
+    enterprise: Redis, sized to need
+    sop: app-deploy-standard
+    status: live
+    software: [redis]
+  - name: Realtime updates
+    category: data
+    icon: "⚡"
+    blurb: Pages that update live as data changes, without a refresh.
+    pro: true
+    growth: true
+    enterprise: true
+    status: builtin
+
+  # --- domain --------------------------------------------------------------
+  - name: Web address
+    category: domain
     icon: "🌐"
-    blurb: Your own domain, registered and pointed at your app for you.
-    workspace: 1 domain
-    agentic: 1 domain
+    blurb: Your app's address. From Pro, your own domain, registered and pointed at your app for you.
+    vibe: you.mcritchie.studio
+    pro: 1 own domain
+    growth: 1 own domain
+    enterprise: Multiple domains
     sop: domain-purchase
     you_do: Approve the domain
     status: live
-  - name: Google Workspace
-    icon: google
-    blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
-    workspace: 2 users
-    agentic: 10 users
-    sop: workspace-signup
-    you_do: Sign up and create the users
-    status: live
-    software: [google]
+  - name: SEO and link previews
+    category: domain
+    icon: "🔎"
+    blurb: Titles, descriptions and share cards, so a link to your app looks right everywhere it is posted.
+    pro: true
+    growth: true
+    enterprise: true
+    status: builtin
+
+  # --- email ---------------------------------------------------------------
   - name: Email that lands in the inbox
+    category: email
     icon: "📬"
     blurb: Verification, SPF, DKIM and DMARC set up so your mail is trusted, not spammed.
-    workspace: true
-    agentic: true
+    pro: true
+    growth: true
+    enterprise: true
     sop: domain-dns
     you_do: Paste the records we give you
     status: live
   - name: App email from your domain
+    category: email
     icon: "✉️"
     blurb: Your app's sign-in links and receipts sent from your own domain, not ours.
-    workspace: true
-    agentic: true
+    pro: Low volume
+    growth: Higher volume
+    enterprise: Custom volume
     you_do: Paste the records we give you
-    status: planned
+    status: builtin
     software: [resend]
+  - name: Email marketing
+    category: email
+    icon: "📣"
+    blurb: Broadcasts with one-click unsubscribe, lists cleaned before they are mailed, and opens and clicks measured.
+    growth: true
+    enterprise: true
+    sop: launch-warmup
+    section: Phase 1 — Clean the list before anyone mails it
+    status: live
+    software: [zerobounce]
+  - name: Google Workspace
+    category: email
+    icon: google
+    blurb: Business Gmail, Calendar and Drive, plus a shared team@ inbox.
+    growth: 2 seats included
+    enterprise: Custom
+    sop: workspace-signup
+    you_do: Sign up and create the users
+    status: live
+    software: [google]
+
+  # --- sign-in -------------------------------------------------------------
+  - name: Customer sign-in
+    category: auth
+    icon: "🔑"
+    blurb: Magic-link sign-in for your customers, with no passwords to leak.
+    pro: true
+    growth: true
+    enterprise: true
+    status: builtin
+
+  # --- storage and backup --------------------------------------------------
+  - name: File storage
+    category: storage
+    icon: "🗄️"
+    blurb: A private Cloudflare R2 bucket for your app's uploads and exports.
+    pro: 1 private bucket
+    growth: 1 private bucket
+    enterprise: Buckets sized to need
+    sop: bucket-provision
+    status: live
+    software: [cloudflare]
+  - name: Nightly backups
+    category: storage
+    icon: "💾"
+    blurb: Your database and files copied every night, so a bad day is an hour, not a loss.
+    pro: Nightly
+    growth: Nightly
+    enterprise: Nightly + restore drill
+    sop: r2-backup
+    status: live
+
+  # --- marketing -----------------------------------------------------------
+  - name: Marketing strategy
+    category: marketing
+    icon: "🧠"
+    blurb: Our CMO agent finds the one thing holding your demand back and sets the plan around it.
+    growth: true
+    enterprise: true
+    sop: constraint-diagnosis
+    status: live
+  - name: Content sprints
+    category: marketing
+    icon: "🎬"
+    blurb: Short-form content tested at volume and measured, not just posted.
+    growth: true
+    enterprise: true
+    sop: content-sprint
+    you_do: Approve the weekly plan
+    status: live
+  - name: Social posting
+    category: marketing
+    icon: "📲"
+    blurb: Approved posts published to X and TikTok for you.
+    growth: X and TikTok
+    enterprise: X and TikTok
+    status: planned
+    software: [x, tiktok]
+  - name: Launch warm-up
+    category: marketing
+    icon: "🔥"
+    blurb: Your first sends ramped in gated batches, so a new domain earns its reputation instead of burning it.
+    growth: true
+    enterprise: true
+    sop: launch-warmup
+    status: live
+
+  # --- agents and service --------------------------------------------------
   - name: Agentic email drafting
+    category: agents
     icon: "✍️"
     blurb: Your agent writes replies and new emails straight into your Drafts. You read, you send.
-    workspace: true
-    agentic: true
+    growth: true
+    enterprise: true
     sop: workspace-provision
     section: "7. Drafting mailboxes"
     you_do: Approve our key once
     status: live
+  - name: Knowledge base
+    category: agents
+    icon: "📚"
+    blurb: Your agent indexes the folders you choose, so drafts use your real documents.
+    growth: Google Drive
+    enterprise: Drive + custom connectors
+    sop: workspace-provision
+    section: "4. Attach the folders"
+    you_do: Name the folders
+    status: live
+  - name: Changes after launch
+    category: agents
+    icon: "🛠️"
+    blurb: What happens when you want something new in your app.
+    pro: Small, queued
+    growth: Monthly build requests
+    enterprise: Dedicated build team
+    status: builtin
+  - name: Support
+    category: agents
+    icon: "💬"
+    blurb: Who answers when you need us.
+    pro: Email
+    growth: Priority
+    enterprise: Named contact
+    status: builtin
+
+  # --- security ------------------------------------------------------------
   - name: Password vault
+    category: security
     icon: "🔐"
     blurb: Every new login filed in 1Password, never pasted in chat.
-    workspace: true
-    agentic: true
+    growth: true
+    enterprise: true
     sop: credential-filing
     you_do: Paste each password once
     status: live
     software: [1password]
   - name: Dedicated browser profile
+    category: security
     icon: "🧭"
-    blurb: A Chrome profile for the new company, so accounts never mix.
-    workspace: true
-    agentic: true
+    blurb: A Chrome profile for your company, so accounts never mix.
+    growth: true
+    enterprise: true
     sop: chrome-profiles
     status: live
-  - name: Knowledge base from your Drive
-    icon: "📚"
-    blurb: Your agent indexes the Drive folders you choose, so drafts use your real documents.
-    agentic: true
-    sop: workspace-provision
-    section: "4. Attach the folders"
-    you_do: Name the folders
-    status: live
-  - name: File storage
-    icon: "🗄️"
-    blurb: A private storage bucket for your app's uploads and exports.
-    agentic: true
-    sop: bucket-provision
-    status: live
-    software: [aws]
   - name: Credential rotation
+    category: security
     icon: "🔄"
     blurb: Any leaked or aging secret rotated everywhere it is used, in one pass.
-    agentic: true
+    growth: Included
+    enterprise: Plus CMMC/ITAR compliance
     sop: credential-rotation
     status: live
-  - name: Social media outreach
-    icon: [tiktok, instagram]
-    blurb: Weekly TikTok and Instagram content, tested at volume and measured, not just posted.
-    agentic: true
-    sop: content-sprint
-    you_do: Approve the weekly plan
-    status: live
-    software: [tiktok, instagram]
-  - name: Team drafting access
-    icon: "👥"
-    blurb: Your admins can draft as the mailboxes you grant them, with every draft logged.
-    agentic: true
+
+  # --- connectors ----------------------------------------------------------
+  - name: Custom connectors
+    category: connectors
+    icon: "🔌"
+    blurb: Your agent reads the systems you already use, such as Egnyte, built for your business.
+    enterprise: Scoped per client
     status: planned
+
+  # --- add-ons (Enterprise, per contract) ----------------------------------
+  - name: Payments
+    category: add_ons
+    icon: "💳"
+    blurb: Card, bank and crypto checkout wired into your app.
+    enterprise: Add-on
+    status: builtin
+    shows: [stripe, coinbase]
+  - name: Crypto and wallets
+    category: add_ons
+    icon: "🪙"
+    blurb: Wallet sign-in, on-chain vaults and stablecoin payouts on Solana.
+    enterprise: Add-on
+    status: builtin
+    shows: [solana, squads]
+  - name: AI features
+    category: add_ons
+    icon: "🤖"
+    blurb: Writing, image and search features built on leading AI models.
+    enterprise: Add-on
+    status: builtin
+    shows: [anthropic]

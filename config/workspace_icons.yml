@@ -50,14 +50,18 @@ software:
   ipinfo: { name: ipinfo, mark: lib/workspace_icons/marks/ipinfo.png }
   mcritchie-studio: { name: McRitchie Studio, mark: lib/workspace_icons/badges/studio.png }
   moonpay: { name: MoonPay, mark: lib/workspace_icons/marks/moonpay.png }
+  postgres: { name: Postgres, mark: lib/workspace_icons/marks/postgresql.svg, hosting: ms }
   rails: { name: Ruby on Rails, mark: lib/workspace_icons/marks/rubyonrails.svg, hosting: ms }
+  redis: { name: Redis, mark: lib/workspace_icons/marks/redis.svg, hosting: ms }
   resend: { name: Resend, mark: lib/workspace_icons/marks/resend.svg, hosting: ms }
   rubygems: { name: RubyGems, mark: lib/workspace_icons/marks/rubygems.svg, hosting: ms }
+  sentry: { name: Sentry, mark: lib/workspace_icons/marks/sentry.svg, hosting: ms }
   slack: { name: Slack, mark: lib/workspace_icons/marks/slack.svg, hosting: ms }
   solana: { name: Solana, mark: lib/workspace_icons/marks/solana.svg }
   squads: { name: Squads, mark: lib/workspace_icons/marks/squads.png }
   stripe: { name: Stripe, mark: lib/workspace_icons/marks/stripe.svg }
   turf-monster: { name: Turf Monster, mark: lib/workspace_icons/badges/turf-monster.png }
+  zerobounce: { name: ZeroBounce, mark: lib/workspace_icons/marks/zerobounce.png, hosting: ms }
 
 workspaces:
   studio:
