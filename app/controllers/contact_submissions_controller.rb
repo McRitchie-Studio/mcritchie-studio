@@ -32,7 +32,7 @@ class ContactSubmissionsController < ApplicationController
     return render(:new, status: :unprocessable_entity) unless saved
 
     notify(@submission)
-    redirect_to_sent
+    redirect_to_sent(sms: @submission.sms_consent?)
   end
 
   private
@@ -42,15 +42,18 @@ class ContactSubmissionsController < ApplicationController
                                                  :sms_care_consent, :sms_marketing_consent, :sms_declined)
   end
 
-  def redirect_to_sent
-    flash[:contact_sent] = true
+  # The app sends no text itself: the phone provider sends the opt-in
+  # confirmation. `sms` only adds the program reminder to the thank-you.
+  def redirect_to_sent(sms: false)
+    flash[:contact_sent] = sms ? "sms" : "sent"
     redirect_to contact_path, status: :see_other
   end
 
-  # The row is the proof and is already saved. A mail outage is logged for the
-  # operator and must not turn a stored submission into an error page.
+  # Sent through the engine's outbox, like every other app email. The row is
+  # the proof and is already saved, so a mail outage is logged for the operator
+  # and must not turn a stored submission into an error page.
   def notify(submission)
-    ContactMailer.submission(submission).deliver_later
+    Studio::Email.deliver(ContactMailer, :submission, submission, to: ContactMailer::NOTIFY)
   rescue StandardError => e
     create_error_log(e)
   end

@@ -81,7 +81,9 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_includes terms, "Consent is not a condition of purchase"
     assert_includes terms, "Message frequency varies"
     assert_includes terms, "Message and data rates may apply"
-    assert_includes terms, "Reply STOP"
+    assert_includes terms, "We send general conversational messaging to answer questions and provide support to customers, as well as marketing messages to promote our products and services"
+    assert_includes terms, "providing your mobile phone number and checking a consent box"
+    assert_includes terms, "Reply STOP or CANCEL"
     assert_includes terms, "Reply HELP"
     assert_includes terms, "alex@mcritchie.studio"
   end

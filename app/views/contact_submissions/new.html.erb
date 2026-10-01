@@ -14,6 +14,9 @@
     <div class="card p-5 mb-6 border border-subtle bg-surface-alt" role="status" data-test="contact-sent">
       <h2 class="text-heading font-semibold mb-1">Thanks, your message is on its way.</h2>
       <p class="text-secondary text-sm">We will reply to the email address you gave us.</p>
+      <% if flash[:contact_sent] == "sms" %>
+        <p class="text-muted text-sm mt-2" data-test="contact-sent-sms">You are signed up for text messages from <%= ContactSubmission::SMS_NUMBER %>. Msg frequency varies. Msg &amp; data rates may apply. Reply HELP for help. Reply STOP to cancel.</p>
+      <% end %>
     </div>
   <% end %>
 

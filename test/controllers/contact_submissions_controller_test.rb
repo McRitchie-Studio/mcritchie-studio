@@ -59,6 +59,19 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     submit
     follow_redirect!
     assert_select "[data-test='contact-sent']", text: /your message is on its way/
+    assert_select "[data-test='contact-sent-sms']", count: 0
+  end
+
+  test "[component] a consenting visitor is reminded of the program terms; a decliner is not" do
+    submit(phone: "303-555-0142", sms_care_consent: "1")
+    follow_redirect!
+    assert_select "[data-test='contact-sent-sms']",
+      text: "You are signed up for text messages from (303) 222-2113. Msg frequency varies. Msg & data rates may apply. Reply HELP for help. Reply STOP to cancel."
+
+    submit(sms_declined: "1")
+    follow_redirect!
+    assert_select "[data-test='contact-sent']"
+    assert_select "[data-test='contact-sent-sms']", count: 0
   end
 
   test "[component] a refused submission re-renders with the errors and the visitor's input" do
@@ -97,6 +110,11 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "ContactTest/1.0", row.user_agent
     assert_in_delta Time.current, row.created_at, 5.seconds
 
+    outbox = Studio::EmailDelivery.recent.first
+    assert_equal "ContactMailer#submission", outbox.email_key
+    assert_equal "alex@mcritchie.studio", outbox.to
+    assert outbox.sent?, "the outbox row was delivered"
+
     mail = ActionMailer::Base.deliveries.last
     assert_equal ["alex@mcritchie.studio"], mail.to
     assert_equal ["jordan@example.com"], mail.reply_to
@@ -126,7 +144,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] No together with Yes is refused server-side and nothing is stored or sent" do
     assert_no_difference -> { ContactSubmission.count } do
-      assert_no_enqueued_emails do
+      assert_no_difference -> { Studio::EmailDelivery.count } do
         submit(phone: "303-555-0142", sms_marketing_consent: "1", sms_declined: "1")
       end
     end
@@ -157,7 +175,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] a filled honeypot looks like success but stores and sends nothing" do
     assert_no_difference -> { ContactSubmission.count } do
-      assert_no_enqueued_emails do
+      assert_no_difference -> { Studio::EmailDelivery.count } do
         submit(company_url: "https://spam.example")
       end
     end
@@ -165,13 +183,11 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to contact_path
     follow_redirect!
     assert_select "[data-test='contact-sent']"
+    assert_select "[data-test='contact-sent-sms']", count: 0
   end
 
   test "[integration] a mail outage is logged and the stored submission still confirms" do
-    failing = Object.new
-    def failing.deliver_later(*) = raise(IOError, "queue is down")
-
-    ContactMailer.stub(:submission, failing) do
+    Studio::Email.stub(:deliver, ->(*, **) { raise IOError, "outbox is down" }) do
       assert_difference -> { ContactSubmission.count } => 1, -> { ErrorLog.count } => 1 do
         submit
       end

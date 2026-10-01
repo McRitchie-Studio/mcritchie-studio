@@ -19,6 +19,7 @@ Agent.delete_all
 Usage.delete_all
 ErrorLog.delete_all
 AppRequest.delete_all # /build requests reference their user — clear before it
+ContactSubmission.delete_all # /contact submissions; read-only rows, so delete_all (no callbacks)
 User.delete_all
 CoachRanking.delete_all
 Coach.delete_all
