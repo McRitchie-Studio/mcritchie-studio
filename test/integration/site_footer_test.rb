@@ -37,10 +37,14 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     assert_no_match(/Humboldt/, response.body)
   end
 
-  test "signed-in pages carry no footer" do
+  test "a signed-in viewer keeps the footer on public pages and loses it on working ones" do
     log_in_as(users(:alex))
-    get root_path
 
+    get privacy_path
+    assert_response :success
+    assert_select "footer[data-site-footer]", 1
+
+    get tasks_path
     assert_response :success
     assert_select "footer[data-site-footer]", 0
   end

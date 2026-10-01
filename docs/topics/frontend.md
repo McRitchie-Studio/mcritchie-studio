@@ -95,8 +95,9 @@ defaults.
 ## Site footer (public pages)
 
 `layouts/application` renders `footers/_site_footer` on every page a visitor
-sees (`SiteFooterHelper#show_site_footer?`: not signed in). Signed-in pages are
-working surfaces and carry none.
+sees, and on the public pages for a signed-in viewer too
+(`SiteFooterHelper#show_site_footer?`, `SITE_FOOTER_PUBLIC_CONTROLLERS`). Every
+other signed-in page is a working surface and carries none.
 
 - **Facts live in one place**: `SiteFooterHelper#site_footer_facts` (address,
   phone, email, social profiles, link columns). The phone is the studio's

@@ -5,11 +5,15 @@ module SiteFooterHelper
   # The studio's Grasshopper line, the number its SMS registration names.
   SITE_FOOTER_PHONE = "(303) 222-2113".freeze
 
-  # The footer is the public site's: visitors (and carriers) get it on every
-  # page. Signed-in pages are the operator's working surfaces (boards, queues,
-  # editors) and stay full-height.
+  # Controllers whose pages are the public site, signed in or not.
+  SITE_FOOTER_PUBLIC_CONTROLLERS = %w[landing packages build contact_submissions].freeze
+
+  # The footer is the public site's: a visitor (or a carrier) gets it on every
+  # page, and the public pages keep it for a signed-in viewer too. Every other
+  # signed-in page is a working surface (boards, queues, editors) and stays
+  # full-height.
   def show_site_footer?
-    !logged_in?
+    !logged_in? || SITE_FOOTER_PUBLIC_CONTROLLERS.include?(controller_name)
   end
 
   def site_footer_facts
