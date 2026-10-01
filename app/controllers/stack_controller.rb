@@ -5,8 +5,20 @@ class StackController < ApplicationController
   before_action :require_admin
 
   def index
+    load_clients
+  end
+
+  # /stack/matrix — the top-level view: clients as columns, software as rows.
+  def matrix
+    load_clients
+    @matrix = StackMatrix.new(@clients, @records_by_entity)
+  end
+
+  private
+
+  def load_clients
     @clients = StackClient.ordered.includes(:workspace_account).to_a
-    # One read of the census, handed to every row, rather than one per client.
+    # One read of the census, handed to every client, rather than one per client.
     @records_by_entity = CredentialRecord.includes(:credential_vault).to_a.group_by(&:served_entity)
   end
 end
