@@ -39,13 +39,14 @@ test("the home page asks Google for the booking frame only once it is scrolled t
   expect(asked).toHaveLength(1);
 });
 
-test("/schedule shows the frame without scrolling, at Google's compact width", async ({ page }) => {
+test("/schedule shows the frame without scrolling, as wide as its column", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await stubGoogle(page);
   await page.goto("/schedule");
 
   await expect(frame(page)).toHaveAttribute("src", /gv=true$/);
+  // The page column is max-w-4xl (896px) less its side padding.
   const box = await frame(page).boundingBox();
-  expect(box.width).toBeLessThanOrEqual(680);
-  expect(box.width).toBeGreaterThanOrEqual(640);
+  expect(box.width).toBeGreaterThanOrEqual(820);
+  expect(box.width).toBeLessThanOrEqual(896);
 });

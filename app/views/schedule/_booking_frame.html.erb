@@ -1,7 +1,12 @@
-<%# Google's inline booking page for the studio's appointment schedule. Google
-    lays it out by width: at 680px it is the compact two-column form (month
-    beside the day's slots), below 600px it stacks. It cannot be themed, so it
-    sits on a white panel in both themes.
+<%# Google's inline booking page for the studio's appointment schedule. It
+    fills its container, so it lines up with the cards around it. Google lays it
+    out by width: month beside the slots from about 600px, stacked below that.
+    It cannot be themed, so it sits on a white panel in both themes.
+
+    THE HEIGHT FITS THE CONTENT AND NO LESS. Google's own header (name, title,
+    length) cannot be cropped away to save space: the form that opens when a
+    slot is picked is a dialog centred in the frame's FULL height, so hiding the
+    top of the frame hides the top of that dialog.
 
     THE SRC IS DEFERRED, and not with loading="lazy". The frame is a third
     party, and a frame that starts loading before the window's `load` event
@@ -20,9 +25,9 @@
 </p>
 
 <style>
-  .booking-frame { max-width: 680px; background: #fff; }
+  .booking-frame { background: #fff; }
   .booking-frame iframe { display: block; border: 0; height: 1200px; }
-  @media (min-width: 640px) { .booking-frame iframe { height: 700px; } }
+  @media (min-width: 640px) { .booking-frame iframe { height: 720px; } }
 </style>
 
 <script>
