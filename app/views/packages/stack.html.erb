@@ -48,12 +48,12 @@
   </ul>
 
   <div class="pkg-matrix-wrap rounded-2xl border border-subtle bg-surface" data-test="stack-matrix-scroll">
-    <table class="pkg-matrix w-full min-w-[560px] md:min-w-[680px] text-sm" data-test="stack-matrix">
+    <table class="pkg-matrix w-full min-w-[480px] md:min-w-[680px] text-sm" data-test="stack-matrix">
       <thead>
         <tr>
           <th scope="col" class="pkg-sticky-col w-32 sm:w-44 md:w-[34%] border-b border-subtle bg-surface px-3 md:px-4 py-3 text-left align-bottom font-medium text-muted">Feature</th>
           <% @packages.each do |package| %>
-            <th scope="col" class="border-b border-subtle bg-surface px-3 py-3 text-left align-bottom <%= 'bg-surface-alt' if package.featured? %>"
+            <th scope="col" class="border-b border-subtle bg-surface px-2 md:px-3 py-3 text-left align-bottom <%= 'bg-surface-alt' if package.featured? %>"
                 data-test="stack-tier-header" data-package="<%= package.key %>">
               <span class="block text-base font-bold text-heading"><%= package.name %></span>
               <span class="block text-xs font-medium text-muted"><%= price_short.call(package) %></span>
@@ -97,14 +97,14 @@
               </th>
               <% @packages.each do |package| %>
                 <% value = feature.value_for(package.key) %>
-                <td class="border-b border-subtle px-3 py-3 <%= 'bg-surface-alt' if package.featured? %>"
+                <td class="border-b border-subtle px-2 md:px-3 py-3 <%= 'bg-surface-alt' if package.featured? %>"
                     data-test="stack-cell" data-package="<%= package.key %>" data-included="<%= !value.nil? %>">
                   <% if value.nil? %>
                     <span class="text-muted" aria-label="Not included">—</span>
                   <% elsif value == true %>
                     <span class="font-semibold text-primary" aria-label="Included">✓</span>
                   <% else %>
-                    <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold"><%= value %></span>
+                    <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold [overflow-wrap:anywhere]"><%= value %></span>
                   <% end %>
                 </td>
               <% end %>
@@ -116,8 +116,8 @@
         <tr>
           <td class="pkg-sticky-col bg-surface px-3 md:px-4 py-4"></td>
           <% @packages.each do |package| %>
-            <td class="px-3 py-4 <%= 'bg-surface-alt' if package.featured? %>">
-              <%= package_cta_link package, class: "btn #{package.featured? ? 'btn-primary' : 'btn-neutral'} btn-sm w-full justify-center whitespace-nowrap" %>
+            <td class="px-2 md:px-3 py-4 <%= 'bg-surface-alt' if package.featured? %>">
+              <%= package_cta_link package, class: "btn #{package.featured? ? 'btn-primary' : 'btn-neutral'} btn-sm w-full justify-center whitespace-normal text-center md:whitespace-nowrap" %>
             </td>
           <% end %>
         </tr>
