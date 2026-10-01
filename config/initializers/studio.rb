@@ -135,6 +135,20 @@ Studio.configure do |config|
   config.booking_url = "https://calendar.google.com/calendar/appointments/schedules/" \
                        "AcZssZ3_1hQYaxXWJCG8T-AAuv6YHQN9w3aRBnp-rtQc10YqH6k6Yy6FjUTtZLnwoT27Sr30YcOuZI1K"
 
+  # Where Google's "Select an appointment time" box sits inside ITS page for
+  # THIS schedule, so the frame can show only that box at rest. Measured with
+  # the engine's bin/booking-crop-measure on 2026-10-01: the box starts at 211px
+  # and, on the fullest bookable day (8 slots), ends at 757px of an 869px page.
+  # Re-measure when the schedule's header or hours change. The 0.83.0 crop was
+  # fixed at 205-619px, which hides the last three slots of a full day.
+  #
+  # GUARDED, and the guard has an exit: studio-engine 0.83.0 crops by default
+  # and has no such setter; the version after it shows the frame whole unless
+  # this is declared. Declaring it here first is what lets the engine change
+  # land without un-cropping this site. Drop the `if` once the Gemfile floor is
+  # above 0.83.0.
+  config.booking_crop = { top: 211, bottom: 757, frame_height: 869 } if config.respond_to?(:booking_crop=)
+
   # Draw the engine's standard email page at /admin/emails (Studio::EmailsController
   # over Studio::EmailCatalog). Opt-in because turf-monster's own routes.rb already
   # claims that path and the admin_emails_path helper; this app claims neither, so

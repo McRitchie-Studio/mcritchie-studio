@@ -26,6 +26,16 @@ module WorkspaceIconConfig
     Rails.root.join("app/assets/images", path).file? ? path : nil
   end
 
+  # The bare brand mark (no disc) the /packages pages draw on their own light
+  # chip, or nil when bin/workspace-icon --tiles has not rendered it yet: the
+  # page then draws a text badge.
+  def brand(software)
+    path = "workspace_icons/brand/#{software}.png"
+    Rails.root.join("app/assets/images", path).file? ? path : nil
+  end
+
+  def software?(key) = softwares.key?(key.to_s)
+
   # The rendered icon for one software x workspace, as an image_tag path, or
   # nil when bin/workspace-icon has not rendered that pair yet.
   def asset(software, scope)

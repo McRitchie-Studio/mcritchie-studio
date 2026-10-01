@@ -20,12 +20,8 @@ class WorkspacePackage
   # mapping has one spelling the migration's test can hold it to.
   LEGACY_TIERS = { "launch" => "vibe", "host" => "pro", "workspace" => "growth", "agentic" => "growth" }.freeze
 
-  # Brand logos with a partial in app/views/packages/logos/. Any other `icon`
-  # value is an emoji rendered as text.
-  LOGOS = %w[google tiktok instagram].freeze
-
   Feature = Struct.new(:name, :category, :icon, :blurb, :values, :sop, :section, :you_do, :status, :software, :shows,
-                       keyword_init: true) do
+                       :brand_from, keyword_init: true) do
     def live? = status == "live"
 
     def planned? = status == "planned"
@@ -41,9 +37,26 @@ class WorkspacePackage
     # provisions (or will), plus add-ons it only shows.
     def display_software = (Array(software) + Array(shows)).uniq
 
-    # One logo key, or a list of them shown side by side.
-    def logos = Array(icon).select { |key| LOGOS.include?(key) }
-    def logo? = logos.any? && logos.size == Array(icon).size
+    # The one brand the row is about, when its `icon` is a software key from
+    # config/workspace_icons.yml: the row leads with that brand's logo. Any
+    # other icon is an emoji, the neutral lead of a row no single brand owns.
+    def brand = WorkspaceIconConfig.software?(icon) ? icon.to_s : nil
+    def brand? = !brand.nil?
+
+    # The logo strip under the row: every brand the row shows, less the one it
+    # already leads with.
+    def strip_brands = display_software - [ brand ]
+
+    # The brands a package card names for this row: the lead brand and every
+    # software it shows. A planned row is a promise, so it names none, and a
+    # tier below `brand_from` gets the row but not the brand (Vibe's web
+    # address is a mcritchie.studio subdomain, not a Squarespace domain).
+    def card_brands(package_key = nil)
+      return [] if planned?
+      return [] if package_key && brand_from && WorkspacePackage.keys.index(package_key.to_s) < WorkspacePackage.keys.index(brand_from)
+
+      ([ brand ].compact + display_software).uniq
+    end
 
     # The package's value for this row: a string ("Basic dyno"), true
     # (included, nothing to quantify), or nil (not included).
@@ -139,6 +152,14 @@ class WorkspacePackage
   # Every software this tier provisions, in feature order — what /stack draws
   # for a client on it.
   def software_keys = features.flat_map(&:software_keys).uniq
+
+  # Every brand this tier's delivered features put in front of the customer, in
+  # row order: what its card's "Powered by" row draws.
+  def brand_keys = features.flat_map { |feature| feature.card_brands(key) }.uniq
+
+  # The brands a card draws: all of them on the first tier, and on every later
+  # tier only those it adds, since each tier includes the one before it.
+  def card_brands(previous = nil) = previous ? brand_keys - previous.brand_keys : brand_keys
 
   # Billed annually: the discount applies to the whole year.
   # $100/mo at 10% off is $1,080/yr, which reads as $90/mo.

@@ -81,6 +81,16 @@
               <% end %>
             </ul>
           </div>
+
+          <% brands = package.card_brands(previous) %>
+          <% if brands.any? %>
+            <div class="mt-auto pt-5" data-test="package-powered-by" data-package="<%= package.key %>">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted"><%= previous ? "Adds" : "Powered by" %></p>
+              <div class="flex flex-wrap gap-1.5">
+                <% brands.each do |key| %><%= render "packages/brand", key: key, size: :chip %><% end %>
+              </div>
+            </div>
+          <% end %>
         </article>
         <% previous = package %>
       <% end %>

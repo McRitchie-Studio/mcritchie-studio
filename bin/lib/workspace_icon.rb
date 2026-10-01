@@ -46,6 +46,10 @@ module WorkspaceIcon
   TILE_SIZE = 512
   TILE_DISC = [ [ "#8A8A8A", 0.448 ], [ "#FFFFFF", 0.442 ], [ "#E3E5E8", 0.3965 ], [ "#F5F6F8", 0.3926 ] ].freeze
   TILE_MARK = 0.50
+  # Brand marks: the bare mark, no disc, on a transparent square — what
+  # /packages draws on its own light chip, where the tile's grey ring would read
+  # as a grey circle. 128 stays sharp at the 28-40px the pages draw it.
+  BRAND_SIZE = 128
   MIN_SIZE = 64
   MAX_SIZE = 4096
 
@@ -102,6 +106,8 @@ module WorkspaceIcon
   end
 
   def tile_path(key) = File.join(ROOT, ASSET_DIR, "software", "#{key}.png")
+
+  def brand_path(key) = File.join(ROOT, ASSET_DIR, "brand", "#{key}.png")
 
   def mark_path(key, path = CONFIG) = File.join(ROOT, software(key, path).fetch("mark"))
 
@@ -232,6 +238,39 @@ module WorkspaceIcon
     raise Error, "ImageMagick failed on #{key}: #{err.strip}" unless status.success?
 
     verify!(out, size: TILE_SIZE, bin: bin)
+    out
+  end
+
+  # The argv for a bare brand mark: trimmed to its ink so every brand reads at
+  # the same optical size, then centred with a margin (BRAND_MARK of the edge)
+  # that keeps the corners transparent.
+  BRAND_MARK = 0.875
+
+  def brand_command(mark:, out:, size: BRAND_SIZE, bin: "magick")
+    box = (size * BRAND_MARK).round
+    read = if File.extname(mark).casecmp?(".svg")
+             [ "+size", "-background", "none", "-density", [ ((72.0 * box * 2) / svg_width(mark)).round, 96 ].max.to_s, mark ]
+           else
+             [ "#{mark}[0]" ]
+           end
+    [ bin, *read, "-trim", "+repage", "-resize", "#{box}x#{box}", "-background", "none", "-gravity", "center",
+      "-extent", "#{size}x#{size}", "PNG32:#{out}" ]
+  end
+
+  # The bare brand mark, resized onto a transparent BRAND_SIZE square.
+  def build_brand!(key, path = CONFIG)
+    bin = binary
+    raise Error, "ImageMagick is not installed (need `magick` or `convert`)" if bin.nil?
+
+    mark = mark_path(key, path)
+    raise Error, "no such mark for #{key}: #{mark}" unless File.file?(mark)
+
+    out = brand_path(key)
+    Dir.exist?(File.dirname(out)) || raise(Error, "output directory does not exist: #{File.dirname(out)}")
+    _o, err, status = Open3.capture3(*brand_command(mark: mark, out: out, bin: bin))
+    raise Error, "ImageMagick failed on #{key}: #{err.strip}" unless status.success?
+
+    verify!(out, size: BRAND_SIZE, bin: bin)
     out
   end
 

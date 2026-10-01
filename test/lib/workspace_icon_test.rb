@@ -101,6 +101,24 @@ class WorkspaceIconTest < Minitest::Test
     assert_equal "PNG32:tile.png", cmd.last
   end
 
+  def test_a_brand_mark_is_trimmed_bare_and_centred_with_a_transparent_margin
+    cmd = WorkspaceIcon.brand_command(mark: fixture_svg(24), out: "brand.png")
+
+    refute_includes cmd, "-draw", "a brand mark has no disc: /packages draws its own chip"
+    assert_operator cmd.index("-trim"), :<, cmd.index("-resize"), "trim to the ink before sizing"
+    box = (WorkspaceIcon::BRAND_SIZE * WorkspaceIcon::BRAND_MARK).round
+    assert_equal "#{box}x#{box}", cmd[cmd.index("-resize") + 1]
+    assert_operator box, :<, WorkspaceIcon::BRAND_SIZE, "the margin keeps the corners transparent"
+    assert_equal "128x128", cmd[cmd.index("-extent") + 1]
+    assert_equal "PNG32:brand.png", cmd.last
+  end
+
+  def test_every_software_has_a_brand_mark_rendered
+    WorkspaceIcon.softwares.each_key do |key|
+      assert File.file?(WorkspaceIcon.brand_path(key)), "#{key} has no brand mark; run bin/workspace-icon --tiles"
+    end
+  end
+
   # --- the config the CLI and /credentials share --------------------------
 
   def test_every_software_has_a_mark_on_disk

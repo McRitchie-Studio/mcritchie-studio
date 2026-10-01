@@ -154,14 +154,56 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
   end
 
-  test "every feature has an icon, and each logo key has a partial" do
+  test "every feature has an icon; a brand icon is a software key with a rendered mark" do
     WorkspacePackage.features.each do |f|
       assert f.icon.present?, "#{f.name} has no icon"
-      f.logos.each do |logo|
-        assert Rails.root.join("app/views/packages/logos/_#{logo}.html.erb").exist?, "no logo partial for #{logo}"
-      end
+      next unless f.brand?
+
+      assert WorkspaceIconConfig.brand(f.brand), "#{f.brand} has no brand mark; run bin/workspace-icon --tiles"
     end
-    assert feature("Google Workspace").logo?
+    every = WorkspacePackage.features.flat_map(&:display_software).uniq
+    every.each { |key| assert WorkspaceIconConfig.brand(key), "#{key} has no brand mark; run bin/workspace-icon --tiles" }
+  end
+
+  test "a row about one brand's product leads with that brand; generic rows stay neutral" do
+    {
+      "Apps" => "github", "Server" => "heroku", "Error alerts" => "sentry", "Database" => "postgres",
+      "Cache and job queue" => "redis", "Web address" => "squarespace", "App email from your domain" => "resend",
+      "Google Workspace" => "google", "File storage" => "cloudflare", "Password vault" => "1password"
+    }.each { |name, brand| assert_equal brand, feature(name).brand, name }
+    [ "Hosting mode", "Changes after launch", "Support", "Realtime updates", "Social posting" ].each do |name|
+      refute feature(name).brand?, "#{name} is no single brand's product"
+    end
+  end
+
+  test "the strip shows every other brand on the row, never the lead twice" do
+    assert_equal %w[rails], feature("Apps").strip_brands
+    assert_empty feature("Server").strip_brands
+    assert_equal %w[zerobounce], feature("Email marketing").strip_brands
+    assert_equal %w[x tiktok], feature("Social posting").strip_brands
+    assert_equal %w[egnyte slack], feature("Custom connectors").strip_brands
+    assert_equal %w[anthropic openai], feature("AI features").strip_brands
+  end
+
+  test "a row names its brand on a card only from its brand_from tier, and a planned row names none" do
+    address = feature("Web address")
+    assert_empty address.card_brands("vibe"), "Vibe's address is a mcritchie.studio subdomain"
+    assert_equal %w[squarespace], address.card_brands("pro")
+    assert_equal %w[squarespace], address.card_brands("enterprise")
+    assert_equal %w[github rails], feature("Apps").card_brands("vibe"), "no brand_from: every tier names it"
+    assert_empty feature("Custom connectors").card_brands("enterprise"), "a planned row is a promise"
+    assert feature("Custom connectors").planned?
+  end
+
+  test "a card's Powered by row adds only what that tier adds, and never a planned brand" do
+    vibe, pro, growth, enterprise = TIERS.map { |key| WorkspacePackage.find(key) }
+
+    assert_equal %w[github rails heroku], vibe.card_brands
+    assert_equal %w[postgres squarespace resend cloudflare], pro.card_brands(vibe)
+    assert_equal %w[sentry redis zerobounce google 1password], growth.card_brands(pro)
+    assert_equal %w[stripe coinbase solana squads anthropic openai], enterprise.card_brands(growth)
+    refute_includes vibe.brand_keys, "squarespace", "Vibe's address is a subdomain, not a Squarespace domain"
+    %w[x tiktok egnyte slack].each { |key| refute_includes enterprise.brand_keys, key, "#{key} rides a planned row" }
   end
 
   test "every legacy tier maps to a current tier" do

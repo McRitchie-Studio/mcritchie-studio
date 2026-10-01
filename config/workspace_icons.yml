@@ -21,7 +21,7 @@ software:
   # `service` a credential_records row names. `mark` is the brand mark in
   # lib/workspace_icons/marks/; `bin/workspace-icon --tiles` centres it on the
   # white disc and writes app/assets/images/workspace_icons/software/<key>.png.
-  # Marks come from Simple Icons (CC0; v16, and v9 for the three brands v16
+  # Marks come from Simple Icons (CC0; v16, v13 for OpenAI, and v9 for the three brands v16
   # dropped: AWS, Heroku, Slack) or, where it has none, the brand's own site
   # icon. `tile: false` marks the one mark that is already an icon.
   #
@@ -43,6 +43,7 @@ software:
   coinbase: { name: Coinbase, mark: lib/workspace_icons/marks/coinbase.png }
   coinflow: { name: Coinflow, mark: lib/workspace_icons/marks/coinflow.png }
   discord: { name: Discord, mark: lib/workspace_icons/marks/discord.svg }
+  egnyte: { name: Egnyte, mark: lib/workspace_icons/marks/egnyte.svg }
   github: { name: GitHub, mark: lib/workspace_icons/marks/github.svg, hosting: ms }
   helius: { name: Helius, mark: lib/workspace_icons/marks/helius.png, hosting: ms }
   heroku: { name: Heroku, mark: lib/workspace_icons/marks/heroku.svg, hosting: ms }
@@ -50,6 +51,7 @@ software:
   ipinfo: { name: ipinfo, mark: lib/workspace_icons/marks/ipinfo.png }
   mcritchie-studio: { name: McRitchie Studio, mark: lib/workspace_icons/badges/studio.png }
   moonpay: { name: MoonPay, mark: lib/workspace_icons/marks/moonpay.png }
+  openai: { name: OpenAI, mark: lib/workspace_icons/marks/openai.svg, hosting: ms }
   postgres: { name: Postgres, mark: lib/workspace_icons/marks/postgresql.svg, hosting: ms }
   rails: { name: Ruby on Rails, mark: lib/workspace_icons/marks/rubyonrails.svg, hosting: ms }
   redis: { name: Redis, mark: lib/workspace_icons/marks/redis.svg, hosting: ms }
@@ -59,6 +61,7 @@ software:
   slack: { name: Slack, mark: lib/workspace_icons/marks/slack.svg, hosting: ms }
   solana: { name: Solana, mark: lib/workspace_icons/marks/solana.svg }
   squads: { name: Squads, mark: lib/workspace_icons/marks/squads.png }
+  squarespace: { name: Squarespace, mark: lib/workspace_icons/marks/squarespace.svg, hosting: ms }
   stripe: { name: Stripe, mark: lib/workspace_icons/marks/stripe.svg }
   turf-monster: { name: Turf Monster, mark: lib/workspace_icons/badges/turf-monster.png }
   zerobounce: { name: ZeroBounce, mark: lib/workspace_icons/marks/zerobounce.png, hosting: ms }
