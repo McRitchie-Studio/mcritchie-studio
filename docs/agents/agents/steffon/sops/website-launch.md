@@ -3,7 +3,7 @@
 ## Status: Active
 
 This is Steffon's `website-launch` SOP: put a hosted website on a new domain.
-It delivers the **Hosted domain** row on `/packages`, and it is a step of
+It delivers the **Hosting mode** row on `/packages/stack`, and it is a step of
 [`workspace-launch`](./workspace-launch.md); runnable on its own.
 
 **To the customer it is always "an app we host."** What runs behind it depends
@@ -11,11 +11,16 @@ on the package, and the customer never needs to know which:
 
 | Package | What the customer gets | What runs it |
 |---------|------------------------|--------------|
-| Basic | 1 domain · standard hosting | A **Squarespace site** on the domain, in Alex's Squarespace account |
-| Pro | 1 domain · more power + database space | **Our app**: a standalone Rails app on Heroku with its own Postgres database |
+| Vibe | you.mcritchie.studio · Eco dyno | **Our app** on a Heroku Eco dyno, no database ([`app-deploy-standard`](./app-deploy-standard.md)) |
+| Pro and up | 1 own domain · Basic dyno + Postgres (Growth adds a worker and Redis) | **Our app**: a standalone Rails app on Heroku with its own Postgres database |
 
+Tiers per the v2 ladder Alex approved on 2026-09-30 (`config/workspace_packages.yml`).
 Decided by Alex, 2026-09-24: "App we host. Behind the scenes it could
 be Squarespace."
+
+The section names below are the 2026-09-24 packages. **Pro** is still the
+section to run for every v2 tier from Pro up. **Basic** (a Squarespace site) is
+on no v2 tier; it stays for a client already on Squarespace.
 
 ## What this act is NOT
 

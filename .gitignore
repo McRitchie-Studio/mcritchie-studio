@@ -46,7 +46,9 @@
 /lib/pff/
 
 # Playwright
-node_modules/
+# No trailing slash: a desk links node_modules to the primary's, and "node_modules/"
+# matches only a directory, so the symlink was committed (PR #1806).
+node_modules
 test-results/
 playwright-report/
 playwright/.cache/

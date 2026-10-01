@@ -15,7 +15,7 @@ class StackViewTest < ActionView::TestCase
     ]
     WorkspaceAccount.create!(domain: "turfmonster.media", status: "active")
     @clients = [
-      StackClient.create!(slug: "turf-monster", name: "Turf Monster", tier: "agentic", domain: "turfmonster.media",
+      StackClient.create!(slug: "turf-monster", name: "Turf Monster", tier: "growth", domain: "turfmonster.media",
                           google_users: 3, resend_mode: "ms", hosting: { "heroku" => "own" }, position: 1),
       StackClient.create!(slug: "studio", name: "McRitchie Studio", tier: "internal", position: 2)
     ]
@@ -29,7 +29,7 @@ class StackViewTest < ActionView::TestCase
     render template: "stack/index"
 
     assert_equal %w[turf-monster studio], css_select("[data-test='stack-client']").map { |tr| tr["data-client"] }
-    assert_select "#{row('turf-monster')} [data-test='stack-tier']", text: %r{Agentic · \$500/mo}
+    assert_select "#{row('turf-monster')} [data-test='stack-tier']", text: %r{Growth · \$500/mo}
     assert_select "#{row('studio')} [data-test='stack-tier']", text: /Internal/
   end
 

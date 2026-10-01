@@ -1,10 +1,18 @@
-# The public Basic vs Pro comparison. Customers see what each package delivers;
-# admins also see the SOP map — which registered SOP delivers each item — so the
-# operator can see how the SOP library is organized.
+# The public pricing pages, both rendered from config/workspace_packages.yml:
+#
+#   /packages        the marketing page — one card per tier, its promise, its
+#                    highlights and a call to action
+#   /packages/stack  the full stack — every feature row, grouped by category,
+#                    one column per tier. Admins also see the SOP map there:
+#                    which registered SOP delivers each row.
 class PackagesController < ApplicationController
   skip_before_action :require_authentication
 
   def index
+    @packages = WorkspacePackage.all
+  end
+
+  def stack
     @packages = WorkspacePackage.all
     @launch_sop_path = WorkspacePackage.sop_paths["workspace-launch"]
   end
