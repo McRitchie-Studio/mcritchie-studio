@@ -35,9 +35,8 @@ module SiteFooterHelper
         [ "Contact",   [ [ SITE_FOOTER_EMAIL, "mailto:#{SITE_FOOTER_EMAIL}" ], [ "Schedule a call", SITE_FOOTER_SCHEDULE_URL ],
                          [ "Contact", "/contact" ] ] ],
         [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
-        # About is the home page's own section until the studio has an about page.
         # Career has no page yet: a nil path renders the label disabled.
-        [ "Company",   [ [ "Home", root_path ], [ "About", "#{root_path}#about" ], [ "Career", nil ] ] ],
+        [ "Company",   [ [ "Home", root_path ], [ "About", about_path ], [ "Career", nil ] ] ],
         [ "Legal",     [ [ "Privacy Policy", privacy_path ], [ "Terms of Service", terms_path ] ] ]
       ],
       # [ label, icon, url ]. A nil url renders the icon unlinked: the handle

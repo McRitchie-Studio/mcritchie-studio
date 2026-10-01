@@ -5,7 +5,7 @@ require "test_helper"
 # how to reach it, its privacy policy and terms, and a map.
 class SiteFooterTest < ActionDispatch::IntegrationTest
   test "public pages end with the footer: address, legal links and a map" do
-    [ root_path, privacy_path, terms_path, packages_path ].each do |path|
+    [ root_path, about_path, privacy_path, terms_path, packages_path ].each do |path|
       get path
       assert_response :success, path
 
@@ -40,7 +40,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     assert_select "footer[data-site-footer] nav[aria-label='Company']" do
       assert_select "a", 2
       assert_select "a[href='#{root_path}']", text: "Home"
-      assert_select "a[href='#{root_path}#about']", text: "About"
+      assert_select "a[href='#{about_path}']", text: "About"
       assert_select "span[aria-disabled='true']", text: "Career", count: 1
     end
   end

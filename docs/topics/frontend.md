@@ -92,6 +92,13 @@ defaults.
 
 `studio/modals/_scoped_host` was never forked here and has always propagated from the engine.
 
+## About page
+
+`/about` (`landing#about`) is the studio's company page: what it does, how a
+launch works, who runs it, and the ways to get in touch. Public, static, and
+linked from the footer's Company column. Its copy restates the home page and
+`/packages`; keep the three in step when one changes.
+
 ## Site footer (public pages)
 
 `layouts/application` renders `footers/_site_footer` on every page a visitor
