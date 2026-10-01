@@ -16,6 +16,10 @@ module SiteFooterHelper
     !logged_in? || SITE_FOOTER_PUBLIC_CONTROLLERS.include?(controller_name)
   end
 
+  # Where "Schedule a call" goes: the same Sprintful page the home page embeds.
+  # One constant, so a move to another scheduler is a one-line change.
+  SITE_FOOTER_SCHEDULE_URL = "https://on.sprintful.com/alex-mcritchie".freeze
+
   def site_footer_facts
     {
       name: "McRitchie Studio",
@@ -31,7 +35,7 @@ module SiteFooterHelper
       # /contact is a literal: the page is the SMS opt-in form, added by
       # /tasks/sms-opt-in-contact-page, whose route helper is `contact_form_path`.
       columns: [
-        [ "Help",      [ [ "Contact", "/contact" ], [ SITE_FOOTER_PHONE, "tel:+1#{SITE_FOOTER_PHONE.delete('^0-9')}" ], [ "Say hi", login_path ] ] ],
+        [ "Help",      [ [ "Schedule a call", SITE_FOOTER_SCHEDULE_URL ], [ "Contact", "/contact" ], [ SITE_FOOTER_PHONE, "tel:+1#{SITE_FOOTER_PHONE.delete('^0-9')}" ], [ "Say hi", login_path ] ] ],
         [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
         [ "Company",   [ [ "Home", root_path ], [ "Meet Alex", "#{root_path}#about" ] ] ],
         [ "Legal",     [ [ "Privacy Policy", privacy_path ], [ "Terms of Service", terms_path ] ] ]
