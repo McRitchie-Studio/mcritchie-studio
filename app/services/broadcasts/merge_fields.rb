@@ -2,10 +2,10 @@
 # staged-email-queue): the contact's own columns plus, when the contact carries
 # them, their Cyvasse stats under traits["cyvasse"].
 #
-# `contacts.traits` belongs to a parallel task (the Cyvasse stats import). This
-# reads it nil-safe, so a database without the column, a contact without the
-# key, and a stat that is blank all come back as "not there" rather than
-# raising. Blank values are left out, so a template that needs one skips the
+# The stats come from Contact#cyvasse, the same reader the import
+# (Contacts::CyvasseTraitsImport, task contact-traits-from-cyvasse) writes for,
+# so a contact without the key and a stat that is blank come back as "not
+# there" rather than raising. Blank values are left out, so a template that needs one skips the
 # contact with a reason instead of rendering "Hi , your  games".
 module Broadcasts
   module MergeFields
@@ -17,17 +17,7 @@ module Broadcasts
     # String-keyed hash of every present value for `contact`.
     def for(contact)
       base = { "email" => contact.email, "first_name" => contact.first_name.presence }
-      cyvasse = traits(contact)["cyvasse"]
-      stats = cyvasse.is_a?(Hash) ? cyvasse.slice(*CYVASSE_KEYS) : {}
-      base.merge(stats).reject { |_k, v| v.blank? && v != 0 }
-    end
-
-    # contacts.traits, or {} when the column is missing or holds no hash.
-    def traits(contact)
-      return {} unless contact.has_attribute?(:traits)
-
-      value = contact[:traits]
-      value.is_a?(Hash) ? value : {}
+      base.merge(contact.cyvasse.slice(*CYVASSE_KEYS)).reject { |_k, v| v.blank? && v != 0 }
     end
 
     # The %{field} names a subject template interpolates.

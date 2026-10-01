@@ -85,4 +85,26 @@ namespace :contacts do
       puts "unsubscribed (verification): #{s.unsubscribed}; picked but unanswered: #{s.missing}"
     end
   end
+
+  # Store each Cyvasse player's traits on their contact (task
+  # contact-traits-from-cyvasse). The CSV comes from
+  # script/contacts/cyvasse_traits.rb, run read-only on the cyvasse app; the
+  # full pipe is in docs/email-delivery.md. Matches by lowercased email, writes
+  # only traits["cyvasse"], never creates a contact, and prints counts only.
+  #
+  #   bin/rails "contacts:import_cyvasse_traits[/tmp/cyvasse-traits.csv]"
+  desc "Store Cyvasse player traits (games, record, rank) on matching contacts"
+  task :import_cyvasse_traits, %i[path] => :environment do |_t, args|
+    abort "Usage: contacts:import_cyvasse_traits[path.csv]" if args[:path].blank?
+    abort "#{args[:path]}: no such file" unless File.file?(args[:path])
+
+    begin
+      summary = File.open(args[:path]) { |io| Contacts::CyvasseTraitsImport.new(io).run }
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      abort "contacts:import_cyvasse_traits: #{e.class}: #{e.message}"
+    end
+    puts summary
+    puts "with Cyvasse games now: #{Contact.with_cyvasse_games.count} contacts"
+  end
 end

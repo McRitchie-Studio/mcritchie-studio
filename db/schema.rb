@@ -591,6 +591,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
     t.string "source"
     t.boolean "subscribed", default: true, null: false
     t.string "tags", default: [], null: false, array: true
+    t.jsonb "traits", default: {}, null: false
     t.string "unsubscribe_reason"
     t.string "unsubscribe_token", null: false
     t.datetime "unsubscribed_at"

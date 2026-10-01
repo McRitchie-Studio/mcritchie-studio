@@ -31,6 +31,23 @@ module ContactsHelper
       "verification" => "Failed verification" }.fetch(reason.to_s) { reason.to_s.humanize }
   end
 
+  # The Cyvasse cell: "username · 27 games · 20 wins", the rank on hover; a
+  # dash when the contact has no Cyvasse traits (task contact-traits-from-cyvasse).
+  def contact_cyvasse_summary(contact)
+    cyv = contact.cyvasse
+    return tag.span("—", class: "text-muted") if cyv["username"].blank?
+
+    games = cyv["games"].to_i
+    wins = cyv["wins"].to_i
+    title = [ ("All-time rank ##{cyv["all_time_rank"]}" if cyv["all_time_rank"]),
+              ("joined #{cyv["joined_on"]}" if cyv["joined_on"]),
+              ("last active #{cyv["last_active_on"]}" if cyv["last_active_on"]) ].compact.join(" · ")
+    tag.span(title: title.presence) do
+      safe_join([ tag.span(cyv["username"], class: "text-heading font-medium"),
+                  " · #{pluralize(games, "game")} · #{pluralize(wins, "win")}" ])
+    end
+  end
+
   # A short timestamp with the full one on hover; a dash when never.
   def contact_time(time)
     return tag.span("—", class: "text-muted") if time.nil?

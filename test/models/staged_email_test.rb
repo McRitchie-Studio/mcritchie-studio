@@ -21,18 +21,15 @@ class StagedEmailTest < ActiveJob::TestCase
     @nameless = listed("nameless@example.com") # no Cyvasse stats
   end
 
-  # A verified-valid contact on the list (cyvasse-legacy is verified-only).
+  # A verified-valid contact on the list (cyvasse-legacy is verified-only),
+  # carrying its Cyvasse stats in contacts.traits when STATS names it.
   def listed(email, **attrs)
-    Contact.create!(email: email, tags: [ "cyvasse-legacy" ], **attrs).tap { _1.record_verification!(status: "valid") }
+    traits = STATS.key?(email) ? { "cyvasse" => STATS[email] } : {}
+    Contact.create!(email: email, tags: [ "cyvasse-legacy" ], traits: traits, **attrs)
+           .tap { _1.record_verification!(status: "valid") }
   end
 
-  # contacts.traits comes from a parallel task; stand in for it by email.
-  def with_stats(&)
-    traits = ->(contact) { STATS.key?(contact.email) ? { "cyvasse" => STATS[contact.email] } : {} }
-    Broadcasts::MergeFields.stub(:traits, traits, &)
-  end
-
-  def stage!(**) = with_stats { @broadcast.stage!(**) }
+  def stage!(**) = @broadcast.stage!(**)
   def row(contact) = @broadcast.staged_emails.find_by!(contact: contact)
   def perform_sends! = perform_enqueued_jobs(only: BroadcastSendJob)
 
@@ -91,7 +88,7 @@ class StagedEmailTest < ActiveJob::TestCase
     assert bob.cancelled?
     assert_raises(ArgumentError) { bob.approve! }
 
-    with_stats { bob.render_snapshot! }
+    bob.render_snapshot!
     assert bob.reload.staged?, "re-staging re-renders a cancelled row back to staged"
     assert_nil bob.cancelled_at
 
@@ -222,6 +219,8 @@ class StagedEmailTest < ActiveJob::TestCase
 
   test "merge fields read traits nil-safe" do
     assert_equal({ "email" => "nameless@example.com" }, Broadcasts::MergeFields.for(@nameless))
+    @nameless.update_columns(traits: { "cyvasse" => "not a hash" })
+    assert_equal({ "email" => "nameless@example.com" }, Broadcasts::MergeFields.for(@nameless.reload))
     assert_equal %w[username games], Broadcasts::MergeFields.fields_in("%{username} %{games} %{username}")
     assert_equal "Ann, {x}", Broadcasts::MergeFields.interpolate("%{username}, {x}", { "username" => "Ann" })
     assert_equal "Hi Tom Bcc: x@y.z, %{games}",

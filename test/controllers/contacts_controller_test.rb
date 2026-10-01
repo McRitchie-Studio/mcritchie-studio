@@ -31,6 +31,37 @@ class ContactsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the Cyvasse column shows username, games and wins; a dash without traits" do
+    Contact.find_by!(email: "valid@example.com").update!(traits: { "cyvasse" => {
+      "username" => "veyjin", "games" => 27, "wins" => 20, "all_time_rank" => 12 } })
+    log_in_as(@admin)
+    get contacts_path
+    assert_select "th", text: "Cyvasse"
+    assert_select "[data-contact-row] [data-cyvasse]", text: "veyjin · 27 games · 20 wins"
+    assert_select "[data-contact-row] [data-cyvasse] span[title*='All-time rank #12']"
+    assert_select "[data-contact-row] [data-cyvasse]", text: "—", count: 4
+  end
+
+  # [integration] The "Your games" audience is exactly the has-games filter.
+  test "the has-Cyvasse-games filter keeps contacts with at least one game" do
+    Contact.find_by!(email: "valid@example.com").update!(traits: { "cyvasse" => { "username" => "a", "games" => 3 } })
+    Contact.find_by!(email: "catch@example.com").update!(traits: { "cyvasse" => { "username" => "b", "games" => 0 } })
+    log_in_as(@admin)
+
+    get contacts_path(cyvasse: "games")
+    assert_response :success
+    assert_select "[data-contact-row]", count: 1
+    assert_select "[data-contact-row]", text: /valid@example.com/
+    assert_select "select[name=cyvasse] option[selected][value=games]"
+    assert_select "[data-result-count]", text: /\A\s*1 match\b/
+
+    get contacts_path(cyvasse: "games", list: Contacts::Dashboard::ALL, subscribed: "no")
+    assert_select "[data-contact-row]", count: 0
+
+    get contacts_path(cyvasse: "anything")
+    assert_select "[data-contact-row]", count: 5, message: "an unknown value filters nothing"
+  end
+
   test "a search never writes the address it searched for to the log" do
     log_in_as(@admin)
     get contacts_path(q: "valid@example", query: "kept")

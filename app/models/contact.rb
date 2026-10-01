@@ -30,6 +30,41 @@ class Contact < ApplicationRecord
   scope :unverified,     -> { where(verified_at: nil) }
   scope :verified_valid, -> { where(verification_status: "valid") }
 
+  # --- traits (task contact-traits-from-cyvasse) ------------------------------
+  # What other apps know about this contact, one key per source. Each importer
+  # writes only its own key (Contacts::CyvasseTraitsImport owns "cyvasse").
+  #
+  # traits["cyvasse"], from the cyvasse app (script/contacts/cyvasse_traits.rb):
+  #   username        the public username
+  #   games           matches the player actually played (at least one move
+  #                   was made), against a person or a computer, legacy or
+  #                   new. An unanswered challenge, a match never started and
+  #                   one that expired before play are not games.
+  #   finished_games  the part of `games` that ended with a result: king,
+  #                   resigned, forfeit or draw (not expired or abandoned)
+  #   wins, losses    the all-time record on the account (users.wins/losses)
+  #   joined_on       the account's creation date (legacy dates carried over)
+  #   last_active_on  the later of the account's updated_at and the last move
+  #                   of a game it played
+  #   all_time_rank   the place on cyvasse's all-time leaderboard (wins, then
+  #                   fewest losses, then oldest account); nil with no wins
+  #   synced_at       when the cyvasse app was read
+  CYVASSE_TRAITS = %w[username games finished_games wins losses joined_on last_active_on all_time_rank synced_at].freeze
+
+  # The "Your games" audience: a Cyvasse player with at least one game.
+  scope :with_cyvasse_games, -> { where("COALESCE((contacts.traits #>> '{cyvasse,games}')::integer, 0) >= 1") }
+
+  # The cyvasse traits (string keys), or an empty hash when never synced or
+  # when the stored value is not a hash (Broadcasts::MergeFields reads this).
+  def cyvasse
+    value = traits.is_a?(Hash) ? traits["cyvasse"] : nil
+    value.is_a?(Hash) ? value : {}
+  end
+
+  def cyvasse_games
+    cyvasse["games"].to_i
+  end
+
   def first_name_or_default
     first_name.presence || "there"
   end

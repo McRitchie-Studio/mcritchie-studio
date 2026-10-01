@@ -162,8 +162,8 @@ visible: total, subscribed, verified valid, undeliverable, not yet verified,
 emailed, and when the last result was stored. They come from three grouped
 queries (`Contacts::Dashboard`), about 17 ms on 18,745 contacts. Below them, the
 contacts table (`Contacts::Directory`) searches by email and filters by list,
-subscription, verification status and whether a broadcast was sent; a row
-expands into its deliveries and events.
+subscription, verification status, whether a broadcast was sent, and whether the
+contact has Cyvasse games; a row expands into its deliveries and events.
 
 **Never rerun a real run to recover one that failed; that spends the credits
 twice.** A submit that errors (a timeout, say) may still have landed, and a
@@ -173,6 +173,52 @@ dashboard's bulk file list: if the file is there, resume it with `FILE_ID`.
 Delete `tmp/cyvasse-last-active.csv` afterwards: it holds every player's email.
 Delete the uploaded file in the ZeroBounce dashboard too, once its results are
 applied: ZeroBounce keeps the roughly 10k addresses otherwise.
+
+## Cyvasse Traits on Contacts
+
+Personalized Cyvasse emails ("veyjin, your 27 Cyvasse games are still here")
+read what the cyvasse app knows about a player from `contacts.traits`, a jsonb
+column namespaced by source (task contact-traits-from-cyvasse). The reader is
+`Contact#cyvasse`; the schema is `Contact::CYVASSE_TRAITS`:
+
+| Key | Meaning |
+|-----|---------|
+| `username` | the public username |
+| `games` | matches the player actually played: at least one move made (`matches.last_move` set), against a person or a computer, legacy or new. An unanswered challenge, a match accepted but never started, and one that expired before play are not games. A legacy match the import closed as `abandoned` counts only if it had a move |
+| `finished_games` | the part of `games` that ended with a result: king, resigned, forfeit or draw. A forfeit or resignation before the first move is in neither count |
+| `wins`, `losses` | the account's all-time record (`users.wins`/`users.losses`) |
+| `joined_on` | the account's creation date (legacy dates carried over) |
+| `last_active_on` | the later of `users.updated_at` and the last move of a game the player played |
+| `all_time_rank` | place on `/leaderboard?board=all-time`: wins, then fewest losses, then oldest account; blank with no win |
+| `synced_at` | when the cyvasse app was read |
+
+Guests, merged accounts and the computer players (`User::COMPUTER_LEGACY_IDS`)
+are left out. The "Your games" audience is `Contact.with_cyvasse_games` (at least
+one game), which `/contacts` offers as the **Cyvasse: Has games** filter
+beside a Cyvasse column (username · games · wins, rank on hover).
+
+To refresh, stream the traits from cyvasse straight into the hub. Nothing lands
+on the laptop and no player row is printed: the cyvasse script prints only
+`CYVT,`-prefixed CSV lines into the pipe, and the import prints counts.
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+heroku run -a cyvasse --no-tty -- bash -c 'cat > /tmp/a.rb; bin/rails runner /tmp/a.rb' \
+    < script/contacts/cyvasse_traits.rb \
+  | grep '^CYVT,' | cut -c6- | tr -d '\r' \
+  | heroku run -a mcritchie-studio --no-tty -- \
+    bash -c 'cat > /tmp/cyvasse-traits.csv; bin/rails "contacts:import_cyvasse_traits[/tmp/cyvasse-traits.csv]"'
+```
+
+`contacts:import_cyvasse_traits` (`Contacts::CyvasseTraitsImport`) matches rows
+to contacts by lowercased email, never creates a contact, and writes only
+`traits["cyvasse"]` (with `jsonb_set`), so other sources' traits and every other
+column stay as they are. It is idempotent: a contact whose traits already equal
+the row is not written, and a row older than the stored `synced_at` is skipped as
+stale. It prints one summary line (rows, invalid, duplicate emails, matched,
+unknown, updated, unchanged, stale) and the size of the has-games audience. Rerun
+it whenever the numbers should be fresh; the dyno's `/tmp` copy dies with the
+one-off dyno.
 
 ## Staged Sends: Review Before Execute
 
