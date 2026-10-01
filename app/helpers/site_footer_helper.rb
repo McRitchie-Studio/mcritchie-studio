@@ -31,7 +31,7 @@ module SiteFooterHelper
       # /contact is a literal: the page is the SMS opt-in form, added by
       # /tasks/sms-opt-in-contact-page, whose route helper is `contact_form_path`.
       columns: [
-        [ "Help",      [ [ "Contact", "/contact" ], [ "Call us", "tel:+1#{SITE_FOOTER_PHONE.delete('^0-9')}" ], [ "Say hi", login_path ] ] ],
+        [ "Help",      [ [ "Contact", "/contact" ], [ SITE_FOOTER_PHONE, "tel:+1#{SITE_FOOTER_PHONE.delete('^0-9')}" ], [ "Say hi", login_path ] ] ],
         [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
         [ "Company",   [ [ "Home", root_path ], [ "Meet Alex", "#{root_path}#about" ] ] ],
         [ "Legal",     [ [ "Privacy Policy", privacy_path ], [ "Terms of Service", terms_path ] ] ]

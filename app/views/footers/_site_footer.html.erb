@@ -38,18 +38,14 @@
 
     <div class="border-t border-subtle" style="padding-block: 3.5rem;">
       <h2 class="text-center text-3xl font-extrabold text-heading tracking-tight">Location</h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center" style="margin-top: 2.5rem;">
-        <div class="text-center">
-          <p class="font-bold text-heading">Denver, CO</p>
-          <address class="not-italic mt-2 leading-relaxed">
-            <%= facts[:street] %><br><%= facts[:city_line] %><br>
-            <a href="<%= facts[:phone_href] %>" class="ftr-link"><%= facts[:phone] %></a>
-          </address>
-          <a href="<%= facts[:directions_url] %>" target="_blank" rel="noopener" class="ftr-link inline-block mt-4 text-sm font-semibold">Get directions →</a>
-        </div>
-        <div class="md:col-span-2">
-          <%= render "footers/map", facts: facts, classes: "h-64 rounded-xl border border-subtle" %>
-        </div>
+      <address class="not-italic text-center leading-relaxed" style="margin-top: 1rem;">
+        <a href="<%= facts[:directions_url] %>" target="_blank" rel="noopener" class="ftr-link"
+           aria-label="Get directions to <%= facts[:street] %>, <%= facts[:city_line] %>">
+          <%= facts[:street] %><br><%= facts[:city_line] %>
+        </a>
+      </address>
+      <div style="margin-top: 2rem;">
+        <%= render "footers/map", facts: facts, classes: "ftr-map-wide rounded-xl border border-subtle" %>
       </div>
     </div>
 

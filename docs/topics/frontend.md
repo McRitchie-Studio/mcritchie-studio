@@ -104,8 +104,9 @@ other signed-in page is a working surface and carries none.
   Grasshopper line, and the footer is where its SMS registration's reviewers find
   the privacy policy, terms and `/contact`. A social entry with a `nil` URL
   renders its icon unlinked.
-- **The map** is Leaflet on OpenStreetMap's keyless tiles, fetched from unpkg
-  only when a `[data-footer-map]` is on the page (`footers/_assets`). Dark mode
+- **The map** is Leaflet (vendored at `public/vendor/leaflet-1.9.4`) on
+  OpenStreetMap's keyless tiles; the script is fetched only when a
+  `[data-footer-map]` is on the page (`footers/_assets`). Dark mode
   filters the same tiles in CSS; there is no second tile set. With scripts
   blocked, the element is a link to directions.
 

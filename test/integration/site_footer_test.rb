@@ -10,7 +10,8 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
       assert_response :success, path
 
       assert_select "footer[data-site-footer]", { count: 1 }, "#{path}: one footer" do
-        assert_select "address", { text: /3000 Lawrence St\s*Denver, CO 80205/m, count: 1 }, "#{path}: address, once"
+        assert_select "address a[href*='google.com/maps/dir']", { text: /3000 Lawrence St\s*Denver, CO 80205/m, count: 1 },
+                      "#{path}: the address, once, linking to directions"
         assert_select "a[href='tel:+13032222113']", { text: "(303) 222-2113", count: 1 }, "#{path}: phone"
         assert_select "a[href='#{privacy_path}']", { minimum: 1 }, "#{path}: privacy link"
         assert_select "a[href='#{terms_path}']", { minimum: 1 }, "#{path}: terms link"

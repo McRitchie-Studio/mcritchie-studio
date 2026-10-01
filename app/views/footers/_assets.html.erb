@@ -1,5 +1,7 @@
 <%# The site footer's styles and its map mount. Rendered once, by footers/_site_footer. %>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<%# Leaflet is vendored (public/vendor/leaflet-1.9.4, BSD-2-Clause): the footer is on
+    every public page and should not hang on a third-party script host. %>
+<link rel="stylesheet" href="/vendor/leaflet-1.9.4/leaflet.css">
 
 <style>
   .ftr { --ftr-primary: var(--color-primary, #8b5cf6); --ftr-primary-rgb: var(--color-primary-500-rgb, 139 92 246); }
@@ -13,6 +15,7 @@
   /* One keyless basemap for both themes: in dark mode the light tiles are
      inverted and pulled toward the site's violet rather than swapped. */
   .dark .ftr-map .leaflet-tile-pane { filter: invert(1) hue-rotate(205deg) saturate(.55) brightness(.9) contrast(.92); }
+  .ftr-map-wide { height: clamp(16rem, 28vw, 22rem); }
   .ftr-map-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     padding: 1rem; text-align: center; font-size: .85rem; }
   .ftr-map .leaflet-container { position: absolute; inset: 0; background: transparent; font: inherit; }
@@ -50,8 +53,7 @@
       if (loading) return loading;
       loading = new Promise(function (resolve, reject) {
         var s = document.createElement('script');
-        s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        s.crossOrigin = '';
+        s.src = '/vendor/leaflet-1.9.4/leaflet.js';
         s.onload = resolve;
         s.onerror = reject;
         document.head.appendChild(s);
