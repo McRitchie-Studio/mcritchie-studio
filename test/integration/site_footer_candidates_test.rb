@@ -20,7 +20,7 @@ class SiteFooterCandidatesTest < ActionDispatch::IntegrationTest
       assert_select "footer[data-footer='#{variant}']" do
         assert_select "address", text: /3000 Lawrence St/, message: "#{variant}: street"
         assert_select "address", text: /Denver, CO 80205/, message: "#{variant}: city line"
-        assert_select "a[href^='tel:+1']", { minimum: 1 }, "#{variant}: phone link"
+        assert_select "a[href='tel:+13032222113']", { minimum: 1 }, "#{variant}: phone link"
         assert_select "a[href='#{privacy_path}']", { minimum: 1 }, "#{variant}: privacy link"
         assert_select "a[href='#{terms_path}']", { minimum: 1 }, "#{variant}: terms link"
         assert_select "[data-footer-map][data-lat][data-lng]", { count: 1 }, "#{variant}: map"

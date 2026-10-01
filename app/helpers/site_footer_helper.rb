@@ -3,8 +3,8 @@
 # the bottom of a page. One hash, so the five candidate footers on /footers and
 # the one that wins cannot disagree about an address or a phone number.
 module SiteFooterHelper
-  # PLACEHOLDER: a 555 number until the studio's Grasshopper line is issued.
-  SITE_FOOTER_PHONE = "(720) 555-0100".freeze
+  # The studio's Grasshopper line, the number its SMS registration names.
+  SITE_FOOTER_PHONE = "(303) 222-2113".freeze
 
   def site_footer_facts
     {
