@@ -11,7 +11,7 @@
       title="<%= name %>" role="img" aria-label="<%= name %>"
       data-test="brand-logo" data-brand="<%= key %>" data-fallback="<%= mark.nil? %>">
   <% if mark %>
-    <%= image_tag mark, alt: "", class: "#{img} object-contain", loading: "lazy", aria: { hidden: true } %>
+    <%= image_tag mark, alt: "", class: "#{img} object-contain", aria: { hidden: true } %>
   <% else %>
     <span class="text-[10px] font-bold uppercase leading-none tracking-tight text-slate-700" aria-hidden="true"><%= name.gsub(/[^[:alnum:]]/, "").first(2) %></span>
   <% end %>
