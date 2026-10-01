@@ -1,12 +1,12 @@
 require "test_helper"
 
-# /footers stacks the five candidate site footers. Whichever one wins, a footer
+# /footers stacks the candidate site footers. Whichever one wins, a footer
 # owes the visitor the same things: where the studio is, how to call it, the
 # privacy policy and terms, and a map. Each candidate is held to that here.
 class SiteFooterCandidatesTest < ActionDispatch::IntegrationTest
-  VARIANTS = %w[blueprint map-stage terminal mile-high postcard].freeze
+  VARIANTS = %w[blueprint map-stage terminal mile-high postcard directory].freeze
 
-  test "the preview is public and stacks all five candidates" do
+  test "the preview is public and stacks every candidate" do
     get footers_path
 
     assert_response :success

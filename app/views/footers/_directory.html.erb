@@ -1,0 +1,66 @@
+<%# 6 · Directory — after the Endeavor Exteriors footer: brand and address at the
+    left, plain link columns under bold headings, a centred Location band, then a
+    quiet centred legal line. No ornament; the structure is the design. %>
+<% columns = [
+     [ "Help",      [ [ "Contact", "mailto:#{facts[:email]}" ], [ "Call us", facts[:phone_href] ], [ "Say hi", login_path ] ] ],
+     [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
+     [ "Company",   [ [ "Home", root_path ], [ "Meet Alex", "#{root_path}#about" ] ] ],
+     [ "Legal",     facts[:legal] ]
+   ] %>
+<footer class="ftr bg-surface-alt border-t border-subtle text-body" data-footer="directory">
+  <div class="max-w-6xl mx-auto px-4">
+    <div class="py-16 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-x-8 gap-y-12">
+      <div class="col-span-2 md:col-span-4 lg:col-span-4">
+        <%= link_to root_path, class: "inline-flex items-center gap-3" do %>
+          <%= image_tag "logo-icon.svg", class: "w-12 h-12 invert dark:invert-0", alt: "" %>
+          <span class="text-2xl font-extrabold text-heading uppercase leading-tight" style="letter-spacing: .14em;">McRitchie<br><span class="text-primary">Studio</span></span>
+        <% end %>
+        <p class="mt-8 font-bold text-heading">Denver, CO</p>
+        <address class="not-italic mt-2 leading-relaxed">
+          <%= facts[:street] %><br><%= facts[:city_line] %><br>
+          <a href="<%= facts[:phone_href] %>" class="ftr-link"><%= facts[:phone] %></a>
+        </address>
+        <a href="mailto:<%= facts[:email] %>" aria-label="Email <%= facts[:name] %>"
+           class="mt-8 inline-flex items-center justify-center w-10 h-10 rounded-full bg-primary text-white font-bold">@</a>
+      </div>
+
+      <% columns.each do |heading, links| %>
+        <nav class="lg:col-span-2" aria-label="<%= heading %>">
+          <h2 class="font-bold text-heading mb-4"><%= heading %></h2>
+          <ul class="space-y-4">
+            <% links.each do |label, path| %>
+              <li><%= link_to label, path, class: "ftr-link" %></li>
+            <% end %>
+          </ul>
+        </nav>
+      <% end %>
+    </div>
+
+    <div class="border-t border-subtle" style="padding-block: 3.5rem;">
+      <h2 class="text-center text-3xl font-extrabold text-heading tracking-tight">Location</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center" style="margin-top: 2.5rem;">
+        <div class="text-center">
+          <p class="font-bold text-heading">Denver, CO</p>
+          <address class="not-italic mt-2 leading-relaxed">
+            <%= facts[:street] %><br><%= facts[:city_line] %><br>
+            <a href="<%= facts[:phone_href] %>" class="ftr-link"><%= facts[:phone] %></a>
+          </address>
+          <p class="text-muted text-sm mt-2"><%= facts[:hours] %></p>
+          <a href="<%= facts[:directions_url] %>" target="_blank" rel="noopener" class="ftr-link inline-block mt-4 text-sm font-semibold">Get directions →</a>
+        </div>
+        <div class="md:col-span-2">
+          <%= render "footers/map", facts: facts, classes: "h-64 rounded-xl border border-subtle" %>
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t border-subtle py-8 text-center text-sm">
+      <p>
+        <% facts[:legal].each_with_index do |(label, path), index| %>
+          <%= " · " unless index.zero? %><%= link_to label, path, class: "ftr-link" %>
+        <% end %>
+      </p>
+      <p class="text-muted mt-2">© <%= Time.current.year %> <%= facts[:name] %></p>
+    </div>
+  </div>
+</footer>
