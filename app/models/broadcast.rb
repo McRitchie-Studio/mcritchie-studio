@@ -203,6 +203,35 @@ class Broadcast < ApplicationRecord
     StageResult.new(staged: staged, skipped: skipped)
   end
 
+  RestageResult = Data.define(:restaged, :skipped, :left) do
+    def total = restaged + skipped
+  end
+
+  # Re-render every still-`staged` email with the current template and subject
+  # (task tiered-your-games-copy), so a copy fix reaches what is held. Only
+  # `staged` rows are touched: an approved, sent, cancelled or skipped row is
+  # left exactly as it is. Each row is locked and re-checked first, so one
+  # approved while this runs keeps its approval and its snapshot. A reader who
+  # now lacks a required field is stored `skipped`, as at staging. `left`
+  # counts rows that stopped being staged before their turn.
+  def restage!(now: Time.current)
+    restaged = skipped = left = 0
+    staged_emails.of_status("staged").find_each do |row|
+      outcome = transaction(requires_new: true) do
+        row.lock!
+        next :left unless row.staged?
+
+        row.render_snapshot!(now: now).skipped? ? :skipped : :restaged
+      end
+      case outcome
+      when :restaged then restaged += 1
+      when :skipped then skipped += 1
+      else left += 1
+      end
+    end
+    RestageResult.new(restaged: restaged, skipped: skipped, left: left)
+  end
+
   # Approve the `count` longest-held staged emails (all of them when nil), or
   # exactly `ids` when given. Returns how many were approved.
   def approve_staged!(count: nil, ids: nil, now: Time.current)
