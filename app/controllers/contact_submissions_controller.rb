@@ -11,7 +11,7 @@ class ContactSubmissionsController < ApplicationController
 
   # A public form that writes a row and sends an email: bounded per IP.
   rate_limit to: 5, within: 1.minute, only: :create,
-             with: -> { redirect_to contact_path, alert: "Too many messages. Try again in a minute." }
+             with: -> { redirect_to contact_form_path, alert: "Too many messages. Try again in a minute." }
 
   # Hidden from people, so only a script fills it in.
   HONEYPOT_FIELD = :company_url
@@ -46,7 +46,7 @@ class ContactSubmissionsController < ApplicationController
   # confirmation. `sms` only adds the program reminder to the thank-you.
   def redirect_to_sent(sms: false)
     flash[:contact_sent] = sms ? "sms" : "sent"
-    redirect_to contact_path, status: :see_other
+    redirect_to contact_form_path, status: :see_other
   end
 
   # Sent through the engine's outbox, like every other app email. The row is

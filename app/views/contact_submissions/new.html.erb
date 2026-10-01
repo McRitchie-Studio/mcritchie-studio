@@ -22,7 +22,7 @@
 
   <div class="card p-6"
        x-data="{ care: <%= @submission.sms_care_consent? %>, marketing: <%= @submission.sms_marketing_consent? %>, declined: <%= @submission.sms_declined? %> }">
-    <%= form_with model: @submission, scope: :contact_submission, url: contact_path, method: :post,
+    <%= form_with model: @submission, scope: :contact_submission, url: contact_form_path, method: :post,
                   html: { class: "space-y-5", data: { test: "contact-form" } } do |f| %>
       <% if @submission.errors.any? %>
         <div class="rounded-lg border border-subtle bg-surface-alt p-4" role="alert" data-test="contact-errors">

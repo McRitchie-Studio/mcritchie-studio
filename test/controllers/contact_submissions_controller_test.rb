@@ -10,14 +10,22 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   VALID = { name: "Jordan Lee", email: "jordan@example.com", message: "I would like a quote." }.freeze
 
   def submit(**fields)
-    post contact_path, params: { contact_submission: VALID.merge(fields) },
+    post contact_form_path, params: { contact_submission: VALID.merge(fields) },
                        headers: { "User-Agent" => "ContactTest/1.0" }
+  end
+
+  # /contact sits one letter from the admin mailing list's /contacts/:id. Named
+  # `contact`, this route took over `contact_path` and every admin detail link
+  # became "/contact.23" (caught by CI on this task's first push).
+  test "[integration] the form's route does not take the mailing list's contact_path" do
+    assert_equal "/contact", contact_form_path
+    assert_equal "/contacts/23", contact_path(23)
   end
 
   # --- [component] the page --------------------------------------------------
 
   test "[component] anyone can open the form without signing in" do
-    get contact_path
+    get contact_form_path
 
     assert_response :success
     assert_select "form[data-test='contact-form'][action='/contact'][method='post']" do
@@ -30,7 +38,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[component] the three consent boxes carry the exact wording and none is ticked" do
-    get contact_path
+    get contact_form_path
 
     assert_select "[data-test='contact-consent'] input[type='checkbox']", count: 3
     assert_select "[data-test='contact-consent'] input[type='checkbox'][checked]", count: 0
@@ -43,7 +51,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[component] the disclosure sits directly below the form, verbatim, linking the policy" do
-    get contact_path
+    get contact_form_path
 
     paragraphs = css_select("[data-test='sms-disclosure'] p").map(&:text)
     assert_equal ContactSubmission::DISCLOSURE_PARAGRAPHS, paragraphs
@@ -53,7 +61,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[component] the confirmation shows only after a submission" do
-    get contact_path
+    get contact_form_path
     assert_select "[data-test='contact-sent']", count: 0
 
     submit
@@ -94,7 +102,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
         end
       end
     end
-    assert_redirected_to contact_path
+    assert_redirected_to contact_form_path
 
     row = ContactSubmission.recent.first
     assert_equal "Jordan Lee", row.name
@@ -162,7 +170,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] the form cannot write the proof columns" do
-    post contact_path, params: { contact_submission: VALID.merge(
+    post contact_form_path, params: { contact_submission: VALID.merge(
       disclosure_version: "forged", disclosure_text: "nothing", ip_address: "9.9.9.9", user_agent: "forged"
     ) }
 
@@ -180,7 +188,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_redirected_to contact_path
+    assert_redirected_to contact_form_path
     follow_redirect!
     assert_select "[data-test='contact-sent']"
     assert_select "[data-test='contact-sent-sms']", count: 0
@@ -193,7 +201,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
       end
     end
 
-    assert_redirected_to contact_path
+    assert_redirected_to contact_form_path
   end
 
   # The test env caches to a null store, which never counts. Counting on the
@@ -210,10 +218,10 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
       assert_no_difference -> { ContactSubmission.count } do
         submit
       end
-      assert_redirected_to contact_path
+      assert_redirected_to contact_form_path
       assert_equal "Too many messages. Try again in a minute.", flash[:alert]
 
-      get contact_path
+      get contact_form_path
       assert_response :success
     end
     assert_equal 6, hits, "only the six POSTs were counted"

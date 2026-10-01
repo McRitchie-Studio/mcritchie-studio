@@ -20,7 +20,7 @@ Rails.application.routes.draw do
   get   "build/:token", to: "build#show",   as: :build_request
   patch "build/:token", to: "build#update"
   # The public contact form, which is also the SMS opt-in page carriers review.
-  get  "contact", to: "contact_submissions#new", as: :contact
+  get  "contact", to: "contact_submissions#new", as: :contact_form
   post "contact", to: "contact_submissions#create"
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.

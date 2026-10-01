@@ -16,9 +16,9 @@
 
     <section>
       <h2 class="text-xl font-semibold text-heading mb-2">2. Information We Collect</h2>
-      <p><strong>Contact form:</strong> When you send us a message through our <%= link_to "contact form", contact_path, class: "text-primary hover:underline" %>, we collect your name, email address, your message and, if you give it, your mobile phone number. We also record whether you consented to or declined text messages, the consent wording you were shown, and the date, time, IP address and browser (user agent) of the submission. We keep this as a record of your choice.</p>
+      <p><strong>Contact form:</strong> When you send us a message through our <%= link_to "contact form", contact_form_path, class: "text-primary hover:underline" %>, we collect your name, email address, your message and, if you give it, your mobile phone number. We also record whether you consented to or declined text messages, the consent wording you were shown, and the date, time, IP address and browser (user agent) of the submission. We keep this as a record of your choice.</p>
       <p><strong>Text messages:</strong> If you opt in to text messages, we collect your mobile number, the messages you send us, and your opt-in and opt-out history.</p>
-      <p><strong>Account information:</strong> When you sign in (by an emailed sign-in link or Google sign-in), we store your name, email address, authentication metadata and session records needed to keep the account secure.</p>
+      <p><strong>Account information:</strong> When you sign in (by a magic link emailed to you, or Google sign-in), we store your name, email address, authentication metadata and session records needed to keep the account secure.</p>
       <p><strong>Requests and mailing list:</strong> When you ask us to build an app or join our mailing list, we store what you submit (for example your description of the app) and your email address. Our emails record whether they were opened and which links were clicked.</p>
       <p><strong>Third-party platform credentials:</strong> When an account holder authorizes the Service to post to social media accounts they control, we store the access tokens and account identifiers those platforms issue.</p>
       <p><strong>Content data:</strong> We store content created through the Service, such as titles, captions, images, video links and references to public sports data.</p>
@@ -60,7 +60,7 @@
     <section data-test="messaging-terms">
       <h2 class="text-xl font-semibold text-heading mb-2">6. Text Message Program</h2>
       <p><strong>Program:</strong> McRitchie Studio LLC (doing business as McRitchie Studio) provides software solutions. We send general conversational messaging to answer questions and provide support to customers, as well as marketing messages to promote our products and services. Messages are sent from <strong>(303) 222-2113</strong>.</p>
-      <p><strong>How you opt in:</strong> You opt in on our <%= link_to "contact page", contact_path, class: "text-primary hover:underline" %> by providing your mobile phone number and checking a consent box. No box is checked for you.</p>
+      <p><strong>How you opt in:</strong> You opt in on our <%= link_to "contact page", contact_form_path, class: "text-primary hover:underline" %> by providing your mobile phone number and checking a consent box. No box is checked for you.</p>
       <p><strong>Message types:</strong> Customer care messages may include responses to messages you send us, as well as information relevant to your relationship with us. Marketing messages may include discount codes, special deals or texts promoting our products and services. You choose which of these you receive, and you can choose neither.</p>
       <p><strong>Consent:</strong> Consent is not a condition of purchase. You can contact us and use the Service without agreeing to receive text messages.</p>
       <p><strong>Frequency:</strong> Message frequency varies.</p>
