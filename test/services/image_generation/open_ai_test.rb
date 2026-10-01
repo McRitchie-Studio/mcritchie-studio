@@ -22,6 +22,18 @@ class ImageGeneration::OpenAITest < ActiveSupport::TestCase
     @row = ImageGeneration::Registry.find!("openai_gpt5_sheet")
   end
 
+  # THE ROW IS SHARED. `Registry.find!` hands back the process-wide memoized row, and
+  # two cases below stub `reference_arity` on it with a singleton method. The setup
+  # above reloads before each case HERE, but nothing reloaded after the last one, so
+  # whichever case ran last left its stub on the row every later test in the process
+  # reads. When that was the "many" case, GeneratorRecordTripwireTest's arity guard
+  # went red on a registry file nobody had touched (accepted CI, 2026-09-30, twice,
+  # after new tests reshuffled the shards). Reproduce on the pre-fix file with
+  # `--seed 13` over this file and that one.
+  teardown do
+    ImageGeneration::Registry.reload!
+  end
+
   # PINS THE LITERAL IN test/test_helper.rb AGAINST THE CONSTANT. The helper runs
   # before Zeitwerk can autoload this class, so it spells the variable by hand;
   # without this the two could drift and the trap would quietly stop being armed.

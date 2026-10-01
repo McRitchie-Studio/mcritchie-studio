@@ -33,6 +33,9 @@ Rails.application.routes.draw do
   # Every client's stack: tier, software (Studio chest when we host it), Google
   # users, Resend. Admin-only.
   get "stack", to: "stack#index", as: :stack
+  # The same clients as a matrix: clients across, software down by category,
+  # a tier/price/hosting band on top and the total MRR. Admin-only.
+  get "stack/matrix", to: "stack#matrix", as: :stack_matrix
 
   # Broadcast emails — table view + editor. `preview` renders the email itself
   # (in the email shell) for the editor's live iframe.
