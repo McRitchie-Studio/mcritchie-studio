@@ -138,6 +138,11 @@ style, script or Leaflet of its own.
   `load`. Dark mode filters the same tiles in CSS; there is no second tile set.
   With scripts blocked, the element is a link to directions. On a touch device
   one finger scrolls the page, not the map.
+- **One rule stays app-side**: the end of `app/assets/tailwind/application.css`
+  gives the footer's Contact column the wider track it had before the adoption.
+  The engine's columns are equal, and `team@mcritchie.studio` is wider than an
+  equal track, so it broke across two lines. Do not restyle the footer beyond
+  that; change the engine instead.
 - **Tests**: `test/integration/site_footer_test.rb` and
   `schedule_page_test.rb` pin this app's facts and where the footer shows;
   `e2e/site_footer.spec.js` and `e2e/booking_frame.spec.js` prove the wiring on

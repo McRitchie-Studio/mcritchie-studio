@@ -79,3 +79,26 @@ test("the footer map mounts, survives a Turbo visit, and follows the theme", asy
   await expect(map(page)).toHaveClass(/leaflet-container/);
   await expect(map(page).locator(".ftr-pin")).toHaveCount(1);
 });
+
+// The engine lays the link columns out in equal tracks, and this site's email
+// address is wider than an equal track, so it broke across two lines
+// ("team@mcritchie.stu / dio"). app/assets/tailwind/application.css gives the
+// Contact column the wider track it had before. Only a browser can see a wrap.
+for (const [name, size] of [["a desktop", { width: 1280, height: 900 }], ["a tablet", { width: 800, height: 1000 }], ["a phone", { width: 390, height: 844 }]]) {
+  test(`the footer's email address stays on one line on ${name}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.goto("/privacy");
+
+    const contact = page.locator("footer[data-site-footer] nav[aria-label='Contact']");
+    const email = contact.locator("a[href='mailto:team@mcritchie.studio']");
+    await email.scrollIntoViewIfNeeded();
+
+    // One line of text is one client rect; a wrapped inline link has two.
+    expect(await email.evaluate((el) => el.getClientRects().length)).toBe(1);
+    // And it fits its column rather than spilling into the next one.
+    const [link, column] = await Promise.all([email.boundingBox(), contact.boundingBox()]);
+    expect(link.x + link.width).toBeLessThanOrEqual(column.x + column.width + 0.5);
+    // The page never scrolls sideways for it.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+  });
+}
