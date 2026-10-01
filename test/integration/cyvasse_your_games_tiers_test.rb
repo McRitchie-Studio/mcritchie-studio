@@ -42,17 +42,17 @@ class CyvasseYourGamesTiersTest < ActiveJob::TestCase
 
   test "veterans lead with their history: games, wins, rank and the year they joined" do
     vey = text(row("Vey").rendered_html)
-    assert_includes vey, "You played 27 games of Cyvasse since joining in 2014, and every one of them came across " \
-                         "to the rebuilt game, along with your 20 wins. You still hold #12 on the all-time board."
+    assert_includes vey, "You played 27 games of Cyvasse since joining in 2014, and every one of them is still there " \
+                         "on the rebuilt game, along with your 20 wins. You still hold #12 on the all-time board."
     assert_includes vey, "Your games are still here"
 
     reg = text(row("Reg").rendered_html)
-    assert_includes reg, "You played 6 games of Cyvasse since joining in 2019, and every one of them came across " \
-                         "to the rebuilt game, along with your 1 win."
+    assert_includes reg, "You played 6 games of Cyvasse since joining in 2019, and every one of them is still there " \
+                         "on the rebuilt game, along with your 1 win."
     assert_not_includes reg, "all-time board", "no rank line without a rank"
 
     zed = text(row("Zed").rendered_html)
-    assert_includes zed, "You played 8 games of Cyvasse, and every one of them came across to the rebuilt game."
+    assert_includes zed, "You played 8 games of Cyvasse, and every one of them is still there on the rebuilt game."
     assert_not_includes zed, "your 0 wins"
     assert_not_includes zed, "Your Cyvasse account and your history are waiting"
   end

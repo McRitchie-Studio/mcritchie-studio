@@ -39,7 +39,7 @@
     <td style="padding:28px 32px 8px 32px;">
       <p style="<%= p_style %>">Hi <%= merge_field(:username) %>,</p>
       <% if history %>
-        <p style="<%= p_style %>" data-tier="history">You played <strong><%= merge_count(:games, "game") %></strong> of Cyvasse<%= " since joining in #{joined_year}" if joined_year.present? %>, and every one of them came across to the rebuilt game<%= wins.present? && wins.to_i.positive? ? ", along with your #{merge_count(:wins, 'win')}" : "" %>.<%= " You still hold ##{rank} on the all-time board." if rank.present? %></p>
+        <p style="<%= p_style %>" data-tier="history">You played <strong><%= merge_count(:games, "game") %></strong> of Cyvasse<%= " since joining in #{joined_year}" if joined_year.present? %>, and every one of them is still there on the rebuilt game<%= wins.present? && wins.to_i.positive? ? ", along with your #{merge_count(:wins, 'win')}" : "" %>.<%= " You still hold ##{rank} on the all-time board." if rank.present? %></p>
       <% else %>
         <p style="<%= p_style %>" data-tier="account">Your Cyvasse account and your history are waiting for you on the rebuilt game<%= ", including the #{merge_count(:games, 'game')} you played" if Broadcasts::CyvasseYourGames.count(@merge_fields, "games").positive? %>. Come play whenever you like.</p>
       <% end %>
