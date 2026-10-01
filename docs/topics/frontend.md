@@ -100,7 +100,7 @@ sees, and on the public pages for a signed-in viewer too
 other signed-in page is a working surface and carries none.
 
 - **Facts live in one place**: `SiteFooterHelper#site_footer_facts` (address,
-  phone, email, social profiles, link columns). The phone is the studio's
+  phone, the team@ email, social profiles, link columns). The phone is the studio's
   Grasshopper line, and the footer is where its SMS registration's reviewers find
   the privacy policy, terms and `/contact`. A social entry with a `nil` URL
   renders its icon unlinked.

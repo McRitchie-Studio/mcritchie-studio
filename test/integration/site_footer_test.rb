@@ -24,6 +24,16 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the Contact column lists email, phone, then the contact page, in that order" do
+    get root_path
+
+    labels = css_select("footer[data-site-footer] nav[aria-label='Contact'] a").map { |link| [ link.text, link["href"] ] }
+    assert_equal [ [ "team@mcritchie.studio", "mailto:team@mcritchie.studio" ],
+                   [ "(303) 222-2113", "tel:+13032222113" ],
+                   [ "Contact", "/contact" ] ], labels.first(3)
+    assert_select "footer[data-site-footer] nav[aria-label='Help']", 0
+  end
+
   test "the footer leads with social profiles" do
     get root_path
 
