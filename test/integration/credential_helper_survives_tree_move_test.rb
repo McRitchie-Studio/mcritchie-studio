@@ -209,19 +209,11 @@ class CredentialHelperSurvivesTreeMoveTest < ActiveSupport::TestCase
   # the instant of a deliberate re-install, and asserting a count on it would be
   # asserting a timing measurement.
   def test_repointing_current_never_makes_the_stable_path_vanish
-    CredentialHelperInstall.install!(source_root: @repo, root: @install_root)
-    stable = CredentialHelperInstall.helper_path(@install_root)
-    link = CredentialHelperInstall.current_link(@install_root)
-
-    # A second snapshot to swap between.
-    File.write(File.join(@repo, "bin/lib/op-meter.sh"), "# altered\n", mode: "a")
-    second = CredentialHelperInstall.install!(source_root: @repo, root: @install_root)
-    first = Dir.children(CredentialHelperInstall.versions_dir(@install_root)).find { |d| d != second }
-    refute_nil first, "expected two snapshots to swap between"
+    stable, first, second = install_two_snapshots
 
     # THE CONTROL, deterministic — no race. The stable path exists only while
     # `current` does, so any strategy that unlinks it first opens a real hole.
-    FileUtils.rm_f(link)
+    FileUtils.rm_f(CredentialHelperInstall.current_link(@install_root))
     assert_raises(Errno::ENOENT, "with `current` unlinked the stable path must be GONE; if it survives " \
                                  "this control proves nothing about the swap below") { File.stat(stable) }
     CredentialHelperInstall.point_current_at!(@install_root, first)
@@ -233,52 +225,45 @@ class CredentialHelperSurvivesTreeMoveTest < ActiveSupport::TestCase
     # the swapper has provably run, and (2) they do not stop until BOTH a
     # minimum read count AND a minimum number of swaps landed DURING the reads
     # — each bounded by a deadline that fails loudly rather than passing a run
-    # that exercised nothing.
+    # that exercised nothing. with_swapper stops and joins the swapper however
+    # this block leaves, so a raise here cannot leak it.
     min_reads = 2_000
     min_swaps_during_reads = 200
     warmup_swaps = 5
     deadline_seconds = 15
 
-    stop = false
     swaps = 0
-    swapper = Thread.new do
-      until stop
-        CredentialHelperInstall.point_current_at!(@install_root, swaps.even? ? first : second)
-        swaps += 1
-      end
-    end
-
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    elapsed = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) - started }
-    until swaps >= warmup_swaps
-      if elapsed.call > deadline_seconds || !swapper.alive?
-        stop = true
-        swapper.join(20)
-        flunk "the swapper completed only #{swaps}/#{warmup_swaps} warm-up swaps in #{deadline_seconds}s; " \
-              "the concurrency could not be set up"
-      end
-      Thread.pass
-    end
-
-    swaps_at_start = swaps
     reads = 0
     vanished = 0
-    until reads >= min_reads && swaps - swaps_at_start >= min_swaps_during_reads
-      break if elapsed.call > deadline_seconds || !swapper.alive?
-
-      begin
-        File.stat(stable)
-      rescue Errno::ENOENT
-        vanished += 1
-      rescue Errno::EINVAL
-        nil # see the note above — transient resolution, not a missing file
+    swaps_during_reads = 0
+    with_swapper(first, second) do |swap_count, swapper|
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      elapsed = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) - started }
+      until swap_count.call >= warmup_swaps
+        if elapsed.call > deadline_seconds || !swapper.alive?
+          flunk "the swapper completed only #{swap_count.call}/#{warmup_swaps} warm-up swaps in " \
+                "#{deadline_seconds}s; the concurrency could not be set up"
+        end
+        Thread.pass
       end
-      reads += 1
-      Thread.pass if (reads % 16).zero?
+
+      swaps_at_start = swap_count.call
+      until reads >= min_reads && swap_count.call - swaps_at_start >= min_swaps_during_reads
+        break if elapsed.call > deadline_seconds || !swapper.alive?
+
+        begin
+          File.stat(stable)
+        rescue Errno::ENOENT
+          vanished += 1
+        rescue Errno::EINVAL
+          nil # see the note above — transient resolution, not a missing file
+        end
+        reads += 1
+        Thread.pass if (reads % 16).zero?
+      end
+      swaps_during_reads = swap_count.call - swaps_at_start
+      swaps = swap_count.call
     end
-    swaps_during_reads = swaps - swaps_at_start
-    stop = true
-    swapper.join(20)
 
     assert_operator swaps, :>, 1, "the swapper never ran; the concurrency was not exercised"
     assert_operator reads, :>=, min_reads,
@@ -292,7 +277,62 @@ class CredentialHelperSurvivesTreeMoveTest < ActiveSupport::TestCase
                  "re-install would reopen the window this closes. Repoint with rename(2), never rm + symlink."
   end
 
+  # THE HARNESS NEVER LEAKS ITS SWAPPER (/tasks/harden-scratch-worktree-recipes). The read
+  # phase used to stop the swapper on its normal path only, so an unexpected File.stat error
+  # (anything but ENOENT/EINVAL) escaped with the thread still repointing `current` — and it
+  # recreated the install root under @sandbox after teardown removed it. with_swapper stops
+  # and joins in an `ensure`; drop that and this goes red.
+  def test_the_swapper_is_stopped_even_when_the_read_phase_raises
+    _stable, first, second = install_two_snapshots
+    leaked = nil
+
+    error = assert_raises(Errno::EACCES) do
+      with_swapper(first, second) do |swap_count, swapper|
+        leaked = swapper
+        Thread.pass until swap_count.call >= 1 || !swapper.alive?
+        raise Errno::EACCES, "injected File.stat failure in the read phase"
+      end
+    end
+
+    assert_match(/injected/, error.message)
+    refute_nil leaked, "the block never ran, so nothing was exercised"
+    refute_predicate leaked, :alive?,
+                     "the swapper outlived a read phase that raised — it keeps repointing `current` " \
+                     "after the test, and recreates the install root after teardown"
+  ensure
+    leaked&.kill # a red run must not leak into the rest of the suite either
+  end
+
   private
+
+  # Two snapshots to swap `current` between -> [stable helper path, first, second].
+  def install_two_snapshots
+    CredentialHelperInstall.install!(source_root: @repo, root: @install_root)
+    File.write(File.join(@repo, "bin/lib/op-meter.sh"), "# altered\n", mode: "a")
+    second = CredentialHelperInstall.install!(source_root: @repo, root: @install_root)
+    first = Dir.children(CredentialHelperInstall.versions_dir(@install_root)).find { |d| d != second }
+    refute_nil first, "expected two snapshots to swap between"
+
+    [CredentialHelperInstall.helper_path(@install_root), first, second]
+  end
+
+  # Run a thread that repoints `current` between two snapshots for the length of the
+  # block, yielding a swap counter and the thread. The thread is ALWAYS stopped and
+  # joined, however the block leaves — a raise included.
+  def with_swapper(first, second)
+    stop = false
+    swaps = 0
+    swapper = Thread.new do
+      until stop
+        CredentialHelperInstall.point_current_at!(@install_root, swaps.even? ? first : second)
+        swaps += 1
+      end
+    end
+    yield(-> { swaps }, swapper)
+  ensure
+    stop = true
+    swapper&.join(20)
+  end
 
   # A throwaway repo carrying the REAL helper closure, with three commits:
   #   main             — the closure as it ships
