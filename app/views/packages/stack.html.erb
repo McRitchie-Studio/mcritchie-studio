@@ -48,10 +48,10 @@
   </ul>
 
   <div class="pkg-matrix-wrap rounded-2xl border border-subtle bg-surface" data-test="stack-matrix-scroll">
-    <table class="pkg-matrix w-full min-w-[680px] text-sm" data-test="stack-matrix">
+    <table class="pkg-matrix w-full min-w-[560px] md:min-w-[680px] text-sm" data-test="stack-matrix">
       <thead>
         <tr>
-          <th scope="col" class="pkg-sticky-col w-44 md:w-[34%] border-b border-subtle bg-surface px-4 py-3 text-left align-bottom font-medium text-muted">Feature</th>
+          <th scope="col" class="pkg-sticky-col w-32 sm:w-44 md:w-[34%] border-b border-subtle bg-surface px-3 md:px-4 py-3 text-left align-bottom font-medium text-muted">Feature</th>
           <% @packages.each do |package| %>
             <th scope="col" class="border-b border-subtle bg-surface px-3 py-3 text-left align-bottom <%= 'bg-surface-alt' if package.featured? %>"
                 data-test="stack-tier-header" data-package="<%= package.key %>">
@@ -71,32 +71,25 @@
           </tr>
           <% rows.each do |feature| %>
             <tr class="align-top" data-test="stack-row" data-feature="<%= feature.name.parameterize %>" data-status="<%= feature.status %>">
-              <th scope="row" class="pkg-sticky-col border-b border-subtle bg-surface px-4 py-3 text-left font-normal">
-                <div class="flex gap-3">
-                  <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-base" aria-hidden="true">
-                    <% if feature.logo? %>
-                      <span class="flex items-center gap-0.5">
-                        <% feature.logos.each do |logo| %><%= render "packages/logos/#{logo}", size: feature.logos.size > 1 ? "h-3.5 w-3.5" : "h-4 w-4" %><% end %>
-                      </span>
-                    <% else %>
-                      <%= feature.icon %>
-                    <% end %>
-                  </span>
+              <th scope="row" class="pkg-sticky-col border-b border-subtle bg-surface px-3 md:px-4 py-3 text-left font-normal">
+                <div class="flex gap-2 md:gap-3">
+                  <% if feature.brand? %>
+                    <span class="mt-0.5" data-test="stack-lead" data-lead="<%= feature.brand %>"><%= render "packages/brand", key: feature.brand, size: :lead %></span>
+                  <% else %>
+                    <span class="mt-0.5 flex h-7 w-7 md:h-9 md:w-9 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-sm md:text-base"
+                          aria-hidden="true" data-test="stack-lead" data-lead="emoji"><%= feature.icon %></span>
+                  <% end %>
                   <div class="min-w-0">
                     <p class="font-semibold text-heading">
                       <%= feature.name %>
                       <% if feature.planned? %>
-                        <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-muted" data-test="coming-soon">Coming soon</span>
+                        <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 md:px-2 py-0.5 text-[10px] md:text-xs font-medium text-muted" data-test="coming-soon">Coming soon</span>
                       <% end %>
                     </p>
-                    <p class="mt-0.5 text-xs text-muted"><%= feature.blurb %></p>
-                    <% software = feature.display_software.filter_map { |key| [ key, WorkspaceIconConfig.tile(key) ] if WorkspaceIconConfig.tile(key) } %>
-                    <% if software.any? %>
-                      <span class="mt-1.5 flex flex-wrap items-center gap-1.5" data-test="stack-software">
-                        <% software.each do |key, tile| %>
-                          <%= image_tag tile, alt: WorkspaceIconConfig.software_name(key), title: WorkspaceIconConfig.software_name(key),
-                                class: "h-6 w-6", loading: "lazy", data: { software: key } %>
-                        <% end %>
+                    <p class="mt-0.5 hidden text-xs text-muted md:block" data-test="stack-blurb"><%= feature.blurb %></p>
+                    <% if feature.strip_brands.any? %>
+                      <span class="mt-2 flex flex-wrap items-center gap-1.5" data-test="stack-software">
+                        <% feature.strip_brands.each do |key| %><%= render "packages/brand", key: key, size: :chip %><% end %>
                       </span>
                     <% end %>
                   </div>
@@ -121,7 +114,7 @@
       <% end %>
       <tfoot>
         <tr>
-          <td class="pkg-sticky-col bg-surface px-4 py-4"></td>
+          <td class="pkg-sticky-col bg-surface px-3 md:px-4 py-4"></td>
           <% @packages.each do |package| %>
             <td class="px-3 py-4 <%= 'bg-surface-alt' if package.featured? %>">
               <%= package_cta_link package, class: "btn #{package.featured? ? 'btn-primary' : 'btn-neutral'} btn-sm w-full justify-center whitespace-nowrap" %>

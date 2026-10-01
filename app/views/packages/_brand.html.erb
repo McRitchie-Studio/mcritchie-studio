@@ -1,0 +1,18 @@
+<%# One brand's logo, full color on a light chip so a dark mark (GitHub, X)
+    still reads in dark mode. `key` is a software key from
+    config/workspace_icons.yml; `size` is :lead (the row's leading tile) or
+    :chip (a strip). A brand with no rendered mark draws its initials as a text
+    badge, so a new brand never renders a broken image. %>
+<% name = WorkspaceIconConfig.software_name(key) %>
+<% mark = WorkspaceIconConfig.brand(key) %>
+<% box = local_assigns[:size] == :lead ? "h-7 w-7 md:h-9 md:w-9" : "h-7 w-7" %>
+<% img = local_assigns[:size] == :lead ? "h-5 w-5 md:h-6 md:w-6" : "h-5 w-5" %>
+<span class="inline-flex <%= box %> shrink-0 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-slate-900/10"
+      title="<%= name %>" role="img" aria-label="<%= name %>"
+      data-test="brand-logo" data-brand="<%= key %>" data-fallback="<%= mark.nil? %>">
+  <% if mark %>
+    <%= image_tag mark, alt: "", class: "#{img} object-contain", loading: "lazy", aria: { hidden: true } %>
+  <% else %>
+    <span class="text-[10px] font-bold uppercase leading-none tracking-tight text-slate-700" aria-hidden="true"><%= name.gsub(/[^[:alnum:]]/, "").first(2) %></span>
+  <% end %>
+</span>

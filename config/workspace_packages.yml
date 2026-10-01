@@ -29,9 +29,12 @@
 # Feature keys:
 #   name      customer-facing label
 #   category  the group it sits under on /packages/stack (see `categories`)
-#   icon      an emoji, a brand logo key (google, tiktok, instagram — partials in
-#             app/views/packages/logos/), or a list of logo keys shown side by side.
-#             Use a logo only where the customer gets that brand's product.
+#   icon      a software key (config/workspace_icons.yml) when the row is about ONE
+#             brand's product: the row leads with that brand's logo, and that
+#             brand joins its tier's "Powered by" row on /packages. Otherwise an
+#             emoji: the neutral lead of a row no single brand owns (Hosting
+#             mode, Support). Use a logo only where the customer gets that
+#             brand's product.
 #   blurb     one customer-facing sentence: what they get, not how
 #   vibe/pro/growth/enterprise
 #             what that tier gets, shown IN the row:
@@ -49,6 +52,10 @@
 #   software  the software keys (config/workspace_icons.yml) the feature puts in a
 #             client's stack — what /stack draws for a client on that tier. Only a
 #             delivered (live or builtin) feature provisions; a planned one does not.
+#             /packages/stack draws them (and `shows`, less the lead brand) as the
+#             row's logo strip; /packages draws a delivered row's brands on its
+#             tier's card. A planned row's logos show only on /packages/stack,
+#             beside its Coming soon tag.
 #   shows     software keys drawn beside the row on /packages/stack WITHOUT
 #             provisioning them: an add-on a client takes per contract, recorded
 #             on the client (stack_clients.extra_software), not by its tier
@@ -129,7 +136,7 @@ features:
   # --- hosting -------------------------------------------------------------
   - name: Apps
     category: hosting
-    icon: "🧩"
+    icon: github
     blurb: Built by our agents from your description, then reviewed and shipped through our own pipeline.
     vibe: 1 app
     pro: 1 app
@@ -141,7 +148,7 @@ features:
     software: [github, rails]
   - name: Server
     category: hosting
-    icon: "🚀"
+    icon: heroku
     blurb: Where your app runs. Bigger tiers stay awake and add a worker for background jobs.
     vibe: Eco dyno (sleeps when idle)
     pro: Basic dyno
@@ -180,7 +187,7 @@ features:
     status: builtin
   - name: Error alerts
     category: hosting
-    icon: "🚨"
+    icon: sentry
     blurb: Errors reported with their full context the moment they happen, not when a customer writes in.
     growth: true
     enterprise: true
@@ -190,7 +197,7 @@ features:
   # --- data ----------------------------------------------------------------
   - name: Database
     category: data
-    icon: "🐘"
+    icon: postgres
     blurb: A Postgres database for your app's records. Vibe apps keep their data in files.
     pro: Postgres, small
     growth: Postgres, larger
@@ -200,7 +207,7 @@ features:
     software: [postgres]
   - name: Cache and job queue
     category: data
-    icon: "🧰"
+    icon: redis
     blurb: Redis for caching and the background jobs your worker runs.
     growth: Redis
     enterprise: Redis, sized to need
@@ -219,7 +226,7 @@ features:
   # --- domain --------------------------------------------------------------
   - name: Web address
     category: domain
-    icon: "🌐"
+    icon: squarespace
     blurb: Your app's address. From Pro, your own domain, registered and pointed at your app for you.
     vibe: you.mcritchie.studio
     pro: 1 own domain
@@ -250,7 +257,7 @@ features:
     status: live
   - name: App email from your domain
     category: email
-    icon: "✉️"
+    icon: resend
     blurb: Your app's sign-in links and receipts sent from your own domain, not ours.
     pro: Low volume
     growth: Higher volume
@@ -292,7 +299,7 @@ features:
   # --- storage and backup --------------------------------------------------
   - name: File storage
     category: storage
-    icon: "🗄️"
+    icon: cloudflare
     blurb: A private Cloudflare R2 bucket for your app's uploads and exports.
     pro: 1 private bucket
     growth: 1 private bucket
@@ -386,7 +393,7 @@ features:
   # --- security ------------------------------------------------------------
   - name: Password vault
     category: security
-    icon: "🔐"
+    icon: 1password
     blurb: Every new login filed in 1Password, never pasted in chat.
     growth: true
     enterprise: true
@@ -415,9 +422,10 @@ features:
   - name: Custom connectors
     category: connectors
     icon: "🔌"
-    blurb: Your agent reads the systems you already use, such as Egnyte, built for your business.
+    blurb: Your agent reads the systems you already use, such as Egnyte or Slack, built for your business.
     enterprise: Scoped per client
     status: planned
+    shows: [egnyte, slack]
 
   # --- add-ons (Enterprise, per contract) ----------------------------------
   - name: Payments
@@ -440,4 +448,4 @@ features:
     blurb: Writing, image and search features built on leading AI models.
     enterprise: Add-on
     status: builtin
-    shows: [anthropic]
+    shows: [anthropic, openai]
