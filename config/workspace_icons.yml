@@ -89,6 +89,15 @@ workspaces:
     badge: lib/workspace_icons/badges/commercial-welding.png
     accent: "#2D5E8E"
     vaults: [Commercial Welding]
+  # Clients with no Google workspace of ours and no vault yet: here so /stack
+  # can show them (a stack_clients slug must be a workspace). Both have no
+  # badge, so bin/workspace-icon --all skips them until one is added.
+  cyvasse:
+    name: Cyvasse
+    vaults: []
+  10and5:
+    name: 10&5 Hospitality
+    vaults: []
   family:
     name: McRitchie Family
     vaults: [family-agents]

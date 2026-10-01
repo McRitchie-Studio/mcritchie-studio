@@ -1,21 +1,19 @@
 <% content_for :title, "Packages · McRitchie Studio" %>
-<% features = WorkspacePackage.features %>
 <% discount = WorkspacePackage.annual_discount_percent %>
 
 <section class="max-w-7xl mx-auto px-4 py-10" data-test="packages-page">
-  <header class="text-center mb-10">
+  <header class="text-center mb-8">
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Packages</p>
-    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">From your first app to an agentic company</h1>
+    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">From your first app to a connected company</h1>
     <p class="text-muted max-w-2xl mx-auto">
-      Start free on our app template, then add hosting, your own workspace and an agent as you grow.
-      Each tier includes everything below it. You make a handful of clicks we can't make for you;
-      our agents do the rest and check every step.
+      Start free with an app our agents build for you, then add your own domain, your email and a
+      marketing team as you grow. Each tier includes everything in the one before it.
     </p>
   </header>
 
   <div x-data="{ annual: false }">
     <% if discount.positive? %>
-      <div class="flex justify-center mb-6" data-test="billing-toggle">
+      <div class="flex justify-center mb-8" data-test="billing-toggle">
         <div class="inline-flex rounded-full border border-subtle bg-surface p-1 text-sm font-semibold">
           <button type="button" class="rounded-full px-4 py-1.5" :class="annual ? 'text-muted' : 'bg-primary text-white'" @click="annual = false"
                   aria-pressed="true" :aria-pressed="annual ? 'false' : 'true'" data-test="billing-monthly">Monthly</button>
@@ -27,160 +25,91 @@
       </div>
     <% end %>
 
-    <%# ONE SWIM LANE PER TIER ON ONE ROW GRID. Each card spans every row and
-        adopts the outer grid's rows (subgrid), so a feature sits on the SAME line
-        in every lane and the difference reads across it: "2 users" beside
-        "10 users". Four lanes from xl, two from md (two bands of two), stacked
-        below md. The outer gap-y separates the bands; each card sets its own
-        gap-y-0, because a subgrid inherits the parent's gap. %>
-    <div class="space-y-6 md:space-y-0 md:grid md:grid-cols-2 xl:grid-cols-4 md:gap-x-5 md:gap-y-6" data-test="package-lanes">
+    <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4" data-test="package-cards">
+      <% previous = nil %>
       <% @packages.each do |package| %>
-        <% featured = package.key == "agentic" %>
-        <article class="rounded-2xl border <%= featured ? 'border-primary' : 'border-subtle' %> bg-surface px-5 md:grid md:grid-rows-subgrid md:gap-y-0"
-                 style="grid-row: span <%= features.size + 1 %> / span <%= features.size + 1 %>"
-                 data-test="package-card" data-package="<%= package.key %>">
-          <div class="pt-6 pb-5">
-            <div class="flex items-baseline justify-between gap-3 mb-1">
-              <h2 class="text-2xl font-bold text-heading"><%= package.name %></h2>
-              <% if featured %>
-                <span class="text-xs font-semibold uppercase tracking-wide text-primary">Most complete</span>
-              <% end %>
-            </div>
-            <p class="text-body mb-4"><%= package.tagline %></p>
-            <div data-test="package-price">
-              <% if package.free? %>
-                <div data-test="price-free">
-                  <span class="text-4xl font-bold text-heading">Free</span>
-                  <p class="text-xs text-muted mt-1">No card needed</p>
-                </div>
-              <% elsif package.priced? %>
-                <div x-show="!annual" data-test="price-monthly">
-                  <span class="text-4xl font-bold text-heading"><%= number_to_currency(package.price_monthly, precision: 0) %></span>
-                  <span class="text-muted">/month</span>
-                  <% if discount.positive? %>
-                    <p class="text-xs text-muted mt-1">or <%= number_to_currency(package.annual_price, precision: 0) %>/year billed annually — save <%= discount %>%</p>
-                  <% end %>
-                </div>
-                <div x-show="annual" style="display: none" data-test="price-annual">
-                  <span class="text-4xl font-bold text-heading"><%= number_to_currency(package.annual_monthly_equivalent, precision: 0) %></span>
-                  <span class="text-muted">/month</span>
-                  <p class="text-xs text-muted mt-1"><%= number_to_currency(package.annual_price, precision: 0) %> billed annually</p>
-                </div>
-              <% else %>
-                <p class="text-lg font-semibold text-heading">Pricing coming soon</p>
-              <% end %>
-            </div>
-          </div>
+        <article class="relative flex flex-col rounded-2xl border <%= package.featured? ? 'border-primary border-2 shadow-lg' : 'border-subtle' %> bg-surface p-6"
+                 data-test="package-card" data-package="<%= package.key %>" data-featured="<%= package.featured? %>">
+          <% if package.featured? %>
+            <span class="absolute -top-3 left-6 rounded-full bg-primary px-3 py-0.5 text-xs font-semibold uppercase tracking-wide text-white"
+                  data-test="featured-badge">Most popular</span>
+          <% end %>
+          <h2 class="text-2xl font-bold text-heading"><%= package.name %></h2>
+          <p class="mt-1 min-h-[3rem] text-body" data-test="package-tagline"><%= package.tagline %></p>
 
-          <% features.each_with_index do |feature, index| %>
-            <% value = feature.value_for(package.key) %>
-            <div class="flex gap-3 border-t border-subtle py-4 <%= 'pb-6' if index == features.size - 1 %> <%= 'opacity-50' if value.nil? %>"
-                 data-test="feature-row" data-feature="<%= feature.name.parameterize %>"
-                 data-included="<%= !value.nil? %>" data-status="<%= feature.status %>">
-              <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-lg"
-                    data-test="feature-icon" aria-hidden="<%= feature.logo? && value ? 'false' : 'true' %>">
-                <% if value.nil? %>
-                  <%# A brand logo appears only where the customer GETS that product, so a
-                      row this package does not include shows a plain mark instead. %>
-                  <span class="text-muted" data-test="not-included-mark">–</span>
-                <% elsif feature.logo? %>
-                  <% size = feature.logos.size > 1 ? "h-4 w-4" : "h-5 w-5" %>
-                  <span class="flex items-center gap-0.5">
-                    <% feature.logos.each do |logo| %><%= render "packages/logos/#{logo}", size: size %><% end %>
-                  </span>
-                <% else %>
-                  <%= feature.icon %>
-                <% end %>
-              </span>
-              <div class="min-w-0">
-                <p class="font-semibold text-heading">
-                  <%= feature.name %>
-                  <% if value && !feature.live? %>
-                    <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-2 py-0.5 text-xs font-medium text-muted">Coming soon</span>
-                  <% end %>
-                </p>
-                <% if value.nil? %>
-                  <p class="text-sm text-muted" data-test="feature-value">Not included</p>
-                <% else %>
-                  <% if value.is_a?(String) %>
-                    <p class="mt-1" data-test="feature-value">
-                      <span class="inline-block rounded-full border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold"><%= value %></span>
-                    </p>
-                  <% end %>
-                  <p class="text-sm text-muted mt-1"><%= feature.blurb %></p>
+          <div class="mt-4 min-h-[4.5rem]" data-test="package-price">
+            <% if package.free? %>
+              <div data-test="price-free">
+                <span class="text-4xl font-bold text-heading">Free</span>
+                <p class="text-xs text-muted mt-1">No card needed</p>
+              </div>
+            <% elsif package.priced? %>
+              <div x-show="!annual" data-test="price-monthly">
+                <span class="text-4xl font-bold text-heading"><%= number_to_currency(package.price_monthly, precision: 0) %></span>
+                <span class="text-muted">/month</span>
+                <% if discount.positive? %>
+                  <p class="text-xs text-muted mt-1">or <%= number_to_currency(package.annual_price, precision: 0) %>/year billed annually</p>
                 <% end %>
               </div>
-            </div>
-          <% end %>
+              <div x-show="annual" style="display: none" data-test="price-annual">
+                <span class="text-4xl font-bold text-heading"><%= number_to_currency(package.annual_monthly_equivalent, precision: 0) %></span>
+                <span class="text-muted">/month</span>
+                <p class="text-xs text-muted mt-1"><%= number_to_currency(package.annual_price, precision: 0) %> billed annually</p>
+              </div>
+            <% else %>
+              <div data-test="price-custom">
+                <span class="text-4xl font-bold text-heading"><%= package.price_label || "Pricing coming soon" %></span>
+                <p class="text-xs text-muted mt-1">Priced to the systems we connect</p>
+              </div>
+            <% end %>
+          </div>
+
+          <%= package_cta_link package, class: "btn #{package.featured? ? 'btn-primary' : 'btn-neutral'} mt-5 w-full justify-center" %>
+
+          <div class="mt-6 border-t border-subtle pt-5">
+            <% if previous %>
+              <p class="mb-3 text-sm font-semibold text-heading" data-test="includes-previous">Everything in <%= previous.name %>, plus:</p>
+            <% end %>
+            <ul class="space-y-2.5" data-test="package-highlights">
+              <% package.highlights.each do |highlight| %>
+                <li class="flex gap-2.5 text-sm text-body" data-test="package-highlight">
+                  <svg class="mt-0.5 h-4 w-4 shrink-0 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/>
+                  </svg>
+                  <span><%= highlight %></span>
+                </li>
+              <% end %>
+            </ul>
+          </div>
         </article>
+        <% previous = package %>
       <% end %>
     </div>
   </div>
 
-  <section class="mt-12" aria-labelledby="how-it-works">
+  <div class="mt-10 text-center">
+    <%= link_to packages_stack_path, class: "inline-flex items-center gap-2 rounded-full border border-primary px-5 py-2.5 font-semibold text-primary hover:bg-primary hover:text-white transition-colors",
+          data: { test: "full-stack-link" } do %>
+      See the full stack for every tier <span aria-hidden="true">→</span>
+    <% end %>
+    <p class="mt-2 text-sm text-muted">Every server, database, service and agent, tier by tier.</p>
+  </div>
+
+  <section class="mt-14" aria-labelledby="how-it-works">
     <h2 id="how-it-works" class="text-xl font-semibold text-heading mb-4 text-center">How a launch works</h2>
     <ol class="grid gap-4 sm:grid-cols-3">
       <li class="rounded-xl bg-surface-alt p-4">
-        <p class="font-semibold text-heading mb-1">1. We guide</p>
-        <p class="text-sm text-muted">Our agent walks you through each step and tells you exactly what to click.</p>
+        <p class="font-semibold text-heading mb-1">1. You describe it</p>
+        <p class="text-sm text-muted">Tell us what you want built. Our agents design it, build it and check every step.</p>
       </li>
       <li class="rounded-xl bg-surface-alt p-4">
         <p class="font-semibold text-heading mb-1">2. You approve</p>
         <p class="text-sm text-muted">Purchases and account approvals stay yours: your card, your admin console.</p>
       </li>
       <li class="rounded-xl bg-surface-alt p-4">
-        <p class="font-semibold text-heading mb-1">3. We verify</p>
-        <p class="text-sm text-muted">Every step is checked before the next begins, ending with your first agent draft.</p>
+        <p class="font-semibold text-heading mb-1">3. We run it</p>
+        <p class="text-sm text-muted">Hosting, email, backups and marketing handled, and watched, after launch.</p>
       </li>
     </ol>
   </section>
-
-  <% if admin? %>
-    <section class="mt-14 rounded-2xl border border-subtle bg-surface p-6" data-test="sop-map" aria-labelledby="sop-map-title">
-      <div class="flex flex-wrap items-baseline justify-between gap-3 mb-4">
-        <h2 id="sop-map-title" class="text-xl font-semibold text-heading">SOP map <span class="text-sm font-normal text-muted">· admins only</span></h2>
-        <% if @launch_sop_path %>
-          <%= link_to "🏢 workspace-launch — the master SOP", doc_path(@launch_sop_path), class: "text-sm font-semibold text-primary hover:underline", data: { test: "sop-map-master" } %>
-        <% end %>
-      </div>
-      <p class="text-sm text-muted mb-5">
-        Which registered SOP delivers each feature. Steffon runs them in this order through
-        <code>workspace-launch</code>; edit <code>config/workspace_packages.yml</code> to change what a package gets.
-      </p>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-left text-muted border-b border-subtle">
-              <th class="py-2 pr-4 font-medium">Feature</th>
-              <% @packages.each do |package| %><th class="py-2 pr-4 font-medium"><%= package.name %></th><% end %>
-              <th class="py-2 pr-4 font-medium">SOP</th>
-              <th class="py-2 pr-4 font-medium">You do</th>
-              <th class="py-2 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <% features.each do |feature| %>
-              <tr class="border-b border-subtle last:border-0 align-top" data-test="sop-map-row" data-sop="<%= feature.sop %>">
-                <td class="py-2 pr-4 text-heading"><%= feature.name %></td>
-                <% @packages.each do |package| %>
-                  <% value = feature.value_for(package.key) %>
-                  <td class="py-2 pr-4 text-body"><%= value.nil? ? "—" : (value == true ? "✓" : value) %></td>
-                <% end %>
-                <td class="py-2 pr-4">
-                  <% if feature.doc_path %>
-                    <%= link_to feature.sop, doc_path(feature.doc_path), class: "font-mono text-primary hover:underline" %>
-                    <% if feature.section %><span class="text-muted"> · §<%= feature.section %></span><% end %>
-                  <% else %>
-                    <span class="text-muted">— no SOP yet</span>
-                  <% end %>
-                </td>
-                <td class="py-2 pr-4 text-body"><%= feature.you_do.presence || "Nothing" %></td>
-                <td class="py-2 text-muted"><%= feature.status %></td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  <% end %>
 </section>

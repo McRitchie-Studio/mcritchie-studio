@@ -55,7 +55,7 @@ class AppRequest < ApplicationRecord
   validate :subdomain_is_claimable, if: -> { subdomain.present? && (new_record? || will_save_change_to_subdomain?) }
   # Admins are exempt: Mr. McRitchie seeds the App Builder with showcase builds
   # (his legacy apps) through the same funnel, and those are not customers.
-  validate :one_free_app_per_account, if: -> { user && !user.admin? && tier == "launch" && HOLDING.include?(status) }
+  validate :one_free_app_per_account, if: -> { user && !user.admin? && tier == "vibe" && HOLDING.include?(status) }
 
   before_validation :normalize
   before_validation -> { self.token ||= SecureRandom.urlsafe_base64(18) }, on: :create
@@ -127,7 +127,7 @@ class AppRequest < ApplicationRecord
         title: "Build Launch App #{subdomain}",
         stage: "designed",
         priority: 1,
-        description: "#{showcase? ? 'Showcase' : 'Launch-tier'} app requested through /build by #{user&.email || 'unknown'}.",
+        description: "#{showcase? ? 'Showcase' : 'Vibe-tier'} app requested through /build by #{user&.email || 'unknown'}.",
         metadata: { "devops" => {
           "kind" => "feature",
           "acceptance" => [ "#{host} serves the app the requester described" ],
@@ -157,7 +157,7 @@ class AppRequest < ApplicationRecord
   end
 
   def one_free_app_per_account
-    others = self.class.holding.where(user: user, tier: "launch")
+    others = self.class.holding.where(user: user, tier: "vibe")
     others = others.where.not(id: id) if persisted?
     errors.add(:base, "Your free plan includes one app, and you already have one.") if others.exists?
   end
