@@ -10,6 +10,8 @@ Rails.application.routes.draw do
   get "privacy", to: "landing#privacy", as: :privacy
   get "about",   to: "landing#about",   as: :about
   get "packages", to: "packages#index", as: :packages
+  # The full stack behind every tier: the software-by-tier matrix /packages links to.
+  get "packages/stack", to: "packages#stack", as: :packages_stack
   # The app funnel: prompt → sign in → claim <name>.mcritchie.studio → queued
   # for an agent. `check` is the live subdomain availability probe.
   get   "build",        to: "build#new",    as: :build
