@@ -118,4 +118,16 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
 
     assert_includes response.body, ContactSubmission::SMS_NUMBER
   end
+
+  test "terms describe a public site and point to the messaging terms" do
+    get terms_path
+
+    assert_response :success
+    assert_includes response.body, "McRitchie Studio LLC"
+    assert_includes response.body, "Parts of this website are open to everyone"
+    assert_select "a[href='#{privacy_path}']", text: "Privacy Policy and Messaging Terms and Conditions"
+    # the internal-tool framing must not return
+    assert_not_includes response.body, "internal content production tool"
+    assert_not_includes response.body, "invitation-only"
+  end
 end
