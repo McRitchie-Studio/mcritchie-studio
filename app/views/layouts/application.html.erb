@@ -74,7 +74,9 @@
       </div>
     <% end %>
 
-    <%= render "footers/site_footer" if show_site_footer? %>
+    <%# The site footer and its booking popup (studio-engine; the facts and the
+        pages it shows on are in config/initializers/studio.rb). %>
+    <%= studio_site_footer %>
 
     <%# Modal host (engine) + the app's modal partials. Powers sign-in (auth),
         the "check your inbox" magic-link confirmation and the first-name
