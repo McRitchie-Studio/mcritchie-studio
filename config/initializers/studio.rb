@@ -142,12 +142,13 @@ Studio.configure do |config|
   # Re-measure when the schedule's header or hours change. The 0.83.0 crop was
   # fixed at 205-619px, which hides the last three slots of a full day.
   #
-  # GUARDED, and the guard has an exit: studio-engine 0.83.0 crops by default
-  # and has no such setter; the version after it shows the frame whole unless
-  # this is declared. Declaring it here first is what lets the engine change
-  # land without un-cropping this site. Drop the `if` once the Gemfile floor is
-  # above 0.83.0.
-  config.booking_crop = { top: 211, bottom: 757, frame_height: 869 } if config.respond_to?(:booking_crop=)
+  # Without this line the engine shows the frame whole.
+  config.booking_crop = { top: 211, bottom: 757, frame_height: 869 }
+
+  # /schedule is this app's own page (ScheduleController), not the engine's
+  # drawn one, so the engine has to be told where it is: booking links fall
+  # back to it, and it keeps the footer for a signed-in viewer.
+  config.booking_path = ->(view) { view.schedule_index_path }
 
   # Draw the engine's standard email page at /admin/emails (Studio::EmailsController
   # over Studio::EmailCatalog). Opt-in because turf-monster's own routes.rb already
