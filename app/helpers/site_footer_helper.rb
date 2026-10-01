@@ -23,7 +23,7 @@ module SiteFooterHelper
   def site_footer_facts
     {
       name: "McRitchie Studio",
-      tagline: "Solutions for business, people, agents and families.",
+      tagline: "Software & Marketing Solutions",
       street: "3000 Lawrence St",
       city_line: "Denver, CO 80205",
       phone: SITE_FOOTER_PHONE,
