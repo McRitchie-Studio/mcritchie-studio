@@ -25,7 +25,8 @@ class Broadcast < ApplicationRecord
       "build" => "https://mcritchie.studio/build"
     }.freeze,
     "cyvasse_your_games" => {
-      "play" => "https://cyvasse.xyz/"
+      "play" => "https://cyvasse.xyz/",
+      "night" => "https://cyvasse.xyz/night"
     }.freeze
   }.freeze
 
@@ -34,6 +35,13 @@ class Broadcast < ApplicationRecord
   # subject names (%{username}) are required too; see #required_merge_fields.
   TEMPLATE_MERGE_FIELDS = {
     "cyvasse_your_games" => %w[username games].freeze
+  }.freeze
+
+  # Templates whose subject depends on the reader (task tiered-your-games-copy):
+  # template_key => a module answering subject_template(fields, default:), where
+  # default is the broadcast's stored subject. See #subject_for.
+  SUBJECT_RESOLVERS = {
+    "cyvasse_your_games" => "Broadcasts::CyvasseYourGames"
   }.freeze
 
   # Registry of available copy templates: key => human label. Each key maps to
@@ -151,9 +159,15 @@ class Broadcast < ApplicationRecord
     required_merge_fields.any?
   end
 
-  # The subject for one reader.
+  # The subject for one reader: the template's resolver picks the line
+  # (SUBJECT_RESOLVERS), else the stored subject; then its %{field}s are
+  # filled, the "<key>_count" phrases (Broadcasts::MergeFields.with_counts)
+  # included.
   def subject_for(fields)
-    Broadcasts::MergeFields.interpolate(subject.presence || "(no subject)", fields)
+    stored = subject.presence || "(no subject)"
+    resolver = SUBJECT_RESOLVERS[template_key]&.constantize
+    line = resolver ? resolver.subject_template(fields, default: stored) : stored
+    Broadcasts::MergeFields.interpolate(line, Broadcasts::MergeFields.with_counts(fields))
   end
 
   StageResult = Data.define(:staged, :skipped) do

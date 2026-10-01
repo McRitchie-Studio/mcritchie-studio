@@ -2,28 +2,51 @@
     stats (task staged-email-queue). It needs merge fields (username, games;
     Broadcast::TEMPLATE_MERGE_FIELDS), so it goes out only through the staged
     queue, where a player without them is skipped rather than mailed blanks.
-    Wins, losses and rank are shown only when the player has them. %>
+
+    The copy is tiered by games played (task tiered-your-games-copy), by the
+    same Broadcasts::CyvasseYourGames that picks the subject: a player with 5
+    or more games is led by their history (games, wins, rank, the year they
+    joined), one with fewer by their account waiting for them. Every tier
+    invites them to Cyvasse Night through its own tracked link. The editor's
+    preview, with no reader, shows the history tier with field names in braces. %>
 <% play_url = broadcast_link(:play, Broadcast::TEMPLATE_LINKS["cyvasse_your_games"]["play"]) %>
+<% night_url = broadcast_link(:night, Broadcast::TEMPLATE_LINKS["cyvasse_your_games"]["night"]) %>
+<% history = @merge_fields.nil? || Broadcasts::CyvasseYourGames.history?(@merge_fields) %>
 <% wins = merge_field(:wins, fallback: "") %>
 <% losses = merge_field(:losses, fallback: "") %>
 <% rank = merge_field(:all_time_rank, fallback: "") %>
+<% joined_year = @merge_fields ? Broadcasts::CyvasseYourGames.joined_year(@merge_fields) : "{joined_on}" %>
+<% p_style = "margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;" %>
 <% content_for :email_reason, "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
-<%= render "broadcasts/email_head",
-      hero_file: "cyvasse_header_live.jpg",
-      hero_alt:  "A Cyvasse board mid-game",
-      preheader: "Your record came across to the new Cyvasse. Pick up where you left off.",
-      title:     "Your games are still here",
-      subtitle:  "#{ERB::Util.html_escape(merge_field(:username))}, your Cyvasse record came with you." %>
+<% if history %>
+  <%= render "broadcasts/email_head",
+        hero_file: "cyvasse_header_live.jpg",
+        hero_alt:  "A Cyvasse board mid-game",
+        preheader: "Your record came across to the new Cyvasse. Pick up where you left off.",
+        title:     "Your games are still here",
+        subtitle:  "#{ERB::Util.html_escape(merge_field(:username))}, your Cyvasse record came with you." %>
+<% else %>
+  <%= render "broadcasts/email_head",
+        hero_file: "cyvasse_header_live.jpg",
+        hero_alt:  "A Cyvasse board mid-game",
+        preheader: "Your Cyvasse account came across to the new game. Come play.",
+        title:     "Your account is still here",
+        subtitle:  "#{ERB::Util.html_escape(merge_field(:username))}, your Cyvasse account is waiting for you." %>
+<% end %>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
   <tr>
     <td style="padding:28px 32px 8px 32px;">
-      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">Hi <%= merge_field(:username) %>,</p>
-      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">You played <strong><%= merge_field(:games) %> games</strong> of Cyvasse, and every one of them came across to the rebuilt game.</p>
+      <p style="<%= p_style %>">Hi <%= merge_field(:username) %>,</p>
+      <% if history %>
+        <p style="<%= p_style %>" data-tier="history">You played <strong><%= merge_count(:games, "game") %></strong> of Cyvasse<%= " since joining in #{joined_year}" if joined_year.present? %>, and every one of them came across to the rebuilt game<%= wins.present? && wins.to_i.positive? ? ", along with your #{merge_count(:wins, 'win')}" : "" %>.<%= " You still hold ##{rank} on the all-time board." if rank.present? %></p>
+      <% else %>
+        <p style="<%= p_style %>" data-tier="account">Your Cyvasse account and your history are waiting for you on the rebuilt game<%= ", including the #{merge_count(:games, 'game')} you played" if Broadcasts::CyvasseYourGames.count(@merge_fields, "games").positive? %>. Come play whenever you like.</p>
+      <% end %>
     </td>
   </tr>
 
-  <% if wins.present? || losses.present? || rank.present? %>
+  <% if history && (wins.present? || losses.present? || rank.present?) %>
   <tr>
     <td style="padding:4px 32px 8px 32px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f5ff;border-radius:10px;">
@@ -48,7 +71,13 @@
   </tr>
 
   <tr>
-    <td style="padding:20px 32px 28px 32px;">
+    <td style="padding:20px 32px 8px 32px;">
+      <p style="<%= p_style %>" data-block="night">One more thing: we&rsquo;re hosting <strong>Cyvasse Night</strong> on Tuesday, October 6, at 7 PM Mountain. Come play a few games with the rest of us. <a href="<%= night_url %>" style="color:#6d5ff5;font-weight:700;text-decoration:underline;">See you at Cyvasse Night</a>.</p>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:12px 32px 28px 32px;">
       <p style="margin:0 0 4px 0;font-size:16px;line-height:1.65;color:#2b3440;">See you on the board.</p>
       <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">&mdash; Alex</p>
     </td>
