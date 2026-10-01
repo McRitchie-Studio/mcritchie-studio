@@ -73,13 +73,20 @@ Use the production board. Do not pass `--local`.
    it against the PR head on a throwaway desk (never the builder's desk):
 
    ```bash
-   REPO=/Users/alex/projects/<repo>; ARB="$(mktemp -d)/arb-<slug>"   # scratchpad, outside the managed root
-   git -C "$REPO" worktree add "$ARB" --detach origin/<branch>
-   cp "$REPO/.worktrees/<slug>/.env.test.local" "$ARB"/
-   test -s "$ARB/.env.test.local" || echo "STOP: no .env.test.local"
+   REPO=/Users/alex/projects/<repo>; ARB="$(mktemp -d)/arb-<slug>"
+   git -C "$REPO" worktree add "$ARB" --detach origin/<branch> &&
+     cp "$REPO/.worktrees/<slug>/.env.test.local" "$ARB"/ &&
+     test -s "$ARB/.env.test.local" &&
+     echo "ready: $ARB" ||
+     echo "STOP: setup failed (no .env.test.local?); reproduce nothing in $ARB"
    ```
 
-   Run the reviewer's trigger and the builder's evidence there. Whichever
+   The block is one `&&` chain, so a missing `.env.test.local` stops it rather
+   than printing a warning the next line ignores. Run the reviewer's trigger and
+   the builder's evidence there, **every rails command prefixed `RAILS_ENV=test`**:
+   a bare `bin/rails` boots development, whose database is the shared one
+   (`DeskDatabaseGuard` refuses that boot in a hub throwaway; the satellites have
+   no such guard). Whichever
    claim survives contact with the tree is the one that wins. Remove the
    throwaway when done: `git -C "$REPO" worktree remove --force "$ARB"`. Never cut it
    under `.worktrees/`: that is a managed desk, and a git removal leaves a ledger ghost.

@@ -92,6 +92,35 @@ defaults.
 
 `studio/modals/_scoped_host` was never forked here and has always propagated from the engine.
 
+## About page
+
+`/about` (`landing#about`) is the studio's company page: what it does, how a
+launch works, who runs it, and the ways to get in touch. Public, static, and
+linked from the footer's Company column. Its copy restates the home page and
+`/packages`; keep the three in step when one changes.
+
+## Site footer (public pages)
+
+`layouts/application` renders `footers/_site_footer` on every page a visitor
+sees, and on the public pages for a signed-in viewer too
+(`SiteFooterHelper#show_site_footer?`, `SITE_FOOTER_PUBLIC_CONTROLLERS`). Every
+other signed-in page is a working surface and carries none.
+
+- **Facts live in one place**: `SiteFooterHelper#site_footer_facts` (address,
+  the team@ email, social profiles, link columns). The footer prints no phone
+  number, by the operator's choice; it is where the SMS registration's reviewers
+  find the privacy policy, terms and `/contact`. A social entry with a `nil` URL
+  renders its icon unlinked.
+- **"Schedule a call"** links carry `data-booking-popup`: a click opens a
+  `<dialog>` holding Google's booking page (markup in `footers/_site_footer`,
+  script in `footers/_assets`). The frame is requested when the dialog first
+  opens. The links' href stays `/schedule`, the fallback.
+- **The map** is Leaflet (vendored at `public/vendor/leaflet-1.9.4`) on
+  OpenStreetMap's keyless tiles; the script is fetched only when a
+  `[data-footer-map]` is on the page (`footers/_assets`). Dark mode
+  filters the same tiles in CSS; there is no second tile set. With scripts
+  blocked, the element is a link to directions.
+
 ## JS Modules (importmap)
 
 - `kanban_board` — drag-and-drop task board with optimistic DOM moves, API transitions, toast notifications. Race-condition guard (`_pendingMoves`) prevents concurrent API calls for same task. Attached to `window.kanbanBoard` for Alpine `x-data` access.
@@ -111,5 +140,5 @@ Public-facing chat interface powered by Claude API. Users can chat with an AI Al
 
 ### Landing Page
 - **Hero** — Denver skyline background with Ken Burns pan animation (15s linear), dark overlay for text contrast.
-- **Get in Touch section** — Two cards: "Chat Over Video" (Sprintful inline widget embed via `on.sprintful.com`) and "Chat Right Now" (embedded chat widget).
-- **Sprintful widget** — Uses official inline widget JS (`app.sprintful.com/widget/v1.js`), not iframe (public URL blocks iframes via X-Frame-Options).
+- **Get in Touch section** — the booking frame (`schedule/_booking_frame`): Google Calendar's inline appointment page, also the whole of `/schedule`.
+- **Booking frame** — an iframe whose URL waits in `data-src`; an inline script assigns `src` only after the window's `load` event and once the frame is near the viewport, so Google never holds a page's `load` open. It fills its column. From 640px up it is cropped at rest to Google's slot-picker box, and opens to the full frame when focus moves into it, because the booking dialog centres in the frame's full height.

@@ -1,0 +1,156 @@
+<%# The site footer's styles and its map mount. Rendered once, by footers/_site_footer. %>
+<%# Leaflet is vendored (public/vendor/leaflet-1.9.4, BSD-2-Clause): the footer is on
+    every public page and should not hang on a third-party script host. %>
+<link rel="stylesheet" href="/vendor/leaflet-1.9.4/leaflet.css">
+
+<style>
+  .ftr { --ftr-primary: var(--color-primary, #8b5cf6); --ftr-primary-rgb: var(--color-primary-500-rgb, 139 92 246); }
+  .ftr a { transition: color .15s ease, opacity .15s ease; }
+  .ftr-link { color: inherit; opacity: .78; }
+  .ftr-link-disabled { opacity: .38; cursor: not-allowed; }
+  .ftr-link:hover { opacity: 1; color: var(--ftr-primary); }
+
+  /* The map. isolation keeps Leaflet's internal z-indexes (up to 1000) under
+     the pinned navbar and every modal. */
+  .ftr-map { position: relative; isolation: isolate; overflow: hidden; background: rgb(var(--ftr-primary-rgb) / .08); }
+  /* One keyless basemap for both themes: in dark mode the light tiles are
+     inverted and pulled toward the site's violet rather than swapped. */
+  .dark .ftr-map .leaflet-tile-pane { filter: invert(1) hue-rotate(205deg) saturate(.55) brightness(.9) contrast(.92); }
+  .ftr-map-wide { width: 100%; height: clamp(16rem, 26vw, 26rem); }
+  .ftr-map-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 1rem; text-align: center; font-size: .85rem; }
+  .ftr-map .leaflet-container { position: absolute; inset: 0; background: transparent; font: inherit; }
+  .ftr-map .leaflet-control-attribution { font-size: 9px; background: rgb(0 0 0 / .45); color: #ddd; }
+  .ftr-map .leaflet-control-attribution a { color: #fff; }
+  .ftr-map .leaflet-bar a { background: var(--color-surface, #fff); color: var(--color-text, #111); border-color: rgb(127 127 127 / .3); }
+  .ftr-pin { position: relative; width: 18px; height: 18px; }
+  .ftr-pin::before, .ftr-pin::after { content: ""; position: absolute; inset: 0; border-radius: 9999px; background: var(--ftr-primary); }
+  .ftr-pin::before { animation: ftr-ping 2.2s cubic-bezier(0, 0, .2, 1) infinite; opacity: .6; }
+  .ftr-pin::after { border: 3px solid #fff; box-shadow: 0 2px 8px rgb(0 0 0 / .45); }
+  @keyframes ftr-ping { 75%, 100% { transform: scale(3.2); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .ftr-pin::before { animation: none; } }
+
+  /* Brand, then four link columns. The first link column holds an email
+     address, so it gets the widest link track at every breakpoint. */
+  .ftr-cols { display: grid; gap: 3rem 2rem; grid-template-columns: 1.2fr 1fr; }
+  .ftr-brand { grid-column: 1 / -1; }
+  @media (min-width: 768px) { .ftr-cols { grid-template-columns: 1.7fr 1fr 1fr 1fr; } }
+  @media (min-width: 1024px) {
+    .ftr-cols { grid-template-columns: 1.7fr 1.5fr 1fr 1fr 1fr; }
+    .ftr-brand { grid-column: auto; }
+  }
+
+  /* The booking popup. Google's page cannot be themed, so the frame is white. */
+  .booking-popup { width: min(960px, calc(100vw - 2rem)); height: min(800px, calc(100vh - 3rem)); max-width: none; max-height: none;
+    /* Tailwind's reset zeroes a dialog's margin, which is what centres it. */
+    margin: auto; inset: 0;
+    padding: 0; border: 1px solid rgb(127 127 127 / .3); border-radius: .75rem; overflow: hidden;
+    background: var(--color-surface, #fff); color: inherit; }
+  .booking-popup[open] { display: flex; flex-direction: column; }
+  .booking-popup::backdrop { background: rgb(15 12 31 / .72); backdrop-filter: blur(3px); }
+  .booking-popup-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem .75rem .6rem 1.1rem; }
+  .booking-popup iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+
+  .ftr-social { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem;
+    border-radius: 9999px; background: var(--ftr-primary); color: #fff; transition: transform .15s ease, filter .15s ease; }
+  a.ftr-social:hover { transform: translateY(-2px); filter: brightness(1.12); }
+  .ftr-social[data-pending] { background: transparent; color: inherit; opacity: .5; border: 1px dashed currentColor; }
+</style>
+
+<script>
+  // Mounts a Leaflet map on every [data-footer-map]. Leaflet is fetched once,
+  // on demand, so a page with no footer map pays nothing for it. The basemap
+  // follows the site theme in CSS (see .dark .leaflet-tile-pane above).
+  (function () {
+    if (window.__footerMapsArmed) return;
+    window.__footerMapsArmed = true;
+
+    var TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    var ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+    var maps = [];
+    var loading = null;
+
+    function loadLeaflet() {
+      if (window.L) return Promise.resolve();
+      if (loading) return loading;
+      loading = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = '/vendor/leaflet-1.9.4/leaflet.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      return loading;
+    }
+
+    function mount(el) {
+      if (el.__footerMap) return;
+      var at = [parseFloat(el.dataset.lat), parseFloat(el.dataset.lng)];
+      var map = L.map(el, { center: at, zoom: parseInt(el.dataset.zoom, 10) || 15,
+                            scrollWheelZoom: false, attributionControl: true,
+                            zoomControl: el.dataset.controls !== 'false' });
+      map.attributionControl.setPrefix(false);
+      L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19 }).addTo(map);
+      L.marker(at, { icon: L.divIcon({ className: '', html: '<div class="ftr-pin"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+                     keyboard: false }).addTo(map);
+      // Page scroll stays page scroll until the visitor commits to the map.
+      map.on('click', function () { map.scrollWheelZoom.enable(); });
+      map.on('mouseout', function () { map.scrollWheelZoom.disable(); });
+      var fallback = el.querySelector('.ftr-map-fallback');
+      if (fallback) fallback.remove();
+      el.__footerMap = map;
+      maps.push(el);
+    }
+
+    function mountAll() {
+      var targets = document.querySelectorAll('[data-footer-map]');
+      if (!targets.length) return;
+      loadLeaflet().then(function () { targets.forEach(mount); }).catch(function () { /* the fallback link stays */ });
+    }
+
+    // A cached Turbo snapshot would restore Leaflet's DOM without its state.
+    document.addEventListener('turbo:before-cache', function () {
+      maps.forEach(function (el) { el.__footerMap.remove(); el.__footerMap = null; });
+      maps = [];
+    });
+    document.addEventListener('turbo:load', mountAll);
+    if (document.readyState !== 'loading') mountAll();
+    else document.addEventListener('DOMContentLoaded', mountAll);
+  })();
+</script>
+
+<script>
+  // Any [data-booking-popup] link opens the booking dialog instead of leaving
+  // the page. Delegated from document, so it survives Turbo body swaps. A
+  // modified click (new tab, new window) is left alone, and so is everything
+  // when the dialog is missing or <dialog> is unsupported: the link's own href
+  // then takes the visitor to /schedule.
+  (function () {
+    if (window.__bookingPopupArmed) return;
+    window.__bookingPopupArmed = true;
+
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[data-booking-popup]');
+      if (!link) return;
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var dialog = document.querySelector('dialog[data-booking-dialog]');
+      if (!dialog || typeof dialog.showModal !== 'function') return;
+
+      event.preventDefault();
+      var frame = dialog.querySelector('iframe[data-booking-popup-frame]');
+      if (frame && !frame.getAttribute('src')) frame.src = frame.dataset.src;
+      if (!dialog.open) dialog.showModal();
+    });
+
+    // A click on the backdrop lands on the dialog element itself.
+    document.addEventListener('click', function (event) {
+      if (event.target.matches && event.target.matches('dialog[data-booking-dialog]')) event.target.close();
+    });
+
+    // Never snapshot the dialog open: a restored page would show it stuck.
+    document.addEventListener('turbo:before-cache', function () {
+      var dialog = document.querySelector('dialog[data-booking-dialog][open]');
+      if (dialog) dialog.close();
+    });
+  })();
+</script>

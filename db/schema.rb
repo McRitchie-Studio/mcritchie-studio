@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_233204) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_235500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -581,6 +581,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_233204) do
     t.index ["entity", "kind", "status"], name: "index_communications_on_entity_and_kind_and_status"
     t.index ["occurred_at"], name: "index_communications_on_occurred_at"
     t.index ["thread_key"], name: "index_communications_on_thread_key"
+  end
+
+  create_table "contact_submissions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "disclosure_text", null: false
+    t.string "disclosure_version", null: false
+    t.string "email", null: false
+    t.string "ip_address"
+    t.text "message", null: false
+    t.string "name", null: false
+    t.string "phone"
+    t.boolean "sms_care_consent", default: false, null: false
+    t.boolean "sms_declined", default: false, null: false
+    t.boolean "sms_marketing_consent", default: false, null: false
+    t.datetime "updated_at", null: false
+    t.text "user_agent"
+    t.index "lower((email)::text)", name: "index_contact_submissions_on_lower_email"
+    t.index ["created_at"], name: "index_contact_submissions_on_created_at"
   end
 
   create_table "contacts", force: :cascade do |t|

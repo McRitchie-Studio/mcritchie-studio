@@ -8,6 +8,7 @@ Rails.application.routes.draw do
   root "landing#index"
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
+  get "about",   to: "landing#about",   as: :about
   get "packages", to: "packages#index", as: :packages
   # The app funnel: prompt → sign in → claim <name>.mcritchie.studio → queued
   # for an agent. `check` is the live subdomain availability probe.
@@ -19,6 +20,11 @@ Rails.application.routes.draw do
   get   "build/requests", to: "build#index", as: :build_requests
   get   "build/:token", to: "build#show",   as: :build_request
   patch "build/:token", to: "build#update"
+  # The public contact form, which is also the SMS opt-in page carriers review.
+  get  "contact", to: "contact_submissions#new", as: :contact_form
+  # Both routes are named. An unnamed `post "contact"` is auto-named `contact`
+  # and takes `contact_path` away from the mailing list's /contacts/:id.
+  post "contact", to: "contact_submissions#create", as: :contact_form_submit
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.
   get "credentials", to: "credential_vaults#index", as: :credentials

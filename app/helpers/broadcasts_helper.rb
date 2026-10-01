@@ -25,4 +25,14 @@ module BroadcastsHelper
 
     fallback || "{#{key}}"
   end
+
+  # A count from the merge fields with its noun, pluralized: "1 game",
+  # "7 games" (Broadcasts::MergeFields.counted). With no value it shows the
+  # field's name in braces, as merge_field does: "{games} games".
+  def merge_count(key, noun)
+    value = @merge_fields&.dig(key.to_s)
+    return Broadcasts::MergeFields.counted(value, noun) if value.present? || value == 0
+
+    "{#{key}} #{noun.pluralize}"
+  end
 end

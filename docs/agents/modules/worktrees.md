@@ -230,17 +230,29 @@ bin/task begin <slug> --steal --agent <soul>   # takes over a LIVE holder, delib
 **Run every mutation pass on a throwaway desk** (the [zap protocol's](zap-protocol.md) rule):
 
 ```bash
-MUT="$(mktemp -d)/mut-<slug>"                            # scratchpad, OUTSIDE <repo>/.worktrees/
-git worktree add "$MUT" --detach <pr-head>
-cp <desk>/.env.test.local "$MUT"/                        # REQUIRED — see below
-test -s "$MUT/.env.test.local" || echo "STOP: no .env.test.local"
-(cd "$MUT" && bin/rails test:prepare)                    # REQUIRED — see below
+MUT="$(mktemp -d)/mut-<slug>"
+git worktree add "$MUT" --detach <pr-head> &&
+  cp <desk>/.env.test.local "$MUT"/ &&
+  test -s "$MUT/.env.test.local" &&
+  (cd "$MUT" && RAILS_ENV=test bin/rails test:prepare) ||
+  echo "STOP: setup failed (no .env.test.local?); run nothing in $MUT"
 # done: git worktree remove --force "$MUT"
 ```
 
+- **Cut it in the scratchpad, carry `.env.test.local`, and build the assets.** The block
+  is one `&&` chain on purpose: if any link fails, nothing after it runs and the last line
+  says STOP. It carries no inline comments, because an interactive zsh without
+  `interactivecomments` reads a `#` as an argument.
 - **`.env.test.local` is untracked**; without it the throwaway runs on the SHARED test DB.
-  Outside `.worktrees/`, `bin/lib/desk_guard.rb` does not refuse the tree, so the
-  `test -s` line is that check.
+  Outside `.worktrees/`, `bin/lib/desk_guard.rb` (the pre-flight's test-DB check, loaded
+  only by `bin/fast-check`) never sees the tree, so the `test -s` link is that check, and
+  a missing file stops the chain before `test:prepare`.
+- **Every rails command in the throwaway carries `RAILS_ENV=test`.** A bare `bin/rails`
+  boots the development env, whose database is the SHARED `mcritchie_studio_development`.
+  `DeskDatabaseGuard` (`lib/desk_database_guard.rb`) refuses that boot in any linked git
+  worktree of the hub (a desk or a scratch throwaway; only the primary checkout is exempt),
+  so a bare command aborts rather than writes, but it does not guard the TEST database and
+  does not run in the satellites. `ALLOW_SHARED_DEV_DB=1` overrides it.
 - **Cut it in your session scratchpad, never under `.worktrees/`.** Anything there is a
   managed desk (`lib/desk_root.rb`) with a desk-ledger episode, and removing it with plain
   git leaves a `vanished` ghost on the Desks panel. One already cut there comes down with
@@ -262,6 +274,7 @@ and CI re-runs on the new head (a `test-only` `[control@<fp>]` stamp is retaken)
 |---|---|---|
 | Control stamp fingerprint (`test-only` PRs) | `bin/dor-check <task>` grades `[control@<fp>]` against the tree | Any foreign change to the desk's working tree after the control ran |
 | Shared-test-DB refusal | `bin/lib/desk_guard.rb`, the pre-flight | A desk **or throwaway under `.worktrees/`** on the shared test DB |
+| Shared-dev-DB refusal | `DeskDatabaseGuard`, a hub initializer | A development-env rails boot in any linked worktree of the hub (desk or scratch throwaway) whose database resolves to the shared dev DB |
 | Desk occupancy | `DeskActivity.touched_since?`, `bin/agent-worktree list` | Someone working in a desk right now |
 | Reclaim withhold | `desk_hold` + `stage_hold`, `bin/agent-worktree cleanup --reclaim` | Destroying a desk younger than 1h29m, touched, mid-gate, or bound to a task the board does not put at `shipped`/`archived` |
 

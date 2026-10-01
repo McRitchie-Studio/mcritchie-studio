@@ -20,6 +20,13 @@ require "test_helper"
 # DeskRoot.managed_path? itself so the doc rule and the ledger rule cannot drift. A `$VAR`
 # target is resolved through the block's own `VAR=...` assignments. `../<name>` counts as
 # managed: run from a desk, it lands beside that desk inside `.worktrees/`.
+#
+# AND WHAT RUNS INSIDE ONE (/tasks/harden-scratch-worktree-recipes). Outside `.worktrees/`
+# neither path-based guard sees the tree, so the recipe itself carries the safety: every
+# `bin/rails` in a throwaway block is prefixed `RAILS_ENV=test` (a bare one boots
+# development, whose database is the shared one), and the `.env.test.local` gate is a link
+# in an `&&` chain — a `test -s … || echo STOP` only printed a warning while the next
+# pasted line ran anyway.
 class ThrowawayWorktreesOutsideManagedRootDocsTest < ActiveSupport::TestCase
   DOCS_ROOT = Rails.root.join("docs/agents")
   SKIPPED = %r{/docs/agents/(archive|audits|maintenance)/}
@@ -69,6 +76,57 @@ class ThrowawayWorktreesOutsideManagedRootDocsTest < ActiveSupport::TestCase
         detached_targets(block).select { |target| managed?(target) }
                                .map { |target| "#{path.delete_prefix("#{Rails.root}/")}: #{target}" }
       end
+    end
+  end
+
+  # Comments stripped, so prose about a command is not read as the command.
+  def code_lines(block)
+    block.each_line.map { |line| line.sub(/(\A|\s)#.*$/, "").rstrip }.reject(&:empty?)
+  end
+
+  # What a throwaway block does wrong inside the tree: a bare rails command, or a gate
+  # that does not stop the chain.
+  def unsafe_lines(block)
+    code_lines(block).select do |line|
+      bare_rails = line.scan(/(\S*\s*)bin\/rails\b/).any? { |(before)| !before.strip.end_with?("RAILS_ENV=test") }
+      soft_gate = line.include?("test -s") && !line.end_with?("&&")
+      bare_rails || soft_gate
+    end
+  end
+
+  def throwaway_offenders
+    Dir.glob(DOCS_ROOT.join("**/*.md")).reject { |path| path.match?(SKIPPED) }.flat_map do |path|
+      fenced_blocks(File.read(path)).select { |block| detached_targets(block).any? }.flat_map do |block|
+        unsafe_lines(block).map { |line| "#{path.delete_prefix("#{Rails.root}/")}: #{line.strip}" }
+      end
+    end
+  end
+
+  test "every throwaway recipe runs rails as RAILS_ENV=test behind a gate that stops" do
+    found = throwaway_offenders
+
+    assert found.empty?,
+           "these throwaway recipes run a bare `bin/rails` (development env, the SHARED dev DB) or " \
+           "gate .env.test.local with a check that does not stop the next line. Prefix every rails " \
+           "command `RAILS_ENV=test` and chain the gate with `&&`:\n  #{found.join("\n  ")}"
+  end
+
+  test "[unit] the throwaway checker catches a bare rails command and a soft gate" do
+    bad = %(ZAP="$(mktemp -d)/zap-1"\ngit worktree add "$ZAP" --detach HEAD\n) +
+          %(test -s "$ZAP/.env.test.local" || echo "STOP: no .env.test.local"\n) +
+          %((cd "$ZAP" && bin/rails test:prepare)\nbin/rails runner 'p 1'   # RAILS_ENV=test in a comment is not a prefix\n)
+    good = %(ZAP="$(mktemp -d)/zap-1"\ngit worktree add "$ZAP" --detach HEAD &&\n) +
+           %(  test -s "$ZAP/.env.test.local" &&\n  (cd "$ZAP" && RAILS_ENV=test bin/rails test:prepare) ||\n  echo STOP\n)
+
+    assert_equal 3, unsafe_lines(bad).size, "the soft gate and both bare rails commands are caught"
+    assert_empty unsafe_lines(good)
+  end
+
+  test "the recipes name the development-DB guard that covers a scratch throwaway" do
+    %w[modules/worktrees.md modules/zap-protocol.md].each do |doc|
+      assert_includes File.read(DOCS_ROOT.join(doc)), "DeskDatabaseGuard",
+                      "#{doc} must name DeskDatabaseGuard, the guard that refuses a development boot in a " \
+                      "scratch throwaway; bin/lib/desk_guard.rb is the test-DB pre-flight and never sees one"
     end
   end
 

@@ -1,0 +1,67 @@
+<% content_for(:title, "About · McRitchie Studio") %>
+<% content_for(:full_width, true) %>
+
+<section class="max-w-3xl mx-auto px-4 text-center section-padding">
+  <p class="text-primary font-semibold uppercase tracking-wider">About</p>
+  <h1 class="text-4xl font-extrabold text-heading tracking-tight mt-2">McRitchie Studio</h1>
+  <p class="text-secondary text-lg mt-4 leading-relaxed">
+    Software &amp; Marketing Solutions, built in Denver. We help owners launch an
+    app, run it, and put it in front of the people it is for.
+  </p>
+</section>
+
+<section class="max-w-4xl mx-auto px-4" style="padding-bottom: 4rem;">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="card p-6 text-center">
+      <div class="text-5xl mb-3" aria-hidden="true">&#x1F4BB;</div>
+      <h2 class="text-heading font-bold text-lg mb-2">Software</h2>
+      <p class="text-secondary">Start free on our app template, then add hosting and your own workspace as you grow.</p>
+    </div>
+    <div class="card p-6 text-center">
+      <div class="text-5xl mb-3" aria-hidden="true">&#x1F4E3;</div>
+      <h2 class="text-heading font-bold text-lg mb-2">Marketing</h2>
+      <p class="text-secondary">Content and campaigns that bring the right customers to what you have built.</p>
+    </div>
+    <div class="card p-6 text-center">
+      <div class="text-5xl mb-3" aria-hidden="true">&#x1F916;</div>
+      <h2 class="text-heading font-bold text-lg mb-2">Agents</h2>
+      <p class="text-secondary">Our agents do the work and check every step, so a small team moves like a large one.</p>
+    </div>
+  </div>
+</section>
+
+<section class="bg-surface-alt border-t border-b border-subtle">
+  <div class="max-w-4xl mx-auto px-4 section-padding">
+    <h2 class="text-3xl font-extrabold text-heading text-center mb-10">How we work</h2>
+    <ol class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <li class="card p-6">
+        <h3 class="text-heading font-bold mb-2"><span class="text-primary">1.</span> We guide</h3>
+        <p class="text-secondary">Our agent walks you through each step and tells you exactly what to click.</p>
+      </li>
+      <li class="card p-6">
+        <h3 class="text-heading font-bold mb-2"><span class="text-primary">2.</span> You approve</h3>
+        <p class="text-secondary">Purchases and account approvals stay yours: your card, your admin console.</p>
+      </li>
+      <li class="card p-6">
+        <h3 class="text-heading font-bold mb-2"><span class="text-primary">3.</span> We verify</h3>
+        <p class="text-secondary">Every step is checked before the next begins.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="max-w-3xl mx-auto px-4 section-padding">
+  <div class="card p-6 flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
+    <img src="/agents/alex-photo.webp" alt="Alex McRitchie" class="w-24 h-24 rounded-full object-cover shrink-0">
+    <div>
+      <h2 class="text-heading font-bold text-xl">Alex McRitchie</h2>
+      <p class="text-primary font-semibold">Founder</p>
+      <p class="text-secondary mt-2">Over a decade of operational &amp; engineering leadership.</p>
+    </div>
+  </div>
+
+  <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+    <%= link_to "Schedule a call", schedule_index_path, class: "btn btn-primary btn-lg", data: { booking_popup: true } %>
+    <%= link_to "See packages", packages_path, class: "btn btn-outline btn-lg" %>
+  </div>
+</section>
