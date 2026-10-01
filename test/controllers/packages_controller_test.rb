@@ -30,6 +30,17 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='billing-toggle']", text: /save 10%/
   end
 
+  test "each card names the brands its tier adds, Vibe first as Powered by" do
+    get packages_path
+
+    assert_select "#{card('vibe')} [data-test='package-powered-by']", text: /Powered by/
+    assert_equal %w[github rails heroku], css_select("#{card('vibe')} [data-test='brand-logo']").map { |l| l["data-brand"] }
+    assert_select "#{card('pro')} [data-test='package-powered-by']", text: /Adds/
+    assert_select "#{card('growth')} [data-test='brand-logo'][data-brand='1password']"
+    assert_select "#{card('enterprise')} [data-test='brand-logo'][data-brand='openai']"
+    assert_select "[data-test='package-card'] [data-test='brand-logo'][data-brand='egnyte']", 0
+  end
+
   test "each card leads with its promise and its highlights, Growth featured" do
     get packages_path
 
@@ -125,9 +136,11 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
   test "rows carry their software logos, and planned rows say Coming soon" do
     get packages_stack_path
 
-    assert_select "[data-feature='file-storage'] [data-test='stack-software'] img[data-software='cloudflare']"
-    assert_select "[data-feature='database'] img[data-software='postgres'][alt='Postgres']"
-    assert_select "[data-feature='email-marketing'] img[data-software='zerobounce']"
+    assert_select "[data-feature='file-storage'] [data-test='stack-lead'] [data-brand='cloudflare'][aria-label='Cloudflare']"
+    assert_select "[data-feature='database'] [data-test='stack-lead'] [data-brand='postgres'][title='Postgres'] img"
+    assert_select "[data-feature='email-marketing'] [data-test='stack-lead'][data-lead='emoji']"
+    assert_select "[data-feature='email-marketing'] [data-test='stack-software'] [data-brand='zerobounce']"
+    assert_select "[data-feature='social-posting'] [data-test='stack-software'] [data-brand='x']"
     assert_select "[data-feature='social-posting'][data-status='planned'] [data-test='coming-soon']"
     assert_select "[data-feature='custom-connectors'] [data-test='coming-soon']"
     assert_select "[data-feature='server'] [data-test='coming-soon']", 0

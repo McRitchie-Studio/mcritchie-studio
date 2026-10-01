@@ -7,7 +7,7 @@
 #
 #   bin/workspace-icon --workspace studio                     # 1Password vault icon
 #   bin/workspace-icon --workspace studio --software google   # Google Workspace icon
-#   bin/workspace-icon --tiles                                # rebuild every software tile from its mark
+#   bin/workspace-icon --tiles                                # rebuild every software tile and brand mark
 #   bin/workspace-icon --all                                  # every software x every badged workspace
 #   bin/workspace-icon --workspace industries --badge ~/Downloads/industries.png
 #   bin/workspace-icon --badge logo.png --accent "#8E83FC" --out ~/Desktop/icon.png
@@ -30,7 +30,7 @@ parser = OptionParser.new do |o|
   o.on("--workspace SCOPE", "workspace scope from config/workspace_icons.yml") { |v| options[:workspace] = v }
   o.on("--software KEY", "base logo from config/workspace_icons.yml (default #{WorkspaceIcon::DEFAULT_SOFTWARE})") { |v| options[:software] = v }
   o.on("--all", "render every software for every workspace that has a badge") { options[:all] = true }
-  o.on("--tiles", "rebuild every software tile from its mark, then exit") { options[:tiles] = true }
+  o.on("--tiles", "rebuild every software tile and bare brand mark from its mark, then exit") { options[:tiles] = true }
   o.on("--badge PATH", "the workspace logo for the corner disc (overrides the scope's)") { |v| options[:badge] = v }
   o.on("--logo PATH", "the main icon (overrides --software)") { |v| options[:logo] = v }
   o.on("--accent HEX", "ring colour, #rrggbb (default: the scope's, else the badge's average)") { |v| options[:accent] = v }
@@ -63,7 +63,10 @@ end
 
 if options[:tiles]
   begin
-    WorkspaceIcon.softwares.each_key { |key| puts "tile #{WorkspaceIcon.build_tile!(key)}" }
+    WorkspaceIcon.softwares.each_key do |key|
+      puts "tile #{WorkspaceIcon.build_tile!(key)}"
+      puts "brand #{WorkspaceIcon.build_brand!(key)}"
+    end
   rescue WorkspaceIcon::Error => e
     warn "bin/workspace-icon: #{e.message}"
     exit 1
