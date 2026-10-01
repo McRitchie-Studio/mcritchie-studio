@@ -34,7 +34,10 @@
                   <span class="ftr-link-disabled" aria-disabled="true" title="Coming soon"><%= label %></span>
                 <% else %>
                   <%# An off-site link opens in a new tab; the visitor keeps the page. %>
-                  <%= link_to label, path, { class: "ftr-link" }.merge(path.start_with?("http") ? { target: "_blank", rel: "noopener" } : {}) %>
+                  <%# The schedule link opens the booking popup; its href is the fallback. %>
+                  <%= link_to label, path, { class: "ftr-link" }
+                        .merge(path.start_with?("http") ? { target: "_blank", rel: "noopener" } : {})
+                        .merge(path == schedule_index_path ? { data: { booking_popup: true } } : {}) %>
                 <% end %>
               </li>
             <% end %>
@@ -68,3 +71,20 @@
     </div>
   </div>
 </footer>
+
+<%# The booking popup: Google's appointment page in a dialog, opened by any
+    [data-booking-popup] link on the page (footers/_assets carries the script).
+    It does what Google's own scheduling-button script does, without loading
+    that script, its stylesheet and its icon font on every public page: the
+    frame is requested only when the dialog first opens. The links keep
+    href="/schedule", so with scripts off, or on a modified click, they are
+    ordinary links to the full page. %>
+<dialog class="booking-popup" data-booking-dialog aria-label="Schedule a call">
+  <form method="dialog" class="booking-popup-bar">
+    <span class="font-bold text-heading">Schedule a call</span>
+    <button type="submit" class="btn btn-neutral" data-booking-close>Close ✕</button>
+  </form>
+  <iframe data-booking-popup-frame
+          data-src="<%= ScheduleController::BOOKING_URL %>?gv=true"
+          title="Book a call with Alex McRitchie" frameborder="0"></iframe>
+</dialog>

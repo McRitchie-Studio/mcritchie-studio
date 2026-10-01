@@ -316,9 +316,9 @@
 # `npx playwright test --list` on the merged tree.
 # 191 -> 192 on 2026-09-30 (/tasks/professional-site-footer): e2e/site_footer.spec.js, the
 # footer map mounting in a browser and surviving a Turbo visit (one spec, not quarantined).
-# 192 -> 195 on 2026-09-30 (same task): e2e/booking_frame.spec.js, the Google booking frame
-# taking its src only after load (three specs, not quarantined).
-total_specs: 195
+# 192 -> 196 on 2026-09-30 (same task): e2e/booking_frame.spec.js, the Google booking frame
+# taking its src only after load (four specs, not quarantined).
+total_specs: 196
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -502,8 +502,8 @@ quarantined: 10
 # 172 -> 173: total_specs - quarantined, the same music_video_clips.spec.js spec.
 # 173 -> 174: total_specs - quarantined, the same music_video_looks.spec.js spec.
 # 181 -> 182: total_specs - quarantined, the same site_footer.spec.js spec.
-# 182 -> 185: the same three booking_frame.spec.js specs.
-executed: 185
+# 182 -> 186: the same four booking_frame.spec.js specs.
+executed: 186
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

@@ -40,6 +40,15 @@
     .ftr-brand { grid-column: auto; }
   }
 
+  /* The booking popup. Google's page cannot be themed, so the frame is white. */
+  .booking-popup { width: min(960px, calc(100vw - 2rem)); height: min(800px, calc(100vh - 3rem)); max-width: none; max-height: none;
+    padding: 0; border: 1px solid rgb(127 127 127 / .3); border-radius: .75rem; overflow: hidden;
+    background: var(--color-surface, #fff); color: inherit; }
+  .booking-popup[open] { display: flex; flex-direction: column; }
+  .booking-popup::backdrop { background: rgb(15 12 31 / .72); backdrop-filter: blur(3px); }
+  .booking-popup-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem .75rem .6rem 1.1rem; }
+  .booking-popup iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+
   .ftr-social { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem;
     border-radius: 9999px; background: var(--ftr-primary); color: #fff; transition: transform .15s ease, filter .15s ease; }
   a.ftr-social:hover { transform: translateY(-2px); filter: brightness(1.12); }
@@ -105,5 +114,41 @@
     document.addEventListener('turbo:load', mountAll);
     if (document.readyState !== 'loading') mountAll();
     else document.addEventListener('DOMContentLoaded', mountAll);
+  })();
+</script>
+
+<script>
+  // Any [data-booking-popup] link opens the booking dialog instead of leaving
+  // the page. Delegated from document, so it survives Turbo body swaps. A
+  // modified click (new tab, new window) is left alone, and so is everything
+  // when the dialog is missing or <dialog> is unsupported: the link's own href
+  // then takes the visitor to /schedule.
+  (function () {
+    if (window.__bookingPopupArmed) return;
+    window.__bookingPopupArmed = true;
+
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[data-booking-popup]');
+      if (!link) return;
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var dialog = document.querySelector('dialog[data-booking-dialog]');
+      if (!dialog || typeof dialog.showModal !== 'function') return;
+
+      event.preventDefault();
+      var frame = dialog.querySelector('iframe[data-booking-popup-frame]');
+      if (frame && !frame.getAttribute('src')) frame.src = frame.dataset.src;
+      if (!dialog.open) dialog.showModal();
+    });
+
+    // A click on the backdrop lands on the dialog element itself.
+    document.addEventListener('click', function (event) {
+      if (event.target.matches && event.target.matches('dialog[data-booking-dialog]')) event.target.close();
+    });
+
+    // Never snapshot the dialog open: a restored page would show it stuck.
+    document.addEventListener('turbo:before-cache', function () {
+      var dialog = document.querySelector('dialog[data-booking-dialog][open]');
+      if (dialog) dialog.close();
+    });
   })();
 </script>

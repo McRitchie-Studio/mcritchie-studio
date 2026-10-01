@@ -52,6 +52,28 @@ test("/schedule shows the frame without scrolling, as wide as its column", async
   expect(box.width).toBeLessThanOrEqual(896);
 });
 
+test("Schedule a call opens the booking popup in place, and Escape closes it", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const asked = await stubGoogle(page);
+  await page.goto("/privacy");
+
+  const dialog = page.locator("dialog[data-booking-dialog]");
+  await expect(dialog).toBeHidden();
+  expect(asked).toEqual([]);
+
+  await page.locator("footer[data-site-footer] a[data-booking-popup]").click();
+
+  // The visitor stays on the page; the dialog opens and only now asks Google.
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/privacy$/);
+  await expect(page.frameLocator("iframe[data-booking-popup-frame]").locator("#stub")).toHaveText("booking stub");
+  expect(asked).toHaveLength(1);
+  expect(await dialog.evaluate((el) => el.matches(":modal"))).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
+
 test("the frame is cropped to the slot picker at rest and opens fully once it is used", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await stubGoogle(page);

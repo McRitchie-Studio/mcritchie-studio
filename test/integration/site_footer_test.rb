@@ -15,7 +15,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
         assert_select "a[href='#{privacy_path}']", { minimum: 1 }, "#{path}: privacy link"
         assert_select "a[href='#{terms_path}']", { minimum: 1 }, "#{path}: terms link"
         assert_select "a[href='/contact']", { text: "Contact", count: 1 }, "#{path}: contact link"
-        assert_select "a[href='#{schedule_index_path}']", { text: "Schedule a call", count: 1 },
+        assert_select "a[href='#{schedule_index_path}'][data-booking-popup]", { text: "Schedule a call", count: 1 },
                       "#{path}: schedule link"
         assert_select "[data-footer-map][data-lat][data-lng]", { count: 1 }, "#{path}: map"
         assert_select "[data-footer-map] a[href*='google.com/maps']", { count: 1 }, "#{path}: map fallback link"

@@ -111,6 +111,10 @@ other signed-in page is a working surface and carries none.
   number, by the operator's choice; it is where the SMS registration's reviewers
   find the privacy policy, terms and `/contact`. A social entry with a `nil` URL
   renders its icon unlinked.
+- **"Schedule a call"** links carry `data-booking-popup`: a click opens a
+  `<dialog>` holding Google's booking page (markup in `footers/_site_footer`,
+  script in `footers/_assets`). The frame is requested when the dialog first
+  opens. The links' href stays `/schedule`, the fallback.
 - **The map** is Leaflet (vendored at `public/vendor/leaflet-1.9.4`) on
   OpenStreetMap's keyless tiles; the script is fetched only when a
   `[data-footer-map]` is on the page (`footers/_assets`). Dark mode

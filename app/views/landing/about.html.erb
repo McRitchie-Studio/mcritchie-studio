@@ -61,7 +61,7 @@
   </div>
 
   <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-    <%= link_to "Schedule a call", schedule_index_path, class: "btn btn-primary btn-lg" %>
+    <%= link_to "Schedule a call", schedule_index_path, class: "btn btn-primary btn-lg", data: { booking_popup: true } %>
     <%= link_to "See packages", packages_path, class: "btn btn-outline btn-lg" %>
   </div>
 </section>

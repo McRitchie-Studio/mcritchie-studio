@@ -17,6 +17,18 @@ class SchedulePageTest < ActionDispatch::IntegrationTest
     assert_select "footer[data-site-footer]", 1
   end
 
+  test "public pages carry the booking popup, its frame not yet requested" do
+    [ root_path, about_path, privacy_path ].each do |path|
+      get path
+
+      assert_select "dialog[data-booking-dialog]", { count: 1 }, path
+      assert_select "dialog[data-booking-dialog] iframe[data-booking-popup-frame]", 1 do |frames|
+        assert_equal "#{ScheduleController::BOOKING_URL}?gv=true", frames.first["data-src"]
+        assert_nil frames.first["src"]
+      end
+    end
+  end
+
   test "the home page books through the same frame" do
     get root_path
 
