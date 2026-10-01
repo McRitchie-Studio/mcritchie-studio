@@ -92,6 +92,22 @@ defaults.
 
 `studio/modals/_scoped_host` was never forked here and has always propagated from the engine.
 
+## Site footer (public pages)
+
+`layouts/application` renders `footers/_site_footer` on every page a visitor
+sees (`SiteFooterHelper#show_site_footer?`: not signed in). Signed-in pages are
+working surfaces and carry none.
+
+- **Facts live in one place**: `SiteFooterHelper#site_footer_facts` (address,
+  phone, email, social profiles, link columns). The phone is the studio's
+  Grasshopper line, and the footer is where its SMS registration's reviewers find
+  the privacy policy, terms and `/contact`. A social entry with a `nil` URL
+  renders its icon unlinked.
+- **The map** is Leaflet on OpenStreetMap's keyless tiles, fetched from unpkg
+  only when a `[data-footer-map]` is on the page (`footers/_assets`). Dark mode
+  filters the same tiles in CSS; there is no second tile set. With scripts
+  blocked, the element is a link to directions.
+
 ## JS Modules (importmap)
 
 - `kanban_board` — drag-and-drop task board with optimistic DOM moves, API transitions, toast notifications. Race-condition guard (`_pendingMoves`) prevents concurrent API calls for same task. Attached to `window.kanbanBoard` for Alpine `x-data` access.

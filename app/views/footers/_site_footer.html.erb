@@ -1,13 +1,9 @@
-<%# 6 · Directory — after the Endeavor Exteriors footer: brand and address at the
-    left, plain link columns under bold headings, a centred Location band, then a
-    quiet centred legal line. No ornament; the structure is the design. %>
-<% columns = [
-     [ "Help",      [ [ "Contact", "mailto:#{facts[:email]}" ], [ "Call us", facts[:phone_href] ], [ "Say hi", login_path ] ] ],
-     [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
-     [ "Company",   [ [ "Home", root_path ], [ "Meet Alex", "#{root_path}#about" ] ] ],
-     [ "Legal",     facts[:legal] ]
-   ] %>
-<footer class="ftr bg-surface-alt border-t border-subtle text-body" data-footer="directory">
+<%# The site footer, after the Endeavor Exteriors layout: brand and social
+    profiles at the left, plain link columns under bold headings, a centred
+    Location band with a live map, then a quiet centred legal line. %>
+<% facts = site_footer_facts %>
+<%= render "footers/assets" %>
+<footer class="ftr bg-surface-alt border-t border-subtle text-body" data-site-footer>
   <div class="max-w-6xl mx-auto px-4">
     <div class="py-16 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-x-8 gap-y-12">
       <div class="col-span-2 md:col-span-4 lg:col-span-4">
@@ -28,7 +24,7 @@
         </ul>
       </div>
 
-      <% columns.each do |heading, links| %>
+      <% facts[:columns].each do |heading, links| %>
         <nav class="lg:col-span-2" aria-label="<%= heading %>">
           <h2 class="font-bold text-heading mb-4"><%= heading %></h2>
           <ul class="space-y-4">
@@ -49,7 +45,6 @@
             <%= facts[:street] %><br><%= facts[:city_line] %><br>
             <a href="<%= facts[:phone_href] %>" class="ftr-link"><%= facts[:phone] %></a>
           </address>
-          <p class="text-muted text-sm mt-2"><%= facts[:hours] %></p>
           <a href="<%= facts[:directions_url] %>" target="_blank" rel="noopener" class="ftr-link inline-block mt-4 text-sm font-semibold">Get directions →</a>
         </div>
         <div class="md:col-span-2">

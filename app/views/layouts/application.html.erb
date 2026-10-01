@@ -74,6 +74,8 @@
       </div>
     <% end %>
 
+    <%= render "footers/site_footer" if show_site_footer? %>
+
     <%# Modal host (engine) + the app's modal partials. Powers sign-in (auth),
         the "check your inbox" magic-link confirmation and the first-name
         onboarding step. %>

@@ -8,8 +8,6 @@ Rails.application.routes.draw do
   root "landing#index"
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
-  # Five candidate site footers, stacked, for the operator to choose between.
-  get "footers", to: "landing#footers", as: :footers
   get "packages", to: "packages#index", as: :packages
   # The app funnel: prompt → sign in → claim <name>.mcritchie.studio → queued
   # for an agent. `check` is the live subdomain availability probe.
