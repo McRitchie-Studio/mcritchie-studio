@@ -20,7 +20,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     assert_equal "Site", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
-    assert_equal ["Dashboard", "Deployments", "Theme", "Design System", "Schema", "Emails", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
+    assert_equal ["Dashboard", "Deployments", "Theme", "Design System", "Schema", "Emails", "Link preview", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
     refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
   end
 
@@ -36,6 +36,18 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert emails, "the Site section should carry an Emails link"
     assert_equal "/admin/emails", emails.fetch(:href)
     refute links.any? { |link| link[:href] == "/admin/email_images" }
+  end
+
+  # task hub-adopts-link-preview: the engine's site-identity page (studio-engine
+  # 0.82) is reached from the hub's own admin menu. The second assertion pins the
+  # stubbed href to the route the engine actually draws in this app.
+  test "admin sidebar links the engine link preview page" do
+    self.admin_enabled = true
+
+    preview = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.find { |link| link[:label] == "Link preview" }
+
+    assert_equal "/admin/link_preview", preview&.fetch(:href)
+    assert_equal "/admin/link_preview", Rails.application.routes.url_helpers.admin_link_preview_path
   end
 
   test "admin sidebar links the object store browser" do
@@ -229,6 +241,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_design_system_path = "/admin/design_system"
   def admin_schema_path = "/admin/schema"
   def admin_emails_path = "/admin/emails"
+  def admin_link_preview_path = "/admin/link_preview"
   def asset_browser_path = "/assets"
   def toast_test_path = "/toast_test"
   def admin_tiktok_connect_path = "/admin/tiktok/connect"
