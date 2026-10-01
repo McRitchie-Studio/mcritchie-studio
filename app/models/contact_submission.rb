@@ -44,6 +44,10 @@ class ContactSubmission < ApplicationRecord
   MESSAGE_LIMIT = 5_000
   USER_AGENT_LIMIT = 1_000
 
+  # Kept out of #inspect, so a logged or raised record does not carry them. The
+  # request log's own filter is in config/initializers/filter_parameter_logging.rb.
+  self.filter_attributes += %i[phone message]
+
   normalizes :name, :phone, with: ->(value) { value.to_s.squish.presence }
   normalizes :email, with: ->(value) { value.to_s.strip.downcase.presence }
   normalizes :message, with: ->(value) { value.to_s.strip.presence }
