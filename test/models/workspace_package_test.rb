@@ -185,6 +185,16 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     assert_equal %w[anthropic openai], feature("AI features").strip_brands
   end
 
+  test "a row names its brand on a card only from its brand_from tier, and a planned row names none" do
+    address = feature("Web address")
+    assert_empty address.card_brands("vibe"), "Vibe's address is a mcritchie.studio subdomain"
+    assert_equal %w[squarespace], address.card_brands("pro")
+    assert_equal %w[squarespace], address.card_brands("enterprise")
+    assert_equal %w[github rails], feature("Apps").card_brands("vibe"), "no brand_from: every tier names it"
+    assert_empty feature("Custom connectors").card_brands("enterprise"), "a planned row is a promise"
+    assert feature("Custom connectors").planned?
+  end
+
   test "a card's Powered by row adds only what that tier adds, and never a planned brand" do
     vibe, pro, growth, enterprise = TIERS.map { |key| WorkspacePackage.find(key) }
 
