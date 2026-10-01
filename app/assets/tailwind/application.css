@@ -495,12 +495,20 @@
    These are the tracks this app's own footer used before it adopted the
    engine's, so the address sits on one line as it always has.
 
+   The address itself must also refuse to break. On a phone the wider track is
+   still only 178px. Before, a plain `fr` track grew to the address's own width,
+   because a track is never narrower than its content's smallest size; under
+   `overflow-wrap: anywhere` that smallest size is one character, so the track
+   stops growing and the address breaks. `normal` gives the address back its
+   width, and the track grows to it again.
+
    Unlayered and one step more specific than the engine's `.ftr-cols`, which is
    an inline, unlayered <style> later in the document: a layered rule, or one of
    equal specificity, would lose to it. e2e/site_footer.spec.js pins the result
    (the address on one line), not these numbers. Delete this block when the
    engine lets a column declare its own width. */
 footer[data-site-footer] .ftr-cols { grid-template-columns: 1.2fr 1fr; }
+footer[data-site-footer] .ftr-link[href^="mailto:"] { overflow-wrap: normal; }
 @media (min-width: 768px) {
   footer[data-site-footer] .ftr-cols { grid-template-columns: 1.7fr 1fr 1fr 1fr; }
 }

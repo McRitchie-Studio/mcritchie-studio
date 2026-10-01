@@ -84,21 +84,30 @@ test("the footer map mounts, survives a Turbo visit, and follows the theme", asy
 // address is wider than an equal track, so it broke across two lines
 // ("team@mcritchie.stu / dio"). app/assets/tailwind/application.css gives the
 // Contact column the wider track it had before. Only a browser can see a wrap.
-for (const [name, size] of [["a desktop", { width: 1280, height: 900 }], ["a tablet", { width: 800, height: 1000 }], ["a phone", { width: 390, height: 844 }]]) {
-  test(`the footer's email address stays on one line on ${name}`, async ({ page }) => {
-    await page.setViewportSize(size);
-    await page.goto("/privacy");
+//
+// Three `test(` calls, not a loop over sizes: test/lib/e2e_quarantine_ratchet_test.rb
+// counts the lane's specs by reading these files, and a loop reads as one.
+const emailOnOneLine = (size) => async ({ page }) => {
+  await page.setViewportSize(size);
+  await page.goto("/privacy");
 
-    const contact = page.locator("footer[data-site-footer] nav[aria-label='Contact']");
-    const email = contact.locator("a[href='mailto:team@mcritchie.studio']");
-    await email.scrollIntoViewIfNeeded();
+  const contact = page.locator("footer[data-site-footer] nav[aria-label='Contact']");
+  const email = contact.locator("a[href='mailto:team@mcritchie.studio']");
+  await email.scrollIntoViewIfNeeded();
+  // Measure in the site's own font. Before it loads the fallback is narrower,
+  // and the address fits a column it will not fit a moment later.
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => document.fonts.check("16px Montserrat"))).toBe(true);
 
-    // One line of text is one client rect; a wrapped inline link has two.
-    expect(await email.evaluate((el) => el.getClientRects().length)).toBe(1);
-    // And it fits its column rather than spilling into the next one.
-    const [link, column] = await Promise.all([email.boundingBox(), contact.boundingBox()]);
-    expect(link.x + link.width).toBeLessThanOrEqual(column.x + column.width + 0.5);
-    // The page never scrolls sideways for it.
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
-  });
-}
+  // One line of text is one client rect; a wrapped inline link has two.
+  expect(await email.evaluate((el) => el.getClientRects().length)).toBe(1);
+  // And it fits its column rather than spilling into the next one.
+  const [link, column] = await Promise.all([email.boundingBox(), contact.boundingBox()]);
+  expect(link.x + link.width).toBeLessThanOrEqual(column.x + column.width + 0.5);
+  // The page never scrolls sideways for it.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+};
+
+test("the footer's email address stays on one line on a desktop", emailOnOneLine({ width: 1280, height: 900 }));
+test("the footer's email address stays on one line on a tablet", emailOnOneLine({ width: 800, height: 1000 }));
+test("the footer's email address stays on one line on a phone", emailOnOneLine({ width: 390, height: 844 }));
