@@ -110,4 +110,34 @@ class ContactSubmissionTest < ActiveSupport::TestCase
 
     assert_raises(ActiveRecord::ReadOnlyRecord) { row.update!(name: "Someone Else") }
   end
+
+  # --- what a log may carry ---------------------------------------------------
+
+  test "the request filter masks the form's phone and message where they are nested" do
+    filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+    params = { "contact_submission" => { "name" => "Jordan Lee", "phone" => "303-555-0142", "message" => "Hello there" } }
+
+    filtered = filter.filter(params).fetch("contact_submission")
+    assert_equal "[FILTERED]", filtered["phone"]
+    assert_equal "[FILTERED]", filtered["message"]
+    assert_equal "Jordan Lee", filtered["name"]
+  end
+
+  # The filter names this form's keys only. A bare :message would also mask
+  # every other `message` param in the app and, through filter_attributes,
+  # every model's `message` column in an inspect (ErrorLog among them).
+  test "the request filter leaves another form's message alone" do
+    filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+
+    assert_equal "boom", filter.filter("message" => "boom")["message"]
+    assert_equal "boom", filter.filter("error_log" => { "message" => "boom" }).dig("error_log", "message")
+  end
+
+  test "inspecting a submission shows neither the phone number nor the message" do
+    row = build(phone: "303-555-0142", message: "My private note.")
+
+    refute_includes row.inspect, "555-0142"
+    refute_includes row.inspect, "My private note"
+    assert_includes row.inspect, "Jordan Lee"
+  end
 end

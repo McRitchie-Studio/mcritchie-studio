@@ -130,4 +130,15 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "internal content production tool"
     assert_not_includes response.body, "invitation-only"
   end
+
+  # The booking calendar moved from Sprintful to Google Calendar on 2026-09-30.
+  # /privacy is read by carriers, so it must name the processor in use.
+  test "privacy page names Google Calendar as the booking provider" do
+    get privacy_path
+
+    assert_select "section", text: /booking calendar provided by Google Calendar appointment scheduling/
+    assert_select "a[href='https://policies.google.com/privacy']", 1
+    assert_select "section", text: /OpenStreetMap/
+    assert_not_includes response.body.downcase, "sprintful"
+  end
 end

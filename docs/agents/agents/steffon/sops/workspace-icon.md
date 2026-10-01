@@ -23,7 +23,7 @@ Records only, throughout. Nothing here reads, stores or shows a secret value.
 | Software tiles (the mark on a white disc) | `app/assets/images/workspace_icons/software/<software>.png` |
 | Badged icons | `app/assets/images/workspace_icons/<software>/<workspace>.png` |
 | The census the page reads | `credential_vaults` and `credential_records`, seeded from `db/seeds/59_credentials.rb` |
-| The pages | `/stack` (clients as rows) and `/credentials` (software by entity), both admin-only |
+| The pages | `/stack` (clients as rows), `/stack/matrix` (clients as columns, software by category, tier band and MRR) and `/credentials` (software by entity), all admin-only |
 | Clients, tiers, Google users, Resend mode | `stack_clients`, seeded from `db/seeds/60_stack_clients.rb` |
 
 **This repo is PUBLIC.** A logo, a vault name and an item title belong here, and
@@ -121,6 +121,9 @@ grant from `domain:` in the config.
 ## Act 4: Put a client on /stack
 
 `/stack` shows one row per client: tier, software, Google users, Resend mode.
+`/stack/matrix` draws the same clients as columns, software down the side by
+category; a new software key lands under Other until it is named in
+`StackMatrix::CATEGORIES` (`app/models/stack_matrix.rb`).
 
 1. Add the client to `db/seeds/60_stack_clients.rb`: `slug` (its workspace key in
    `config/workspace_icons.yml`), `name`, `tier` (`launch`, `host`, `workspace`,

@@ -2,8 +2,9 @@
 //
 // What only a browser can prove: no consent box starts ticked, ticking "No"
 // clears both "Yes" boxes (and a "Yes" clears "No"), the mobile number becomes
-// required only once a "Yes" is ticked, and a consenting visitor lands on the
-// confirmation with the operator's notice sent.
+// required only once a "Yes" is ticked, the bot trap is out of a person's
+// reach, and a consenting visitor lands on the confirmation with the
+// operator's notice sent.
 const { test, expect } = require("@playwright/test");
 
 test("a visitor opts in to texts on the contact page and sees it confirmed", async ({ page }) => {
@@ -33,6 +34,16 @@ test("a visitor opts in to texts on the contact page and sees it confirmed", asy
   await expect(phone).not.toHaveAttribute("required", /.*/);
   await care.check();
   await expect(declined).not.toBeChecked();
+
+  // The bot trap is on the page but no person meets it: off-screen, hidden
+  // from assistive tech, not a tab stop, and named so no autofill fills it.
+  const trap = page.locator("[data-test='contact-honeypot']");
+  await expect(trap).toHaveCount(1);
+  await expect(trap).toHaveAttribute("name", "contact_submission[leave_blank]");
+  await expect(trap).toHaveAttribute("tabindex", "-1");
+  await expect(trap).not.toBeInViewport();
+  await expect(page.getByRole("textbox", { name: "Leave this field empty" })).toHaveCount(0);
+  await expect(trap).toHaveValue("");
 
   const email = `opt-in-${Date.now()}@example.test`;
   await page.getByLabel("Name", { exact: true }).fill("Jordan Lee");

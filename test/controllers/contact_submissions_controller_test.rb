@@ -184,7 +184,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   test "[integration] a filled honeypot looks like success but stores and sends nothing" do
     assert_no_difference -> { ContactSubmission.count } do
       assert_no_difference -> { Studio::EmailDelivery.count } do
-        submit(company_url: "https://spam.example")
+        submit(ContactSubmissionsController::HONEYPOT_FIELD => "https://spam.example")
       end
     end
 
@@ -192,6 +192,93 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
     assert_select "[data-test='contact-sent']"
     assert_select "[data-test='contact-sent-sms']", count: 0
+  end
+
+  # The honeypot used to be `company_url`. A browser's address autofill matches
+  # "company" and ignores autocomplete="off", so a real visitor could have the
+  # trap filled for them: they saw the thank-you and nothing was stored or
+  # sent. A value under the old name must now be an ordinary, stored submission.
+  test "[integration] a value under the old honeypot name no longer drops a real visitor" do
+    assert_difference -> { ContactSubmission.count } => 1, -> { Studio::EmailDelivery.count } => 1 do
+      submit(company_url: "https://acme.example", phone: "303-555-0142", sms_care_consent: "1")
+    end
+
+    assert ContactSubmission.recent.first.sms_care_consent, "the SMS consent record was kept"
+  end
+
+  # Words a browser or password manager matches in a field's name, id or label
+  # to decide what to autofill. The honeypot may contain none of them.
+  AUTOFILL_TOKENS = %w[
+    name email mail tel phone mobile fax url website web site homepage company organization organisation
+    business employer title job address addr street city town state province region zip postal postcode
+    country user login account pass card credit cvc cvv expir birth bday dob age sex gender
+    language nickname first last middle given family additional honorific search contact subject
+  ].freeze
+
+  test "[integration] the honeypot's name, id and label match no autofill token" do
+    field = ContactSubmissionsController::HONEYPOT_FIELD.to_s
+    get contact_form_path
+    input = css_select("input[data-test='contact-honeypot']").first
+    label = css_select("label[for='#{input['id']}']").first
+
+    assert_equal "contact_submission[#{field}]", input["name"]
+    # The form's scope is shared by every field; what is checked is the part
+    # that names this one.
+    seen = { "field name" => field, "id" => input["id"].delete_prefix("contact_submission_"), "label" => label.text }
+    seen.each do |what, value|
+      squashed = value.downcase.gsub(/[^a-z]/, "")
+      hits = AUTOFILL_TOKENS.select { |token| squashed.include?(token) }
+      assert_empty hits, "the honeypot #{what} #{value.inspect} matches autofill token(s) #{hits.inspect}"
+    end
+    assert_includes AUTOFILL_TOKENS, "company", "the list still catches the name this field used to have"
+    assert_includes AUTOFILL_TOKENS, "url"
+  end
+
+  test "[component] the honeypot is off-screen, out of the tab order and hidden from assistive tech" do
+    get contact_form_path
+
+    assert_select "form[data-test='contact-form'] input[data-test='contact-honeypot']", count: 1
+    assert_select "input[name='contact_submission[company_url]']", count: 0
+    assert_select "div[aria-hidden='true'][style*='left:-9999px'] input[data-test='contact-honeypot']" \
+                  "[type='text'][tabindex='-1'][autocomplete='off']", count: 1
+    assert_select "input[data-test='contact-honeypot'][value]", count: 0
+    assert_select "input[data-test='contact-honeypot'][required]", count: 0
+  end
+
+  # --- [integration] the request log -----------------------------------------
+
+  # What the "Parameters:" line of a request log carries. Read off the real log
+  # subscriber, so a filter that is configured but does not match fails here.
+  def logged_lines
+    io = StringIO.new
+    original = ActionController::Base.logger
+    ActionController::Base.logger = ActiveSupport::Logger.new(io)
+    yield
+    io.string
+  ensure
+    ActionController::Base.logger = original
+  end
+
+  test "[integration] the request log carries neither the phone number nor the message" do
+    log = logged_lines do
+      submit(phone: "(303) 555-0142", message: "My private note to the studio.", sms_care_consent: "1")
+    end
+
+    assert_match(/Processing by ContactSubmissionsController#create/, log, "the request was logged")
+    assert_match(/Parameters: .*"phone" ?=> ?"\[FILTERED\]"/, log)
+    assert_match(/Parameters: .*"message" ?=> ?"\[FILTERED\]"/, log)
+    refute_includes log, "555-0142"
+    refute_includes log, "My private note"
+    refute_includes log, "jordan@example.com"
+    assert_match(/"name" ?=> ?"Jordan Lee"/, log, "an unfiltered field is still logged: the capture is live")
+  end
+
+  test "[integration] a refused submission is logged without them too" do
+    log = logged_lines { submit(phone: "303-555-0142", message: "My private note.", sms_care_consent: "1", sms_declined: "1") }
+
+    assert_response :unprocessable_entity
+    refute_includes log, "555-0142"
+    refute_includes log, "My private note"
   end
 
   test "[integration] a mail outage is logged and the stored submission still confirms" do

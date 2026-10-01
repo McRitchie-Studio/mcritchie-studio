@@ -13,8 +13,11 @@ class ContactSubmissionsController < ApplicationController
   rate_limit to: 5, within: 1.minute, only: :create,
              with: -> { redirect_to contact_form_path, alert: "Too many messages. Try again in a minute." }
 
-  # Hidden from people, so only a script fills it in.
-  HONEYPOT_FIELD = :company_url
+  # Hidden from people, so only a script fills it in. The name must match no
+  # browser autofill heuristic (name, email, tel, url, company, address, ...):
+  # autofill ignores autocomplete="off", and a visitor whose trap is filled for
+  # them sees the thank-you while nothing is stored or sent.
+  HONEYPOT_FIELD = :leave_blank
 
   def new
     @submission = ContactSubmission.new

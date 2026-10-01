@@ -70,6 +70,61 @@ class AgentWorktreeTest < Minitest::Test
     MSG
   end
 
+  # --- copy_primary_env_files: .env and .env.development reach a new desk ------
+  # .env.development carries development-only settings (R2 storage stages) that
+  # must not load in the test env, where dotenv also reads .env.
+
+  def test_copy_primary_env_files_copies_both_and_never_overwrites
+    Dir.mktmpdir do |root|
+      primary = File.join(root, "primary")
+      desk = File.join(root, "desk")
+      FileUtils.mkdir_p([primary, desk])
+      File.write(File.join(primary, ".env"), "A=1\n")
+      File.write(File.join(primary, ".env.development"), "ACTIVE_STORAGE_BACKEND=r2\n")
+      File.write(File.join(desk, ".env.development"), "KEEP=desk\n")
+      out = run_in_script(<<~RUBY)
+        copy_primary_env_files(#{primary.inspect}, #{desk.inspect})
+      RUBY
+      assert_equal "A=1\n", File.read(File.join(desk, ".env"))
+      assert_equal "KEEP=desk\n", File.read(File.join(desk, ".env.development")), "an existing desk copy is never overwritten"
+      assert_equal "copied .env", out
+    end
+  end
+
+  def test_copy_primary_env_files_skips_a_missing_development_file
+    Dir.mktmpdir do |root|
+      primary = File.join(root, "primary")
+      desk = File.join(root, "desk")
+      FileUtils.mkdir_p([primary, desk])
+      File.write(File.join(primary, ".env"), "A=1\n")
+      out = run_in_script(<<~RUBY)
+        copy_primary_env_files(#{primary.inspect}, #{desk.inspect})
+      RUBY
+      assert_equal "copied .env", out
+      refute File.exist?(File.join(desk, ".env.development")), "no primary file, no desk copy"
+    end
+  end
+
+  def test_copy_primary_env_files_copies_the_development_file
+    Dir.mktmpdir do |root|
+      primary = File.join(root, "primary")
+      desk = File.join(root, "desk")
+      FileUtils.mkdir_p([primary, desk])
+      File.write(File.join(primary, ".env"), "A=1\n")
+      File.write(File.join(primary, ".env.development"), "ACTIVE_STORAGE_BACKEND=r2\n")
+      out = run_in_script(<<~RUBY)
+        copy_primary_env_files(#{primary.inspect}, #{desk.inspect})
+      RUBY
+      assert_equal "copied .env\ncopied .env.development", out
+      assert_equal "ACTIVE_STORAGE_BACKEND=r2\n", File.read(File.join(desk, ".env.development"))
+    end
+  end
+
+  def test_tool_written_env_files_are_not_held_as_work
+    out = run_in_script('print IGNORED_TOOL_FILES.include?(".env.development")')
+    assert_equal "true", out, "a desk's copied .env.development must not hold its teardown"
+  end
+
   # --- allocate_port: reserved_ports are skipped, not just live listeners ------
 
   def test_allocate_port_skips_reserved_ports

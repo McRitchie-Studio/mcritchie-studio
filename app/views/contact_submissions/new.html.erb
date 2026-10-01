@@ -57,10 +57,13 @@
         <%= f.text_area :message, required: true, rows: 5, maxlength: ContactSubmission::MESSAGE_LIMIT, class: "input-field w-full" %>
       </div>
 
-      <%# Off-screen, unlabelled for people: only a script fills this in. %>
+      <%# Off-screen, out of the tab order and hidden from assistive tech: only
+          a script fills this in. The name comes from the controller, which
+          explains why it must not look like anything a browser autofills. %>
+      <% honeypot = ContactSubmissionsController::HONEYPOT_FIELD %>
       <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
-        <label for="contact_submission_company_url">Leave this field empty</label>
-        <input type="text" name="contact_submission[company_url]" id="contact_submission_company_url" tabindex="-1" autocomplete="off" data-test="contact-honeypot">
+        <label for="contact_submission_<%= honeypot %>">Leave this field empty</label>
+        <input type="text" name="contact_submission[<%= honeypot %>]" id="contact_submission_<%= honeypot %>" tabindex="-1" autocomplete="off" data-test="contact-honeypot">
       </div>
 
       <fieldset class="space-y-3" data-test="contact-consent">
