@@ -13,6 +13,10 @@ class AboutPageTest < ActionDispatch::IntegrationTest
     assert_select "h2", text: "How we work"
     assert_select "ol li", 3
     assert_select "a[href='#{schedule_index_path}']", text: "Schedule a call"
+    # The page's own button opens the booking popup in place: both markers, or
+    # the engine's script leaves it an ordinary link to /schedule.
+    assert_select "a.btn.btn-primary[href='#{schedule_index_path}'][data-booking-popup][data-studio-booking]",
+                  text: "Schedule a call", count: 1
     assert_select "a[href='#{packages_path}']", text: "See packages"
   end
 

@@ -4,6 +4,11 @@ require "test_helper"
 # that depends on config (Enterprise's booking URL) must work both while the URL
 # is blank and once it is filled.
 class PackagesHelperTest < ActionView::TestCase
+  # package_cta_link writes its booking links with the engine's
+  # studio_booking_link. A controller's view has every helper; this test's view
+  # has only the ones named here.
+  include Studio::SiteFooterHelper
+
   BOOKING = "https://calendar.app.google/enterprise-test".freeze
 
   def link_for(key, **options) = Nokogiri::HTML.fragment(package_cta_link(WorkspacePackage.find(key), **options)).at("a")
@@ -22,6 +27,8 @@ class PackagesHelperTest < ActionView::TestCase
       link = link_for(key)
       assert_equal "/schedule", link["href"], key
       assert_equal "true", link["data-booking-popup"], key
+      assert_equal "true", link["data-studio-booking"], "#{key}: the engine's popup script answers only to its own marker"
+      assert_equal "schedule", link["data-cta-target"], key
       assert_nil link["target"], "#{key}: the popup keeps the visitor on the page"
     end
   end
@@ -31,6 +38,7 @@ class PackagesHelperTest < ActionView::TestCase
       link = link_for(:enterprise)
       assert_equal "/schedule", link["href"]
       assert_equal "true", link["data-booking-popup"]
+      assert_equal "true", link["data-studio-booking"]
       assert_equal "Book a call", link.text
     end
   end

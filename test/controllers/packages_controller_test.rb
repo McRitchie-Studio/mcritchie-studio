@@ -47,15 +47,15 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "#{cta('vibe')}[href='/build'][data-cta-target='build']", text: "Build your app"
     %w[pro growth].each do |key|
-      assert_select "#{cta(key)}[href='/schedule'][data-booking-popup='true'][data-cta-target='schedule']"
+      assert_select "#{cta(key)}[href='/schedule'][data-booking-popup='true'][data-studio-booking='true'][data-cta-target='schedule']"
     end
-    assert_select "dialog[data-booking-dialog]", 1, "the popup the schedule CTAs open must be on the page"
+    assert_select "dialog[data-booking-dialog][data-studio-booking]", 1, "the popup the schedule CTAs open must be on the page"
   end
 
   test "Enterprise Book a call falls back to the studio's booking popup while no URL is configured" do
     get packages_path
 
-    assert_select "#{cta('enterprise')}[href='/schedule'][data-booking-popup='true']", text: "Book a call"
+    assert_select "#{cta('enterprise')}[href='/schedule'][data-booking-popup='true'][data-studio-booking='true']", text: "Book a call"
     assert_select "#{cta('enterprise')}[target]", 0, "the fallback stays on the page in the popup"
   end
 

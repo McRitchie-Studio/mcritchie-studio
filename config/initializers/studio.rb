@@ -74,6 +74,67 @@ Studio.configure do |config|
     { file: "logo-icon.svg",    title: "Navbar Logo" },
     { file: "studio-logo.svg",  title: "SSO Logo" },
   ]
+  # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
+  # The engine renders the footer, the map, the booking frame and the booking
+  # popup, and serves Leaflet. This block is only the facts.
+  #
+  # `name`, `wordmark`, `logo` and the directions URL are written out rather
+  # than left to their defaults: the default name is the site identity's title,
+  # which the operator can edit at /admin/link_preview, and the footer's
+  # wordmark and © line must not move with it.
+  config.site_footer = ->(view) {
+    {
+      name: "McRitchie Studio",
+      wordmark: %w[McRitchie Studio],
+      logo: "logo-icon.svg",
+      logo_invert: true,
+      home_path: view.root_path,
+      tagline: "Software & Marketing Solutions",
+      address: {
+        street: "3000 Lawrence St", city_line: "Denver, CO 80205",
+        lat: 39.7614786, lng: -104.978957,
+        directions_url: "https://www.google.com/maps/dir/?api=1&destination=3000+Lawrence+St%2C+Denver%2C+CO+80205"
+      },
+      # [ label, icon, url ].
+      social: [
+        [ "LinkedIn", :linkedin, "https://www.linkedin.com/in/amcritchie/" ],
+        [ "Instagram", :instagram, "https://www.instagram.com/alexmcritchie/" ],
+        [ "X", :x, "https://x.com/mcritchiealex" ]
+      ],
+      columns: [
+        # No phone number, on purpose: the operator removed it.
+        # `booking: true` makes the link open the booking popup; /schedule is
+        # this app's own page (ScheduleController), so the engine cannot tell
+        # from the path alone. Contact is the SMS opt-in form: its helper is
+        # `contact_form_path`; `contact_path` belongs to /contacts/:id.
+        [ "Contact",   [ [ "team@mcritchie.studio", "mailto:team@mcritchie.studio" ],
+                         [ "Schedule a call", view.schedule_index_path, { booking: true } ],
+                         [ "Contact", view.contact_form_path ] ] ],
+        [ "Solutions", [ [ "Packages", view.packages_path ], [ "Build an app", view.build_path ] ] ],
+        # Career has no page yet: a nil path renders the label disabled.
+        [ "Company",   [ [ "Home", view.root_path ], [ "About", view.about_path ], [ "Career", nil ] ] ],
+        [ "Legal",     [ [ "Privacy Policy", view.privacy_path ], [ "Terms of Service", view.terms_path ] ] ]
+      ],
+      legal: [ [ "Privacy Policy", view.privacy_path ], [ "Terms of Service", view.terms_path ] ],
+      booking: { label: "Schedule a call", title: "Book a call with Alex McRitchie" }
+    }
+  }
+
+  # A visitor gets the footer on every page. A signed-in viewer gets it only on
+  # these controllers, the public site; every other signed-in page is a working
+  # surface (boards, queues, editors) and stays full height.
+  config.site_footer_controllers = %w[landing packages build contact_submissions schedule]
+
+  # The studio's Google Calendar appointment schedule. It checks every one of
+  # the operator's calendars for conflicts, which is why bookings go through it.
+  # Read it back as Studio.booking_url.
+  #
+  # draw_booking_routes stays off: /schedule is ScheduleController's, which
+  # keeps this app's page title and its line about Alex's calendar. The engine's
+  # page would replace both.
+  config.booking_url = "https://calendar.google.com/calendar/appointments/schedules/" \
+                       "AcZssZ3_1hQYaxXWJCG8T-AAuv6YHQN9w3aRBnp-rtQc10YqH6k6Yy6FjUTtZLnwoT27Sr30YcOuZI1K"
+
   # Draw the engine's standard email page at /admin/emails (Studio::EmailsController
   # over Studio::EmailCatalog). Opt-in because turf-monster's own routes.rb already
   # claims that path and the admin_emails_path helper; this app claims neither, so
