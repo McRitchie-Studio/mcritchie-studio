@@ -8,16 +8,28 @@ class SchedulePageTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h1", "Schedule a call"
-    assert_select "iframe[data-booking-frame][loading='lazy']", 1 do |frames|
-      assert_equal "#{ScheduleController::BOOKING_URL}?gv=true", frames.first["src"]
+    # The URL waits in data-src: the page's script assigns src after `load`.
+    assert_select "iframe[data-booking-frame]", 1 do |frames|
+      assert_equal "#{ScheduleController::BOOKING_URL}?gv=true", frames.first["data-src"]
+      assert_nil frames.first["src"]
     end
     assert_select "a[href='#{ScheduleController::BOOKING_URL}'][target='_blank']", text: "Open the booking page"
     assert_select "footer[data-site-footer]", 1
   end
 
-  test "the page no longer loads the Sprintful widget" do
-    get schedule_index_path
+  test "the home page books through the same frame" do
+    get root_path
 
-    assert_no_match(/sprintful/i, response.body)
+    assert_select "iframe[data-booking-frame]", 1 do |frames|
+      assert_equal "#{ScheduleController::BOOKING_URL}?gv=true", frames.first["data-src"]
+      assert_nil frames.first["src"]
+    end
+  end
+
+  test "neither page loads the Sprintful widget any more" do
+    [ schedule_index_path, root_path ].each do |path|
+      get path
+      assert_no_match(/sprintful/i, response.body, path)
+    end
   end
 end

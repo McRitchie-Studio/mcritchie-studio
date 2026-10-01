@@ -28,11 +28,16 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Technical Strategy"
   end
 
-  test "get in touch section shows only the full-width video chat card" do
+  # Was "shows only the full-width video chat card", pinning the "Chat Over
+  # Video" heading. That card held the Sprintful widget; the section now holds
+  # the Google booking frame and no card heading (/tasks/professional-site-footer).
+  test "get in touch section shows the booking frame and no chat card" do
     get root_path
 
     assert_response :success
-    assert_includes response.body, "Chat Over Video"
+    assert_includes response.body, "Get in Touch"
+    assert_select "iframe[data-booking-frame]", 1
+    assert_not_includes response.body, "Chat Over Video"
     assert_not_includes response.body, "Chat Right Now"
   end
 

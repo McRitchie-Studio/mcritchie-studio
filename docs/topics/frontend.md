@@ -136,5 +136,5 @@ Public-facing chat interface powered by Claude API. Users can chat with an AI Al
 
 ### Landing Page
 - **Hero** — Denver skyline background with Ken Burns pan animation (15s linear), dark overlay for text contrast.
-- **Get in Touch section** — Two cards: "Chat Over Video" (Sprintful inline widget embed via `on.sprintful.com`) and "Chat Right Now" (embedded chat widget).
-- **Sprintful widget** — Uses official inline widget JS (`app.sprintful.com/widget/v1.js`), not iframe (public URL blocks iframes via X-Frame-Options).
+- **Get in Touch section** — the booking frame (`schedule/_booking_frame`): Google Calendar's inline appointment page, also the whole of `/schedule`.
+- **Booking frame** — an iframe whose URL waits in `data-src`; an inline script assigns `src` only after the window's `load` event and once the frame is near the viewport, so Google never holds a page's `load` open. Capped at 680px, the width where Google renders its compact two-column layout.

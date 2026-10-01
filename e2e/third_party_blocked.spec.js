@@ -46,9 +46,12 @@ test("a cross-origin subresource is refused rather than waited on", async ({ pag
   await expect(page).toHaveURL(/\/$/);
 
   // NOT VACUOUS: the signed-in landing must still ASK for something off-origin,
-  // or this control is asserting about a page with no third party on it. If the
-  // widget is ever removed from app/views/landing/index.html.erb, retire this
-  // pair rather than letting it pass on an empty set.
+  // or this control is asserting about a page with no third party on it. The
+  // Sprintful widget this was written against left the landing page on
+  // 2026-09-30 (/tasks/professional-site-footer). What the page asks for now is
+  // the site footer's map tiles, requested by Leaflet once the map mounts, so
+  // the wait below is a poll. If the footer map ever leaves the landing page,
+  // retire this pair rather than letting it pass on an empty set.
   //
   // KNOW WHICH WAY THIS ONE BITES. `succeeded` goes non-empty only when the third
   // party ANSWERS, so deleting the fix reds this the way it red in review — on a
@@ -58,7 +61,7 @@ test("a cross-origin subresource is refused rather than waited on", async ({ pag
   // observed is a runner that STALLS, and that still reds, via the 30s test
   // timeout inside loginWithMagicLink. Worth knowing when reading a green: this
   // control is strongest on the machine where the bug does not happen.
-  expect(attempted.join("\n")).toContain("sprintful.com");
+  await expect.poll(() => attempted.join("\n")).toContain("tile.openstreetmap.org");
   expect(succeeded, `cross-origin responses that got through:\n${succeeded.join("\n")}`).toEqual([]);
 });
 

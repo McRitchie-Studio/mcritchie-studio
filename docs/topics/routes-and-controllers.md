@@ -4,7 +4,7 @@
 
 ## HTML Routes (public monitoring, auth-gated mutations)
 
-- `/` — Landing page (hero with Denver bg, about, get in touch with Sprintful + AI chat, acquisition criteria, contact)
+- `/` — Landing page (hero with Denver bg, about, get in touch with the Google booking frame, acquisition criteria, contact)
 - `/dashboard` — Dashboard (agents, task pipeline, activity feed)
 - `/chat` — AI chat with Alex agent (Claude Haiku, session-based conversation history). Chat widget partial (`chat/_chat_widget`) also embedded in landing page.
 - `/schedule` — public booking page: Google Calendar appointment schedule, embedded inline (`ScheduleController::BOOKING_URL`); the footer and About page link here

@@ -1,0 +1,54 @@
+<%# Google's inline booking page for the studio's appointment schedule. Google
+    lays it out by width: at 680px it is the compact two-column form (month
+    beside the day's slots), below 600px it stacks. It cannot be themed, so it
+    sits on a white panel in both themes.
+
+    THE SRC IS DEFERRED, and not with loading="lazy". The frame is a third
+    party, and a frame that starts loading before the window's `load` event
+    holds that event open for as long as Google takes to answer. So the URL
+    waits in data-src and the script below assigns it only AFTER `load`, once
+    the frame is near the viewport. %>
+<div class="booking-frame mx-auto rounded-xl overflow-hidden border border-subtle">
+  <iframe data-booking-frame
+          data-src="<%= ScheduleController::BOOKING_URL %>?gv=true"
+          title="Book a call with Alex McRitchie"
+          width="100%" frameborder="0"></iframe>
+</div>
+<p class="text-muted text-sm text-center mt-4">
+  Trouble seeing the calendar?
+  <a href="<%= ScheduleController::BOOKING_URL %>" target="_blank" rel="noopener" class="text-primary hover:underline">Open the booking page</a>.
+</p>
+
+<style>
+  .booking-frame { max-width: 680px; background: #fff; }
+  .booking-frame iframe { display: block; border: 0; height: 1200px; }
+  @media (min-width: 640px) { .booking-frame iframe { height: 700px; } }
+</style>
+
+<script>
+  (function () {
+    if (window.__bookingFramesArmed) return;
+    window.__bookingFramesArmed = true;
+
+    function arm() {
+      document.querySelectorAll('iframe[data-booking-frame][data-src]').forEach(function (frame) {
+        if (frame.__bookingArmed) return;
+        frame.__bookingArmed = true;
+        var watcher = new IntersectionObserver(function (entries) {
+          if (!entries.some(function (entry) { return entry.isIntersecting; })) return;
+          watcher.disconnect();
+          frame.src = frame.dataset.src;
+        }, { rootMargin: '200px' });
+        watcher.observe(frame);
+      });
+    }
+
+    function armAfterLoad() {
+      if (document.readyState === 'complete') arm();
+      else window.addEventListener('load', arm, { once: true });
+    }
+
+    document.addEventListener('turbo:load', armAfterLoad);
+    armAfterLoad();
+  })();
+</script>
