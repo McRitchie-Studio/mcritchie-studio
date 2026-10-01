@@ -42,6 +42,8 @@
 
   /* The booking popup. Google's page cannot be themed, so the frame is white. */
   .booking-popup { width: min(960px, calc(100vw - 2rem)); height: min(800px, calc(100vh - 3rem)); max-width: none; max-height: none;
+    /* Tailwind's reset zeroes a dialog's margin, which is what centres it. */
+    margin: auto; inset: 0;
     padding: 0; border: 1px solid rgb(127 127 127 / .3); border-radius: .75rem; overflow: hidden;
     background: var(--color-surface, #fff); color: inherit; }
   .booking-popup[open] { display: flex; flex-direction: column; }
