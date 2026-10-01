@@ -23,6 +23,10 @@ test("the footer map mounts, survives a Turbo visit, and follows the theme", asy
   await expect(map(page).locator(".ftr-pin")).toHaveCount(1);
   await expect(map(page).locator(".ftr-map-fallback")).toHaveCount(0);
 
+  // The map runs edge to edge: as wide as the viewport, not the centred column.
+  const widths = await map(page).evaluate((el) => [el.getBoundingClientRect().width, document.documentElement.clientWidth]);
+  expect(widths[0]).toBe(widths[1]);
+
   // The map is centred on the address the footer prints.
   const centre = await map(page).evaluate((el) => {
     const c = el.__footerMap.getCenter();

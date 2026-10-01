@@ -36,7 +36,7 @@
       <% end %>
     </div>
 
-    <div class="border-t border-subtle" style="padding-block: 3.5rem;">
+    <div class="border-t border-subtle" style="padding-block: 3.5rem 2rem;">
       <h2 class="text-center text-3xl font-extrabold text-heading tracking-tight">Location</h2>
       <address class="not-italic text-center leading-relaxed" style="margin-top: 1rem;">
         <a href="<%= facts[:directions_url] %>" target="_blank" rel="noopener" class="ftr-link"
@@ -44,12 +44,14 @@
           <%= facts[:street] %><br><%= facts[:city_line] %>
         </a>
       </address>
-      <div style="margin-top: 2rem;">
-        <%= render "footers/map", facts: facts, classes: "ftr-map-wide rounded-xl border border-subtle" %>
-      </div>
     </div>
+  </div>
 
-    <div class="border-t border-subtle py-8 text-center text-sm">
+  <%# Outside the centred column on purpose: the map runs edge to edge. %>
+  <%= render "footers/map", facts: facts, classes: "ftr-map-wide border-t border-b border-subtle" %>
+
+  <div class="max-w-6xl mx-auto px-4">
+    <div class="py-8 text-center text-sm">
       <p>
         <% facts[:legal].each_with_index do |(label, path), index| %>
           <%= " · " unless index.zero? %><%= link_to label, path, class: "ftr-link" %>
