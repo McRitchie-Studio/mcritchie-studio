@@ -100,9 +100,9 @@ sees, and on the public pages for a signed-in viewer too
 other signed-in page is a working surface and carries none.
 
 - **Facts live in one place**: `SiteFooterHelper#site_footer_facts` (address,
-  phone, the team@ email, social profiles, link columns). The phone is the studio's
-  Grasshopper line, and the footer is where its SMS registration's reviewers find
-  the privacy policy, terms and `/contact`. A social entry with a `nil` URL
+  the team@ email, social profiles, link columns). The footer prints no phone
+  number, by the operator's choice; it is where the SMS registration's reviewers
+  find the privacy policy, terms and `/contact`. A social entry with a `nil` URL
   renders its icon unlinked.
 - **The map** is Leaflet (vendored at `public/vendor/leaflet-1.9.4`) on
   OpenStreetMap's keyless tiles; the script is fetched only when a

@@ -3,7 +3,7 @@ const { test, expect } = require("@playwright/test");
 // The site footer (task professional-site-footer).
 //
 // WHY A BROWSER TIER EARNS ITS PLACE HERE. The component tier proves the footer's
-// markup: the address, the phone, the legal links, the element the map mounts on.
+// markup: the address, the legal links, the element the map mounts on.
 // It cannot prove the map: that is an inline script that fetches Leaflet, mounts it
 // on [data-footer-map], and replaces the fallback link. Only a browser shows that
 // it ran, that it runs again after a Turbo visit (which replaces the body but not

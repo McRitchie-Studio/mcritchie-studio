@@ -2,9 +2,9 @@ require "test_helper"
 
 # The site footer is what a visitor, or a carrier reviewing the studio's SMS
 # registration, finds at the bottom of every public page: where the studio is,
-# how to call it, its privacy policy and terms, and a map.
+# how to reach it, its privacy policy and terms, and a map.
 class SiteFooterTest < ActionDispatch::IntegrationTest
-  test "public pages end with the footer: address, phone, legal links and a map" do
+  test "public pages end with the footer: address, legal links and a map" do
     [ root_path, privacy_path, terms_path, packages_path ].each do |path|
       get path
       assert_response :success, path
@@ -12,7 +12,6 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
       assert_select "footer[data-site-footer]", { count: 1 }, "#{path}: one footer" do
         assert_select "address a[href*='google.com/maps/dir']", { text: /3000 Lawrence St\s*Denver, CO 80205/m, count: 1 },
                       "#{path}: the address, once, linking to directions"
-        assert_select "a[href='tel:+13032222113']", { text: "(303) 222-2113", count: 1 }, "#{path}: phone"
         assert_select "a[href='#{privacy_path}']", { minimum: 1 }, "#{path}: privacy link"
         assert_select "a[href='#{terms_path}']", { minimum: 1 }, "#{path}: terms link"
         assert_select "a[href='/contact']", { text: "Contact", count: 1 }, "#{path}: contact link"
@@ -24,14 +23,14 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the Contact column lists email, phone, then the contact page, in that order" do
+  test "the Contact column lists email, scheduling, then the contact page, and no phone" do
     get root_path
 
     labels = css_select("footer[data-site-footer] nav[aria-label='Contact'] a").map { |link| [ link.text, link["href"] ] }
     assert_equal [ [ "team@mcritchie.studio", "mailto:team@mcritchie.studio" ],
-                   [ "(303) 222-2113", "tel:+13032222113" ],
-                   [ "Contact", "/contact" ],
-                   [ "Schedule a call", "https://on.sprintful.com/alex-mcritchie" ] ], labels
+                   [ "Schedule a call", "https://on.sprintful.com/alex-mcritchie" ],
+                   [ "Contact", "/contact" ] ], labels
+    assert_select "footer[data-site-footer] a[href^='tel:']", 0
     assert_select "footer[data-site-footer] nav[aria-label='Help']", 0
   end
 

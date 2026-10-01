@@ -2,8 +2,6 @@
 # the links a visitor (or a carrier reviewing an SMS registration) looks for at
 # the bottom of a page.
 module SiteFooterHelper
-  # The studio's Grasshopper line, the number its SMS registration names.
-  SITE_FOOTER_PHONE = "(303) 222-2113".freeze
   SITE_FOOTER_EMAIL = "team@mcritchie.studio".freeze
 
   # Controllers whose pages are the public site, signed in or not.
@@ -27,8 +25,6 @@ module SiteFooterHelper
       tagline: "Software & Marketing Solutions",
       street: "3000 Lawrence St",
       city_line: "Denver, CO 80205",
-      phone: SITE_FOOTER_PHONE,
-      phone_href: "tel:+1#{SITE_FOOTER_PHONE.delete('^0-9')}",
       email: SITE_FOOTER_EMAIL,
       lat: 39.7614786,
       lng: -104.978957,
@@ -36,8 +32,8 @@ module SiteFooterHelper
       # /contact is a literal: the page is the SMS opt-in form, added by
       # /tasks/sms-opt-in-contact-page, whose route helper is `contact_form_path`.
       columns: [
-        [ "Contact",   [ [ SITE_FOOTER_EMAIL, "mailto:#{SITE_FOOTER_EMAIL}" ], [ SITE_FOOTER_PHONE, "tel:+1#{SITE_FOOTER_PHONE.delete('^0-9')}" ],
-                         [ "Contact", "/contact" ], [ "Schedule a call", SITE_FOOTER_SCHEDULE_URL ] ] ],
+        [ "Contact",   [ [ SITE_FOOTER_EMAIL, "mailto:#{SITE_FOOTER_EMAIL}" ], [ "Schedule a call", SITE_FOOTER_SCHEDULE_URL ],
+                         [ "Contact", "/contact" ] ] ],
         [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
         [ "Company",   [ [ "Home", root_path ], [ "Meet Alex", "#{root_path}#about" ] ] ],
         [ "Legal",     [ [ "Privacy Policy", privacy_path ], [ "Terms of Service", terms_path ] ] ]
