@@ -12,7 +12,7 @@ class AboutPageTest < ActionDispatch::IntegrationTest
     assert_select "h2", text: "Marketing"
     assert_select "h2", text: "How we work"
     assert_select "ol li", 3
-    assert_select "a[href='https://on.sprintful.com/alex-mcritchie']", text: "Schedule a call"
+    assert_select "a[href='#{schedule_index_path}']", text: "Schedule a call"
     assert_select "a[href='#{packages_path}']", text: "See packages"
   end
 

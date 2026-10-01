@@ -5,7 +5,7 @@ module SiteFooterHelper
   SITE_FOOTER_EMAIL = "team@mcritchie.studio".freeze
 
   # Controllers whose pages are the public site, signed in or not.
-  SITE_FOOTER_PUBLIC_CONTROLLERS = %w[landing packages build contact_submissions].freeze
+  SITE_FOOTER_PUBLIC_CONTROLLERS = %w[landing packages build contact_submissions schedule].freeze
 
   # The footer is the public site's: a visitor (or a carrier) gets it on every
   # page, and the public pages keep it for a signed-in viewer too. Every other
@@ -14,10 +14,6 @@ module SiteFooterHelper
   def show_site_footer?
     !logged_in? || SITE_FOOTER_PUBLIC_CONTROLLERS.include?(controller_name)
   end
-
-  # Where "Schedule a call" goes: the same Sprintful page the home page embeds.
-  # One constant, so a move to another scheduler is a one-line change.
-  SITE_FOOTER_SCHEDULE_URL = "https://on.sprintful.com/alex-mcritchie".freeze
 
   def site_footer_facts
     {
@@ -32,7 +28,7 @@ module SiteFooterHelper
       # /contact is a literal: the page is the SMS opt-in form, added by
       # /tasks/sms-opt-in-contact-page, whose route helper is `contact_form_path`.
       columns: [
-        [ "Contact",   [ [ SITE_FOOTER_EMAIL, "mailto:#{SITE_FOOTER_EMAIL}" ], [ "Schedule a call", SITE_FOOTER_SCHEDULE_URL ],
+        [ "Contact",   [ [ SITE_FOOTER_EMAIL, "mailto:#{SITE_FOOTER_EMAIL}" ], [ "Schedule a call", schedule_index_path ],
                          [ "Contact", "/contact" ] ] ],
         [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
         # Career has no page yet: a nil path renders the label disabled.

@@ -7,7 +7,7 @@
 - `/` — Landing page (hero with Denver bg, about, get in touch with Sprintful + AI chat, acquisition criteria, contact)
 - `/dashboard` — Dashboard (agents, task pipeline, activity feed)
 - `/chat` — AI chat with Alex agent (Claude Haiku, session-based conversation history). Chat widget partial (`chat/_chat_widget`) also embedded in landing page.
-- `/schedule` — Sprintful calendar embed (full-page)
+- `/schedule` — public booking page: Google Calendar appointment schedule, embedded inline (`ScheduleController::BOOKING_URL`); the footer and About page link here
 - `/docs` — Agent docs viewer (read-only, markdown rendered)
 - `/docs/*path` — Individual doc viewer
 - `/agents` — Agent grid

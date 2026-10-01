@@ -5,7 +5,7 @@ require "test_helper"
 # how to reach it, its privacy policy and terms, and a map.
 class SiteFooterTest < ActionDispatch::IntegrationTest
   test "public pages end with the footer: address, legal links and a map" do
-    [ root_path, about_path, privacy_path, terms_path, packages_path ].each do |path|
+    [ root_path, about_path, schedule_index_path, privacy_path, terms_path, packages_path ].each do |path|
       get path
       assert_response :success, path
 
@@ -15,7 +15,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
         assert_select "a[href='#{privacy_path}']", { minimum: 1 }, "#{path}: privacy link"
         assert_select "a[href='#{terms_path}']", { minimum: 1 }, "#{path}: terms link"
         assert_select "a[href='/contact']", { text: "Contact", count: 1 }, "#{path}: contact link"
-        assert_select "a[href='https://on.sprintful.com/alex-mcritchie'][target='_blank']", { text: "Schedule a call", count: 1 },
+        assert_select "a[href='#{schedule_index_path}']", { text: "Schedule a call", count: 1 },
                       "#{path}: schedule link"
         assert_select "[data-footer-map][data-lat][data-lng]", { count: 1 }, "#{path}: map"
         assert_select "[data-footer-map] a[href*='google.com/maps']", { count: 1 }, "#{path}: map fallback link"
@@ -28,7 +28,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
 
     labels = css_select("footer[data-site-footer] nav[aria-label='Contact'] a").map { |link| [ link.text, link["href"] ] }
     assert_equal [ [ "team@mcritchie.studio", "mailto:team@mcritchie.studio" ],
-                   [ "Schedule a call", "https://on.sprintful.com/alex-mcritchie" ],
+                   [ "Schedule a call", schedule_index_path ],
                    [ "Contact", "/contact" ] ], labels
     assert_select "footer[data-site-footer] a[href^='tel:']", 0
     assert_select "footer[data-site-footer] nav[aria-label='Help']", 0

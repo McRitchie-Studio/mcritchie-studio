@@ -1,19 +1,24 @@
-<% content_for(:title, "Schedule a Meeting — McRitchie Studio") %>
+<% content_for(:title, "Schedule a Call · McRitchie Studio") %>
 <% content_for(:full_width, true) %>
 
-<div class="flex flex-col" style="height: calc(100vh - 80px);">
-  <!-- Header -->
-  <div class="bg-surface border-b border-subtle px-4 py-3 flex items-center gap-3">
-    <div class="text-2xl">&#x1F4C5;</div>
-    <div>
-      <h1 class="text-heading font-bold text-lg leading-tight">Schedule a Meeting</h1>
-      <p class="text-muted text-xs">Book a 30-minute call with Alex McRitchie</p>
-    </div>
-  </div>
+<section class="max-w-3xl mx-auto px-4 text-center section-padding" style="padding-bottom: 2rem;">
+  <h1 class="text-4xl font-extrabold text-heading tracking-tight">Schedule a call</h1>
+  <p class="text-secondary text-lg mt-3">Pick a time that works and it lands on Alex's calendar.</p>
+</section>
 
-  <!-- Sprintful Embed -->
-  <div class="flex-1 p-4">
-    <div class="sprintful-inline-widget" data-copy-parents-query="false" data-url="https://on.sprintful.com/alex-mcritchie?hide-logo=true&hide-message=true" style="min-width:320px;height:100%;background-color:#fff;"></div>
-    <script type="text/javascript" src="https://app.sprintful.com/widget/v1.js"></script>
+<section class="max-w-4xl mx-auto px-4" style="padding-bottom: 4rem;">
+  <%# Google's inline booking page. It cannot be themed, so it sits on a white
+      panel in both themes. `gv=true` is Google's embed mode. Lazy: a third
+      party should not hold this page's load event open. %>
+  <div class="rounded-xl overflow-hidden border border-subtle" style="background: #fff;">
+    <iframe src="<%= ScheduleController::BOOKING_URL %>?gv=true"
+            title="Book a call with Alex McRitchie"
+            data-booking-frame
+            loading="lazy"
+            width="100%" height="640" frameborder="0" style="border: 0; display: block;"></iframe>
   </div>
-</div>
+  <p class="text-muted text-sm text-center mt-4">
+    Trouble seeing the calendar?
+    <a href="<%= ScheduleController::BOOKING_URL %>" target="_blank" rel="noopener" class="text-primary hover:underline">Open the booking page</a>.
+  </p>
+</section>
