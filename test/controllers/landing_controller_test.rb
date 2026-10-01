@@ -28,22 +28,32 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Technical Strategy"
   end
 
-  test "get in touch section shows only the full-width video chat card" do
+  # Was "shows only the full-width video chat card", pinning the "Chat Over
+  # Video" heading. That card held the Sprintful widget; the section now holds
+  # the Google booking frame and no card heading (/tasks/professional-site-footer).
+  test "get in touch section shows the booking frame and no chat card" do
     get root_path
 
     assert_response :success
-    assert_includes response.body, "Chat Over Video"
+    assert_includes response.body, "Get in Touch"
+    assert_select "iframe[data-booking-frame]", 1
+    assert_not_includes response.body, "Chat Over Video"
     assert_not_includes response.body, "Chat Right Now"
   end
 
-  test "contact section links to the correct social profiles" do
+  # The home page's own "Get In Touch" section is gone; the site footer carries
+  # these links now, and the same handles are pinned there.
+  test "the home page links to the correct social profiles" do
     get root_path
 
     assert_response :success
     assert_select "a[href=?]", "https://www.linkedin.com/in/amcritchie/"
     assert_select "a[href=?]", "https://x.com/mcritchiealex"
-    # the stale "alexmcritchie" handles must not come back
-    assert_select "a[href*=?]", "alexmcritchie", count: 0
+    # The stale "alexmcritchie" LinkedIn and X handles must not come back. Scoped
+    # to those two hosts: on Instagram, "alexmcritchie" IS the right handle.
+    assert_select "a[href*='linkedin.com'][href*='alexmcritchie']", 0
+    assert_select "a[href*='x.com'][href*='alexmcritchie']", 0
+    assert_select "a[href*='twitter.com'][href*='alexmcritchie']", 0
   end
 
   test "pwa manifest renders the corrected app name" do
