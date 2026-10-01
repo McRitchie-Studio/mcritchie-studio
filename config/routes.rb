@@ -35,6 +35,16 @@ Rails.application.routes.draw do
       get  :preview
       post :deliver
     end
+    # The staged email queue (task staged-email-queue): emails rendered and
+    # held, then approved, then sent. /broadcasts/:broadcast_id/queue
+    resource :queue, only: :show, controller: "broadcast_queues" do
+      post :stage
+      post :approve
+      post :cancel
+      post :execute
+      get  "emails/:email_id/preview", action: :preview, as: :preview
+      post "emails/:email_id/restage", action: :restage, as: :restage
+    end
   end
 
   # The mailing list, watched live (admin). `stats` is the polled stats frame.

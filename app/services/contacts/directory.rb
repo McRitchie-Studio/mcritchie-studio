@@ -7,6 +7,8 @@
 #   subscribed "yes" | "no"
 #   status     a verification status, "unverified", or "verified" (any result)
 #   emailed    "yes" | "no" — sent at least one broadcast
+#   cyvasse    "games" — has at least one Cyvasse game (Contact.with_cyvasse_games),
+#              the "Your games" audience (task contact-traits-from-cyvasse)
 #
 # A page is PER_PAGE contacts by limit and offset. Filtering to verified
 # contacts orders by the newest verification first; otherwise newest contact
@@ -21,7 +23,7 @@ module Contacts
     attr_reader :params, :page
 
     def initialize(params = {})
-      @params = params.to_h.symbolize_keys.slice(:q, :list, :subscribed, :status, :emailed)
+      @params = params.to_h.symbolize_keys.slice(:q, :list, :subscribed, :status, :emailed, :cyvasse)
       @params[:list] = @params[:list].presence || Dashboard::DEFAULT_LIST
       @page = [ params.to_h.symbolize_keys[:page].to_i, 1 ].max
     end
@@ -34,6 +36,7 @@ module Contacts
       scope = scope.where(subscribed: params[:subscribed] == "yes") if %w[yes no].include?(params[:subscribed])
       scope = filter_status(scope)
       scope = filter_emailed(scope)
+      scope = scope.with_cyvasse_games if params[:cyvasse] == "games"
       scope
     end
 

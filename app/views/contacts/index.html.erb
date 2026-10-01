@@ -16,7 +16,7 @@
   <%= render "stats", dashboard: @dashboard, stats: @stats %>
 
   <%# Filters: a plain GET form, so a filtered view is a shareable URL. %>
-  <%= form_with url: contacts_path, method: :get, class: "card p-4 grid grid-cols-2 md:grid-cols-6 gap-3 items-end", data: { turbo_frame: "_top" } do %>
+  <%= form_with url: contacts_path, method: :get, class: "card p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end", data: { turbo_frame: "_top" } do %>
     <label class="col-span-2 min-w-0 text-xs text-secondary space-y-1">
       <span class="block">Search email</span>
       <input type="search" name="q" value="<%= f[:q] %>" placeholder="name@example.com" class="input-field w-full min-w-0" autocomplete="off">
@@ -57,7 +57,15 @@
         <% end %>
       </select>
     </label>
-    <div class="col-span-2 md:col-span-6 flex flex-wrap items-center justify-between gap-2">
+    <label class="min-w-0 text-xs text-secondary space-y-1">
+      <span class="block">Cyvasse</span>
+      <select name="cyvasse" class="input-field w-full min-w-0">
+        <% [ [ "", "Any" ], [ "games", "Has games" ] ].each do |value, label| %>
+          <option value="<%= value %>" <%= "selected" if f[:cyvasse].to_s == value %>><%= label %></option>
+        <% end %>
+      </select>
+    </label>
+    <div class="col-span-full flex flex-wrap items-center justify-between gap-2">
       <p class="text-xs text-secondary" data-result-count>
         <%= number_with_delimiter(d.total) %> match<%= "es" unless d.total == 1 %><%= " · newest verification first" if d.verified_order? %>
       </p>
@@ -70,13 +78,14 @@
 
   <section class="card overflow-hidden" aria-label="Contacts table">
     <div class="overflow-x-auto">
-      <table class="w-full text-sm min-w-[64rem]">
+      <table class="w-full text-sm min-w-[72rem]">
         <thead class="text-secondary border-b border-subtle text-xs">
           <tr>
             <th class="text-left p-3">Email</th>
             <th class="text-left p-3">Name</th>
             <th class="text-left p-3">Source</th>
             <th class="text-left p-3">Tags</th>
+            <th class="text-left p-3">Cyvasse</th>
             <th class="text-left p-3">List status</th>
             <th class="text-left p-3">Verification</th>
             <th class="text-left p-3">Verified</th>
@@ -86,7 +95,7 @@
           </tr>
         </thead>
         <% if d.rows.empty? %>
-          <tbody><tr><td colspan="10" class="p-6 text-center text-secondary">No contacts match.</td></tr></tbody>
+          <tbody><tr><td colspan="11" class="p-6 text-center text-secondary">No contacts match.</td></tr></tbody>
         <% end %>
         <% d.rows.each do |row| %>
           <% c = row.contact %>
@@ -100,6 +109,7 @@
               <td class="p-3 text-body whitespace-nowrap"><%= [ c.first_name, c.last_name ].compact_blank.join(" ").presence || tag.span("—", class: "text-muted") %></td>
               <td class="p-3 text-secondary whitespace-nowrap"><%= c.source.presence || "—" %></td>
               <td class="p-3 text-secondary"><%= c.tags.join(", ").presence || "—" %></td>
+              <td class="p-3 whitespace-nowrap" data-cyvasse><%= contact_cyvasse_summary(c) %></td>
               <td class="p-3 whitespace-nowrap">
                 <% if c.subscribed? %>
                   <span class="text-success-ink">Subscribed</span>
@@ -118,7 +128,7 @@
               <td class="p-3 text-secondary whitespace-nowrap"><%= contact_time(row.last_clicked_at) %></td>
             </tr>
             <tr id="<%= dom_id(c, :row_detail) %>" x-show="open" x-cloak>
-              <td colspan="10" class="bg-surface-alt/60">
+              <td colspan="11" class="bg-surface-alt/60">
                 <%# Loaded on the first open (the click sets src), not lazily: a lazy frame
                     waits on an IntersectionObserver that a hidden row can leave unfired. %>
                 <%= turbo_frame_tag dom_id(c, :detail), data: { src: contact_path(c) }, "x-ref": "detail" do %>

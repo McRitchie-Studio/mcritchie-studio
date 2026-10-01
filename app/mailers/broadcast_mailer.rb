@@ -5,9 +5,13 @@ class BroadcastMailer < ApplicationMailer
   # Renders a broadcast for ONE contact: personalized greeting, public S3 images,
   # a per-contact unsubscribe link, and (when a delivery is given) the open pixel
   # + click-tracking links. Delivery uses the shared Studio mail transport.
-  def campaign(broadcast, contact, delivery = nil)
+  # `merge_fields` are the reader's personal values (Broadcasts::MergeFields):
+  # the subject's %{field}s and the body's merge_field helper read them. A
+  # staged send renders through here once, at staging, and stores the result.
+  def campaign(broadcast, contact, delivery = nil, merge_fields: nil)
     @broadcast        = broadcast
     @contact          = contact
+    @merge_fields     = merge_fields || Broadcasts::MergeFields.for(contact)
     @email_asset_host = Broadcasts::Assets.base_url
     # `d` names the email the reader unsubscribed from, for the analytics.
     @unsubscribe_url  = unsubscribe_url(token: contact.unsubscribe_token, d: delivery&.token, **url_host_options)
@@ -19,18 +23,37 @@ class BroadcastMailer < ApplicationMailer
       end.symbolize_keys
     end
 
-    # One-click unsubscribe (RFC 8058), which Gmail and Yahoo require of bulk
-    # senders: the mail client POSTs "List-Unsubscribe=One-Click" to this URL,
-    # which UnsubscribesController#create accepts without a form token.
-    headers["List-Unsubscribe"] = "<#{@unsubscribe_url}>"
-    headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    list_unsubscribe_headers(@unsubscribe_url)
 
-    mail(to: contact.email, subject: @broadcast.subject.presence || "(no subject)") do |format|
+    mail(to: contact.email, subject: @broadcast.subject_for(@merge_fields)) do |format|
       format.html { render template: "broadcasts/#{@broadcast.template_key}", layout: "broadcast_email" }
     end
   end
 
+  # Sends a staged email's stored snapshot exactly as it was approved: its
+  # recipient, subject and body, nothing re-rendered (task staged-email-queue).
+  # Only the headers are rebuilt, from the same token the body's links carry.
+  def staged(staged_email)
+    raise ArgumentError, "staged email #{staged_email.id} has no rendered body" if staged_email.rendered_html.blank?
+
+    unsubscribe = unsubscribe_url(token: staged_email.contact.unsubscribe_token, d: staged_email.delivery_token, **url_host_options)
+    list_unsubscribe_headers(unsubscribe)
+
+    mail(to: staged_email.email, subject: staged_email.rendered_subject) do |format|
+      format.text { render plain: staged_email.rendered_text } if staged_email.rendered_text.present?
+      format.html { render html: staged_email.rendered_html.html_safe, layout: false } # rubocop:disable Rails/OutputSafety -- our own render, stored at staging
+    end
+  end
+
   private
+
+  # One-click unsubscribe (RFC 8058), which Gmail and Yahoo require of bulk
+  # senders: the mail client POSTs "List-Unsubscribe=One-Click" to this URL,
+  # which UnsubscribesController#create accepts without a form token.
+  def list_unsubscribe_headers(url)
+    headers["List-Unsubscribe"] = "<#{url}>"
+    headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+  end
 
   # Unsubscribe/tracking links must be absolute and point at the environment
   # that sent the email. BROADCAST_HOST is an optional campaign-specific

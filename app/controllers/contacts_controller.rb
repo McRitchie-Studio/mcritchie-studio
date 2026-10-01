@@ -7,7 +7,7 @@ class ContactsController < ApplicationController
 
   # GET /contacts
   def index
-    @directory = Contacts::Directory.new(params.permit(:q, :list, :subscribed, :status, :emailed, :page))
+    @directory = Contacts::Directory.new(params.permit(:q, :list, :subscribed, :status, :emailed, :cyvasse, :page))
     @dashboard = Contacts::Dashboard.new(list: @directory.params[:list])
     @stats = @dashboard.stats
     @lists = Contacts::Dashboard.lists

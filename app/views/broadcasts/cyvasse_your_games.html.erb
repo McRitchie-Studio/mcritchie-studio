@@ -1,0 +1,56 @@
+<%# "Your games": a personal note to an old Cyvasse player, built on their own
+    stats (task staged-email-queue). It needs merge fields (username, games;
+    Broadcast::TEMPLATE_MERGE_FIELDS), so it goes out only through the staged
+    queue, where a player without them is skipped rather than mailed blanks.
+    Wins, losses and rank are shown only when the player has them. %>
+<% play_url = broadcast_link(:play, Broadcast::TEMPLATE_LINKS["cyvasse_your_games"]["play"]) %>
+<% wins = merge_field(:wins, fallback: "") %>
+<% losses = merge_field(:losses, fallback: "") %>
+<% rank = merge_field(:all_time_rank, fallback: "") %>
+<% content_for :email_reason, "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
+<%= render "broadcasts/email_head",
+      hero_file: "cyvasse_header_live.jpg",
+      hero_alt:  "A Cyvasse board mid-game",
+      preheader: "Your record came across to the new Cyvasse. Pick up where you left off.",
+      title:     "Your games are still here",
+      subtitle:  "#{ERB::Util.html_escape(merge_field(:username))}, your Cyvasse record came with you." %>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td style="padding:28px 32px 8px 32px;">
+      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">Hi <%= merge_field(:username) %>,</p>
+      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">You played <strong><%= merge_field(:games) %> games</strong> of Cyvasse, and every one of them came across to the rebuilt game.</p>
+    </td>
+  </tr>
+
+  <% if wins.present? || losses.present? || rank.present? %>
+  <tr>
+    <td style="padding:4px 32px 8px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f5ff;border-radius:10px;">
+        <tr>
+          <% [ [ "Wins", wins ], [ "Losses", losses ], [ "All-time rank", rank.present? ? "##{rank}" : "" ] ].each do |label, value| %>
+            <% next if value.blank? %>
+            <td style="padding:14px 8px;text-align:center;">
+              <div style="font-size:22px;font-weight:800;color:#2b3440;"><%= value %></div>
+              <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;"><%= label %></div>
+            </td>
+          <% end %>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <% end %>
+
+  <tr>
+    <td style="padding:22px 32px 8px 32px;text-align:center;">
+      <%= render "broadcasts/button", url: play_url, label: "Play Now &rarr;".html_safe, color: "#8E82FE", full_width: true %>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:20px 32px 28px 32px;">
+      <p style="margin:0 0 4px 0;font-size:16px;line-height:1.65;color:#2b3440;">See you on the board.</p>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">&mdash; Alex</p>
+    </td>
+  </tr>
+</table>

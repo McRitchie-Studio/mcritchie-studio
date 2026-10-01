@@ -309,7 +309,12 @@
 # 184 -> 187 on 2026-09-29 (/tasks/contacts-admin-page): e2e/contacts_page.spec.js, the
 # /contacts stats poll (visible-only), a filter, and the 375px overflow check (three specs,
 # not quarantined).
-total_specs: 187
+# 187 -> 189 on 2026-09-30 (/tasks/staged-email-queue): e2e/broadcast_queue.spec.js (two
+# specs, not quarantined).
+# 189 -> 190 on 2026-09-30 (/tasks/contact-traits-from-cyvasse): e2e/contacts_page.spec.js,
+# the has-games filter and the Cyvasse column (one spec, not quarantined). Set from
+# `npx playwright test --list` on the merged tree.
+total_specs: 190
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -492,7 +497,7 @@ quarantined: 10
 # 170 -> 171: total_specs - quarantined, the same asset_browser.spec.js spec.
 # 172 -> 173: total_specs - quarantined, the same music_video_clips.spec.js spec.
 # 173 -> 174: total_specs - quarantined, the same music_video_looks.spec.js spec.
-executed: 177
+executed: 180
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

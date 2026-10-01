@@ -1532,6 +1532,7 @@ end
 
 # /unsubscribe — one reader with fixed tokens, reached from one broadcast, so
 # e2e/unsubscribe.spec.js can walk unsubscribe then resubscribe.
+StagedEmail.delete_all # holds FKs to deliveries, broadcasts and contacts
 EmailEvent.delete_all
 BroadcastDelivery.delete_all
 Broadcast.delete_all
@@ -1550,11 +1551,27 @@ contacts_broadcast = Broadcast.find_by!(slug: "e2e-cyvasse-is-back")
   contact = Contact.create!(email: email, first_name: email.split("@").first.capitalize, source: "cyvasse", tags: ["cyvasse-legacy"])
   contact.record_verification!(status: status, sub_status: ("mailbox_not_found" if status == "invalid"), at: 1.hour.ago) if status
 end
+# One Cyvasse player among them, for the "has Cyvasse games" filter
+# (task contact-traits-from-cyvasse).
+Contact.find_by!(email: "catchall@example.com").update!(traits: { "cyvasse" => {
+  "username" => "e2e_veyjin", "games" => 27, "finished_games" => 25, "wins" => 20, "losses" => 7,
+  "joined_on" => "2014-03-02", "last_active_on" => "2026-09-01", "all_time_rank" => 12, "synced_at" => "2026-09-30T12:00:00Z" } })
 Contact.find_by!(email: "valid@example.com").then do |contact|
   delivery = contacts_broadcast.deliveries.create!(contact: contact, sent_at: 50.minutes.ago)
   delivery.record_open!(at: 40.minutes.ago)
   delivery.record_click!(link_key: "play", at: 30.minutes.ago)
 end
+
+# /broadcasts/e2e-queue/queue — the staged email queue (e2e/broadcast_queue.spec.js).
+# Three readers on their own list (queue-e2e, so the /contacts tiles never move):
+# two staged with their first names in the subject, one skipped for want of one.
+# Staging sends nothing.
+queue_broadcast = Broadcast.create!(slug: "e2e-queue", subject: "%{first_name}, Cyvasse is back",
+                                    template_key: "cyvasse_is_back", target_list: "queue-e2e")
+{ "queue-ann@example.com" => "Ann", "queue-bob@example.com" => "Bob", "queue-anon@example.com" => nil }.each do |email, name|
+  Contact.create!(email: email, first_name: name, source: "cyvasse", tags: ["queue-e2e"])
+end
+queue_broadcast.stage!
 
 # /music_videos/steve-aoki-night-call — the cast panel with its seven unlabelled
 # people (e2e/music_video_cast.spec.js). Its labels are synthetic: the spec finds
