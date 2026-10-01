@@ -99,27 +99,49 @@ launch works, who runs it, and the ways to get in touch. Public, static, and
 linked from the footer's Company column. Its copy restates the home page and
 `/packages`; keep the three in step when one changes.
 
-## Site footer (public pages)
+## Site footer and booking (public pages)
 
-`layouts/application` renders `footers/_site_footer` on every page a visitor
-sees, and on the public pages for a signed-in viewer too
-(`SiteFooterHelper#show_site_footer?`, `SITE_FOOTER_PUBLIC_CONTROLLERS`). Every
-other signed-in page is a working surface and carries none.
+studio-engine renders both (0.83.0; its consumer doc is `docs/SITE_FOOTER.md` in
+that repo). This app holds the facts and four call sites, and no footer markup,
+style, script or Leaflet of its own.
 
-- **Facts live in one place**: `SiteFooterHelper#site_footer_facts` (address,
-  the team@ email, social profiles, link columns). The footer prints no phone
-  number, by the operator's choice; it is where the SMS registration's reviewers
-  find the privacy policy, terms and `/contact`. A social entry with a `nil` URL
-  renders its icon unlinked.
-- **"Schedule a call"** links carry `data-booking-popup`: a click opens a
-  `<dialog>` holding Google's booking page (markup in `footers/_site_footer`,
-  script in `footers/_assets`). The frame is requested when the dialog first
-  opens. The links' href stays `/schedule`, the fallback.
-- **The map** is Leaflet (vendored at `public/vendor/leaflet-1.9.4`) on
-  OpenStreetMap's keyless tiles; the script is fetched only when a
-  `[data-footer-map]` is on the page (`footers/_assets`). Dark mode
-  filters the same tiles in CSS; there is no second tile set. With scripts
-  blocked, the element is a link to directions.
+- **The layout line**: `layouts/application` calls `studio_site_footer`. A
+  visitor gets the footer on every page. A signed-in viewer gets it only on the
+  controllers in `config.site_footer_controllers` (`landing`, `packages`,
+  `build`, `contact_submissions`, `schedule`); every other signed-in page is a
+  working surface and carries none.
+- **Facts live in one place**: `config.site_footer` in
+  `config/initializers/studio.rb` (name, wordmark, logo, tagline, address,
+  social profiles, link columns, legal line). The footer prints no phone number,
+  by the operator's choice; it is where the SMS registration's reviewers find
+  the privacy policy, terms and `/contact`. A link with a `nil` path renders
+  disabled (Career); a social entry with a `nil` URL renders its icon unlinked.
+- **Booking**: `config.booking_url` is the studio's Google Calendar appointment
+  schedule. `studio_booking_frame` puts Google's page inline on `/` (in the
+  tinted Get in Touch band) and on `/schedule`. Its `src` waits in `data-src`
+  until after the window's `load` and until the frame is near the viewport; from
+  640px up it is cropped to the slot picker and opens to the full page when
+  focus moves into it.
+- **"Schedule a call" links**: write them with
+  `studio_booking_link "Label", schedule_index_path`, never by hand. The helper
+  adds `data-booking-popup` and `data-studio-booking`; the engine's script
+  answers only to links carrying both, so a hand-written link is an ordinary
+  link to `/schedule`. A click opens a `<dialog>` holding Google's page (the
+  footer renders it; the frame is requested when the dialog first opens). On a
+  page that already shows the inline frame (`/`, `/schedule`) the click scrolls
+  to that frame instead. The href stays `/schedule`, the fallback. Call sites:
+  the footer's Contact column (marked `{ booking: true }` in the facts),
+  `landing/about`, and `PackagesHelper#package_cta_link`.
+- **The map** is Leaflet 1.9.4 on OpenStreetMap's keyless tiles, served by the
+  engine through the asset pipeline (`/assets/studio/leaflet-*.js` and `.css`).
+  It is fetched only once the map is within 400px of the viewport, after
+  `load`. Dark mode filters the same tiles in CSS; there is no second tile set.
+  With scripts blocked, the element is a link to directions. On a touch device
+  one finger scrolls the page, not the map.
+- **Tests**: `test/integration/site_footer_test.rb` and
+  `schedule_page_test.rb` pin this app's facts and where the footer shows;
+  `e2e/site_footer.spec.js` and `e2e/booking_frame.spec.js` prove the wiring on
+  this app's pages. The scripts themselves are covered in the engine's lane.
 
 ## JS Modules (importmap)
 
