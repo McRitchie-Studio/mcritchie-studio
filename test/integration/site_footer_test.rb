@@ -34,6 +34,17 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     assert_select "footer[data-site-footer] nav[aria-label='Help']", 0
   end
 
+  test "the Company column links Home and About, and shows Career disabled" do
+    get root_path
+
+    assert_select "footer[data-site-footer] nav[aria-label='Company']" do
+      assert_select "a", 2
+      assert_select "a[href='#{root_path}']", text: "Home"
+      assert_select "a[href='#{root_path}#about']", text: "About"
+      assert_select "span[aria-disabled='true']", text: "Career", count: 1
+    end
+  end
+
   test "the footer leads with social profiles" do
     get root_path
 
