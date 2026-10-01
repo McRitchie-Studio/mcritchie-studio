@@ -30,7 +30,8 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     labels = css_select("footer[data-site-footer] nav[aria-label='Contact'] a").map { |link| [ link.text, link["href"] ] }
     assert_equal [ [ "team@mcritchie.studio", "mailto:team@mcritchie.studio" ],
                    [ "(303) 222-2113", "tel:+13032222113" ],
-                   [ "Contact", "/contact" ] ], labels.first(3)
+                   [ "Contact", "/contact" ],
+                   [ "Schedule a call", "https://on.sprintful.com/alex-mcritchie" ] ], labels
     assert_select "footer[data-site-footer] nav[aria-label='Help']", 0
   end
 

@@ -37,7 +37,7 @@ module SiteFooterHelper
       # /tasks/sms-opt-in-contact-page, whose route helper is `contact_form_path`.
       columns: [
         [ "Contact",   [ [ SITE_FOOTER_EMAIL, "mailto:#{SITE_FOOTER_EMAIL}" ], [ SITE_FOOTER_PHONE, "tel:+1#{SITE_FOOTER_PHONE.delete('^0-9')}" ],
-                         [ "Contact", "/contact" ], [ "Schedule a call", SITE_FOOTER_SCHEDULE_URL ], [ "Say hi", login_path ] ] ],
+                         [ "Contact", "/contact" ], [ "Schedule a call", SITE_FOOTER_SCHEDULE_URL ] ] ],
         [ "Solutions", [ [ "Packages", packages_path ], [ "Build an app", build_path ] ] ],
         [ "Company",   [ [ "Home", root_path ], [ "Meet Alex", "#{root_path}#about" ] ] ],
         [ "Legal",     [ [ "Privacy Policy", privacy_path ], [ "Terms of Service", terms_path ] ] ]
