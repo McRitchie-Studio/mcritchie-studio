@@ -197,7 +197,12 @@ gem "sentry-rails"
 # 0.83 for the site footer and booking primitives (Studio.site_footer,
 # Studio.booking_url, studio_site_footer, studio_booking_frame): task
 # hub-adopts-engine-footer. It also carries Leaflet, which this app used to vendor.
-gem "studio-engine", "~> 0.83"
+#
+# 0.84 is the floor: it makes the booking crop per-site (Studio.booking_crop,
+# set in config/initializers/studio.rb) and adds Studio.booking_path. On 0.83
+# the crop was one fixed window that hid the last slots of this schedule's
+# fullest day.
+gem "studio-engine", "~> 0.84"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the
