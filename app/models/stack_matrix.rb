@@ -12,13 +12,14 @@
 # lives here. A software key it does not name falls into "Other" rather than
 # off the page: a new key shows up the moment a stack has it.
 class StackMatrix
+  # Category order is the page's row order, and each list's order is the row
+  # order inside it: Alex reads a client top-down from its platform and email,
+  # to its app, to its data, then everything else.
   CATEGORIES = {
-    "Hosting" => %w[heroku],
-    "Data" => %w[postgres redis],
-    "Domain" => %w[squarespace],
-    "Email" => %w[google resend zerobounce ses],
+    "Platform & Email" => %w[google resend squarespace zerobounce ses],
+    "App" => %w[heroku github],
+    "Data" => %w[postgres redis cloudflare r2 aws],
     "Auth" => %w[phantom],
-    "Storage & backup" => %w[cloudflare r2 aws],
     "Payments & crypto" => %w[stripe coinbase coinflow moonpay solana squads helius],
     "AI" => %w[anthropic openai fal higgsfield],
     "Data feeds" => %w[espn sleeper serper fred ipinfo],
@@ -27,7 +28,7 @@ class StackMatrix
     "Observability" => %w[sentry logrocket],
     "Secrets" => %w[1password dashlane],
     "Documents" => %w[egnyte],
-    "Platform" => %w[github rails rubygems mcritchie-studio turf-monster]
+    "Code & internal" => %w[rails rubygems mcritchie-studio turf-monster]
   }.freeze
   OTHER = "Other".freeze
 
@@ -45,11 +46,15 @@ class StackMatrix
   def self.category_for(software) = CATEGORIES.find { |_, keys| keys.include?(software.to_s) }&.first || OTHER
 
   # The software any client runs, in categories (CATEGORIES order, Other last),
-  # each in config/workspace_icons.yml's software order. A category no client
-  # touches is left out.
+  # each in its CATEGORIES list order; software only Other holds falls back to
+  # config/workspace_icons.yml's order. A category no client touches is left out.
   def groups
-    order = WorkspaceIconConfig.softwares.keys
-    present = @stacks.values.flatten.uniq.sort_by { |key| [ order.index(key) || order.size, key ] }
+    config_order = WorkspaceIconConfig.softwares.keys
+    rank = lambda do |key|
+      listed = CATEGORIES.values.flatten.index(key)
+      listed ? [ 0, listed, key ] : [ 1, config_order.index(key) || config_order.size, key ]
+    end
+    present = @stacks.values.flatten.uniq.sort_by(&rank)
     names = CATEGORIES.keys + [ OTHER ]
     present.group_by { |key| self.class.category_for(key) }
            .sort_by { |category, _| names.index(category) }

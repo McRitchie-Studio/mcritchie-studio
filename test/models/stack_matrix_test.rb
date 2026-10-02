@@ -27,14 +27,23 @@ class StackMatrixTest < ActiveSupport::TestCase
     client = internal_client(extra_software: %w[stripe heroku 1password anthropic])
     groups = StackMatrix.new([ client ]).groups
 
-    assert_equal [ "Hosting", "Payments & crypto", "AI", "Secrets" ], groups.map(&:category)
+    assert_equal [ "App", "Payments & crypto", "AI", "Secrets" ], groups.map(&:category)
     assert_equal %w[heroku stripe anthropic 1password], groups.flat_map(&:software)
     refute_includes groups.flat_map(&:software), "x", "nobody runs X, so it has no row"
   end
 
+  test "the page leads with Platform & Email, then App, then Data, each in Alex's order" do
+    client = internal_client(extra_software: %w[cloudflare github redis squarespace heroku resend postgres google])
+    groups = StackMatrix.new([ client ]).groups
+
+    assert_equal [ "Platform & Email", "App", "Data" ], groups.map(&:category)
+    assert_equal [ %w[google resend squarespace], %w[heroku github], %w[postgres redis cloudflare] ],
+                 groups.map(&:software)
+  end
+
   test "a software key with no category falls into Other, not off the page" do
     assert_equal "Other", StackMatrix.category_for("brand-new-thing")
-    assert_equal "Email", StackMatrix.category_for(:resend)
+    assert_equal "Platform & Email", StackMatrix.category_for(:resend)
   end
 
   test "unused software lists configured keys no stack has" do
