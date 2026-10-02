@@ -11,6 +11,20 @@ class Nflverse::SeedPlayersTest < ActiveSupport::TestCase
     draft_year draft_round draft_pick draft_team
   ].freeze
 
+  # Headshots cache through Studio::S3, which on R2 signs with its own keys and
+  # on AWS with the default chain. Local dev runs on R2 dev keys since
+  # 2026-09-30, so the seeder must accept them and still refuse neither-present.
+  test "headshot caching needs storage credentials: R2 keys or an AWS key, not neither" do
+    original = Studio.s3_access_key_id
+    Studio.s3_access_key_id = nil
+    refute Nflverse::SeedPlayers.storage_credentials?({})
+    assert Nflverse::SeedPlayers.storage_credentials?({ "AWS_ACCESS_KEY_ID" => "AKIA" })
+    Studio.s3_access_key_id = "r2-sentinel-id"
+    assert Nflverse::SeedPlayers.storage_credentials?({})
+  ensure
+    Studio.s3_access_key_id = original
+  end
+
   def csv_for(rows)
     out = [HEADERS.join(",")]
     rows.each { |r| out << HEADERS.map { |h| r[h].to_s }.join(",") }
