@@ -30,8 +30,21 @@ class WorkspacePackage
     def delivered? = !planned?
 
     # The software keys (config/workspace_icons.yml) this feature puts in a
-    # client's stack. A planned feature provisions nothing: it is a promise.
-    def software_keys = delivered? ? Array(software) : []
+    # client's stack. A planned feature provisions nothing: it is a promise. A
+    # tier below `brand_from` gets the row but not the software (Vibe's web
+    # address is a mcritchie.studio subdomain, so no Squarespace domain).
+    def software_keys(package_key = nil)
+      return [] unless delivered?
+      return [] if below_brand_from?(package_key)
+
+      Array(software)
+    end
+
+    def below_brand_from?(package_key)
+      return false unless package_key && brand_from
+
+      WorkspacePackage.keys.index(package_key.to_s) < WorkspacePackage.keys.index(brand_from)
+    end
 
     # Every software drawn beside the row on the full-stack page: what it
     # provisions (or will), plus add-ons it only shows.
@@ -53,7 +66,7 @@ class WorkspacePackage
     # address is a mcritchie.studio subdomain, not a Squarespace domain).
     def card_brands(package_key = nil)
       return [] if planned?
-      return [] if package_key && brand_from && WorkspacePackage.keys.index(package_key.to_s) < WorkspacePackage.keys.index(brand_from)
+      return [] if below_brand_from?(package_key)
 
       ([ brand ].compact + display_software).uniq
     end
@@ -151,7 +164,7 @@ class WorkspacePackage
 
   # Every software this tier provisions, in feature order — what /stack draws
   # for a client on it.
-  def software_keys = features.flat_map(&:software_keys).uniq
+  def software_keys = features.flat_map { |feature| feature.software_keys(key) }.uniq
 
   # Every brand this tier's delivered features put in front of the customer, in
   # row order: what its card's "Powered by" row draws.
