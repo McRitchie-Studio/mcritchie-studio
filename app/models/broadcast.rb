@@ -27,6 +27,12 @@ class Broadcast < ApplicationRecord
     "cyvasse_your_games" => {
       "play" => "https://cyvasse.xyz/",
       "night" => "https://cyvasse.xyz/night"
+    }.freeze,
+    "cyvasse_night" => {
+      "night" => "https://cyvasse.xyz/night",
+      "play" => "https://cyvasse.xyz/",
+      "calendar" => "https://cyvasse.xyz/night.ics",
+      "build" => "https://mcritchie.studio/build"
     }.freeze
   }.freeze
 
@@ -41,7 +47,8 @@ class Broadcast < ApplicationRecord
   # template_key => a module answering subject_template(fields, default:), where
   # default is the broadcast's stored subject. See #subject_for.
   SUBJECT_RESOLVERS = {
-    "cyvasse_your_games" => "Broadcasts::CyvasseYourGames"
+    "cyvasse_your_games" => "Broadcasts::CyvasseYourGames",
+    "cyvasse_night" => "Broadcasts::CyvasseNight"
   }.freeze
 
   # Registry of available copy templates: key => human label. Each key maps to
@@ -51,6 +58,7 @@ class Broadcast < ApplicationRecord
     "new_game_announcement" => "New Game Announcement",
     "cyvasse_is_back"       => "Cyvasse Is Back",
     "cyvasse_your_games"    => "Cyvasse: Your Games",
+    "cyvasse_night"         => "Cyvasse Night Invite",
   }.freeze
 
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy
