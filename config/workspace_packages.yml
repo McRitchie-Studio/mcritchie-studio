@@ -237,6 +237,7 @@ features:
     sop: domain-purchase
     you_do: Approve the domain
     status: live
+    software: [squarespace]
     brand_from: pro
   - name: SEO and link previews
     category: domain

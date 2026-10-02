@@ -81,4 +81,24 @@ class StackClientTest < ActiveSupport::TestCase
     account = WorkspaceAccount.create!(domain: "commercialwelding.llc")
     assert_equal account, c.reload.workspace_account
   end
+  test "the seed orders the matrix Studio, Industries, Welding, Turf, Cyvasse, 10and5" do
+    StackClient.delete_all
+    capture_io { load Rails.root.join("db/seeds/60_stack_clients.rb") }
+
+    assert_equal %w[studio industries commercial-welding turf-monster cyvasse 10and5], StackClient.ordered.pluck(:slug)
+  end
+
+  test "the seed gives the two internal stacks their real software, Google first among it" do
+    StackClient.delete_all
+    capture_io { load Rails.root.join("db/seeds/60_stack_clients.rb") }
+
+    %w[studio industries].each do |slug|
+      keys = StackClient.find_by!(slug: slug).software_keys([])
+      assert_includes keys, "google", "#{slug} runs Google Workspace"
+      assert_includes keys, "heroku", "#{slug} runs its app on Heroku"
+      assert_includes keys, "github", "#{slug} keeps its code on GitHub"
+    end
+    refute_includes StackClient.find_by!(slug: "industries").software_keys([]), "slack",
+                    "Industries' Slack pull has no production key, so it does not run Slack"
+  end
 end
