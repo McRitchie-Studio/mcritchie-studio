@@ -36,7 +36,7 @@ class CyvasseNightStagedTest < ActiveJob::TestCase
 
     vey = text(row(@vet).rendered_html)
     assert_includes vey, "Hi Vey,"
-    assert_includes vey, "Bring your 20 wins' worth of experience."
+    assert_includes vey, "Bring your 20 wins’ worth of experience."
 
     bare = text(row(@bare).rendered_html)
     assert_includes bare, "Hi there,"

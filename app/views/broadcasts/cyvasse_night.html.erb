@@ -11,7 +11,7 @@
 <% cal_url    = broadcast_link(:calendar, links["calendar"]) %>
 <% build_url  = broadcast_link(:build,    links["build"]) %>
 <% named      = @merge_fields.nil? || @merge_fields["username"].present? %>
-<% experience = @merge_fields ? Broadcasts::CyvasseNight.experience_line(@merge_fields) : "Bring your {wins} wins' worth of experience." %>
+<% experience = @merge_fields ? Broadcasts::CyvasseNight.experience_line(@merge_fields) : "Bring your {wins} wins’ worth of experience." %>
 <% p_style    = "margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;" %>
 <% content_for :email_reason, "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
 <%= render "broadcasts/email_head",

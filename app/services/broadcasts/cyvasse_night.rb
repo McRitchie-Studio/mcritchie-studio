@@ -23,7 +23,7 @@ module Broadcasts
       fields.to_h["username"].present? ? PERSONAL_SUBJECT : PLAIN_SUBJECT
     end
 
-    # "Bring your 30 wins' worth of experience." from the reader's wins, else
+    # "Bring your 30 wins’ worth of experience." from the reader's wins, else
     # their games; nil for a reader with neither, who gets no personal line.
     def experience_line(fields)
       %w[wins games].each do |key|
@@ -36,10 +36,10 @@ module Broadcasts
       nil
     end
 
-    # "1 win's", "30 wins'".
+    # "1 win’s", "30 wins’".
     def possessive(n, noun)
       counted = Broadcasts::MergeFields.counted(n, noun)
-      n == 1 ? "#{counted}'s" : "#{counted}'"
+      n == 1 ? "#{counted}’s" : "#{counted}’"
     end
   end
 end

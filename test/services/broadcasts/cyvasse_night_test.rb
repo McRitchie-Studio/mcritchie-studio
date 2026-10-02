@@ -59,7 +59,7 @@ class Broadcasts::CyvasseNightTest < ActionDispatch::IntegrationTest
                           "we’re holding Cyvasse Night: one night when everyone plays live at once."
     assert_includes body, "Open Cyvasse, hit Play Now, and you’re matched with a real player, not the computer. " \
                           "Wins count toward the night’s leaderboard."
-    assert_includes body, "Bring your 30 wins' worth of experience."
+    assert_includes body, "Bring your 30 wins’ worth of experience."
     assert_includes body, "See Cyvasse Night"
     assert_includes body, "Add it to your calendar"
     assert_includes body, "— Alex"
@@ -67,9 +67,9 @@ class Broadcasts::CyvasseNightTest < ActionDispatch::IntegrationTest
   end
 
   test "the experience line pluralizes, and falls back to games when there are no wins" do
-    assert_equal "Bring your 1 win's worth of experience.", Broadcasts::CyvasseNight.experience_line("wins" => 1)
-    assert_equal "Bring your 7 games' worth of experience.", Broadcasts::CyvasseNight.experience_line("wins" => 0, "games" => 7)
-    assert_equal "Bring your 1 game's worth of experience.", Broadcasts::CyvasseNight.experience_line("games" => "1")
+    assert_equal "Bring your 1 win’s worth of experience.", Broadcasts::CyvasseNight.experience_line("wins" => 1)
+    assert_equal "Bring your 7 games’ worth of experience.", Broadcasts::CyvasseNight.experience_line("wins" => 0, "games" => 7)
+    assert_equal "Bring your 1 game’s worth of experience.", Broadcasts::CyvasseNight.experience_line("games" => "1")
     assert_nil Broadcasts::CyvasseNight.experience_line("username" => "Ann")
     assert_nil Broadcasts::CyvasseNight.experience_line(nil)
   end
