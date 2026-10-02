@@ -98,5 +98,7 @@ class StackClientTest < ActiveSupport::TestCase
       assert_includes keys, "heroku", "#{slug} runs its app on Heroku"
       assert_includes keys, "github", "#{slug} keeps its code on GitHub"
     end
+    refute_includes StackClient.find_by!(slug: "industries").software_keys([]), "slack",
+                    "Industries' Slack pull has no production key, so it does not run Slack"
   end
 end

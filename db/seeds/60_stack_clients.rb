@@ -31,9 +31,9 @@ CONFIRMED_TIER = "Tier confirmed by Mr. McRitchie 2026-09-30 (pricing tiers v2).
                        sentry anthropic openai discord 1password] },
   { slug: "industries", name: "McRitchie Industries", tier: StackClient::INTERNAL, domain: "mcritchie.industries",
     position: 20,
-    # Drive knowledge base and Slack pull exist in code; their production keys
-    # are not set yet (inventory 2026-09-30), so they are listed as what it runs.
-    extra_software: %w[google resend heroku github postgres cloudflare aws slack 1password] },
+    # Google is its live Workspace. Its Slack pull exists in code but has no
+    # production key (inventory 2026-09-30), so Slack is left off until it runs.
+    extra_software: %w[google resend heroku github postgres cloudflare aws 1password] },
   { slug: "commercial-welding", name: "Commercial Welding", tier: "growth", domain: "commercialwelding.llc",
     # Workspace only today: no app yet.
     position: 30, notes: CONFIRMED_TIER },
