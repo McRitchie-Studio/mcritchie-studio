@@ -67,11 +67,27 @@ them; grading and settlement remain their own acts.
 **Production by default. A local run is a REHEARSAL and must be called one.**
 
 This act writes `Goal` rows, and those rows settle contests people paid to
-enter. There is no scheduled job behind it — `bin/nfl-live-poll` is the only
-non-test caller of `Nfl::LiveScores::PollCycle`, and `config/schedule.yml` has
-no NFL entry — so an agent running this SOP is the **sole path by which
-production contests re-score.** Getting the target wrong is not a slow day; it
-is a Sunday of contests that never move.
+enter, so getting the target wrong is not a slow day — it is twelve hours of a
+report that describes the wrong database and reads exactly like a correct one.
+
+**You are not the only thing polling, and this SOP claimed you were until
+2026-09-30.** turf-monster's `config/schedule.yml` carries two NFL entries now —
+`nfl_live_poll` (`Nfl::LivePollJob`, `*/5 * * * *`, all week, unconditionally)
+and `nfl_silent_gap_check` (`Nfl::SilentGapCheckJob`, `37 */6 * * *`), both
+`active_job: true` — so `bin/nfl-live-poll` is no longer the only non-test
+caller of `Nfl::LiveScores::PollCycle`, and production contests re-score whether
+or not anybody runs this act. Read the file, not this paragraph:
+`config/schedule.yml#nfl_live_poll` in turf-monster.
+
+**The cron is a FLOOR ON LATENCY, not a replacement for the watch** — five
+minutes is the worst case for an unwatched slate, never a target, and
+`Nfl::LivePollJob` says so itself. An operator watching a live contest still
+wants the 30-second cadence below, the per-play readout, and a human reading
+anomalies as they land, so this act keeps its whole purpose. What changed is the
+consequence of NOT running it: a week can no longer silently vanish for want of
+a watcher, which is what took regular-season week 2 — 16 games Final at ESPN, 16
+held at `scheduled` with zero goals, and a contest with 7 paid entries scoring
+two weeks out of three for ten days.
 
 Watching the real slate, which is what `live-score-watch` means unless
 Alex says otherwise:
@@ -106,19 +122,27 @@ A local watch **must** be labelled REHEARSAL in every report it produces. Its
 
 ## Preconditions
 
-**1. The command is DEPLOYED — merged is not deployed.** As of 2026-08-26,
-`bin/nfl-live-poll` and `Nfl::LiveScores::PollCycle` are on turf-monster
-`accepted` (PR #426) and on NEITHER `release` NOR `main` — and
-`turf-monster-mainnet` deploys from `main`. So this gate is live today and it is
-what correctly STOPS this act. Knowing #426 merged is not grounds to skip it:
+**1. The command is DEPLOYED — merged is not deployed.** `turf-monster-mainnet`
+deploys from `main`, so work merged onto `accepted` is not yet reachable by this
+act. Ask the app, and do not predict its answer:
 
 ```bash
 heroku run -a turf-monster-mainnet 'test -x bin/nfl-live-poll && echo present || echo MISSING'
 ```
 
-`MISSING` means THIS app is not running that code — today's expected answer.
-Report "the live-score poller is not deployed" and stop; there is no watch to
-run and nothing to fix here.
+`present` means this app is running that code and the watch may proceed.
+`MISSING` means it is not: report "the live-score poller is not deployed" and
+stop; there is no watch to run and nothing to fix here.
+
+**This precondition deliberately records no expected answer.** It carried one
+from 2026-08-26 — the poller was on `accepted` only, so `MISSING` was named as
+"today's expected answer" — and the branches moved under the sentence. A stale
+prediction here does not fail loudly; it aborts a watch that should have run.
+Settle the branch question locally in a second instead:
+
+```bash
+cd /Users/alex/projects/turf-monster && git branch -r --contains "$(git log -1 --format=%H origin/accepted -- bin/nfl-live-poll)"
+```
 
 **2. You are pointed where you think you are.** Prove it, and read it back
 before committing twelve hours:
@@ -214,8 +238,10 @@ command line, so it also matches the shell that launched the loop — and, if yo
 typed the stop command in a session whose own argv contains that string, the
 tool shell running it. The recorded pid names exactly one process.
 
-This is still the agent's loop — no queue, no scheduler, and it dies with the
-machine you started it on.
+This is still the agent's loop: nothing restarts it, and it dies with the
+machine you started it on. It is not the scheduler — `nfl_live_poll` keeps
+ticking every five minutes whether this loop lives or dies — so losing a batch
+costs you the live readout and the tight cadence, never the week.
 
 ## What a cycle prints
 
@@ -255,8 +281,10 @@ contests re-scored, anomalies by kind.
 
 ## Anomalies — the part that needs judgment
 
-The cycle reports seven kinds and never stops for any of them. Deciding which
-deserves a human is your job.
+The cycle REPORTS rather than stops, for every kind below, and the table is the
+complete set it can raise. It carried a COUNT until 2026-10-01 ("seven kinds"),
+which was wrong by three: a hand-kept tally of another repo's constants has no
+feedback loop. Deciding which anomaly deserves a human is your job.
 
 | Kind | What it means | What to do |
 |---|---|---|
@@ -267,10 +295,14 @@ deserves a human is your job.
 | `status_regression` | A stale row reported an earlier state for a game already final | Informational. The game keeps `completed`; nothing is re-broadcast. |
 | `unsettled_final` | The feed says FINAL but our events disagree with its total | **The game is NOT settled** — no matchup flipped, no contest scored. It settles on the next reconciling cycle. Escalate if it survives the slot. |
 | `cycle_error` | An unexpected exception, captured to `ErrorLog` | A bug, not a feed problem. Report it with the game slug. |
+| `settled_contest` | EVERY contest on this game's slate has settled, so the cycle wrote nothing for that game | Expected, and correct: a graded contest's ranks and payouts are final, and `Contest#grade!` raises rather than regrade them. It skips that GAME and not the slot, so the rest of the slate polls as usual. Override only as an operator who has read that seam: `bin/nfl-live-poll --allow-settled`. Nothing scheduled passes it. |
+| `settled_contest_coscored` | The game's slate carries a settled contest AND an open one, so it WAS processed | Informational, and a deliberate trade: the two tiers share `SlateMatchup` rows, one row cannot be both frozen and current, and refusing would leave the live paid contest scoring short forever. The settled tier's own entry scores, ranks and payouts are never recomputed (`Game#score_affected_contests!` scopes to open contests) — only its pick-detail view moves, and it moves toward the truth. |
+| `recap_push_failed` | Enqueuing the game-recap push to the hub raised | Informational for the watch: the scores are already written and the push is a separate job. Report it with the game slug if it persists. |
 
-`unknown_team` is the one that never waits. Every other anomaly degrades the
-board or stops it advancing; that one silently under-scores a contest while
-everything on screen looks correct.
+`unknown_team` is the one that never waits. Every other anomaly either degrades
+the board, stops it advancing, or records a refusal or a trade made on purpose;
+that one silently under-scores a contest while everything on screen looks
+correct.
 
 Note what a QUIET anomaly table no longer means. It used to be possible for the
 board to be corrupted with none of these raised at all — that is the specific
