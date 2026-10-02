@@ -250,6 +250,10 @@ bin/rails "broadcasts:queue_status[<slug>]"
   games (`Broadcasts::CyvasseYourGames`): 20+ sends the stored subject; 5-19
   sends "your 7 games and 3 wins", or the stored subject with no wins; 1-4 sends
   "your Cyvasse account is still here". Its body follows the same tier.
+  `cyvasse_night` (`Broadcasts::CyvasseNight`) sends "<username>, Cyvasse Night
+  is Tuesday at 7 PM Mountain" to a reader with a username and the plain line
+  to one without; it requires no merge fields, so store the plain subject. Its
+  links (`night`, `play`, `calendar` for `/night.ics`, `build`) are all tracked.
 - After a copy change, `broadcasts:restage` re-renders every `staged` row with
   the current subject and template, keeping each row's tracking token. Approved,
   sent, cancelled and skipped rows are never touched, a row approved mid-run
