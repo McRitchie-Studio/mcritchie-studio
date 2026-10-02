@@ -41,6 +41,12 @@ class StackMatrixTest < ActiveSupport::TestCase
                  groups.map(&:software)
   end
 
+  test "Pro and up carry the Squarespace domain in their stack; Vibe's subdomain does not" do
+    assert_includes WorkspacePackage.find("pro").software_keys, "squarespace"
+    assert_includes WorkspacePackage.find("growth").software_keys, "squarespace"
+    refute_includes WorkspacePackage.find("vibe").software_keys, "squarespace"
+  end
+
   test "a software key with no category falls into Other, not off the page" do
     assert_equal "Other", StackMatrix.category_for("brand-new-thing")
     assert_equal "Platform & Email", StackMatrix.category_for(:resend)
