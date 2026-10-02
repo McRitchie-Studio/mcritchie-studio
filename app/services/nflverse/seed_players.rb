@@ -85,13 +85,21 @@ class Nflverse::SeedPlayers
 
   attr_reader :stats, :refusals
 
+  # Whether Studio::S3, which caches the headshots, can sign a write: the R2 keys
+  # config/initializers/studio.rb sets under STUDIO_S3_BACKEND=r2 (production,
+  # QA and local dev since 2026-09-30), or on AWS the SDK's default chain, which
+  # is AWS_ACCESS_KEY_ID. Same guard as turf-monster's copy of this seeder.
+  def self.storage_credentials?(env = ENV)
+    Studio.s3_access_key_id.present? || env["AWS_ACCESS_KEY_ID"].present?
+  end
+
   def initialize(verbose: false, upload_headshots: true,
                  min_season: DEFAULT_MIN_SEASON, status_filter: nil,
                  source_url: PLAYERS_URL, csv_body: nil)
     @verbose = verbose
     @upload_headshots = upload_headshots
-    if @upload_headshots && ENV["AWS_ACCESS_KEY_ID"].blank?
-      raise "AWS_ACCESS_KEY_ID not set — headshot caching requires AWS credentials. " \
+    if @upload_headshots && !self.class.storage_credentials?
+      raise "No storage credentials — headshot caching needs R2 keys (STUDIO_S3_BACKEND=r2) or AWS_ACCESS_KEY_ID. " \
             "Pass upload_headshots: false (or SKIP_HEADSHOTS=1) to opt out."
     end
     @min_season = min_season.to_i
