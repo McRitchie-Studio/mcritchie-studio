@@ -233,7 +233,7 @@ rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
 - Detail: `studio-engine/docs/BOOKING.md` (setup in Google, the crop, the
   popup, the `/schedule` page, CSP).
 
-**The launch's DONE line** — copy it into the launch task's acceptance:
+**The launch's DONE line** — tick it before the launch is called done:
 
 ```text
 [ ] Site footer renders on / (footer[data-site-footer]); Legal links present if legal pages exist; no address, map or phone unless the operator chose them
