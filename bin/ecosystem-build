@@ -671,7 +671,7 @@ phase_nfl_data() {
 
 # ─── Phase 6c: NFL headshots (opt-in: WITH_NFL_HEADSHOTS=1) ─────────────────
 # Heavy: nflverse master CSV (~24k rows) + S3 headshot caching (~1100 athletes).
-# ~10-15 min, requires AWS creds in .env. Skipped by default to keep builds fast.
+# ~10-15 min, requires storage creds (R2 keys in .env.development, else AWS in .env). Skipped by default to keep builds fast.
 # Without this, /nfl-rosters shows position-labeled placeholder circles instead
 # of player photos.
 phase_nfl_headshots() {
@@ -750,7 +750,7 @@ phase_nfl_headshots() {
     # per-athlete causes, so the honest line points AT that rather than guessing.
     bundle exec rails nfl:upload_headshots >/dev/null \
       && log_ok "nfl:upload_headshots" "$(bundle exec rails runner 'puts ImageCache.where(owner_type: "Athlete", purpose: "headshot").count' 2>/dev/null | tail -1) cached variants" \
-      || log_fail "nfl:upload_headshots exited non-zero — READ ITS OWN stderr above, which names the verdict that fired and the first causes per athlete. It has two aborts: a wholesale upload failure names AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION in .env, and a run that declined fetchable work says it is NOT S3. A dead ESPN source (404/410) is not one of them and never reddens this phase."
+      || log_fail "nfl:upload_headshots exited non-zero — READ ITS OWN stderr above, which names the verdict that fired and the first causes per athlete. It has two aborts: a wholesale upload failure names the storage keys the active backend reads (R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY under STUDIO_S3_BACKEND=r2, else AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY), and a run that declined fetchable work says it is NOT S3. A dead ESPN source (404/410) is not one of them and never reddens this phase."
   )
 }
 

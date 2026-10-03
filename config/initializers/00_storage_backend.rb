@@ -38,6 +38,19 @@ module StorageBackend
     stage(env, "STUDIO_S3_BACKEND", STUDIO_S3_STAGES)
   end
 
+  # The credentials an operator should check when Studio::S3 (headshots, broadcasts,
+  # reference photos) fails wholesale: the R2 keys once STUDIO_S3_BACKEND=r2
+  # (production, QA and local dev since 2026-09-30), else the AWS keys. Remedy text
+  # that always named AWS sent operators to keys the R2 path never reads.
+  def credential_hint(env = ENV)
+    if studio_s3_stage(env) == "r2"
+      "R2_ENDPOINT / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY (STUDIO_S3_BACKEND=r2; " \
+        "local dev reads them from .env.development)"
+    else
+      "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION in .env"
+    end
+  end
+
   # The Studio.configure settings for the current stage: {} on S3 (the engine's
   # AWS defaults, exactly as before), the R2 connection and public URL on r2.
   def studio_s3_settings(env = ENV)
