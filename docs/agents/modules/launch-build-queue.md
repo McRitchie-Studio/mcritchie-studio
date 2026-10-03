@@ -40,7 +40,9 @@ which writes to a local database nobody sees.
 
 ## Act 2: Deliver it
 
-1. Build it on our stack from the app template, the way any satellite is built.
+1. Build it on our stack from the app template, the way any satellite is built,
+   with the site footer (and legal pages if it takes accounts or personal data)
+   in the first build: [new-app onboarding § 7](../system/new-app-onboarding-sop.md#7-build-conventions).
 2. **Point the name at it by hand.** `mcritchie.studio` has no wildcard DNS: add a
    CNAME for `<subdomain>` to the app's Heroku DNS target, then
    `heroku certs:auto --app <app>` until its certificate is issued. The DNS
