@@ -81,7 +81,9 @@ Green when both answer `200` over HTTPS. Then run the last step.
 Follow the **standalone / client app** tier of
 [`../../../system/new-app-onboarding-sop.md`](../../../system/new-app-onboarding-sop.md)
 for the repo, runtime and branch decisions, built from the BASE template in
-[`../../../system/app-templates.md`](../../../system/app-templates.md). Then:
+[`../../../system/app-templates.md`](../../../system/app-templates.md), with the
+site footer and any legal pages it requires in the first build (§ 7 of the
+onboarding SOP). Then:
 
 ```bash
 heroku create <app-name>
@@ -117,7 +119,9 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://www.<domain>/up
 curl -sS -o /dev/null -w "%{http_code} %{redirect_url}\n" http://<domain>
 ```
 
-Green when `www` resolves to the Heroku target, `/up` answers `200` over
+Green when the onboarding SOP's footer DONE line holds on `https://www.<domain>/`
+([§ 7](../../../system/new-app-onboarding-sop.md#7-build-conventions)), `www`
+resolves to the Heroku target, `/up` answers `200` over
 HTTPS (Heroku's certificate can take several minutes to issue), and the bare
 domain redirects to `https://www.<domain>`.
 

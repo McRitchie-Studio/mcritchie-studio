@@ -118,6 +118,9 @@ and an engine publish bumps the app's lock to the published version
 routine. A large one (`moms-app` was on 0.32 when the engine was on 0.77) should be
 closed deliberately first, in the app's own task, with its suite green.
 
+A new app adopts the engine and renders its site footer from the first build
+([new-app onboarding § 7](../../../system/new-app-onboarding-sop.md#7-build-conventions)).
+
 ## 3. Register
 
 ```bash

@@ -384,8 +384,8 @@ namespace :nfl do
       abort "nfl:upload_headshots failed #{failed} of #{graded} attempted uploads " \
             "(cached #{cached}#{dead_source.positive? ? "; #{dead_source} more had a dead " \
             "source and are NOT counted here" : ""}) — #{causes}" \
-            "Across MANY attempts this is usually AWS credentials: check AWS_ACCESS_KEY_ID / " \
-            "AWS_SECRET_ACCESS_KEY / AWS_REGION in .env. A 404 or 410 from a.espncdn.com is " \
+            "Across MANY attempts this is usually storage credentials: check " \
+            "#{StorageBackend.credential_hint}. A 404 or 410 from a.espncdn.com is " \
             "NOT in this count — dead sources are named in the report on stdout."
 
     # THE PARTIAL FAILURE, WARNED ABOUT RATHER THAN ABORTED ON, and it needs saying
@@ -575,8 +575,8 @@ namespace :nfl do
       warn "nfl:rekey_headshots: #{failed} of #{attempted} attempted re-keys failed"
       abort "nfl:rekey_headshots failed #{failed} of #{attempted} attempted re-keys " \
             "(re-keyed #{rekeyed}) -- read the [!] lines above, which name the cause per " \
-            "athlete. Across MANY attempts this is usually S3 access: check " \
-            "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION, and that the key may " \
+            "athlete. Across MANY attempts this is usually storage access: check " \
+            "#{StorageBackend.credential_hint}, and that the key may " \
             "GetObject, PutObject and DeleteObject on the bucket. NO AVATAR WAS LOST: a " \
             "failed athlete's rows still point at the objects they always did."
     end

@@ -162,6 +162,20 @@ class StorageBackendTest < ActiveSupport::TestCase
     assert_match(/R2_ENDPOINT/, error.message)
   end
 
+  # Remedy text for a wholesale Studio::S3 failure must name the keys the active
+  # backend reads; on R2 the AWS keys are not consulted at all.
+  test "credential_hint names R2 keys on r2 and AWS keys on s3" do
+    assert_match(/R2_ACCESS_KEY_ID/, StorageBackend.credential_hint({ "STUDIO_S3_BACKEND" => "r2" }))
+    refute_match(/AWS_/, StorageBackend.credential_hint({ "STUDIO_S3_BACKEND" => "r2" }))
+    assert_match(/AWS_ACCESS_KEY_ID/, StorageBackend.credential_hint({}))
+  end
+
+  test "the headshot rake aborts take their credential text from credential_hint, not a hardcoded AWS list" do
+    rake = Rails.root.join("lib/tasks/nfl.rake").read
+    assert_equal 2, rake.scan("StorageBackend.credential_hint").size, "upload_headshots and rekey_headshots"
+    refute_match(%r{AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION}, rake)
+  end
+
   private
 
   def with_env(vars)
