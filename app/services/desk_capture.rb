@@ -154,6 +154,21 @@ module DeskCapture
         JSON.parse(res.body)
       end
 
+      # The most recent received emails, newest first — the ledger the desk
+      # health check compares against DeskCaptureItem. Returns the `data` rows.
+      def list_received(limit: 50)
+        require "net/http"
+        uri = URI("#{BASE}/emails/receiving?limit=#{Integer(limit)}")
+        req = Net::HTTP::Get.new(uri)
+        req["Authorization"] = "Bearer #{ENV.fetch('RESEND_API_KEY')}"
+        res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 20) do |http|
+          http.request(req)
+        end
+        raise "Resend list received failed: #{res.code}" unless res.code.to_i == 200
+
+        Array(JSON.parse(res.body)["data"])
+      end
+
       def fetch_url(url)
         require "net/http"
         res = Net::HTTP.get_response(URI(url))

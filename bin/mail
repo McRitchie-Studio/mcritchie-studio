@@ -1,0 +1,40 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/mail — THE way an agent reads a desk item or a Gmail thread, with its
+# attachments, and checks the team@ inbound path. One `heroku run` per call;
+# every verb is a read. The logic is in bin/lib/mail_cli.rb (local half) and
+# app/services/mail_export.rb (the dyno half).
+#
+#   bin/mail desk [--since 7d]
+#   bin/mail desk <id> [--save [DIR]]
+#   bin/mail thread '<gmail query>' [--mailbox alex@mcritchie.studio] [--save [DIR]]
+#   bin/mail doctor
+#
+# Exit: 0 ok · 1 the run failed, or doctor found a problem · 2 usage.
+# An unknown flag raises OptionParser::InvalidOption before anything runs.
+
+require "optparse"
+require_relative "lib/mail_cli"
+
+verb = ARGV.shift
+if verb.nil? || %w[-h --help help].include?(verb)
+  puts MailCli::USAGE
+  exit(verb.nil? ? 2 : 0)
+end
+
+opts = MailCli.default_options
+OptionParser.new do |o|
+  o.banner = MailCli::USAGE
+  o.on("--since SPAN", "desk list window: <n>m|h|d|w (default 7d)") { |v| opts[:since] = v }
+  o.on("--save [DIR]", "write files to DIR (default $TMPDIR/mail/<item>)") { |v| opts[:save] = v || :default }
+  o.on("--mailbox ADDR", "thread: the mailbox to read (default #{MailCli::DEFAULT_MAILBOX})") { |v| opts[:mailbox] = v }
+  o.on("--app NAME", "Heroku app (default #{MailCli::DEFAULT_APP})") { |v| opts[:app] = v }
+  o.on("--local", "run bin/rails runner in this checkout instead of heroku") { opts[:local] = true }
+  o.on("-h", "--help") do
+    puts o
+    exit 0
+  end
+end.parse!(ARGV)
+
+exit MailCli.run(verb, ARGV, opts)
