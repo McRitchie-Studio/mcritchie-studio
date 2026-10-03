@@ -143,6 +143,8 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
     assert_match(/nfl:upload_headshots exited non-zero/i, out)
     assert_match(/AWS_ACCESS_KEY_ID/, out,
                  "the line has to name the credential an operator goes and checks")
+    assert_match(/R2_ACCESS_KEY_ID/, out,
+                 "and the R2 key, which every hub environment reads since 2026-09-30")
     refute_match(/cached variants/, out,
                  "the cached-variant count is a LEVEL — it survives a failed upload " \
                  "untouched, so it must not print as this run's result")

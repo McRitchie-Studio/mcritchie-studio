@@ -13,9 +13,10 @@ require "open-uri"
 # scoped to current/recent rosters (the master CSV has 24k rows total). Pass
 # MIN_SEASON=0 to ingest everything, or status="" to skip the status filter.
 #
-# Headshot caching is enabled by default and REQUIRES AWS credentials —
-# the constructor raises if AWS_ACCESS_KEY_ID is missing. Each Athlete with
-# an espn_id gets its 100w/400w variants cached in S3 via Studio::ImageCache.
+# Headshot caching is enabled by default and REQUIRES storage credentials —
+# the constructor raises when Studio::S3 has none (.storage_credentials?: the R2
+# keys under STUDIO_S3_BACKEND=r2, else AWS_ACCESS_KEY_ID). Each Athlete with an
+# espn_id gets its 100w/400w variants cached via Studio::ImageCache.
 # Idempotent — variants already cached are skipped. To opt out (CI, tests),
 # pass upload_headshots: false or set SKIP_HEADSHOTS=1 on the rake task.
 #
