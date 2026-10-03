@@ -71,8 +71,8 @@ and `DeskCapture`'s private R2 bucket.
 | Wave | Goal | State |
 |---|---|---|
 | 0 | credentials | **done**: `cloudflare.studio.provision` filed and verified |
-| 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, released in `studio-engine` 0.77); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md), run nightly for `moms-app` and `mcritchie-industries` |
-| 2 | per-app S3 → R2 cutover | **in progress** (2026-09-29): `moms-app` and `mcritchie-industries` R2-primary with an S3 mirror, soaking; `mcritchie-studio` the same since 2026-09-30 (soak to about 2026-10-07); `turf-monster` the same since 2026-09-30 (release v297, soak to about 2026-10-07); record in [`r2-cutover-record.md`](r2-cutover-record.md) |
+| 1 | R2 foundation | **done**: five pairs provisioned and probed (`r2-bucket-provision-lane`); `Studio::S3` speaks R2 (`studio-s3-r2-endpoint`, released in `studio-engine` 0.77); backup SOP [`r2-backup`](../agents/steffon/sops/r2-backup.md), run nightly for `moms-app`, `mcritchie-industries`, `mcritchie-studio` and `turf-monster` |
+| 2 | per-app S3 → R2 cutover | **done** except `commercial-welding`: `moms-app`, `mcritchie-industries`, `mcritchie-studio` and `turf-monster` serve from R2 alone since 2026-10-03 (moms v25, industries v54, hub v543, turf v305), each backed up nightly; record in [`r2-cutover-record.md`](r2-cutover-record.md) |
 | 3 | asset catalog | proposal below |
 | 4 | load the collections | after 3 |
 | 5 | business documents | **done for McRitchie Studio** (Shared Drives); Commercial Welding open |

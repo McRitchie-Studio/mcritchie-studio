@@ -41,6 +41,10 @@ jobs:
             secret: MOMS_APP
           - app: mcritchie-industries
             secret: MCRITCHIE_INDUSTRIES
+          - app: mcritchie-studio
+            secret: MCRITCHIE_STUDIO
+          - app: turf-monster
+            secret: TURF_MONSTER
     steps:
       - uses: actions/checkout@v4
 
