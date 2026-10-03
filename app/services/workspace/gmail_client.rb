@@ -73,6 +73,15 @@ module Workspace
       end
     end
 
+    # One attachment's bytes (users.messages.attachments.get) — a READ, under
+    # the same gmail.readonly reach as threads_get. The gem decodes the
+    # base64url `data`, so `.data` on the result is the raw file.
+    def attachment_get(message_id, attachment_id)
+      with_retries("messages.attachments.get", sleeper: @sleeper) do
+        service.get_user_message_attachment("me", message_id, attachment_id)
+      end
+    end
+
     # --- the draft surface: creates and updates, never a send ----------------
 
     def drafts_create(raw:, thread_id: nil)
