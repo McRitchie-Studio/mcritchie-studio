@@ -94,10 +94,24 @@ From the McRitchie Studio primary checkout:
 ```bash
 cd /Users/alex/projects/mcritchie-studio
 bin/agent-activity start --category Workflow --reason "knowledge-capture sweep"
-# the queue: /admin/desk, or
-heroku run -a mcritchie-studio --no-tty rails runner \
-  'DeskCaptureItem.awaiting_sweep.each { |i| puts "#{i.id} | #{i.from_addr} | #{i.subject} | hint=#{i.entity_hint}" }'
+bin/mail desk --since 7d            # the queue: id, Denver time, source, status, from, subject, attachments
+bin/mail desk <id> --save <dir>     # one item's body; --save writes its raw .eml and every attachment
 ```
+
+**`bin/mail` is THE way to read an item.** Do not hand-write `heroku run … rails
+runner` one-liners: each verb is one read-only `heroku run`, and `--save`
+defaults to `$TMPDIR/mail/desk-<id>`. On a quarantined item it prints the
+`Authentication-Results` dkim verdict and "report to operator", never the body,
+and saves nothing. To read a thread straight from Alex's mailbox, no forward
+needed: `bin/mail thread '<gmail query>' --save <dir>`
+([`gmail-capture.md`](gmail-capture.md)).
+
+**Check the email leg before trusting an empty queue.** `bin/mail doctor` (the
+same check as `bin/rails desk:health`, and the daily `DeskHealthJob`, which files
+an `ErrorLog` on failure) requires the `in.mcritchie.studio` MX to point at
+`inbound-smtp.us-east-1.amazonaws.com` and every Resend-received email to have a
+desk item. Resend's domain page is not a health signal: it showed every record
+"verified" through the 2026-09-29 to 10-02 outage, when that MX was missing.
 
 For each awaiting item: run the intake protocol on its body and attachments
 (raw + parsed parts live in the private `mcritchie-studio-desk` bucket: S3 us-east-1, or R2 once `DESK_CAPTURE_BACKEND=r2`; raw arrives via the Resend ingest job — Resend's own download URLs are temporary, the bucket copy is the durable one),
