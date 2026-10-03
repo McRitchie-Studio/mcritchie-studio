@@ -184,6 +184,16 @@ The task reports `N matched, M new, K already held`, and names which path it
 took (`incremental from <cursor>` or `full sync (…)`). On a quiet mailbox `M` is
 0, nothing is stored and no row is touched.
 
+### Reading one thread directly
+
+To read a single conversation, no pull and no forward: `bin/mail thread
+'<gmail query>' [--mailbox alex@mcritchie.studio] [--save <dir>]`. It prints the
+transcript (oldest first, attachment names listed) and, with `--save`, writes
+`transcript.txt` and every attachment. It goes through `Workspace::ThreadFinder`,
+so a query matching more than one thread is refused unread. It reads only, holds
+no new scope, and `GmailClient` still cannot send (`test/lib/no_gmail_send_test.rb`).
+Use `bin/mail` before any hand-written `heroku run`.
+
 ---
 
 ## Part 3 — Categorize

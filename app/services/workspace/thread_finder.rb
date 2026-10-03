@@ -72,20 +72,55 @@ module Workspace
     # it writes the reply. Bodies come from each message's text/plain part; a
     # message with only HTML says so rather than being silently skipped.
     def transcript(query)
+      render(@client.threads_get(thread_id_for(query), format: "full"))
+    end
+
+    # The transcript plus, when asked, every attachment's bytes — what
+    # `bin/mail thread --save` writes to disk. Reads only; still the ONE thread.
+    Attachment = Struct.new(:message_id, :filename, :mime_type, :data, keyword_init: true)
+
+    def export(query, attachments: false)
       thread = @client.threads_get(thread_id_for(query), format: "full")
+      files = attachments ? Array(thread.messages).flat_map { |m| fetch_attachments(m) } : []
+      { thread_id: thread.id, transcript: render(thread), attachments: files }
+    end
+
+    private
+
+    def render(thread)
       Array(thread.messages).map { |message|
         headers = header_map(message)
+        names = attachment_parts(message.payload).map(&:filename)
         [
           "From: #{headers['from']}",
           "Date: #{headers['date']}",
           "Subject: #{headers['subject']}",
+          ("Attachments: #{names.join(', ')}" if names.any?),
           "",
           plain_body(message.payload) || "(no plain-text part — HTML only)"
-        ].join("\n")
+        ].compact.join("\n")
       }.join("\n\n#{'-' * 60}\n\n")
     end
 
-    private
+    # Every part that names a file, at any depth.
+    def attachment_parts(part)
+      return [] if part.nil?
+
+      own = part.filename.to_s.empty? ? [] : [ part ]
+      own + Array(part.parts).flat_map { |child| attachment_parts(child) }
+    end
+
+    # Small attachments ride inline in `body.data`; the rest carry an
+    # attachment_id and are fetched one read each.
+    def fetch_attachments(message)
+      attachment_parts(message.payload).map do |part|
+        data = part.body&.data
+        if data.nil? && part.body&.attachment_id
+          data = @client.attachment_get(message.id, part.body.attachment_id).data
+        end
+        Attachment.new(message_id: message.id, filename: part.filename, mime_type: part.mime_type, data: data.to_s)
+      end
+    end
 
     def header_map(message)
       Array(message.payload&.headers).each_with_object({}) do |header, map|
@@ -98,7 +133,10 @@ module Workspace
     # base64url `data` into bytes.
     def plain_body(part)
       return nil if part.nil?
-      return part.body&.data.to_s.dup.force_encoding(Encoding::UTF_8).scrub if part.mime_type == "text/plain"
+      # A text/plain ATTACHMENT (notes.txt) is a file, not the message body.
+      if part.mime_type == "text/plain" && part.filename.to_s.empty?
+        return part.body&.data.to_s.dup.force_encoding(Encoding::UTF_8).scrub
+      end
 
       Array(part.parts).each do |child|
         found = plain_body(child)
