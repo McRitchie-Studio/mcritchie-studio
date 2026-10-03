@@ -18,7 +18,7 @@ Engine satellite; Rolio is the current reference case.
 | Examples | turf-monster, the mcritchie-studio hub | app-owned client demos; Rolio is release-managed standalone |
 | Repo | own repo, inside the managed ecosystem | own repo, outside shared automation |
 | Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: unmanaged candidate; release-managed: `release_repos.yml` (+ `qa_environments.yml` only with a QA copy; the `standalone-heroku` profile has none); optional `status: reserved` row only |
-| Runtime | `studio-engine` (auth, theme, `ErrorLog`, SSO) | standalone — **no `studio-engine`**; owns auth/UI/infra |
+| Runtime | `studio-engine` (auth, theme, `ErrorLog`, SSO) | owns auth/UI/infra; a **new** app still adopts `studio-engine` for the site footer (§7) |
 | Branch model | three-rung ladder `accepted` → `release` → `main`; feature PRs target **`accepted`** | app-owned: PRs target **`main`**; release-managed: the same three-rung ladder |
 | DoR | full `bin/dor-check` (shape-tiered) | app-owned: **lite** — task + tests + error-logging; release-managed: release conductor gates apply |
 | Deploy owner | studio DevOps (Steffon); operator-gated ship | app-owned deploy or release-managed Heroku deploy |
@@ -80,7 +80,7 @@ will never sign a transaction. Most apps are web2. See
 
 | Decision | Managed satellite | Standalone / client app |
 |---|---|---|
-| Engine | consume `studio-engine` from RubyGems | no engine — vendor only what you need |
+| Engine | consume `studio-engine` from RubyGems | `studio-engine` for the site footer (§7); vendor anything else you need |
 | Auth | engine passwordless + hub SSO | own auth (the app's call) |
 | DB | Postgres | **SQLite is fine for a demo**; Postgres when it matters |
 | External adapters (AI, payments, …) | mock-first behind a swappable adapter | same — mock-first behind a swappable adapter |
@@ -165,6 +165,83 @@ unrelated `bin/release status`.
   `Llm` adapter is the pattern: a mock implementation by default, the real
   provider behind an env key. The app boots, tests, and demos with zero external
   credentials; flipping one env var swaps in the real provider.
+
+**Every new app — the site footer and its legal pages, from day one:**
+
+Decided by Alex, 2026-10-03: *"new apps have this built right in."* Every new
+app, either tier, adopts `studio-engine` and ships the engine's site footer in
+its first build, not in a later cleanup task. This is the source of truth for the
+rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
+
+- **Adopt the engine at a version with the footer.** `studio-engine` >= 0.84.0
+  (the footer landed in 0.83.0; 0.84.0 made the booking crop a per-app
+  measurement instead of one hard-coded window). Read `Gemfile.lock` for what
+  resolved.
+- **Render it once, from the layout.** `<%= studio_site_footer %>` at the end of
+  `<body>` in `app/views/layouts/application.html.erb`; never a hand-written
+  footer partial.
+- **Declare it as facts.** `config.site_footer` in
+  `config/initializers/studio.rb`, a callable that receives the view so it can
+  use route helpers. `nil` means no footer, so leaving it unset is the failure.
+- **Default content is Turf Monster's** (`turf-monster`
+  `config/initializers/studio.rb`): brand wordmark and logo, a one-line
+  tagline, the app's own link columns, a contact `email`, and `social` only when
+  the app has handles.
+- **Legal column only with legal pages.** Add a Legal column and the `legal:`
+  line when, and only when, the app has Privacy and Terms pages (below).
+- **No address, map or phone unless the operator asks.** `address:` draws the
+  Location band and the map; leave it out by default. McRitchie Studio and
+  McRitchie Industries show 3000 Lawrence St with a map by explicit choice, not
+  as the template.
+- **Visibility is one setting: `config.site_footer_visible`.** The default shows
+  the footer on every page to a visitor, and to a signed-in viewer only on the
+  controllers in `config.site_footer_controllers` (the public pages). Keep that
+  default unless the app is a public site whose legitimacy links must show
+  everywhere: Turf Monster sets `config.site_footer_visible = ->(_view) { true }`
+  for its underwriters.
+
+**Legal pages — when the app needs them, and how they are written:**
+
+- **Needed when the app has accounts or collects personal data**: emails, phone
+  numbers, form submissions. A pure showcase with none of those needs neither.
+- **Establish the operating entity per app first.** A client's app names the
+  client's entity, never ours by default. Ours are in `business-data/FACTS.md`
+  (the private `mcritchie-industries` repo; see
+  [`knowledge-capture.md`](../modules/knowledge-capture.md)).
+- **Write them from what the code does.** Read the models, forms, mailers,
+  cookies and third-party calls, then describe those, not a generic policy.
+- **True of what the site SHOWS as well as what it stores.** Industries'
+  `/signup` asked for a password its policy said did not exist; the review
+  caught it, and the page now asks for an email alone.
+- **List every statement you could not verify** (retention period, processors,
+  jurisdiction, contact address) in the PR body for the operator to confirm
+  before review.
+- **Worked examples:** `mcritchie-industries` `app/views/legal/privacy.html.erb`
+  and `terms.html.erb`, and the hub's
+  [`app/views/landing/privacy.html.erb`](../../../app/views/landing/privacy.html.erb).
+
+**Booking scheduler — optional, when the app wants one:**
+
+- **Set `config.booking_url`** to the Google appointment schedule's public
+  `https` address; a footer link to the booking page then opens the popup.
+- **Crop it from a measurement, not a guess.** From a `studio-engine` checkout,
+  run `bin/booking-crop-measure <booking_url>` and paste the
+  `config.booking_crop = { top:, bottom:, frame_height: }` line it prints.
+- **Allow it in the content security policy.** `frame-src
+  https://calendar.google.com`; an app that keeps `address:` also needs
+  `img-src https://tile.openstreetmap.org` for the map tiles.
+- Detail: `studio-engine/docs/BOOKING.md` (setup in Google, the crop, the
+  popup, the `/schedule` page, CSP).
+
+**The launch's DONE line** — copy it into the launch task's acceptance:
+
+```text
+[ ] Site footer renders on / (footer[data-site-footer]); Legal links present if legal pages exist; no address, map or phone unless the operator chose them
+```
+
+Check it with
+`curl -fsS https://<host>/ | grep -c 'data-site-footer'` (expect `1` or more)
+and read the rendered footer once in a browser.
 
 **Managed-satellite-specific — the engine standards, from day one:**
 
@@ -260,7 +337,9 @@ later cleanup task.
   [`../modules/email-operations.md`](../modules/email-operations.md).
 
 **Standalone-specific:**
-- No `studio-engine`, no hub SSO — the app owns its auth, UI, and infra.
+- No hub SSO — the app owns its auth, UI, and infra. It still adopts
+  `studio-engine` for the site footer (above); apps that predate 2026-10-03,
+  such as Rolio, are not retrofitted by this rule.
 - App-owned feature PRs target **`main`**; release-managed standalone PRs target
   **`accepted`** (the ladder's first rung).
 - Match the studio's Ruby/Rails versions. App-owned standalone apps own their
@@ -290,6 +369,8 @@ Merge Patterns**. Read that before fanning out agents.
 
 ## Related
 
+- `studio-engine/docs/SITE_FOOTER.md` and `studio-engine/docs/BOOKING.md` — the
+  footer and booking primitives every new app adopts (§7).
 - [`app-templates.md`](app-templates.md) — the **base vs web3 bolt-on** template
   decision, orthogonal to the tier decision above: a new app picks a tier here
   and a template there.
