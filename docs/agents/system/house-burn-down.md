@@ -59,7 +59,7 @@ That's it. The only thing you actually do is copy the token and run the commands
 
 **Default NFL data:** every build pulls the live schedule, runs the ESPN depth-chart scrape, and snapshots current-week rosters (~3-5 min). Game show pages and the season grid work out of the box.
 
-**Headshots (opt-in):** `/nfl-rosters` shows position-labeled placeholders by default. To cache real player photos, run `WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` — adds ~10-15 min for the nflverse master CSV + S3 headshot uploads. Requires AWS creds in `.env` (auto-restored by Phase 4).
+**Headshots (opt-in):** `/nfl-rosters` shows position-labeled placeholders by default. To cache real player photos, run `WITH_NFL_HEADSHOTS=1 bin/ecosystem-build` — adds ~10-15 min for the nflverse master CSV + S3 headshot uploads. Requires storage creds: the R2 dev pair (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`) in `.env.development` under `STUDIO_S3_BACKEND=r2`, else AWS creds in `.env` (see `.env.example`).
 
 The manual phase-by-phase steps below are kept as a fallback for debugging when the script can't complete a phase.
 
