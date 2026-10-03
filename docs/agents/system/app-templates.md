@@ -12,6 +12,8 @@ relitigated the first time someone finds it inconvenient.
 | **BASE** | `studio-engine` + `mcritchie-studio` | **Every** app — web2 and web3 alike |
 | **WEB3 ADD** | `solana-studio` + `turf-monster` | Bolted on **only** for a Solana application |
 
+The BASE template includes the engine's site footer from the first build, plus legal pages when the app holds personal data: [`new-app-onboarding-sop.md` § 7](new-app-onboarding-sop.md#7-build-conventions).
+
 Turf Monster is **not** a separate lineage. It is built on `studio-engine` and
 inherits every base primitive; it is unique in carrying web3 **and** payment
 rails, which is what makes it the **web3 hub** — the reference app a new Solana

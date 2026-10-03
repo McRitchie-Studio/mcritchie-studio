@@ -36,7 +36,8 @@ studio-engine gem ──┐
 is built on; the `solana-studio` arm is the WEB3 ADD, bolted on only for a Solana
 app. `chain-ops` is being deprecated, so turf-monster is the web3 arm that
 remains. See [`docs/agents/system/app-templates.md`](agents/system/app-templates.md)
-for the decision and its reasoning.
+for the decision and its reasoning. Every new app ships the engine's site footer
+from day one: [`new-app-onboarding-sop.md` § 7](agents/system/new-app-onboarding-sop.md#7-build-conventions).
 
 The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local clones are still part of the ecosystem because agents edit, release, and audit those gems.
 
