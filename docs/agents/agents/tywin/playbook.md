@@ -113,8 +113,8 @@ forward diagonals, a second crossbow at its side and two mountains close by.
 The dragon waits nearby. The trebuchet in the centre of the second row covers
 nearly the whole front: whichever front-line piece an enemy dragon takes, the
 trebuchet or the catapult can take the dragon back, except the light horse on
-the far left. Slow, and almost impossible to crack.
-It is his default against a player he does not know.
+the far left. Slow, and hard to crack. It was his default against a player
+he did not know until the second round of rules; it now needs rebuilding.
 
 ### The Blackwater — the flank strike
 
@@ -176,9 +176,9 @@ row 11       . X K . . .
 
 `["L.SE..ES.L", ".H..T..H.", "R..DR..R", "M.XC..M", ".XK..."]`
 
-Balanced and orderly, the setup he plays most. A symmetrical front of horses,
-spearmen and elephants; the trebuchet behind the centre; the dragon in reserve
-on the third row. The king sits on the back row just left of centre, a crossbow
+Balanced and orderly, his standard under the first rules. A symmetrical
+front of horses, spearmen and elephants; the trebuchet behind the centre;
+the dragon in reserve on the third row. The king sits on the back row just left of centre, a crossbow
 at its side and a crossbow and the catapult on its diagonals, with mountains
 on both wings to funnel the opponent into the middle. A Hand's setup: nothing
 flashy, everything covered.
