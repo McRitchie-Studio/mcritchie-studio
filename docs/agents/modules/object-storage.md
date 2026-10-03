@@ -88,12 +88,12 @@ their own dates where they changed after the census.
 
 | App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
 |---|---|---|---|---|
-| `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | `Studio::S3` on R2 and Active Storage R2-primary with S3 mirror since 2026-09-30 (release v530), soaking to about 2026-10-07; `assets.mcritchie.studio` serves production | not enabled |
-| `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | not yet: the code reads it once `DESK_CAPTURE_BACKEND=r2` is set | not enabled |
-| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | `Studio::S3` on R2 and Active Storage R2-primary with S3 mirror since 2026-09-30 (release v297), soaking to about 2026-10-07; `assets.turfmonster.media` serves production | not enabled |
-| `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | knowledge docs (`Studio::S3`) since 2026-09-28; Active Storage R2-primary with S3 mirror during the soak | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
+| `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | R2 alone since 2026-10-03 (Active Storage `r2`, v543; `Studio::S3` on R2 since 2026-09-30); `assets.mcritchie.studio` serves production, `assets-dev.mcritchie.studio` the dev bucket; QA (`mcritchie-studio-qa`) and local dev on the dev bucket | enabled 2026-10-03, `mcritchie-studio-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
+| `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | R2 since 2026-10-01 (`DESK_CAPTURE_BACKEND=r2`, v542); only the manual SES fallback still reads the S3 desk bucket | not enabled |
+| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | R2 alone since 2026-10-03 (Active Storage `r2`, v305; `Studio::S3` on R2 since 2026-09-30); `assets.turfmonster.media` serves production, `assets-dev.turfmonster.media` the dev bucket; QA and local dev on the dev bucket | enabled 2026-10-03, `turf-monster-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
+| `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | R2 alone since 2026-10-03 (Active Storage `r2`, v54; knowledge docs on R2 since 2026-09-28); QA on the dev bucket | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
 | `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
-| `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | not yet (Wave 2) | enabled 2026-09-26, `moms-app-backup`; drill passed; nightly via `.github/workflows/r2-backup.yml` |
+| `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | R2 alone since 2026-10-03 (Active Storage `r2`, v25) | enabled 2026-09-26, `moms-app-backup`; drill passed; nightly via `.github/workflows/r2-backup.yml` |
 
 Re-derive before trusting: `GET /accounts/<id>/r2/buckets` with the tier-2
 token lists the pairs, and the SOP's verify script re-runs the probes. A census
