@@ -53,6 +53,6 @@ class R2BackupWorkflowTest < Minitest::Test
   end
 
   def test_the_apps_backed_up_nightly
-    assert_equal %w[mcritchie-industries moms-app], matrix.map { |row| row["app"] }.sort
+    assert_equal %w[mcritchie-industries mcritchie-studio moms-app turf-monster], matrix.map { |row| row["app"] }.sort
   end
 end

@@ -11,9 +11,10 @@ is the act that applies them to a new app.
 
 **Where storage lives now.** Every app's object storage is an R2 bucket pair in
 **McRitchie Studio's Cloudflare account**. Apps inherit that account; none holds
-its own. AWS S3 is **legacy**: the pairs below still serve the live apps until
-each app's Wave 2 cutover task moves its objects and config, and the whole AWS
-section at the end of this page retires with the last of them (Wave 7). Why R2:
+its own. AWS S3 is **legacy**: the hub, Turf Monster, Industries and
+`moms-app` have served from R2 alone since 2026-10-03 (`commercial-welding` has
+not cut over), and the AWS section at the end of this page is history that
+retires in Wave 7. Why R2:
 Alex is leaving AWS for a simpler operator experience, not for cost; R2 speaks
 the S3 API, so Active Storage and `Studio::S3` move by endpoint and key, not by
 rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
@@ -80,20 +81,20 @@ never borrow agent keys; agents never borrow app keys.
 Provisioned and verified by `bucket-provision` on 2026-09-26: every pair passed
 the positive probes and the three negative ones (prod key refused on dev, dev
 key refused a production write and a production delete). All buckets are
-private. They were empty at provisioning. Since 2026-09-28
-`mcritchie-industries` serves from its production bucket; no other app reads
-them yet. Each enabled `<app>-backup` holds its mirror, drill receipts and
-archives (archives and receipts expire under its lifecycle rules). Rows carry
-their own dates where they changed after the census.
+private. They were empty at provisioning. Since 2026-10-03
+every app but `commercial-welding` serves from its production bucket alone.
+Each enabled `<app>-backup` holds its mirror, drill receipts and archives
+(archives and receipts expire under its lifecycle rules). Rows carry their own
+dates where they changed after the census.
 
 | App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
 |---|---|---|---|---|
-| `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | `Studio::S3` on R2 and Active Storage R2-primary with S3 mirror since 2026-09-30 (release v530), soaking to about 2026-10-07; `assets.mcritchie.studio` serves production | not enabled |
-| `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | not yet: the code reads it once `DESK_CAPTURE_BACKEND=r2` is set | not enabled |
-| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | `Studio::S3` on R2 and Active Storage R2-primary with S3 mirror since 2026-09-30 (release v297), soaking to about 2026-10-07; `assets.turfmonster.media` serves production | not enabled |
-| `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | knowledge docs (`Studio::S3`) since 2026-09-28; Active Storage R2-primary with S3 mirror during the soak | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
+| `mcritchie-studio` | `mcritchie-studio-{dev,production}` | `r2.mcritchie-studio` | R2 alone since 2026-10-03 (Active Storage `r2`, v543; `Studio::S3` on R2 since 2026-09-30); `assets.mcritchie.studio` serves production, `assets-dev.mcritchie.studio` the dev bucket; QA (`mcritchie-studio-qa`) and local dev on the dev bucket | enabled 2026-10-03, `mcritchie-studio-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
+| `mcritchie-studio` (`DeskCapture`) | `mcritchie-studio-desk`, one private bucket, no pair (added 2026-09-29) | `r2.mcritchie-studio-desk` | R2 since 2026-10-01 (`DESK_CAPTURE_BACKEND=r2`, v542); only the manual SES fallback still reads the S3 desk bucket | not enabled |
+| `turf-monster` | `turf-monster-{dev,production}` | `r2.turf-monster` | R2 alone since 2026-10-03 (Active Storage `r2`, v305; `Studio::S3` on R2 since 2026-09-30); `assets.turfmonster.media` serves production, `assets-dev.turfmonster.media` the dev bucket; QA and local dev on the dev bucket | enabled 2026-10-03, `turf-monster-backup`; drill passed 2026-10-03; nightly via `.github/workflows/r2-backup.yml` |
+| `mcritchie-industries` | `mcritchie-industries-{dev,production}` | `r2.mcritchie-industries` | R2 alone since 2026-10-03 (Active Storage `r2`, v54; knowledge docs on R2 since 2026-09-28); QA on the dev bucket | enabled 2026-09-28, `mcritchie-industries-backup`; drill passed on live data; nightly via `.github/workflows/r2-backup.yml` |
 | `commercial-welding` | `commercial-welding-{dev,production}` | `r2.commercial-welding` | not yet (Wave 2) | not enabled |
-| `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | not yet (Wave 2) | enabled 2026-09-26, `moms-app-backup`; drill passed; nightly via `.github/workflows/r2-backup.yml` |
+| `moms-app` | `moms-app-{dev,production}` | `r2.moms-app` | R2 alone since 2026-10-03 (Active Storage `r2`, v25) | enabled 2026-09-26, `moms-app-backup`; drill passed; nightly via `.github/workflows/r2-backup.yml` |
 
 Re-derive before trusting: `GET /accounts/<id>/r2/buckets` with the tier-2
 token lists the pairs, and the SOP's verify script re-runs the probes. A census
@@ -103,7 +104,9 @@ is only true for the day it was taken.
 
 # Legacy — AWS S3 (retires app by app in Wave 2, wholly in Wave 7)
 
-Everything below describes the S3 buckets the live apps still serve from. Do
+Everything below is the pre-R2 posture, kept for history: no cut-over app has
+used S3 since 2026-10-03, and the cutover session reports the production buckets
+cleared that night (versioned; noncurrent versions expire after 30 days). Do
 not provision new S3 buckets.
 
 ## S3 — the rules
