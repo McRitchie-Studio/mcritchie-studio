@@ -218,7 +218,7 @@ rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
   before review.
 - **Worked examples:** `mcritchie-industries` `app/views/legal/privacy.html.erb`
   and `terms.html.erb`, and the hub's
-  [`app/views/landing/privacy.html.erb`](../../../app/views/landing/privacy.html.erb).
+  `app/views/landing/privacy.html.erb` (with `terms.html.erb` beside it).
 
 **Booking scheduler — optional, when the app wants one:**
 
