@@ -11,9 +11,10 @@ is the act that applies them to a new app.
 
 **Where storage lives now.** Every app's object storage is an R2 bucket pair in
 **McRitchie Studio's Cloudflare account**. Apps inherit that account; none holds
-its own. AWS S3 is **legacy**: the pairs below still serve the live apps until
-each app's Wave 2 cutover task moves its objects and config, and the whole AWS
-section at the end of this page retires with the last of them (Wave 7). Why R2:
+its own. AWS S3 is **legacy**: the hub, Turf Monster, Industries and
+`moms-app` have served from R2 alone since 2026-10-03 (`commercial-welding` has
+not cut over), and the AWS section at the end of this page is history that
+retires in Wave 7. Why R2:
 Alex is leaving AWS for a simpler operator experience, not for cost; R2 speaks
 the S3 API, so Active Storage and `Studio::S3` move by endpoint and key, not by
 rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
@@ -80,11 +81,11 @@ never borrow agent keys; agents never borrow app keys.
 Provisioned and verified by `bucket-provision` on 2026-09-26: every pair passed
 the positive probes and the three negative ones (prod key refused on dev, dev
 key refused a production write and a production delete). All buckets are
-private. They were empty at provisioning. Since 2026-09-28
-`mcritchie-industries` serves from its production bucket; no other app reads
-them yet. Each enabled `<app>-backup` holds its mirror, drill receipts and
-archives (archives and receipts expire under its lifecycle rules). Rows carry
-their own dates where they changed after the census.
+private. They were empty at provisioning. Since 2026-10-03
+every app but `commercial-welding` serves from its production bucket alone.
+Each enabled `<app>-backup` holds its mirror, drill receipts and archives
+(archives and receipts expire under its lifecycle rules). Rows carry their own
+dates where they changed after the census.
 
 | App | Buckets | 1Password | Serving | Backup (`r2-backup`) |
 |---|---|---|---|---|
@@ -103,7 +104,9 @@ is only true for the day it was taken.
 
 # Legacy — AWS S3 (retires app by app in Wave 2, wholly in Wave 7)
 
-Everything below describes the S3 buckets the live apps still serve from. Do
+Everything below is the pre-R2 posture, kept for history: no cut-over app has
+used S3 since 2026-10-03, and the cutover session reports the production buckets
+cleared that night (versioned; noncurrent versions expire after 30 days). Do
 not provision new S3 buckets.
 
 ## S3 — the rules
