@@ -3,26 +3,33 @@
 How Tywin plays Cyvasse: the style, the questions he asks of every position,
 and the five setups he favours. His character is in [`soul.md`](soul.md).
 
-Every rule quoted here is the engine's (`cyvasse/app/javascript/cyvasse/`),
-as it stands after Alex's rule changes of 2026-09-29. Every claim about a
-setup was checked against that engine; the method is at the end.
+Every rule quoted here is the engine's (`cyvasse/app/javascript/cyvasse/`)
+as it stood on cyvasse `main` of 2026-09-30 (commit `7ac5bb5`), after Alex's
+second round of rule changes: new strengths, trumps that work on attack only,
+and new cavalry jumps. Every claim about a setup was checked against that
+engine; the method is at the end. The rules are still moving, so re-run the
+checks after any rule change before trusting a number here.
 
 ## The rules that shape his game
 
 - **The king is the game.** Take theirs and you win.
 - **The enemy dragon is the first danger.** It flies any distance in a
-  straight line, over mountains and most units, and takes what it lands on.
-  Only a trebuchet or a catapult stops it outright; a crossbow or a dragon makes
-  it stop to capture. A king whose two forward diagonals each meet one of those
-  four pieces first cannot be struck on the first turn.
+  straight line, over mountains, its own pieces and enemy foot soldiers, and
+  takes what it lands on. A shooter (crossbow, catapult, trebuchet) or a dragon
+  in its path makes it stop there. A king whose two forward diagonals each meet
+  one of those four pieces first cannot be struck on the first turn.
+- **Horses raid.** A light horse moves 4 and then 1 more; a heavy horse 3 and
+  then 1. A horse can take a front piece with its first jump and the king with
+  its second, so a king safe from the dragon is not yet safe.
 - **The side whose king stands nearer the middle row moves first.** Initiative
   costs king safety.
 - **Mountains stop every shot and every walking piece,** but not a dragon.
-- **The lowest pieces kill lords.** A crossbow can take a king. So can a
-  spearman, either horse, an elephant, a catapult, a dragon, or the other king.
-  Only rabble and the trebuchet cannot.
-- **Trumps beat numbers.** A spearman takes a light horse; a crossbow takes an
-  elephant; a catapult, a trebuchet or a king takes a dragon.
+- **The lowest pieces kill lords.** Every unit but the trebuchet can take a
+  king, the rabble included: the rabble trumps the king.
+- **Trumps work on attack only.** The rabble takes a king; a trebuchet, a
+  catapult or a king takes a dragon. There are no other trumps, and a trump
+  protects nothing: a dragon can still take a trebuchet.
+- **Shooters are fragile.** All three defend at 1, so any unit can take one.
 
 ## His style
 
@@ -30,8 +37,9 @@ Each principle is a page of his life turned into a way of playing.
 
 1. **The house before the field.** His king starts sealed: both forward
    diagonals closed by a shooter or the dragon, stone at its shoulder. He never
-   opens with the king forward, and gives up the first move gladly. None of his
-   five setups leaves the king open to a first-turn dragon strike.
+   opens with the king forward, and gives up the first move gladly. No enemy
+   piece can take the king in any of his five setups on the first turn: not a
+   dragon, and not a horse raiding with both jumps.
 2. **Win before the battle.** Most games are decided in the setup. He chooses
    his lanes with mountains and his killing grounds with shooters, then lets
    the opponent walk into them. (The Red Wedding was won by letter.)
@@ -41,8 +49,8 @@ Each principle is a page of his life turned into a way of playing.
 4. **Castamere.** A piece that enters his camp dies, whatever it costs. He
    takes that trade even at a slight loss, because the next piece hesitates.
 5. **A Lannister pays his debts.** He counts every trade by value (rabble,
-   light horse, spearman, crossbow, heavy horse, elephant, trebuchet, catapult,
-   dragon, king, the computer's own order). He takes a trade that pays. He
+   light horse, crossbow, spearman, heavy horse, elephant, trebuchet, catapult,
+   dragon, king: the computer's own order, `KILL_PRIORITY` in `ai.js`). He takes a trade that pays. He
    refuses a free piece that opens a line to his king.
 6. **The Blackwater.** When he attacks, it is with the force the opponent did
    not count, on the flank they are not watching, after they have committed.
@@ -73,16 +81,17 @@ half a hex in from the one above, as on the board.
 
 | Setup | Idea | King | Moves first vs the 18 computer armies | Won vs the computer |
 |---|---|---|---|---|
-| Casterly Rock | The fortress | Back corner, right | 0 | 55.6% |
-| The Blackwater | The flank strike | Back corner, left | 0 | 59.6% |
-| The Red Wedding | The dragon trap | Fourth row, centre | 7 | 47.2% |
-| The Hand of the King | The standard | Back row, left of centre | 0 | 56.1% |
-| The Rains of Castamere | Bait and punish | Back corner, right | 0 | 46.7% |
+| The Blackwater | The flank strike | Back corner, left | 0 | 64.1% |
+| The Red Wedding | The dragon trap | Back row, centre | 0 | 57.6% |
+| The Rains of Castamere | Bait and punish | Back corner, right | 0 | 51.7% |
+| Casterly Rock | The fortress | Back corner, right | 0 | 24.3% |
+| The Hand of the King | The standard | Back row, left of centre | 0 | 9.3% |
 
-For comparison, the 25 existing openings win 34.6% on average by the same
-measure. All five of his beat that average. The best existing openings, Horse
-Lords (66.5%) and Centre Column (62.0%), beat all of his. The numbers were
-measured after the rule change that has elephants move 2. See "How the
+For comparison, the 25 existing openings win 20.4% on average by the same
+measure, and the best, Tusk Line, wins 64.3%. The Blackwater, the Red Wedding
+and Castamere rank second, third and fifth among all thirty. Casterly Rock and
+the Hand of the King were built for the first round of rules and fell under the
+second: the Hand now loses most games and needs rebuilding. See "How the
 numbers were made" for what this measures and what it does not.
 
 ### Casterly Rock — the fortress
@@ -134,22 +143,24 @@ was not watching.
             the enemy
 row  7   L . S . . . . S . L
 row  8    H . . . E . . . H
-row  9     . X . C T . X .
-row 10      M . R K R . M
-row 11       . . E D R .
+row  9     . X . . R . X .
+row 10      M . R C T R M
+row 11       . . E K D .
             your side
 ```
 
-`["L.S....S.L", "H...E...H", ".X.CT.X.", "M.RKR.M", "..EDR."]`
+`["L.S....S.L", "H...E...H", ".X..R.X.", "M.RCTRM", "..EKD."]`
 
 The centre is left open, with one elephant standing in it: an invitation.
-An enemy dragon that takes it lands next to the catapult and the trebuchet, and
-either can take the dragon back. Deeper in, any piece their dragon takes on
-the back two rows is answered by the catapult and the trebuchet, and mostly by
-the king as well, which trumps a dragon within two hexes. The catapult and
-trebuchet also seal the king's diagonals. Because the king stands on the
-fourth row, he moves first against 7 of the 18 computer armies, the only one
-of his setups that ever does.
+An enemy dragon that takes it can be taken back by the catapult, the
+trebuchet or his own dragon. Deeper in, any piece their dragon takes on the
+back two rows is answered by the catapult and the trebuchet. The catapult and
+trebuchet also seal the king's diagonals from the row in front of it.
+
+Rebuilt on 2026-10-03: the king used to stand on the fourth row, which moved
+first against some computer armies, but under the new cavalry jumps a light
+horse from the enemy's front row could reach it on the first turn. The king
+now sits on the back row, and no first-turn raid reaches it.
 
 ### The Hand of the King — the standard
 
@@ -199,16 +210,18 @@ favourite.
 
 | Opponent | Setup |
 |---|---|
-| Unknown, or strong | Casterly Rock |
+| Unknown, or strong | The Blackwater |
 | Greedy: takes every free piece | The Rains of Castamere |
 | Dragon-happy: flies the dragon early | The Red Wedding |
 | Turtles: sits back and waits | The Blackwater |
-| Everyone else, and when teaching | The Hand of the King |
+
+Casterly Rock and the Hand of the King stay in his book by name but out of
+this table until they are rebuilt for the current rules.
 
 ## How the numbers were made
 
 A throwaway harness loaded each setup through the engine's own
-`Game#loadLineup` (via `openingLineup` in `openings.js`) and checked four
+`Game#loadLineup` (via `openingLineup` in `openings.js`) and checked five
 things:
 
 1. **A whole army**: all 19 pieces, on the player's rows at their true widths,
@@ -217,9 +230,15 @@ things:
    enemy hexes in turn, `legalActions` never lists the king as a capture. This
    is the same check `test/javascript/openings_test.js` runs on the existing
    openings.
-3. **Moves first**: `Game#start` against each of the 18 computer lineups in
+3. **No first-turn raid**: the same, for one enemy dragon, light or heavy
+   horse (both jumps), elephant, rabble, spearman, crossbow or catapult on each
+   enemy hex. The King's Gambit, checked as a control, is raidable from 84
+   placements. This is the stronger check: `raids` in Tyrion's
+   `test/javascript/tyrion_brain_test.js` in the `cyvasse` repo is the
+   committed version of it.
+4. **Moves first**: `Game#start` against each of the 18 computer lineups in
    `setups.js`.
-4. **Retakes**: for each bait described above, an enemy piece put on that hex,
+5. **Retakes**: for each bait described above, an enemy piece put on that hex,
    and `legalActions` listing which of his pieces can take it.
 
 None is a duplicate of an existing opening.
