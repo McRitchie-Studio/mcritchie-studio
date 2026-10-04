@@ -45,6 +45,20 @@ class AppRequest < ApplicationRecord
     study-sprint yard-sale trivia-night bike-repair pet-sitter
   ].freeze
 
+  # What the board card tells the agent who builds from it, after the
+  # requester's prompt. The card is all a builder may read, and the prompt is a
+  # customer's words: it never mentions the house rules every new app ships
+  # with. So the card names the SOP that carries them, and its acceptance asks
+  # for the one a launch has shipped without (`footer_criterion`).
+  BUILDER_POINTER = "Work this request by docs/agents/modules/launch-build-queue.md. " \
+                    "Every new app ships the site footer, and legal pages when it holds personal data: " \
+                    "docs/agents/system/new-app-onboarding-sop.md § 7.".freeze
+
+  # The selector studio-engine's footer partial emits on its root element
+  # (`<footer class="ftr" data-site-footer>`); onboarding § 7's DONE line greps
+  # for the same attribute.
+  FOOTER_SELECTOR = "footer[data-site-footer]".freeze
+
   belongs_to :user, optional: true
 
   validates :token, presence: true, uniqueness: true
@@ -130,10 +144,11 @@ class AppRequest < ApplicationRecord
         description: "#{showcase? ? 'Showcase' : 'Vibe-tier'} app requested through /build by #{user&.email || 'unknown'}.",
         metadata: { "devops" => {
           "kind" => "feature",
-          "acceptance" => [ "#{host} serves the app the requester described" ],
+          "acceptance" => [ "#{host} serves the app the requester described", footer_criterion ],
           "agent_context" => "Prompt from the requester, verbatim:\n\n#{prompt}\n\n" \
                              "Subdomain reserved: #{host}. Tier: #{tier}. App request token: #{token}." \
-                             "#{showcase? ? ' SHOWCASE build: an example of what the App Builder delivers, submitted by an admin.' : ''}"
+                             "#{showcase? ? ' SHOWCASE build: an example of what the App Builder delivers, submitted by an admin.' : ''}" \
+                             "\n\n#{BUILDER_POINTER}"
         } }
       )
       update!(task_slug: task.slug)
@@ -143,6 +158,10 @@ class AppRequest < ApplicationRecord
     AppRequestDiscordJob.perform_later(id)
     self
   end
+
+  # The card's second acceptance bullet: the footer, on the page a visitor
+  # lands on. Eight words whatever the name, inside the board's 5-12 word rule.
+  def footer_criterion = "#{host}'s home page renders the site footer (#{FOOTER_SELECTOR})"
 
   private
 
