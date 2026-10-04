@@ -83,6 +83,20 @@ module Api
         assert_equal "steve-aoki-night-call", data["slug"]
       end
 
+      test "an underscore in a source id never reaches the slug" do
+        post_video
+        post_video(source_id: "_b7GSJJ_lO_", source_url: "https://www.youtube.com/watch?v=_b7GSJJ_lO_")
+        assert_response :created
+        assert_equal "steve-aoki-night-call-b7gsjj-lo", data["slug"]
+
+        post_video(platform: "instagram", source_id: "Cx_-Y_z", source_url: "https://www.instagram.com/reel/Cx_-Y_z/",
+                   title: "Instagram Cx_-Y_z", uploader: "steveaoki", credited_artists: ["Steve Aoki"],
+                   source_object_key: "music_videos/steve_aoki/instagram_cx_y_z/source/steve_aoki_instagram_cx_y_z.mp4",
+                   info_object_key: "music_videos/steve_aoki/instagram_cx_y_z/source/steve_aoki_instagram_cx_y_z.info.json")
+        assert_response :created
+        assert_equal "steve-aoki-instagram-cx-y-z", data["slug"]
+      end
+
       test "GET by slug returns the record without lyric text" do
         post_video
         get api_v1_music_video_path("steve-aoki-night-call"), headers: auth_headers, as: :json

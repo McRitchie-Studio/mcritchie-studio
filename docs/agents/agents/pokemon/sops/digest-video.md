@@ -16,6 +16,7 @@ bin/digest-video <url> --api <base>      # another hub, e.g. a desk server
 bin/digest-video <url> --from-dir <dir>  # reuse a download already on disk
 bin/digest-video <url> --dry-run         # download and print the plan only
 bin/digest-video <url> --production      # production bucket and mcritchie.studio
+bin/digest-video <url> --cookies-from-browser chrome   # lend yt-dlp the browser's session
 ```
 
 It writes the dev bucket unless `--production` is passed.
@@ -26,14 +27,15 @@ It writes the dev bucket unless `--production` is passed.
 |---|---|---|
 | `youtube.com`, `youtu.be` | [`download-youtube`](download-youtube.md) | measured 2026-09-28 |
 | `tiktok.com`, `vm.tiktok.com`, `vt.tiktok.com` | [`download-tiktok`](download-tiktok.md) | built; download UNMEASURED |
-| `instagram.com` | [`download-instagram`](download-instagram.md) | UNMEASURED; the script prints `not built yet` |
+| `instagram.com` | [`download-instagram`](download-instagram.md) | built; anonymous download measured 2026-10-04, cookie path UNMEASURED |
 
 Any other host: stop and ask Alex.
 
 ## 2. Download
 
 Run the sub-SOP. It leaves an H.264 MP4 and its `.info.json` in a working folder.
-Confirm the MP4 plays and read its duration:
+The script refuses an MP4 with no audio track. Confirm the MP4 plays and read
+its duration:
 
 ```bash
 ffprobe -v error -show_entries format=duration -of csv=p=0 <file>.mp4
@@ -53,7 +55,8 @@ music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.info.json
 Keys come from 1Password item `r2.mcritchie-studio` in `studio-agents`, read
 through `bin/secret`; no value is printed. The stored `.info.json` keeps only
 the allowlist in [`download-youtube`](download-youtube.md) (a TikTok's in
-[`download-tiktok`](download-tiktok.md), which drops the caption); lyrics and signed URLs are dropped.
+[`download-tiktok`](download-tiktok.md), which drops the caption, and an
+Instagram reel's the same); lyrics and signed URLs are dropped.
 
 ## 4. Create the MusicVideo record
 

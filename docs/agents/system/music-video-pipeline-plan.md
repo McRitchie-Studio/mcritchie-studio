@@ -27,7 +27,7 @@ inputs complete in the UI.
 ### 1. Digest
 
 `digest video <url>` (`bin/digest-video`) downloads through a platform sub-SOP
-(YouTube and TikTok built; Instagram not yet; all yt-dlp), stores the source MP4
+(YouTube, TikTok and Instagram built; all yt-dlp), stores the source MP4
 in R2 and creates a `MusicVideo` record through `POST /api/v1/music_videos`: type `music_video` (the only type for now), platform, source URL and id,
 title, duration and stage. It links the credited primary and featured artists.
 
@@ -141,6 +141,6 @@ Already filed, in build order:
 3. `music-video-cast-panel`
 4. `music-video-clip-finder`
 
-Alongside: `asset-tree-browser`. Later, not yet filed: measuring the TikTok and
-Instagram sub-SOPs, the artist reference and look stages, and the pipeline 4
+Alongside: `asset-tree-browser`. Later, not yet filed: measuring the TikTok download
+and the Instagram cookie path, the artist reference and look stages, and the pipeline 4
 hand-off.
