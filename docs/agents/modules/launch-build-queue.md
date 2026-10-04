@@ -13,7 +13,7 @@ This SOP is how an agent works that queue.
 |------|-------|
 | The funnel | `/build` (public), `/build/<token>` (the requester's own page) |
 | A request | `app_requests`: `prompt`, `subdomain`, `status` (`draft → queued → building → live`, or `cancelled`), `tier` (`launch`), `task_slug` |
-| The board card | opened when the request is queued, titled `Build Launch App <subdomain>`, stage `designed`; `agent_context` carries the prompt verbatim, the reserved host and the request token |
+| The board card | opened when the request is queued, titled `Build Launch App <subdomain>`, stage `designed`; `agent_context` carries the prompt verbatim, the reserved host and the request token, then a pointer to this page and to new-app onboarding § 7. Acceptance is two bullets: `<host>` serves the app the requester described, and `<host>`'s home page renders the site footer (`footer[data-site-footer]`) |
 | The rules | `AppRequest`: 3-30 of a-z, 0-9 and hyphens; reserved names plus every satellite's subdomain from `config/satellites.yml`; one free app per account, except admins |
 | Showcase builds | an admin's request is flagged `showcase`: an example of what the App Builder delivers (Mr. McRitchie's legacy apps), not a customer. The board card and the Discord post say so; `/build/requests?status=showcase` lists them. Once one is `live`, it appears automatically in the "Built with McRitchie Studio" gallery on `/build` (hand-kept extras: `config/build_examples.yml`) |
 | Every request, for admins | `/build/requests`: filter by status; each row shows the prompt, the requester, the reserved address and links to the board card |
@@ -49,6 +49,9 @@ which writes to a local database nobody sees.
    records live with the domain (see [deployment](deployment.md), the
    subdomain cutover steps).
 3. Confirm it answers: `curl -fsS https://<subdomain>.mcritchie.studio/up`.
+   Then confirm the card's second acceptance bullet, the footer on the home page:
+   `curl -fsS https://<subdomain>.mcritchie.studio/ | grep -c 'data-site-footer'`
+   (expect `1` or more; a `0` is read in onboarding § 7's DONE line).
 4. **Showcase builds only:** capture its gallery screenshot, pointed at the page
    that shows what the app IS (Cyvasse's game board, not its landing text), and
    commit it in a hub PR:
