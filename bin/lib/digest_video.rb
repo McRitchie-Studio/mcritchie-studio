@@ -17,11 +17,13 @@ require_relative "../../lib/music_videos/vtt_timing"
 # Lyric text never leaves this process: captions become timings here.
 module DigestVideo
   class Failure < StandardError; end
-  class NotBuilt < Failure; end
 
   H264 = "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]"
   TIKTOK_H264 = "b[vcodec^=h264]/b[vcodec^=avc1]" # TikTok serves muxed files; the rest are H.265
+  # No height cap: a reel is portrait (720x1280, 1080x1920), which `height<=1080` shuts out.
+  INSTAGRAM_H264 = "bv*[vcodec^=avc1]+ba/b[vcodec^=avc1]/b[vcodec^=h264]"
   ANY = "bv*[height<=1080]+ba/b[height<=1080]/b"
+  INSTAGRAM_ANY = "bv*+ba/b"
   R2_ITEM = "r2.mcritchie-studio"
   TARGETS = {
     false => { bucket: "mcritchie-studio-dev", suffix: "dev", api: "http://localhost:3000" },
@@ -36,9 +38,17 @@ module DigestVideo
   # A TikTok title is the caption, free text: dropped. uploader_id keeps the
   # creator findable after a handle change.
   TIKTOK_INFO_ALLOWLIST = (INFO_ALLOWLIST - %w[title] + %w[uploader_id]).freeze
+  # An Instagram title is "Video by <handle>" or free text; the caption is the description.
+  INSTAGRAM_INFO_ALLOWLIST = TIKTOK_INFO_ALLOWLIST
   CANONICAL_PAGE = %r{\Ahttps://(?:www\.)?youtube\.com/watch\?v=[\w-]{11}\z}
   TIKTOK_HOSTS = %w[tiktok.com vm.tiktok.com vt.tiktok.com].freeze
   TIKTOK_PAGE = %r{\Ahttps://www\.tiktok\.com/@[\w.-]+/video/(\d+)\z}
+  # /reel/<code>, /reels/<code>, /p/<code>, /tv/<code>, each also under /<handle>/.
+  INSTAGRAM_POST = %r{\A(?:/[^/]+)?/(p|tv|reels?)/([\w-]+)}
+  # yt-dlp's own words when Instagram wants a session (measured 2026-10-04).
+  LOGIN_WALL = /empty media response|cookies-from-browser|login required/i
+  # Where yt-dlp keeps the session it was lent; never left in a downloaded info.json.
+  SESSION_KEYS = %w[cookies http_headers].freeze
   CREDIT_WORDS = 4 # a longer "ft. …" run is caption prose, not a name
   QUERY_URL = %r{https?://\S*\?}
 
@@ -51,14 +61,16 @@ module DigestVideo
     case host
     when "youtube.com", "youtu.be" then "youtube"
     when *TIKTOK_HOSTS then "tiktok"
-    when "instagram.com" then raise NotBuilt, "not built yet: download-instagram"
+    when "instagram.com" then "instagram"
     else raise Failure, "unsupported host #{host.inspect}: ask Alex"
     end
   rescue URI::InvalidURIError
     raise Failure, "not a URL: #{url}"
   end
 
-  def info_allowlist(platform) = platform == "tiktok" ? TIKTOK_INFO_ALLOWLIST : INFO_ALLOWLIST
+  def info_allowlist(platform)
+    { "tiktok" => TIKTOK_INFO_ALLOWLIST, "instagram" => INSTAGRAM_INFO_ALLOWLIST }.fetch(platform, INFO_ALLOWLIST)
+  end
 
   # Allowlisted scalars only; a URL with a query string survives only as the canonical watch page.
   def sanitize_info(info, platform: "youtube")
@@ -73,13 +85,61 @@ module DigestVideo
   # The id is in a page URL; a short link (vm.tiktok.com) gets it from info.json.
   def tiktok_id(url) = URI.parse(url).path[%r{/video/(\d+)}, 1]
 
+  # A share link (/share/reel/<token>) carries no shortcode, and yt-dlp refuses it.
+  def instagram_id(url)
+    path = URI.parse(url).path.to_s
+    if path.start_with?("/share/")
+      raise Failure, "an Instagram share link has no post id: open it and paste the /reel/ or /p/ URL it lands on"
+    end
+
+    path[INSTAGRAM_POST, 2] or raise Failure, "no Instagram post id in #{url}: paste a /reel/, /p/ or /tv/ URL"
+  end
+
+  # The post's page without the handle prefix or the tracking query (?igsh=…).
+  def instagram_page(url, id)
+    kind = URI.parse(url).path.to_s[INSTAGRAM_POST, 1].to_s.sub(/\Areels\z/, "reel")
+    "https://www.instagram.com/#{kind.empty? ? 'p' : kind}/#{id}/"
+  end
+
+  def source_id(platform, url)
+    case platform
+    when "tiktok" then tiktok_id(url)
+    when "instagram" then instagram_id(url)
+    else youtube_id(url)
+    end
+  end
+
+  def login_wall?(err) = err.to_s.match?(LOGIN_WALL)
+
+  # Drops the lent session from every info.json yt-dlp wrote in dir.
+  def scrub_session(dir)
+    Dir.glob(File.join(dir, "*.info.json")).each do |path|
+      File.write(path, JSON.generate(without_session(JSON.parse(File.read(path)))))
+    end
+  end
+
+  def without_session(node)
+    case node
+    when Hash then node.except(*SESSION_KEYS).transform_values { |v| without_session(v) }
+    when Array then node.map { |v| without_session(v) }
+    else node
+    end
+  end
+
+  def tiktok_credits(info)
+    creator_credits([info["channel"], info["creator"], info["uploader"]], info["title"])
+  end
+
+  # Instagram's uploader is the display name and its channel the handle.
+  def instagram_credits(info) = creator_credits([info["uploader"], info["channel"]], info["description"])
+
   # The creator, then feat.-style names from the caption's first line. The
   # caption itself is never kept: only names the parser pulls out of it.
-  def tiktok_credits(info)
-    creator = [info["channel"], info["creator"], info["uploader"]].map { |n| n.to_s.strip }.find { |n| !n.empty? }
+  def creator_credits(names, caption)
+    creator = names.map { |n| n.to_s.strip }.find { |n| !n.empty? }
     return [] unless creator # a caption name is never the primary
 
-    caption = info["title"].to_s.lines.first.to_s.gsub(/#\S+/, "").gsub(/@([\w.]+)/, '\\1').squeeze(" ").strip
+    caption = caption.to_s.lines.first.to_s.gsub(/#\S+/, "").gsub(/@([\w.]+)/, '\\1').squeeze(" ").strip
     featured = MusicVideos::CreditParser.new.parse(title: caption).featured
                                         .reject { |n| n.split.size > CREDIT_WORDS }
     [creator, *featured].compact.uniq(&:downcase)
@@ -104,7 +164,7 @@ module DigestVideo
   # One run: download (or reuse --from-dir), make it playable, store, record.
   class Runner
     def initialize(workdir:, shell:, storage:, api:, out: $stdout, from_dir: nil, dry_run: false,
-                   encoder: "libx264", ytdlp: "yt-dlp", bucket: "mcritchie-studio-dev")
+                   encoder: "libx264", ytdlp: "yt-dlp", bucket: "mcritchie-studio-dev", cookies_from_browser: nil)
       @workdir = workdir
       @shell = shell
       @storage = storage
@@ -115,21 +175,26 @@ module DigestVideo
       @encoder = encoder
       @ytdlp = ytdlp
       @bucket = bucket
+      @cookies_from_browser = cookies_from_browser
     end
 
     def call(url)
       platform = DigestVideo.platform_for(url)
-      tiktok = platform == "tiktok"
-      id = tiktok ? DigestVideo.tiktok_id(url) : DigestVideo.youtube_id(url)
+      id = DigestVideo.source_id(platform, url)
       dir = @from_dir || File.join(@workdir, id || short_code(url)).tap { |d| FileUtils.mkdir_p(d) }
-      download(url, dir, tiktok: tiktok) unless @from_dir
+      download(url, dir, platform) unless @from_dir
 
       info = JSON.parse(File.read(find(dir, id.to_s, ".info.json")))
+      if info["_type"] == "playlist"
+        raise Failure, "#{url} is a post with #{info['playlist_count'] || 'several'} videos; a digest takes one: ask Alex"
+      end
+
       id ||= info["id"].to_s
       mp4 = playable(find(dir, id, ".mp4"))
       vtts = Dir.glob(File.join(dir, "*#{id}*.vtt"))
       timing = MusicVideos::VttTiming.parse(vtts.min && File.read(vtts.min))
-      payload = tiktok ? tiktok_fields(info, id) : youtube_fields(info, url, id)
+      payload = fields(platform, info, url, id)
+      info = info.merge("webpage_url" => payload[:source_url]) if platform == "instagram"
       keys = object_keys(payload)
       payload.merge!(platform: platform, source_id: id, duration_ms: duration_ms(mp4),
                      source_object_key: keys.source_mp4, info_object_key: keys.info_json, caption_timing: timing)
@@ -144,6 +209,14 @@ module DigestVideo
     end
 
     private
+
+    def fields(platform, info, url, id)
+      case platform
+      when "tiktok" then tiktok_fields(info, id)
+      when "instagram" then instagram_fields(info, url, id)
+      else youtube_fields(info, url, id)
+      end
+    end
 
     def youtube_fields(info, url, _id)
       { source_url: info["webpage_url"] || url, title: info["title"], uploader: info["uploader"],
@@ -163,6 +236,15 @@ module DigestVideo
         credits: ["TikTok #{id}", nil, artists] }
     end
 
+    # As for a TikTok: the title is "Instagram <shortcode>" and the caption stays here.
+    def instagram_fields(info, url, id)
+      artists = DigestVideo.instagram_credits(info)
+      raise Failure, "no creator in the Instagram info.json for #{id}" if artists.empty?
+
+      { source_url: DigestVideo.instagram_page(url, id), title: "Instagram #{id}", uploader: info["channel"],
+        credited_artists: artists, credits: ["Instagram #{id}", nil, artists] }
+    end
+
     # Same parse the hub runs, so the key matches the record's credits.
     def object_keys(payload)
       title, uploader, artists = payload.delete(:credits)
@@ -172,16 +254,31 @@ module DigestVideo
 
     def short_code(url) = URI.parse(url).path.scan(/[\w-]+/).last || "tiktok"
 
-    def download(url, dir, tiktok: false)
+    def download(url, dir, platform)
       @out.puts "downloading #{url} (H.264 first)"
-      subs = tiktok ? [] : ["--write-subs", "--write-auto-subs", "--sub-format", "vtt", "--sub-langs", "en.*,en"]
-      common = ["--merge-output-format", "mp4", "--write-info-json", *subs, "-P", dir, "-o", "%(id)s.%(ext)s", url]
-      _o, err, ok = @shell.call(@ytdlp, "-f", tiktok ? TIKTOK_H264 : H264, *common)
-      return if ok
+      instagram = platform == "instagram"
+      subs = platform == "youtube" ? ["--write-subs", "--write-auto-subs", "--sub-format", "vtt", "--sub-langs", "en.*,en"] : []
+      session = @cookies_from_browser ? ["--cookies-from-browser", @cookies_from_browser] : []
+      common = [*session, "--merge-output-format", "mp4", "--write-info-json", *subs, "-P", dir,
+                "-o", "%(id)s.%(ext)s", url]
+      h264 = { "tiktok" => TIKTOK_H264, "instagram" => INSTAGRAM_H264 }.fetch(platform, H264)
+      _o, err, ok = @shell.call(@ytdlp, "-f", h264, *common)
+      unless ok
+        raise Failure, login_wall(err) if DigestVideo.login_wall?(err) # a second try would only spend the rate limit
 
-      @out.puts "no H.264 format (#{err.to_s.lines.last&.strip}); downloading best and converting"
-      _o, err, ok = @shell.call(@ytdlp, "-f", ANY, *common)
-      raise Failure, "yt-dlp failed: #{err.to_s.lines.last&.strip}" unless ok
+        @out.puts "no H.264 format (#{err.to_s.lines.last&.strip}); downloading best and converting"
+        _o, err, ok = @shell.call(@ytdlp, "-f", instagram ? INSTAGRAM_ANY : ANY, *common)
+        raise Failure, "yt-dlp failed: #{err.to_s.lines.last&.strip}" unless ok
+      end
+    ensure
+      DigestVideo.scrub_session(dir) if @cookies_from_browser
+    end
+
+    def login_wall(err)
+      line = err.to_s.lines.grep(/ERROR/).last.to_s[/ERROR:\s*(.+?\.)(?:\s|\z)/, 1] || err.to_s.lines.last.to_s.strip[0, 160]
+      return "the site refused the download even with the #{@cookies_from_browser} session: #{line}" if @cookies_from_browser
+
+      "the site wants a login (#{line}); rerun with --cookies-from-browser chrome"
     end
 
     def find(dir, id, ext)
@@ -193,6 +290,7 @@ module DigestVideo
     # audio goes to AAC, never copied, since Opus in MP4 will not play.
     def playable(mp4)
       video, audio = codecs(mp4)
+      raise Failure, "#{File.basename(mp4)} has no audio track; a music video needs one" unless audio
       return mp4 if video == "h264" && audio == "aac"
 
       out = mp4.sub(/\.mp4\z/, ".h264.mp4")

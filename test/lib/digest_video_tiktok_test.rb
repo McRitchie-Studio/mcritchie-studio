@@ -102,7 +102,6 @@ class DigestVideoTiktokTest < Minitest::Test
       assert_equal "tiktok", DigestVideo.platform_for(url), url
     end
     assert_raises(DigestVideo::Failure) { DigestVideo.platform_for("https://eviltiktok.com/@a/video/1") }
-    assert_raises(DigestVideo::NotBuilt) { DigestVideo.platform_for("https://instagram.com/reel/x") }
   end
 
   def test_tiktok_id_from_the_page_url_only

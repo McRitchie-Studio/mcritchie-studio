@@ -10,6 +10,7 @@
 #   bin/digest-video <url> --from-dir DIR      # reuse a download already on disk
 #   bin/digest-video <url> --dry-run           # download and plan; no upload, no record
 #   bin/digest-video <url> --production        # production bucket and https://mcritchie.studio
+#   bin/digest-video <url> --cookies-from-browser chrome   # lend yt-dlp the browser's session (a login wall)
 
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 require "bundler/setup" # aws-sdk-s3 for the R2 upload; before any gem loads
@@ -26,6 +27,9 @@ parser = OptionParser.new do |opts|
   opts.on("--from-dir DIR", "skip the download; use the MP4 and info.json already in DIR") { |v| options[:from_dir] = File.expand_path(v) }
   opts.on("--encoder NAME", "ffmpeg H.264 encoder for a VP9 source (default #{options[:encoder]})") { |v| options[:encoder] = v }
   opts.on("--dry-run", "download and print the plan; upload and record nothing") { options[:dry_run] = true }
+  opts.on("--cookies-from-browser NAME", "lend yt-dlp NAME's session when the site wants a login (e.g. chrome)") do |v|
+    options[:cookies_from_browser] = v
+  end
   opts.on("-h", "--help") do
     puts opts
     exit 0
@@ -40,13 +44,14 @@ end
 url = ARGV.first
 
 begin
-  DigestVideo.platform_for(url) # fail fast on an unbuilt platform, before any credential read
+  DigestVideo.source_id(DigestVideo.platform_for(url), url) # fail fast on a host or link it cannot take, before any credential read
   target = DigestVideo.target(production: options[:production])
   runner = DigestVideo::Runner.new(
     workdir: options[:workdir], shell: DigestVideo.shell, out: $stdout,
     storage: DigestVideo::R2Storage.new(bucket: target[:bucket], suffix: target[:suffix]),
     api: DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__)),
     from_dir: options[:from_dir], dry_run: options[:dry_run], encoder: options[:encoder], bucket: target[:bucket],
+    cookies_from_browser: options[:cookies_from_browser],
     ytdlp: ENV.fetch("YT_DLP", File.exist?(File.expand_path("~/.local/bin/yt-dlp")) ? File.expand_path("~/.local/bin/yt-dlp") : "yt-dlp")
   )
   runner.call(url)
