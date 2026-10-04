@@ -74,6 +74,50 @@ class AppRequestTest < ActiveSupport::TestCase
     assert_includes task.metadata.dig("devops", "agent_context"), "A booking site for my groomer"
   end
 
+  # A builder may read nothing but the card. The prompt is a customer's words and
+  # never names the house rules, so the card has to: without these two an app
+  # passed its card with no footer.
+  test "the card requires the site footer and points the builder at the launch SOP" do
+    request_row = draft(user: users(:viewer)).queue!("pawsome")
+    devops = Task.find_by!(slug: request_row.task_slug).metadata.fetch("devops")
+
+    assert_equal [
+      "pawsome.mcritchie.studio serves the app the requester described",
+      "pawsome.mcritchie.studio's home page renders the site footer (footer[data-site-footer])"
+    ], devops.fetch("acceptance")
+    context = devops.fetch("agent_context")
+    assert context.end_with?(
+      "\n\nWork this request by docs/agents/modules/launch-build-queue.md. " \
+      "Every new app ships the site footer, and legal pages when it holds personal data: " \
+      "docs/agents/system/new-app-onboarding-sop.md § 7."
+    ), context
+  end
+
+  test "the requester's prompt opens the card's context, verbatim, before anything of ours" do
+    prompt = "A booking site.\n\nTwo paragraphs, \"quotes\" & <tags> kept as typed"
+    request_row = draft(prompt: prompt, user: users(:viewer)).queue!("pawsome")
+    context = Task.find_by!(slug: request_row.task_slug).metadata.dig("devops", "agent_context")
+
+    assert context.start_with?("Prompt from the requester, verbatim:\n\n#{prompt}\n\nSubdomain reserved: pawsome.mcritchie.studio."), context
+    assert_operator context.index(prompt), :<, context.index("launch-build-queue.md")
+  end
+
+  test "the card points at docs that exist, and the footer selector is the one the engine emits" do
+    AppRequest::BUILDER_POINTER.scan(%r{docs/\S+\.md}).each do |path|
+      assert Rails.root.join(path).file?, "#{path} is named on every /build card and must exist"
+    end
+    assert_equal 2, AppRequest::BUILDER_POINTER.scan(%r{docs/\S+\.md}).size
+    footer = File.read(File.join(Gem.loaded_specs.fetch("studio-engine").full_gem_path, "app/views/studio/site_footer/_footer.html.erb"))
+    assert_match(/<footer[^>]*\sdata-site-footer[\s>]/, footer)
+    assert_equal "footer[data-site-footer]", AppRequest::FOOTER_SELECTOR
+  end
+
+  test "the longest name the field accepts still opens a card the board accepts" do
+    request_row = draft(user: users(:viewer)).queue!("a" * 30)
+
+    assert_equal 2, Task.find_by!(slug: request_row.task_slug).devops_acceptance.size
+  end
+
   test "a failed claim leaves no task behind" do
     draft(user: users(:alex)).queue!("pawsome")
 
