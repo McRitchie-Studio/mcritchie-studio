@@ -160,7 +160,7 @@ class AppRequest < ApplicationRecord
   end
 
   # The card's second acceptance bullet: the footer, on the page a visitor
-  # lands on. Seven words whatever the name, inside the board's 5-12 word rule.
+  # lands on. Eight words whatever the name, inside the board's 5-12 word rule.
   def footer_criterion = "#{host}'s home page renders the site footer (#{FOOTER_SELECTOR})"
 
   private
