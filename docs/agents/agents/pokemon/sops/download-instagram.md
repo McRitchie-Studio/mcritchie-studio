@@ -65,8 +65,12 @@ cookies. Alex answers that prompt; an agent cannot.
 ## 4. Check the codec
 
 If no H.264 format exists, the script downloads the best one and converts it as
-in [`download-youtube`](download-youtube.md) step 3 (audio to AAC). Every
-measured format was already H.264, so the conversion is UNMEASURED on Instagram.
+in [`download-youtube`](download-youtube.md) step 3 (audio to AAC).
+
+Measured 2026-10-04: one reel offered VP9 only, at 720x1280 and 1080x1920, with
+an AAC track. The script took the 1080x1920 format and converted it. The Mac
+encoder's fixed 8 Mbps turned a 2.3 MB source into a 24.8 MB file, eleven times
+the size, for a 27-second reel.
 
 ## 5. What is kept
 
