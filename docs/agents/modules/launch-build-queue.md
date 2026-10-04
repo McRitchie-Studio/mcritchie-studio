@@ -51,7 +51,7 @@ which writes to a local database nobody sees.
 3. Confirm it answers: `curl -fsS https://<subdomain>.mcritchie.studio/up`.
    Then confirm the card's second acceptance bullet, the footer on the home page:
    `curl -fsS https://<subdomain>.mcritchie.studio/ | grep -c 'data-site-footer'`
-   (expect `1` or more; a `0` is read in onboarding § 7's DONE line).
+   (expect `1` or more; what a `0` means is under onboarding § 7's DONE line).
 4. **Showcase builds only:** capture its gallery screenshot, pointed at the page
    that shows what the app IS (Cyvasse's game board, not its landing text), and
    commit it in a hub PR:
