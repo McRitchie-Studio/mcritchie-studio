@@ -180,18 +180,18 @@ rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
   engine version.
 - **The engine version decides what that line renders with nothing configured.**
   Read `Gemfile.lock` for what resolved (`grep -m1 'studio-engine (' Gemfile.lock`):
-  - **The release after 0.86.0** (`studio-engine` task
-    `site-footer-on-by-default`; in review and unpublished when this was
-    written, so it has no version number yet): an unset `config.site_footer`
+  - **An engine with the default footer** (`studio-engine` task
+    `site-footer-on-by-default`; not in 0.86.0, and in review and unpublished
+    when this was written, so it has no version number yet): an unset `config.site_footer`
     renders the **default footer**, with no config. It shows the app's name, its
     logo if one is configured, the © line, and a Privacy Policy and a Terms of
     Service link for each of the routes named `privacy` and `terms` the app has.
     It has no address, map, phone, email, tagline, social row or link columns.
-    That engine's `CHANGELOG.md` entry "The site footer is on by default" names
-    the version once it publishes.
-  - **0.86.0 and earlier**: unset (`nil`) renders nothing, so the line alone
-    ships no footer. Declare `config.site_footer` (below), or adopt the later
-    release first. The footer itself needs >= 0.84.0 (it landed in 0.83.0;
+    The engine's `CHANGELOG.md` entry "The site footer is on by default" names
+    the version once it publishes; a release without that entry does not have it.
+  - **An engine without it (0.86.0 and everything earlier)**: unset (`nil`)
+    renders nothing, so the line alone ships no footer. Declare `config.site_footer`
+    (below), or adopt an engine with the default footer first. The footer itself needs >= 0.84.0 (it landed in 0.83.0;
     0.84.0 made the booking crop a per-app measurement instead of one
     hard-coded window).
   - **An app with no database** (no ActiveRecord) needs >= 0.86.0 on either
@@ -210,15 +210,15 @@ rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
   only when, it has those pages (below).
 - **No address, map or phone unless the operator asks.** The default footer has
   none, and an app's own facts leave `address:` out by default. When the
-  operator does choose a location, on the release after 0.86.0 it is the one
+  operator does choose a location, on an engine with the default footer it is the one
   setting `config.site_footer_address = { street:, city_line:, lat:, lng: }`,
   which draws the Location band, and the map when both coordinates are given,
-  on the default footer or on facts that carry no address; on 0.86.0 and
-  earlier it is the `address:` key of the app's own facts. McRitchie Studio and
+  on the default footer or on facts that carry no address; on an engine without
+  it, it is the `address:` key of the app's own facts. McRitchie Studio and
   McRitchie Industries show 3000 Lawrence St with a map by explicit choice, not
   as the template.
 - **`config.site_footer = false` is the opt-out, and a new app does not use
-  it.** It turns the footer off on every page (the release after 0.86.0). The
+  it.** It turns the footer off on every page (an engine with the default footer). The
   rule above is that every new app ships the footer.
 - **Visibility is one setting: `config.site_footer_visible`.** The default shows
   the footer on every page to a visitor, and to a signed-in viewer only on the
@@ -270,7 +270,7 @@ rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
 Check it with
 `curl -fsS https://<host>/ | grep -c 'data-site-footer'` (expect `1` or more)
 and read the rendered footer once in a browser. A `0` on an app whose layout has
-the helper line most often means the engine is 0.86.0 or earlier with `config.site_footer`
+the helper line most often means the engine predates the default footer with `config.site_footer`
 unset, or the app set it to `false`. A `/build` card carries the same check as
 its second acceptance bullet (`AppRequest#footer_criterion`).
 
