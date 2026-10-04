@@ -48,8 +48,12 @@ module MusicVideos
     end
 
     def unique_slug(text)
-      base = text.parameterize.presence || @params["source_id"].to_s.parameterize
-      MusicVideo.exists?(slug: base) ? "#{base}-#{@params['source_id'].to_s.parameterize}" : base
+      base = slugify(text).presence || slugify(@params["source_id"])
+      MusicVideo.exists?(slug: base) ? "#{base}-#{slugify(@params['source_id'])}" : base
     end
+
+    # parameterize keeps "_", which a slug may not hold; an Instagram shortcode
+    # or a YouTube id can carry one.
+    def slugify(text) = text.to_s.parameterize.gsub(/[-_]+/, "-").gsub(/\A-|-\z/, "")
   end
 end

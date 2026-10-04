@@ -173,26 +173,53 @@ app, either tier, adopts `studio-engine` and ships the engine's site footer in
 its first build, not in a later cleanup task. This is the source of truth for the
 rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
 
-- **Adopt the engine at a version with the footer.** `studio-engine` >= 0.84.0
-  (the footer landed in 0.83.0; 0.84.0 made the booking crop a per-app
-  measurement instead of one hard-coded window). Read `Gemfile.lock` for what
-  resolved.
-- **Render it once, from the layout.** `<%= studio_site_footer %>` at the end of
-  `<body>` in `app/views/layouts/application.html.erb`; never a hand-written
-  footer partial.
-- **Declare it as facts.** `config.site_footer` in
-  `config/initializers/studio.rb`, a callable that receives the view so it can
-  use route helpers. `nil` means no footer, so leaving it unset is the failure.
-- **Default content is Turf Monster's** (`turf-monster`
-  `config/initializers/studio.rb`): brand wordmark and logo, a one-line
-  tagline, the app's own link columns, a contact `email`, and `social` only when
-  the app has handles.
-- **Legal column only with legal pages.** Add a Legal column and the `legal:`
-  line when, and only when, the app has Privacy and Terms pages (below).
-- **No address, map or phone unless the operator asks.** `address:` draws the
-  Location band and the map; leave it out by default. McRitchie Studio and
+- **The helper line in the layout is the one required step.**
+  `<%= studio_site_footer %>` at the end of `<body>` in
+  `app/views/layouts/application.html.erb`; never a hand-written footer partial.
+  The engine never injects it, so an app without that line has no footer on any
+  engine version.
+- **The engine version decides what that line renders with nothing configured.**
+  Read `Gemfile.lock` for what resolved (`grep -m1 'studio-engine (' Gemfile.lock`):
+  - **An engine with the default footer** (`studio-engine` task
+    `site-footer-on-by-default`; not in 0.86.0, and in review and unpublished
+    when this was written, so it has no version number yet): an unset `config.site_footer`
+    renders the **default footer**, with no config. It shows the app's name, its
+    logo if one is configured, the © line, and a Privacy Policy and a Terms of
+    Service link for each of the routes named `privacy` and `terms` the app has.
+    It has no address, map, phone, email, tagline, social row or link columns.
+    The engine's `CHANGELOG.md` entry "The site footer is on by default" names
+    the version once it publishes; a release without that entry does not have it.
+  - **An engine without it (0.86.0 and everything earlier)**: unset (`nil`)
+    renders nothing, so the line alone ships no footer. Declare `config.site_footer`
+    (below), or adopt an engine with the default footer first. The footer itself needs >= 0.84.0 (it landed in 0.83.0;
+    0.84.0 made the booking crop a per-app measurement instead of one
+    hard-coded window).
+  - **An app with no database** (no ActiveRecord) needs >= 0.86.0 on either
+    path: that release is the first to support one without workarounds.
+- **Add the app's own content by declaring facts.** `config.site_footer` in
+  `config/initializers/studio.rb`, a Hash or a callable that receives the view
+  so it can use route helpers: a one-line tagline, the app's own link columns, a
+  contact `email`, and `social` only when the app has handles. Turf Monster's
+  (`turf-monster` `config/initializers/studio.rb`) is the worked example. Declared
+  facts replace the default footer; they render the same on every engine version
+  with the footer.
+- **Legal links only with legal pages.** The default footer links Privacy and
+  Terms only when the app has routes named `privacy` and `terms`, so name the
+  routes that way (`get "privacy", to: "legal#privacy", as: :privacy`). An app
+  declaring its own facts adds a Legal column and the `legal:` line when, and
+  only when, it has those pages (below).
+- **No address, map or phone unless the operator asks.** The default footer has
+  none, and an app's own facts leave `address:` out by default. When the
+  operator does choose a location, on an engine with the default footer it is the one
+  setting `config.site_footer_address = { street:, city_line:, lat:, lng: }`,
+  which draws the Location band, and the map when both coordinates are given,
+  on the default footer or on facts that carry no address; on an engine without
+  it, it is the `address:` key of the app's own facts. McRitchie Studio and
   McRitchie Industries show 3000 Lawrence St with a map by explicit choice, not
   as the template.
+- **`config.site_footer = false` is the opt-out, and a new app does not use
+  it.** It turns the footer off on every page (an engine with the default footer). The
+  rule above is that every new app ships the footer.
 - **Visibility is one setting: `config.site_footer_visible`.** The default shows
   the footer on every page to a visitor, and to a signed-in viewer only on the
   controllers in `config.site_footer_controllers` (the public pages). Keep that
@@ -228,7 +255,8 @@ rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
   run `bin/booking-crop-measure <booking_url>` and paste the
   `config.booking_crop = { top:, bottom:, frame_height: }` line it prints.
 - **Allow it in the content security policy.** `frame-src
-  https://calendar.google.com`; an app that keeps `address:` also needs
+  https://calendar.google.com`; an app that shows a map (`address:` in its
+  facts, or `config.site_footer_address` with coordinates) also needs
   `img-src https://tile.openstreetmap.org` for the map tiles.
 - Detail: `studio-engine/docs/BOOKING.md` (setup in Google, the crop, the
   popup, the `/schedule` page, CSP).
@@ -241,7 +269,10 @@ rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.
 
 Check it with
 `curl -fsS https://<host>/ | grep -c 'data-site-footer'` (expect `1` or more)
-and read the rendered footer once in a browser.
+and read the rendered footer once in a browser. A `0` on an app whose layout has
+the helper line most often means the engine predates the default footer with `config.site_footer`
+unset, or the app set it to `false`. A `/build` card carries the same check as
+its second acceptance bullet (`AppRequest#footer_criterion`).
 
 **Managed-satellite-specific — the engine standards, from day one:**
 

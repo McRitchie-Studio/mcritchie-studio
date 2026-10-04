@@ -88,6 +88,11 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-status']"
     assert_select "[data-test='build-host']", text: "league-hub.mcritchie.studio"
     assert draft.reload.queued?
+    # The card the claim opened is what an agent builds from: it asks for the
+    # footer and names the SOP, after the requester's own words.
+    devops = Task.find_by!(slug: draft.task_slug).metadata.fetch("devops")
+    assert_includes devops.fetch("acceptance"), "league-hub.mcritchie.studio's home page renders the site footer (footer[data-site-footer])"
+    assert_includes devops.fetch("agent_context"), "docs/agents/modules/launch-build-queue.md"
   end
 
   test "a refused name re-renders the name step with the reason, and queues nothing" do

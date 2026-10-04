@@ -107,8 +107,7 @@ class DigestVideoTest < Minitest::Test
     assert_equal "youtube", DigestVideo.platform_for("https://youtu.be/Sa7GSJJ_lOo")
     assert_equal "youtube", DigestVideo.platform_for("https://music.youtube.com/watch?v=Sa7GSJJ_lOo")
     assert_equal "tiktok", DigestVideo.platform_for("https://www.tiktok.com/@a/video/1") # built: was NotBuilt
-    error = assert_raises(DigestVideo::NotBuilt) { DigestVideo.platform_for("https://instagram.com/reel/x") }
-    assert_equal "not built yet: download-instagram", error.message
+    assert_equal "instagram", DigestVideo.platform_for("https://instagram.com/reel/x") # built: was NotBuilt
     assert_raises(DigestVideo::Failure) { DigestVideo.platform_for("https://vimeo.com/1") }
   end
 

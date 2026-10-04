@@ -23,10 +23,20 @@ class DigestVideoCommandTest < Minitest::Test
     end
   end
 
-  def test_instagram_is_not_built_yet
-    _out, err, status = run_script("https://www.instagram.com/reel/abc/")
+  # Instagram is built now (was "not built yet"); a link with no post id stops before any download.
+  def test_instagram_share_link_fails_cleanly
+    _out, err, status = run_script("https://www.instagram.com/share/reel/BAbc1/")
     refute status.success?
-    assert_includes err, "not built yet: download-instagram"
+    assert_includes err, "digest-video: an Instagram share link has no post id"
+  end
+
+  def test_instagram_without_ytdlp_fails_cleanly
+    Dir.mktmpdir do |dir|
+      _out, err, status = Open3.capture3({ "YT_DLP" => File.join(dir, "no-yt-dlp") }, SCRIPT,
+                                         "https://www.instagram.com/reel/abc/", "--dry-run", "--workdir", dir)
+      refute status.success?
+      assert_includes err, "digest-video: no-yt-dlp not found"
+    end
   end
 
   def test_needs_exactly_one_url
