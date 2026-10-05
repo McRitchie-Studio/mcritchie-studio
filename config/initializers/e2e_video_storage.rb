@@ -29,3 +29,27 @@ if Rails.env.test? && ENV["E2E_FAKE_VIDEO_STORAGE"] == "1"
     StitchVideoJob.queue_adapter = :async
   end
 end
+
+# THE SAME LANE'S STAND-IN FOR ESPN. The draft on a Video Post (X) card reads a
+# team's live record; the test env must not depend on a live sports feed or on
+# what a real team's record happens to be today. Every team gets the same fixed
+# season: 3-1, with a win yesterday afternoon.
+if Rails.env.test? && ENV["E2E_FAKE_VIDEO_STORAGE"] == "1"
+  Rails.application.config.to_prepare do
+    Content::DraftXCopy.fetch = lambda do |url|
+      teams = Team.where(league: "nfl").order(:name).each_with_index.map { |t, i| { "team" => { "id" => (i + 1).to_s, "displayName" => t.name } } }
+      case url
+      when %r{/teams\z}          then { "sports" => [{ "leagues" => [{ "teams" => teams }] }] }
+      when %r{/teams/(\d+)\z}    then { "team" => { "record" => { "items" => [{ "summary" => "3-1" }] } } }
+      when %r{/teams/(\d+)/schedule\z}
+        id = Regexp.last_match(1)
+        { "events" => [{ "date" => 1.day.ago.utc.change(hour: 17).strftime("%Y-%m-%dT%H:%MZ"), "shortName" => "E2E @ HOME",
+                         "competitions" => [{ "neutralSite" => false, "status" => { "type" => { "completed" => true } },
+                                              "competitors" => [
+                                                { "winner" => true, "score" => { "displayValue" => "27" }, "team" => { "id" => id } },
+                                                { "winner" => false, "score" => { "displayValue" => "20" }, "team" => { "id" => "0", "displayName" => "E2E Opponent" } }
+                                              ] }] }] }
+      end
+    end
+  end
+end

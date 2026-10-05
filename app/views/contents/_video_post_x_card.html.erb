@@ -1,0 +1,122 @@
+<%# Video Post (X): the whole machine on one card. Input was the team that won
+    and the MP4; the output is the copy below, shown as X will draw it. The
+    operator's click on Post is the approval. Local: content. %>
+<%
+  facts      = content.game_facts || {}
+  post       = facts["post"] || {}
+  game       = facts["last_final"]
+  exceptions = Array(facts["exceptions"])
+  caption    = X::Caption.new(line: content.captions.to_s)
+  admin      = current_user&.admin?
+  refusal    = Content::PostVideoToX.refusal(content)
+  stuck      = Content::PostVideoToX.stuck?(content)
+  in_flight  = content.stage == "assembly" && !stuck
+%>
+<div class="card p-6 border border-primary/30" data-test="video-post-x-card" data-state="<%= content.stage %>"
+     <% if in_flight %>x-data x-init="setTimeout(() => window.location.reload(), 4000)"<% end %>>
+  <div class="flex items-center justify-between mb-4">
+    <p class="label-upper text-primary">Video Post (X)</p>
+    <% if content.stage == "posted" %>
+      <span class="text-xs font-semibold text-success-ink" data-test="video-post-x-status">Posted</span>
+    <% elsif stuck %>
+      <span class="text-xs font-semibold text-warning" data-test="video-post-x-status">Check the timeline</span>
+    <% elsif in_flight %>
+      <span class="text-xs font-semibold text-primary" data-test="video-post-x-status">Posting…</span>
+    <% elsif content.captions.present? %>
+      <span class="text-xs font-semibold text-secondary" data-test="video-post-x-status">Ready for your approval</span>
+    <% else %>
+      <span class="text-xs font-semibold text-secondary" data-test="video-post-x-status">No copy yet</span>
+    <% end %>
+  </div>
+
+  <% if content.captions.present? %>
+    <%= render "contents/x_post_preview", text: content.captions, video_url: content.final_video_url, weight: caption.weight %>
+  <% elsif content.final_video_url.present? %>
+    <video src="<%= content.final_video_url %>" controls playsinline preload="metadata"
+           class="w-full max-h-96 rounded-lg bg-black" data-test="video-post-x-preview"></video>
+  <% end %>
+
+  <% if content.post_url.present? %>
+    <div class="mt-4">
+      <p class="label-upper">Live on X</p>
+      <%= link_to content.post_url, content.post_url, target: "_blank", rel: "noopener",
+            class: "text-primary text-sm hover:text-primary-300 break-all", "data-test": "video-post-x-link" %>
+      <% verified = post["verified"] || {} %>
+      <% if verified["video"] == true %>
+        <p class="text-xs text-secondary mt-1" data-test="video-post-x-verified">
+          Read back from X: video attached<%= verified["seconds"] ? ", #{verified['seconds']}s" : "" %>.
+        </p>
+      <% elsif verified.key?("video") %>
+        <p class="text-xs text-warning mt-1" data-test="video-post-x-verified">Read back from X: the post is live but NO video is attached.</p>
+      <% elsif verified["error"] %>
+        <p class="text-xs text-secondary mt-1" data-test="video-post-x-verified">Posted; the read-back did not complete, so open the link to confirm the video.</p>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if content.stage != "posted" %>
+    <%# What the copy was built from, so the number can be checked at a glance. %>
+    <% if facts["record"].present? %>
+      <p class="text-xs text-secondary mt-4" data-test="video-post-x-facts">
+        Record <%= facts["record"] %> read from <%= facts["source"] %><% if game %>;
+        last final <%= game["matchup"] %> <%= game["score"] %> (<%= game["won"] ? "win" : "loss" %>)<% end %>.
+      </p>
+    <% end %>
+
+    <% exceptions.each do |line| %>
+      <p class="text-sm text-warning mt-2" data-test="video-post-x-exception">Check before posting: <%= line %>.</p>
+    <% end %>
+    <% if facts["draft_error"].present? && content.captions.blank? %>
+      <p class="text-sm text-warning mt-2" data-test="video-post-x-draft-error">The copy could not be drafted: <%= facts["draft_error"] %>.</p>
+    <% end %>
+    <% if post["state"] == "refused" && post["error"].present? %>
+      <p class="text-sm text-warning mt-2" data-test="video-post-x-refused">The last attempt was not posted: <%= post["error"] %></p>
+    <% end %>
+    <% caption.problems.each do |problem| %>
+      <p class="text-sm text-warning mt-2" data-test="video-post-x-problem">X would refuse this copy: <%= problem %>.</p>
+    <% end if content.captions.present? %>
+  <% end %>
+
+  <% if stuck %>
+    <div class="mt-4 p-3 rounded-lg border border-warning/40" data-test="video-post-x-stuck">
+      <p class="text-sm text-body mb-2">
+        A post started<%= post["attempted_at"] ? " at #{post['attempted_at']}" : "" %> and never reported back, so it
+        <span class="font-semibold">may be live</span>.
+        <%= link_to "Open the timeline", "https://x.com/#{Content::PostVideoToX::ACCOUNT}", target: "_blank", rel: "noopener", class: "text-primary" %>
+        and look before doing anything else.
+      </p>
+      <% if admin %>
+        <%= form_with url: resolve_x_post_content_path(content.slug), method: :post, local: true,
+                      html: { class: "flex flex-col sm:flex-row gap-2 mb-2" } do %>
+          <input type="url" name="post_url" required placeholder="https://x.com/<%= Content::PostVideoToX::ACCOUNT %>/status/…" class="input-field flex-1">
+          <button type="submit" class="btn btn-secondary">It is live: record the link</button>
+        <% end %>
+        <%= button_to "It is not there: make it ready again", resolve_x_post_content_path(content.slug),
+              class: "btn btn-outline btn-sm", form: { "data-turbo": "false" } %>
+      <% end %>
+    </div>
+  <% elsif admin && %w[idea script].include?(content.stage) %>
+    <% if content.captions.present? %>
+      <%= form_with model: content, url: content_path(content.slug), method: :patch, local: true, html: { class: "mt-4" } do |f| %>
+        <label class="block text-sm text-secondary mb-2 font-medium">Copy</label>
+        <%= f.text_area :captions, rows: 3, class: "input-field", "data-test": "video-post-x-copy-field" %>
+        <div class="mt-2"><%= f.submit "Save copy", class: "btn btn-outline btn-sm" %></div>
+      <% end %>
+    <% end %>
+
+    <div class="flex flex-wrap items-center gap-2 mt-4">
+      <% if content.captions.present? %>
+        <%= button_to "Post to X", post_video_to_x_content_path(content.slug),
+              class: "btn btn-primary", disabled: refusal.present?, "data-test": "video-post-x-post",
+              form: { class: "inline-block", "data-turbo": "false" },
+              data: { confirm: "Post this to @#{Content::PostVideoToX::ACCOUNT} now? It is public the moment it lands." } %>
+      <% end %>
+      <%= button_to content.captions.present? ? "Redraft from the live record" : "Draft the copy",
+            draft_x_copy_content_path(content.slug), class: "btn btn-outline", "data-test": "video-post-x-redraft",
+            form: { class: "inline-block", "data-turbo": "false" } %>
+    </div>
+    <% if refusal.present? && content.captions.present? %>
+      <p class="text-xs text-secondary mt-2" data-test="video-post-x-refusal">Post is off: <%= refusal %>.</p>
+    <% end %>
+  <% end %>
+</div>
