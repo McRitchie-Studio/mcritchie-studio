@@ -1,0 +1,11 @@
+<%# A look's character-sheet thumbnail, or a neutral placeholder while it has no image (or the image fails). `look` is the Alpine expression naming the row, which may be null. %>
+<span class="<%= size %> shrink-0 rounded-md bg-inset border border-subtle overflow-hidden flex items-center justify-center text-muted" data-test="look-thumb">
+  <template x-if="<%= look %> && <%= look %>.image_url && !<%= look %>.imageFailed">
+    <img :src="<%= look %>.image_url" alt="" loading="lazy" class="block w-full h-full object-cover" @error="<%= look %>.imageFailed = true"
+         data-test="look-thumb-image">
+  </template>
+  <svg x-show="!<%= look %> || !<%= look %>.image_url || <%= look %>.imageFailed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+       aria-hidden="true" class="w-5 h-5" :class="<%= look %> && <%= look %>.state === 'building' ? 'animate-pulse' : ''" data-test="look-thumb-placeholder">
+    <rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m5 17 4.5-4 3 2.5 3-3 3.5 4.5"/>
+  </svg>
+</span>
