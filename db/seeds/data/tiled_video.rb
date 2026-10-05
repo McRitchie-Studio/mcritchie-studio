@@ -51,6 +51,17 @@ module TiledVideo
               .transform_keys(&:to_s)]
   end
 
+  # A take row as MusicVideos::StoreTake would record it, with no file behind it.
+  def self.take!(chunk, number:, at: Time.current, byte_size: 2_048)
+    video = chunk.music_video
+    video.chunk_takes.create!(
+      chunk_ordinal: chunk.ordinal, start_ms: chunk.start_ms, end_ms: chunk.end_ms, number:, byte_size:, current_since: at,
+      original_filename: "generated_#{chunk.ordinal}_#{number}.mp4",
+      object_key: MusicVideos::ObjectKeys.take(source_key: video.source_object_key, ordinal: chunk.ordinal,
+                                               start_ms: chunk.start_ms, end_ms: chunk.end_ms, number:)
+    )
+  end
+
   def self.seed!
     video = video!
     MusicVideos::ReplaceClips.new(video, candidate_rows).call unless video.clip_candidates.exists?

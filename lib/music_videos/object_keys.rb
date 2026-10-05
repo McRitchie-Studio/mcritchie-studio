@@ -14,19 +14,29 @@ module MusicVideos
     # music_videos/<artist>/<video>/clips/<video>_clip_<NN>_<seam>_<shape>_<mmss>_<mmss>.mp4,
     # in the source's own folder.
     def self.clip(source_key:, ordinal:, seam:, cast_shape:, start_ms:, end_ms:)
-      m = %r{\A(#{PREFIX}[a-z0-9_]+/([a-z0-9_]+)/)source/}.match(source_key.to_s)
-      raise ArgumentError, "#{source_key.inspect} is not a music video source key" unless m
-
+      m = video_folder(source_key)
       "#{m[1]}clips/#{m[2]}_clip_#{format('%02d', ordinal)}_#{seam}_#{cast_shape}_#{mmss(start_ms)}_#{mmss(end_ms)}.mp4"
     end
 
     # music_videos/<artist>/<video>/chunks/<video>_chunk_<NN>_<mmss>_<mmss>.mp4:
     # one tile of the whole video (ChunkTiler), beside the clips folder.
     def self.chunk(source_key:, ordinal:, start_ms:, end_ms:)
-      m = %r{\A(#{PREFIX}[a-z0-9_]+/([a-z0-9_]+)/)source/}.match(source_key.to_s)
-      raise ArgumentError, "#{source_key.inspect} is not a music video source key" unless m
-
+      m = video_folder(source_key)
       "#{m[1]}chunks/#{m[2]}_chunk_#{format('%02d', ordinal)}_#{mmss(start_ms)}_#{mmss(end_ms)}.mp4"
+    end
+
+    # music_videos/<artist>/<video>/generated/<video>_chunk_<NN>_<mmss>_<mmss>_take_<NN>.mp4:
+    # one generated MP4 the operator uploaded back for that chunk. The chunk's
+    # own file name with the take number, so the two sort together.
+    def self.take(source_key:, ordinal:, start_ms:, end_ms:, number:)
+      m = video_folder(source_key)
+      "#{m[1]}generated/#{m[2]}_chunk_#{format('%02d', ordinal)}_#{mmss(start_ms)}_#{mmss(end_ms)}_take_#{format('%02d', number)}.mp4"
+    end
+
+    # [whole match, "music_videos/<artist>/<video>/", "<video>"] of a source key.
+    def self.video_folder(source_key)
+      %r{\A(#{PREFIX}[a-z0-9_]+/([a-z0-9_]+)/)source/}.match(source_key.to_s) ||
+        raise(ArgumentError, "#{source_key.inspect} is not a music video source key")
     end
 
     def self.mmss(ms) = format("%02d%02d", ms.to_i / 60_000, ms.to_i / 1000 % 60)

@@ -340,7 +340,12 @@
 # e2e/music_video_recast.spec.js, the operator picks an athlete and a look on a cast
 # card and the chunk prompts follow (one spec, not quarantined). Measured with
 # `npx playwright test --list` on the tree merged with accepted => 208.
-total_specs: 208
+#
+# 208 -> 209 on 2026-10-04 (/tasks/generated-takes-and-stitch-preview):
+# e2e/music_video_stitch.spec.js, the operator uploads a generated take, flags a chunk
+# and plays the stitch preview across a handover (one spec, not quarantined). Measured
+# with `npx playwright test --list` on the tree merged with accepted => 209.
+total_specs: 209
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -533,7 +538,9 @@ quarantined: 10
 # the merged tree: `npx playwright test --list --grep-invert @quarantine` => 197.
 # 197 -> 198: the music_video_recast.spec.js spec (/tasks/recast-picker-on-cast-panel).
 # Measured on the tree merged with accepted: the same lister => 198.
-executed: 198
+# 198 -> 199: the music_video_stitch.spec.js spec (/tasks/generated-takes-and-stitch-preview).
+# Measured on the tree merged with accepted: the same lister => 199.
+executed: 199
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
