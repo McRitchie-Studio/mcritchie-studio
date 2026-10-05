@@ -49,6 +49,10 @@ class Contact < ApplicationRecord
   #   all_time_rank   the place on cyvasse's all-time leaderboard (wins, then
   #                   fewest losses, then oldest account); nil with no wins
   #   synced_at       when the cyvasse app was read
+  # and, from Contacts::NewStackPlayerTagger (task first-game-feedback-survey),
+  # for a player tagged cyvasse-new-stack-player:
+  #   first_new_game_on  the date of their first game on the rebuilt Cyvasse
+  #   new_games          their games on it, when the cyvasse app was read
   CYVASSE_TRAITS = %w[username games finished_games wins losses joined_on last_active_on all_time_rank synced_at].freeze
 
   # The "Your games" audience: a Cyvasse player with at least one game.
