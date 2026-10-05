@@ -38,7 +38,9 @@ class VideoPerformer < ApplicationRecord
   # An athlete and one of their looks are both chosen.
   def recast? = recast_person_slug.present? && recast_appearance_slug.present?
 
-  # An athlete with no look: the look they were given is gone. Choose another.
+  # A person chosen with no look: they have none yet (the picker lists people
+  # with 0 looks), or the one they were given is gone. The card stays open
+  # until a look is chosen.
   def recast_pending? = recast_person_slug.present? && recast_appearance_slug.blank?
 
   # Nothing is owed: recast in full, kept on purpose, or an extra nobody recast.

@@ -344,4 +344,55 @@ class PeopleControllerTest < ActionDispatch::IntegrationTest
     assert_not Person.exists?(slug: source.slug)
     assert_equal [%w[athlete actor entertainer], "entertainer", true], keep.reload.values_at(:vocations, :primary_vocation, :athlete)
   end
+
+  # --- drifted rows: the boolean true, the list never told (written past the callbacks) ---
+
+  def drifted!(last_name, flag = :athlete)
+    Person.create!(first_name: "Test", last_name:).tap { |p| p.update_columns(flag => true, vocations: [], primary_vocation: nil) }
+  end
+
+  test "the vocations form ticks a drifted boolean, and saving the form as rendered keeps it" do
+    person = drifted!("Vocation Drift Form")
+    log_in_as users(:alex)
+
+    get person_path(person.slug)
+    assert_select "input[data-test='vocation-box'][checked]", 1
+    assert_select "input[data-test='vocation-box'][checked][value='athlete']"
+
+    vocations!(person, vocations: ["", "athlete", "musician"], primary_vocation: "")
+    assert_equal [true, %w[athlete musician], "athlete"], person.reload.values_at(:athlete, :vocations, :primary_vocation)
+  end
+
+  test "a vocations submit that does not mention a drifted boolean keeps it, and says so" do
+    athlete = drifted!("Vocation Drift Athlete")
+    coach = drifted!("Vocation Drift Coach", :coach)
+    log_in_as users(:alex)
+
+    vocations!(athlete, vocations: ["", "musician"], primary_vocation: "musician")
+    assert_equal [true, %w[athlete musician], "musician"], athlete.reload.values_at(:athlete, :vocations, :primary_vocation)
+    assert_equal "Test Vocation Drift Athlete: primary vocation musician, also athlete.", flash[:notice]
+
+    vocations!(coach, vocations: [""], primary_vocation: "")
+    assert_equal [true, %w[coach], "coach"], coach.reload.values_at(:coach, :vocations, :primary_vocation)
+
+    # The row is healed now, so the same submit is a deliberate untick.
+    vocations!(athlete, vocations: ["", "musician"], primary_vocation: "musician")
+    assert_equal [false, %w[musician]], athlete.reload.values_at(:athlete, :vocations)
+  end
+
+  test "merge keeps a drifted boolean on either side" do
+    log_in_as users(:alex)
+
+    keep = drifted!("Vocation Drift Keeper")
+    source = Person.create!(first_name: "Test", last_name: "Vocation Drift Keeperr", vocations: %w[musician])
+    post merge_people_path, params: { keep_slug: keep.slug, merge_slug: source.slug }
+    assert_not Person.exists?(slug: source.slug)
+    assert_equal [true, %w[athlete musician]], keep.reload.values_at(:athlete, :vocations)
+
+    keep = Person.create!(first_name: "Test", last_name: "Vocation Drift Survivor", vocations: %w[musician])
+    source = drifted!("Vocation Drift Survivorr", :coach)
+    post merge_people_path, params: { keep_slug: keep.slug, merge_slug: source.slug }
+    assert_not Person.exists?(slug: source.slug)
+    assert_equal [true, %w[coach musician], "musician"], keep.reload.values_at(:coach, :vocations, :primary_vocation)
+  end
 end
