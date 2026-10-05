@@ -35,6 +35,16 @@ class EmailEvents::ResultsTest < ActiveSupport::TestCase
     assert_equal "https://evilmcritchie.studio/x", Results.with_ref("https://evilmcritchie.studio/x", "tok")
   end
 
+  # task first-game-feedback-survey: the survey reads its token as ?t=.
+  test "a hub survey link carries the token as t, every other hub page as ref" do
+    assert_equal "https://mcritchie.studio/s/cyvasse-first-game?t=tok",
+                 Results.with_ref("https://mcritchie.studio/s/cyvasse-first-game", "tok")
+    assert_equal "https://www.mcritchie.studio/s/x?t=tok", Results.with_ref("https://www.mcritchie.studio/s/x?t=old", "tok")
+    assert_equal "https://mcritchie.studio/s/x/thanks?ref=tok", Results.with_ref("https://mcritchie.studio/s/x/thanks", "tok")
+    assert_equal "https://cyvasse.xyz/s/x?ref=tok", Results.with_ref("https://cyvasse.xyz/s/x", "tok"),
+                 "only the hub's own /s/ is a survey"
+  end
+
   test "a customer app on a mcritchie.studio subdomain never receives the token" do
     assert_equal "https://someones-app.mcritchie.studio/", Results.with_ref("https://someones-app.mcritchie.studio/", "tok")
     assert_equal "https://cyvasse.mcritchie.studio./play?ref=tok", Results.with_ref("https://cyvasse.mcritchie.studio./play", "tok")
