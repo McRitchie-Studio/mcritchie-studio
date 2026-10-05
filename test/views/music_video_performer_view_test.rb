@@ -6,7 +6,8 @@ require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 # [component] One performer card on the cast panel: its still on a signed URL,
 # its sightings as YouTube timecode links, the typeahead while it is open, and
-# the recast picker: open, recast, kept, and after the cast is confirmed.
+# the recast picker (the look dropdown, its preview and the generate form):
+# open, recast, kept, and after the cast is confirmed.
 class MusicVideoPerformerViewTest < ActionView::TestCase
   setup do
     @video = NightCallCast.seed!
@@ -14,9 +15,13 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     @key = @performer.still_object_keys.first
   end
 
-  def render_card(performer = @performer, urls: { @key => "https://signed.example/p2.jpg?X-Amz-Signature=abc" }, recast_looks: {})
-    render partial: "music_videos/performer", locals: { performer:, video: performer.music_video, still_urls: urls, recast_looks: }
+  def render_card(performer = @performer, urls: { @key => "https://signed.example/p2.jpg?X-Amz-Signature=abc" }, recast_looks: nil, **locals)
+    recast_looks ||= MusicVideos::LookOptions.for([performer.recast_person_slug])
+    render partial: "music_videos/performer", locals: { performer:, video: performer.music_video, still_urls: urls, recast_looks:, **locals }
   end
+
+  # The rows the saved card hands its look picker.
+  def picker_data = JSON.parse(css_select("[data-test='recast-looks']").first["data-athlete"])
 
   def recast_path = "/music_videos/steve-aoki-night-call/performers/2/recast"
 
@@ -83,25 +88,89 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='performer-recast'][data-state='open'] form[action=?]", recast_path, 2
   end
 
-  test "an open card renders the recast picker: athlete typeahead, look step, new-look link and keep as is" do
+  test "an open card renders the recast picker: athlete typeahead, the look picker and keep as is" do
     render_card
 
     assert_select "[data-test='performer-recast'][data-state='open']" do
       assert_select "[data-test='recast-typeahead'][x-data='recastTypeahead()'][data-search-url='/recast_athletes/search.json']" do
-        assert_select "form[action=?] input[name='_method'][value='patch']", recast_path
-        assert_select "input[type='hidden'][name='person_slug']"
-        assert_select "input[type='hidden'][name='appearance_slug']"
         assert_select "input[role='combobox'][placeholder='Search people by name']"
         assert_select "[data-test='recast-no-match']", /No person matches that name/
-        assert_select "[data-test='recast-looks'][x-show='athlete && athlete.looks.length'] [data-test='recast-look-option']"
-        assert_select "a[data-test='recast-new-look']"
+        assert_select "[data-test='look-picker'][x-show='athlete']", 1
+        assert_select "form[data-test='recast-look-form'][action=?] input[name='_method'][value='patch']", recast_path
       end
+      assert_select "[data-test='recast-typeahead'][data-looks-url='/recast_athletes/__slug__/looks.json']"
       assert_select "[data-test='recast-typeahead'][data-new-look-url=?]",
                     "/people/__slug__?return_to=%2Fmusic_videos%2Fsteve-aoki-night-call%23person-2#new-model"
+      assert_select "[data-test='recast-typeahead'][data-athlete]", 0, "nobody is chosen until the typeahead says so"
       assert_select "form[action=?] input[name='keep'][value='1']", recast_path
       assert_select "button", "Keep as is"
     end
-    assert_includes rendered, %(x-text="athlete.name + ' > ' + look.descriptor")
+  end
+
+  # The picker is an Alpine template the browser fills (e2e/music_video_look_picker.spec.js).
+  # Here: its parts are on the page once per card, bound to what LookOptions sends.
+  test "the look picker is a listbox of looks with thumbnails, a preview, the cast button and the generate row" do
+    render_card
+
+    assert_select "[data-test='look-picker']", 1 do
+      assert_select "button[data-test='look-trigger'][role='combobox'][aria-haspopup='listbox'][aria-controls='look-list-2']" do
+        assert_select "[data-test='look-thumb'] template[x-if='chosen && chosen.image_url && !chosen.imageFailed']"
+        assert_select "#look-current-2[x-text=?]", "chosen ? chosen.descriptor : 'Choose a look'"
+      end
+      assert_select "#look-list-2[role='listbox'][x-show='listOpen']" do
+        assert_select "template[x-for='(look, i) in looks'] > [role='option'][data-test='look-option']", 1
+        assert_select "[data-test='look-option']" do
+          assert_select "[data-test='look-thumb'] template[x-if='look && look.image_url && !look.imageFailed'] > img[alt='']", 1
+          assert_select "svg[data-test='look-thumb-placeholder'][x-show='!look || !look.image_url || look.imageFailed']"
+          assert_select "[data-test='look-option-name'][x-text='look.descriptor']"
+          assert_select "[data-test='look-option-state'][x-text='stateLabel(look)']"
+          assert_select "[data-test='look-option-default'][x-show='look.default']", "default"
+        end
+        assert_select "> [role='option'][data-test='look-generate-option']", /Generate a new look/
+      end
+      assert_select "figure[data-test='look-preview'][x-show='chosen']" do
+        assert_select "template[x-if='chosen && chosen.image_url && !chosen.imageFailed'] > a[target='_blank'] > img[data-test='look-preview-image']", 1
+        assert_select "[data-test='look-preview-empty'] [x-text=?]", "chosen ? emptyPreview(chosen) : ''"
+        assert_select "a[data-test='look-page-link']", "Open look"
+      end
+      assert_select "form[data-test='recast-look-form'][x-show='chosen && lookSlug !== savedLook'][action=?]", recast_path do
+        assert_select "input[type='hidden'][name='person_slug']"
+        assert_select "input[type='hidden'][name='appearance_slug']"
+        assert_select "button[type='submit'][data-test='look-cast']", /Cast as/
+        assert_select "[data-test='look-cast-no-sheet']", /It can be cast now/
+      end
+      assert_select "button[data-test='look-generate-first'][x-show='looks.length === 0 && !genOpen']", "Generate first look"
+      assert_select "[data-test='look-building-note'][role='status'][x-show='buildingElsewhere']"
+      assert_select "a[data-test='recast-new-look']", /Or add a look by hand/
+    end
+  end
+
+  test "the generate form posts the athlete and a look name to the card's own action" do
+    render_card
+
+    assert_select "form[data-test='look-generate-form'][x-show='genOpen'][method='post'][action=?]",
+                  "/music_videos/steve-aoki-night-call/performers/2/recast_looks" do
+      assert_select "input[type='hidden'][name='person_slug']"
+      assert_select "input[name='descriptor'][required][placeholder='Broncos blue']"
+      assert_select "label[for='look-name-2']", "Look name: the uniform or colours"
+      assert_select "input[name='number']"
+      assert_select "input[name='reference_url']"
+      assert_select "button[type='submit'][data-test='look-generate-submit']", /Generate look/
+      assert_select "input[name='_method']", 0
+    end
+  end
+
+  test "the generate form says what a press costs, or that nothing is spent here" do
+    row = ImageGeneration::Registry.preferred(:character_sheet)
+
+    render_card(sheet_row: row, sheet_ready: true)
+    assert_select "[data-test='look-cost-hint']", /Costs money: makes the look and builds one character sheet on GPT-5 image generation \(Responses\), about 6,724–7,629 tokens per sheet/
+
+    render_card(sheet_row: row, sheet_ready: false)
+    assert_select "[data-test='look-cost-hint']", /is not configured here, so the look is made without a character sheet and nothing is spent/
+
+    render_card
+    assert_select "[data-test='look-cost-hint']", /No image generator can build a character sheet here/
   end
 
   # The row is an Alpine template: the browser fills it (e2e/music_video_search_rows.spec.js).
@@ -126,56 +195,64 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='typeahead-results'] [data-test='search-row-badge'][x-text=?]", "r.type === 'person' ? 'people' : r.kind"
   end
 
-  test "a look-less athlete's card offers to create a look instead of a look select" do
+  test "a look-less athlete's card hands the picker no looks, so it offers the first one" do
     lookless = Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
     @performer.update!(recast_person_slug: lookless.slug)
     render_card
 
     assert_select "[data-test='performer-recast'][data-state='pending']" do
       assert_select "[data-test='recast-label']", "Test Athlete Gamma"
-      assert_select "[data-test='recast-no-look']", /Test Athlete Gamma has no look yet/
       assert_select "[data-test='recast-pending']", 0
-      assert_select "[data-test='recast-look-form']", 0
-      assert_select "a[data-test='recast-new-look'][href=?]",
-                    "/people/test-athlete-gamma?return_to=%2Fmusic_videos%2Fsteve-aoki-night-call%23person-2#new-model",
-                    "Create a look for Test Athlete Gamma"
+      assert_select "[data-test='recast-typeahead']", 0
+      assert_equal({ "slug" => "test-athlete-gamma", "name" => "Test Athlete Gamma", "looks" => [] }, picker_data)
+      assert_select "[data-test='recast-no-look'][x-show='looks.length === 0']", /has no look yet/
       assert_select "[data-test='recast-clear'] input[name='clear'][value='1']"
     end
   end
 
   # A synthetic athlete: only the operator says who replaces an on-screen person.
-  test "a recast card shows athlete then look, the athlete's other looks, a new-look link and Change" do
+  test "a recast card shows athlete then look, hands the picker every look and the saved one, and offers Change" do
     athlete = RecastVideo.athlete!
     home, away = athlete.appearances.order(:created_at, :id).to_a
     @performer.update!(recast_person_slug: athlete.slug, recast_appearance_slug: away.slug)
-    render_card(recast_looks: { athlete.slug => [home, away] })
+    render_card(fresh_look: home.slug)
 
     assert_select "[data-test='performer-card'][data-resolved='false']", 1, "a music video card still needs its artist"
     assert_select "[data-test='performer-recast'][data-state='recast']" do
       assert_select "[data-test='recast-label']", "Test Athlete Alpha > Away White"
       assert_select "[data-test='recast-typeahead']", 0
-      assert_select "[data-test='recast-look-form'][action=?]", recast_path do
-        assert_select "input[name='person_slug'][value=?]", athlete.slug
-        assert_select "option", 2
-        assert_select "option[selected][value=?]", away.slug, "Test Athlete Alpha > Away White"
-      end
-      assert_select "a[data-test='recast-new-look'][href=?]",
-                    "/people/test-athlete-alpha?return_to=%2Fmusic_videos%2Fsteve-aoki-night-call%23person-2#new-model",
-                    "New look for Test Athlete Alpha"
+      assert_select "[data-test='recast-looks'][x-data='lookPicker()'][data-saved-look=?][data-fresh-look=?]", away.slug, home.slug
+      assert_select "[data-test='recast-looks'][data-looks-url='/recast_athletes/__slug__/looks.json']"
+      assert_equal ["test-athlete-alpha", "Test Athlete Alpha"], picker_data.values_at("slug", "name")
+      assert_equal [[home.slug, "Home Blue", true, nil, "empty", "/people/test-athlete-alpha/models/#{home.slug}"],
+                    [away.slug, "Away White", false, nil, "empty", "/people/test-athlete-alpha/models/#{away.slug}"]],
+                   picker_data["looks"].map { |look| look.values_at("slug", "descriptor", "default", "image_url", "state", "url") }
       assert_select "[data-test='recast-clear'] input[name='clear'][value='1']"
     end
+  end
+
+  test "a look's character sheet reaches the picker as its image" do
+    athlete = RecastVideo.athlete!
+    home = athlete.appearances.order(:created_at, :id).first
+    sheet = Artifact.create!(kind: "character_sheet", image_url: "https://example.test/home-blue.png", source: "test")
+    sheet.subjects.create!(person_slug: athlete.slug, appearance_slug: home.slug, ordinal: 1)
+    @performer.update!(recast_person_slug: athlete.slug, recast_appearance_slug: home.slug)
+    render_card
+
+    assert_equal [["https://example.test/home-blue.png", "ready"], [nil, "empty"]],
+                 picker_data["looks"].map { |look| look.values_at("image_url", "state") }
   end
 
   test "an athlete whose look is gone asks for another" do
     athlete = RecastVideo.athlete!
     @performer.update!(recast_person_slug: athlete.slug)
-    render_card(recast_looks: { athlete.slug => athlete.appearances.to_a })
+    render_card
 
     assert_select "[data-test='performer-recast'][data-state='pending']" do
       assert_select "[data-test='recast-label']", "Test Athlete Alpha"
       assert_select "[data-test='recast-pending']", /No look chosen/
-      assert_select "[data-test='recast-look-form'] option", 3
-      assert_select "[data-test='recast-look-form'] option[value='']", "Choose a look"
+      assert_select "[data-test='recast-looks'][data-saved-look='']"
+      assert_equal 2, picker_data["looks"].size
     end
   end
 
