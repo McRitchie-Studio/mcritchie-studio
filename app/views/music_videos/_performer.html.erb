@@ -134,7 +134,7 @@
           <p class="text-xs text-muted mt-2" data-test="performer-artist-optional">A cinematic video credits no artists: naming one is optional. The answer under “Replaced by” closes this card.</p>
         <% end %>
       <% else %>
-        <p class="text-sm text-muted">Not labelled.</p>
+        <p class="text-sm text-muted" data-test="performer-unlabelled"><%= video.cinematic? ? "No artist named: a cinematic video credits none." : "Not labelled." %></p>
       <% end %>
     </div>
 
