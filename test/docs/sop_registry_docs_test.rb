@@ -7,13 +7,13 @@ require "test_helper"
 # and the agent is expected to resolve that phrase through the registry table in
 # docs/agents/index.md to a file. Three separate surfaces have to agree:
 #
-#   1. docs/agents/index.md      — TWO registry tables (top-level + reference),
+#   1. docs/agents/index.md      — ONE registry table under `## SOP Registry`,
 #                                  generated verbatim into $PROJECTS_ROOT/AGENTS.md
 #   2. docs/agents/claude.md     — the Claude adapter's prose list of invocations,
 #                                  generated into $PROJECTS_ROOT/CLAUDE.md
 #   3. docs/agents/agents/<soul>/sops/<sop>.md — the file that actually runs
 #
-# Add an SOP and forget one table and the failure is SILENT: the agent reads a
+# Add an SOP and forget the table and the failure is SILENT: the agent reads a
 # registry that does not name the SOP, treats the invocation as ordinary prose,
 # and improvises — which is precisely the drift the SOP Invocation Standard exists
 # to kill. The registry claiming an SOP that is not on disk fails the other way:
@@ -26,6 +26,11 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
   INDEX       = DOCS_ROOT.join("index.md")
   CLAUDE      = DOCS_ROOT.join("claude.md")
   SOPS_GLOB   = DOCS_ROOT.join("agents/*/sops/*.md")
+  HEARTBEATS_GLOB = DOCS_ROOT.join("agents/*/HEARTBEAT.md")
+
+  # The one heading the registry lives under. The SOP Invocation Standard sends an
+  # agent here by name, so the heading is part of the contract, not decoration.
+  REGISTRY_HEADING = "## SOP Registry"
 
   # Rows look like:  | `clean-up` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
   # The invocation may carry a trailing note — `pr-review-primary` (role SOP),
@@ -51,6 +56,23 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
     Dir.glob(SOPS_GLOB).map { |p| Pathname.new(p).relative_path_from(Rails.root).to_s }.sort
   end
 
+  def heartbeat_files_on_disk
+    Dir.glob(HEARTBEATS_GLOB).map { |p| Pathname.new(p).relative_path_from(Rails.root).to_s }.sort
+  end
+
+  # The text under REGISTRY_HEADING, up to the next H2. The rows an agent resolves
+  # a name through are the rows in THIS section; a row anywhere else in the map is
+  # a second copy waiting to drift.
+  def registry_section
+    text = INDEX.read
+    start = text.index("#{REGISTRY_HEADING}\n")
+    refute_nil start, "docs/agents/index.md lost its '#{REGISTRY_HEADING}' section"
+
+    rest = text[(start + REGISTRY_HEADING.length)..]
+    stop = rest.index(/^## /)
+    stop ? rest[0...stop] : rest
+  end
+
   test "every registered SOP path exists on disk" do
     missing = registry_rows.reject { |row| Rails.root.join(row[:path]).exist? }
 
@@ -66,27 +88,58 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
     assert_empty unregistered,
                  "These SOP files exist but no registry row in docs/agents/index.md names them. An agent " \
                  "cannot resolve an SOP it cannot find in the registry — it will treat the invocation as " \
-                 "ordinary prose and improvise. Add a row to BOTH registry tables."
+                 "ordinary prose and improvise. Add a row under '#{REGISTRY_HEADING}'."
   end
 
-  # The two tables are the SAME registry printed twice (the second exists for agents
-  # that jump straight to the reference section). A name in one and not the other is
-  # a coin-flip on which an agent reads.
-  test "the two registry tables in index.md name the same set of SOP files" do
+  # The heartbeat is the one doc a soul LAUNCHES from, and the SOP glob above does
+  # not see it (it lives beside sops/, not inside it). Pin the disk→registry
+  # direction for heartbeats on its own, so a new soul's HEARTBEAT.md cannot land
+  # without the row an agent resolves `<Soul> Heartbeat` through.
+  test "every heartbeat file on disk is registered by name in docs/agents/index.md" do
+    files = heartbeat_files_on_disk
+
+    assert_operator files.length, :>=, 3,
+                    "the HEARTBEAT.md glob found only #{files.length} file(s); the souls carry at least " \
+                    "Carl, Avi and Steffon, so the glob has stopped seeing them"
+
+    registered = registry_rows.map { |r| r[:path] }.to_set
+    unregistered = files.reject { |path| registered.include?(path) }
+
+    assert_empty unregistered,
+                 "These heartbeat files exist but no registry row in docs/agents/index.md names them. " \
+                 "Add a `<Soul> Heartbeat` row under '#{REGISTRY_HEADING}'."
+  end
+
+  # The registry is one table under one heading. A second copy anywhere in the map
+  # is a coin flip on which one an agent reads, and the two drift the first time an
+  # SOP is added to one and not the other. So: one heading, every row inside it,
+  # and no name on two rows.
+  test "index.md carries the SOP registry exactly once" do
     text = INDEX.read
-    reference_heading = text.index("## SOP Registry")
+    headings = text.scan(/^#{Regexp.escape(REGISTRY_HEADING)}\s*$/)
 
-    refute_nil reference_heading, "docs/agents/index.md lost its '## SOP Registry' reference section"
+    assert_equal 1, headings.length,
+                 "docs/agents/index.md carries '#{REGISTRY_HEADING}' #{headings.length} time(s); the " \
+                 "SOP Invocation Standard sends an agent to exactly one"
 
-    top_paths = text[0...reference_heading].lines.filter_map { |l| ROW.match(l)&.[](3) }
-    ref_paths = text[reference_heading..].lines.filter_map { |l| ROW.match(l)&.[](3) }
+    rows_in_section = registry_section.lines.count { |l| ROW.match?(l) }
+    rows_in_file = text.lines.count { |l| ROW.match?(l) }
 
-    # BOTH tables carry the heartbeat rows AND the SOP rows — an earlier version of
-    # this comment claimed heartbeats lived only in the top table, and its regex could
-    # not match them anyway, so the claim was never tested. Compare the FULL path sets.
-    assert_equal top_paths.to_set, ref_paths.to_set,
-                 "The two SOP registry tables in docs/agents/index.md disagree. Both must list every SOP " \
-                 "and every heartbeat — an agent may read either one."
+    # The floor first: a section that parses to nothing would make the equality
+    # below a statement about two empty sets.
+    assert_operator rows_in_section, :>=, 40,
+                    "only #{rows_in_section} registry rows parsed under '#{REGISTRY_HEADING}'; the ROW " \
+                    "regex or the section cut has gone blind"
+    assert_equal rows_in_file, rows_in_section,
+                 "#{rows_in_file - rows_in_section} registry-shaped row(s) sit outside the " \
+                 "'#{REGISTRY_HEADING}' section of docs/agents/index.md; the registry lives in that " \
+                 "one table, so move them there"
+
+    repeated = registry_rows.map { |r| r[:invocation] }.tally.select { |_, n| n > 1 }.keys
+
+    assert_empty repeated,
+                 "these invocations have more than one row in docs/agents/index.md: #{repeated.inspect}. " \
+                 "One name resolves through one row; a second row is a copy that will drift"
   end
 
   # The one class of doc a soul LAUNCHES from. Pinned explicitly, because they are the

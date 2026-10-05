@@ -34,7 +34,7 @@ McRitchie operating procedures are normal repo docs, not installed skills.
 - Shared primitives live under `mcritchie-studio/docs/agents/modules/`.
 
 When Alex names one (`pr-review`, `qa-release`, `production-deploy`, `focus-session`,
-`clean-up`, …), open your activity, resolve it in the registry tables at the end of
+`clean-up`, …), open your activity, resolve it in the **SOP Registry** at the end of
 this map, and read the mapped HEARTBEAT.md or SOP file before queue inspection,
 `--help` probing, GitHub PR discovery, or tool/plugin selection. Then execute it.
 Each SOP stands alone; a design doc is background, never an execution path.
@@ -140,82 +140,13 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | **Dreams**: good answers from past sessions, read at every start | `docs/agents/modules/dream.md`; the bank in `docs/agents/dreams/` |
 | History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
 
-## SOP Invocation Table
-
-| Invocation | Owner | Read first |
-|------------|-------|------------|
-| `pr-review` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
-| `pr-review-slow` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
-| `pr-review-primary` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
-| `pr-review-light` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |
-| `Carl Heartbeat` | Carl | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
-| `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
-| `qa-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
-| `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
-| `arbitrate-block` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
-| `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
-| `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
-| `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
-| `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
-| `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
-| `market-refresh` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
-| `content-build` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
-| `roster-sync` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
-| `collect-vault-revenue` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/collect-vault-revenue.md` |
-| `post-to-x` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
-| `Turf Monster Heartbeat` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/HEARTBEAT.md` |
-| `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
-| `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
-| `archive-completed` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
-| `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
-| `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
-| `app-deploy-standard` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
-| `r2-backup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
-| `credential-filing` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
-| `credential-rotation` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
-| `workspace-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-provision.md` |
-| `workspace-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-launch.md` |
-| `domain-purchase` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
-| `workspace-signup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-signup.md` |
-| `domain-dns` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
-| `website-launch` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
-| `chrome-profiles` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
-| `workspace-icon` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-icon.md` |
-| `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
-| `full-cycle` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
-| `clean-up` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
-| `grade-events` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
-| `share-insights` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
-| `Xan Heartbeat` | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
-| `Alex Heartbeat` (legacy alias) | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
-| `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
-| `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
-| `launch-warmup` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/launch-warmup.md` |
-| `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
-| `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
-| `digest-video` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
-| `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
-| `download-tiktok` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
-| `download-instagram` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
-| `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
-| `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
-| `launch-build-queue` | Shared | `mcritchie-studio/docs/agents/modules/launch-build-queue.md` |
-| `focus-session` | Shared | `mcritchie-studio/docs/agents/modules/focus-session.md` |
-| `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
-| `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
-| `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
-| `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
-| `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
-| `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
-| `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
-| `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
-| `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
-| `dream` | Shared | `mcritchie-studio/docs/agents/modules/dream.md` |
-
 ## SOP Registry
 
-The same registry again, for agents that jump to the reference section. A
-heartbeat may set attribution and act order; the SOP files do not depend on it.
+Every name Alex can say to launch a procedure, with the file that runs it; this
+table is the one registry, and `test/docs/sop_registry_docs_test.rb` holds it to
+the files on disk. A heartbeat may set attribution and act order; the SOP files do
+not depend on it. `(legacy alias)` marks an older name that resolves to the same
+file; `(role SOP)` marks the procedure one reviewer role runs inside `pr-review`.
 
 | Invocation | Owner | Read |
 |------------|-------|------|

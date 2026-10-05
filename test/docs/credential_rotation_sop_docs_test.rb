@@ -8,11 +8,11 @@ require "test_helper"
 # reading the file:
 #
 #   REGISTERED — an SOP absent from the registry is not an SOP. An agent told
-#     "credential-rotation" resolves the phrase through the tables in
-#     docs/agents/index.md; miss one table and the failure is SILENT (the agent
-#     treats the invocation as ordinary prose and improvises). docs/agents/claude.md
-#     is the file Claude Code AUTO-LOADS, so an SOP it never names is the one Claude
-#     is least likely to resolve.
+#     "credential-rotation" resolves the phrase through the SOP Registry table in
+#     docs/agents/index.md; a missing row fails SILENTLY (the agent treats the
+#     invocation as ordinary prose and improvises). docs/agents/claude.md is the
+#     file Claude Code AUTO-LOADS, so an SOP it never names is the one Claude is
+#     least likely to resolve.
 #
 #   STANDALONE — AGENTS.md's SOP Invocation Standard: "every command, gate and
 #     decision rule is inline," and an SOP may reference only (1) other REGISTERED
@@ -84,15 +84,19 @@ class CredentialRotationSopDocsTest < ActiveSupport::TestCase
     end
   end
 
-  # The registry is printed TWICE — the top-level table and the reference section —
-  # and an agent may read either one. Split on the reference heading so each half is
-  # graded on its own; a name in one table and not the other is a coin flip.
-  def registry_halves
-    text = INDEX.read
-    heading = text.index("## SOP Registry")
-    refute_nil heading, "docs/agents/index.md lost its '## SOP Registry' reference section"
+  # The registry is one table under one heading (sop_registry_docs_test.rb pins that
+  # it appears exactly once). Read that section alone, so a row that drifts outside
+  # it is not counted as registered.
+  REGISTRY_HEADING = "## SOP Registry"
 
-    [registry_rows(text[0...heading]), registry_rows(text[heading..])]
+  def registry_table
+    text = INDEX.read
+    heading = text.index("#{REGISTRY_HEADING}\n")
+    refute_nil heading, "docs/agents/index.md lost its '#{REGISTRY_HEADING}' section"
+
+    section = text[(heading + REGISTRY_HEADING.length)..]
+    next_heading = section.index(/^## /)
+    registry_rows(next_heading ? section[0...next_heading] : section)
   end
 
   def sop_body
@@ -121,28 +125,23 @@ class CredentialRotationSopDocsTest < ActiveSupport::TestCase
 
   # ── REGISTERED ────────────────────────────────────────────────────────────
 
-  test "credential-rotation is registered in BOTH index.md tables, owned by Steffon, and resolves" do
-    top, reference = registry_halves
+  test "credential-rotation is registered in the index.md SOP Registry, owned by Steffon, and resolves" do
+    rows = registry_table
 
     # The floor first. A regex that stopped matching would make every assertion
     # below pass on an empty corpus.
-    assert_operator top.length, :>=, 25,
-                    "only #{top.length} rows parsed from the top-level registry table — the ROW " \
-                    "regex has gone blind and the assertions below would grade nothing"
-    assert_operator reference.length, :>=, 25,
-                    "only #{reference.length} rows parsed from the '## SOP Registry' reference " \
-                    "table — the ROW regex has gone blind"
+    assert_operator rows.length, :>=, 25,
+                    "only #{rows.length} rows parsed from the '#{REGISTRY_HEADING}' table — the ROW " \
+                    "regex or the section cut has gone blind and the assertions below would grade nothing"
 
-    [["top-level", top], ["reference", reference]].each do |name, rows|
-      row = rows.find { |r| r[:invocation] == INVOCATION }
+    row = rows.find { |r| r[:invocation] == INVOCATION }
 
-      refute_nil row,
-                 "`#{INVOCATION}` has no row in the #{name} SOP registry table in docs/agents/index.md. " \
-                 "An agent told to run it would treat the invocation as ordinary prose and improvise."
-      assert_equal "Steffon", row[:owner], "#{name} table names the wrong owner for `#{INVOCATION}`"
-      assert_equal "mcritchie-studio/#{SOP_PATH}", "mcritchie-studio/#{row[:path]}",
-                   "#{name} table points `#{INVOCATION}` at the wrong file"
-    end
+    refute_nil row,
+               "`#{INVOCATION}` has no row in the '#{REGISTRY_HEADING}' table in docs/agents/index.md. " \
+               "An agent told to run it would treat the invocation as ordinary prose and improvise."
+    assert_equal "Steffon", row[:owner], "the registry names the wrong owner for `#{INVOCATION}`"
+    assert_equal "mcritchie-studio/#{SOP_PATH}", "mcritchie-studio/#{row[:path]}",
+                 "the registry points `#{INVOCATION}` at the wrong file"
 
     assert_path_exists SOP, "the registry names #{SOP_PATH}, which does not exist on disk"
   end
@@ -186,7 +185,7 @@ class CredentialRotationSopDocsTest < ActiveSupport::TestCase
   end
 
   test "every hop in the executable body is a registered SOP or a declared write target" do
-    registered = registry_halves.first.map { |r| r[:path] }.to_set
+    registered = registry_table.map { |r| r[:path] }.to_set
     hops = links_in(executable_body)
 
     assert_operator hops.length, :>=, 2,
