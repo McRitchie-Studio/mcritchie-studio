@@ -27,5 +27,35 @@ class FindClipsCommandTest < Minitest::Test
     assert status.success?
     assert_includes out, "--production"
     assert_includes out, "--dry-run"
+    assert_includes out, "--tile"
+    assert_includes out, "overlapping chunks (25 s, 5 s overlap)"
+  end
+
+  def test_help_names_the_tiling_flags
+    out, _err, status = Open3.capture3(SCRIPT, "--help")
+    assert status.success?
+    assert_includes out, "--chunk SECONDS"
+    assert_includes out, "--overlap SECONDS"
+  end
+
+  def test_an_overlap_as_long_as_the_chunk_stops_before_any_call
+    [%w[--chunk 15 --overlap 15], %w[--chunk 5 --overlap 9], %w[--overlap 25]].each do |flags|
+      _out, err, status = Open3.capture3(SCRIPT, "a-slug", "--tile", *flags)
+      refute status.success?
+      assert_includes err, "find-clips: the overlap"
+      assert_includes err, "must be shorter than the chunk"
+    end
+    _out, err, status = Open3.capture3(SCRIPT, "a-slug", "--tile", "--chunk", "0")
+    refute status.success?
+    assert_includes err, "find-clips: the chunk length must be whole milliseconds above zero"
+    _out, err, status = Open3.capture3(SCRIPT, "a-slug", "--tile", "--chunk", "long")
+    refute status.success?
+    assert_includes err, "find-clips: invalid argument: --chunk long"
+  end
+
+  def test_the_tiling_flags_need_tile
+    _out, err, status = Open3.capture3(SCRIPT, "a-slug", "--chunk", "15")
+    refute status.success?
+    assert_includes err, "find-clips: --chunk sets the tiling: pass --tile with it"
   end
 end

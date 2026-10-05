@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# The operator's answer on one clip: approve or reject. The video is
-# clips_ready while at least one clip is approved.
+# The operator's answer on one clip candidate: approve or reject. The video is
+# clips_ready while at least one candidate is approved. Chunks have no decision.
 class VideoClipsController < ApplicationController
   before_action :require_admin
   before_action :set_clip
@@ -26,7 +26,7 @@ class VideoClipsController < ApplicationController
 
   def set_clip
     @video = MusicVideo.find_by!(slug: params[:music_video_slug])
-    @clip = @video.video_clips.find_by!(ordinal: params[:ordinal])
+    @clip = @video.clip_candidates.find_by!(ordinal: params[:ordinal])
   end
 
   def back(**flash)

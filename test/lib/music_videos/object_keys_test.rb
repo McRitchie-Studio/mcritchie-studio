@@ -34,6 +34,15 @@ class MusicVideosClipKeyTest < Minitest::Test
     assert_equal "music_videos/steve_aoki/night_call/clips/night_call_clip_03_verse_to_chorus_duo_plus_background_0133_0158.mp4", key
   end
 
+  def test_chunk_key_sits_beside_the_clips_and_names_ordinal_and_times
+    key = MusicVideos::ObjectKeys.chunk(source_key: SOURCE, ordinal: 12, start_ms: 220_000, end_ms: 242_051)
+    assert_equal "music_videos/steve_aoki/night_call/chunks/night_call_chunk_12_0340_0402.mp4", key
+  end
+
+  def test_chunk_key_refuses_a_source_outside_the_tree
+    assert_raises(ArgumentError) { MusicVideos::ObjectKeys.chunk(source_key: "other/x.mp4", ordinal: 1, start_ms: 0, end_ms: 25_000) }
+  end
+
   def test_refuses_a_key_outside_the_tree
     assert_raises(ArgumentError) do
       MusicVideos::ObjectKeys.clip(source_key: "other/x.mp4", ordinal: 1, seam: "unknown", cast_shape: "solo",

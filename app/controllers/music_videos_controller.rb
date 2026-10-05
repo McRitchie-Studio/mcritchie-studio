@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# /music_videos/:slug — the cast panel (music video pipeline, stage 2) and the
-# clips (stage 5). Admin only: stills and clips are private objects shown
+# /music_videos/:slug — the cast panel (music video pipeline, stage 2), the
+# clip candidates (stage 5) and the chunks the whole video is tiled into. Admin only: stills and clips are private objects shown
 # through short-lived signed URLs.
 class MusicVideosController < ApplicationController
   before_action :require_admin
@@ -13,9 +13,10 @@ class MusicVideosController < ApplicationController
     @credits = @video.music_video_artists.includes(:artist).sort_by { |c| [c.role == "primary" ? 0 : 1, c.position] }
     @performers = @video.video_performers.includes(:artist).to_a
     @still_urls = signed_urls(@performers.flat_map(&:still_object_keys))
-    @clips = @video.video_clips.to_a
+    @clips = @video.clip_candidates.to_a
+    @chunks = @video.video_chunks.to_a
     load_looks
-    @clip_urls = signed_urls(@clips.map(&:object_key))
+    @clip_urls = signed_urls((@clips + @chunks).map(&:object_key))
   end
 
   def confirm_cast

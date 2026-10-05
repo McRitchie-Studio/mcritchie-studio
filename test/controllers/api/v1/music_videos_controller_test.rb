@@ -58,6 +58,25 @@ module Api
         assert_equal "group", data["artists"].find { |a| a["slug"] == "migos" }["kind"]
       end
 
+      test "a video may be typed cinematic; music_video stays the default" do
+        post_video(kind: "cinematic")
+        assert_response :created
+        assert_equal "cinematic", data["kind"]
+        assert_equal "cinematic", MusicVideo.find_by!(slug: "steve-aoki-night-call").kind
+
+        post_video(source_id: "other-id-1", source_url: "https://www.youtube.com/watch?v=other-id-1")
+        assert_response :created
+        assert_equal "music_video", data["kind"]
+      end
+
+      test "an unknown type is refused and records nothing" do
+        assert_no_difference -> { MusicVideo.count } do
+          post_video(kind: "documentary")
+        end
+        assert_response :unprocessable_entity
+        assert_equal "VALIDATION_FAILED", JSON.parse(response.body)["error_code"]
+      end
+
       test "an alias resolves and an unknown name is reported, not created" do
         assert_no_difference -> { Artist.count } do
           post_video(title: "Steve Aoki - Night Call feat. Lil Boat & Nobody Known (Official Video)")

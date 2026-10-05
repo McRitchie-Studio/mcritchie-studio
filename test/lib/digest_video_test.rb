@@ -90,14 +90,14 @@ class DigestVideoTest < Minitest::Test
     end
   end
 
-  def run_digest(shell: FakeShell.new, dry_run: false)
+  def run_digest(shell: FakeShell.new, dry_run: false, **opts)
     Dir.mktmpdir do |dir|
       log = []
       storage = FakeStorage.new(log)
       api = FakeApi.new(log)
       out = StringIO.new
       DigestVideo::Runner.new(workdir: dir, shell: shell, storage: storage, api: api, out: out,
-                              dry_run: dry_run, encoder: "libx264").call(URL)
+                              dry_run: dry_run, encoder: "libx264", **opts).call(URL)
       yield shell, storage, api, out.string, log, File.join(dir, "Sa7GSJJ_lOo")
     end
   end
@@ -135,6 +135,13 @@ class DigestVideoTest < Minitest::Test
       refute_includes JSON.generate(payload), "secretlyric"
       assert_includes out, "#{KEY}.mp4"
     end
+  end
+
+  def test_a_video_is_a_music_video_unless_typed_cinematic
+    run_digest { |_shell, _storage, api| assert_equal "music_video", api.payloads.first[:kind] }
+    run_digest(kind: "cinematic") { |_shell, _storage, api| assert_equal "cinematic", api.payloads.first[:kind] }
+    error = assert_raises(DigestVideo::Failure) { run_digest(kind: "documentary") { flunk "never runs" } }
+    assert_match "kind must be one of: music_video, cinematic", error.message
   end
 
   def test_vp9_fallback_converts_with_aac_audio

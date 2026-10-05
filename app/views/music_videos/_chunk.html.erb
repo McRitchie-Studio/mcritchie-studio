@@ -1,0 +1,66 @@
+<%# One chunk of the tiled video: its preview, window, overlap with the chunk before, cast shape, target and prompt. No decision: chunks are not approved or rejected. %>
+<% url = clip_urls[chunk.object_key] %>
+<% target = performers[chunk.target_performer] %>
+<article id="chunk-<%= chunk.ordinal %>" class="card overflow-hidden scroll-mt-24 min-w-0"
+         x-data="clipRow()" data-src="<%= url %>"
+         data-test="chunk-row" data-ordinal="<%= chunk.ordinal %>">
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+    <div class="relative bg-inset aspect-video" data-test="chunk-preview" data-key="<%= chunk.object_key %>">
+      <% if url %>
+        <video x-ref="player" x-show="open" x-cloak controls playsinline preload="none"
+               class="absolute inset-0 w-full h-full bg-black" data-test="chunk-player"
+               @error="failed = true"></video>
+        <button type="button" x-show="!open" @click="preview()"
+                class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-heading hover:text-primary"
+                data-test="chunk-preview-button">
+          <svg class="w-10 h-10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <span class="text-sm font-semibold">Preview <%= chunk.name.downcase %></span>
+        </button>
+        <p x-show="failed" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+           data-test="chunk-load-failed">The chunk did not load: <%= chunk.object_key.split("/").last %></p>
+      <% else %>
+        <p class="absolute inset-0 flex items-center justify-center p-3 text-xs text-muted text-center break-all"
+           data-test="chunk-unreachable">Chunk not reachable: <%= chunk.object_key.split("/").last %></p>
+      <% end %>
+    </div>
+
+    <div class="p-4 flex flex-col gap-3 min-w-0">
+      <header class="min-w-0">
+        <h3 class="text-lg font-bold text-heading"><%= chunk.name %></h3>
+        <p class="text-sm text-body font-mono tabular-nums" data-test="chunk-window">
+          <%= video_timecode(chunk.start_ms) %>–<%= video_timecode(chunk.end_ms) %>
+          <span class="text-muted">· <%= format("%.1f", chunk.duration_ms / 1000.0) %> s</span>
+        </p>
+      </header>
+
+      <div class="flex flex-wrap gap-1.5">
+        <span class="badge text-xs bg-surface-alt text-body border-subtle" data-test="chunk-shape"><%= clip_shape_label(chunk.cast_shape) %></span>
+        <% if chunk.ordinal > 1 && overlap_ms.positive? %>
+          <span class="badge text-xs bg-primary/10 text-primary border-primary/20" data-test="chunk-overlap">First <%= clip_seconds(overlap_ms) %> s repeat chunk <%= chunk.ordinal - 1 %></span>
+        <% end %>
+      </div>
+
+      <p class="text-sm text-body min-w-0" data-test="chunk-target">
+        <span class="label-upper mr-1">Target</span>
+        <% if target %>
+          <%= target.name %><% if target.artist %> · <span class="font-semibold text-heading"><%= target.artist.name %></span><% end %>
+          <span class="text-muted">(<%= target.label %>)</span>
+        <% else %>
+          <span class="text-muted">No labelled artist in this window; the prompt says “the singer”.</span>
+        <% end %>
+      </p>
+
+      <div class="min-w-0">
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <p class="label-upper">Swap prompt</p>
+          <button type="button" @click="copy()" class="btn btn-outline btn-sm" data-test="chunk-copy">
+            <span x-text="copied ? 'Copied' : 'Copy'">Copy</span>
+          </button>
+        </div>
+        <p x-ref="prompt" class="text-sm text-body bg-surface-alt border border-subtle rounded-lg p-3 whitespace-pre-wrap break-words select-all"
+           data-test="chunk-prompt"><%= chunk.prompt %></p>
+        <p x-show="manual" x-cloak class="text-xs text-warning-ink mt-1" data-test="chunk-copy-manual">Copy is blocked here: the prompt is selected, press ⌘C.</p>
+      </div>
+    </div>
+  </div>
+</article>

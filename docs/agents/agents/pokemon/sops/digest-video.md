@@ -17,6 +17,7 @@ bin/digest-video <url> --from-dir <dir>  # reuse a download already on disk
 bin/digest-video <url> --dry-run         # download and print the plan only
 bin/digest-video <url> --production      # production bucket and mcritchie.studio
 bin/digest-video <url> --cookies-from-browser chrome   # lend yt-dlp the browser's session
+bin/digest-video <url> --kind cinematic  # a cinematic video; the default is music_video
 ```
 
 It writes the dev bucket unless `--production` is passed.
@@ -64,7 +65,8 @@ The script posts to `POST /api/v1/music_videos` (bearer token from
 `/api/v1/auth`); `GET /api/v1/music_videos/<slug>` reads it back. A second post of
 the same video answers 200 with the record it already has. The record carries:
 
-- type `music_video` (the only type for now);
+- type (`kind`) `music_video`, or `cinematic` when the script ran with
+  `--kind cinematic`; the API refuses any other;
 - platform, source URL and source id (from `.info.json`);
 - title, duration, and stage `digested`;
 - the credited artists: each `primary` or `featured`. A group such as Migos is
@@ -137,7 +139,9 @@ people, stills and sightings, no names.
 ## Stage 5: Clips
 
 Once the cast is confirmed, `bin/find-clips` proposes 25-second clips, cuts
-them to R2 and records them. It uses ffmpeg only; install nothing else.
+them to R2 and records them. It uses ffmpeg only; install nothing else. With
+`--tile` it cuts the whole video into overlapping chunks instead
+([Chunks](#chunks-the-whole-video-tiled), below).
 
 ```bash
 bin/find-clips <slug>                  # dev bucket, API at localhost:3000
@@ -145,6 +149,8 @@ bin/find-clips <slug> --api <base>     # another hub, e.g. a desk server
 bin/find-clips <slug> --source <mp4>   # a source already on disk
 bin/find-clips <slug> --dry-run        # measure and print the windows only
 bin/find-clips <slug> --production     # production bucket and mcritchie.studio
+bin/find-clips <slug> --tile           # the whole video as 25 s chunks that overlap 5 s
+bin/find-clips <slug> --tile --chunk 15 --overlap 5   # 15 s chunks on a 10 s stride
 ```
 
 1. **Source.** `--source`, else the digest folder
@@ -184,6 +190,44 @@ The prompt reads the cast label as the target's description: a label naming a
 person ("long-haired man") reads as-is, and a scene label ("desk") reads as "the
 person in the desk scenes". Write labels as visible descriptions for the best
 prompt. `{athlete}` stays a blank for pipeline 4.
+
+### Chunks: the whole video, tiled
+
+`bin/find-clips <slug> --tile` cuts the WHOLE video into chunks instead of
+picking candidates. It takes the same flags (`--api`, `--source`, `--dry-run`,
+`--production`); `--count` does not apply. The chunks and the candidates are two
+sets on one video: running either never replaces the other.
+
+1. **Tile.** By default 25 s chunks on a 20 s stride, so each shares 5 s with
+   the one before: 0-25, 20-45, 40-65 and on. `--chunk <seconds>` and
+   `--overlap <seconds>` change the two; they need `--tile`, and the overlap
+   must be shorter than the chunk. `--chunk 15 --overlap 5` gives 0-15, 10-25,
+   20-35 and on, for a swap model that takes 15 s at most. The last chunk ends at
+   the video's end and may be shorter. A tail the previous chunk already covers
+   makes no extra chunk (at the defaults, a 45 s video is two chunks). The rule
+   lives in `lib/music_videos/chunk_tiler.rb`. A chunk has no seam; only the
+   duration is measured.
+2. **Check the source.** The file on disk must run within 1 s of the recorded
+   duration, or the script stops: it is not the digested video. The tiling ends
+   at the shorter of the two.
+3. **Label.** As for a candidate: cast shape, target and who is present.
+4. **Cut and store.** Re-encoded like a candidate, uploaded to
+   `music_videos/<artist>/<video>/chunks/<video>_chunk_<NN>_<mmss>_<mmss>.mp4`.
+5. **Post the set**: `POST /api/v1/music_videos/<slug>/clips` with
+   `"kind": "chunk"`, `chunk_ms` and `chunk_overlap_ms` beside `clips` (the two
+   default to 25000 and 5000). The video records them as its tiling, and `GET`
+   returns them. Each row carries `ordinal`, `start_ms`,
+   `end_ms`, `cast_shape`, `target_performer`, `performer_ordinals` and
+   `object_key`; `seam` and `seam_ms` are refused (`UNPERMITTED_KEYS`). The set
+   must be the whole tiling at that chunk length and overlap: anything else
+   answers `422 INVALID_TILING`. It
+   replaces the chunks and leaves the candidates and their approvals alone. With
+   no `kind`, the post is the candidate set, as before. `GET` returns the
+   candidates under `clips` and the chunks under `chunks`.
+6. **Hand the operator the chunks**, below the clip candidates on
+   `/music_videos/<slug>`: in time order, each with a preview, its window, the
+   cast shape, the target and the prompt with a Copy button. A chunk has no
+   Approve or Reject, and never moves the video's stage.
 
 ## Related
 
