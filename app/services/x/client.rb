@@ -5,11 +5,12 @@ require "securerandom"
 
 module X
   # Net::HTTP wrapper that signs every request with X::OAuthSigner.
-  # Knows how to issue the four request shapes we use:
+  # Knows how to issue the five request shapes we use:
   #   - get(url, query_params)
   #   - post_form(url, params)         — application/x-www-form-urlencoded
   #   - post_json(url, body)           — application/json
-  #   - post_multipart(url, fields, media_chunk:) — for v1.1 chunked APPEND
+  #   - post_empty(url)                — no body (v2 media FINALIZE)
+  #   - post_multipart(url, fields, media_chunk:) — for the chunked APPEND
   class Client
     class HttpError < StandardError; end
 
@@ -36,6 +37,14 @@ module X
       # JSON bodies aren't part of the OAuth signature base string.
       req["Authorization"] = OAuthSigner.header("POST", url, {})
       req.body = JSON.generate(body)
+      execute(uri, req)
+    end
+
+    # A bodiless POST. Nothing but the oauth_* params enters the signature.
+    def post_empty(url)
+      uri = URI(url)
+      req = Net::HTTP::Post.new(uri)
+      req["Authorization"] = OAuthSigner.header("POST", url, {})
       execute(uri, req)
     end
 

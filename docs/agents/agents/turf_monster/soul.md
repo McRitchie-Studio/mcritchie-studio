@@ -108,6 +108,11 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   only and off the launcher card — it runs when Alex asks for the money, which
   nothing here can know. Judging whether the balance is finished revenue is mine;
   how much leaves the vault, and to which wallet, is Alex's
+- [`sops/post-to-x.md`](sops/post-to-x.md) — post the MP4s Alex hands over to
+  `@turfmonstershow`: finish each caption from his line, choose the hashtags,
+  show him the batch, post on his one approval. Direct-invocation only and off
+  the launcher card — it runs when he hands over videos. Which tag a fan base
+  actually uses is mine; every fact in the caption, and the go, are Alex's
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — schema work flags `--requires-migration` and confers with Carl
