@@ -128,16 +128,25 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    `meta.dropped_recasts`); a confirmed cast answers `409 CAST_CONFIRMED`.
 5. **Hand the operator the cast panel**, `/music_videos/<slug>` (admin). Each card
    shows the still, the sightings as links to that second of the video, and a
-   typeahead over artists (names and aliases) and People. Picking a person from
+   typeahead over artists (names and aliases) and People. Each result is one
+   row: a headshot (a neutral placeholder when there is none), the name, then
+   the primary vocation and the current team (`People::SearchRows`; an artist
+   with no Person reads "musician" or "group"). Picking a person from
    People makes them an artist; "Create new artist" adds one; "Extra, not a named
    artist" closes a card. **Cast confirmed** unlocks when every card is closed and
    moves the video from `digested` to `cast_confirmed`. A `cinematic` video
    credits no artists, so there a card also closes on its recast answer (below)
    and naming an artist is optional.
 6. **The operator recasts**, on the same card, under "Replaced by": a typeahead
-   over athletes (People who have a look), then one of that athlete's looks,
-   shown as "Athlete > Look"; or "Keep as is". "New look for <athlete>" opens the
-   look form on the person's page and returns to the card on save. The recast
+   over every Person, drawn with the same row and a looks count. People who
+   have a look come first; then exact name, prefix, anywhere. Picking someone
+   offers their looks, shown as "Athlete > Look"; or "Keep as is". A person
+   with **no look yet** is listed with "0 looks" and is saved alone when
+   picked: the card names them, offers "Create a look for <athlete>" in place
+   of a look select, and stays open (an athlete with no look does not close a
+   card, and their name already fills the prompts). The look link opens the
+   look form on the person's page and returns to the card on save, where the
+   card then asks which look. The recast
    can change before and after the cast is confirmed. **Only the operator sets
    it**: the agent never proposes who replaces anyone.
 
