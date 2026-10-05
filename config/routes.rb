@@ -231,8 +231,6 @@ Rails.application.routes.draw do
   get "alex/insights",        to: legacy_seat
   get "alex/pipeline",        to: legacy_seat
 
-  get "toast_test", to: "toast_test#index"
-  post "toast_test/flash", to: "toast_test#trigger_flash"
   resources :chat, only: [:index, :create]
   resources :schedule, only: [:index]
 
