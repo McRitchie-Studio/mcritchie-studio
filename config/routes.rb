@@ -162,6 +162,14 @@ Rails.application.routes.draw do
       resource :recast, only: [:update], controller: "video_performer_recasts"
     end
     resources :clips, only: [:update], param: :ordinal, controller: "video_clips"
+    # Chunks (the tiled video) have their own routes: upload a generated take,
+    # put an older take back in front, request or clear a regenerate.
+    resources :chunks, only: [], param: :ordinal do
+      resources :takes, only: [:create], param: :number, controller: "video_chunk_takes" do
+        post :current, on: :member
+      end
+      resource :regenerate, only: [:create, :destroy], controller: "video_chunk_regenerates"
+    end
     resources :looks, only: [:create], param: :look_slug, controller: "music_video_looks" do
       post :sheet, on: :member
     end

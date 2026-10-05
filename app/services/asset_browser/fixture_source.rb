@@ -29,8 +29,9 @@ module AssetBrowser
 
     def head(key:) = @entries.find { |entry| entry.key == key }
 
-    def signed_url(key:, expires_in:)
-      "https://fixture.invalid/#{key}?X-Amz-Expires=#{expires_in}&X-Amz-Signature=fixture"
+    def signed_url(key:, expires_in:, download_as: nil)
+      disposition = download_as ? "&response-content-disposition=#{CGI.escape("attachment; filename=\"#{download_as}\"")}" : ""
+      "https://fixture.invalid/#{key}?X-Amz-Expires=#{expires_in}&X-Amz-Signature=fixture#{disposition}"
     end
   end
 end

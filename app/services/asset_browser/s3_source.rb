@@ -37,11 +37,12 @@ module AssetBrowser
     end
 
     # Inside `storage` so aws-sdk-s3 is loaded even when no list or head ran first.
-    def signed_url(key:, expires_in:)
-      storage do
-        Aws::S3::Presigner.new(client: client)
-                          .presigned_url(:get_object, bucket: bucket, key: Studio::S3.full_key(key), expires_in: expires_in)
-      end
+    # download_as: a file name makes the URL answer as an attachment, so a link
+    # to it saves the file instead of playing it in the tab.
+    def signed_url(key:, expires_in:, download_as: nil)
+      params = { bucket: bucket, key: Studio::S3.full_key(key), expires_in: expires_in }
+      params[:response_content_disposition] = ActionDispatch::Http::ContentDisposition.format(disposition: "attachment", filename: download_as) if download_as
+      storage { Aws::S3::Presigner.new(client: client).presigned_url(:get_object, **params) }
     end
 
     private

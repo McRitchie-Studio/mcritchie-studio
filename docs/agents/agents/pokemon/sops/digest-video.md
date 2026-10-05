@@ -248,6 +248,44 @@ sets on one video: running either never replaces the other.
    cast shape, the target, who replaces them, and the prompt with a Copy button.
    A chunk has no Approve or Reject, and never moves the video's stage.
 
+### Generated takes and the stitch preview
+
+The operator swaps each chunk by hand in the Higgsfield web UI and brings the
+result back. All of it happens on `/music_videos/<slug>`, in the chunk's row.
+
+1. **Take the hand-off.** Each chunk row carries the three inputs: **Download
+   source chunk** (the cut file, served as an attachment), the swap prompt with
+   **Copy**, and **Character sheet** for the look the chunk's target was recast
+   as. With no sheet the row says so and links to the athlete; with nobody
+   recast it says there is no look.
+2. **Upload the result.** Choose the generated MP4 in the row and press
+   **Upload take**. Each upload is a numbered take, kept and never overwritten,
+   at `music_videos/<artist>/<video>/generated/<video>_chunk_<NN>_<mmss>_<mmss>_take_<NN>.mp4`.
+   The newest take is current; **Make current** on an older take puts it back
+   in front, and the next upload is current again. MP4 only, 100 MB at most.
+   The file rides the web request, so on a slow uplink a large file can pass
+   Heroku's 30-second window: upload from the local hub then.
+3. **Request a regenerate** on a chunk whose take will not do, with an optional
+   note. The flagged chunks are listed above the preview. The next take
+   uploaded for that chunk clears its flag; **Clear** removes it by hand.
+4. **Watch the stitch preview**, above the chunk rows. It plays the whole video
+   as if stitched, with no stitched file: each chunk plays its current take,
+   or its own source cut when it has none (marked `source`), and hands over to
+   the next at the middle of their overlap. The original source audio plays
+   underneath and the clips are muted. Seek with the slider or a chunk marker.
+   The handover is a hard cut; the crossfade belongs to the final stitch.
+5. **Ready to stitch** shows when every chunk has a current take and none is
+   flagged (`MusicVideo#ready_to_stitch?`). Until then the line says what is
+   missing.
+
+A re-tile at the same chunk length and overlap keeps every take and flag: a
+take belongs to a chunk by its number and window, not by row. A re-tile at
+another length leaves the old takes filed in R2 and on no chunk.
+
+Timing comes from each chunk's `start_ms` and `end_ms`
+(`lib/music_videos/stitch_timeline.rb`), never from a file's length: cut files
+run a frame long and a generated file may differ slightly.
+
 ## Related
 
 - [Music video pipeline plan](../../../system/music-video-pipeline-plan.md): the

@@ -97,6 +97,117 @@
       },
     };
   };
+
+  // The stitch preview: plays the chunks back to back as if stitched, without
+  // a stitched file. The server sends when each chunk is on screen
+  // (MusicVideos::StitchTimeline: handover at the middle of each overlap) and
+  // the file it plays. The source audio is the clock; the two muted videos
+  // follow it, one on screen and one holding the next chunk ready.
+  window.stitchPreview = function () {
+    return {
+      segments: [], durationMs: 0, t: 0, index: 0, active: 0, playing: false, audioOk: true,
+      frame: null, wallBase: 0, wallAt: 0, failed: [false, false],
+      init() {
+        const data = JSON.parse(this.$root.dataset.timeline);
+        this.segments = data.segments; this.durationMs = data.duration_ms;
+        this.audioOk = !!this.$refs.audio.getAttribute("src");
+        if (this.segments.length) this.show(0);
+      },
+      destroy() { this.pause(); },
+      get now() { return this.segments[this.index] || null; },
+      get missing() { return !!this.now && !this.now.url; },
+      get nowLabel() { return this.now ? "Chunk " + this.now.ordinal + " · " + this.now.label : ""; },
+      fmt(ms) {
+        const s = Math.floor(ms / 1000);
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+      },
+      // The video clock in ms: the source audio while it plays, else a timer.
+      clock() {
+        if (this.audioOk) return this.$refs.audio.currentTime * 1000;
+        return this.wallBase + (performance.now() - this.wallAt);
+      },
+      startWall() { this.wallBase = this.t; this.wallAt = performance.now(); },
+      audioFailed() { this.audioOk = false; this.startWall(); },
+      // A video whose file would not load (an expired link, a format the browser cannot play).
+      loadFailed(which) { if ([this.$refs.a, this.$refs.b][which].getAttribute("src")) this.failed[which] = true; },
+      // The last segment that has started by ms.
+      indexAt(ms) {
+        let found = 0;
+        this.segments.forEach((seg, i) => { if (ms >= seg.from_ms) found = i; });
+        return found;
+      },
+      // Point one video at a segment's file, at the frame the clock ms falls on:
+      // the offset comes from the chunk's recorded start, never the file's length.
+      cue(video, seg, ms, exact = false) {
+        if (!seg.url) { video.dataset.ordinal = ""; video.removeAttribute("src"); video.load(); return; }
+        if (video.dataset.ordinal !== String(seg.ordinal)) {
+          video.dataset.ordinal = String(seg.ordinal);
+          this.failed[video === this.$refs.a ? 0 : 1] = false;
+          video.src = seg.url;
+        }
+        let want = Math.max(0, (ms - seg.start_ms) / 1000);
+        if (Number.isFinite(video.duration)) want = Math.min(want, Math.max(0, video.duration - 0.05));
+        // A file shorter than its window has run out: hold its last frame.
+        if (video.ended && want >= video.duration - 0.1) return;
+        const off = Math.abs(video.currentTime - want);
+        if (video.paused || exact) { if (off > 0.03) video.currentTime = want; return; }
+        // Playing: pull a drifting video back onto the clock, at most once a second,
+        // aiming a little ahead to cover the seek itself.
+        const now = performance.now();
+        if (off > 0.2 && !video.seeking && now - Number(video.dataset.syncedAt || 0) > 1000) {
+          video.dataset.syncedAt = String(now);
+          video.currentTime = want + 0.1;
+        }
+      },
+      // Put segment i on screen and load the one after it into the other video.
+      show(i) {
+        const seg = this.segments[i], next = this.segments[i + 1];
+        const pair = [this.$refs.a, this.$refs.b];
+        if (pair[1 - this.active].dataset.ordinal === String(seg.ordinal)) this.active = 1 - this.active;
+        const front = pair[this.active], back = pair[1 - this.active];
+        const handover = i !== this.index;
+        this.index = i;
+        this.cue(front, seg, this.t, handover);
+        back.pause();
+        if (this.playing && seg.url) front.play().catch(() => {});
+        if (next) this.cue(back, next, next.from_ms);
+      },
+      tick() {
+        if (!this.playing) return;
+        this.t = Math.min(this.clock(), this.durationMs);
+        if (this.t >= this.durationMs) { this.pause(); return; }
+        const i = this.indexAt(this.t);
+        if (i !== this.index) this.show(i);
+        else if (this.now.url) this.cue([this.$refs.a, this.$refs.b][this.active], this.now, this.t);
+        this.frame = requestAnimationFrame(() => this.tick());
+      },
+      play() {
+        if (!this.segments.length || this.playing) return;
+        if (this.t >= this.durationMs) this.seek(0);
+        this.playing = true;
+        this.startWall();
+        if (this.audioOk) {
+          this.$refs.audio.currentTime = this.t / 1000;
+          this.$refs.audio.play().catch(() => this.audioFailed());
+        }
+        this.show(this.index);
+        this.frame = requestAnimationFrame(() => this.tick());
+      },
+      pause() {
+        this.playing = false;
+        cancelAnimationFrame(this.frame);
+        this.$refs.audio.pause(); this.$refs.a.pause(); this.$refs.b.pause();
+      },
+      toggle() { this.playing ? this.pause() : this.play(); },
+      seek(ms) {
+        if (!this.segments.length) return;
+        this.t = Math.min(Math.max(0, ms), this.durationMs);
+        if (this.audioOk) this.$refs.audio.currentTime = this.t / 1000;
+        this.startWall();
+        this.show(this.indexAt(this.t));
+      },
+    };
+  };
 </script>
 <%= render "components/copy_text_script" %>
 
@@ -253,10 +364,12 @@
       <% end %>
     </header>
     <% if @chunks.any? %>
+      <%= render "music_videos/stitch_preview", video: @video, chunks: @chunks, stitch: @stitch,
+                 audio_url: @clip_urls[@video.source_object_key] %>
       <div class="flex flex-col gap-4">
         <% @chunks.each do |chunk| %>
-          <%= render "music_videos/chunk", chunk: chunk, clip_urls: @clip_urls,
-                     overlap_ms: @video.chunk_overlap_ms.to_i %>
+          <%= render "music_videos/chunk", chunk: chunk, video: @video, clip_urls: @clip_urls,
+                     downloads: @chunk_downloads, sheets: @recast_sheets, overlap_ms: @video.chunk_overlap_ms.to_i %>
         <% end %>
       </div>
     <% elsif @video.cast_confirmed? %>
