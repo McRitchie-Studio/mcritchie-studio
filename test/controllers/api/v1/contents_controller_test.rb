@@ -260,6 +260,19 @@ module Api
         assert_nil video_post.claim_session
       end
 
+      test "posted refuses a card that is already posted and keeps its first link" do
+        claim_video_post("s-1")
+        post posted_api_v1_content_path(video_post.slug),
+             params: { session: "s-1", post_url: "https://x.com/turfmonstershow/status/1" }, headers: auth, as: :json
+        post claim_next_api_v1_contents_path, params: { session: "s-1", workflow: "video_post_x", stage: "posted" }, headers: auth, as: :json
+        post posted_api_v1_content_path(video_post.slug),
+             params: { session: "s-1", post_url: "https://x.com/turfmonstershow/status/2" }, headers: auth, as: :json
+
+        assert_response :conflict
+        assert_equal "ALREADY_POSTED", JSON.parse(response.body)["error_code"]
+        assert_equal "https://x.com/turfmonstershow/status/1", video_post.reload.post_url
+      end
+
       test "posted refuses a session that does not hold the claim" do
         claim_video_post("s-1")
         post posted_api_v1_content_path(video_post.slug),

@@ -4,7 +4,8 @@ require "test_helper"
 # and that a refusal stores nothing.
 class Content::AttachVideoTest < ActiveSupport::TestCase
   Upload = Struct.new(:original_filename, :content_type, :size, :body) do
-    def read = body
+    def tempfile = (@tempfile ||= StringIO.new(body))
+    def read = raise("read the IO, not a string: a 100 MB upload must not be loaded into memory")
   end
 
   setup do
@@ -13,7 +14,7 @@ class Content::AttachVideoTest < ActiveSupport::TestCase
   end
 
   def attach(upload)
-    Content::AttachVideo.stub(:store, ->(key:, body:) { @stored << [key, body]; "https://cdn.test/#{key}" }) do
+    Content::AttachVideo.stub(:store, ->(key:, body:) { @stored << [key, body.read]; "https://cdn.test/#{key}" }) do
       Content::AttachVideo.new(@content, upload).call
     end
   end

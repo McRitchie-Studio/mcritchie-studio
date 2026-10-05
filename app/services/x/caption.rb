@@ -11,7 +11,11 @@ module X
     MAX_HASHTAGS  = 8
     HASHTAG       = /\A#[A-Za-z0-9_]+\z/
     HANDLE        = /\A@[A-Za-z0-9_]{1,15}\z/
-    URL           = %r{https?://\S+}
+    # A link with or without its scheme. X counts both as a link, so a bare
+    # `espn.com` weighs 23 like any other; the TLD list is the common ones, not
+    # X's full table.
+    URL           = %r{(?:https?://\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|co|tv|gg|app|media|studio|xyz|us)\b(?:/\S*)?)}i
+    TOKEN         = /[#@][A-Za-z0-9_]+/
     # Code point ranges X counts as 1. Everything else counts as 2.
     LIGHT_RANGES  = [0..4351, 8192..8205, 8208..8223, 8242..8247].freeze
 
@@ -24,9 +28,11 @@ module X
     end
 
     # The line, then one tail line of handles and hashtags. A tag already written
-    # into the line is not repeated in the tail.
+    # into the line is not repeated in the tail — matched as a WHOLE token, so
+    # `#NFL` is not mistaken for present because the line carries `#NFLDraft`.
     def text
-      tail = (handles + hashtags).reject { |t| line.downcase.include?(t.downcase) }
+      written = line.scan(TOKEN).map(&:downcase)
+      tail    = (handles + hashtags).reject { |t| written.include?(t.downcase) }
       tail.empty? ? line : "#{line}\n\n#{tail.join(' ')}"
     end
 

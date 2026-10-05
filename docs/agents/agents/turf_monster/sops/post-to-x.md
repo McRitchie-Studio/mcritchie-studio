@@ -55,8 +55,10 @@ That is the queue. If it prints `no content`, say so and stop.
 bin/x-post whoami
 ```
 
-It must print `@turfmonstershow`. Any other handle, stop. An HTTP 401 or a
-1Password failure is the `token-session` SOP. `bin/x-post` reads the
+It must print `@turfmonstershow`. Any other handle, stop. An HTTP 401 means X
+no longer accepts the keys: report it to Alex, because new keys come from the X
+developer console and are refiled in `agent.turf.x` by `credential-rotation`.
+A 1Password failure (the item cannot be read at all) is `credential-issues`. `bin/x-post` reads the
 `agent.turf.x` item itself; never paste a key into a command.
 
 **2. You have a per-soul session, exported once for the whole run.**
@@ -214,6 +216,12 @@ prints the first link. So if a run dies between `post` and `posted`, re-run
 `post`: it refuses, hands you the link, and you finish with `posted`.
 `--again` overrides the ledger, and only Alex decides to post a video twice.
 
+**It also records the ATTEMPT before it uploads.** If a run is killed or times
+out after X took the post but before the link came back, the next `post` of
+that file refuses and tells you to look at the timeline, because at that point
+only the timeline knows whether the video is live. Do what it says before
+reaching for `--again`.
+
 A `409` on `write` or `posted` is the claim: `CLAIM_LAPSED` means the 30
 minutes ran out, so claim again; `CLAIM_HELD` means another session has the
 card, so leave it.
@@ -227,8 +235,8 @@ billed attempts.
 
 | X says | Meaning | Action |
 |---|---|---|
-| 401 | The credentials no longer work | `token-session` |
-| 403, with "duplicate" | That exact text was posted recently | Change the copy; ask Alex |
+| 401 | X no longer accepts the keys | Report to Alex; `credential-rotation` refiles new ones |
+| 403, with "duplicate" | That exact text is already on the account | **Look at the timeline first.** If this video is there, an earlier run posted it: record that link with `bin/content posted` and move on. Only if it is not there, change the copy and ask Alex |
 | 403, otherwise | The X app lost write permission, or the account is restricted | Report to Alex verbatim |
 | A message about credits, billing or usage | The developer account has no balance | Alex tops it up; only he holds the billing |
 | 429 | Rate limited | Wait for the window X names, then resume |

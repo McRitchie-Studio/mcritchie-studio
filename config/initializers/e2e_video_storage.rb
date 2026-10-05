@@ -6,6 +6,6 @@
 # reached, which the test env has no credentials for.
 if Rails.env.test? && ENV["E2E_FAKE_VIDEO_STORAGE"] == "1"
   Rails.application.config.to_prepare do
-    Content::AttachVideo.define_singleton_method(:store) { |key:, body:| "/e2e-uploads/#{key}?bytes=#{body.bytesize}" }
+    Content::AttachVideo.define_singleton_method(:store) { |key:, body:| "/e2e-uploads/#{key}?bytes=#{body.size}" }
   end
 end

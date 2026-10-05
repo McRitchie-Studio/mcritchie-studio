@@ -234,15 +234,23 @@ class ContentsController < ApplicationController
   def create_video_post_x
     attach = Content::AttachVideo.new(@content, params.dig(:content, :video_file))
     attach.validate!
+    raise Content::AttachVideo::Refused, "Say what the video is in Description." if @content.description.blank?
+
     @content.title = @content.description.to_s.squish.truncate(60) if @content.title.blank?
     @content.stage = "idea"
     # NO `target:` here. A rollback hands @content back as a NEW record, and the
     # error log autosaves a new target, so naming it re-created the very card the
     # rollback removed (measured: a failed upload left one behind).
     rescue_and_log do
-      Content.transaction(requires_new: true) do
-        @content.save!
+      # Save, THEN upload, and take the card back if the upload fails: a network
+      # call inside a transaction holds a database connection for as long as the
+      # bucket takes, which for a large file is most of the request.
+      @content.save!
+      begin
         attach.call
+      rescue StandardError
+        @content.destroy!
+        raise
       end
       redirect_to content_path(@content.slug), notice: "Video queued for X. Turf Monster writes the copy and posts it."
     end

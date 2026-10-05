@@ -22,7 +22,10 @@
 # `post` IS PUBLIC AND IS NOT UNDONE BY THIS COMMAND. So it refuses without
 # --yes, refuses when the credentials do not belong to the expected account, and
 # refuses a video it has already posted (the ledger, keyed by the file's
-# sha256) unless --again is passed.
+# sha256) unless --again is passed. An ATTEMPT is recorded before the upload
+# starts, so a run that dies after X took the post but before this command
+# could record it is also refused: the timeline is the only witness then, and
+# a re-run must not guess.
 #
 # THE CAPTION GOES IN A FILE, never a shell argument: it carries newlines,
 # quotes, `$` and `#`, and a shell argument eats all four.
@@ -38,10 +41,18 @@ require "fileutils"
 require "open3"
 require "time"
 require_relative "lib/op_meter"
-require_relative "../app/services/x/oauth_signer"
-require_relative "../app/services/x/client"
-require_relative "../app/services/x/post_media"
-require_relative "../app/services/x/caption"
+begin
+  require_relative "../app/services/x/oauth_signer"
+  require_relative "../app/services/x/client"
+  require_relative "../app/services/x/post_media"
+  require_relative "../app/services/x/caption"
+rescue LoadError
+  # The fixed-path tooling tree carries bin/ but not app/services, so the copy
+  # at /Users/alex/projects/.agents/bin cannot run. Say where it does.
+  warn "x-post: this copy has no app/services/x beside it. Run the hub's: " \
+       "cd /Users/alex/projects/mcritchie-studio && bin/x-post"
+  exit 1
+end
 
 ROOT     = File.expand_path("..", __dir__)
 ACCOUNT  = "turfmonstershow"
@@ -173,9 +184,16 @@ when "post"
   caption, sha, problems = inspect_post(path, opts)
   exit 1 if problems.any?
 
-  prior = ledger_rows.find { |r| r["sha256"] == sha }
+  rows  = ledger_rows.select { |r| r["sha256"] == sha }
+  prior = rows.find { |r| r["post_url"] }
   if prior && !opts[:again]
     die!("this video was already posted #{prior['posted_at']} → #{prior['post_url']}. Pass --again to post it a second time.")
+  end
+  # Only the LAST row speaks: an attempt followed by a refusal is finished.
+  unfinished = rows.last if rows.last && rows.last["attempted_at"] && !rows.last["post_url"]
+  if unfinished && !prior && !opts[:again]
+    die!("an attempt to post this video started #{unfinished['attempted_at']} and never recorded a result, so it may be LIVE. " \
+         "Look at https://x.com/#{ACCOUNT} first. If it is there, do not post again; if it is not, re-run with --again.")
   end
   die!("not posted: a post is public. Re-run with --yes once Alex has approved this exact text.") unless opts[:yes]
 
@@ -184,13 +202,20 @@ when "post"
   actual   = whoami
   die!("these credentials post as @#{actual}, not @#{expected}. Nothing was posted.") unless actual.casecmp?(expected)
 
+  FileUtils.mkdir_p(File.dirname(LEDGER))
+  File.open(LEDGER, "a") do |f|
+    f.puts(JSON.generate(sha256: sha, video: File.expand_path(path), account: actual, text: caption.text,
+                         attempted_at: Time.now.utc.iso8601))
+  end
+
   begin
     result = X::PostMedia.new(text: caption.text, video_path: path).call
   rescue X::PostMedia::Error, X::Client::HttpError => e
+    # X ANSWERED and said no, so nothing is live: retire the attempt row.
+    File.open(LEDGER, "a") { |f| f.puts(JSON.generate(sha256: sha, refused_at: Time.now.utc.iso8601)) }
     die!("X refused the post, nothing was recorded: #{e.message[0, 500]}")
   end
 
-  FileUtils.mkdir_p(File.dirname(LEDGER))
   File.open(LEDGER, "a") do |f|
     f.puts(JSON.generate(sha256: sha, video: File.expand_path(path), account: actual, text: caption.text,
                          post_id: result[:post_id], post_url: "https://x.com/#{actual}/status/#{result[:post_id]}",
@@ -201,7 +226,7 @@ when "post"
 when "ledger"
   rows = ledger_rows
   puts "no posts recorded" if rows.empty?
-  rows.each { |r| puts "#{r['posted_at']}  #{r['post_url']}  #{File.basename(r['video'].to_s)}" }
+  rows.select { |r| r["post_url"] }.each { |r| puts "#{r['posted_at']}  #{r['post_url']}  #{File.basename(r['video'].to_s)}" }
 
 when "help", "--help", "-h", nil
   usage!(0)
