@@ -1,4 +1,4 @@
-<%# The look step of "Replaced by": a listbox of the chosen athlete's looks (sheet thumbnail, name, default mark, build state), a larger preview of the one picked, the button that casts it, and "Generate a new look" inline. Driven by window.lookPicker on the enclosing x-data root, which both render paths share: the open card (athlete picked in the typeahead) and the saved card (athlete read off the page). A custom listbox, since a native select cannot show images. %>
+<%# The look step of "Replaced by": a listbox of the chosen athlete's looks (sheet thumbnail, name, default mark, build state), a larger preview of the one picked, the button that casts it, and "Generate a new look" inline. Driven by window.lookPicker on the enclosing x-data root, which both render paths share: the open card (athlete picked in the typeahead) and the saved card (athlete read off the page). A custom listbox, since a native select cannot show images: focus stays on the trigger, which takes the arrow keys, Home, End, Enter, Space and Escape and names the active row. %>
 <% n = performer.ordinal %>
 <% sheet_row = local_assigns[:sheet_row] %>
 <div x-show="athlete" x-cloak class="mt-2 space-y-2 min-w-0" data-test="look-picker">
@@ -8,9 +8,14 @@
 
   <div x-show="looks.length > 0" class="relative" @click.outside="closeList()">
     <p class="text-xs text-muted mb-1" id="look-label-<%= n %>">Which look of <span class="font-semibold text-heading" x-text="athlete ? athlete.name : ''"></span>?</p>
-    <button type="button" x-ref="lookTrigger" aria-haspopup="listbox" :aria-expanded="listOpen" aria-controls="look-list-<%= n %>"
+    <button type="button" x-ref="lookTrigger" role="combobox" aria-haspopup="listbox" :aria-expanded="listOpen" aria-controls="look-list-<%= n %>"
             aria-labelledby="look-label-<%= n %> look-current-<%= n %>"
-            @click="listOpen ? closeList() : openList()" @keydown.arrow-down.prevent="openList()" @keydown.arrow-up.prevent="openList()"
+            :aria-activedescendant="listOpen ? 'look-option-<%= n %>-' + lookActive : null"
+            @click="listOpen ? closeList() : openList()"
+            @keydown.arrow-down.prevent="listOpen ? moveLook(1) : openList()" @keydown.arrow-up.prevent="listOpen ? moveLook(-1) : openList()"
+            @keydown.home="if (listOpen) { $event.preventDefault(); showRow(0); }" @keydown.end="if (listOpen) { $event.preventDefault(); showRow(looks.length); }"
+            @keydown.enter.prevent="listOpen ? pickRow(lookActive) : openList()" @keydown.space.prevent="listOpen ? pickRow(lookActive) : openList()"
+            @keydown.escape="closeList()" @keydown.tab="closeList()"
             class="input-field py-1.5 px-2 text-sm w-full flex items-center gap-3 text-left min-w-0" data-test="look-trigger">
       <%= render "music_videos/look_thumb", look: "chosen", size: "w-12 h-8" %>
       <span id="look-current-<%= n %>" class="min-w-0 flex-1 truncate" :class="chosen ? 'text-heading font-semibold' : 'text-muted'"
@@ -20,14 +25,8 @@
       </svg>
     </button>
 
-    <div x-show="listOpen" x-cloak x-ref="lookList" id="look-list-<%= n %>" role="listbox" tabindex="-1" aria-labelledby="look-label-<%= n %>"
-         :aria-activedescendant="listOpen ? 'look-option-<%= n %>-' + lookActive : null"
-         @keydown.arrow-down.prevent="moveLook(1)" @keydown.arrow-up.prevent="moveLook(-1)"
-         @keydown.home.prevent="showRow(0)" @keydown.end.prevent="showRow(looks.length)"
-         @keydown.enter.prevent="pickRow(lookActive)" @keydown.space.prevent="pickRow(lookActive)"
-         @keydown.escape.prevent="closeList(true)" @keydown.tab="closeList()"
-         class="absolute z-20 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-         data-test="look-list">
+    <div x-show="listOpen" x-cloak x-ref="lookList" id="look-list-<%= n %>" role="listbox" aria-labelledby="look-label-<%= n %>"
+         class="absolute z-20 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1" data-test="look-list">
       <template x-for="(look, i) in looks" :key="look.slug">
         <div role="option" :id="'look-option-<%= n %>-' + i" :aria-selected="look.slug === lookSlug" @click="pickRow(i)" @mouseenter="lookActive = i"
              class="rounded-lg px-2 py-2 flex items-center gap-3 min-w-0 cursor-pointer" :class="i === lookActive ? 'bg-surface-alt' : ''"

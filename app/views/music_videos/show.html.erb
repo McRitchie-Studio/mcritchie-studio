@@ -103,22 +103,25 @@
       },
       openList() {
         this.listOpen = true;
-        this.lookActive = Math.max(0, this.looks.findIndex((l) => l.slug === this.lookSlug));
-        this.$nextTick(() => this.$refs.lookList.focus());
+        this.showRow(Math.max(0, this.looks.findIndex((l) => l.slug === this.lookSlug)));
       },
-      closeList(refocus) { if (!this.listOpen) return; this.listOpen = false; if (refocus) this.$refs.lookTrigger.focus(); },
+      closeList() { this.listOpen = false; },
       // The rows are the looks, then "Generate a new look".
       moveLook(step) { const n = this.looks.length + 1; this.showRow((this.lookActive + step + n) % n); },
       showRow(i) {
         this.lookActive = i;
-        this.$nextTick(() => { const row = this.$refs.lookList.querySelectorAll("[role='option']")[i]; if (row) row.scrollIntoView({ block: "nearest" }); });
+        this.$nextTick(() => setTimeout(() => {
+          const row = this.$refs.lookList.querySelectorAll("[role='option']")[i];
+          if (row) row.scrollIntoView({ block: "nearest" });
+        }));
       },
       pickRow(i) {
-        this.closeList(true);
+        this.closeList(); this.$refs.lookTrigger.focus();
         if (i >= this.looks.length) return this.startGenerate();
         this.lookSlug = this.looks[i].slug; this.genOpen = false;
       },
-      startGenerate() { this.genOpen = true; this.$nextTick(() => this.$refs.genName.focus()); },
+      // x-show paints on a timeout, so the focus waits one too.
+      startGenerate() { this.genOpen = true; this.$nextTick(() => setTimeout(() => this.$refs.genName.focus())); },
       watchBuilds() {
         clearTimeout(this.lookTimer);
         if (this.looks.some((l) => l.state === "building")) this.lookTimer = setTimeout(() => this.refreshLooks(), 5000);
