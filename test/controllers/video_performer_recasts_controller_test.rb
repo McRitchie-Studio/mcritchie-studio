@@ -91,16 +91,52 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "the athlete typeahead returns people with looks, and the looks to choose from" do
+  test "the typeahead returns every matching person: looks, headshot, vocation and team per row" do
     log_in_as users(:alex)
-    Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
+    team = Team.create!(slug: "test-city-testers", name: "Test City Testers")
+    gamma = Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
+    profile = Athlete.create!(person_slug: gamma.slug, sport: "football", team_slug: team.slug)
+    cache = ImageCache.create!(owner: profile, purpose: "headshot", variant: "100", content_type: "image/png",
+                               s3_key: "headshots/nfl/test-city-testers/test-athlete-gamma/100.png")
 
     get search_recast_athletes_path(format: :json, q: "test ath")
     assert_response :success
     rows = JSON.parse(response.body)
-    assert_equal [%w[test-athlete-alpha Test\ Athlete\ Alpha]], rows.map { |r| r.values_at("slug", "name") }
+    assert_equal [%w[test-athlete-alpha Test\ Athlete\ Alpha], %w[test-athlete-gamma Test\ Athlete\ Gamma]],
+                 rows.map { |r| r.values_at("slug", "name") }
     assert_equal [["Home Blue", true], ["Away White", false]], rows.first["looks"].map { |l| l.values_at("descriptor", "default") }
     assert_equal [@home.slug, @away.slug], rows.first["looks"].map { |l| l["slug"] }
+    assert_equal ["2 looks", nil, "athlete", nil], rows.first.values_at("hint", "avatar_url", "vocation", "team")
+    assert_equal ["0 looks", cache.url, "athlete", "Test City Testers", []],
+                 rows.last.values_at("hint", "avatar_url", "vocation", "team", "looks")
+  end
+
+  test "a look-less athlete is saved alone and the card offers to create a look, with the way back" do
+    log_in_as users(:alex)
+    gamma = Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
+
+    assert_no_difference -> { ErrorLog.count } do
+      recast(1, person_slug: gamma.slug)
+    end
+    assert_redirected_to "/music_videos/#{@video.slug}#person-1"
+    assert_match "Test Athlete Gamma has no look yet", flash[:notice]
+    assert performer(1).recast_pending?
+    assert_not performer(1).resolved?, "an athlete with no look does not close a card"
+
+    follow_redirect!
+    assert_select "[data-ordinal='1'] [data-test='performer-recast'][data-state='pending']" do
+      assert_select "[data-test='recast-no-look']", /Test Athlete Gamma has no look yet/
+      assert_select "[data-test='recast-look-form']", 0
+      assert_select "a[data-test='recast-new-look'][href=?]",
+                    "/people/test-athlete-gamma?return_to=%2Fmusic_videos%2F#{@video.slug}%23person-1#new-model",
+                    "Create a look for Test Athlete Gamma"
+    end
+
+    post create_appearance_person_path(gamma.slug, return_to: "/music_videos/#{@video.slug}#person-1"),
+         params: { appearance: { descriptor: "Training Grey" } }
+    follow_redirect!
+    assert_equal ["Choose a look", "Test Athlete Gamma > Training Grey"],
+                 css_select("[data-ordinal='1'] [data-test='recast-look-form'] option").map { |o| o.text.strip }
   end
 
   test "the new look link opens the person's look form, and saving returns to the cast card" do

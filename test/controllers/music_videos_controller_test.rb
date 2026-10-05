@@ -110,6 +110,28 @@ class MusicVideosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     first = JSON.parse(response.body).first
     assert_equal({ "type" => "artist", "slug" => @artist.slug, "name" => "Test Artist A", "kind" => "person",
-                   "hint" => "aka Test Alias A" }, first)
+                   "hint" => "aka Test Alias A", "avatar_url" => nil, "vocation" => "musician", "team" => nil }, first)
+  end
+
+  # Synthetic people: the typeahead's rows carry a headshot, a vocation and a team.
+  test "the typeahead endpoint returns avatar, vocation and team per row" do
+    log_in_as users(:alex)
+    team = Team.create!(slug: "test-city-testers", name: "Test City Testers")
+    rostered = Person.create!(first_name: "Test", last_name: "Rowfinder Athlete", athlete: true)
+    profile = Athlete.create!(person_slug: rostered.slug, sport: "football", team_slug: team.slug)
+    cache = ImageCache.create!(owner: profile, purpose: "headshot", variant: "100", content_type: "image/png",
+                               s3_key: "headshots/nfl/test-city-testers/#{rostered.slug}/100.png")
+    Person.create!(first_name: "Test", last_name: "Rowfinder Plain", avatar_url: "https://img.example/plain.png")
+    Artist.create!(slug: "test-rowfinder-band", name: "Test Rowfinder Band", kind: "group")
+
+    get search_artists_path(format: :json, q: "test rowfinder")
+
+    assert_response :success
+    rows = JSON.parse(response.body).index_by { |r| r["slug"] }
+    assert_equal [cache.url, "athlete", "Test City Testers"], rows.fetch(rostered.slug).values_at("avatar_url", "vocation", "team")
+    assert_equal ["https://img.example/plain.png", nil, nil],
+                 rows.fetch("test-rowfinder-plain").values_at("avatar_url", "vocation", "team")
+    assert_equal [nil, "group", nil], rows.fetch("test-rowfinder-band").values_at("avatar_url", "vocation", "team")
+    assert_equal %w[avatar_url hint kind name slug team type vocation], rows.values.first.keys.sort
   end
 end

@@ -91,8 +91,9 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
         assert_select "form[action=?] input[name='_method'][value='patch']", recast_path
         assert_select "input[type='hidden'][name='person_slug']"
         assert_select "input[type='hidden'][name='appearance_slug']"
-        assert_select "input[role='combobox'][placeholder='Search athletes with a look']"
-        assert_select "[data-test='recast-looks'][x-show='athlete'] [data-test='recast-look-option']"
+        assert_select "input[role='combobox'][placeholder='Search people by name']"
+        assert_select "[data-test='recast-no-match']", /No person matches that name/
+        assert_select "[data-test='recast-looks'][x-show='athlete && athlete.looks.length'] [data-test='recast-look-option']"
         assert_select "a[data-test='recast-new-look']"
       end
       assert_select "[data-test='recast-typeahead'][data-new-look-url=?]",
@@ -101,6 +102,45 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
       assert_select "button", "Keep as is"
     end
     assert_includes rendered, %(x-text="athlete.name + ' > ' + look.descriptor")
+  end
+
+  # The row is an Alpine template: the browser fills it (e2e/music_video_search_rows.spec.js).
+  # Here: both typeaheads render the one partial, and it binds what the endpoints send.
+  test "both typeaheads render the shared search row: headshot or placeholder, name, vocation and team" do
+    render_card
+
+    { "typeahead-results" => "typeahead-option", "recast-results" => "recast-option" }.each do |list, option|
+      assert_select "[data-test='#{list}'] button[role='option'][data-test='#{option}']", 1 do
+        assert_select "[data-test='search-row-avatar']" do
+          assert_select "template[x-if='r.avatar_url && !r.avatarFailed']"
+          assert_select "svg[data-test='search-row-placeholder'][x-show='!r.avatar_url || r.avatarFailed']"
+        end
+        assert_select "[data-test='search-row-name'][x-text='r.name']"
+        assert_select "[data-test='search-row-utility'] [data-test='search-row-vocation'][x-text=?]", "r.vocation || 'person'"
+        assert_select "[data-test='search-row-utility'] [x-show='r.team'] [data-test='search-row-team'][x-text='r.team']"
+        assert_select "[data-test='search-row-badge']"
+      end
+    end
+    assert_includes rendered, %(<img :src="r.avatar_url" alt="" loading="lazy" class="block w-full h-full object-cover" @error="r.avatarFailed = true")
+    assert_select "[data-test='recast-results'] [data-test='search-row-badge'][x-text='r.hint']", 1, "the looks count, 0 looks included"
+    assert_select "[data-test='typeahead-results'] [data-test='search-row-badge'][x-text=?]", "r.type === 'person' ? 'people' : r.kind"
+  end
+
+  test "a look-less athlete's card offers to create a look instead of a look select" do
+    lookless = Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
+    @performer.update!(recast_person_slug: lookless.slug)
+    render_card
+
+    assert_select "[data-test='performer-recast'][data-state='pending']" do
+      assert_select "[data-test='recast-label']", "Test Athlete Gamma"
+      assert_select "[data-test='recast-no-look']", /Test Athlete Gamma has no look yet/
+      assert_select "[data-test='recast-pending']", 0
+      assert_select "[data-test='recast-look-form']", 0
+      assert_select "a[data-test='recast-new-look'][href=?]",
+                    "/people/test-athlete-gamma?return_to=%2Fmusic_videos%2Fsteve-aoki-night-call%23person-2#new-model",
+                    "Create a look for Test Athlete Gamma"
+      assert_select "[data-test='recast-clear'] input[name='clear'][value='1']"
+    end
   end
 
   # A synthetic athlete: only the operator says who replaces an on-screen person.

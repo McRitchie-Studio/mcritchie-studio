@@ -1,6 +1,7 @@
 class PeopleController < ApplicationController
   skip_before_action :require_authentication, only: [:index, :show]
-  before_action :set_person, only: [:show, :create_appearance, :make_default_appearance, :attach_artifact]
+  before_action :set_person, only: [:show, :create_appearance, :make_default_appearance, :attach_artifact, :update_vocations]
+  before_action :require_admin, only: [:update_vocations]
 
   def index
     # Most-recently-touched first: creating or editing a model bumps a person,
@@ -73,6 +74,20 @@ class PeopleController < ApplicationController
     end
   end
 
+  # What this person does (Person::VOCATIONS): the boxes ticked, and which one
+  # is primary. A refusal (a primary the person does not hold) is an answer,
+  # not an ErrorLog.
+  def update_vocations
+    choice = params.fetch(:person, {}).permit(:primary_vocation, vocations: [])
+    @person.assign_attributes(vocations: Array(choice[:vocations]).compact_blank, primary_vocation: choice[:primary_vocation])
+    unless @person.valid?
+      return redirect_to person_path(@person.slug), alert: "Vocations not saved: #{@person.errors.full_messages.to_sentence}."
+    end
+
+    rescue_and_log(target: @person) { @person.save! }
+    redirect_to person_path(@person.slug), notice: vocations_notice
+  end
+
   def search
     query = params[:q].to_s.strip
     people = if query.present?
@@ -106,6 +121,13 @@ class PeopleController < ApplicationController
 
   def recast_return_path
     params[:return_to].to_s[RECAST_RETURN]
+  end
+
+  def vocations_notice
+    return "#{@person.full_name} has no vocation." if @person.vocations.empty?
+
+    others = @person.vocations - [@person.primary_vocation]
+    "#{@person.full_name}: primary vocation #{@person.primary_vocation}#{", also #{others.to_sentence}" if others.any?}."
   end
 
   def appearance_params
@@ -218,6 +240,7 @@ class PeopleController < ApplicationController
     # 6. Copy boolean flags
     keep.update!(athlete: true) if source.athlete? && !keep.athlete?
     keep.update!(coach: true) if source.coach? && !keep.coach?
+    keep.update!(vocations: keep.vocations | source.vocations) if (source.vocations - keep.vocations).any?
 
     # 7. Move the source's LOOKS and ARTIFACT CAST to the survivor
     relocate_looks_and_cast!(keep, source)

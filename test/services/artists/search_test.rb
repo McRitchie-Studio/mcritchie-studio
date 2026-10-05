@@ -63,6 +63,25 @@ module Artists
       assert_not_includes slugs("quavo marshall"), "quavo-person"
     end
 
+    test "an artist with no Person reads musician or group; a linked one takes the person's row" do
+      assert_equal [nil, "group", nil], Search.call("migos").first.to_h.values_at(:avatar_url, :vocation, :team)
+      assert_equal [nil, "musician", nil], Search.call("quavo").first.to_h.values_at(:avatar_url, :vocation, :team)
+
+      linked = Person.create!(first_name: "Test", last_name: "Linked Performer", avatar_url: "https://img.example/linked.png")
+      @quavo.update!(person_slug: linked.slug)
+      linked.update!(vocations: %w[musician actor], primary_vocation: "actor")
+      assert_equal ["https://img.example/linked.png", "actor", nil],
+                   Search.call("quavo").first.to_h.values_at(:avatar_url, :vocation, :team)
+    end
+
+    test "a bare person carries their own vocation, or none" do
+      Person.create!(first_name: "Test", last_name: "Searchrow Coach", coach: true)
+      Person.create!(first_name: "Test", last_name: "Searchrow Nobody")
+
+      assert_equal({ "test-searchrow-coach" => "coach", "test-searchrow-nobody" => nil },
+                   Search.call("test searchrow").to_h { |r| [r.slug, r.vocation] })
+    end
+
     test "matching ignores case and extra spaces, and LIKE wildcards are literal" do
       assert_equal ["lil-yachty"], slugs("  LIL   yachty ")
       assert_empty slugs("%")

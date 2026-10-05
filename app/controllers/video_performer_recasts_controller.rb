@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # The operator's recast for one performer on the cast panel: an athlete and one
-# of their looks, keep as is, or clear. Allowed after the cast is confirmed too;
+# of their looks (or the athlete alone while they have no look), keep as is, or clear. Allowed after the cast is confirmed too;
 # the video's stored prompts follow (MusicVideos::RecastPerformer).
 class VideoPerformerRecastsController < ApplicationController
   before_action :require_admin
@@ -10,7 +10,7 @@ class VideoPerformerRecastsController < ApplicationController
   def update
     choice = recast
     # A refusal is an answer, not an ErrorLog.
-    unless choice[:clear] || choice[:keep] || (choice[:person_slug] && choice[:appearance_slug])
+    unless choice[:clear] || choice[:keep] || (choice[:person_slug] && (choice[:appearance_slug] || lookless?(choice[:person_slug])))
       return back(alert: "#{@performer.name} not recast: choose an athlete and one of their looks, or keep as is.")
     end
 
@@ -33,6 +33,9 @@ class VideoPerformerRecastsController < ApplicationController
       keep: p[:keep] == "1", clear: p[:clear] == "1" }
   end
 
+  # An athlete with no look yet is saved alone; the card then offers to create one.
+  def lookless?(person_slug) = !Appearance.recastable.exists?(person_slug:)
+
   def back(**flash)
     redirect_to music_video_path(@video, anchor: "person-#{@performer.ordinal}"), **flash
   end
@@ -40,6 +43,7 @@ class VideoPerformerRecastsController < ApplicationController
   def notice_for(performer)
     return "#{performer.name} is kept as is." if performer.recast_keep?
     return "#{performer.name} is replaced by #{performer.recast_label}." if performer.recast?
+    return "#{performer.recast_label} has no look yet: create one to finish this recast." if performer.recast_pending?
 
     "#{performer.name}: recast cleared."
   end

@@ -3,30 +3,40 @@ messi:
   last_name: Messi
   slug: lionel-messi
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 pulisic:
   first_name: Christian
   last_name: Pulisic
   slug: christian-pulisic
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 neymar:
   first_name: Neymar
   last_name: Jr
   slug: neymar-jr
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 cam_ward:
   first_name: Cam
   last_name: Ward
   slug: cam-ward
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 josh_allen:
   first_name: Josh
   last_name: Allen
   slug: josh-allen
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 # Offense starters for Bills
 james_cook:
@@ -34,66 +44,88 @@ james_cook:
   last_name: Cook
   slug: james-cook
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 ray_davis:
   first_name: Ray
   last_name: Davis
   slug: ray-davis
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 khalil_shakir:
   first_name: Khalil
   last_name: Shakir
   slug: khalil-shakir
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 keon_coleman:
   first_name: Keon
   last_name: Coleman
   slug: keon-coleman
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 curtis_samuel:
   first_name: Curtis
   last_name: Samuel
   slug: curtis-samuel
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 dalton_kincaid:
   first_name: Dalton
   last_name: Kincaid
   slug: dalton-kincaid
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 dion_dawkins:
   first_name: Dion
   last_name: Dawkins
   slug: dion-dawkins
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 connor_mcgovern:
   first_name: Connor
   last_name: McGovern
   slug: connor-mcgovern
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 mitch_morse:
   first_name: Mitch
   last_name: Morse
   slug: mitch-morse
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 ryan_bates:
   first_name: Ryan
   last_name: Bates
   slug: ryan-bates
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 spencer_brown:
   first_name: Spencer
   last_name: Brown
   slug: spencer-brown
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 # Defense starters for Bills
 von_miller:
@@ -101,78 +133,104 @@ von_miller:
   last_name: Miller
   slug: von-miller
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 greg_rousseau:
   first_name: Greg
   last_name: Rousseau
   slug: greg-rousseau
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 ed_oliver:
   first_name: Ed
   last_name: Oliver
   slug: ed-oliver
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 daquan_jones:
   first_name: DaQuan
   last_name: Jones
   slug: daquan-jones
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 tim_settle:
   first_name: Tim
   last_name: Settle
   slug: tim-settle
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 matt_milano:
   first_name: Matt
   last_name: Milano
   slug: matt-milano
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 terrel_bernard:
   first_name: Terrel
   last_name: Bernard
   slug: terrel-bernard
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 rasul_douglas:
   first_name: Rasul
   last_name: Douglas
   slug: rasul-douglas
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 taron_johnson:
   first_name: Taron
   last_name: Johnson
   slug: taron-johnson
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 christian_benford:
   first_name: Christian
   last_name: Benford
   slug: christian-benford
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 jordan_poyer:
   first_name: Jordan
   last_name: Poyer
   slug: jordan-poyer
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 taylor_rapp:
   first_name: Taylor
   last_name: Rapp
   slug: taylor-rapp
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 aj_epenesa:
   first_name: AJ
   last_name: Epenesa
   slug: aj-epenesa
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 # Prospects
 david_bailey:
@@ -180,6 +238,8 @@ david_bailey:
   last_name: Bailey
   slug: david-bailey
   athlete: true
+  vocations: ["athlete"]
+  primary_vocation: athlete
 
 # Coaches
 sean_mcdermott:
@@ -187,3 +247,5 @@ sean_mcdermott:
   last_name: McDermott
   slug: sean-mcdermott
   coach: true
+  vocations: ["coach"]
+  primary_vocation: coach

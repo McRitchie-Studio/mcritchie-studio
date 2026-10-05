@@ -1,67 +1,74 @@
 <% content_for :title, "#{@video.title} · Cast · McRitchie Studio" %>
 <% resolved = @performers.count(&:resolved?) %>
 <script>
-  // The cast typeahead: debounced search over artists and People, then one form submit.
-  window.castTypeahead = function () {
+  // What both cast-card typeaheads share: a debounced search whose answer is
+  // dropped once a newer search or a pick has superseded it, and the list keys.
+  window.typeaheadSearch = function () {
     return {
-      query: "", results: [], open: false, loading: false, failed: false, active: -1, creating: false,
-      artistSlug: "", personSlug: "", newName: "", newKind: "person",
+      query: "", results: [], open: false, loading: false, failed: false, active: -1, seq: 0, picked: null,
       async search() {
         const q = this.query.trim();
-        this.creating = false;
-        if (q.length === 0) { this.results = []; this.open = false; return; }
+        // The debounce of the keystrokes before a pick fires after it: the pick stands.
+        if (this.picked !== null && this.query === this.picked) return;
+        const seq = ++this.seq;
+        this.picked = null;
+        this.reset();
+        if (q.length === 0) { this.results = []; this.open = false; this.loading = false; return; }
         this.loading = true; this.failed = false;
+        let results = [], failed = false;
         try {
           const resp = await fetch(this.$root.dataset.searchUrl + "?q=" + encodeURIComponent(q),
                                    { headers: { Accept: "application/json" } });
           if (!resp.ok) throw new Error(String(resp.status));
-          if (q === this.query.trim()) { this.results = await resp.json(); this.active = this.results.length ? 0 : -1; }
-        } catch (e) { this.results = []; this.failed = true; }
+          results = await resp.json();
+        } catch (e) { failed = true; }
+        // An older answer never repaints or reopens the list.
+        if (seq !== this.seq) return;
+        this.results = results; this.failed = failed; this.active = results.length ? 0 : -1;
         this.loading = false; this.open = true;
-      },
-      get exactMatch() {
-        const q = this.query.trim().toLowerCase();
-        return this.results.some((r) => r.name.toLowerCase() === q);
       },
       move(step) {
         if (!this.open || this.results.length === 0) return;
         this.active = (this.active + step + this.results.length) % this.results.length;
       },
       pickActive() { if (this.open && this.results[this.active]) this.choose(this.results[this.active]); },
+      // A pick: name the input after it, close the list, and void any search in flight.
+      settle(r) { this.seq++; this.loading = false; this.picked = r.name; this.query = r.name; this.open = false; },
+    };
+  };
+
+  // The cast typeahead: search artists and People, then one form submit.
+  window.castTypeahead = function () {
+    return {
+      ...window.typeaheadSearch(),
+      creating: false, artistSlug: "", personSlug: "", newName: "", newKind: "person",
+      reset() { this.creating = false; },
+      get exactMatch() {
+        const q = this.query.trim().toLowerCase();
+        return this.results.some((r) => r.name.toLowerCase() === q);
+      },
       choose(r) {
         this.artistSlug = r.type === "artist" ? r.slug : "";
         this.personSlug = r.type === "person" ? r.slug : "";
-        this.newName = ""; this.query = r.name; this.open = false;
+        this.newName = ""; this.settle(r);
         this.$nextTick(() => this.$refs.form.requestSubmit());
       },
       startCreate() { this.newName = this.query.trim(); this.artistSlug = ""; this.personSlug = ""; this.open = false; this.creating = true; },
     };
   };
 
-  // The recast typeahead: search athletes (People with looks), pick one, then
-  // one of the looks that came back with them; the look click submits.
+  // The recast typeahead: search People, pick one, then one of the looks that
+  // came back with them; the look click submits. A person with no look is
+  // saved alone, and the card then offers to create one.
   window.recastTypeahead = function () {
     return {
-      query: "", results: [], open: false, loading: false, failed: false, active: -1, athlete: null, lookSlug: "",
-      async search() {
-        const q = this.query.trim();
-        this.athlete = null; this.lookSlug = "";
-        if (q.length === 0) { this.results = []; this.open = false; return; }
-        this.loading = true; this.failed = false;
-        try {
-          const resp = await fetch(this.$root.dataset.searchUrl + "?q=" + encodeURIComponent(q),
-                                   { headers: { Accept: "application/json" } });
-          if (!resp.ok) throw new Error(String(resp.status));
-          if (q === this.query.trim()) { this.results = await resp.json(); this.active = this.results.length ? 0 : -1; }
-        } catch (e) { this.results = []; this.failed = true; }
-        this.loading = false; this.open = true;
+      ...window.typeaheadSearch(),
+      athlete: null, lookSlug: "",
+      reset() { this.athlete = null; this.lookSlug = ""; },
+      choose(r) {
+        this.athlete = r; this.lookSlug = ""; this.settle(r);
+        if (r.looks.length === 0) this.$nextTick(() => this.$refs.form.requestSubmit());
       },
-      move(step) {
-        if (!this.open || this.results.length === 0) return;
-        this.active = (this.active + step + this.results.length) % this.results.length;
-      },
-      pickActive() { if (this.open && this.results[this.active]) this.choose(this.results[this.active]); },
-      choose(r) { this.athlete = r; this.query = r.name; this.open = false; },
       pickLook(look) {
         this.lookSlug = look.slug;
         this.$nextTick(() => this.$refs.form.requestSubmit());

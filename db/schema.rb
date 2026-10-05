@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_04_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1201,13 +1201,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_220000) do
     t.string "last_name", null: false
     t.string "linkedin_url"
     t.string "location"
+    t.string "primary_vocation"
     t.string "slug", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "vocations", default: [], null: false
     t.string "website_url"
     t.string "x_url"
     t.index ["default_appearance_slug"], name: "index_people_on_default_appearance_slug"
     t.index ["email"], name: "index_people_on_email"
     t.index ["last_name", "first_name"], name: "index_people_on_last_name_and_first_name"
+    t.index ["primary_vocation"], name: "index_people_on_primary_vocation"
     t.index ["slug"], name: "index_people_on_slug", unique: true
     t.index ["updated_at"], name: "index_people_on_updated_at"
   end
