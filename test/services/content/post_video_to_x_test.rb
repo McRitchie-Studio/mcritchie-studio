@@ -154,6 +154,20 @@ class Content::PostVideoToXTest < ActiveSupport::TestCase
     end
   end
 
+  # Settling a card as "not there" lets Post run again, so a LIVE run must not
+  # read as stuck: one that waited nine minutes in the queue is still uploading.
+  test "a run that waited in the queue is timed from its start, not from the click" do
+    begin_post
+    post = @content.reload.game_facts["post"]
+    travel 9.minutes
+    @content.update!(game_facts: { "post" => post.merge("state" => "posting", "started_at" => Time.current.utc.iso8601) })
+
+    travel 2.minutes
+    assert_not Content::PostVideoToX.stuck?(@content), "11 minutes after the click, 2 into the run"
+    travel 9.minutes
+    assert Content::PostVideoToX.stuck?(@content)
+  end
+
   test "the job is never retried, whatever escapes the service" do
     begin_post
     Content::PostVideoToX.stub(:new, ->(*) { raise "boom" }) do

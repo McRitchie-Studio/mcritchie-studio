@@ -59,7 +59,10 @@ class Content
       return false unless content.stage == "assembly"
       return true if post["state"] == "unknown"
 
-      started = Time.zone.parse(post["attempted_at"].to_s)
+      # A run that has started is timed from ITS start, not from the click: one
+      # that waited in the queue is alive, and settling it as "not there" would
+      # let a second Post land beside it.
+      started = Time.zone.parse((post["started_at"] || post["attempted_at"]).to_s)
       started.nil? || started < STUCK_AFTER.ago
     end
 
