@@ -396,6 +396,7 @@ Rails.application.routes.draw do
     end
     member do
       # The model library: a person's looks, and the images made of them.
+      # Admin only, all three (hub signup is open; a session is no gate).
       post :create_appearance
       post :make_default_appearance
       post :attach_artifact
