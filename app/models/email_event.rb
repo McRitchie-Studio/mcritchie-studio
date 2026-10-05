@@ -20,8 +20,9 @@ class EmailEvent < ApplicationRecord
   SOURCES = %w[resend pixel redirect page app beacon].freeze
 
   # What a reader did after clicking, credited to the email (kind "converted",
-  # data["goal"]): EmailEvents::Results records these.
-  GOALS = %w[signed_in played_match joined_newsletter requested_app].freeze
+  # data["goal"]): EmailEvents::Results records these. survey_completed is an
+  # app's feedback survey answered by the reader (task first-game-feedback-survey).
+  GOALS = %w[signed_in played_match joined_newsletter requested_app survey_completed].freeze
 
   belongs_to :broadcast_delivery
 

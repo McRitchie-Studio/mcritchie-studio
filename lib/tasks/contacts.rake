@@ -107,4 +107,32 @@ namespace :contacts do
     puts summary
     puts "with Cyvasse games now: #{Contact.with_cyvasse_games.count} contacts"
   end
+
+  # Tag the contacts who played on the rebuilt Cyvasse cyvasse-new-stack-player
+  # and store traits["cyvasse"]["first_new_game_on"] (task
+  # first-game-feedback-survey). The CSV is optional and comes from
+  # script/contacts/cyvasse_new_stack_players.rb, run read-only on the cyvasse
+  # app; with or without it, contacts with a played_match result from an email
+  # are tagged too. Alex's own addresses are skipped. Counts only.
+  # The pipe is in docs/email-delivery.md.
+  #
+  #   bin/rails "contacts:tag_new_stack_players[/tmp/cyvasse-new-stack.csv]"
+  #   bin/rails contacts:tag_new_stack_players     # the email events alone
+  desc "Tag contacts who played the new Cyvasse cyvasse-new-stack-player"
+  task :tag_new_stack_players, %i[path] => :environment do |_t, args|
+    abort "#{args[:path]}: no such file" if args[:path].present? && !File.file?(args[:path])
+
+    begin
+      summary = if args[:path].present?
+        File.open(args[:path]) { |io| Contacts::NewStackPlayerTagger.new(io).run }
+      else
+        Contacts::NewStackPlayerTagger.new.run
+      end
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      abort "contacts:tag_new_stack_players: #{e.class}: #{e.message}"
+    end
+    puts summary
+    puts "#{Contacts::NewStackPlayerTagger::TAG} now: #{Contact.with_tag(Contacts::NewStackPlayerTagger::TAG).count} contacts"
+  end
 end

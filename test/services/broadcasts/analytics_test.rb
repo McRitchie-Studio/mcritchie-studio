@@ -38,6 +38,14 @@ class Broadcasts::AnalyticsTest < ActiveSupport::TestCase
     assert_in_delta 0.5, Broadcasts::Analytics.new.summary.open_rate
   end
 
+  # task first-game-feedback-survey: every goal is counted and has a label.
+  test "survey_completed is a counted, labelled goal" do
+    deliver("a@gmail.com").record_event!(kind: "converted", source: "beacon", data: { "goal" => "survey_completed" })
+
+    assert_equal 1, Broadcasts::Analytics.new.summary.results["survey_completed"]
+    assert_equal EmailEvent::GOALS.sort, BroadcastAnalyticsHelper::GOAL_LABELS.keys.sort
+  end
+
   test "a result counts each email once per goal" do
     a = deliver("a@gmail.com")
     3.times { |i| a.record_event!(kind: "converted", source: "beacon", data: { "goal" => "played_match" }, provider_event_id: "g#{i}") }
