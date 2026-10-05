@@ -45,7 +45,15 @@ stored.
   into Person 1..N, each with stills and sightings. **Never face recognition.**
 - The operator labels each person through a typeahead over people and artists;
   creating a new one is allowed.
-- "Cast confirmed" advances the video.
+- "Cast confirmed" advances the video. A `music_video` card closes on an artist
+  or an extra; a `cinematic` video credits no artists, so its cards also close
+  on the recast answer.
+- **Recast.** On the same card the operator says who replaces the performer: an
+  athlete (a Person with a look) and one of that athlete's looks, or "keep as
+  is". It is stored on `video_performers` (`recast_person_slug`,
+  `recast_appearance_slug`, `recast_keep`), is the operator's alone (the agent
+  API refuses the keys), and can change after the cast is confirmed. Built by
+  `recast-picker-on-cast-panel`, piece 2 of the recast pipeline.
 
 Built by `music-video-cast-panel`: the `video_performers` table,
 `POST /api/v1/music_videos/:slug/performers`, and the panel at
@@ -73,7 +81,10 @@ Several 25-second candidates per video. Each one:
 - carries a cast-shape label: solo, duo, trio, duo plus background, and so on;
 - carries a filled Higgsfield swap prompt. The template is Alex's proven prompt,
   with blanks for the target performer's description, the athlete, and who stays
-  the same.
+  the same. The athlete and look come from the target's recast
+  (`MusicVideos::ClipPrompts`); every stored prompt of the video is rewritten
+  when a recast changes. A `cinematic` video's prompt says "video", not "music
+  video".
 
 Built by `music-video-clip-finder`: `bin/find-clips`, the `video_clips` table,
 `POST /api/v1/music_videos/:slug/clips`, and the clips list below the cast panel.
@@ -111,7 +122,7 @@ Record slugs stay kebab-case, the app's existing convention.
 | `artist_aliases` | alternate names per artist |
 | `artist_memberships` | member → group, start and end years |
 | `music_video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
-| `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence |
+| `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence; the recast: athlete (`recast_person_slug`), look (`recast_appearance_slug`), or `recast_keep` |
 | `appearances` | gains a nullable music video link |
 | `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status |
 
