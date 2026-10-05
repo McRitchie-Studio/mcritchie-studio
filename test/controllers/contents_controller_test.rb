@@ -461,6 +461,8 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     content.update!(post_url: "https://x.com/turfmonstershow/status/123")
     get content_path(content.slug)
     assert_select "a.break-all[data-test='video-post-x-link'][href='https://x.com/turfmonstershow/status/123']"
+    # The same URL is printed again under "Post"; either one unwrapped scrolls a phone sideways.
+    assert_select "a[href='https://x.com/turfmonstershow/status/123']:not(.break-all)", 0
     assert_select "[data-test='video-post-x-copy']", 0
   end
 
