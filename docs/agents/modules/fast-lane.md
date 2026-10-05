@@ -42,6 +42,15 @@ still act on the tree you stand in (they root at the cwd), and they read the hub
 stays a working fallback for one release, and wherever this page says
 "hub-absolute", the fixed path works too.
 
+The same installer wires everything that runs on every session or git operation
+at the fixed path: the Claude hooks and status line in `~/.claude/settings.json`,
+the Codex hooks, and the github.com credential helper in `~/.gitconfig`. Each
+names `/Users/alex/projects/.agents/bin/<script>`, and the hub primary's `bin/`
+only on a machine where no ship has installed the tooling yet. The scripts there
+resolve the projects root through `bin/lib/projects_root.rb`, which climbs out of
+the tooling tree exactly as it climbs out of a desk (a shell script runs that file
+instead of requiring it).
+
 The tooling tree is deliberately **not a Rails app** — no `Gemfile`, no `app/assets`,
 no `db/` — so any `bin/` script that boots the application is installed there as a
 **shim that execs the hub primary's copy**, never as a copy. The set is derived at
