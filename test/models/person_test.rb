@@ -181,4 +181,19 @@ class PersonTest < ActiveSupport::TestCase
     artist.update!(person_slug: person.slug)
     assert_equal [%w[athlete musician], "athlete"], person.reload.values_at(:vocations, :primary_vocation)
   end
+
+  test "a row whose boolean was set past the callbacks heals on its next save" do
+    person = vocational
+    person.update_columns(athlete: true)
+
+    person.update!(location: "Testville")
+    assert_equal [%w[athlete], "athlete"], person.reload.values_at(:vocations, :primary_vocation)
+  end
+
+  test "every people fixture agrees with itself" do
+    Person.find_each do |person|
+      assert person.valid?, "#{person.slug}: #{person.errors.full_messages.to_sentence}"
+      assert_not person.changed?, "#{person.slug}: #{person.changes}"
+    end
+  end
 end

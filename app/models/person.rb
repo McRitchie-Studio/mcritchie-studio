@@ -79,19 +79,21 @@ class Person < ApplicationRecord
     update!(vocations: vocations + [name.to_s]) unless vocation?(name)
   end
 
-  # ONE FACT, TWO SPELLINGS: the list and the two boolean columns. A boolean
-  # written in this save wins (that is what every importer writes); otherwise
-  # a list written in this save sets the boolean. Then the primary: blank is
+  # ONE FACT, TWO SPELLINGS: the list and the two boolean columns. A list
+  # written in this save sets a boolean the save did not also write; in every
+  # other case the boolean wins (it is what every importer writes, and a row
+  # whose boolean was set past the callbacks heals on its next save). Then the
+  # primary: blank is
   # filled from the first vocation, and one whose vocation was just taken away
   # falls back the same way. A primary the caller SET to something the person
   # does not hold is left alone, for the validation to refuse.
   def reconcile_vocations
     list = Array(vocations).map { |v| v.to_s.strip.downcase }.reject(&:empty?).uniq
     FLAG_VOCATIONS.each do |flag|
-      if will_save_change_to_attribute?(flag)
-        self[flag] ? list |= [flag] : list -= [flag]
-      elsif will_save_change_to_vocations?
+      if will_save_change_to_vocations? && !will_save_change_to_attribute?(flag)
         self[flag] = list.include?(flag)
+      else
+        self[flag] ? list |= [flag] : list -= [flag]
       end
     end
     self.vocations = list.sort_by { |v| VOCATIONS.index(v) || VOCATIONS.size }

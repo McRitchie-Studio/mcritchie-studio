@@ -116,18 +116,50 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
     assert(prompts.all? { |p| p.include?("{athlete}") && p.exclude?("Test Athlete Alpha") })
   end
 
-  test "the typeahead finds athletes with a look to recast into, and only those" do
+  test "an athlete with no look yet is saved alone: named in the prompts, the card still open" do
     lookless = Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
+
+    recast(@jacket, person_slug: lookless.slug)
+
+    assert @jacket.reload.recast_pending?
+    assert_not @jacket.resolved?, "an athlete with no look does not close a card"
+    assert_equal [1], @video.reload.recast_open.map(&:ordinal)
+    assert(prompts.all? { |p| p.include?("with Test Athlete Gamma") && p.include?("(like the model provided)") })
+  end
+
+  test "the typeahead finds every person, people with a look first, each with their looks and row facts" do
+    lookless = Person.create!(first_name: "Test", last_name: "Athlete", athlete: true, avatar_url: "https://img.example/gamma.png")
     capture_only = Person.create!(first_name: "Test", last_name: "Athlete Delta")
     capture_only.appearances.create!(descriptor: "Demo look", music_video_slug: @video.slug, performer_ordinal: 1)
     @away.update!(retired_at: Time.current)
 
     results = MusicVideos::RecastAthleteSearch.call("test athlete")
-    assert_equal ["test-athlete-alpha"], results.map(&:slug)
-    assert_equal "1 look", results.first.hint
+    assert_equal %w[test-athlete-alpha test-athlete test-athlete-delta], results.map(&:slug),
+                 "a look outranks even an exact name; then the name ranking"
+    assert_equal ["1 look", "0 looks", "0 looks"], results.map(&:hint)
     assert_equal [{ slug: @home.slug, descriptor: "Home Blue", default: true }], results.first.looks
+    assert_equal [[], []], results.last(2).map(&:looks), "a capture look is not one to recast into"
+    assert_equal ["athlete", "athlete", nil], results.map(&:vocation)
+    assert_equal [nil, "https://img.example/gamma.png", nil], results.map(&:avatar_url)
+    assert_includes results.map(&:slug), lookless.slug
     assert_empty MusicVideos::RecastAthleteSearch.call("  ")
     assert_empty MusicVideos::RecastAthleteSearch.call("100%")
-    assert_not_includes results.map(&:slug), lookless.slug
+  end
+
+  test "the typeahead returns at most ten, in a fixed number of queries" do
+    12.times { |n| Person.create!(first_name: "Test", last_name: "Crowd #{n}", athlete: true) }
+    count = ->(query) do
+      seen = 0
+      counter = ->(*, payload) { seen += 1 unless payload[:name].in?(%w[SCHEMA TRANSACTION]) || payload[:cached] }
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+        ActiveRecord::Base.uncached { MusicVideos::RecastAthleteSearch.call(query) }
+      end
+      seen
+    end
+
+    assert_equal 10, MusicVideos::RecastAthleteSearch.call("test crowd").size
+    one, ten = count.call("test athlete alpha"), count.call("test crowd")
+    assert_operator one, :>, 0
+    assert_equal one, ten, "one person or ten, the same queries"
   end
 end

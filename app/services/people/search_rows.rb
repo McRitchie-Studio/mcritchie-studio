@@ -8,11 +8,14 @@ module People
   #             draws a placeholder. Never the ESPN URL itself.
   #   vocation  people.primary_vocation (Person::VOCATIONS), nil when none.
   #   team      the athlete's own team (athletes.team_slug, the column the
-  #             person page reads), else an unexpired contract's, else the
-  #             coach's. The team's name, or the slug in words when no team
+  #             person page reads), else an unexpired contract's (never a
+  #             mock pick's), else the coach's. The team's name, or the slug in words when no team
   #             row exists.
   class SearchRows
     HEADSHOT_WIDTH = 100
+    # Contracts that say where someone plays now, best first. A mock pick is a
+    # projection, not a team.
+    CONTRACT_TYPES = %w[active draft_pick college].freeze
     Row = Data.define(:avatar_url, :vocation, :team)
     BLANK = Row.new(avatar_url: nil, vocation: nil, team: nil)
 
@@ -46,7 +49,8 @@ module People
 
     def team_slugs
       @team_slugs ||= begin
-        contracts = Contract.where(person_slug: @slugs).order(:id).select(&:active?).group_by(&:person_slug)
+        contracts = Contract.where(person_slug: @slugs, contract_type: CONTRACT_TYPES).order(:id).select(&:active?)
+                            .sort_by { |contract| CONTRACT_TYPES.index(contract.contract_type) }.group_by(&:person_slug)
         @slugs.index_with do |slug|
           athletes[slug]&.team_slug.presence || contracts.dig(slug, 0)&.team_slug || coaches.dig(slug, 0)&.team_slug
         end
