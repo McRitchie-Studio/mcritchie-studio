@@ -260,6 +260,32 @@ module Api
         assert_nil video_post.claim_session
       end
 
+      test "record_x_post files one posted card for a file-path post, and only one" do
+        params = { post_url: "https://x.com/turfmonstershow/status/2106955745665384504",
+                   caption: "Chiefs 4-0 #nfl #nflfootball #chiefskingdom #kansascity #chiefs" }
+
+        assert_difference -> { Content.where(workflow: "video_post_x", stage: "posted").count }, 1 do
+          post record_x_post_api_v1_contents_path, params: params, headers: auth, as: :json
+          post record_x_post_api_v1_contents_path, params: params, headers: auth, as: :json
+        end
+        assert_response :success
+        card = Content.find_by(post_id: "2106955745665384504")
+        assert_equal "x", card.platform
+        assert_equal params[:caption], card.captions
+        assert_equal params[:post_url], card.post_url
+        assert_not_nil card.posted_at
+        assert_not_includes Content.claimable_by_agent.by_stage("posted").pluck(:slug), card.slug
+      end
+
+      test "record_x_post refuses anything that is not an X status link, and needs auth" do
+        assert_no_difference -> { Content.count } do
+          post record_x_post_api_v1_contents_path, params: { post_url: "https://example.com/status/1" }, headers: auth, as: :json
+          assert_response :unprocessable_entity
+          post record_x_post_api_v1_contents_path, params: { post_url: "https://x.com/turfmonstershow/status/1" }, as: :json
+          assert_response :unauthorized
+        end
+      end
+
       test "neither the claimable list nor the pop offers a video post with no video" do
         stranded = Content.create!(title: "Stranded", workflow: "video_post_x")
 

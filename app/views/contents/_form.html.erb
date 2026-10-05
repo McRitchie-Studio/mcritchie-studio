@@ -29,13 +29,24 @@
         Turf Monster writes the copy from the context and posts it. %>
     <% unless content.persisted? %>
       <div x-show="workflow === 'video_post_x'" x-cloak class="mb-5" data-test="video-post-x-fields">
+        <p class="text-sm text-secondary mb-4">
+          Two inputs: the team that won and the video. The copy is written for you from the live
+          record and the team's tags, and you approve it on the next screen.
+        </p>
+        <label class="block text-sm text-secondary mb-2 font-medium">Team that won</label>
+        <%# Its own select, enabled on this workflow alone: Starter Post (X) carries a
+            second team_slug field further down, and two live fields of one name
+            would let the later one win. %>
+        <%= select_tag "content[team_slug]",
+              options_for_select(Team.where(sport: "football", league: "nfl").order(:name).map { |t| ["#{t.emoji} #{t.name}", t.slug] }, content.team_slug),
+              include_blank: "— Select the winner —", class: "input-field mb-4", id: "video_post_x_team",
+              "data-test": "video-post-x-team", ":disabled": "workflow !== 'video_post_x'" %>
         <label class="block text-sm text-secondary mb-2 font-medium">MP4</label>
         <%# Disabled off-workflow, so a file picked and then abandoned is not uploaded. %>
         <%= f.file_field :video_file, accept: "video/mp4", class: "input-field", "data-test": "video-post-x-file",
               ":disabled": "workflow !== 'video_post_x'" %>
         <p class="text-xs text-secondary mt-2">
-          Up to <%= Content::AttachVideo::MAX_BYTES / 1024 / 1024 %> MB. Put what it is in Description, for example
-          &ldquo;Panthers win&rdquo;. Title is optional; Description is not.
+          Up to <%= Content::AttachVideo::MAX_BYTES / 1024 / 1024 %> MB. Title and Description are optional.
         </p>
       </div>
     <% end %>
@@ -119,7 +130,7 @@
         <%= f.select :team_slug,
               Team.where(sport: "football", league: "nfl").order(:name).map { |t| ["#{t.emoji} #{t.name}", t.slug] },
               { include_blank: "— Select team —" },
-              class: "input-field" %>
+              class: "input-field", ":disabled": "workflow === 'video_post_x'" %>
       </div>
 
       <div class="mb-5">

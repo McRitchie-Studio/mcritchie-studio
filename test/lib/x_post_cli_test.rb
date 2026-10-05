@@ -136,4 +136,30 @@ class XPostCliTest < Minitest::Test
     assert File.exist?(@op_mark), "a refused attempt must not block the retry"
   end
 
+
+  # `draft` reads ESPN for a real team, so only its REFUSALS run here: they stop
+  # before any network call. The recipe itself is pinned in
+  # test/services/x/post_draft_test.rb against fixture payloads.
+  def test_draft_refuses_an_unknown_team_and_an_ambiguous_city_before_any_read
+    _out, err, status = run_cli("draft", "monarchs")
+    assert_equal 1, status.exitstatus
+    assert_includes err, 'no team matches "monarchs"'
+
+    _out, err, status = run_cli("draft", "new", "york")
+    assert_equal 1, status.exitstatus
+    assert_includes err, "matches New York Giants and New York Jets"
+
+    _out, err, status = run_cli("draft")
+    assert_equal 1, status.exitstatus
+    assert_includes err, "draft needs a team"
+  end
+
+  def test_ledger_says_so_when_it_holds_only_an_unfinished_attempt
+    File.write(File.join(@dir, "ledger.jsonl"), "#{JSON.generate(sha256: 'x', attempted_at: '2026-10-04T01:00:00Z')}\n")
+    out, _err, status = run_cli("ledger")
+
+    assert status.success?
+    assert_includes out, "no posts recorded"
+  end
+
 end

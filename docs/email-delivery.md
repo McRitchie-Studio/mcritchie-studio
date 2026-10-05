@@ -220,6 +220,55 @@ unknown, updated, unchanged, stale) and the size of the has-games audience. Reru
 it whenever the numbers should be fresh; the dyno's `/tmp` copy dies with the
 one-off dyno.
 
+## New-Stack Players and the First-Game Email
+
+The "How was your first game" email (`cyvasse_first_game`, task
+first-game-feedback-survey) goes to the players who have played on the rebuilt
+Cyvasse, tagged `cyvasse-new-stack-player`. Its one button is the tracked link
+`l=survey` to Cyvasse's own survey, `https://cyvasse.mcritchie.studio/surveys/first-game`
+(served by studio-engine's survey primitive, a separate task; the email host's redirect carries
+the query across to cyvasse.xyz). The click tracker adds the reader's token as
+`?ref=` (`EmailEvents::Results.with_ref`), Cyvasse's `EmailReferral` credits the
+answer to them, and the app beacons the `survey_completed` goal
+(`EmailEvent::GOALS`) back to `/e/g/<token>`, where the analytics count it as
+"Answered a survey".
+
+The list has two sources, both written by `contacts:tag_new_stack_players`
+(`Contacts::NewStackPlayerTagger`), which tags the contact and merges
+`first_new_game_on` (and, from cyvasse, `new_games`) into `traits["cyvasse"]`
+with `jsonb_set`; the traits import above keeps both keys:
+
+1. **Cyvasse accounts.** `script/contacts/cyvasse_new_stack_players.rb`, run
+   read-only on cyvasse, prints the non-guest, non-computer accounts with a
+   match created on or after 2026-09-28 (not a legacy import) that had a move.
+2. **Email-driven guests.** Contacts with a `played_match` converted email
+   event, dated by the event; this needs no cyvasse read.
+
+Alex's own addresses (amcritchie@gmail.com, anything @mcritchie.studio) are
+skipped. Both commands print counts only:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+heroku run -a cyvasse --no-tty -- bash -c 'cat > /tmp/a.rb; bin/rails runner /tmp/a.rb' \
+    < script/contacts/cyvasse_new_stack_players.rb \
+  | grep '^CYVN,' | cut -c6- | tr -d '\r' \
+  | heroku run -a mcritchie-studio --no-tty -- \
+    bash -c 'cat > /tmp/cyvasse-new-stack.csv; bin/rails "contacts:tag_new_stack_players[/tmp/cyvasse-new-stack.csv]"'
+
+# The email-driven guests alone, without reading cyvasse:
+heroku run -a mcritchie-studio -- bin/rails contacts:tag_new_stack_players
+```
+
+Then create a `cyvasse_first_game` broadcast with the plain subject ("How was
+your first game on the new Cyvasse?"; the resolver adds the username) and
+target list `cyvasse-new-stack-player`, and stage it as in the next section.
+
+**Hold the send until Cyvasse serves the survey.** The button's target is dead
+until Cyvasse adopts the engine survey and defines `first-game`. Do not execute
+the send until `https://cyvasse.mcritchie.studio/surveys/first-game?ref=test`
+loads on production Cyvasse with `ref` intact. This is the same gate the
+`cyvasse_night` send waits on for its Night page.
+
 ## Staged Sends: Review Before Execute
 
 A personalized broadcast (a subject with `%{field}`s, or a template listed in

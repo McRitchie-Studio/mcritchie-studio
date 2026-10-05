@@ -20,6 +20,9 @@ module Contacts
     INTEGERS = %w[games finished_games wins losses].freeze
     DATES = %w[joined_on last_active_on].freeze
     BATCH = 500
+    # Written into traits["cyvasse"] by Contacts::NewStackPlayerTagger, not by
+    # this import, so a re-import keeps them.
+    KEPT_KEYS = %w[first_new_game_on new_games].freeze
 
     Summary = Data.define(:rows, :invalid, :duplicates, :matched, :updated, :unchanged, :stale, :unknown) do
       def to_s
@@ -92,6 +95,8 @@ module Contacts
 
     def apply(contact, value)
       stored = contact.cyvasse
+      # Keys another writer owns inside traits["cyvasse"] ride along unchanged.
+      value = value.merge(stored.slice(*KEPT_KEYS))
       return :unchanged if stored == value
       return :stale if stored["synced_at"].present? && stored["synced_at"] > value["synced_at"]
 

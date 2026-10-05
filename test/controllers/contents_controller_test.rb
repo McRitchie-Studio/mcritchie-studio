@@ -360,22 +360,133 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # === Video Post (X): the operator's MP4 plus context ===
+  # === Video Post (X): the team that won and the MP4 in, an approved post out ===
+
+  X_CREDS = %w[X_API_KEY X_API_SECRET X_ACCESS_TOKEN X_ACCESS_TOKEN_SECRET].freeze
 
   def stub_video_store(&block)
     Content::AttachVideo.stub(:store, ->(key:, body:) { "https://cdn.test/#{key}" }, &block)
   end
 
-  test "new content form offers the Video Post (X) workflow and its file field" do
+  # Every ESPN read the draft makes, answered for the Bills: 3-1, won yesterday.
+  def stub_espn(won: true)
+    Content::DraftXCopy.fetch = lambda do |url|
+      case url
+      when %r{/teams\z}     then { "sports" => [{ "leagues" => [{ "teams" => [{ "team" => { "id" => "2", "displayName" => "Buffalo Bills" } }] }] }] }
+      when %r{/teams/2\z}   then { "team" => { "record" => { "items" => [{ "summary" => "3-1" }] } } }
+      when %r{/schedule\z}
+        { "events" => [{ "date" => 1.day.ago.utc.strftime("%Y-%m-%dT17:00Z"), "shortName" => "NE @ BUF",
+                         "competitions" => [{ "status" => { "type" => { "completed" => true } }, "competitors" => [
+                           { "winner" => won, "score" => { "displayValue" => "27" }, "team" => { "id" => "2" } },
+                           { "winner" => !won, "score" => { "displayValue" => "20" }, "team" => { "id" => "17", "displayName" => "New England Patriots" } }
+                         ] }] }] }
+      end
+    end
+    yield
+  ensure
+    Content::DraftXCopy.fetch = nil
+  end
+
+  def with_x_keys
+    prior = X_CREDS.to_h { |k| [k, ENV[k]] }
+    X_CREDS.each { |k| ENV[k] = "test" }
+    yield
+  ensure
+    prior.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+  end
+
+  def ready_video_post(**attrs)
+    Content.create!({ title: "Bills win", workflow: "video_post_x", stage: "script", team_slug: "buffalo-bills",
+                      captions: "Bills 3-1 #nfl #nflfootball #billsmafia #buffalo #bills <b>",
+                      final_video_url: "https://cdn.test/v.mp4",
+                      game_facts: { "record" => "3-1", "source" => "ESPN (test)", "exceptions" => [],
+                                    "last_final" => { "matchup" => "NE @ BUF", "score" => "27-20", "won" => true } } }.merge(attrs))
+  end
+
+  def create_video_post(team: "buffalo-bills", file: fixture_file_upload("video_post.mp4", "video/mp4"))
+    post contents_path, params: { content: { workflow: "video_post_x", team_slug: team, video_file: file }.compact }
+  end
+
+  test "new content form offers Video Post (X) with a team picker and a file field" do
     log_in_as(@admin)
     get new_content_path
 
     assert_response :success
     assert_select "form[enctype='multipart/form-data']"
     assert_select "option[value='video_post_x']", "Video Post (X)"
+    assert_select "[data-test='video-post-x-fields'] select[data-test='video-post-x-team'] option[value='buffalo-bills']"
     assert_select "[data-test='video-post-x-fields'] input[type=file][accept='video/mp4']"
-    # Off-workflow the input is disabled, so an abandoned file is not uploaded.
-    assert_includes response.body, %(:disabled="workflow !== &#39;video_post_x&#39;")
+    # Both are live on this workflow alone: off it the file is not uploaded, and
+    # the second team_slug field (Starter Post) is the one that steps aside here.
+    assert_equal 2, response.body.scan(%(:disabled="workflow !== &#39;video_post_x&#39;")).size
+    assert_includes response.body, %(:disabled="workflow === &#39;video_post_x&#39;")
+  end
+
+  test "creating a video post stores the MP4, drafts the copy and lands ready for approval" do
+    log_in_as(@admin)
+    teams(:buffalo_bills).update!(hashtag: "#BillsMafia")
+
+    stub_video_store do
+      stub_espn do
+        assert_difference -> { Content.where(workflow: "video_post_x").count }, 1 do
+          create_video_post
+        end
+      end
+    end
+
+    content = Content.where(workflow: "video_post_x").order(:created_at).last
+    assert_redirected_to content_path(content.slug)
+    assert_equal "Bills win", content.title
+    assert_equal "script", content.stage
+    assert_equal "buffalo-bills", content.team_slug
+    assert_equal "https://cdn.test/video_posts/#{content.slug}.mp4", content.final_video_url
+    assert_equal "Bills 3-1 #nfl #nflfootball #billsmafia #buffalo #bills", content.captions
+  end
+
+  test "a draft that fails does not fail the create: the card waits with a Draft button" do
+    log_in_as(@admin)
+    Content::DraftXCopy.fetch = ->(_url) { raise X::PostDraft::Error, "could not read ESPN" }
+
+    stub_video_store { assert_difference(-> { Content.count }, 1) { create_video_post } }
+    content = Content.where(workflow: "video_post_x").order(:created_at).last
+    get content_path(content.slug)
+
+    assert_equal "idea", content.stage
+    assert_select "[data-test='video-post-x-draft-error']", /could not read ESPN/
+    assert_select "[data-test='video-post-x-redraft']"
+    assert_select "[data-test='video-post-x-post']", 0
+  ensure
+    Content::DraftXCopy.fetch = nil
+  end
+
+  test "a video post with no MP4, a file that is not one, or no team creates no card" do
+    log_in_as(@admin)
+
+    stub_video_store do
+      assert_no_difference -> { Content.count } do
+        create_video_post(file: nil)
+        assert_response :unprocessable_entity
+        assert_includes response.body, "Attach the MP4 to post."
+
+        create_video_post(file: fixture_file_upload("video_post.txt", "text/plain"))
+        assert_response :unprocessable_entity
+        assert_includes response.body, "That file is not an MP4."
+
+        create_video_post(team: "")
+        assert_response :unprocessable_entity
+        assert_includes response.body, "Pick the team that won."
+      end
+    end
+  end
+
+  test "a failed upload leaves no card behind for a soul to claim" do
+    log_in_as(@admin)
+
+    Content::AttachVideo.stub(:store, ->(**) { raise "bucket down" }) do
+      assert_no_difference(-> { Content.count }) { create_video_post }
+    end
+    assert_response :unprocessable_entity
+    assert_includes response.body, "bucket down"
   end
 
   test "an existing card cannot be edited into a video post, which would have no video" do
@@ -385,85 +496,146 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "video", @idea_content.reload.workflow
   end
 
-  test "a video post with no context is refused with a sentence about Description" do
+  test "the card draws the post as X will: tags in blue, copy escaped, video inline, facts beneath" do
+    content = ready_video_post
     log_in_as(@admin)
-
-    stub_video_store do
-      assert_no_difference -> { Content.count } do
-        post contents_path, params: { content: { workflow: "video_post_x", description: " ",
-                                                 video_file: fixture_file_upload("video_post.mp4", "video/mp4") } }
-      end
-    end
-    assert_response :unprocessable_entity
-    assert_includes response.body, "Say what the video is in Description."
-  end
-
-  test "creating a video post stores the MP4 and titles the card from the context" do
-    log_in_as(@admin)
-
-    stub_video_store do
-      assert_difference -> { Content.where(workflow: "video_post_x").count }, 1 do
-        post contents_path, params: { content: { workflow: "video_post_x", description: "Panthers win",
-                                                 video_file: fixture_file_upload("video_post.mp4", "video/mp4") } }
-      end
-    end
-
-    content = Content.where(workflow: "video_post_x").order(:created_at).last
-    assert_redirected_to content_path(content.slug)
-    assert_equal "Panthers win", content.title
-    assert_equal "idea", content.stage
-    assert_equal "https://cdn.test/video_posts/#{content.slug}.mp4", content.final_video_url
-  end
-
-  test "a video post with no MP4, or a file that is not one, creates no card" do
-    log_in_as(@admin)
-
-    stub_video_store do
-      assert_no_difference -> { Content.count } do
-        post contents_path, params: { content: { workflow: "video_post_x", description: "Panthers win" } }
-        assert_response :unprocessable_entity
-        assert_includes response.body, "Attach the MP4 to post."
-
-        post contents_path, params: { content: { workflow: "video_post_x", description: "Panthers win",
-                                                 video_file: fixture_file_upload("video_post.txt", "text/plain") } }
-        assert_response :unprocessable_entity
-        assert_includes response.body, "That file is not an MP4."
-      end
-    end
-  end
-
-  test "a failed upload leaves no card behind for a soul to claim" do
-    log_in_as(@admin)
-
-    Content::AttachVideo.stub(:store, ->(**) { raise "bucket down" }) do
-      assert_no_difference -> { Content.count } do
-        post contents_path, params: { content: { workflow: "video_post_x", description: "Panthers win",
-                                                 video_file: fixture_file_upload("video_post.mp4", "video/mp4") } }
-      end
-    end
-    assert_response :unprocessable_entity
-    assert_includes response.body, "bucket down"
-  end
-
-  test "the video post card shows the video and context, then the copy, then the link" do
-    content = Content.create!(title: "Panthers win", description: "Panthers win", workflow: "video_post_x",
-                              final_video_url: "https://cdn.test/v.mp4")
     get content_path(content.slug)
-    assert_select "[data-test='video-post-x-card'] video[src='https://cdn.test/v.mp4'][playsinline]"
-    assert_select "[data-test='video-post-x-waiting']"
-    # The page is public: no internal command name on it.
-    assert_select "[data-test='video-post-x-waiting']", text: /post-to-x/, count: 0
 
-    content.update!(captions: "Panthers 3-1 #nfl #keeppounding")
-    get content_path(content.slug)
-    assert_select "[data-test='video-post-x-copy']", "Panthers 3-1 #nfl #keeppounding"
+    assert_select "[data-test='video-post-x-card'][data-state='script']"
+    assert_select "[data-test='x-post-preview']", /Turf Monster/
+    assert_select "[data-test='x-post-preview'] video[src='https://cdn.test/v.mp4'][playsinline]"
+    assert_select "[data-test='x-post-preview-text'] span[style*='#1d9bf0']", "#billsmafia"
+    assert_select "[data-test='x-post-preview-text'] span[style*='#1d9bf0']", 5
+    assert_select "[data-test='x-post-preview-text'] b", 0, "copy must be escaped, never rendered as markup"
+    assert_includes response.body, "&lt;b&gt;"
+    assert_select "[data-test='x-post-weight']", /\A\s*59 of 280/
+    assert_select "[data-test='video-post-x-facts']", /Record 3-1 read from ESPN \(test\);\s+last final NE @ BUF 27-20 \(win\)/
+    assert_select "[data-test='video-post-x-status']", "Ready for your approval"
+  end
 
-    content.update!(post_url: "https://x.com/turfmonstershow/status/123")
+  test "the Post button is on only when the server holds the X keys, and says why when off" do
+    content = ready_video_post
+    log_in_as(@admin)
+
     get content_path(content.slug)
+    assert_select "button[data-test='video-post-x-post'][disabled]"
+    assert_select "[data-test='video-post-x-refusal']", /the X keys are not set on this server/
+
+    with_x_keys do
+      get content_path(content.slug)
+      assert_select "button[data-test='video-post-x-post']:not([disabled])"
+      assert_select "[data-test='video-post-x-refusal']", 0
+    end
+  end
+
+  test "a visitor sees the preview and none of the controls" do
+    content = ready_video_post
+    get content_path(content.slug)
+
+    assert_select "[data-test='x-post-preview']"
+    assert_select "[data-test='video-post-x-post']", 0
+    assert_select "[data-test='video-post-x-redraft']", 0
+    assert_select "[data-test='video-post-x-copy-field']", 0
+  end
+
+  test "exceptions from the draft are shown above the button" do
+    content = ready_video_post(game_facts: { "record" => "3-1", "source" => "ESPN (test)",
+                                             "exceptions" => ["ESPN's most recent final for Buffalo Bills is a LOSS"] })
+    log_in_as(@admin)
+    get content_path(content.slug)
+
+    assert_select "[data-test='video-post-x-exception']", /Check before posting: ESPN's most recent final for Buffalo Bills is a LOSS/
+  end
+
+  test "Post queues one job, shows the card posting, and a second click posts nothing more" do
+    content = ready_video_post(captions: "Bills 3-1 #nfl")
+    log_in_as(@admin)
+
+    with_x_keys do
+      assert_enqueued_jobs 1, only: ContentPostVideoToXJob do
+        post post_video_to_x_content_path(content.slug)
+        post post_video_to_x_content_path(content.slug)
+      end
+      assert_match(/Not posted: a post is already in flight/, flash[:alert])
+
+      get content_path(content.slug)
+      assert_select "[data-test='video-post-x-status']", "Posting…"
+      assert_select "[data-test='video-post-x-card'][x-init*='reload']"
+      assert_select "[data-test='video-post-x-post']", 0
+    end
+  end
+
+  test "Post without the keys posts nothing and says so" do
+    content = ready_video_post(captions: "Bills 3-1 #nfl")
+    log_in_as(@admin)
+
+    assert_no_enqueued_jobs(only: ContentPostVideoToXJob) { post post_video_to_x_content_path(content.slug) }
+    assert_match(/Not posted: the X keys are not set/, flash[:alert])
+    assert_equal "script", content.reload.stage
+  end
+
+  test "only an admin can post, redraft or settle" do
+    content = ready_video_post
+    log_in_as(@viewer)
+
+    assert_no_enqueued_jobs(only: ContentPostVideoToXJob) { post post_video_to_x_content_path(content.slug) }
+    post draft_x_copy_content_path(content.slug)
+    post resolve_x_post_content_path(content.slug)
+    assert_equal "script", content.reload.stage
+    assert_equal "Bills 3-1 #nfl #nflfootball #billsmafia #buffalo #bills <b>", content.captions
+  end
+
+  test "Redraft rewrites the copy from the live record" do
+    content = ready_video_post(captions: "old copy")
+    teams(:buffalo_bills).update!(hashtag: "#BillsMafia")
+    log_in_as(@admin)
+
+    stub_espn { post draft_x_copy_content_path(content.slug) }
+
+    assert_equal "Bills 3-1 #nfl #nflfootball #billsmafia #buffalo #bills", content.reload.captions
+  end
+
+  test "a posted card shows the link and what X read back, and no controls" do
+    content = ready_video_post(stage: "posted", post_url: "https://x.com/turfmonstershow/status/123",
+                               game_facts: { "post" => { "state" => "posted", "verified" => { "video" => true, "seconds" => 27.7 } } })
+    log_in_as(@admin)
+    get content_path(content.slug)
+
     assert_select "a.break-all[data-test='video-post-x-link'][href='https://x.com/turfmonstershow/status/123']"
-    # The same URL is printed again under "Post"; either one unwrapped scrolls a phone sideways.
-    assert_select "a[href='https://x.com/turfmonstershow/status/123']:not(.break-all)", 0
-    assert_select "[data-test='video-post-x-copy']", 0
+    assert_select "[data-test='video-post-x-verified']", /video attached, 27.7s/
+    assert_select "[data-test='video-post-x-post']", 0
+    assert_select "[data-test='video-post-x-status']", "Posted"
+  end
+
+  test "a run that died mid-post asks the operator to look, then takes either answer" do
+    stuck = { "post" => { "state" => "unknown", "attempted_at" => "2026-10-05T01:00:00Z", "error" => "timeout" } }
+    content = ready_video_post(stage: "assembly", game_facts: stuck)
+    log_in_as(@admin)
+
+    get content_path(content.slug)
+    assert_select "[data-test='video-post-x-stuck']", /may be live/
+    assert_select "[data-test='video-post-x-stuck'] a[href='https://x.com/turfmonstershow']"
+    assert_select "[data-test='video-post-x-post']", 0
+
+    post resolve_x_post_content_path(content.slug), params: { post_url: "https://example.com/nope" }
+    assert_equal "assembly", content.reload.stage
+
+    post resolve_x_post_content_path(content.slug), params: { post_url: "https://x.com/turfmonstershow/status/456" }
+    assert_equal "posted", content.reload.stage
+    assert_equal "456", content.post_id
+
+    other = ready_video_post(stage: "assembly", game_facts: stuck)
+    post resolve_x_post_content_path(other.slug)
+    assert_equal "script", other.reload.stage
+  end
+
+  test "settle refuses a card that is not stuck" do
+    content = ready_video_post
+    log_in_as(@admin)
+    post resolve_x_post_content_path(content.slug), params: { post_url: "https://x.com/turfmonstershow/status/456" }
+
+    assert_equal "script", content.reload.stage
+    assert_nil content.post_url
   end
 
 end

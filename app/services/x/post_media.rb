@@ -21,6 +21,11 @@ module X
 
     class Error < StandardError; end
     class NotConfigured < Error; end
+    # X ANSWERED, AND NOTHING IS LIVE: the upload failed before any post was
+    # created, or the create call was refused with a 4xx. Safe to retry. Any
+    # OTHER Error (a 5xx from the create call, a 2xx with no id) is unknown: the
+    # post may exist, and only the timeline can say.
+    class NotPosted < Error; end
 
     def initialize(text:, video_path:, media_category: "tweet_video", client: Client.new)
       @text           = text.to_s
@@ -42,11 +47,16 @@ module X
     private
 
     def upload_video
-      total_bytes = File.size(@video_path)
-      media_id = init_upload(total_bytes)
-      append_chunks(media_id)
-      finalize_upload(media_id)
-      wait_for_processing(media_id)
+      media_id = begin
+        id = init_upload(File.size(@video_path))
+        append_chunks(id)
+        finalize_upload(id)
+        wait_for_processing(id)
+        id
+      rescue Error, Client::HttpError => e
+        # No create call has been made yet, so there is no post to be live.
+        raise NotPosted, e.message
+      end
       # Propagation buffer: STATUS reports the upload backend is ready, but the
       # v2 /tweets cache lags a few seconds. Without this pause /tweets often
       # rejects the media_id with "Your media IDs are invalid" on first try.
@@ -109,7 +119,7 @@ module X
         pause 5
         return create_tweet(media_id, attempt: 2)
       end
-      raise Error, "tweet create failed: #{resp.code} #{resp.body}"
+      raise (resp.code.start_with?("4") ? NotPosted : Error), "tweet create failed: #{resp.code} #{resp.body}"
     end
 
     # The one seam the waits go through, so a test does not sit out real seconds.

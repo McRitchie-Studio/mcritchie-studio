@@ -20,7 +20,10 @@ class X::PostMediaTest < ActiveSupport::TestCase
       return ok("data" => { "id" => "777", "media_key" => "13_777" }) if url.end_with?("/initialize")
 
       failure = @tweet_failures.shift
-      failure ? response(Net::HTTPBadRequest, "400", failure) : ok("data" => { "id" => "999" })
+      return ok("data" => { "id" => "999" }) unless failure
+      return response(Net::HTTPServiceUnavailable, "503", failure) if failure.include?("server")
+
+      response(Net::HTTPBadRequest, "400", failure)
     end
 
     def post_multipart(url, fields, media_chunk:)
@@ -125,4 +128,27 @@ class X::PostMediaTest < ActiveSupport::TestCase
 
     assert_includes assert_raises(X::PostMedia::Error) { post(client) }.message, "nope"
   end
+
+  # --- not posted versus unknown: the difference between "retry" and "look first" ---
+
+  test "a 4xx from the create call is NotPosted: X answered and nothing is live" do
+    client = RecordingClient.new(tweet_failures: ['{"detail":"You are not permitted"}'])
+
+    assert_raises(X::PostMedia::NotPosted) { post(client) }
+  end
+
+  test "a 5xx from the create call is NOT NotPosted: the post may exist" do
+    client = RecordingClient.new(tweet_failures: ['{"detail":"server error"}'])
+
+    error = assert_raises(X::PostMedia::Error) { post(client) }
+    assert_not_kind_of X::PostMedia::NotPosted, error
+  end
+
+  test "a failure during the upload is NotPosted, because no create call was made" do
+    client = RecordingClient.new(statuses: %w[failed])
+
+    assert_raises(X::PostMedia::NotPosted) { post(client) }
+    assert_empty client.calls.select { |c| c[1].end_with?("/2/tweets") }
+  end
+
 end
