@@ -170,7 +170,9 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    athlete with no look cast does not close a card, and their name already
    fills the prompts. The recast can change before and after the cast is
    confirmed. **Only the operator sets it**: the agent never proposes who
-   replaces anyone, and generating a look is admin only.
+   replaces anyone, and generating a look is admin only. So is the person
+   page's own look form, its "Make default" and its "Attach image"; an
+   attached image must be an `https://` URL on a public host.
 
 The Night Call proof is the dev seed (`db/seeds/data/night_call_cast.rb`): seven
 people, stills and sightings, no names.
