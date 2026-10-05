@@ -18,8 +18,8 @@ class MusicVideosController < ApplicationController
     @performers = @video.video_performers.to_a
     ActiveRecord::Associations::Preloader.new(records: @performers,
                                               associations: %i[artist recast_person recast_appearance]).call
-    @recast_looks = Appearance.recastable.where(person_slug: @performers.filter_map(&:recast_person_slug))
-                              .order(:created_at, :id).group_by(&:person_slug)
+    # Each recast athlete's look dropdown rows: thumbnail, default mark, build state.
+    @recast_looks = MusicVideos::LookOptions.for(@performers.filter_map(&:recast_person_slug))
     @still_urls = signed_urls(@performers.flat_map(&:still_object_keys))
     @clips = @video.clip_candidates.to_a
     @chunks = @video.video_chunks.to_a
@@ -48,7 +48,7 @@ class MusicVideosController < ApplicationController
     @looks = @video.looks.live.includes(:person).order(:performer_ordinal).to_a
     with_look = @looks.map(&:performer_ordinal)
     @look_candidates = @performers.select { |p| p.artist && !p.artist.group? && with_look.exclude?(p.ordinal) }
-    @look_sheets = newest_sheets(@looks.map(&:slug))
+    @look_sheets = Artifact.newest_character_sheets(@looks.map(&:slug))
     @sheet_row = Appearances::GenerateArtifact.preferred_row
     @sheet_ready = Appearances::GenerateArtifact.available?
   end
@@ -61,7 +61,7 @@ class MusicVideosController < ApplicationController
     take_keys = @chunks.flat_map { |chunk| chunk.takes.map(&:object_key) }
     @clip_urls = signed_urls((@clips + @chunks).map(&:object_key) + take_keys + [@video.source_object_key])
     @chunk_downloads = signed_urls(@chunks.map(&:object_key), download: true)
-    @recast_sheets = newest_sheets(@performers.filter_map(&:recast_appearance_slug))
+    @recast_sheets = Artifact.newest_character_sheets(@performers.filter_map(&:recast_appearance_slug))
     @stitch = helpers.stitch_preview_data(@chunks, @clip_urls)
   end
 
@@ -74,16 +74,6 @@ class MusicVideosController < ApplicationController
     @stitch_urls = signed_urls(keys)
     @stitch_downloads = signed_urls(keys, download: true)
     @stitch_here = MusicVideos::Stitcher.available?
-  end
-
-  # appearance slug => its newest live character sheet.
-  def newest_sheets(appearance_slugs)
-    return {} if appearance_slugs.empty?
-
-    ArtifactSubject.where(appearance_slug: appearance_slugs).includes(:artifact)
-                   .joins(:artifact).merge(Artifact.live.where(kind: "character_sheet"))
-                   .order("artifacts.created_at DESC")
-                   .each_with_object({}) { |s, h| h[s.appearance_slug] ||= s.artifact }
   end
 
   def set_video

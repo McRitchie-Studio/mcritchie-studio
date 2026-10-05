@@ -18,6 +18,18 @@ class Artifact < ApplicationRecord
   scope :live, -> { where(retired_at: nil) }
   scope :approved, -> { where.not(approved_at: nil) }
 
+  # appearance slug => that look's newest live character sheet. One query,
+  # whatever the number of looks.
+  def self.newest_character_sheets(appearance_slugs)
+    slugs = Array(appearance_slugs).compact_blank.uniq
+    return {} if slugs.empty?
+
+    ArtifactSubject.where(appearance_slug: slugs).includes(:artifact)
+                   .joins(:artifact).merge(live.where(kind: "character_sheet"))
+                   .order("artifacts.created_at DESC, artifacts.id DESC")
+                   .each_with_object({}) { |s, h| h[s.appearance_slug] ||= s.artifact }
+  end
+
   def to_param = slug
   def approved? = approved_at.present?
   def retired? = retired_at.present?

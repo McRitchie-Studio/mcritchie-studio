@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { loginWithMagicLink } = require("./helpers");
 
 // PIN THE SESSION — never rely on the page's "latest session" default.
 // /xan/heartbeat defaults to HeartbeatController#latest_session_id, i.e. whichever
@@ -16,8 +17,10 @@ const { test, expect } = require("@playwright/test");
 // [e2e] The T5 feedback loop on the read-only event heartbeat: expand a span, open a
 // drilled-down action's grading drawer, write Xan's grade, bank it, and confirm it
 // surfaces in the Insight Bank. Grading moved entirely into the drawer — the event
-// table itself is read-only (no inline radios).
+// table itself is read-only (no inline radios). The page reads without a login; the
+// grade and bank writes need an admin, so the spec signs in as one first.
 test("grade a drilled-down action, bank it, and see it in the Insight Bank", async ({ page }) => {
+  await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
   const drawer = page.locator("aside[data-test='heartbeat-drawer']");
 

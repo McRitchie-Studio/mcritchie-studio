@@ -1,5 +1,5 @@
 // [e2e] The recast picker on a cast card: the operator searches an athlete,
-// picks one of that athlete's looks, and the chunk prompts below name both;
+// picks one of that athlete's looks from the dropdown and casts it, and the chunk prompts below name both;
 // switching the look and keeping the performer as is each rewrite them. A
 // cinematic video, so no prompt says "music video". Wholly synthetic data,
 // seeded by e2e/seed.rb from db/seeds/data/recast_video.rb: only the operator
@@ -26,19 +26,21 @@ test("operator picks an athlete and look and sees the prompt change", async ({ p
   await recast(page, 1).getByRole("button", { name: "Change" }).click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "open");
 
-  // The typeahead finds the athlete; picking him offers his looks and a new-look link.
+  // The typeahead finds the athlete; picking him offers his looks in a dropdown.
   await recast(page, 1).getByRole("combobox").fill("test athlete");
   const option = recast(page, 1).locator("[data-test='recast-option']").first();
   await expect(option).toContainText("Test Athlete Alpha");
   await expect(option).toContainText("2 looks");
   await option.click();
-  const looks = recast(page, 1).locator("[data-test='recast-look-option']");
-  await expect(looks).toHaveText(["Test Athlete Alpha > Home Blue", "Test Athlete Alpha > Away White"]);
-  await expect(recast(page, 1).locator("[data-test='recast-new-look']")).toHaveAttribute(
-    "href", /\/people\/test-athlete-alpha\?return_to=%2Fmusic_videos%2Ftest-cinematic-recast-demo%23person-1#new-model$/);
+  const trigger = recast(page, 1).locator("[data-test='look-trigger']");
+  const looks = recast(page, 1).locator("[data-test='look-option']");
+  await trigger.click();
+  await expect(looks.locator("[data-test='look-option-name']")).toHaveText(["Home Blue", "Away White"]);
 
-  // Picking a look saves; the card and every chunk he is in now name both.
+  // Picking a look previews it; Cast saves, and the card and every chunk he is in now name both.
   await looks.nth(1).click();
+  await expect(recast(page, 1)).toHaveAttribute("data-state", "open");
+  await recast(page, 1).getByRole("button", { name: "Cast as Test Athlete Alpha > Away White" }).click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "recast");
   await expect(recast(page, 1).locator("[data-test='recast-label']")).toHaveText("Test Athlete Alpha > Away White");
   await expect(prompt).toContainText("Replace the man in the red jacket in this video with Test Athlete Alpha, the football player.");
@@ -48,11 +50,15 @@ test("operator picks an athlete and look and sees the prompt change", async ({ p
   await expect(page.locator("[data-test='chunk-prompt']").filter({ hasText: "Test Athlete Alpha" })).toHaveCount(4);
 
   // Switching the look on the saved card rewrites the prompt.
-  await recast(page, 1).getByLabel("Look for Test Athlete Alpha").selectOption({ label: "Test Athlete Alpha > Home Blue" });
+  await trigger.click();
+  await looks.filter({ hasText: "Home Blue" }).click();
+  await recast(page, 1).getByRole("button", { name: "Cast as Test Athlete Alpha > Home Blue" }).click();
   await expect(recast(page, 1).locator("[data-test='recast-label']")).toHaveText("Test Athlete Alpha > Home Blue");
   await expect(prompt).toContainText("(like the Home Blue model provided)");
 
-  // The new-look link lands on the athlete's look form, which knows the way back.
+  // The by-hand link lands on the athlete's look form, which knows the way back.
+  await expect(recast(page, 1).locator("[data-test='recast-new-look']")).toHaveAttribute(
+    "href", /\/people\/test-athlete-alpha\?return_to=%2Fmusic_videos%2Ftest-cinematic-recast-demo%23person-1#new-model$/);
   await recast(page, 1).locator("[data-test='recast-new-look']").click();
   await expect(page).toHaveURL(/\/people\/test-athlete-alpha\?return_to=/);
   await expect(page.locator("details#new-model [data-test='new-model-return']")).toBeVisible();

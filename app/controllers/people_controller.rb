@@ -1,7 +1,12 @@
 class PeopleController < ApplicationController
   skip_before_action :require_authentication, only: [:index, :show]
+  # ADMIN, NOT MERELY A SESSION, on every action here that writes. Hub signup is
+  # open, so a session costs a stranger one email address: it is no control over
+  # who may file a look, move a default, plant a picture or merge two people.
+  # Before set_person, so a refused request costs no lookup.
+  before_action :require_admin, only: [:create_appearance, :make_default_appearance, :attach_artifact,
+                                       :update_vocations, :merge_execute]
   before_action :set_person, only: [:show, :create_appearance, :make_default_appearance, :attach_artifact, :update_vocations]
-  before_action :require_admin, only: [:update_vocations]
 
   def index
     # Most-recently-touched first: creating or editing a model bumps a person,
@@ -63,13 +68,25 @@ class PeopleController < ApplicationController
 
   # Attach an image for one look. A character sheet is a one-subject artifact;
   # multi-person images are created by the content pipeline, not here.
+  #
+  # THE URL IS CHECKED BEFORE ANYTHING IS FILED. It becomes the look's newest
+  # sheet: the operator's browser loads it on the cast card, and the chunk
+  # hand-off gives it out as the swap reference. So it must be https on a public
+  # host (Appearances::FetchableUrl.https?); a refusal writes no row.
   def attach_artifact
     appearance = @person.appearances.live.find_by(slug: params[:appearance_slug]) || @person.default_appearance
     return redirect_to(person_path(@person.slug), alert: "Create a look first.") unless appearance
 
+    image_url = params[:image_url].to_s.strip
+    unless Appearances::FetchableUrl.https?(image_url)
+      return redirect_to(person_path(@person.slug), alert: Appearances::FetchableUrl::HTTPS_REFUSAL)
+    end
+
     rescue_and_log(target: @person) do
-      artifact = Artifact.create!(kind: "character_sheet", image_url: params[:image_url], source: "operator")
-      artifact.subjects.create!(person_slug: @person.slug, appearance_slug: appearance.slug, ordinal: 1)
+      Artifact.transaction do
+        artifact = Artifact.create!(kind: "character_sheet", image_url: image_url, source: "operator")
+        artifact.subjects.create!(person_slug: @person.slug, appearance_slug: appearance.slug, ordinal: 1)
+      end
       redirect_to person_path(@person.slug), notice: "Model image attached to #{appearance.descriptor}."
     end
   end

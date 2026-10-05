@@ -5,7 +5,7 @@ require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 # [integration] The recast round trip on the cast panel: admin gate, an athlete
 # and look saved and the video's prompts refreshed, keep as is, clear, the
-# refusals, the athlete typeahead, the new-look link's way back, and a
+# refusals, the athlete typeahead, the by-hand look link's way back, and a
 # cinematic cast confirmed with no artist on it. All data is synthetic.
 class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
   setup do
@@ -46,8 +46,11 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
     assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='performer-recast'][data-state='recast']" do
       assert_select "[data-test='recast-label'][data-person=?][data-look=?]", @athlete.slug, @away.slug, "Test Athlete Alpha > Away White"
-      assert_select "[data-test='recast-look-form'] select[name='appearance_slug'] option", 2
-      assert_select "[data-test='recast-look-form'] option[selected][value=?]", @away.slug
+      assert_select "[data-test='recast-looks'][x-data='lookPicker()'][data-saved-look=?]", @away.slug
+      assert_equal [["Home Blue", true, "empty"], ["Away White", false, "empty"]],
+                   JSON.parse(css_select("[data-ordinal='1'] [data-test='recast-looks']").first["data-athlete"])["looks"]
+                       .map { |look| look.values_at("descriptor", "default", "state") }
+      assert_select "[data-test='recast-look-form'][action=?] input[name='appearance_slug']", music_video_performer_recast_path(@video, 1)
     end
     assert_select "#chunk-1 [data-test='chunk-recast']", /Test Athlete Alpha > Away White/
     assert_select "#chunk-1 [data-test='chunk-prompt']", /with Test Athlete Alpha, the football player/
@@ -111,42 +114,46 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
                  rows.last.values_at("hint", "avatar_url", "vocation", "team", "looks")
   end
 
-  test "a look-less athlete is saved alone and the card offers to create a look, with the way back" do
+  test "a look-less athlete is saved alone and the card offers to generate the first look, or to add one by hand" do
     log_in_as users(:alex)
     gamma = Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
+    card = "/music_videos/#{@video.slug}#person-1"
 
     assert_no_difference -> { ErrorLog.count } do
       recast(1, person_slug: gamma.slug)
     end
-    assert_redirected_to "/music_videos/#{@video.slug}#person-1"
+    assert_redirected_to card
     assert_match "Test Athlete Gamma has no look yet", flash[:notice]
     assert performer(1).recast_pending?
     assert_not performer(1).resolved?, "an athlete with no look does not close a card"
 
     follow_redirect!
     assert_select "[data-ordinal='1'] [data-test='performer-recast'][data-state='pending']" do
-      assert_select "[data-test='recast-no-look']", /Test Athlete Gamma has no look yet/
-      assert_select "[data-test='recast-look-form']", 0
-      assert_select "a[data-test='recast-new-look'][href=?]",
-                    "/people/test-athlete-gamma?return_to=%2Fmusic_videos%2F#{@video.slug}%23person-1#new-model",
-                    "Create a look for Test Athlete Gamma"
+      assert_select "[data-test='recast-pending']", 0
+      assert_select "[data-test='recast-looks'][data-athlete=?]", { slug: gamma.slug, name: "Test Athlete Gamma", looks: [] }.to_json
+      assert_select "[data-test='recast-looks'][data-new-look-url=?]", "/people/__slug__?return_to=%2Fmusic_videos%2F#{@video.slug}%23person-1#new-model"
+      assert_select "button[data-test='look-generate-first']", "Generate first look"
+      assert_select "[data-test='look-generate-form'][action=?]", music_video_performer_recast_looks_path(@video, 1)
     end
 
-    post create_appearance_person_path(gamma.slug, return_to: "/music_videos/#{@video.slug}#person-1"),
-         params: { appearance: { descriptor: "Training Grey" } }
+    # The by-hand route still returns to the card, which then lists the look.
+    post create_appearance_person_path(gamma.slug, return_to: card), params: { appearance: { descriptor: "Training Grey" } }
+    assert_redirected_to card
     follow_redirect!
-    assert_equal ["Choose a look", "Test Athlete Gamma > Training Grey"],
-                 css_select("[data-ordinal='1'] [data-test='recast-look-form'] option").map { |o| o.text.strip }
+    assert_select "[data-ordinal='1'] [data-test='recast-pending']", /No look chosen/
+    assert_equal ["Training Grey"],
+                 JSON.parse(css_select("[data-ordinal='1'] [data-test='recast-looks']").first["data-athlete"])["looks"].pluck("descriptor")
   end
 
-  test "the new look link opens the person's look form, and saving returns to the cast card" do
+  test "the by-hand link opens the person's look form, and saving returns to the cast card" do
     log_in_as users(:alex)
     recast(1, person_slug: @athlete.slug, appearance_slug: @home.slug)
     card = "/music_videos/#{@video.slug}#person-1"
 
     get music_video_path(@video)
-    assert_select "[data-test='performer-card'][data-ordinal='1'] a[data-test='recast-new-look'][href=?]",
-                  person_path(@athlete.slug, return_to: card, anchor: "new-model"), "New look for Test Athlete Alpha"
+    assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='recast-looks'][data-new-look-url=?]",
+                  person_path("__slug__", return_to: card, anchor: "new-model")
+    assert_select "[data-test='performer-card'][data-ordinal='1'] a[data-test='recast-new-look']", /Or add a look by hand/
 
     get person_path(@athlete.slug, return_to: card)
     assert_select "details#new-model[open] [data-test='new-model-return']"
@@ -158,7 +165,8 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to card
 
     get music_video_path(@video)
-    assert_select "[data-test='recast-look-form'] option", text: "Test Athlete Alpha > Alternate Black"
+    assert_includes JSON.parse(css_select("[data-ordinal='1'] [data-test='recast-looks']").first["data-athlete"])["looks"].pluck("descriptor"),
+                    "Alternate Black"
   end
 
   test "a return address that is not a cast card is ignored" do

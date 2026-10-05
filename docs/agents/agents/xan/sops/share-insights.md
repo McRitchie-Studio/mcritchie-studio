@@ -46,10 +46,8 @@ is mutually exclusive with `#discard!`), while `grader` records only WHO WROTE T
 ROW: `xan` is Xan's grade of the activity, `mcr` is Alex's audit **of
 that grade** — a second row on the same target, written from the browser drawer
 and never by the agent CLI, because the agent API always grades as `xan`. That
-is PROVENANCE, NOT PROOF: the heartbeat drawer skips authentication (build-first,
-2026-07-03), so an `mcr` row is writable with no token at all. "A shared token
-can never forge the audit lane" is therefore true but vacuous — one more reason
-the grader cannot be the gate. Every other reader of the bank agrees: the feed-forward
+is PROVENANCE, NOT PROOF: it records who wrote the row (the drawer's writes need
+an admin), and nothing reads it as a gate. Every other reader of the bank agrees: the feed-forward
 `/api/v1/insights` hook and the `/xan/insights` page both read
 `ActionGrade.banked` with no grader filter.
 

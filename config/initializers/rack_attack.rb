@@ -45,6 +45,27 @@ class Rack::Attack
     req.ip if req.get? && req.path.start_with?("/auth/") && req.path.end_with?("/callback")
   end
 
+  ### Throttle: chat — every POST /chat costs an Anthropic call and signup is open,
+  # so one address and one account are each bounded. The user key is the session's
+  # user id (nil for a visitor, who counts only by address). The limits sit well
+  # above a person typing and well below a loop.
+  CHAT_IP_LIMIT    = 10
+  CHAT_IP_PERIOD   = 1.minute
+  CHAT_USER_LIMIT  = 30
+  CHAT_USER_PERIOD = 10.minutes
+
+  throttle("chat/ip", limit: CHAT_IP_LIMIT, period: CHAT_IP_PERIOD) do |req|
+    req.ip if req.post? && req.path == "/chat"
+  end
+
+  throttle("chat/user", limit: CHAT_USER_LIMIT, period: CHAT_USER_PERIOD) do |req|
+    if req.post? && req.path == "/chat"
+      session = req.env["rack.session"] || {}
+      user_id = session[Studio.session_key.to_s] || session[Studio.session_key]
+      user_id&.to_s
+    end
+  end
+
   ### Response: throttled requests get 429
   self.throttled_responder = lambda do |request|
     match_data = request.env["rack.attack.match_data"] || {}

@@ -1610,6 +1610,11 @@ RecastVideo.seed!
 # athlete with a team and no look yet (e2e/music_video_search_rows.spec.js).
 require Rails.root.join("db/seeds/data/search_rows_video.rb").to_s
 SearchRowsVideo.seed!
+# /music_videos/test-cinematic-look-picker-demo — two open cards and one recast, a
+# synthetic athlete with three looks (a sheet, none, one building) and a rookie
+# with none (e2e/music_video_look_picker.spec.js).
+require Rails.root.join("db/seeds/data/look_picker_video.rb").to_s
+LookPickerVideo.seed!
 # /music_videos/steve-aoki-night-call-looks — a confirmed cast with two labelled
 # test artists and their stills, no looks yet (e2e/music_video_looks.spec.js).
 require Rails.root.join("db/seeds/data/night_call_looks.rb").to_s

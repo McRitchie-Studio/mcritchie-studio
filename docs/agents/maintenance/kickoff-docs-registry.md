@@ -28,7 +28,7 @@ invisible to the index.
 ```ruby
 test "every registered SOP path exists on disk"
 test "every SOP file on disk is registered by name in docs/agents/index.md"
-test "the two registry tables in index.md name the same set of SOP files"
+test "index.md carries the SOP registry exactly once"
 test "every invocation the Claude adapter names is a real registered invocation"
 ```
 

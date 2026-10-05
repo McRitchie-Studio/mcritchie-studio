@@ -1,0 +1,136 @@
+<%# The look step of "Replaced by": a listbox of the chosen athlete's looks (sheet thumbnail, name, default mark, build state), a larger preview of the one picked, the button that casts it, and "Generate a new look" inline. Driven by window.lookPicker on the enclosing x-data root, which both render paths share: the open card (athlete picked in the typeahead) and the saved card (athlete read off the page). A custom listbox, since a native select cannot show images: focus stays on the trigger, which takes the arrow keys, Home, End, Enter, Space and Escape and names the active row. Both forms submit without Turbo, so the redirect's #person-N lands the operator back on this card. %>
+<% n = performer.ordinal %>
+<% sheet_row = local_assigns[:sheet_row] %>
+<div x-show="athlete" x-cloak class="mt-2 space-y-2 min-w-0" data-test="look-picker">
+  <p x-show="looks.length === 0" class="text-sm text-warning-ink" data-test="recast-no-look">
+    <span x-text="athlete ? athlete.name : ''"></span> has no look yet.
+  </p>
+
+  <div x-show="looks.length > 0" class="relative" @click.outside="closeList()">
+    <p class="text-xs text-muted mb-1" id="look-label-<%= n %>">Which look of <span class="font-semibold text-heading" x-text="athlete ? athlete.name : ''"></span>?</p>
+    <button type="button" x-ref="lookTrigger" role="combobox" aria-haspopup="listbox" :aria-expanded="listOpen" aria-controls="look-list-<%= n %>"
+            aria-labelledby="look-label-<%= n %> look-current-<%= n %>"
+            :aria-activedescendant="listOpen ? 'look-option-<%= n %>-' + lookActive : null"
+            @click="listOpen ? closeList() : openList()"
+            @keydown.arrow-down.prevent="listOpen ? moveLook(1) : openList()" @keydown.arrow-up.prevent="listOpen ? moveLook(-1) : openList()"
+            @keydown.home="if (listOpen) { $event.preventDefault(); showRow(0); }" @keydown.end="if (listOpen) { $event.preventDefault(); showRow(looks.length); }"
+            @keydown.enter.prevent="listOpen ? pickRow(lookActive) : openList()" @keydown.space.prevent="listOpen ? pickRow(lookActive) : openList()"
+            @keydown.escape="closeList()" @keydown.tab="closeList()"
+            class="input-field py-1.5 px-2 text-sm w-full flex items-center gap-3 text-left min-w-0" data-test="look-trigger">
+      <%= render "music_videos/look_thumb", look: "chosen", size: "w-12 h-8" %>
+      <span id="look-current-<%= n %>" class="min-w-0 flex-1 truncate" :class="chosen ? 'text-heading font-semibold' : 'text-muted'"
+            x-text="chosen ? chosen.descriptor : 'Choose a look'"></span>
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="w-4 h-4 shrink-0 text-muted transition-transform" :class="listOpen ? 'rotate-180' : ''">
+        <path fill-rule="evenodd" d="M5.2 7.2a.75.75 0 0 1 1.06 0L10 10.94l3.74-3.74a.75.75 0 1 1 1.06 1.06l-4.27 4.27a.75.75 0 0 1-1.06 0L5.2 8.26a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/>
+      </svg>
+    </button>
+
+    <div x-show="listOpen" x-cloak x-ref="lookList" id="look-list-<%= n %>" role="listbox" aria-labelledby="look-label-<%= n %>"
+         class="absolute z-20 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1" data-test="look-list">
+      <template x-for="(look, i) in looks" :key="look.slug">
+        <div role="option" :id="'look-option-<%= n %>-' + i" :aria-selected="look.slug === lookSlug" @click="pickRow(i)" @mouseenter="lookActive = i"
+             class="rounded-lg px-2 py-2 flex items-center gap-3 min-w-0 cursor-pointer" :class="i === lookActive ? 'bg-surface-alt' : ''"
+             data-test="look-option" :data-slug="look.slug" :data-state="look.state">
+          <%= render "music_videos/look_thumb", look: "look", size: "w-16 h-10" %>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-semibold text-heading truncate" x-text="look.descriptor" data-test="look-option-name"></span>
+            <span class="block text-xs text-muted truncate" x-text="stateLabel(look)" data-test="look-option-state"></span>
+          </span>
+          <span x-show="look.default" class="badge text-3xs shrink-0 bg-success/10 text-success-ink border-success/40" data-test="look-option-default">default</span>
+        </div>
+      </template>
+      <div role="option" :id="'look-option-<%= n %>-' + looks.length" aria-selected="false" @click="pickRow(looks.length)" @mouseenter="lookActive = looks.length"
+           class="rounded-lg px-2 py-2 flex items-center gap-3 min-w-0 cursor-pointer border-t border-subtle mt-1 text-sm font-semibold text-primary"
+           :class="lookActive === looks.length ? 'bg-surface-alt' : ''" data-test="look-generate-option">
+        <span class="w-16 h-10 shrink-0 rounded-md border border-dashed border-subtle flex items-center justify-center text-lg" aria-hidden="true">+</span>
+        <span class="min-w-0 flex-1">Generate a new look</span>
+      </div>
+    </div>
+  </div>
+
+  <p x-show="buildingElsewhere" x-cloak role="status" class="text-xs text-muted" data-test="look-building-note">
+    Building a character sheet: <span class="font-semibold text-heading" x-text="buildingElsewhere"></span>. This card updates itself.
+  </p>
+
+  <button type="button" x-show="looks.length === 0 && !genOpen" @click="startGenerate()" class="btn btn-primary btn-sm w-full" data-test="look-generate-first">
+    Generate first look
+  </button>
+
+  <figure x-show="chosen" x-cloak class="rounded-lg border border-subtle bg-inset overflow-hidden min-w-0" data-test="look-preview"
+          :data-slug="chosen ? chosen.slug : ''" :data-state="chosen ? chosen.state : ''">
+    <template x-if="chosen && chosen.image_url && !chosen.imageFailed">
+      <a :href="chosen.image_url" target="_blank" rel="noopener" class="block">
+        <img :src="chosen.image_url" :alt="'Character sheet: ' + athlete.name + ', ' + chosen.descriptor" class="block w-full h-auto"
+             @error="chosen.imageFailed = true" data-test="look-preview-image">
+      </a>
+    </template>
+    <div x-show="chosen && (!chosen.image_url || chosen.imageFailed)" class="aspect-video flex items-center justify-center p-4 text-center text-sm text-muted"
+         data-test="look-preview-empty">
+      <span x-text="chosen ? emptyPreview(chosen) : ''"></span>
+    </div>
+    <figcaption class="px-3 py-2 flex items-center justify-between gap-2 min-w-0 bg-surface border-t border-subtle">
+      <span class="min-w-0 text-xs">
+        <span class="block font-semibold text-heading truncate" x-text="chosen ? athlete.name + ' > ' + chosen.descriptor : ''" data-test="look-preview-label"></span>
+        <span class="block text-muted truncate" role="status" x-text="chosen ? stateLabel(chosen) : ''" data-test="look-preview-state"></span>
+      </span>
+      <a :href="chosen ? chosen.url : '#'" class="text-xs text-primary hover:underline shrink-0" data-test="look-page-link">Open look</a>
+    </figcaption>
+  </figure>
+
+  <%= form_with url: music_video_performer_recast_path(video, n), method: :patch, local: true,
+                html: { "x-show": "chosen && lookSlug !== savedLook", "x-cloak": true, data: { test: "recast-look-form", turbo: false } } do %>
+    <input type="hidden" name="person_slug" :value="athlete ? athlete.slug : ''">
+    <input type="hidden" name="appearance_slug" :value="lookSlug">
+    <button type="submit" class="btn btn-primary btn-sm w-full min-w-0" data-test="look-cast">
+      <span class="truncate">Cast as <span x-text="chosen ? athlete.name + ' > ' + chosen.descriptor : ''"></span></span>
+    </button>
+    <p x-show="chosen && chosen.state !== 'ready'" class="text-3xs text-muted mt-1" data-test="look-cast-no-sheet">
+      This look has no character sheet yet. It can be cast now; its chunks show the sheet once it is built.
+    </p>
+  <% end %>
+
+  <%= form_with url: music_video_performer_recast_looks_path(video, n), method: :post, local: true,
+                html: { "x-show": "genOpen", "x-cloak": true, "@submit": "genBusy = true",
+                        class: "rounded-lg border border-subtle bg-surface-alt p-3 space-y-2 min-w-0",
+                        data: { test: "look-generate-form", turbo: false } } do %>
+    <input type="hidden" name="person_slug" :value="athlete ? athlete.slug : ''">
+    <p class="text-sm font-semibold text-heading" x-text="(looks.length ? 'New look for ' : 'First look for ') + (athlete ? athlete.name : '')"></p>
+    <div>
+      <label class="block text-xs text-muted mb-1" for="look-name-<%= n %>">Look name: the uniform or colours</label>
+      <input id="look-name-<%= n %>" type="text" name="descriptor" x-ref="genName" required maxlength="80" autocomplete="off"
+             placeholder="Broncos blue" class="input-field py-2 text-sm w-full">
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div>
+        <label class="block text-xs text-muted mb-1" for="look-number-<%= n %>">Jersey number</label>
+        <input id="look-number-<%= n %>" type="text" name="number" inputmode="numeric" maxlength="2" autocomplete="off"
+               placeholder="Optional" class="input-field py-2 text-sm w-full">
+      </div>
+      <div class="sm:col-span-2 min-w-0">
+        <label class="block text-xs text-muted mb-1" for="look-reference-<%= n %>">Reference photo URL</label>
+        <input id="look-reference-<%= n %>" type="text" name="reference_url" autocomplete="off"
+               placeholder="Only for a person with no stored headshot" class="input-field py-2 text-sm w-full">
+      </div>
+    </div>
+    <div class="flex flex-col sm:flex-row gap-2">
+      <button type="submit" class="btn btn-primary btn-sm flex-1" :disabled="genBusy" data-test="look-generate-submit">
+        <span x-show="!genBusy">Generate look</span>
+        <span x-show="genBusy" x-cloak>Starting…</span>
+      </button>
+      <button type="button" class="btn btn-outline btn-sm" @click="genOpen = false" :disabled="genBusy">Cancel</button>
+    </div>
+    <p class="text-3xs text-muted" data-test="look-cost-hint">
+      <% if sheet_row.nil? %>
+        No image generator can build a character sheet here, so the look is made without one and nothing is spent.
+      <% elsif !local_assigns[:sheet_ready] %>
+        <%= sheet_row.label %> is not configured here, so the look is made without a character sheet and nothing is spent.
+      <% else %>
+        Costs money: makes the look and builds one character sheet on <%= sheet_row.label %><% if (hint = sheet_row.expected_cost_hint) %>, <%= hint %><% end %>. It takes about two minutes.
+      <% end %>
+    </p>
+  <% end %>
+
+  <a :href="newLookUrl" class="inline-block text-xs text-muted hover:text-primary hover:underline" data-test="recast-new-look">
+    Or add a look by hand on <span x-text="athlete ? athlete.name : ''"></span>’s page
+  </a>
+</div>

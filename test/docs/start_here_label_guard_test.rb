@@ -27,8 +27,8 @@ require "test_helper"
 # Neither existing test covers these rows:
 #   · sop_registry_docs_test.rb  — its ROW regex requires a THREE-column row with
 #     a backticked invocation in column 1, so the two-column Start Here rows are
-#     invisible to it. It pins that the PATHS exist and that the two registry
-#     tables agree; it never reads a prose label.
+#     invisible to it. It pins that the PATHS exist and that the registry appears
+#     exactly once; it never reads a prose label.
 #   · sop_registry_docs_test.rb's owner check pairs a registry row with the SOUL
 #     whose directory holds the file. It has no opinion about a Start Here label.
 #
@@ -84,7 +84,7 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
   SECTION_HEADING = "## Start Here"
 
   # Two-column Start Here row pointing into an agent's own SOP or heartbeat file.
-  # The three-column registry tables cannot match: they carry an Owner column
+  # The three-column registry table cannot match: it carries an Owner column
   # between the label and the path.
   ROW = %r{
     ^\|\s*(?<label>[^|]+?)\s*\|\s*
@@ -104,8 +104,8 @@ class StartHereLabelGuardTest < ActiveSupport::TestCase
   # rehearsal" reads exactly like an act name, and the act name it reads like
   # (`qa-contest-rehearsal`) is a real command — so the row actively misdirects.
   # "Carl primary reviewer role SOP" reads as a DESCRIPTION and could not be
-  # mistaken for something to type. Start Here is a Need→Read index; the two
-  # registry tables are the invocation index and already carry these three names
+  # mistaken for something to type. Start Here is a Need→Read index; the SOP
+  # Registry table is the invocation index and already carries these three names
   # verbatim in backticks, so nothing is unfindable.
   #
   # That is a judgment call, recorded here so the next reader inherits the

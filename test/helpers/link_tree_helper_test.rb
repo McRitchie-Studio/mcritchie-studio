@@ -243,7 +243,6 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_emails_path = "/admin/emails"
   def admin_link_preview_path = "/admin/link_preview"
   def asset_browser_path = "/assets"
-  def toast_test_path = "/toast_test"
   def admin_tiktok_connect_path = "/admin/tiktok/connect"
   def activities_agents_path = "/agents/activities"
   def admin_ai_builder_multiple_path = "/admin/ai_builder_multiple"
