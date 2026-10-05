@@ -73,6 +73,19 @@ class MusicVideoFullVideoViewTest < ActionView::TestCase
     assert_select "[data-test='full-video-open']", /Stitch 1\s+is queued on this hub/
   end
 
+  # A QA hub runs the production env on the dev bucket, so --production there would stitch on production.
+  { "production" => [false, " --production"], "a QA hub" => [true, " --api http://test.host"] }.each do |host, (qa, flag)|
+    test "the waiting command targets the hub that asked: #{host}" do
+      take_all!
+      request!
+      Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new("production")) do
+        Studio.stub(:qa_environment?, qa) { render_panel(here: false) }
+      end
+
+      assert_select "[data-test='full-video-open'] span.font-mono", "bin/stitch-video #{@video.slug}#{flag}"
+    end
+  end
+
   test "a running request says so, and one gone quiet offers the way out" do
     take_all!
     stitch = request!

@@ -35,7 +35,9 @@
         <span class="font-semibold text-heading"><%= open.name %></span> is queued on this hub (takes <%= open.take_list %>).
       <% else %>
         <span class="font-semibold text-heading"><%= open.name %></span> is waiting for
-        <span class="font-mono">bin/stitch-video <%= video.slug %><%= " --production" if Rails.env.production? %></span> on the Mac (takes <%= open.take_list %>).
+        <%# A QA hub runs the production env on the DEV bucket: --production there would stitch on production instead. %>
+        <% target = (Studio.qa_environment? ? " --api #{request.base_url}" : " --production") if Rails.env.production? %>
+        <span class="font-mono">bin/stitch-video <%= video.slug %><%= target %></span> on the Mac (takes <%= open.take_list %>).
         This server has no ffmpeg, so the stitch runs there and reports back.
       <% end %>
       <span x-show="changed" x-cloak class="block mt-2" data-test="full-video-changed">
