@@ -1534,6 +1534,7 @@ end
 # /unsubscribe — one reader with fixed tokens, reached from one broadcast, so
 # e2e/unsubscribe.spec.js can walk unsubscribe then resubscribe.
 StagedEmail.delete_all # holds FKs to deliveries, broadcasts and contacts
+SurveyResponse.delete_all # nullified by the deletes below; cleared so the survey spec starts empty
 EmailEvent.delete_all
 BroadcastDelivery.delete_all
 Broadcast.delete_all
@@ -1562,6 +1563,15 @@ Contact.find_by!(email: "valid@example.com").then do |contact|
   delivery.record_open!(at: 40.minutes.ago)
   delivery.record_click!(link_key: "play", at: 30.minutes.ago)
 end
+
+# /s/cyvasse-first-game — one first-game email reader with a fixed delivery
+# token, on its own list so the /contacts tiles never move
+# (e2e/survey_first_game.spec.js, task first-game-feedback-survey).
+survey_reader = Contact.create!(email: "survey-reader@example.com", tags: ["survey-e2e"],
+                                traits: { "cyvasse" => { "username" => "e2e_first_gamer" } })
+Broadcast.create!(slug: "e2e-first-game", subject: "How was your first game on the new Cyvasse?",
+                  template_key: "cyvasse_first_game")
+  .deliveries.create!(contact: survey_reader, token: "e2e-survey-token", sent_at: Time.current)
 
 # /broadcasts/e2e-queue/queue — the staged email queue (e2e/broadcast_queue.spec.js).
 # Three readers on their own list (queue-e2e, so the /contacts tiles never move):
