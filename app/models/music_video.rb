@@ -25,6 +25,11 @@ class MusicVideo < ApplicationRecord
   # The whole video tiled into overlapping chunks, in time order (bin/find-clips --tile).
   has_many :video_chunks, -> { where(kind: "chunk").order(:ordinal) }, class_name: "VideoClip",
            foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :music_video
+  # Every generated take the operator uploaded back, across all chunks. A take
+  # finds its chunk by ordinal and window (VideoChunkTake#for?). Destroying the
+  # video drops the rows; the objects stay in R2.
+  has_many :chunk_takes, -> { order(:chunk_ordinal, :number) }, class_name: "VideoChunkTake",
+           foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :music_video, dependent: :delete_all
 
   has_many :looks, class_name: "Appearance", foreign_key: :music_video_slug, primary_key: :slug,
            inverse_of: :music_video, dependent: :nullify
@@ -84,6 +89,30 @@ class MusicVideo < ApplicationRecord
   # --tile), or nil for a video never tiled.
   def chunk_tiling
     { chunk_ms:, overlap_ms: chunk_overlap_ms } if chunk_ms && chunk_overlap_ms
+  end
+
+  # Chunks the operator asked to have generated again, in order.
+  def chunks_flagged = video_chunks.select(&:regenerate_requested?)
+
+  # Chunks with no generated take yet, in order.
+  def chunks_without_take = video_chunks.reject(&:current_take)
+
+  # The final stitch may run: the video is tiled, every chunk has a current
+  # take, and none is flagged for a regenerate (recast pipeline, piece 4).
+  def ready_to_stitch?
+    video_chunks.any? && chunks_without_take.empty? && chunks_flagged.empty?
+  end
+
+  # Why the stitch may not run yet, as one sentence; nil when it may.
+  def stitch_blocker
+    return "the video is not tiled into chunks yet" if video_chunks.none?
+
+    missing = chunks_without_take.map(&:name)
+    flagged = chunks_flagged.map(&:name)
+    parts = []
+    parts << "#{missing.to_sentence} #{missing.one? ? 'has' : 'have'} no generated take" if missing.any?
+    parts << "#{flagged.to_sentence} #{flagged.one? ? 'is' : 'are'} flagged for a regenerate" if flagged.any?
+    parts.join("; ").presence
   end
 
   def kind_label = kind == "cinematic" ? "Cinematic video" : "Music video"

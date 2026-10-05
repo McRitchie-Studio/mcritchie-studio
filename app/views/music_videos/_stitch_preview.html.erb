@@ -1,0 +1,82 @@
+<%# The stitch preview: the whole video as if stitched, with no stitched file. Each chunk plays its current take (its source cut when it has none, marked), handing over at the middle of each overlap, over the original source audio. Above it, where the stitch stands and which chunks are flagged for a regenerate. %>
+<% with_take = chunks.count(&:current_take) %>
+<% flagged = chunks.select(&:regenerate_requested?) %>
+<% ready = video.ready_to_stitch? %>
+<div class="card p-4 mb-4 flex flex-col gap-3 min-w-0" data-test="stitch-status" data-ready="<%= ready %>">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0">
+    <p class="text-sm text-body min-w-0">
+      <span class="font-semibold text-heading" data-test="stitch-take-count"><%= with_take %> of <%= chunks.size %></span>
+      chunks have a generated take.
+      <% unless ready %><span class="text-muted break-words" data-test="stitch-blocker">Not ready to stitch: <%= video.stitch_blocker %>.</span><% end %>
+    </p>
+    <span class="badge text-xs shrink-0 <%= ready ? 'bg-success/10 text-success-ink border-success/40' : 'bg-surface-alt text-secondary border-subtle' %>"
+          data-test="stitch-ready"><%= ready ? "Ready to stitch" : "Not ready to stitch" %></span>
+  </div>
+  <div class="min-w-0" data-test="chunks-flagged" data-count="<%= flagged.size %>">
+    <p class="label-upper mb-1.5">Regenerate requested</p>
+    <% if flagged.empty? %>
+      <p class="text-sm text-muted" data-test="chunks-flagged-none">No chunk is flagged.</p>
+    <% else %>
+      <ul class="flex flex-col gap-1 text-sm">
+        <% flagged.each do |chunk| %>
+          <li class="min-w-0 break-words" data-test="flagged-chunk" data-ordinal="<%= chunk.ordinal %>">
+            <%= link_to chunk.name, "#chunk-#{chunk.ordinal}", class: "font-semibold text-primary hover:underline" %>
+            <span class="text-muted font-mono tabular-nums">· <%= video_timecode(chunk.start_ms) %>–<%= video_timecode(chunk.end_ms) %></span>
+            <% if chunk.regenerate_note.present? %><span class="text-body">· <%= chunk.regenerate_note %></span><% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </div>
+</div>
+
+<div class="card overflow-hidden mb-4 min-w-0" x-data="stitchPreview()" data-timeline="<%= stitch.to_json %>"
+     data-test="stitch-preview" :data-playing="String(playing)" :data-chunk="now ? now.ordinal : ''" :data-source="now ? String(now.source) : ''">
+  <div class="relative bg-black w-full aspect-video max-h-[60vh]">
+    <video x-ref="a" muted playsinline preload="auto" class="absolute inset-0 w-full h-full object-contain"
+           :class="active === 0 ? 'opacity-100' : 'opacity-0'" @error="loadFailed(0)" data-test="stitch-video"></video>
+    <video x-ref="b" muted playsinline preload="auto" class="absolute inset-0 w-full h-full object-contain"
+           :class="active === 1 ? 'opacity-100' : 'opacity-0'" @error="loadFailed(1)" data-test="stitch-video"></video>
+    <span class="absolute top-2 left-2 badge text-xs bg-surface/90 text-heading border-subtle"
+          x-text="nowLabel" data-test="stitch-now"></span>
+    <p x-show="missing" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+       data-test="stitch-missing">This chunk's file is not reachable.</p>
+    <p x-show="!missing && failed[active]" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+       data-test="stitch-load-failed">This chunk's file did not load. The signed links last <%= MusicVideosController::SIGNED_URL_TTL / 60 %> minutes: reload the page.</p>
+  </div>
+  <audio x-ref="audio" preload="auto" <% if audio_url %>src="<%= audio_url %>"<% end %> @error="audioFailed()" @ended="pause()" data-test="stitch-audio"></audio>
+
+  <div class="p-4 flex flex-col gap-3 min-w-0">
+    <div class="flex items-center gap-3 min-w-0">
+      <button type="button" class="btn btn-primary btn-sm shrink-0" @click="toggle()" data-test="stitch-toggle">
+        <span x-text="playing ? 'Pause' : 'Play'">Play</span>
+      </button>
+      <label class="sr-only" for="stitch-seek">Seek the stitch preview</label>
+      <input id="stitch-seek" type="range" min="0" max="<%= stitch[:duration_ms] %>" step="100" class="flex-1 min-w-0"
+             :value="Math.round(t)" @input="seek(Number($event.target.value))" data-test="stitch-seek">
+      <span class="text-sm font-mono tabular-nums text-body shrink-0" data-test="stitch-time">
+        <span x-text="fmt(t)">0:00</span> / <%= video_timecode(stitch[:duration_ms]) %>
+      </span>
+    </div>
+
+    <div class="flex gap-1 min-w-0" data-test="stitch-markers">
+      <% stitch[:segments].each_with_index do |segment, i| %>
+        <button type="button" @click="seek(<%= segment[:from_ms] %>)" style="flex: <%= segment[:to_ms] - segment[:from_ms] %> 1 0%"
+                class="min-w-0 rounded-lg border px-1 py-1.5 text-center text-3xs leading-tight <%= segment[:source] ? 'bg-warning/10 text-warning-ink border-warning/40' : 'bg-success/10 text-success-ink border-success/40' %>"
+                :class="index === <%= i %> ? 'ring-2 ring-primary' : ''" :aria-current="index === <%= i %> ? 'true' : 'false'"
+                title="Chunk <%= segment[:ordinal] %>: on screen <%= video_timecode(segment[:from_ms]) %>–<%= video_timecode(segment[:to_ms]) %>"
+                data-test="stitch-marker" data-ordinal="<%= segment[:ordinal] %>" data-source="<%= segment[:source] %>"
+                data-from="<%= segment[:from_ms] %>" data-to="<%= segment[:to_ms] %>" data-flagged="<%= segment[:flagged] %>">
+          <span class="block font-semibold truncate"><%= segment[:ordinal] %><% if segment[:flagged] %> ⚑<% end %></span>
+          <span class="block truncate"><%= segment[:label] %></span>
+        </button>
+      <% end %>
+    </div>
+
+    <p class="text-xs text-muted">
+      Not a stitched file: each chunk hands over to the next at the middle of their overlap. The original source audio plays underneath; the clips are muted.
+      Chunks marked <span class="text-warning-ink font-semibold">source</span> have no generated take yet.
+    </p>
+    <p x-show="!audioOk" x-cloak class="text-xs text-warning-ink" data-test="stitch-audio-missing">The source audio is not reachable, so the preview plays silent.</p>
+  </div>
+</div>

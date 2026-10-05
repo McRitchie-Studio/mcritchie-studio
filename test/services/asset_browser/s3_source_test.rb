@@ -78,6 +78,16 @@ class AssetBrowserS3SourceTest < ActiveSupport::TestCase
 
     assert_match %r{mcritchie-studio-dev.*artists/drake/portrait_01\.jpg}, url
     assert_includes url, "X-Amz-Expires=900"
+    assert_not_includes url, "response-content-disposition"
+  end
+
+  test "signed_url with download_as answers as an attachment under that name" do
+    url = @source.signed_url(key: "music_videos/a/b/chunks/b_chunk_01_0000_0025.mp4", expires_in: 900,
+                             download_as: "b_chunk_01_0000_0025.mp4")
+
+    disposition = CGI.unescape(url[/response-content-disposition=([^&]+)/, 1])
+    assert_match(/\Aattachment; filename="b_chunk_01_0000_0025\.mp4"/, disposition)
+    assert_includes url, "X-Amz-Signature"
   end
 end
 

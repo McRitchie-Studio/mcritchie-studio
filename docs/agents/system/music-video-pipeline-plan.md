@@ -104,6 +104,22 @@ first piece of the recast pipeline, which swaps every chunk and stitches them
 back. The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#chunks-the-whole-video-tiled).
 
+**Generated takes and the stitch preview.** The operator swaps each chunk by
+hand and uploads the generated MP4 back on the chunk's row, which also carries
+the hand-off: the source chunk as a download, the prompt, and the recast look's
+character sheet. Each upload is a numbered take in `video_chunk_takes`, kept and
+never overwritten; the newest is current unless the operator puts an older one
+back. A chunk can be flagged "request regenerate" with a note; the next take
+clears it. A preview player plays the current takes back to back as if stitched,
+without a stitched file: it hands over at the middle of each overlap
+(`MusicVideos::StitchTimeline`), falls back to a chunk's source cut where there
+is no take, and plays the original source audio underneath with the clips
+muted. `MusicVideo#ready_to_stitch?` is true when every chunk has a current take
+and none is flagged; the final stitch reads it, and each chunk's file from
+`VideoClip#current_take`. Built by `generated-takes-and-stitch-preview`, piece 3
+of the recast pipeline. The steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#generated-takes-and-the-stitch-preview).
+
 ## Where it runs
 
 The SOPs are agent-driven and run on Alex's Mac: YouTube often blocks cloud IPs,
@@ -124,7 +140,8 @@ Record slugs stay kebab-case, the app's existing convention.
 | `music_video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
 | `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence; the recast: athlete (`recast_person_slug`), look (`recast_appearance_slug`), or `recast_keep` |
 | `appearances` | gains a nullable music video link |
-| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status |
+| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status; on a chunk, the regenerate flag (`regenerate_requested_at`, `regenerate_note`) |
+| `video_chunk_takes` | one generated MP4 uploaded back for a chunk: video (`music_video_slug`), `chunk_ordinal`, the chunk's window (`start_ms`, `end_ms`), take `number`, asset, size, and `current_since` (the latest is the current take) |
 
 ## Artist seed
 
@@ -150,6 +167,7 @@ music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.mp4
 music_videos/<artist>/<video>/stills/person_01_0230.jpg
 music_videos/<artist>/<video>/clips/<video>_clip_01_<seam>_<shape>_<start>_<end>.mp4
 music_videos/<artist>/<video>/chunks/<video>_chunk_01_<start>_<end>.mp4
+music_videos/<artist>/<video>/generated/<video>_chunk_01_<start>_<end>_take_01.mp4
 music_videos/<artist>/<video>/looks/person_01_<name>_<video>/character_sheet.png
 artists/<artist>/…                      general artist images
 ```

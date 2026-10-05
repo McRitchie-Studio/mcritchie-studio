@@ -2,8 +2,9 @@
 
 # /music_videos/:slug — the cast panel (music video pipeline, stage 2) with
 # each performer's recast, the
-# clip candidates (stage 5) and the chunks the whole video is tiled into. Admin only: stills and clips are private objects shown
-# through short-lived signed URLs.
+# clip candidates (stage 5) and the chunks the whole video is tiled into, with
+# each chunk's hand-off, generated takes and the stitch preview. Admin only:
+# stills, clips and takes are private objects shown through short-lived signed URLs.
 class MusicVideosController < ApplicationController
   before_action :require_admin
   before_action :set_video
@@ -24,7 +25,7 @@ class MusicVideosController < ApplicationController
     # Each row reads its swap target off THIS video's loaded cast, not a copy per row.
     (@clips + @chunks).each { |clip| clip.association(:music_video).target = @video }
     load_looks
-    @clip_urls = signed_urls((@clips + @chunks).map(&:object_key))
+    load_chunk_review
   end
 
   def confirm_cast
@@ -45,12 +46,31 @@ class MusicVideosController < ApplicationController
     @looks = @video.looks.live.includes(:person).order(:performer_ordinal).to_a
     with_look = @looks.map(&:performer_ordinal)
     @look_candidates = @performers.select { |p| p.artist && !p.artist.group? && with_look.exclude?(p.ordinal) }
-    @look_sheets = ArtifactSubject.where(appearance_slug: @looks.map(&:slug)).includes(:artifact)
-                                  .joins(:artifact).merge(Artifact.live.where(kind: "character_sheet"))
-                                  .order("artifacts.created_at DESC")
-                                  .each_with_object({}) { |s, h| h[s.appearance_slug] ||= s.artifact }
+    @look_sheets = newest_sheets(@looks.map(&:slug))
     @sheet_row = Appearances::GenerateArtifact.preferred_row
     @sheet_ready = Appearances::GenerateArtifact.available?
+  end
+
+  # The recast round trip: each chunk's takes (one query, read off the video),
+  # the signed files the page plays and downloads, the recast looks' character
+  # sheets for the hand-off, and the stitch preview's timeline.
+  def load_chunk_review
+    @video.chunk_takes.load
+    take_keys = @chunks.flat_map { |chunk| chunk.takes.map(&:object_key) }
+    @clip_urls = signed_urls((@clips + @chunks).map(&:object_key) + take_keys + [@video.source_object_key])
+    @chunk_downloads = signed_urls(@chunks.map(&:object_key), download: true)
+    @recast_sheets = newest_sheets(@performers.filter_map(&:recast_appearance_slug))
+    @stitch = helpers.stitch_preview_data(@chunks, @clip_urls)
+  end
+
+  # appearance slug => its newest live character sheet.
+  def newest_sheets(appearance_slugs)
+    return {} if appearance_slugs.empty?
+
+    ArtifactSubject.where(appearance_slug: appearance_slugs).includes(:artifact)
+                   .joins(:artifact).merge(Artifact.live.where(kind: "character_sheet"))
+                   .order("artifacts.created_at DESC")
+                   .each_with_object({}) { |s, h| h[s.appearance_slug] ||= s.artifact }
   end
 
   def set_video
@@ -58,8 +78,11 @@ class MusicVideosController < ApplicationController
   end
 
   # key => signed URL, or nil when the store is not reachable (the card says so).
-  def signed_urls(keys)
-    keys.index_with { |key| AssetBrowser.source.signed_url(key: key, expires_in: SIGNED_URL_TTL) }
+  # download: the URL answers as an attachment named after the object.
+  def signed_urls(keys, download: false)
+    keys.uniq.index_with do |key|
+      AssetBrowser.source.signed_url(key: key, expires_in: SIGNED_URL_TTL, **(download ? { download_as: File.basename(key) } : {}))
+    end
   rescue AssetBrowser::Unavailable
     {}
   end

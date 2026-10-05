@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_04_220000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2049,6 +2049,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
     t.index ["slug"], name: "index_users_on_slug", unique: true
   end
 
+  create_table "video_chunk_takes", force: :cascade do |t|
+    t.bigint "byte_size", null: false
+    t.integer "chunk_ordinal", null: false
+    t.datetime "created_at", null: false
+    t.datetime "current_since", null: false
+    t.integer "end_ms", null: false
+    t.string "music_video_slug", null: false
+    t.integer "number", null: false
+    t.string "object_key", null: false
+    t.string "original_filename"
+    t.integer "start_ms", null: false
+    t.datetime "updated_at", null: false
+    t.index ["music_video_slug", "chunk_ordinal", "number"], name: "index_video_chunk_takes_on_video_chunk_and_number", unique: true
+    t.index ["object_key"], name: "index_video_chunk_takes_on_object_key", unique: true
+  end
+
   create_table "video_clips", force: :cascade do |t|
     t.string "cast_shape", null: false
     t.datetime "created_at", null: false
@@ -2059,6 +2075,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
     t.integer "ordinal", null: false
     t.jsonb "performer_ordinals", default: [], null: false
     t.text "prompt", null: false
+    t.string "regenerate_note"
+    t.datetime "regenerate_requested_at"
     t.string "seam"
     t.integer "seam_ms"
     t.integer "start_ms", null: false
