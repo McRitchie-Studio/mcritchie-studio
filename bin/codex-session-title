@@ -22,16 +22,10 @@ SQLITE3="${SQLITE3:-sqlite3}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 CODEX_STATE_DB="${CODEX_STATE_DB:-$CODEX_HOME/state_5.sqlite}"
 LIVE_THREAD_NAME_SENTINEL="${CODEX_SESSION_TITLE_LIVE_SENTINEL:-$CODEX_HOME/mcritchie-live-thread-title.enabled}"
-default_projects_dir() {
-  local candidate
-  candidate="$(cd "$ROOT/.." && pwd)"
-  if [ "$(basename "$candidate")" = ".worktrees" ]; then
-    cd "$candidate/../.." && pwd
-  else
-    printf '%s\n' "$candidate"
-  fi
-}
-PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$(default_projects_dir)}"
+# The projects root comes from the shared resolver (bin/lib/projects_root.rb), which
+# climbs out of a desk and out of the fixed-path tooling tree the hooks name this
+# script at; a bash copy of that climb stopped at the tooling directory.
+PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$(ruby "$ROOT/bin/lib/projects_root.rb" "${BASH_SOURCE[0]}")}"
 
 hook_input="$(cat 2>/dev/null || true)"
 payload_info="$(

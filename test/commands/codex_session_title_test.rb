@@ -292,4 +292,48 @@ class CodexSessionTitleTest < Minitest::Test
     assert_equal ["called"], calls
     assert_equal "thread-123", title_for("thread-123")
   end
+
+  # The Codex hooks name this script at the fixed path <projects>/.agents/bin, a
+  # link into tooling/<sha>/bin. With CLAUDE_PROJECTS_DIR unset the script derives
+  # the projects root from its own location, and the marker it asks for lives under
+  # <projects>/.agents — not under the tooling tree, and not under .agents itself.
+  # Observed through the --projects-dir it hands bin/agent-marker, at both
+  # spellings of the installed path.
+  def test_integration_tooling_copy_resolves_the_projects_root_through_the_link
+    projects = File.realpath(@tmp)
+    tree = File.join(projects, ".agents", "tooling", "0123abc")
+    FileUtils.mkdir_p(File.join(tree, "bin", "lib"))
+    File.write(File.join(tree, ".complete"), "0123abc\n")
+    FileUtils.cp(SCRIPT, File.join(tree, "bin", "codex-session-title"))
+    FileUtils.cp(File.join(ROOT, "bin", "lib", "projects_root.rb"), File.join(tree, "bin", "lib"))
+    File.symlink("tooling/0123abc/bin", File.join(projects, ".agents", "bin"))
+
+    marker_log = File.join(@tmp, "marker-args.log")
+    marker = File.join(@tmp, "agent-marker")
+    File.write(marker, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> #{marker_log}\n")
+    FileUtils.chmod("+x", marker)
+
+    [File.join(projects, ".agents", "bin", "codex-session-title"),
+     File.join(tree, "bin", "codex-session-title")].each do |installed|
+      File.delete(marker_log) if File.exist?(marker_log)
+      out, err, status = Open3.capture3(
+        SessionEnv.neutralized(
+          "CODEX_THREAD_ID" => "thread-123",
+          "CODEX_HOME" => @tmp,
+          "CODEX_STATE_DB" => @db,
+          "SESSION_KICKOFF" => @kickoff,
+          "AGENT_MARKER" => marker,
+          "CLAUDE_PROJECTS_DIR" => nil,
+          "CODEX_SESSION_TITLE_RETRY_DELAYS" => "none"
+        ),
+        installed, chdir: @tmp, stdin_data: ""
+      )
+
+      assert_silent_success out, err, status
+      # Anchored: `<projects>/.agents/tooling` CONTAINS `<projects>`, so a substring
+      # check passes on the wrong answer.
+      assert_match(/--projects-dir #{Regexp.escape(projects)}(?: |$)/, File.read(marker_log),
+                   "#{installed} must resolve the projects root the tooling tree was installed under")
+    end
+  end
 end

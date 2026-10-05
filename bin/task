@@ -1759,11 +1759,12 @@ end
 
 # --- Stale check: is a task's work already on origin/main? ------------------
 # The directory the stale check runs git in. Defaults to the CLI's own checkout
-# (any clone/worktree that shares origin's tracking refs); TASK_GIT_DIR overrides
-# it so tests can point git at a throwaway repo with no network.
+# (any clone/worktree that shares origin's tracking refs), or to the hub primary
+# when this copy runs from the fixed-path tooling tree, which has no .git;
+# TASK_GIT_DIR overrides it so tests can point git at a throwaway repo with no network.
 def git_dir
   dir = ENV["TASK_GIT_DIR"].to_s.strip
-  dir.empty? ? File.expand_path("..", __dir__) : dir
+  dir.empty? ? ProjectsRoot.git_checkout(File.expand_path("..", __dir__)) : dir
 end
 
 # Run a git command in git_dir, swallowing stderr. Returns [stdout, success?].
