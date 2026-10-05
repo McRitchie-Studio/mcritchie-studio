@@ -104,12 +104,50 @@ first piece of the recast pipeline, which swaps every chunk and stitches them
 back. The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#chunks-the-whole-video-tiled).
 
+**Generated takes and the stitch preview.** The operator swaps each chunk by
+hand and uploads the generated MP4 back on the chunk's row, which also carries
+the hand-off: the source chunk as a download, the prompt, and the recast look's
+character sheet. Each upload is a numbered take in `video_chunk_takes`, kept and
+never overwritten; the newest is current unless the operator puts an older one
+back. A chunk can be flagged "request regenerate" with a note; the next take
+clears it. A preview player plays the current takes back to back as if stitched,
+without a stitched file: it hands over at the middle of each overlap
+(`MusicVideos::StitchTimeline`), falls back to a chunk's source cut where there
+is no take, and plays the original source audio underneath with the clips
+muted. `MusicVideo#ready_to_stitch?` is true when every chunk has a current take
+and none is flagged; the final stitch reads it, and each chunk's file from
+`VideoClip#current_take`. Built by `generated-takes-and-stitch-preview`, piece 3
+of the recast pipeline. The steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#generated-takes-and-the-stitch-preview).
+
+**The final stitch.** "Generate full video", on once the video is ready to
+stitch, records a numbered stitch in `video_stitches` with the take each chunk
+has at that moment. ffmpeg crossfades the picture of consecutive takes across
+each overlap, lays the original source audio under the whole length untouched,
+and writes H.264 and AAC in MP4 to the video's `stitched/` folder. The plan is
+`MusicVideos::StitchPlan` (pure: inputs, the frames each chunk owns, crossfade
+offsets, the filter graph, the ffmpeg arguments), run by
+`MusicVideos::Stitcher`. Takes are normalised to the best any take offers and
+never more than the source, in size and in frame rate. A stitch is `requested`,
+`running`, then `done` or `failed` with the reason. The page shows the latest
+with a player and a download, and marks it stale once a chunk has a different
+current take or a regenerate flag, or the video is re-tiled. Every stitch is
+kept. Built by `stitch-takes-into-full-video`, piece 4 of the recast pipeline.
+The steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#the-final-stitch).
+
 ## Where it runs
 
 The SOPs are agent-driven and run on Alex's Mac: YouTube often blocks cloud IPs,
 and the cast step is an agent vision pass. The app stores results through a small
 JSON API and gives the UI. Nothing Mac-specific goes in the app, so the agent side
 can move off the Mac later.
+
+The final stitch needs ffmpeg, and production dynos have none. So the stitch is
+one library with two callers: `bin/stitch-video <slug>` on the Mac, which
+fulfils a request through the API, and `StitchVideoJob`, which the button
+enqueues only where ffmpeg is on `PATH` (a local hub). On production a request
+stays `requested` until the Mac runs the bin.
 
 ## Data model
 
@@ -124,7 +162,9 @@ Record slugs stay kebab-case, the app's existing convention.
 | `music_video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
 | `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence; the recast: athlete (`recast_person_slug`), look (`recast_appearance_slug`), or `recast_keep` |
 | `appearances` | gains a nullable music video link |
-| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status |
+| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status; on a chunk, the regenerate flag (`regenerate_requested_at`, `regenerate_note`) |
+| `video_chunk_takes` | one generated MP4 uploaded back for a chunk: video (`music_video_slug`), `chunk_ordinal`, the chunk's window (`start_ms`, `end_ms`), take `number`, asset, size, and `current_since` (the latest is the current take) |
+| `video_stitches` | one full-length stitch: video (`music_video_slug`), stitch `number`, `state` (`requested`, `running`, `done`, `failed`) with `failure_reason`, the take each chunk had (`takes`: ordinal, window, take number), asset, and the result's duration, size, frame size, frame rate and notes |
 
 ## Artist seed
 
@@ -150,6 +190,8 @@ music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.mp4
 music_videos/<artist>/<video>/stills/person_01_0230.jpg
 music_videos/<artist>/<video>/clips/<video>_clip_01_<seam>_<shape>_<start>_<end>.mp4
 music_videos/<artist>/<video>/chunks/<video>_chunk_01_<start>_<end>.mp4
+music_videos/<artist>/<video>/generated/<video>_chunk_01_<start>_<end>_take_01.mp4
+music_videos/<artist>/<video>/stitched/<video>_stitched_01.mp4
 music_videos/<artist>/<video>/looks/person_01_<name>_<video>/character_sheet.png
 artists/<artist>/…                      general artist images
 ```

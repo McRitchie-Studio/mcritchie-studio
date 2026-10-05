@@ -162,6 +162,17 @@ Rails.application.routes.draw do
       resource :recast, only: [:update], controller: "video_performer_recasts"
     end
     resources :clips, only: [:update], param: :ordinal, controller: "video_clips"
+    # Chunks (the tiled video) have their own routes: upload a generated take,
+    # put an older take back in front, request or clear a regenerate.
+    resources :chunks, only: [], param: :ordinal do
+      resources :takes, only: [:create], param: :number, controller: "video_chunk_takes" do
+        post :current, on: :member
+      end
+      resource :regenerate, only: [:create, :destroy], controller: "video_chunk_regenerates"
+    end
+    # The final stitch: "Generate full video" records a request; show answers
+    # its state as JSON for the page's progress poll.
+    resources :stitches, only: [:create, :show], param: :number, controller: "video_stitches"
     resources :looks, only: [:create], param: :look_slug, controller: "music_video_looks" do
       post :sheet, on: :member
     end
@@ -380,6 +391,8 @@ Rails.application.routes.draw do
       post :create_appearance
       post :make_default_appearance
       post :attach_artifact
+      # What this person does: many vocations, one primary. Admin only.
+      patch :vocations, action: :update_vocations
     end
 
     # ONE LOOK'S CHARACTER MODEL. Nested because a look has no meaning without its
@@ -475,10 +488,20 @@ Rails.application.routes.draw do
       # design: MS masters durable facts, TM masters events, and neither writes
       # into the other's master.
       resources :athletes, only: [:index]
-      # Written by bin/digest-video (stage 1), the cast vision pass (stage 2) and bin/find-clips (stage 5).
+      # Written by bin/digest-video (stage 1), the cast vision pass (stage 2), bin/find-clips (stage 5)
+      # and bin/stitch-video (the final stitch).
       resources :music_videos, only: [:show, :create], param: :slug do
         post :performers, on: :member
         post :clips, on: :member
+        # The final stitch, as bin/stitch-video drives it: read the requests,
+        # open one, then report it started, finished or failed.
+        resources :stitches, only: [:index, :create], param: :number, controller: "music_video_stitches" do
+          member do
+            post :start
+            post :finish
+            post :failed
+          end
+        end
       end
       # The content pipeline's AGENT surface. Non-deterministic steps (the take,
       # the scenes, the caption) are written by a soul during an SOP with its own

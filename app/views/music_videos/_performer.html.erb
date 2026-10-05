@@ -98,15 +98,9 @@
             <div x-show="open" x-cloak id="artist-results-<%= performer.ordinal %>" role="listbox"
                  class="absolute z-20 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1" data-test="typeahead-results">
               <template x-for="(r, i) in results" :key="r.type + r.slug">
-                <button type="button" role="option" :aria-selected="i === active" @click="choose(r)" @mouseenter="active = i"
-                        class="w-full text-left rounded-lg px-3 py-2 flex items-start justify-between gap-2"
-                        :class="i === active ? 'bg-surface-alt' : ''" data-test="typeahead-option">
-                  <span class="min-w-0">
-                    <span class="block text-sm font-semibold text-heading truncate" x-text="r.name"></span>
-                    <span class="block text-xs text-muted truncate" x-text="[r.hint, r.slug].filter(Boolean).join(' · ')"></span>
-                  </span>
-                  <span class="badge text-3xs shrink-0" :class="r.kind === 'group' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-secondary border-subtle'" x-text="r.type === 'person' ? 'people' : r.kind"></span>
-                </button>
+                <%= render "music_videos/search_row", option_test: "typeahead-option", hint: "r.hint",
+                           badge: "r.type === 'person' ? 'people' : r.kind",
+                           badge_class: "r.kind === 'group' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-secondary border-subtle'" %>
               </template>
               <p x-show="!loading && failed" class="px-3 py-2 text-sm text-warning-ink">Search failed. Try again.</p>
               <p x-show="!loading && !failed && results.length === 0" class="px-3 py-2 text-sm text-muted">No artist or person matches.</p>

@@ -317,6 +317,8 @@ class BinHelpFlagClassTest < Minitest::Test
     # Exactly one URL; a second positional aborts before any download.
     "digest-video"           => :optparse,
     "find-clips"             => :optparse,
+    # Exactly one slug; --help and an unknown flag exit before the API is read.
+    "stitch-video"           => :optparse,
     # Read-only: every verb is a read through one `heroku run`. The verb is
     # shifted first, then OptionParser owns the rest, so `desk 5 --help` prints
     # help and exits before any run; an unknown flag raises unrescued.

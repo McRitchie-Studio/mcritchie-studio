@@ -20,6 +20,8 @@ class Artist < ApplicationRecord
   validate :person_link_only_for_individuals
 
   before_validation :default_sort_name
+  # A person linked to an artist is a musician (Person::VOCATIONS).
+  after_save -> { person&.add_vocation!("musician") }, if: :saved_change_to_person_slug?
 
   scope :people, -> { where(kind: "person") }
   scope :groups, -> { where(kind: "group") }

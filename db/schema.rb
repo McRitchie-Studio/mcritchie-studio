@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1201,13 +1201,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
     t.string "last_name", null: false
     t.string "linkedin_url"
     t.string "location"
+    t.string "primary_vocation"
     t.string "slug", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "vocations", default: [], null: false
     t.string "website_url"
     t.string "x_url"
     t.index ["default_appearance_slug"], name: "index_people_on_default_appearance_slug"
     t.index ["email"], name: "index_people_on_email"
     t.index ["last_name", "first_name"], name: "index_people_on_last_name_and_first_name"
+    t.index ["primary_vocation"], name: "index_people_on_primary_vocation"
     t.index ["slug"], name: "index_people_on_slug", unique: true
     t.index ["updated_at"], name: "index_people_on_updated_at"
   end
@@ -2049,6 +2052,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
     t.index ["slug"], name: "index_users_on_slug", unique: true
   end
 
+  create_table "video_chunk_takes", force: :cascade do |t|
+    t.bigint "byte_size", null: false
+    t.integer "chunk_ordinal", null: false
+    t.datetime "created_at", null: false
+    t.datetime "current_since", null: false
+    t.integer "end_ms", null: false
+    t.string "music_video_slug", null: false
+    t.integer "number", null: false
+    t.string "object_key", null: false
+    t.string "original_filename"
+    t.integer "start_ms", null: false
+    t.datetime "updated_at", null: false
+    t.index ["music_video_slug", "chunk_ordinal", "number"], name: "index_video_chunk_takes_on_video_chunk_and_number", unique: true
+    t.index ["object_key"], name: "index_video_chunk_takes_on_object_key", unique: true
+  end
+
   create_table "video_clips", force: :cascade do |t|
     t.string "cast_shape", null: false
     t.datetime "created_at", null: false
@@ -2059,6 +2078,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
     t.integer "ordinal", null: false
     t.jsonb "performer_ordinals", default: [], null: false
     t.text "prompt", null: false
+    t.string "regenerate_note"
+    t.datetime "regenerate_requested_at"
     t.string "seam"
     t.integer "seam_ms"
     t.integer "start_ms", null: false
@@ -2086,6 +2107,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
     t.index ["music_video_slug", "ordinal"], name: "index_video_performers_on_music_video_slug_and_ordinal", unique: true
     t.index ["recast_appearance_slug"], name: "index_video_performers_on_recast_appearance_slug"
     t.index ["recast_person_slug"], name: "index_video_performers_on_recast_person_slug"
+  end
+
+  create_table "video_stitches", force: :cascade do |t|
+    t.bigint "byte_size"
+    t.datetime "created_at", null: false
+    t.integer "duration_ms"
+    t.string "failure_reason"
+    t.datetime "finished_at"
+    t.string "frame_rate"
+    t.integer "height"
+    t.string "music_video_slug", null: false
+    t.integer "number", null: false
+    t.string "object_key", null: false
+    t.datetime "started_at"
+    t.string "state", default: "requested", null: false
+    t.jsonb "takes", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "warnings", default: [], null: false
+    t.integer "width"
+    t.index ["music_video_slug", "number"], name: "index_video_stitches_on_music_video_slug_and_number", unique: true
+    t.index ["object_key"], name: "index_video_stitches_on_object_key", unique: true
   end
 
   create_table "workspace_accounts", force: :cascade do |t|

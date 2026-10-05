@@ -272,4 +272,127 @@ class PeopleControllerTest < ActionDispatch::IntegrationTest
     assert_nil Artifact.matching([[keep.slug, kl.slug]], kind: "pair"),
                "and it must not be reusable as a one-person pair"
   end
+
+  # --- vocations on the person page (synthetic people) ---
+
+  def vocations!(person, **choice) = patch vocations_person_path(person.slug), params: { person: choice }
+
+  test "an admin edits a person's vocations and primary on their page" do
+    person = Person.create!(first_name: "Test", last_name: "Vocation Edit", athlete: true)
+    log_in_as users(:alex)
+
+    get person_path(person.slug)
+    assert_select "form[data-test='vocations-form'][action=?]", vocations_person_path(person.slug) do
+      assert_select "input[data-test='vocation-box']", Person::VOCATIONS.size
+      assert_select "input[data-test='vocation-box'][checked]", 1
+      assert_select "input[data-test='vocation-box'][checked][value='athlete']"
+      assert_select "select[data-test='vocation-primary'] option[selected][value='athlete']"
+    end
+
+    vocations!(person, vocations: ["", "athlete", "actor", "entertainer"], primary_vocation: "entertainer")
+    assert_redirected_to person_path(person.slug)
+    assert_equal "Test Vocation Edit: primary vocation entertainer, also athlete and actor.", flash[:notice]
+    assert_equal [%w[athlete actor entertainer], "entertainer", true], person.reload.values_at(:vocations, :primary_vocation, :athlete)
+
+    follow_redirect!
+    assert_equal ["entertainer · primary", "athlete", "actor"], css_select("[data-test='person-vocation']").map { |b| b.text.strip }
+    assert_select "[data-test='person-vocation'][data-primary='true']", 1
+
+    vocations!(person, vocations: [""], primary_vocation: "")
+    assert_equal [[], nil, false], person.reload.values_at(:vocations, :primary_vocation, :athlete)
+    follow_redirect!
+    assert_select "[data-test='person-no-vocation']", "Person"
+  end
+
+  test "a primary the person does not hold is refused, without an error log" do
+    person = Person.create!(first_name: "Test", last_name: "Vocation Refused", athlete: true)
+    log_in_as users(:alex)
+
+    assert_no_difference -> { ErrorLog.count } do
+      vocations!(person, vocations: %w[athlete actor], primary_vocation: "musician")
+    end
+    assert_match "Primary vocation must be one of this person's vocations", flash[:alert]
+    assert_equal [%w[athlete], "athlete"], person.reload.values_at(:vocations, :primary_vocation)
+
+    vocations!(person, vocations: %w[athlete astronaut], primary_vocation: "athlete")
+    assert_match "Vocations has no astronaut", flash[:alert]
+  end
+
+  test "visitors and non-admins see no vocation editor and cannot save one" do
+    person = Person.create!(first_name: "Test", last_name: "Vocation Guarded", athlete: true)
+
+    get person_path(person.slug)
+    assert_response :success
+    assert_select "[data-test='vocations-form']", 0
+    assert_select "[data-test='person-vocation']", "athlete"
+    vocations!(person, vocations: %w[actor], primary_vocation: "actor")
+    assert_redirected_to "/login"
+
+    log_in_as users(:viewer)
+    vocations!(person, vocations: %w[actor], primary_vocation: "actor")
+    assert_redirected_to root_path
+    assert_equal %w[athlete], person.reload.vocations
+  end
+
+  test "merge gives the survivor the source's vocations and keeps the survivor's primary" do
+    keep = Person.create!(first_name: "Test", last_name: "Vocation Keeper", vocations: %w[entertainer])
+    source = Person.create!(first_name: "Test", last_name: "Vocation Keeperr", vocations: %w[athlete actor])
+    log_in_as users(:alex)
+
+    post merge_people_path, params: { keep_slug: keep.slug, merge_slug: source.slug }
+
+    assert_not Person.exists?(slug: source.slug)
+    assert_equal [%w[athlete actor entertainer], "entertainer", true], keep.reload.values_at(:vocations, :primary_vocation, :athlete)
+  end
+
+  # --- drifted rows: the boolean true, the list never told (written past the callbacks) ---
+
+  def drifted!(last_name, flag = :athlete)
+    Person.create!(first_name: "Test", last_name:).tap { |p| p.update_columns(flag => true, vocations: [], primary_vocation: nil) }
+  end
+
+  test "the vocations form ticks a drifted boolean, and saving the form as rendered keeps it" do
+    person = drifted!("Vocation Drift Form")
+    log_in_as users(:alex)
+
+    get person_path(person.slug)
+    assert_select "input[data-test='vocation-box'][checked]", 1
+    assert_select "input[data-test='vocation-box'][checked][value='athlete']"
+
+    vocations!(person, vocations: ["", "athlete", "musician"], primary_vocation: "")
+    assert_equal [true, %w[athlete musician], "athlete"], person.reload.values_at(:athlete, :vocations, :primary_vocation)
+  end
+
+  test "a vocations submit that does not mention a drifted boolean keeps it, and says so" do
+    athlete = drifted!("Vocation Drift Athlete")
+    coach = drifted!("Vocation Drift Coach", :coach)
+    log_in_as users(:alex)
+
+    vocations!(athlete, vocations: ["", "musician"], primary_vocation: "musician")
+    assert_equal [true, %w[athlete musician], "musician"], athlete.reload.values_at(:athlete, :vocations, :primary_vocation)
+    assert_equal "Test Vocation Drift Athlete: primary vocation musician, also athlete.", flash[:notice]
+
+    vocations!(coach, vocations: [""], primary_vocation: "")
+    assert_equal [true, %w[coach], "coach"], coach.reload.values_at(:coach, :vocations, :primary_vocation)
+
+    # The row is healed now, so the same submit is a deliberate untick.
+    vocations!(athlete, vocations: ["", "musician"], primary_vocation: "musician")
+    assert_equal [false, %w[musician]], athlete.reload.values_at(:athlete, :vocations)
+  end
+
+  test "merge keeps a drifted boolean on either side" do
+    log_in_as users(:alex)
+
+    keep = drifted!("Vocation Drift Keeper")
+    source = Person.create!(first_name: "Test", last_name: "Vocation Drift Keeperr", vocations: %w[musician])
+    post merge_people_path, params: { keep_slug: keep.slug, merge_slug: source.slug }
+    assert_not Person.exists?(slug: source.slug)
+    assert_equal [true, %w[athlete musician]], keep.reload.values_at(:athlete, :vocations)
+
+    keep = Person.create!(first_name: "Test", last_name: "Vocation Drift Survivor", vocations: %w[musician])
+    source = drifted!("Vocation Drift Survivorr", :coach)
+    post merge_people_path, params: { keep_slug: keep.slug, merge_slug: source.slug }
+    assert_not Person.exists?(slug: source.slug)
+    assert_equal [true, %w[coach musician], "musician"], keep.reload.values_at(:coach, :vocations, :primary_vocation)
+  end
 end

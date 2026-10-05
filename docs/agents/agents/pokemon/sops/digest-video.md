@@ -128,16 +128,25 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    `meta.dropped_recasts`); a confirmed cast answers `409 CAST_CONFIRMED`.
 5. **Hand the operator the cast panel**, `/music_videos/<slug>` (admin). Each card
    shows the still, the sightings as links to that second of the video, and a
-   typeahead over artists (names and aliases) and People. Picking a person from
+   typeahead over artists (names and aliases) and People. Each result is one
+   row: a headshot (a neutral placeholder when there is none), the name, then
+   the primary vocation and the current team (`People::SearchRows`; an artist
+   with no Person reads "musician" or "group"). Picking a person from
    People makes them an artist; "Create new artist" adds one; "Extra, not a named
    artist" closes a card. **Cast confirmed** unlocks when every card is closed and
    moves the video from `digested` to `cast_confirmed`. A `cinematic` video
    credits no artists, so there a card also closes on its recast answer (below)
    and naming an artist is optional.
 6. **The operator recasts**, on the same card, under "Replaced by": a typeahead
-   over athletes (People who have a look), then one of that athlete's looks,
-   shown as "Athlete > Look"; or "Keep as is". "New look for <athlete>" opens the
-   look form on the person's page and returns to the card on save. The recast
+   over every Person, drawn with the same row and a looks count. People who
+   have a look come first; then exact name, prefix, anywhere. Picking someone
+   offers their looks, shown as "Athlete > Look"; or "Keep as is". A person
+   with **no look yet** is listed with "0 looks" and is saved alone when
+   picked: the card names them, offers "Create a look for <athlete>" in place
+   of a look select, and stays open (an athlete with no look does not close a
+   card, and their name already fills the prompts). The look link opens the
+   look form on the person's page and returns to the card on save, where the
+   card then asks which look. The recast
    can change before and after the cast is confirmed. **Only the operator sets
    it**: the agent never proposes who replaces anyone.
 
@@ -247,6 +256,113 @@ sets on one video: running either never replaces the other.
    `/music_videos/<slug>`: in time order, each with a preview, its window, the
    cast shape, the target, who replaces them, and the prompt with a Copy button.
    A chunk has no Approve or Reject, and never moves the video's stage.
+
+### Generated takes and the stitch preview
+
+The operator swaps each chunk by hand in the Higgsfield web UI and brings the
+result back. All of it happens on `/music_videos/<slug>`, in the chunk's row.
+
+1. **Take the hand-off.** Each chunk row carries the three inputs: **Download
+   source chunk** (the cut file, served as an attachment), the swap prompt with
+   **Copy**, and **Character sheet** for the look the chunk's target was recast
+   as. With no sheet the row says so and links to the athlete; with nobody
+   recast it says there is no look.
+2. **Upload the result.** Choose the generated MP4 in the row and press
+   **Upload take**. Each upload is a numbered take, kept and never overwritten,
+   at `music_videos/<artist>/<video>/generated/<video>_chunk_<NN>_<mmss>_<mmss>_take_<NN>.mp4`.
+   The newest take is current; **Make current** on an older take puts it back
+   in front, and the next upload is current again. MP4 only, 100 MB at most.
+   The file rides the web request, so on a slow uplink a large file can pass
+   Heroku's 30-second window: upload from the local hub then.
+3. **Request a regenerate** on a chunk whose take will not do, with an optional
+   note. The flagged chunks are listed above the preview. The next take
+   uploaded for that chunk clears its flag; **Clear** removes it by hand.
+4. **Watch the stitch preview**, above the chunk rows. It plays the whole video
+   as if stitched, with no stitched file: each chunk plays its current take,
+   or its own source cut when it has none (marked `source`), and hands over to
+   the next at the middle of their overlap. The original source audio plays
+   underneath and the clips are muted. Seek with the slider or a chunk marker.
+   The handover is a hard cut; the crossfade belongs to
+   [the final stitch](#the-final-stitch).
+5. **Ready to stitch** shows when every chunk has a current take and none is
+   flagged (`MusicVideo#ready_to_stitch?`). Until then the line says what is
+   missing.
+
+A re-tile at the same chunk length and overlap keeps every take and flag: a
+take belongs to a chunk by its number and window, not by row. A re-tile at
+another length leaves the old takes filed in R2 and on no chunk.
+
+Timing comes from each chunk's `start_ms` and `end_ms`
+(`lib/music_videos/stitch_timeline.rb`), never from a file's length: cut files
+run a frame long and a generated file may differ slightly.
+
+### The final stitch
+
+One MP4 of the whole video: every chunk's current take, crossfaded into the
+next across their overlap, over the original source audio. It runs where ffmpeg
+is. Production dynos have none, so on production the Mac does it.
+
+1. **Press Generate full video** in the **Full video** panel, above the chunk
+   rows on `/music_videos/<slug>`. The button is on only when the video is
+   ready to stitch; until then the panel says what holds it up. Pressing it
+   records stitch N with the take each chunk has at that moment.
+2. **On a local hub** (ffmpeg on `PATH`) a background job stitches at once. The
+   panel says it is stitching and offers **Show it** when it finishes.
+3. **On production** the panel says stitch N is waiting. Run it from the Mac:
+
+   ```bash
+   bin/stitch-video <slug> --production
+   ```
+
+   It fetches the takes and the source from R2 (1Password item
+   `r2.mcritchie-studio`, as `bin/find-clips` does), stitches, uploads the MP4
+   and reports through the API. Then reload the page.
+4. **Check the result** in the panel: a player, the length, size and frame
+   rate, the take numbers it used, and **Download**. Judge lip-sync here, on
+   the stitched file, not in the preview.
+5. **Stale.** A stitch is marked **Stale**, with the reason, once any chunk
+   gets a newer current take, has an older take put back, is flagged for a
+   regenerate, or the video is re-tiled. It still plays and downloads. Generate
+   again for a current one; every stitch is numbered and kept.
+
+`bin/stitch-video` flags, the same set as `bin/find-clips`:
+
+| Flag | Does |
+|---|---|
+| (none) | dev bucket, the local hub at `localhost:3000` |
+| `--api URL` | another hub, such as a desk server |
+| `--production` | the production bucket and `https://mcritchie.studio` |
+| `--source FILE` | use a source MP4 already on disk instead of fetching it |
+| `--dry-run` | fetch, measure and print the plan; start, encode, upload and report nothing |
+| `--force` | also run a stitch stuck `running` (a closed lid) or one that failed |
+
+With no request waiting, `bin/stitch-video` asks for one itself, so it also
+works without the button. Downloads are kept under
+`~/projects/.corpus/music_videos/stitch/<slug>/`, so a second stitch fetches
+only the takes that changed.
+
+What the stitch does (`lib/music_videos/stitch_plan.rb`, pure and unit-tested;
+`lib/music_videos/stitcher.rb` runs it):
+
+- **Picture.** Take N fades into take N+1 across exactly the frames their
+  windows share (ffmpeg `xfade`). Each chunk owns output frames
+  `round(start × rate)` to `round(end × rate)`, counted from the chunk's
+  recorded window and never from a file's length, so nothing drifts down the
+  video. A take that runs short of its window holds its last frame; one that
+  runs long is trimmed. Either is listed as a note on the stitch.
+- **One size and rate.** Every take is brought to the best any take offers and
+  never more than the source: the largest take's frame (the source's if a take
+  is larger), and the highest take frame rate capped at the source's. Takes
+  that all came back smaller than the source are stitched at their own size,
+  with no invented pixels. A take within 2 % of the target's shape is stretched
+  to it; any other is fitted inside and padded black. Pixel format `yuv420p`.
+- **Audio.** The source's own audio for the whole length, through no filter: an
+  AAC track is copied bit for bit. The takes' audio is never read.
+- **Output.** H.264 and AAC in MP4, as long as the last chunk's end. The
+  stitcher refuses to store a file more than one frame per chunk off the plan.
+
+If a stitch fails, the panel shows the reason. A stitch left `running` for 30
+minutes reads as stuck: generate again to replace it, or pass `--force`.
 
 ## Related
 

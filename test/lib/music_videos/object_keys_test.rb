@@ -43,6 +43,23 @@ class MusicVideosClipKeyTest < Minitest::Test
     assert_raises(ArgumentError) { MusicVideos::ObjectKeys.chunk(source_key: "other/x.mp4", ordinal: 1, start_ms: 0, end_ms: 25_000) }
   end
 
+  def test_take_key_sits_under_generated_and_adds_the_take_number_to_the_chunk_name
+    key = MusicVideos::ObjectKeys.take(source_key: SOURCE, ordinal: 12, start_ms: 220_000, end_ms: 242_051, number: 3)
+    assert_equal "music_videos/steve_aoki/night_call/generated/night_call_chunk_12_0340_0402_take_03.mp4", key
+    assert_match(/_take_120\.mp4\z/, MusicVideos::ObjectKeys.take(source_key: SOURCE, ordinal: 1, start_ms: 0, end_ms: 25_000, number: 120))
+  end
+
+  def test_stitched_key_sits_under_stitched_and_carries_the_stitch_number
+    assert_equal "music_videos/steve_aoki/night_call/stitched/night_call_stitched_02.mp4",
+                 MusicVideos::ObjectKeys.stitched(source_key: SOURCE, number: 2)
+    assert_match(/_stitched_104\.mp4\z/, MusicVideos::ObjectKeys.stitched(source_key: SOURCE, number: 104))
+    assert_raises(ArgumentError) { MusicVideos::ObjectKeys.stitched(source_key: "elsewhere/x.mp4", number: 1) }
+  end
+
+  def test_take_key_refuses_a_source_outside_the_tree
+    assert_raises(ArgumentError) { MusicVideos::ObjectKeys.take(source_key: nil, ordinal: 1, start_ms: 0, end_ms: 25_000, number: 1) }
+  end
+
   def test_refuses_a_key_outside_the_tree
     assert_raises(ArgumentError) do
       MusicVideos::ObjectKeys.clip(source_key: "other/x.mp4", ordinal: 1, seam: "unknown", cast_shape: "solo",

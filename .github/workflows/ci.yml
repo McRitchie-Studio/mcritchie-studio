@@ -457,9 +457,12 @@ jobs:
         # Vips.block_untrusted call. `imagemagick` and `librsvg2-bin` are for
         # test/lib/workspace_icon_render_test.rb, which draws real PNGs with
         # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
-        # ImageMagick 6 reads SVG only through rsvg-convert.
+        # ImageMagick 6 reads SVG only through rsvg-convert. `ffmpeg` is for
+        # test/lib/music_videos/stitcher_test.rb, which stitches real takes with the
+        # final stitch's own arguments and reads the frames back; it too fails (not
+        # skips) without ffmpeg and ffprobe.
         timeout-minutes: 25
-        run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick librsvg2-bin
+        run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick librsvg2-bin ffmpeg
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh

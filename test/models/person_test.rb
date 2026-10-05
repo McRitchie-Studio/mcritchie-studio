@@ -100,4 +100,161 @@ class PersonTest < ActiveSupport::TestCase
     Person.find_or_create_by_name!("J.T.", "Tuimoloau")
     assert_equal 1, person.reload.aliases.count { |a| a == "J.T. Tuimoloau" }
   end
+
+  # --- vocations: many, one primary (synthetic people only) ---
+
+  def vocational(**attrs) = Person.create!(first_name: "Test", last_name: "Vocation #{SecureRandom.hex(3)}", **attrs)
+
+  test "a person holds many vocations, stored in the list's order, and one primary" do
+    person = vocational(vocations: %w[entertainer athlete actor], primary_vocation: "entertainer")
+
+    assert_equal %w[athlete actor entertainer], person.reload.vocations
+    assert_equal "entertainer", person.primary_vocation
+    assert person.vocation?(:actor)
+    assert_not person.vocation?("coach")
+  end
+
+  test "the primary must be one of the person's vocations" do
+    person = vocational(vocations: %w[athlete actor])
+
+    person.primary_vocation = "musician"
+    assert_not person.valid?
+    assert_includes person.errors[:primary_vocation], "must be one of this person's vocations"
+
+    person.primary_vocation = "actor"
+    assert person.valid?
+    assert_not Person.new(first_name: "Test", last_name: "Nobody", primary_vocation: "actor").valid?,
+               "a primary with no vocations at all"
+  end
+
+  test "an unknown vocation is refused" do
+    person = Person.new(first_name: "Test", last_name: "Astronaut", vocations: %w[athlete astronaut])
+
+    assert_not person.valid?
+    assert_match "has no astronaut", person.errors[:vocations].first
+  end
+
+  test "a blank primary is filled from the first vocation, and no vocations means no primary" do
+    person = vocational(vocations: %w[musician actor])
+    assert_equal "actor", person.primary_vocation
+
+    person.update!(vocations: [])
+    assert_nil person.reload.primary_vocation
+  end
+
+  test "taking away the primary's vocation moves the primary to one still held" do
+    person = vocational(vocations: %w[athlete actor], primary_vocation: "athlete")
+
+    person.update!(vocations: %w[actor entertainer])
+    assert_equal "actor", person.reload.primary_vocation
+  end
+
+  test "the athlete and coach booleans and the list stay in step, whichever is written" do
+    imported = vocational(athlete: true)
+    assert_equal [%w[athlete], "athlete"], imported.values_at(:vocations, :primary_vocation)
+
+    imported.update!(coach: true)
+    assert_equal [%w[athlete coach], "athlete"], imported.reload.values_at(:vocations, :primary_vocation)
+
+    imported.update!(athlete: false)
+    assert_equal [%w[coach], "coach"], imported.reload.values_at(:vocations, :primary_vocation)
+
+    edited = vocational(vocations: %w[coach entertainer], primary_vocation: "entertainer")
+    assert_equal [false, true], edited.values_at(:athlete, :coach)
+    edited.update!(vocations: %w[athlete entertainer])
+    assert_equal [true, false], edited.reload.values_at(:athlete, :coach)
+    assert_equal 1, Person.where(athlete: true, slug: [imported.slug, edited.slug]).count, "the SQL readers see the list"
+  end
+
+  test "find_or_create_by_name! with a flag gives a known person the vocation and keeps their primary" do
+    person = vocational(vocations: %w[entertainer])
+
+    Person.find_or_create_by_name!(person.first_name, person.last_name, athlete: true)
+    assert_equal [%w[athlete entertainer], "entertainer", true], person.reload.values_at(:vocations, :primary_vocation, :athlete)
+  end
+
+  test "a person linked to an artist becomes a musician and keeps their primary" do
+    person = vocational(athlete: true)
+    artist = Artist.create!(slug: "test-vocation-artist", name: "Test Vocation Artist", kind: "person")
+    assert_equal %w[athlete], person.reload.vocations
+
+    artist.update!(person_slug: person.slug)
+    assert_equal [%w[athlete musician], "athlete"], person.reload.values_at(:vocations, :primary_vocation)
+  end
+
+  test "a row whose boolean was set past the callbacks heals on its next save" do
+    person = vocational
+    person.update_columns(athlete: true)
+
+    person.update!(location: "Testville")
+    assert_equal [%w[athlete], "athlete"], person.reload.values_at(:vocations, :primary_vocation)
+  end
+
+  # --- drift: a boolean written past the callbacks, the list never told ---
+  #
+  # Such a row comes from any write that skips before_validation: a dyno still
+  # running the old code after the column landed, update_columns, upsert_all.
+
+  def drifted(flag = :athlete)
+    vocational.tap { |person| person.update_columns(flag => true, vocations: [], primary_vocation: nil) }.reload
+  end
+
+  test "a list write never clears a boolean the stored list never held" do
+    person = drifted
+    artist = Artist.create!(slug: "test-drift-artist", name: "Test Drift Artist", kind: "person")
+
+    artist.update!(person_slug: person.slug)
+    assert_equal [true, %w[athlete musician], "athlete"], person.reload.values_at(:athlete, :vocations, :primary_vocation)
+    assert_equal 1, Person.where(athlete: true, slug: person.slug).count, "the SQL readers still see the athlete"
+  end
+
+  test "coach drift is kept the same way, and a list that names the flag still sets it" do
+    person = drifted(:coach)
+
+    person.update!(vocations: %w[actor athlete])
+    assert_equal [true, true, %w[athlete coach actor], "athlete"],
+                 person.reload.values_at(:athlete, :coach, :vocations, :primary_vocation)
+  end
+
+  test "removing a vocation the stored list held clears its boolean" do
+    person = vocational(athlete: true, coach: true)
+    assert_equal %w[athlete coach], person.reload.vocations
+
+    person.update!(vocations: %w[coach])
+    assert_equal [false, true, %w[coach], "coach"], person.reload.values_at(:athlete, :coach, :vocations, :primary_vocation)
+
+    person.update!(vocations: [])
+    assert_equal [false, false, [], nil], person.reload.values_at(:athlete, :coach, :vocations, :primary_vocation)
+  end
+
+  test "a drifted row healed by one save can be unticked by the next" do
+    person = drifted
+
+    person.update!(vocations: %w[actor])
+    assert_equal [true, %w[athlete actor]], person.reload.values_at(:athlete, :vocations)
+    person.update!(vocations: %w[actor])
+    assert_equal [false, %w[actor], "actor"], person.reload.values_at(:athlete, :vocations, :primary_vocation)
+  end
+
+  test "a boolean written in the same save as the list still wins over it" do
+    person = drifted
+
+    person.update!(athlete: false, vocations: %w[athlete actor])
+    assert_equal [false, %w[actor]], person.reload.values_at(:athlete, :vocations)
+  end
+
+  test "held_vocations reads a drifted boolean as held, in the list's order" do
+    person = drifted(:coach)
+    person.update_columns(vocations: %w[actor])
+
+    assert_equal %w[coach actor], person.reload.held_vocations
+    assert_equal %w[actor], person.vocations, "reading does not write"
+  end
+
+  test "every people fixture agrees with itself" do
+    Person.find_each do |person|
+      assert person.valid?, "#{person.slug}: #{person.errors.full_messages.to_sentence}"
+      assert_not person.changed?, "#{person.slug}: #{person.changes}"
+    end
+  end
 end

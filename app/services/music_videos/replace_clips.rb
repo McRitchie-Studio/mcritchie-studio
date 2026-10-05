@@ -7,7 +7,9 @@ module MusicVideos
   # confirmed cast; approvals on the old set are dropped and counted.
   #
   # A chunk set arrives with the chunk length and overlap it was cut at (25 s
-  # and 5 s unless sent); the video records them with the set.
+  # and 5 s unless sent); the video records them with the set. A chunk cut at
+  # the same window as before keeps its "request regenerate" flag, and its
+  # takes find it again by that window (VideoChunkTake#for?).
   class ReplaceClips
     FIELDS = %w[ordinal start_ms end_ms seam seam_ms cast_shape target_performer performer_ordinals object_key].freeze
     CHUNK_FIELDS = (FIELDS - %w[seam seam_ms]).freeze
@@ -53,11 +55,13 @@ module MusicVideos
         @video.lock!
         old = @video.video_clips.where(kind: @kind)
         dropped = old.where(status: "approved").count
+        flags = chunk? ? regenerate_flags(old) : {}
         old.destroy_all
         @video.update!(chunk_ms: @tiling[:chunk_ms], chunk_overlap_ms: @tiling[:overlap_ms]) if chunk?
         clips = @rows.map do |row|
           clip = @video.video_clips.build(row.slice(*fields).merge("kind" => @kind))
           clip.prompt = ClipPrompts.for(clip)
+          clip.assign_attributes(flags.fetch([clip.ordinal, clip.start_ms, clip.end_ms], {}))
           clip.tap(&:save!)
         end
         @video.sync_clip_stage!
@@ -70,6 +74,13 @@ module MusicVideos
     def chunk? = @kind == "chunk"
 
     def fields = chunk? ? CHUNK_FIELDS : FIELDS
+
+    # [ordinal, start_ms, end_ms] => the operator's pending regenerate request.
+    def regenerate_flags(chunks)
+      chunks.where.not(regenerate_requested_at: nil).to_h do |c|
+        [[c.ordinal, c.start_ms, c.end_ms], c.slice(:regenerate_requested_at, :regenerate_note)]
+      end
+    end
 
     # A chunk set is the whole tiling or nothing: the stitch needs every
     # chunk, in order, each overlapping the next by the overlap, the last
