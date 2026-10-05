@@ -18,6 +18,8 @@ require_relative "../../lib/music_videos/vtt_timing"
 module DigestVideo
   class Failure < StandardError; end
 
+  KINDS = %w[music_video cinematic].freeze # MusicVideo::KINDS; the hub refuses any other
+
   H264 = "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]"
   TIKTOK_H264 = "b[vcodec^=h264]/b[vcodec^=avc1]" # TikTok serves muxed files; the rest are H.265
   # No height cap: a reel is portrait (720x1280, 1080x1920), which `height<=1080` shuts out.
@@ -164,7 +166,11 @@ module DigestVideo
   # One run: download (or reuse --from-dir), make it playable, store, record.
   class Runner
     def initialize(workdir:, shell:, storage:, api:, out: $stdout, from_dir: nil, dry_run: false,
-                   encoder: "libx264", ytdlp: "yt-dlp", bucket: "mcritchie-studio-dev", cookies_from_browser: nil)
+                   encoder: "libx264", ytdlp: "yt-dlp", bucket: "mcritchie-studio-dev", cookies_from_browser: nil,
+                   kind: "music_video")
+      raise Failure, "kind must be one of: #{KINDS.join(', ')}" unless KINDS.include?(kind)
+
+      @kind = kind
       @workdir = workdir
       @shell = shell
       @storage = storage
@@ -196,7 +202,7 @@ module DigestVideo
       payload = fields(platform, info, url, id)
       info = info.merge("webpage_url" => payload[:source_url]) if platform == "instagram"
       keys = object_keys(payload)
-      payload.merge!(platform: platform, source_id: id, duration_ms: duration_ms(mp4),
+      payload.merge!(kind: @kind, platform: platform, source_id: id, duration_ms: duration_ms(mp4),
                      source_object_key: keys.source_mp4, info_object_key: keys.info_json, caption_timing: timing)
       return report_dry_run(payload, mp4) if @dry_run
 

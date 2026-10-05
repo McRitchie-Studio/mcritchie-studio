@@ -4,11 +4,11 @@ module Api
     # here after uploading it to R2. Caption text never crosses: any key beyond
     # the known fields is refused rather than silently dropped.
     class MusicVideosController < BaseController
-      FIELDS = %w[platform source_url source_id title uploader credited_artists duration_ms
+      FIELDS = %w[kind platform source_url source_id title uploader credited_artists duration_ms
                   source_object_key info_object_key caption_timing].freeze
       TIMING_KEYS = %w[cues sections].freeze
       PERFORMER_FIELDS = %w[ordinal label artist_slug extra still_object_keys sightings confidence_note].freeze
-      CLIP_FIELDS = (MusicVideos::ReplaceClips::FIELDS + %w[prompt status]).freeze
+      CLIP_FIELDS = (MusicVideos::ReplaceClips::FIELDS + %w[kind prompt status]).freeze
 
       def show
         render_data(serialize(MusicVideo.find_by!(slug: params[:slug])))
@@ -39,11 +39,14 @@ module Api
                                 error_code: e.code)
       end
 
-      # Stage 5: bin/find-clips replaces the video's clip set. Clip files are
-      # already in R2; the hub fills each prompt from the confirmed cast.
+      # Stage 5: bin/find-clips replaces one kind of the video's clips: the
+      # seam candidates (the default), or with kind "chunk" the tiling. The
+      # other kind is left alone. Clip files are already in R2; the hub fills
+      # each prompt from the confirmed cast.
       def clips
         video = MusicVideo.find_by!(slug: params[:slug])
-        replace = MusicVideos::ReplaceClips.new(video, params.to_unsafe_h["clips"])
+        body = params.to_unsafe_h
+        replace = MusicVideos::ReplaceClips.new(video, body["clips"], kind: body.fetch("kind", "candidate"))
         replace.check! # a refusal is an answer, not an ErrorLog
         outcome = rescue_and_log(target: video) { replace.call }
         render_data(serialize(video.reload), meta: { dropped_approvals: outcome.dropped_approvals })
@@ -69,7 +72,8 @@ module Api
                { "slug" => c.artist_slug, "name" => c.artist.name, "kind" => c.artist.kind,
                  "role" => c.role, "position" => c.position }
              end, "performers" => video.video_performers.map { |p| p.as_json(only: PERFORMER_FIELDS) },
-                  "clips" => video.video_clips.map { |c| c.as_json(only: CLIP_FIELDS) })
+                  "clips" => video.clip_candidates.map { |c| c.as_json(only: CLIP_FIELDS) },
+                  "chunks" => video.video_chunks.map { |c| c.as_json(only: CLIP_FIELDS) })
       end
     end
   end

@@ -1,8 +1,9 @@
-# A music video digested from a platform URL (docs/agents/system/music-video-pipeline-plan.md).
+# A video digested from a platform URL (docs/agents/system/music-video-pipeline-plan.md):
+# a music video, or a cinematic one (kind).
 # The source MP4 lives in R2 under `source_object_key`. caption_timing is cue
 # times and section markers only: lyric text is never stored.
 class MusicVideo < ApplicationRecord
-  KINDS = %w[music_video].freeze
+  KINDS = %w[music_video cinematic].freeze
   PLATFORMS = %w[youtube tiktok instagram].freeze
   STAGES = %w[digested cast_confirmed clips_ready].freeze
   CAST_CONFIRMED_STAGES = %w[cast_confirmed clips_ready].freeze
@@ -15,8 +16,15 @@ class MusicVideo < ApplicationRecord
   has_many :artists, through: :music_video_artists
   has_many :video_performers, -> { order(:ordinal) }, foreign_key: :music_video_slug,
            primary_key: :slug, inverse_of: :music_video, dependent: :destroy
-  has_many :video_clips, -> { order(:ordinal) }, foreign_key: :music_video_slug,
+  # Every clip row; the two kinds below never mix in a list.
+  has_many :video_clips, -> { order(:kind, :ordinal) }, foreign_key: :music_video_slug,
            primary_key: :slug, inverse_of: :music_video, dependent: :destroy
+  # The seam-picked ~25 s candidates the operator approves or rejects (stage 5).
+  has_many :clip_candidates, -> { where(kind: "candidate").order(:ordinal) }, class_name: "VideoClip",
+           foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :music_video
+  # The whole video tiled into overlapping chunks, in time order (bin/find-clips --tile).
+  has_many :video_chunks, -> { where(kind: "chunk").order(:ordinal) }, class_name: "VideoClip",
+           foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :music_video
 
   has_many :looks, class_name: "Appearance", foreign_key: :music_video_slug, primary_key: :slug,
            inverse_of: :music_video, dependent: :nullify
@@ -59,11 +67,14 @@ class MusicVideo < ApplicationRecord
     "#{open.to_sentence} #{open.one? ? 'is' : 'are'} neither an artist nor an extra" if open.any?
   end
 
-  # clips_ready while at least one clip is approved; back to cast_confirmed when none is.
+  def kind_label = kind == "cinematic" ? "Cinematic video" : "Music video"
+
+  # clips_ready while at least one candidate is approved; back to cast_confirmed
+  # when none is. Chunks never move the stage.
   def sync_clip_stage!
     return unless cast_confirmed?
 
-    update!(stage: video_clips.where(status: "approved").exists? ? "clips_ready" : "cast_confirmed")
+    update!(stage: clip_candidates.where(status: "approved").exists? ? "clips_ready" : "cast_confirmed")
   end
 
   # A timecode link into the source video. YouTube only for now.

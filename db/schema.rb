@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_01_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_04_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2051,18 +2051,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_060000) do
     t.string "cast_shape", null: false
     t.datetime "created_at", null: false
     t.integer "end_ms", null: false
+    t.string "kind", default: "candidate", null: false
     t.string "music_video_slug", null: false
     t.string "object_key", null: false
     t.integer "ordinal", null: false
     t.jsonb "performer_ordinals", default: [], null: false
     t.text "prompt", null: false
-    t.string "seam", null: false
+    t.string "seam"
     t.integer "seam_ms"
     t.integer "start_ms", null: false
     t.string "status", default: "proposed", null: false
     t.integer "target_performer"
     t.datetime "updated_at", null: false
-    t.index ["music_video_slug", "ordinal"], name: "index_video_clips_on_music_video_slug_and_ordinal", unique: true
+    t.index ["music_video_slug", "kind", "ordinal"], name: "index_video_clips_on_music_video_slug_and_kind_and_ordinal", unique: true
   end
 
   create_table "video_performers", force: :cascade do |t|

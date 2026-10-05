@@ -11,13 +11,14 @@
 #   bin/digest-video <url> --dry-run           # download and plan; no upload, no record
 #   bin/digest-video <url> --production        # production bucket and https://mcritchie.studio
 #   bin/digest-video <url> --cookies-from-browser chrome   # lend yt-dlp the browser's session (a login wall)
+#   bin/digest-video <url> --kind cinematic    # a cinematic video, not a music video (the default)
 
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 require "bundler/setup" # aws-sdk-s3 for the R2 upload; before any gem loads
 require "optparse"
 require_relative "lib/digest_video"
 
-options = { production: false, dry_run: false, workdir: File.expand_path("~/projects/.corpus/music_videos"),
+options = { production: false, dry_run: false, kind: "music_video", workdir: File.expand_path("~/projects/.corpus/music_videos"),
             encoder: RUBY_PLATFORM.include?("darwin") ? "h264_videotoolbox" : "libx264" }
 parser = OptionParser.new do |opts|
   opts.banner = "Usage: bin/digest-video <url> [options]"
@@ -30,12 +31,19 @@ parser = OptionParser.new do |opts|
   opts.on("--cookies-from-browser NAME", "lend yt-dlp NAME's session when the site wants a login (e.g. chrome)") do |v|
     options[:cookies_from_browser] = v
   end
+  opts.on("--kind KIND", DigestVideo::KINDS, "what the video is: #{DigestVideo::KINDS.join(' or ')} (default music_video)") do |v|
+    options[:kind] = v
+  end
   opts.on("-h", "--help") do
     puts opts
     exit 0
   end
 end
-parser.parse!
+begin
+  parser.parse!
+rescue OptionParser::InvalidArgument => e
+  abort "digest-video: #{e.message}"
+end
 
 if ARGV.size != 1
   warn parser.banner
@@ -51,7 +59,7 @@ begin
     storage: DigestVideo::R2Storage.new(bucket: target[:bucket], suffix: target[:suffix]),
     api: DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__)),
     from_dir: options[:from_dir], dry_run: options[:dry_run], encoder: options[:encoder], bucket: target[:bucket],
-    cookies_from_browser: options[:cookies_from_browser],
+    cookies_from_browser: options[:cookies_from_browser], kind: options[:kind],
     ytdlp: ENV.fetch("YT_DLP", File.exist?(File.expand_path("~/.local/bin/yt-dlp")) ? File.expand_path("~/.local/bin/yt-dlp") : "yt-dlp")
   )
   runner.call(url)

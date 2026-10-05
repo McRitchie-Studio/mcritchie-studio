@@ -7,7 +7,7 @@ module MusicVideos
       def created? = created
     end
 
-    ATTRIBUTES = %w[platform source_url source_id title duration_ms source_object_key info_object_key caption_timing].freeze
+    ATTRIBUTES = %w[kind platform source_url source_id title duration_ms source_object_key info_object_key caption_timing].freeze
 
     def initialize(params, resolver: CreditResolver.new)
       @params = params.to_h.stringify_keys

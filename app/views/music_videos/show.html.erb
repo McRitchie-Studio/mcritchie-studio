@@ -68,7 +68,7 @@
 
 <section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="cast-panel">
   <header class="mb-6 min-w-0">
-    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Music video · Cast</p>
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2" data-test="video-kind"><%= @video.kind_label %> · Cast</p>
     <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2 break-words"><%= @video.title %></h1>
     <p class="text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1">
       <span><%= @video.platform.titleize %></span>
@@ -130,7 +130,7 @@
 
   <section class="mt-10" data-test="looks-panel" id="looks">
     <header class="mb-4">
-      <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Music video · Looks</p>
+      <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1"><%= @video.kind_label %> · Looks</p>
       <h2 class="text-xl font-bold text-heading">Artist looks</h2>
       <p class="text-sm text-muted mt-1">One look per labelled artist for this video, built from their stills.</p>
     </header>
@@ -168,7 +168,7 @@
   <section class="mt-10" data-test="clips-panel" id="clips">
     <header class="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Music video · Clips</p>
+        <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1"><%= @video.kind_label %> · Clips</p>
         <h2 class="text-xl font-bold text-heading">Clip candidates</h2>
       </div>
       <% if @clips.any? %>
@@ -190,6 +190,36 @@
       </div>
     <% else %>
       <div class="empty-state text-muted" data-test="clips-locked">Clips come after the cast is confirmed.</div>
+    <% end %>
+  </section>
+
+  <section class="mt-10" data-test="chunks-panel" id="chunks">
+    <header class="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1"><%= @video.kind_label %> · Chunks</p>
+        <h2 class="text-xl font-bold text-heading">Whole video, in chunks</h2>
+        <p class="text-sm text-muted mt-1">25 s chunks on a 20 s stride, so each shares 5 s with the one before. Separate from the clip candidates above.</p>
+      </div>
+      <% if @chunks.any? %>
+        <p class="text-sm text-body shrink-0" data-test="chunks-count">
+          <span class="font-semibold text-heading"><%= pluralize(@chunks.size, "chunk") %></span>
+          <span class="text-muted">· 0:00–<%= video_timecode(@chunks.last.end_ms) %></span>
+        </p>
+      <% end %>
+    </header>
+    <% if @chunks.any? %>
+      <% performers = @performers.index_by(&:ordinal) %>
+      <div class="flex flex-col gap-4">
+        <% @chunks.each do |chunk| %>
+          <%= render "music_videos/chunk", chunk: chunk, performers: performers, clip_urls: @clip_urls %>
+        <% end %>
+      </div>
+    <% elsif @video.cast_confirmed? %>
+      <div class="empty-state text-muted" data-test="chunks-empty">
+        No chunks yet. Run <span class="font-mono">bin/find-clips <%= @video.slug %> --tile</span> on the Mac.
+      </div>
+    <% else %>
+      <div class="empty-state text-muted" data-test="chunks-locked">Chunks come after the cast is confirmed.</div>
     <% end %>
   </section>
 </section>
