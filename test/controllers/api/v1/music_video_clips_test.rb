@@ -89,7 +89,8 @@ module Api
                      body.dig("data", "chunks").map { |c| c.values_at("ordinal", "start_ms", "end_ms") }
         assert_equal ["chunk"], body.dig("data", "chunks").map { |c| c["kind"] }.uniq
         assert_equal [nil], body.dig("data", "chunks").map { |c| c["seam"] }.uniq
-        assert_match "Replace the man in the red jacket in this music video with {athlete}", body.dig("data", "chunks", 0, "prompt")
+        assert_match "Replace the man in the red jacket in this video with {athlete}", body.dig("data", "chunks", 0, "prompt")
+        assert_no_match(/music video/, body.dig("data", "chunks", 0, "prompt"))
         assert_empty old_chunk_ids & video.video_chunks.reload.pluck(:id), "the old chunks were replaced"
 
         assert_equal [[candidate.id, "approved"]], video.clip_candidates.reload.pluck(:id, :status)

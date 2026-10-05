@@ -47,7 +47,17 @@ class MusicVideo < ApplicationRecord
   # Clips come after the cast, so a clips_ready video's cast is confirmed too.
   def cast_confirmed? = CAST_CONFIRMED_STAGES.include?(stage)
 
-  # Ready once the vision pass has left people and each one is an artist or an extra.
+  def cinematic? = kind == "cinematic"
+
+  # Performers the operator still owes a recast answer (an athlete and a look,
+  # or "keep as is"). Extras nobody recast owe none.
+  def recast_open = video_performers.reject(&:recast_decided?)
+
+  # Every performer has its recast answer: the later pieces' "may we generate".
+  def recast_assigned? = video_performers.any? && recast_open.empty?
+
+  # Ready once the vision pass has left people and each one's card is closed
+  # (VideoPerformer#resolved?).
   def cast_ready?
     stage == "digested" && video_performers.any? && video_performers.all?(&:resolved?)
   end
@@ -65,7 +75,9 @@ class MusicVideo < ApplicationRecord
     return "no performers yet: the vision pass has not posted any" if video_performers.none?
 
     open = video_performers.reject(&:resolved?).map(&:name)
-    "#{open.to_sentence} #{open.one? ? 'is' : 'are'} neither an artist nor an extra" if open.any?
+    return if open.empty?
+
+    "#{open.to_sentence} #{open.one? ? 'is' : 'are'} neither #{cinematic? ? 'recast, kept as is, an artist' : 'an artist'} nor an extra"
   end
 
   # { chunk_ms:, overlap_ms: } the current chunks were cut with (bin/find-clips

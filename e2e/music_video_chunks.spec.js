@@ -41,7 +41,7 @@ test("a tiled video shows its chunks in order under the cast panel", async ({ pa
   await expect(chunk.locator("[data-test='chunk-copy']")).toHaveText("Copied");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toBe((await chunk.locator("[data-test='chunk-prompt']").textContent()).trim());
-  expect(copied).toContain("Replace the man in the red jacket in this music video with {athlete}");
+  expect(copied).toContain("Replace the man in the red jacket in this video with {athlete}");
 
   // A chunk has no decision; the candidate still does.
   await expect(chunk.getByRole("button", { name: "Approve" })).toHaveCount(0);

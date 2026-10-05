@@ -1,6 +1,5 @@
 <%# One chunk of the tiled video: its preview, window, overlap with the chunk before, cast shape, target and prompt. No decision: chunks are not approved or rejected. %>
 <% url = clip_urls[chunk.object_key] %>
-<% target = performers[chunk.target_performer] %>
 <article id="chunk-<%= chunk.ordinal %>" class="card overflow-hidden scroll-mt-24 min-w-0"
          x-data="clipRow()" data-src="<%= url %>"
          data-test="chunk-row" data-ordinal="<%= chunk.ordinal %>">
@@ -40,15 +39,7 @@
         <% end %>
       </div>
 
-      <p class="text-sm text-body min-w-0" data-test="chunk-target">
-        <span class="label-upper mr-1">Target</span>
-        <% if target %>
-          <%= target.name %><% if target.artist %> · <span class="font-semibold text-heading"><%= target.artist.name %></span><% end %>
-          <span class="text-muted">(<%= target.label %>)</span>
-        <% else %>
-          <span class="text-muted">No labelled artist in this window; the prompt says “the singer”.</span>
-        <% end %>
-      </p>
+      <%= render "music_videos/swap_target", clip: chunk, prefix: "chunk" %>
 
       <div class="min-w-0">
         <div class="flex items-center justify-between gap-2 mb-1.5">

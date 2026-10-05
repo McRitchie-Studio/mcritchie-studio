@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_04_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_04_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2076,11 +2076,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_180000) do
     t.string "label", null: false
     t.string "music_video_slug", null: false
     t.integer "ordinal", null: false
+    t.string "recast_appearance_slug"
+    t.boolean "recast_keep", default: false, null: false
+    t.string "recast_person_slug"
     t.jsonb "sightings", default: [], null: false
     t.jsonb "still_object_keys", default: [], null: false
     t.datetime "updated_at", null: false
     t.index ["artist_slug"], name: "index_video_performers_on_artist_slug"
     t.index ["music_video_slug", "ordinal"], name: "index_video_performers_on_music_video_slug_and_ordinal", unique: true
+    t.index ["recast_appearance_slug"], name: "index_video_performers_on_recast_appearance_slug"
+    t.index ["recast_person_slug"], name: "index_video_performers_on_recast_person_slug"
   end
 
   create_table "workspace_accounts", force: :cascade do |t|

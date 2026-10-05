@@ -64,6 +64,6 @@ class MusicVideoClipViewTest < ActionView::TestCase
   test "a window with no labelled artist falls back to the singer" do
     @clip.update_columns(target_performer: nil)
     render_row(@clip.reload)
-    assert_select "[data-test='clip-target']", /No labelled artist/
+    assert_select "[data-test='clip-target']", /Nobody in this window is labelled or recast; the prompt says “the singer”/
   end
 end

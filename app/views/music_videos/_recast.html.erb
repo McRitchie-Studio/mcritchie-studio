@@ -1,0 +1,89 @@
+<%# Who replaces this performer: an athlete in one of their looks, or keep as is. The operator's choice; editable after the cast is confirmed, and the prompts below follow. %>
+<% athlete = performer.recast_person %>
+<% recast_path = music_video_performer_recast_path(video, performer.ordinal) %>
+<% card_path = "#{music_video_path(video)}#person-#{performer.ordinal}" %>
+<% state = if athlete then performer.recast? ? "recast" : "pending" elsif performer.recast_keep? then "keep" else "open" end %>
+<div class="pt-3 border-t border-subtle min-w-0" data-test="performer-recast" data-state="<%= state %>">
+  <p class="label-upper mb-1.5">Replaced by</p>
+  <% if athlete %>
+    <% choices = looks.fetch(athlete.slug, []) %>
+    <div class="flex items-start justify-between gap-2 min-w-0">
+      <p class="min-w-0 break-words font-semibold text-heading" data-test="recast-label"
+         data-person="<%= performer.recast_person_slug %>" data-look="<%= performer.recast_appearance_slug %>"><%= performer.recast_label %></p>
+      <%= button_to "Change", recast_path, method: :patch, params: { clear: "1" },
+                    class: "btn btn-outline btn-sm shrink-0", form: { data: { test: "recast-clear" } } %>
+    </div>
+    <% if performer.recast_pending? %>
+      <p class="text-sm text-warning-ink mt-1" data-test="recast-pending">No look chosen: the look this recast used is gone. Choose one.</p>
+    <% end %>
+    <% if choices.size > 1 || (performer.recast_pending? && choices.any?) %>
+      <%= form_with url: recast_path, method: :patch, local: true, class: "mt-2", data: { test: "recast-look-form" } do %>
+        <input type="hidden" name="person_slug" value="<%= athlete.slug %>">
+        <label class="sr-only" for="recast-look-<%= performer.ordinal %>">Look for <%= athlete.full_name %></label>
+        <select id="recast-look-<%= performer.ordinal %>" name="appearance_slug" class="input-field py-2 text-sm"
+                onchange="this.form.requestSubmit()">
+          <% if performer.recast_pending? %><option value="">Choose a look</option><% end %>
+          <% choices.each do |look| %>
+            <option value="<%= look.slug %>" <%= "selected" if look.slug == performer.recast_appearance_slug %>><%= athlete.full_name %> &gt; <%= look.descriptor %></option>
+          <% end %>
+        </select>
+      <% end %>
+    <% end %>
+    <%= link_to "New look for #{athlete.full_name}", person_path(athlete.slug, return_to: card_path, anchor: "new-model"),
+                class: "inline-block mt-2 text-sm text-primary hover:underline", data: { test: "recast-new-look" } %>
+  <% elsif performer.recast_keep? %>
+    <div class="flex items-center justify-between gap-2 min-w-0">
+      <p class="text-sm text-muted" data-test="recast-keep">Kept as is: nobody replaces this person.</p>
+      <%= button_to "Change", recast_path, method: :patch, params: { clear: "1" },
+                    class: "btn btn-outline btn-sm shrink-0", form: { data: { test: "recast-clear" } } %>
+    </div>
+  <% else %>
+    <div x-data="recastTypeahead()" data-search-url="<%= search_recast_athletes_path(format: :json) %>"
+         data-new-look-url="<%= person_path("__slug__", return_to: card_path, anchor: "new-model") %>"
+         @click.outside="open = false" class="relative" data-test="recast-typeahead">
+      <%= form_with url: recast_path, method: :patch, local: true, html: { "x-ref": "form" } do %>
+        <input type="hidden" name="person_slug" :value="athlete ? athlete.slug : ''">
+        <input type="hidden" name="appearance_slug" :value="lookSlug">
+        <label class="sr-only" for="recast-search-<%= performer.ordinal %>">Who replaces <%= performer.name %>?</label>
+        <input id="recast-search-<%= performer.ordinal %>" type="text" autocomplete="off" role="combobox"
+               aria-autocomplete="list" :aria-expanded="open" aria-controls="recast-results-<%= performer.ordinal %>"
+               placeholder="Search athletes with a look"
+               class="input-field py-2 text-sm" x-model="query" @input.debounce.250ms="search()"
+               @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
+               @keydown.enter.prevent="pickActive()" @keydown.escape="open = false">
+
+        <div x-show="open" x-cloak id="recast-results-<%= performer.ordinal %>" role="listbox"
+             class="absolute z-20 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1" data-test="recast-results">
+          <template x-for="(r, i) in results" :key="r.slug">
+            <button type="button" role="option" :aria-selected="i === active" @click="choose(r)" @mouseenter="active = i"
+                    class="w-full text-left rounded-lg px-3 py-2"
+                    :class="i === active ? 'bg-surface-alt' : ''" data-test="recast-option">
+              <span class="block text-sm font-semibold text-heading truncate" x-text="r.name"></span>
+              <span class="block text-xs text-muted truncate" x-text="[r.hint, r.slug].join(' · ')"></span>
+            </button>
+          </template>
+          <p x-show="!loading && failed" class="px-3 py-2 text-sm text-warning-ink">Search failed. Try again.</p>
+          <p x-show="!loading && !failed && results.length === 0" class="px-3 py-2 text-sm text-muted" data-test="recast-no-match">
+            No athlete with a look matches. A person gets a look on their page in
+            <%= link_to "People", people_path, class: "text-primary hover:underline" %>.
+          </p>
+        </div>
+
+        <div x-show="athlete" x-cloak class="mt-2" data-test="recast-looks">
+          <p class="text-xs text-muted mb-1.5">Which look of <span class="font-semibold text-heading" x-text="athlete ? athlete.name : ''"></span>?</p>
+          <div class="flex flex-wrap gap-1.5">
+            <template x-for="look in (athlete ? athlete.looks : [])" :key="look.slug">
+              <button type="button" class="btn btn-outline btn-sm" @click="pickLook(look)" data-test="recast-look-option"
+                      x-text="athlete.name + ' > ' + look.descriptor"></button>
+            </template>
+          </div>
+          <a :href="newLookUrl" class="inline-block mt-2 text-sm text-primary hover:underline" data-test="recast-new-look">
+            New look for <span x-text="athlete ? athlete.name : ''"></span>
+          </a>
+        </div>
+      <% end %>
+    </div>
+    <%= button_to "Keep as is", recast_path, method: :patch, params: { keep: "1" },
+                  class: "btn btn-outline btn-sm w-full mt-2", data: { test: "recast-keep-button" } %>
+  <% end %>
+</div>

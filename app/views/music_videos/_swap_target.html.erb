@@ -1,0 +1,21 @@
+<%# Who a clip's or chunk's prompt replaces (VideoClip#swap_target), and the athlete and look the operator recast them as. %>
+<% target = clip.swap_target %>
+<p class="text-sm text-body min-w-0" data-test="<%= prefix %>-target">
+  <span class="label-upper mr-1">Target</span>
+  <% if target %>
+    <%= target.name %><% if target.artist %> · <span class="font-semibold text-heading"><%= target.artist.name %></span><% end %>
+    <span class="text-muted">(<%= target.label %>)</span>
+    <% if target.recast_person %>
+      <span class="block mt-1 break-words" data-test="<%= prefix %>-recast">
+        <span class="label-upper mr-1">Replaced by</span>
+        <span class="font-semibold text-heading"><%= target.recast_label %></span>
+      </span>
+    <% else %>
+      <span class="block mt-1 text-muted" data-test="<%= prefix %>-recast-open">
+        No athlete chosen for <%= link_to target.name, "#person-#{target.ordinal}", class: "text-primary hover:underline" %> yet, so the prompt leaves {athlete} blank.
+      </span>
+    <% end %>
+  <% else %>
+    <span class="text-muted">Nobody in this window is labelled or recast; the prompt says “<%= MusicVideos::ClipPrompt::NO_TARGET_BY_KIND.fetch(clip.music_video.kind, MusicVideos::ClipPrompt::NO_TARGET) %>”.</span>
+  <% end %>
+</p>

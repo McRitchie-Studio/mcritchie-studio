@@ -44,6 +44,17 @@ class VideoClip < ApplicationRecord
 
   def target = music_video.video_performers.find { |p| p.ordinal == target_performer }
 
+  # Who the swap prompt replaces. The labelled target when the operator recast
+  # them; else the first person in the window who is recast (a cinematic video
+  # has no labelled target at all); else the labelled target, athlete unnamed.
+  def swap_target
+    labelled = target
+    return labelled if labelled&.recast_person_slug.present?
+
+    present = Array(performer_ordinals)
+    music_video.video_performers.find { |p| present.include?(p.ordinal) && p.recast_person_slug.present? } || labelled
+  end
+
   private
 
   def length_fits_the_kind

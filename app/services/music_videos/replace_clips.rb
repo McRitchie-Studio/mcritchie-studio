@@ -3,7 +3,7 @@ module MusicVideos
   # there OF THAT KIND. The seam candidates and the chunks (bin/find-clips
   # --tile) coexist: posting one never touches the other. The clip files are
   # already in R2; only their keys arrive. The hub fills each prompt from the
-  # cast, so the template lives in one place (ClipPrompt). Clips need a
+  # cast and its recasts (ClipPrompts), so the template lives in one place (ClipPrompt). Clips need a
   # confirmed cast; approvals on the old set are dropped and counted.
   #
   # A chunk set arrives with the chunk length and overlap it was cut at (25 s
@@ -56,7 +56,9 @@ module MusicVideos
         old.destroy_all
         @video.update!(chunk_ms: @tiling[:chunk_ms], chunk_overlap_ms: @tiling[:overlap_ms]) if chunk?
         clips = @rows.map do |row|
-          @video.video_clips.create!(row.slice(*fields).merge("kind" => @kind, "prompt" => prompt_for(row)))
+          clip = @video.video_clips.build(row.slice(*fields).merge("kind" => @kind))
+          clip.prompt = ClipPrompts.for(clip)
+          clip.tap(&:save!)
         end
         @video.sync_clip_stage!
         Outcome.new(clips:, dropped_approvals: dropped)
@@ -89,14 +91,6 @@ module MusicVideos
 
       raise Refused.new("the last chunk ends at #{last_end} ms but the video runs #{duration} ms: tile the whole video",
                         "INVALID_TILING")
-    end
-
-    def prompt_for(row)
-      people = @video.video_performers.index_by(&:ordinal)
-      target = people[row["target_performer"]]
-      present = Array(row["performer_ordinals"]).filter_map { |n| people[n] } - [target]
-      labelled, background = present.partition(&:artist_slug)
-      ClipPrompt.fill(target: target&.label, others: labelled.map(&:label), background: background.any?)
     end
   end
 end

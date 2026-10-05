@@ -1,4 +1,4 @@
-<%# One person on the cast panel: stills, sightings, and the operator's answer. %>
+<%# One person on the cast panel: stills, sightings, the operator's answer, and who replaces them. %>
 <% sightings = performer.sightings_by_time %>
 <% editable = !video.cast_confirmed? %>
 <article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
@@ -32,6 +32,8 @@
         <span class="badge text-3xs bg-success/10 text-success-ink border-success/40 shrink-0">Labelled</span>
       <% elsif performer.extra? %>
         <span class="badge text-3xs bg-surface-alt text-secondary border-subtle shrink-0">Extra</span>
+      <% elsif performer.resolved? %>
+        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40 shrink-0" data-test="performer-closed-by-recast"><%= performer.recast_keep? ? "Kept" : "Recast" %></span>
       <% else %>
         <span class="badge text-3xs bg-warning/10 text-warning-ink border-warning/40 shrink-0">Open</span>
       <% end %>
@@ -63,7 +65,7 @@
     <% end %>
 
     <div class="mt-auto pt-3 border-t border-subtle" data-test="performer-resolution">
-      <% if performer.resolved? %>
+      <% if performer.artist || performer.extra? %>
         <div class="flex items-center justify-between gap-2 min-w-0">
           <% if performer.artist %>
             <p class="min-w-0" data-test="performer-artist" data-slug="<%= performer.artist_slug %>">
@@ -128,9 +130,14 @@
         </div>
         <%= button_to "Extra, not a named artist", music_video_performer_path(video, performer.ordinal), method: :patch,
                       params: { extra: "1" }, class: "btn btn-outline btn-sm w-full mt-2", data: { test: "mark-extra" } %>
+        <% if video.cinematic? %>
+          <p class="text-xs text-muted mt-2" data-test="performer-artist-optional">A cinematic video credits no artists: naming one is optional. The answer under “Replaced by” closes this card.</p>
+        <% end %>
       <% else %>
         <p class="text-sm text-muted">Not labelled.</p>
       <% end %>
     </div>
+
+    <%= render "music_videos/recast", performer: performer, video: video, looks: local_assigns.fetch(:recast_looks, {}) %>
   </div>
 </article>

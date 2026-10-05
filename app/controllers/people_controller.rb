@@ -45,11 +45,11 @@ class PeopleController < ApplicationController
     appearance = @person.appearances.new(appearance_params)
     rescue_and_log(target: @person) do
       appearance.save!
-      redirect_to person_path(@person.slug),
+      redirect_to recast_return_path || person_path(@person.slug),
                   notice: "#{appearance.descriptor} saved#{appearance.default? ? ' and set as default' : ''}."
     end
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to person_path(@person.slug), alert: e.message
+    redirect_to person_path(@person.slug, return_to: recast_return_path), alert: e.message
   end
 
   def make_default_appearance
@@ -97,6 +97,15 @@ class PeopleController < ApplicationController
 
   def set_person
     @person = Person.find_by!(slug: params[:slug])
+  end
+
+  # The cast card a "new look" link came from (/music_videos/<slug>#person-<n>),
+  # so a saved look lands the operator back on it. Anything else is ignored.
+  RECAST_RETURN = %r{\A/music_videos/[a-z0-9]+(?:-[a-z0-9]+)*(?:#person-\d+)?\z}
+  helper_method :recast_return_path
+
+  def recast_return_path
+    params[:return_to].to_s[RECAST_RETURN]
   end
 
   def appearance_params
@@ -232,6 +241,7 @@ class PeopleController < ApplicationController
   # each is a unique index that raises and takes the whole merge down with it.
   def relocate_looks_and_cast!(keep, source)
     relocate_cast!(keep, source)
+    recast_videos = relocate_recasts!(keep, source)
     relocate_looks!(keep, source)
 
     # The survivor may have just inherited their FIRST look. Relocation is an
@@ -245,6 +255,18 @@ class PeopleController < ApplicationController
     # into a look or a subject we just handed to the survivor.
     source.association(:appearances).reset
     source.association(:artifact_subjects).reset
+    source.association(:recast_performers).reset
+    MusicVideo.where(slug: recast_videos).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
+  end
+
+  # On-screen performers the source replaces (the recast) now name the
+  # survivor. Their looks follow in relocate_looks!; the prompts are refreshed
+  # once both have moved. Returns the videos touched.
+  def relocate_recasts!(keep, source)
+    recasts = VideoPerformer.where(recast_person_slug: source.slug)
+    videos = recasts.distinct.pluck(:music_video_slug)
+    recasts.update_all(recast_person_slug: keep.slug, updated_at: Time.current)
+    videos
   end
 
   # ORDER IS NOT LOAD-BEARING between this and the look pass, and an earlier
@@ -297,6 +319,7 @@ class PeopleController < ApplicationController
       twin = look.retired? ? nil : keep.appearances.live.find_by(descriptor: look.descriptor)
       if twin
         ArtifactSubject.where(appearance_slug: look.slug).update_all(appearance_slug: twin.slug)
+        VideoPerformer.where(recast_appearance_slug: look.slug).update_all(recast_appearance_slug: twin.slug)
         look.destroy!
       else
         look.update!(person_slug: keep.slug)
