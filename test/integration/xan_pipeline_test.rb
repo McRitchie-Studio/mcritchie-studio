@@ -2,8 +2,7 @@ require "test_helper"
 
 # [integration] the OPSD distillation pipeline page — three columns (Activities →
 # Insights → Confirmations) — plus the McRitchie "Confirm" write. The read page is
-# a public meta surface; the confirm write is admin-gated on the current release
-# gate (public once make-grading-actions-public lands), so its test logs in.
+# a public meta surface; the confirm write needs an admin, so its tests log in.
 class AlexPipelineTest < ActionDispatch::IntegrationTest
   def span(session_id:, reason:, **attrs)
     AgentActivity.create!({ session_id: session_id, category: attrs.delete(:category) || "Verify",
@@ -178,7 +177,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
   test "[integration] Confirm records a McRitchie mcr grade and redirects back" do
     s = span(session_id: "pl-confirm", reason: "confirm me")
     ActionGrade.create!(agent_activity: s, grader: "xan", disposition: "good", slug: "a good lesson").bank!
-    log_in_as(users(:alex)) # admin — the write is gated until make-grading-actions-public lands
+    log_in_as(users(:alex)) # admin — the confirm write needs one
 
     assert_difference -> { ActionGrade.by_grader("mcr").count }, 1 do
       post xan_pipeline_confirm_path(s.id), params: { slug: "a good lesson" }
@@ -225,7 +224,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     run = make_test_run(scope: "pre_qa_gate", result: "fail", session_id: "cfa-2")
     ActionGrade.create!(agent_action: run, grader: "xan", disposition: "not",
                         slug: "pre-qa gate flaked").bank!
-    log_in_as(users(:alex)) # admin — the write is gated until make-grading-actions-public lands
+    log_in_as(users(:alex)) # admin — the confirm write needs one
 
     assert_difference -> { ActionGrade.for_action(run).by_grader("mcr").count }, 1 do
       post xan_pipeline_confirm_path(run.id), params: { slug: "pre-qa gate flaked", agent_action_id: run.id }
