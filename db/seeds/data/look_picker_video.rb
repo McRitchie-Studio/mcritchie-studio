@@ -13,8 +13,8 @@ require_relative "tiled_video"
 module LookPickerVideo
   SLUG = "test-cinematic-look-picker-demo".freeze
   SOURCE = "music_videos/test_cinematic/look_picker_demo/source/test_cinematic_look_picker_demo.mp4".freeze
-  ATHLETE = { first_name: "Test", last_name: "Athlete Delta" }.freeze
-  ROOKIE = { first_name: "Test", last_name: "Rookie Echo" }.freeze
+  ATHLETE = { first_name: "Demo", last_name: "Winger Delta" }.freeze
+  ROOKIE = { first_name: "Demo", last_name: "Novice Echo" }.freeze
   TEAM_SLUG = "test-city-testers".freeze
   FINISHED = "Home Orange".freeze
   BARE = "Away White".freeze

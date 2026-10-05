@@ -64,7 +64,7 @@ class MusicVideosCreateRecastLookTest < ActiveSupport::TestCase
     assert_equal "choose who replaces Person 1 first", maker(@open, person_slug: "").refusal
     assert_equal "choose who replaces Person 1 first", maker(@open, person_slug: "nobody-here").refusal
     assert_equal "name the look, for example its colours", maker(@open, descriptor: "   ").refusal
-    assert_equal "Test Athlete Delta already has a look named Home Orange: choose it from the list", maker(@open, descriptor: "Home Orange").refusal
+    assert_equal "Demo Winger Delta already has a look named Home Orange: choose it from the list", maker(@open, descriptor: "Home Orange").refusal
     assert_nil maker(@open, person_slug: @rookie.slug, descriptor: "Home Orange").refusal, "the name is free for another athlete"
 
     assert_no_difference -> { Appearance.count } do
@@ -93,6 +93,6 @@ class MusicVideosCreateRecastLookTest < ActiveSupport::TestCase
     MusicVideos::CreateRecastLook.new(jacket, person_slug: @rookie.slug, descriptor: "Road grey").call
     prompts = video.reload.video_chunks.map(&:prompt)
     assert(prompts.none? { |prompt| prompt.include?("Test Athlete Alpha") })
-    assert(prompts.any? { |prompt| prompt.include?("Test Rookie Echo") })
+    assert(prompts.any? { |prompt| prompt.include?("Demo Novice Echo") })
   end
 end

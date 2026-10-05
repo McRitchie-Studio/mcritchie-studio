@@ -36,7 +36,7 @@ class MusicVideosLookOptionsTest < ActiveSupport::TestCase
 
     finished = row(@finished)
     assert_equal LookPickerVideo.sheet_image("Home Orange"), finished.image_url
-    assert_equal "/people/test-athlete-delta/models/#{@finished.slug}", finished.url
+    assert_equal "/people/demo-winger-delta/models/#{@finished.slug}", finished.url
     assert_nil row(@bare).image_url, "a look with no sheet has no image: the card draws a placeholder"
     assert_equal %i[slug descriptor default image_url state error url], finished.to_h.keys
   end

@@ -10,7 +10,7 @@ require Rails.root.join("db/seeds/data/look_picker_video.rb").to_s
 # REACHES A GENERATOR: the adapter and the image store are stubbed, and every
 # athlete is synthetic.
 class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
-  STORED_URL = "https://mcritchie-studio-dev.s3.us-east-2.amazonaws.com/character-sheets/test-rookie-echo/sheet.png"
+  STORED_URL = "https://mcritchie-studio-dev.s3.us-east-2.amazonaws.com/character-sheets/demo-novice-echo/sheet.png"
 
   class FakeAdapter
     class << self
@@ -87,7 +87,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
 
     look = @rookie.appearances.sole
     assert_redirected_to card(look:)
-    assert_match "Broncos blue made for Test Rookie Echo. Its character sheet is building", flash[:notice]
+    assert_match "Broncos blue made for Demo Novice Echo. Its character sheet is building", flash[:notice]
     assert look.sheet_building?
     assert_equal 0, Artifact.joins(:subjects).where(artifact_subjects: { appearance_slug: look.slug }).count
     assert_equal [look.slug, "17"], enqueued_jobs.sole["arguments"].values_at(0, 2), "the typed jersey number rides the job"
@@ -104,12 +104,12 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
                    looks_json(@rookie).map { |row| row.values_at("slug", "descriptor", "default", "image_url", "state") }
 
       perform_enqueued_jobs
-      assert_equal [[STORED_URL, "ready", "/people/test-rookie-echo/models/#{look.slug}"]],
+      assert_equal [[STORED_URL, "ready", "/people/demo-novice-echo/models/#{look.slug}"]],
                    looks_json(@rookie).map { |row| row.values_at("image_url", "state", "url") }
       assert_includes Artifact.find_by!(generator: "openai_gpt5_sheet").prompt, "Broncos blue game uniform", "the look's name is the uniform the sheet is asked for"
 
       patch music_video_performer_recast_path(@video, 1), params: { person_slug: @rookie.slug, appearance_slug: look.slug }
-      assert_equal "Test Rookie Echo > Broncos blue", performer(1).recast_label
+      assert_equal "Demo Novice Echo > Broncos blue", performer(1).recast_label
     end
   end
 
@@ -122,7 +122,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     patch music_video_performer_recast_path(@video, 1), params: { person_slug: @rookie.slug, appearance_slug: look.slug }
 
     assert performer(1).recast?
-    assert_match "is replaced by Test Rookie Echo > Broncos blue", flash[:notice]
+    assert_match "is replaced by Demo Novice Echo > Broncos blue", flash[:notice]
   end
 
   test "the landed card previews the new look, building, beside the athlete's other looks" do
@@ -134,7 +134,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
 
     assert_select "[data-ordinal='2'] [data-test='performer-recast'][data-state='recast']" do
-      assert_select "[data-test='recast-label']", "Test Athlete Delta > Home Orange", "the cast look stands"
+      assert_select "[data-test='recast-label']", "Demo Winger Delta > Home Orange", "the cast look stands"
       assert_select "[data-test='recast-looks'][data-fresh-look=?]", look.slug
       picker = css_select("[data-test='recast-looks']").first
       rows = JSON.parse(picker["data-athlete"])["looks"]
@@ -156,7 +156,7 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
 
     look = @rookie.appearances.sole
     assert_redirected_to card(look:)
-    assert_match(/Broncos blue was made for Test Rookie Echo, but its character sheet did not start: .*nothing was spent/, flash[:alert])
+    assert_match(/Broncos blue was made for Demo Novice Echo, but its character sheet did not start: .*nothing was spent/, flash[:alert])
     assert_nil look.sheet_build_state
     assert_equal ["empty"], looks_json(@rookie).pluck("state")
   end
@@ -212,13 +212,13 @@ class VideoPerformerRecastLooksControllerTest < ActionDispatch::IntegrationTest
   test "the typeahead rows carry each look's image, state and page for the dropdown" do
     log_in_as users(:alex)
 
-    get search_recast_athletes_path(format: :json, q: "athlete delta")
+    get search_recast_athletes_path(format: :json, q: "winger delta")
 
     row = JSON.parse(response.body).sole
-    assert_equal ["test-athlete-delta", "3 looks"], row.values_at("slug", "hint")
+    assert_equal ["demo-winger-delta", "3 looks"], row.values_at("slug", "hint")
     assert_equal [["Home Orange", true, "ready"], ["Away White", false, "empty"], ["Alternate Blue", false, "building"]],
                  row["looks"].map { |look| look.values_at("descriptor", "default", "state") }
     assert_equal LookPickerVideo.sheet_image("Home Orange"), row["looks"].first["image_url"]
-    assert_match %r{\A/people/test-athlete-delta/models/look-}, row["looks"].first["url"]
+    assert_match %r{\A/people/demo-winger-delta/models/look-}, row["looks"].first["url"]
   end
 end
