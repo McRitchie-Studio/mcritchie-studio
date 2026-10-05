@@ -274,4 +274,55 @@ class ContentAgentClaimTest < ActiveSupport::TestCase
     assert_equal 0, Content.where.not(claimed_at: nil).count,
                  "the refusal must not park a card nobody can ever write"
   end
+
+  # --- a video_post_x card stranded by a killed upload ---------------------
+  #
+  # The card is saved before its MP4 is stored, so a server that dies mid-upload
+  # leaves one with no final_video_url. It must never be handed to a soul.
+
+  test "the claimable scope excludes a video post with no video, nil or blank" do
+    Content.delete_all
+    ready    = Content.create!(title: "Ready", workflow: "video_post_x", final_video_url: "https://cdn.test/v.mp4")
+    stranded = Content.create!(title: "Stranded", workflow: "video_post_x")
+    blank    = Content.create!(title: "Blank", workflow: "video_post_x", final_video_url: "")
+    recap    = Content.create!(title: "Recap", workflow: "game_recap")
+
+    claimable = Content.claimable_by_agent.pluck(:slug)
+
+    assert_includes claimable, ready.slug
+    assert_includes claimable, recap.slug, "a workflow with no video of its own is untouched"
+    assert_not_includes claimable, stranded.slug
+    assert_not_includes claimable, blank.slug
+  end
+
+  test "claim_next skips a stranded video post and takes the one behind it" do
+    Content.delete_all
+    stranded = Content.create!(title: "Stranded", workflow: "video_post_x", position: 0)
+    ready    = Content.create!(title: "Ready", workflow: "video_post_x", position: 1,
+                               final_video_url: "https://cdn.test/v.mp4")
+
+    result = Content.claim_next_for_agent(session: "s-1", workflow: "video_post_x")
+
+    assert_equal ready.slug, result.content.slug
+    assert_nil stranded.reload.claimed_at
+  end
+
+  test "a queue holding only a stranded video post is empty to a soul" do
+    Content.delete_all
+    Content.create!(title: "Stranded", workflow: "video_post_x")
+
+    result = Content.claim_next_for_agent(session: "s-1", workflow: "video_post_x")
+
+    assert_nil result.content
+    assert_equal "none_claimable", result.reason
+  end
+
+  test "an expired lease does not make a stranded video post claimable again" do
+    Content.delete_all
+    Content.create!(title: "Stranded", workflow: "video_post_x",
+                    claimed_at: 2.hours.ago, claim_session: "old", claimed_by: "old")
+
+    assert_empty Content.claimable_by_agent
+  end
+
 end

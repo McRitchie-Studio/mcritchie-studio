@@ -260,6 +260,17 @@ module Api
         assert_nil video_post.claim_session
       end
 
+      test "neither the claimable list nor the pop offers a video post with no video" do
+        stranded = Content.create!(title: "Stranded", workflow: "video_post_x")
+
+        get api_v1_contents_path, params: { workflow: "video_post_x", claimable: 1 }, headers: auth, as: :json
+        assert_empty JSON.parse(response.body)["data"]
+
+        post claim_next_api_v1_contents_path, params: { session: "s-1", workflow: "video_post_x" }, headers: auth, as: :json
+        assert_nil JSON.parse(response.body).dig("data", "claimed")
+        assert_nil stranded.reload.claimed_at
+      end
+
       test "posted refuses a card that is already posted and keeps its first link" do
         claim_video_post("s-1")
         post posted_api_v1_content_path(video_post.slug),

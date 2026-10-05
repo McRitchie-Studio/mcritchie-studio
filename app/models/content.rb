@@ -103,8 +103,16 @@ class Content < ApplicationRecord
 
   # Free to claim: never claimed, or claimed long enough ago that the holder is
   # presumed gone.
+  #
+  # AND IT HAS ITS MATERIAL. A video_post_x card is saved BEFORE its MP4 is
+  # stored (the upload is too slow to hold a transaction open), so a server that
+  # dies mid-upload leaves the card with no video. That card must not be handed
+  # to a soul: there is nothing to post. The filter lives HERE, in the scope,
+  # because the list, the pluck and the locked re-read all go through it — a
+  # check in only one of them would let the other two disagree.
   scope :claimable_by_agent, ->(now: Time.current) {
     where(claimed_at: nil).or(where(claimed_at: ...(now - AGENT_CLAIM_LEASE)))
+      .where.not(workflow: "video_post_x", final_video_url: [nil, ""])
   }
 
   ClaimResult = Struct.new(:content, :reason, keyword_init: true) do
