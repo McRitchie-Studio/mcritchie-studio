@@ -8,7 +8,8 @@ module BroadcastAnalyticsHelper
 
   GOAL_LABELS = {
     "signed_in" => "Signed in", "played_match" => "Played a match",
-    "joined_newsletter" => "Joined the newsletter", "requested_app" => "Requested an app"
+    "joined_newsletter" => "Joined the newsletter", "requested_app" => "Requested an app",
+    "survey_completed" => "Answered a survey"
   }.freeze
 
   # A rate as a percent; small rates keep two decimals so 0.08% reads true.

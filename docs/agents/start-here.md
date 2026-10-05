@@ -35,6 +35,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Credential issues (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | Business facts quick reference (when to pull from and add to `FACTS.md`) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
 | Form fill (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
+| Dream (the bank of good answers every session reads at start; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Agent presence (who is working, machine headroom) | `mcritchie-studio/docs/agents/system/agent-presence.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
@@ -83,7 +84,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Turf Monster content build SOP (drain the idea queue, write the takes) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | Turf Monster roster sync SOP (refresh players/teams before a season) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | Turf Monster collect vault revenue SOP (sweep entry fees out, then Squads to a wallet) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/collect-vault-revenue.md` |
-| Turf Monster post to X SOP (write the copy for the board's Video Post (X) cards, post to @turfmonstershow) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
+| Turf Monster post to X SOP (winning team + video in, drafted and approved post on @turfmonstershow out) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
 | Tyrion soul (Cyvasse's house player: character, game style, five setups, voice) | `mcritchie-studio/docs/agents/agents/tyrion/soul.md` |
 | Tyrion runtime design (isolated runner, bot API, threat model; not built) | `mcritchie-studio/docs/agents/agents/tyrion/runtime.md` |
 | Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |

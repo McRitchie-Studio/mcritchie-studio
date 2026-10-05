@@ -1,0 +1,38 @@
+<%# The post as X will draw it, so the operator approves what the timeline will
+    show. Colours are X's own dark theme and are INLINE on purpose: this is a
+    picture of someone else's product, not part of our theme, so it must look
+    the same in our light and dark modes and must not depend on Tailwind having
+    scanned a class. Locals: text, video_url, weight. %>
+<div data-test="x-post-preview"
+     style="background:#000;border:1px solid #2f3336;border-radius:16px;padding:12px 16px;max-width:598px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#e7e9ea;">
+  <div style="display:flex;gap:12px;">
+    <img src="/turf-monster-logo.png" alt="" width="40" height="40"
+         style="width:40px;height:40px;border-radius:9999px;background:#16181c;object-fit:cover;flex:none;">
+    <div style="min-width:0;flex:1;">
+      <div style="display:flex;gap:4px;align-items:baseline;font-size:15px;line-height:20px;white-space:nowrap;overflow:hidden;">
+        <span style="font-weight:700;color:#e7e9ea;">Turf Monster</span>
+        <span style="color:#71767b;overflow:hidden;text-overflow:ellipsis;">@<%= Content::PostVideoToX::ACCOUNT %> · now</span>
+      </div>
+      <div data-test="x-post-preview-text"
+           style="font-size:15px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:2px;"><%= x_post_markup(text) %></div>
+      <% if video_url.present? %>
+        <video src="<%= video_url %>" controls playsinline preload="metadata" data-test="video-post-x-preview"
+               style="display:block;width:100%;max-height:510px;margin-top:12px;border:1px solid #2f3336;border-radius:16px;background:#000;"></video>
+      <% end %>
+      <div aria-hidden="true"
+           style="display:flex;justify-content:space-between;max-width:425px;margin-top:12px;color:#71767b;font-size:13px;">
+        <% [["M1.75 10c0-4.4 3.6-8 8-8h4.4c4.4 0 8 3.6 8 8 0 3-1.7 5.7-4.3 7.1L10 21.6v-3.7c-4.6-.1-8.25-3.6-8.25-7.9z", "Reply"],
+            ["M4.5 3.9 8.2 7.3 6.8 8.8 5.5 7.6V16c0 1.1.9 2 2 2H13v2H7.5c-2.2 0-4-1.8-4-4V7.6L2.2 8.8.8 7.3 4.5 3.9zM16.5 6H11V4h5.5c2.2 0 4 1.8 4 4v8.4l1.3-1.2 1.4 1.5-3.7 3.4-3.7-3.4 1.4-1.5 1.3 1.2V8c0-1.1-.9-2-2-2z", "Repost"],
+            ["M12 20.5S3.8 15.4 3.8 9.6c0-2.3 1.7-4 3.9-4 1.6 0 3.1.9 4.3 2.7 1.2-1.8 2.7-2.7 4.3-2.7 2.2 0 3.9 1.7 3.9 4 0 5.8-8.2 10.9-8.2 10.9z", "Like"],
+            ["M8.75 21V3h2v18h-2zM18 21V8.5h2V21h-2zM4 21l.004-10h2L6 21H4zm9.248 0v-7h2v7h-2z", "Views"]].each do |path, label| %>
+          <span title="<%= label %>" style="display:inline-flex;align-items:center;gap:4px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="<%= path %>"/></svg>
+          </span>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="text-xs text-secondary mt-2" data-test="x-post-weight">
+  <%= weight %> of <%= X::Caption::MAX_WEIGHT %> characters, counted the way X counts them.
+</p>

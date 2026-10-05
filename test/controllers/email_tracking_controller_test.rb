@@ -92,6 +92,15 @@ class EmailTrackingControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, @delivery.events.of_kind("converted").count
   end
 
+  # task first-game-feedback-survey: an app's survey beacons survey_completed
+  # the way Cyvasse beacons played_match.
+  test "a survey_completed beacon is credited once to the email" do
+    2.times { get email_goal_path(token: @delivery.token, g: "survey_completed") }
+
+    assert_response :success
+    assert_equal [ "survey_completed" ], @delivery.events.of_kind("converted").map { |e| e.data["goal"] }
+  end
+
   test "a beacon with an unknown goal or token records nothing" do
     get email_goal_path(token: @delivery.token, g: "nope")
     get email_goal_path(token: "not-real", g: "signed_in")

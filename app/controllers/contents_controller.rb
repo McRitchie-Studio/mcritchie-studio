@@ -9,7 +9,7 @@ class ContentsController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   skip_before_action :require_authentication, only: [:index, :show]
   before_action :require_admin, except: [:index, :show]
-  before_action :set_content, only: [:show, :edit, :update, :destroy, :hook_step, :script_step, :assets_step, :assemble_step, :post_step, :review_step, :script_agent_step, :assets_agent_step, :assemble_agent_step, :finalize_step, :metadata_step, :generate_lineup_assets, :post_to_x, :post_to_tiktok, :prep_for_tiktok, :use_caption_variant, :mark_posted, :studio_upload_to_tiktok, :set_colorway, :attach_artifact, :approve_artifacts]
+  before_action :set_content, only: [:show, :edit, :update, :destroy, :hook_step, :script_step, :assets_step, :assemble_step, :post_step, :review_step, :script_agent_step, :assets_agent_step, :assemble_agent_step, :finalize_step, :metadata_step, :generate_lineup_assets, :post_to_x, :post_to_tiktok, :prep_for_tiktok, :use_caption_variant, :mark_posted, :studio_upload_to_tiktok, :set_colorway, :attach_artifact, :approve_artifacts, :draft_x_copy, :post_video_to_x, :resolve_x_post]
 
   def index
     @contents = Content.ordered
@@ -228,15 +228,17 @@ class ContentsController < ApplicationController
     redirect_to content_path(@content.slug), alert: e.message
   end
 
-  # A video_post_x card is the operator's MP4 plus a line of context. The file
-  # is checked BEFORE the row is saved, so a refused upload leaves no card that
-  # a soul could claim with nothing to post.
+  # A video_post_x card is the operator's whole input: the team that won and the
+  # MP4. The file and the team are checked BEFORE the row is saved, so a refused
+  # upload leaves no card. The copy is then drafted on the spot; a draft that
+  # cannot be read does not fail the create, it leaves the card with a Redraft.
   def create_video_post_x
     attach = Content::AttachVideo.new(@content, params.dig(:content, :video_file))
     attach.validate!
-    raise Content::AttachVideo::Refused, "Say what the video is in Description." if @content.description.blank?
+    team = Team.find_by(slug: @content.team_slug)
+    raise Content::AttachVideo::Refused, "Pick the team that won." if team.nil?
 
-    @content.title = @content.description.to_s.squish.truncate(60) if @content.title.blank?
+    @content.title = "#{team.mascot} win" if @content.title.blank?
     @content.stage = "idea"
     # NO `target:` here. A rollback hands @content back as a NEW record, and the
     # error log autosaves a new target, so naming it re-created the very card the
@@ -252,7 +254,8 @@ class ContentsController < ApplicationController
         @content.destroy!
         raise
       end
-      redirect_to content_path(@content.slug), notice: "Video queued for X. Turf Monster writes the copy and posts it."
+      Content::DraftXCopy.new(@content).call
+      redirect_to content_path(@content.slug), notice: "Video queued. Check the preview, then post."
     end
   rescue Content::AttachVideo::Refused => e
     @content.errors.add(:base, e.message)
@@ -260,6 +263,41 @@ class ContentsController < ApplicationController
   rescue StandardError => e
     @content.errors.add(:base, "Upload failed: #{e.message}") if @content.errors.empty?
     render :new, status: :unprocessable_entity
+  end
+
+  def draft_x_copy
+    Content::DraftXCopy.new(@content).call
+    error = (@content.game_facts || {})["draft_error"]
+    redirect_to content_path(@content.slug), error ? { alert: "Draft failed: #{error}" } : { notice: "Copy redrafted from the live record." }
+  rescue Content::DraftXCopy::Refused => e
+    redirect_to content_path(@content.slug), alert: e.message
+  end
+
+  # THE POST BUTTON. The click is the approval: what is on the card is what goes
+  # out. The work happens in a job, so this returns at once.
+  def post_video_to_x
+    Content::PostVideoToX.begin!(@content)
+    redirect_to content_path(@content.slug), notice: "Posting to X. This page updates when it lands."
+  rescue Content::PostVideoToX::Refused => e
+    redirect_to content_path(@content.slug), alert: "Not posted: #{e.message}."
+  end
+
+  # Settles a run that died mid-post, where only the timeline knows the truth.
+  # The operator either pastes the link (it is live) or says it is not.
+  def resolve_x_post
+    return redirect_to(content_path(@content.slug), alert: "Nothing to settle on this card.") unless Content::PostVideoToX.stuck?(@content)
+
+    if params[:post_url].present?
+      post_id = params[:post_url].to_s.strip[%r{\Ahttps://(?:x|twitter)\.com/[A-Za-z0-9_]+/status/(\d+)}, 1]
+      return redirect_to(content_path(@content.slug), alert: "That is not an x.com post link.") if post_id.nil?
+
+      Content::Post.new(@content).call(platform: "x", post_url: params[:post_url].to_s.strip, post_id: post_id)
+      redirect_to content_path(@content.slug), notice: "Recorded as posted."
+    else
+      facts = @content.game_facts || {}
+      @content.update!(stage: "script", game_facts: facts.merge("post" => { "state" => "refused", "error" => "operator confirmed it is not on the timeline" }))
+      redirect_to content_path(@content.slug), notice: "Back to ready. You can post it again."
+    end
   end
 
   def create_starter_post_x

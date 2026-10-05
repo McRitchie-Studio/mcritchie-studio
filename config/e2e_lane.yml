@@ -358,7 +358,7 @@
 # take or regenerate flag marks it stale (one spec, not quarantined). Measured with
 # `npx playwright test --list` on the tree merged with accepted (search rows included)
 # => 213.
-total_specs: 213
+total_specs: 214
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -558,7 +558,7 @@ quarantined: 10
 # `npx playwright test --list --grep-invert @quarantine` => 202.
 # 202 -> 203: the music_video_full_video.spec.js spec (/tasks/stitch-takes-into-full-video).
 # Measured on the tree merged with accepted: the same lister => 203.
-executed: 203
+executed: 204
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

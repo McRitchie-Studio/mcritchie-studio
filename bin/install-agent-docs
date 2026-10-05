@@ -274,7 +274,11 @@ tooling_sha() {
 #
 # The set is DERIVED, never enumerated: an enumerated list goes stale the first time
 # someone adds a Rails-booting script to bin/, and goes stale silently.
-TOOLING_RAILS_BOOT_RE='require_relative[[:space:]]+"\.\./config/(boot|environment)"'
+# Also a script that require_relatives app/services: that tree is NOT in
+# TOOLING_PATHS (only the pure app/models/{release,devops} are), so a direct copy
+# dies on its first require exactly as a Rails-booting one does. bin/x-post was
+# the first; the pattern catches the next one without anyone listing it.
+TOOLING_RAILS_BOOT_RE='require_relative[[:space:]]+"\.\./(config/(boot|environment)|app/services/)'
 
 # `return 0` is load-bearing under `set -euo pipefail`: the loop's last command is a
 # grep that FAILS on any non-matching file, so the function would exit non-zero, and a

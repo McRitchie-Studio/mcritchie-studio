@@ -182,7 +182,9 @@ class InstallFastLaneToolingTest < Minitest::Test
   # install could ship five scripts that cannot run and stay green. These tests close
   # that: the set is DERIVED from bin/ so a NEW Rails-booting script is covered the day
   # it is written, and one of them is really executed.
-  RAILS_BOOT_RE = %r{require_relative\s+"\.\./config/(?:boot|environment)"}
+  # ...or loads app/services, which the tooling tree does not carry either
+  # (bin/x-post, the first such script, died on its first require there).
+  RAILS_BOOT_RE = %r{require_relative\s+"\.\./(?:config/(?:boot|environment)|app/services/)}
 
   # Derived, never enumerated: an enumerated list goes stale silently.
   def rails_booting_scripts(dir)
@@ -200,6 +202,7 @@ class InstallFastLaneToolingTest < Minitest::Test
     # The measured instance. If reviewer-select ever stops booting Rails, revisit this
     # deliberately rather than letting the guard quietly cover an empty set.
     assert_includes expected, "reviewer-select"
+    assert_includes expected, "x-post", "a script that loads app/services must delegate to the hub too"
 
     install!
 

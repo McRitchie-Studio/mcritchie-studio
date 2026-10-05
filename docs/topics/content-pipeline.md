@@ -868,15 +868,26 @@ v2 chunked upload at `api.x.com/2/media/upload/{initialize,<id>/append,<id>/fina
 
 ## Video Post (X) Workflow
 
-`Content.workflow = "video_post_x"` is a finished MP4 the operator uploads with a few words of context; a soul writes the copy and posts it. It is the board half of the Turf Monster `post-to-x` SOP.
+`Content.workflow = "video_post_x"` is an input-output machine: the operator gives the team that won and an MP4, and the card produces an approved post on `@turfmonstershow`. It is the board half of the Turf Monster `post-to-x` SOP; `bin/x-post` is the same machine from the command line.
 
-1. **Create**: `/contents/new` → Workflow **Video Post (X)** → attach the MP4, put the context in Description. `ContentsController#create_video_post_x` validates the file BEFORE saving (`Content::AttachVideo#validate!`: an `.mp4` with `video/mp4`, at most 100 MB), saves the card at `stage=idea`, and stores the file at `video_posts/<slug>.mp4`, recording `final_video_url`. A refused or failed upload leaves no card. A server killed mid-upload can leave one with no `final_video_url`; `Content.claimable_by_agent` excludes it, so no soul is handed a card with nothing to post. A blank title is taken from the context.
-2. **Copy and post**: the SOP reads the card through the agent API (`final_video_url` and `description` are serialized), writes `captions`, posts with `bin/x-post`, then calls `POST /api/v1/contents/:slug/posted { session, post_url }`, which is claim-guarded, accepts only an `x.com` status URL on a `video_post_x` card, and records `post_url`/`post_id`/`platform=x`, moves the card to `posted` and releases the claim. `bin/content posted <slug> --post-url …` wraps it.
-3. **Card**: the show page renders a Video Post (X) card with the video, the context, then the copy, then the link.
+| Stage | Means | How it gets there |
+|---|---|---|
+| `idea` | Video stored, no copy | Create, when the draft could not be read |
+| `script` | Copy drafted, waiting on the operator's click | Create (normally), Redraft, or a refused post |
+| `assembly` | A post is in flight, or one started and never reported back | The Post button |
+| `posted` | Live, with its link | The job, the settle form, or the agent API |
 
-There is no post button on the card: production holds no X keys, and an upload plus X's processing outlasts a web request.
+1. **Create**: `/contents/new` → **Video Post (X)** → team + MP4. `ContentsController#create_video_post_x` checks the file and the team BEFORE saving (`Content::AttachVideo#validate!`: an `.mp4` with `video/mp4`, at most 100 MB), saves, stores the file at `video_posts/<slug>.mp4` OUTSIDE a transaction (destroying the card if the upload raises), then runs `Content::DraftXCopy`. A server killed mid-upload can leave a card with no `final_video_url`; `Content.claimable_by_agent` excludes it.
+2. **Draft**: `X::PostDraft` (pure Ruby, shared with `bin/x-post draft`) reads three ESPN documents through `Espn::Api`'s host: the team list (matched by display name, so no abbreviation map), the team's record, and its schedule. Copy is `<mascot> <record>` plus `#nfl #nflfootball`, the team's `hashtag`, the city, the mascot and a prime-time slot tag. It returns the facts it read and a list of exceptions (latest final was a loss, final older than eight days, no slogan tag). `DraftXCopy` stores the text in `captions` and the facts in `game_facts`.
+3. **Preview**: `contents/_video_post_x_card` renders `contents/_x_post_preview`, the post as X draws it. Its colours are X's and are inline on purpose, so the picture is the same in our light and dark themes. `x_post_markup` escapes the copy before colouring tags.
+4. **Post**: `Content::PostVideoToX.begin!` refuses anything unpostable (`refusal` names the reason and also drives the disabled button), moves the card to `assembly` with `game_facts["post"]["state"] = "queued"`, and enqueues `ContentPostVideoToXJob`. The job moves `queued → posting` under a row lock and posts only if it made that move, so a re-delivered job cannot post twice. Outcomes: `posted` (link recorded, then `X::ReadBack` confirms the video attached); `refused` (X answered and nothing is live — `X::PostMedia::NotPosted` — card back to `script`); `unknown` (anything else — card stays in `assembly` and asks the operator to look at the timeline). `ApplicationJob` retries by default; this job discards instead.
+5. **Settle**: `resolve_x_post` takes the operator's answer for a stuck card: a pasted link, or "it is not there".
 
-The e2e lane has no bucket, so `config/initializers/e2e_video_storage.rb` replaces `Content::AttachVideo.store` when the Playwright server sets `E2E_FAKE_VIDEO_STORAGE=1`.
+The button is disabled, with the reason beside it, unless the server holds `X_API_KEY`/`X_API_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET`.
+
+Agent API: `POST /api/v1/contents/:slug/posted` records a link on a claimed card; `POST /api/v1/contents/record_x_post` files a `posted` card for a video posted from a file path (`bin/content record-post`), idempotent on the link.
+
+The e2e lane has no bucket and must not depend on a live feed, so `config/initializers/e2e_video_storage.rb` replaces `Content::AttachVideo.store` and `Content::DraftXCopy.fetch` when the Playwright server sets `E2E_FAKE_VIDEO_STORAGE=1`.
 
 ## Starter Post (TikTok) Workflow
 
