@@ -31,6 +31,11 @@ class MusicVideo < ApplicationRecord
   has_many :chunk_takes, -> { order(:chunk_ordinal, :number) }, class_name: "VideoChunkTake",
            foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :music_video, dependent: :delete_all
 
+  # Every full-length stitch made of this video, oldest first. Destroying the
+  # video drops the rows; the objects stay in R2.
+  has_many :stitches, -> { order(:number) }, class_name: "VideoStitch",
+           foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :music_video, dependent: :delete_all
+
   has_many :looks, class_name: "Appearance", foreign_key: :music_video_slug, primary_key: :slug,
            inverse_of: :music_video, dependent: :nullify
 

@@ -215,6 +215,26 @@
       },
     };
   };
+
+  // A stitch that is waiting or running: ask the server every few seconds
+  // whether it has moved on, and offer the reload when it has. Never reloads
+  // on its own: the operator may be mid-upload further down the page.
+  window.stitchProgress = function () {
+    return {
+      timer: null, changed: false, lost: false,
+      init() { this.timer = setInterval(() => this.check(), 4000); },
+      destroy() { clearInterval(this.timer); },
+      async check() {
+        try {
+          const resp = await fetch(this.$root.dataset.statusUrl, { headers: { Accept: "application/json" } });
+          if (!resp.ok) throw new Error(String(resp.status));
+          const body = await resp.json();
+          this.lost = false;
+          if (body.state !== this.$root.dataset.state) { this.changed = true; clearInterval(this.timer); }
+        } catch (e) { this.lost = true; }
+      },
+    };
+  };
 </script>
 <%= render "components/copy_text_script" %>
 
@@ -373,6 +393,8 @@
     <% if @chunks.any? %>
       <%= render "music_videos/stitch_preview", video: @video, chunks: @chunks, stitch: @stitch,
                  audio_url: @clip_urls[@video.source_object_key] %>
+      <%= render "music_videos/full_video", video: @video, chunks: @chunks, stitches: @stitches, urls: @stitch_urls,
+                 downloads: @stitch_downloads, here: @stitch_here %>
       <div class="flex flex-col gap-4">
         <% @chunks.each do |chunk| %>
           <%= render "music_videos/chunk", chunk: chunk, video: @video, clip_urls: @clip_urls,

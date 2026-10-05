@@ -2,16 +2,32 @@ require "open3"
 require "tmpdir"
 require_relative "tiled_video"
 
-# Playable files for the tiled demo, so the local page's players and the stitch
-# preview have something to load: a 72 s test pattern with a beep track as the
-# source, each chunk cut from it, and a generated take for chunks 1 and 3 (the
-# same cut with the picture inverted and a different tone, so a handover is
-# plain to see and a clip that is not muted is plain to hear). Chunks 2 and 4
-# stay on their source cut. Made with ffmpeg on the Mac and uploaded to the DEV
-# bucket under the demo's own synthetic keys. Development only; skipped, with a
-# line saying why, when ffmpeg or the bucket is missing. Idempotent.
+# Playable files for the tiled demo, so the local page's players, the stitch
+# preview and the final stitch have something to work on: a 72 s test pattern
+# with a beep track as the source, each chunk cut from it, and one generated
+# take for EVERY chunk, so the demo is ready to stitch and "Generate full
+# video" works locally. Each take is the same cut made to look different (and
+# carrying a different tone, so a clip that is not muted is plain to hear), and
+# no two neighbours look alike, so a handover and a crossfade are plain to see:
+#
+#   chunk 1  picture inverted
+#   chunk 2  hue turned, and returned smaller (240x136) at 24 fps, the way a
+#            generated take comes back at its own size and rate
+#   chunk 3  picture inverted
+#   chunk 4  greyscale, and half a second short of its window
+#
+# The pattern carries a running clock, so two takes showing the same clock
+# through a crossfade are aligned. Made with ffmpeg on the Mac and uploaded to
+# the DEV bucket under the demo's own synthetic keys. Development only;
+# skipped, with a line saying why, when ffmpeg or the bucket is missing.
+# Idempotent: an object already in the bucket is never replaced.
 module TiledVideoFiles
-  TAKE_CHUNKS = [1, 3].freeze
+  TAKES = {
+    1 => { vf: "negate" },
+    2 => { vf: "hue=h=120,scale=240:136,fps=24" },
+    3 => { vf: "negate" },
+    4 => { vf: "hue=s=0", short_ms: 500 }
+  }.freeze
 
   def self.seed!(video = TiledVideo.seed!, out: $stdout)
     why = blocker
@@ -22,12 +38,13 @@ module TiledVideoFiles
       upload(video.source_object_key) { render_source(source, video.duration_ms) }
       video.video_chunks.each do |chunk|
         upload(chunk.object_key) { cut(source_file(source, video), chunk, File.join(dir, "chunk_#{chunk.ordinal}.mp4")) }
-        next unless TAKE_CHUNKS.include?(chunk.ordinal) && chunk.takes.empty?
+        look = TAKES[chunk.ordinal]
+        next unless look && chunk.takes.empty?
 
-        path = cut(source_file(source, video), chunk, File.join(dir, "take_#{chunk.ordinal}.mp4"), generated: true)
         key = MusicVideos::ObjectKeys.take(source_key: video.source_object_key, ordinal: chunk.ordinal,
                                            start_ms: chunk.start_ms, end_ms: chunk.end_ms, number: 1)
-        File.open(path, "rb") { |io| Studio::S3.upload(key:, body: io, content_type: "video/mp4") }
+        path = cut(source_file(source, video), chunk, File.join(dir, "take_#{chunk.ordinal}.mp4"), look:)
+        upload(key) { path }
         TiledVideo.take!(chunk, number: 1, byte_size: File.size(path))
       end
     end
@@ -63,9 +80,11 @@ module TiledVideoFiles
            "-c:a", "aac", "-b:a", "48k", "-movflags", "+faststart", "-shortest", path)
   end
 
-  def self.cut(source, chunk, path, generated: false)
-    filters = generated ? ["-vf", "negate", "-af", "asetrate=44100*2,aresample=44100,atempo=0.5"] : []
-    ffmpeg("-ss", (chunk.start_ms / 1000.0).to_s, "-t", (chunk.duration_ms / 1000.0).to_s, "-i", source, *filters,
+  # look: a generated take's stand-in, the cut filtered so it is told apart.
+  def self.cut(source, chunk, path, look: nil)
+    filters = look ? ["-vf", look.fetch(:vf), "-af", "asetrate=44100*2,aresample=44100,atempo=0.5"] : []
+    length = chunk.duration_ms - (look && look[:short_ms]).to_i
+    ffmpeg("-ss", (chunk.start_ms / 1000.0).to_s, "-t", (length / 1000.0).to_s, "-i", source, *filters,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-g", "12", "-pix_fmt", "yuv420p",
            "-c:a", "aac", "-b:a", "48k", "-movflags", "+faststart", path)
   end

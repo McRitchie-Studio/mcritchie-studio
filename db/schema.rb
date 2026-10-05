@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_05_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2107,6 +2107,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_120000) do
     t.index ["music_video_slug", "ordinal"], name: "index_video_performers_on_music_video_slug_and_ordinal", unique: true
     t.index ["recast_appearance_slug"], name: "index_video_performers_on_recast_appearance_slug"
     t.index ["recast_person_slug"], name: "index_video_performers_on_recast_person_slug"
+  end
+
+  create_table "video_stitches", force: :cascade do |t|
+    t.bigint "byte_size"
+    t.datetime "created_at", null: false
+    t.integer "duration_ms"
+    t.string "failure_reason"
+    t.datetime "finished_at"
+    t.string "frame_rate"
+    t.integer "height"
+    t.string "music_video_slug", null: false
+    t.integer "number", null: false
+    t.string "object_key", null: false
+    t.datetime "started_at"
+    t.string "state", default: "requested", null: false
+    t.jsonb "takes", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "warnings", default: [], null: false
+    t.integer "width"
+    t.index ["music_video_slug", "number"], name: "index_video_stitches_on_music_video_slug_and_number", unique: true
+    t.index ["object_key"], name: "index_video_stitches_on_object_key", unique: true
   end
 
   create_table "workspace_accounts", force: :cascade do |t|
