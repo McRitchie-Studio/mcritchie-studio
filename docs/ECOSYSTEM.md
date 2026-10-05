@@ -9,13 +9,13 @@ the registry wins; fix the row.
 
 ## Apps
 
-Status uses three words: **live** (a product people use), **showcase** (a rebuilt
-portfolio app) and **archived** (nothing deploys it). Every app runs on Heroku.
+Status uses three words: **live** (a product people use), **showcase** (a portfolio
+app on display) and **archived** (nothing deploys it). Every app runs on Heroku.
 
 | App | Status | Role | Port | Production | QA |
 |-----|--------|------|------|------------|----|
 | [`mcritchie-studio`](https://github.com/McRitchie-Studio/mcritchie-studio) | live | Flagship hub: task board and DevOps pipeline, agent registry and activity, SSO source for the satellites, NFL data, news and content pipelines, email broadcasts, recovery scripts, agent docs | 3000 | https://mcritchie.studio | https://qa.mcritchie.studio |
-| [`turf-monster`](https://github.com/McRitchie-Studio/turf-monster) | live | Sports pick'em; entries and payouts settle on Solana through `turf-vault` | 3100 | https://turfmonster.media | https://qa.turfmonster.media |
+| [`turf-monster`](https://github.com/McRitchie-Studio/turf-monster) | live | Sports pick'em with on-chain settlement through `turf-vault` | 3100 | https://turfmonster.media | https://qa.turfmonster.media |
 | [`mcritchie-industries`](https://github.com/McRitchie-Studio/mcritchie-industries) | live | Business knowledge base: acquisitions, companies, financials, clients | 3500 | https://www.mcritchie.industries | https://qa.mcritchie.industries |
 | [`cyvasse`](https://github.com/McRitchie-Studio/cyvasse) | live | Hex strategy board game | 3600 | https://cyvasse.mcritchie.studio | none |
 | [`moms-app`](https://github.com/McRitchie-Studio/moms-app) | live, not showcased | Karen McRitchie's family audiobook and slideshow site | 4400 | https://karenmcritchie.com | none |

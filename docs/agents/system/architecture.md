@@ -1,7 +1,7 @@
 # Architecture
 
 The hub's stack, data and API surface. Who does what: [`mission.md`](mission.md).
-The pages: [`user.md`](user.md). The ecosystem: [`../../ECOSYSTEM.md`](../../ECOSYSTEM.md).
+The pages: [`user.md`](user.md). The ecosystem: `docs/ECOSYSTEM.md`.
 
 ## Stack
 
@@ -30,8 +30,7 @@ Foreign keys are slug strings. The tables an agent meets first:
 | `users` | Operators; `provider` and `uid` carry the Google identity |
 | `error_logs` | Structured error capture from `studio-engine` |
 
-The full schema is `db/schema.rb`; the walk-through is
-[`../../topics/data-model.md`](../../topics/data-model.md).
+The full schema is `db/schema.rb`; the walk-through is `docs/topics/data-model.md`.
 
 ## Task pipeline
 
