@@ -62,6 +62,13 @@ Rails.application.routes.draw do
   get "contacts/stats", to: "contacts#stats", as: :contacts_stats
   resources :contacts, only: %i[index show]
 
+  # Feedback surveys (task first-game-feedback-survey): the public form at
+  # /s/:slug (?t=<delivery token> attributes it) and the admin answers view.
+  get  "s/:slug",        to: "survey_responses#show",   as: :survey_form
+  post "s/:slug",        to: "survey_responses#create", as: :survey_form_submit
+  get  "s/:slug/thanks", to: "survey_responses#thanks", as: :survey_thanks
+  resources :surveys, only: %i[index show], param: :slug
+
   # One-click-safe unsubscribe: GET shows an inert confirm page, POST unsubscribes.
   get  "unsubscribe/:token", to: "unsubscribes#show",   as: :unsubscribe
   post "unsubscribe/:token", to: "unsubscribes#create"

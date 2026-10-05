@@ -13,5 +13,8 @@ Rails.application.config.filter_parameters += [
   # tested against the full dotted path), because a bare :message would also
   # mask every other `message` param and, through filter_attributes, every
   # model's `message` column in an inspect. ContactSubmission filters its own.
-  /\Acontact_submission\.(phone|message)\z/
+  /\Acontact_submission\.(phone|message)\z/,
+  # A feedback survey's answers (task first-game-feedback-survey) are what a
+  # reader told Alex, never the log's: the whole `answers` hash is masked.
+  /\Aanswers\z/
 ]

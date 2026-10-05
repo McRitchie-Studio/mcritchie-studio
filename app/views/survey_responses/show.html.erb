@@ -1,0 +1,99 @@
+<% content_for :title, "#{@survey.title} · McRitchie Studio" %>
+<%# A public feedback survey (task first-game-feedback-survey), phone first:
+    one column, big tap targets, the questions Survey defines in order. The
+    token rides as a hidden field so the answer is credited to the email's
+    reader; a reader who already answered sees their answers to edit. %>
+<% editing = @response.persisted? %>
+<section class="max-w-xl mx-auto px-4 py-8 sm:py-12" data-test="survey-page">
+  <header class="text-center mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Feedback</p>
+    <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2"><%= @survey.title %></h1>
+    <p class="text-secondary"><%= @survey.intro %></p>
+  </header>
+
+  <% if editing %>
+    <div class="card p-4 mb-4 border border-subtle bg-surface-alt text-sm text-secondary" role="status" data-test="survey-editing">
+      Thanks for answering. Change anything below and save again.
+    </div>
+  <% end %>
+
+  <div class="card p-5 sm:p-6">
+    <%= form_with url: survey_form_submit_path(@survey), method: :post, scope: nil,
+                  html: { class: "space-y-7", data: { test: "survey-form" } } do %>
+      <% if @response.errors.any? %>
+        <div class="rounded-lg border border-subtle bg-surface-alt p-4" role="alert" data-test="survey-errors">
+          <ul class="list-disc pl-5 text-sm text-secondary space-y-1">
+            <% @response.errors.full_messages.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+
+      <% if @token %>
+        <input type="hidden" name="t" value="<%= @token %>">
+      <% end %>
+
+      <% @survey.questions.each_with_index do |question, index| %>
+        <% field_id = "answers_#{question.key}" %>
+        <% current = @response.answer(question.key).to_s %>
+        <% case question.kind %>
+        <% when "faces", "choice" %>
+          <fieldset data-test="survey-question-<%= question.key %>">
+            <legend class="block text-base font-semibold text-heading mb-3">
+              <%= index + 1 %>. <%= question.prompt %>
+              <% unless question.required %><span class="text-muted font-normal text-sm">(optional)</span><% end %>
+            </legend>
+            <div class="grid <%= question.kind == "faces" ? "grid-cols-5" : "grid-cols-3" %> gap-2">
+              <% question.options.each do |value, *labels| %>
+                <% face = question.kind == "faces" %>
+                <label class="cursor-pointer">
+                  <input type="radio" name="answers[<%= question.key %>]" value="<%= value %>" class="sr-only peer"
+                         <%= "checked" if current == value.to_s %> <%= "required" if question.required %>
+                         data-test="survey-option-<%= question.key %>-<%= value %>">
+                  <span class="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-subtle bg-surface px-1 py-3 text-center transition
+                               hover:border-primary peer-checked:border-primary peer-checked:bg-surface-alt peer-focus-visible:ring-2 peer-focus-visible:ring-primary">
+                    <% if face %>
+                      <span class="text-3xl sm:text-4xl leading-none" aria-hidden="true"><%= labels.first %></span>
+                      <span class="text-xs text-secondary"><%= labels.last %></span>
+                    <% else %>
+                      <span class="text-sm font-semibold text-heading"><%= labels.first %></span>
+                    <% end %>
+                  </span>
+                </label>
+              <% end %>
+            </div>
+          </fieldset>
+        <% when "text" %>
+          <div data-test="survey-question-<%= question.key %>">
+            <label for="<%= field_id %>" class="block text-base font-semibold text-heading mb-2">
+              <%= index + 1 %>. <%= question.prompt %> <span class="text-muted font-normal text-sm">(optional)</span>
+            </label>
+            <input type="text" id="<%= field_id %>" name="answers[<%= question.key %>]" value="<%= current %>"
+                   maxlength="<%= question.limit %>" autocomplete="off" class="input-field w-full">
+          </div>
+        <% when "textarea" %>
+          <div data-test="survey-question-<%= question.key %>">
+            <label for="<%= field_id %>" class="block text-base font-semibold text-heading mb-2">
+              <%= index + 1 %>. <%= question.prompt %> <span class="text-muted font-normal text-sm">(optional)</span>
+            </label>
+            <textarea id="<%= field_id %>" name="answers[<%= question.key %>]" rows="4" maxlength="<%= question.limit %>"
+                      class="input-field w-full"><%= current %></textarea>
+          </div>
+        <% end %>
+      <% end %>
+
+      <%# Off-screen, out of the tab order and hidden from assistive tech: only
+          a script fills this in (SurveyResponsesController::HONEYPOT_FIELD). %>
+      <% honeypot = SurveyResponsesController::HONEYPOT_FIELD %>
+      <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+        <label for="survey_<%= honeypot %>">Leave this field empty</label>
+        <input type="text" name="<%= honeypot %>" id="survey_<%= honeypot %>" tabindex="-1" autocomplete="off" data-test="survey-honeypot">
+      </div>
+
+      <button type="submit" class="btn btn-primary w-full text-base py-3" data-test="survey-submit">
+        <%= editing ? "Save my answers" : "Send my answers" %>
+      </button>
+    <% end %>
+  </div>
+</section>
