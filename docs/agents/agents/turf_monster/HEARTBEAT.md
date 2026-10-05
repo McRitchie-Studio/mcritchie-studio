@@ -28,10 +28,10 @@ attribution and routes to its act SOPs:
   revenue out of the vault in TWO hops: sweep the `op_rev` ATA to the treasury
   (2-of-3, our admin UI), then withdraw from the Squads vault to a personal
   wallet (3-of-5, app.squads.so, not in our code).
-- [`post-to-x`](sops/post-to-x.md) - drain the board's Video Post (X) cards to
-  `@turfmonstershow`: turn Alex's context into copy and hashtags, read every
-  added fact from a source, show him the batch, post on his one approval, and
-  record each link on its card.
+- [`post-to-x`](sops/post-to-x.md) - turn "this team won" and a video into a
+  post on `@turfmonstershow`: the code drafts the copy from the live record and
+  the team's tags, Alex approves it, and it posts. The board does it with a
+  button; this act covers the chat door and the board's exceptions.
 
 Use this file when Alex invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.

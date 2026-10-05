@@ -20,5 +20,4 @@ module ContentsHelper
     marked  = escaped.gsub(%r{(https?://\S+|[#@][A-Za-z0-9_]+)}) { %(<span style="color:#{X_BLUE}">#{Regexp.last_match(1)}</span>) }
     marked.html_safe # rubocop:disable Rails/OutputSafety -- escaped above; only our own span is added
   end
-
 end
