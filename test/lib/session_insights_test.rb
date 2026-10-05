@@ -99,11 +99,129 @@ class SessionInsightsTest < Minitest::Test
     end
   end
 
+  # ── [unit] session_context joins the dream and insight blocks ───────────────
+
+  def test_unit_session_context_puts_dreams_ahead_of_insights
+    assert_equal "DREAMS\n\nINSIGHTS", tool.session_context(dreams: "DREAMS\n", insights: "INSIGHTS")
+  end
+
+  def test_unit_session_context_stands_on_either_block_alone
+    assert_equal "DREAMS", tool.session_context(dreams: "DREAMS", insights: "")
+    assert_equal "INSIGHTS", tool.session_context(dreams: "", insights: "INSIGHTS")
+    assert_equal "", tool.session_context(dreams: " ", insights: nil)
+  end
+
+  # ── [unit] the hook cap: one string, 10,000 characters ─────────────────────
+  #
+  # Claude Code caps a hook's additionalContext at 10,000 characters. Over it the
+  # model is handed a file path and a 2,000-character preview, which loses most
+  # dreams and EVERY insight without a word. These pin the size, so the dream
+  # that tips the bank over fails here instead of truncating in production.
+
+  HOOK_CAP = 10_000
+  # Room held for the insight feed: 12 rows, each a slug, a long form and a task.
+  # The live feed measured 1,834 characters on 2026-10-05.
+  INSIGHT_RESERVE = 2_500
+
+  def test_unit_the_budget_sits_under_the_hook_cap
+    assert_operator SessionInsights::CONTEXT_BUDGET, :<, HOOK_CAP
+  end
+
+  def test_unit_dream_budget_leaves_the_insights_whole
+    insights = "x" * 1_800
+
+    assert_equal SessionInsights::CONTEXT_BUDGET, tool.dream_budget("")
+    assert_equal SessionInsights::CONTEXT_BUDGET - 1_800 - 2, tool.dream_budget(insights)
+  end
+
+  def test_unit_the_real_bank_and_a_full_feed_fit_under_the_cap_with_every_dream
+    approved = DreamBank.approved
+    insights = "## Insights\n" + ("- x" * 1).ljust(INSIGHT_RESERVE - 12, "x")
+    real = SessionInsights.new(env: {}, dreams_dir: DreamBank::DEFAULT_DIR)
+
+    dreams = real.dream_context(budget: real.dream_budget(insights))
+    context = real.session_context(dreams: dreams, insights: insights)
+
+    assert_operator context.size, :<=, HOOK_CAP
+    assert_includes context, insights, "the insights are never trimmed for a dream"
+    assert_equal approved.size, dreams.scan(/^\*\*Q:/).size,
+                 "the approved bank no longer fits beside a full insight feed: " \
+                 "#{approved.size} approved, #{dreams.scan(/^\*\*Q:/).size} loaded. " \
+                 "Shorten a dream or retire one (docs/agents/modules/dream.md, The ceiling)."
+    refute_includes dreams, "did not fit this block"
+  end
+
+  def test_unit_an_oversized_feed_squeezes_the_dreams_and_never_the_insights
+    insights = "## Insights\n" + ("y" * 9_000)
+    real = SessionInsights.new(env: {}, dreams_dir: DreamBank::DEFAULT_DIR)
+
+    context = real.session_context(dreams: real.dream_context(budget: real.dream_budget(insights)), insights: insights)
+
+    assert_operator context.size, :<=, HOOK_CAP
+    assert_includes context, insights
+  end
+
+  # ── [integration] dreams load from disk, with or without the board ─────────
+
+  def test_integration_approved_dreams_load_ahead_of_the_insights
+    with_dream_dir do |dreams|
+      Dir.mktmpdir do |proj|
+        out, _err, status = run_bin(proj: proj, dreams_dir: dreams,
+                                    insights: [ { "slug" => "write the failing test first", "disposition" => "good" } ])
+
+        assert_equal 0, status.exitstatus
+        context = JSON.parse(out).dig("hookSpecificOutput", "additionalContext")
+        assert_includes context, "**Q: Do I merge on one read?** (`wait-for-it`)"
+        refute_includes context, "candidate", "a proposed dream reaches no session"
+        assert_operator context.index("## Dreams"), :<, context.index("## Insights")
+      end
+    end
+  end
+
+  # The board is DOWN here: nothing listens on the port, so the insight fetch fails.
+  # The dreams are local files and must still arrive.
+  def test_integration_dreams_load_with_the_board_unreachable
+    with_dream_dir do |dreams|
+      Dir.mktmpdir do |proj|
+        env = SessionEnv.neutralized("AGENT_API_SECRET" => "test-secret", "CLAUDE_PROJECTS_DIR" => proj,
+                                     "DREAM_BANK_DIR" => dreams, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{closed_port}")
+        out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN)
+
+        assert_equal 0, status.exitstatus
+        context = JSON.parse(out).dig("hookSpecificOutput", "additionalContext")
+        assert_includes context, "A: No. Wait for the report."
+        refute_includes context, "## Insights"
+      end
+    end
+  end
+
   private
+
+  def with_dream_dir
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "wait-for-it.md"),
+                 "---\nquestion: \"Do I merge on one read?\"\nanswer: \"No. Wait for the report.\"\n" \
+                 "why: \"A late blocker costs a whole task.\"\nstatus: approved\n---\n\n# Wait\n")
+      File.write(File.join(dir, "not-yet.md"),
+                 "---\nquestion: \"A candidate question?\"\nanswer: \"A candidate answer.\"\nstatus: proposed\n---\n")
+      yield dir
+    end
+  end
+
+  # A port with nothing listening: bind one, read its number, release it.
+  def closed_port
+    server = TCPServer.new("127.0.0.1", 0)
+    server.addr[1]
+  ensure
+    server&.close
+  end
 
   # Shell out to the real bin against a one-shot stub that mints a token then serves
   # the given insights on GET /api/v1/insights.
-  def run_bin(proj:, insights:)
+  #
+  # dreams_dir defaults to the empty tmp project dir, NOT the repo's real bank: the
+  # insight tests must not start failing the day a dream is approved.
+  def run_bin(proj:, insights:, dreams_dir: proj)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     thread = Thread.new { serve(server, insights) }
@@ -112,6 +230,7 @@ class SessionInsightsTest < Minitest::Test
     env = SessionEnv.neutralized(
       "AGENT_API_SECRET" => "test-secret",
       "CLAUDE_PROJECTS_DIR" => proj,
+      "DREAM_BANK_DIR" => dreams_dir,
       "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}"
     )
     Open3.capture3(env, RbConfig.ruby, BIN)
