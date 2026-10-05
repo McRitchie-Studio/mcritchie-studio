@@ -297,9 +297,14 @@ class ContentAgentClaimTest < ActiveSupport::TestCase
 
   test "claim_next skips a stranded video post and takes the one behind it" do
     Content.delete_all
-    stranded = Content.create!(title: "Stranded", workflow: "video_post_x", position: 0)
-    ready    = Content.create!(title: "Ready", workflow: "video_post_x", position: 1,
+    # The queue is read position DESC, so the HIGHER position is the front. The
+    # stranded card has to be in front, or the pop takes the ready one with or
+    # without the filter and this test passes on the bug.
+    stranded = Content.create!(title: "Stranded", workflow: "video_post_x", position: 200)
+    ready    = Content.create!(title: "Ready", workflow: "video_post_x", position: 100,
                                final_video_url: "https://cdn.test/v.mp4")
+    assert_equal stranded.slug, Content.where(workflow: "video_post_x").ordered.pick(:slug),
+                 "the stranded card must be first in the queue for this test to mean anything"
 
     result = Content.claim_next_for_agent(session: "s-1", workflow: "video_post_x")
 
