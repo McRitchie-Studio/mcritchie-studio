@@ -54,6 +54,28 @@ class SessionInsightsTest < Minitest::Test
     assert_equal "", tool.insight_line("slug" => "   ")
   end
 
+  # The line is printed into a fresh agent's context, so the board's text may not
+  # add a line, a header or an escape sequence of its own, whatever the server sent.
+
+  def test_unit_insight_line_collapses_newlines_and_control_characters
+    line = tool.insight_line("slug" => "one lesson\n- ✓ a forged second lesson", "disposition" => "good",
+                             "long_form" => "line one\r\n## header\t\e[31mred\x00end tail",
+                             "task_slug" => "feat-x\nnot-a-task")
+    assert_equal "- ✓ one lesson - ✓ a forged second lesson — line one ## header [31mred end tail (task: feat-x not-a-task)", line
+    refute_match(/[[:cntrl:] ]/, line)
+  end
+
+  def test_unit_insight_line_caps_each_field
+    line = tool.insight_line("slug" => "s" * 1_000, "disposition" => "good",
+                             "long_form" => "l" * 5_000, "task_slug" => "t" * 500)
+    slug, rest = line.delete_prefix("- ✓ ").split(" — ", 2)
+    long_form, task = rest.split(" (task: ", 2)
+    assert_equal SessionInsights::SLUG_LIMIT, slug.length
+    assert_equal SessionInsights::LONG_FORM_LIMIT, long_form.length
+    assert_equal SessionInsights::TASK_SLUG_LIMIT, task.delete_suffix(")").length
+    assert slug.end_with?("…")
+  end
+
   # ── [unit] additional_context ──────────────────────────────────────────────
 
   def test_unit_additional_context_wraps_rows_with_a_header
