@@ -9,7 +9,8 @@
 #   bin/find-clips <slug> --api URL        # another hub, e.g. a desk server
 #   bin/find-clips <slug> --source FILE    # a source MP4 already on disk
 #   bin/find-clips <slug> --dry-run        # measure and print the windows only
-#   bin/find-clips <slug> --tile           # instead: the whole video as 25 s chunks on a 20 s stride
+#   bin/find-clips <slug> --tile           # instead: the whole video as 25 s chunks that overlap 5 s
+#   bin/find-clips <slug> --tile --chunk 15 --overlap 5   # 15 s chunks on a 10 s stride
 #   bin/find-clips <slug> --production     # production bucket and https://mcritchie.studio
 
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
@@ -17,7 +18,7 @@ require "bundler/setup" # aws-sdk-s3 for R2; before any gem loads
 require "optparse"
 require_relative "lib/find_clips"
 
-options = { production: false, dry_run: false, tile: false, count: 5, workdir: File.expand_path("~/projects/.corpus/music_videos") }
+options = { production: false, dry_run: false, tile: false, chunk: 25.0, overlap: 5.0, count: 5, workdir: File.expand_path("~/projects/.corpus/music_videos") }
 parser = OptionParser.new do |opts|
   opts.banner = "Usage: bin/find-clips <music_video_slug> [options]"
   opts.on("--production", "write the production bucket and API (default: dev)") { options[:production] = true }
@@ -25,8 +26,16 @@ parser = OptionParser.new do |opts|
   opts.on("--source FILE", "the source MP4 on disk (default: the digest folder, else R2)") { |v| options[:source] = File.expand_path(v) }
   opts.on("--workdir DIR", "digest working folder (default #{options[:workdir]})") { |v| options[:workdir] = File.expand_path(v) }
   opts.on("--count N", Integer, "how many clips to propose (default 5)") { |v| options[:count] = v }
-  opts.on("--tile", "cut the whole video into 25 s chunks on a 20 s stride; replaces the chunks, not the candidates") do
+  opts.on("--tile", "cut the whole video into overlapping chunks (25 s, 5 s overlap); replaces the chunks, not the candidates") do
     options[:tile] = true
+  end
+  opts.on("--chunk SECONDS", Float, "with --tile: how long a chunk runs (default 25)") do |v|
+    options[:chunk] = v
+    options[:tiling_flag] = "--chunk"
+  end
+  opts.on("--overlap SECONDS", Float, "with --tile: how much a chunk repeats of the one before (default 5; under --chunk)") do |v|
+    options[:overlap] = v
+    options[:tiling_flag] = "--overlap"
   end
   opts.on("--dry-run", "measure and print the windows; cut, upload and post nothing") { options[:dry_run] = true }
   opts.on("-h", "--help") do
@@ -34,13 +43,22 @@ parser = OptionParser.new do |opts|
     exit 0
   end
 end
-parser.parse!
+begin
+  parser.parse!
+rescue OptionParser::InvalidArgument => e
+  abort "find-clips: #{e.message}"
+end
 
 if ARGV.size != 1
   warn parser.banner
   abort(ARGV.empty? ? "find-clips: a music video slug is required" : "find-clips: exactly one slug, got #{ARGV.size}")
 end
 abort "find-clips: no such file: #{options[:source]}" if options[:source] && !File.file?(options[:source])
+abort "find-clips: #{options[:tiling_flag]} sets the tiling: pass --tile with it" if options[:tiling_flag] && !options[:tile]
+tiling = { chunk_ms: (options[:chunk] * 1000).round, overlap_ms: (options[:overlap] * 1000).round }
+if options[:tile] && (why = MusicVideos::ChunkTiler.problem(**tiling))
+  abort "find-clips: #{why}"
+end
 
 begin
   target = DigestVideo.target(production: options[:production])
@@ -48,7 +66,7 @@ begin
     api: DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__)),
     storage: DigestVideo::R2Storage.new(bucket: target[:bucket], suffix: target[:suffix]),
     shell: DigestVideo.shell, workdir: options[:workdir], source: options[:source], dry_run: options[:dry_run],
-    count: options[:count], bucket: target[:bucket], tile: options[:tile]
+    count: options[:count], bucket: target[:bucket], tile: options[:tile], **tiling
   ).call(ARGV.first)
 rescue DigestVideo::Failure => e
   abort "find-clips: #{e.message}"

@@ -40,13 +40,15 @@ module Api
       end
 
       # Stage 5: bin/find-clips replaces one kind of the video's clips: the
-      # seam candidates (the default), or with kind "chunk" the tiling. The
-      # other kind is left alone. Clip files are already in R2; the hub fills
+      # seam candidates (the default), or with kind "chunk" the tiling, cut at
+      # chunk_ms and chunk_overlap_ms (25 s and 5 s unless sent). The other
+      # kind is left alone. Clip files are already in R2; the hub fills
       # each prompt from the confirmed cast.
       def clips
         video = MusicVideo.find_by!(slug: params[:slug])
         body = params.to_unsafe_h
-        replace = MusicVideos::ReplaceClips.new(video, body["clips"], kind: body.fetch("kind", "candidate"))
+        replace = MusicVideos::ReplaceClips.new(video, body["clips"], kind: body.fetch("kind", "candidate"),
+                                                                        **body.slice("chunk_ms", "chunk_overlap_ms").symbolize_keys)
         replace.check! # a refusal is an answer, not an ErrorLog
         outcome = rescue_and_log(target: video) { replace.call }
         render_data(serialize(video.reload), meta: { dropped_approvals: outcome.dropped_approvals })
@@ -66,7 +68,7 @@ module Api
 
       def serialize(video)
         credits = video.music_video_artists.includes(:artist).sort_by { |c| [c.role == "primary" ? 0 : 1, c.position] }
-        video.as_json(only: %w[slug kind platform source_url source_id title duration_ms stage
+        video.as_json(only: %w[slug kind platform source_url source_id title duration_ms stage chunk_ms chunk_overlap_ms
                                source_object_key info_object_key caption_timing unresolved_credits])
              .merge("artists" => credits.map do |c|
                { "slug" => c.artist_slug, "name" => c.artist.name, "kind" => c.artist.kind,

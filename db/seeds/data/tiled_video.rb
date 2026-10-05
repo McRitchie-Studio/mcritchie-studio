@@ -36,9 +36,9 @@ module TiledVideo
   end
 
   # The rows bin/find-clips --tile would post: the tiling, labelled from the cast.
-  def self.chunk_rows(video = video!, duration_ms: DURATION_MS)
+  def self.chunk_rows(video = video!, duration_ms: DURATION_MS, **tiling)
     cast = video.video_performers.map { |p| p.as_json(only: %w[ordinal artist_slug extra sightings]) }
-    MusicVideos::ChunkTiler.windows(duration_ms).map do |w|
+    MusicVideos::ChunkTiler.windows(duration_ms, **tiling).map do |w|
       seen = MusicVideos::ClipCast.label(cast, w.start_ms, w.end_ms)
       { "ordinal" => w.ordinal, "start_ms" => w.start_ms, "end_ms" => w.end_ms, "cast_shape" => seen.cast_shape,
         "target_performer" => seen.target, "performer_ordinals" => seen.present,

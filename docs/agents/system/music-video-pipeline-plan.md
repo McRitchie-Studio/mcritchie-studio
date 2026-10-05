@@ -82,7 +82,9 @@ One approved clip moves the video to `clips_ready`. The agent's steps are in
 
 **Chunks.** Beside the candidates, `bin/find-clips <slug> --tile` cuts the whole
 video into 25-second chunks on a 20-second stride (0-25, 20-45, 40-65 and on), so
-each shares 5 seconds with the one before. The last chunk ends at the video's end
+each shares 5 seconds with the one before. Chunk length and overlap are
+parameters (`--chunk`, `--overlap`); the video records the pair its chunks were
+cut with. The last chunk ends at the video's end
 and may be shorter; a tail the previous chunk already covers makes no extra
 chunk. A chunk has no seam and no approval. Chunks are `video_clips` rows of kind
 `chunk`; the candidates are kind `candidate`. Each kind numbers its own ordinals
@@ -104,7 +106,7 @@ Record slugs stay kebab-case, the app's existing convention.
 
 | Table | Holds |
 |---|---|
-| `music_videos` | type (`kind`: `music_video` or `cinematic`), platform, source URL and id, title, duration, stage, source asset |
+| `music_videos` | type (`kind`: `music_video` or `cinematic`), the chunk tiling (`chunk_ms`, `chunk_overlap_ms`; null until tiled), platform, source URL and id, title, duration, stage, source asset |
 | `artists` | kind `person` or `group`; `person_slug` for individuals; source ids: Wikidata, MusicBrainz, Discogs, Spotify |
 | `artist_aliases` | alternate names per artist |
 | `artist_memberships` | member → group, start and end years |

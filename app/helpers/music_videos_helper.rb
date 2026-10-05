@@ -5,6 +5,9 @@ module MusicVideosHelper
     format("%d:%02d", total / 60, total % 60)
   end
 
+  # 25_000 -> "25", 7_500 -> "7.5"
+  def clip_seconds(ms) = format("%g", ms / 1000.0)
+
   CLIP_SEAM_LABELS = {
     "verse_to_chorus" => "Verse → chorus", "chorus_to_verse" => "Chorus → verse",
     "singer_change" => "Singer change", "section_change" => "Section change", "unknown" => "Seam unknown"

@@ -85,6 +85,8 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='chunk-row'][data-ordinal='4'][data-src*='tiled_demo_chunk_04_0100_0112.mp4'][data-src*='X-Amz-Signature']"
     assert_select "[data-test='chunks-count']", /4 chunks\s+· 0:00–1:12/
     assert_select "[data-test='chunk-prompt']", 4
+    assert_select "[data-test='chunks-tiling']", /25 s chunks on a 20 s stride, so each shares 5 s with the one before\./
+    assert_select "[data-test='chunk-overlap']", 3
     assert_select "[data-test='clips-approved-count']", /0 of 1/
   end
 
@@ -98,6 +100,18 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     none = count.call { get music_video_path(video) }
     assert_select "[data-test='chunks-empty']", /bin\/find-clips test-artist-a-tiled-demo --tile/
     assert_equal none, four, "four chunks render with the same queries as none"
+  end
+
+  test "the page describes a 15 s tiling in its own numbers" do
+    video = TiledVideo.seed!
+    MusicVideos::ReplaceClips.new(video, TiledVideo.chunk_rows(video, chunk_ms: 15_000, overlap_ms: 5_000),
+                                  kind: "chunk", chunk_ms: 15_000, chunk_overlap_ms: 5_000).call
+    log_in_as users(:alex)
+    get music_video_path(video)
+
+    assert_select "[data-test='chunks-tiling']", /15 s chunks on a 10 s stride, so each shares 5 s with the one before\./
+    assert_select "[data-test='chunk-row']", 7
+    assert_select "[data-test='chunk-row'][data-ordinal='2'] [data-test='chunk-window']", /0:10–0:25\s+· 15\.0 s/
   end
 
   test "a chunk cannot be approved: the decision route reaches candidates only" do

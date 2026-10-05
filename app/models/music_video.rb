@@ -40,6 +40,7 @@ class MusicVideo < ApplicationRecord
   validates :source_object_key, format: { with: %r{\Amusic_videos/.+\.mp4\z} }
   validates :duration_ms, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validate :caption_timing_is_timing_only
+  validate :chunk_tiling_can_tile
 
   def to_param = slug
 
@@ -67,6 +68,12 @@ class MusicVideo < ApplicationRecord
     "#{open.to_sentence} #{open.one? ? 'is' : 'are'} neither an artist nor an extra" if open.any?
   end
 
+  # { chunk_ms:, overlap_ms: } the current chunks were cut with (bin/find-clips
+  # --tile), or nil for a video never tiled.
+  def chunk_tiling
+    { chunk_ms:, overlap_ms: chunk_overlap_ms } if chunk_ms && chunk_overlap_ms
+  end
+
   def kind_label = kind == "cinematic" ? "Cinematic video" : "Music video"
 
   # clips_ready while at least one candidate is approved; back to cast_confirmed
@@ -85,6 +92,13 @@ class MusicVideo < ApplicationRecord
   end
 
   private
+
+  def chunk_tiling_can_tile
+    return if chunk_ms.nil? && chunk_overlap_ms.nil?
+
+    why = MusicVideos::ChunkTiler.problem(chunk_ms:, overlap_ms: chunk_overlap_ms)
+    errors.add(:chunk_ms, why) if why
+  end
 
   def caption_timing_is_timing_only
     t = caption_timing

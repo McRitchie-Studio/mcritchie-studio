@@ -198,7 +198,12 @@
       <div>
         <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1"><%= @video.kind_label %> · Chunks</p>
         <h2 class="text-xl font-bold text-heading">Whole video, in chunks</h2>
-        <p class="text-sm text-muted mt-1">25 s chunks on a 20 s stride, so each shares 5 s with the one before. Separate from the clip candidates above.</p>
+        <p class="text-sm text-muted mt-1" data-test="chunks-tiling">
+          <% if (tiling = @video.chunk_tiling) %>
+            <%= clip_seconds(tiling[:chunk_ms]) %> s chunks on a <%= clip_seconds(tiling[:chunk_ms] - tiling[:overlap_ms]) %> s stride<% if tiling[:overlap_ms].positive? %>, so each shares <%= clip_seconds(tiling[:overlap_ms]) %> s with the one before<% end %>.
+          <% end %>
+          Separate from the clip candidates above.
+        </p>
       </div>
       <% if @chunks.any? %>
         <p class="text-sm text-body shrink-0" data-test="chunks-count">
@@ -211,7 +216,8 @@
       <% performers = @performers.index_by(&:ordinal) %>
       <div class="flex flex-col gap-4">
         <% @chunks.each do |chunk| %>
-          <%= render "music_videos/chunk", chunk: chunk, performers: performers, clip_urls: @clip_urls %>
+          <%= render "music_videos/chunk", chunk: chunk, performers: performers, clip_urls: @clip_urls,
+                     overlap_ms: @video.chunk_overlap_ms.to_i %>
         <% end %>
       </div>
     <% elsif @video.cast_confirmed? %>

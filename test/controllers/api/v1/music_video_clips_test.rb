@@ -133,8 +133,8 @@ module Api
         seam_window = TiledVideo.candidate_rows.map { |row| row.except("seam", "seam_ms") }
         no_times = [whole.first.merge("end_ms" => "25000")]
 
-        { whole.first(3) => "tile the whole video", shifted => "20 s stride", gap => "20 s stride",
-          short_middle => "only the last one shorter", seam_window => "20 s stride", no_times => "20 s stride" }.each do |rows, why|
+        { whole.first(3) => "tile the whole video", shifted => "20000 ms stride", gap => "20000 ms stride",
+          short_middle => "only the last one shorter", seam_window => "20000 ms stride", no_times => "20000 ms stride" }.each do |rows, why|
           assert_no_changes -> { video.video_chunks.reload.pluck(:id) } do
             post clips_api_v1_music_video_path(video), params: { kind: "chunk", clips: rows }, headers: auth_headers, as: :json
           end
@@ -156,6 +156,70 @@ module Api
         assert_response :unprocessable_entity
         assert_equal "INVALID_TILING", body["error_code"]
         assert_equal 71_200, video.video_chunks.reload.last.end_ms
+      end
+
+      def post_chunks(video, rows, **tiling)
+        post clips_api_v1_music_video_path(video), params: { kind: "chunk", clips: rows, **tiling }, headers: auth_headers, as: :json
+      end
+
+      test "a chunk post with no tiling records the default 25 s and 5 s on the video" do
+        video = TiledVideo.video!
+        assert_nil video.chunk_tiling
+
+        post_chunks(video, TiledVideo.chunk_rows(video))
+        assert_response :ok
+        assert_equal [25_000, 5_000], body["data"].values_at("chunk_ms", "chunk_overlap_ms")
+        assert_equal({ chunk_ms: 25_000, overlap_ms: 5_000 }, video.reload.chunk_tiling)
+      end
+
+      test "a 15 s chunk with a 5 s overlap replaces a 25 s tiling, and the video records it" do
+        video = TiledVideo.seed!
+        tiling = { chunk_ms: 15_000, overlap_ms: 5_000 }
+        rows = TiledVideo.chunk_rows(video, **tiling)
+
+        post_chunks(video, rows, chunk_ms: 15_000, chunk_overlap_ms: 5_000)
+        assert_response :ok
+        assert_equal [15_000, 5_000], body["data"].values_at("chunk_ms", "chunk_overlap_ms")
+        assert_equal [[1, 0, 15_000], [2, 10_000, 25_000], [3, 20_000, 35_000], [4, 30_000, 45_000], [5, 40_000, 55_000],
+                      [6, 50_000, 65_000], [7, 60_000, 72_000]],
+                     body.dig("data", "chunks").map { |c| c.values_at("ordinal", "start_ms", "end_ms") }
+        assert_equal "music_videos/test_artist_a/tiled_demo/chunks/tiled_demo_chunk_02_0010_0025.mp4", body.dig("data", "chunks", 1, "object_key")
+        assert(video.video_chunks.reload.all?(&:valid?))
+        assert_equal 1, video.clip_candidates.count
+      end
+
+      test "15 s rows sent without their tiling are measured against the default and refused" do
+        video = TiledVideo.seed!
+        assert_no_changes -> { [video.video_chunks.reload.pluck(:id), video.reload.chunk_tiling] } do
+          post_chunks(video, TiledVideo.chunk_rows(video, chunk_ms: 15_000, overlap_ms: 5_000))
+        end
+        assert_response :unprocessable_entity
+        assert_equal "INVALID_TILING", body["error_code"]
+      end
+
+      test "an overlap as long as the chunk, or a tiling that is not whole milliseconds, is refused" do
+        video = TiledVideo.seed!
+        rows = TiledVideo.chunk_rows(video)
+        { { chunk_ms: 15_000, chunk_overlap_ms: 15_000 } => "must be shorter than the chunk",
+          { chunk_ms: 5_000, chunk_overlap_ms: 9_000 } => "must be shorter than the chunk",
+          { chunk_ms: 0, chunk_overlap_ms: 0 } => "chunk length",
+          { chunk_ms: "15", chunk_overlap_ms: 5_000 } => "chunk length",
+          { chunk_ms: 15_000, chunk_overlap_ms: -1 } => "overlap" }.each do |tiling, why|
+          assert_no_changes -> { [video.video_chunks.reload.pluck(:id), video.reload.chunk_tiling] } do
+            post_chunks(video, rows, **tiling)
+          end
+          assert_response :unprocessable_entity
+          assert_equal "INVALID_TILING", body["error_code"]
+          assert_match why, body["error"]
+        end
+      end
+
+      test "a candidate post may not carry a tiling" do
+        video = TiledVideo.seed!
+        post clips_api_v1_music_video_path(video), params: { clips: TiledVideo.candidate_rows, chunk_ms: 15_000 }, headers: auth_headers, as: :json
+        assert_response :unprocessable_entity
+        assert_equal "UNPERMITTED_KEYS", body["error_code"]
+        assert_equal({ chunk_ms: 25_000, overlap_ms: 5_000 }, video.reload.chunk_tiling)
       end
 
       test "an unknown kind is refused" do

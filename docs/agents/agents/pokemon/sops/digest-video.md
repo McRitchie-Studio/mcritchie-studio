@@ -149,7 +149,8 @@ bin/find-clips <slug> --api <base>     # another hub, e.g. a desk server
 bin/find-clips <slug> --source <mp4>   # a source already on disk
 bin/find-clips <slug> --dry-run        # measure and print the windows only
 bin/find-clips <slug> --production     # production bucket and mcritchie.studio
-bin/find-clips <slug> --tile           # the whole video as 25 s chunks on a 20 s stride
+bin/find-clips <slug> --tile           # the whole video as 25 s chunks that overlap 5 s
+bin/find-clips <slug> --tile --chunk 15 --overlap 5   # 15 s chunks on a 10 s stride
 ```
 
 1. **Source.** `--source`, else the digest folder
@@ -197,12 +198,15 @@ picking candidates. It takes the same flags (`--api`, `--source`, `--dry-run`,
 `--production`); `--count` does not apply. The chunks and the candidates are two
 sets on one video: running either never replaces the other.
 
-1. **Tile.** 25 s chunks on a 20 s stride, so each shares 5 s with the one
-   before: 0-25, 20-45, 40-65 and on. The last chunk ends at the video's end and
-   may be shorter. A tail the previous chunk already covers makes no extra chunk
-   (a 45 s video is two chunks). The rule lives in
-   `lib/music_videos/chunk_tiler.rb`. A chunk has no seam; only the duration is
-   measured.
+1. **Tile.** By default 25 s chunks on a 20 s stride, so each shares 5 s with
+   the one before: 0-25, 20-45, 40-65 and on. `--chunk <seconds>` and
+   `--overlap <seconds>` change the two; they need `--tile`, and the overlap
+   must be shorter than the chunk. `--chunk 15 --overlap 5` gives 0-15, 10-25,
+   20-35 and on, for a swap model that takes 15 s at most. The last chunk ends at
+   the video's end and may be shorter. A tail the previous chunk already covers
+   makes no extra chunk (at the defaults, a 45 s video is two chunks). The rule
+   lives in `lib/music_videos/chunk_tiler.rb`. A chunk has no seam; only the
+   duration is measured.
 2. **Check the source.** The file on disk must run within 1 s of the recorded
    duration, or the script stops: it is not the digested video. The tiling ends
    at the shorter of the two.
@@ -210,10 +214,13 @@ sets on one video: running either never replaces the other.
 4. **Cut and store.** Re-encoded like a candidate, uploaded to
    `music_videos/<artist>/<video>/chunks/<video>_chunk_<NN>_<mmss>_<mmss>.mp4`.
 5. **Post the set**: `POST /api/v1/music_videos/<slug>/clips` with
-   `"kind": "chunk"` beside `clips`. Each row carries `ordinal`, `start_ms`,
+   `"kind": "chunk"`, `chunk_ms` and `chunk_overlap_ms` beside `clips` (the two
+   default to 25000 and 5000). The video records them as its tiling, and `GET`
+   returns them. Each row carries `ordinal`, `start_ms`,
    `end_ms`, `cast_shape`, `target_performer`, `performer_ordinals` and
    `object_key`; `seam` and `seam_ms` are refused (`UNPERMITTED_KEYS`). The set
-   must be the whole tiling: anything else answers `422 INVALID_TILING`. It
+   must be the whole tiling at that chunk length and overlap: anything else
+   answers `422 INVALID_TILING`. It
    replaces the chunks and leaves the candidates and their approvals alone. With
    no `kind`, the post is the candidate set, as before. `GET` returns the
    candidates under `clips` and the chunks under `chunks`.

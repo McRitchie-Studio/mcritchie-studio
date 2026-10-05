@@ -35,8 +35,8 @@
 
       <div class="flex flex-wrap gap-1.5">
         <span class="badge text-xs bg-surface-alt text-body border-subtle" data-test="chunk-shape"><%= clip_shape_label(chunk.cast_shape) %></span>
-        <% if chunk.ordinal > 1 %>
-          <span class="badge text-xs bg-primary/10 text-primary border-primary/20" data-test="chunk-overlap">First <%= MusicVideos::ChunkTiler::OVERLAP_MS / 1000 %> s repeat chunk <%= chunk.ordinal - 1 %></span>
+        <% if chunk.ordinal > 1 && overlap_ms.positive? %>
+          <span class="badge text-xs bg-primary/10 text-primary border-primary/20" data-test="chunk-overlap">First <%= clip_seconds(overlap_ms) %> s repeat chunk <%= chunk.ordinal - 1 %></span>
         <% end %>
       </div>
 

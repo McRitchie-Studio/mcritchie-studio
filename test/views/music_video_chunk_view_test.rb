@@ -16,8 +16,8 @@ class MusicVideoChunkViewTest < ActionView::TestCase
     @url = "https://signed.example/chunk.mp4?X-Amz-Signature=abc"
   end
 
-  def render_row(chunk, urls: { chunk.object_key => @url })
-    render partial: "music_videos/chunk", locals: { chunk:, performers: @performers, clip_urls: urls }
+  def render_row(chunk, urls: { chunk.object_key => @url }, overlap_ms: @video.chunk_overlap_ms)
+    render partial: "music_videos/chunk", locals: { chunk:, performers: @performers, clip_urls: urls, overlap_ms: }
   end
 
   test "the row carries its signed preview, window, shape and target" do
@@ -44,6 +44,14 @@ class MusicVideoChunkViewTest < ActionView::TestCase
     render_row(@chunks.last)
     assert_select "#chunk-4 [data-test='chunk-window']", /1:00–1:12\s+· 12\.0 s/
     assert_select "#chunk-4 [data-test='chunk-overlap']", "First 5 s repeat chunk 3"
+  end
+
+  test "the overlap chip reads the video's own tiling, and a plain cut has none" do
+    render_row(@chunks.second, overlap_ms: 7_500)
+    assert_select "[data-test='chunk-overlap']", "First 7.5 s repeat chunk 1"
+
+    render_row(@chunks.third, overlap_ms: 0)
+    assert_select "#chunk-3 [data-test='chunk-overlap']", 0
   end
 
   test "the filled prompt sits beside a Copy button" do

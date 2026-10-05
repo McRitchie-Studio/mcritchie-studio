@@ -16,7 +16,8 @@ require_relative "../../lib/music_videos/object_keys"
 # no Python packages. Runs where the source MP4 is (the operator's Mac).
 #
 # With tile: true (bin/find-clips --tile) it measures only the duration and
-# cuts the whole video into 25 s chunks on a 20 s stride (MusicVideos::ChunkTiler),
+# cuts the whole video into overlapping chunks (MusicVideos::ChunkTiler): 25 s
+# with a 5 s overlap unless chunk_ms and overlap_ms say otherwise. They are
 # posted as kind "chunk". The seam candidates and the chunks never replace each other.
 module FindClips
   Failure = DigestVideo::Failure
@@ -93,7 +94,8 @@ module FindClips
   # One run: fetch the video and cast, find windows, cut, upload, post.
   class Runner
     def initialize(api:, storage:, shell:, out: $stdout, workdir:, source: nil, dry_run: false, count: 5,
-                   bucket: "mcritchie-studio-dev", tile: false)
+                   bucket: "mcritchie-studio-dev", tile: false, chunk_ms: MusicVideos::ChunkTiler::CHUNK_MS,
+                   overlap_ms: MusicVideos::ChunkTiler::OVERLAP_MS)
       @api = api
       @storage = storage
       @shell = shell
@@ -105,9 +107,13 @@ module FindClips
       @count = count
       @bucket = bucket
       @tile = tile
+      @tiling = { chunk_ms:, overlap_ms: }
     end
 
     def call(slug)
+      why = @tile && MusicVideos::ChunkTiler.problem(**@tiling)
+      raise Failure, why if why
+
       video = @api.show(slug)
       unless READY.include?(video["stage"])
         raise Failure, "#{slug} is #{video['stage']}: confirm the cast on /music_videos/#{slug} first"
@@ -133,12 +139,13 @@ module FindClips
 
     # --tile: the whole video as overlapping chunks, replacing only the chunks.
     def tile(video, mp4)
-      rows = MusicVideos::ChunkTiler.windows(tiling_duration(video, mp4)).map { |w| chunk_row(video, w) }
+      rows = MusicVideos::ChunkTiler.windows(tiling_duration(video, mp4), **@tiling).map { |w| chunk_row(video, w) }
       report_chunks(video, rows)
       return rows if @dry_run
 
       cut_and_upload(mp4, rows)
-      @api.post("/api/v1/music_videos/#{video['slug']}/clips", { kind: "chunk", clips: rows })
+      @api.post("/api/v1/music_videos/#{video['slug']}/clips",
+                { kind: "chunk", chunk_ms: @tiling[:chunk_ms], chunk_overlap_ms: @tiling[:overlap_ms], clips: rows })
       @out.puts "posted #{rows.size} chunks for #{video['slug']}; the clip candidates are untouched"
       rows
     end
@@ -229,7 +236,8 @@ module FindClips
 
     def report_chunks(video, rows)
       people = (video["performers"] || []).to_h { |p| [p["ordinal"], p] }
-      @out.puts "#{rows.size} chunks for #{video['slug']} (25 s on a 20 s stride)" \
+      @out.puts "#{rows.size} chunks for #{video['slug']} (#{seconds(@tiling[:chunk_ms])} s on a " \
+                "#{seconds(MusicVideos::ChunkTiler.stride(**@tiling))} s stride)" \
                 "#{' (dry run: nothing cut, uploaded or posted)' if @dry_run}"
       rows.each do |r|
         target = people[r[:target_performer]]
@@ -237,6 +245,8 @@ module FindClips
                          target ? "Person #{target['ordinal']} (#{target['label']})" : "none")
       end
     end
+
+    def seconds(ms) = format("%g", ms / 1000.0)
 
     def clock(ms) = format("%d:%04.1f", ms / 60_000, (ms % 60_000) / 1000.0)
   end

@@ -164,7 +164,7 @@ class FindClipsTest < Minitest::Test
     keys = %w[01_0000_0025 02_0020_0045 03_0040_0105 04_0100_0112].map { |w| "music_videos/steve_aoki/night_call/chunks/night_call_chunk_#{w}.mp4" }
     assert_equal keys, rows.map { |r| r[:object_key] }
     assert_equal keys.map { |k| [k, "clip", "video/mp4"] }, storage.puts
-    assert_equal [["/api/v1/music_videos/steve-aoki-night-call/clips", { kind: "chunk", clips: rows }]], api.posts
+    assert_equal [["/api/v1/music_videos/steve-aoki-night-call/clips", { kind: "chunk", chunk_ms: 25_000, chunk_overlap_ms: 5_000, clips: rows }]], api.posts
 
     cuts = shell.calls.select { |c| c.include?("-ss") }
     assert_equal [%w[0.000 25.000], %w[20.000 25.000], %w[40.000 25.000], %w[60.000 12.000]],
@@ -190,6 +190,30 @@ class FindClipsTest < Minitest::Test
     assert_match(/04  1:00\.0-1:12\.0  unknown  target none/, out.string)
     refute(shell.calls.any? { |c| c.include?("-ss") })
     assert_empty storage.puts
+    assert_empty api.posts
+  end
+
+  # The fal swap model takes 15 s at most: --chunk 15 --overlap 5.
+  def test_tile_at_15_seconds_with_a_5_second_overlap_cuts_on_a_10_second_stride
+    api = FakeApi.new(video(duration_ms: 47_500))
+    rows, storage, shell = run_finder(api:, shell: FakeShell.new(duration: "47.500000"), tile: true, chunk_ms: 15_000, overlap_ms: 5_000)
+
+    assert_equal [[1, 0, 15_000], [2, 10_000, 25_000], [3, 20_000, 35_000], [4, 30_000, 45_000], [5, 40_000, 47_500]],
+                 rows.map { |r| r.values_at(:ordinal, :start_ms, :end_ms) }
+    assert_equal "music_videos/steve_aoki/night_call/chunks/night_call_chunk_05_0040_0047.mp4", rows.last[:object_key]
+    assert_equal 5, storage.puts.size
+    assert_equal [{ kind: "chunk", chunk_ms: 15_000, chunk_overlap_ms: 5_000, clips: rows }], api.posts.map(&:last)
+    cuts = shell.calls.select { |c| c.include?("-ss") }
+    assert_equal [%w[0.000 15.000], %w[10.000 15.000], %w[20.000 15.000], %w[30.000 15.000], %w[40.000 7.500]],
+                 cuts.map { |c| [c[c.index("-ss") + 1], c[c.index("-t") + 1]] }
+  end
+
+  def test_tile_refuses_an_overlap_as_long_as_the_chunk_before_any_call
+    api = FakeApi.new(video)
+    shell = FakeShell.new
+    error = assert_raises(FindClips::Failure) { run_finder(api:, shell:, tile: true, chunk_ms: 5_000, overlap_ms: 5_000) }
+    assert_match "must be shorter than the chunk", error.message
+    assert_empty shell.calls
     assert_empty api.posts
   end
 

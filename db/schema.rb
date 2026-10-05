@@ -1124,6 +1124,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_180000) do
 
   create_table "music_videos", force: :cascade do |t|
     t.jsonb "caption_timing", default: {"cues"=>[], "sections"=>[]}, null: false
+    t.integer "chunk_ms"
+    t.integer "chunk_overlap_ms"
     t.datetime "created_at", null: false
     t.integer "duration_ms"
     t.string "info_object_key"

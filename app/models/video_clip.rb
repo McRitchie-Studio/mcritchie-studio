@@ -4,15 +4,15 @@
 #
 #   candidate  a ~25 s window that starts on a musical boundary and spans a
 #              seam (stage 5); the operator approves or rejects it.
-#   chunk      one tile of the whole video (MusicVideos::ChunkTiler): 25 s on a
-#              20 s stride, the last one ending at the video's end. No seam.
+#   chunk      one tile of the whole video (MusicVideos::ChunkTiler), cut at
+#              the chunk length and overlap its video records (25 s and 5 s
+#              by default), the last one ending at the video's end. No seam.
 class VideoClip < ApplicationRecord
   KINDS = %w[candidate chunk].freeze
   SEAMS = MusicVideos::ClipFinder::SEAMS
   CAST_SHAPES = MusicVideos::ClipCast::SHAPES
   STATUSES = %w[proposed approved rejected].freeze
   LENGTH_MS = (MusicVideos::ClipFinder::MIN_MS..MusicVideos::ClipFinder::MAX_MS)
-  CHUNK_LENGTH_MS = (1..MusicVideos::ChunkTiler::CHUNK_MS)
 
   belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :video_clips
 
@@ -29,7 +29,7 @@ class VideoClip < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validates :prompt, presence: true
   validate :length_fits_the_kind
-  validate :chunk_starts_on_the_stride, if: :chunk?
+  validate :chunk_fits_the_videos_tiling, if: :chunk?
   validate :seam_inside_the_window
   validate :performers_belong_to_the_video
   validate :object_key_names_the_window
@@ -49,22 +49,28 @@ class VideoClip < ApplicationRecord
   def length_fits_the_kind
     return unless start_ms.is_a?(Integer) && end_ms.is_a?(Integer)
 
-    if chunk?
-      errors.add(:end_ms, "makes a #{duration_ms} ms chunk; chunks run up to 25 s") unless CHUNK_LENGTH_MS.cover?(duration_ms)
-    else
-      errors.add(:end_ms, "makes a #{duration_ms} ms clip; clips run 24 to 26 s") unless LENGTH_MS.cover?(duration_ms)
+    unless chunk? || LENGTH_MS.cover?(duration_ms)
+      errors.add(:end_ms, "makes a #{duration_ms} ms clip; clips run 24 to 26 s")
     end
     duration = music_video&.duration_ms
     errors.add(:end_ms, "is past the end of the video") if duration && end_ms > duration
   end
 
-  # The stride is fixed, so a chunk's ordinal alone says where it starts. The
-  # stitch (recast pipeline) relies on it: neighbours overlap exactly 5 s.
-  def chunk_starts_on_the_stride
-    return unless ordinal.is_a?(Integer) && ordinal.positive? && start_ms.is_a?(Integer)
+  # A chunk is cut at its video's own tiling (chunk length and overlap): no
+  # longer than a chunk, and starting where its ordinal puts it on the stride.
+  # The stitch (recast pipeline) relies on it: neighbours overlap exactly.
+  def chunk_fits_the_videos_tiling
+    tiling = music_video&.chunk_tiling
+    return errors.add(:kind, "chunk needs the video's chunk length and overlap, and it has none") unless tiling
+    return unless ordinal.is_a?(Integer) && ordinal.positive? && start_ms.is_a?(Integer) && end_ms.is_a?(Integer)
 
-    expected = MusicVideos::ChunkTiler.start_of(ordinal)
-    errors.add(:start_ms, "must be #{expected} for chunk #{ordinal} (a 20 s stride)") unless start_ms == expected
+    unless (1..tiling[:chunk_ms]).cover?(duration_ms)
+      errors.add(:end_ms, "makes a #{duration_ms} ms chunk; this video's chunks run up to #{tiling[:chunk_ms]} ms")
+    end
+    expected = MusicVideos::ChunkTiler.start_of(ordinal, **tiling)
+    return if start_ms == expected
+
+    errors.add(:start_ms, "must be #{expected} for chunk #{ordinal} (a #{MusicVideos::ChunkTiler.stride(**tiling)} ms stride)")
   end
 
   def seam_inside_the_window
