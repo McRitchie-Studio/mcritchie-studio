@@ -13,6 +13,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Ecosystem map | `mcritchie-studio/docs/ECOSYSTEM.md` |
 | Fresh-machine rebuild | `mcritchie-studio/docs/agents/system/house-burn-down.md` |
 | DevOps v3 design (ratified 2026-09-24, landing in phases) | `mcritchie-studio/docs/agents/system/devops-v3-design.md` |
+| Agent sessions and capability APIs design (proposed, awaiting Alex's review; tiers, grants, capability matrix) | `mcritchie-studio/docs/agents/system/agent-sessions-design.md` |
 | Ecosystem build script | `mcritchie-studio/docs/agents/system/ecosystem-build.md` |
 | Agent culture | `mcritchie-studio/docs/agents/modules/culture.md` |
 | Credentials and 1Password | `mcritchie-studio/docs/agents/modules/credentials.md` |
