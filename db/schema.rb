@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_05_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1795,6 +1795,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_180000) do
     t.index ["slug"], name: "index_studio_site_identities_on_slug", unique: true
   end
 
+  create_table "survey_responses", force: :cascade do |t|
+    t.jsonb "answers", default: {}, null: false
+    t.bigint "broadcast_delivery_id"
+    t.bigint "contact_id"
+    t.datetime "created_at", null: false
+    t.string "survey_slug", null: false
+    t.datetime "updated_at", null: false
+    t.index ["broadcast_delivery_id"], name: "index_survey_responses_on_broadcast_delivery_id"
+    t.index ["contact_id"], name: "index_survey_responses_on_contact_id"
+    t.index ["survey_slug", "broadcast_delivery_id"], name: "index_survey_responses_one_per_delivery", unique: true, where: "(broadcast_delivery_id IS NOT NULL)"
+    t.index ["survey_slug", "created_at"], name: "index_survey_responses_on_survey_slug_and_created_at"
+  end
+
   create_table "task_events", force: :cascade do |t|
     t.string "actor"
     t.bigint "cache_creation_tokens"
@@ -2187,6 +2200,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_180000) do
   add_foreign_key "staged_emails", "broadcasts"
   add_foreign_key "staged_emails", "contacts"
   add_foreign_key "studio_email_deliveries", "users"
+  add_foreign_key "survey_responses", "broadcast_deliveries", on_delete: :nullify
+  add_foreign_key "survey_responses", "contacts", on_delete: :nullify
   add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
   add_foreign_key "workspace_mailboxes", "workspace_accounts"
 end
