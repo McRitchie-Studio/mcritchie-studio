@@ -190,6 +190,67 @@ class PersonTest < ActiveSupport::TestCase
     assert_equal [%w[athlete], "athlete"], person.reload.values_at(:vocations, :primary_vocation)
   end
 
+  # --- drift: a boolean written past the callbacks, the list never told ---
+  #
+  # Such a row comes from any write that skips before_validation: a dyno still
+  # running the old code after the column landed, update_columns, upsert_all.
+
+  def drifted(flag = :athlete)
+    vocational.tap { |person| person.update_columns(flag => true, vocations: [], primary_vocation: nil) }.reload
+  end
+
+  test "a list write never clears a boolean the stored list never held" do
+    person = drifted
+    artist = Artist.create!(slug: "test-drift-artist", name: "Test Drift Artist", kind: "person")
+
+    artist.update!(person_slug: person.slug)
+    assert_equal [true, %w[athlete musician], "athlete"], person.reload.values_at(:athlete, :vocations, :primary_vocation)
+    assert_equal 1, Person.where(athlete: true, slug: person.slug).count, "the SQL readers still see the athlete"
+  end
+
+  test "coach drift is kept the same way, and a list that names the flag still sets it" do
+    person = drifted(:coach)
+
+    person.update!(vocations: %w[actor athlete])
+    assert_equal [true, true, %w[athlete coach actor], "athlete"],
+                 person.reload.values_at(:athlete, :coach, :vocations, :primary_vocation)
+  end
+
+  test "removing a vocation the stored list held clears its boolean" do
+    person = vocational(athlete: true, coach: true)
+    assert_equal %w[athlete coach], person.reload.vocations
+
+    person.update!(vocations: %w[coach])
+    assert_equal [false, true, %w[coach], "coach"], person.reload.values_at(:athlete, :coach, :vocations, :primary_vocation)
+
+    person.update!(vocations: [])
+    assert_equal [false, false, [], nil], person.reload.values_at(:athlete, :coach, :vocations, :primary_vocation)
+  end
+
+  test "a drifted row healed by one save can be unticked by the next" do
+    person = drifted
+
+    person.update!(vocations: %w[actor])
+    assert_equal [true, %w[athlete actor]], person.reload.values_at(:athlete, :vocations)
+    person.update!(vocations: %w[actor])
+    assert_equal [false, %w[actor], "actor"], person.reload.values_at(:athlete, :vocations, :primary_vocation)
+  end
+
+  test "a boolean written in the same save as the list still wins over it" do
+    person = drifted
+
+    person.update!(athlete: false, vocations: %w[athlete actor])
+    assert_equal [false, %w[actor]], person.reload.values_at(:athlete, :vocations)
+  end
+
+  test "held_vocations reads a drifted boolean as held, in the list's order" do
+    person = drifted(:coach)
+    person.update_columns(vocations: %w[actor])
+
+    assert_equal %w[coach actor], person.reload.held_vocations
+    assert_equal %w[actor], person.vocations, "reading does not write"
+  end
+
   test "every people fixture agrees with itself" do
     Person.find_each do |person|
       assert person.valid?, "#{person.slug}: #{person.errors.full_messages.to_sentence}"
