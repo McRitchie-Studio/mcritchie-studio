@@ -35,7 +35,7 @@ class Broadcast < ApplicationRecord
       "build" => "https://mcritchie.studio/build"
     }.freeze,
     # The first-game feedback note (task first-game-feedback-survey). The
-    # survey is served by Cyvasse (studio-engine's Studio::Survey). The link
+    # survey is served by Cyvasse (studio-engine's survey primitive, a separate task). The link
     # uses the email host, whose redirect carries ?ref= across to cyvasse.xyz;
     # the click tracker adds the reader's token as ?ref=
     # (EmailEvents::Results.with_ref), and Cyvasse's EmailReferral credits the

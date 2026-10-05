@@ -226,7 +226,7 @@ The "How was your first game" email (`cyvasse_first_game`, task
 first-game-feedback-survey) goes to the players who have played on the rebuilt
 Cyvasse, tagged `cyvasse-new-stack-player`. Its one button is the tracked link
 `l=survey` to Cyvasse's own survey, `https://cyvasse.mcritchie.studio/surveys/first-game`
-(served by studio-engine's `Studio::Survey`; the email host's redirect carries
+(served by studio-engine's survey primitive, a separate task; the email host's redirect carries
 the query across to cyvasse.xyz). The click tracker adds the reader's token as
 `?ref=` (`EmailEvents::Results.with_ref`), Cyvasse's `EmailReferral` credits the
 answer to them, and the app beacons the `survey_completed` goal
@@ -262,6 +262,12 @@ heroku run -a mcritchie-studio -- bin/rails contacts:tag_new_stack_players
 Then create a `cyvasse_first_game` broadcast with the plain subject ("How was
 your first game on the new Cyvasse?"; the resolver adds the username) and
 target list `cyvasse-new-stack-player`, and stage it as in the next section.
+
+**Hold the send until Cyvasse serves the survey.** The button's target is dead
+until Cyvasse adopts the engine survey and defines `first-game`. Do not execute
+the send until `https://cyvasse.mcritchie.studio/surveys/first-game?ref=test`
+loads on production Cyvasse with `ref` intact. This is the same gate the
+`cyvasse_night` send waits on for its Night page.
 
 ## Staged Sends: Review Before Execute
 

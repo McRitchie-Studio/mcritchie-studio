@@ -12,7 +12,7 @@
 <%= render "broadcasts/email_head",
       hero_file: "cyvasse_header_live.jpg",
       hero_alt:  "A Cyvasse board mid-game",
-      preheader: "Five quick questions about your first game. Alex reads every answer.",
+      preheader: "A few quick questions about your first game. Alex reads every answer.",
       title:     "How was your first game?",
       subtitle:  "Thank you for playing the new Cyvasse." %>
 
@@ -21,7 +21,7 @@
     <td style="padding:28px 32px 8px 32px;">
       <p style="<%= p_style %>">Hi<%= " #{username}" if username.present? %>,</p>
       <p style="<%= p_style %>" data-block="body">Thank you for playing Cyvasse. We rebuilt it from scratch, and you&rsquo;re one of the first people to play the new version.</p>
-      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">How did it feel? Five quick questions, and I read every answer.</p>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">How did it feel? A few quick questions, and I read every answer.</p>
     </td>
   </tr>
 
