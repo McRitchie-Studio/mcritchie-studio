@@ -27,8 +27,8 @@ a **prompt-like row 1** plus **copyable action rows**:
   - `collect-vault-revenue` — operator-triggered, and it moves money: it runs
     when Alex asks for the revenue, and its second hop is three approvals in
     Squads' own UI.
-  - `post-to-x` — operator-triggered, and it publishes: it runs when Alex hands
-    over videos, and every batch waits on his approval.
+  - `post-to-x` — operator-triggered, and it publishes: it runs when Alex has
+    put videos on the board, and every batch waits on his approval.
 
   A chip does not imply a cadence (`clean-infra`, `deploy-with-task` and
   `contest-rehearsal` are chips and are direct-invoke); do not restate that

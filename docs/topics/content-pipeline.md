@@ -866,6 +866,18 @@ v2 chunked upload at `api.x.com/2/media/upload/{initialize,<id>/append,<id>/fina
 ### Rake
 `bin/rails lineup_graphic:capture SLUG=buffalo-bills` runs the capture script + `LineupGraphic::AssembleVideo` for local testing without going through a Content record.
 
+## Video Post (X) Workflow
+
+`Content.workflow = "video_post_x"` is a finished MP4 the operator uploads with a few words of context; a soul writes the copy and posts it. It is the board half of the Turf Monster `post-to-x` SOP.
+
+1. **Create**: `/contents/new` → Workflow **Video Post (X)** → attach the MP4, put the context in Description. `ContentsController#create_video_post_x` validates the file BEFORE saving (`Content::AttachVideo#validate!`: an `.mp4` with `video/mp4`, at most 100 MB), saves the card at `stage=idea`, and stores the file at `video_posts/<slug>.mp4`, recording `final_video_url`. A refused or failed upload leaves no card. A blank title is taken from the context.
+2. **Copy and post**: the SOP reads the card through the agent API (`final_video_url` and `description` are serialized), writes `captions`, posts with `bin/x-post`, then calls `POST /api/v1/contents/:slug/posted { session, post_url }`, which is claim-guarded, accepts only an `x.com` status URL on a `video_post_x` card, and records `post_url`/`post_id`/`platform=x`, moves the card to `posted` and releases the claim. `bin/content posted <slug> --post-url …` wraps it.
+3. **Card**: the show page renders a Video Post (X) card with the video, the context, then the copy, then the link.
+
+There is no post button on the card: production holds no X keys, and an upload plus X's processing outlasts a web request.
+
+The e2e lane has no bucket, so `config/initializers/e2e_video_storage.rb` replaces `Content::AttachVideo.store` when the Playwright server sets `E2E_FAKE_VIDEO_STORAGE=1`.
+
 ## Starter Post (TikTok) Workflow
 
 `Content.workflow = "starter_post_tiktok_offense"` and `"starter_post_tiktok_defense"`. Two workflows, one per side of the ball, that mirror the X pipeline but post 19-second vertical (1080×1920) clips to TikTok. **Posting is currently a creator-copilot loop**: agent does all prep, human does the publish click. Three publish paths exist (API drafts, API direct, manual fallback) but TikTok app is in review until Content Posting API approval lands — only sandbox-mode + manual paths work for now.

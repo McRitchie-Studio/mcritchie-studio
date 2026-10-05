@@ -28,15 +28,16 @@ attribution and routes to its act SOPs:
   revenue out of the vault in TWO hops: sweep the `op_rev` ATA to the treasury
   (2-of-3, our admin UI), then withdraw from the Squads vault to a personal
   wallet (3-of-5, app.squads.so, not in our code).
-- [`post-to-x`](sops/post-to-x.md) - post the MP4s Alex hands over to
-  `@turfmonstershow`: finish each caption from his line, choose the hashtags,
-  show him the batch, and post on his one approval.
+- [`post-to-x`](sops/post-to-x.md) - drain the board's Video Post (X) cards to
+  `@turfmonstershow`: turn Alex's context into copy and hashtags, read every
+  added fact from a source, show him the batch, post on his one approval, and
+  record each link on its card.
 
 Use this file when Alex invokes `Turf Monster Heartbeat`. When he
 invokes a single act directly, read that act's SOP file.
 
 `post-to-x` is not a chip, for a seventh reason: it is OPERATOR-triggered and
-it PUBLISHES. It runs when Alex hands over videos and never otherwise, every
+it PUBLISHES. It runs when Alex has put videos on the board and never otherwise, every
 batch waits on his approval, and a button that posts to a public account on a
 cadence has nothing to post. It stays a registered invocation by name, owned
 here and in the SOP registry.
