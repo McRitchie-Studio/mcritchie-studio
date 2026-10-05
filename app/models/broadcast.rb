@@ -33,6 +33,13 @@ class Broadcast < ApplicationRecord
       "play" => "https://cyvasse.xyz/",
       "calendar" => "https://cyvasse.xyz/night.ics",
       "build" => "https://mcritchie.studio/build"
+    }.freeze,
+    # The first-game feedback note (task first-game-feedback-survey). The
+    # click tracker adds the reader's token to the survey link as ?t=
+    # (EmailEvents::Results.with_ref), which credits the answer to them.
+    "cyvasse_first_game" => {
+      "survey" => "https://mcritchie.studio/s/cyvasse-first-game",
+      "build" => "https://mcritchie.studio/build"
     }.freeze
   }.freeze
 
@@ -48,7 +55,8 @@ class Broadcast < ApplicationRecord
   # default is the broadcast's stored subject. See #subject_for.
   SUBJECT_RESOLVERS = {
     "cyvasse_your_games" => "Broadcasts::CyvasseYourGames",
-    "cyvasse_night" => "Broadcasts::CyvasseNight"
+    "cyvasse_night" => "Broadcasts::CyvasseNight",
+    "cyvasse_first_game" => "Broadcasts::CyvasseFirstGame"
   }.freeze
 
   # Registry of available copy templates: key => human label. Each key maps to
@@ -59,6 +67,7 @@ class Broadcast < ApplicationRecord
     "cyvasse_is_back"       => "Cyvasse Is Back",
     "cyvasse_your_games"    => "Cyvasse: Your Games",
     "cyvasse_night"         => "Cyvasse Night Invite",
+    "cyvasse_first_game"    => "Cyvasse: How Was Your First Game",
   }.freeze
 
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy

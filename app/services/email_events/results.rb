@@ -39,16 +39,28 @@ module EmailEvents
 
     # Adds the email's token to a link that lands on one of our sites, so the
     # site can report results back. Other hosts get the URL unchanged: the
-    # token is ours to share only with ourselves.
+    # token is ours to share only with ourselves. It rides as ?ref=, or as ?t=
+    # on a hub survey (token_param).
     def with_ref(url, token)
       uri = URI.parse(url.to_s)
       return url unless uri.is_a?(URI::HTTP) && our_host?(uri.host)
 
-      query = URI.decode_www_form(uri.query.to_s).reject { |key, _| key == "ref" } << [ "ref", token ]
+      param = token_param(uri)
+      query = URI.decode_www_form(uri.query.to_s).reject { |key, _| key == param } << [ param, token ]
       uri.query = URI.encode_www_form(query)
       uri.to_s
     rescue URI::InvalidURIError
       url
+    end
+
+    # A feedback survey on the hub (/s/<slug>, task first-game-feedback-survey)
+    # reads the token as ?t=, which credits the answer to the reader.
+    SURVEY_PATH = %r{\A/s/[^/]+/?\z}
+    HUB_HOSTS = %w[mcritchie.studio www.mcritchie.studio].freeze
+
+    # The query key a link's token rides in: "t" for a hub survey, else "ref".
+    def token_param(uri)
+      HUB_HOSTS.include?(uri.host.to_s.downcase.delete_suffix(".")) && SURVEY_PATH.match?(uri.path.to_s) ? "t" : "ref"
     end
 
     # Our own apps only. Customer apps also live on *.mcritchie.studio, and

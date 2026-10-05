@@ -15,6 +15,7 @@ Rails.application.config.filter_parameters += [
   # model's `message` column in an inspect. ContactSubmission filters its own.
   /\Acontact_submission\.(phone|message)\z/,
   # A feedback survey's answers (task first-game-feedback-survey) are what a
-  # reader told Alex, never the log's: the whole `answers` hash is masked.
-  /\Aanswers\z/
+  # reader told Alex, never the log's: the whole `answers` hash is masked. Its
+  # `t` is the email's delivery token, which opens that reader's answers.
+  /\Aanswers\z/, /\At\z/
 ]
