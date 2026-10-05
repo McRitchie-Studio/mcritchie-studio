@@ -20,9 +20,14 @@
 # NON-FATAL by construction: any failure (no token, unreachable board, empty bank)
 # prints NOTHING and exits 0, so a session with no insights just starts normally —
 # the hook can never block or slow a session start.
+#
+# It also loads the DREAM BANK (bin/lib/dream_bank.rb): the approved worked
+# decisions in docs/agents/dreams/. Dreams are tracked files, read locally, so they
+# load even when the board gives no insights. Dreams print first; insights follow.
 
 require "json"
 require_relative "lib/agent_api"
+require_relative "lib/dream_bank"
 
 class SessionInsights
   include AgentApi::Presence
@@ -31,20 +36,18 @@ class SessionInsights
   READ_TIMEOUT = 4
   DEFAULT_LIMIT = 12
 
-  def initialize(env: ENV, out: $stdout)
+  def initialize(env: ENV, out: $stdout, dreams_dir: nil)
     @env = env
     @out = out
+    @dreams_dir = dreams_dir || env["DREAM_BANK_DIR"] || DreamBank::DEFAULT_DIR
     @api = AgentApi.new(env: env, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT)
   end
 
-  # Fetch the feed and, if there is anything to say, print the SessionStart
-  # injection JSON. Silent no-op otherwise. ALWAYS returns without raising.
+  # Read the dreams, fetch the feed and, if either has anything to say, print the
+  # SessionStart injection JSON. Silent no-op otherwise. ALWAYS returns without raising.
   def run
-    insights = fetch_insights
-    return if insights.nil? || insights.empty?
-
-    context = additional_context(insights)
-    return if context.to_s.strip.empty?
+    context = session_context(dreams: dream_context, insights: additional_context(fetch_insights))
+    return if context.empty?
 
     @out.puts(JSON.generate(
                 "hookSpecificOutput" => {
@@ -54,6 +57,18 @@ class SessionInsights
               ))
   rescue StandardError
     # swallow — a feed-forward hook must never break or delay a session start
+  end
+
+  # The approved dreams as a context block; "" when the bank is empty or unreadable.
+  def dream_context
+    DreamBank.context(DreamBank.approved(dir: @dreams_dir))
+  rescue StandardError
+    ""
+  end
+
+  # Join the blocks that have content. Either one alone is a full context.
+  def session_context(dreams:, insights:)
+    [ dreams, insights ].map { |block| block.to_s.strip }.reject(&:empty?).join("\n\n")
   end
 
   # ── Pure formatter (unit-tested directly) ─────────────────────────────────

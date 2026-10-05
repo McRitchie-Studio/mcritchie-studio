@@ -99,11 +99,79 @@ class SessionInsightsTest < Minitest::Test
     end
   end
 
+  # ── [unit] session_context joins the dream and insight blocks ───────────────
+
+  def test_unit_session_context_puts_dreams_ahead_of_insights
+    assert_equal "DREAMS\n\nINSIGHTS", tool.session_context(dreams: "DREAMS\n", insights: "INSIGHTS")
+  end
+
+  def test_unit_session_context_stands_on_either_block_alone
+    assert_equal "DREAMS", tool.session_context(dreams: "DREAMS", insights: "")
+    assert_equal "INSIGHTS", tool.session_context(dreams: "", insights: "INSIGHTS")
+    assert_equal "", tool.session_context(dreams: " ", insights: nil)
+  end
+
+  # ── [integration] dreams load from disk, with or without the board ─────────
+
+  def test_integration_approved_dreams_load_ahead_of_the_insights
+    with_dream_dir do |dreams|
+      Dir.mktmpdir do |proj|
+        out, _err, status = run_bin(proj: proj, dreams_dir: dreams,
+                                    insights: [ { "slug" => "write the failing test first", "disposition" => "good" } ])
+
+        assert_equal 0, status.exitstatus
+        context = JSON.parse(out).dig("hookSpecificOutput", "additionalContext")
+        assert_includes context, "**Q: Do I merge on one read?** (`wait-for-it`)"
+        refute_includes context, "candidate", "a proposed dream reaches no session"
+        assert_operator context.index("## Dreams"), :<, context.index("## Insights")
+      end
+    end
+  end
+
+  # The board is DOWN here: nothing listens on the port, so the insight fetch fails.
+  # The dreams are local files and must still arrive.
+  def test_integration_dreams_load_with_the_board_unreachable
+    with_dream_dir do |dreams|
+      Dir.mktmpdir do |proj|
+        env = SessionEnv.neutralized("AGENT_API_SECRET" => "test-secret", "CLAUDE_PROJECTS_DIR" => proj,
+                                     "DREAM_BANK_DIR" => dreams, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{closed_port}")
+        out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN)
+
+        assert_equal 0, status.exitstatus
+        context = JSON.parse(out).dig("hookSpecificOutput", "additionalContext")
+        assert_includes context, "A: No. Wait for the report."
+        refute_includes context, "## Insights"
+      end
+    end
+  end
+
   private
+
+  def with_dream_dir
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "wait-for-it.md"),
+                 "---\nquestion: \"Do I merge on one read?\"\nanswer: \"No. Wait for the report.\"\n" \
+                 "why: \"A late blocker costs a whole task.\"\nstatus: approved\n---\n\n# Wait\n")
+      File.write(File.join(dir, "not-yet.md"),
+                 "---\nquestion: \"A candidate question?\"\nanswer: \"A candidate answer.\"\nstatus: proposed\n---\n")
+      yield dir
+    end
+  end
+
+  # A port with nothing listening: bind one, read its number, release it.
+  def closed_port
+    server = TCPServer.new("127.0.0.1", 0)
+    server.addr[1]
+  ensure
+    server&.close
+  end
 
   # Shell out to the real bin against a one-shot stub that mints a token then serves
   # the given insights on GET /api/v1/insights.
-  def run_bin(proj:, insights:)
+  #
+  # dreams_dir defaults to the empty tmp project dir, NOT the repo's real bank: the
+  # insight tests must not start failing the day a dream is approved.
+  def run_bin(proj:, insights:, dreams_dir: proj)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     thread = Thread.new { serve(server, insights) }
@@ -112,6 +180,7 @@ class SessionInsightsTest < Minitest::Test
     env = SessionEnv.neutralized(
       "AGENT_API_SECRET" => "test-secret",
       "CLAUDE_PROJECTS_DIR" => proj,
+      "DREAM_BANK_DIR" => dreams_dir,
       "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}"
     )
     Open3.capture3(env, RbConfig.ruby, BIN)

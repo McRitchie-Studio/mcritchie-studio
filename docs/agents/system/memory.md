@@ -34,6 +34,15 @@ memory (`~/.claude/projects/*/memory/MEMORY.md`) is scratch history, never a sou
 of truth. Don't hand-write a lesson into a doc; **bank it** so every runtime
 (Claude, Codex) sees the same set.
 
+## The dream bank (worked decisions)
+
+A lesson says what to do. A **dream** shows a decision being made: the question a
+session faced, the good answer, and why. Dreams are tracked files in
+[`docs/agents/dreams/`](../dreams/README.md), each one signed off by Alex, and the
+same `bin/session-insights` loader prints the approved ones ahead of the insights.
+They are read locally, so they load with the board unreachable. Procedure:
+[`dream.md`](../modules/dream.md).
+
 ## Agent-Specific Memory
 
 Durable agent-specific memory belongs in tracked docs under

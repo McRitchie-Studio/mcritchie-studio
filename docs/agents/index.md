@@ -91,6 +91,7 @@ Where each command may run, the author set, and the long form:
 6. **Concurrency cap: 5 at a time.** At most five agents, dynos, or board-writing commands in flight; the board database has 20 connections.
 7. **No secrets in output.** Use named 1Password references and purpose-built scripts. Detail: `docs/agents/modules/credentials.md`.
 8. **No terminal chores for Alex.** Run safe commands yourself; ask him only for approvals, product judgment, or a credential only he holds.
+9. **Dream before you decide.** Session start loads the dream bank: good answers from past sessions, signed off by Alex. Read it, and answer a matching situation the same way. Detail: `docs/agents/modules/dream.md`.
 
 Namespace scratch writes by task slug (`ship-<task-slug>.log`); sibling agents share one scratchpad.
 Correct Alex's spelling and grammar as you transcribe, by *The Elements of Style*.
@@ -136,6 +137,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | **Business facts**: an entity's name, EIN, address, code, headcount or advisors; a form to fill | Pull from `business-data/FACTS.md` (private `mcritchie-industries` repo) first, and add any durable fact you learn in the same pass: `docs/agents/modules/knowledge-capture.md` (the quick reference rule). Forms: `docs/agents/modules/form-fill.md` |
 | **Communication**: reporting to Alex | `docs/agents/modules/communication-style.md` |
 | **Learning**: grades and insights | `docs/agents/agents/xan/sops/grade-events.md` |
+| **Dreams**: good answers from past sessions, read at every start | `docs/agents/modules/dream.md`; the bank in `docs/agents/dreams/` |
 | History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
 
 ## SOP Invocation Table
@@ -208,6 +210,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
+| `dream` | Shared | `mcritchie-studio/docs/agents/modules/dream.md` |
 
 ## SOP Registry
 
@@ -282,6 +285,7 @@ heartbeat may set attribution and act order; the SOP files do not depend on it.
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
+| `dream` | Shared | `mcritchie-studio/docs/agents/modules/dream.md` |
 
 ## LLM Adapters
 
