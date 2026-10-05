@@ -70,22 +70,68 @@ module DreamBank
     nil
   end
 
-  # The SessionStart block for a list of dreams, or "" when none are approved.
-  def context(dreams)
-    rows = Array(dreams).select(&:approved?).map { |d| dream_block(d) }
-    return "" if rows.empty?
+  HEADER = "## Dreams: good answers from past sessions\n" \
+           "Each dream is a decision worth repeating, signed off by Alex. Some record what a session got " \
+           "right; some record the answer a wrong call taught. Read them all before your first decision; " \
+           "when a situation here matches yours, answer it the same way. A dream never overrides a First " \
+           "Rule or an SOP. Full story: `docs/agents/dreams/<slug>.md`.\n\n"
 
-    header = "## Dreams — good answers from past sessions\n" \
-             "Each dream is a real decision a past session got right, signed off by Alex. " \
-             "Read them all before your first decision; when a situation here matches yours, " \
-             "answer it the same way. Full story: `docs/agents/dreams/<slug>.md`.\n\n"
-    header + rows.join("\n\n")
+  # The SessionStart block for a list of dreams, or "" when none are approved.
+  #
+  # `budget` is the most characters the block may take. Claude Code caps a hook's
+  # additionalContext at 10,000 characters and, over that, hands the model a file
+  # path and a 2,000-character preview instead: nearly every dream would be lost,
+  # silently. So the block degrades on purpose, in three steps, and says so:
+  #
+  #   1. every dream with its Why
+  #   2. every dream, question and answer only
+  #   3. as many question-and-answer dreams as fit, then one line naming how many
+  #      were left out and where to read them
+  def context(dreams, budget: nil)
+    approved = Array(dreams).select(&:approved?)
+    return "" if approved.empty?
+
+    full = render(approved, why: true)
+    return full if fits?(full, budget)
+
+    brief = render(approved, why: false)
+    return brief if fits?(brief, budget)
+
+    truncated(approved, budget)
   end
 
-  def dream_block(dream)
+  def render(dreams, why:)
+    HEADER + dreams.map { |d| dream_block(d, why: why) }.join("\n\n")
+  end
+
+  def dream_block(dream, why: true)
     lines = [ "**Q: #{dream.question}** (`#{dream.slug}`)", "A: #{dream.answer}" ]
-    lines << "Why: #{dream.why}" unless dream.why.empty?
+    lines << "Why: #{dream.why}" if why && !dream.why.empty?
     lines.join("\n")
+  end
+
+  def fits?(text, budget)
+    budget.nil? || text.size <= budget
+  end
+
+  # Step 3. Keeps whole dreams only, in bank order, and always leaves room for the
+  # line that says the block is incomplete. "" when not even the header fits.
+  def truncated(dreams, budget)
+    kept = []
+    dreams.each do |dream|
+      candidate = kept + [ dream ]
+      break unless fits?(render(candidate, why: false) + "\n\n" + overflow_line(dreams.size - candidate.size), budget)
+
+      kept = candidate
+    end
+    return "" if kept.empty?
+
+    render(kept, why: false) + "\n\n" + overflow_line(dreams.size - kept.size)
+  end
+
+  def overflow_line(left_out)
+    "**#{left_out} more approved dream(s) did not fit this block.** " \
+      "Read `docs/agents/dreams/` before your first decision."
   end
 
   def field(data, key)

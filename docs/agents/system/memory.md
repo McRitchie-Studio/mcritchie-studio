@@ -40,7 +40,8 @@ A lesson says what to do. A **dream** shows a decision being made: the question 
 session faced, the good answer, and why. Dreams are tracked files in
 [`docs/agents/dreams/`](../dreams/README.md), each one signed off by Alex, and the
 same `bin/session-insights` loader prints the approved ones ahead of the insights.
-They are read locally, so they load with the board unreachable. Procedure:
+They are read locally, so they load with the board unreachable. About 25 load
+by themselves, because a hook's context is capped at 10,000 characters. Procedure:
 [`dream.md`](../modules/dream.md).
 
 ## Agent-Specific Memory

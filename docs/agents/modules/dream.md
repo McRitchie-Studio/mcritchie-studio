@@ -37,9 +37,33 @@ insights. It reads the tracked files, so it needs no token and no board.
    ruby -Ibin/lib -rdream_bank -e 'puts DreamBank.context(DreamBank.approved)'
    ```
 
-Only `status: approved` dreams load. The block costs about 100 tokens a dream, so
-a bank of 100 is roughly 10,000 tokens at every session start. Keep each dream
-short enough that the whole bank stays worth reading.
+Only `status: approved` dreams load. A dream never overrides a First Rule or an
+SOP: where they disagree, the rule wins and the dream is wrong.
+
+### The ceiling: about 25 dreams load by themselves
+
+Claude Code caps a hook's context at **10,000 characters**. Over that, the model
+gets a file path and a 2,000-character preview, and nearly everything is lost
+without a word. Dreams and insights share that one string, so the loader budgets
+it (`SessionInsights::CONTEXT_BUDGET`, 9,800):
+
+1. The insights are fetched first and kept whole. They are never trimmed for a dream.
+2. The dreams take what is left, and degrade on purpose:
+   - every dream with its Why, while that fits (about 16 dreams beside a full feed);
+   - then every dream as question and answer only (about 25);
+   - then as many as fit, with a closing line that says how many were left out
+     and tells the session to read `docs/agents/dreams/`.
+
+`test/lib/session_insights_test.rb` pins the real bank beside a full insight feed
+under the cap with every dream present. The dream that tips the bank over fails
+CI; it does not truncate in production. When that test goes red, shorten a dream
+or retire one.
+
+So the always-loaded bank is a curated set of about 25, not 100. Today's 20 load
+as question and answer; their Why lines stay in the files. A larger bank
+needs the session to read the files itself (the closing line asks for that), or a
+loader that picks dreams by relevance. Neither is built. Codex's hook limit has
+not been measured.
 
 ## Act 2 — Capture (when a session earns one)
 
@@ -48,7 +72,8 @@ Propose a dream when one of these happens:
 - Alex says "good call", or accepts a recommendation that went against the
   obvious move.
 - A review, or Alex, catches a decision that was wrong, and the right answer is
-  now clear. A dream may be born from a bad decision; it records the good one.
+  now clear. A dream may be born from a bad decision; it records the good one,
+  and its story says plainly that the session got it wrong.
 - You chose not to do something tempting, and the reason would transfer.
 
 Write the file in your task's desk. Let it ride a change that is already going
@@ -79,6 +104,10 @@ Rules for a dream:
   temptation is a fact, and facts belong in the docs.
 - **No live data.** This repo is public. No real names of counterparties, no
   figures from a deal, no contact details, no keys or addresses.
+- **No security detail.** Do not name a weakness that may still be open (which
+  key is shared, what leaked). Say that one was found.
+- **Short.** Question, answer and why together stay under about 400 characters;
+  every character is spent out of the ceiling above.
 - **New dreams are `proposed`.** Never write `approved` yourself.
 
 ## Act 3 — Sign-off (Alex)

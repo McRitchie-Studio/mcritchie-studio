@@ -18,4 +18,4 @@ Say 'good point' and carry on with the wallet design.
 
 ## What happened
 
-Asked what the reframe implied (system credentials are per-environment), checked every credential against it, and found one signing key shared between production and QA.
+Asked what the reframe implied (system credentials are per-environment), checked every credential against it, and found the one that broke the rule.

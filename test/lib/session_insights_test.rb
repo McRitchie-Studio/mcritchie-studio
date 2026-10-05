@@ -111,6 +111,56 @@ class SessionInsightsTest < Minitest::Test
     assert_equal "", tool.session_context(dreams: " ", insights: nil)
   end
 
+  # ── [unit] the hook cap: one string, 10,000 characters ─────────────────────
+  #
+  # Claude Code caps a hook's additionalContext at 10,000 characters. Over it the
+  # model is handed a file path and a 2,000-character preview, which loses most
+  # dreams and EVERY insight without a word. These pin the size, so the dream
+  # that tips the bank over fails here instead of truncating in production.
+
+  HOOK_CAP = 10_000
+  # Room held for the insight feed: 12 rows, each a slug, a long form and a task.
+  # The live feed measured 1,834 characters on 2026-10-05.
+  INSIGHT_RESERVE = 2_500
+
+  def test_unit_the_budget_sits_under_the_hook_cap
+    assert_operator SessionInsights::CONTEXT_BUDGET, :<, HOOK_CAP
+  end
+
+  def test_unit_dream_budget_leaves_the_insights_whole
+    insights = "x" * 1_800
+
+    assert_equal SessionInsights::CONTEXT_BUDGET, tool.dream_budget("")
+    assert_equal SessionInsights::CONTEXT_BUDGET - 1_800 - 2, tool.dream_budget(insights)
+  end
+
+  def test_unit_the_real_bank_and_a_full_feed_fit_under_the_cap_with_every_dream
+    approved = DreamBank.approved
+    insights = "## Insights\n" + ("- x" * 1).ljust(INSIGHT_RESERVE - 12, "x")
+    real = SessionInsights.new(env: {}, dreams_dir: DreamBank::DEFAULT_DIR)
+
+    dreams = real.dream_context(budget: real.dream_budget(insights))
+    context = real.session_context(dreams: dreams, insights: insights)
+
+    assert_operator context.size, :<=, HOOK_CAP
+    assert_includes context, insights, "the insights are never trimmed for a dream"
+    assert_equal approved.size, dreams.scan(/^\*\*Q:/).size,
+                 "the approved bank no longer fits beside a full insight feed: " \
+                 "#{approved.size} approved, #{dreams.scan(/^\*\*Q:/).size} loaded. " \
+                 "Shorten a dream or retire one (docs/agents/modules/dream.md, The ceiling)."
+    refute_includes dreams, "did not fit this block"
+  end
+
+  def test_unit_an_oversized_feed_squeezes_the_dreams_and_never_the_insights
+    insights = "## Insights\n" + ("y" * 9_000)
+    real = SessionInsights.new(env: {}, dreams_dir: DreamBank::DEFAULT_DIR)
+
+    context = real.session_context(dreams: real.dream_context(budget: real.dream_budget(insights)), insights: insights)
+
+    assert_operator context.size, :<=, HOOK_CAP
+    assert_includes context, insights
+  end
+
   # ── [integration] dreams load from disk, with or without the board ─────────
 
   def test_integration_approved_dreams_load_ahead_of_the_insights

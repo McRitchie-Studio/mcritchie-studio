@@ -32,6 +32,14 @@ require_relative "lib/dream_bank"
 class SessionInsights
   include AgentApi::Presence
 
+  # Claude Code caps a hook's additionalContext at 10,000 characters; over it the
+  # model gets a file path and a 2,000-character preview, so dreams AND insights
+  # would both be lost. Stay under it with a margin. The insights are fetched
+  # first and always kept whole; the dreams take what is left and degrade on
+  # purpose (DreamBank.context) when that is not enough.
+  CONTEXT_BUDGET = 9_800
+  SEPARATOR = "\n\n"
+
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 4
   DEFAULT_LIMIT = 12
@@ -46,7 +54,8 @@ class SessionInsights
   # Read the dreams, fetch the feed and, if either has anything to say, print the
   # SessionStart injection JSON. Silent no-op otherwise. ALWAYS returns without raising.
   def run
-    context = session_context(dreams: dream_context, insights: additional_context(fetch_insights))
+    insights = additional_context(fetch_insights).to_s.strip
+    context = session_context(dreams: dream_context(budget: dream_budget(insights)), insights: insights)
     return if context.empty?
 
     @out.puts(JSON.generate(
@@ -60,15 +69,22 @@ class SessionInsights
   end
 
   # The approved dreams as a context block; "" when the bank is empty or unreadable.
-  def dream_context
-    DreamBank.context(DreamBank.approved(dir: @dreams_dir))
+  def dream_context(budget: CONTEXT_BUDGET)
+    DreamBank.context(DreamBank.approved(dir: @dreams_dir), budget: budget)
   rescue StandardError
     ""
   end
 
+  # What the dreams may take once the insights have their room. The insights are
+  # never trimmed to make space for a dream.
+  def dream_budget(insights)
+    used = insights.to_s.strip.size
+    used.zero? ? CONTEXT_BUDGET : CONTEXT_BUDGET - used - SEPARATOR.size
+  end
+
   # Join the blocks that have content. Either one alone is a full context.
   def session_context(dreams:, insights:)
-    [ dreams, insights ].map { |block| block.to_s.strip }.reject(&:empty?).join("\n\n")
+    [ dreams, insights ].map { |block| block.to_s.strip }.reject(&:empty?).join(SEPARATOR)
   end
 
   # ── Pure formatter (unit-tested directly) ─────────────────────────────────

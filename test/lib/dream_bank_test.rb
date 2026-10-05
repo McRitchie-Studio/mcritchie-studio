@@ -87,6 +87,40 @@ class DreamBankTest < Minitest::Test
     assert_equal [], DreamBank.all(dir: "/nonexistent-dream-bank")
   end
 
+  # ── the budget: degrade on purpose, never silently ─────────────────────────
+
+  def three_dreams
+    %w[one two three].map { |slug| DreamBank.parse(DREAM, slug: slug) }
+  end
+
+  def test_unit_context_drops_the_why_lines_before_it_drops_a_dream
+    full = DreamBank.context(three_dreams)
+    brief = DreamBank.context(three_dreams, budget: full.size - 1)
+
+    assert_includes full, "Why: A late blocker"
+    refute_includes brief, "Why:"
+    assert_equal 3, brief.scan(/^\*\*Q:/).size, "every dream survives the first degrade"
+    assert_operator brief.size, :<, full.size
+  end
+
+  def test_unit_context_over_budget_keeps_whole_dreams_and_says_how_many_it_left_out
+    brief = DreamBank.render(three_dreams, why: false)
+    context = DreamBank.context(three_dreams, budget: brief.size - 1)
+
+    assert_operator context.size, :<=, brief.size - 1, "the block never exceeds its budget"
+    assert_operator context.scan(/^\*\*Q:/).size, :<, 3
+    assert_match(/\*\*[12] more approved dream\(s\) did not fit this block\.\*\*/, context)
+    assert_includes context, "Read `docs/agents/dreams/`"
+  end
+
+  def test_unit_context_is_empty_when_not_even_one_dream_fits
+    assert_equal "", DreamBank.context(three_dreams, budget: 50)
+  end
+
+  def test_unit_the_header_says_a_dream_never_overrides_a_rule
+    assert_includes DreamBank.context(three_dreams), "A dream never overrides a First Rule or an SOP."
+  end
+
   # ── the real bank ──────────────────────────────────────────────────────────
 
   def test_unit_every_tracked_dream_parses_with_a_known_status

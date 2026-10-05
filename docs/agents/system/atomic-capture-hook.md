@@ -461,7 +461,9 @@ it as a bare path.
 **It also loads the dream bank.** Ahead of the insights it prints a `## Dreams`
 block: the `status: approved` files in `docs/agents/dreams/`, read from disk by
 `bin/lib/dream_bank.rb`. That half needs no token and no board, so a session whose
-insight fetch fails still starts with its dreams. Procedure:
+insight fetch fails still starts with its dreams. Both blocks share Claude Code's
+10,000-character cap on a hook's context, so the loader keeps the insights whole
+and fits the dreams into what is left, degrading on purpose. Procedure:
 [`../modules/dream.md`](../modules/dream.md).
 
 **Wiring — `bin/install-agent-docs` owns it.** As of the *wire-bank-to-session-bridge*
