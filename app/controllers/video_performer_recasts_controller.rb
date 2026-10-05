@@ -10,7 +10,7 @@ class VideoPerformerRecastsController < ApplicationController
   def update
     choice = recast
     # A refusal is an answer, not an ErrorLog.
-    unless choice[:clear] || choice[:keep] || (choice[:person_slug] && choice[:appearance_slug])
+    unless choice[:clear] || choice[:keep] || choice[:person_slug]
       return back(alert: "#{@performer.name} not recast: choose an athlete and one of their looks, or keep as is.")
     end
 
@@ -40,6 +40,7 @@ class VideoPerformerRecastsController < ApplicationController
   def notice_for(performer)
     return "#{performer.name} is kept as is." if performer.recast_keep?
     return "#{performer.name} is replaced by #{performer.recast_label}." if performer.recast?
+    return "#{performer.recast_label} has no look yet: create one to finish this recast." if performer.recast_pending?
 
     "#{performer.name}: recast cleared."
   end

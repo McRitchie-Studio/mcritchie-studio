@@ -13,8 +13,10 @@
       <%= button_to "Change", recast_path, method: :patch, params: { clear: "1" },
                     class: "btn btn-outline btn-sm shrink-0", form: { data: { test: "recast-clear" } } %>
     </div>
-    <% if performer.recast_pending? %>
-      <p class="text-sm text-warning-ink mt-1" data-test="recast-pending">No look chosen: the look this recast used is gone. Choose one.</p>
+    <% if performer.recast_pending? && choices.empty? %>
+      <p class="text-sm text-warning-ink mt-1" data-test="recast-no-look"><%= athlete.full_name %> has no look yet. Create one, then choose it here.</p>
+    <% elsif performer.recast_pending? %>
+      <p class="text-sm text-warning-ink mt-1" data-test="recast-pending">No look chosen. Choose one of <%= athlete.full_name %>’s looks.</p>
     <% end %>
     <% if choices.size > 1 || (performer.recast_pending? && choices.any?) %>
       <%= form_with url: recast_path, method: :patch, local: true, class: "mt-2", data: { test: "recast-look-form" } do %>
@@ -29,7 +31,7 @@
         </select>
       <% end %>
     <% end %>
-    <%= link_to "New look for #{athlete.full_name}", person_path(athlete.slug, return_to: card_path, anchor: "new-model"),
+    <%= link_to "#{choices.empty? ? 'Create a look' : 'New look'} for #{athlete.full_name}", person_path(athlete.slug, return_to: card_path, anchor: "new-model"),
                 class: "inline-block mt-2 text-sm text-primary hover:underline", data: { test: "recast-new-look" } %>
   <% elsif performer.recast_keep? %>
     <div class="flex items-center justify-between gap-2 min-w-0">
@@ -47,7 +49,7 @@
         <label class="sr-only" for="recast-search-<%= performer.ordinal %>">Who replaces <%= performer.name %>?</label>
         <input id="recast-search-<%= performer.ordinal %>" type="text" autocomplete="off" role="combobox"
                aria-autocomplete="list" :aria-expanded="open" aria-controls="recast-results-<%= performer.ordinal %>"
-               placeholder="Search athletes with a look"
+               placeholder="Search people by name"
                class="input-field py-2 text-sm" x-model="query" @input.debounce.250ms="search()"
                @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
                @keydown.enter.prevent="pickActive()" @keydown.escape="open = false">
@@ -55,21 +57,18 @@
         <div x-show="open" x-cloak id="recast-results-<%= performer.ordinal %>" role="listbox"
              class="absolute z-20 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1" data-test="recast-results">
           <template x-for="(r, i) in results" :key="r.slug">
-            <button type="button" role="option" :aria-selected="i === active" @click="choose(r)" @mouseenter="active = i"
-                    class="w-full text-left rounded-lg px-3 py-2"
-                    :class="i === active ? 'bg-surface-alt' : ''" data-test="recast-option">
-              <span class="block text-sm font-semibold text-heading truncate" x-text="r.name"></span>
-              <span class="block text-xs text-muted truncate" x-text="[r.hint, r.slug].join(' · ')"></span>
-            </button>
+            <%= render "music_videos/search_row", option_test: "recast-option", hint: "false",
+                       badge: "r.hint",
+                       badge_class: "r.looks.length ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-secondary border-subtle'" %>
           </template>
           <p x-show="!loading && failed" class="px-3 py-2 text-sm text-warning-ink">Search failed. Try again.</p>
           <p x-show="!loading && !failed && results.length === 0" class="px-3 py-2 text-sm text-muted" data-test="recast-no-match">
-            No athlete with a look matches. A person gets a look on their page in
+            No person matches that name. Everyone we know is listed in
             <%= link_to "People", people_path, class: "text-primary hover:underline" %>.
           </p>
         </div>
 
-        <div x-show="athlete" x-cloak class="mt-2" data-test="recast-looks">
+        <div x-show="athlete && athlete.looks.length" x-cloak class="mt-2" data-test="recast-looks">
           <p class="text-xs text-muted mb-1.5">Which look of <span class="font-semibold text-heading" x-text="athlete ? athlete.name : ''"></span>?</p>
           <div class="flex flex-wrap gap-1.5">
             <template x-for="look in (athlete ? athlete.looks : [])" :key="look.slug">

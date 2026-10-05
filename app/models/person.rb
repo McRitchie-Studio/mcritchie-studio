@@ -23,7 +23,22 @@ class Person < ApplicationRecord
   has_many :roster_spots, foreign_key: :person_slug, primary_key: :slug
   has_many :coaches, foreign_key: :person_slug, primary_key: :slug
 
+  # WHAT A PERSON DOES. A person holds any number of these and exactly one
+  # primary, which is the one the UI shows (a search row, the person page).
+  # Listed in the order a list is stored and a blank primary is filled from.
+  #
+  # `athlete` and `coach` are also boolean columns, older than this list: the
+  # importers write them (`find_or_create_by_name!(..., athlete: true)`) and
+  # the rankings read them in SQL. They stay, and #reconcile_vocations keeps
+  # the two spellings in step on every save.
+  VOCATIONS = %w[athlete coach actor musician politician entertainer].freeze
+  FLAG_VOCATIONS = %w[athlete coach].freeze
+
   validates :first_name, :last_name, presence: true
+
+  before_validation :reconcile_vocations
+  validate :vocations_are_known
+  validate :primary_vocation_is_held
 
   # Before the looks go (prepend): a destroyed person replaces nobody, and the
   # videos' prompts stop naming them.
@@ -55,6 +70,45 @@ class Person < ApplicationRecord
     update_columns(default_appearance_slug: settled) if persisted? && !destroyed?
     self.default_appearance_slug = settled
     settled
+  end
+
+  def vocation?(name) = vocations.include?(name.to_s)
+
+  # Add one vocation, keeping the primary the person already has.
+  def add_vocation!(name)
+    update!(vocations: vocations + [name.to_s]) unless vocation?(name)
+  end
+
+  # ONE FACT, TWO SPELLINGS: the list and the two boolean columns. A boolean
+  # written in this save wins (that is what every importer writes); otherwise
+  # a list written in this save sets the boolean. Then the primary: blank is
+  # filled from the first vocation, and one whose vocation was just taken away
+  # falls back the same way. A primary the caller SET to something the person
+  # does not hold is left alone, for the validation to refuse.
+  def reconcile_vocations
+    list = Array(vocations).map { |v| v.to_s.strip.downcase }.reject(&:empty?).uniq
+    FLAG_VOCATIONS.each do |flag|
+      if will_save_change_to_attribute?(flag)
+        self[flag] ? list |= [flag] : list -= [flag]
+      elsif will_save_change_to_vocations?
+        self[flag] = list.include?(flag)
+      end
+    end
+    self.vocations = list.sort_by { |v| VOCATIONS.index(v) || VOCATIONS.size }
+    self.primary_vocation = primary_vocation.presence
+    stale = !vocations.include?(primary_vocation) && !will_save_change_to_primary_vocation?
+    self.primary_vocation = vocations.first if primary_vocation.nil? || stale
+  end
+
+  def vocations_are_known
+    unknown = vocations - VOCATIONS
+    errors.add(:vocations, "has no #{unknown.to_sentence}: choose from #{VOCATIONS.to_sentence}") if unknown.any?
+  end
+
+  def primary_vocation_is_held
+    return if primary_vocation.nil? || vocations.include?(primary_vocation)
+
+    errors.add(:primary_vocation, "must be one of this person's vocations")
   end
 
   def release_recasts

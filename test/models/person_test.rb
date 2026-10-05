@@ -100,4 +100,85 @@ class PersonTest < ActiveSupport::TestCase
     Person.find_or_create_by_name!("J.T.", "Tuimoloau")
     assert_equal 1, person.reload.aliases.count { |a| a == "J.T. Tuimoloau" }
   end
+
+  # --- vocations: many, one primary (synthetic people only) ---
+
+  def vocational(**attrs) = Person.create!(first_name: "Test", last_name: "Vocation #{SecureRandom.hex(3)}", **attrs)
+
+  test "a person holds many vocations, stored in the list's order, and one primary" do
+    person = vocational(vocations: %w[entertainer athlete actor], primary_vocation: "entertainer")
+
+    assert_equal %w[athlete actor entertainer], person.reload.vocations
+    assert_equal "entertainer", person.primary_vocation
+    assert person.vocation?(:actor)
+    assert_not person.vocation?("coach")
+  end
+
+  test "the primary must be one of the person's vocations" do
+    person = vocational(vocations: %w[athlete actor])
+
+    person.primary_vocation = "musician"
+    assert_not person.valid?
+    assert_includes person.errors[:primary_vocation], "must be one of this person's vocations"
+
+    person.primary_vocation = "actor"
+    assert person.valid?
+    assert_not Person.new(first_name: "Test", last_name: "Nobody", primary_vocation: "actor").valid?,
+               "a primary with no vocations at all"
+  end
+
+  test "an unknown vocation is refused" do
+    person = Person.new(first_name: "Test", last_name: "Astronaut", vocations: %w[athlete astronaut])
+
+    assert_not person.valid?
+    assert_match "has no astronaut", person.errors[:vocations].first
+  end
+
+  test "a blank primary is filled from the first vocation, and no vocations means no primary" do
+    person = vocational(vocations: %w[musician actor])
+    assert_equal "actor", person.primary_vocation
+
+    person.update!(vocations: [])
+    assert_nil person.reload.primary_vocation
+  end
+
+  test "taking away the primary's vocation moves the primary to one still held" do
+    person = vocational(vocations: %w[athlete actor], primary_vocation: "athlete")
+
+    person.update!(vocations: %w[actor entertainer])
+    assert_equal "actor", person.reload.primary_vocation
+  end
+
+  test "the athlete and coach booleans and the list stay in step, whichever is written" do
+    imported = vocational(athlete: true)
+    assert_equal [%w[athlete], "athlete"], imported.values_at(:vocations, :primary_vocation)
+
+    imported.update!(coach: true)
+    assert_equal [%w[athlete coach], "athlete"], imported.reload.values_at(:vocations, :primary_vocation)
+
+    imported.update!(athlete: false)
+    assert_equal [%w[coach], "coach"], imported.reload.values_at(:vocations, :primary_vocation)
+
+    edited = vocational(vocations: %w[coach entertainer], primary_vocation: "entertainer")
+    assert_equal [false, true], edited.values_at(:athlete, :coach)
+    edited.update!(vocations: %w[athlete entertainer])
+    assert_equal [true, false], edited.reload.values_at(:athlete, :coach)
+    assert_equal 1, Person.where(athlete: true, slug: [imported.slug, edited.slug]).count, "the SQL readers see the list"
+  end
+
+  test "find_or_create_by_name! with a flag gives a known person the vocation and keeps their primary" do
+    person = vocational(vocations: %w[entertainer])
+
+    Person.find_or_create_by_name!(person.first_name, person.last_name, athlete: true)
+    assert_equal [%w[athlete entertainer], "entertainer", true], person.reload.values_at(:vocations, :primary_vocation, :athlete)
+  end
+
+  test "a person linked to an artist becomes a musician and keeps their primary" do
+    person = vocational(athlete: true)
+    artist = Artist.create!(slug: "test-vocation-artist", name: "Test Vocation Artist", kind: "person")
+    assert_equal %w[athlete], person.reload.vocations
+
+    artist.update!(person_slug: person.slug)
+    assert_equal [%w[athlete musician], "athlete"], person.reload.values_at(:vocations, :primary_vocation)
+  end
 end

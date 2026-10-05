@@ -2,10 +2,14 @@ module Artists
   # The cast panel's typeahead: artists by name and alias, plus People not yet
   # linked to an artist. Ranked exact > prefix > word prefix > contains; at each
   # step a name beats an alias, and an artist beats a bare person on a tie.
+  # Every result carries its row facts: a headshot, a vocation and a team
+  # (People::SearchRows). An artist with no Person has no headshot or team and
+  # reads "musician", or "group".
   class Search
     LIMIT = 10
     POOL = 30 # per source, taken in rank order, so the merged top LIMIT is exact
-    Result = Data.define(:type, :slug, :name, :kind, :hint, :rank)
+    Result = Data.define(:type, :slug, :name, :kind, :hint, :rank, :avatar_url, :vocation, :team)
+    Hit = Data.define(:type, :slug, :name, :kind, :hint, :rank, :person_slug)
 
     NAME_RANKS = [0, 2, 4, 6].freeze
     ALIAS_RANKS = [1, 3, 5, 7].freeze
@@ -20,7 +24,13 @@ module Artists
     def call(limit: LIMIT)
       return [] if @q.empty?
 
-      (artist_results + people_results).sort_by { |r| [r.rank, r.name.length, r.name] }.first(limit)
+      hits = (artist_results + people_results).sort_by { |r| [r.rank, r.name.length, r.name] }.first(limit)
+      rows = People::SearchRows.for(hits.map(&:person_slug))
+      hits.map do |hit|
+        row = rows.fetch(hit.person_slug, People::SearchRows::BLANK)
+        Result.new(**hit.to_h.except(:person_slug), avatar_url: row.avatar_url, team: row.team,
+                   vocation: row.vocation || (hit.kind == "group" ? "group" : ("musician" if hit.type == "artist")))
+      end
     end
 
     private
@@ -33,7 +43,8 @@ module Artists
       artists = Artist.includes(:groups, :members).where(slug: best.keys).index_by(&:slug)
       best.filter_map do |slug, (rank, via)|
         artist = artists[slug] or next
-        Result.new(type: "artist", slug:, name: artist.name, kind: artist.kind, hint: artist_hint(artist, via), rank:)
+        Hit.new(type: "artist", slug:, name: artist.name, kind: artist.kind, hint: artist_hint(artist, via), rank:,
+                person_slug: artist.person_slug)
       end
     end
 
@@ -54,8 +65,8 @@ module Artists
       rank = rank_sql(column, NAME_RANKS, fallback: ALIAS_RANKS.last)
       scope.order(Arel.sql("#{rank}, length(#{column})")).limit(POOL)
            .pluck(:slug, :first_name, :last_name, Arel.sql(rank)).map do |slug, first, last, r|
-        Result.new(type: "person", slug:, name: "#{first} #{last}", kind: "person",
-                   hint: "in People, not an artist yet", rank: r + PERSON_OFFSET)
+        Hit.new(type: "person", slug:, name: "#{first} #{last}", kind: "person",
+                hint: "in People, not an artist yet", rank: r + PERSON_OFFSET, person_slug: slug)
       end
     end
 

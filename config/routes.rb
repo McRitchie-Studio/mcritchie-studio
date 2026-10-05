@@ -380,6 +380,8 @@ Rails.application.routes.draw do
       post :create_appearance
       post :make_default_appearance
       post :attach_artifact
+      # What this person does: many vocations, one primary. Admin only.
+      patch :vocations, action: :update_vocations
     end
 
     # ONE LOOK'S CHARACTER MODEL. Nested because a look has no meaning without its
