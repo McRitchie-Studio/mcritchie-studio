@@ -8,7 +8,7 @@ module X
   class Caption
     MAX_WEIGHT    = 280
     URL_WEIGHT    = 23
-    MAX_HASHTAGS  = 3
+    MAX_HASHTAGS  = 8
     HASHTAG       = /\A#[A-Za-z0-9_]+\z/
     HANDLE        = /\A@[A-Za-z0-9_]{1,15}\z/
     URL           = %r{https?://\S+}

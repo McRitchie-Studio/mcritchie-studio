@@ -37,9 +37,10 @@ class X::CaptionTest < ActiveSupport::TestCase
   end
 
   test "counts hashtags written into the line against the cap" do
-    caption = X::Caption.new(line: "One #A #B", hashtags: %w[#C #D])
+    caption = X::Caption.new(line: "One #A #B #C #D #E", hashtags: %w[#F #G #H #I])
 
-    assert_includes caption.problems.join, "4 hashtags"
+    assert_includes caption.problems.join, "9 hashtags"
+    assert_empty X::Caption.new(line: "One #A #B", hashtags: %w[#C #D #E #F #G #H]).problems
   end
 
   test "names a link, which X bills at a higher rate" do

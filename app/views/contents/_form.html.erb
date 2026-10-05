@@ -7,7 +7,7 @@
     </div>
   <% end %>
 
-  <%= form_with model: content, url: content.persisted? ? content_path(content.slug) : contents_path do |f| %>
+  <%= form_with model: content, url: content.persisted? ? content_path(content.slug) : contents_path, multipart: true do |f| %>
     <!-- Workflow -->
     <div class="mb-5">
       <label class="block text-sm text-secondary mb-2 font-medium">Workflow</label>
@@ -18,11 +18,25 @@
               ["Starter Post (TikTok Offense)", "starter_post_tiktok_offense"],
               ["Starter Post (TikTok Defense)", "starter_post_tiktok_defense"],
               ["Game Recap", "game_recap"],
-              ["Rapper Replace", "rapper_replace"]
+              ["Rapper Replace", "rapper_replace"],
+              ["Video Post (X)", "video_post_x"]
             ],
             {},
             class: "input-field", "x-model": "workflow" %>
     </div>
+
+    <%# VIDEO POST (X): the operator's whole input is the file and the context.
+        Turf Monster writes the copy from the context and posts it. %>
+    <% unless content.persisted? %>
+      <div x-show="workflow === 'video_post_x'" x-cloak class="mb-5" data-test="video-post-x-fields">
+        <label class="block text-sm text-secondary mb-2 font-medium">MP4</label>
+        <%= f.file_field :video_file, accept: "video/mp4", class: "input-field", "data-test": "video-post-x-file" %>
+        <p class="text-xs text-secondary mt-2">
+          Up to <%= Content::AttachVideo::MAX_BYTES / 1024 / 1024 %> MB. Put what it is in Description, for example
+          &ldquo;Panthers win&rdquo;. Title is optional.
+        </p>
+      </div>
+    <% end %>
 
     <!-- Idea -->
     <p class="label-upper mb-3">Idea</p>

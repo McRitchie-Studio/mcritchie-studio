@@ -486,6 +486,7 @@ Rails.application.routes.draw do
         end
         member do
           post :release
+          post :posted
         end
       end
       # GitHub Actions webhook receiver (workflow_run events). Called by GitHub,

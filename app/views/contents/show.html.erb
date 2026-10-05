@@ -32,6 +32,32 @@
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Main Content -->
     <div class="lg:col-span-2 space-y-6">
+      <%# Video Post (X): the operator's MP4 and context, then the copy and the link
+          as Turf Monster fills them in through the post-to-x SOP. %>
+      <% if @content.video_post_x? %>
+        <div class="card p-6 border border-primary/30" data-test="video-post-x-card">
+          <p class="label-upper mb-2 text-primary">Video Post (X)</p>
+          <% if @content.final_video_url.present? %>
+            <video src="<%= @content.final_video_url %>" controls preload="metadata"
+                   class="w-full max-h-96 rounded-lg bg-black mb-4" data-test="video-post-x-preview"></video>
+          <% end %>
+          <p class="label-upper">Context</p>
+          <p class="text-body text-sm whitespace-pre-wrap mb-4"><%= @content.description %></p>
+          <% if @content.post_url.present? %>
+            <p class="label-upper">Posted</p>
+            <%= link_to @content.post_url, @content.post_url, target: "_blank", rel: "noopener",
+                  class: "text-primary text-sm hover:text-primary-300", "data-test": "video-post-x-link" %>
+          <% elsif @content.captions.present? %>
+            <p class="label-upper">Copy</p>
+            <p class="text-body text-sm whitespace-pre-wrap" data-test="video-post-x-copy"><%= @content.captions %></p>
+          <% else %>
+            <p class="text-sm text-secondary" data-test="video-post-x-waiting">
+              Waiting for Turf Monster to write the copy and post it. Run <code>post-to-x</code>.
+            </p>
+          <% end %>
+        </div>
+      <% end %>
+
       <%# Post-to-X call-to-action: shows for starter_post_x once assets are ready %>
       <% if @content.workflow == "starter_post_x" && @content.stage == "assets" %>
         <%

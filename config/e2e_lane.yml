@@ -331,10 +331,11 @@
 # address on one line at desktop, tablet and phone width. No spec was retired: the five
 # that were there still run, against the engine's markers. Set from
 # `npx playwright test --list` on the desk tree.
-# 204 -> 205 on 2026-10-04 (/tasks/tile-video-into-overlapping-chunks):
+# 206 -> 207 on 2026-10-04 (/tasks/tile-video-into-overlapping-chunks):
 # e2e/music_video_chunks.spec.js, a tiled video's chunks in order under the cast panel
-# (one spec, not quarantined). Set from `npx playwright test --list` on the desk tree.
-total_specs: 205
+# (one spec, not quarantined). Both sides moved this counter; set from
+# `npx playwright test --list` on the MERGED tree.
+total_specs: 207
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -523,9 +524,9 @@ quarantined: 10
 # 189 -> 194: the five specs added by /tasks/hub-adopts-engine-footer (two in
 # booking_frame.spec.js, three in site_footer.spec.js). Measured on the desk tree:
 # `npx playwright test --list --grep-invert @quarantine` => 194.
-# 194 -> 195: total_specs - quarantined, the music_video_chunks.spec.js spec. Measured on
-# the desk tree: `npx playwright test --list --grep-invert @quarantine` => 195.
-executed: 195
+# 196 -> 197: total_specs - quarantined, the music_video_chunks.spec.js spec. Measured on
+# the merged tree: `npx playwright test --list --grep-invert @quarantine` => 197.
+executed: 197
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

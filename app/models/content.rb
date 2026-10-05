@@ -6,7 +6,7 @@ class Content < ApplicationRecord
   include Studio::Board::Rankable
 
   STAGES = %w[idea hook script assets assembly posted reviewed].freeze
-  WORKFLOWS = %w[video starter_post_x starter_post_tiktok_offense starter_post_tiktok_defense game_recap rapper_replace].freeze
+  WORKFLOWS = %w[video starter_post_x starter_post_tiktok_offense starter_post_tiktok_defense game_recap rapper_replace video_post_x].freeze
 
   TIKTOK_WORKFLOWS = %w[starter_post_tiktok_offense starter_post_tiktok_defense].freeze
 
@@ -22,6 +22,12 @@ class Content < ApplicationRecord
 
   def tiktok_workflow?
     TIKTOK_WORKFLOWS.include?(workflow)
+  end
+
+  # A finished MP4 the operator uploads with a line of context; a soul writes
+  # the copy and posts it to X (the Turf Monster `post-to-x` SOP).
+  def video_post_x?
+    workflow == "video_post_x"
   end
 
   def game_recap?
