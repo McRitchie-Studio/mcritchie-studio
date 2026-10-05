@@ -2,6 +2,7 @@
 
 require "test_helper"
 require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
+require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 # [component] One chunk row: the preview on its signed URL (or the unreachable
 # state), the window, the overlap with the chunk before, the cast shape, the
@@ -12,12 +13,11 @@ class MusicVideoChunkViewTest < ActionView::TestCase
   setup do
     @video = TiledVideo.seed!
     @chunks = @video.video_chunks.to_a
-    @performers = @video.video_performers.includes(:artist).index_by(&:ordinal)
     @url = "https://signed.example/chunk.mp4?X-Amz-Signature=abc"
   end
 
   def render_row(chunk, urls: { chunk.object_key => @url }, overlap_ms: @video.chunk_overlap_ms)
-    render partial: "music_videos/chunk", locals: { chunk:, performers: @performers, clip_urls: urls, overlap_ms: }
+    render partial: "music_videos/chunk", locals: { chunk:, clip_urls: urls, overlap_ms: }
   end
 
   test "the row carries its signed preview, window, shape and target" do
@@ -59,7 +59,7 @@ class MusicVideoChunkViewTest < ActionView::TestCase
     render_row(chunk)
 
     assert_select "[data-test='chunk-prompt'][x-ref='prompt']", text: chunk.prompt
-    assert_select "[data-test='chunk-prompt']", /Replace the man in the red jacket in this music video with \{athlete\}/
+    assert_select "[data-test='chunk-prompt']", /Replace the man in the red jacket in this video with \{athlete\}/
     copy = css_select("button[data-test='chunk-copy'][type='button']").sole
     assert_equal "copy()", copy["@click"]
   end
@@ -84,6 +84,40 @@ class MusicVideoChunkViewTest < ActionView::TestCase
     chunk = @chunks.first
     chunk.update_columns(target_performer: nil)
     render_row(chunk.reload)
-    assert_select "[data-test='chunk-target']", /No labelled artist/
+    assert_select "[data-test='chunk-target']", /Nobody in this window is labelled or recast; the prompt says “the main person on screen”/
+  end
+
+  test "a target nobody has recast says the athlete is still a blank and links to their card" do
+    render_row(@chunks.first)
+
+    assert_select "[data-test='chunk-recast']", 0
+    assert_select "[data-test='chunk-recast-open']", /No athlete chosen for\s+Person 1\s+yet, so the prompt leaves \{athlete\} blank/ do
+      assert_select "a[href='#person-1']", "Person 1"
+    end
+  end
+
+  test "a recast target shows the athlete and look, and the prompt names them" do
+    athlete = RecastVideo.athlete!
+    MusicVideos::RecastPerformer.new(@video.video_performers.first)
+                                .call(person_slug: athlete.slug, appearance_slug: athlete.appearances.live.find_by!(descriptor: "Away White").slug)
+    render_row(@video.reload.video_chunks.first)
+
+    assert_select "[data-test='chunk-target']", /Person 1 · Test Artist A\s+\(man in the red jacket\)/
+    assert_select "[data-test='chunk-recast']", /Replaced by\s+Test Athlete Alpha &gt; Away White|Replaced by\s+Test Athlete Alpha > Away White/
+    assert_select "[data-test='chunk-recast-open']", 0
+    assert_select "[data-test='chunk-prompt']", /in this video with Test Athlete Alpha, the football player.*like the Away White model provided/m
+  end
+
+  test "a cinematic chunk with no labelled target takes the recast person in its window" do
+    video = RecastVideo.seed!
+    athlete = RecastVideo.athlete!
+    render_row(video.video_chunks.first, overlap_ms: 5_000)
+    assert_select "[data-test='chunk-target']", /Nobody in this window is labelled or recast/
+
+    MusicVideos::RecastPerformer.new(video.video_performers.second)
+                                .call(person_slug: athlete.slug, appearance_slug: athlete.appearances.first.slug)
+    render_row(video.reload.video_chunks.first, overlap_ms: 5_000)
+    assert_select "[data-test='chunk-target']", /Person 2\s+\(woman in the doorway\)/
+    assert_select "[data-test='chunk-recast']", /Test Athlete Alpha > Home Blue/
   end
 end

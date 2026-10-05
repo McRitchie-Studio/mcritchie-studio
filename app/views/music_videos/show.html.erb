@@ -38,6 +38,40 @@
     };
   };
 
+  // The recast typeahead: search athletes (People with looks), pick one, then
+  // one of the looks that came back with them; the look click submits.
+  window.recastTypeahead = function () {
+    return {
+      query: "", results: [], open: false, loading: false, failed: false, active: -1, athlete: null, lookSlug: "",
+      async search() {
+        const q = this.query.trim();
+        this.athlete = null; this.lookSlug = "";
+        if (q.length === 0) { this.results = []; this.open = false; return; }
+        this.loading = true; this.failed = false;
+        try {
+          const resp = await fetch(this.$root.dataset.searchUrl + "?q=" + encodeURIComponent(q),
+                                   { headers: { Accept: "application/json" } });
+          if (!resp.ok) throw new Error(String(resp.status));
+          if (q === this.query.trim()) { this.results = await resp.json(); this.active = this.results.length ? 0 : -1; }
+        } catch (e) { this.results = []; this.failed = true; }
+        this.loading = false; this.open = true;
+      },
+      move(step) {
+        if (!this.open || this.results.length === 0) return;
+        this.active = (this.active + step + this.results.length) % this.results.length;
+      },
+      pickActive() { if (this.open && this.results[this.active]) this.choose(this.results[this.active]); },
+      choose(r) { this.athlete = r; this.query = r.name; this.open = false; },
+      pickLook(look) {
+        this.lookSlug = look.slug;
+        this.$nextTick(() => this.$refs.form.requestSubmit());
+      },
+      get newLookUrl() {
+        return this.athlete ? this.$root.dataset.newLookUrl.replace("__slug__", encodeURIComponent(this.athlete.slug)) : "#";
+      },
+    };
+  };
+
   // One clip row: load the signed clip only when asked, and copy its prompt.
   window.clipRow = function () {
     return {
@@ -102,9 +136,15 @@
   <div class="card p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3 justify-between" data-test="cast-progress">
     <p class="text-sm text-body">
       <span class="font-semibold text-heading" data-test="cast-resolved-count"><%= resolved %> of <%= @performers.size %></span>
-      people labelled or marked as extras.
+      <%= @video.cinematic? ? "people answered: recast, kept as is, labelled or marked as extras." : "people labelled or marked as extras." %>
       <% unless @video.cast_confirmed? || @video.cast_ready? %>
-        <span class="text-muted">Cast confirmed unlocks when every person is one or the other.</span>
+        <span class="text-muted">Cast confirmed unlocks when every person <%= @video.cinematic? ? "has an answer" : "is one or the other" %>.</span>
+      <% end %>
+      <% if @performers.any? %>
+        <span class="block mt-1" data-test="recast-progress">
+          <span class="font-semibold text-heading"><%= @performers.count(&:recast?) %></span> recast,
+          <span class="font-semibold text-heading"><%= @video.recast_open.size %></span> still to answer under “Replaced by”.
+        </span>
       <% end %>
     </p>
     <% if @video.cast_confirmed? %>
@@ -123,7 +163,7 @@
   <% else %>
     <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
       <% @performers.each do |performer| %>
-        <%= render "music_videos/performer", performer: performer, video: @video, still_urls: @still_urls %>
+        <%= render "music_videos/performer", performer: performer, video: @video, still_urls: @still_urls, recast_looks: @recast_looks %>
       <% end %>
     </div>
   <% end %>
@@ -213,10 +253,9 @@
       <% end %>
     </header>
     <% if @chunks.any? %>
-      <% performers = @performers.index_by(&:ordinal) %>
       <div class="flex flex-col gap-4">
         <% @chunks.each do |chunk| %>
-          <%= render "music_videos/chunk", chunk: chunk, performers: performers, clip_urls: @clip_urls,
+          <%= render "music_videos/chunk", chunk: chunk, clip_urls: @clip_urls,
                      overlap_ms: @video.chunk_overlap_ms.to_i %>
         <% end %>
       </div>

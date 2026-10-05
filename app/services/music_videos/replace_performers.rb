@@ -1,8 +1,9 @@
 module MusicVideos
   # The cast seam: the agent's vision pass posts the whole performer set and it
-  # replaces what is there. Operator labels on the old set are dropped (the
-  # grouping may have changed), and the count dropped is reported. A confirmed
-  # cast is never replaced.
+  # replaces what is there. Operator labels and recasts on the old set are
+  # dropped (the grouping may have changed), and each count dropped is
+  # reported. A confirmed cast is never replaced. The agent sends FIELDS and
+  # nothing else: who a performer is, and who replaces them, is the operator's.
   class ReplacePerformers
     FIELDS = %w[ordinal label still_object_keys sightings confidence_note].freeze
     SIGHTING_FIELDS = VideoPerformer::SIGHTING_KEYS
@@ -16,7 +17,7 @@ module MusicVideos
       end
     end
 
-    Outcome = Data.define(:performers, :dropped_labels)
+    Outcome = Data.define(:performers, :dropped_labels, :dropped_recasts)
 
     def initialize(video, rows)
       @video = video
@@ -31,10 +32,12 @@ module MusicVideos
     def call
       check!
       VideoPerformer.transaction do
-        dropped = @video.video_performers.count(&:resolved?)
+        old = @video.video_performers.to_a
+        dropped = old.count { |p| p.artist_slug.present? || p.extra? }
+        dropped_recasts = old.count { |p| p.recast_person_slug.present? || p.recast_keep? }
         @video.video_performers.destroy_all
         performers = @rows.map { |row| @video.video_performers.create!(attributes(row)) }
-        Outcome.new(performers:, dropped_labels: dropped)
+        Outcome.new(performers:, dropped_labels: dropped, dropped_recasts:)
       end
     end
 
@@ -51,7 +54,7 @@ module MusicVideos
       end.uniq
       return if extra.empty?
 
-      raise Refused.new("unpermitted keys (the operator sets artists): #{extra.join(', ')}", "UNPERMITTED_KEYS")
+      raise Refused.new("unpermitted keys (the operator sets artists and recasts): #{extra.join(', ')}", "UNPERMITTED_KEYS")
     end
 
     def attributes(row)

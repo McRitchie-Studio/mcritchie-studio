@@ -27,13 +27,14 @@ module Api
       end
 
       # Stage 2: the vision pass replaces the video's performer set. Stills are
-      # already in R2; only their keys arrive. Artists are the operator's call.
+      # already in R2; only their keys arrive. Artists and recasts are the
+      # operator's call: a row carrying either is refused whole.
       def performers
         video = MusicVideo.find_by!(slug: params[:slug])
         replace = MusicVideos::ReplacePerformers.new(video, params.to_unsafe_h["performers"])
         replace.check! # a refusal is an answer, not an ErrorLog
         outcome = rescue_and_log(target: video) { replace.call }
-        render_data(serialize(video.reload), meta: { dropped_labels: outcome.dropped_labels })
+        render_data(serialize(video.reload), meta: { dropped_labels: outcome.dropped_labels, dropped_recasts: outcome.dropped_recasts })
       rescue MusicVideos::ReplacePerformers::Refused => e
         render_error(e.message, status: e.code == "CAST_CONFIRMED" ? :conflict : :unprocessable_entity,
                                 error_code: e.code)

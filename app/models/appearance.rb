@@ -59,8 +59,12 @@ class Appearance < ApplicationRecord
   before_create :set_initial_position
   after_create :become_default_if_first
   after_destroy :release_default_pointer
+  after_destroy :release_recasts
 
   scope :live, -> { where(retired_at: nil) }
+  # Looks an on-screen performer can be recast INTO: live, and not themselves a
+  # capture of a performer in some video (a music-video look).
+  scope :recastable, -> { live.where(music_video_slug: nil) }
 
   def to_param = slug
   def retired? = retired_at.present?
@@ -272,6 +276,16 @@ class Appearance < ApplicationRecord
     Person.where(default_appearance_slug: slug).find_each do |holder|
       holder.resolve_default_appearance!
     end
+  end
+
+  # A recast that named this look keeps its athlete and loses the look (the
+  # card asks for another), and the videos' prompts stop mentioning it.
+  def release_recasts
+    videos = VideoPerformer.where(recast_appearance_slug: slug).distinct.pluck(:music_video_slug)
+    return if videos.empty?
+
+    VideoPerformer.where(recast_appearance_slug: slug).update_all(recast_appearance_slug: nil, updated_at: Time.current)
+    MusicVideo.where(slug: videos).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
   end
 
   def normalize_colorway

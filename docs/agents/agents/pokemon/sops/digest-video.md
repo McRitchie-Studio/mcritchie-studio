@@ -122,16 +122,24 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
        "confidence_note": "Desk scenes throughout." } ] }
    ```
 
-   The agent never sends an artist: any key beyond these five is refused
-   (`UNPERMITTED_KEYS`). A replace drops the operator's labels on the old set and
-   says how many (`meta.dropped_labels`); a confirmed cast answers `409
-   CAST_CONFIRMED`.
+   The agent never sends an artist or a recast: any key beyond these five is
+   refused (`UNPERMITTED_KEYS`). A replace drops the operator's labels and
+   recasts on the old set and says how many of each (`meta.dropped_labels`,
+   `meta.dropped_recasts`); a confirmed cast answers `409 CAST_CONFIRMED`.
 5. **Hand the operator the cast panel**, `/music_videos/<slug>` (admin). Each card
    shows the still, the sightings as links to that second of the video, and a
    typeahead over artists (names and aliases) and People. Picking a person from
    People makes them an artist; "Create new artist" adds one; "Extra, not a named
    artist" closes a card. **Cast confirmed** unlocks when every card is closed and
-   moves the video from `digested` to `cast_confirmed`.
+   moves the video from `digested` to `cast_confirmed`. A `cinematic` video
+   credits no artists, so there a card also closes on its recast answer (below)
+   and naming an artist is optional.
+6. **The operator recasts**, on the same card, under "Replaced by": a typeahead
+   over athletes (People who have a look), then one of that athlete's looks,
+   shown as "Athlete > Look"; or "Keep as is". "New look for <athlete>" opens the
+   look form on the person's page and returns to the card on save. The recast
+   can change before and after the cast is confirmed. **Only the operator sets
+   it**: the agent never proposes who replaces anyone.
 
 The Night Call proof is the dev seed (`db/seeds/data/night_call_cast.rb`): seven
 people, stills and sightings, no names.
@@ -189,7 +197,18 @@ bin/find-clips <slug> --tile --chunk 15 --overlap 5   # 15 s chunks on a 10 s st
 The prompt reads the cast label as the target's description: a label naming a
 person ("long-haired man") reads as-is, and a scene label ("desk") reads as "the
 person in the desk scenes". Write labels as visible descriptions for the best
-prompt. `{athlete}` stays a blank for pipeline 4.
+prompt.
+
+**The recast fills the prompt.** When the clip's target is recast, the prompt
+names the athlete in place of `{athlete}` and mentions the look ("like the
+<look> model provided"). When the target is kept or undecided and someone else
+in the window is recast, the prompt replaces that person instead (the lowest
+Person number, when several are). With nobody recast, `{athlete}` stays a
+blank. Changing a recast rewrites the stored prompt of every candidate and
+chunk of the video, so copy a prompt after the cast card is right, not before.
+One prompt replaces one person: a window with two recast people still names
+only one. For a `cinematic` video the prompt says "this video", never "music
+video".
 
 ### Chunks: the whole video, tiled
 
@@ -226,8 +245,8 @@ sets on one video: running either never replaces the other.
    candidates under `clips` and the chunks under `chunks`.
 6. **Hand the operator the chunks**, below the clip candidates on
    `/music_videos/<slug>`: in time order, each with a preview, its window, the
-   cast shape, the target and the prompt with a Copy button. A chunk has no
-   Approve or Reject, and never moves the video's stage.
+   cast shape, the target, who replaces them, and the prompt with a Copy button.
+   A chunk has no Approve or Reject, and never moves the video's stage.
 
 ## Related
 

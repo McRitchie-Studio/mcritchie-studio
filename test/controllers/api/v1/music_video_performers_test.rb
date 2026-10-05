@@ -1,5 +1,6 @@
 require "test_helper"
 require Rails.root.join("db/seeds/data/night_call_cast.rb").to_s
+require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 module Api
   module V1
@@ -50,6 +51,42 @@ module Api
         assert_response :unprocessable_entity
         assert_equal "UNPERMITTED_KEYS", body["error_code"]
         assert_match "artist_slug", body["error"]
+      end
+
+      # The recast is the operator's choice, like the artist: the seam takes its
+      # five fields and refuses the rest.
+      test "the agent may not set a recast, by any of its keys, and nothing changes" do
+        athlete = RecastVideo.athlete!
+        { recast_person_slug: athlete.slug, recast_appearance_slug: athlete.appearances.first.slug,
+          recast_keep: true, extra: true }.each do |key, value|
+          rows = two_people
+          rows[1][key] = value
+
+          assert_no_changes -> { @video.video_performers.pluck(:id, :recast_person_slug, :recast_keep) } do
+            post_performers(rows)
+          end
+          assert_response :unprocessable_entity
+          assert_equal "UNPERMITTED_KEYS", body["error_code"]
+          assert_match key.to_s, body["error"]
+          assert_match "the operator sets artists and recasts", body["error"]
+        end
+        assert_equal %w[confidence_note label ordinal sightings still_object_keys], MusicVideos::ReplacePerformers::FIELDS.sort
+      end
+
+      test "a replace reports the recasts it dropped, apart from the labels" do
+        athlete = RecastVideo.athlete!
+        look = athlete.appearances.first
+        @video.video_performers.find_by!(ordinal: 1).update!(recast_person_slug: athlete.slug, recast_appearance_slug: look.slug)
+        @video.video_performers.find_by!(ordinal: 2).update!(recast_keep: true)
+        @video.video_performers.find_by!(ordinal: 3).update!(extra: true)
+
+        post_performers(two_people)
+
+        assert_response :ok
+        assert_equal({ "dropped_labels" => 1, "dropped_recasts" => 2 }, body["meta"].slice("dropped_labels", "dropped_recasts"))
+        assert_equal [[nil, nil, false]] * 2,
+                     @video.video_performers.reload.map { |p| p.values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep) }
+        assert(body.dig("data", "performers").none? { |p| p.keys.any? { |k| k.start_with?("recast") } })
       end
 
       test "an invalid row rolls the whole replace back" do

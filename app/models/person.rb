@@ -15,6 +15,8 @@ class Person < ApplicationRecord
   # away RELEASES it (see #resolve_default_appearance!).
   belongs_to :default_appearance, class_name: "Appearance", foreign_key: :default_appearance_slug,
              primary_key: :slug, optional: true
+  # On-screen performers this person replaces (the recast).
+  has_many :recast_performers, class_name: "VideoPerformer", foreign_key: :recast_person_slug, primary_key: :slug
   has_many :builders, dependent: :restrict_with_exception
   has_many :contracts, foreign_key: :person_slug, primary_key: :slug
   has_many :teams, through: :contracts
@@ -22,6 +24,10 @@ class Person < ApplicationRecord
   has_many :coaches, foreign_key: :person_slug, primary_key: :slug
 
   validates :first_name, :last_name, presence: true
+
+  # Before the looks go (prepend): a destroyed person replaces nobody, and the
+  # videos' prompts stop naming them.
+  before_destroy :release_recasts, prepend: true
 
   # RE-RESOLVE THE DEFAULT POINTER AGAINST REALITY.
   #
@@ -49,6 +55,14 @@ class Person < ApplicationRecord
     update_columns(default_appearance_slug: settled) if persisted? && !destroyed?
     self.default_appearance_slug = settled
     settled
+  end
+
+  def release_recasts
+    videos = recast_performers.distinct.pluck(:music_video_slug)
+    return if videos.empty?
+
+    recast_performers.update_all(recast_person_slug: nil, recast_appearance_slug: nil, updated_at: Time.current)
+    MusicVideo.where(slug: videos).find_each { |video| MusicVideos::ClipPrompts.refresh!(video) }
   end
 
   # Multi-strategy name lookup: exact slug → normalized slug → alias match
