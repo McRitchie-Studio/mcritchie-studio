@@ -16,7 +16,7 @@ a **prompt-like row 1** plus **copyable action rows**:
   - **Xan** → `🧑🏻‍🏫 grade-events` (optional: every task is graded at ship) · `📡 share-insights` · `🌎 full-cycle`
   - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal`
 
-  Six registered acts are deliberately NOT chips; each stays invocable by name:
+  Seven registered acts are deliberately NOT chips; each stays invocable by name:
   - `archive-shipped` — `production-deploy` runs it as its final step, so the
     keycap sequence ends at `3️⃣`; `clean-infra` took the slot but is off-sequence.
   - `sleeper-auction-watch` — calendar-bound (one draft evening a year), and at 21

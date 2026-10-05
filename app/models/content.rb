@@ -69,6 +69,9 @@ class Content < ApplicationRecord
   validates :slug, presence: true, uniqueness: true
   validates :stage, inclusion: { in: STAGES }
   validates :workflow, inclusion: { in: WORKFLOWS }
+  # The MP4 is attached when the card is created. Editing another card INTO this
+  # workflow would leave a claimable card with nothing to post.
+  validate :video_post_keeps_its_video, on: :update
 
   belongs_to :source_news, class_name: "News", foreign_key: :source_news_slug, primary_key: :slug, optional: true
   belongs_to :rival_team, class_name: "Team", foreign_key: :rival_team_slug, primary_key: :slug, optional: true
@@ -298,6 +301,12 @@ class Content < ApplicationRecord
     # via the concern's shared 100-gap helper. set_initial_position (the genesis seed)
     # comes from Studio::Board::Rankable; the create-time branch is guarded out here.
     self.position = self.class.board_next_position(stage) unless new_record?
+  end
+
+  def video_post_keeps_its_video
+    return unless video_post_x? && workflow_changed? && final_video_url.blank?
+
+    errors.add(:workflow, "Video Post (X) is made with its MP4 on a new card; this card has no video")
   end
 
   def generate_slug

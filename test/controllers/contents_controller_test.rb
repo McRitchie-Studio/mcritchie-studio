@@ -374,6 +374,28 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[enctype='multipart/form-data']"
     assert_select "option[value='video_post_x']", "Video Post (X)"
     assert_select "[data-test='video-post-x-fields'] input[type=file][accept='video/mp4']"
+    # Off-workflow the input is disabled, so an abandoned file is not uploaded.
+    assert_includes response.body, %(:disabled="workflow !== &#39;video_post_x&#39;")
+  end
+
+  test "an existing card cannot be edited into a video post, which would have no video" do
+    log_in_as(@admin)
+    patch content_path(@idea_content.slug), params: { content: { workflow: "video_post_x" } }
+
+    assert_equal "video", @idea_content.reload.workflow
+  end
+
+  test "a video post with no context is refused with a sentence about Description" do
+    log_in_as(@admin)
+
+    stub_video_store do
+      assert_no_difference -> { Content.count } do
+        post contents_path, params: { content: { workflow: "video_post_x", description: " ",
+                                                 video_file: fixture_file_upload("video_post.mp4", "video/mp4") } }
+      end
+    end
+    assert_response :unprocessable_entity
+    assert_includes response.body, "Say what the video is in Description."
   end
 
   test "creating a video post stores the MP4 and titles the card from the context" do
@@ -427,8 +449,10 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     content = Content.create!(title: "Panthers win", description: "Panthers win", workflow: "video_post_x",
                               final_video_url: "https://cdn.test/v.mp4")
     get content_path(content.slug)
-    assert_select "[data-test='video-post-x-card'] video[src='https://cdn.test/v.mp4']"
+    assert_select "[data-test='video-post-x-card'] video[src='https://cdn.test/v.mp4'][playsinline]"
     assert_select "[data-test='video-post-x-waiting']"
+    # The page is public: no internal command name on it.
+    assert_select "[data-test='video-post-x-waiting']", text: /post-to-x/, count: 0
 
     content.update!(captions: "Panthers 3-1 #nfl #keeppounding")
     get content_path(content.slug)
@@ -436,7 +460,9 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
 
     content.update!(post_url: "https://x.com/turfmonstershow/status/123")
     get content_path(content.slug)
-    assert_select "a[data-test='video-post-x-link'][href='https://x.com/turfmonstershow/status/123']"
+    assert_select "a.break-all[data-test='video-post-x-link'][href='https://x.com/turfmonstershow/status/123']"
+    # The same URL is printed again under "Post"; either one unwrapped scrolls a phone sideways.
+    assert_select "a[href='https://x.com/turfmonstershow/status/123']:not(.break-all)", 0
     assert_select "[data-test='video-post-x-copy']", 0
   end
 

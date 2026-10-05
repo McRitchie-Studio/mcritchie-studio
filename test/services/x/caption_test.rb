@@ -47,4 +47,17 @@ class X::CaptionTest < ActiveSupport::TestCase
     assert X::Caption.new(line: "See https://turfmonster.media").link?
     refute X::Caption.new(line: "No link here").link?
   end
+
+  test "keeps a tail tag that is only a substring of a tag in the line" do
+    caption = X::Caption.new(line: "Go #NFLDraft", hashtags: %w[#NFL #nfldraft])
+
+    assert_equal "Go #NFLDraft\n\n#NFL", caption.text
+  end
+
+  test "a bare domain weighs twenty-three, like a link with a scheme" do
+    assert_equal 25, X::Caption.weight("a espn.com")
+    assert X::Caption.new(line: "See turfmonster.media/tiktok").link?
+    refute X::Caption.new(line: "Panthers 3-1. Big win").link?
+  end
+
 end

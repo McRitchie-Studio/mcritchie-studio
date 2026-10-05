@@ -38,7 +38,7 @@
         <div class="card p-6 border border-primary/30" data-test="video-post-x-card">
           <p class="label-upper mb-2 text-primary">Video Post (X)</p>
           <% if @content.final_video_url.present? %>
-            <video src="<%= @content.final_video_url %>" controls preload="metadata"
+            <video src="<%= @content.final_video_url %>" controls playsinline preload="metadata"
                    class="w-full max-h-96 rounded-lg bg-black mb-4" data-test="video-post-x-preview"></video>
           <% end %>
           <p class="label-upper">Context</p>
@@ -46,13 +46,13 @@
           <% if @content.post_url.present? %>
             <p class="label-upper">Posted</p>
             <%= link_to @content.post_url, @content.post_url, target: "_blank", rel: "noopener",
-                  class: "text-primary text-sm hover:text-primary-300", "data-test": "video-post-x-link" %>
+                  class: "text-primary text-sm hover:text-primary-300 break-all", "data-test": "video-post-x-link" %>
           <% elsif @content.captions.present? %>
             <p class="label-upper">Copy</p>
             <p class="text-body text-sm whitespace-pre-wrap" data-test="video-post-x-copy"><%= @content.captions %></p>
           <% else %>
             <p class="text-sm text-secondary" data-test="video-post-x-waiting">
-              Waiting for Turf Monster to write the copy and post it. Run <code>post-to-x</code>.
+              Waiting for Turf Monster to write the copy and post it.
             </p>
           <% end %>
         </div>
@@ -273,7 +273,7 @@
         <% if @content.post_url.present? %>
           <div class="mb-4">
             <p class="label-upper">Post</p>
-            <a href="<%= @content.post_url %>" target="_blank" class="text-primary text-sm hover:text-primary-300"><%= @content.post_url.truncate(60) %></a>
+            <a href="<%= @content.post_url %>" target="_blank" class="text-primary text-sm hover:text-primary-300 break-all"><%= @content.post_url.truncate(60) %></a>
           </div>
         <% end %>
 

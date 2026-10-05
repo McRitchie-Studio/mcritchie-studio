@@ -30,10 +30,12 @@
     <% unless content.persisted? %>
       <div x-show="workflow === 'video_post_x'" x-cloak class="mb-5" data-test="video-post-x-fields">
         <label class="block text-sm text-secondary mb-2 font-medium">MP4</label>
-        <%= f.file_field :video_file, accept: "video/mp4", class: "input-field", "data-test": "video-post-x-file" %>
+        <%# Disabled off-workflow, so a file picked and then abandoned is not uploaded. %>
+        <%= f.file_field :video_file, accept: "video/mp4", class: "input-field", "data-test": "video-post-x-file",
+              ":disabled": "workflow !== 'video_post_x'" %>
         <p class="text-xs text-secondary mt-2">
           Up to <%= Content::AttachVideo::MAX_BYTES / 1024 / 1024 %> MB. Put what it is in Description, for example
-          &ldquo;Panthers win&rdquo;. Title is optional.
+          &ldquo;Panthers win&rdquo;. Title is optional; Description is not.
         </p>
       </div>
     <% end %>

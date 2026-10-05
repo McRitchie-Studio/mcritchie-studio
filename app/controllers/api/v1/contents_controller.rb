@@ -78,6 +78,8 @@ module Api
       def posted
         return render_error("only a video_post_x card is recorded this way", status: :unprocessable_entity, error_code: "WRONG_WORKFLOW") unless @content.video_post_x?
 
+        return render_error("this card is already posted: #{@content.post_url}", status: :conflict, error_code: "ALREADY_POSTED") if @content.stage == "posted"
+
         post_id = params[:post_url].to_s[%r{\Ahttps://(?:x|twitter)\.com/[A-Za-z0-9_]+/status/(\d+)\z}, 1]
         return render_error("post_url must be an x.com status URL", status: :unprocessable_entity, error_code: "BAD_POST_URL") if post_id.nil?
 

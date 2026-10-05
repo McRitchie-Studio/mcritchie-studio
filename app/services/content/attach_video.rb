@@ -23,7 +23,9 @@ class Content
 
     def call
       validate!
-      url = self.class.store(key: "video_posts/#{@content.slug}.mp4", body: @upload.read)
+      # The IO itself, never `.read`: a 100 MB upload read into a string is a
+      # fifth of a dyno's memory for the length of the request.
+      url = self.class.store(key: "video_posts/#{@content.slug}.mp4", body: @upload.tempfile)
       raise Refused, "The video was stored but has no public URL, so nothing can post it." if url.blank?
 
       @content.update!(final_video_url: url)

@@ -110,4 +110,30 @@ class XPostCliTest < Minitest::Test
     assert status.success?
     assert_includes err, "bin/x-post check <video.mp4>"
   end
+
+  # An attempt row with nothing after it means a run died mid-post: the video
+  # may be live, and only the timeline knows.
+  def test_post_refuses_after_an_attempt_that_never_recorded_a_result
+    row = { sha256: Digest::SHA256.file(@video).hexdigest, attempted_at: "2026-10-04T01:00:00Z" }
+    File.write(File.join(@dir, "ledger.jsonl"), "#{JSON.generate(row)}\n")
+    _out, err, status = run_cli("post", @video, "--caption-file", @caption, "--yes")
+
+    assert_equal 1, status.exitstatus
+    assert_includes err, "started 2026-10-04T01:00:00Z and never recorded a result, so it may be LIVE"
+    refute File.exist?(@op_mark)
+  end
+
+  # X answered no, so nothing is live and the next run may proceed: it gets as
+  # far as the credential read, which the stand-in op fails.
+  def test_post_proceeds_after_an_attempt_x_refused
+    sha  = Digest::SHA256.file(@video).hexdigest
+    rows = [{ sha256: sha, attempted_at: "2026-10-04T01:00:00Z" }, { sha256: sha, refused_at: "2026-10-04T01:00:09Z" }]
+    File.write(File.join(@dir, "ledger.jsonl"), rows.map { |r| JSON.generate(r) }.join("\n") + "\n")
+    _out, err, status = run_cli("post", @video, "--caption-file", @caption, "--yes")
+
+    assert_equal 1, status.exitstatus
+    refute_includes err, "may be LIVE"
+    assert File.exist?(@op_mark), "a refused attempt must not block the retry"
+  end
+
 end
