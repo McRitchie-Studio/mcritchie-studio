@@ -54,6 +54,15 @@ stored.
   `recast_appearance_slug`, `recast_keep`), is the operator's alone (the agent
   API refuses the keys), and can change after the cast is confirmed. Built by
   `recast-picker-on-cast-panel`, piece 2 of the recast pipeline.
+- **Look dropdown.** The athlete's looks are a dropdown of rows
+  (`MusicVideos::LookOptions`): the look's newest character sheet as a
+  thumbnail, its name, the default mark and its sheet-build state, with a
+  larger preview of the look picked. "Generate a new look" (or "Generate first
+  look") makes a look from the card (`MusicVideos::CreateRecastLook`) and
+  starts its sheet through `Appearances::SheetBuild`; the card polls
+  `/recast_athletes/:slug/looks.json` and repaints when the sheet is ready.
+  Admin only, since a sheet spends. Built by
+  `recast-look-dropdown-and-generate`, piece 8 of the recast pipeline.
 
 Built by `music-video-cast-panel`: the `video_performers` table,
 `POST /api/v1/music_videos/:slug/performers`, and the panel at

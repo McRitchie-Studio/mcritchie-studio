@@ -57,26 +57,103 @@
     };
   };
 
-  // The recast typeahead: search People, pick one, then one of the looks that
-  // came back with them; the look click submits. A person with no look is
-  // saved alone, and the card then offers to create one.
-  window.recastTypeahead = function () {
+  // The look step of "Replaced by", shared by the open card (an athlete picked
+  // in the typeahead) and the saved card (an athlete read off the page): a
+  // listbox of the athlete's looks, a preview of the one picked, and the
+  // generate form. A pick only previews; "Cast as" saves it. While a look's
+  // character sheet is building, the rows are polled and repainted in place.
+  window.lookPicker = function () {
     return {
-      ...window.typeaheadSearch(),
-      athlete: null, lookSlug: "",
-      reset() { this.athlete = null; this.lookSlug = ""; },
-      choose(r) {
-        this.athlete = r; this.lookSlug = ""; this.settle(r);
-        if (r.looks.length === 0) this.$nextTick(() => this.$refs.form.requestSubmit());
+      athlete: null, lookSlug: "", savedLook: "", listOpen: false, lookActive: 0, genOpen: false, genBusy: false, lookTimer: null,
+      init() {
+        const data = this.$root.dataset;
+        if (data.athlete) this.setAthlete(JSON.parse(data.athlete), data.savedLook || "", data.freshLook || "");
       },
-      pickLook(look) {
-        this.lookSlug = look.slug;
-        this.$nextTick(() => this.$refs.form.requestSubmit());
+      destroy() { clearTimeout(this.lookTimer); },
+      get looks() { return this.athlete ? this.athlete.looks : []; },
+      get chosen() { return this.looks.find((l) => l.slug === this.lookSlug) || null; },
+      // Sheets building on looks other than the one previewed, by name.
+      get buildingElsewhere() {
+        return this.looks.filter((l) => l.state === "building" && l.slug !== this.lookSlug).map((l) => l.descriptor).join(", ");
       },
+      // The athlete's own page, where a look can be added by hand; it knows the way back.
       get newLookUrl() {
         return this.athlete ? this.$root.dataset.newLookUrl.replace("__slug__", encodeURIComponent(this.athlete.slug)) : "#";
       },
+      // Previewed first: the look just generated, else the saved look, else the default.
+      setAthlete(athlete, saved, fresh) {
+        this.athlete = athlete; this.savedLook = saved || "";
+        const first = athlete.looks.find((l) => l.slug === fresh) || athlete.looks.find((l) => l.slug === this.savedLook) ||
+                      athlete.looks.find((l) => l.default);
+        this.lookSlug = first ? first.slug : "";
+        this.listOpen = false; this.genBusy = false; this.genOpen = athlete.looks.length === 0;
+        this.watchBuilds();
+      },
+      clearAthlete() { clearTimeout(this.lookTimer); this.athlete = null; this.lookSlug = ""; this.listOpen = false; this.genOpen = false; },
+      stateLabel(look) {
+        if (look.state === "building") return "Character sheet building…";
+        if (look.state === "failed") return "Sheet build failed";
+        return look.state === "ready" ? "Character sheet ready" : "No character sheet yet";
+      },
+      emptyPreview(look) {
+        if (look.state === "building") return "Building the character sheet. It takes about two minutes; this card updates itself.";
+        if (look.state === "failed") return "The last sheet build failed" + (look.error ? ": " + look.error : ".") + " Retry it from the look's page.";
+        if (look.state === "ready") return "The character sheet image could not be loaded.";
+        return "No character sheet yet. Build one from the look's page.";
+      },
+      openList() {
+        this.listOpen = true;
+        this.showRow(Math.max(0, this.looks.findIndex((l) => l.slug === this.lookSlug)));
+      },
+      closeList() { this.listOpen = false; },
+      // The rows are the looks, then "Generate a new look".
+      moveLook(step) { const n = this.looks.length + 1; this.showRow((this.lookActive + step + n) % n); },
+      showRow(i) {
+        this.lookActive = i;
+        this.$nextTick(() => setTimeout(() => {
+          const row = this.$refs.lookList.querySelectorAll("[role='option']")[i];
+          if (row) row.scrollIntoView({ block: "nearest" });
+        }));
+      },
+      pickRow(i) {
+        this.closeList(); this.$refs.lookTrigger.focus();
+        if (i >= this.looks.length) return this.startGenerate();
+        this.lookSlug = this.looks[i].slug; this.genOpen = false;
+      },
+      // x-show paints on a timeout, so the focus waits one too.
+      startGenerate() { this.genOpen = true; this.$nextTick(() => setTimeout(() => this.$refs.genName.focus())); },
+      watchBuilds() {
+        clearTimeout(this.lookTimer);
+        if (this.looks.some((l) => l.state === "building")) this.lookTimer = setTimeout(() => this.refreshLooks(), 5000);
+      },
+      async refreshLooks() {
+        const slug = this.athlete && this.athlete.slug;
+        if (!slug) return;
+        try {
+          const resp = await fetch(this.$root.dataset.looksUrl.replace("__slug__", encodeURIComponent(slug)),
+                                   { headers: { Accept: "application/json" } });
+          if (resp.ok) {
+            const rows = await resp.json();
+            if (this.athlete && this.athlete.slug === slug) this.athlete.looks = rows;
+          }
+        } catch (e) { /* the next poll tries again */ }
+        this.watchBuilds();
+      },
     };
+  };
+
+  // Accessors survive (an object spread would flatten each getter to its first value).
+  window.mixComponents = function (...parts) {
+    return parts.reduce((mixed, part) => Object.defineProperties(mixed, Object.getOwnPropertyDescriptors(part)), {});
+  };
+
+  // The recast typeahead: search People and pick one; the look picker above
+  // takes it from there. Nothing is saved until a look is cast or generated.
+  window.recastTypeahead = function () {
+    return window.mixComponents(window.typeaheadSearch(), window.lookPicker(), {
+      reset() { this.clearAthlete(); },
+      choose(r) { this.settle(r); this.setAthlete(r, ""); },
+    });
   };
 
   // One clip row: load the signed clip only when asked, and copy its prompt.
@@ -301,7 +378,8 @@
   <% else %>
     <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
       <% @performers.each do |performer| %>
-        <%= render "music_videos/performer", performer: performer, video: @video, still_urls: @still_urls, recast_looks: @recast_looks %>
+        <%= render "music_videos/performer", performer: performer, video: @video, still_urls: @still_urls, recast_looks: @recast_looks,
+                   sheet_row: @sheet_row, sheet_ready: @sheet_ready, fresh_look: params[:look] %>
       <% end %>
     </div>
   <% end %>

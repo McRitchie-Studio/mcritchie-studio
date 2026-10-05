@@ -1,23 +1,35 @@
-<%# One typeahead result on the cast card, shared by the artist search and "Replaced by". Sits inside an Alpine x-for over results as (r, i): a headshot or a placeholder, the name, a utility row (primary vocation, team, then any hint), and a trailing badge. %>
+<%# One typeahead result on the cast card, shared by the artist search and "Replaced by". Sits inside an Alpine x-for over results as (r, i): a headshot or a placeholder, the name, a utility row (primary vocation, team, then any hint), and a trailing badge. "Replaced by" passes look, the Alpine expression for the person's default look: a second line then shows that look's character-sheet thumbnail and name, set apart from the headshot, so the row says what is saved for the person. The artist search passes none and draws no such line. %>
+<% look = local_assigns[:look] %>
 <button type="button" role="option" :aria-selected="i === active" @click="choose(r)" @mouseenter="active = i"
-        class="w-full text-left rounded-lg px-3 py-2 flex items-center gap-3 min-w-0"
+        class="w-full text-left rounded-lg px-3 py-2 min-w-0"
         :class="i === active ? 'bg-surface-alt' : ''" data-test="<%= option_test %>" :data-slug="r.slug">
-  <span class="w-9 h-9 shrink-0 rounded-full bg-inset border border-subtle overflow-hidden flex items-center justify-center text-muted"
-        data-test="search-row-avatar">
-    <template x-if="r.avatar_url && !r.avatarFailed">
-      <img :src="r.avatar_url" alt="" loading="lazy" class="block w-full h-full object-cover" @error="r.avatarFailed = true"
-           data-test="search-row-headshot">
-    </template>
-    <svg x-show="!r.avatar_url || r.avatarFailed" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="w-5 h-5"
-         data-test="search-row-placeholder">
-      <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.5-8 5.5 0 .8.7 1.5 1.5 1.5h13c.8 0 1.5-.7 1.5-1.5 0-3-3.6-5.5-8-5.5Z"/>
-    </svg>
-  </span>
-  <span class="min-w-0 flex-1">
-    <span class="block text-sm font-semibold text-heading truncate" x-text="r.name" data-test="search-row-name"></span>
-    <span class="block text-xs text-muted truncate" :title="r.slug" data-test="search-row-utility">
-      <span class="text-body" x-text="r.vocation || 'person'" data-test="search-row-vocation"></span><span x-show="r.team"> · <span x-text="r.team" data-test="search-row-team"></span></span><span x-show="<%= hint %>"> · <span x-text="<%= hint %>"></span></span>
+  <span class="flex items-center gap-3 min-w-0">
+    <span class="w-9 h-9 shrink-0 rounded-full bg-inset border border-subtle overflow-hidden flex items-center justify-center text-muted"
+          data-test="search-row-avatar">
+      <template x-if="r.avatar_url && !r.avatarFailed">
+        <img :src="r.avatar_url" alt="" loading="lazy" class="block w-full h-full object-cover" @error="r.avatarFailed = true"
+             data-test="search-row-headshot">
+      </template>
+      <svg x-show="!r.avatar_url || r.avatarFailed" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="w-5 h-5"
+           data-test="search-row-placeholder">
+        <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.5-8 5.5 0 .8.7 1.5 1.5 1.5h13c.8 0 1.5-.7 1.5-1.5 0-3-3.6-5.5-8-5.5Z"/>
+      </svg>
     </span>
+    <span class="min-w-0 flex-1">
+      <span class="block text-sm font-semibold text-heading truncate" x-text="r.name" data-test="search-row-name"></span>
+      <span class="block text-xs text-muted truncate" :title="r.slug" data-test="search-row-utility">
+        <span class="text-body" x-text="r.vocation || 'person'" data-test="search-row-vocation"></span><span x-show="r.team"> · <span x-text="r.team" data-test="search-row-team"></span></span><span x-show="<%= hint %>"> · <span x-text="<%= hint %>"></span></span>
+      </span>
+    </span>
+    <span class="badge text-3xs shrink-0" :class="<%= badge_class %>" x-text="<%= badge %>" data-test="search-row-badge"></span>
   </span>
-  <span class="badge text-3xs shrink-0" :class="<%= badge_class %>" x-text="<%= badge %>" data-test="search-row-badge"></span>
+  <% if look %>
+    <span x-show="<%= look %>" class="mt-1.5 pl-12 flex items-center gap-2 min-w-0" data-test="search-row-look">
+      <%= render "music_videos/look_thumb", look: look, size: "w-14 h-9" %>
+      <span class="min-w-0 flex-1">
+        <span class="block text-3xs uppercase tracking-wide text-muted">Primary look</span>
+        <span class="block text-xs font-semibold text-heading truncate" x-text="<%= look %> ? <%= look %>.descriptor : ''" data-test="search-row-look-name"></span>
+      </span>
+    </span>
+  <% end %>
 </button>
