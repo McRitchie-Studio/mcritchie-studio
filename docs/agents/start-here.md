@@ -83,6 +83,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Turf Monster content build SOP (drain the idea queue, write the takes) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | Turf Monster roster sync SOP (refresh players/teams before a season) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | Turf Monster collect vault revenue SOP (sweep entry fees out, then Squads to a wallet) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/collect-vault-revenue.md` |
+| Turf Monster post to X SOP (write the copy for the board's Video Post (X) cards, post to @turfmonstershow) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
 | Tyrion soul (Cyvasse's house player: character, game style, five setups, voice) | `mcritchie-studio/docs/agents/agents/tyrion/soul.md` |
 | Tyrion runtime design (isolated runner, bot API, threat model; not built) | `mcritchie-studio/docs/agents/agents/tyrion/runtime.md` |
 | Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |

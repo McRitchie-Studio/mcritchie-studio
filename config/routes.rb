@@ -154,9 +154,13 @@ Rails.application.routes.draw do
   get "assets", to: "assets#index", as: :asset_browser
   # Music video pipeline: the cast panel (stage 2) and clips (stage 5), admin only.
   get "artists/search", to: "artists#search", as: :search_artists
+  get "recast_athletes/search", to: "recast_athletes#search", as: :search_recast_athletes
   resources :music_videos, only: [:show], param: :slug do
     post :confirm_cast, on: :member
-    resources :performers, only: [:update], param: :ordinal, controller: "video_performers"
+    resources :performers, only: [:update], param: :ordinal, controller: "video_performers" do
+      # Who replaces this performer: an athlete and a look, keep as is, or clear.
+      resource :recast, only: [:update], controller: "video_performer_recasts"
+    end
     resources :clips, only: [:update], param: :ordinal, controller: "video_clips"
     resources :looks, only: [:create], param: :look_slug, controller: "music_video_looks" do
       post :sheet, on: :member
@@ -486,6 +490,7 @@ Rails.application.routes.draw do
         end
         member do
           post :release
+          post :posted
         end
       end
       # GitHub Actions webhook receiver (workflow_run events). Called by GitHub,

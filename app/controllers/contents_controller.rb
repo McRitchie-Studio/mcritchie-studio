@@ -25,6 +25,8 @@ class ContentsController < ApplicationController
 
   def create
     @content = Content.new(content_params)
+    return create_video_post_x if @content.video_post_x?
+
     rescue_and_log(target: @content) do
       @content.save!
       redirect_to content_path(@content.slug), notice: "Content idea created."
@@ -224,6 +226,40 @@ class ContentsController < ApplicationController
     end
   rescue StandardError => e
     redirect_to content_path(@content.slug), alert: e.message
+  end
+
+  # A video_post_x card is the operator's MP4 plus a line of context. The file
+  # is checked BEFORE the row is saved, so a refused upload leaves no card that
+  # a soul could claim with nothing to post.
+  def create_video_post_x
+    attach = Content::AttachVideo.new(@content, params.dig(:content, :video_file))
+    attach.validate!
+    raise Content::AttachVideo::Refused, "Say what the video is in Description." if @content.description.blank?
+
+    @content.title = @content.description.to_s.squish.truncate(60) if @content.title.blank?
+    @content.stage = "idea"
+    # NO `target:` here. A rollback hands @content back as a NEW record, and the
+    # error log autosaves a new target, so naming it re-created the very card the
+    # rollback removed (measured: a failed upload left one behind).
+    rescue_and_log do
+      # Save, THEN upload, and take the card back if the upload fails: a network
+      # call inside a transaction holds a database connection for as long as the
+      # bucket takes, which for a large file is most of the request.
+      @content.save!
+      begin
+        attach.call
+      rescue StandardError
+        @content.destroy!
+        raise
+      end
+      redirect_to content_path(@content.slug), notice: "Video queued for X. Turf Monster writes the copy and posts it."
+    end
+  rescue Content::AttachVideo::Refused => e
+    @content.errors.add(:base, e.message)
+    render :new, status: :unprocessable_entity
+  rescue StandardError => e
+    @content.errors.add(:base, "Upload failed: #{e.message}") if @content.errors.empty?
+    render :new, status: :unprocessable_entity
   end
 
   def create_starter_post_x

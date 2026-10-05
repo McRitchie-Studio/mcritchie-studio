@@ -148,9 +148,13 @@
     <% end %>
 
     <%# --- create a look --- %>
-    <details class="rounded-lg bg-surface-alt p-4">
+    <%# Opened by the cast card's "new look" link, which also says where to return. %>
+    <details id="new-model" class="rounded-lg bg-surface-alt p-4 scroll-mt-24" <%= "open" if recast_return_path %> data-test="new-model">
       <summary class="cursor-pointer text-sm font-bold text-heading">+ New model</summary>
-      <%= form_with url: create_appearance_person_path(@person.slug), method: :post,
+      <% if recast_return_path %>
+        <p class="mt-3 text-xs text-muted" data-test="new-model-return">Saving takes you back to the cast card.</p>
+      <% end %>
+      <%= form_with url: create_appearance_person_path(@person.slug, return_to: recast_return_path), method: :post,
                     scope: :appearance, class: "mt-3 space-y-2" do |f| %>
         <%= f.text_field :descriptor, placeholder: "Bengals white · navy suit · 1994 Ace Ventura",
               class: "input-field text-sm w-full", required: true %>

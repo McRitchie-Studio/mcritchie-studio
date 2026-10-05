@@ -847,7 +847,7 @@ a negative score, or a score that is not a whole number. That last one matters �
 1. **Create**: button on `/nfl-rosters` per team → `POST /contents/starter_post_x?team_slug=…` → `ContentsController#create_starter_post_x` creates a Content with `workflow=starter_post_x`, `team_slug`, `source_type=studio`, `stage=script`, and a default `captions` of `"Find the mistake in my <Mascot> lineup 👀\n\n#<Hashtag> <emoji>"`. Redirects to `/contents/:slug/edit`.
 2. **Generate assets**: button on the show page (when `stage in [idea, hook, script]`) → `POST /contents/:slug/generate_lineup_assets` → `Content::GenerateLineupAssets` shells out to `script/capture_lineup.js` (Playwright + CDP screencast at 2x device pixels), assembles the PNG-frame sequence into MP4 via `LineupGraphic::AssembleVideo` (lanczos downsample to 1200×1500, **fps=30 cap**, libx264 CRF 16), uploads PNG + MP4 to S3 at `starter_posts/{team_slug}/{content_slug}.{png,mp4}`, saves `hook_image_url` + `final_video_url`, advances stage to `assets`.
 3. **Post**: card on the show page (when `workflow=starter_post_x` AND `stage=assets`) offers two paths:
-   - **Auto** — `POST /contents/:slug/post_to_x` → `Content::PostToX` downloads MP4 from S3 → `X::PostMedia` (v1.1 chunked upload + v2 /tweets) → records `post_url`/`post_id`/`posted_at`, stage=`posted`. Disabled if any of `X_API_KEY`/`X_API_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET` are missing.
+   - **Auto** — `POST /contents/:slug/post_to_x` → `Content::PostToX` downloads MP4 from S3 → `X::PostMedia` (v2 chunked upload + v2 /tweets) → records `post_url`/`post_id`/`posted_at`, stage=`posted`. Disabled if any of `X_API_KEY`/`X_API_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET` are missing.
    - **Manual** — "⬇ Download Video" + "📤 Open X Compose" (intent URL with caption pre-filled, attach video by hand) + paste-URL form → `post_step` extracts post_id from `/status/(\d+)` and saves.
 
 ### Schema additions
@@ -861,10 +861,22 @@ a negative score, or a score that is not a whole number. That last one matters �
 `script/capture_lineup.js` uses Playwright + Chrome DevTools Protocol `Page.startScreencast` at 2x device pixels (2400×3000 frames), saves PNG sequence to `tmp/lineup-graphics/{slug}-frames/`, writes actual capture FPS to `framerate.txt`. Then `LineupGraphic::AssembleVideo` runs ffmpeg with the recorded input rate, downsamples + caps output at 30fps. **Critical**: X's video spec is ≤60fps; CDP delivers 60–80fps in practice → without the fps=30 filter, /tweets rejects with "Your media IDs are invalid".
 
 ### `X::PostMedia` notes
-v1.1 chunked upload at `upload.twitter.com/1.1/media/upload.json` + v2 tweet creation at `api.twitter.com/2/tweets`. v2 chunked upload is Pro-tier only; v1.1 is the Free-tier path. Uses `X::OAuthSigner` (HMAC-SHA1) and `X::Client` (Net::HTTP). Includes a 3s propagation buffer after STATUS=succeeded and a single auto-retry on 400 "media IDs are invalid" (cache lag between upload backend and tweet endpoint). OAuth signature rule: form-urlencoded bodies sign body fields, multipart/form-data and JSON bodies sign only `oauth_*` params.
+v2 chunked upload at `api.x.com/2/media/upload/{initialize,<id>/append,<id>/finalize}` with a `?command=STATUS` read, then v2 post creation at `api.x.com/2/tweets`. X sunset the v1.1 upload host (`upload.twitter.com/1.1/media/upload.json`) on 2025-06-09; the uploader moved to v2 on 2026-10-04. Uses `X::OAuthSigner` (HMAC-SHA1, OAuth 1.0a user context) and `X::Client` (Net::HTTP). Includes a 3s propagation buffer after STATUS=succeeded and a single auto-retry on 400 "media IDs are invalid" (cache lag between upload backend and tweet endpoint). OAuth signature rule: form-urlencoded bodies and query params are signed; multipart, JSON and empty bodies sign only `oauth_*` params. The API is billed per call. `bin/x-post` posts one LOCAL MP4 through the same uploader with no Content record, for the Turf Monster `post-to-x` SOP; `X::Caption` measures a caption by X's weighted count.
 
 ### Rake
 `bin/rails lineup_graphic:capture SLUG=buffalo-bills` runs the capture script + `LineupGraphic::AssembleVideo` for local testing without going through a Content record.
+
+## Video Post (X) Workflow
+
+`Content.workflow = "video_post_x"` is a finished MP4 the operator uploads with a few words of context; a soul writes the copy and posts it. It is the board half of the Turf Monster `post-to-x` SOP.
+
+1. **Create**: `/contents/new` → Workflow **Video Post (X)** → attach the MP4, put the context in Description. `ContentsController#create_video_post_x` validates the file BEFORE saving (`Content::AttachVideo#validate!`: an `.mp4` with `video/mp4`, at most 100 MB), saves the card at `stage=idea`, and stores the file at `video_posts/<slug>.mp4`, recording `final_video_url`. A refused or failed upload leaves no card. A blank title is taken from the context.
+2. **Copy and post**: the SOP reads the card through the agent API (`final_video_url` and `description` are serialized), writes `captions`, posts with `bin/x-post`, then calls `POST /api/v1/contents/:slug/posted { session, post_url }`, which is claim-guarded, accepts only an `x.com` status URL on a `video_post_x` card, and records `post_url`/`post_id`/`platform=x`, moves the card to `posted` and releases the claim. `bin/content posted <slug> --post-url …` wraps it.
+3. **Card**: the show page renders a Video Post (X) card with the video, the context, then the copy, then the link.
+
+There is no post button on the card: production holds no X keys, and an upload plus X's processing outlasts a web request.
+
+The e2e lane has no bucket, so `config/initializers/e2e_video_storage.rb` replaces `Content::AttachVideo.store` when the Playwright server sets `E2E_FAKE_VIDEO_STORAGE=1`.
 
 ## Starter Post (TikTok) Workflow
 

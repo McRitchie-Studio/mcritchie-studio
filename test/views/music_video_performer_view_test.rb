@@ -2,9 +2,11 @@
 
 require "test_helper"
 require Rails.root.join("db/seeds/data/night_call_cast.rb").to_s
+require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 # [component] One performer card on the cast panel: its still on a signed URL,
-# its sightings as YouTube timecode links, and the typeahead while it is open.
+# its sightings as YouTube timecode links, the typeahead while it is open, and
+# the recast picker: open, recast, kept, and after the cast is confirmed.
 class MusicVideoPerformerViewTest < ActionView::TestCase
   setup do
     @video = NightCallCast.seed!
@@ -12,9 +14,11 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     @key = @performer.still_object_keys.first
   end
 
-  def render_card(performer = @performer, urls: { @key => "https://signed.example/p2.jpg?X-Amz-Signature=abc" })
-    render partial: "music_videos/performer", locals: { performer:, video: @video, still_urls: urls }
+  def render_card(performer = @performer, urls: { @key => "https://signed.example/p2.jpg?X-Amz-Signature=abc" }, recast_looks: {})
+    render partial: "music_videos/performer", locals: { performer:, video: performer.music_video, still_urls: urls, recast_looks: }
   end
+
+  def recast_path = "/music_videos/steve-aoki-night-call/performers/2/recast"
 
   test "the still renders on its signed URL" do
     render_card
@@ -69,12 +73,91 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "input[name='clear'][value='1']"
   end
 
-  test "once the cast is confirmed the card is read-only" do
+  test "once the cast is confirmed the label is read-only and the recast is still open to change" do
     @video.video_performers.each { |p| p.update!(extra: true) }
     @video.confirm_cast!
     render_card(@performer.reload)
 
     assert_select "[data-test='performer-extra']"
-    assert_select "form", 0
+    assert_select "[data-test='performer-resolution'] form", 0
+    assert_select "[data-test='performer-recast'][data-state='open'] form[action=?]", recast_path, 2
+  end
+
+  test "an open card renders the recast picker: athlete typeahead, look step, new-look link and keep as is" do
+    render_card
+
+    assert_select "[data-test='performer-recast'][data-state='open']" do
+      assert_select "[data-test='recast-typeahead'][x-data='recastTypeahead()'][data-search-url='/recast_athletes/search.json']" do
+        assert_select "form[action=?] input[name='_method'][value='patch']", recast_path
+        assert_select "input[type='hidden'][name='person_slug']"
+        assert_select "input[type='hidden'][name='appearance_slug']"
+        assert_select "input[role='combobox'][placeholder='Search athletes with a look']"
+        assert_select "[data-test='recast-looks'][x-show='athlete'] [data-test='recast-look-option']"
+        assert_select "a[data-test='recast-new-look']"
+      end
+      assert_select "[data-test='recast-typeahead'][data-new-look-url=?]",
+                    "/people/__slug__?return_to=%2Fmusic_videos%2Fsteve-aoki-night-call%23person-2#new-model"
+      assert_select "form[action=?] input[name='keep'][value='1']", recast_path
+      assert_select "button", "Keep as is"
+    end
+    assert_includes rendered, %(x-text="athlete.name + ' > ' + look.descriptor")
+  end
+
+  # A synthetic athlete: only the operator says who replaces an on-screen person.
+  test "a recast card shows athlete then look, the athlete's other looks, a new-look link and Change" do
+    athlete = RecastVideo.athlete!
+    home, away = athlete.appearances.order(:created_at, :id).to_a
+    @performer.update!(recast_person_slug: athlete.slug, recast_appearance_slug: away.slug)
+    render_card(recast_looks: { athlete.slug => [home, away] })
+
+    assert_select "[data-test='performer-card'][data-resolved='false']", 1, "a music video card still needs its artist"
+    assert_select "[data-test='performer-recast'][data-state='recast']" do
+      assert_select "[data-test='recast-label']", "Test Athlete Alpha > Away White"
+      assert_select "[data-test='recast-typeahead']", 0
+      assert_select "[data-test='recast-look-form'][action=?]", recast_path do
+        assert_select "input[name='person_slug'][value=?]", athlete.slug
+        assert_select "option", 2
+        assert_select "option[selected][value=?]", away.slug, "Test Athlete Alpha > Away White"
+      end
+      assert_select "a[data-test='recast-new-look'][href=?]",
+                    "/people/test-athlete-alpha?return_to=%2Fmusic_videos%2Fsteve-aoki-night-call%23person-2#new-model",
+                    "New look for Test Athlete Alpha"
+      assert_select "[data-test='recast-clear'] input[name='clear'][value='1']"
+    end
+  end
+
+  test "an athlete whose look is gone asks for another" do
+    athlete = RecastVideo.athlete!
+    @performer.update!(recast_person_slug: athlete.slug)
+    render_card(recast_looks: { athlete.slug => athlete.appearances.to_a })
+
+    assert_select "[data-test='performer-recast'][data-state='pending']" do
+      assert_select "[data-test='recast-label']", "Test Athlete Alpha"
+      assert_select "[data-test='recast-pending']", /No look chosen/
+      assert_select "[data-test='recast-look-form'] option", 3
+      assert_select "[data-test='recast-look-form'] option[value='']", "Choose a look"
+    end
+  end
+
+  test "a kept card says so and offers Change, not the picker" do
+    @performer.update!(recast_keep: true)
+    render_card
+
+    assert_select "[data-test='performer-recast'][data-state='keep']" do
+      assert_select "[data-test='recast-keep']", /Kept as is/
+      assert_select "[data-test='recast-typeahead']", 0
+      assert_select "[data-test='recast-clear'][action=?] input[name='clear'][value='1']", recast_path
+    end
+  end
+
+  test "a cinematic card closes on its recast answer and keeps the artist optional" do
+    video = RecastVideo.video!
+    video.update_columns(stage: "digested")
+    kept = video.video_performers.first
+    render_card(kept, urls: {})
+
+    assert_select "[data-test='performer-card'][data-resolved='true'] [data-test='performer-closed-by-recast']", "Kept"
+    assert_select "[data-test='performer-typeahead']", 1
+    assert_select "[data-test='performer-artist-optional']", /naming one is optional/
   end
 end

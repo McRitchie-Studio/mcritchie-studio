@@ -1,0 +1,236 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Post one local MP4 to X as @turfmonstershow — the mechanical half of the
+# Turf Monster `post-to-x` SOP (docs/agents/agents/turf_monster/sops/post-to-x.md).
+#
+# The split this serves: a soul decides the words and the hashtags, and Alex
+# approves the batch; this command decides nothing. It measures, refuses, uploads
+# and records.
+#
+# Usage:
+#   bin/x-post whoami
+#   bin/x-post check <video.mp4> --caption-file F [--tag '#Tag']... [--handle @h]...
+#   bin/x-post post  <video.mp4> --caption-file F [--tag '#Tag']... [--handle @h]... --yes
+#   bin/x-post ledger
+#
+# `check` TOUCHES NOTHING: no credential read, no network. It prints the exact
+# text that would go out, its weighted length, and the video's facts, and exits 1
+# on anything X would refuse. Run it for every post in a batch before asking
+# Alex to approve, because what he approves is what `check` printed.
+#
+# `post` IS PUBLIC AND IS NOT UNDONE BY THIS COMMAND. So it refuses without
+# --yes, refuses when the credentials do not belong to the expected account, and
+# refuses a video it has already posted (the ledger, keyed by the file's
+# sha256) unless --again is passed. An ATTEMPT is recorded before the upload
+# starts, so a run that dies after X took the post but before this command
+# could record it is also refused: the timeline is the only witness then, and
+# a re-run must not guess.
+#
+# THE CAPTION GOES IN A FILE, never a shell argument: it carries newlines,
+# quotes, `$` and `#`, and a shell argument eats all four.
+#
+# Credentials: X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET
+# from ENV, else ONE 1Password read of `agent.turf.x` in `studio-agents`.
+# Cost: X bills per post created, and several times more for a post with a link.
+
+require "json"
+require "optparse"
+require "digest"
+require "fileutils"
+require "open3"
+require "time"
+require_relative "lib/op_meter"
+begin
+  require_relative "../app/services/x/oauth_signer"
+  require_relative "../app/services/x/client"
+  require_relative "../app/services/x/post_media"
+  require_relative "../app/services/x/caption"
+rescue LoadError
+  # The fixed-path tooling tree carries bin/ but not app/services, so the copy
+  # at /Users/alex/projects/.agents/bin cannot run. Say where it does.
+  warn "x-post: this copy has no app/services/x beside it. Run the hub's: " \
+       "cd /Users/alex/projects/mcritchie-studio && bin/x-post"
+  exit 1
+end
+
+ROOT     = File.expand_path("..", __dir__)
+ACCOUNT  = "turfmonstershow"
+ME_URL   = "https://api.x.com/2/users/me"
+LEDGER   = ENV.fetch("X_POST_LEDGER", File.join(ROOT, "tmp", "x-posts", "ledger.jsonl"))
+OP       = ENV.fetch("X_POST_OP_BIN", "/opt/homebrew/bin/op")
+OP_ITEM  = %w[agent.turf.x studio-agents].freeze
+OP_FIELD = {
+  "Consumer Key" => "X_API_KEY", "Consumer Key Secret" => "X_API_SECRET",
+  "Access Token" => "X_ACCESS_TOKEN", "Access Token Secret" => "X_ACCESS_TOKEN_SECRET"
+}.freeze
+FFPROBE  = ENV.fetch("X_POST_FFPROBE_BIN", "ffprobe")
+MAX_FPS  = 60
+LONG_SECONDS = 140
+
+def die!(msg)
+  warn "x-post: #{msg}"
+  exit 1
+end
+
+def usage!(status = 0)
+  warn File.read(__FILE__).lines[2..31].map { |l| l.sub(/\A# ?/, "") }.join
+  exit status
+end
+
+# ENV wins; otherwise one metered read of the whole item, by field label.
+def load_creds!
+  return if X::OAuthSigner.creds_present?
+
+  raw = OpMeter.popen({}, [OP, "item", "get", OP_ITEM[0], "--vault", OP_ITEM[1], "--format", "json"],
+                      via: "x-post", err: File::NULL)
+  fields = JSON.parse(raw).fetch("fields", [])
+  OP_FIELD.each do |label, env|
+    value = fields.find { |f| f["label"] == label }&.fetch("value", nil).to_s
+    ENV[env] = value unless value.empty?
+  end
+  die!("X credentials missing: #{X::OAuthSigner::REQUIRED_ENV.reject { |k| ENV[k].to_s.strip != '' }.join(', ')}") unless X::OAuthSigner.creds_present?
+rescue JSON::ParserError, Errno::ENOENT
+  die!("could not read 1Password item #{OP_ITEM[0]} in #{OP_ITEM[1]}. That is the token-session SOP, not this one.")
+end
+
+def whoami
+  resp = X::Client.new.get(ME_URL)
+  die!("X refused the credentials: HTTP #{resp.code} #{resp.body.to_s[0, 300]}") unless resp.is_a?(Net::HTTPSuccess)
+  JSON.parse(resp.body).dig("data", "username").to_s
+end
+
+# ffprobe's read of the file, or nil when ffprobe is absent or cannot read it.
+def probe(path)
+  out, status = Open3.capture2(FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries",
+                               "stream=codec_name,width,height,avg_frame_rate:format=duration", "-of", "json", path,
+                               err: File::NULL)
+  return nil unless status.success?
+
+  data   = JSON.parse(out)
+  stream = data.fetch("streams", []).first or return nil
+  num, den = stream["avg_frame_rate"].to_s.split("/").map(&:to_f)
+  { codec: stream["codec_name"], width: stream["width"], height: stream["height"],
+    fps: den.to_f.zero? ? 0.0 : (num / den).round(2), seconds: data.dig("format", "duration").to_f.round(1) }
+rescue Errno::ENOENT, JSON::ParserError
+  nil
+end
+
+def ledger_rows
+  return [] unless File.exist?(LEDGER)
+
+  File.readlines(LEDGER).filter_map { |l| JSON.parse(l) rescue nil }
+end
+
+# Prints the post as it would go out and returns [caption, sha, problems].
+def inspect_post(path, opts)
+  die!("needs a video path") if path.to_s.empty?
+  die!("no such file: #{path}") unless File.file?(path)
+  die!("needs --caption-file") unless opts[:caption_file]
+  die!("no such caption file: #{opts[:caption_file]}") unless File.file?(opts[:caption_file])
+
+  caption  = X::Caption.new(line: File.read(opts[:caption_file]), hashtags: opts[:tags], handles: opts[:handles])
+  problems = caption.problems
+  facts    = probe(path)
+  if facts.nil?
+    problems << "ffprobe could not read a video stream from it"
+  else
+    problems << "#{facts[:fps]}fps, over X's #{MAX_FPS}" if facts[:fps] > MAX_FPS
+  end
+  problems << "not an .mp4" unless File.extname(path).casecmp?(".mp4")
+  sha = Digest::SHA256.file(path).hexdigest
+
+  puts "video:   #{path}"
+  puts "         #{(File.size(path) / 1_048_576.0).round(1)} MB" \
+       "#{facts ? "  #{facts[:width]}x#{facts[:height]}  #{facts[:fps]}fps  #{facts[:seconds]}s  #{facts[:codec]}" : ''}"
+  puts "sha256:  #{sha[0, 16]}"
+  puts "weight:  #{caption.weight}/#{X::Caption::MAX_WEIGHT}"
+  puts "text:"
+  caption.text.each_line { |l| puts "  | #{l.chomp}" }
+  warn "x-post: note — #{facts[:seconds]}s is past #{LONG_SECONDS}s; X takes that only from a Premium account." if facts && facts[:seconds] > LONG_SECONDS
+  warn "x-post: note — this post carries a link, which X bills at several times a plain post." if caption.link?
+  problems.each { |p| warn "x-post: REFUSED — #{p}" }
+  [caption, sha, problems]
+end
+
+command = ARGV.shift
+opts = { tags: [], handles: [] }
+begin
+  OptionParser.new do |o|
+    o.on("--caption-file F") { |v| opts[:caption_file] = v }
+    o.on("--tag T")          { |v| opts[:tags] << v }
+    o.on("--handle H")       { |v| opts[:handles] << v }
+    o.on("--account A")      { |v| opts[:account] = v.delete_prefix("@") }
+    o.on("--yes")            { opts[:yes] = true }
+    o.on("--again")          { opts[:again] = true }
+    o.on("-h", "--help")     { usage!(0) }
+  end.parse!(ARGV)
+rescue OptionParser::ParseError => e
+  die!(e.message)
+end
+
+case command
+when "whoami"
+  load_creds!
+  puts "@#{whoami}"
+
+when "check"
+  _, _, problems = inspect_post(ARGV.shift, opts)
+  exit 1 if problems.any?
+  puts "ok: postable"
+
+when "post"
+  path = ARGV.shift
+  caption, sha, problems = inspect_post(path, opts)
+  exit 1 if problems.any?
+
+  rows  = ledger_rows.select { |r| r["sha256"] == sha }
+  prior = rows.find { |r| r["post_url"] }
+  if prior && !opts[:again]
+    die!("this video was already posted #{prior['posted_at']} → #{prior['post_url']}. Pass --again to post it a second time.")
+  end
+  # Only the LAST row speaks: an attempt followed by a refusal is finished.
+  unfinished = rows.last if rows.last && rows.last["attempted_at"] && !rows.last["post_url"]
+  if unfinished && !prior && !opts[:again]
+    die!("an attempt to post this video started #{unfinished['attempted_at']} and never recorded a result, so it may be LIVE. " \
+         "Look at https://x.com/#{ACCOUNT} first. If it is there, do not post again; if it is not, re-run with --again.")
+  end
+  die!("not posted: a post is public. Re-run with --yes once Alex has approved this exact text.") unless opts[:yes]
+
+  load_creds!
+  expected = opts[:account] || ACCOUNT
+  actual   = whoami
+  die!("these credentials post as @#{actual}, not @#{expected}. Nothing was posted.") unless actual.casecmp?(expected)
+
+  FileUtils.mkdir_p(File.dirname(LEDGER))
+  File.open(LEDGER, "a") do |f|
+    f.puts(JSON.generate(sha256: sha, video: File.expand_path(path), account: actual, text: caption.text,
+                         attempted_at: Time.now.utc.iso8601))
+  end
+
+  begin
+    result = X::PostMedia.new(text: caption.text, video_path: path).call
+  rescue X::PostMedia::Error, X::Client::HttpError => e
+    # X ANSWERED and said no, so nothing is live: retire the attempt row.
+    File.open(LEDGER, "a") { |f| f.puts(JSON.generate(sha256: sha, refused_at: Time.now.utc.iso8601)) }
+    die!("X refused the post, nothing was recorded: #{e.message[0, 500]}")
+  end
+
+  File.open(LEDGER, "a") do |f|
+    f.puts(JSON.generate(sha256: sha, video: File.expand_path(path), account: actual, text: caption.text,
+                         post_id: result[:post_id], post_url: "https://x.com/#{actual}/status/#{result[:post_id]}",
+                         posted_at: Time.now.utc.iso8601))
+  end
+  puts "posted:  https://x.com/#{actual}/status/#{result[:post_id]}"
+
+when "ledger"
+  rows = ledger_rows
+  puts "no posts recorded" if rows.empty?
+  rows.select { |r| r["post_url"] }.each { |r| puts "#{r['posted_at']}  #{r['post_url']}  #{File.basename(r['video'].to_s)}" }
+
+when "help", "--help", "-h", nil
+  usage!(0)
+else
+  warn "x-post: unknown command #{command.inspect}"
+  usage!(1)
+end

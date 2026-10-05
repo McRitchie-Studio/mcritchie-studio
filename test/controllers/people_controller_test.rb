@@ -125,6 +125,31 @@ class PeopleControllerTest < ActionDispatch::IntegrationTest
   # `become_default_if_first` is an after_CREATE, so moving a look onto the
   # survivor stamps nothing. Measured before the fix: survivor with one live
   # look and a nil default — the same broken state a destroyed default leaves.
+  # A recast names a person and one of their looks by slug. Both move with the
+  # merge, and the prompts that named the source now name the survivor.
+  test "merge moves the source's recasts, look and prompt, to the survivor" do
+    log_in_as(users(:alex))
+    require Rails.root.join("db/seeds/data/recast_video.rb").to_s
+    video = RecastVideo.seed!
+    keep   = Person.create!(first_name: "Recastkeep", last_name: "Mergefixture")
+    source = Person.create!(first_name: "Recastsource", last_name: "Mergefixture")
+    twin = keep.appearances.create!(descriptor: "Home")
+    mine = source.appearances.create!(descriptor: "Home")
+    moved = source.appearances.create!(descriptor: "Away")
+    one, two = video.video_performers.to_a
+    MusicVideos::RecastPerformer.new(one).call(person_slug: source.slug, appearance_slug: mine.slug)
+    MusicVideos::RecastPerformer.new(two).call(person_slug: source.slug, appearance_slug: moved.slug)
+
+    merge!(keep, source)
+
+    assert_equal [keep.slug, twin.slug], one.reload.values_at(:recast_person_slug, :recast_appearance_slug)
+    assert_equal [keep.slug, moved.slug], two.reload.values_at(:recast_person_slug, :recast_appearance_slug)
+    assert one.recast? && two.recast?
+    prompt = video.video_chunks.reload.first.prompt
+    assert_includes prompt, "with Recastkeep Mergefixture, the football player"
+    assert_not_includes prompt, "Recastsource"
+  end
+
   test "a survivor who inherits their first look resolves a default" do
     log_in_as(@admin)
     keep   = Person.create!(first_name: "Dominic", last_name: "Defmerge")

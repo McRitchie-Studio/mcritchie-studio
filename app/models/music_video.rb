@@ -1,8 +1,9 @@
-# A music video digested from a platform URL (docs/agents/system/music-video-pipeline-plan.md).
+# A video digested from a platform URL (docs/agents/system/music-video-pipeline-plan.md):
+# a music video, or a cinematic one (kind).
 # The source MP4 lives in R2 under `source_object_key`. caption_timing is cue
 # times and section markers only: lyric text is never stored.
 class MusicVideo < ApplicationRecord
-  KINDS = %w[music_video].freeze
+  KINDS = %w[music_video cinematic].freeze
   PLATFORMS = %w[youtube tiktok instagram].freeze
   STAGES = %w[digested cast_confirmed clips_ready].freeze
   CAST_CONFIRMED_STAGES = %w[cast_confirmed clips_ready].freeze
@@ -15,8 +16,15 @@ class MusicVideo < ApplicationRecord
   has_many :artists, through: :music_video_artists
   has_many :video_performers, -> { order(:ordinal) }, foreign_key: :music_video_slug,
            primary_key: :slug, inverse_of: :music_video, dependent: :destroy
-  has_many :video_clips, -> { order(:ordinal) }, foreign_key: :music_video_slug,
+  # Every clip row; the two kinds below never mix in a list.
+  has_many :video_clips, -> { order(:kind, :ordinal) }, foreign_key: :music_video_slug,
            primary_key: :slug, inverse_of: :music_video, dependent: :destroy
+  # The seam-picked ~25 s candidates the operator approves or rejects (stage 5).
+  has_many :clip_candidates, -> { where(kind: "candidate").order(:ordinal) }, class_name: "VideoClip",
+           foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :music_video
+  # The whole video tiled into overlapping chunks, in time order (bin/find-clips --tile).
+  has_many :video_chunks, -> { where(kind: "chunk").order(:ordinal) }, class_name: "VideoClip",
+           foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :music_video
 
   has_many :looks, class_name: "Appearance", foreign_key: :music_video_slug, primary_key: :slug,
            inverse_of: :music_video, dependent: :nullify
@@ -32,13 +40,24 @@ class MusicVideo < ApplicationRecord
   validates :source_object_key, format: { with: %r{\Amusic_videos/.+\.mp4\z} }
   validates :duration_ms, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validate :caption_timing_is_timing_only
+  validate :chunk_tiling_can_tile
 
   def to_param = slug
 
   # Clips come after the cast, so a clips_ready video's cast is confirmed too.
   def cast_confirmed? = CAST_CONFIRMED_STAGES.include?(stage)
 
-  # Ready once the vision pass has left people and each one is an artist or an extra.
+  def cinematic? = kind == "cinematic"
+
+  # Performers the operator still owes a recast answer (an athlete and a look,
+  # or "keep as is"). Extras nobody recast owe none.
+  def recast_open = video_performers.reject(&:recast_decided?)
+
+  # Every performer has its recast answer: the later pieces' "may we generate".
+  def recast_assigned? = video_performers.any? && recast_open.empty?
+
+  # Ready once the vision pass has left people and each one's card is closed
+  # (VideoPerformer#resolved?).
   def cast_ready?
     stage == "digested" && video_performers.any? && video_performers.all?(&:resolved?)
   end
@@ -56,14 +75,25 @@ class MusicVideo < ApplicationRecord
     return "no performers yet: the vision pass has not posted any" if video_performers.none?
 
     open = video_performers.reject(&:resolved?).map(&:name)
-    "#{open.to_sentence} #{open.one? ? 'is' : 'are'} neither an artist nor an extra" if open.any?
+    return if open.empty?
+
+    "#{open.to_sentence} #{open.one? ? 'is' : 'are'} neither #{cinematic? ? 'recast, kept as is, an artist' : 'an artist'} nor an extra"
   end
 
-  # clips_ready while at least one clip is approved; back to cast_confirmed when none is.
+  # { chunk_ms:, overlap_ms: } the current chunks were cut with (bin/find-clips
+  # --tile), or nil for a video never tiled.
+  def chunk_tiling
+    { chunk_ms:, overlap_ms: chunk_overlap_ms } if chunk_ms && chunk_overlap_ms
+  end
+
+  def kind_label = kind == "cinematic" ? "Cinematic video" : "Music video"
+
+  # clips_ready while at least one candidate is approved; back to cast_confirmed
+  # when none is. Chunks never move the stage.
   def sync_clip_stage!
     return unless cast_confirmed?
 
-    update!(stage: video_clips.where(status: "approved").exists? ? "clips_ready" : "cast_confirmed")
+    update!(stage: clip_candidates.where(status: "approved").exists? ? "clips_ready" : "cast_confirmed")
   end
 
   # A timecode link into the source video. YouTube only for now.
@@ -74,6 +104,13 @@ class MusicVideo < ApplicationRecord
   end
 
   private
+
+  def chunk_tiling_can_tile
+    return if chunk_ms.nil? && chunk_overlap_ms.nil?
+
+    why = MusicVideos::ChunkTiler.problem(chunk_ms:, overlap_ms: chunk_overlap_ms)
+    errors.add(:chunk_ms, why) if why
+  end
 
   def caption_timing_is_timing_only
     t = caption_timing

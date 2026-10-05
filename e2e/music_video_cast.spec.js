@@ -6,6 +6,8 @@ const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
 
 const card = (page, n) => page.locator(`[data-test='performer-card'][data-ordinal='${n}']`);
+// The card has a second combobox now (the recast picker): name the artist one.
+const who = (page, n) => card(page, n).locator("[data-test='performer-typeahead']").getByRole("combobox");
 
 test("operator labels people via the typeahead and confirms the cast", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
@@ -17,7 +19,7 @@ test("operator labels people via the typeahead and confirms the cast", async ({ 
   await expect(confirm).toBeDisabled();
 
   // Person 1: an alias finds Test Artist A; picking it saves and reloads the card.
-  await card(page, 1).getByRole("combobox").fill("test alias a");
+  await who(page, 1).fill("test alias a");
   const option = card(page, 1).locator("[data-test='typeahead-option']").first();
   await expect(option).toContainText("Test Artist A");
   await expect(option).toContainText("aka Test Alias A");
@@ -25,7 +27,7 @@ test("operator labels people via the typeahead and confirms the cast", async ({ 
   await expect(card(page, 1).locator("[data-test='performer-artist']")).toContainText("Test Artist A");
 
   // Person 2: nobody matches, so the operator creates the artist inline.
-  await card(page, 2).getByRole("combobox").fill("Test Artist E");
+  await who(page, 2).fill("Test Artist E");
   await card(page, 2).locator("[data-test='typeahead-create']").click();
   await expect(card(page, 2).getByLabel("New artist name")).toHaveValue("Test Artist E");
   await card(page, 2).getByRole("button", { name: "Create and link" }).click();

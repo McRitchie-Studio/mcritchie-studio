@@ -20,6 +20,15 @@ module MusicVideos
       "#{m[1]}clips/#{m[2]}_clip_#{format('%02d', ordinal)}_#{seam}_#{cast_shape}_#{mmss(start_ms)}_#{mmss(end_ms)}.mp4"
     end
 
+    # music_videos/<artist>/<video>/chunks/<video>_chunk_<NN>_<mmss>_<mmss>.mp4:
+    # one tile of the whole video (ChunkTiler), beside the clips folder.
+    def self.chunk(source_key:, ordinal:, start_ms:, end_ms:)
+      m = %r{\A(#{PREFIX}[a-z0-9_]+/([a-z0-9_]+)/)source/}.match(source_key.to_s)
+      raise ArgumentError, "#{source_key.inspect} is not a music video source key" unless m
+
+      "#{m[1]}chunks/#{m[2]}_chunk_#{format('%02d', ordinal)}_#{mmss(start_ms)}_#{mmss(end_ms)}.mp4"
+    end
+
     def self.mmss(ms) = format("%02d%02d", ms.to_i / 60_000, ms.to_i / 1000 % 60)
 
     def initialize(primary:, featured:, song:)

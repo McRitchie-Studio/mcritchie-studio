@@ -3,7 +3,8 @@
 require "minitest/autorun"
 require_relative "../../../lib/music_videos/clip_prompt"
 
-# [unit] The Higgsfield swap prompt: the proven prompt with its three blanks.
+# [unit] The Higgsfield swap prompt: the proven prompt with its blanks, the
+# athlete and look a recast fills in, and the wording for a cinematic video.
 class MusicVideosClipPromptTest < Minitest::Test
   P = MusicVideos::ClipPrompt
 
@@ -27,8 +28,48 @@ class MusicVideosClipPromptTest < Minitest::Test
                  "same. Please give the video the same cinematic lighting as the music video.", prompt
   end
 
-  def test_athlete_stays_a_placeholder_for_pipeline_four
+  def test_athlete_stays_a_placeholder_until_the_target_is_recast
     assert_equal 1, P.fill(target: "desk").scan(P::ATHLETE).size
+    assert_equal 1, P.fill(target: "desk", look: "Home Blue").scan(P::ATHLETE).size
+    refute_includes P.fill(target: "desk", look: "Home Blue"), "Home Blue"
+  end
+
+  def test_a_recast_names_the_athlete_and_mentions_the_look
+    prompt = P.fill(target: "long-haired man", athlete: "Test Athlete Alpha", look: "Home Blue")
+
+    assert prompt.start_with?("Replace the long-haired man in this music video with Test Athlete Alpha, the football player.")
+    assert_includes prompt, "no helmet (like the Home Blue model provided)."
+    refute_includes prompt, "{"
+  end
+
+  def test_an_athlete_with_no_look_is_named_alone
+    prompt = P.fill(target: "desk", athlete: "Test Athlete Alpha")
+
+    assert_includes prompt, "with Test Athlete Alpha, the football player."
+    assert_includes prompt, "(like the model provided)"
+  end
+
+  def test_names_are_flattened_so_they_cannot_open_a_blank
+    prompt = P.fill(target: "desk", athlete: " Test\n{athlete} Alpha ", look: "Home {video} Blue")
+
+    assert_includes prompt, "with Test athlete Alpha, the football player."
+    assert_includes prompt, "like the Home video Blue model provided"
+    refute_includes prompt, "{"
+  end
+
+  def test_a_cinematic_video_is_never_called_a_music_video
+    prompt = P.fill(target: "man in the red jacket", athlete: "Test Athlete Alpha", look: "Away White", video_kind: "cinematic")
+
+    assert prompt.start_with?("Replace the man in the red jacket in this video with Test Athlete Alpha, the football player.")
+    assert prompt.end_with?("Please give the video the same cinematic lighting as the original video.")
+    refute_includes prompt, "music video"
+    refute_includes P.fill(target: nil, video_kind: "cinematic"), "music video"
+    assert P.fill(target: nil, video_kind: "cinematic").start_with?("Replace the main person on screen in this video with {athlete}")
+    refute_includes P.fill(target: nil, video_kind: "cinematic"), "singer"
+  end
+
+  def test_an_unknown_kind_reads_as_a_music_video
+    assert_equal P.fill(target: "desk"), P.fill(target: "desk", video_kind: "short")
   end
 
   def test_describe_reads_labels_as_people_or_scenes

@@ -359,4 +359,111 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
                       "workflow select — saving the form would silently rewrite it to the first option"
     end
   end
+
+  # === Video Post (X): the operator's MP4 plus context ===
+
+  def stub_video_store(&block)
+    Content::AttachVideo.stub(:store, ->(key:, body:) { "https://cdn.test/#{key}" }, &block)
+  end
+
+  test "new content form offers the Video Post (X) workflow and its file field" do
+    log_in_as(@admin)
+    get new_content_path
+
+    assert_response :success
+    assert_select "form[enctype='multipart/form-data']"
+    assert_select "option[value='video_post_x']", "Video Post (X)"
+    assert_select "[data-test='video-post-x-fields'] input[type=file][accept='video/mp4']"
+    # Off-workflow the input is disabled, so an abandoned file is not uploaded.
+    assert_includes response.body, %(:disabled="workflow !== &#39;video_post_x&#39;")
+  end
+
+  test "an existing card cannot be edited into a video post, which would have no video" do
+    log_in_as(@admin)
+    patch content_path(@idea_content.slug), params: { content: { workflow: "video_post_x" } }
+
+    assert_equal "video", @idea_content.reload.workflow
+  end
+
+  test "a video post with no context is refused with a sentence about Description" do
+    log_in_as(@admin)
+
+    stub_video_store do
+      assert_no_difference -> { Content.count } do
+        post contents_path, params: { content: { workflow: "video_post_x", description: " ",
+                                                 video_file: fixture_file_upload("video_post.mp4", "video/mp4") } }
+      end
+    end
+    assert_response :unprocessable_entity
+    assert_includes response.body, "Say what the video is in Description."
+  end
+
+  test "creating a video post stores the MP4 and titles the card from the context" do
+    log_in_as(@admin)
+
+    stub_video_store do
+      assert_difference -> { Content.where(workflow: "video_post_x").count }, 1 do
+        post contents_path, params: { content: { workflow: "video_post_x", description: "Panthers win",
+                                                 video_file: fixture_file_upload("video_post.mp4", "video/mp4") } }
+      end
+    end
+
+    content = Content.where(workflow: "video_post_x").order(:created_at).last
+    assert_redirected_to content_path(content.slug)
+    assert_equal "Panthers win", content.title
+    assert_equal "idea", content.stage
+    assert_equal "https://cdn.test/video_posts/#{content.slug}.mp4", content.final_video_url
+  end
+
+  test "a video post with no MP4, or a file that is not one, creates no card" do
+    log_in_as(@admin)
+
+    stub_video_store do
+      assert_no_difference -> { Content.count } do
+        post contents_path, params: { content: { workflow: "video_post_x", description: "Panthers win" } }
+        assert_response :unprocessable_entity
+        assert_includes response.body, "Attach the MP4 to post."
+
+        post contents_path, params: { content: { workflow: "video_post_x", description: "Panthers win",
+                                                 video_file: fixture_file_upload("video_post.txt", "text/plain") } }
+        assert_response :unprocessable_entity
+        assert_includes response.body, "That file is not an MP4."
+      end
+    end
+  end
+
+  test "a failed upload leaves no card behind for a soul to claim" do
+    log_in_as(@admin)
+
+    Content::AttachVideo.stub(:store, ->(**) { raise "bucket down" }) do
+      assert_no_difference -> { Content.count } do
+        post contents_path, params: { content: { workflow: "video_post_x", description: "Panthers win",
+                                                 video_file: fixture_file_upload("video_post.mp4", "video/mp4") } }
+      end
+    end
+    assert_response :unprocessable_entity
+    assert_includes response.body, "bucket down"
+  end
+
+  test "the video post card shows the video and context, then the copy, then the link" do
+    content = Content.create!(title: "Panthers win", description: "Panthers win", workflow: "video_post_x",
+                              final_video_url: "https://cdn.test/v.mp4")
+    get content_path(content.slug)
+    assert_select "[data-test='video-post-x-card'] video[src='https://cdn.test/v.mp4'][playsinline]"
+    assert_select "[data-test='video-post-x-waiting']"
+    # The page is public: no internal command name on it.
+    assert_select "[data-test='video-post-x-waiting']", text: /post-to-x/, count: 0
+
+    content.update!(captions: "Panthers 3-1 #nfl #keeppounding")
+    get content_path(content.slug)
+    assert_select "[data-test='video-post-x-copy']", "Panthers 3-1 #nfl #keeppounding"
+
+    content.update!(post_url: "https://x.com/turfmonstershow/status/123")
+    get content_path(content.slug)
+    assert_select "a.break-all[data-test='video-post-x-link'][href='https://x.com/turfmonstershow/status/123']"
+    # The same URL is printed again under "Post"; either one unwrapped scrolls a phone sideways.
+    assert_select "a[href='https://x.com/turfmonstershow/status/123']:not(.break-all)", 0
+    assert_select "[data-test='video-post-x-copy']", 0
+  end
+
 end

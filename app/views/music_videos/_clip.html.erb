@@ -1,6 +1,5 @@
 <%# One clip candidate: its preview, window, seam, cast shape, target and prompt. %>
 <% url = clip_urls[clip.object_key] %>
-<% target = clip.target %>
 <% status_chip = { "approved" => "bg-success/10 text-success-ink border-success/40",
                    "rejected" => "bg-danger/10 text-danger-ink border-danger/30",
                    "proposed" => "bg-surface-alt text-secondary border-subtle" }.fetch(clip.status) %>
@@ -44,15 +43,7 @@
         <span class="badge text-xs bg-surface-alt text-body border-subtle" data-test="clip-shape"><%= clip_shape_label(clip.cast_shape) %></span>
       </div>
 
-      <p class="text-sm text-body min-w-0" data-test="clip-target">
-        <span class="label-upper mr-1">Target</span>
-        <% if target %>
-          <%= target.name %><% if target.artist %> · <span class="font-semibold text-heading"><%= target.artist.name %></span><% end %>
-          <span class="text-muted">(<%= target.label %>)</span>
-        <% else %>
-          <span class="text-muted">No labelled artist in this window; the prompt says “the singer”.</span>
-        <% end %>
-      </p>
+      <%= render "music_videos/swap_target", clip: clip, prefix: "clip" %>
 
       <div class="min-w-0">
         <div class="flex items-center justify-between gap-2 mb-1.5">

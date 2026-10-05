@@ -98,6 +98,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # through the parser and exits before dispatch — verified against a dead
     # base URL, so no subcommand reached the network.
     "content"                => :optparse,
+    # Posts video to a public X account. `--help` is wired through OptionParser
+    # and an unknown flag refuses before any credential read or upload.
+    "x-post"                 => :optparse,
     # Leftover positionals beyond <soul> <dir> abort with the usage line.
     "openclaw-workspace"     => :optparse,
     "control-check"          => :cli_arg_guard,

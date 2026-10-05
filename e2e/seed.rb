@@ -1593,6 +1593,15 @@ ArtistAlias.find_or_create_by!(artist_slug: test_artist_a.slug, name: "Test Alia
 # (e2e/music_video_clips.spec.js).
 require Rails.root.join("db/seeds/data/night_call_clips.rb").to_s
 NightCallClips.seed!
+# /music_videos/test-artist-a-tiled-demo — a synthetic cinematic video tiled into
+# four chunks beside one clip candidate (e2e/music_video_chunks.spec.js).
+require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
+TiledVideo.seed!
+# /music_videos/test-cinematic-recast-demo — a synthetic cinematic video, both
+# people kept as is, tiled into four chunks, and a synthetic athlete with two
+# looks (e2e/music_video_recast.spec.js).
+require Rails.root.join("db/seeds/data/recast_video.rb").to_s
+RecastVideo.seed!
 # /music_videos/steve-aoki-night-call-looks — a confirmed cast with two labelled
 # test artists and their stills, no looks yet (e2e/music_video_looks.spec.js).
 require Rails.root.join("db/seeds/data/night_call_looks.rb").to_s

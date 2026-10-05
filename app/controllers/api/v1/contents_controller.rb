@@ -10,8 +10,8 @@ module Api
     # The board is already the queue, so this adds no queue — only the reads,
     # the atomic claim, and the write-back that were missing.
     class ContentsController < BaseController
-      before_action :set_content, only: [:show, :update, :release]
-      before_action :require_claim_holder, only: [:update]
+      before_action :set_content, only: [:show, :update, :release, :posted]
+      before_action :require_claim_holder, only: [:update, :posted]
 
       # GET /api/v1/contents?stage=idea&workflow=game_recap&claimable=1
       # What is waiting for me. `claimable=1` hides cards another session holds.
@@ -65,6 +65,28 @@ module Api
           @content.update!(content_params)
         end
 
+        render_data(serialize(@content.reload, full: true))
+      end
+
+      # POST /api/v1/contents/:slug/posted { session, post_url }
+      #
+      # "It is live." Records where a video_post_x card was posted, moves it to
+      # `posted` and lets the claim go. Narrow on purpose: post_url is not in the
+      # general write-back, so a claim on any other workflow cannot mark a card
+      # posted that nothing posted. The id is read out of the URL, so the two
+      # cannot disagree.
+      def posted
+        return render_error("only a video_post_x card is recorded this way", status: :unprocessable_entity, error_code: "WRONG_WORKFLOW") unless @content.video_post_x?
+
+        return render_error("this card is already posted: #{@content.post_url}", status: :conflict, error_code: "ALREADY_POSTED") if @content.stage == "posted"
+
+        post_id = params[:post_url].to_s[%r{\Ahttps://(?:x|twitter)\.com/[A-Za-z0-9_]+/status/(\d+)\z}, 1]
+        return render_error("post_url must be an x.com status URL", status: :unprocessable_entity, error_code: "BAD_POST_URL") if post_id.nil?
+
+        rescue_and_log(target: @content) do
+          Content::Post.new(@content).call(platform: "x", post_url: params[:post_url], post_id: post_id)
+          @content.release_claim!(session: params[:session])
+        end
         render_data(serialize(@content.reload, full: true))
       end
 
@@ -151,6 +173,8 @@ module Api
           scenes:      content.scenes,
           captions:    content.captions,
           hashtags:    content.hashtags,
+          final_video_url: content.final_video_url,
+          post_url:    content.post_url,
           url:         "#{ENV.fetch('STUDIO_BASE_URL', 'https://mcritchie.studio')}/contents/#{content.slug}"
         )
       end
