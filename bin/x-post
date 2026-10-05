@@ -10,9 +10,15 @@
 #
 # Usage:
 #   bin/x-post whoami
+#   bin/x-post draft <team> [--caption-file F]
 #   bin/x-post check <video.mp4> --caption-file F [--tag '#Tag']... [--handle @h]...
 #   bin/x-post post  <video.mp4> --caption-file F [--tag '#Tag']... [--handle @h]... --yes
 #   bin/x-post ledger
+#
+# `draft` WRITES THE COPY. Give it the team that won ("chiefs", "KC", "Kansas
+# City") and it reads the live record and the team's tags and prints the post,
+# the facts it read, and a CHECK line for anything a person should look at
+# first. It is the same recipe the content card runs. --caption-file saves it.
 #
 # `check` TOUCHES NOTHING: no credential read, no network. It prints the exact
 # text that would go out, its weighted length, and the video's facts, and exits 1
@@ -46,6 +52,7 @@ begin
   require_relative "../app/services/x/client"
   require_relative "../app/services/x/post_media"
   require_relative "../app/services/x/caption"
+  require_relative "../app/services/x/post_draft"
 rescue LoadError
   # The fixed-path tooling tree carries bin/ but not app/services, so the copy
   # at /Users/alex/projects/.agents/bin cannot run. Say where it does.
@@ -65,6 +72,7 @@ OP_FIELD = {
   "Access Token" => "X_ACCESS_TOKEN", "Access Token Secret" => "X_ACCESS_TOKEN_SECRET"
 }.freeze
 FFPROBE  = ENV.fetch("X_POST_FFPROBE_BIN", "ffprobe")
+TEAMS_CSV = File.join(ROOT, "db", "seeds", "data", "teams_hashtags.csv")
 MAX_FPS  = 60
 LONG_SECONDS = 140
 
@@ -92,6 +100,23 @@ def load_creds!
   die!("X credentials missing: #{X::OAuthSigner::REQUIRED_ENV.reject { |k| ENV[k].to_s.strip != '' }.join(', ')}") unless X::OAuthSigner.creds_present?
 rescue JSON::ParserError, Errno::ENOENT
   die!("could not read 1Password item #{OP_ITEM[0]} in #{OP_ITEM[1]}. That is the token-session SOP, not this one.")
+end
+
+# The team table's row for whatever the operator typed: mascot, short code, city
+# or full name. Exactly one match, or it refuses and lists what it found.
+def team_row(query)
+  require "csv"
+  q    = query.to_s.strip.downcase
+  rows = CSV.read(TEAMS_CSV, headers: true).map { |r| r.to_h.transform_keys { |k| k.to_s.strip } }
+  hits = rows.select do |r|
+    [r["Alias"], r["Short"], r["Location"], "#{r['Location']} #{r['Alias']}"].any? { |v| v.to_s.strip.downcase == q }
+  end
+  die!("no team matches #{query.inspect}. Use the mascot (chiefs), the short code (KC) or the full name.") if hits.empty?
+  die!("#{query.inspect} matches #{hits.map { |r| "#{r['Location']} #{r['Alias']}" }.join(' and ')}. Use the mascot or the full name.") if hits.size > 1
+
+  r = hits.first
+  X::PostDraft::Team.new(name: "#{r['Location'].strip} #{r['Alias'].strip}", location: r["Location"].strip,
+                         mascot: r["Alias"].strip, hashtag: r["Hashtag"].to_s.strip)
 end
 
 def whoami
@@ -174,6 +199,21 @@ when "whoami"
   load_creds!
   puts "@#{whoami}"
 
+when "draft"
+  query = ARGV.join(" ")
+  die!("draft needs a team: bin/x-post draft chiefs") if query.strip.empty?
+  begin
+    draft = X::PostDraft.new(team: team_row(query)).call
+  rescue X::PostDraft::Error => e
+    die!(e.message)
+  end
+  game = draft.facts["last_final"]
+  puts draft.text
+  warn "record:  #{draft.facts['record']}  (#{draft.facts['source']}, read #{draft.facts['read_at']})"
+  warn "final:   #{game['matchup']} #{game['score']} #{game['won'] ? 'WIN' : 'LOSS'}, kickoff #{game['kickoff']}" if game
+  draft.exceptions.each { |x| warn "CHECK:   #{x}" }
+  File.write(opts[:caption_file], "#{draft.text}\n") if opts[:caption_file]
+
 when "check"
   _, _, problems = inspect_post(ARGV.shift, opts)
   exit 1 if problems.any?
@@ -210,10 +250,14 @@ when "post"
 
   begin
     result = X::PostMedia.new(text: caption.text, video_path: path).call
-  rescue X::PostMedia::Error, X::Client::HttpError => e
-    # X ANSWERED and said no, so nothing is live: retire the attempt row.
+  rescue X::PostMedia::NotPosted => e
+    # X ANSWERED and nothing is live: retire the attempt row so a retry may run.
     File.open(LEDGER, "a") { |f| f.puts(JSON.generate(sha256: sha, refused_at: Time.now.utc.iso8601)) }
-    die!("X refused the post, nothing was recorded: #{e.message[0, 500]}")
+    die!("X refused the post, nothing is live: #{e.message[0, 500]}")
+  rescue X::PostMedia::Error, X::Client::HttpError => e
+    # UNKNOWN: a server error or an answer with no id. The attempt row stays, so
+    # the next run stops and sends you to the timeline.
+    die!("X did not confirm the post and it MAY BE LIVE: #{e.message[0, 400]}. Look at https://x.com/#{ACCOUNT} before anything else.")
   end
 
   File.open(LEDGER, "a") do |f|
@@ -224,9 +268,9 @@ when "post"
   puts "posted:  https://x.com/#{actual}/status/#{result[:post_id]}"
 
 when "ledger"
-  rows = ledger_rows
+  rows = ledger_rows.select { |r| r["post_url"] }
   puts "no posts recorded" if rows.empty?
-  rows.select { |r| r["post_url"] }.each { |r| puts "#{r['posted_at']}  #{r['post_url']}  #{File.basename(r['video'].to_s)}" }
+  rows.each { |r| puts "#{r['posted_at']}  #{r['post_url']}  #{File.basename(r['video'].to_s)}" }
 
 when "help", "--help", "-h", nil
   usage!(0)
