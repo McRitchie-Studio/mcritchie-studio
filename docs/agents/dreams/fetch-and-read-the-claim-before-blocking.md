@@ -2,7 +2,7 @@
 question: "A task depends on a file that is not on `accepted`. Do I mark it blocked?"
 answer: "Fetch first, then read the ref again. Then read the task's claim. Only write the blocker if both still say so."
 why: "A stale ref blocked a task six minutes after its dependency merged, and stamped 'unresolved feedback' onto a live session's in-progress work."
-status: proposed
+status: approved
 source: "2026-08-27 \u00b7 task workflows-card-fifth-soul"
 ---
 

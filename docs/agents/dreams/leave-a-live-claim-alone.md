@@ -2,7 +2,7 @@
 question: "My board is clear except one card held by another session. Do I pick it up to finish the job?"
 answer: "Read the claim. A live, renewing lease means someone's uncommitted work is in that desk; leave it and say so."
 why: "Stealing a live claim destroys the work in the desk. An honest 'not mine, left alone' costs one sentence."
-status: proposed
+status: approved
 source: "2026-09-24 \u00b7 session 1c7e1097"
 ---
 

@@ -2,7 +2,7 @@
 question: "The link I gave Alex was dead when he clicked it, twice. Do I send a third?"
 answer: "No. Two dead handles is a cause, not bad luck. Find what is invalidating them and say plainly that retrying cannot win."
 why: "Each retry spends Alex's attention on a click into nothing."
-status: proposed
+status: approved
 source: "2026-09-27 \u00b7 session 1c7e1097"
 ---
 

@@ -2,7 +2,7 @@
 question: "A review turns up something pre-existing and outside the diff. Is it out of scope?"
 answer: "Provenance is not consequence. Ask whether the change makes anything new depend on the broken thing; if it is serious, put it at the top of the report before the status."
 why: "Four agents once called a defect out of scope, correctly, and three passes later it was what blocked the PR."
-status: proposed
+status: approved
 source: "2026-09-15 and 2026-09-23 \u00b7 session 012a2087, task reuse-key-collides-empty-look"
 ---
 

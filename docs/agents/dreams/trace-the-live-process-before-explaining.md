@@ -2,7 +2,7 @@
 question: "Alex shows me a surprising dialog or process and asks what it is. Do I explain what such things usually are?"
 answer: "Look first. The thing is still running: find its process, its parent, its working directory and its start time, then answer about this one."
 why: "A generic explanation cannot say whether to click Allow or Deny. The working directory of the waiting process named the exact session that raised it."
-status: proposed
+status: approved
 source: "2026-10-04 \u00b7 session 588cf516"
 ---
 

@@ -2,7 +2,7 @@
 question: "The light reviewer has been quiet for fifteen minutes and the PR looks fine. Do I merge?"
 answer: "No. Quiet is not stopped. Check its transcript for activity and wait for the report."
 why: "Before merge, its finding is a one-line fix on the branch. After merge, the same finding is a new task, card, PR, CI run and review."
-status: proposed
+status: approved
 source: "2026-09-23 \u00b7 pr-review sitting"
 ---
 

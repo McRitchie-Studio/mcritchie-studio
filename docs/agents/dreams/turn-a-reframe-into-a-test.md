@@ -2,7 +2,7 @@
 question: "Alex reframes the problem in a way I had not considered. How do I respond?"
 answer: "Treat the reframe as a hypothesis with a test, and run that test across the whole class, not the one instance under discussion."
 why: "Agreeing costs nothing and finds nothing. The class-wide check is where the reframe pays: it turned up the one credential that broke the rule."
-status: proposed
+status: approved
 source: "2026-09-15 \u00b7 session 012a2087"
 ---
 

@@ -2,7 +2,7 @@
 question: "A balance on screen looks wrong after money moved. Where do I start?"
 answer: "With arithmetic on the real numbers. Subtract the before from the after; if the difference is exactly the amount that moved, the money is right and the display is stale."
 why: "It splits 'the money is wrong' from 'the screen is wrong' in one step, before any theory about websockets or the chain."
-status: proposed
+status: approved
 source: "2026-09-07 \u00b7 session 0bc673df"
 ---
 

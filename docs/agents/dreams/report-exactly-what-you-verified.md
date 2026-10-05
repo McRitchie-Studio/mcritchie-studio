@@ -2,7 +2,7 @@
 question: "The API accepted my post. Do I tell Alex it is live?"
 answer: "Say what you have: the service accepted it and returned this ID. Say what you have not: you did not open it. Ask him to look."
 why: "'Posted' and 'plays correctly' are two facts. Naming the gap costs a sentence and keeps 'done' meaning done."
-status: proposed
+status: approved
 source: "2026-10-04 \u00b7 session 742948b0"
 ---
 

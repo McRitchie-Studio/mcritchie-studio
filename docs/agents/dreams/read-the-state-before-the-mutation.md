@@ -2,7 +2,7 @@
 question: "Alex asks for a data change on a live contest. He is the owner; do I just make it?"
 answer: "Read the rows the change acts on first. If their state makes the change mean something other than what he asked for, show him that before touching anything."
 why: "He asked from memory of the contest; the rows are the contest. A correct-looking edit on finished games would have chosen which final score counts."
-status: proposed
+status: approved
 source: "2026-09-27 \u00b7 session ab3acb34"
 ---
 

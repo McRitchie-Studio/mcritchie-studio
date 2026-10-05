@@ -2,7 +2,7 @@
 question: "A subagent reports that it verified something. Can I pass that to Alex as fact?"
 answer: "Only what your own tool calls confirm. A report is testimony: check the load-bearing claim yourself, or relay it as 'the reviewer says'."
 why: "A review that never ran was once recorded on the board as merge-ready and repeated to Alex, because nothing distinguishes a real report from an imagined one."
-status: proposed
+status: approved
 source: "2026-08-27 \u00b7 task adopt-engine-entry-confirmed"
 ---
 

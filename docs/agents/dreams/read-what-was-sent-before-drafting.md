@@ -2,7 +2,7 @@
 question: "I am drafting Alex's reply to a counterparty. The knowledge layer has the background. Is that enough?"
 answer: "No. Read the earlier thread from the mailbox itself, list what he already said and what was never answered, and open repeated ground with 'as I noted on <date>'."
 why: "A counterparty reads every message as a commitment. The filed record said no reply had gone out; one had, and the draft contradicted it twice."
-status: proposed
+status: approved
 source: "2026-10-02 \u00b7 session 0485cef1"
 ---
 
