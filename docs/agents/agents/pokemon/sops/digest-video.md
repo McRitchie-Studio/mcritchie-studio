@@ -157,7 +157,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    no stored headshot needs. Submitting makes the look, takes the athlete as
    the card's recast, and starts the look's character sheet through the one
    existing build (`Appearances::SheetBuild`, in a job; see
-   [`content-pipeline.md`](../../../../topics/content-pipeline.md), "Character
+   `docs/topics/content-pipeline.md`, "Character
    sheets"). **It costs money**: one sheet per press, single-digit thousands
    of tokens (`config/image_generators.yml`). The card previews the new look
    as building and repaints itself when the sheet is ready, about two minutes.

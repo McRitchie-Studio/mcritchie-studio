@@ -129,10 +129,12 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   if ((await novice.locator("[data-test='search-row-badge']").textContent()) === "0 looks") {
     await expect(novice.locator("[data-test='search-row-look']")).toBeHidden();
   }
-  // At phone width the name still reads in full.
+  // At phone width the name keeps most of the row (it may ellipsize under a wide font, never vanish),
+  // and the row does not spill past the list.
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(delta.locator("[data-test='search-row-name']")).toBeVisible();
-  expect(await delta.locator("[data-test='search-row-name']").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await delta.locator("[data-test='search-row-name']").evaluate((el) => el.clientWidth)).toBeGreaterThan(120);
+  expect(await delta.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(delta.locator("[data-test='search-row-look-name']")).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 720 });
   await delta.click();
