@@ -1,7 +1,7 @@
 <%# "How was your first game": a short personal note to someone who played the
     rebuilt Cyvasse (task first-game-feedback-survey), asking how it felt. One
-    button, to the survey through the click tracker, which adds the reader's
-    token as ?t= so the answer is credited to them. The subject comes from
+    button, to Cyvasse's survey through the click tracker, which adds the
+    reader's token as ?ref= so the answer is credited to them. The subject comes from
     Broadcasts::CyvasseFirstGame; no merge field is required. %>
 <% links      = Broadcast::TEMPLATE_LINKS["cyvasse_first_game"] %>
 <% survey_url = broadcast_link(:survey, links["survey"]) %>

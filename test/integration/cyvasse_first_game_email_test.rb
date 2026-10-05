@@ -2,8 +2,8 @@ require "test_helper"
 
 # [integration] The "How was your first game" email (task
 # first-game-feedback-survey): registered, rendered per reader with the
-# subject their username picks, one button to the survey through the click
-# tracker, and the tracker landing the reader on the survey with ?t=<token>.
+# subject their username picks, one button to Cyvasse's survey through the
+# click tracker, and the tracker landing the reader there with ?ref=<token>.
 class CyvasseFirstGameEmailTest < ActionDispatch::IntegrationTest
   setup do
     @broadcast = Broadcast.create!(slug: "first-game-email", template_key: "cyvasse_first_game",
@@ -19,7 +19,7 @@ class CyvasseFirstGameEmailTest < ActionDispatch::IntegrationTest
   test "the template is registered with its survey and build links, and needs no merge field" do
     assert_equal "Cyvasse: How Was Your First Game", Broadcast::TEMPLATES["cyvasse_first_game"]
     assert_equal %w[survey build], Broadcast::TEMPLATE_LINKS["cyvasse_first_game"].keys
-    assert_equal "https://mcritchie.studio/s/cyvasse-first-game", @broadcast.link_for("survey")
+    assert_equal "https://cyvasse.mcritchie.studio/surveys/first-game", @broadcast.link_for("survey")
     assert_not @broadcast.requires_staging?
   end
 
@@ -54,9 +54,9 @@ class CyvasseFirstGameEmailTest < ActionDispatch::IntegrationTest
     assert_not_includes html, "cyvasse.xyz"
   end
 
-  test "the tracked survey click lands on the survey with ?t=<token>" do
+  test "the tracked survey click lands on Cyvasse's survey with ?ref=<token>" do
     get email_click_path(token: @delivery.token, l: "survey")
-    assert_redirected_to "https://mcritchie.studio/s/cyvasse-first-game?t=#{@delivery.token}"
+    assert_redirected_to "https://cyvasse.mcritchie.studio/surveys/first-game?ref=#{@delivery.token}"
     assert_equal "survey", @delivery.events.where(kind: "clicked").last&.link_key
   end
 end

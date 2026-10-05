@@ -60,14 +60,13 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   end
 
   # task contacts-admin-page: the mailing list sits beside the broadcasts sent to it.
-  # task first-game-feedback-survey: the survey answers sit last in Email.
   test "admin sidebar has an Email section with Broadcasts then Contacts" do
     self.admin_enabled = true
 
     email = sidebar_link_sections.find { |section| section[:title] == "Email" }
 
     assert email&.fetch(:admin), "expected an admin Email section"
-    assert_equal [ "/broadcasts", "/contacts", "/broadcasts/analytics", "/surveys" ], email.fetch(:links).map { |link| link.fetch(:href) }
+    assert_equal [ "/broadcasts", "/contacts", "/broadcasts/analytics" ], email.fetch(:links).map { |link| link.fetch(:href) }
   end
 
   test "admin sidebar includes the Activities feed link" do
@@ -225,7 +224,6 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def broadcasts_path = "/broadcasts"
   def contacts_path = "/contacts"
   def broadcast_analytics_path = "/broadcasts/analytics"
-  def surveys_path = "/surveys"
   def nfl_hub_path = "/nfl"
   def games_season_path(year) = "/games/#{year}"
   def teams_path = "/teams"

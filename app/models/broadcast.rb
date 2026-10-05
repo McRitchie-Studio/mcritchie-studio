@@ -35,10 +35,13 @@ class Broadcast < ApplicationRecord
       "build" => "https://mcritchie.studio/build"
     }.freeze,
     # The first-game feedback note (task first-game-feedback-survey). The
-    # click tracker adds the reader's token to the survey link as ?t=
-    # (EmailEvents::Results.with_ref), which credits the answer to them.
+    # survey is served by Cyvasse (studio-engine's Studio::Survey). The link
+    # uses the email host, whose redirect carries ?ref= across to cyvasse.xyz;
+    # the click tracker adds the reader's token as ?ref=
+    # (EmailEvents::Results.with_ref), and Cyvasse's EmailReferral credits the
+    # answer to them.
     "cyvasse_first_game" => {
-      "survey" => "https://mcritchie.studio/s/cyvasse-first-game",
+      "survey" => "https://cyvasse.mcritchie.studio/surveys/first-game",
       "build" => "https://mcritchie.studio/build"
     }.freeze
   }.freeze

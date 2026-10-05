@@ -220,18 +220,18 @@ unknown, updated, unchanged, stale) and the size of the has-games audience. Reru
 it whenever the numbers should be fresh; the dyno's `/tmp` copy dies with the
 one-off dyno.
 
-## New-Stack Players and the First-Game Survey
+## New-Stack Players and the First-Game Email
 
 The "How was your first game" email (`cyvasse_first_game`, task
 first-game-feedback-survey) goes to the players who have played on the rebuilt
 Cyvasse, tagged `cyvasse-new-stack-player`. Its one button is the tracked link
-`l=survey`; the click tracker (`EmailEvents::Results.with_ref`) lands the reader
-on `https://mcritchie.studio/s/cyvasse-first-game?t=<delivery token>`, which
-credits their answer to the contact. The form also works without a token
-(anonymously), keeps one response per token (a return visit edits it), and the
-answers are read at `/surveys/cyvasse-first-game` (admin; sidebar **Email ·
-Surveys**). Surveys are code (`Survey::REGISTRY`); answers are
-`SurveyResponse` rows and never reach the request log.
+`l=survey` to Cyvasse's own survey, `https://cyvasse.mcritchie.studio/surveys/first-game`
+(served by studio-engine's `Studio::Survey`; the email host's redirect carries
+the query across to cyvasse.xyz). The click tracker adds the reader's token as
+`?ref=` (`EmailEvents::Results.with_ref`), Cyvasse's `EmailReferral` credits the
+answer to them, and the app beacons the `survey_completed` goal
+(`EmailEvent::GOALS`) back to `/e/g/<token>`, where the analytics count it as
+"Answered a survey".
 
 The list has two sources, both written by `contacts:tag_new_stack_players`
 (`Contacts::NewStackPlayerTagger`), which tags the contact and merges
