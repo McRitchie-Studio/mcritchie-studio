@@ -33,6 +33,13 @@ module MusicVideos
       "#{m[1]}generated/#{m[2]}_chunk_#{format('%02d', ordinal)}_#{mmss(start_ms)}_#{mmss(end_ms)}_take_#{format('%02d', number)}.mp4"
     end
 
+    # music_videos/<artist>/<video>/stitched/<video>_stitched_<NN>.mp4: one
+    # full-length stitch of the current takes. Numbered and kept, like takes.
+    def self.stitched(source_key:, number:)
+      m = video_folder(source_key)
+      "#{m[1]}stitched/#{m[2]}_stitched_#{format('%02d', number)}.mp4"
+    end
+
     # [whole match, "music_videos/<artist>/<video>/", "<video>"] of a source key.
     def self.video_folder(source_key)
       %r{\A(#{PREFIX}[a-z0-9_]+/([a-z0-9_]+)/)source/}.match(source_key.to_s) ||

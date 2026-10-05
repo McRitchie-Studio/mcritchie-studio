@@ -1,0 +1,62 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# stitch video <music_video_slug>: make the full stitched MP4 of a tiled video.
+# Every chunk's current take is crossfaded into the next across their overlap,
+# the original source audio runs underneath untouched, and the result is stored
+# in R2 as the video's next numbered stitch. The final step of the recast
+# pipeline (docs/agents/agents/pokemon/sops/digest-video.md, "The final stitch").
+#
+# It fulfils the request "Generate full video" recorded on /music_videos/<slug>;
+# with none waiting it asks for one itself. Runs on the Mac: production dynos
+# have no ffmpeg.
+#
+#   bin/stitch-video <slug>                # dev bucket, local API (localhost:3000)
+#   bin/stitch-video <slug> --api URL      # another hub, e.g. a desk server
+#   bin/stitch-video <slug> --source FILE  # a source MP4 already on disk
+#   bin/stitch-video <slug> --dry-run      # fetch, measure and print the plan only
+#   bin/stitch-video <slug> --force        # also re-run a stitch stuck running, or failed
+#   bin/stitch-video <slug> --production   # production bucket and https://mcritchie.studio
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup" # aws-sdk-s3 for R2; before any gem loads
+require "optparse"
+require_relative "lib/stitch_video"
+
+options = { production: false, dry_run: false, force: false, workdir: File.expand_path("~/projects/.corpus/music_videos") }
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/stitch-video <music_video_slug> [options]"
+  opts.on("--production", "read and write the production bucket and API (default: dev)") { options[:production] = true }
+  opts.on("--api URL", "hub API base (default: localhost:3000, or mcritchie.studio with --production)") { |v| options[:api] = v }
+  opts.on("--source FILE", "the source MP4 on disk (default: fetched from R2)") { |v| options[:source] = File.expand_path(v) }
+  opts.on("--workdir DIR", "working folder (default #{options[:workdir]})") { |v| options[:workdir] = File.expand_path(v) }
+  opts.on("--force", "also run a stitch that is stuck running, or that failed") { options[:force] = true }
+  opts.on("--dry-run", "fetch, measure and print the plan; start, encode, upload and report nothing") { options[:dry_run] = true }
+  opts.on("-h", "--help") do
+    puts opts
+    exit 0
+  end
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  abort "stitch-video: #{e.message}"
+end
+
+if ARGV.size != 1
+  warn parser.banner
+  abort(ARGV.empty? ? "stitch-video: a music video slug is required" : "stitch-video: exactly one slug, got #{ARGV.size}")
+end
+abort "stitch-video: no such file: #{options[:source]}" if options[:source] && !File.file?(options[:source])
+
+begin
+  target = DigestVideo.target(production: options[:production])
+  StitchVideo::Runner.new(
+    api: DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__)),
+    storage: DigestVideo::R2Storage.new(bucket: target[:bucket], suffix: target[:suffix]),
+    shell: DigestVideo.shell, workdir: options[:workdir], source: options[:source], dry_run: options[:dry_run],
+    force: options[:force], bucket: target[:bucket]
+  ).call(ARGV.first)
+rescue DigestVideo::Failure, MusicVideos::Stitcher::Failure => e
+  abort "stitch-video: #{e.message}"
+end

@@ -16,15 +16,16 @@ module TiledVideo
   CANDIDATE = { ordinal: 1, start_ms: 30_000, end_ms: 55_000, seam: "section_change", seam_ms: 42_000,
                 cast_shape: "solo_plus_background", target_performer: 1, performer_ordinals: [1, 2] }.freeze
 
-  def self.video!
-    video = MusicVideo.find_or_create_by!(slug: SLUG) do |v|
+  # The demo video, or with overrides a second one like it (StitchReadyVideo).
+  def self.video!(slug: SLUG, source: SOURCE, source_id: "tiled-demo", title: "Test Artist A - Tiled Demo", duration_ms: DURATION_MS)
+    video = MusicVideo.find_or_create_by!(slug:) do |v|
       v.kind = "cinematic"
       v.platform = "youtube"
-      v.source_url = "https://www.youtube.com/watch?v=tiled-demo"
-      v.source_id = "tiled-demo"
-      v.title = "Test Artist A - Tiled Demo"
-      v.duration_ms = DURATION_MS
-      v.source_object_key = SOURCE
+      v.source_url = "https://www.youtube.com/watch?v=#{source_id}"
+      v.source_id = source_id
+      v.title = title
+      v.duration_ms = duration_ms
+      v.source_object_key = source
     end
     return video if video.video_performers.exists?
 
@@ -36,13 +37,13 @@ module TiledVideo
   end
 
   # The rows bin/find-clips --tile would post: the tiling, labelled from the cast.
-  def self.chunk_rows(video = video!, duration_ms: DURATION_MS, **tiling)
+  def self.chunk_rows(video = video!, duration_ms: video.duration_ms, **tiling)
     cast = video.video_performers.map { |p| p.as_json(only: %w[ordinal artist_slug extra sightings]) }
     MusicVideos::ChunkTiler.windows(duration_ms, **tiling).map do |w|
       seen = MusicVideos::ClipCast.label(cast, w.start_ms, w.end_ms)
       { "ordinal" => w.ordinal, "start_ms" => w.start_ms, "end_ms" => w.end_ms, "cast_shape" => seen.cast_shape,
         "target_performer" => seen.target, "performer_ordinals" => seen.present,
-        "object_key" => MusicVideos::ObjectKeys.chunk(source_key: SOURCE, ordinal: w.ordinal, start_ms: w.start_ms, end_ms: w.end_ms) }
+        "object_key" => MusicVideos::ObjectKeys.chunk(source_key: video.source_object_key, ordinal: w.ordinal, start_ms: w.start_ms, end_ms: w.end_ms) }
     end
   end
 

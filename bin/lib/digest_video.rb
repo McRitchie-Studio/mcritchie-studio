@@ -416,6 +416,8 @@ module DigestVideo
 
     def show(slug) = data(request(Net::HTTP::Get, "/api/v1/music_videos/#{slug}", nil, authenticate))
 
+    def get(path) = data(request(Net::HTTP::Get, path, nil, authenticate))
+
     def post(path, payload) = data(request(Net::HTTP::Post, path, payload, authenticate))
 
     # The data of a success; a refusal raises with the API's own code.

@@ -3,7 +3,8 @@
 # /music_videos/:slug — the cast panel (music video pipeline, stage 2) with
 # each performer's recast, the
 # clip candidates (stage 5) and the chunks the whole video is tiled into, with
-# each chunk's hand-off, generated takes and the stitch preview. Admin only:
+# each chunk's hand-off, generated takes, the stitch preview and the final
+# stitched video. Admin only:
 # stills, clips and takes are private objects shown through short-lived signed URLs.
 class MusicVideosController < ApplicationController
   before_action :require_admin
@@ -26,6 +27,7 @@ class MusicVideosController < ApplicationController
     (@clips + @chunks).each { |clip| clip.association(:music_video).target = @video }
     load_looks
     load_chunk_review
+    load_stitches
   end
 
   def confirm_cast
@@ -61,6 +63,17 @@ class MusicVideosController < ApplicationController
     @chunk_downloads = signed_urls(@chunks.map(&:object_key), download: true)
     @recast_sheets = newest_sheets(@performers.filter_map(&:recast_appearance_slug))
     @stitch = helpers.stitch_preview_data(@chunks, @clip_urls)
+  end
+
+  # The final stitch: every stitch of the video, newest first, the signed
+  # files of the finished ones, and whether this hub can stitch on its own.
+  def load_stitches
+    @stitches = @video.stitches.to_a.reverse
+    @stitches.each { |stitch| stitch.association(:music_video).target = @video }
+    keys = @stitches.select(&:done?).map(&:object_key)
+    @stitch_urls = signed_urls(keys)
+    @stitch_downloads = signed_urls(keys, download: true)
+    @stitch_here = MusicVideos::Stitcher.available?
   end
 
   # appearance slug => its newest live character sheet.

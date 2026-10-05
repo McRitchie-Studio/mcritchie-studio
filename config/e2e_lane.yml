@@ -352,7 +352,13 @@
 # search with a failed headshot and a pick inside the debounce; a late older answer that
 # must not reopen the list. Measured with `npx playwright test --list` on the tree merged
 # with accepted (generated takes included) => 212.
-total_specs: 212
+#
+# 212 -> 213 on 2026-10-05 (/tasks/stitch-takes-into-full-video):
+# e2e/music_video_full_video.spec.js, the operator generates the full video and a later
+# take or regenerate flag marks it stale (one spec, not quarantined). Measured with
+# `npx playwright test --list` on the tree merged with accepted (search rows included)
+# => 213.
+total_specs: 213
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -550,7 +556,9 @@ quarantined: 10
 # 199 -> 202: the three music_video_search_rows.spec.js specs
 # (/tasks/person-vocations-and-search-rows). Measured on the tree merged with accepted:
 # `npx playwright test --list --grep-invert @quarantine` => 202.
-executed: 202
+# 202 -> 203: the music_video_full_video.spec.js spec (/tasks/stitch-takes-into-full-video).
+# Measured on the tree merged with accepted: the same lister => 203.
+executed: 203
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

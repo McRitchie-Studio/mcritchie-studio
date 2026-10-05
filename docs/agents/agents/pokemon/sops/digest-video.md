@@ -282,7 +282,8 @@ result back. All of it happens on `/music_videos/<slug>`, in the chunk's row.
    or its own source cut when it has none (marked `source`), and hands over to
    the next at the middle of their overlap. The original source audio plays
    underneath and the clips are muted. Seek with the slider or a chunk marker.
-   The handover is a hard cut; the crossfade belongs to the final stitch.
+   The handover is a hard cut; the crossfade belongs to
+   [the final stitch](#the-final-stitch).
 5. **Ready to stitch** shows when every chunk has a current take and none is
    flagged (`MusicVideo#ready_to_stitch?`). Until then the line says what is
    missing.
@@ -294,6 +295,74 @@ another length leaves the old takes filed in R2 and on no chunk.
 Timing comes from each chunk's `start_ms` and `end_ms`
 (`lib/music_videos/stitch_timeline.rb`), never from a file's length: cut files
 run a frame long and a generated file may differ slightly.
+
+### The final stitch
+
+One MP4 of the whole video: every chunk's current take, crossfaded into the
+next across their overlap, over the original source audio. It runs where ffmpeg
+is. Production dynos have none, so on production the Mac does it.
+
+1. **Press Generate full video** in the **Full video** panel, above the chunk
+   rows on `/music_videos/<slug>`. The button is on only when the video is
+   ready to stitch; until then the panel says what holds it up. Pressing it
+   records stitch N with the take each chunk has at that moment.
+2. **On a local hub** (ffmpeg on `PATH`) a background job stitches at once. The
+   panel says it is stitching and offers **Show it** when it finishes.
+3. **On production** the panel says stitch N is waiting. Run it from the Mac:
+
+   ```bash
+   bin/stitch-video <slug> --production
+   ```
+
+   It fetches the takes and the source from R2 (1Password item
+   `r2.mcritchie-studio`, as `bin/find-clips` does), stitches, uploads the MP4
+   and reports through the API. Then reload the page.
+4. **Check the result** in the panel: a player, the length, size and frame
+   rate, the take numbers it used, and **Download**. Judge lip-sync here, on
+   the stitched file, not in the preview.
+5. **Stale.** A stitch is marked **Stale**, with the reason, once any chunk
+   gets a newer current take, has an older take put back, is flagged for a
+   regenerate, or the video is re-tiled. It still plays and downloads. Generate
+   again for a current one; every stitch is numbered and kept.
+
+`bin/stitch-video` flags, the same set as `bin/find-clips`:
+
+| Flag | Does |
+|---|---|
+| (none) | dev bucket, the local hub at `localhost:3000` |
+| `--api URL` | another hub, such as a desk server |
+| `--production` | the production bucket and `https://mcritchie.studio` |
+| `--source FILE` | use a source MP4 already on disk instead of fetching it |
+| `--dry-run` | fetch, measure and print the plan; start, encode, upload and report nothing |
+| `--force` | also run a stitch stuck `running` (a closed lid) or one that failed |
+
+With no request waiting, `bin/stitch-video` asks for one itself, so it also
+works without the button. Downloads are kept under
+`~/projects/.corpus/music_videos/stitch/<slug>/`, so a second stitch fetches
+only the takes that changed.
+
+What the stitch does (`lib/music_videos/stitch_plan.rb`, pure and unit-tested;
+`lib/music_videos/stitcher.rb` runs it):
+
+- **Picture.** Take N fades into take N+1 across exactly the frames their
+  windows share (ffmpeg `xfade`). Each chunk owns output frames
+  `round(start × rate)` to `round(end × rate)`, counted from the chunk's
+  recorded window and never from a file's length, so nothing drifts down the
+  video. A take that runs short of its window holds its last frame; one that
+  runs long is trimmed. Either is listed as a note on the stitch.
+- **One size and rate.** Every take is brought to the best any take offers and
+  never more than the source: the largest take's frame (the source's if a take
+  is larger), and the highest take frame rate capped at the source's. Takes
+  that all came back smaller than the source are stitched at their own size,
+  with no invented pixels. A take within 2 % of the target's shape is stretched
+  to it; any other is fitted inside and padded black. Pixel format `yuv420p`.
+- **Audio.** The source's own audio for the whole length, through no filter: an
+  AAC track is copied bit for bit. The takes' audio is never read.
+- **Output.** H.264 and AAC in MP4, as long as the last chunk's end. The
+  stitcher refuses to store a file more than one frame per chunk off the plan.
+
+If a stitch fails, the panel shows the reason. A stitch left `running` for 30
+minutes reads as stuck: generate again to replace it, or pass `--force`.
 
 ## Related
 
