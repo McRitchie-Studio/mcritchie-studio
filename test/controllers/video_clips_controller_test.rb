@@ -2,6 +2,7 @@
 
 require "test_helper"
 require Rails.root.join("db/seeds/data/night_call_clips.rb").to_s
+require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
 
 # [integration] The clips panel round trip: admin gate, the list under the
 # cast, and Approve / Reject moving the video to clips_ready and back.
@@ -65,5 +66,60 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     get music_video_path(NightCallCast.seed!)
     assert_select "[data-test='clips-locked']"
+  end
+
+  # [component] the chunk list on the page: in time order, apart from the candidates.
+  test "a tiled video lists its chunks in time order, apart from the clip candidates" do
+    video = TiledVideo.seed!
+    log_in_as users(:alex)
+    get music_video_path(video)
+
+    assert_response :success
+    assert_select "[data-test='video-kind']", "Cinematic video · Cast"
+    assert_select "[data-test='clips-panel'] [data-test='clip-row']", 1
+    assert_select "[data-test='clips-panel'] [data-test='chunk-row']", 0
+    assert_select "[data-test='cast-panel'] [data-test='chunks-panel'] [data-test='clip-row']", 0
+    assert_equal %w[1 2 3 4], css_select("[data-test='chunks-panel'] [data-test='chunk-row']").map { |row| row["data-ordinal"] }
+    assert_equal ["0:00–0:25", "0:20–0:45", "0:40–1:05", "1:00–1:12"],
+                 css_select("[data-test='chunk-window']").map { |w| w.text.strip[/\A\S+/] }
+    assert_select "[data-test='chunk-row'][data-ordinal='4'][data-src*='tiled_demo_chunk_04_0100_0112.mp4'][data-src*='X-Amz-Signature']"
+    assert_select "[data-test='chunks-count']", /4 chunks\s+· 0:00–1:12/
+    assert_select "[data-test='chunk-prompt']", 4
+    assert_select "[data-test='clips-approved-count']", /0 of 1/
+  end
+
+  test "the chunk list costs no query per chunk" do
+    video = TiledVideo.seed!
+    log_in_as users(:alex)
+    count = ->(&block) { [].tap { |q| ActiveSupport::Notifications.subscribed(->(*, payload) { q << payload[:sql] unless payload[:name] == "SCHEMA" }, "sql.active_record", &block) }.size }
+    four = count.call { get music_video_path(video) }
+
+    video.video_chunks.destroy_all
+    none = count.call { get music_video_path(video) }
+    assert_select "[data-test='chunks-empty']", /bin\/find-clips test-artist-a-tiled-demo --tile/
+    assert_equal none, four, "four chunks render with the same queries as none"
+  end
+
+  test "a chunk cannot be approved: the decision route reaches candidates only" do
+    video = TiledVideo.seed!
+    log_in_as users(:alex)
+
+    patch music_video_clip_path(video, 4), params: { status: "approved" }
+    assert_response :not_found
+    assert_equal %w[proposed], video.video_chunks.pluck(:status).uniq
+
+    patch music_video_clip_path(video, 1), params: { status: "approved" }
+    assert_equal "approved", video.clip_candidates.sole.status
+    assert_equal "proposed", video.video_chunks.first.status, "chunk 1 shares the ordinal and is untouched"
+  end
+
+  test "a video with a confirmed cast and no chunks says how to tile it; an unconfirmed one waits" do
+    log_in_as users(:alex)
+    get music_video_path(@video)
+    assert_select "[data-test='chunks-empty']", /bin\/find-clips steve-aoki-night-call-clips --tile/
+    assert_select "[data-test='video-kind']", "Music video · Cast"
+
+    get music_video_path(NightCallCast.seed!)
+    assert_select "[data-test='chunks-locked']", /after the cast is confirmed/
   end
 end

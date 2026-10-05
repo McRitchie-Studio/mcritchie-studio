@@ -27,5 +27,7 @@ class FindClipsCommandTest < Minitest::Test
     assert status.success?
     assert_includes out, "--production"
     assert_includes out, "--dry-run"
+    assert_includes out, "--tile"
+    assert_includes out, "25 s chunks on a 20 s stride"
   end
 end

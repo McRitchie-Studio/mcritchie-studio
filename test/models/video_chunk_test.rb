@@ -125,6 +125,11 @@ class VideoChunkTest < ActiveSupport::TestCase
     assert_equal "clips_ready", @video.reload.stage
   end
 
+  test "bin/digest-video accepts exactly the kinds the model does" do
+    require Rails.root.join("bin/lib/digest_video").to_s
+    assert_equal MusicVideo::KINDS, DigestVideo::KINDS
+  end
+
   test "a video is a music video unless it is typed cinematic" do
     assert_equal "cinematic", @video.kind
     assert_equal "Cinematic video", @video.kind_label

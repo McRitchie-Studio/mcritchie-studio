@@ -53,4 +53,17 @@ class DigestVideoCommandTest < Minitest::Test
     assert status.success?
     assert_includes out, "--production"
   end
+
+  def test_an_unknown_kind_stops_before_any_download
+    _out, err, status = run_script("https://www.youtube.com/watch?v=Sa7GSJJ_lOo", "--kind", "documentary")
+    refute status.success?
+    assert_includes err, "digest-video: invalid argument: --kind documentary"
+  end
+
+  def test_help_names_the_kind_flag
+    out, _err, status = run_script("--help")
+    assert status.success?
+    assert_includes out, "--kind KIND"
+    assert_includes out, "music_video or cinematic"
+  end
 end
