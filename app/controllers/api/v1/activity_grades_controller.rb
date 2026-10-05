@@ -7,12 +7,9 @@ module Api
       #
       # PROVENANCE, NOT A SECURITY BOUNDARY: this path ALWAYS grades as `xan` — the
       # grader is never read from params, so there is no way to post an audit-OF-Xan
-      # (`grader: "mcr"`) row THROUGH THIS ENDPOINT. That is all it buys. The `mcr`
-      # lane is NOT otherwise gated: HeartbeatController skips authentication
-      # (build-first, 2026-07-03), so an anonymous request forges an `mcr` row with no
-      # token at all — green in test/integration/heartbeat_grade_auth_test.rb. Saying
-      # "a shared token can never forge the audit lane" is true but vacuous; re-gate
-      # the heartbeat surface before treating `mcr` as ground truth.
+      # (`grader: "mcr"`) row THROUGH THIS ENDPOINT. The `mcr` lane is the heartbeat
+      # browser surface, whose writes need an admin (HeartbeatController,
+      # test/integration/heartbeat_grade_auth_test.rb), so an `mcr` row is an admin's.
 
       # GET /api/v1/agent_activities/awaiting_grade?limit=N
       #

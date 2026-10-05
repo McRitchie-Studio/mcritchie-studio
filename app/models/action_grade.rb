@@ -51,6 +51,15 @@ class ActionGrade < ApplicationRecord
   DEFAULT_FEED_LIMIT = 12
   MAX_FEED_LIMIT     = 50
 
+  # The feed is printed into a fresh agent's context (bin/session-insights), so each
+  # field goes out as ONE line of bounded length: a stored grade can add neither a
+  # forged lesson line nor a wall of text, whoever wrote it.
+  INSIGHT_SLUG_LIMIT      = 200
+  INSIGHT_LONG_FORM_LIMIT = 400
+  # Control, format (bidi overrides, zero-width) and line/paragraph separator
+  # characters; each becomes a space, and runs of spaces collapse.
+  INSIGHT_UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/
+
   # Dual, mutually exclusive targets — both optional at the association level so a
   # grade can hang off EITHER one. The XOR below guarantees exactly one is set.
   belongs_to :agent_action, optional: true, inverse_of: :action_grades
@@ -110,6 +119,15 @@ class ActionGrade < ApplicationRecord
     banked.includes(:agent_action, :agent_activity).order(updated_at: :desc).limit(capped)
   end
 
+  # One printable line of at most `limit` characters, or nil when nothing printable
+  # is left. A cut line ends in an ellipsis so the reader knows it was cut.
+  def self.insight_text(value, limit:)
+    text = value.to_s.gsub(INSIGHT_UNPRINTABLE, " ").squeeze(" ").strip
+    return nil if text.empty?
+
+    text.truncate(limit, omission: "…")
+  end
+
   # Upsert the ONE grade for (activity, grader) — the shared write behind BOTH the
   # admin browser drawer and the bearer agent path (bin/agent-activity grade). It
   # matches the drawer's semantics: disposition defaults to GOOD, slug defaults to
@@ -118,12 +136,10 @@ class ActionGrade < ApplicationRecord
   # invalid write (a grade is a deliberate act, not best-effort telemetry).
   #
   # `grader` is the CALLER's responsibility to constrain — the agent path passes
-  # ALEX and NEVER MCR. That makes `grader` PROVENANCE, NOT PROOF: it records who
-  # wrote the row, and the agent CLI's `alex` is a property of that caller, not an
-  # authenticated boundary. HeartbeatController skips authentication outright
-  # (build-first, 2026-07-03), so an ANONYMOUS request can write an `mcr` row —
-  # proven green in test/integration/heartbeat_grade_auth_test.rb. Do not read
-  # this lane as admin-only, and do not re-derive a grader gate from it.
+  # XAN and NEVER MCR. That makes `grader` PROVENANCE, NOT PROOF: it records who
+  # wrote the row. The two writers are the bearer agent API (grader forced to XAN)
+  # and the heartbeat browser surface (admin only), so an `mcr` row is an admin's;
+  # test/integration/heartbeat_grade_auth_test.rb holds that line.
   def self.record_activity_grade(activity:, grader:, disposition: nil, slug: nil, long_form: :unset, intent: nil)
     grade = for_activity(activity).by_grader(grader).first_or_initialize(grader: grader)
     grade.disposition = disposition.presence || grade.disposition.presence || GOOD
@@ -220,12 +236,13 @@ class ActionGrade < ApplicationRecord
   # task it was mined from. Provenance is read INLINE from whichever source is set
   # (kept independent of any richer provenance helper so this doesn't couple to
   # other in-flight work). No raw trajectory body — a fresh session wants the
-  # LESSON, not the tool calls. nil fields are dropped.
+  # LESSON, not the tool calls. The text fields go out as one capped line each
+  # (insight_text); nil fields are dropped.
   def to_insight
     {
-      "slug"        => slug,
+      "slug"        => self.class.insight_text(slug, limit: INSIGHT_SLUG_LIMIT),
       "disposition" => disposition,
-      "long_form"   => long_form.presence,
+      "long_form"   => self.class.insight_text(long_form, limit: INSIGHT_LONG_FORM_LIMIT),
       "grader"      => grader,
       "task_slug"   => (agent_action&.task_slug || agent_activity&.task_slug)
     }.compact

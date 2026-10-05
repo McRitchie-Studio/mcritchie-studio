@@ -269,7 +269,10 @@ Every task is graded once at ship (`Insights::TaskGrader`, thresholds in
 - **Precondition:** resolved activities awaiting a grade. None → report and stop.
 - **Steps:** `bin/agent-activity awaiting [--limit 10]` → `bin/agent-activity grade
   <activity-id> --disposition good|not --slug "<4–7 words>"` → `--bank` or
-  `--discard`. The `/xan/heartbeat` drawer is the admin path (the `mcr` lane).
+  `--discard`. The `/xan/heartbeat` drawer is the admin path (the `mcr` lane):
+  the heartbeat pages read without a login, and every grade, bank, discard and
+  confirm write needs an admin, because a banked grade is printed into each new
+  session's context.
 - **Exit seam:** ~10 activities graded, useful insights banked.
 
 ### Act 2 — `share-insights`

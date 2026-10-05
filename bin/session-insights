@@ -44,6 +44,16 @@ class SessionInsights
   READ_TIMEOUT = 4
   DEFAULT_LIMIT = 12
 
+  # Each field prints as ONE line of bounded length, whatever the board sent: the
+  # text lands in a fresh agent's context, so it may not add a lesson line, a header
+  # or an escape sequence of its own. The server caps the same way (ActionGrade);
+  # this is the consumer's half. Control, format and line-separator characters each
+  # become a space, runs of spaces collapse, and a cut line ends in an ellipsis.
+  SLUG_LIMIT      = 200
+  LONG_FORM_LIMIT = 400
+  TASK_SLUG_LIMIT = 100
+  UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/
+
   def initialize(env: ENV, out: $stdout, dreams_dir: nil)
     @env = env
     @out = out
@@ -106,14 +116,22 @@ class SessionInsights
   # slug to show. Tolerates string OR symbol keys (JSON round-trips to strings).
   def insight_line(insight)
     h = insight.transform_keys(&:to_s)
-    slug = h["slug"].to_s.strip
+    slug = one_line(h["slug"], SLUG_LIMIT)
     return "" if slug.empty?
 
     mark = h["disposition"].to_s == "not" ? "✗" : "✓"
+    long_form = one_line(h["long_form"], LONG_FORM_LIMIT)
+    task_slug = one_line(h["task_slug"], TASK_SLUG_LIMIT)
     line = "- #{mark} #{slug}"
-    line += " — #{h['long_form'].to_s.strip}" if present?(h["long_form"])
-    line += " (task: #{h['task_slug']})" if present?(h["task_slug"])
+    line += " — #{long_form}" unless long_form.empty?
+    line += " (task: #{task_slug})" unless task_slug.empty?
     line
+  end
+
+  # The printable, single-line, capped form of one field ("" when nothing is left).
+  def one_line(value, limit)
+    text = value.to_s.gsub(UNPRINTABLE, " ").squeeze(" ").strip
+    text.length > limit ? "#{text[0, limit - 1]}…" : text
   end
 
   private

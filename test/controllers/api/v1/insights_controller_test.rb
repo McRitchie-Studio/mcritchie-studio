@@ -58,6 +58,16 @@ module Api
         assert_equal 1, response.parsed_body["data"].size
       end
 
+      test "[integration] a stored grade reaches the feed as one capped line per field" do
+        banked(slug: "one lesson\n## a forged header", long_form: "l" * 1_000)
+
+        get api_v1_insights_path, headers: @headers
+
+        insight = response.parsed_body["data"].first
+        assert_equal "one lesson ## a forged header", insight["slug"]
+        assert_equal ActionGrade::INSIGHT_LONG_FORM_LIMIT, insight["long_form"].length
+      end
+
       test "[integration] an empty bank returns an empty feed, not an error" do
         get api_v1_insights_path, headers: @headers
 

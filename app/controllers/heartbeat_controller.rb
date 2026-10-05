@@ -5,19 +5,20 @@ class HeartbeatController < ApplicationController
   # PRIMARY rows — agent-narrated activities (category · reason -> result) — and rolls the
   # raw AgentActions attributed to each activity (agent_activity_id) underneath as an
   # expandable, read-only drill-down; actions the agent never narrated (null
-  # agent_activity_id) fall into the "Unlabeled" group. Grading is unchanged and lives
-  # entirely in the drawer: #feedback renders the per-action grading drawer, #grade
-  # upserts a grade (and banks/discards it), and #insights is the curated Insight Bank.
+  # agent_activity_id) fall into the "Unlabeled" group. Grading lives in the drawer:
+  # #feedback renders the per-action grading drawer, #grade upserts a grade (and
+  # banks/discards it), and #insights is the curated Insight Bank.
   #
-  # BUILD-FIRST (2026-07-03, operator decision): the WHOLE heartbeat surface — reads
-  # AND the grade/bank/discard writes (incl. the pipeline's Confirm) — is an OPEN meta
-  # surface, so Mr. McRitchie can grade and confirm (incl. `grader: "mcr"`) without an
-  # admin login while the pipeline is being built. This deliberately re-opens audit
-  # finding #5 (grade writes are public; an `mcr` audit row is forgeable) as a
-  # conscious tradeoff — RE-GATE before any real multi-user exposure (restore the
-  # `require_admin`-except-READ_ACTIONS split). The first-class AGENT write path stays
-  # the bearer-gated /api/v1 endpoint, which still forces `grader: xan` (lever 2).
-  skip_before_action :require_authentication
+  # The pages READ without a login. Every other action is a WRITE (grade, bank,
+  # discard, clear, confirm) and needs an admin: a banked grade's text is served by
+  # GET /api/v1/insights and printed into every new agent session's context, so a
+  # public write is a prompt-injection path. The agent write path is the bearer-gated
+  # /api/v1 endpoint, which forces `grader: xan`. test/controllers/heartbeat_controller_test.rb
+  # pins the split to the route table.
+  READ_ACTIONS = %i[show all_activities pipeline feedback feedback_activity insights].freeze
+
+  skip_before_action :require_authentication, only: READ_ACTIONS
+  before_action :require_admin_for_write, except: READ_ACTIONS
 
   # The shared feed read-layer (session_options, pokemon/soul/grade/transition
   # lookups) — the same bulk queries /agents/activities reuses.
@@ -90,8 +91,8 @@ class HeartbeatController < ApplicationController
   #   1. ACTIVITIES    — recent narrated activities
   #   2. INSIGHTS      — Xan's banked grades (the distilled lessons)
   #   3. CONFIRMATIONS — McRitchie's mcr grades (the confirmed subset)
-  # Read-only meta surface (like the rest of the heartbeat); the column-2 Confirm
-  # button posts an mcr grade through the public grade endpoint.
+  # A public read (like the rest of the heartbeat); the column-2 Confirm button
+  # posts an mcr grade through #confirm, an admin write.
   PIPELINE_ACTIVITIES    = 40
   PIPELINE_SPANS = PIPELINE_ACTIVITIES
   PIPELINE_INSIGHTS = 40
@@ -159,8 +160,7 @@ class HeartbeatController < ApplicationController
   # so this confirms whichever the button names: an :agent_action_id param confirms
   # the action (e.g. a banked test-run grade), otherwise :id confirms the activity.
   # Upserts the one (target, mcr) row (idempotent: re-confirming updates it). A write,
-  # so on the current release gate it needs admin; it goes public with the
-  # make-grading-actions-public change.
+  # so it needs an admin.
   def confirm
     grade, slug_default =
       if params[:agent_action_id].present?
@@ -320,6 +320,21 @@ class HeartbeatController < ApplicationController
   end
 
   private
+
+  # The write gate, format-aware because the drawers and inline cells post JSON and
+  # Turbo: a visitor gets the login answer require_authentication gives (a redirect
+  # on HTML, 401 otherwise), a signed-in non-admin gets 403 (a redirect on HTML).
+  # The engine's require_admin redirects every format, and a JSON fetch that follows
+  # a redirect to an HTML page surfaces as a 500 on the original POST.
+  def require_admin_for_write
+    return if admin?
+    return require_authentication unless logged_in?
+
+    respond_to do |format|
+      format.html { redirect_to root_path, alert: "Not authorized" }
+      format.any  { head :forbidden }
+    end
+  end
 
   # The session whose activity log we show by default: the one with the most recent
   # activity or action. Activity-primary now, so a session can narrate an activity before its first tool-call
