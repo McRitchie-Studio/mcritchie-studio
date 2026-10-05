@@ -58,8 +58,9 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
 4. **One token per ship.** `bin/task` and `bin/dor-check` send a bearer handed
    down in `AGENT_API_TOKEN` when one is set, and mint their own from the
    secret only when it is not. `bin/ship` mints once per run and exports it to
-   every board call it spawns (`bin/lib/task_board.rb#handed_token`). A `401`
-   on a handed token names the variable; unset it to mint afresh.
+   every board call it spawns (`bin/lib/task_board.rb#handed_token`). When the
+   board answers `401` to a handed token, `bin/task` names the variable; unset
+   it to mint afresh.
 
 ### Secret hygiene
 

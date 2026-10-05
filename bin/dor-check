@@ -292,26 +292,15 @@ def agent_secret
     die!("AGENT_API_SECRET not found (checked ENV, #{dotenv}, 1Password)")
 end
 
-# The bearer: one a parent process handed down (bin/ship mints once per run and
-# exports AGENT_API_TOKEN), else minted here from the secret chain.
-def token
-  @token ||= TaskBoard.handed_token ||
-             api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
-end
-
-# Names the handed-down token when the board refused it, so the reader fixes the
-# var and not the secret chain this run never consulted.
-def handed_token_hint(res)
-  return "" unless res.code.to_i == 401 && TaskBoard.handed_token
-
-  " (the bearer came from #{TaskBoard::TOKEN_ENV}; unset it to mint afresh from the secret)"
+def token # a bearer bin/ship handed down (AGENT_API_TOKEN, TaskBoard#handed_token), else one minted here
+  @token ||= TaskBoard.handed_token || api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
 end
 
 def api(method, path, body = nil, auth: true)
   res = TaskBoard.request(method, path, base_url: BASE_URL, token: (auth ? token : nil), body: body)
   parsed = TaskBoard.parse_body(res)
   unless res.code.to_i.between?(200, 299)
-    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}#{handed_token_hint(res)}")
+    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}")
   end
   parsed
 end

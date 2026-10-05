@@ -601,7 +601,10 @@ class RemedyHintGuardTest < Minitest::Test
       "SHIP_GH_BIN" => task_bin,
       "CLAUDE_PROJECTS_DIR" => root,
       "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111",
-      "TASK_CLAIM_NONCE" => "inst-default"
+      "TASK_CLAIM_NONCE" => "inst-default",
+      # ship mints one board token up front; the chain stops at ENV (never a .env
+      # or the vault) and the board is unroutable, so the mint fails fast.
+      "AGENT_API_SECRET" => "test-secret"
     )
   end
 end
