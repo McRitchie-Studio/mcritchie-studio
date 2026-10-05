@@ -116,6 +116,25 @@ class InstallAgentSkillsTest < Minitest::Test
     File.join(@home, ".zprofile")
   end
 
+  def installed_gitconfig
+    File.join(@home, ".gitconfig")
+  end
+
+  # The fixed-path tooling a sandbox install lands: <projects>/.agents/bin, a link
+  # onto tooling/<sha>/bin. Every managed hook, the status line and the git
+  # credential helper name a script here; the hub primary is only the fallback.
+  def tooling_bin
+    File.join(@projects, ".agents", "bin")
+  end
+
+  def hook_commands(settings, event)
+    (settings.dig("hooks", event) || []).flat_map { |entry| (entry["hooks"] || []).map { |hook| hook["command"] } }
+  end
+
+  def github_helper_values(config = installed_gitconfig)
+    `git config --file #{config} --get-all credential.https://github.com.helper`.split("\n", -1)[0..-2]
+  end
+
   def jq_available?
     system(SessionEnv.neutralized, "command -v jq >/dev/null 2>&1")
   end
@@ -559,21 +578,30 @@ class InstallAgentSkillsTest < Minitest::Test
     )
   end
 
-  def test_integration_global_hooks_use_runtime_root_override
+  # Every managed command names the FIXED-PATH tooling (<projects>/.agents/bin), which
+  # no `git checkout` can move; the hub primary ($AGENT_DOCS_RUNTIME_ROOT) stays the
+  # managed_dir and the Rails-booting shims' target, never a hook command.
+  def test_integration_global_hooks_name_the_fixed_path_tooling
     skip "jq is required for settings hook install" unless jq_available?
 
     runtime_root = "/stable/mcritchie-studio"
     _out, err, status = run_installer("install", "AGENT_DOCS_RUNTIME_ROOT" => runtime_root)
 
     assert status.success?, "install failed: #{err}"
+    assert File.symlink?(tooling_bin), "the sandbox install must land the tooling link the hooks name"
     settings = JSON.parse(File.read(installed_settings))
-    assert_equal "#{runtime_root}/bin/statusline", settings.dig("statusLine", "command")
-    commands = settings.fetch("hooks").fetch("SessionStart").flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
-    assert_includes commands, "#{runtime_root}/bin/task session-mascot"
+    assert_equal "#{tooling_bin}/statusline", settings.dig("statusLine", "command")
+    commands = hook_commands(settings, "SessionStart")
+    assert_includes commands, "#{tooling_bin}/task session-mascot"
     # The feed-forward insights hook is wired alongside the mascot, pointed at the
-    # runtime root (survives worktree cleanup) and the prod board by default.
-    assert_includes commands, "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights"
+    # fixed path and the prod board by default.
+    assert_includes commands, "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/session-insights"
     refute commands.any? { |command| command.include?("/.worktrees/") }
+    every_command = %w[SessionStart PreToolUse PostToolUse SessionEnd].flat_map { |event| hook_commands(settings, event) }
+    refute every_command.any? { |command| command.include?("#{runtime_root}/bin/") },
+      "no managed hook may name the hub primary while the fixed path is installed: #{every_command.inspect}"
+    assert_equal "#{tooling_bin}/gh-app-git-credential", github_helper_values.last,
+      "the global git credential helper for github.com names the fixed path"
 
     # The insights hook carries a bounded timeout + status message so a fresh
     # session start never hangs on the network fetch.
@@ -584,23 +612,23 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_equal 15, insights_hook["timeout"]
     assert_equal "Loading insights…", insights_hook["statusMessage"]
 
-    post_tool_commands = settings.fetch("hooks").fetch("PostToolUse")
-      .flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
-    assert_includes post_tool_commands,
-      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/atomic-capture-hook"
-    session_end_commands = settings.fetch("hooks").fetch("SessionEnd")
-      .flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
-    assert_includes session_end_commands,
-      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/agent-activity close-open"
+    assert_includes hook_commands(settings, "PostToolUse"),
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/atomic-capture-hook"
+    assert_includes hook_commands(settings, "PreToolUse"),
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/atomic-capture-hook"
+    assert_includes hook_commands(settings, "SessionEnd"),
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/agent-activity close-open"
 
     codex_requirements = File.read(installed_codex_requirements)
     assert_includes codex_requirements,
-      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights")
+      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/session-insights")
     assert_includes codex_requirements,
-      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/atomic-capture-hook")
+      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/atomic-capture-hook")
     assert_includes codex_requirements,
-      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/agent-activity close-open")
+      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/agent-activity close-open")
     assert_includes codex_requirements, 'statusMessage = "Loading insights…"'
+    refute_includes codex_requirements, "#{runtime_root}/bin/",
+      "no managed Codex hook may name the hub primary while the fixed path is installed"
 
     config = File.read(installed_codex_config)
     assert_match(/^check_for_update_on_startup = false$/, config)
@@ -624,9 +652,149 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes requirements, "[[hooks.PostToolUse]]"
     assert_includes requirements, "[[hooks.Stop]]"
     assert_includes requirements, 'matcher = "Bash"'
-    assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
+    assert_includes requirements, %(command = "#{tooling_bin}/codex-session-title")
     assert_includes requirements, 'statusMessage = "Setting session mascot"'
     assert_includes requirements, 'statusMessage = "Capturing action"'
+  end
+
+  # The machine this installer meets: every managed command already wired at the hub
+  # primary, exactly as an earlier install left it. One install moves each of them to
+  # the fixed path, leaves exactly one of each (no hub-path twin beside the new one),
+  # and keeps the operator's own hooks.
+  def test_integration_repoints_hub_primary_hooks_to_the_fixed_path_without_twins
+    skip "jq is required for settings hook install" unless jq_available?
+
+    hub = "/stable/mcritchie-studio"
+    board = "ATOMIC_CAPTURE_URL=https://mcritchie.studio"
+    foreign = { "type" => "command", "command" => "/usr/local/bin/my-own-hook" }
+    FileUtils.mkdir_p(File.dirname(installed_settings))
+    File.write(installed_settings, JSON.pretty_generate(
+      "statusLine" => { "type" => "command", "command" => "#{hub}/bin/statusline", "padding" => 1, "refreshInterval" => 5 },
+      "hooks" => {
+        "SessionStart" => [
+          { "hooks" => [{ "type" => "command", "command" => "#{hub}/bin/task session-mascot" }] },
+          { "hooks" => [{ "type" => "command", "command" => "#{board} #{hub}/bin/session-insights", "timeout" => 15, "statusMessage" => "Loading insights…" }] }
+        ],
+        "PostToolUse" => [{ "hooks" => [{ "type" => "command", "command" => "#{board} #{hub}/bin/atomic-capture-hook", "timeout" => 5 }, foreign] }],
+        "PreToolUse" => [{ "hooks" => [{ "type" => "command", "command" => "#{board} #{hub}/bin/atomic-capture-hook", "timeout" => 5 }] }],
+        "SessionEnd" => [{ "hooks" => [{ "type" => "command", "command" => "#{board} #{hub}/bin/agent-activity close-open", "timeout" => 5 }] }]
+      }
+    ))
+
+    _out, err, status = run_installer("install", "AGENT_DOCS_RUNTIME_ROOT" => hub)
+    assert status.success?, "install failed: #{err}"
+
+    settings = JSON.parse(File.read(installed_settings))
+    assert_equal "#{tooling_bin}/statusline", settings.dig("statusLine", "command"),
+      "a status line already on the hub primary is repointed, not left as it was"
+    assert_equal 5, settings.dig("statusLine", "refreshInterval"), "repointing keeps the status line's other settings"
+
+    expected = {
+      "SessionStart" => ["#{tooling_bin}/task session-mascot", "#{board} #{tooling_bin}/session-insights"],
+      "PostToolUse" => ["/usr/local/bin/my-own-hook", "#{board} #{tooling_bin}/atomic-capture-hook"],
+      "PreToolUse" => ["#{board} #{tooling_bin}/atomic-capture-hook"],
+      "SessionEnd" => ["#{board} #{tooling_bin}/agent-activity close-open"]
+    }
+    expected.each do |event, commands|
+      assert_equal commands.sort, hook_commands(settings, event).sort,
+        "#{event} must hold exactly the managed commands at the fixed path (plus the operator's own)"
+    end
+  end
+
+  def test_integration_leaves_a_foreign_status_line_alone
+    skip "jq is required for settings hook install" unless jq_available?
+
+    FileUtils.mkdir_p(File.dirname(installed_settings))
+    File.write(installed_settings, JSON.pretty_generate(
+      "statusLine" => { "type" => "command", "command" => "/usr/local/bin/my-status" }
+    ))
+
+    _out, err, status = run_installer("install")
+    assert status.success?, "install failed: #{err}"
+    assert_equal "/usr/local/bin/my-status", JSON.parse(File.read(installed_settings)).dig("statusLine", "command"),
+      "a status line that is not ours is the operator's, and is never clobbered"
+  end
+
+  # Bringup before the first ship: the tree the installer runs from is not a git
+  # checkout, so no tooling is installed and nothing exists at <projects>/.agents/bin.
+  # Every command then names the hub primary, the only copy that exists.
+  def test_integration_hooks_fall_back_to_the_hub_primary_without_the_tooling
+    skip "jq is required for settings hook install" unless jq_available?
+
+    # The working tree's files (not `git archive HEAD`, which would test the last
+    # commit), laid out as a checkout-less export: no .git, so no tooling install.
+    exported = File.join(@sandbox, "exported-tree")
+    %w[bin/install-agent-docs bin/lib/projects_root.rb docs/agents/index.md docs/agents/claude.md].each do |rel|
+      FileUtils.mkdir_p(File.dirname(File.join(exported, rel)))
+      FileUtils.cp(File.join(ROOT, rel), File.join(exported, rel))
+    end
+    hub = "/stable/mcritchie-studio"
+
+    out, err, status = Open3.capture3(
+      SessionEnv.neutralized(default_env.merge("AGENT_DOCS_RUNTIME_ROOT" => hub)),
+      File.join(exported, "bin", "install-agent-docs"), "install"
+    )
+
+    assert status.success?, "install failed: #{err}"
+    assert_includes out, "skipped fast-lane tooling", "the control: this tree installs no tooling"
+    refute File.exist?(tooling_bin)
+    settings = JSON.parse(File.read(installed_settings))
+    assert_equal "#{hub}/bin/statusline", settings.dig("statusLine", "command")
+    assert_includes hook_commands(settings, "SessionStart"), "#{hub}/bin/task session-mascot"
+    assert_includes hook_commands(settings, "PostToolUse"),
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{hub}/bin/atomic-capture-hook"
+    assert_includes File.read(installed_codex_requirements), %(command = "#{hub}/bin/codex-session-title")
+    assert_equal "#{hub}/bin/gh-app-git-credential", github_helper_values.last
+  end
+
+  # ── integration: the global git credential helper for github.com ────────────
+
+  # The real ~/.gitconfig holds TWO values under [credential "https://github.com"]: an
+  # empty reset (so the generic osxkeychain helper does not answer github.com), then
+  # the helper path. The rewrite touches only the line naming this helper.
+  def test_integration_repoints_the_git_credential_helper_and_keeps_the_reset
+    File.write(installed_gitconfig, <<~GITCONFIG)
+      [credential "https://gist.github.com"]
+      	helper =
+      	helper = !/opt/homebrew/bin/gh auth git-credential
+      [credential]
+      	helper = osxkeychain
+      [credential "https://github.com"]
+      	helper =
+      	helper = /stable/mcritchie-studio/bin/gh-app-git-credential
+      [credential "https://git.heroku.com"]
+      	helper = !heroku git:credentials
+    GITCONFIG
+
+    out, err, status = run_installer("install")
+    assert status.success?, "install failed: #{err}"
+    assert_includes out, "credential.https://github.com.helper -> #{tooling_bin}/gh-app-git-credential"
+    assert_equal ["", "#{tooling_bin}/gh-app-git-credential"], github_helper_values,
+      "the reset stays first and the one helper line now names the fixed path"
+    assert_equal ["", "!/opt/homebrew/bin/gh auth git-credential"],
+      `git config --file #{installed_gitconfig} --get-all credential.https://gist.github.com.helper`.split("\n", -1)[0..-2]
+    assert_equal "osxkeychain", `git config --file #{installed_gitconfig} --get credential.helper`.strip
+
+    out, err, status = run_installer("install")
+    assert status.success?, "second install failed: #{err}"
+    refute_includes out, "credential.https://github.com.helper ->", "an already-wired helper is not rewritten"
+    assert_equal ["", "#{tooling_bin}/gh-app-git-credential"], github_helper_values, "a re-run converges"
+  end
+
+  def test_integration_wires_the_git_credential_helper_on_a_fresh_machine
+    refute File.exist?(installed_gitconfig)
+
+    _out, err, status = run_installer("install")
+    assert status.success?, "install failed: #{err}"
+    assert_equal ["", "#{tooling_bin}/gh-app-git-credential"], github_helper_values,
+      "a fresh config gets the reset BEFORE the helper, so a generic helper cannot answer github.com first"
+  end
+
+  def test_integration_manifest_names_the_gitconfig
+    out, err, status = run_installer("manifest")
+    assert status.success?, "manifest failed: #{err}"
+    assert_includes out.lines.map(&:chomp), "WRITE\t#{installed_gitconfig}"
+    refute File.exist?(installed_gitconfig), "manifest is a dry run"
   end
 
   def test_integration_install_allows_runtime_ruby_path_override
@@ -742,7 +910,7 @@ class InstallAgentSkillsTest < Minitest::Test
       entry.fetch("hooks").map { |hook| hook.fetch("command") }
     end
     refute commands.any? { |command| command.include?("/.worktrees/") }
-    assert_includes commands, "#{runtime_root}/bin/task session-mascot"
+    assert_includes commands, "#{tooling_bin}/task session-mascot"
 
     codex_hooks = JSON.parse(File.read(installed_codex_hooks))
     codex_commands = %w[SessionStart PostToolUse].flat_map do |event|
@@ -756,7 +924,7 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes requirements, "[[hooks.SessionStart]]"
     assert_includes requirements, "[[hooks.PostToolUse]]"
     assert_includes requirements, "[[hooks.Stop]]"
-    assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
+    assert_includes requirements, %(command = "#{tooling_bin}/codex-session-title")
     assert_includes requirements, "/bin/atomic-capture-hook"
     assert_includes requirements, "/bin/agent-activity close-open"
   end
@@ -769,7 +937,7 @@ class InstallAgentSkillsTest < Minitest::Test
       %(id="${CLAUDE_CODE_SESSION_ID:-$(jq -r '.session_id // empty')}";),
       %(CLAUDE_CODE_SESSION_ID="$id" #{runtime_root}/bin/task session-mascot >/dev/null 2>&1 || true)
     ].join(" ")
-    current_cmd = "#{runtime_root}/bin/task session-mascot"
+    current_cmd = "#{tooling_bin}/task session-mascot"
 
     FileUtils.mkdir_p(File.dirname(installed_settings))
     File.write(installed_settings, JSON.pretty_generate(
@@ -787,7 +955,7 @@ class InstallAgentSkillsTest < Minitest::Test
             "hooks" => [
               {
                 "type" => "command",
-                "command" => current_cmd
+                "command" => "#{runtime_root}/bin/task session-mascot"
               }
             ]
           }
@@ -803,7 +971,7 @@ class InstallAgentSkillsTest < Minitest::Test
     end
     assert_equal 1, commands.count { |command| command == current_cmd }
     refute commands.any? { |command| command != current_cmd && command.include?("/bin/task session-mascot") },
-      "legacy shell-wrapped mascot hooks must be pruned"
+      "legacy shell-wrapped and hub-path mascot hooks must be pruned"
   end
 
   def test_integration_stages_admin_requirements_when_etc_unwritable
@@ -857,7 +1025,6 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes staged_requirements, "[[hooks.Stop]]"
 
     codex_hooks = JSON.parse(File.read(installed_codex_hooks))
-    runtime_root = ROOT.sub(%r{/\.worktrees/.*\z}, "")
     session_commands = (codex_hooks.dig("hooks", "SessionStart") || []).flat_map do |entry|
       entry.fetch("hooks", []).map { |hook| hook["command"] }
     end
@@ -872,14 +1039,14 @@ class InstallAgentSkillsTest < Minitest::Test
     # SessionStart (insights as its own entry so each stays independently prunable),
     # then captures every tool call and closes open activities on Stop.
     assert_equal [
-      "#{runtime_root}/bin/codex-session-title",
-      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights"
+      "#{tooling_bin}/codex-session-title",
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/session-insights"
     ], session_commands
     assert_equal [
-      "#{runtime_root}/bin/codex-session-title",
-      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/atomic-capture-hook"
+      "#{tooling_bin}/codex-session-title",
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/atomic-capture-hook"
     ], post_tool_commands
-    assert_equal ["ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/agent-activity close-open"], stop_commands
+    assert_equal ["ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/agent-activity close-open"], stop_commands
   end
 
   # ── integration: the feed-forward insights SessionStart hook ────────────────
@@ -901,7 +1068,7 @@ class InstallAgentSkillsTest < Minitest::Test
       .flat_map { |entry| entry.fetch("hooks") }
       .select { |hook| hook.fetch("command").include?("/bin/session-insights") }
     assert_equal 1, insights.length, "exactly one insights hook after two installs"
-    assert_equal "ATOMIC_CAPTURE_URL=#{board} #{runtime_root}/bin/session-insights",
+    assert_equal "ATOMIC_CAPTURE_URL=#{board} #{tooling_bin}/session-insights",
       insights.first.fetch("command"),
       "the board URL override must flow into the wired command"
   end
@@ -935,7 +1102,7 @@ class InstallAgentSkillsTest < Minitest::Test
     refute commands.any? { |command| command.include?("/.worktrees/") },
       "the stale worktree insights hook must be pruned"
     assert_equal 1, commands.count { |command| command.include?("/bin/session-insights") },
-      "the pruned worktree hook must be replaced by exactly one runtime-root hook"
-    assert_includes commands, "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights"
+      "the pruned worktree hook must be replaced by exactly one fixed-path hook"
+    assert_includes commands, "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/session-insights"
   end
 end
