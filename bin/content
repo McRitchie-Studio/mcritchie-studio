@@ -21,6 +21,7 @@
 #                            [--scenes-json '[...]'] [--stage script]
 #   bin/content release <slug>
 #   bin/content posted <slug> --post-url https://x.com/<handle>/status/<id>
+#   bin/content record-post --post-url URL [--caption-file F] [--title T]
 #
 # CLAIM BEFORE YOU WRITE. `write` sends this desk's session and the server
 # refuses it with 409 unless that session still holds the card's live claim:
@@ -56,7 +57,7 @@ end
 # ledger. This script CLAIMS and WRITES, so help exits without acting and an
 # unknown flag refuses through OptionParser rather than being stepped over.
 def usage!(status = 0)
-  warn File.read(__FILE__).lines[2..40].map { |l| l.sub(/\A# ?/, "") }.join
+  warn File.read(__FILE__).lines[2..37].map { |l| l.sub(/\A# ?/, "") }.join
   exit status
 end
 
@@ -263,6 +264,13 @@ when "posted"
   slug = ARGV.shift or die!("posted needs a slug")
   die!("posted needs --post-url") unless opts[:post_url]
   print_content(api(:post, "/api/v1/contents/#{slug}/posted", { session: session, post_url: opts[:post_url] }), full: true)
+
+when "record-post"
+  # A card for a video that was posted from a file path, so the board holds one
+  # record of everything that went out. It posts nothing and stores no video.
+  die!("record-post needs --post-url") unless opts[:post_url]
+  body = { post_url: opts[:post_url], caption: read_text(opts[:caption], opts[:caption_file]), title: opts[:title] }.compact
+  print_content(api(:post, "/api/v1/contents/record_x_post", body), full: true)
 
 when "help", "--help", "-h", nil
   usage!(0)

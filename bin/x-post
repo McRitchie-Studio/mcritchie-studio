@@ -82,7 +82,7 @@ def die!(msg)
 end
 
 def usage!(status = 0)
-  warn File.read(__FILE__).lines[2..31].map { |l| l.sub(/\A# ?/, "") }.join
+  warn File.read(__FILE__).lines[2..40].map { |l| l.sub(/\A# ?/, "") }.join
   exit status
 end
 

@@ -68,6 +68,27 @@ module Api
         render_data(serialize(@content.reload, full: true))
       end
 
+      # POST /api/v1/contents/record_x_post { post_url, caption, title }
+      #
+      # ONE RECORD OF WHAT WENT OUT. A video posted from a file path with
+      # bin/x-post has no card, so the board would not know it exists. This files
+      # one, already at `posted`, carrying the link and the copy. It stores no
+      # video and posts nothing: it is a ledger entry the board can show.
+      # Idempotent on the link, so a re-run files nothing twice.
+      def record_x_post
+        url     = params[:post_url].to_s.strip
+        post_id = url[%r{\Ahttps://(?:x|twitter)\.com/[A-Za-z0-9_]+/status/(\d+)\z}, 1]
+        return render_error("post_url must be an x.com status URL", status: :unprocessable_entity, error_code: "BAD_POST_URL") if post_id.nil?
+
+        content = Content.find_by(workflow: "video_post_x", post_id: post_id)
+        content ||= Content.create!(
+          title: params[:title].to_s.squish.presence || params[:caption].to_s.squish.truncate(60).presence || "X post #{post_id}",
+          workflow: "video_post_x", stage: "posted", platform: "x", source_type: "manual",
+          captions: params[:caption].to_s.presence, post_url: url, post_id: post_id, posted_at: Time.current
+        )
+        render_data(serialize(content, full: true))
+      end
+
       # POST /api/v1/contents/:slug/posted { session, post_url }
       #
       # "It is live." Records where a video_post_x card was posted, moves it to

@@ -355,6 +355,10 @@ Rails.application.routes.draw do
       post :metadata_step
       post :generate_lineup_assets
       post :post_to_x
+      # Video Post (X): redraft the copy, publish, and settle a run that died.
+      post :draft_x_copy
+      post :post_video_to_x
+      post :resolve_x_post
       post :post_to_tiktok
       post :prep_for_tiktok
       post :use_caption_variant
@@ -510,6 +514,7 @@ Rails.application.routes.draw do
       resources :contents, only: [:index, :show, :update], param: :slug do
         collection do
           post :claim_next
+          post :record_x_post
         end
         member do
           post :release
