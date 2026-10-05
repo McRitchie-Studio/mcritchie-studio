@@ -331,7 +331,7 @@
 # address on one line at desktop, tablet and phone width. No spec was retired: the five
 # that were there still run, against the engine's markers. Set from
 # `npx playwright test --list` on the desk tree.
-total_specs: 204
+total_specs: 206
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -520,7 +520,7 @@ quarantined: 10
 # 189 -> 194: the five specs added by /tasks/hub-adopts-engine-footer (two in
 # booking_frame.spec.js, three in site_footer.spec.js). Measured on the desk tree:
 # `npx playwright test --list --grep-invert @quarantine` => 194.
-executed: 194
+executed: 196
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

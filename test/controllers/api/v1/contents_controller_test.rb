@@ -224,6 +224,64 @@ module Api
         get api_v1_content_path("no-such-content"), headers: auth, as: :json
         assert_response :not_found
       end
+
+      # --- posted: the write-back that says a video_post_x card is live ---
+
+      def video_post
+        @video_post ||= Content.create!(title: "Panthers win", description: "Panthers win", workflow: "video_post_x",
+                                        final_video_url: "https://cdn.test/v.mp4")
+      end
+
+      def claim_video_post(session)
+        video_post
+        post claim_next_api_v1_contents_path, params: { session: session, workflow: "video_post_x" }, headers: auth, as: :json
+        assert_equal video_post.slug, JSON.parse(response.body).dig("data", "claimed", "slug")
+      end
+
+      test "the claim hands a soul the video and the context" do
+        claim_video_post("s-1")
+
+        claimed = JSON.parse(response.body).dig("data", "claimed")
+        assert_equal "https://cdn.test/v.mp4", claimed["final_video_url"]
+        assert_equal "Panthers win", claimed["description"]
+      end
+
+      test "posted records the link and id, moves the card and drops the claim" do
+        claim_video_post("s-1")
+        post posted_api_v1_content_path(video_post.slug),
+             params: { session: "s-1", post_url: "https://x.com/turfmonstershow/status/1976543210" }, headers: auth, as: :json
+
+        assert_response :success
+        video_post.reload
+        assert_equal "posted", video_post.stage
+        assert_equal "x", video_post.platform
+        assert_equal "https://x.com/turfmonstershow/status/1976543210", video_post.post_url
+        assert_equal "1976543210", video_post.post_id
+        assert_nil video_post.claim_session
+      end
+
+      test "posted refuses a session that does not hold the claim" do
+        claim_video_post("s-1")
+        post posted_api_v1_content_path(video_post.slug),
+             params: { session: "s-2", post_url: "https://x.com/turfmonstershow/status/1" }, headers: auth, as: :json
+
+        assert_response :conflict
+        assert_equal "idea", video_post.reload.stage
+      end
+
+      test "posted refuses a URL that is not an X status, and any other workflow" do
+        claim_video_post("s-1")
+        post posted_api_v1_content_path(video_post.slug),
+             params: { session: "s-1", post_url: "https://example.com/status/1" }, headers: auth, as: :json
+        assert_response :unprocessable_entity
+        assert_equal "idea", video_post.reload.stage
+
+        post claim_next_api_v1_contents_path, params: { session: "s-9", workflow: "game_recap" }, headers: auth, as: :json
+        post posted_api_v1_content_path(@content.slug),
+             params: { session: "s-9", post_url: "https://x.com/turfmonstershow/status/1" }, headers: auth, as: :json
+        assert_response :unprocessable_entity
+        assert_equal "idea", @content.reload.stage
+      end
     end
   end
 end
