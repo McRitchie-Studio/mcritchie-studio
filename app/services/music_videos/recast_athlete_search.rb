@@ -3,7 +3,8 @@ module MusicVideos
   # the looks a performer can be recast into (Appearance.recastable) and the
   # row facts (People::SearchRows). People who have a look come first, then
   # exact name, prefix, anywhere. A person with no look is listed with
-  # "0 looks": the card offers to create one.
+  # "0 looks": the card offers to generate their first. Each look is a
+  # dropdown row (MusicVideos::LookOptions).
   class RecastAthleteSearch
     LIMIT = 10
     Result = Data.define(:slug, :name, :hint, :looks, :avatar_url, :vocation, :team)
@@ -18,13 +19,13 @@ module MusicVideos
       return [] if @q.empty?
 
       people = matches.limit(limit).to_a
-      looks = Appearance.recastable.where(person_slug: people.map(&:slug)).order(:created_at, :id).group_by(&:person_slug)
+      looks = LookOptions.for(people.map(&:slug))
       rows = People::SearchRows.for(people.map(&:slug))
       people.map do |person|
         mine = looks.fetch(person.slug, [])
         Result.new(slug: person.slug, name: person.full_name, hint: "#{mine.size} look#{'s' unless mine.size == 1}",
                    **rows.fetch(person.slug, People::SearchRows::BLANK).to_h,
-                   looks: mine.map { |look| { slug: look.slug, descriptor: look.descriptor, default: person.default_appearance_slug == look.slug } })
+                   looks: mine.map(&:to_h))
       end
     end
 

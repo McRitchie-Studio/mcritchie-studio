@@ -155,11 +155,15 @@ Rails.application.routes.draw do
   # Music video pipeline: the cast panel (stage 2) and clips (stage 5), admin only.
   get "artists/search", to: "artists#search", as: :search_artists
   get "recast_athletes/search", to: "recast_athletes#search", as: :search_recast_athletes
+  # One person's look dropdown rows, polled by a cast card while a sheet builds.
+  get "recast_athletes/:slug/looks", to: "recast_athletes#looks", as: :recast_athlete_looks
   resources :music_videos, only: [:show], param: :slug do
     post :confirm_cast, on: :member
     resources :performers, only: [:update], param: :ordinal, controller: "video_performers" do
       # Who replaces this performer: an athlete and a look, keep as is, or clear.
       resource :recast, only: [:update], controller: "video_performer_recasts"
+      # "Generate a new look" on the card: a look for the athlete, and its sheet build.
+      resources :recast_looks, only: [:create], controller: "video_performer_recast_looks"
     end
     resources :clips, only: [:update], param: :ordinal, controller: "video_clips"
     # Chunks (the tiled video) have their own routes: upload a generated take,
