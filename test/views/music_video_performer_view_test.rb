@@ -192,6 +192,23 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     end
     assert_includes rendered, %(<img :src="r.avatar_url" alt="" loading="lazy" class="block w-full h-full object-cover" @error="r.avatarFailed = true")
     assert_select "[data-test='recast-results'] [data-test='search-row-badge'][x-text='r.hint']", 1, "the looks count, 0 looks included"
+  end
+
+  test "a Replaced by row shows the person's default look beside the count; the artist search draws no look line" do
+    render_card
+
+    assert_select "[data-test='recast-results'] button[data-test='recast-option']" do
+      assert_select "[data-test='search-row-look'][x-show='r.default_look']", 1 do
+        assert_select "[data-test='look-thumb'] template[x-if='r.default_look && r.default_look.image_url && !r.default_look.imageFailed'] > img", 1
+        assert_select "svg[data-test='look-thumb-placeholder']", 1
+        assert_select "[data-test='search-row-look-name'][x-text=?]", "r.default_look ? r.default_look.descriptor : ''"
+        assert_select "span", text: "Primary look"
+      end
+      assert_select "[data-test='search-row-avatar'] [data-test='look-thumb']", 0, "the look is not the person's picture"
+      assert_select "[data-test='search-row-avatar'] ~ * [data-test='search-row-look']", 0
+      assert_select "[data-test='search-row-badge'][x-text='r.hint']", 1
+    end
+    assert_select "[data-test='typeahead-results'] [data-test='search-row-look']", 0
     assert_select "[data-test='typeahead-results'] [data-test='search-row-badge'][x-text=?]", "r.type === 'person' ? 'people' : r.kind"
   end
 

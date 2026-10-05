@@ -45,7 +45,7 @@
         <div x-show="open" x-cloak id="recast-results-<%= performer.ordinal %>" role="listbox"
              class="absolute z-30 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1" data-test="recast-results">
           <template x-for="(r, i) in results" :key="r.slug">
-            <%= render "music_videos/search_row", option_test: "recast-option", hint: "false",
+            <%= render "music_videos/search_row", option_test: "recast-option", hint: "false", look: "r.default_look",
                        badge: "r.hint",
                        badge_class: "r.looks.length ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-secondary border-subtle'" %>
           </template>

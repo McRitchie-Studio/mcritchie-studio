@@ -137,7 +137,10 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
     assert_equal %w[test-athlete-alpha test-athlete test-athlete-delta], results.map(&:slug),
                  "a look outranks even an exact name; then the name ranking"
     assert_equal ["1 look", "0 looks", "0 looks"], results.map(&:hint)
-    assert_equal [{ slug: @home.slug, descriptor: "Home Blue", default: true }], results.first.looks
+    assert_equal [{ slug: @home.slug, descriptor: "Home Blue", default: true, image_url: nil, state: "empty", error: nil,
+                    url: "/people/test-athlete-alpha/models/#{@home.slug}" }], results.first.looks
+    assert_equal results.first.looks.first, results.first.default_look, "the row shows the default look"
+    assert_equal [nil, nil], results.last(2).map(&:default_look), "nobody's capture look, and no look at all"
     assert_equal [[], []], results.last(2).map(&:looks), "a capture look is not one to recast into"
     assert_equal ["athlete", "athlete", nil], results.map(&:vocation)
     assert_equal [nil, "https://img.example/gamma.png", nil], results.map(&:avatar_url)
@@ -158,8 +161,50 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
     end
 
     assert_equal 10, MusicVideos::RecastAthleteSearch.call("test crowd").size
-    one, ten = count.call("test athlete alpha"), count.call("test crowd")
+    # Like with like: a page where nobody has a look skips the character-sheet read.
+    one, ten = count.call("test crowd 3"), count.call("test crowd")
     assert_operator one, :>, 0
     assert_equal one, ten, "one person or ten, the same queries"
+    assert_equal one + 1, count.call("test athlete alpha"), "a page with looks reads their sheets once"
+  end
+
+  test "ten people with looks and sheets cost the same queries as one, and each row names its default look" do
+    crowd = Array.new(10) do |n|
+      Person.create!(first_name: "Sample", last_name: "Squad #{n}", athlete: true).tap do |person|
+        first, second = %w[Home Away].map { |name| person.appearances.create!(descriptor: "#{name} #{n}") }
+        [first, second].each do |look|
+          sheet = Artifact.create!(kind: "character_sheet", image_url: "https://example.test/#{look.slug}.png", source: "test")
+          sheet.subjects.create!(person_slug: person.slug, appearance_slug: look.slug, ordinal: 1)
+        end
+        second.make_default! if n.odd?
+      end
+    end
+    count = ->(query) do
+      seen = 0
+      counter = ->(*, payload) { seen += 1 unless payload[:name].in?(%w[SCHEMA TRANSACTION]) || payload[:cached] }
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+        ActiveRecord::Base.uncached { MusicVideos::RecastAthleteSearch.call(query) }
+      end
+      seen
+    end
+
+    results = MusicVideos::RecastAthleteSearch.call("sample squad")
+    assert_equal 10, results.size
+    results.each do |result|
+      n = result.name[/\d+\z/].to_i
+      look = crowd[n].appearances.find_by!(descriptor: "#{n.odd? ? 'Away' : 'Home'} #{n}")
+      assert_equal [look.slug, look.descriptor, "https://example.test/#{look.slug}.png", "ready"],
+                   result.default_look.values_at(:slug, :descriptor, :image_url, :state)
+      assert_equal "2 looks", result.hint
+    end
+    assert_equal count.call("sample squad 3"), count.call("sample squad"), "one person or ten, the same queries"
+  end
+
+  test "a person whose default look is retired or a capture has looks counted and no default look shown" do
+    @home.update!(retired_at: Time.current)
+
+    result = MusicVideos::RecastAthleteSearch.call("test athlete alpha").sole
+
+    assert_equal ["1 look", nil], [result.hint, result.default_look]
   end
 end

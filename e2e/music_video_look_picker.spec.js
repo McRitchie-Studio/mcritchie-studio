@@ -117,8 +117,25 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   if ((await picker.getAttribute("data-state")) !== "open") await picker.getByRole("button", { name: "Change" }).click();
   await expect(picker).toHaveAttribute("data-state", "open");
   await expect(picker.locator("[data-test='look-picker']")).toBeHidden();
-  await picker.getByRole("combobox").fill("winger delta");
-  await picker.locator("[data-test='recast-option']").first().click();
+  await picker.getByRole("combobox").fill("demo");
+  // The search row says what is saved for each person: the default look's sheet and name beside the count.
+  const delta = picker.locator("[data-test='recast-option']").filter({ hasText: "Demo Winger Delta" });
+  await expect(delta.locator("[data-test='search-row-badge']")).toHaveText(/^\d+ looks$/);
+  await expect(delta.locator("[data-test='search-row-look-name']")).toHaveText("Home Orange");
+  await expect(delta.locator("[data-test='search-row-look'] [data-test='look-thumb-image']")).toBeVisible();
+  await expect(delta.locator("[data-test='search-row-avatar'] img")).toHaveCount(0);
+  const novice = picker.locator("[data-test='recast-option']").filter({ hasText: "Demo Novice Echo" });
+  await expect(novice.locator("[data-test='search-row-name']")).toBeVisible();
+  if ((await novice.locator("[data-test='search-row-badge']").textContent()) === "0 looks") {
+    await expect(novice.locator("[data-test='search-row-look']")).toBeHidden();
+  }
+  // At phone width the name still reads in full.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(delta.locator("[data-test='search-row-name']")).toBeVisible();
+  expect(await delta.locator("[data-test='search-row-name']").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await expect(delta.locator("[data-test='search-row-look-name']")).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await delta.click();
 
   // The default look is previewed first; the building one says so in its row and in the note.
   await expect(picker.locator("[data-test='look-preview-label']")).toHaveText("Demo Winger Delta > Home Orange");

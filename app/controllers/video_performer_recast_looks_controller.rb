@@ -14,14 +14,8 @@ class VideoPerformerRecastLooksController < ApplicationController
     # A refusal is an answer, not an ErrorLog.
     return back(alert: "No look made: #{maker.refusal}.") if maker.refusal
 
-    look = rescue_and_log(target: @video) { maker.call }
-    rescue_and_log(target: look) { start_build(look) }
-  rescue MusicVideos::CreateRecastLook::Refused, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
-    back(alert: "No look made: #{e.message}.")
-  rescue StandardError => e
-    raise if look.nil?
-
-    back(look: look, alert: "#{look.descriptor} was made, but its character sheet could not start: #{e.message}")
+    look = make(maker)
+    build(look) if look
   end
 
   private
@@ -39,6 +33,20 @@ class VideoPerformerRecastLooksController < ApplicationController
   # look: the card previews the look just made.
   def back(look: nil, **flash)
     redirect_to music_video_path(@video, look: look&.slug, anchor: "person-#{@performer.ordinal}"), **flash
+  end
+
+  def make(maker)
+    rescue_and_log(target: @video) { maker.call }
+  rescue MusicVideos::CreateRecastLook::Refused, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+    back(alert: "No look made: #{e.message}.")
+    nil
+  end
+
+  # The look stands whatever the build does; anything unexpected is logged against it.
+  def build(look)
+    rescue_and_log(target: look) { start_build(look) }
+  rescue StandardError => e
+    back(look: look, alert: "#{look.descriptor} was made, but its character sheet could not start: #{e.message}")
   end
 
   # The readiness refusals and the busy guard are answers, not ErrorLog rows.

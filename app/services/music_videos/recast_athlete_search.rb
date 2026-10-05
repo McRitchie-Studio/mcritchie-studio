@@ -4,10 +4,12 @@ module MusicVideos
   # row facts (People::SearchRows). People who have a look come first, then
   # exact name, prefix, anywhere. A person with no look is listed with
   # "0 looks": the card offers to generate their first. Each look is a
-  # dropdown row (MusicVideos::LookOptions).
+  # dropdown row (MusicVideos::LookOptions), and the person's default look is
+  # named again as default_look, so the search row can show it (nil when the
+  # person has no look, or none of the live ones is the default).
   class RecastAthleteSearch
     LIMIT = 10
-    Result = Data.define(:slug, :name, :hint, :looks, :avatar_url, :vocation, :team)
+    Result = Data.define(:slug, :name, :hint, :looks, :default_look, :avatar_url, :vocation, :team)
 
     def self.call(query, limit: LIMIT) = new(query).call(limit:)
 
@@ -25,7 +27,7 @@ module MusicVideos
         mine = looks.fetch(person.slug, [])
         Result.new(slug: person.slug, name: person.full_name, hint: "#{mine.size} look#{'s' unless mine.size == 1}",
                    **rows.fetch(person.slug, People::SearchRows::BLANK).to_h,
-                   looks: mine.map(&:to_h))
+                   looks: mine.map(&:to_h), default_look: mine.find(&:default)&.to_h)
       end
     end
 
