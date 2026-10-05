@@ -138,9 +138,12 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    credits no artists, so there a card also closes on its recast answer (below)
    and naming an artist is optional.
 6. **The operator recasts**, on the same card, under "Replaced by": a typeahead
-   over every Person, drawn with the same row and a looks count. People who
-   have a look come first; then exact name, prefix, anywhere. Picking someone
-   saves nothing yet. It opens the **look dropdown**: one row per look, with
+   over every Person, drawn with the same row and a looks count. A person who
+   has a default look also shows it on a second line of the row: that look's
+   character-sheet thumbnail and its name ("Primary look"), apart from the
+   headshot, so the row says what is saved for them. People who have a look
+   come first; then exact name, prefix, anywhere. Picking someone saves
+   nothing yet. It opens the **look dropdown**: one row per look, with
    the look's character-sheet thumbnail (a placeholder while it has none), its
    name, a "default" mark and where its sheet stands (ready, building, failed,
    none). The look picked is previewed large, with a link to the look's own
