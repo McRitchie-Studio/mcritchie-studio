@@ -134,11 +134,11 @@ class PeopleLookActionsGateTest < ActionDispatch::IntegrationTest
     ["javascript:alert(1)", "data:image/png;base64,QUJD", "file:///etc/passwd", "http://cdn.example.com/a.png",
      "https://localhost/a.png", "https://127.0.0.1/a.png", "https://10.0.0.5/a.png", "https://169.254.169.254/latest",
      "https://[::1]/a.png", "https://hub.internal/a.png", "/uploads/a.png", "//cdn.example.com/a.png", "not a url", ""].each do |url|
-      assert_nothing_written { attach!(url) }
+      # A refused URL is an answer, not an error: no ErrorLog row either.
+      assert_no_difference("ErrorLog.count") { assert_nothing_written { attach!(url) } }
       assert_redirected_to person_path(@person.slug)
-      assert_match(/not attached/i, flash[:alert], "refusing #{url.inspect}")
-      assert_nil flash[:notice]
+      assert_equal Appearances::FetchableUrl::HTTPS_REFUSAL, flash[:alert], "refusing #{url.inspect}"
+      assert_no_match(/attached/, flash[:notice].to_s)
     end
-    assert_equal 0, ErrorLog.where(target_slug: @person.slug).count, "a refused URL is an answer, not an error" if ErrorLog.column_names.include?("target_slug")
   end
 end

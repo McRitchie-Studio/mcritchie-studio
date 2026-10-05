@@ -141,7 +141,7 @@
             <% if look.default? %>
               <span data-test="default-look-badge"
                     class="badge text-3xs bg-success/10 text-success-ink border-success/40">default</span>
-            <% else %>
+            <% elsif admin? %>
               <%= button_to "Make default", make_default_appearance_person_path(@person.slug),
                     method: :post, params: { appearance_slug: look.slug },
                     class: "btn btn-sm btn-secondary" %>
@@ -168,46 +168,50 @@
             </span>
           </div>
 
-          <%# Attach an image for THIS look. %>
-          <%= form_with url: attach_artifact_person_path(@person.slug), method: :post,
-                        class: "flex items-center gap-2 flex-wrap pl-3 pb-2" do |f| %>
-            <%= f.hidden_field :appearance_slug, value: look.slug %>
-            <%# text_field for the same reason as the gate's: type=url blocks a
-                relative path in the browser and the submit never fires. %>
-            <%= f.text_field :image_url, placeholder: "image URL for #{look.descriptor}",
-                  class: "input-field text-xs w-80" %>
-            <%= f.submit "Attach image", class: "btn btn-sm btn-secondary" %>
+          <%# Attach an image for THIS look. Admin only, like the action; the
+              address must be an https URL on a public host, and the action says
+              so when it refuses one. %>
+          <% if admin? %>
+            <%= form_with url: attach_artifact_person_path(@person.slug), method: :post,
+                          class: "flex items-center gap-2 flex-wrap pl-3 pb-2" do |f| %>
+              <%= f.hidden_field :appearance_slug, value: look.slug %>
+              <%= f.text_field :image_url, placeholder: "https:// image URL for #{look.descriptor}",
+                    class: "input-field text-xs w-80" %>
+              <%= f.submit "Attach image", class: "btn btn-sm btn-secondary" %>
+            <% end %>
           <% end %>
         <% end %>
       </div>
     <% else %>
       <p class="text-sm text-muted">
-        No models yet. Create one below — it becomes <%= @person.full_name %>'s default.
+        No models yet.<% if admin? %> Create one below — it becomes <%= @person.full_name %>'s default.<% end %>
       </p>
     <% end %>
 
-    <%# --- create a look --- %>
-    <%# Opened by the cast card's "new look" link, which also says where to return. %>
-    <details id="new-model" class="rounded-lg bg-surface-alt p-4 scroll-mt-24" <%= "open" if recast_return_path %> data-test="new-model">
-      <summary class="cursor-pointer text-sm font-bold text-heading">+ New model</summary>
-      <% if recast_return_path %>
-        <p class="mt-3 text-xs text-muted" data-test="new-model-return">Saving takes you back to the cast card.</p>
-      <% end %>
-      <%= form_with url: create_appearance_person_path(@person.slug, return_to: recast_return_path), method: :post,
-                    scope: :appearance, class: "mt-3 space-y-2" do |f| %>
-        <%= f.text_field :descriptor, placeholder: "Bengals white · navy suit · 1994 Ace Ventura",
-              class: "input-field text-sm w-full", required: true %>
-        <div class="flex gap-2 flex-wrap">
-          <%= f.text_field :team_slug, placeholder: "team slug (athletes only)", class: "input-field text-sm w-52" %>
-          <%= f.text_field :colorway, placeholder: "colorway (optional)", class: "input-field text-sm w-40" %>
-        </div>
-        <%= f.url_field :reference_url, placeholder: "reference photo URL", class: "input-field text-sm w-full" %>
-        <%= f.text_area :generation_notes, rows: 2,
-              placeholder: "How to generate this person — required when there is no athlete record",
-              class: "input-field text-sm w-full" %>
-        <%= f.submit "Save model", class: "btn btn-sm btn-primary" %>
-      <% end %>
-    </details>
+    <%# --- create a look: admin only, like the action it posts to --- %>
+    <% if admin? %>
+      <%# Opened by the cast card's "new look" link, which also says where to return. %>
+      <details id="new-model" class="rounded-lg bg-surface-alt p-4 scroll-mt-24" <%= "open" if recast_return_path %> data-test="new-model">
+        <summary class="cursor-pointer text-sm font-bold text-heading">+ New model</summary>
+        <% if recast_return_path %>
+          <p class="mt-3 text-xs text-muted" data-test="new-model-return">Saving takes you back to the cast card.</p>
+        <% end %>
+        <%= form_with url: create_appearance_person_path(@person.slug, return_to: recast_return_path), method: :post,
+                      scope: :appearance, class: "mt-3 space-y-2" do |f| %>
+          <%= f.text_field :descriptor, placeholder: "Bengals white · navy suit · 1994 Ace Ventura",
+                class: "input-field text-sm w-full", required: true %>
+          <div class="flex gap-2 flex-wrap">
+            <%= f.text_field :team_slug, placeholder: "team slug (athletes only)", class: "input-field text-sm w-52" %>
+            <%= f.text_field :colorway, placeholder: "colorway (optional)", class: "input-field text-sm w-40" %>
+          </div>
+          <%= f.url_field :reference_url, placeholder: "reference photo URL", class: "input-field text-sm w-full" %>
+          <%= f.text_area :generation_notes, rows: 2,
+                placeholder: "How to generate this person — required when there is no athlete record",
+                class: "input-field text-sm w-full" %>
+          <%= f.submit "Save model", class: "btn btn-sm btn-primary" %>
+        <% end %>
+      </details>
+    <% end %>
   </div>
 
   <%# --- every image they appear in, including shared ones --- %>

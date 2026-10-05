@@ -37,5 +37,23 @@ module Appearances
     rescue Studio::ImageCache::InvalidSourceURL, URI::InvalidURIError
       false
     end
+
+    # What an operator is told when `https?` says no.
+    HTTPS_REFUSAL = "Image not attached: the address must be an https:// URL on a public host.".freeze
+
+    # THE STRICTER QUESTION: will we FILE this URL as a picture of someone?
+    #
+    # `ok?` answers for a URL a remote fetcher pulls once. A filed image URL is
+    # also rendered into an operator's page and handed out as a swap reference,
+    # so on top of `ok?` it must be https: plain http is refused, as is anything
+    # with no scheme (a relative path, `//host/x`). Never raises.
+    #
+    # ITS LIMITS ARE `ok?`'s. This reads the URL's text and resolves nothing: a
+    # public name that resolves to a private address passes, a redirect the
+    # address later serves is not followed or checked, and a loopback written
+    # as a bare integer or a short dotted form (`127.1`) is not recognised.
+    def self.https?(url)
+      ok?(url) && URI.parse(url).scheme.to_s.casecmp?("https")
+    end
   end
 end
