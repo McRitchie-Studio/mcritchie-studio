@@ -49,6 +49,10 @@
     </div>
   </div>
 
+  <p x-show="buildingElsewhere" x-cloak role="status" class="text-xs text-muted" data-test="look-building-note">
+    Building a character sheet: <span class="font-semibold text-heading" x-text="buildingElsewhere"></span>. This card updates itself.
+  </p>
+
   <button type="button" x-show="looks.length === 0 && !genOpen" @click="startGenerate()" class="btn btn-primary btn-sm w-full" data-test="look-generate-first">
     Generate first look
   </button>
@@ -125,4 +129,8 @@
       <% end %>
     </p>
   <% end %>
+
+  <a :href="newLookUrl" class="inline-block text-xs text-muted hover:text-primary hover:underline" data-test="recast-new-look">
+    Or add a look by hand on <span x-text="athlete ? athlete.name : ''"></span>’s page
+  </a>
 </div>

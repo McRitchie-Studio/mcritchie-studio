@@ -21,7 +21,7 @@ class VideoPerformerRecastLooksController < ApplicationController
   rescue StandardError => e
     raise if look.nil?
 
-    back(alert: "#{look.descriptor} was made, but its character sheet could not start: #{e.message}")
+    back(look: look, alert: "#{look.descriptor} was made, but its character sheet could not start: #{e.message}")
   end
 
   private
@@ -36,18 +36,19 @@ class VideoPerformerRecastLooksController < ApplicationController
     { person_slug: p[:person_slug], descriptor: p[:descriptor], reference_url: p[:reference_url] }
   end
 
-  def back(**flash)
-    redirect_to music_video_path(@video, anchor: "person-#{@performer.ordinal}"), **flash
+  # look: the card previews the look just made.
+  def back(look: nil, **flash)
+    redirect_to music_video_path(@video, look: look&.slug, anchor: "person-#{@performer.ordinal}"), **flash
   end
 
   # The readiness refusals and the busy guard are answers, not ErrorLog rows.
   # The look stands either way; its own page can build the sheet later.
   def start_build(look)
     Appearances::SheetBuild.start!(look, number: params[:number].presence)
-    back(notice: "#{look.descriptor} made for #{look.person.full_name}. Its character sheet is building in the " \
+    back(look: look, notice: "#{look.descriptor} made for #{look.person.full_name}. Its character sheet is building in the " \
                  "background; it takes about two minutes, and this card updates itself.")
   rescue Appearances::GenerateArtifact::NoGenerator, Appearances::GenerateArtifact::NoIdentityPhoto,
          Appearances::SheetBuild::Busy => e
-    back(alert: "#{look.descriptor} was made for #{look.person.full_name}, but its character sheet did not start: #{e.message}")
+    back(look: look, alert: "#{look.descriptor} was made for #{look.person.full_name}, but its character sheet did not start: #{e.message}")
   end
 end

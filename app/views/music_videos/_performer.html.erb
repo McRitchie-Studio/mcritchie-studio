@@ -133,6 +133,6 @@
     </div>
 
     <%= render "music_videos/recast", performer: performer, video: video, looks: local_assigns.fetch(:recast_looks, {}),
-               sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready] %>
+               sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready], fresh_look: local_assigns[:fresh_look] %>
   </div>
 </article>

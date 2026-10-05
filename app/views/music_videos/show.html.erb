@@ -67,17 +67,25 @@
       athlete: null, lookSlug: "", savedLook: "", listOpen: false, lookActive: 0, genOpen: false, genBusy: false, lookTimer: null,
       init() {
         const data = this.$root.dataset;
-        if (data.athlete) this.setAthlete(JSON.parse(data.athlete), data.savedLook || "");
+        if (data.athlete) this.setAthlete(JSON.parse(data.athlete), data.savedLook || "", data.freshLook || "");
       },
       destroy() { clearTimeout(this.lookTimer); },
       get looks() { return this.athlete ? this.athlete.looks : []; },
       get chosen() { return this.looks.find((l) => l.slug === this.lookSlug) || null; },
-      // Previewed first: the saved look, else one still building, else the default.
-      setAthlete(athlete, saved) {
+      // Sheets building on looks other than the one previewed, by name.
+      get buildingElsewhere() {
+        return this.looks.filter((l) => l.state === "building" && l.slug !== this.lookSlug).map((l) => l.descriptor).join(", ");
+      },
+      // The athlete's own page, where a look can be added by hand; it knows the way back.
+      get newLookUrl() {
+        return this.athlete ? this.$root.dataset.newLookUrl.replace("__slug__", encodeURIComponent(this.athlete.slug)) : "#";
+      },
+      // Previewed first: the look just generated, else the saved look, else the default.
+      setAthlete(athlete, saved, fresh) {
         this.athlete = athlete; this.savedLook = saved || "";
-        const building = athlete.looks.filter((l) => l.state === "building").pop();
-        const fallback = building || athlete.looks.find((l) => l.default);
-        this.lookSlug = this.savedLook || (fallback ? fallback.slug : "");
+        const first = athlete.looks.find((l) => l.slug === fresh) || athlete.looks.find((l) => l.slug === this.savedLook) ||
+                      athlete.looks.find((l) => l.default);
+        this.lookSlug = first ? first.slug : "";
         this.listOpen = false; this.genBusy = false; this.genOpen = athlete.looks.length === 0;
         this.watchBuilds();
       },
@@ -368,7 +376,7 @@
     <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
       <% @performers.each do |performer| %>
         <%= render "music_videos/performer", performer: performer, video: @video, still_urls: @still_urls, recast_looks: @recast_looks,
-                   sheet_row: @sheet_row, sheet_ready: @sheet_ready %>
+                   sheet_row: @sheet_row, sheet_ready: @sheet_ready, fresh_look: params[:look] %>
       <% end %>
     </div>
   <% end %>
