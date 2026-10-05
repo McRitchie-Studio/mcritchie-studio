@@ -28,8 +28,10 @@ inputs complete in the UI.
 
 `digest video <url>` (`bin/digest-video`) downloads through a platform sub-SOP
 (YouTube, TikTok and Instagram built; all yt-dlp), stores the source MP4
-in R2 and creates a `MusicVideo` record through `POST /api/v1/music_videos`: type `music_video` (the only type for now), platform, source URL and id,
-title, duration and stage. It links the credited primary and featured artists.
+in R2 and creates a `MusicVideo` record through `POST /api/v1/music_videos`: type
+`music_video` (the default) or `cinematic` (`--kind cinematic`), platform, source
+URL and id, title, duration and stage. It links the credited primary and featured
+artists.
 
 Captions are read for **timing and section structure only**. Lyric text is never
 stored.
@@ -78,6 +80,17 @@ Built by `music-video-clip-finder`: `bin/find-clips`, the `video_clips` table,
 One approved clip moves the video to `clips_ready`. The agent's steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#stage-5-clips).
 
+**Chunks.** Beside the candidates, `bin/find-clips <slug> --tile` cuts the whole
+video into 25-second chunks on a 20-second stride (0-25, 20-45, 40-65 and on), so
+each shares 5 seconds with the one before. The last chunk ends at the video's end
+and may be shorter; a tail the previous chunk already covers makes no extra
+chunk. A chunk has no seam and no approval. Chunks are `video_clips` rows of kind
+`chunk`; the candidates are kind `candidate`. Each kind numbers its own ordinals
+and is replaced on its own. Built by `tile-video-into-overlapping-chunks`, the
+first piece of the recast pipeline, which swaps every chunk and stitches them
+back. The steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#chunks-the-whole-video-tiled).
+
 ## Where it runs
 
 The SOPs are agent-driven and run on Alex's Mac: YouTube often blocks cloud IPs,
@@ -91,14 +104,14 @@ Record slugs stay kebab-case, the app's existing convention.
 
 | Table | Holds |
 |---|---|
-| `music_videos` | type, platform, source URL and id, title, duration, stage, source asset |
+| `music_videos` | type (`kind`: `music_video` or `cinematic`), platform, source URL and id, title, duration, stage, source asset |
 | `artists` | kind `person` or `group`; `person_slug` for individuals; source ids: Wikidata, MusicBrainz, Discogs, Spotify |
 | `artist_aliases` | alternate names per artist |
 | `artist_memberships` | member → group, start and end years |
 | `music_video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
 | `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence |
 | `appearances` | gains a nullable music video link |
-| `video_clips` | start, end, seam, cast shape, target performer, prompt, asset, status |
+| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status |
 
 ## Artist seed
 
@@ -123,6 +136,7 @@ folders are human-readable **snake_case**. Alex amended the asset library's
 music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.mp4
 music_videos/<artist>/<video>/stills/person_01_0230.jpg
 music_videos/<artist>/<video>/clips/<video>_clip_01_<seam>_<shape>_<start>_<end>.mp4
+music_videos/<artist>/<video>/chunks/<video>_chunk_01_<start>_<end>.mp4
 music_videos/<artist>/<video>/looks/person_01_<name>_<video>/character_sheet.png
 artists/<artist>/…                      general artist images
 ```
@@ -140,6 +154,7 @@ Already filed, in build order:
 2. `digest-video-youtube`
 3. `music-video-cast-panel`
 4. `music-video-clip-finder`
+5. `tile-video-into-overlapping-chunks`
 
 Alongside: `asset-tree-browser`. Later, not yet filed: measuring the TikTok download
 and the Instagram cookie path, the artist reference and look stages, and the pipeline 4
