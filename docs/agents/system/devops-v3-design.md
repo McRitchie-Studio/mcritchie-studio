@@ -333,7 +333,7 @@ credential block appears in twelve SOPs.
 
 | Layer | Purpose | Size rule | Loaded when |
 |---|---|---|---|
-| 1 · AGENTS.md | The map: names, souls, the pipeline in one diagram, the six commands, repos and ports, the eight rules that are rules, where each capability page lives | about 200 lines | every session |
+| 1 · AGENTS.md | The map: names, souls, the pipeline in one diagram, the six commands, repos and ports, the nine rules that are rules, where each capability page lives | about 200 lines | every session |
 | 2 · capability pages | build, review, release, desks and infra, credentials, communication, learning: purpose, when, procedure, exit | at most 300 lines each | when the work touches it |
 | 3 · reference and archive | Incident history, measured numbers, design rationale, moved verbatim under `docs/agents/archive/` | unbounded | never by default |
 

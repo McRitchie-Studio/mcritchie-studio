@@ -35,6 +35,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Credential issues (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | Business facts quick reference (when to pull from and add to `FACTS.md`) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
 | Form fill (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
+| Dream (the bank of good answers every session reads at start; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Agent presence (who is working, machine headroom) | `mcritchie-studio/docs/agents/system/agent-presence.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
