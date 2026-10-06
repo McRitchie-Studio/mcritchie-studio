@@ -3202,9 +3202,11 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   timeout    = budget
   interval   = ci_poll_interval
   last_state = nil
+  refreshes = CiStatus.gh_auth_summary[:refreshes]
   ci = nil
   loop do
     ci = ci_verdict(repo, sha)
+    refreshes = say_ci_token_refresh(repo, refreshes)
     return ci unless ci_poll_action(ci) == :wait
 
     remaining = deadline - monotonic_s
@@ -3219,6 +3221,17 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
     last_state = ci[:state]
     sleep([interval, remaining].min)
   end
+end
+
+# A wait past one App token's hour re-mints the read token (CiStatus.gh_read_status).
+# Say so, with the token's LENGTH only, so a long hold shows why it kept reading.
+# Returns the refresh count to compare against on the next read.
+def say_ci_token_refresh(repo, seen)
+  auth = CiStatus.gh_auth_summary
+  if auth[:refreshes] > seen.to_i
+    say("  #{repo}: re-minted the GitHub App read token (#{auth[:token_length]} chars) — the wait outlived the last one")
+  end
+  auth[:refreshes]
 end
 
 # Resolve GitHub CI's verdict for a `repo` `sha` — G3's origin/#{RELEASE_BRANCH}
