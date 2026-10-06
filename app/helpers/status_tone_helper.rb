@@ -61,6 +61,27 @@ module StatusToneHelper
     }
   }.freeze
 
+  # THE STAGE LADDER: the seven task stages as seven distinct chips, ordered by
+  # weight so the board reads left to right as progress. Five roles cannot name
+  # seven stages, so the ladder varies weight within a role: outline, tint, then
+  # solid. A solid chip inverts its role: the fill is the role's contrast-derived
+  # ink and the text is the surface, so it clears AA in both themes by the same
+  # derivation that makes the ink legible on the surface.
+  STAGE_TONES = {
+    "designed" => "bg-transparent text-heading border border-dashed border-primary/60",
+    "building" => "bg-primary/10 text-heading border border-primary/40",
+    "submitted" => "bg-warning/10 text-warning-ink border border-warning/40",
+    "reviewed" => "bg-success/10 text-success-ink border border-success/40",
+    "assembled" => "bg-primary-700 text-white border border-primary-700",
+    "shipped" => "bg-[var(--color-success-ink)] text-surface border border-transparent",
+    "blocked" => "bg-danger/10 text-danger-ink border border-danger/40"
+  }.freeze
+
+  # The chip for a task stage; any other word (archived, unknown) is muted.
+  def stage_tone(stage)
+    STAGE_TONES.fetch(stage.to_s) { status_tone(:muted) }
+  end
+
   # Status words the hub shows, by role. A role name maps to itself. Anything
   # unlisted is muted: an unknown status reads as quiet, never as an alarm.
   STATUS_TONE_WORDS = {

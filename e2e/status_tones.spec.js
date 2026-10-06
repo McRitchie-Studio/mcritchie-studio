@@ -9,6 +9,10 @@ const { test, expect } = require("@playwright/test");
 
 const { CONTRAST, eachTheme, TEXT_ON_SURFACE, CHIP_ON_TINT } = require("./contrast");
 
+// The stage ladder's solid rungs (StatusToneHelper::STAGE_TONES).
+const SOLID_STAGES = ["Assembled", "Shipped"];
+const SOLID_AA = 4.5;
+
 test("a form's validation errors read in both themes", async ({ page }) => {
   await page.goto("/tasks/new");
   await page.fill("input[name='task[title]']", "");
@@ -36,11 +40,30 @@ test("the stage badges read in both themes", async ({ page }) => {
   await eachTheme(page, async (theme) => {
     const chips = await page.evaluate(CONTRAST, "[data-test='stage-guide-card'] > div:first-child > span:first-child");
     expect(chips.length, `${theme}: stage badges render`).toBeGreaterThan(0);
+    for (const stage of SOLID_STAGES) {
+      expect(chips.map((c) => c.text), `${theme}: the ${stage} rung renders`).toContain(stage);
+    }
     for (const chip of chips) {
-      expect(chip.ratio, `${theme}: badge "${chip.text}" contrast`).toBeGreaterThanOrEqual(CHIP_ON_TINT);
+      // A solid rung (Assembled, Shipped) has no tint to excuse: AA, 4.5.
+      const floor = SOLID_STAGES.includes(chip.text) ? SOLID_AA : CHIP_ON_TINT;
+      expect(chip.ratio, `${theme}: badge "${chip.text}" contrast`).toBeGreaterThanOrEqual(floor);
     }
   });
 });
 
 // The content artifact card's chips are measured inside artifact_gate.spec.js,
 // before that spec approves the artifacts and the card leaves the page.
+
+// The blocker's ✕ on a blocked card's crew avatars sits on the card's own
+// danger tint, so it carries an opaque surface ground under the danger ink.
+test("the blocked crew badge reads in both themes", async ({ page }) => {
+  await page.goto("/tasks");
+  const badge = page.locator("#card-task-ea8541e4b5b6 [data-test='crew-blocked']");
+  await expect(badge).toBeVisible();
+
+  await eachTheme(page, async (theme) => {
+    const measured = await page.evaluate(CONTRAST, "#card-task-ea8541e4b5b6 [data-test='crew-blocked']");
+    expect(measured.length, `${theme}: the badge renders`).toBe(1);
+    expect(measured[0].ratio, `${theme}: ✕ contrast`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
+  });
+});

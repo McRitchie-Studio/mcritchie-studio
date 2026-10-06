@@ -372,10 +372,10 @@
 # where the card does. Measured with `npx playwright test --list` on the tree merged with
 # accepted => 219.
 #
-# 219 -> 221 on 2026-10-06 (/tasks/status-colours-from-tokens):
-# e2e/status_tones.spec.js adds two specs, not quarantined: the form error box and the
-# stage badges keep their text contrast in light and dark.
-total_specs: 221
+# 219 -> 222 on 2026-10-06 (/tasks/status-colours-from-tokens):
+# e2e/status_tones.spec.js adds three specs, not quarantined: the form error box, the
+# stage badges and the blocked crew badge keep their text contrast in light and dark.
+total_specs: 222
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -581,8 +581,8 @@ quarantined: 10
 # 208 -> 209: the second music_video_recast.spec.js spec, saves in order
 # (/tasks/replace-with-keep-original). Measured on the tree merged with accepted:
 # `npx playwright test --list --grep-invert @quarantine` => 209.
-# 209 -> 211: the two status_tones.spec.js specs (/tasks/status-colours-from-tokens).
-executed: 211
+# 209 -> 212: the three status_tones.spec.js specs (/tasks/status-colours-from-tokens).
+executed: 212
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

@@ -74,4 +74,20 @@ class StatusToneHelperTest < ActionView::TestCase
     parts = StatusToneHelper::STATUS_TONE_PARTS.values.map(&:keys)
     assert_equal 1, parts.uniq.size
   end
+
+  test "[unit] the seven task stages give seven distinct stage chips" do
+    stages = %w[designed building submitted reviewed assembled shipped blocked]
+    chips = stages.map { |stage| stage_tone(stage) }
+    assert_equal 7, chips.uniq.size, "each stage needs its own rung: #{stages.zip(chips).to_h}"
+    assert_equal stages.sort, StatusToneHelper::STAGE_TONES.keys.sort
+  end
+
+  test "[unit] the stage ladder uses tokens only and falls back to muted" do
+    StatusToneHelper::STAGE_TONES.each do |stage, chip|
+      assert_no_match(/\bdark:|\b(?:bg|text|border)-(?:red|amber|green|emerald|blue|violet|mint)-\d/, chip, stage)
+      assert_includes Rails.root.join("app/helpers/status_tone_helper.rb").read, %("#{chip}"), "#{stage} is spelled out whole"
+    end
+    assert_equal status_tone(:muted), stage_tone("archived")
+    assert_equal status_tone(:muted), stage_tone(nil)
+  end
 end

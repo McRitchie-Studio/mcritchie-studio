@@ -381,10 +381,10 @@ module ApplicationHelper
     override&.positive? ? override : FRESH_DEPLOY_WINDOW_DEFAULT_MS
   end
 
-  # A stage's count chip on the board, the stages page and the epic pages: the
-  # stage word through status_tone, so every stage reads in both themes.
+  # A stage's count chip on the board, the stages page and the epic pages: one
+  # of the seven distinct rungs of StatusToneHelper::STAGE_TONES.
   def task_stage_count_classes(stage)
-    status_tone(stage)
+    stage_tone(stage)
   end
 
   def task_activity_badge_scheme(activity)
