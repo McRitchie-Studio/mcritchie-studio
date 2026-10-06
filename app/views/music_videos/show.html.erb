@@ -184,7 +184,7 @@
           // An athlete saved with no look: nothing is previewed as if it were cast.
           if (!this.savedLook && !data.freshLook) this.lookSlug = "";
         }
-        this.$watch("open", (open) => { if (open) this.$nextTick(() => this.fitList()); });
+        this.$watch("open", (open) => { if (open) this.$nextTick(() => requestAnimationFrame(() => this.fitList())); });
       },
       // Swapping: someone is picked and Keep Original is unchecked.
       get swapping() { return !!this.athlete && !this.keep; },
@@ -262,11 +262,14 @@
         return json;
       },
       // The results list is wider than the card: slide it back inside the window.
-      fitList() {
+      // Measured only once the list is painted: a box read while x-show still hides it is
+      // empty, and the shift worked out from it pushed the list off a phone screen.
+      fitList(tries = 0) {
         const list = this.$refs.results;
-        if (!list) return;
+        if (!list || !this.open) return;
         list.style.transform = "";
         const box = list.getBoundingClientRect();
+        if (box.width === 0) { if (tries < 10) requestAnimationFrame(() => this.fitList(tries + 1)); return; }
         const gutter = 16;
         let dx = Math.min(0, window.innerWidth - gutter - box.right);
         if (box.left + dx < gutter) dx = gutter - box.left;

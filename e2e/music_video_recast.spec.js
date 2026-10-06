@@ -197,6 +197,18 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(recast(page, 2).locator("[data-test='swap-saved']")).toBeVisible();
   await expect(recast(page, 2).locator("[data-test='look-trigger']")).toHaveText("Home Blue");
   await expect(offer).toBeHidden();
+
+  // At phone width the wide list opened from the top of a card lands on screen the first time,
+  // not only after a resize refits it (it once measured itself before it was painted).
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await search(page, 1).fill("test athlete");
+  const results = recast(page, 1).locator("[data-test='recast-results']");
+  await expect(results.locator("[data-test='recast-option']").first()).toBeVisible();
+  await page.waitForTimeout(300);
+  const box = await results.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
 });
 
 // The race piece 10's review named: a change made while the pick's save is in flight, then
