@@ -33,20 +33,17 @@ end
 # THE SAME LANE'S STAND-IN FOR ESPN. The draft on a Video Post (X) card reads a
 # team's live record; the test env must not depend on a live sports feed or on
 # what a real team's record happens to be today. Every team gets the same fixed
-# season: 3-1, with a win at 17:00Z on the latest day that carries no prime-time
-# tag (#mnf, #tnf), so the drafted copy reads the same whatever day the lane runs.
+# season: 3-1, with a win yesterday afternoon.
 if Rails.env.test? && ENV["E2E_FAKE_VIDEO_STORAGE"] == "1"
   Rails.application.config.to_prepare do
     Content::DraftXCopy.fetch = lambda do |url|
-      kickoff = 1.day.ago.utc.change(hour: 17)
-      kickoff -= 1.day while kickoff.monday? || kickoff.thursday?
       teams = Team.where(league: "nfl").order(:name).each_with_index.map { |t, i| { "team" => { "id" => (i + 1).to_s, "displayName" => t.name } } }
       case url
       when %r{/teams\z}          then { "sports" => [{ "leagues" => [{ "teams" => teams }] }] }
       when %r{/teams/(\d+)\z}    then { "team" => { "record" => { "items" => [{ "summary" => "3-1" }] } } }
       when %r{/teams/(\d+)/schedule\z}
         id = Regexp.last_match(1)
-        { "events" => [{ "date" => kickoff.strftime("%Y-%m-%dT%H:%MZ"), "shortName" => "E2E @ HOME",
+        { "events" => [{ "date" => 1.day.ago.utc.change(hour: 17).strftime("%Y-%m-%dT%H:%MZ"), "shortName" => "E2E @ HOME",
                          "competitions" => [{ "neutralSite" => false, "status" => { "type" => { "completed" => true } },
                                               "competitors" => [
                                                 { "winner" => true, "score" => { "displayValue" => "27" }, "team" => { "id" => id } },

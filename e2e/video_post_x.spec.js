@@ -9,6 +9,13 @@ const { loginWithMagicLink } = require("./helpers");
 // (config/initializers/e2e_video_storage.rb): every team is 3-1 with a win
 // yesterday, so the copy is fixed whatever the real season is doing.
 
+// The stand-in kicks off at 17:00Z yesterday, so the draft carries the prime-time
+// tag X::PostDraft.slot_tag gives that day: #mnf after a Monday, #tnf after a Thursday.
+function expectedSlotTag() {
+  const day = new Date(Date.now() - 24 * 60 * 60 * 1000).getUTCDay();
+  return { 1: " #mnf", 4: " #tnf" }[day] || "";
+}
+
 async function openVideoPostForm(page) {
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/contents/new");
@@ -41,7 +48,7 @@ test("operator picks the winner, uploads the MP4 and sees the post as X will dra
   const preview = card.locator("[data-test='x-post-preview']");
   await expect(preview).toContainText("Turf Monster");
   await expect(preview).toContainText("@turfmonstershow");
-  await expect(preview.locator("[data-test='x-post-preview-text']")).toHaveText("Bills 3-1 #nfl #nflfootball #buffalo #bills");
+  await expect(preview.locator("[data-test='x-post-preview-text']")).toHaveText(`Bills 3-1 #nfl #nflfootball #buffalo #bills${expectedSlotTag()}`);
   await expect(preview.locator("[data-test='x-post-preview-text'] span").first()).toHaveCSS("color", "rgb(29, 155, 240)");
   await expect(preview.locator("[data-test='video-post-x-preview']")).toHaveAttribute("src", /\/e2e-uploads\/video_posts\/content-[0-9a-f]+\.mp4\?bytes=15$/);
 
