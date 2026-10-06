@@ -186,6 +186,8 @@ class StateStoreContainmentTest < Minitest::Test
       "last_signal_at" => "READ — stats the session's markers for their newest mtime to tell a " \
                           "WORKING agent from a merely resident one (bin/lib/anchor_heartbeat.rb); " \
                           "it opens nothing and mutates nothing",
+      "entries" => "READ — lists the store's markers with their mtimes for the pruner " \
+                   "(bin/lib/marker_prune.rb); its deletes go through delete_entry, which enforces",
       "touched_at" => "READ — stats ONE named marker for its mtime, so a single task's claim can " \
                       "be asked about inside a session holding several " \
                       "(bin/lib/review_worker_pulse.rb); it opens nothing and mutates nothing"
