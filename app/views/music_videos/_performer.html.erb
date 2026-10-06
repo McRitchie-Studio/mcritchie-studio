@@ -1,7 +1,14 @@
-<%# One person on the cast panel, top to bottom: the still and heading; Replace with (the inputs to swap in a new player); the description and sightings; then, pinned to the bottom so cards in a row line up, the Keep Original / Swap back button and who is on screen (the optional artist name, the rolodex). Nothing here has to be pressed before the cast is confirmed. %>
+<%# One person on the cast panel, top to bottom: the still and the title; Replace with (the inputs to swap in a new player); the description and sightings, folded behind the title (window.castCardDisclosure); then, pinned to the bottom so cards in a row line up, the Keep Original / Swap back button and who is on screen (the optional artist name, the rolodex). Nothing here has to be pressed before the cast is confirmed. %>
 <% sightings = performer.sightings_by_time %>
+<% clear_sightings, partial_sightings = sightings.partition { |s| s["visibility"] == "clear" } %>
+<% partial_sightings = partial_sightings.select { |s| s["visibility"] == "partial" } %>
+<%# The title is the named artist's name (an extra is not named), else Person N; it follows naming saves without a reload. %>
+<% title_name = performer.artist&.name unless performer.extra? %>
 <article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
-         data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>" data-named="<%= performer.named? %>">
+         x-data="castCardDisclosure()" @naming-saved.window="cardOnNamed($event.detail)" @resize.window.debounce.200ms="cardFitRow()"
+         data-card-name="<%= title_name %>" data-clear-count="<%= clear_sightings.size %>" data-partial-count="<%= partial_sightings.size %>"
+         data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>" data-named="<%= performer.named? %>"
+         data-level="0" :data-level="cardLevel">
   <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset rounded-t-xl overflow-hidden">
     <% performer.still_object_keys.each do |key| %>
       <% url = still_urls[key] %>
@@ -26,7 +33,20 @@
                                                         fresh_look: local_assigns[:fresh_look], css: "p-4 flex flex-col gap-3 flex-1 min-w-0" } do %>
     <header class="flex items-start justify-between gap-2 min-w-0">
       <div class="min-w-0">
-        <h2 class="text-lg font-bold text-heading"><%= performer.name %></h2>
+        <%# The title is the disclosure: press it for the description and one row of clear sightings, again to fold them. %>
+        <h2 class="min-w-0">
+          <button type="button" @click="cardToggle()" aria-expanded="false" :aria-expanded="(cardLevel > 0).toString()"
+                  aria-controls="person-<%= performer.ordinal %>-details"
+                  class="group flex items-baseline gap-2 min-w-0 max-w-full text-left rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  data-test="performer-title">
+            <span class="min-w-0 text-lg font-bold text-heading truncate group-hover:text-primary" x-text="cardName || '<%= performer.name %>'"
+                  data-test="performer-title-name"><%= title_name.presence || performer.name %></span>
+            <span class="text-3xs text-muted shrink-0" x-show="cardName" <%= "x-cloak" if title_name.blank? %>
+                  data-test="performer-title-ordinal"><%= performer.name %></span>
+            <svg class="w-3.5 h-3.5 text-muted shrink-0 self-center transition-transform" :class="cardLevel > 0 && 'rotate-180'"
+                 viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+          </button>
+        </h2>
         <p class="text-sm text-body break-words" data-test="performer-label"><%= performer.label %></p>
       </div>
       <%# Follows the naming search's saves (window.namingCard dispatches naming-saved). %>
@@ -41,28 +61,43 @@
     <%= render "music_videos/recast", performer: performer, video: video, looks: recast_looks,
                sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready] %>
 
-    <% if performer.confidence_note.present? %>
-      <p class="text-sm text-muted" data-test="performer-note"><%= performer.confidence_note %></p>
-    <% end %>
+    <%# Folded by default. One level: the description and one row of the clearly visible chips, "+N more" for the rest; pressing that row (or +N more) shows every chip in both groups. Chips stay links to their second. %>
+    <% if performer.confidence_note.present? || sightings.any? %>
+      <div id="person-<%= performer.ordinal %>-details" class="space-y-3 min-w-0" x-show="cardLevel > 0" x-cloak data-test="card-details">
+        <% if performer.confidence_note.present? %>
+          <p class="text-sm text-muted" data-test="performer-note"><%= performer.confidence_note %></p>
+        <% end %>
 
-    <% { "clear" => "Clearly visible", "partial" => "Partly in frame or background" }.each do |visibility, heading| %>
-      <% group = sightings.select { |s| s["visibility"] == visibility } %>
-      <% next if group.empty? %>
-      <div data-test="sightings-<%= visibility %>">
-        <p class="label-upper mb-1.5"><%= heading %> <span class="normal-case tracking-normal">· <%= group.size %></span></p>
-        <div class="flex flex-wrap gap-1.5">
-          <% group.each do |s| %>
-            <% href = video.timecode_url(s["t_ms"]) %>
-            <% chip = visibility == "clear" ? "bg-primary/10 text-heading border-primary/20" : "bg-surface-alt text-muted border-subtle" %>
-            <% if href %>
-              <%= link_to video_timecode(s["t_ms"]), href, target: "_blank", rel: "noopener",
-                          class: "font-mono tabular-nums text-xs px-2 py-1 rounded-md border hover:border-primary #{chip}",
-                          data: { test: "sighting", t_ms: s["t_ms"] } %>
-            <% else %>
-              <span class="font-mono tabular-nums text-xs px-2 py-1 rounded-md border <%= chip %>" data-test="sighting" data-t-ms="<%= s["t_ms"] %>"><%= video_timecode(s["t_ms"]) %></span>
+        <% if clear_sightings.any? || partial_sightings.any? %>
+          <%# With no clear chips the row holds only +N more, the way to the partial ones. %>
+          <div data-test="sightings-clear"
+               :class="cardLevel === 1 && 'cursor-pointer'" @click="if (cardLevel === 1 && !$event.target.closest('a')) cardExpandAll()">
+            <% if clear_sightings.any? %>
+              <p class="label-upper mb-1.5">Clearly visible <span class="normal-case tracking-normal">· <%= clear_sightings.size %></span></p>
             <% end %>
-          <% end %>
-        </div>
+            <div id="person-<%= performer.ordinal %>-clear-row" class="flex flex-wrap gap-1.5" data-test="sightings-clear-row">
+              <% clear_sightings.each_with_index do |s, i| %>
+                <%= render "music_videos/sighting_chip", video:, sighting: s, chip: "bg-primary/10 text-heading border-primary/20",
+                           show: "cardLevel === 2 || #{i} < cardFit" %>
+              <% end %>
+              <button type="button" x-show="cardLevel === 1 && cardMore() > 0" x-cloak @click.stop="cardExpandAll()"
+                      aria-expanded="false" aria-controls="person-<%= performer.ordinal %>-details"
+                      class="text-xs px-2 py-1 rounded-md border border-subtle bg-surface-alt text-secondary hover:border-primary hover:text-primary"
+                      x-text="'+' + cardMore() + ' more'" data-test="sightings-more"></button>
+            </div>
+          </div>
+        <% end %>
+
+        <% if partial_sightings.any? %>
+          <div x-show="cardLevel === 2" x-cloak data-test="sightings-partial">
+            <p class="label-upper mb-1.5">Partly in frame or background <span class="normal-case tracking-normal">· <%= partial_sightings.size %></span></p>
+            <div class="flex flex-wrap gap-1.5">
+              <% partial_sightings.each do |s| %>
+                <%= render "music_videos/sighting_chip", video:, sighting: s, chip: "bg-surface-alt text-muted border-subtle" %>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
       </div>
     <% end %>
 
