@@ -50,10 +50,10 @@ done
 ```
 
 `blocked` is an attribute of a `building` task; `--stage blocked` resolves through
-`Task.blocked`. **`bin/task list` prints at most 20 rows per stage**, with no total,
-no truncation notice and no `--limit`. Treat exactly 20 rows as truncated and count
-from `--json` (`bin/task list --stage shipped --json | python3 -c "import json,sys;
-print(len(json.load(sys.stdin)))"`).
+`Task.blocked`. **A bare `bin/task list` prints one page of 20 rows.** When the stage
+holds more, its last line reads `(20 of N — pass --all or --json for every row)`;
+otherwise it reads `(N task(s))`. Pass `--all` to print every row in the same
+three-column form, or `--json` for every row as data. There is no `--limit` flag.
 
 Join the board to GitHub, the highest-value query in the SOP:
 
@@ -177,8 +177,8 @@ proven otherwise.** A cert that produced no output did not pass: under load
 - **`ahead N, behind M`**: the branch was rebased locally and never pushed. Verify
   it touches only its own files before force-pushing:
   ```bash
-  git fetch -q origin release
-  git diff origin/release...HEAD --stat     # must be ONLY this task's files
+  git fetch -q origin accepted
+  git diff origin/accepted...HEAD --stat    # must be ONLY this task's files
   git push --force-with-lease origin feat/<task>
   ```
 
