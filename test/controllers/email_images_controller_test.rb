@@ -36,17 +36,38 @@ class EmailImagesControllerTest < ActionDispatch::IntegrationTest
     assert_no_enqueued_jobs only: EmailImageBuildJob
   end
 
-  test "a signed-in non-admin cannot read, open or spend" do
+  # EVERY ACTION, reads included: the page shows spend and unapproved art, and
+  # three of its actions write. A non-admin reaches none of them.
+  test "a signed-in non-admin is denied on every action" do
     brief = turf_brief
+    artifact = Artifact.create!(kind: "email_header", brief_slug: brief.slug, image_url: "https://assets.example.test/a.jpg")
     log_in_as(@viewer)
 
-    get email_images_path
-    assert_not_equal 200, response.status
-    post email_images_path, params: brief_params(variant: "existing_player")
+    requests = {
+      index: -> { get email_images_path },
+      show: -> { get email_image_path(brief) },
+      preview: -> { get preview_email_image_path(brief, candidate: artifact.slug) },
+      create: -> { post email_images_path, params: brief_params(variant: "existing_player") },
+      update: -> { patch email_image_path(brief), params: { email_image_brief: { headline: "Hijacked" } } },
+      generate: -> { with_env("OPENAI_API_KEY", "sk-test") { post generate_email_image_path(brief) } },
+      approve: -> { post approve_candidate_email_image_path(brief, artifact_slug: artifact.slug) },
+      retire: -> { post retire_candidate_email_image_path(brief, artifact_slug: artifact.slug) }
+    }
+    routed = Rails.application.routes.routes.filter_map { |r| r.defaults[:action] if r.defaults[:controller] == "email_images" }
+    assert_equal routed.map(&:to_sym).uniq.sort, requests.keys.sort, "every routed action is covered here"
+
+    requests.each do |action, request|
+      request.call
+      assert_not_equal 200, response.status, "#{action} answered 200 to a non-admin"
+      assert_no_match(/You're In!|Hijacked/, response.body.to_s, "#{action} leaked the brief")
+    end
+
     assert_nil EmailImageBrief.find_by(variant: "existing_player")
-    with_env("OPENAI_API_KEY", "sk-test") { post generate_email_image_path(brief) }
+    assert_equal "You're In!", brief.reload.headline
+    assert_equal 0, brief.rounds_used
     assert_no_enqueued_jobs only: EmailImageBuildJob
-    assert_equal 0, brief.reload.rounds_used
+    assert_nil artifact.reload.approved_at
+    assert_nil artifact.retired_at
   end
 
   test "an admin opens a brief" do
@@ -147,5 +168,56 @@ class EmailImagesControllerTest < ActionDispatch::IntegrationTest
     get preview_email_image_path(brief, candidate: a.slug)
     assert_select "td[background='https://assets.example.test/a.jpg']"
     assert_select "p", /You're In!/
+  end
+
+  # Carl, piece-1 review: a non-refusal error while starting a round is logged
+  # against the brief and answers as an alert, never a bare 500.
+  test "an unexpected error starting a round shows an alert and logs against the brief" do
+    brief = turf_brief
+    log_in_as(@admin)
+    boom = ->(*, **) { raise ActiveRecord::StatementInvalid, "queue unreachable" }
+
+    with_env("OPENAI_API_KEY", "sk-test") do
+      assert_difference -> { ErrorLog.count }, 1 do
+        EmailImageBuildJob.stub(:perform_later, boom) { post generate_email_image_path(brief) }
+      end
+    end
+
+    assert_redirected_to email_image_path(brief)
+    assert_match(/Could not start a round: .*queue unreachable/, flash[:alert])
+    log = ErrorLog.order(:id).last
+    assert_equal brief.slug, log.target_name
+  end
+
+  test "a refusal is an alert and writes no error log" do
+    brief = turf_brief
+    brief.update_columns(rounds_used: 4)
+    log_in_as(@admin)
+
+    with_env("OPENAI_API_KEY", "sk-test") do
+      assert_no_difference(-> { ErrorLog.count }) { post generate_email_image_path(brief) }
+    end
+    assert_match(/all 4 rounds/, flash[:alert])
+  end
+
+  test "the brief page points to the SOP, keeps Generate as a secondary fallback, and sandboxes the preview" do
+    brief = turf_brief
+    Artifact.create!(kind: "email_header", brief_slug: brief.slug, image_url: "https://assets.example.test/a.jpg")
+    log_in_as(@admin)
+
+    with_env("OPENAI_API_KEY", "sk-test") { get email_image_path(brief) }
+    assert_select "[data-test='sop-note']", /email-image.*SOP/m
+    assert_select "[data-test='generate-form'] button.btn-neutral", /Generate 2 candidates here/
+    assert_select "[data-test='generate-form'] button.btn-primary", 0
+    assert_select "iframe[data-test='email-preview'][sandbox='allow-same-origin']"
+  end
+
+  test "the building status clears its reload timer when Turbo leaves the page" do
+    brief = turf_brief
+    brief.update_columns(build_state: "building", build_started_at: Time.current)
+    log_in_as(@admin)
+
+    get email_image_path(brief)
+    assert_select "[data-test='build-status'][data-state='building'][x-init*='turbo:before-render'][x-init*='clearTimeout']"
   end
 end
