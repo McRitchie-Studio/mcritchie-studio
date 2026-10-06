@@ -18,6 +18,7 @@ class GateRunRetiredCloseTest < ActiveSupport::TestCase
   end
 
   test "[unit] closes only in-flight retired rows, with no verdict, and is idempotent" do
+    settled_at = @settled.reload.finished_at
     freeze_time do
       assert_equal 1, GateRun.close_retired_in_flight!
 
@@ -26,7 +27,8 @@ class GateRunRetiredCloseTest < ActiveSupport::TestCase
       assert_nil @stale.success, "an abandoned run has no verdict; the grader must not count it a failure"
       assert_match(/retired gate/, @stale.metadata["closed_reason"])
       assert @live.reload.in_flight?, "a live gate is not touched"
-      assert_equal 2.days.ago, @settled.reload.finished_at, "a settled retired row keeps its verdict"
+      assert_equal settled_at, @settled.reload.finished_at, "a settled retired row keeps its close"
+      assert @settled.success
 
       assert_equal 0, GateRun.close_retired_in_flight!, "a second run finds nothing to close"
     end
