@@ -32,8 +32,9 @@ class MusicVideos::RunStitchTest < ActiveSupport::TestCase
 
   setup do
     @video = TiledVideo.seed!
-    @video.video_chunks.each { |chunk| TiledVideo.take!(chunk, number: 1, at: 1.hour.ago) }
-    @stitch = MusicVideos::RequestStitch.new(@video.reload).call.stitch
+    @alt = AltVideo.build_from!(@video)
+    @alt.clips.each { |clip| TiledVideo.version!(clip, number: 1, at: 1.hour.ago) }
+    @stitch = MusicVideos::RequestStitch.new(@alt.reload).call.stitch
     @store = Object.new
   end
 
@@ -51,7 +52,7 @@ class MusicVideos::RunStitchTest < ActiveSupport::TestCase
     assert seen["dir_exists"]
     assert_equal @stitch.object_key, seen["object_key"]
     assert_equal TiledVideo::SOURCE, seen["source_object_key"]
-    assert_equal @video.chunk_takes.map(&:object_key), seen["takes"].map { |t| t["object_key"] }
+    assert_equal @alt.clips.map { |c| c.primary_version.object_key }, seen["takes"].map { |t| t["object_key"] }
     assert_equal ["done", 72_000, 2_000_000, 320, 180, "12"],
                  @stitch.reload.attributes.values_at("state", "duration_ms", "byte_size", "width", "height", "frame_rate")
     assert_equal GOOD.report["warnings"], @stitch.warnings
@@ -96,9 +97,9 @@ class MusicVideos::RunStitchTest < ActiveSupport::TestCase
     ran = []
     real = MusicVideos::RunStitch.method(:new)
     MusicVideos::RunStitch.define_singleton_method(:new) { |stitch| ran << stitch.number && Struct.new(:call).new(nil) }
-    StitchVideoJob.perform_now(@video.slug, 1)
-    StitchVideoJob.perform_now(@video.slug, 99)
-    StitchVideoJob.perform_now("no-such-video", 1)
+    StitchVideoJob.perform_now(@alt.slug, 1)
+    StitchVideoJob.perform_now(@alt.slug, 99)
+    StitchVideoJob.perform_now("no-such-video-alt-1", 1)
 
     assert_equal [1], ran
   ensure
