@@ -271,7 +271,10 @@ timeout elapses — instead of aborting the sweep's first run on the first pendi
 workflows on the SHA under test**: the longest `needs:` chain of job `timeout-minutes` plus
 10 min of queue headroom, never below `RELEASE_CI_POLL_TIMEOUT` (default 1200s) and never
 above `RELEASE_CI_POLL_CEILING` (default 7200s); an unreadable workflow set keeps the
-1200s floor. The gem publish gate uses the same budget, because studio-engine's verdict
+1200s floor. Only workflows that trigger on `push` or `pull_request` count: a schedule-,
+`workflow_dispatch`- or `workflow_run`-only workflow (r2-backup, devnet-nightly) never runs
+on the SHA. A hold past one hour re-mints the GitHub App read token, which lives 3600s
+(`CiStatus.gh_read_status`, task `ci-poll-refreshes-its-token`). The gem publish gate uses the same budget, because studio-engine's verdict
 includes Consumer CI, which outlasts 1200s on a fresh tip
 (`bin/lib/ci_poll_budget.rb`, task `gem-gate-outwaits-consumer-ci`). Only the wait on a
 pending verdict widens: red and unreadable still abort on the first read.
