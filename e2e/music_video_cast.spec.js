@@ -39,7 +39,7 @@ test("operator confirms the cast without naming everyone, naming two and marking
   const partial = card(page, 2).locator("[data-test='sightings-partial']");
   const more = card(page, 2).locator("[data-test='sightings-more']");
   const visibleTops = (loc) => loc.evaluateAll((els) => els.filter((e) => e.offsetParent).map((e) => e.getBoundingClientRect().top));
-  await expect(title).toHaveText(/^Person 2/);
+  await expect(title.locator("[data-test='performer-title-name']")).toHaveText("Person 2");
   await expect(title).toHaveAttribute("aria-expanded", "false");
   await expect(details).toBeHidden();
   await title.click();
