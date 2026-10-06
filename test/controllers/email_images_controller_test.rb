@@ -65,7 +65,7 @@ class EmailImagesControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@admin)
     post email_images_path, params: brief_params(headline: "")
     assert_response :unprocessable_content
-    assert_select "[data-test='brief-errors']"
+    assert_select "[data-test='form-errors']"
   end
 
   test "generate with the fake adapter files two candidates" do

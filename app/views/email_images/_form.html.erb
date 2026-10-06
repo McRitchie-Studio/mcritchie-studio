@@ -2,11 +2,7 @@
     variant) is editable; once opened it is fixed, because the candidates are
     stored under that path and the catalog key derives from it. %>
 <% new_brief = brief.new_record? %>
-<% if brief.errors.any? %>
-  <div data-test="brief-errors" role="alert" class="rounded-lg border border-danger/40 bg-danger/10 text-danger-ink p-2 text-2xs">
-    <% brief.errors.full_messages.each do |message| %><p><%= message %></p><% end %>
-  </div>
-<% end %>
+<%= render "shared/form_errors", record: brief, spacing: "mb-3" %>
 <%= form_with model: brief, url: (new_brief ? email_images_path : email_image_path(brief)),
               scope: :email_image_brief, class: "space-y-3", data: { test: "brief-form" } do |f| %>
   <div class="grid gap-3 sm:grid-cols-3">
