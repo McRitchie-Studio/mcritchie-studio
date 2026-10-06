@@ -70,12 +70,29 @@ module Api
         assert_equal "failed", GateRun.last.status
       end
 
-      test "the retired g1_cert key still opens a task row for the local-check indicator; an unknown key is refused" do
-        post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", headers: @headers, as: :json
-        assert_response :created
+      test "[unit] every write on the retired g1_cert key is refused without minting a row" do
+        %w[open sops close].each do |verb|
+          assert_no_difference -> { GateRun.count }, "#{verb} must not mint a g1_cert row" do
+            post "/api/v1/gates/task/#{@task.slug}/g1_cert/#{verb}",
+                 params: { success: true, sop: { sop: "mapped-tests", result: "passed" } },
+                 headers: @headers, as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal "RETIRED_GATE_KEY", response.parsed_body["error_code"], verb
+        end
+      end
 
-        assert_equal "task", GateRun.grain_for("g1_cert")
+      test "[unit] a retired key's old rows still read back through the index" do
+        GateRun.create!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert",
+                        attempt: 1, started_at: 1.hour.ago, finished_at: 50.minutes.ago, success: true)
 
+        get "/api/v1/gates/task/#{@task.slug}", headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal %w[g1_cert], response.parsed_body["data"].map { |run| run["key"] }
+      end
+
+      test "an unknown key is refused, and the refusal lists only the live gates" do
         assert_no_difference -> { GateRun.count } do
           post "/api/v1/gates/task/#{@task.slug}/g0_nothing/open", headers: @headers, as: :json
         end

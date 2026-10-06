@@ -89,8 +89,8 @@ class GateRunRunningSopTest < ActiveSupport::TestCase
   # both of which the board reported as a cert that never ends:
   #
   #   · after close! — created attempt n+1 carrying a lone `running` row. A
-  #     PHANTOM ATTEMPT: Cert::LocalCheckReader reads in-flight attempts, so the
-  #     card showed a finished cert as live until STALE_AFTER, then STALLED forever.
+  #     PHANTOM ATTEMPT: the board's local-check indicator (since removed) read
+  #     in-flight attempts, so the card showed a finished cert as live, then STALLED.
   #   · before close! — repainted `running` over a lane that had already settled.
   #
   # CertEmission::Heartbeat#stop orders shutdown so this does not happen on the

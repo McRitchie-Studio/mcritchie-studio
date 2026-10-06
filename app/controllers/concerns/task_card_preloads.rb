@@ -28,7 +28,7 @@ module TaskCardPreloads
     @resubmissions = Task::Resubmission.for_tasks(tasks)
   end
 
-  # CI meters and local-check indicators for every card about to render.
+  # CI meters for every card about to render.
   def load_task_card_readers(tasks)
     # CI progress bars: one batched read for every open PR's GitHub CI (building
     # through assembled — a shipping builder's PR is live news while it waits on CI),
@@ -37,16 +37,6 @@ module TaskCardPreloads
     # rescue guards the batch itself so a reader failure never 500s the whole board.
     @ci_progress_by_slug = begin
       Ci::ProgressReader.new.progress_by_slug(tasks)
-    rescue StandardError => e
-      ErrorLog.capture!(e)
-      {}
-    end
-    # Local-check indicators: ONE batched read of the in-flight g1_cert attempts
-    # across every card about to render, so a board full of building tasks issues
-    # one GateRun query instead of one per card. Same blast-radius rule as the CI
-    # batch above — a reader failure degrades to no indicators, never a 500.
-    @local_check_by_slug = begin
-      Cert::LocalCheckReader.new.for_tasks(tasks)
     rescue StandardError => e
       ErrorLog.capture!(e)
       {}

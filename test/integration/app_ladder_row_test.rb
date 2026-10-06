@@ -276,12 +276,11 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # THE SAME BUG ONE ROW DOWN, and it was live: /deployments calls load_board (so
-  # @local_check_by_slug is populated) but its card render did not pass it, and
-  # tasks/_task_card falls back to Cert::LocalCheckReader#for_task per card — a
-  # GateRun query for every building card with no PR yet. tasks/_board always passed
-  # the batch; this row now matches.
-  test "the deploy board reads local checks in one batch, not one per card" do
+  # THE SAME BUG ONE ROW DOWN, and it was live once: a card that fell back to its
+  # own gate_runs read cost a query per building card. The local-check indicator
+  # that did it is gone (remove-dead-local-check-indicator); this keeps any per-card
+  # gate read from coming back.
+  test "the deploy board reads gate runs in one batch, not one per card" do
     building_task("mid-cert-alpha")
     one_card = gate_run_queries { get deployments_path }
     assert_response :success
@@ -297,7 +296,7 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
 
   private
 
-  # A `building` task with no PR — the shape whose card reads a local check.
+  # A `building` task with no PR — the shape whose card once read a local check.
   def building_task(slug)
     Task.create!(slug: slug, title: "Local Check Fixture #{slug.split('-').last.capitalize}",
                  stage: "building",
@@ -305,9 +304,8 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
   end
 
   # How many gate_runs SELECTs the render issued. The board reads them a FIXED number
-  # of times whatever the card count — the load_board preload plus the one batched
-  # Cert::LocalCheckReader#for_tasks — while the per-card fallback adds one read per
-  # card. So the count is flat when the batch is wired and grows when it is not.
+  # of times whatever the card count (the load_board preload), while a per-card
+  # fallback would add one read per card. So the count is flat when the batch is wired and grows when it is not.
   #
   # MATCH ON `FROM "gate_runs"`, not on the gate key: these run as PREPARED
   # STATEMENTS, so "g1_cert" is a bind value and never appears in the SQL text. A

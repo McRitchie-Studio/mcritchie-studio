@@ -1,8 +1,9 @@
 module Api
   module V1
     # Gate-run writes — open / append-sop / close for the branded testing gates
-    # (GateRun::GATES: G1 Cert … G4 Ship) on a task or release, plus a read of a
-    # subject's runs. All writes flow through GateRun's own funnel
+    # (GateRun::GATES: DoR … G4 Ship) on a task or release, plus a read of a
+    # subject's runs. A retired key (GateRun::RETIRED_KEYS) is refused on every
+    # write, since each of them can mint a row; its old rows still read. All writes flow through GateRun's own funnel
     # (open!/append_sop!/close!) so attempt semantics live in ONE place.
     #
     # Deliberately NO usage gate here: gate markers are deterministic pipeline
@@ -76,7 +77,12 @@ module Api
       end
 
       def validate_key!
-        unless GateRun::KEYS.include?(gate_key) || GateRun::RETIRED_KEYS.include?(gate_key)
+        if GateRun::RETIRED_KEYS.include?(gate_key)
+          return render_error("#{gate_key} is a retired gate; no producer may write one " \
+                              "(live gates: #{GateRun::KEYS.join(', ')})",
+                              error_code: "RETIRED_GATE_KEY")
+        end
+        unless GateRun::KEYS.include?(gate_key)
           return render_error("unknown gate key #{gate_key.inspect} (one of: #{GateRun::KEYS.join(', ')})",
                               error_code: "INVALID_GATE_KEY")
         end

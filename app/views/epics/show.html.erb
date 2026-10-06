@@ -63,7 +63,6 @@
                 resubmission: @resubmissions&.fetch(task.slug, nil),
                 ever_blocked: @ever_blocked_slugs&.include?(task.slug),
                 ci_progress: @ci_progress_by_slug&.fetch(task.slug, nil),
-                local_check: @local_check_by_slug&.fetch(task.slug, nil),
                 review_in_progress: task.review_in_progress?(events: task.task_events.to_a) %>
         <% end %>
       </div>

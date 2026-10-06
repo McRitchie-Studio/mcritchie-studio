@@ -604,7 +604,7 @@ Rails.application.routes.draw do
           post "conductor_claim/reassign", to: "release_conductor_claims#reassign", as: :conductor_claim_reassign
         end
       end
-      # Gate-run markers — the branded testing gates (GateRun::GATES, G1 Cert …
+      # Gate-run markers — the branded testing gates (GateRun::GATES, DoR …
       # G4 Ship). open/sops/close is the whole write surface; deterministic
       # markers, so NO usage gate here (see Api::V1::GateRunsController).
       scope "gates/:subject_type/:subject_slug", constraints: { subject_type: /task|release/ } do

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { clockFmt, shortFmt, windowFmt, agoFmt, windowState, countdown, localCheckStalled } from "board/ticker";
+import { clockFmt, shortFmt, windowFmt, agoFmt, windowState, countdown } from "board/ticker";
 
 test("the clock reads seconds, then minutes with padded seconds, then hours with padded minutes", () => {
   assert.equal(clockFmt(0), "0s");
@@ -50,11 +50,4 @@ test("a countdown forecasts with ~ and turns negative after the average", () => 
   assert.equal(over.overrun, true);
   assert.equal(over.text, "-30s");
   assert.equal(over.title, "Historical average: 5m 00s · elapsed 5m 30s · over by 30s");
-});
-
-test("a local check stalls only while running and only past its heartbeat deadline", () => {
-  assert.equal(localCheckStalled("running", "100", 101), true);
-  assert.equal(localCheckStalled("running", "100", 100), false);
-  assert.equal(localCheckStalled("passed", "100", 500), false);
-  assert.equal(localCheckStalled("running", "", 500), false);
 });

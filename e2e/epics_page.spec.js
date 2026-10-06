@@ -11,7 +11,7 @@ const { watchPageErrors } = require("./helpers");
 //
 // THE SPEC OWNS ITS OWN FIXTURES and deletes them, rather than seeding
 // e2e/seed.rb: other specs measure the shared board, so a permanently seeded card
-// changes their input (see e2e/board_local_check.spec.js).
+// changes their input (see e2e/board_window_chip.spec.js).
 
 const EPIC = "e2e-epic-view";
 
