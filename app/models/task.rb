@@ -931,8 +931,11 @@ class Task < ApplicationRecord
 
   # Readers and writers for DEVOPS_MIRRORED_KEYS. A reader takes the column and
   # falls back to the devops key for a row the backfill has not reached. A writer
-  # sets both, so an attribute write and a devops write land the same value. An
-  # in-place devops mutation reaches the column at the next save.
+  # sets both, so an attribute write and a devops write land the same value. The
+  # writer also records the value for #mirror_devops_columns to replay, because
+  # mass assignment applies a hash value such as `metadata:` after every scalar,
+  # which would otherwise discard the key the writer just set. An in-place devops
+  # mutation reaches the column at the next save.
   DEVOPS_MIRRORED_KEYS.each do |key|
     define_method(key) do
       super().presence || devops[key].to_s.strip.presence
@@ -940,10 +943,8 @@ class Task < ApplicationRecord
 
     define_method("#{key}=") do |value|
       text = value.to_s.strip.presence
-      merged = (metadata || {}).deep_dup
-      merged["devops"] = {} unless merged["devops"].is_a?(Hash)
-      text ? merged["devops"][key] = text : merged["devops"].delete(key)
-      self.metadata = merged
+      (@devops_column_writes ||= {})[key] = text
+      write_devops_key(key, text)
       super(text)
     end
   end
@@ -2508,11 +2509,23 @@ class Task < ApplicationRecord
   # save. The key is the source while both exist: every writer, old code included,
   # writes it, so a cleared key clears the column too.
   def mirror_devops_columns
+    pending = @devops_column_writes
+    @devops_column_writes = nil
+    pending&.each { |key, text| write_devops_key(key, text) unless devops[key].to_s.strip.presence == text }
     source = metadata.is_a?(Hash) && metadata["devops"].is_a?(Hash) ? metadata["devops"] : {}
     DEVOPS_MIRRORED_KEYS.each do |key|
       value = source[key].to_s.strip.presence
       write_attribute(key, value) unless read_attribute(key) == value
     end
+  end
+
+  # Set or (blank) remove one devops key, as a fresh metadata hash so dirty
+  # tracking sees the change.
+  def write_devops_key(key, text)
+    merged = (metadata || {}).deep_dup
+    merged["devops"] = {} unless merged["devops"].is_a?(Hash)
+    text ? merged["devops"][key] = text : merged["devops"].delete(key)
+    self.metadata = merged
   end
 
   # Strip any devops key that shadows a column, on every save. Two layers on
