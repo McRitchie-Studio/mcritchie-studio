@@ -3,8 +3,7 @@
 # The conductor seam: the shell-safe payload, the session prefix, deploy-span
 # narration, run_test_scope telemetry and the crew-ticker intent writes.
 #
-# Part of the bin/release CLI suite, split by subcommand from the old
-# test/lib/release_cli_test.rb (release-cli-tests-by-subcommand, 2026-10-05). The
+# Part of the bin/release CLI suite, one file per subcommand. The
 # shared subprocess harness, fixtures and stub constants live in
 # test/lib/release_cli_harness.rb. Run directly:
 #   ruby -Itest test/lib/release_cli_conductor_test.rb

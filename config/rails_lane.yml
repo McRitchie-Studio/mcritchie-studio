@@ -48,11 +48,16 @@
 # 166s, 189s and 200s — a 55s spread the packer had predicted as ZERO. Look at what LPT
 # does with a suite this skewed and it is obvious in hindsight. It puts each of the six
 # heaviest files in its own bucket, so each shard's floor becomes ITS HEAVIEST FILE.
-# Shard 1 owned test/lib/release_cli_test.rb (204s local, then the heaviest in the repo)
-# and came last at 200s. (That file was split by subcommand on 2026-10-05, task
-# release-cli-tests-by-subcommand, into test/lib/release_cli_*_test.rb, so it no longer
-# sets the floor; the next heaviest is test/lib/dor_check_test.rb.) YOU CANNOT SHARD BELOW YOUR HEAVIEST FILE, and past the point where
-# the biggest file sets the floor, another shard buys nothing while costing a slot.
+# Shard 1 owned the release CLI suite, then one 204s file and the heaviest in the repo,
+# and came last at 200s. YOU CANNOT SHARD BELOW YOUR HEAVIEST FILE, and past the point
+# where the biggest file sets the floor, another shard buys nothing while costing a slot.
+#
+# THE FLOOR NOW (test/timings.yml, the mean of three green CI runs): the release CLI
+# suite is one file per subcommand, none above 42s, and the heaviest files are
+# test/lib/reviewer_select_test.rb (247s), test/commands/pr_review_command_test.rb
+# (180s), test/lib/dor_check_test.rb (156s) and test/lib/ship_test.rb (133s). Each
+# shard packs to 922s of summed test time, so at four shards no single file sets the
+# floor; the balance does.
 #
 # So four it is, and the next lever is NOT more matrix entries. It is either the 56s of
 # setup that does not shard (container init 20s, apt 11s, gem propagation 11s, ruby 7s),

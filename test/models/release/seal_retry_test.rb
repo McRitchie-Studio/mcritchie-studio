@@ -88,10 +88,10 @@ class Release
       end
     end
 
-    # The subprocess seam: test/lib/release_cli_test.rb drives the REAL ship seal
-    # by loading bin/release, so it cannot inject a sleeper — before the env
-    # override each of its red-seal tests slept a genuine 30s (~90s of suite time,
-    # the "real test sleeps" this round fixes).
+    # The subprocess seam: the release CLI tests drive the REAL ship seal by
+    # loading bin/release, so they cannot inject a sleeper; without the env
+    # override (set in test/lib/release_cli_harness.rb) each red-seal test would
+    # sleep a genuine 30s.
     test "[unit] SEAL_RETRY_DELAY_SECONDS overrides the wait for subprocess ship tests" do
       with_env("SEAL_RETRY_DELAY_SECONDS", "0") do
         assert_equal 0.0, SealRetry.delay_seconds

@@ -2,14 +2,12 @@
 
 # THE SHARED HARNESS for the bin/release CLI tests, test/lib/release_cli_*_test.rb.
 #
-# Every constant, class method and helper that used to sit inside
-# test/lib/release_cli_test.rb lives here, VERBATIM and in its original order: the
+# Every constant, class method and helper the release CLI tests share lives here: the
 # subprocess runner (run_ruby / run_cli / eval_helper, with its OutboundSeams env,
 # isolated lock_dir and SUBPROCESS_ATTEMPTS retry), the git fixtures
-# (build_sibling_fixture, run_git, git_out) and every stub constant. The tests were
-# split by bin/release subcommand into one file each (release-cli-tests-by-subcommand,
-# 2026-10-05); each file subclasses ReleaseCliHarness, so every test still runs against
-# exactly the harness it was written against, not a copy of it.
+# (build_sibling_fixture, run_git, git_out) and every stub constant. The tests sit one
+# file per bin/release subcommand, and each file subclasses ReleaseCliHarness, so every
+# test runs against this one harness, not a copy of it.
 #
 # Why one base class and not a module: the tests call `self.class.lock_dir` and
 # `self.class.stub_repo`, and reach the stub constants by bare name. A subclass

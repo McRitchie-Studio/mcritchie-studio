@@ -50,7 +50,7 @@
 #
 #   local  CI    file
 #   101s   193s  test/lib/dor_check_test.rb        (+92s)
-#   204s   285s  test/lib/release_cli_test.rb      (+81s)
+#   204s   285s  the release CLI suite, then one file (+81s)
 #   114s   173s  test/commands/pr_review_command_test.rb (+59s)
 #    30s    88s  test/lib/reviewer_select_test.rb  (+58s)
 #
