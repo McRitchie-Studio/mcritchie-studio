@@ -263,5 +263,5 @@ so the bloom always reaches ≥4px past the ring no matter how small
 scales — keep a card-sized example showing the effect as designed, add a
 small-host example with scaled knobs — so the next person sizing it down reads
 the answer instead of rediscovering it. `mcritchie-studio`'s
-`tasks/_deployments_live_fx` already carries a worked small-host override
+`tasks/_deployments_live_fx` (its `.release-meter-glow` CSS) carries a worked small-host override
 (2px ring, 4px bloom, on a wrapper sized to the bar) to copy from.

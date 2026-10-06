@@ -16,7 +16,7 @@
        ("opacity-75" unless fresh_deploy),
        ("studio-border-glow release-fresh-glow lbfx-fresh-deploy" if fresh_deploy)
      ].compact.join(" ") %>
-  <%# The ReleaseFx router (tasks/_release_fx_router) reads all of these:
+  <%# The ReleaseFx router (board/release_fx_dom) reads all of these:
       data-fresh-deploy + data-shipped-at-ms drive the deploy glow, a WINDOW
       (fresh_deploy_window_ms — 60s in production, injectable for e2e) that resumes
       at the right phase on a reload rather than restarting. data-fresh-window-ms

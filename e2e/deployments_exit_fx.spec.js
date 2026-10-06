@@ -38,7 +38,7 @@ async function recordGhosts(page) {
           // offset. This used to be `setTimeout(() => record.mid = sample(node), 320)`,
           // and the numbers say why that could only ever work by luck:
           //
-          //   _deployments_live_fx.html.erb: SLIDE_OFF_MS = 300
+          //   board/live_fx: SLIDE_OFF_MS = 300
           //   slide.finished.then(() => ghost.remove())   <- the ghost is DELETED the
           //                                                 instant the animation ends
           //
