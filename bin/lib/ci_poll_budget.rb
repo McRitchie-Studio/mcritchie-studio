@@ -16,7 +16,8 @@ require "yaml"
 # THE BUDGET, BY CONSTRUCTION. GitHub kills a job at its `timeout-minutes`, so a
 # workflow cannot stay pending past the longest `needs:` chain of those timeouts (plus
 # queue time). Workflows on one SHA run in parallel, so the verdict settles within the
-# LONGEST workflow's chain. The budget is that chain plus HEADROOM_S for runner queueing,
+# LONGEST workflow's chain, counting only the workflows that run on push or pull_request
+# (gating?). The budget is that chain plus HEADROOM_S for runner queueing,
 # never below the operator's floor (RELEASE_CI_POLL_TIMEOUT) and never above a hard
 # ceiling (RELEASE_CI_POLL_CEILING).
 #
@@ -61,10 +62,34 @@ module CiPollBudget
     raw.is_a?(Numeric) && raw.positive? ? raw.ceil : GITHUB_DEFAULT_JOB_MINUTES
   end
 
-  # Seconds to hold a pending verdict, given every workflow text on the SHA. Returns the
-  # floor when no workflow yields a chain, so an unreadable set never widens the wait.
+  # The events whose runs produce the verdict a release gate reads. A schedule-,
+  # workflow_dispatch- or workflow_run-only workflow (r2-backup, devnet-nightly,
+  # engine-lock-automerge) never runs on the SHA under test, so its chain must not size
+  # the wait (task ci-poll-refreshes-its-token). Measured 2026-10-06, none of them yet
+  # outlasts its repo's ci.yml, so this is the guard against the day one does: a slow
+  # nightly would otherwise hold every gate for a run that never comes.
+  GATING_EVENTS = %w[push pull_request].freeze
+
+  # TRUE when the workflow triggers on push or pull_request. Reads `on:` in all three
+  # spellings GitHub accepts (a string, a list, a map of event => filters) and under
+  # BOTH keys Psych may give it: YAML 1.1 reads a bare `on` as the boolean true.
+  # Unparseable or trigger-less text is not gating: GitHub would not run it.
+  def gating?(yaml_text)
+    doc = YAML.safe_load(yaml_text.to_s, aliases: true)
+    return false unless doc.is_a?(Hash)
+
+    on = doc.key?("on") ? doc["on"] : doc[true]
+    events = on.is_a?(Hash) ? on.keys : Array(on)
+    events.map(&:to_s).intersect?(GATING_EVENTS)
+  rescue StandardError
+    false
+  end
+
+  # Seconds to hold a pending verdict, given every workflow text on the SHA. Only the
+  # gating workflows count. Returns the floor when none yields a chain, so an unreadable
+  # set never widens the wait.
   def budget_s(workflow_texts, floor:, ceiling:)
-    chains = Array(workflow_texts).filter_map { |text| critical_path_minutes(text) }
+    chains = Array(workflow_texts).select { |text| gating?(text) }.filter_map { |text| critical_path_minutes(text) }
     return floor if chains.empty?
 
     sized = (chains.max * 60) + HEADROOM_S

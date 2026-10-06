@@ -50,7 +50,7 @@ class CiPollBudgetTest < Minitest::Test
   end
 
   def test_parallel_workflows_budget_for_the_slowest_one
-    fast = "jobs:\n  a:\n    timeout-minutes: 10\n"
+    fast = "on: push\njobs:\n  a:\n    timeout-minutes: 10\n"
 
     assert_equal (95 * 60) + CiPollBudget::HEADROOM_S,
                  CiPollBudget.budget_s([fast, CONSUMER_CI_SHAPE], floor: 0, ceiling: 99_999)
@@ -59,7 +59,33 @@ class CiPollBudgetTest < Minitest::Test
   # A job with no timeout runs to GitHub's 360-minute default; the ceiling bounds it.
   def test_a_job_without_a_timeout_counts_as_githubs_default_and_the_ceiling_caps_it
     assert_equal 360, CiPollBudget.critical_path_minutes("jobs:\n  a:\n    runs-on: x\n")
-    assert_equal 7200, CiPollBudget.budget_s(["jobs:\n  a:\n    runs-on: x\n"], floor: 1200, ceiling: 7200)
+    assert_equal 7200, CiPollBudget.budget_s(["on: push\njobs:\n  a:\n    runs-on: x\n"], floor: 1200, ceiling: 7200)
+  end
+
+  # [unit] ONLY GATING WORKFLOWS SIZE THE WAIT (task ci-poll-refreshes-its-token). A
+  # schedule- or dispatch-only workflow never runs on the SHA under test, so its chain,
+  # however long, must not widen the hold.
+  NIGHTLY = "name: devnet-nightly\non:\n  schedule:\n    - cron: '0 6 * * *'\n  workflow_dispatch:\n" \
+            "jobs:\n  nightly:\n    runs-on: x\n"
+
+  def test_a_schedule_only_workflow_does_not_size_the_budget
+    assert_equal 360, CiPollBudget.critical_path_minutes(NIGHTLY), "its chain alone would hit the ceiling"
+    assert_equal (95 * 60) + CiPollBudget::HEADROOM_S,
+                 CiPollBudget.budget_s([NIGHTLY, CONSUMER_CI_SHAPE], floor: 0, ceiling: 99_999)
+    assert_equal 1200, CiPollBudget.budget_s([NIGHTLY], floor: 1200, ceiling: 7200)
+  end
+
+  # Every `on:` spelling GitHub accepts. Psych reads a bare `on` as the boolean true,
+  # which is why CONSUMER_CI_SHAPE's `on: [push]` is the case that proves the key read.
+  def test_gating_reads_every_on_spelling
+    assert CiPollBudget.gating?(CONSUMER_CI_SHAPE)
+    assert CiPollBudget.gating?("on: pull_request\njobs: {}\n")
+    assert CiPollBudget.gating?("on:\n  push:\n    branches: [accepted]\njobs: {}\n")
+    assert CiPollBudget.gating?("'on': [workflow_dispatch, push]\njobs: {}\n")
+    refute CiPollBudget.gating?("on: [schedule, workflow_dispatch]\njobs: {}\n")
+    refute CiPollBudget.gating?("on:\n  workflow_run:\n    workflows: [CI]\njobs: {}\n")
+    refute CiPollBudget.gating?("jobs:\n  a:\n    runs-on: x\n"), "no trigger: GitHub never runs it"
+    refute CiPollBudget.gating?(": : not yaml [")
   end
 
   # UNKNOWN NEVER WIDENS: nothing readable keeps the operator's floor exactly.

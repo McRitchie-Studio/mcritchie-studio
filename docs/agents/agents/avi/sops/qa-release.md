@@ -208,6 +208,17 @@ bin/release prepare --yes
    self-gated gem in a gem-only release earns the same identical-tree credit. A red gate,
    and why you must **not** blank the registry's `qa_test_cmd`:
    [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md).
+
+   **How long a sweep can hold.** Each repo's pending wait is sized from its own
+   push and pull_request workflows, up to about 105 minutes for studio-engine. Repos
+   gate **one after another**, not in parallel, and the gem gate runs before the app
+   gates, so one sweep's worst case is the SUM of its repos' waits. That can exceed the
+   2-hour cap on a background command. Run `prepare` where it may outlive that cap
+   (Alex's terminal), or watch for a cut-off and re-run: a re-run reads the greens
+   that landed meanwhile on its first poll. `RELEASE_CI_POLL_TIMEOUT` is now a **floor**: raising it
+   lengthens the wait, and lowering it never shortens a workflow-sized one. A wait past
+   one hour re-mints the GitHub App read token (the sweep prints `re-minted the GitHub
+   App read token`), so a long hold no longer ends in a credentials abort.
 6. Deploy QA and wait for boot. Gem members are QA'd through the consumer's bumped lock;
    a **gem-only release has no app QA deploy** and assembles on its G3 CI verdict
    (/deployments shows a **GEM-ONLY** badge and `💎 <gem> <version>`).

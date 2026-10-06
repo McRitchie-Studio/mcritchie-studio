@@ -748,7 +748,16 @@ module CiStatus
   #     on exit status alone would mint a token on every red PR in the fleet — and a
   #     404 or a merge conflict re-run with a fresh token just fails again, slower.
   #     Only the SHAPE of the refusal (GhAuthRetry.auth_failure?) may trigger a mint.
-  #   * ONE mint per process, memoized — not one per call.
+  #   * ONE mint per TOKEN LIFETIME, memoized — not one per call. It used to be one
+  #     per PROCESS, and that was wrong for the one long-lived caller: the release
+  #     gates now hold a pending verdict for up to ~105 minutes (bin/lib/ci_poll_budget.rb),
+  #     and an App installation token lives 3600 s. A wait past the hour read
+  #     :unreadable and aborted with a message blaming credentials that were fine a
+  #     re-mint away (task ci-poll-refreshes-its-token). So a held token is re-minted
+  #     when it reaches TOKEN_REFRESH_AGE_S, and again when a read is refused (401)
+  #     after the token has aged — but never twice inside MINT_RETRY_FLOOR_S, so a
+  #     token GitHub refuses outright, or a broker that cannot mint, costs one attempt
+  #     a minute rather than one per read.
   #   * A mint that cannot happen returns gh's ORIGINAL refusal. The gate then prints
   #     what GitHub actually said, which is the honest thing to show.
   #
@@ -773,10 +782,77 @@ module CiStatus
     override.empty? ? "gh" : override
   end
 
+  # An App installation token lives 3600 s. Re-mint at 50 minutes, the same freshness
+  # window bin/gh-token serves its cache by, so a read never rides a token in its last
+  # ten minutes.
+  TOKEN_LIFETIME_S = 3600
+  TOKEN_REFRESH_AGE_S = 3000
+  # The least time between two mint ATTEMPTS. A refused fresh token, or a broker that
+  # cannot mint (no 1Password session), must not turn a 15-second poll into a mint per
+  # read. One minute still recovers an expiry long before any gate's deadline.
+  MINT_RETRY_FLOOR_S = 60
+
+  # gh's 401 line, matched beside GhAuthRetry's wording: an expired installation token
+  # answers `gh: Bad credentials (HTTP 401)`, and the status line is the part that does
+  # not depend on GitHub's prose.
+  HTTP_401 = /\bHTTP 401\b/
+
   # Forget any minted token. Test seam (module state outlives one example) and a
   # deliberate hook for a long-lived process that wants to re-mint.
   def self.reset_gh_auth!
     @gh_token = nil
+    @gh_token_minted_at = nil
+    @gh_mint_attempted_at = nil
+    @gh_refreshes = 0
+  end
+
+  # The clock token age is read against: monotonic seconds. TEST SEAM: assign a
+  # callable to stand in for an hour of wall time; nil restores the real clock.
+  class << self
+    attr_writer :clock
+  end
+
+  def self.now_s
+    @clock ? @clock.call : Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  end
+
+  # What a caller may SAY about the held token: whether there is one, its LENGTH, its
+  # age, and how many times it was re-minted. Never the token: this is the whole of
+  # what a log line may carry.
+  def self.gh_auth_summary
+    {
+      held: !@gh_token.nil?,
+      token_length: @gh_token.to_s.length,
+      age_s: @gh_token_minted_at ? (now_s - @gh_token_minted_at).floor : nil,
+      refreshes: @gh_refreshes.to_i
+    }
+  end
+
+  def self.gh_auth_refusal?(body)
+    GhAuthRetry.auth_failure?(body) || HTTP_401.match?(body.to_s)
+  end
+
+  # TRUE when the held token has reached its re-mint age.
+  def self.gh_token_aging?
+    !@gh_token.nil? && @gh_token_minted_at && (now_s - @gh_token_minted_at) >= TOKEN_REFRESH_AGE_S
+  end
+
+  # Mint a token through bin/gh-token and hold it, unless an attempt ran inside
+  # MINT_RETRY_FLOOR_S. Returns true when a fresh token is now held. A failed mint
+  # KEEPS any token already held: an aging token may still have minutes left, and
+  # the read that follows reports GitHub's own answer either way.
+  def self.mint_gh_token!
+    now = now_s
+    return false if @gh_mint_attempted_at && (now - @gh_mint_attempted_at) < MINT_RETRY_FLOOR_S
+
+    @gh_mint_attempted_at = now
+    token = GhAuthRetry.mint
+    return false unless token
+
+    @gh_refreshes = @gh_refreshes.to_i + 1 if @gh_token
+    @gh_token = token
+    @gh_token_minted_at = now
+    true
   end
 
   # The authenticated read, WITH ITS OUTCOME: [body, ok].
@@ -789,11 +865,10 @@ module CiStatus
   # changed nothing" from "GitHub refused the token". Handing back the exit status is
   # what lets that gate refuse instead of silently grading the local working tree.
   def self.gh_read_status(*args)
+    mint_gh_token! if gh_token_aging?
     body, ok = gh_capture(args)
-    return [body, ok] if ok || @gh_token || !GhAuthRetry.auth_failure?(body)
-
-    @gh_token = GhAuthRetry.mint
-    return [body, false] unless @gh_token
+    return [body, ok] if ok || !gh_auth_refusal?(body)
+    return [body, false] unless mint_gh_token!
 
     gh_capture(args)
   end
