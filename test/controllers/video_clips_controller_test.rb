@@ -140,9 +140,10 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='chunks-locked']", false, "chunks no longer wait for the cast"
   end
 
-  # bin/digest-video cuts the chunks before anyone is cast: the page lists them,
-  # with the hand-off and the generic prompt, while the cast still waits.
-  test "an unconfirmed video lists the chunks the digest cut, generic prompt and all" do
+  # bin/digest-video cuts the chunks before anyone is cast: the page lists them
+  # while the cast still waits, and Build Clips stays off until the confirm
+  # (the hand-off and the prompt live on an alt video's clip cards).
+  test "an unconfirmed video lists the chunks the digest cut, with Build Clips off" do
     video = NightCallCast.seed!
     video.update!(duration_ms: 30_000)
     rows = MusicVideos::ChunkTiler.windows(30_000).map do |w|
@@ -155,9 +156,8 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-test='video-stage']", "Digested"
-    assert_select "[data-test='chunk-row']", 2
-    assert_select "[data-test='chunk-take-state']", /No take yet/
+    assert_select "[data-test='chunk-window']", 2
     assert_select "[data-test='chunks-empty']", false
-    assert_includes response.body, ERB::Util.html_escape(MusicVideos::ClipPrompt.fill(target: nil))
+    assert_select "[data-test='build-clips-form'] button[disabled][title='Confirm the cast first']", "Build Clips"
   end
 end
