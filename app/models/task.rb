@@ -935,10 +935,11 @@ class Task < ApplicationRecord
   # writer also records the value for #mirror_devops_columns to replay, because
   # mass assignment applies a hash value such as `metadata:` after every scalar,
   # which would otherwise discard the key the writer just set. An in-place devops
-  # mutation reaches the column at the next save.
+  # mutation reaches the column at the next save. A record loaded through a
+  # `select` that omits the column reads the key, never MissingAttributeError.
   DEVOPS_MIRRORED_KEYS.each do |key|
     define_method(key) do
-      super().presence || devops[key].to_s.strip.presence
+      (has_attribute?(key) ? super() : nil).presence || devops[key].to_s.strip.presence
     end
 
     define_method("#{key}=") do |value|
@@ -2514,6 +2515,8 @@ class Task < ApplicationRecord
     pending&.each { |key, text| write_devops_key(key, text) unless devops[key].to_s.strip.presence == text }
     source = metadata.is_a?(Hash) && metadata["devops"].is_a?(Hash) ? metadata["devops"] : {}
     DEVOPS_MIRRORED_KEYS.each do |key|
+      next unless has_attribute?(key)
+
       value = source[key].to_s.strip.presence
       write_attribute(key, value) unless read_attribute(key) == value
     end

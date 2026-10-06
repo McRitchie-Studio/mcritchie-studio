@@ -74,6 +74,15 @@ class TaskDevopsMirroredColumnsTest < ActiveSupport::TestCase
     assert_equal PR_URL, t.as_json["pr_url"], "the API's top-level field reads the fallback too"
   end
 
+  test "[unit] a select that omits the columns reads the keys" do
+    t = task("pr_url" => PR_URL, "branch" => "feat/partial")
+    partial = Task.where(id: t.id).select(:id, :slug, :metadata).first
+
+    assert_equal PR_URL, partial.pr_url
+    assert_equal "feat/partial", partial.branch
+    assert_equal "mcritchie-studio", partial.release_repo
+  end
+
   test "[unit] an attribute write sets the column and the key" do
     t = task
     t.update!(pr_url: " #{PR_URL} ", approval_status: "approved")
