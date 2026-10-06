@@ -7,7 +7,8 @@
 #   ruby -Itest test/commands/measure_test_timings_test.rb
 #
 # One tier (backend shape):
-#   [unit] the generator's fold over synthetic shard receipts; no suite run.
+#   [integration] the real binary, run against the real lane manifest, over synthetic
+#   shard receipts; no suite run.
 
 require "minitest/autorun"
 require "json"
