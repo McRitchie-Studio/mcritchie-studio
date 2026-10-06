@@ -448,8 +448,8 @@ jobs:
         # long before it can take the whole job down with it.
         #
         # `libjemalloc2` is deliberately absent from THIS list where the other jobs
-        # carry it: it is a PRODUCTION allocator this repo LD_PRELOADs in the
-        # Dockerfile, and nothing on the test path references it. `curl`,
+        # carry it: it is a production memory allocator, and nothing on the test path
+        # loads it. `curl`,
         # `postgresql-client` and `libvips` all stay — measured, not assumed:
         # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
         # and bin/agent-worktree shells `psql` to do it, and libvips is required
@@ -598,8 +598,8 @@ jobs:
         # long before it can take the whole job down with it.
         #
         # `libjemalloc2` is deliberately absent from THIS list where the other jobs
-        # carry it: it is a PRODUCTION allocator this repo LD_PRELOADs in the
-        # Dockerfile, and nothing on the test path references it. `curl`,
+        # carry it: it is a production memory allocator, and nothing on the test path
+        # loads it. `curl`,
         # `postgresql-client` and `libvips` all stay — measured, not assumed:
         # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
         # and bin/agent-worktree shells `psql` to do it, and libvips is required
