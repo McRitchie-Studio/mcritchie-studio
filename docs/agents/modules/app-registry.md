@@ -1,20 +1,67 @@
 # App Registry
 
-The managed app registry lives in `mcritchie-studio/config/satellites.yml`.
-It is the source of truth for satellite apps, their primary ports, reserved
-port ranges, deploy provider, production URL, SSO role, and lifecycle status.
+`mcritchie-studio/config/apps.yml` is the app catalog: one record per app with
+its slug, name, glyph, status-line color, tier, status, port block, Heroku app,
+production and QA URLs, whether it runs on studio-engine, whether McRitchie
+Studio hosts it, and its `/stack` workspace. `AppCatalog` (`lib/app_catalog.rb`)
+loads and validates it once and hands out frozen values. Gems and the on-chain
+program sit in its `libraries:` list: they carry a glyph and a color but no tier,
+status or port.
 
-McRitchie Studio itself is the implicit hub at `3000-3099`; it does not appear
-in `config/satellites.yml`.
+What derives from the catalog:
+
+- `ApplicationHelper::APP_EMOJIS`, the board's app glyphs
+- `ReleaseNotes::Formatter::APP_GROUPS`, the release-notes groups
+- the `App` rows `db/seeds/00_apps.rb` upserts (`bin/rails apps:seed`), which tint
+  the status line
+- the app tier and status on `/stack` and `/stack/matrix`
+- the badge-glyph check in `bin/register-app`
+
+Three registries keep their own readers and are held to the catalog by
+`test/lib/app_registry_test.rb`, which fails on any slug, port, Heroku app,
+status word or engine flag that disagrees:
+
+- `config/satellites.yml`: port blocks, navbar links, `bin/ecosystem-build`
+- `config/release_repos.yml`: how each repo ships (gems stay here)
+- `config/qa_environments.yml`: QA and production targets
+
+McRitchie Studio itself is the implicit hub at `3000-3099`; it has a catalog
+record but no `config/satellites.yml` row.
+
+## Adding an app
+
+1. Add one record to `config/apps.yml`. Every field is required; write `null`
+   where one does not apply. Pick an unused glyph and the next free port block.
+2. Run `bin/rails test test/lib/app_catalog_test.rb test/lib/app_registry_test.rb`
+   and fix what it names: usually a `config/satellites.yml` row for the port block
+   (`bin/register-satellite`) and a `config/release_repos.yml` entry
+   (`bin/register-app`).
+3. The board glyph, the release-notes group and the `App` row follow from the
+   record; `bin/rails apps:seed` writes the row on deploy.
+
+## Tiers and statuses
+
+| Tier | Meaning |
+|------|---------|
+| Studio | McRitchie Studio itself |
+| Product | A product we build and run, ours or a client's |
+| Basic | A small site: a family site or a showcase rebuild |
+
+| Status | Meaning |
+|--------|---------|
+| Active | Live and in use |
+| Delinquent | Live, but not in good standing |
+| Showcase | Live as a demonstration of the work |
+| Archived | Not running as a product; the record stays so its port block stays reserved. Tier is blank |
 
 ## Status-line identity (App model)
 
-Per-app **status-line color + emoji** live in the `App` model
-(`app/models/app.rb`, seeded by `db/seeds/00_apps.rb`) — the canonical source
-`bin/statusline` uses to tint the app slug so a glance tells you the app:
-McRitchie Studio lavender, Turf Monster green, etc. This is *separate* from
-`config/satellites.yml` / the `APP_OVERRIDES` hash in `bin/agent-worktree` (ports
-+ deploy metadata): edit colors here, ports there.
+Per-app **status-line color + emoji** reach `bin/statusline` through the `App`
+model (`app/models/app.rb`), whose rows `db/seeds/00_apps.rb` writes from
+`config/apps.yml`, so a glance tells you the app: McRitchie Studio lavender,
+Turf Monster green, etc. Edit a color in the catalog; the `APP_OVERRIDES` hash
+in `bin/agent-worktree` holds only desk runtime settings (stack, session keys,
+squatted ports).
 
 The color rides to the status line without DB access (`bin/task` and
 `bin/agent-worktree` are API clients): `Task#sync_app_identity` stamps
@@ -144,54 +191,52 @@ bin/session-kickoff pokemon  # return to the Pokémon
 
 ## Current Decisions
 
-| App | Registry status | Primary port | Reserved range | Notes |
-|-----|-----------------|--------------|----------------|-------|
-| McRitchie Studio | implicit active hub | 3000 | 3000-3099 | Bootstrap/docs anchor |
-| Turf Monster | active satellite | 3100 | 3100-3199 | Managed by `bin/ecosystem-build` |
-| Tax Studio | planned satellite | 3200 | 3200-3299 | Keep reserved unless the app is deliberately dropped |
-| 📇 Rolio | release-managed standalone with reserved satellite range | 3300 | 3300-3399 | Dormant since the 2026-07-03 audit; QA/prod in release registries; satellite range protected until promoted |
-| Chain Ops | planned satellite | 3400 | 3400-3499 | Solana environment control plane; v1 localnet utility |
-| 📐 McRitchie Industries | **active managed satellite** | 3500 | 3500-3599 (3510 reserved — MSAA squatter) | Confidential business knowledge base — the store of record for all business data, documentation, and context: acquisitions the flagship domain, plus companies, financials, and client records, kept as version-controlled `business-data/` files and the app DB. Replaces the retired `acquisition-studio` prototype and inherits its range. Tier decision (2026-07-29, hosting-onboarding task): **managed satellite** — studio-engine + SSO runtime, auth enforced app-wide, three-rung ladder from birth, registered in `config/satellites.yml` (active), release-conductor deploys via `config/release_repos.yml` (git_push_heroku) + `config/qa_environments.yml` (Heroku `mcritchie-industries-qa` / `mcritchie-industries`; canonical host `www.mcritchie.industries`). Repo `McRitchie-Studio/mcritchie-industries` (private) |
-| 🐉 Cyvasse | planned managed satellite | 3600 | 3600-3699 | Hex strategy board game, revived from Alex's first app (2014-15). Tier decision (2026-09-25, epic `cyvasse-revival`): **managed satellite** on studio-engine, three-rung ladder from birth, registered in `config/satellites.yml` (planned) and `config/release_repos.yml` (three-rung). Release-conductor deploys via `config/release_repos.yml` (git_push_heroku to Heroku `cyvasse`; ship gate `test_cmd` = CI's full suite; canonical host `https://cyvasse.xyz` (2026-09-30, task `cyvasse-canonical-domain`; the old `cyvasse.mcritchie.studio` 301s there, and stays in `config/satellites.yml` so the subdomain stays reserved). **No QA environment, by Alex's decision** (2026-09-25: no `cyvasse-qa` without a free tier), so it declares `qa_evidence: exempt` — the first deployable app exempted on cost rather than because QA does not apply. Repo `McRitchie-Studio/cyvasse` (public) |
-| 🎞️ Dads App | release-managed standalone with reserved range | 3700 | 3700-3799 | Public photo slideshow of Greig McRitchie (Alex's dad) at greigmcritchie.com, successor to the 2015 gift on the dead `vast-chamber-8478`. Tier decision (2026-09-26, epic `dads-app`): **release-managed standalone**: no studio-engine, **no database** (Rails 8.1 without ActiveRecord), three-rung ladder from birth. `config/satellites.yml` holds a `status: reserved` row for the port block only (that row also makes it deskable through `bin/agent-worktree`, like rolio); `config/release_repos.yml` deploys it by git_push_heroku to Heroku `dads-app` on one Eco dyno (about $5/month), ship gate `test_cmd` = CI's suite verbatim (`bin/rails test`, the `test` job verbatim; the `system-test` job's verdict gates too, and no `db:test:prepare`), smoke on the herokuapp host until the Name.com records land. **No QA environment, by Alex's cost decision** (option C, one Eco dyno, over GitHub Pages and hosting inside moms-app), so it declares `qa_evidence: exempt`; the recorded line survives as history; since 2026-09-28 dads-app is on profile `standalone-heroku`, whose one fleet decision in `config/app_profiles.yml` is what `repos_test.rb` checks. Known desk gap: `bin/agent-worktree up` runs `db:prepare`, which a no-database app lacks, so a local stack needs a stackless override first. Repo `McRitchie-Studio/dads-app` (public) |
-| 🎲 Prisoners Dilemma · 🏈 Weekly Lock · 📣 Rantly · 🗂️ Portfolio | release-managed standalones with reserved ranges | 3800 · 3900 · 4000 · 4100 | 3800-4199 (one block each) | Showcase rebuilds built from `/build` (task `register-showcase-apps`, 2026-09-26). Tier decision: **release-managed standalone**, registered exactly like Dads App: no studio-engine, **no database**, three-rung ladder from birth, `status: reserved` rows in `config/satellites.yml`, and git_push_heroku in `config/release_repos.yml` to Heroku `mcr-<repo>` with ship gate `test_cmd` = CI's `test` job verbatim (`bin/rails test`; the `system-test` job's verdict gates too). Smoke on the herokuapp host until `<repo>.mcritchie.studio` DNS and ACM land. **No QA environments, by Alex's choice**: asked whether they should get QA copies or ship straight to production, he selected "No QA copies (Recommended)" (the option text was the agent's), so each declares `qa_evidence: exempt`. Repos `McRitchie-Studio/<repo>` (public) |
-| 🍽️ 10&5 Hospitality · 🔎 Search Position | release-managed standalones with reserved ranges | 4200 · 4300 | 4200-4399 (one block each) | Showcase rebuilds of 10&5 Hospitality, a restaurant mystery-shopper platform (amcritchie/garret-app, 2015-17), and a Google search position checker (amcritchie/google-search-position, 2015), task `register-two-more-showcase-apps`, 2026-09-26. Registered exactly like the four showcase apps above: no studio-engine, **no database**, three-rung ladder from birth, `status: reserved` rows in `config/satellites.yml`, git_push_heroku to Heroku `mcr-10and5` / `mcr-search-position` on one Eco dyno each, ship gate `test_cmd` = CI's `test` job verbatim (`bin/rails test`). Smoke on the herokuapp host until the `<repo>.mcritchie.studio` CNAMEs and ACM land. **No QA environments**, under the same selection ("No QA copies (Recommended)"), which Alex asked to extend to these two, so each declares `qa_evidence: exempt`. Repos `McRitchie-Studio/10and5` and `McRitchie-Studio/search-position` (public) |
+The catalog holds each app's tier, status and targets; this table adds the
+deployment shape.
 
-Do not reuse `3200-4399`. Rolio is already in `config/satellites.yml` with
-`status: reserved`, which protects its port block without adding it to the
-managed rebuild or hub navigation. Rolio is also release-managed for Heroku
-deploys through `config/release_repos.yml` and `config/qa_environments.yml`;
-that release metadata does not make it an active Studio Engine satellite.
-Rolio has been **dormant** since the 2026-07-03 audit: its 44 board tasks are
-archived, dependabot config is removed, and its Heroku dynos (`rolio-prod`,
-`rolio-qa`) remain up pending the operator-reserved scale-down — Alex
-runs `heroku ps:scale web=0` on both apps himself. Nothing needs draining or
-backup first: neither app has Heroku add-ons or API keys in config vars, and
-the SQLite demo data reseeds on boot. To wake rolio up: scale web dynos back
-to 1, restore `.github/dependabot.yml` (revert rolio commit `a79e818`; the
-file content is blob `f0527e6`), and delete `test/dormancy_test.rb` (revert
-`d10b9ec`), which guards the config's absence.
+| App | Tier · status | Port block | Shape |
+|-----|---------------|------------|-------|
+| 🪎 McRitchie Studio | Studio · Active | 3000-3099 | The hub; deploys through GitHub Actions; QA at `qa.mcritchie.studio` |
+| 🐊 Turf Monster | Product · Showcase | 3100-3199 | Managed satellite on studio-engine; `bin/deploy` to `turf-monster-mainnet`; QA at `qa.turfmonster.media` |
+| 🐉 Cyvasse | Product · Showcase | 3600-3699 | Managed satellite on studio-engine; git push to Heroku `cyvasse`; canonical host `cyvasse.xyz` (`cyvasse.mcritchie.studio` 301s there and stays reserved); no QA copy by Alex's cost decision, so `qa_evidence: exempt` |
+| 📐 McRitchie Industries | Product · Active | 3500-3599 (3510 held for the MSAA dev server) | Managed satellite on studio-engine; the private business knowledge base; git push to Heroku `mcritchie-industries`; QA at `qa.mcritchie.industries` |
+| 🔥 Commercial Welding | Product · Active | none | A Google Workspace client with no app; not hosted by McRitchie Studio |
+| 📚 Moms App | Basic · Active | 4400-4499 | Release-managed standalone on studio-engine, profile `standalone-heroku` |
+| 🎞️ Dads App, 🎲 Prisoners Dilemma, 🏈 Weekly Lock, 📣 Rantly, 🗂️ Portfolio, 🍽️ 10&5 Hospitality, 🔎 Search Position | Basic · Showcase | 3700-4399, one block each | Release-managed standalones on profile `standalone-heroku`, Heroku `dads-app` or `mcr-<repo>`, no QA copies (`qa_evidence: exempt`). Rantly runs on studio-engine; the others have no engine and no database |
+| 📇 Rolio | Archived | 3300-3399 | Dormant; ladder `dormant`; Heroku `rolio-prod` and `rolio-qa` |
+| ⛓️ Chain Ops | Archived | 3400-3499 | Never reached production; ladder `blocked`, no Heroku app |
+| 📊 Tax Studio | Archived | 3200-3299 | Heroku app `tax-studio` with no repo; ladder `planned` |
+| 🤝 Acquisition Studio | Archived | none | Retired prototype; McRitchie Industries holds its old block |
 
-## Lifecycle Status
+Do not reuse `3200-4499`. To wake Rolio: scale its web dynos back to 1, restore
+`.github/dependabot.yml` (revert rolio commit `a79e818`; the file content is blob
+`f0527e6`), delete `test/dormancy_test.rb` (revert `d10b9ec`), and set its
+catalog status.
 
-- `active`: `bin/ecosystem-build` clones/restores/bundles the app, and the hub
-  shows it in satellite links.
-- `planned`: the app has a reserved block and durable metadata, but the
-  ecosystem build and hub UI ignore it.
-- `reserved`: the app has a protected slug/range only. It is not managed, built,
-  or linked until a later promotion flips it to `planned` or `active`.
-- `release-managed standalone`: the app is not a Studio Engine satellite, but
-  the release conductor knows its deploy targets through
-  `config/release_repos.yml` (and its QA target through
-  `config/qa_environments.yml` when it has one; the `standalone-heroku` profile
-  has none, per [`app-deploy-standard`](../agents/steffon/sops/app-deploy-standard.md)).
+## Satellite status words
+
+`config/satellites.yml` answers a narrower question than the catalog status: is
+the app built by `bin/ecosystem-build` and linked from the hub? The registry test
+maps one onto the other.
+
+- `active`: `bin/ecosystem-build` clones, restores and bundles the app, and the
+  hub links it. Only a live catalog app (Active, Delinquent, Showcase) may be
+  `active`.
+- `planned`: a reserved block and durable metadata for an app with no production
+  Heroku app yet; the build and the hub UI ignore it.
+- `reserved`: a protected slug and range only. Every archived app is `reserved`.
+- `release-managed standalone`: not a Studio Engine satellite, but the release
+  conductor knows its deploy targets through `config/release_repos.yml` (and its
+  QA target through `config/qa_environments.yml` when it has one; the
+  `standalone-heroku` profile has none, per
+  [`app-deploy-standard`](../agents/steffon/sops/app-deploy-standard.md)).
 - Unmanaged candidate: the app may exist locally, but it is not part of the
   rebuild contract. Keep app-specific docs in that repo and avoid adding it to
   shared automation until it is promoted.
 
 ## Unmanaged candidate → managed satellite
 
-An app starts life in one of two **tiers** (full decision table:
+An app takes one of three **deployment shapes**, separate from its catalog tier (full decision table:
 [`../system/new-app-onboarding-sop.md`](../system/new-app-onboarding-sop.md)):
 
 - **Standalone / client app** — its own repo, **no `studio-engine`**, PRs into
@@ -214,13 +259,14 @@ onboarding SOP must pass — repo on GitHub, boots on its primary port,
 `/Users/alex/projects/AGENTS.md`, parked operator identities seeded, real
 production target + DNS. Only then register it or flip its existing reserved row
 to `status: planned` and follow the **Registering An App** steps below. When you
-do register a promoted app, carry its emoji into the `config/satellites.yml`
-`emoji:` field so the navbar matches the registry.
+do register a promoted app, give its `config/satellites.yml` `emoji:` the catalog
+glyph; the registry test checks they match.
 
 ## Registering An App
 
-Use `bin/register-satellite` from `mcritchie-studio` before creating new
-automation or hand-editing the registry.
+Add the app's `config/apps.yml` record first (see **Adding an app** above), then
+use `bin/register-satellite` from `mcritchie-studio` for its port block before
+creating new automation or hand-editing the registry.
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -262,8 +308,8 @@ Release registration of a single-use app is `bin/register-app` (since
 which checks the app and generates its `config/release_repos.yml` entry from a
 profile. A future `bin/new-app` can
 generate the Rails app, Heroku/GitHub resources, 1Password items, and docs, but
-it should call or preserve the same registry rules instead of inventing another
-app list.
+it should write the `config/apps.yml` record and keep the registry test green
+instead of inventing another app list.
 
 The generated app should also scaffold a parked identity constant on `User`, a
 seed file that consumes that constant, and focused tests proving that a known

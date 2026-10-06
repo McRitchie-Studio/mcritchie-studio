@@ -1,10 +1,10 @@
 # Managed-app registry fixtures — the canonical color/emoji source the status line
-# reads (see db/seeds/00_apps.rb). mcritchie-studio is App.default.
+# reads (seeded from config/apps.yml by db/seeds/00_apps.rb). mcritchie-studio is App.default.
 mcritchie_studio:
   slug: mcritchie-studio
   name: McRitchie Studio
   color: "#B57EDC"
-  emoji: "🎩"
+  emoji: "🪎"
   position: 0
   status: active
 
@@ -12,6 +12,6 @@ turf_monster:
   slug: turf-monster
   name: Turf Monster
   color: "#22C55E"
-  emoji: "🏈"
+  emoji: "🐊"
   position: 1
   status: active

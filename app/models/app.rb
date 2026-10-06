@@ -22,8 +22,7 @@ class App < ApplicationRecord
 
   # Sluggable#set_slug assigns `slug = name_slug` on save. An app's slug is its
   # repo slug from config/apps.yml, which a name does not always spell
-  # ("10&5 Hospitality" is `10and5`), so a set slug stands and the name only
-  # fills a blank one.
+  # ("10&5 Hospitality" is `10and5`), so the set slug stands.
   def name_slug
     slug.presence || name.to_s.parameterize
   end
