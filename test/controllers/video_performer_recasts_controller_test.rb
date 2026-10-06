@@ -4,8 +4,9 @@ require "test_helper"
 require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 # [integration] The recast round trip on the cast panel: admin gate, an athlete
-# and look saved and the video's prompts refreshed, the JSON saves the Swap
-# Person toggle makes (pick, look change, toggle off, refusal), clear, the
+# and look saved and the video's prompts refreshed, the JSON saves the Replace
+# with card makes (a pick turns the swap on, a look change, Keep Original turns
+# it off keeping the person, another pick unchecks it, refusal), clear, the
 # athlete typeahead, the by-hand look link's way back, and a cast confirmed
 # with nobody named and nothing pressed. All data is synthetic.
 class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
@@ -17,7 +18,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
 
   def recast(ordinal, video: @video, **params) = patch music_video_performer_recast_path(video, ordinal), params: params
 
-  # What the Swap Person card sends: JSON in, JSON out.
+  # What the Replace with card sends: JSON in, JSON out.
   def save(ordinal, video: @video, **body)
     patch music_video_performer_recast_path(video, ordinal), params: body.to_json,
                                                               headers: { "Content-Type" => "application/json", "Accept" => "application/json" }
@@ -56,8 +57,9 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_equal [@athlete.slug, @away.slug], node.first.attributes.values_at("data-saved-person", "data-saved-look").map(&:value)
       assert_equal [["Home Blue", true, "empty"], ["Away White", false, "empty"]],
                    JSON.parse(node.first["data-athlete"])["looks"].map { |look| look.values_at("descriptor", "default", "state") }
-      assert_select "button[role='switch'][aria-checked='true'][data-test='swap-toggle']", "Swap Person"
-      assert_select "[data-test='swap-athlete-name']", "Test Athlete Alpha"
+      assert_select "[data-test='performer-recast'][data-keep='false']"
+      assert_select "[data-test='keep-original']:not([x-cloak]) input[type='checkbox'][data-test='keep-original-box']:not([checked])"
+      assert_select "[data-test='swap-body']:not([x-cloak]) [data-test='swap-athlete-name']", "Test Athlete Alpha"
       assert_select "[data-test='look-cast']", 0
     end
     assert_select "#chunk-1 [data-test='chunk-recast']", /Test Athlete Alpha > Away White/
@@ -65,7 +67,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='cast-swap-count']", "1 of 2"
   end
 
-  test "the swap card's JSON saves: a pick, a look change, and the toggle turned off, each refreshing the prompts" do
+  test "the card's JSON saves: a pick, a look change, and Clear, each refreshing the prompts" do
     log_in_as users(:alex)
 
     body = save(1, person_slug: @athlete.slug, appearance_slug: @home.slug)
@@ -78,7 +80,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("like the Away White model provided") })
 
     body = save(1, clear: "1")
-    assert_equal ["off", nil, nil], body.values_at("state", "person_slug", "appearance_slug")
+    assert_equal ["none", nil, nil], body.values_at("state", "person_slug", "appearance_slug")
     assert_equal [nil, nil, false], performer(1).values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
     assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("{athlete}") })
   end
@@ -106,17 +108,48 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_nil performer(1).recast_person_slug
   end
 
-  test "the swap card's JSON off then on: off remembers and refreshes the prompts, on restores with no re-pick" do
+  test "a pick turns the swap on; Keep Original turns it off keeping the person; unchecked restores with no re-pick" do
     log_in_as users(:alex)
-    save(1, person_slug: @athlete.slug, appearance_slug: @away.slug)
+    assert performer(1).recast_keep?, "seeded under the old keep as is, with nobody remembered"
+    body = save(1, person_slug: @athlete.slug, appearance_slug: @away.slug)
+    assert_equal "recast", body["state"]
+    assert performer(1).swap?, "the pick alone turned the swap on"
 
     body = save(1, keep: "1")
-    assert_equal ["off", @athlete.slug, @away.slug], body.values_at("state", "person_slug", "appearance_slug")
+    assert_equal ["kept", @athlete.slug, @away.slug], body.values_at("state", "person_slug", "appearance_slug")
+    assert_equal "Person 1 is not swapped; Test Athlete Alpha > Away White is remembered.", body["message"]
+    assert_not performer(1).swap?
     assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("{athlete}") })
 
     body = save(1, swap: "1")
     assert_equal ["recast", @athlete.slug, @away.slug], body.values_at("state", "person_slug", "appearance_slug")
     assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("like the Away White model provided") })
+  end
+
+  test "picking another person while Keep Original is checked unchecks it and swaps to them" do
+    log_in_as users(:alex)
+    gamma = Person.create!(first_name: "Test", last_name: "Athlete Gamma", athlete: true)
+    save(1, person_slug: gamma.slug, appearance_slug: "")
+    save(1, keep: "1")
+    assert_equal "kept", performer(1).swap_state
+
+    body = save(1, person_slug: @athlete.slug, appearance_slug: @home.slug)
+    assert_equal ["recast", @athlete.slug, @home.slug], body.values_at("state", "person_slug", "appearance_slug")
+    assert_equal [@athlete.slug, @home.slug, false], performer(1).values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
+    assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("like the Home Blue model provided") })
+  end
+
+  # The card's queue sends changes in the order they were made (show.html.erb, swapCard#drain):
+  # a pick, a look change made while it was in flight, then Keep Original. In that order the
+  # server ends where the card does: the second look, remembered, not swapped.
+  test "the card's changes in order end on the last one: pick, look change, Keep Original" do
+    log_in_as users(:alex)
+    save(1, person_slug: @athlete.slug, appearance_slug: @home.slug)
+    save(1, person_slug: @athlete.slug, appearance_slug: @away.slug)
+    save(1, keep: "1")
+
+    assert_equal ["kept", @athlete.slug, @away.slug], [performer(1).swap_state, *performer(1).values_at(:recast_person_slug, :recast_appearance_slug)]
+    assert_equal "Away White", save(1, swap: "1")["label"].split(" > ").last
   end
 
   test "a look-less athlete is saved alone as pending through JSON" do
@@ -137,8 +170,9 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [@athlete.slug, @away.slug, true], performer(1).values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
     assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("{athlete}") })
     follow_redirect!
-    assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='performer-recast'][data-state='off'][data-swap-on='false']" do |node|
-      assert_select "button[role='switch'][aria-checked='false']", "Don’t Swap Person"
+    assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='performer-recast'][data-state='kept'][data-keep='true']" do |node|
+      assert_select "input[data-test='keep-original-box'][checked]"
+      assert_select "[data-test='swap-body'][x-cloak]"
       assert_equal "Test Athlete Alpha", JSON.parse(node.first["data-athlete"])["name"], "the card still knows who is remembered"
     end
     assert_select "#chunk-1 [data-test='chunk-recast']", 0
@@ -149,7 +183,10 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Person 1 is not swapped.", flash[:notice]
     assert_not performer(1).recast_keep?
     follow_redirect!
-    assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='performer-recast'][data-state='off']"
+    assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='performer-recast'][data-state='none']" do
+      assert_select "[data-test='keep-original'][x-cloak]"
+      assert_select "[data-test='performer-recast'][data-athlete]", 0
+    end
     assert_select "[data-test='cast-swap-count']", "0 of 2"
   end
 
@@ -270,7 +307,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='performer-card'][data-resolved='true'][data-named='false']", 2
       assert_select "[data-test='performer-badge']", text: "Not named", count: 2
       assert_select "[data-test='performer-artist-optional']", 2
-      assert_select "[data-test='performer-recast'][data-state='off']", 2
+      assert_select "[data-test='performer-recast'][data-state='none']", 2
       assert_select "[data-test='cast-named-count']", /Nobody named\. Naming is optional/
       assert_select "[data-test='confirm-cast-form'] button:not([disabled])", "Cast confirmed"
 
