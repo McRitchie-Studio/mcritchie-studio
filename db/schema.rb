@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_141500) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1880,12 +1880,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_141500) do
   create_table "tasks", force: :cascade do |t|
     t.string "actual_size"
     t.string "agent_slug"
+    t.string "approval_status"
     t.datetime "archived_at"
     t.datetime "assembled_at"
     t.string "block_kind"
     t.datetime "blocked_at"
     t.string "blocked_by"
     t.string "blocked_from"
+    t.string "branch"
     t.datetime "completed_at"
     t.datetime "created_at", null: false
     t.jsonb "dependencies", default: [], null: false
@@ -1905,6 +1907,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_141500) do
     t.string "pm_size"
     t.string "po_size"
     t.integer "position"
+    t.string "pr_url"
     t.integer "priority", default: 0
     t.datetime "queued_at"
     t.string "release_slug"
@@ -1912,6 +1915,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_141500) do
     t.boolean "requires_migration", default: false, null: false
     t.jsonb "result", default: {}
     t.datetime "reviewed_at"
+    t.string "session_id"
     t.datetime "sizes_revealed_at"
     t.string "slug", null: false
     t.string "stage", default: "designed"
@@ -1923,10 +1927,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_141500) do
     t.string "title", null: false
     t.datetime "updated_at", null: false
     t.index ["agent_slug"], name: "index_tasks_on_agent_slug"
+    t.index ["approval_status"], name: "index_tasks_on_approval_status"
+    t.index ["branch"], name: "index_tasks_on_branch"
     t.index ["epic_slug"], name: "index_tasks_on_epic_slug"
+    t.index ["pr_url"], name: "index_tasks_on_pr_url"
     t.index ["priority"], name: "index_tasks_on_priority"
     t.index ["release_slug"], name: "index_tasks_on_release_slug"
     t.index ["requires_migration"], name: "index_tasks_on_requires_migration"
+    t.index ["session_id"], name: "index_tasks_on_session_id"
     t.index ["slug"], name: "index_tasks_on_slug", unique: true
     t.index ["stage", "created_at"], name: "index_tasks_on_stage_and_created_at"
     t.index ["stage", "position"], name: "index_tasks_on_stage_and_position"
