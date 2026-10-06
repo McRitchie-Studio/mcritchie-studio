@@ -4,8 +4,8 @@
 
 DoR is the branded testing gate for the **Definition-of-Ready verdict**: the
 deterministic `bin/dor-check` pass that decides whether a task is ready to
-advance. It sits between [G1](g1-cert.md) (the optional local pre-flight) and
-[G2 Review](g2-review.md) (the senior review), and it is recorded as **two
+advance. It is the first gate: it follows the optional local
+[pre-flight](../pre-flight.md) and precedes [G2 Review](g2-review.md) (the senior review), and it is recorded as **two
 task-grain gates** so the same check reads cleanly from both sides of the
 `submitted` seam:
 
@@ -13,13 +13,12 @@ task-grain gates** so the same check reads cleanly from both sides of the
 - **DoR (review)** — GateRun key `dor_review`. The primary reviewer's gate-zero
   re-run, plus the supervisor's pre-spawn CI bounce.
 
-The gate flow order: [G1 pre-flight](g1-cert.md) → **DoR** (this doc) →
+The gate flow order: **DoR** (this doc) →
 [G2 Review](g2-review.md) → [G3 Candidate](g3-candidate.md) →
 [G4 Ship](g4-ship.md).
 
-This gate was split out of G1 Cert ("Option B", 2026-07-11): the cert now
-self-closes its own `g1_cert` window, and CI stays a **handoff, not a gate**
-(its verdict rides as a SOP inside DoR, never its own gate row).
+CI stays a **handoff, not a gate**: its verdict rides as a SOP inside DoR,
+never its own gate row.
 
 ## What this gate verifies
 
@@ -445,7 +444,7 @@ a root (the CI/test seam), exactly as `FAST_CHECK_ROOT` does for the pre-flight.
 ### Builder side (the `dor` gate)
 
 Run from the task worktree, after the final commit + push + open PR (the
-verdict runs LAST; the optional pre-flight, [g1-cert.md](g1-cert.md), comes
+verdict runs LAST; the optional [pre-flight](../pre-flight.md) comes
 before the push):
 
 ```bash
@@ -469,7 +468,7 @@ bin/dor-check <task-slug> --gate-role review
 ```
 
 This opens+closes the `dor_review` gate and keeps the **strict** CI semantics
-(below). It never touches `g1_cert` or the G2 review lanes — that is exactly
+(below). It never touches the builder's `dor` gate or the G2 review lanes — that is exactly
 what `--gate-role review` exists for.
 
 ## The CI seam — the gate never waits; the WRAPPER now does
@@ -655,7 +654,7 @@ attempt n+1.
 
 - **Task gates card** — the "Testing gates" card on
   `https://mcritchie.studio/tasks/<slug>` renders the **DoR (builder)** and
-  **DoR (review)** chips between G1 Cert and the G2 lanes: latest attempt
+  **DoR (review)** chips ahead of the G2 lanes: latest attempt
   (`×n` retry badge), passed / failed / in-flight status, and the expandable SOP
   list (`dor-check`, `tiers`, `ci`).
 - **CLI read:** `bin/gate show task <task-slug>` (add `--json` for the raw
@@ -671,9 +670,8 @@ attempt n+1.
 
 ## Related
 
-- [`g1-cert.md`](g1-cert.md) — the self-closing cert gate that precedes DoR; its
-  receipts are no longer what this gate reads, but its lanes are still the
-  builder's local pre-flight.
+- [`../pre-flight.md`](../pre-flight.md) — the builder's optional local
+  pre-flight, which runs before the push and records nothing.
 - [`g2-review.md`](g2-review.md) — the senior-review lanes that follow; the
   primary's gate-zero IS this gate's `dor_review` half.
 - [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write

@@ -316,8 +316,8 @@ Before handoff:
 
 5. Commit, push, and open a PR **into `accepted`** (base `accepted`, not
    `release`/`main`) whose body **leads with the task URL**, so CI starts at
-   once. Then the pre-flight — the task's **G1** step, optional
-   (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): run
+   once. Then the optional pre-flight
+   (`mcritchie-studio/docs/agents/modules/pre-flight.md`): run
    `bin/fast-check <task>` (diff-mapped tests + core spine + rubocop on changed
    files, ~1 min) while CI runs. It records nothing; the PR's settled green CI
    is the verdict. From a satellite desk name it

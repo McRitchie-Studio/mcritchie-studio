@@ -40,8 +40,9 @@ runs the same scripts.
 - Write the test tiers your shape requires as you go, unit-first.
 - Nobody hand-stamps `merged`, `pr_url` or the author set: the board derives
   them from GitHub. `--agent <soul>` is optional.
-- A cold ship takes about 12 minutes, so run it in the background with
+- A cold submit takes about 12 minutes, so run it in the background with
   `bin/submit-wait`; do not hand-roll a pgrep watcher.
+- `bin/ship` and `bin/ship-wait` are one-release aliases that print a rename note.
 - `bin/fast-check` is an optional pre-flight; the cert gate (test-only included)
   reads only the PR's settled green CI.
 - `bin/submit` stops at `submitted`. Never merge, deploy, or push `main` unless Alex

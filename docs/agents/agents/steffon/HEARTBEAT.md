@@ -104,12 +104,6 @@ by never entering the act.
 stale UNMERGED desks and the Redis band contraction. `bin/release archive` sweeps
 only what is automatically safe, so the two are complementary, not redundant.
 
-## Legacy Aliases
-
-The old launcher name still refers to the same work:
-
-- `archive-completed` -> [`archive-shipped`](sops/archive-shipped.md)
-
 ## Handoff
 
 End every Steffon heartbeat with a short report:

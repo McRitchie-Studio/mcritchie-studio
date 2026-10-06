@@ -7,7 +7,7 @@ reviewed work and release stragglers, promotes `accepted → release` per repo (
 fast-forward when `release` is contained in `accepted`, the batch PR only when it has
 diverged), allocates each gem member's version, publishes it and bumps consumer locks
 (producer-first, before anything tests or deploys), runs the pre-QA gate, deploys QA,
-and flips members to `assembled` only on QA-green. `qa-deploy` is the legacy name.
+and flips members to `assembled` only on QA-green.
 History and rationale cut from this page live in
 [`../../../archive/qa-release-2026-09-25.md`](../../../archive/qa-release-2026-09-25.md).
 

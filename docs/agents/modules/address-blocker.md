@@ -186,7 +186,7 @@ bin/task update <slug> --checks "[unit] <the check that now proves the fix>"
 #    live block columns but NOT this badge — you must post it explicitly.
 bin/task note <slug> --handoff "Fixed <the gap>: <what changed>, tied to the blocker." --resolves-feedback
 
-# 2. Commit → G1 cert → push → PR (base accepted, led by the task URL) →
+# 2. Commit → push → PR (base accepted, led by the task URL) →
 #    bin/dor-check → move submitted. The forward move off `building` clears the
 #    live block; review picks it up from the submitted seam.
 bin/submit <slug> -m "<commit message>"

@@ -219,9 +219,9 @@ latest handoff note, then merges on its own verdict, and the move to `reviewed`
 settles the request. So make that note say what he should look at. If his answer
 must come BEFORE the merge, tell him directly.
 
-## Step 5 — Pre-flight (G1, optional)
+## Step 5 — Pre-flight (optional)
 
-Commit, then run the local pre-flight ([`gates/g1-cert.md`](gates/g1-cert.md)):
+Commit, then run the local pre-flight ([`pre-flight.md`](pre-flight.md)):
 
 ```bash
 bin/fast-check <slug>          # diff-mapped tests + core spine + rubocop on changed files, ~1 min
@@ -281,7 +281,7 @@ the task URL, records `pr_url`, runs the pre-flight while CI is already running,
 
 **Before you launch:** land every change (a push mid-wait restarts CI), probe
 with `bin/dor-check <slug> --json` (read-only, no gate attempt), and clear the
-[traps the pre-flight cannot see](gates/g1-cert.md#traps-the-pre-flight-cannot-see).
+[traps the pre-flight cannot see](pre-flight.md#traps-the-pre-flight-cannot-see).
 
 Keep the worktree and branch until review confirms the PR merged or was
 abandoned. A pushed branch preserves code; `main` is not a backup.
