@@ -36,7 +36,7 @@
   </div>
 
   <template x-if="watching">
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70" @click.self="watching = false"
+    <div class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-3 sm:p-6 bg-black/70" @click.self="watching = false"
          role="dialog" aria-modal="true" aria-labelledby="watch-title" data-test="watch-modal">
       <div class="card w-full max-w-4xl max-h-full overflow-y-auto min-w-0" x-data="stitchPreview()" data-timeline="<%= watch.to_json %>"
            data-test="stitch-preview" :data-playing="String(playing)" :data-chunk="now ? now.ordinal : ''" :data-source="now ? String(now.source) : ''">
