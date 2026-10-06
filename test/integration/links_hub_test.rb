@@ -12,8 +12,8 @@ class LinksHubTest < ActionDispatch::IntegrationTest
 
   # A `reserved` satellite holds its port range and registry row but is not
   # linked, so the public Apps section must not draw it. rolio is archived in
-  # config/apps.yml and reserved in config/satellites.yml; cyvasse is live and
-  # active, so it is the control that does render.
+  # config/apps.yml and reserved in config/satellites.yml; Turf Monster is the
+  # active control that does render.
   test "[integration] a reserved satellite stays off the public Apps section" do
     rolio = Satellite.find("rolio")
     assert rolio, "precondition: rolio is registered in config/satellites.yml"
@@ -22,7 +22,6 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     get links_path
     assert_response :success
     assert_match "Turf Monster", response.body, "control: an active satellite does render"
-    assert_match "Cyvasse", response.body, "control: cyvasse is live and active"
     assert_no_match "Rolio", response.body
     assert_select "a[href^=?]", rolio.url_for, count: 0
   end

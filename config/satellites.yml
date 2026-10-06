@@ -107,7 +107,7 @@ satellites:
     role: "viewer"
     description: "Hex strategy board game, revived from Alex's first app"
     deploy_provider: "heroku"
-    status: "active"
+    status: "reserved"
 
   - slug: dads-app
     display_name: "Dads App"
