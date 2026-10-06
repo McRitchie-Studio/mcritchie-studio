@@ -1,8 +1,8 @@
 module MusicVideos
   # "Generate a new look" on a cast card: a new look (Appearance) for the
-  # athlete the operator chose, named by him ("Broncos blue"). The athlete
-  # becomes the performer's recast if he was not already; the look is NOT
-  # chosen for him, so the card still asks which look. The character sheet
+  # athlete the operator chose, named by him ("Broncos blue"). The card saves
+  # every pick at once (no Cast button), so the new look is cast too: the
+  # performer becomes that athlete in that look. The character sheet
   # is started by the caller (Appearances::SheetBuild), outside this
   # transaction, so the job never runs before the look is committed.
   class CreateRecastLook
@@ -31,10 +31,8 @@ module MusicVideos
 
       Appearance.transaction do
         look = Appearance.create!(person_slug: @person.slug, descriptor: @descriptor, reference_url: @reference_url)
-        unless @performer.recast_person_slug == @person.slug
-          @performer.update!(recast_person_slug: @person.slug, recast_appearance_slug: nil, recast_keep: false)
-          ClipPrompts.refresh!(@performer.music_video)
-        end
+        @performer.update!(recast_person_slug: @person.slug, recast_appearance_slug: look.slug, recast_keep: false)
+        ClipPrompts.refresh!(@performer.music_video)
         look
       end
     end

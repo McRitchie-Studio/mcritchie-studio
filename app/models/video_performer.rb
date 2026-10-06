@@ -1,10 +1,13 @@
 # One person on screen in a music video (Person N), grouped by the agent from
 # visible cues (outfit, hair, eyewear, jewelry), never face recognition. The
-# operator resolves it: link an artist, or mark it an extra.
+# operator may name it (link an artist, or mark it an extra); naming is
+# optional, and an unnamed performer is simply one with neither.
 #
 # The operator also says who REPLACES them (the recast): an athlete (Person) in
-# one of that athlete's looks (Appearance), or an explicit "keep as is". Only
-# the operator sets it; the agent API refuses the keys.
+# one of that athlete's looks (Appearance). The default is no swap: a performer
+# with no recast athlete is not swapped, whatever recast_keep says (the legacy
+# "keep as is" flag reads the same as no swap). Only the operator sets it; the
+# agent API refuses the keys.
 class VideoPerformer < ApplicationRecord
   VISIBILITIES = %w[clear partial].freeze
   SIGHTING_KEYS = %w[t_ms visibility].freeze
@@ -27,13 +30,15 @@ class VideoPerformer < ApplicationRecord
 
   def name = "Person #{ordinal}"
 
-  # The card is closed. A music video needs an artist or an extra. A cinematic
-  # video credits no artists, so there the recast answer closes the card too.
-  def resolved?
-    return true if artist_slug.present? || extra?
+  # The card owes nothing. Naming an artist is optional and the swap is off by
+  # default, so every card is closed except a swap still waiting for its look.
+  def resolved? = recast_decided?
 
-    music_video&.cinematic? ? recast? || recast_keep? : false
-  end
+  # The operator linked an artist: the optional rolodex half of the card.
+  def named? = artist_slug.present?
+
+  # The Swap Person toggle is on: an athlete is chosen, with or without a look.
+  def swap? = recast_person_slug.present?
 
   # An athlete and one of their looks are both chosen.
   def recast? = recast_person_slug.present? && recast_appearance_slug.present?
@@ -43,8 +48,9 @@ class VideoPerformer < ApplicationRecord
   # until a look is chosen.
   def recast_pending? = recast_person_slug.present? && recast_appearance_slug.blank?
 
-  # Nothing is owed: recast in full, kept on purpose, or an extra nobody recast.
-  def recast_decided? = recast? || recast_keep? || (extra? && recast_person_slug.blank?)
+  # Nothing is owed: recast in full, or not swapped (the default). Only a swap
+  # waiting for its look is owed one.
+  def recast_decided? = !recast_pending?
 
   # "Test Athlete > Home Blue", or just the athlete while the look is missing.
   def recast_label

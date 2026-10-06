@@ -20,6 +20,8 @@ class MusicVideosController < ApplicationController
                                               associations: %i[artist recast_person recast_appearance]).call
     # Each recast athlete's look dropdown rows: thumbnail, default mark, build state.
     @recast_looks = MusicVideos::LookOptions.for(@performers.filter_map(&:recast_person_slug))
+    # The chosen athlete's block on the card: headshot, vocation, team.
+    @recast_rows = People::SearchRows.for(@performers.filter_map(&:recast_person_slug))
     @still_urls = signed_urls(@performers.flat_map(&:still_object_keys))
     @clips = @video.clip_candidates.to_a
     @chunks = @video.video_chunks.to_a

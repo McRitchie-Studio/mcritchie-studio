@@ -1,8 +1,8 @@
-<%# One person on the cast panel: stills, sightings, the operator's answer, and who replaces them. %>
+<%# One person on the cast panel: stills, sightings, the optional artist name (the rolodex), and the Swap Person toggle. Nothing here has to be pressed before the cast is confirmed. %>
 <% sightings = performer.sightings_by_time %>
 <% editable = !video.cast_confirmed? %>
 <article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
-         data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>">
+         data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>" data-named="<%= performer.named? %>">
   <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset rounded-t-xl overflow-hidden">
     <% performer.still_object_keys.each do |key| %>
       <% url = still_urls[key] %>
@@ -29,13 +29,11 @@
         <p class="text-sm text-body break-words" data-test="performer-label"><%= performer.label %></p>
       </div>
       <% if performer.artist %>
-        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40 shrink-0">Labelled</span>
+        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40 shrink-0" data-test="performer-badge">Named</span>
       <% elsif performer.extra? %>
-        <span class="badge text-3xs bg-surface-alt text-secondary border-subtle shrink-0">Extra</span>
-      <% elsif performer.resolved? %>
-        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40 shrink-0" data-test="performer-closed-by-recast"><%= performer.recast_keep? ? "Kept" : "Recast" %></span>
+        <span class="badge text-3xs bg-surface-alt text-secondary border-subtle shrink-0" data-test="performer-badge">Extra</span>
       <% else %>
-        <span class="badge text-3xs bg-warning/10 text-warning-ink border-warning/40 shrink-0">Open</span>
+        <span class="badge text-3xs bg-surface-alt text-muted border-subtle shrink-0" data-test="performer-badge">Not named</span>
       <% end %>
     </header>
 
@@ -90,7 +88,7 @@
             <label class="sr-only" for="artist-search-<%= performer.ordinal %>">Who is <%= performer.name %>?</label>
             <input id="artist-search-<%= performer.ordinal %>" type="text" autocomplete="off" role="combobox"
                    aria-autocomplete="list" :aria-expanded="open" aria-controls="artist-results-<%= performer.ordinal %>"
-                   placeholder="Who is this? Search artists and people"
+                   placeholder="Not named. Search artists and people"
                    class="input-field py-2 text-sm" x-model="query" @input.debounce.250ms="search()"
                    @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
                    @keydown.enter.prevent="pickActive()" @keydown.escape="open = false">
@@ -122,17 +120,19 @@
             </div>
           <% end %>
         </div>
-        <%= button_to "Extra, not a named artist", music_video_performer_path(video, performer.ordinal), method: :patch,
-                      params: { extra: "1" }, class: "btn btn-outline btn-sm w-full mt-2", data: { test: "mark-extra" } %>
-        <% if video.cinematic? %>
-          <p class="text-xs text-muted mt-2" data-test="performer-artist-optional">A cinematic video credits no artists: naming one is optional. The answer under “Replaced by” closes this card.</p>
-        <% end %>
+        <div class="flex flex-wrap items-center justify-between gap-x-2 mt-1.5 text-xs text-muted" data-test="performer-artist-optional">
+          <span>Optional: name the artist to add them to the rolodex.</span>
+          <%= button_to "Mark as extra", music_video_performer_path(video, performer.ordinal), method: :patch,
+                        params: { extra: "1" }, class: "text-xs text-muted hover:text-primary hover:underline",
+                        form: { class: "inline" }, data: { test: "mark-extra" } %>
+        </div>
       <% else %>
-        <p class="text-sm text-muted" data-test="performer-unlabelled"><%= video.cinematic? ? "No artist named: a cinematic video credits none." : "Not labelled." %></p>
+        <p class="text-sm text-muted" data-test="performer-unlabelled">Not named.</p>
       <% end %>
     </div>
 
     <%= render "music_videos/recast", performer: performer, video: video, looks: local_assigns.fetch(:recast_looks, {}),
+               rows: local_assigns.fetch(:recast_rows, {}),
                sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready], fresh_look: local_assigns[:fresh_look] %>
   </div>
 </article>
