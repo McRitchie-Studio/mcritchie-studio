@@ -254,7 +254,27 @@ production. Details: [`../../../modules/gates/g4-ship.md`](../../../modules/gate
 **The seal retries once through the boot window — expect a possible ~30s pause**
 (`🔁 first smoke attempt failed — waiting 30s …`); do not interrupt it. **Green with
 "retried once after 30s boot-window wait"** is healthy; **Red** persisted through the
-retry. The seal never auto-rolls-back: the rollback commands print and you decide.
+retry. The seal never rolls back on its own; a red seal prints the rollback and you decide.
+
+**Rolling back is `bin/release rollback [<release-slug>]`** (the newest shipped release
+by default). Run it bare first: it prints the plan and deploys nothing. Then run it with
+`--mode ask` (confirm at the prompt) or `--mode auto` (or `--yes`):
+
+- **Each app goes back to the SHA the release before it shipped.** The hub redeploys
+  through `prod-deploy.yml -f sha=<previous>`; a `git_push_heroku` app force-pushes the
+  previous SHA to its Heroku remote; turf-monster (`repo_script`) runs `heroku rollback
+  v<N>` to the release that deployed it, which restores that release's config vars too.
+  Satellites go first, the hub last, and each non-hub app is smoked on `/up`.
+- **It refuses a schema-ahead release and names the migrations.** Migrations already ran
+  in the release phase, so fix forward or ship a down migration first. It also refuses
+  when a later release has shipped or a ship is in flight.
+- **It moves no ref.** `main` keeps the release's code, so land a revert on `accepted`
+  through a task before the next ship, or that ship redeploys it. Data is not rolled back.
+- **Gems stay published.** A published gem cannot be unpublished; each app runs the
+  version its previous SHA's `Gemfile.lock` pins.
+- **The board record:** a `rollback` release event with both SHAs per app, a red seal
+  naming the rollback, and G4's seal re-stamped red. The release and its members stay
+  `shipped`, because their code is still on `main`.
 
 **The seal runs the shipped tree's specs** (the hub's ship workspace at the frozen SHA,
 never the primary). **⚪ unsealed** means those specs could not run, and says why; it
