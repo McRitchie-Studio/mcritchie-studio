@@ -17,11 +17,9 @@
 # ~0.4-0.7s per checkout, about 68% of the operation — and desk-side commands and
 # git's own credential helper read that tree while it happens.
 #
-# WHY THIS IS A NEW FILE. These two cases would naturally have been appended to
-# test/lib/release_cli_test.rb beside the other `commit_artifact_to_release`
-# tests. That file is the suite's worst APPEND HOTSPOT — 26 of the last 200 PRs
-# touched it, all colliding at the bottom — and `TestHealthRatchetTest` refuses a
-# PR that grows it. Named for its concern instead.
+# WHY THIS IS A FILE OF ITS OWN. The release CLI files are frozen APPEND hotspots,
+# and `TestHealthRatchetTest` refuses a PR that grows one. Named for its concern
+# instead.
 #
 # NOTHING HERE TOUCHES a real repo: the fixture is a bare origin plus a clone in
 # a tmpdir, and the child runs under OutboundSeams so a forgotten stub resolves
@@ -143,8 +141,8 @@ class ReleaseArtifactFlipTest < Minitest::Test
     end
   end
 
-  # Load bin/release.rb in a child and call the dance directly, exactly as
-  # test/lib/release_cli_test.rb drives it.
+  # Load bin/release.rb in a child and call the dance directly, exactly as the
+  # release CLI tests drive it.
   def run_dance(repo, dir, doc)
     setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
             %(def repo_path(_repo) = #{repo.inspect})

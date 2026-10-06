@@ -18,7 +18,7 @@
 # studio-engine version.
 #
 # WHY THE SUITE DID NOT CATCH IT. Every existing dispatch_and_watch case gave the
-# poll a run to find (test/lib/release_cli_test.rb: the strictly-greater run, the
+# poll a run to find (the release CLI deploy tests: the strictly-greater run, the
 # watcher 500, the protection pause, the unobservable run). None exercised a
 # dispatch that creates NO run, so the one silent `return false` in the method was
 # never driven. A suite that only covers a successful dispatch certifies nothing
@@ -30,10 +30,10 @@
 # longer boot poll: the app booted, and a wider window would poll the same stale
 # tree for longer and then tell the same lie.
 #
-# A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is frozen at its size by
+# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
 # config/test_health.yml precisely so new work lands somewhere else. The harness
 # below is deliberately the small one (load the script, stub `sh`, drive one
-# method) rather than a copy of that file's 200-line private harness.
+# method) rather than the shared release CLI harness.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
@@ -54,7 +54,7 @@ class ReleaseCliDispatchRunTest < Minitest::Test
   INPUTS   = { "sha" => "0a0cc23" }.freeze
 
   # Lazy + memoized so forked test workers each get their own dir, and REMOVED after
-  # the run — the same shape test/lib/release_cli_test.rb uses. A per-run tmpdir that
+  # the run — the same shape the release CLI harness uses. A per-run tmpdir that
   # nobody deletes is how a machine accumulates hundreds of them silently.
   def self.lock_dir
     @lock_dir ||= begin

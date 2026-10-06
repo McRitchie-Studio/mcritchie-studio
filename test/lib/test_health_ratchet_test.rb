@@ -123,9 +123,8 @@ class TestHealthRatchetTest < Minitest::Test
     named = over.map { |o| "#{o[:file]} is #{o[:lines]} lines, ceiling #{o[:ceiling]}" }
 
     assert_empty over,
-                 "#{named.join("; ")}. These files are the suite's APPEND hotspots — " \
-                 "test/lib/release_cli_test.rb alone was touched by 26 of the last 200 PRs, all " \
-                 "colliding at the bottom of one file. Put the new test in a NEW file named for its " \
+                 "#{named.join("; ")}. These files are the suite's APPEND hotspots, where " \
+                 "PRs collide at the bottom of one file. Put the new test in a NEW file named for its " \
                  "concern (that is what every test added in this session did), or, if you genuinely " \
                  "grew an existing test, raise the ceiling in config/test_health.yml so the reason " \
                  "sits in the diff."

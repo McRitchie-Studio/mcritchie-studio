@@ -5,11 +5,10 @@
 # Slice 4 of docs/agents/system/agent-presence.md. Standalone:
 #   ruby -Itest test/lib/release_presence_wiring_test.rb
 #
-# DELIBERATELY A NEW FILE, not an addition to test/lib/release_cli_test.rb — the same
-# rule test/lib/release_cli_accepted_gate_test.rb states: that file is ~7.6k lines,
-# everyone appends at the bottom, so everyone conflicts at the bottom. It also carries a
-# hard line ceiling, and appending these cases there tripped it (`rails (2)` red at 7674
-# against a ceiling of 7598). The ceiling was right and the append was wrong.
+# A FILE OF ITS OWN, not an addition to another release CLI file: the same rule
+# test/lib/release_cli_accepted_gate_test.rb states. Where everyone appends at the
+# bottom, everyone conflicts at the bottom, and each release CLI file carries a hard
+# line ceiling.
 #
 # WHAT IS BEING PINNED, and why the module's own tests are not enough. The claim module
 # (test/lib/release_presence_test.rb) proves the record and its grading. It cannot prove

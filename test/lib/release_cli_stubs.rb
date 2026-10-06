@@ -2,11 +2,9 @@
 
 # Subprocess stubs shared by the release-CLI tests.
 #
-# These live OUTSIDE test/lib/release_cli_test.rb on purpose. That file is a
-# frozen hotspot in config/test_health.yml — 26 of the last 200 merged PRs touched
-# it, all colliding at the bottom of one 7364-line file — and the ratchet's remedy
-# for "I need to add something" is to give the thing its own named home rather
-# than append. A stub injected into a subprocess is a reusable fixture, not a
+# These live OUTSIDE the release CLI harness on purpose. The harness is a frozen
+# hotspot in config/test_health.yml, and the ratchet's remedy for "I need to add
+# something" is to give the thing its own named home rather than append. A stub injected into a subprocess is a reusable fixture, not a
 # test, so it belongs here.
 module ReleaseCliStubs
   # Makes solana-studio read as NOT self-gated.

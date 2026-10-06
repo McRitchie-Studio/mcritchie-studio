@@ -651,7 +651,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   # kind — including every NO-DATA state — fails closed, because a false green here
   # ships an untested tree to production. The self-skip against G3's qa_gates
   # record (ship_gate_skip? / auditor_red? / qa_gate) went with the local suite it
-  # spared — see the wiring in test/lib/release_cli_test.rb (test_ship_test_gate_*).
+  # spared — see the wiring in test/lib/release_ship_gate_read_test.rb (test_ship_test_gate_*).
 
   # label => [ci read, options, kind, passes?]
   SHIP_GATE_KINDS = {

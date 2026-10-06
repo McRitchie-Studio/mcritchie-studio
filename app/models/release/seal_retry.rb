@@ -28,11 +28,11 @@ class Release
     class RealSleepError < StandardError; end
 
     # Test-only delay override. A test that drives the REAL ship seal in a
-    # SUBPROCESS (test/lib/release_cli_test.rb loads bin/release and calls
-    # production_smoke_seal) cannot inject a sleeper through the script, so
-    # before this existed each red-seal CLI test slept a genuine 30 seconds —
-    # ~90s of the suite. Set it to 0 there and the retry PATH is exercised for
-    # real at zero cost. Production never sets it: the boot window is a real wait.
+    # SUBPROCESS (the release CLI tests load bin/release and call
+    # production_smoke_seal) cannot inject a sleeper through the script, so each
+    # red-seal CLI test would sleep a genuine 30 seconds. test/lib/release_cli_harness.rb
+    # sets it to 0 and the retry PATH is exercised for real at zero cost.
+    # Production never sets it: the boot window is a real wait.
     DELAY_ENV = "SEAL_RETRY_DELAY_SECONDS".freeze
 
     def delay_seconds

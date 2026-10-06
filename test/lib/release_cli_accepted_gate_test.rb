@@ -4,10 +4,9 @@
 # GitHub has already called broken. Standalone:
 #   ruby -Itest test/lib/release_cli_accepted_gate_test.rb
 #
-# DELIBERATELY A NEW FILE, not an addition to test/lib/release_cli_test.rb. That file
-# is 7056 lines and was touched by 26 of the last 200 merged PRs; everyone appends at
-# the bottom, so everyone conflicts at the bottom. Putting new work in a new file is
-# the same rule the dor-check plugin seam encodes, applied to tests.
+# A FILE OF ITS OWN, not an addition to another release CLI file: where everyone
+# appends at the bottom, everyone conflicts at the bottom. Putting new work in a new
+# file is the same rule the dor-check plugin seam encodes, applied to tests.
 #
 # WHAT IS BEING PINNED: the asymmetry. `red_accepted_repos` must refuse on an ASSERTED
 # failure and on nothing else. If it ever grows to mean "not green", every sweep that

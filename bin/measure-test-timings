@@ -7,6 +7,7 @@
 #   bin/measure-test-timings --out PATH      write somewhere else
 #   bin/measure-test-timings --from RECEIPT  convert an existing receipt, run nothing
 #   bin/measure-test-timings --from DIR       merge every receipt in a directory
+#   bin/measure-test-timings --from DIR --from DIR2 …   average several runs
 #
 # THE DIRECTORY FORM IS THE INTERESTING ONE. The sharded lane uploads one receipt per
 # shard as a CI artifact, so downloading a green run's artifacts and pointing this at
@@ -15,6 +16,12 @@
 #
 #   gh run download <run-id> --pattern 'rails-report-shard-*' --dir /tmp/receipts
 #   bin/measure-test-timings --from /tmp/receipts
+#
+# ONE RUN IS NOISY. The same file swings by a third between green runs on the same
+# commit range (pr_review_command_test.rb measures 137s on one run and 237s on another),
+# so pass --from once per run: receipts inside one --from are summed (its shards are
+# disjoint), and each file's weight is then the MEAN across the --from sources that
+# measured it. A file a source never ran does not drag its mean toward zero.
 #
 # WHAT THE NUMBERS ARE FOR, AND WHAT THEY ARE NOT. bin/lib/test_shard.rb bin-packs the
 # lane by these weights so the four shards finish at roughly the same time. That is
@@ -43,7 +50,7 @@
 #
 #   local  CI    file
 #   101s   193s  test/lib/dor_check_test.rb        (+92s)
-#   204s   285s  test/lib/release_cli_test.rb      (+81s)
+#   204s   285s  the release CLI suite, then one file (+81s)
 #   114s   173s  test/commands/pr_review_command_test.rb (+59s)
 #    30s    88s  test/lib/reviewer_select_test.rb  (+58s)
 #
@@ -63,16 +70,16 @@ require "yaml"
 ROOT = File.expand_path("..", __dir__)
 
 out_path = File.join(ROOT, "test", "timings.yml")
-from_receipt = nil
+from_receipts = []
 
 args = ARGV.dup
 until args.empty?
   arg = args.shift
   case arg
   when "--out" then out_path = args.shift
-  when "--from" then from_receipt = args.shift
+  when "--from" then from_receipts << args.shift
   when "-h", "--help"
-    puts "usage: bin/measure-test-timings [--out PATH] [--from RECEIPT.json]"
+    puts "usage: bin/measure-test-timings [--out PATH] [--from RECEIPT.json|DIR]..."
     exit 0
   else abort "bin/measure-test-timings: unrecognized argument #{arg.inspect}"
   end
@@ -80,9 +87,10 @@ end
 
 Dir.chdir(ROOT)
 
-receipt_path = from_receipt || File.join(ROOT, "tmp", "test-timings-receipt.json")
+local_receipt = File.join(ROOT, "tmp", "test-timings-receipt.json")
 
-if from_receipt.nil?
+if from_receipts.empty?
+  receipt_path = local_receipt
   manifest = `bin/ci-shard --manifest`.split("\n").map(&:strip).reject(&:empty?)
   abort "bin/measure-test-timings: bin/ci-shard --manifest returned nothing" if manifest.empty?
 
@@ -103,35 +111,53 @@ if from_receipt.nil?
   # way; the exit status is reported rather than obeyed.
   ok = system(env, "bin/rails", "test", *manifest)
   warn "[measure] suite exited #{ok ? 'green' : 'RED — timings kept, but re-measure once it is green'}"
+  from_receipts = [ local_receipt ]
 end
 
-# One receipt, or every receipt in a directory. A file that appears in more than one
-# receipt has its seconds SUMMED — which is the right fold for both shapes this sees:
-# shards are disjoint (so nothing is summed), and a re-run of one shard replaces its own
-# artifact rather than adding a second.
-receipt_paths =
-  if File.directory?(receipt_path)
-    Dir.glob(File.join(receipt_path, "**", "*.json")).sort
-  else
-    [ receipt_path ]
-  end
-
-abort "bin/measure-test-timings: no receipt at #{receipt_path}" if receipt_paths.empty?
-missing = receipt_paths.reject { |path| File.exist?(path) }
-abort "bin/measure-test-timings: no receipt at #{missing.join(', ')}" if missing.any?
-
-files = receipt_paths.each_with_object({}) do |path, acc|
-  parsed = JSON.parse(File.read(path))
-  parsed.fetch("files", {}).each do |file, counters|
-    seconds = counters.is_a?(Hash) ? counters["seconds"].to_f : 0.0
-    acc[file] = { "seconds" => (acc.dig(file, "seconds").to_f + seconds) }
-  end
-rescue JSON::ParserError => e
-  abort "bin/measure-test-timings: #{path} is not readable JSON (#{e.message})"
+# Each --from is one SOURCE: one receipt, or every receipt in a directory. Inside a source
+# a file that appears in more than one receipt has its seconds SUMMED — the right fold for
+# a run's shards, which are disjoint (so nothing is summed), and for a re-run of one shard,
+# which replaces its own artifact rather than adding a second. Across sources a file's
+# weight is the MEAN of the sources that measured it.
+sources = from_receipts.map do |source|
+  paths = File.directory?(source) ? Dir.glob(File.join(source, "**", "*.json")).sort : [ source ]
+  abort "bin/measure-test-timings: no receipt at #{source}" if paths.empty?
+  missing = paths.reject { |path| File.exist?(path) }
+  abort "bin/measure-test-timings: no receipt at #{missing.join(', ')}" if missing.any?
+  paths
 end
+
+commits = []
+per_source = sources.map do |paths|
+  paths.each_with_object({}) do |path, acc|
+    parsed = JSON.parse(File.read(path))
+    commits << parsed["commit"].to_s[0, 8] if parsed["commit"]
+    parsed.fetch("files", {}).each do |file, counters|
+      seconds = counters.is_a?(Hash) ? counters["seconds"].to_f : 0.0
+      acc[file] = acc.fetch(file, 0.0) + seconds
+    end
+  rescue JSON::ParserError => e
+    abort "bin/measure-test-timings: #{path} is not readable JSON (#{e.message})"
+  end
+end
+
+files = per_source.flat_map(&:keys).uniq.to_h do |file|
+  measured = per_source.filter_map { |source| source[file] }
+  [ file, { "seconds" => measured.sum / measured.length } ]
+end
+
+# Weigh only what the lane runs NOW. An older run's receipt names files deleted since, and
+# a stale line in test/timings.yml outlives its file (test/lib/test_shard_test.rb fails on
+# one), so the tree's own manifest is the filter, not the receipts.
+lane = `bin/ci-shard --manifest`.split("\n").map(&:strip).reject(&:empty?)
+abort "bin/measure-test-timings: bin/ci-shard --manifest returned nothing" if lane.empty?
+gone = files.keys - lane
+warn "[measure] dropped #{gone.length} file(s) the lane no longer runs: #{gone.sort.join(', ')}" if gone.any?
+files = files.slice(*lane)
 
 abort "bin/measure-test-timings: the receipt(s) name no files" if files.empty?
-warn "[measure] merged #{receipt_paths.length} receipt(s)" if receipt_paths.length > 1
+receipt_count = sources.sum(&:length)
+warn "[measure] merged #{receipt_count} receipt(s) from #{sources.length} source(s)" if receipt_count > 1
 
 timings = files.each_with_object({}) do |(file, counters), acc|
   seconds = counters.is_a?(Hash) ? counters["seconds"].to_f : 0.0
@@ -155,8 +181,9 @@ header = <<~HEADER
   # bin/rails-executed-set-check, which re-derives the expected set from the tree.
   #
   # Measured #{Time.now.utc.strftime('%Y-%m-%d')} · #{timings.length} files · #{total.round(1)}s total,
-  # from #{receipt_paths.length} receipt(s). Only the RATIOS matter to the packer, so numbers
-  # measured on one machine transfer to a runner of a different speed without re-measurement.
+  # the mean of #{sources.length} source(s), #{receipt_count} receipt(s)#{commits.uniq.empty? ? '' : ", commits #{commits.uniq.join(', ')}"}.
+  # Regenerate from green CI shard receipts, not a local run: subprocess-heavy CLI suites
+  # cost far more on a runner than on a Mac, so local weights misbalance the lane.
 HEADER
 
 File.write(out_path, header + timings.sort.to_h.to_yaml)

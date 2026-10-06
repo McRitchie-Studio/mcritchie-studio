@@ -16,14 +16,14 @@
 # is pinned — the self-skip against release.metadata["qa_gates"] (ship_gate_skip?)
 # went with the local suite it used to spare.
 #
-# WHY THIS FILE EXISTS SEPARATELY. test/lib/release_cli_test.rb owns the ship lane's
-# integration coverage and is the suite's worst APPEND hotspot — frozen at its ceiling
+# WHY THIS FILE EXISTS SEPARATELY. The release CLI ship tests own the ship lane's
+# integration coverage and are an APPEND hotspot — frozen at their ceiling
 # in the suite's health ratchet (`test_health.yml`, named without its directory on
 # purpose: spelling that path maps this file onto the ratchet's own fast-check lane,
 # which is at its cap). The ratchet's stated out is a new file named for its concern,
 # which is what this is; `run_cli` and the canned git stub are
 # re-implemented from it rather than shared, as test/lib/release_pre_qa_remedy_test.rb
-# does, so loading this file never loads that one's 290 tests.
+# does, so loading this file never loads the shared release CLI harness.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
@@ -48,7 +48,7 @@ class ReleaseShipGateReadTest < Minitest::Test
                    '{"name":"test","status":"queued","conclusion":null},' \
                    '{"name":"test:system","status":"in_progress","conclusion":null}]}'
 
-  # The gate's git plumbing, canned — verbatim from release_cli_test.rb's
+  # The gate's git plumbing, canned — verbatim from the release CLI harness's
   # GATE_GIT_STUB: rev-parse → GATE_SHA, workspace git → ok, the private-DB probe
   # answered as a compliant app would. Every stub below answers `origin/accepted` and
   # the two `^{tree}` reads BEFORE falling through to it.
@@ -69,8 +69,8 @@ class ReleaseShipGateReadTest < Minitest::Test
 
   # Every subprocess here loads bin/release.rb standalone, session-less (SessionEnv) and
   # with the outbound seams sealed (OutboundSeams: `gh` / `heroku` / `op` resolve to
-  # logging stubs, never the real binaries) — the same floor release_cli_test.rb's
-  # run_ruby lays. The lock dir is isolated per run so no child touches the live
+  # logging stubs, never the real binaries) — the same floor the release CLI
+  # harness's run_ruby lays. The lock dir is isolated per run so no child touches the live
   # conductor's locks; TASK_API_BASE is unroutable so no board write can leave the box.
   def run_cli(argv, call:, setup: "")
     script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{setup}; #{call})
