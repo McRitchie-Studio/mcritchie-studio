@@ -20,4 +20,18 @@ class ApplicationController < ActionController::Base
 
   # Default-deny: every action needs an admin unless AdminWall lists it.
   include AdminWall
+
+  private
+
+  # Sign-out (the engine's SessionsController#destroy) and a forced re-login
+  # (verify_session_token) both end here. Neither rotates the user's token, so
+  # the socket this browser opened would stay identified as the user; dropping
+  # the user's sockets makes each one reconnect and re-run the connect check,
+  # which this browser's now-empty session fails and the user's other live
+  # sessions pass. /tasks/cable-drops-revoked-sockets.
+  def clear_app_session
+    user_id = session[Studio.session_key]
+    super
+    ApplicationCable::Connection.disconnect(User.find_by(id: user_id)) if user_id.present?
+  end
 end
