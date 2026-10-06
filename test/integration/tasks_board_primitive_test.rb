@@ -6,6 +6,10 @@ require "test_helper"
 # new order, and the card/dropzone identity contract the primitive's SortableJS +
 # live observer depend on holds.
 class TasksBoardPrimitiveTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup { @admin = users(:alex) }
 
   test "[integration] the tasks board renders through the studio/board primitive" do

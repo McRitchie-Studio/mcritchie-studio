@@ -1,5 +1,4 @@
 class SizingsController < ApplicationController
-  skip_before_action :require_authentication, only: [:show]
   before_action :require_admin, only: [:update]
   before_action :set_task
 

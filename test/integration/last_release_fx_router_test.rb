@@ -11,6 +11,10 @@ require "test_helper"
 # its identity (data-card-signature), which is the evidence the router needs to tell
 # a real change from a redraw.
 class LastReleaseFxRouterTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "[component] the Last Release card publishes the signature the router diffs" do
     Release.open!.ship!(by: "test")
 

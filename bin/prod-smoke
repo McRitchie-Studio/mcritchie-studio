@@ -4,7 +4,8 @@
 # bin/prod-smoke <app> — the production read-only SEAL smoke.
 #
 # Runs the EXISTING read-only Playwright suite (e2e/qa_readonly.spec.js, tagged
-# @qa-readonly: home/signin/tasks render + /up 200 + /devops & /devops/cycle 404)
+# @qa-readonly: home/signin/packages/terms/privacy render, /tasks sends a visitor
+# to sign-in, /up 200, /devops & /devops/cycle 404)
 # against the app's PRODUCTION url instead of QA. Read-only BY CONSTRUCTION — it
 # creates no content, sends no email, and changes no provider state — so it is
 # safe to run against live prod after a deploy.

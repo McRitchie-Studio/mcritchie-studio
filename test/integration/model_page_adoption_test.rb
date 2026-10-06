@@ -66,12 +66,11 @@ class ModelPageAdoptionTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", studio_model_path("release", release.slug), text: "Model"
   end
 
-  test "[integration] the Model link is hidden from logged-out visitors" do
+  test "[integration] logged-out visitors are sent to sign-in before any Model link" do
     create_release
 
     get all_deployments_path
 
-    assert_response :success
-    assert_select "a", text: "Model", count: 0
+    assert_redirected_to login_path
   end
 end

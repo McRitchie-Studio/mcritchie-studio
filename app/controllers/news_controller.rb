@@ -7,8 +7,7 @@ class NewsController < ApplicationController
   board_reorderable model: News, id_attr: :slug, param: :slugs
 
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  skip_before_action :require_authentication, only: [:index, :show, :workflow]
-  before_action :require_admin, except: [:index, :show, :workflow]
+  before_action :require_admin
   before_action :set_news, only: [:show, :edit, :update, :destroy, :archive, :review, :process_step, :refine, :conclude, :create_content]
 
   def index

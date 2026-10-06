@@ -1,6 +1,10 @@
 require "test_helper"
 
 class ReleaseSummaryMembersTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "[component] current release condenses member tasks into highlights plus repo counts" do
     Release.delete_all
     rel = Release.open!(branch: "release/condensed-members")

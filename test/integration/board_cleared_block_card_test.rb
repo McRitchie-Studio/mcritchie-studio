@@ -7,6 +7,10 @@ require "test_helper"
 # controller's @ever_blocked_slugs preload feeding Task#block_state through the
 # real _board/_task_card partials.
 class BoardClearedBlockCardTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "a resolved block back in submitted shows the amber re-review card (tone, no badge)" do
     task = Task.create!(title: "board cleared block card", stage: "submitted")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "please fix Y")

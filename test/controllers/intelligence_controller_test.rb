@@ -3,6 +3,10 @@ require "test_helper"
 # [integration] IntelligenceController#index assembles the TaskIntelligence data
 # and renders the dashboard (public-read, like the other board surfaces).
 class IntelligenceControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "renders the dashboard with chart containers and panels" do
     TaskEvent.delete_all
     Task.delete_all

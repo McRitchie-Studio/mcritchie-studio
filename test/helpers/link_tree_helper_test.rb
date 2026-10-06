@@ -84,6 +84,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # makes for the model page it links to: a surface only reachable by knowing a URL is a
   # surface the operator does not have.
   test "the Studio section links the model pipeline board" do
+    self.admin_enabled = true
     self.logged_in_enabled = true
 
     models = public_link_sections.flat_map { |section| section.fetch(:links) }
@@ -138,7 +139,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute_includes labels, "Deployments"
   end
 
-  test "logged-out sidebar shows only the public Apps section" do
+  test "logged-out sidebar shows only the public sections" do
     self.admin_enabled = false
     self.logged_in_enabled = false
 
@@ -181,14 +182,21 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute sidebar_link_sections.any? { |section| section.fetch(:title) == "Clients" }
   end
 
-  test "logged-in sidebar reveals Studio with Agents and Builders together" do
+  test "a signed-in non-admin sees only the public sections" do
     self.admin_enabled = false
     self.logged_in_enabled = true
 
-    sections = sidebar_link_sections
+    assert_equal ["Services", "Apps"], sidebar_link_sections.map { |section| section.fetch(:title) }
+  end
+
+  test "the admin's link hub reveals Studio with Agents and Builders together" do
+    self.admin_enabled = true
+    self.logged_in_enabled = true
+
+    sections = public_link_sections
     studio = sections.find { |section| section.fetch(:title) == "Studio" }
 
-    assert studio, "expected a Studio section for signed-in users"
+    assert studio, "expected a Studio section for admins"
     labels = studio.fetch(:links).map { |link| link.fetch(:label) }
     assert_includes labels, "Agents"
     assert_includes labels, "Builders"

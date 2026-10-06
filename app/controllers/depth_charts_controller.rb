@@ -11,7 +11,6 @@ class DepthChartsController < ApplicationController
   # The route names it depth_charts#toggle_lock; the concern provides board_toggle_lock.
   alias_method :toggle_lock, :board_toggle_lock
 
-  skip_before_action :require_authentication, only: [:show]
   # reorder + toggle_lock mutate a GLOBAL editorial resource: a depth chart hangs
   # off a Team, and Teams have no owner — so there is no per-record authorization to
   # fall back on. Gate both behind admin, matching the sibling news/contents boards

@@ -1,6 +1,10 @@
 require "test_helper"
 
 class NewsControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     @admin = users(:alex)
     @viewer = users(:viewer)
@@ -161,10 +165,11 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@viewer)
     patch news_path(@new_article.slug, format: :json),
           params: { news: { stage: "reviewed" } }, as: :json
-    assert_response :redirect
+    assert_response :forbidden
   end
 
   test "moves require login" do
+    reset!
     patch news_path(@new_article.slug, format: :json),
           params: { news: { stage: "reviewed" } }, as: :json
     # Format-aware auth (OPSEC-046): AJAX/JSON gets a clean 401, not an HTML redirect.
@@ -201,10 +206,11 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@viewer)
     post reorder_news_index_path(format: :json),
          params: { slugs: [@new_article.slug] }, as: :json
-    assert_response :redirect
+    assert_response :forbidden
   end
 
   test "reorder requires login" do
+    reset!
     post reorder_news_index_path(format: :json),
          params: { slugs: [@new_article.slug] }, as: :json
     assert_response :unauthorized
@@ -242,6 +248,7 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "review requires login" do
+    reset!
     post review_news_path(@new_article.slug), params: {
       primary_person: "Test", primary_team: "Test", primary_action: "test"
     }

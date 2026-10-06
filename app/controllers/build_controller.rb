@@ -10,7 +10,6 @@
 #                                  once queued, the request's status page
 #   PATCH /build/:token            claim the subdomain and queue the build
 class BuildController < ApplicationController
-  skip_before_action :require_authentication, only: %i[new create show check]
   before_action :load_request, only: %i[show update]
   before_action :require_admin, only: :index
 

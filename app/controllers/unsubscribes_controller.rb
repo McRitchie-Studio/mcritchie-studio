@@ -17,7 +17,6 @@
 # redirect), so the buttons submit with Turbo off: Turbo will not render a
 # form response that is not a redirect.
 class UnsubscribesController < ApplicationController
-  skip_before_action :require_authentication
   skip_forgery_protection only: :create
   before_action :load_contact
 

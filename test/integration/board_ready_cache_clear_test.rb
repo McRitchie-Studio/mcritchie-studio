@@ -14,6 +14,10 @@ require "test_helper"
 # the flag — is proven in the [e2e] halves of tasks_board_filter_test and
 # board_app_filter_test.
 class BoardReadyCacheClearTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   # The cleanup's distinctive fragments. Asserting the selector+delete pair (not
   # a bare addEventListener, which the modal host also ships) keeps this
   # non-vacuous: only the board cleanup targets the board root's ready flag.

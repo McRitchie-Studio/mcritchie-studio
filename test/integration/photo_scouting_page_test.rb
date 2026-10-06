@@ -18,6 +18,10 @@ require "test_helper"
 # asserting it. A render must never spend, and the one test that drives #search injects
 # a fake provider through the façade's own registry seam.
 class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   Photo = AppearanceReferencePhoto
 
   setup do
@@ -218,13 +222,12 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
 
   # ── THE ADMIN GATES ──────────────────────────────────────────────────────────────
 
-  test "[component] a visitor is offered NO spending button" do
+  test "[component] a visitor is sent to sign-in before any spending button" do
+    reset!
     file_three
     get page_path
 
-    assert_select "[data-test='scouting-search-button']", { count: 0 },
-                  "hub signup is open, so a button shown to everyone is a purchase offered to everyone"
-    assert_select "[data-test='verdict-control']", count: 0
+    assert_redirected_to "/login"
   end
 
   test "[component] an admin is offered the search button and the verdict controls" do
@@ -252,6 +255,7 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] a visitor with no session cannot record a verdict" do
+    reset!
     file_three
 
     post verdict_person_scouting_path(@person.slug),
@@ -609,12 +613,9 @@ class PhotoScoutingPageTest < ActionDispatch::IntegrationTest
 
   # THE ERROR-LOG LINK IS ADMIN-ONLY, because /error_logs is behind require_admin and a
   # link that bounces the reader to a sign-in wall is worse than no link.
-  test "[component] only an admin is offered the error-log link on a silent classifier" do
+  test "[component] an admin is offered the error-log link on a silent classifier" do
     file_three
     Photo.update_all(face_score: nil)
-
-    Appearances::FaceVisibility.stub(:available?, true) { get page_path }
-    assert_select "[data-test='classifier-silent'] a[href=?]", error_logs_path, count: 0
 
     log_in_as(users(:alex))
     Appearances::FaceVisibility.stub(:available?, true) { get page_path }

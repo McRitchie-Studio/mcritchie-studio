@@ -1,6 +1,10 @@
 require "test_helper"
 
 class ReviewProcessHubIntegrationTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     Agent.create!(name: "Carl", slug: "carl")
     Agent.create!(name: "Shannon", slug: "shannon")

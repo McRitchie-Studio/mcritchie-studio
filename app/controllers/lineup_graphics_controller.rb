@@ -2,7 +2,6 @@ class LineupGraphicsController < ApplicationController
   include LineupLabelsHelper
 
   layout "lineup_graphic"
-  skip_before_action :require_authentication, only: [:show]
 
   # Offense slots that appear in the TikTok 5×2 graphic (no WR3, no Flex).
   OFFENSE_LINE_SLOTS  = %i[lt lg c rg rt].freeze

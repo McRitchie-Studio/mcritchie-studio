@@ -1,7 +1,6 @@
 class ReleasesController < ApplicationController
   RELEASES_PER_PAGE = 25
 
-  skip_before_action :require_authentication, only: %i[index show]
   before_action :require_admin, only: %i[authorize_ship]
 
   def index

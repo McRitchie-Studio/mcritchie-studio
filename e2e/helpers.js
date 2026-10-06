@@ -412,4 +412,8 @@ async function openDeploySidebar(page, panel) {
   return sidebar;
 }
 
-module.exports = { loginWithMagicLink, watchPageErrors, openDeploySidebar, blockThirdPartyRequests };
+// A signed-out browser: `test.use({ storageState: VISITOR })` in a spec about what a
+// visitor sees. Every other spec starts as the seeded admin (e2e/global-setup.js).
+const VISITOR = { cookies: [], origins: [] };
+
+module.exports = { loginWithMagicLink, watchPageErrors, openDeploySidebar, blockThirdPartyRequests, VISITOR };

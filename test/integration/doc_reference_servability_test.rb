@@ -26,6 +26,10 @@ require_relative "../support/doc_reference_scanner"
 # prove this test agrees with a copy of the rule, which is what let the original defect
 # through — role.md's author and the route never compared notes.
 class DocReferenceServabilityTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   DOCS_ROOT = Rails.root.join("docs", "agents")
 
   # Frozen audit snapshots. AGENTS.md: historical snapshots stay as written, and
