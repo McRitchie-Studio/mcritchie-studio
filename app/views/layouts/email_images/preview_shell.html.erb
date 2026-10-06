@@ -1,0 +1,15 @@
+<%# A bare document around the engine's branded_mailer layout, so the preview
+    iframe shows exactly the shell every app's mailer renders, and nothing of
+    the admin page. %>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Email preview</title>
+    <style>body{margin:0;background:#f4f5f7;}</style>
+  </head>
+  <body data-test="email-shell">
+    <%= render template: "layouts/branded_mailer" %>
+  </body>
+</html>

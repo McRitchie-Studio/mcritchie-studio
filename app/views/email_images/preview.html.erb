@@ -1,0 +1,6 @@
+<%# Sample body copy under the header, so the preview reads as an email. %>
+<p style="margin:0 0 14px;font-size:16px;line-height:24px;">Hi there,</p>
+<p style="margin:0 0 14px;font-size:16px;line-height:24px;">
+  This is where the <strong><%= @brief.catalog_key.humanize.downcase %></strong> email's message goes. The header above is
+  <%= @preview_artifact ? "candidate #{@preview_artifact.slug}" : "not chosen yet" %>.
+</p>

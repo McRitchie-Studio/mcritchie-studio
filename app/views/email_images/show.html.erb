@@ -1,0 +1,89 @@
+<%# ONE BRIEF: what the header must say, the generate control with its spend,
+    the candidate grid, and the chosen candidate inside the real email shell
+    (EmailImagesController#preview, framed at email width). %>
+<% kit = @brief.kit %>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
+    <%= link_to "Email images", email_images_path, class: "hover:text-primary" %>
+    <span aria-hidden="true">/</span>
+    <span class="text-heading font-bold font-mono break-all"><%= @brief.catalog_key %></span>
+  </nav>
+
+  <div class="card p-4 sm:p-5 space-y-2">
+    <h1 class="text-xl sm:text-2xl font-bold text-heading break-words">&ldquo;<%= @brief.headline %>&rdquo;</h1>
+    <div class="flex gap-1.5 flex-wrap">
+      <span class="badge text-3xs bg-surface-alt text-muted border-subtle"><%= @brief.app %></span>
+      <span class="badge text-3xs bg-surface-alt text-muted border-subtle font-mono"><%= @brief.catalog_key %></span>
+      <span class="badge text-3xs bg-surface-alt text-muted border-subtle"><%= kit&.label %></span>
+      <span class="badge text-3xs bg-surface-alt text-muted border-subtle">text: <%= @brief.text_mode %></span>
+      <span class="badge text-3xs bg-surface-alt text-muted border-subtle"><%= @brief.preset_config&.label %> &middot; <%= @brief.image_format.upcase %></span>
+      <% if @brief.approved_artifact_slug.present? %>
+        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">approved</span>
+      <% end %>
+    </div>
+    <% if @brief.exported_at %>
+      <p class="text-3xs text-muted">Exported <%= time_ago_in_words(@brief.exported_at) %> ago to <span class="font-mono break-all"><%= @brief.exported_to %></span>.</p>
+    <% end %>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-12 lg:items-start">
+    <div class="lg:col-span-5 space-y-4 min-w-0">
+      <div class="card p-4 space-y-3" data-test="generate-panel">
+        <h2 class="text-sm font-bold text-heading">Generate</h2>
+        <%= render "build_status", brief: @brief %>
+        <dl class="text-2xs grid grid-cols-2 gap-x-3 gap-y-1">
+          <dt class="text-muted">Rounds</dt><dd class="text-body" data-test="rounds"><%= @brief.rounds_used %> of <%= @brief.max_rounds %></dd>
+          <dt class="text-muted">Per round</dt><dd class="text-body"><%= pluralize(EmailImages::BrandKit.candidates_per_round, "candidate") %></dd>
+          <dt class="text-muted">Spent</dt>
+          <dd class="text-body font-mono" data-test="spend">
+            <%= number_with_delimiter(@brief.billable_units_total) %> tokens<% if @brief.cost_usd_total %> &middot; <%= number_to_currency(@brief.cost_usd_total) %><% else %> &middot; unpriced<% end %>
+          </dd>
+          <dt class="text-muted">Generator</dt><dd class="text-body break-words"><%= (@generator_row || @preferred_row)&.label || "none registered" %></dd>
+        </dl>
+        <% if @generator_row.nil? %>
+          <p class="text-2xs text-muted" data-test="generator-off"><%= @preferred_row ? @preferred_row.unconfigured_message : "No generator is registered for email headers." %></p>
+        <% elsif @brief.building? %>
+          <%# One round at a time; the server refuses a second press too. %>
+        <% elsif @brief.rounds_exhausted? %>
+          <p class="text-2xs text-muted">All rounds are used. Change the brief, or raise its round limit.</p>
+        <% else %>
+          <%= button_to "Generate #{EmailImages::BrandKit.candidates_per_round} candidates", generate_email_image_path(@brief),
+                        class: "btn btn-sm btn-primary w-full", form: { data: { test: "generate-form" } } %>
+          <p class="text-3xs text-muted">Costs money: one paid image per candidate. Do not press twice.</p>
+        <% end %>
+      </div>
+
+      <details class="card p-4" <%= "open" if @brief.errors.any? %>>
+        <summary class="text-sm font-bold text-heading cursor-pointer">Edit the brief</summary>
+        <div class="mt-3"><%= render "form", brief: @brief %></div>
+      </details>
+    </div>
+
+    <div class="lg:col-span-7 space-y-4 min-w-0">
+      <div class="card p-4 space-y-3">
+        <h2 class="text-sm font-bold text-heading">Candidates</h2>
+        <%= render "candidates", brief: @brief, candidates: @candidates, preview_artifact: @preview_artifact %>
+      </div>
+    </div>
+  </div>
+
+  <%# FULL WIDTH, because the email is a fixed 600 px card: inside the
+      candidates column it was clipped at desktop widths. Below 648 px the
+      frame scrolls sideways inside its own box, never the page. %>
+  <div class="card p-4 space-y-2" data-test="email-preview-panel">
+    <h2 class="text-sm font-bold text-heading">In the email</h2>
+    <% if @preview_artifact %>
+      <p class="text-3xs text-muted">
+        The <%= @brief.app %> email shell at 600 px, as an inbox draws it<%= @brief.text_mode == "none" ? ", with the headline set as live text over the art" : "" %>.
+        Alt text: &ldquo;<%= @brief.effective_alt_text %>&rdquo;.
+      </p>
+      <div class="overflow-x-auto rounded-lg border border-subtle bg-[#f4f5f7]">
+        <iframe src="<%= preview_email_image_path(@brief, candidate: @preview_artifact.slug) %>"
+                title="Email preview" data-test="email-preview" loading="lazy"
+                class="block mx-auto border-0" style="width:648px;max-width:none;height:520px;"></iframe>
+      </div>
+    <% else %>
+      <p class="text-2xs text-muted">Generate a round to see a candidate in the email.</p>
+    <% end %>
+  </div>
+</div>

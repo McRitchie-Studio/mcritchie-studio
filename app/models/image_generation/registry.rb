@@ -26,7 +26,7 @@ module ImageGeneration
     # and only one of them is a bug.
     Row = Struct.new(:key, :label, :adapter, :endpoint, :model, :api_version, :credential_env,
                      :reference_field, :reference_arity, :capabilities, :docs_url,
-                     :unit_price_usd, :billing_unit, :measured, keyword_init: true) do
+                     :unit_price_usd, :billing_unit, :measured, :image_size, keyword_init: true) do
       # NO credential_env MEANS KEYLESS, not misconfigured. Nothing ships that way
       # today; the branch exists so adding one is a row rather than an argument
       # with this file.
@@ -191,7 +191,10 @@ module ImageGeneration
             docs_url: attrs[:docs_url]&.to_s,
             unit_price_usd: attrs[:unit_price_usd],
             billing_unit: attrs[:billing_unit]&.to_s,
-            measured: attrs[:measured]
+            measured: attrs[:measured],
+            # THE SIZE THIS ROW ASKS THE VENDOR FOR, in the vendor's own words
+            # ("1536x1024" for the OpenAI image tool). Nil sends no size at all.
+            image_size: attrs[:image_size]&.to_s
           )
         end
       end

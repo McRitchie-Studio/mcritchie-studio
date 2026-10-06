@@ -42,9 +42,14 @@ module Appearances
 
     def self.call(source, **kwargs) = new(source, **kwargs).call
 
-    def initialize(source, person_slug:, clock: Time)
+    # `prefix:` AND `subject:` GENERALISE THE FOLDER, defaults unchanged: a
+    # character sheet still lands at character-sheets/<person>/…, and an email
+    # header passes prefix "email_images" and subject "<app>/<email_key>/<variant>"
+    # (EmailImages::Generate). `person_slug:` is the original spelling of subject.
+    def initialize(source, person_slug: nil, subject: nil, prefix: PREFIX, clock: Time)
       @source = source.to_s
-      @person_slug = person_slug.to_s.presence || "unknown"
+      @subject = (subject || person_slug).to_s.presence || "unknown"
+      @prefix = prefix.to_s.presence || PREFIX
       @clock = clock
     end
 
@@ -92,14 +97,14 @@ module Appearances
       [response.body.to_s, response["content-type"].presence || "image/png"]
     end
 
-    # PERSON-SCOPED AND RANDOM. Scoped so the bucket is browsable by subject the
+    # SUBJECT-SCOPED AND RANDOM. Scoped so the bucket is browsable by subject the
     # way the headshots are; RANDOM rather than derived from the artifact slug so
     # the upload can happen BEFORE the row exists — a failed upload then leaves no
     # half-built artifact pointing at an object that was never written.
     def build_key(content_type)
       ext = content_type.to_s.split("/").last.presence || "png"
       ext = "jpg" if ext == "jpeg"
-      "#{PREFIX}/#{@person_slug}/#{@clock.now.utc.strftime('%Y%m%d%H%M%S')}-#{SecureRandom.hex(4)}.#{ext}"
+      "#{@prefix}/#{@subject}/#{@clock.now.utc.strftime('%Y%m%d%H%M%S')}-#{SecureRandom.hex(4)}.#{ext}"
     end
   end
 end

@@ -394,7 +394,12 @@
 # local cert is retired and nothing opens a g1_cert gate, so the indicator could never
 # fire. None was quarantined. Measured with `npx playwright test --list` => 220,
 # 210 with --grep-invert @quarantine.
-total_specs: 220
+#
+# 220 -> 221 on 2026-10-06 (/tasks/email-header-image-generator):
+# e2e/email_images.spec.js adds one spec, not quarantined: an admin opens a header brief,
+# generates a fake round, approves a candidate and sees it in the email shell preview.
+# Measured on the tree merged with accepted: `npx playwright test --list` => 221.
+total_specs: 221
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -605,7 +610,9 @@ quarantined: 10
 # 213 -> 210: the three board_local_check.spec.js specs, deleted with the retired local-check
 # indicator (/tasks/remove-dead-local-check-indicator). Measured:
 # `npx playwright test --list --grep-invert @quarantine` => 210.
-executed: 210
+# 210 -> 211: the email_images.spec.js spec (/tasks/email-header-image-generator).
+# Measured on the tree merged with accepted: the same lister => 211.
+executed: 211
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
