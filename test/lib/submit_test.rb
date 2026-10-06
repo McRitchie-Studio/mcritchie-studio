@@ -9,7 +9,7 @@
 # env seams. The skip decisions themselves are unit-tested in
 # test/lib/fast_lane_test.rb.
 # Run directly:
-#   ruby -Itest test/lib/ship_test.rb
+#   ruby -Itest test/lib/submit_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
@@ -25,7 +25,7 @@ require_relative "../support/outbound_seams"
 require_relative "../support/fake_desk"
 require_relative "../../bin/lib/tree_fingerprint"
 
-class ShipTest < Minitest::Test
+class SubmitTest < Minitest::Test
   BIN = File.expand_path("../../bin/submit", __dir__)
   SLUG = "fast-lane-demo"
   BRANCH = "feat/#{SLUG}"

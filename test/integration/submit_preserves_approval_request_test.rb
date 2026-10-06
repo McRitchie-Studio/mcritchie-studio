@@ -33,7 +33,7 @@ require "test_helper"
 # WHAT THIS FILE ASSERTS, and it is the PERSISTED FIELD, never the warning string:
 # a test that only checked the message would have passed against the shipped defect,
 # which printed a perfectly accurate warning about a request it was destroying.
-class ShipPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
+class SubmitPreservesApprovalRequestTest < ActionDispatch::IntegrationTest
   LOCAL_URL = "http://localhost:3021/contests/demo".freeze
 
   def token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)

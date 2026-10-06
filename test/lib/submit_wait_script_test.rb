@@ -2,7 +2,7 @@
 
 # [integration] Harness tests for bin/submit-wait — the REAL script, shelled via
 # Open3 against a throwaway state directory and a stub ship (house pattern:
-# test/lib/ship_test.rb, test/lib/fast_check_test.rb).
+# test/lib/submit_test.rb, test/lib/fast_check_test.rb).
 #
 # THE POINT OF THIS FILE, stated so nobody weakens it later. A watcher test that
 # asserts "it waits" PASSES ON A WATCHER THAT WAITS FOREVER, and waiting forever
@@ -25,7 +25,7 @@
 # discriminator, not decoration.
 #
 # Run directly:
-#   ruby -Itest test/lib/ship_wait_script_test.rb
+#   ruby -Itest test/lib/submit_wait_script_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
@@ -36,7 +36,7 @@ require_relative "../support/session_env"
 require_relative "../support/outbound_seams"
 require_relative "../../bin/lib/ship_wait"
 
-class ShipWaitScriptTest < Minitest::Test
+class SubmitWaitScriptTest < Minitest::Test
   BIN = File.expand_path("../../bin/submit-wait", __dir__)
   LIB = File.expand_path("../../bin/lib/ship_wait.rb", __dir__)
   SLUG = "ship-wait-demo"

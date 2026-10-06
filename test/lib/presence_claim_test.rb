@@ -20,7 +20,7 @@
 # run is the leak TaskUsageSandbox exists to close.
 #
 # The killed-writer rule is asserted at the integration tier, in
-# test/lib/ship_test.rb, where a real ship is really SIGKILLed.
+# test/lib/submit_test.rb, where a real ship is really SIGKILLed.
 
 require "minitest/autorun"
 require "json"

@@ -35,7 +35,7 @@
 # config pinned to a scratch file.
 #
 # WHERE THE WIRING IS PROVED. Not here, and not by reading bin/submit's source: a
-# source scan asserts a string, not a behaviour. test/lib/ship_test.rb runs the
+# source scan asserts a string, not a behaviour. test/lib/submit_test.rb runs the
 # REAL bin/submit against a repo whose repo-level identity is `tester` and asserts
 # the resulting commit's author out of git.
 #

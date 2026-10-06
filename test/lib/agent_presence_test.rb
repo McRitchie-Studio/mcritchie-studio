@@ -516,7 +516,7 @@ class AgentPresenceTest < Minitest::Test
                       "suffixed sibling. If this line goes red the reader's glob was tightened " \
                       "— the other valid fix — and the writer's name may only follow it back " \
                       "once every other reader of this store has been shown to agree, including " \
-                      "the SHELL glob in test/lib/ship_test.rb"
+                      "the SHELL glob in test/lib/submit_test.rb"
       refute_includes paths, dotted,
                       "THE FIX: a dot-prefixed sibling is excluded by `Dir.glob` and by a POSIX " \
                       "shell glob by default, so one name hides it from every reader of this " \

@@ -36,7 +36,7 @@
 # #{SLUG}"` and stayed GREEN when the printed line was mutated back to the bare
 # form — because an absolute path CONTAINS that substring
 # (".../bin/submit <slug>" includes "bin/submit <slug>"). Several assertions in
-# test/lib/ship_test.rb have the same shape and the same blindness. So the
+# test/lib/submit_test.rb have the same shape and the same blindness. So the
 # end-to-end test here does not ask what the line SAYS. It takes the first token
 # of the printed command and asks the disk: is that an absolute path, and is it
 # `File.executable?`. Only an absolute, real, runnable script can pass, and no

@@ -270,7 +270,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   #
   # THE HANDOFF ITSELF NO LONGER DROPS ANYTHING (2026-09-09). `submitted` joined
   # APPROVAL_REQUEST_STAGES, so step 3 is now the merge, not the ship. The test that
-  # holds that half is in test/integration/ship_preserves_approval_request_test.rb,
+  # holds that half is in test/integration/submit_preserves_approval_request_test.rb,
   # which drives the real PATCH `bin/submit` issues.
 
   test "[unit] merging a task drops its pending request and says so on the record" do

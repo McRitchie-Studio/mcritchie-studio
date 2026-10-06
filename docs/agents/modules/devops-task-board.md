@@ -788,7 +788,7 @@ point:
 `SHIP_CI_WAIT=off` disarms it. Note the wait lives in the **wrapper**: a hand-run
 `bin/task move <slug> submitted` still does not wait, and `bin/dor-check`'s own
 semantics are untouched. Owned by `bin/lib/ci_wait.rb`; the rule is proven in
-`test/lib/ci_wait_test.rb` and its presence on the path in `test/lib/ship_test.rb`.
+`test/lib/ci_wait_test.rb` and its presence on the path in `test/lib/submit_test.rb`.
 
 ### Waiting for a backgrounded ship — `bin/submit-wait`
 
@@ -851,7 +851,7 @@ the window are deleted.
   verified)`, matched whole rather than as a substring.
 - **Already-done returns AT ONCE.** The first read happens before the first
   sleep. This is the case the naive loop gets most wrong, and the case
-  `test/lib/ship_wait_script_test.rb` pins with a wall-clock bound — because a
+  `test/lib/submit_wait_script_test.rb` pins with a wall-clock bound — because a
   test that only asserts "it waits" passes on a watcher that waits forever.
 - **It is bounded** (`--timeout`, default 1800s; `--interval`, default 10s,
   floored at 1). A wait that can hang forever is the same defect in a new shape.
@@ -874,7 +874,7 @@ state. Waiting for the ship subsumes waiting for its CI.
 
 Owned by `bin/lib/ship_wait.rb` (the decision rules) and `bin/submit-wait` (the
 CLI); proven in `test/lib/ship_wait_test.rb` (unit) and
-`test/lib/ship_wait_script_test.rb` (the real script, including a decoy sibling
+`test/lib/submit_wait_script_test.rb` (the real script, including a decoy sibling
 process that a pattern-based watcher would hang on).
 
 With the PR open, ship asks two questions of the sibling PRs in **one**

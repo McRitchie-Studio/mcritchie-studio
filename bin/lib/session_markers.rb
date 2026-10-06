@@ -216,7 +216,7 @@ module SessionMarkers
     # The sibling was `"#{path}.#{Process.pid}.tmp"`: the marker path PLUS A SUFFIX,
     # while every reader of this namespace globs `*.presence-*` (the grader at
     # bin/lib/agent_presence.rb#claim_paths, plus five test readers, one of them a
-    # SHELL glob in test/lib/ship_test.rb). A suffix cannot escape a trailing `*`, so
+    # SHELL glob in test/lib/submit_test.rb). A suffix cannot escape a trailing `*`, so
     # the zero-byte window this block closed on the marker path simply REOPENED on a
     # name the readers still matched. Production graded the sibling `:malformed` for
     # the width of every write, and the integration tier — which parses claims bare —

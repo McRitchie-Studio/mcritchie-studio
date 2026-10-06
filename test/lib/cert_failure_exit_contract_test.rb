@@ -48,7 +48,7 @@ class CertFailureExitContractTest < Minitest::Test
   # while it does. In THIS harness the push dies (no origin): that is the step that
   # must own the non-zero exit — never a silent 0 — and the pre-flight, which comes
   # after it, must not have spoken at all. (That a RED pre-flight is reported and
-  # walked past is proven with a real origin in test/lib/ship_test.rb.)
+  # walked past is proven with a real origin in test/lib/submit_test.rb.)
   def test_a_failed_push_owns_the_exit_and_the_pre_flight_has_not_run_before_it
     out, code = ship(cert_exit: 1)
 

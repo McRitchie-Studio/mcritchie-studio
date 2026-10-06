@@ -8,7 +8,7 @@
 # Also picked up by the normal `bin/rails test` sweep.
 #
 # The integration half — that bin/submit actually CALLS this, and that a red CI
-# leaves the task in `building` — lives in test/lib/ship_test.rb. Both halves are
+# leaves the task in `building` — lives in test/lib/submit_test.rb. Both halves are
 # needed: this file proves the rule, that one proves the rule is on the path.
 require "minitest/autorun"
 require_relative "../../bin/lib/ci_wait"
@@ -194,7 +194,7 @@ class CiWaitTest < Minitest::Test
     # F2. :unreadable is a 401/403 on the TOKEN. It SETTLES — waiting cannot mend a
     # credential — which is precisely why it needs a name of its own: bin/submit's
     # token-refresh advisory fired on :unverified and said nothing on the one state
-    # whose remedy IS the token. The integration half is in test/lib/ship_test.rb.
+    # whose remedy IS the token. The integration half is in test/lib/submit_test.rb.
     refused = settle(probe_over(:unreadable))
     green = settle(probe_over(:green))
     unread = settle(probe_over(:unverified), step: 30, timeout_s: 900, appearance_s: 60)

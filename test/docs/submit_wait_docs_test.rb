@@ -15,8 +15,8 @@ require "test_helper"
 #
 # NOTE FOR THE RUNNER: `bin/fast-check` cannot see `test/docs` (its diff→test map
 # does not reach this directory), so this lane must be run explicitly:
-#   bin/rails test test/docs/ship_wait_docs_test.rb
-class ShipWaitDocsTest < ActiveSupport::TestCase
+#   bin/rails test test/docs/submit_wait_docs_test.rb
+class SubmitWaitDocsTest < ActiveSupport::TestCase
   AGENTS = Rails.root.join("docs", "agents")
 
   # The places the "run it in the background" advice lives. claude.md and

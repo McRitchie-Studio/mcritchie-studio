@@ -21,7 +21,7 @@
 #
 #   1. IT NEVER MATCHES ITSELF. There is no `pgrep`, no `pkill`, no `ps | grep`
 #      anywhere in this script or in bin/lib/ship_wait.rb — enforced by
-#      test/lib/ship_wait_script_test.rb. Liveness is a PID captured at launch
+#      test/lib/submit_wait_script_test.rb. Liveness is a PID captured at launch
 #      (`Process.kill(0, pid)`) or a sentinel line the launcher appends to the
 #      log. A pattern that can match a sibling watcher is the disease.
 #   2. THE LOG HOLDS THE VERDICT, NOT THE PROCESS TABLE AND NOT THE EXIT CODE.
