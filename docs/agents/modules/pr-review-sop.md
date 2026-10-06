@@ -329,7 +329,10 @@ Resolved — <slug>: <reason>** line; omit the section on a clean run.
 
 ## Step 4 — Verdict
 
-**Carl collects the light's read and drives the verdict.**
+**Carl collects the light's read and drives the verdict.** A quiet light is not a
+stalled one: messages arrive at its next tool round, and a clean desk fits hard work.
+Ask with `SendMessage` before stopping it, and before merging without its verdict say
+so and wait one more round. A blocker found after the merge costs a whole new task.
 
 - **Merge-ready** (no reviewer blocked) → **Carl merges the feat PR into
   `accepted`** — revalidate the head, `gh pr merge --merge --match-head-commit`,

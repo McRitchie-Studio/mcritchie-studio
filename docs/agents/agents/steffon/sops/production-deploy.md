@@ -173,7 +173,7 @@ It **proves the frozen SHA is live first**, then records; it never deploys:
 |---|---|---|
 | `github_actions` | mcritchie-studio | `origin/main` at the frozen SHA, prod `/up` 200, and a `prod-deploy.yml` run whose `headSha` is that SHA concluded success |
 | `git_push_heroku` | mcritchie-industries, rolio | prod `/up` 200, and the app's **current** Heroku release is a succeeded `Deploy <frozen sha>` (app from the adapter's `remote:`) |
-| `repo_script` | turf-monster | the same Heroku proof, against `prod_deploy.heroku_app:`; it also needs `prod_deploy.smoke_url:` or the repo can never be confirmed |
+| `repo_script` | turf-monster | the same Heroku proof, against `prod_deploy.heroku_app:`; it also needs `prod_deploy.smoke_url:` (a bare origin: the ship appends `/up`) or the repo can never be confirmed |
 
 Per-repo refusals: `prod /up did not answer 200` wants a deploy (`bin/release ship`);
 `<app>'s CURRENT Heroku release is not a succeeded Deploy …` means a config change or
@@ -245,7 +245,9 @@ naming the source. Nothing runs locally, and it does not self-gate on G3's recor
 | `test gate HELD … NO green verdict for frozen <sha> (pending …) after polling ~1200s` | CI is still building. | Wait, or widen `RELEASE_CI_POLL_TIMEOUT`; re-run `ship`. |
 
 For a genuine false negative, the supported override is `bin/release ship
---skip-test-gate --reason "…"`, which records a **red** gate SOP. **Never** blank the
+--skip-test-gate --reason "…"`, which records a **red** gate SOP. The skip covers
+every app with a `test_cmd`, and each app's gate consumes one `--reason`: pass the
+flag once per gated app, or the second one aborts. **Never** blank the
 registry's `test_cmd`/`qa_test_cmd`: that silently disarms the last gate before
 production. Details: [`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md).
 
@@ -299,7 +301,9 @@ migration, or the hub's target tree still carries the rake.
 never the primary). **⚪ unsealed** means those specs could not run, and says why; it
 is not a red seal and prints no rollback. Fix the cause, then re-seal:
 `bin/release reseal <release-slug>` (it overwrites the recorded seal and deploys
-nothing). Use the same command to correct a seal recorded wrongly.
+nothing). Use the same command to correct a seal recorded wrongly. A reseal runs the
+release's frozen tree, so a spec fix merged later cannot turn that seal green; the
+next release's seal shows it.
 
 `ship` records the **G4 Ship gate** (a red seal never flips its success) and moves
 members to `shipped` itself: never hand-run a bulk `bin/task move`.

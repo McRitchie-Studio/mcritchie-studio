@@ -57,15 +57,8 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
   selector's refusal states: [`pr-review-sop.md`](pr-review-sop.md).
 - **Classify the shape**; it selects the tests you owe
   (`config/feature_shapes.yml`): `ui-only` · `ui+db` · `backend` · `library` ·
-  `onchain` · `onchain-vertical` · `docs` · `test-only`.
-- **Shape by the files, never the hunk.** `bin/lib/code_diff.rb` classifies by file
-  type, so a comment-only `.rb` edit is not `docs`: re-shape to what the file is and
-  pay the tier with a test that fails when the trap the comment describes is sprung.
-  `docs` admits prose plus guard tests under `test/docs/`, and nothing else. A
-  studio-engine change a consumer can assert on is `library`, never `ui-only`. A
-  `.github/workflows` change is `backend`; its honest `[integration]` line is the
-  PR's own CI run of the changed workflow. Read `config/feature_shapes.yml` before
-  telling anyone what a shape refuses.
+  `onchain` · `onchain-vertical` · `docs` · `test-only`. Shape by the files, never
+  the hunk ([`fast-lane.md`](fast-lane.md#the-long-form-fallback)).
 - **`test-only`** is for a diff that is entirely test code. It has no tiers, but
   it is not the easy option:
   1. It is claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`,
@@ -78,12 +71,8 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      runner for `e2e/`/`tests/`), write a `[control]` line in `checks_run` naming
      a file from the diff. A `NO-SIGNAL` verdict is **not** a refusal; it asks
      you for that sentence.
-  4. Lead every `[control]` line with the test file's path or basename, the
-     command, and the failure you saw. A line naming no file from the diff is
-     refused (`bin/dor-check`'s `control_names_a_changed_file?`).
-  5. `bin/ship` does not run `bin/control-check`. Run it from the desk **after
-     your last commit**: its stamp is bound to the tree, so any later commit stales
-     it. Never run it beside a ship; it swaps test files in place while it runs.
+  4. `bin/ship` never runs it. Run it after your last commit (the stamp is bound
+     to the tree) and never beside a ship (it swaps test files in place).
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
 every session: `<app-slug> · <feature-slug> · <task URL>`.
@@ -121,6 +110,8 @@ cd /Users/alex/projects/mcritchie-studio/.worktrees/<slug>
 1. On a fresh desk, set it up first: `bundle install`, `bin/rails db:prepare`.
 2. Make the scoped change. Commit early and often; a peer claim can reset a desk
    under uncommitted work.
+   After any `db:migrate`, read the whole `git diff db/schema.rb`: the dump can
+   carry a sibling's column from a shared database. Keep only your own hunks.
 3. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the **owning active docs in the same pass**.
 4. Narrate with `bin/agent-activity`, one activity per unit of work, starting
@@ -136,21 +127,8 @@ them tier-tagged:
 bin/task update <slug> --checks "[unit] ..." --checks "[integration] ..."
 ```
 
-`--checks` and `--accept` **replace** the list; pass the full set each call.
-
-- **Repeat the flag for each entry.** `--checks "[unit] a" "[integration] b"` stores
-  only the first; `bin/task update` ignores the stray value and exits 0.
-- **Tag each line with one tier, at its start.** `[unit]` and `[integration]` go on
-  separate lines; `[unit+integration]` credits neither.
-- **`--test` and `--checks` are different fields.** `--test` fills `test_plan`,
-  which the preflight requires at `begin`; `--checks` fills `checks_run`, the only
-  field `bin/dor-check` grades tiers from. Filling one never satisfies the other.
-- **Keep shell out of recorded text.** Inside double quotes the shell runs anything
-  in backticks or `$(…)`, with your credentials, and the write still succeeds with
-  the words gone. Write long prose to a file with a quoted heredoc (`<<'EOF'`) and
-  pass `"$(cat file)"`; use `git commit -F` and `gh pr create --body-file` likewise.
-- **Read every write back** with `bin/task show <slug> -v`. A successful exit is
-  not evidence the record holds what you sent.
+`--checks` and `--accept` **replace** the list; pass the full set each call. The
+other recording traps: [`task-board-api.md`](task-board-api.md#footguns-verified-will-bite-you), footgun 8.
 
 ## Step 4 — Decide: does this change earn a LOCAL REVIEW?
 
@@ -301,19 +279,9 @@ the task URL, records `pr_url`, runs the pre-flight while CI is already running,
 - Moving by hand (`bin/task move <slug> submitted`) does **not** wait for CI; the
   wait lives in `bin/ship`.
 
-**Before you launch**, three cheap checks save a whole CI cycle:
-
-- **Land every change first.** A push during the CI wait restarts CI under the
-  waiter; the verdict still refuses correctly, so let CI settle on the final head
-  and re-run `bin/ship`.
-- **Probe the verdict read-only:** `bin/dor-check <slug> --json` from the desk
-  names missing tiers and a bad `[control]` line in seconds, and records no gate
-  attempt. Its complaint about the PR or CI is expected before the ship.
-- **Clear the traps the pre-flight cannot see** — a `test/docs` guard, a new
-  `bin/` script, your own test run holding the test database:
-  [`gates/g1-cert.md`](gates/g1-cert.md#traps-the-pre-flight-cannot-see). A diff
-  touching `e2e/` also owes re-derived counts in `config/e2e_lane.yml`
-  ([`testing.md`](testing.md)).
+**Before you launch:** land every change (a push mid-wait restarts CI), probe
+with `bin/dor-check <slug> --json` (read-only, no gate attempt), and clear the
+[traps the pre-flight cannot see](gates/g1-cert.md#traps-the-pre-flight-cannot-see).
 
 Keep the worktree and branch until review confirms the PR merged or was
 abandoned. A pushed branch preserves code; `main` is not a backup.

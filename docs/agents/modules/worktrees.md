@@ -330,10 +330,6 @@ park stranded work on a pushed `rescue/<slug>-<date>` branch.
   `cleanup --reclaim`. Desks held by the idle clock free themselves within the window
   (a fleet-wide board write resets it everywhere at once). Never reclaim a `_ship`
   workspace or a reviewer's throwaway.
-- **Never run `bin/install-agent-docs` by hand, least of all from a desk.** It
-  publishes the tree it runs in, committed or not, as the machine-wide entry docs. On
-  an entry-doc branch, preflight's drift line is expected; the ship publishes.
-  `bin/install-agent-docs check` is the read-only form.
 
 ## Multi-Agent Safety & Merge Patterns
 

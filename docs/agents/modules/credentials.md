@@ -21,15 +21,14 @@ put a live secret in a transcript:
 
 - **`heroku releases:info <v>` prints every config var in plaintext.** For a
   release's log use `heroku releases:output <v>`.
-- **`heroku config:set VAR=… ` echoes the value it set**, multi-line secrets
+- **`heroku config:set VAR=…` echoes the value it set**, multi-line secrets
   included. Run it as `heroku config:set … >/dev/null 2>&1; echo "exit $?"`.
 - **`heroku config:get` cannot verify anything**: absent, empty and a failed read all
   print one bare newline. Test presence with a control:
   `heroku config --json -a <app> | jq 'length'` (0 means the read failed), then
   `jq '(.NAME // "") != ""'`.
-- **Any "only stderr" redirect in zsh** — see
-  [`../system/coding-standards.md`](../system/coding-standards.md#shell-zsh-on-macos):
-  `2>&1 >/dev/null` still carries stdout.
+- **Any "only stderr" redirect** uses the brace-group form in
+  [`../system/coding-standards.md`](../system/coding-standards.md#shell-zsh-on-macos).
 
 **Hunting a leak must not repeat it.** Use a slice of the live variable as the grep
 needle (`needle="${SECRET:200:60}"`), report paths and counts only, and tell a real
@@ -67,13 +66,6 @@ Already-public identities are fine and need no ceremony: the git author address,
 a business domain's own contact, an open-source author's address in a vendored
 file. What this rule is about is **third parties who did not choose to be
 published** — most often family.
-
-Measured 2026-09-04 (`/tasks/chrome-profile-order-sop`): a config file keyed on
-account email carried two family members' personal Gmail addresses into PR #1212.
-Neither had ever appeared in the repository before. Review caught it; by then
-the branch had been public for roughly forty minutes. The fix was to move the
-whole file into 1Password and commit only a `.example` — see
-`docs/agents/agents/steffon/sops/chrome-profiles.md`.
 
 ## 1Password Service Account
 
@@ -132,17 +124,10 @@ lane is closed to you.** WHICH gap decides who closes it, and
 
 The second row is the **only** credential step on either lane that is his
 ([`token-session.md`](token-session.md) → *The one honest escalation*). Never
-reach for it without testing the first. On 2026-08-30 an agent read a deployer
-refusal as the never-provisioned case and put a repeated hand-mint chore on
-Alex while a production deploy waited; the token had been on disk for two
-days and sourcing it worked on the first try. Handing a deploy back to him
-because a credential failed is the operator toil `AGENTS.md` forbids.
+reach for it without testing the first: handing a deploy back to him because a
+credential failed is the operator toil `AGENTS.md` forbids.
 
 #### Two ways the CHECK lies
-
-Both were measured on 2026-09-15, after a session read the SOP, measured the
-admin token as absent, and reported production blocked. The token was present the
-whole time, with the deployer item reading cleanly.
 
 **1. A pipe runs `source` in a subshell.** Every stage of a pipeline is its own
 process, so the export lands in a child that exits before the next command reads
@@ -232,8 +217,7 @@ Default access is the AGENT vault (`studio-agents`). The ADMIN vault (`studio-ag
 > **Blocked on a credential right now?** It is yours to fix, not
 > Alex's: `eval "$(bin/gh-auth-refresh --export)"`
 
-Since the 2026-07-29 org migration every repo lives under the **McRitchie-Studio**
-org, and `git`/`gh` authenticate as one of **two GitHub App** installations
+Every repo lives under the **McRitchie-Studio** org, and `git`/`gh` authenticate as one of **two GitHub App** installations
 rather than a personal token.
 
 ### The items
@@ -301,12 +285,6 @@ read-only token): `gh pr list` for read, a throwaway branch `git push` for write
 **Never print a token.** Report a SHA-256 prefix instead. The full hygiene rules,
 the dotted-JWT redaction pattern, and the revoke-and-re-mint procedure are in
 [`source-control.md`](source-control.md).
-
-**Historical — the PAT era.** Until 2026-07-29 auth was a fine-grained PAT on
-the `amcritchie` personal account (`agent.github`, wired via `gh auth login
---with-token` + `gh auth setup-git`). Fine-grained PATs cannot call the
-check-runs API at all — which the CI gates read — so the PAT wiring is retired;
-`agent.github` is deprecated pending deletion.
 
 ## Fresh Machine
 

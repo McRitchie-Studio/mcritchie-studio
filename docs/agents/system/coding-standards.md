@@ -77,9 +77,10 @@
   non-empty before deleting.
 - **zsh does not word-split `$var`.** Use an array (`E=(A=1 B=2); env -i "${E[@]}" cmd`)
   or `${=var}`, and assert a sandbox variable inside the child.
-- **zsh traps:** `cmd 2>&1 >/dev/null` does not isolate stderr (MULTIOS duplicates
-  stdout), so send each stream to its own file; `echo ===` fails as an `=word`
-  expansion and aborts the compound command, so quote it.
+- **zsh traps:** near a command that prints a secret, isolate stderr with a brace
+  group, `{ cmd >/dev/null; } 2>&1`, or send each stream to its own file, and never
+  rely on redirect order; `echo ===` fails as an `=word` expansion and aborts the
+  compound command, so quote it.
 - **Backticks and `$(...)` execute inside double quotes.** Prose with backticks in
   `-m`, `--body` or `--agent-context` runs as a command and vanishes from the text.
   Write long text with a quoted heredoc (`cat > f <<'EOF'`), pass the file, and read

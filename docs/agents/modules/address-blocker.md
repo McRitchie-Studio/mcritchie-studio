@@ -142,6 +142,14 @@ bin/task block <slug> --kind <environment|rework|dependency> \
 Name yourself with `--agent`: a `--kind rework` block spends the task's bounce,
 and the block is recorded against the soul you name.
 
+**Verify fresh before any block.** Run `git fetch` before reading a ref such as
+`origin/accepted`, since a stale fetch can block on work that already merged. Read
+the task's `claim:` first: a block moves a live builder's task to `building` and
+stamps `unresolved_feedback` on work in progress. For a `dependency` block on a gem,
+check what the consumer's `Gemfile.lock` pins, not only that the fix merged. To
+retract a wrong block, post `bin/task note <slug> --handoff "…" --resolves-feedback`
+(it needs `--handoff`); never `--steal` to undo it.
+
 ## Step 5 — Modify and resubmit
 
 **Re-establish the desk.**
