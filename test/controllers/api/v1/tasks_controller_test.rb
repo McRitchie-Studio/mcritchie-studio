@@ -38,7 +38,7 @@ module Api
       end
 
       # [integration] devops-v3 4c-i: the board DERIVES the PR url and caches it into
-      # a blank `devops.pr_url`, so bin/ship can skip its write and its read-back still
+      # a blank `devops.pr_url`, so bin/submit can skip its write and its read-back still
       # pins the exact PR. The derivation runs in TaskPrUrlCacheJob, never in the
       # request; the index queues nothing.
       test "show queues the PR url fill and the next show serves the cached url" do
@@ -1012,16 +1012,16 @@ module Api
       end
 
       test "[integration] show JSON includes the gates projection with the latest attempt" do
-        GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true,
+        GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: true,
                        sops: [{ "sop" => "full-suite", "result" => "pass" }])
 
         get api_v1_task_path(@task.slug), headers: @headers, as: :json
 
         assert_response :success
         gates = response.parsed_body.dig("data", "gates", "gates")
-        assert_equal 1, gates.dig("g1_cert", "attempt")
-        assert_equal true, gates.dig("g1_cert", "success")
-        assert_equal ["full-suite"], gates.dig("g1_cert", "sops").map { |s| s["sop"] }
+        assert_equal 1, gates.dig("dor", "attempt")
+        assert_equal true, gates.dig("dor", "success")
+        assert_equal ["full-suite"], gates.dig("dor", "sops").map { |s| s["sop"] }
         assert_nil gates.dig("g2a_primary", "attempt"), "never-attempted gate carries the all-nil row"
       end
 

@@ -17,8 +17,8 @@ That is the actual engine of documentation bloat: not files that are too long,
 but two files on the same subject that slowly disagree.
 
 The clearest example: `docs/agents/modules/gates/dor.md` is **358 lines**, sits
-in the gates directory beside `g1-cert.md` through `g4-ship.md`, and Start Here
-lists **g1 through g4 but not dor**. A gate document, in the gates folder,
+in the gates directory beside `g2-review.md` through `g4-ship.md`, and Start Here
+listed **the numbered gates but not dor**. A gate document, in the gates folder,
 invisible to the index.
 
 ## You already built the mechanism — for SOPs only

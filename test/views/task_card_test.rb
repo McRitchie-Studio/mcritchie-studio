@@ -385,7 +385,7 @@ class TaskCardTest < ActionView::TestCase
   end
 
   test "[component] the CI meter slot renders while BUILDING and submitted, not once reviewed" do
-    # building is the ship-wait window: bin/ship opens the PR, then waits on its CI
+    # building is the submit-wait window: bin/submit opens the PR, then waits on its CI
     # with the task still on this desk — the meter has to be here to be watchable.
     building = Task.create!(title: "ci meter building card", stage: "building",
                             metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/9" } })

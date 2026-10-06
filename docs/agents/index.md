@@ -67,7 +67,7 @@ picks the SCRIPT, the cwd picks the TREE**: name the fixed-path script, stand in
 | Command | What it does |
 |---------|--------------|
 | `bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> --shape <shape> --risk <tag> --accept "…" --test "[unit] …"` | Creates the task, cuts the desk, claims it, preflights. `--agent <soul>` is optional |
-| `bin/ship-wait <task-slug> --launch -m "Commit message"` | Runs `bin/ship` and waits: commit, push, PR into `accepted`, CI, `bin/dor-check`, `submitted` |
+| `bin/submit-wait <task-slug> --launch -m "Commit message"` | Runs `bin/submit` and waits: commit, push, PR into `accepted`, CI, `bin/dor-check`, `submitted` |
 | `bin/task show <slug> -v` · `bin/task list --stage <stage>` | Read one task · read the board |
 | `bin/release status` | Where the current release stands |
 | `bin/agent-activity start\|next\|end` | Narrate your work (rule 1 below) |
@@ -75,7 +75,10 @@ picks the SCRIPT, the cwd picks the TREE**: name the fixed-path script, stand in
 Nobody hand-stamps `merged`, `pr_url` or the author set: the board derives all three
 from GitHub and keeps the columns as a cache.
 
-A cold ship takes about 12 minutes, so run it in the background with `bin/ship-wait`;
+`bin/ship` and `bin/ship-wait` are aliases of `bin/submit` and `bin/submit-wait` for one
+release; each prints a rename note and runs the new script.
+
+A cold submit takes about 12 minutes, so run it in the background with `bin/submit-wait`;
 do not hand-roll a pgrep watcher. `bin/fast-check` is an optional one-minute
 pre-flight, and the cert gate (test-only included) reads only the PR's settled green CI.
 Where each command may run, the author set, and the long form:
@@ -87,7 +90,7 @@ Where each command may run, the author set, and the long form:
 2. **Task before code.** Any diff, even a small one, starts with `bin/task begin`; there is no size exemption. Detail: `docs/agents/modules/building-sop.md`.
 3. **Desks, not primaries.** Edit only in your task's worktree; primary checkouts are for reading and deploys. Detail: `docs/agents/modules/worktrees.md`.
 4. **GitHub auth is self-service.** On a 401, run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"`; never ask Alex for `gh auth login`. Detail: `docs/agents/modules/token-session.md`.
-5. **Never merge, deploy, or push `main`** unless Alex assigned you that lane in this session. `bin/ship` stops at `submitted`.
+5. **Never merge, deploy, or push `main`** unless Alex assigned you that lane in this session. `bin/submit` stops at `submitted`.
 6. **Concurrency cap: 5 at a time.** At most five agents, dynos, or board-writing commands in flight; the board database has 20 connections.
 7. **No secrets in output.** Use named 1Password references and purpose-built scripts. Detail: `docs/agents/modules/credentials.md`.
 8. **No terminal chores for Alex.** Run safe commands yourself; ask him only for approvals, product judgment, or a credential only he holds.
@@ -145,8 +148,8 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 Every name Alex can say to launch a procedure, with the file that runs it; this
 table is the one registry, and `test/docs/sop_registry_docs_test.rb` holds it to
 the files on disk. A heartbeat may set attribution and act order; the SOP files do
-not depend on it. `(legacy alias)` marks an older name that resolves to the same
-file; `(role SOP)` marks the procedure one reviewer role runs inside `pr-review`.
+not depend on it. `(role SOP)` marks the procedure one reviewer role runs inside
+`pr-review`. Retired names resolve only in `docs/agents/archive/`.
 
 | Invocation | Owner | Read |
 |------------|-------|------|
@@ -157,7 +160,6 @@ file; `(role SOP)` marks the procedure one reviewer role runs inside `pr-review`
 | `pr-review-light` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
-| `qa-deploy` (legacy alias) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | `arbitrate-block` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
@@ -173,7 +175,6 @@ file; `(role SOP)` marks the procedure one reviewer role runs inside `pr-review`
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
-| `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
 | `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | `app-deploy-standard` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
@@ -189,7 +190,6 @@ file; `(role SOP)` marks the procedure one reviewer role runs inside `pr-review`
 | `chrome-profiles` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
 | `workspace-icon` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-icon.md` |
 | `Xan Heartbeat` | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
-| `Alex Heartbeat` (legacy alias) | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
 | `grade-events` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
 | `share-insights` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
 | `full-cycle` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |

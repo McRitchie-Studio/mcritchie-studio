@@ -57,7 +57,7 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
    `{ "error": "...", "error_code": "UNAUTHORIZED" }`.
 4. **One token per ship.** `bin/task` and `bin/dor-check` send a bearer handed
    down in `AGENT_API_TOKEN` when one is set, and mint their own from the
-   secret only when it is not. `bin/ship` mints once per run and exports it to
+   secret only when it is not. `bin/submit` mints once per run and exports it to
    every board call it spawns (`bin/lib/task_board.rb#handed_token`). When the
    board answers `401` to a handed token, `bin/task` names the variable; unset
    it to mint afresh.
@@ -137,9 +137,9 @@ filter with `?stage=` (an actionable stage holds far fewer than 20 rows). A `GET
 
 Task JSON (show and index) carries a cached `gates` projection — the LATEST
 attempt per task-grain gate, keyed under `gates.gates`:
-`{ "cache_version": 1, "cached_at": "…", "gates": { "g1_cert": { "attempt",
-"started_at", "finished_at", "success", "sops" }, "g2a_primary": …,
-"g2b_light": … } }`. `success` is `null` while the attempt is in flight; a
+`{ "cache_version": 3, "cached_at": "…", "gates": { "dor": { "attempt",
+"started_at", "finished_at", "success", "sops" }, "dor_review": …,
+"g2a_primary": …, "g2b_light": … } }`. `success` is `null` while the attempt is in flight; a
 never-attempted gate carries the all-nil row. `gate_runs` stays the source of
 truth (`GET /gates/...` above for the full attempt history); show self-heals a
 stale cache, index serves the raw column. Release-grain gates (G3/G4) are not
@@ -340,11 +340,16 @@ gate docs live in `docs/agents/modules/gates/`). Keys and grains:
 
 | Key | Gate | Grain (`:subject_type`) |
 |---|---|---|
-| `g1_cert` | G1 Cert (builder certification) | `task` |
+| `dor` | DoR (builder) (the `bin/dor-check` verdict at submit) | `task` |
+| `dor_review` | DoR (review) (the reviewer's gate-zero re-run) | `task` |
 | `g2a_primary` | G2a Primary (deep review lane) | `task` |
 | `g2b_light` | G2b Light (second-read lane) | `task` |
 | `g3_candidate` | G3 Candidate (pre-QA + QA deploy) | `release` |
 | `g4_ship` | G4 Ship (frozen-SHA + prod deploy) | `release` |
+
+A **retired** key (`GateRun::RETIRED_KEYS`; history in `docs/agents/archive/`) is
+refused on every write (`open`, `sops`, `close`) with `422 RETIRED_GATE_KEY` and
+mints no row. Its old rows still validate and still list through `GET`.
 
 ```bash
 GET  /api/v1/gates/:subject_type/:subject_slug
@@ -364,12 +369,12 @@ Payloads ride under a `gate` key (top-level also accepted); `close` takes a
 top-level `success`:
 
 ```bash
-api POST /api/v1/gates/task/<task-slug>/g1_cert/open \
+api POST /api/v1/gates/task/<task-slug>/g2a_primary/open \
   '{"gate": {"actor": "carl"}}'
-api POST /api/v1/gates/task/<task-slug>/g1_cert/sops \
-  '{"gate": {"sop": {"sop": "spine", "cmd": "bin/rails test test/models", "result": "pass", "duration_ms": 9800}}}'
-api POST /api/v1/gates/task/<task-slug>/g1_cert/close \
-  '{"success": true, "gate": {"sops": [{"sop": "dor-check", "result": "pass"}], "metadata": {"route": "fast"}}}'
+api POST /api/v1/gates/task/<task-slug>/g2a_primary/sops \
+  '{"gate": {"sop": {"sop": "scout-report", "cmd": "bin/pr-review", "result": "pass", "duration_ms": 9800}}}'
+api POST /api/v1/gates/task/<task-slug>/g2a_primary/close \
+  '{"success": true, "gate": {"sops": [{"sop": "pr-review-primary", "result": "pass"}], "metadata": {"route": "fast"}}}'
 ```
 
 A SOP entry keeps `{sop, cmd, tier, result, duration_ms, at}` (`at` is stamped
@@ -867,7 +872,7 @@ api PATCH /api/v1/tasks/task-XXXX '{
 # Preferred CLI path for the pre-PR operator validation gate:
 bin/task update task-XXXX --local-url http://localhost:3001/admin/users --approval waiting
 # `waiting` is legal for as long as the local demo it points at can be served —
-# `designed`, `building` and `submitted` — so it SURVIVES `bin/ship`. Any save at
+# `designed`, `building` and `submitted` — so it SURVIVES `bin/submit`. Any save at
 # `reviewed` or later settles an open request to `none` (settled — never a
 # fabricated `approved`).
 

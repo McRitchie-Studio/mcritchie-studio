@@ -1,12 +1,14 @@
-# One full-length stitch of a tiled video (recast pipeline, piece 4): every
-# chunk's current take crossfaded across the overlaps, over the source audio.
-# Stitches are numbered per video and kept, never overwritten.
+# One full-length stitch of an alt video (recast pipeline, pieces 4 and 13):
+# every clip's primary version crossfaded across the overlaps, over the
+# source's audio. Stitches are numbered per alt video and kept, never
+# overwritten. music_video_slug stays as the source's slug.
 #
 # A stitch is REQUESTED on the page, RUNNING while ffmpeg works on it (a local
 # hub's StitchVideoJob, or bin/stitch-video on the Mac), then DONE with its
-# measurements or FAILED with the reason. `takes` is the take each chunk had
-# at the request: [{ "ordinal", "start_ms", "end_ms", "take" }]. The stitch is
-# built from exactly those, and it is stale once any chunk has moved on.
+# measurements or FAILED with the reason. `takes` is the version each clip had
+# as primary at the request: [{ "ordinal", "start_ms", "end_ms", "take" }]
+# ("take" is the version number; the key keeps piece 4's API shape). The
+# stitch is built from exactly those, and it is stale once a primary moves on.
 class VideoStitch < ApplicationRecord
   STATES = %w[requested running done failed].freeze
   OPEN_STATES = %w[requested running].freeze
@@ -17,14 +19,16 @@ class VideoStitch < ApplicationRecord
 
   class WrongState < StandardError; end
 
-  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :stitches
+  belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug
+  belongs_to :alt_video, foreign_key: :alt_video_slug, primary_key: :slug, inverse_of: :stitches
 
-  validates :number, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :music_video_slug }
+  validates :number, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :alt_video_slug }
   validates :state, inclusion: { in: STATES }
   validates :failure_reason, length: { maximum: REASON_MAX }
   validates :duration_ms, :byte_size, numericality: { only_integer: true, greater_than: 0 }, if: :done?
   validate :takes_name_each_chunk_once
-  validate :object_key_names_the_stitch
+  validate :object_key_names_the_stitch, on: :create
+  validate :belongs_to_the_alt_videos_source
 
   STATES.each { |name| define_method(:"#{name}?") { state == name } }
 
@@ -35,51 +39,50 @@ class VideoStitch < ApplicationRecord
   # Running, but for so long that nothing is likely still working on it.
   def stuck?(now: Time.current) = running? && started_at.present? && started_at < now - RUN_TIMEOUT
 
-  # "1, 2, 1, 1": the take number of each chunk, in chunk order.
+  # "1, 2, 1, 1": the version number of each clip, in clip order.
   def take_list = takes.map { |t| t["take"] }.join(", ")
 
-  # What the stitcher needs (MusicVideos::Stitcher's request), every take
+  # What the stitcher needs (MusicVideos::Stitcher's request), every version
   # resolved to its object.
   def as_request
-    source_key = music_video.source_object_key
+    video = alt_video.music_video
+    versions = alt_video.clips.to_h { |c| [c.chunk_ordinal, c.versions.index_by(&:number)] }
     as_json(only: %w[number state object_key failure_reason duration_ms byte_size width height frame_rate warnings
                      started_at finished_at])
-      .merge("music_video_slug" => music_video_slug, "source_object_key" => source_key,
-             "source_duration_ms" => music_video.duration_ms,
+      .merge("music_video_slug" => music_video_slug, "alt_video" => alt_video.number,
+             "source_object_key" => video.source_object_key, "source_duration_ms" => video.duration_ms,
              "takes" => takes.map do |t|
-               t.slice(*TAKE_KEYS).merge("object_key" => MusicVideos::ObjectKeys.take(
-                 source_key:, ordinal: t["ordinal"], start_ms: t["start_ms"], end_ms: t["end_ms"], number: t["take"]
-               ))
+               version = versions.dig(t["ordinal"], t["take"])
+               t.slice(*TAKE_KEYS).merge("object_key" => version&.object_key)
              end)
   end
 
-  # The take each chunk has now, in the shape `takes` records. Chunks with no
-  # take are left out, so the list never equals a full stitch's.
-  def self.takes_of(chunks)
-    chunks.filter_map do |chunk|
-      take = chunk.current_take
-      take && { "ordinal" => chunk.ordinal, "start_ms" => chunk.start_ms, "end_ms" => chunk.end_ms, "take" => take.number }
+  # The primary version each clip has now, in the shape `takes` records.
+  # Clips with none are left out, so the list never equals a full stitch's.
+  def self.takes_of(clips)
+    clips.filter_map do |clip|
+      version = clip.primary_version
+      version && { "ordinal" => clip.chunk_ordinal, "start_ms" => clip.start_ms, "end_ms" => clip.end_ms,
+                   "take" => version.number }
     end
   end
 
-  # Why this stitch no longer shows the video as it stands, one phrase per
-  # cause; empty while it is current. Read against the video's chunks now.
-  def stale_reasons(chunks = music_video.video_chunks.to_a)
+  # Why this stitch no longer shows the alt video as it stands, one phrase per
+  # cause; empty while it is current. Read against the alt video's clips now.
+  def stale_reasons(clips = alt_video.clips.to_a)
     used = takes.index_by { |t| t["ordinal"] }
-    retiled = chunks.map { |c| [c.ordinal, c.start_ms, c.end_ms] } != takes.map { |t| t.values_at("ordinal", "start_ms", "end_ms") }
-    reasons = retiled ? ["the video was re-tiled"] : []
-    chunks.each do |chunk|
-      then_take = used.dig(chunk.ordinal, "take")
-      now_take = chunk.current_take&.number
-      if !retiled && now_take != then_take
-        reasons << "#{chunk.name.downcase} is now on #{now_take ? "take #{now_take}" : 'no take'} (stitched with take #{then_take})"
+    clips.each_with_object([]) do |clip, reasons|
+      then_number = used.dig(clip.chunk_ordinal, "take")
+      now_number = clip.primary_version&.number
+      if now_number != then_number
+        reasons << "#{clip.name.downcase} is now on #{now_number ? "version #{now_number}" : 'no version'} " \
+                   "(stitched with #{then_number ? "version #{then_number}" : 'none'})"
       end
-      reasons << "#{chunk.name.downcase} is flagged for a regenerate" if chunk.regenerate_requested?
+      reasons << "#{clip.name.downcase} is flagged for a regenerate" if clip.regenerate_requested?
     end
-    reasons
   end
 
-  def stale?(chunks = music_video.video_chunks.to_a) = stale_reasons(chunks).any?
+  def stale?(clips = alt_video.clips.to_a) = stale_reasons(clips).any?
 
   # requested -> running. force: also from running (a run that died), and
   # from failed (run it again). Raises WrongState otherwise.
@@ -125,10 +128,19 @@ class VideoStitch < ApplicationRecord
     errors.add(:takes, "names a chunk twice") if takes.map { |t| t["ordinal"] }.uniq.size != takes.size
   end
 
+  # Checked when the stitch is requested; stitches moved from piece 4 keep
+  # their objects where they were (stitched/), so later saves do not re-check.
   def object_key_names_the_stitch
-    expected = MusicVideos::ObjectKeys.stitched(source_key: music_video&.source_object_key, number:)
+    expected = MusicVideos::ObjectKeys.alt_stitched(source_key: alt_video&.music_video&.source_object_key,
+                                                    alt_number: alt_video&.number, number:)
     errors.add(:object_key, "must be #{expected}") unless object_key == expected
   rescue ArgumentError, TypeError
     errors.add(:object_key, "cannot be checked against the video's source folder")
+  end
+
+  def belongs_to_the_alt_videos_source
+    return unless alt_video
+
+    errors.add(:music_video_slug, "must be #{alt_video.music_video_slug}") unless music_video_slug == alt_video.music_video_slug
   end
 end

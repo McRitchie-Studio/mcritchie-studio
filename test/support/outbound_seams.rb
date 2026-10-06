@@ -18,7 +18,7 @@
 #     keyring token is invalid, so the refusal classifies as an AUTH failure, which
 #     arms GhAuthRetry.mint (bin/lib/gh_auth_retry.rb) → bin/gh-token → `op read`
 #     against LIVE 1Password → a POST to api.github.com that MINTS A REAL App
-#     installation token. test/lib/ship_test.rb records that chain firing once
+#     installation token. test/lib/submit_test.rb records that chain firing once
 #     already. So an unsealed test run can mint production credentials, and neither
 #     that nor the board write is a test FAILURE — both are silent successes.
 #

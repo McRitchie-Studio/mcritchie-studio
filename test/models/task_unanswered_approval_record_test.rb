@@ -15,7 +15,7 @@ require "test_helper"
 #   3. the merger is never mistaken for the setter;
 #   4. a note that fails to post never rolls back or refuses the move.
 # The end-to-end half, through the real PATCHes, is
-# test/integration/ship_preserves_approval_request_test.rb.
+# test/integration/submit_preserves_approval_request_test.rb.
 class TaskUnansweredApprovalRecordTest < ActiveSupport::TestCase
   LOCAL_URL = "http://localhost:3015/tasks/demo".freeze
 

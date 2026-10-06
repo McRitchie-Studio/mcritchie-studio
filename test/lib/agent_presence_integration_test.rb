@@ -15,7 +15,7 @@
 # and the very next read is the assertion.
 #
 # AND THE OPPOSITE ERROR, which is the one that would starve someone all over again.
-# A LIVE process must read as LIVE even when it is IDLE. Cost #4: two `bin/ship`
+# A LIVE process must read as LIVE even when it is IDLE. Cost #4: two `bin/submit`
 # processes parked in a CI wait — consuming nothing, sleeping — read as competing certs
 # and nearly held off a launch. A sleeping `sleep 30` is exactly that shape, and if this
 # reader graded "not burning CPU" as "not there" it would reproduce the bug it replaces.
@@ -307,7 +307,7 @@ class AgentPresenceIntegrationTest < Minitest::Test
   # `ps`. If the writer's filename and the reader's glob ever disagree, nothing here
   # can stay green.
   #
-  # Measured live on 2026-09-01 BEFORE this hop existed: a `bin/ship` parked in its
+  # Measured live on 2026-09-01 BEFORE this hop existed: a `bin/submit` parked in its
   # CI wait, publishing `waiting/idle` on disk, was still reported by this reader
   # under `backstop:` as UNATTRIBUTED — and the machine called BUSY on the strength
   # of it. The claim was correct; nothing read it.

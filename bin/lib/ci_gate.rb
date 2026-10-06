@@ -143,7 +143,7 @@ module CiGate
                          GATE_ROW_NO_PR].freeze
 
   # Is this verdict a WAIT rather than a refusal? Builder-side only, and only for a CI
-  # that is genuinely RUNNING: bin/ship holds at step 6/8 for exactly this, so the
+  # that is genuinely RUNNING: bin/submit holds at step 6/8 for exactly this, so the
   # ordinary handoff never sees it, and a hand-run verdict that does is told to come
   # back rather than told it failed. Review's gate-zero is the authoritative verdict,
   # and an unsettled CI is a legitimate NO there.
@@ -214,7 +214,7 @@ module CiGate
         rebase = base.empty? ? "merge the PR's base in" : "rebase onto origin/#{base}"
         "GitHub CI has produced no verdict yet (none) — the PR reports no checks, and #{ONLY_EVIDENCE}, so " \
           "there is nothing to advance on and no local cert stands in. Confirm the workflow triggered (a stale base branch runs " \
-          "nothing: #{rebase}), then re-run this verdict once it reports — bin/ship waits for exactly this " \
+          "nothing: #{rebase}), then re-run this verdict once it reports — bin/submit waits for exactly this " \
           "at step 6/8 and resumes here."
       else
         # :unverified builder-side — gh missing, a 404, a transport error. NOT a
@@ -233,7 +233,7 @@ module CiGate
           "refuses rather than passing quietly. Record it: `#{TASK_CMD} update #{slug} --pr-url <url>`."
       else
         "devops.pr_url is BLANK, so there is no PR to read a CI verdict from — and #{ONLY_EVIDENCE}. Push the " \
-          "branch and open the PR (bin/ship does both, then re-runs this verdict), or record an existing " \
+          "branch and open the PR (bin/submit does both, then re-runs this verdict), or record an existing " \
           "one: `#{TASK_CMD} update #{slug} --pr-url <url>`."
       end
     else
@@ -320,7 +320,7 @@ module CiGate
           # it is the only thing standing.
           "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — WAITING for it to " \
             "settle. #{ONLY_EVIDENCE.sub(/\Aa /, 'A ')}, so this verdict is not ready YET; nothing about " \
-            "the tree is refused. bin/ship waits for exactly this at step 6/8 and resumes here; re-run " \
+            "the tree is refused. bin/submit waits for exactly this at step 6/8 and resumes here; re-run " \
             "this verdict once the checks report (a red finish is refused, a green one advances)."
         end
       when :closed, :merged

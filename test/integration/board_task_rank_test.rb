@@ -64,7 +64,7 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
   test "[integration] a submitted card still flashes a carried approval request" do
     # THE BOARD HALF of the 2026-09-09 fix. This test used to assert the opposite —
     # that the bar was gone after submit — which was the defect written down as a
-    # guarantee: `bin/ship` discarded requests builders were told to set, and three
+    # guarantee: `bin/submit` discarded requests builders were told to set, and three
     # PRs in one night reached review with nobody asked. `submitted` is inside
     # Task::APPROVAL_REQUEST_STAGES now, so the request rides the handoff and the
     # card asks for Mr. McRitchie's eyes from the review column. No view changed to

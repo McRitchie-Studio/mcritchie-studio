@@ -55,7 +55,7 @@
 # THE FLOOR NOW. The release CLI suite is one file per subcommand, none above 42s. The
 # heaviest files (test/timings.yml, the mean of three green CI runs) are
 # test/lib/reviewer_select_test.rb (247s), test/commands/pr_review_command_test.rb
-# (180s), test/lib/dor_check_test.rb (156s) and test/lib/ship_test.rb (133s). Those are
+# (180s), test/lib/dor_check_test.rb (156s) and test/lib/submit_test.rb (133s). Those are
 # SUMMED test seconds: each shard runs four parallel workers, so reviewer_select's 247s
 # splits across a shard's four workers rather than standing as one 247s block.
 #

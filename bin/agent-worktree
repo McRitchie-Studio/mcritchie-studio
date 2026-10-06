@@ -68,7 +68,7 @@ require_relative "lib/agent_worktree_cli"
 require_relative "lib/session_identity"
 require_relative "lib/desk_context"
 # The desk's git identity — the claiming soul, in the desk's OWN config.worktree.
-# The same module bin/ship authors its commit from, so a desk stamp and a ship
+# The same module bin/submit authors its commit from, so a desk stamp and a ship
 # commit spell a soul identically ("Carl <carl@mcritchie.studio>").
 require_relative "../lib/commit_identity"
 
@@ -958,7 +958,7 @@ end
 #
 # THE DEFECT (turf-monster-git-identity-wrong). A desk is where a builder's
 # mid-build commits, merge-forwards and rebases happen, and none of those pass
-# through bin/ship's per-commit author. They took whatever the checkout carried:
+# through bin/submit's per-commit author. They took whatever the checkout carried:
 # on turf-monster that was a shared "Steffon (Claude)" default in .git/config, so
 # every soul's hand commits read as Steffon's, and a reviewer reasoned from it.
 # lib/commit_identity.rb#stamp_worktree! owns the mechanics and the refusals.

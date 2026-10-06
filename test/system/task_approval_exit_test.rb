@@ -2,7 +2,7 @@ require "application_system_test_case"
 
 # The operator-approval request's life on the rendered board, end to end. It used to
 # assert the bar was gone at `submitted`; that was the 2026-09-09 defect written down
-# as a guarantee — `bin/ship` discarded requests the documented flow told builders to
+# as a guarantee — `bin/submit` discarded requests the documented flow told builders to
 # set, so a builder who asked for Mr. McRitchie's eyes got none. The exit is now the
 # MERGE, and both halves are driven here in one browser session.
 class TaskApprovalExitSystemTest < ApplicationSystemTestCase

@@ -14,18 +14,18 @@ require_relative "../../bin/lib/stitch_video"
 class StitchVideoTest < Minitest::Test
   SOURCE_KEY = "music_videos/test_artist_a/tiled_demo/source/test_artist_a_tiled_demo.mp4"
   SLUG = "test-artist-a-tiled-demo"
-  BASE = "/api/v1/music_videos/#{SLUG}/stitches".freeze
+  LABEL = "#{SLUG} alt video 1".freeze
+  BASE = "/api/v1/music_videos/#{SLUG}/alt_videos/1/stitches".freeze
   TAKES = [[1, 0, 25_000, 2], [2, 20_000, 45_000, 1]].map do |ordinal, start_ms, end_ms, take|
-    { "ordinal" => ordinal, "start_ms" => start_ms, "end_ms" => end_ms, "take" => take }
+    { "ordinal" => ordinal, "start_ms" => start_ms, "end_ms" => end_ms, "take" => take,
+      "object_key" => MusicVideos::ObjectKeys.alt_clip_version(source_key: SOURCE_KEY, alt_number: 1, ordinal:, start_ms:,
+                                                               end_ms:, number: take) }
   end.freeze
 
   def self.stitch(number, state, started_at: nil)
     { "number" => number, "state" => state, "started_at" => started_at, "source_object_key" => SOURCE_KEY,
-      "object_key" => MusicVideos::ObjectKeys.stitched(source_key: SOURCE_KEY, number:),
-      "takes" => TAKES.map do |t|
-        t.merge("object_key" => MusicVideos::ObjectKeys.take(source_key: SOURCE_KEY, ordinal: t["ordinal"], start_ms: t["start_ms"],
-                                                             end_ms: t["end_ms"], number: t["take"]))
-      end }
+      "object_key" => MusicVideos::ObjectKeys.alt_stitched(source_key: SOURCE_KEY, alt_number: 1, number:),
+      "takes" => TAKES }
   end
 
   # The hub API: remembers every call; a POST moves the one stitch it holds.
@@ -42,7 +42,8 @@ class StitchVideoTest < Minitest::Test
 
     def get(path)
       @calls << [:get, path]
-      { "stitches" => @stitches, "ready" => @ready, "blocker" => @blocker, "current_takes" => TAKES }
+      { "stitches" => @stitches, "ready" => @ready, "blocker" => @blocker, "current_takes" => TAKES,
+        "alt_video" => 1, "source_object_key" => SOURCE_KEY }
     end
 
     def show(slug)
@@ -126,14 +127,14 @@ class StitchVideoTest < Minitest::Test
     run = run_bin(api:)
 
     assert_nil run[:error]
-    assert_equal [SOURCE_KEY, "music_videos/test_artist_a/tiled_demo/generated/tiled_demo_chunk_01_0000_0025_take_02.mp4",
-                  "music_videos/test_artist_a/tiled_demo/generated/tiled_demo_chunk_02_0020_0045_take_01.mp4"], run[:storage].gets
-    assert_equal [["music_videos/test_artist_a/tiled_demo/stitched/tiled_demo_stitched_03.mp4", "stitched", "video/mp4"]], run[:storage].puts
+    assert_equal [SOURCE_KEY, "music_videos/test_artist_a/tiled_demo/alt_videos/01/clips/tiled_demo_alt_01_chunk_01_0000_0025_v02.mp4",
+                  "music_videos/test_artist_a/tiled_demo/alt_videos/01/clips/tiled_demo_alt_01_chunk_02_0020_0045_v01.mp4"], run[:storage].gets
+    assert_equal [["music_videos/test_artist_a/tiled_demo/alt_videos/01/stitched/tiled_demo_alt_01_stitched_03.mp4", "stitched", "video/mp4"]], run[:storage].puts
     report = { "duration_ms" => 45_000, "byte_size" => 8, "width" => 1484, "height" => 620, "frame_rate" => "24", "warnings" => [] }
     assert_equal [["/3/start", { force: false }], ["/3/finish", report]], steps(api)
-    assert_includes run[:out], "stitch 3 of #{SLUG}: takes 2, 1"
+    assert_includes run[:out], "stitch 3 of #{LABEL}: versions 2, 1"
     assert_includes run[:out], "stitch plan: 2 takes -> 1484x620 at 24 fps, 1080 frames (45.000 s), audio copy"
-    assert_match(%r{stitch 3 done: 45\.000 s, 1484x620 at 24 fps, 0\.0 MB, r2://mcritchie-studio-dev/music_videos/.*/tiled_demo_stitched_03\.mp4}, run[:out])
+    assert_match(%r{stitch 3 done: 45\.000 s, 1484x620 at 24 fps, 0\.0 MB, r2://mcritchie-studio-dev/music_videos/.*/tiled_demo_alt_01_stitched_03\.mp4}, run[:out])
   end
 
   def test_with_none_waiting_it_asks_for_one
@@ -142,14 +143,15 @@ class StitchVideoTest < Minitest::Test
 
     assert_nil run[:error]
     assert_equal ["", "/2/start", "/2/finish"], steps(api).map(&:first)
-    assert_equal "music_videos/test_artist_a/tiled_demo/stitched/tiled_demo_stitched_02.mp4", run[:storage].puts.first.first
+    assert_equal "music_videos/test_artist_a/tiled_demo/alt_videos/01/stitched/tiled_demo_alt_01_stitched_02.mp4",
+                 run[:storage].puts.first.first
   end
 
   def test_a_video_that_is_not_ready_is_refused_before_anything_is_fetched
-    api = FakeApi.new(ready: false, blocker: "Chunk 2 has no generated take")
+    api = FakeApi.new(ready: false, blocker: "Clip 2 has no generated version")
     run = run_bin(api:)
 
-    assert_equal "API 409: NOT_READY Chunk 2 has no generated take", run[:error].message
+    assert_equal "API 409: NOT_READY Clip 2 has no generated version", run[:error].message
     assert_empty run[:storage].gets
     assert_empty run[:shell].calls
   end
@@ -157,7 +159,7 @@ class StitchVideoTest < Minitest::Test
   def test_a_stitch_already_running_is_left_alone_unless_forced
     api = FakeApi.new(stitches: [self.class.stitch(2, "running", started_at: "2026-10-05T12:00:00Z")])
     run = run_bin(api:)
-    assert_equal "stitch 2 of #{SLUG} is already running (since 2026-10-05T12:00:00Z): pass --force if that run is dead", run[:error].message
+    assert_equal "stitch 2 of #{LABEL} is already running (since 2026-10-05T12:00:00Z): pass --force if that run is dead", run[:error].message
     assert_empty run[:storage].puts
     assert_equal [""], steps(api).map(&:first), "it asked, was handed the running one, and stopped"
 
@@ -192,7 +194,7 @@ class StitchVideoTest < Minitest::Test
     assert_empty steps(api)
     assert_empty run[:storage].puts
     assert(run[:shell].calls.none? { |cmd| cmd.first == "ffmpeg" })
-    assert_includes run[:out], "stitch 4 of #{SLUG} (dry run: nothing started, encoded, uploaded or reported): takes 2, 1"
+    assert_includes run[:out], "stitch 4 of #{LABEL} (dry run: nothing started, encoded, uploaded or reported): versions 2, 1"
     assert_includes run[:out], "chunk 02  frames 480-1080  exact  fades in over 120 frames from frame 480"
   end
 
@@ -202,11 +204,11 @@ class StitchVideoTest < Minitest::Test
 
     assert_nil run[:error]
     assert_empty steps(api)
-    assert_includes run[:out], "stitch 2 of #{SLUG} (dry run"
+    assert_includes run[:out], "stitch 2 of #{LABEL} (dry run"
     assert_equal 3, run[:storage].gets.size
 
-    blocked = run_bin(api: FakeApi.new(ready: false, blocker: "Chunk 2 has no generated take"), dry_run: true)
-    assert_equal "#{SLUG} is not ready to stitch: Chunk 2 has no generated take", blocked[:error].message
+    blocked = run_bin(api: FakeApi.new(ready: false, blocker: "Clip 2 has no generated version"), dry_run: true)
+    assert_equal "#{LABEL} is not ready to stitch: Clip 2 has no generated version", blocked[:error].message
   end
 
   def test_the_source_on_disk_is_not_fetched
@@ -221,5 +223,14 @@ class StitchVideoTest < Minitest::Test
       refute_includes run[:storage].gets, SOURCE_KEY
       assert_includes run[:shell].calls.find { |cmd| cmd.first == "ffmpeg" }, local
     end
+  end
+
+  def test_another_alt_video_is_reached_by_its_own_number
+    api = FakeApi.new(stitches: [self.class.stitch(1, "requested")])
+    run = run_bin(api:, alt: 2, dry_run: true)
+
+    assert_nil run[:error]
+    assert_equal [[:get, "/api/v1/music_videos/#{SLUG}/alt_videos/2/stitches"]], api.calls.first(1)
+    assert_includes run[:out], "stitch 1 of #{SLUG} alt video 2 (dry run"
   end
 end

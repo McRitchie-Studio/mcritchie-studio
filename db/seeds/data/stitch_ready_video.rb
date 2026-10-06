@@ -1,8 +1,9 @@
 require_relative "tiled_video"
 
 # A second tiled video for the final stitch's e2e: 45 s, two chunks (0-25 and
-# 20-45), chunk 1 with a generated take and chunk 2 with none, so the operator
-# is one upload away from "Generate full video". Its own video, so the spec
+# 20-45), and its alt video 1 (nobody swapped) with clip 1 holding a generated
+# version and clip 2 none, so the operator is one upload away from "Generate
+# full video". Its own video, so the spec
 # never meets the specs that upload to and flag the tiled demo. Wholly
 # synthetic, built from TiledVideo's cast; no file is behind any row.
 module StitchReadyVideo
@@ -14,8 +15,9 @@ module StitchReadyVideo
     video = TiledVideo.video!(slug: SLUG, source: SOURCE, source_id: "stitch-demo", title: "Test Artist A - Stitch Demo",
                               duration_ms: DURATION_MS)
     MusicVideos::ReplaceClips.new(video, TiledVideo.chunk_rows(video), kind: "chunk").call unless video.video_chunks.exists?
-    first = video.video_chunks.first
-    TiledVideo.take!(first, number: 1) if first.takes.empty?
+    alt = video.alt_videos.first || AltVideo.build_from!(video)
+    first = alt.clips.first
+    TiledVideo.version!(first, number: 1) if first.versions.empty?
     video
   end
 end

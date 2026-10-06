@@ -105,8 +105,8 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Pokemon download tiktok SOP (yt-dlp download of a TikTok video; unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
 | Pokemon download instagram SOP (yt-dlp download of an Instagram reel or post; cookie path unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
-| Fast lane (`bin/task begin` / `bin/ship`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
-| Fast lane entry rules (where each command runs, author set, ship-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |
+| Fast lane (`bin/task begin` / `bin/submit`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
+| Fast lane entry rules (where each command runs, author set, submit-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
@@ -114,7 +114,8 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Codex runtime updates | `mcritchie-studio/docs/agents/modules/codex-updates.md` |
 | Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |
 | Tests | `mcritchie-studio/docs/agents/modules/testing.md` |
-| G1 Cert gate (builder certification) | `mcritchie-studio/docs/agents/modules/gates/g1-cert.md` |
+| Pre-flight (the builder's optional local check) | `mcritchie-studio/docs/agents/modules/pre-flight.md` |
+| DoR gate (the Definition-of-Ready verdict) | `mcritchie-studio/docs/agents/modules/gates/dor.md` |
 | G2 Review gate (primary + light lanes) | `mcritchie-studio/docs/agents/modules/gates/g2-review.md` |
 | G3 Candidate gate (pre-QA + QA deploy) | `mcritchie-studio/docs/agents/modules/gates/g3-candidate.md` |
 | G4 Ship gate (frozen-SHA + prod deploy) | `mcritchie-studio/docs/agents/modules/gates/g4-ship.md` |

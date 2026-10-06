@@ -8,7 +8,7 @@ require_relative "../support/desk_ledger_sink"
 
 # A DESK COMMITS AS THE SOUL THAT CLAIMED IT (turf-monster-git-identity-wrong).
 #
-# THE DEFECT. bin/ship authors ITS commit from devops.built_by, but a desk commits by
+# THE DEFECT. bin/submit authors ITS commit from devops.built_by, but a desk commits by
 # other paths too — the builder's own mid-build commits, merge-forwards, rebases — and
 # those took whatever the checkout carried. turf-monster's shared .git/config carried
 # `user.name = Steffon (Claude)`, so every desk's hand commits named Steffon whoever
@@ -17,7 +17,7 @@ require_relative "../support/desk_ledger_sink"
 #
 # This hub fixture reproduces that shape on purpose: init_hub writes "Agent Test" into
 # the SHARED config, the way turf carried its default. Every commit below is a PLAIN
-# `git commit`, the path bin/ship never covers, and the identity is read OUT OF GIT.
+# `git commit`, the path bin/submit never covers, and the identity is read OUT OF GIT.
 # The stamp mechanics and refusals are unit-tested in test/lib/commit_identity_test.rb;
 # this file is the CLI wiring (`identity`, `new --soul`) against a real desk.
 #
@@ -197,7 +197,7 @@ class AgentWorktreeIdentityTest < ActiveSupport::TestCase
   end
 
   def hand_commit(dir)
-    git_out(dir, "commit", "--allow-empty", "-q", "-m", "a hand commit, not bin/ship")
+    git_out(dir, "commit", "--allow-empty", "-q", "-m", "a hand commit, not bin/submit")
   end
 
   def author_ident(dir, env: {})

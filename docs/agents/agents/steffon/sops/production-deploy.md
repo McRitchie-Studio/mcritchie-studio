@@ -55,7 +55,7 @@ The two exports are NOT interchangeable:
 
 - **`GH_APP_ITEM`** declares **the lane** for git pushes and every `gh` recovery
   (contents + actions + checks-read + secrets). The deployer **cannot open or merge PRs
-  by design**; `bin/ship` and `bin/pr-review` pin `identity: "agent"` and do not run here.
+  by design**; `bin/submit` and `bin/pr-review` pin `identity: "agent"` and do not run here.
 - **`GH_TOKEN`** is what `gh` calls use. It expires in **1 hour** (401 `Bad
   credentials`); a 403 `not accessible by personal access token` means it is empty.
   Re-run the export, or `eval "$(bin/gh-auth-refresh --export)"` and read its stderr

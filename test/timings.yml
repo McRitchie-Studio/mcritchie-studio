@@ -141,11 +141,9 @@ test/controllers/tasks_controller_test.rb: 108.2
 test/controllers/team_grades_controller_test.rb: 0.22
 test/controllers/triage_controller_test.rb: 1.01
 test/controllers/unsubscribes_controller_test.rb: 0.93
-test/controllers/video_chunk_takes_controller_test.rb: 3.71
 test/controllers/video_clips_controller_test.rb: 3.74
 test/controllers/video_performer_recast_looks_controller_test.rb: 2.58
 test/controllers/video_performer_recasts_controller_test.rb: 3.56
-test/controllers/video_stitches_controller_test.rb: 3.8
 test/controllers/webhooks/resend_events_controller_test.rb: 0.37
 test/controllers/webhooks/resend_inbound_controller_test.rb: 0.08
 test/db/add_vocations_to_people_test.rb: 0.05
@@ -171,7 +169,7 @@ test/docs/review_handoff_mint_docs_test.rb: 0.07
 test/docs/review_lane_docs_test.rb: 3.63
 test/docs/share_insights_precondition_docs_test.rb: 0.24
 test/docs/ship_docs_sync_docs_test.rb: 0.94
-test/docs/ship_wait_docs_test.rb: 0.17
+test/docs/submit_wait_docs_test.rb: 0.17
 test/docs/sop_registry_docs_test.rb: 0.14
 test/docs/sop_registry_install_test.rb: 3.53
 test/docs/start_here_label_guard_test.rb: 0.15
@@ -212,7 +210,6 @@ test/integration/board_ci_progress_test.rb: 4.69
 test/integration/board_cleared_block_card_test.rb: 0.69
 test/integration/board_epic_filter_test.rb: 6.31
 test/integration/board_lane_pin_test.rb: 1.33
-test/integration/board_local_check_indicator_test.rb: 2.55
 test/integration/board_query_budget_test.rb: 6.07
 test/integration/board_ready_cache_clear_test.rb: 0.31
 test/integration/board_task_rank_test.rb: 3.6
@@ -299,7 +296,7 @@ test/integration/scratch_backup_cli_test.rb: 7.54
 test/integration/seal_retry_wiring_test.rb: 0.42
 test/integration/session_entry_launcher_test.rb: 0.38
 test/integration/sheet_build_job_discard_test.rb: 0.08
-test/integration/ship_preserves_approval_request_test.rb: 2.57
+test/integration/submit_preserves_approval_request_test.rb: 2.57
 test/integration/sidebar_agents_builders_link_test.rb: 3.87
 test/integration/signing_console_retired_test.rb: 0.17
 test/integration/site_footer_test.rb: 2.87
@@ -602,8 +599,8 @@ test/lib/session_markers_test.rb: 0.51
 test/lib/session_preflight_shape_note_test.rb: 2.99
 test/lib/shift_renewer_test.rb: 0.07
 test/lib/ship_authority_test.rb: 0.1
-test/lib/ship_test.rb: 133.43
-test/lib/ship_wait_script_test.rb: 14.64
+test/lib/submit_test.rb: 133.43
+test/lib/submit_wait_script_test.rb: 14.64
 test/lib/ship_wait_test.rb: 0.13
 test/lib/stacked_pr_test.rb: 0.11
 test/lib/stale_check_test.rb: 0.06
@@ -861,7 +858,6 @@ test/models/triage_finding_test.rb: 0.24
 test/models/user_name_parts_test.rb: 0.18
 test/models/user_test.rb: 0.38
 test/models/users_seed_test.rb: 0.19
-test/models/video_chunk_take_test.rb: 1.45
 test/models/video_chunk_test.rb: 2.02
 test/models/video_clip_test.rb: 1.66
 test/models/video_performer_recast_test.rb: 0.66
@@ -915,8 +911,6 @@ test/services/avi_sizer_test.rb: 0.09
 test/services/broadcasts/analytics_test.rb: 0.65
 test/services/broadcasts/cyvasse_night_test.rb: 0.26
 test/services/broadcasts/cyvasse_your_games_test.rb: 0.18
-test/services/cert/local_check_reader_test.rb: 0.19
-test/services/cert/local_check_test.rb: 0.25
 test/services/ci/progress_reader_gem_release_branch_test.rb: 2.67
 test/services/ci/progress_reader_test.rb: 10.51
 test/services/ci/run_reconciler_test.rb: 0.2
@@ -978,7 +972,6 @@ test/services/music_videos/look_options_test.rb: 0.76
 test/services/music_videos/recast_performer_test.rb: 3.4
 test/services/music_videos/request_stitch_test.rb: 0.79
 test/services/music_videos/run_stitch_test.rb: 1.04
-test/services/music_videos/store_take_test.rb: 1.01
 test/services/nflverse/seed_players_collision_test.rb: 0.91
 test/services/nflverse/seed_players_hardening_test.rb: 0.68
 test/services/nflverse/seed_players_run_record_test.rb: 0.3
@@ -1036,9 +1029,7 @@ test/views/intelligence_dashboard_test.rb: 0.19
 test/views/layer_scale_adoption_test.rb: 0.11
 test/views/modal_host_adoption_test.rb: 0.07
 test/views/model_pipeline_card_test.rb: 0.57
-test/views/music_video_chunk_view_test.rb: 2.37
 test/views/music_video_clip_view_test.rb: 1.13
-test/views/music_video_full_video_view_test.rb: 1.59
 test/views/music_video_look_card_test.rb: 0.96
 test/views/music_video_performer_view_test.rb: 3.46
 test/views/onboarding_first_name_component_test.rb: 0.06

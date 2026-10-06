@@ -346,7 +346,7 @@ class DevopsReconcileCliTest < Minitest::Test
         finding = payload["findings"].first
         assert_equal "ship_interrupted", finding["anomaly"]
         assert_equal "report", finding["disposition"]
-        assert_includes finding["repair"], "bin/ship killed-ship"
+        assert_includes finding["repair"], "bin/submit killed-ship"
         assert_empty payload["healed"], "ship_interrupted is never auto-healed"
         refute File.exist?(calls)
       end

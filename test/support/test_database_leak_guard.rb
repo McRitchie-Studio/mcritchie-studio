@@ -45,7 +45,7 @@ require_relative "test_database_purge"
 #
 # THE BOUNDARY, stated plainly: the standalone `test/lib` / `test/commands` files
 # are bare `minitest/autorun` and run with no Rails at all when invoked directly
-# (`ruby -Itest test/lib/ship_test.rb`), so nothing here is armed for them then.
+# (`ruby -Itest test/lib/submit_test.rb`), so nothing here is armed for them then.
 # In the `bin/rails test` sweep they ARE covered — the hook is installed on
 # Minitest::Test — and the check no-ops whenever no database connection is
 # established, because a process that never connected cannot have written.

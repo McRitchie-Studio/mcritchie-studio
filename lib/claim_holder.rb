@@ -13,7 +13,7 @@ require_relative "../bin/lib/fast_lane"
 #
 # ═══ THE NEAR-MISS, 2026-09-01 ═══
 #
-# `bin/ship ship-waiter-misreports-ci` refused, verbatim:
+# `bin/submit ship-waiter-misreports-ci` refused, verbatim:
 #
 #   task … is claimed by a DIFFERENT live instance (session …, instance …, last
 #   heartbeat ~Ns ago, lease TTL 120s). Ship must not hand off another builder's
@@ -85,7 +85,7 @@ require_relative "../bin/lib/fast_lane"
 #
 # PURE. Nothing here reads the clock, the board, the environment, or the process
 # tree — every fact arrives as an argument, so the whole decision table is
-# exercisable at the unit tier and the same source answers bin/ship, bin/task, and
+# exercisable at the unit tier and the same source answers bin/submit, bin/task, and
 # bin/task review-claim.
 module ClaimHolder
   # --- lease freshness ---------------------------------------------------------
@@ -185,7 +185,7 @@ module ClaimHolder
   end
 
   # THE ONE RENDERING OF A LEASE'S FRESHNESS. Every surface that states a lease
-  # prints this string: `bin/task show --verbose`'s claim line, bin/ship's refusal,
+  # prints this string: `bin/task show --verbose`'s claim line, bin/submit's refusal,
   # and bin/task's build-claim gate.
   #
   # It is one function for the reason ClaimLease.humanize_age is one function — the
@@ -386,7 +386,7 @@ module ClaimHolder
   # --- the refusal -------------------------------------------------------------
   #
   # The message a consumer prints when ClaimLease says :held_by_other. Returns an
-  # ARRAY OF LINES so each caller can prefix them in its own house style (bin/ship
+  # ARRAY OF LINES so each caller can prefix them in its own house style (bin/submit
   # prefixes `ship:`, bin/task prints them bare) without this file guessing.
   #
   # Every branch states the same three things in the same order — WHAT is held, WHO

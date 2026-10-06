@@ -122,46 +122,46 @@ class GateCliTest < Minitest::Test
 
   # [integration] The stamp itself: whoever opened the attempt is on the row.
   def test_open_records_the_session_that_opened_the_gate
-    requests, status = run_gate(%w[open task demo-task g1_cert],
+    requests, status = run_gate(%w[open task demo-task dor],
                                 env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
 
     assert status.success?, "bin/gate exited #{status.exitstatus}: #{@gate_stderr}"
-    assert_equal SESSION, gate_body(requests, "/g1_cert/open").dig("metadata", "session"),
+    assert_equal SESSION, gate_body(requests, "/dor/open").dig("metadata", "session"),
                  "an unsigned gate run gets credited to whoever holds the claim"
   end
 
   def test_close_records_the_session_that_closed_the_gate
-    requests, status = run_gate(%w[close task demo-task g1_cert --success],
+    requests, status = run_gate(%w[close task demo-task dor --success],
                                 env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
 
     assert status.success?, "bin/gate exited #{status.exitstatus}: #{@gate_stderr}"
-    assert_equal SESSION, gate_body(requests, "/g1_cert/close").dig("metadata", "session")
+    assert_equal SESSION, gate_body(requests, "/dor/close").dig("metadata", "session")
   end
 
   # A Codex session is a session too — the stamp rides the shared identity chain,
   # not one provider's env var.
   def test_open_records_a_codex_session
-    requests, = run_gate(%w[open task demo-task g1_cert], env: { "CODEX_THREAD_ID" => SESSION })
+    requests, = run_gate(%w[open task demo-task dor], env: { "CODEX_THREAD_ID" => SESSION })
 
-    assert_equal SESSION, gate_body(requests, "/g1_cert/open").dig("metadata", "session")
+    assert_equal SESSION, gate_body(requests, "/dor/open").dig("metadata", "session")
   end
 
   # A plain shell / CI run names no session. An unattributed row must stay
   # honestly unattributed — a guessed owner is the failure this exists to end.
   def test_open_without_a_session_stamps_nobody
-    requests, status = run_gate(%w[open task demo-task g1_cert])
+    requests, status = run_gate(%w[open task demo-task dor])
 
     assert status.success?, "bin/gate exited #{status.exitstatus}: #{@gate_stderr}"
-    assert_nil gate_body(requests, "/g1_cert/open")["metadata"], "no session means no owner, never a guessed one"
+    assert_nil gate_body(requests, "/dor/open")["metadata"], "no session means no owner, never a guessed one"
   end
 
   # --meta still reaches the server, and the session rides alongside rather than
   # replacing it — the close path merges the two.
   def test_close_keeps_explicit_meta_beside_the_session
-    requests, = run_gate(%w[close task demo-task g1_cert --failed --meta cause=lane_failed],
+    requests, = run_gate(%w[close task demo-task dor --failed --meta cause=lane_failed],
                          env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
 
-    metadata = gate_body(requests, "/g1_cert/close")["metadata"]
+    metadata = gate_body(requests, "/dor/close")["metadata"]
     assert_equal "lane_failed", metadata["cause"]
     assert_equal SESSION, metadata["session"]
   end

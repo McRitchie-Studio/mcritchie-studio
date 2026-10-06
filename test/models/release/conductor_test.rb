@@ -30,7 +30,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_includes rel.tasks.pluck(:slug), t.slug
   end
 
-  # --- sweep_candidates (qa-deploy step 1: detect the work) ---
+  # --- sweep_candidates (qa-release step 1: detect the work) ---
 
   test "[unit] sweep_candidates detects reviewed tasks and assembled stragglers" do
     r = reviewed_task("queue")
@@ -95,7 +95,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_empty cands["stragglers"]
   end
 
-  # --- sweep! (qa-deploy step 3: membership WITHOUT the stage flip) ---
+  # --- sweep! (qa-release step 3: membership WITHOUT the stage flip) ---
 
   test "[unit] sweep! attaches the task with merged:release but does NOT move its stage" do
     assert_nil Release.current
@@ -169,7 +169,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal Task::MERGED_RELEASE, t.reload.merged, "the sweep backfills the git-location"
   end
 
-  # --- qa_green! (qa-deploy step 6: the reviewed→assembled flip) ---
+  # --- qa_green! (qa-release step 6: the reviewed→assembled flip) ---
 
   test "[unit] qa_green! flips swept reviewed members to assembled and assembles the RC" do
     a = reviewed_task("alpha")
@@ -580,7 +580,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal %w[shipped main], [t.reload.stage, t.merged]       # done
   end
 
-  test "[integration] an interrupted qa-deploy resumes: the re-sweep skips nothing it shouldn't and the flip completes" do
+  test "[integration] an interrupted qa-release resumes: the re-sweep skips nothing it shouldn't and the flip completes" do
     # Crash shape: the sweep recorded (reviewed + merged:release) but QA never
     # went green. The next self-healing run re-sweeps (a no-op) and flips on green.
     t = reviewed_task("interrupted")

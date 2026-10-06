@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# [integration] The mirrored devops columns through the route bin/task and bin/ship
+# [integration] The mirrored devops columns through the route bin/task and bin/submit
 # call: a devops write lands in the column, the payload keeps both field shapes,
 # and an invalid approval_status answers 422, never 500.
 class DevopsMirroredColumnsApiTest < ActionDispatch::IntegrationTest

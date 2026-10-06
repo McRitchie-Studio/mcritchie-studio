@@ -61,12 +61,3 @@ export function countdown(secs, average, averageTitle) {
       (overrun ? "over by " + clockFmt(Math.abs(remaining)) : clockFmt(remaining) + " left")
   };
 }
-
-// A killed local cert emits no final write, so no Turbo morph can turn its spinner
-// into STALLED; the ticker owns that time boundary on an already-open board. True
-// once a running check's heartbeat deadline (epoch seconds) has passed.
-export function localCheckStalled(state, staleAt, now) {
-  if (state !== "running") return false;
-  const deadline = parseInt(staleAt || "0", 10);
-  return !!deadline && now > deadline;
-}

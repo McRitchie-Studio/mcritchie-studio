@@ -338,7 +338,7 @@ shapes:
       THE CONDITION THAT DIFFERS IS THE ROLE, NOT THE GREEN. Both roles are
       worded in `bin/lib/ci_gate.rb#verdict`: review's gate-zero refuses a
       pending CI outright, while the BUILDER's submit-side run reports it as
-      WAITING — not ready, not failed — and `bin/ship` holds at step 6/8 for it.
+      WAITING — not ready, not failed — and `bin/submit` holds at step 6/8 for it.
       Nothing is credited provisionally, and no local run stands in: an
       UNREADABLE verdict is a credential to refresh, and a RED CI is fixed by
       fixing CI, pushing and re-running. Every wording here has cost real time

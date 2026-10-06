@@ -30,7 +30,7 @@
 #                  [--sop-json JSON]... [--meta k=v]... [--actor A] [--source S]
 #   bin/gate show  <task|release> <slug> [--json]
 #
-# Keys: g1_cert dor dor_review g2a_primary g2b_light (task) · g3_candidate
+# Keys: dor dor_review g2a_primary g2b_light (task) · g3_candidate
 #       g4_ship (release).
 # Semantics live server-side in GateRun: `open` finds the in-flight attempt or
 # starts attempt n+1; `sop` appends one executed-SOP entry (implicitly opening);
@@ -44,7 +44,7 @@ require "json"
 require_relative "lib/agent_api"
 require_relative "lib/session_identity"
 
-KEYS = %w[g1_cert dor dor_review g2a_primary g2b_light g3_candidate g4_ship].freeze
+KEYS = %w[dor dor_review g2a_primary g2b_light g3_candidate g4_ship].freeze
 SUBJECTS = %w[task release].freeze
 
 def die!(msg)
@@ -129,7 +129,7 @@ end
 
 # WHOSE gate run this is. A gate row records that a cert ran; it did not record
 # WHO ran it, and that gap manufactured evidence: on 2026-08-13 a challenger's own
-# local cert (retired since) opened a g1_cert on a task held by someone else, and the
+# local cert (retired since) opened a cert gate on a task held by someone else, and the
 # claim gate then quoted that cert back to the challenger as proof the HOLDER was
 # alive. Progress with no owner gets credited to whoever holds the claim.
 #

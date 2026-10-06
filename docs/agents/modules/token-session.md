@@ -257,7 +257,7 @@ unblocked can still die on the push. That is what ended a ship at step 3 of 8 on
 2026-09-27, with `remote: Invalid username or token`.
 
 **Arm the shell that actually pushes.** Exported values reach child processes, so
-`bin/ship` inherits them — but a value set in a terminal you have since left, or
+`bin/submit` inherits them — but a value set in a terminal you have since left, or
 in a subshell that has already exited, reaches nothing. In the hub that failure
 looks identical to an unarmed one, because the fallback below answers either way.
 

@@ -11,8 +11,9 @@ module MusicVideos
   #
   # A chunk set arrives with the chunk length and overlap it was cut at (25 s
   # and 5 s unless sent); the video records them with the set. A chunk cut at
-  # the same window as before keeps its "request regenerate" flag, and its
-  # takes find it again by that window (VideoChunkTake#for?).
+  # the same window as before keeps piece 3's (now unread) regenerate flag;
+  # an alt video's clips find their chunk again by that window
+  # (AltVideoClip#chunk_in).
   class ReplaceClips
     FIELDS = %w[ordinal start_ms end_ms seam seam_ms cast_shape target_performer performer_ordinals object_key].freeze
     CHUNK_FIELDS = (FIELDS - %w[seam seam_ms]).freeze

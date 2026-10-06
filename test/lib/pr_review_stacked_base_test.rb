@@ -28,7 +28,7 @@ class PrReviewStackedBaseTest < Minitest::Test
 
   def test_the_base_decision_goes_through_the_shared_guard
     assert_includes merge_body, "StackedPr.guard_base",
-                    "merge_feature_pr must ask the SAME guard bin/ship asks — the reviewer half of this " \
+                    "merge_feature_pr must ask the SAME guard bin/submit asks — the reviewer half of this " \
                     "bug existed because the two answered the base question separately"
   end
 

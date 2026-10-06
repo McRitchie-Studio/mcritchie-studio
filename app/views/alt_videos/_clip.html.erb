@@ -1,0 +1,191 @@
+<%# One clip of an alt video (alt video x source chunk): the source chunk's preview and window; whom the alt video's swaps replace here; the hand-off (the 25 s source clip, the swapped people's character sheets, the prompt built from the alt video's own swaps); a drop zone for the generated MP4; every version, one primary; and the regenerate flag. %>
+<% url = chunk && urls[chunk.object_key] %>
+<% versions = clip.versions.to_a %>
+<% primary = clip.primary_version %>
+<% target = chunk&.swap_target(swaps) %>
+<% swap = target && swaps[target.ordinal] %>
+<% swapped = chunk ? chunk.swapped_present(swaps) : [] %>
+<% prompt = chunk && MusicVideos::ClipPrompts.for(chunk, swaps: swaps) %>
+<article id="clip-<%= clip.chunk_ordinal %>" class="card overflow-hidden scroll-mt-24 min-w-0"
+         x-data="clipRow()" data-src="<%= url %>"
+         data-test="alt-clip" data-ordinal="<%= clip.chunk_ordinal %>"
+         data-primary="<%= primary&.number %>" data-flagged="<%= clip.regenerate_requested? %>">
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+    <div class="relative bg-inset aspect-video" data-test="clip-preview" data-key="<%= chunk&.object_key %>">
+      <% if url %>
+        <video x-ref="player" x-show="open" x-cloak controls playsinline preload="none"
+               class="absolute inset-0 w-full h-full bg-black" data-test="clip-player"
+               @error="failed = true"></video>
+        <button type="button" x-show="!open" @click="preview()"
+                class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-heading hover:text-primary"
+                data-test="clip-preview-button">
+          <svg class="w-10 h-10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <span class="text-sm font-semibold">Preview the source chunk</span>
+        </button>
+        <p x-show="failed" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+           data-test="clip-load-failed">The source chunk did not load: <%= chunk.object_key.split("/").last %></p>
+      <% elsif chunk %>
+        <p class="absolute inset-0 flex items-center justify-center p-3 text-xs text-muted text-center break-all"
+           data-test="clip-unreachable">Source chunk not reachable: <%= chunk.object_key.split("/").last %></p>
+      <% else %>
+        <p class="absolute inset-0 flex items-center justify-center p-3 text-xs text-warning-ink text-center"
+           data-test="clip-no-chunk">The source is no longer cut at this window: it was re-tiled after this alt video was built.</p>
+      <% end %>
+    </div>
+
+    <div class="p-4 flex flex-col gap-3 min-w-0">
+      <header class="min-w-0">
+        <h3 class="text-lg font-bold text-heading"><%= clip.name %></h3>
+        <p class="text-sm text-body font-mono tabular-nums" data-test="clip-window">
+          <%= video_timecode(clip.start_ms) %>–<%= video_timecode(clip.end_ms) %>
+          <span class="text-muted">· <%= format("%.1f", clip.duration_ms / 1000.0) %> s</span>
+        </p>
+      </header>
+
+      <div class="flex flex-wrap gap-1.5">
+        <% if chunk %>
+          <span class="badge text-xs bg-surface-alt text-body border-subtle" data-test="clip-shape"><%= clip_shape_label(chunk.cast_shape) %></span>
+        <% end %>
+        <% if clip.chunk_ordinal > 1 && overlap_ms.positive? %>
+          <span class="badge text-xs bg-primary/10 text-primary border-primary/20" data-test="clip-overlap">First <%= clip_seconds(overlap_ms) %> s repeat clip <%= clip.chunk_ordinal - 1 %></span>
+        <% end %>
+        <% if primary %>
+          <span class="badge text-xs bg-success/10 text-success-ink border-success/40" data-test="clip-state"><%= primary.name %> primary</span>
+        <% else %>
+          <span class="badge text-xs bg-surface-alt text-muted border-subtle" data-test="clip-state">No version yet</span>
+        <% end %>
+        <% if clip.regenerate_requested? %>
+          <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="clip-flag">Regenerate requested</span>
+        <% end %>
+      </div>
+
+      <p class="text-sm text-body min-w-0" data-test="clip-target">
+        <span class="label-upper mr-1">Target</span>
+        <% if target %>
+          <%= target.name %><% if target.artist %> · <span class="font-semibold text-heading"><%= target.artist.name %></span><% end %>
+          <span class="text-muted">(<%= target.label %>)</span>
+          <% if swap %>
+            <span class="block mt-1 break-words" data-test="clip-swap">
+              <span class="label-upper mr-1">Replaced by</span>
+              <span class="font-semibold text-heading"><%= swap.label %></span>
+            </span>
+          <% else %>
+            <span class="block mt-1 text-muted" data-test="clip-swap-none">This alt video keeps <%= target.name %> as filmed, so the prompt leaves {athlete} blank.</span>
+          <% end %>
+        <% elsif chunk %>
+          <span class="text-muted">Nobody in this window is labelled or swapped.</span>
+        <% end %>
+      </p>
+
+      <% if prompt %>
+        <div class="min-w-0">
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <p class="label-upper">Swap prompt</p>
+            <button type="button" @click="copy()" class="btn btn-outline btn-sm" data-test="clip-copy">
+              <span x-text="copied ? 'Copied' : 'Copy prompt'">Copy prompt</span>
+            </button>
+          </div>
+          <p x-ref="prompt" class="text-sm text-body bg-surface-alt border border-subtle rounded-lg p-3 whitespace-pre-wrap break-words select-all"
+             data-test="clip-prompt"><%= prompt %></p>
+          <p x-show="manual" x-cloak class="text-xs text-warning-ink mt-1" data-test="clip-copy-manual">Copy is blocked here: the prompt is selected, press ⌘C.</p>
+        </div>
+      <% end %>
+
+      <div class="min-w-0" data-test="clip-handoff">
+        <p class="label-upper mb-1.5">Hand-off <span class="normal-case tracking-normal">· the source clip, the swapped people's looks and the prompt</span></p>
+        <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 min-w-0">
+          <% if chunk && (download = downloads[chunk.object_key]) %>
+            <%= link_to "Download #{clip_seconds(clip.duration_ms)} s clip", download, download: chunk.object_key.split("/").last,
+                        class: "btn btn-outline btn-sm", data: { test: "clip-chunk-download" } %>
+          <% else %>
+            <span class="text-sm text-muted" data-test="clip-chunk-unreachable">Source clip not reachable.</span>
+          <% end %>
+          <% swapped.each do |entry| %>
+            <% sheet = entry.appearance_slug && sheets[entry.appearance_slug] %>
+            <% if sheet %>
+              <%= link_to sheet.image_url, target: "_blank", rel: "noopener", download: "#{entry.appearance_slug}_character_sheet",
+                          class: "btn btn-outline btn-sm min-w-0", data: { test: "clip-sheet", look: entry.appearance_slug, ordinal: entry.performer_ordinal } do %>
+                <span class="truncate">Download character assets · <%= entry.label %></span>
+              <% end %>
+            <% else %>
+              <span class="text-sm text-warning-ink min-w-0 break-words" data-test="clip-sheet-missing" data-ordinal="<%= entry.performer_ordinal %>">
+                No character sheet for <%= entry.label %> yet.
+                <%= link_to "Open the athlete", person_path(entry.person_slug), class: "text-primary hover:underline" %> to build one.
+              </span>
+            <% end %>
+          <% end %>
+          <% if swapped.empty? %>
+            <span class="text-sm text-muted" data-test="clip-sheet-none">No character assets: this alt video swaps nobody in this window.</span>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="min-w-0 pt-3 border-t border-subtle" data-test="clip-versions" data-count="<%= versions.size %>">
+        <p class="label-upper mb-1.5">Generated versions</p>
+        <%= form_with url: music_video_alt_video_clip_versions_path(video, alt_video, clip.chunk_ordinal), method: :post, multipart: true, local: true,
+                      html: { "x-data": "clipDrop()", "@submit": "busy = true",
+                              data: { test: "clip-drop-form", max_bytes: MusicVideos::StoreClipVersion::MAX_BYTES } } do %>
+          <label for="clip-file-<%= clip.chunk_ordinal %>"
+                 class="flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-3 py-5 text-center cursor-pointer transition-colors min-w-0"
+                 :class="over ? 'border-primary bg-primary/10' : 'border-subtle bg-surface-alt hover:border-primary/60'"
+                 @dragenter.prevent="over = true" @dragover.prevent="over = true" @dragleave.prevent="over = false" @drop.prevent="dropped($event)"
+                 data-test="clip-drop">
+            <span class="text-sm font-semibold text-heading" x-show="!busy">Drop the generated MP4 here</span>
+            <span class="text-sm font-semibold text-heading" x-show="busy" x-cloak>Uploading, keep this tab open…</span>
+            <span class="text-xs text-muted" x-show="!busy">or click to choose it · MP4 up to <%= MusicVideos::StoreClipVersion::MAX_BYTES / 1024 / 1024 %> MB · it becomes the primary version</span>
+          </label>
+          <input id="clip-file-<%= clip.chunk_ordinal %>" x-ref="file" type="file" name="file" accept="video/mp4,.mp4" required
+                 class="sr-only" @change="chosen()" data-test="clip-file">
+          <p x-show="error" x-cloak x-text="error" class="text-xs text-warning-ink mt-1" data-test="clip-drop-error"></p>
+        <% end %>
+        <% if versions.empty? %>
+          <p class="text-sm text-muted mt-2" data-test="clip-versions-empty">None yet: Watch full video plays the source chunk here.</p>
+        <% else %>
+          <ul class="flex flex-col gap-1.5 mt-2">
+            <% versions.reverse_each do |version| %>
+              <li class="flex flex-wrap items-center justify-between gap-2 min-w-0 text-sm" data-test="clip-version"
+                  data-number="<%= version.number %>" data-primary="<%= version == primary %>" data-key="<%= version.object_key %>">
+                <span class="min-w-0 break-words">
+                  <span class="font-semibold text-heading"><%= version.name %></span>
+                  <span class="text-muted">· <%= take_size(version.byte_size) %> · <%= l(version.created_at, format: :short) %></span>
+                </span>
+                <span class="flex items-center gap-2 shrink-0">
+                  <% if (version_url = urls[version.object_key]) %>
+                    <%= link_to "Open", version_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline", data: { test: "clip-version-open" } %>
+                  <% end %>
+                  <% if version == primary %>
+                    <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">Primary</span>
+                  <% else %>
+                    <%= button_to "Make primary", primary_music_video_alt_video_clip_version_path(video, alt_video, clip.chunk_ordinal, version.number),
+                                  method: :post, class: "btn btn-outline btn-sm", form: { class: "contents", data: { test: "clip-make-primary" } } %>
+                  <% end %>
+                </span>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+      </div>
+
+      <div class="min-w-0 pt-3 border-t border-subtle" data-test="clip-regenerate">
+        <% if clip.regenerate_requested? %>
+          <div class="flex items-start justify-between gap-2 min-w-0">
+            <p class="text-sm text-warning-ink min-w-0 break-words" data-test="clip-regenerate-note">
+              <span class="font-semibold">Regenerate requested</span><% if clip.regenerate_note.present? %>: <%= clip.regenerate_note %><% end %>
+              <span class="block text-muted">The next uploaded version clears it.</span>
+            </p>
+            <%= button_to "Clear", music_video_alt_video_clip_regenerate_path(video, alt_video, clip.chunk_ordinal), method: :delete,
+                          class: "btn btn-outline btn-sm shrink-0", form: { data: { test: "clip-regenerate-clear" } } %>
+          </div>
+        <% else %>
+          <%= form_with url: music_video_alt_video_clip_regenerate_path(video, alt_video, clip.chunk_ordinal), method: :post, local: true,
+                        class: "flex flex-col sm:flex-row gap-2 min-w-0", data: { test: "clip-regenerate-form" } do %>
+            <label class="sr-only" for="clip-regenerate-note-<%= clip.chunk_ordinal %>">What is wrong with <%= clip.name.downcase %> (optional)</label>
+            <input id="clip-regenerate-note-<%= clip.chunk_ordinal %>" type="text" name="note" maxlength="<%= AltVideoClip::REGENERATE_NOTE_MAX %>"
+                   placeholder="What is wrong (optional)" class="input-field py-2 text-sm min-w-0 flex-1" data-test="clip-regenerate-input">
+            <button type="submit" class="btn btn-outline btn-sm shrink-0">Request regenerate</button>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</article>

@@ -255,7 +255,7 @@ class ReviewClaimStatusObservationTest < Minitest::Test
     payload = JSON.parse(out)
 
     assert_equal false, payload["free"],
-                 "free=true here is the whole defect: bin/ship and any claim gate reading " \
+                 "free=true here is the whole defect: bin/submit and any claim gate reading " \
                  "this field would treat a live holder's task as available"
     refute_equal "lapsed", payload["observed"]
   end
@@ -420,7 +420,7 @@ class ReviewClaimStatusObservationTest < Minitest::Test
     assert_equal "unobserved", payload["observed"]
     assert_equal false, payload["free"]
     assert_equal "carl", payload.dig("holder", "agent"),
-                 "bin/ship's refusal reads this to say WHO to ask; a holder with no name " \
+                 "bin/submit's refusal reads this to say WHO to ask; a holder with no name " \
                  "turns 'ask them to release' into advice nobody can act on"
     assert_equal REVIEWER_SESSION, payload.dig("holder", "session")
   end

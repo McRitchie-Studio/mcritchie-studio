@@ -16,7 +16,7 @@ Pokémon is the logged-out state, and stays as flavour when a soul is logged in.
 
 | Surface | What it does today | Where |
 |---|---|---|
-| Hub API login | One shared `AGENT_API_SECRET` exchanges for a 24-hour token whose payload is `{authenticated: true, issued_at}`: no soul, no task, no scope. Every `bin/task`, `bin/dor-check` and `bin/agent-activity` call carries it, and `bin/ship` through them | `app/controllers/api/v1/auth_controller.rb#create`, `app/controllers/api/v1/base_controller.rb#authenticate_api!`, `bin/lib/agent_api.rb#token` |
+| Hub API login | One shared `AGENT_API_SECRET` exchanges for a 24-hour token whose payload is `{authenticated: true, issued_at}`: no soul, no task, no scope. Every `bin/task`, `bin/dor-check` and `bin/agent-activity` call carries it, and `bin/submit` through them | `app/controllers/api/v1/auth_controller.rb#create`, `app/controllers/api/v1/base_controller.rb#authenticate_api!`, `bin/lib/agent_api.rb#token` |
 | Actor on task events | A self-declared request param. `bin/task --actor <soul>` names whoever the caller says | `app/controllers/api/v1/task_events_controller.rb#event_attributes` |
 | Turf Monster production | Holds the same `AGENT_API_SECRET` for two hub endpoints: `Studio::PushGameRecap` (`POST /api/v1/game_recaps`) and `Studio::SyncAthletes` (`GET /api/v1/athletes`) | `turf-monster/app/services/studio/` |
 | Heartbeat attribution | `bin/agent-activity heartbeat <soul>` writes a sticky `.acting-agent` marker beside the session marker; every activity attributes to that soul until `--clear` or session end. Local, unverified | `bin/atomic-event#heartbeat` |

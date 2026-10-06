@@ -154,6 +154,8 @@ Rails.application.routes.draw do
   get "recast_athletes/search", to: "recast_athletes#search", as: :search_recast_athletes
   # One person's look dropdown rows, polled by a cast card while a sheet builds.
   get "recast_athletes/:slug/looks", to: "recast_athletes#looks", as: :recast_athlete_looks
+  # Every alt video across every source, with its clip progress.
+  get "alt_videos", to: "alt_videos#index", as: :alt_videos
   resources :music_videos, only: [:show], param: :slug do
     post :confirm_cast, on: :member
     resources :performers, only: [:update], param: :ordinal, controller: "video_performers" do
@@ -163,17 +165,20 @@ Rails.application.routes.draw do
       resources :recast_looks, only: [:create], controller: "video_performer_recast_looks"
     end
     resources :clips, only: [:update], param: :ordinal, controller: "video_clips"
-    # Chunks (the tiled video) have their own routes: upload a generated take,
-    # put an older take back in front, request or clear a regenerate.
-    resources :chunks, only: [], param: :ordinal do
-      resources :takes, only: [:create], param: :number, controller: "video_chunk_takes" do
-        post :current, on: :member
+    # Alt videos (recast pipeline, piece 13): Build Clips makes the next one from
+    # the cast card's swaps; its page is the clip builder. Each clip (alt video x
+    # chunk) takes uploaded versions, one primary, and a regenerate flag.
+    resources :alt_videos, only: [:create, :show], param: :number do
+      resources :clips, only: [], param: :ordinal do
+        resources :versions, only: [:create], param: :number, controller: "alt_video_clip_versions" do
+          post :primary, on: :member
+        end
+        resource :regenerate, only: [:create, :destroy], controller: "alt_video_clip_regenerates"
       end
-      resource :regenerate, only: [:create, :destroy], controller: "video_chunk_regenerates"
+      # The final stitch: "Generate full video" records a request; show answers
+      # its state as JSON for the page's progress poll.
+      resources :stitches, only: [:create, :show], param: :number, controller: "alt_video_stitches"
     end
-    # The final stitch: "Generate full video" records a request; show answers
-    # its state as JSON for the page's progress poll.
-    resources :stitches, only: [:create, :show], param: :number, controller: "video_stitches"
     resources :looks, only: [:create], param: :look_slug, controller: "music_video_looks" do
       post :sheet, on: :member
     end
@@ -481,13 +486,15 @@ Rails.application.routes.draw do
       resources :music_videos, only: [:show, :create], param: :slug do
         post :performers, on: :member
         post :clips, on: :member
-        # The final stitch, as bin/stitch-video drives it: read the requests,
-        # open one, then report it started, finished or failed.
-        resources :stitches, only: [:index, :create], param: :number, controller: "music_video_stitches" do
-          member do
-            post :start
-            post :finish
-            post :failed
+        # The final stitch of an alt video, as bin/stitch-video drives it: read
+        # the requests, open one, then report it started, finished or failed.
+        resources :alt_videos, only: [], param: :number do
+          resources :stitches, only: [:index, :create], param: :number, controller: "music_video_stitches" do
+            member do
+              post :start
+              post :finish
+              post :failed
+            end
           end
         end
       end
@@ -597,7 +604,7 @@ Rails.application.routes.draw do
           post "conductor_claim/reassign", to: "release_conductor_claims#reassign", as: :conductor_claim_reassign
         end
       end
-      # Gate-run markers — the branded testing gates (GateRun::GATES, G1 Cert …
+      # Gate-run markers — the branded testing gates (GateRun::GATES, DoR …
       # G4 Ship). open/sops/close is the whole write surface; deterministic
       # markers, so NO usage gate here (see Api::V1::GateRunsController).
       scope "gates/:subject_type/:subject_slug", constraints: { subject_type: /task|release/ } do

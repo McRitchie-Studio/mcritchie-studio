@@ -2,7 +2,7 @@
 
 # Unit tests for bin/lib/task_tree.rb — the task-tree check bin/fast-check
 # consults before running against an IMPLICITLY-resolved root, and the desk
-# resolver bin/ship and bin/dor-check re-root through. A root is the task's tree
+# resolver bin/submit and bin/dor-check re-root through. A root is the task's tree
 # when its checked-out branch is the task's branch (board devops.branch, else the
 # feat/<slug> convention) or it is the task's .worktrees/<worktree_slug> dir;
 # anything else refuses — the 2026-07-12 fail-GREEN certified the hub primary's
@@ -148,7 +148,7 @@ class TaskTreeTest < Minitest::Test
                                      root: primary, projects_dir: empty_projects)
         refute_nil found
         assert_nil found[:resolved_root]
-        # This :message is what bin/ship die!s with when resolved_root is nil — so ship
+        # This :message is what bin/submit die!s with when resolved_root is nil — so ship
         # DOES emit the refusal text, on exactly this path (task
         # handoff-narration-overclaims-four: a comment once said it never did).
         assert_includes found[:message], "refusing to run against it"

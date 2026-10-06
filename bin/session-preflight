@@ -311,7 +311,7 @@ end
 # WHY AT PREFLIGHT. App installation tokens live ~1h and NOTHING refreshes gh's
 # ambient credential on its own (docs/agents/modules/source-control.md § Three
 # stores, and they rank). So a desk cut an hour ago ships fine and a desk cut now
-# dies at `bin/ship`, `gh pr view`, or the first CI read — mid-wave, in the session
+# dies at `bin/submit`, `gh pr view`, or the first CI read — mid-wave, in the session
 # least able to absorb it. One probe here moves that discovery to the cheapest
 # moment and hands over the exact fix, which is SELF-SERVICE and never an
 # escalation to Mr. McRitchie.
@@ -414,7 +414,7 @@ end
 
 # Ladder branches whose PRs carry every merged file by construction (the release
 # train's `accepted → release` batch promote). Excluded from the migration check so a
-# release window does not make it collide with everything. Mirrors bin/ship.
+# release window does not make it collide with everything. Mirrors bin/submit.
 RELEASE_BATCH_HEADS = %w[accepted release].freeze
 
 def first_line(path)
@@ -688,7 +688,7 @@ end
            "one non-test file and the claim is refused. It owes the cert gate (NOT exempt, unlike docs): " \
            "a SETTLED GREEN CI for the PR's head is the one form of suite evidence dor-check credits, and " \
            "bin/fast-check is an optional pre-flight, not evidence. At SUBMIT a CI still running reads as " \
-           "WAITING (bin/ship holds for it at step 6/8); no local run stands in, an UNREADABLE verdict is a " \
+           "WAITING (bin/submit holds for it at step 6/8); no local run stands in, an UNREADABLE verdict is a " \
            "credential to refresh, and a RED CI is fixed by fixing CI. The [control] line must name a file " \
            "from the diff (does the changed test still bite?)"
     end

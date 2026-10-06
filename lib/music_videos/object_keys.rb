@@ -40,6 +40,24 @@ module MusicVideos
       "#{m[1]}stitched/#{m[2]}_stitched_#{format('%02d', number)}.mp4"
     end
 
+    # music_videos/<artist>/<video>/alt_videos/<NN>/clips/<video>_alt_<NN>_chunk_<NN>_<mmss>_<mmss>_v<NN>.mp4:
+    # one generated MP4 uploaded back for a clip of an alt video (piece 13).
+    # The chunk's own file name with the alt video and the version, so they sort together.
+    def self.alt_clip_version(source_key:, alt_number:, ordinal:, start_ms:, end_ms:, number:)
+      m = video_folder(source_key)
+      "#{alt_folder(m, alt_number)}clips/#{m[2]}_alt_#{format('%02d', alt_number)}_chunk_#{format('%02d', ordinal)}_" \
+        "#{mmss(start_ms)}_#{mmss(end_ms)}_v#{format('%02d', number)}.mp4"
+    end
+
+    # music_videos/<artist>/<video>/alt_videos/<NN>/stitched/<video>_alt_<NN>_stitched_<NN>.mp4:
+    # one full-length stitch of an alt video's primary versions.
+    def self.alt_stitched(source_key:, alt_number:, number:)
+      m = video_folder(source_key)
+      "#{alt_folder(m, alt_number)}stitched/#{m[2]}_alt_#{format('%02d', alt_number)}_stitched_#{format('%02d', number)}.mp4"
+    end
+
+    def self.alt_folder(match, alt_number) = "#{match[1]}alt_videos/#{format('%02d', alt_number)}/"
+
     # [whole match, "music_videos/<artist>/<video>/", "<video>"] of a source key.
     def self.video_folder(source_key)
       %r{\A(#{PREFIX}[a-z0-9_]+/([a-z0-9_]+)/)source/}.match(source_key.to_s) ||

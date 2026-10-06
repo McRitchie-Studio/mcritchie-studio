@@ -75,9 +75,9 @@ tasks. If anything is missing, note it as a finding; do not guess.
      bin/dor-check <task-slug> --gate-role review
      ```
 
-     `--gate-role review` matters twice. Your verdict lands on the task's **G2a
-     Primary** gate ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md))
-     instead of closing the builder's G1. And it keeps **strict CI semantics**:
+     `--gate-role review` matters twice. Your verdict lands on the task's **DoR
+     (review)** gate ([`../../../modules/gates/dor.md`](../../../modules/gates/dor.md))
+     instead of the builder's `dor` gate. And it keeps **strict CI semantics**:
      red and still-running both block, and no local cert stands in for the
      settled green.
 

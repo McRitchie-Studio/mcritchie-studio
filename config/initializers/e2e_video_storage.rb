@@ -7,8 +7,8 @@
 if Rails.env.test? && ENV["E2E_FAKE_VIDEO_STORAGE"] == "1"
   Rails.application.config.to_prepare do
     Content::AttachVideo.define_singleton_method(:store) { |key:, body:| "/e2e-uploads/#{key}?bytes=#{body.size}" }
-    # A generated take (the recast round trip): measured and dropped the same way.
-    MusicVideos::StoreTake.define_singleton_method(:store) { |key:, body:| "/e2e-uploads/#{key}?bytes=#{body.size}" }
+    # A clip's generated version (the recast round trip): measured and dropped the same way.
+    MusicVideos::StoreClipVersion.define_singleton_method(:store) { |key:, body:| "/e2e-uploads/#{key}?bytes=#{body.size}" }
     # The final stitch: the lane has no ffmpeg and no bucket, so "this hub can
     # stitch" is forced on and the stitcher is a stand-in that waits a moment
     # (long enough for the page to show the stitch in progress) and reports a

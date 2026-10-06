@@ -8,7 +8,7 @@
 # `reviewed` the work has merged and the desk serving the local demo is reclaimable,
 # so the request points at a page nobody can open. But on 2026-09-07 it happened in
 # SILENCE — an agent set --approval waiting at `building`, read it back as "waiting",
-# ran bin/ship, and the handoff move discarded the request with nothing printed. The
+# ran bin/submit, and the handoff move discarded the request with nothing printed. The
 # board never pulsed and Mr. McRitchie was never asked. The move still succeeds; it
 # just has to SAY SO.
 #

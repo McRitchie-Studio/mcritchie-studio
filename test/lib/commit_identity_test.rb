@@ -23,20 +23,20 @@
 # test_two_desks_of_one_repo_do_not_share_an_identity below is the load-bearing
 # test in this file rather than a nicety.
 #
-# TWO LAYERS, BOTH PROVED HERE. bin/ship's own commit is authored PER COMMIT,
+# TWO LAYERS, BOTH PROVED HERE. bin/submit's own commit is authored PER COMMIT,
 # from the environment, which outranks every config file — the only grain that
 # matches two souls taking turns at one desk. Every OTHER desk commit (the
 # builder's mid-build commits, merge-forwards, rebases) never passes through
-# bin/ship, so the desk is also stamped PER DESK, in its own config.worktree via
+# bin/submit, so the desk is also stamped PER DESK, in its own config.worktree via
 # extensions.worktreeConfig (turf-monster-git-identity-wrong, approved
 # 2026-09-16). That is a DIFFERENT file from the shared .git/config, which is why
 # the sibling-isolation property below still holds for the stamp. The "desk
 # layer" section at the bottom proves it against real repos with the global
 # config pinned to a scratch file.
 #
-# WHERE THE WIRING IS PROVED. Not here, and not by reading bin/ship's source: a
-# source scan asserts a string, not a behaviour. test/lib/ship_test.rb runs the
-# REAL bin/ship against a repo whose repo-level identity is `tester` and asserts
+# WHERE THE WIRING IS PROVED. Not here, and not by reading bin/submit's source: a
+# source scan asserts a string, not a behaviour. test/lib/submit_test.rb runs the
+# REAL bin/submit against a repo whose repo-level identity is `tester` and asserts
 # the resulting commit's author out of git.
 #
 # WHAT THIS MUST NEVER DO. `devops.builders` is the AUTHOR SET bin/reviewer-select
@@ -166,7 +166,7 @@ class CommitIdentityTest < Minitest::Test
 
   # --- the desk layer: stamp_worktree! against real repos -------------------
   #
-  # THE DEFECT (measured 2026-09-16). bin/ship's env covers one commit. The
+  # THE DEFECT (measured 2026-09-16). bin/submit's env covers one commit. The
   # builder's hand commits in a turf-monster desk inherited the SHARED default in
   # .git/config — "Steffon (Claude)" — whoever the builder was: 131 non-merge
   # commits and 50 merges on origin/accepted since 2026-09-07. Every test below
@@ -185,7 +185,7 @@ class CommitIdentityTest < Minitest::Test
       assert_equal "Jasper <jasper@mcritchie.studio>", git!(desk, "log", "-1", "--format=%cn <%ce>"),
                    "the committer line must name the soul too, or a rebase keeps the relic in %cn"
       assert_equal CommitIdentity.env_for("built_by" => "jasper")["GIT_AUTHOR_NAME"], result.name,
-                   "the desk stamp and bin/ship's commit must spell a soul the SAME way"
+                   "the desk stamp and bin/submit's commit must spell a soul the SAME way"
     end
   end
 
@@ -370,7 +370,7 @@ class CommitIdentityTest < Minitest::Test
   end
 
   def hand_commit(dir)
-    git!(dir, "commit", "--allow-empty", "-q", "-m", "a hand commit, no bin/ship")
+    git!(dir, "commit", "--allow-empty", "-q", "-m", "a hand commit, no bin/submit")
   end
 
   def ident(dir) = git!(dir, "var", "GIT_AUTHOR_IDENT").sub(/\s+\d+\s+[-+]\d{4}\z/, "")

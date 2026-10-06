@@ -12,7 +12,7 @@
 > 2026-07-14, in rollout).** Feature PRs will target a new persistent **`accepted`**
 > branch below `release` (review merges there, stamping `merged: "accepted"`);
 > **GitHub Actions becomes the authoritative gate verdict** at each promotion seam
-> (G1 stays a fast local pre-flight); and QA + prod **deploys move into Actions**,
+> (the fast local pre-flight stays); and QA + prod **deploys move into Actions**,
 > gated by GitHub Environments (optimistic QA, operator-confirmed prod). See the
 > **target-model** subsection at the head of §1 and the phased rollout in
 > "Implementation order". Piloted in `mcritchie-studio`, then rolio, then
@@ -202,12 +202,12 @@ already use. One reusable workflow, one tier per seam:
 
 | Seam (PR into) | CI tier | Grain | Gate |
 |---|---|---|---|
-| `accepted` | **Tier 1** — scan + lint + full base+system suite | per-feature ("granular") | **G1 / G2** |
+| `accepted` | **Tier 1** — scan + lint + full base+system suite | per-feature ("granular") | **DoR / G2** |
 | `release` (+ push to `release`) | **Tier 2** — the batch suite | release-batch ("group") | **G3** |
 | `main` | **Tier 3** — exhaustive / pre-prod superset | full app | **G4** precondition |
 
-**G1 stays a fast local pre-flight** (`fast-check`, ~1 min) to save Actions
-minutes and catch obvious breaks; the **authoritative** G1/G2/G3/G4 verdict is the
+**The fast local pre-flight stays** (`fast-check`, ~1 min) to save Actions
+minutes and catch obvious breaks; the **authoritative** DoR/G2/G3/G4 verdict is the
 Actions conclusion for the seam's SHA (at G3/G4 this *promotes* today's existing
 non-blocking CI auditor to the verdict). On the hub all three tiers run the same
 suite — the hub already runs full+system+scans per PR — so they differ mostly in
@@ -234,7 +234,7 @@ Actions-side follow-up, not a gate concern).
 
 **Deploys run in GitHub Actions, gated by GitHub Environments:**
 
-- **QA — auto + optimistic.** A push to `release` triggers the `qa-deploy`
+- **QA — auto + optimistic.** A push to `release` triggers the `qa-deploy.yml`
   workflow (`qa` environment, no reviewer). qa does **not** block on it: once
   Tier-2 CI is green it opens the `release → main` PR immediately (a broken QA boot
   no longer stalls the pipeline — the operator launching `production-deploy` is the
@@ -544,7 +544,7 @@ when it ships. **Bias to action: green tests = go**, because both `accepted` and
 
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
-| **→ submitted** (task, entry) | Feature agent | Feature agent | optional pre-flight — `bin/fast-check` (~1 min, records nothing) → open PR (base `accepted`), let CI settle, pass `bin/dor-check` (the PR's settled green CI is the suite evidence), record `checks_run`, move in | self-gate — **G1** (the optional pre-flight; since 2026-09-24 it writes no gate) → **DoR** (the `bin/dor-check` verdict opens+closes the `dor` gate) |
+| **→ submitted** (task, entry) | Feature agent | Feature agent | optional pre-flight — `bin/fast-check` (~1 min, records nothing) → open PR (base `accepted`), let CI settle, pass `bin/dor-check` (the PR's settled green CI is the suite evidence), record `checks_run`, move in | self-gate — the optional pre-flight (writes no gate) → **DoR** (the `bin/dor-check` verdict opens+closes the `dor` gate) |
 | **submitted** (task) — REVIEW | **Carl** (standing primary + owner) + a domain LIGHT | Session Pokémon spins **one Carl per PR** → Carl summons **one LIGHT** at his discretion | The review session claims a green-CI PR (`bin/task claim-next-review`) and spins **one Carl** — the standing primary AND owner; **there is no Avi supervisor**. Carl does the deep review, owns the gates, and **summons one domain LIGHT** for a focused second read — the domain pick from {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform · Xan=Documentation}, previewed by **`bin/reviewer-select <task> --no-record`** (`ReviewerSelector` — a bare run RECORDS the pair and takes the task's review claim, so a preview always carries `--no-record`; excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`), else `devops.persona`, else the task's assigned `agent_slug`**; **busy souls** come from `--busy a,b,c` and/or `--busy-auto`; **KEEP fallback:** when the exclusions would leave too few, the least-bad are kept; the primary Carl + domain light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Carl and the light confirm DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker → **Carl merges the feat PR into `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed` ✅, then STOPS — review never touches `release`/`main` and never deploys; the `accepted → release` promotion (next row) is Avi's; a blocker → `blocked` (rework, with `qa_feedback`) | **G2 Review** (lanes `g2a_primary` + `g2b_light`; Carl's gate-zero = `bin/dor-check <task> --gate-role review`, recorded on the separate `dor_review` gate) — merge-ready primary + light reads (Carl = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — SWEEP (task) | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`) | `bin/release prepare` DETECTS every `reviewed` task + any `assembled` straggler off the current RC, ensures a candidate (`Release.current_or_open!`), and PROMOTES **ONE `accepted → release` batch PR per repo** — not N per-task `feat → release` merges (review already landed each feat PR on `accepted`); the promote is SKIPPED for a repo already level, or for a task already stamped `merged: release/main` (interrupted-run recovery). Then record membership + `merged: "release"` (`Release::Conductor.sweep!`) — **stage stays `reviewed`**. Honors `dependencies` + producer-first. Nothing detected + nothing active → idempotent no-op. **Bias to action: green tests = go** (`release` reverts cleanly) | deterministic sweep (conflicts surface at PR-merge; a conflicted PR is swept PAST — block-and-move); review gate: only `reviewed`/`assembled` tasks sweep (`--override` = audited `review_bypassed`) |
 | **assembled** (release) — QA | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`, same run) | After the sweep, the **stale-tree gate** (`Release::StaleTreeCheck`) re-reads `origin/release..origin/accepted` for every three-rung repo in the deploy plan and REFUSES unless `release` already carries `accepted` — asserting the promote's EFFECT, because the promote picks its repos from board stamps and so cannot see a commit with no task behind it (that gap once printed `✓ Assembled` over a tree missing the fix). Then the **pre-QA gate** runs the **next tier — integration + an e2e smoke** (registry `qa_test_cmd`) on `origin/release` BEFORE deploying; green → `prepare` deploys it to QA → **Discord QA-deployment note** → on **QA-green** `Release::Conductor.qa_green!` flips swept members `reviewed → assembled` (merged stays `release`) + release `assembled` | **G3 Candidate** (release-grain; spans pre-QA suite → QA boot smokes → post-deploy hooks; closes with the QA-green flip) — deterministic suite; ⛔ regression → **eject the offender** (`bin/release eject <task>` = detach + block + merged cleared; revert its merge commit) — the REST rides the re-run. **`prepare` waits-for-boot** (`/up`-smoke race) and **defers the flip** until QA returns 200 — a failure leaves members `reviewed` for the next self-healing run |
@@ -578,7 +578,7 @@ Clarifications:
   ship authorization (`bin/release ship` → `ship_gate`, then `confirm`, unless
   the authorized autonomous workflow passes `--yes`). Each gate's verdicts are
   recorded as attempt-aware `GateRun` rows — the standalone gate docs live in
-  `docs/agents/modules/gates/` (`g1-cert.md` … `g4-ship.md`).
+  `docs/agents/modules/gates/` (`dor.md` … `g4-ship.md`).
 - **`assembled` now means ONE thing at both scopes: QA-green.** A *task* flips
   `assembled` only when the QA deploy it rides smokes green
   (`Release::Conductor.qa_green!`) — being merged into `release` alone leaves it
@@ -1614,13 +1614,9 @@ run the suite; GitHub CI is the runner that produces the evidence, once per tree
 and the verdict on the task record survives a fresh checkout where a local
 artifact would not.
 
-The §3.3 sequence is recorded as **two branded gates** (attempt-aware `GateRun`
-rows; "Option B" split, 2026-07-11):
+The §3.3 sequence is recorded as a branded gate (attempt-aware `GateRun` rows);
+the builder's optional local pre-flight (`bin/fast-check`) writes no gate:
 
-- **G1** (`g1_cert`) — until 2026-09-24 the **self-closing cert**: the cert
-  tools opened the attempt, appended one SOP per lane, and closed it themselves.
-  The pre-flight that replaced them writes no gate; the key stays on the board
-  for the historical rows.
 - **DoR** — the Definition-of-Ready **verdict**, its own gate now, split by
   role: the builder's `bin/dor-check <task>` opens+closes **`dor`**, and the
   reviewer's gate-zero `bin/dor-check <task> --gate-role review` opens+closes
@@ -1628,7 +1624,7 @@ rows; "Option B" split, 2026-07-11):
   `dor_review` failed). CI stays a **handoff, not a gate** — its verdict rides as
   a `ci` SOP inside DoR, never its own gate row.
 
-Standalone gate SOPs: `docs/agents/modules/gates/g1-cert.md` / `dor.md` /
+Standalone gate SOPs: `docs/agents/modules/gates/dor.md` /
 `g2-review.md` (task-grain), `g3-candidate.md` / `g4-ship.md` (release-grain,
 conductor-recorded).
 
@@ -1716,7 +1712,7 @@ The heartbeat agent will not merge-race conflicting work:
   the docs don't conflict on `release` *after* passing review. Warning-only (it
   never blocks); the conductor reads it to choose order / rebase the loser.
 - **Migrations:** two tasks touching `db/schema.rb` or migrations → the
-  duplicate-migration collision check in `bin/dor-check` and `bin/ship`
+  duplicate-migration collision check in `bin/dor-check` and `bin/submit`
   (`bin/lib/migration_collision.rb`) refuses the colliding one; there is no
   lane (see `exclusive-lanes.md`).
 - **studio-engine + consumers:** gem publish → consumer lockfile bump → app
@@ -1869,7 +1865,7 @@ the current release drain), so the in-flight-PR retarget risk is zero.
    straight through); the conductor triggers + `gh run watch`es instead of local
    `git push heroku`.
 3. **Flip gate authority + rewrite SOPs (hub)** — promote the existing `CiStatus`
-   auditor to the G3/G4 verdict (G1 stays a local pre-flight); reconcile §1.1/§1.2,
+   auditor to the G3/G4 verdict (the local pre-flight stays); reconcile §1.1/§1.2,
    the Feature/Bug SOPs, §3.3 DoR, Workflow 2 (§4), and the gate docs to the target
    model; `bin/install-agent-docs`.
 4. **Canary + cleanup** — drive one change end-to-end through the new pipeline;

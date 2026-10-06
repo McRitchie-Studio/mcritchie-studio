@@ -149,7 +149,7 @@ Desk: <the path bin/task begin printed> (already created; do not run bin/task be
 
 Read docs/agents/agents/pokemon/role.md, then docs/agents/modules/building-sop.md, and follow it.
 Write the test tiers your shape requires. Commit in the desk early and often.
-Hand off from the desk, in the background, with the fixed-path script: /Users/alex/projects/.agents/bin/ship-wait <slug> --launch -m "<message>" (about 12 minutes; if that path is missing, /Users/alex/projects/mcritchie-studio/bin/ship-wait runs the same script).
+Hand off from the desk, in the background, with the fixed-path script: /Users/alex/projects/.agents/bin/submit-wait <slug> --launch -m "<message>" (about 12 minutes; if that path is missing, /Users/alex/projects/mcritchie-studio/bin/submit-wait runs the same script).
 STOP at submitted. Do not merge, deploy, or touch release/main.
 Narrate with bin/agent-activity. Report back: the PR URL, the pre-flight result, the CI state, anything undone.
 ```
@@ -176,10 +176,10 @@ premise in it costs the recipient a disproof or ships a wrong fix.
 
 **A report that reads like a plan is a stall.** No notification wakes a subagent,
 so one that ends its turn "holding for the ship" stops there. Tell builders to
-launch `ship-wait` once, then loop `ship-wait <slug> --timeout 1200` in the
+launch `submit-wait` once, then loop `submit-wait <slug> --timeout 1200` in the
 foreground until it settles, and never launch a second ship. To resume one, read
 the task and PR state first, `git status` its desk (a stall can leave a mutation
-on disk), then `SendMessage` it to attach with `ship-wait <slug>` and no
+on disk), then `SendMessage` it to attach with `submit-wait <slug>` and no
 `--launch`.
 
 ## Step 4 — Review your own PRs

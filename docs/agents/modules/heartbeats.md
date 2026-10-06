@@ -203,7 +203,6 @@ single-task expedite, never part of the heartbeat.
 SOP: [`../agents/avi/sops/qa-release.md`](../agents/avi/sops/qa-release.md). Run
 the self-healing `bin/release prepare --yes` sweep: reviewed work plus stragglers
 onto `release`, pre-QA gate, QA deploy, and members `assembled` only on QA-green.
-`qa-deploy` is the legacy alias.
 
 - **Precondition:** `reviewed` work and/or an `assembled` straggler. Nothing
   reviewed, no stragglers, no RC in flight → report + stop.
@@ -252,8 +251,7 @@ SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/prod
 ### Act 2 — `archive-shipped`
 
 SOP: [`../agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md).
-Archive shipped work and reclaim completed worktrees. `archive-completed` is the
-legacy alias.
+Archive shipped work and reclaim completed worktrees.
 
 ## 4. Xan Heartbeat — `Xan Heartbeat` / `grade-events` / `share-insights` / `full-cycle`
 
