@@ -2,7 +2,7 @@ require "test_helper"
 
 module Api
   module V1
-    class AgentActivitysControllerTest < ActionDispatch::IntegrationTest
+    class AgentActivitiesControllerTest < ActionDispatch::IntegrationTest
       setup do
         @task = tasks(:new_task)
         @headers = {

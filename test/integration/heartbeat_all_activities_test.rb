@@ -4,7 +4,7 @@ require "test_helper"
 # narrated AgentActivity across ALL sessions, newest-first, paginated 100 per page.
 # Reuses the per-session activity table + drawer; there is no per-session "Unlabeled" group
 # here. Read-only meta surface, like the per-session heartbeat — no auth.
-class HeartbeatAllSpansTest < ActionDispatch::IntegrationTest
+class HeartbeatAllActivitiesTest < ActionDispatch::IntegrationTest
   # The ops pages sit behind the admin wall (AdminWall); these tests read them as
   # the operator. A test about another viewer signs that session in itself.
   setup { log_in_as(users(:alex)) }

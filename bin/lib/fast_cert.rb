@@ -356,11 +356,11 @@ module FastCert
   # spellings. Code that RUNS a script writes the path — `File.join(ROOT, "bin",
   # "session-kickoff")` — while the registries that ENUMERATE bin/ write the bare
   # command name as a quoted literal: test/lib/bin_help_flag_class_test.rb holds
-  # `"register-satellite" => :optparse` for every script in the tree. Dropping the
-  # quoted form cost five scripts their only mapped test (measured 2026-09-07:
-  # bin/register-satellite, bin/reap-cert-databases, bin/island-background,
-  # bin/docker-entrypoint, bin/devops-tests all fell to zero), and that one file is
-  # a self-checking registry — the kind of test this whole family exists to reach.
+  # `"register-satellite" => :optparse` for every script in the tree. Without the
+  # quoted form, scripts such as bin/register-satellite, bin/reap-cert-databases,
+  # bin/island-background and bin/devops-tests map to no test at all, and that one
+  # file is a self-checking registry — the kind of test this whole family exists to
+  # reach.
   #
   # THE QUOTES ARE THE POINT, not a decoration. A quoted literal is a naming act;
   # a bare word is English. The same script name unquoted is what matched 325 files.

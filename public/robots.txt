@@ -12,6 +12,5 @@
 # stays inside the one User-agent group — a blank line ends a group for older parsers.
 User-agent: *
 Disallow: /agents/activities
-Disallow: /alex/heartbeat
 Disallow: /tasks
 Disallow: /*?*sessions=

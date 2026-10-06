@@ -54,7 +54,7 @@ test("grade a drilled-down action, bank it, and see it in the Insight Bank", asy
 // app/views/heartbeat/_activity_inline_grade.html.erb exists. Inline grading came BACK.
 // Its subject is gone, so it wants DELETING or rewriting to the current design — a
 // coverage call, not a repair: the live behaviour IS covered Rails-side
-// (test/views/heartbeat_event_table_test.rb, test/integration/heartbeat_all_spans_test.rb),
+// (test/views/heartbeat_event_table_test.rb, test/integration/heartbeat_all_activities_test.rb),
 // but deleting these drops the only BROWSER coverage of grading.
 test("the event heartbeat table exposes no inline grading radios @quarantine", async ({ page }) => {
   await page.goto("/xan/heartbeat?session_id=e2e-heartbeat-0001");
