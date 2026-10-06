@@ -435,8 +435,8 @@ class Task < ApplicationRecord
     { "slug" => slug, "state" => "unreadable", "sha" => "", "repo" => e.class.name }
   end
 
-# The skipped repos that deliver no CI to the board at all; reporting only, so an
-# error degrades to none.
+  # The skipped repos that deliver no CI to the board at all; reporting only, so an
+  # error degrades to none.
   def self.blind_repos_among(repos)
     return [] if repos.blank?
 
@@ -573,9 +573,9 @@ class Task < ApplicationRecord
     settled
   end
 
-# Gives every live task without a mascot a unique fresh draw, through the normal
-# devops path. Idempotent; a failing row goes to ErrorLog and is skipped. Returns
-# the count assigned.
+  # Gives every live task without a mascot a unique fresh draw, through the normal
+  # devops path. Idempotent; a failing row goes to ErrorLog and is skipped. Returns
+  # the count assigned.
   def self.backfill_mascots!
     taken = active_mascots.to_set
     assigned = 0
@@ -1735,8 +1735,8 @@ class Task < ApplicationRecord
     DeploymentsBroadcaster.app_ladder
   end
 
-# Only a stage transition moves a task-owned phase window; TaskEvent and GateRun
-# refresh their own. Metadata churn does not rebuild.
+  # Only a stage transition moves a task-owned phase window; TaskEvent and GateRun
+  # refresh their own. Metadata churn does not rebuild.
   def refresh_testing_phases_after_change
     return unless saved_change_to_stage?
 
