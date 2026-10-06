@@ -191,10 +191,16 @@ class AgentApi
     nil
   end
 
+  # The cache holds a live bearer token, so it is owner-only (0600): created 0600,
+  # and chmod-ed after the write so a cache an older writer left 0644 is tightened
+  # on its next refresh. `perm:` alone applies only when the file is created.
+  TOKEN_CACHE_MODE = 0o600
+
   def write_cached_token(tok, expires_at)
     path = guarded_token_cache_path
     FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, JSON.generate("token" => tok, "expires_at" => expires_at))
+    File.write(path, JSON.generate("token" => tok, "expires_at" => expires_at), perm: TOKEN_CACHE_MODE)
+    File.chmod(TOKEN_CACHE_MODE, path)
   rescue StandardError
     nil
   end

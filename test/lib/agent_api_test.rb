@@ -180,6 +180,28 @@ class AgentApiTest < Minitest::Test
     end
   end
 
+  # The cache holds a live bearer token: it is written owner-only, and a cache left
+  # world-readable by an older writer is tightened on its next refresh.
+  def test_unit_token_cache_is_written_owner_only
+    Dir.mktmpdir do |proj|
+      c = client("CLAUDE_PROJECTS_DIR" => proj, "AGENT_API_SECRET" => "s3cret")
+      c.send(:write_cached_token, "tok", (Time.now + 3600).utc.iso8601)
+      assert_equal 0o600, File.stat(c.send(:token_cache_path)).mode & 0o777, "a fresh cache is 0600"
+    end
+  end
+
+  def test_unit_token_cache_left_world_readable_is_tightened_on_next_write
+    Dir.mktmpdir do |proj|
+      c = client("CLAUDE_PROJECTS_DIR" => proj, "AGENT_API_SECRET" => "s3cret")
+      path = c.send(:token_cache_path)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, "{}")
+      File.chmod(0o644, path)
+      c.send(:write_cached_token, "tok", (Time.now + 3600).utc.iso8601)
+      assert_equal 0o600, File.stat(path).mode & 0o777, "an existing 0644 cache is fixed on the next write"
+    end
+  end
+
   def assert_token_abort(&block)
     original = $stderr
     $stderr = StringIO.new
