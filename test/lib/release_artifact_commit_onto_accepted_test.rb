@@ -112,6 +112,16 @@ class ReleaseArtifactCommitOntoAcceptedTest < Minitest::Test
     end
   end
 
+  # [control] the git readers this file asserts through RAISE on a ref that does not
+  # resolve, rather than handing back rev-parse's echo of the ref name.
+  def test_control_rev_raises_on_an_unresolvable_ref
+    with_fixture do |repo, _dir|
+      error = assert_raises(RuntimeError) { rev(repo, "refs/heads/no-such-branch") }
+      assert_includes error.message, "no-such-branch"
+      assert_includes error.message, repo
+    end
+  end
+
   private
 
   # origin/main == origin/accepted carry the ledger at "ledger on main". A stale local
@@ -187,12 +197,23 @@ class ReleaseArtifactCommitOntoAcceptedTest < Minitest::Test
     File.write(File.join(repo, rel), text)
   end
 
-  def rev(repo, ref) = capture(repo, "rev-parse", ref).strip
+  # Every read RAISES on a non-zero exit, naming the command, the directory and the
+  # code: `git rev-parse` prints the ref name itself for a missing ref and exits 128,
+  # so a dropped status would hand an assertion a plausible wrong string.
+  def rev(repo, ref)
+    out, err, status = Open3.capture3("git", "-C", repo, "rev-parse", "--verify", ref)
+    raise "git rev-parse #{ref.inspect} failed in #{repo} (exit #{status.exitstatus}): #{err.strip}" unless status.success?
+
+    out.strip
+  end
+
   def show(repo, ref, rel) = capture(repo, "show", "#{ref}:#{rel}")
   def porcelain(repo) = capture(repo, "status", "--porcelain").strip
 
   def capture(repo, *args)
-    out, = Open3.capture2("git", "-C", repo, *args)
+    out, err, status = Open3.capture3("git", "-C", repo, *args)
+    raise "git #{args.join(' ')} failed in #{repo} (exit #{status.exitstatus}): #{err.strip}" unless status.success?
+
     out
   end
 
