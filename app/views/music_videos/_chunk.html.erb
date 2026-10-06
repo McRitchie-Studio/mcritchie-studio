@@ -3,7 +3,7 @@
 <% takes = chunk.takes %>
 <% current = chunk.current_take %>
 <% recast = chunk.swap_target %>
-<% look = recast&.recast_appearance %>
+<% look = recast&.swap_look %>
 <% sheet = look && sheets[look.slug] %>
 <article id="chunk-<%= chunk.ordinal %>" class="card overflow-hidden scroll-mt-24 min-w-0"
          x-data="clipRow()" data-src="<%= url %>"

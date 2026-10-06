@@ -4,10 +4,12 @@
 # optional, and an unnamed performer is simply one with neither.
 #
 # The operator also says who REPLACES them (the recast): an athlete (Person) in
-# one of that athlete's looks (Appearance). The default is no swap: a performer
-# with no recast athlete is not swapped, whatever recast_keep says (the legacy
-# "keep as is" flag reads the same as no swap). Only the operator sets it; the
-# agent API refuses the keys.
+# one of that athlete's looks (Appearance). The default is no swap. recast_keep
+# is the Swap Person toggle turned OFF: it keeps the athlete and look the
+# operator picked (remembered, so turning the swap back on restores them) but
+# nothing reads them as a swap while it is set: not the prompts, not the swap
+# target, not the hand-off. A row with no athlete is not swapped either way.
+# Only the operator sets it; the agent API refuses the keys.
 class VideoPerformer < ApplicationRecord
   VISIBILITIES = %w[clear partial].freeze
   SIGHTING_KEYS = %w[t_ms visibility].freeze
@@ -37,16 +39,24 @@ class VideoPerformer < ApplicationRecord
   # The operator linked an artist: the optional rolodex half of the card.
   def named? = artist_slug.present?
 
-  # The Swap Person toggle is on: an athlete is chosen, with or without a look.
-  def swap? = recast_person_slug.present?
+  # The Swap Person toggle is on and names an athlete, with or without a look.
+  def swap? = recast_person_slug.present? && !recast_keep?
+
+  # The toggle is off but an athlete (and maybe a look) is remembered for it.
+  def swap_remembered? = recast_person_slug.present? && recast_keep?
+
+  # Who and what the prompts, the swap target and the hand-off use: nil while
+  # the swap is off, whatever is remembered.
+  def swap_person = (recast_person if swap?)
+  def swap_look = (recast_appearance if swap?)
 
   # An athlete and one of their looks are both chosen.
-  def recast? = recast_person_slug.present? && recast_appearance_slug.present?
+  def recast? = swap? && recast_appearance_slug.present?
 
   # A person chosen with no look: they have none yet (the picker lists people
   # with 0 looks), or the one they were given is gone. The card stays open
   # until a look is chosen.
-  def recast_pending? = recast_person_slug.present? && recast_appearance_slug.blank?
+  def recast_pending? = swap? && recast_appearance_slug.blank?
 
   # Nothing is owed: recast in full, or not swapped (the default). Only a swap
   # waiting for its look is owed one.
@@ -115,10 +125,9 @@ class VideoPerformer < ApplicationRecord
   # make an old row unsaveable.
   def recast_names_an_athlete_and_their_look
     return unless recast_person_slug_changed? || recast_appearance_slug_changed? || recast_keep_changed?
+    # Turning the swap off only flips the flag: what is remembered may have aged.
+    return if recast_keep? && !recast_person_slug_changed? && !recast_appearance_slug_changed?
 
-    if recast_keep? && (recast_person_slug.present? || recast_appearance_slug.present?)
-      return errors.add(:recast_keep, "cannot be set on a performer who is recast")
-    end
     return errors.add(:recast_appearance_slug, "needs the athlete it belongs to") if recast_person_slug.blank? && recast_appearance_slug.present?
     return if recast_person_slug.blank?
     return errors.add(:recast_person_slug, "names no person") unless Person.exists?(slug: recast_person_slug)

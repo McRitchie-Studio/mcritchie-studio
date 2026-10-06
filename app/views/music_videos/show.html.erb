@@ -175,7 +175,7 @@
       init() {
         const data = this.$root.dataset;
         this.savedPerson = data.savedPerson || ""; this.savedLook = data.savedLook || "";
-        this.on = this.savedPerson !== "";
+        this.on = data.swapOn === "true";
         if (data.athlete) {
           this.setAthlete(JSON.parse(data.athlete), data.freshLook || this.savedLook);
           // An athlete saved with no look: nothing is previewed as if it were cast.
@@ -190,15 +190,20 @@
         return this.savedLook ? "recast" : "pending";
       },
       reset() {},
+      // Off remembers the athlete and look (the server keeps them, read by nothing);
+      // on brings them straight back. On with nobody remembered saves nothing until a pick.
       toggle() {
         this.on = !this.on;
+        this.open = false;
         if (this.on) {
-          this.searching = !this.athlete;
+          if (this.athlete) { this.searching = false; this.persist({ swap: "1" }); return; }
+          this.searching = true; this.save = ""; this.error = "";
           this.$nextTick(() => setTimeout(() => this.$refs.search && this.$refs.search.focus()));
           return;
         }
-        this.searching = false; this.open = false; this.query = ""; this.clearAthlete();
-        this.persist({ clear: "1" });
+        this.searching = false;
+        if (this.savedPerson || this.inflight || this.athlete) this.persist({ keep: "1" });
+        else { this.save = ""; this.error = ""; }
       },
       changeAthlete() {
         this.searching = true; this.query = ""; this.results = []; this.open = false;
@@ -232,6 +237,8 @@
           const json = (resp.headers.get("Content-Type") || "").includes("json") ? await resp.json() : {};
           if (!resp.ok || !json.state) throw new Error(json.error || "The server answered " + resp.status + ".");
           this.savedPerson = json.person_slug || ""; this.savedLook = json.appearance_slug || "";
+          // Back on with a remembered look that is gone: the card asks for a look again.
+          if (body.swap && this.athlete) this.lookSlug = this.savedLook;
           ok = true;
         } catch (e) {
           this.error = e.message && e.message !== "Failed to fetch" ? e.message : "The connection dropped.";

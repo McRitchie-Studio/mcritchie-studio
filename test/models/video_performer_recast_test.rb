@@ -46,14 +46,21 @@ class VideoPerformerRecastTest < ActiveSupport::TestCase
     assert_includes @performer.errors[:recast_appearance_slug], "needs the athlete it belongs to"
   end
 
-  test "keep as is and a recast cannot both be set; the legacy keep reads as no swap" do
+  test "keep is the swap turned off: alone it reads as no swap, with an athlete it is remembered, never a recast" do
     assert recast(recast_keep: true).valid?
     assert @performer.recast_decided?
     assert_not @performer.swap?
+    assert_not @performer.swap_remembered?
     assert_nil @performer.recast_label
 
-    assert_not recast(recast_keep: true, recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug).valid?
-    assert_includes @performer.errors[:recast_keep], "cannot be set on a performer who is recast"
+    assert recast(recast_keep: true, recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug).valid?
+    assert @performer.swap_remembered?
+    assert_not @performer.swap?
+    assert_not @performer.recast?
+    assert_not @performer.recast_pending?
+    assert @performer.resolved?
+    assert_nil @performer.swap_person
+    assert_nil @performer.swap_look
   end
 
   test "an untouched performer is not swapped and owes nothing; only an athlete without a look is owed one" do

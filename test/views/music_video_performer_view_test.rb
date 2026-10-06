@@ -129,6 +129,26 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='performer-recast'] form[action=?]", recast_path, 0
   end
 
+  test "a swap turned off remembers the athlete: the card is off but carries him for the toggle to restore" do
+    athlete = RecastVideo.athlete!
+    away = athlete.appearances.order(:created_at, :id).last
+    @performer.update!(recast_person_slug: athlete.slug, recast_appearance_slug: away.slug, recast_keep: true)
+    render_card
+
+    assert_select "[data-test='performer-recast'][data-state='off'][data-swap-on='false']" do |node|
+      assert_equal [athlete.slug, away.slug], node.first.attributes.values_at("data-saved-person", "data-saved-look").map(&:value)
+      assert_equal "Test Athlete Alpha", picker_data["name"]
+      assert_select "button[data-test='swap-toggle'][aria-checked='false']", "Don’t Swap Person"
+      assert_select "[data-test='swap-body'][x-cloak]"
+    end
+  end
+
+  test "on with nobody picked asks who, and says nothing is saved until then" do
+    render_card
+
+    assert_select "[data-test='swap-pick-note'][x-show='on && !athlete']", /Pick who replaces them\. Nothing is saved until you do\./
+  end
+
   test "the legacy kept card reads the same as no swap" do
     @performer.update!(recast_keep: true)
     render_card
@@ -255,7 +275,7 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='performer-recast'][data-state='pending']" do
       assert_select "button[data-test='swap-toggle'][aria-checked='true']", "Swap Person"
       assert_select "[data-test='swap-athlete-name']", "Test Athlete Gamma"
-      assert_select "[data-test='recast-pending']", 0
+      assert_select "[data-test='recast-pending'][x-cloak]", 1, "no looks to choose from: the note waits hidden"
       assert_equal({ "slug" => "test-athlete-gamma", "name" => "Test Athlete Gamma", "avatar_url" => nil, "vocation" => "athlete",
                      "team" => nil, "looks" => [] }, picker_data)
       assert_select "[data-test='recast-no-look'][x-show='looks.length === 0']", /has no look yet/

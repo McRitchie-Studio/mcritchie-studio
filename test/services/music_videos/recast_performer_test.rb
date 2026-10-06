@@ -45,8 +45,12 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
 
     recast(@jacket, keep: true)
     assert @jacket.reload.recast_keep?
-    assert_nil @jacket.recast_person_slug
+    assert_equal [@athlete.slug, @home.slug], @jacket.values_at(:recast_person_slug, :recast_appearance_slug), "off remembers"
     assert(prompts.all? { |p| p.include?("{athlete}") && p.exclude?("Test Athlete Alpha") })
+
+    recast(@jacket, swap: true)
+    assert @jacket.reload.recast?
+    assert(prompts.all? { |p| p.include?("like the Home Blue model provided") }, "on again names him with no re-pick")
 
     recast(@jacket, clear: true)
     assert_equal [nil, nil, false], @jacket.reload.values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
@@ -206,5 +210,51 @@ class MusicVideosRecastPerformerTest < ActiveSupport::TestCase
     result = MusicVideos::RecastAthleteSearch.call("test athlete alpha").sole
 
     assert_equal ["1 look", nil], [result.hint, result.default_look]
+  end
+
+  test "swap off then on restores the athlete and look; off reads as kept everywhere" do
+    recast(@jacket, person_slug: @athlete.slug, appearance_slug: @away.slug)
+    recast(@jacket, keep: true)
+    @jacket.reload
+
+    assert @jacket.swap_remembered?
+    assert_not @jacket.swap?
+    assert_not @jacket.recast?
+    assert_not @jacket.recast_pending?
+    assert_nil @jacket.swap_person
+    assert_nil @jacket.swap_look
+    assert @video.reload.recast_assigned?
+    assert_empty @video.video_performers.select(&:swap?)
+    chunk = @video.video_chunks.first
+    assert(@video.video_chunks.none? { |c| c.swap_target&.swap? }, "no chunk targets a swap that is off")
+    assert_nil chunk.swap_target&.swap_look, "the hand-off offers no look"
+
+    recast(@jacket, swap: true)
+    assert_equal [@athlete.slug, @away.slug, false], @jacket.reload.values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
+    assert(prompts.any? { |p| p.include?("like the Away White model provided") })
+  end
+
+  test "a remembered look retired while the swap was off falls back to the athlete alone, pending" do
+    recast(@jacket, person_slug: @athlete.slug, appearance_slug: @away.slug)
+    recast(@jacket, keep: true)
+    @away.update_columns(retired_at: Time.current)
+
+    recast(@jacket, swap: true)
+    assert_equal [@athlete.slug, nil], @jacket.reload.values_at(:recast_person_slug, :recast_appearance_slug)
+    assert @jacket.recast_pending?
+  end
+
+  test "turning the swap off is allowed even when the remembered look has since been retired" do
+    recast(@jacket, person_slug: @athlete.slug, appearance_slug: @away.slug)
+    @away.update_columns(retired_at: Time.current)
+
+    recast(@jacket, keep: true)
+    assert @jacket.reload.swap_remembered?
+  end
+
+  test "on with nothing remembered names nobody: the same row as off" do
+    recast(@jacket, swap: true)
+    assert_equal [nil, nil, false], @jacket.reload.values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
+    assert_not @jacket.swap?
   end
 end
