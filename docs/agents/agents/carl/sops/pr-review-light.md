@@ -118,7 +118,7 @@ note it as a finding — do not guess.
    ```
 
 6. **Return a concise final message** to Carl summarizing the recorded outcome and
-   any blockers. Do not summon another reviewer, do not run the gates, and do not
+   any blockers, and name what your lens left unread. Do not summon another reviewer, do not run the gates, and do not
    move the task stage — that is Carl's, the owner's.
 
 ## The bounce is not yours to spend

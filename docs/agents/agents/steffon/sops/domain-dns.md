@@ -79,3 +79,18 @@ Record: `bin/task update <launch-task> --checks "[control] domain-dns: MX, SPF, 
 
 DMARC starts at `p=none` on purpose. Raise it to `quarantine` after a few weeks
 of clean reports — a separate, deliberate change.
+
+## Moving a domain's nameservers
+
+- **Check DNSSEC first.** Run `dig DS <domain>` against the TLD's servers. If a
+  DS record exists, disable DNSSEC as its own step, watch the TLD until the DS is
+  gone, wait its TTL (usually an hour), and only then change nameservers. A DS
+  left behind makes every validating resolver fail the whole domain.
+- **Copy every record, subdomains included.** Compare the new zone with the old
+  one record by record, including rows under subdomains such as `in.` and
+  `send.in.`; a missing inbound MX drops mail silently, and dropped mail is not
+  redelivered. A provider's "verified" badge is not a DNS check; `dig` against
+  the new nameservers is.
+- **Have Alex confirm the domain name on the registrar page before every save.**
+  Registrar saves reach the registry minutes later, in order, so a save on the
+  wrong domain is slow to undo.

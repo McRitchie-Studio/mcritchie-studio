@@ -290,7 +290,8 @@ release conductor should run it after explicit approval from Alex or an
 already-approved rollout prompt. Xan's `full-cycle` launcher, Steffon's
 `production-deploy`, and Avi's `deploy-with-task` acts are such pre-approved
 production prompts; `pr-review` and Avi's `qa-release` sweep are not — they stop
-before prod.
+before prod. A grant lasts for the window Alex names ("for the night"); outside it,
+drive work to `reviewed` and ask again before a release.
 Gem publishes specifically ride a release as
 first-class members and are published producer-first by **`bin/release prepare`
 at QA assembly** (see below) — the one irreversible act inside Avi's
@@ -524,6 +525,24 @@ Operational notes:
   `bin/release prepare` automates that path (preflight → build → push → tag) as
   the release conductor's producer-first step, and `bin/release ship` re-runs
   it as the idempotent verify.
+- Confirm a fresh publish with
+  `https://rubygems.org/api/v1/versions/<gem>/latest.json`; `gem list -r` and
+  `versions/<gem>.json` lag for minutes, and a version can never be pushed twice.
+- What a consumer runs is its `Gemfile.lock`, not the gem repo's branches and not
+  the newest gem installed on the laptop. Before calling a cross-repo feature
+  shipped, read the locked version and that version's source.
+- A prepare lock bump installs new engine migrations onto `release`. An adoption PR
+  on `accepted` that runs `install:migrations` again copies the same
+  `*.studio_engine.rb` under a new timestamp, and the promote then conflicts and
+  production would hit `PG::DuplicateTable`. Check both rungs before adopting.
+- A consumer test that asserts HOW the engine is installed (say, `/gems/` in a
+  template path) passes in the consumer and fails in the engine's `consumer-ci`
+  lane, which bundles a path checkout, and that red blocks the publish. Assert the
+  defect instead.
+- A two-segment `~> 0.69` admits `0.69.0`; a constant first shipped in a patch
+  needs `"~> 0.69", ">= 0.69.5"`.
+- `solana-studio/bin/release-check` fails any file with a skipped test, so a
+  missing test dependency must assert, not skip.
 
 ## QA Servers
 
@@ -659,6 +678,40 @@ If deployment changes a provider, domain, callback URL, env var, or local port, 
 - `mcritchie-studio/docs/ECOSYSTEM.md`
 - the app README/runbook
 - any provider-specific docs under the app's `docs/`
+
+## Reading State From Heroku
+
+Each of these reads can fail quietly enough to look like an answer.
+
+- **Absence:** `heroku config:get KEY` prints an empty line for an absent key AND an
+  empty one. Test membership in `heroku config --json -a <app>`, and print keys
+  only: `| ruby -rjson -e 'puts JSON.parse(STDIN.read).keys'`.
+- **A failed read looks like "unset".** An unauthenticated `heroku config` can
+  return empty. Read a key you know is set first; if it is missing too, the read failed.
+- **Writes:** never silence `heroku config:set`. Read the key back and look for a new
+  `heroku releases` entry; a write has exited 0 and written nothing.
+- **Never fold stderr into stdout** when capturing a value: the CLI's update notice
+  is on stderr, and `2>&1` makes it read as the value.
+- **`heroku run` output can vanish** while the command ran. Confirm a mutation with a
+  separate read-only query, and make mutating scripts idempotent and self-guarding.
+  A run hung on its first read-only step is usually the laptop's network: kill the
+  heroku child and re-run.
+- **`heroku releases` lists newest first.** Read it whole; `| tail` shows older rows.
+- **Did a migration land?** Read the column, index, or row it changed. A sibling's
+  later-timestamped migration pins `schema_migrations`' max, and an aborted release
+  phase still leaves `/up` answering 200 from the old dynos.
+- **Memory:** `Process running mem=` lines appear only beside an `R14`, so silence
+  means under quota. Read the number from the Metrics API
+  (`api.metrics.heroku.com/metrics/<app-id>/dyno/memory`, params
+  `start_time`/`end_time`).
+- **Custom domains** must CNAME to the app's `*.herokudns.com` target (`heroku
+  domains`). A CNAME to `*.herokuapp.com` serves HTTP and fails HTTPS on the wrong cert.
+- **A green post-deploy hook proves exit 0, nothing more.** `bin/release` grades it on
+  `heroku run --exit-code` alone. Put the whole follow-through in
+  `devops.post_deploy_cmd`, including derived artifacts that freeze at build time,
+  and check the outcome, not the hook. Declare it (or `none`) when the task is
+  created: `bin/dor-check` refuses any diff under `db/migrate/` or `db/seeds`,
+  including files your own tool wrote, only after the full ship and CI wait.
 
 ## GitHub Actions panel + prod-deploy (approval subsystem removed 2026-07-20)
 

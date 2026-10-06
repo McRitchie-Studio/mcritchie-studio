@@ -796,6 +796,25 @@ See footgun 4 for the full set of fields that live outside `devops`.
    `bin/task update <task> --approval approved`, and the board stops pulsing
    WAITING. `approval_approved_at` is still server-stamped the first time approval
    enters `"approved"`, so you do not need to send it.
+8. **Recording through `bin/task` drops text without an error.**
+   - Repeat a list flag per entry. `--checks "[unit] a" "[integration] b"` stores
+     only the first; `update` ignores the stray value and exits 0.
+   - A tier tag leads its line and names one tier. `[unit+integration]` credits
+     neither.
+   - `--test` fills `test_plan`, which the preflight requires; `--checks` fills
+     `checks_run`, the only field `bin/dor-check` grades tiers from.
+   - A scalar such as `agent_context` is replaced whole. Read it out with `show -v`,
+     resend the old text with your addition, and check the head and the tail survived.
+   - Inside double quotes the shell runs backticks and `$(…)` with your credentials
+     and splices in the output. Write prose to a file with a quoted heredoc
+     (`<<'EOF'`) and pass `"$(cat file)"`; use `git commit -F` and
+     `gh pr create --body-file` the same way.
+9. **A wrong path reads empty, with exit 0.** `bin/task show <slug> --json` prints
+   the task at the top level, with no `task` wrapper. The keys are `acceptance` and
+   `repositories`, not the labels `show` prints. `unresolved_feedback`,
+   `resubmission` and the `blocked_*` set are top-level, as are the columns in
+   footgun 4. When a dotted read is empty on every task you try, suspect the path:
+   real absence is patchy, a wrong key is uniform.
 
 ## Worked example
 

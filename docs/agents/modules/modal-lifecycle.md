@@ -128,6 +128,22 @@ negating a guard, `||`→`&&`, and `throw`→`console.warn`.
 - **Behaviour in inlined JS** — only an e2e spec sees it. If you cannot afford
   one, say the coverage is structural and do NOT report it as mutation-checked.
 - When you do mutate, **negate and reorder**, never only delete.
+- **Verify through the consumer, not a bare render.** A shared partial rendered
+  with empty locals shows a default the consumer's locals helper may override;
+  render through that helper or hit the real route.
+- **Read the props in the Alpine factory too.** In turf-monster a modal's props
+  may be read only by `app/views/shared/_alpine_factories.html.erb`, never by the
+  partial, so a partial-only review misses them.
+- **After a swap on the global host, wait.** A `swap` on the global host
+  completes after `CLOSE_ANIM_MS`; on `_scoped_host` it is synchronous. A spec
+  that asserts straight after an awaited `evaluate` grades the old card on one
+  and passes on the other.
+
+**Before editing a consumer modal, ask which piece it is.** A fragment the engine
+already ships as a block is fixed in the engine and the consumer copy deleted. A
+whole card that encodes a product decision (auth, entry tokens, on-chain
+transactions, funding) stays in the app permanently, carded in the app's own
+section; do not let a copy of it back into the gem.
 
 ## Your app's section on the guide
 

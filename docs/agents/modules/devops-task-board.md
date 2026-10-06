@@ -20,6 +20,16 @@ candidate — the sweep promotes everything on `accepted` in one batch, so
 Use parent/child modeling only after flat tasks prove too weak in real
 operations.
 
+- **The board holds only startable work.** Do not file a `designed` card for
+  work that waits on something outside the session (a gem release, another PR);
+  a `--depends-on` edge records why it is stuck, not that anyone can start it.
+  Keep the note where the next worker meets it, and file the card when the
+  blocker clears.
+- **Fold two cards into one task only on a shared artifact.** Name the file,
+  constant or test both touch, and show that one card's fix needs the other's.
+  A shared theme is not a seam: no single test certifies it, and a revert of one
+  half takes the other with it.
+
 ## Required Task-Tracking Rule
 
 Every feature, bug, QA, release, cleanup, or active-doc change that may produce
@@ -397,6 +407,13 @@ It counts a send-back exactly as `bin/task bounces` does (both read
 `breaker_tripped` + `bounce_count` so the circuit-breaker state is visible where a
 reader already is. A `resolves_feedback` handoff deliberately does **not** override an
 unmoved head — that claim is precisely what lied in the measured case.
+`addressed` says the head MOVED, not that the finding was fixed: merging the base
+in moves it too. Before re-reviewing, compare the blobs of the files the bounce
+named (`git rev-parse <old-head>:<file>` against the new head).
+
+**A stage is a value, not a lock.** Another session can move an `archived` task
+back out and build it. Re-read at wrap every task you moved, and tell Alex that
+archiving parks work rather than deleting it.
 
 Do not skip `assembled` for user-facing app changes. Do not move a task to
 `shipped` for production work until production has actually deployed and the

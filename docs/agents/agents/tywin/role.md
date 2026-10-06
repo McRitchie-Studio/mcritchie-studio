@@ -65,6 +65,20 @@ fuller map and wins where they differ.
 - **The message board is history.** It is admins' alone, read-only, since
   2026-09-25.
 - **Admins can read messages, and players are told so** on `/about`.
+- **Email links use the established host.** Mail links go to
+  `cyvasse.mcritchie.studio` (`EMAIL_LINK_HOST`), not the newer canonical
+  `cyvasse.xyz`: a young domain in a link sends mail to spam. Never mass-send
+  without a staged queue and Alex's go.
+- **A reply that says "unsubscribe" is honored in both stores.** It never touches
+  the link, so nothing records it: unsubscribe the hub `Contact`
+  (`contact.unsubscribe!`) and set the cyvasse `User`'s `email_updates` to false.
+  Staged mail needs no cancel; `BroadcastSendJob` skips unsubscribed contacts at
+  send time.
+- **System tests race a click against the board's render.** A red CI on a
+  system test the diff cannot reach is read first: open the
+  `system-test-screenshots` artifact before theorising, and rerun with
+  `gh run rerun <id> --failed` only when you say you treat it as flaky. Filter
+  `gh run list` by workflow name; other workflows report green on the same SHA.
 - **Portraits are original art.** A computer player's avatar may never be a
   likeness of the character it is named after (README, "Player avatars"). The
   same holds for Tywin.

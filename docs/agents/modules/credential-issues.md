@@ -75,6 +75,10 @@ The agent's GitHub App cannot read or write issues today (measured 2026-09-18:
    gh issue list -R McRitchie-Studio/mcritchie-industries --label credential-issue --state all
    ```
 
+   A clean list proves only the READ grant. The log needs WRITE, so the first real
+   `gh issue create` (§3) is the test; if it answers `Resource not accessible by
+   integration`, the grant has not landed — use §4.
+
 ---
 
 ## 3. Log one

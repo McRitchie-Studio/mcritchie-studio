@@ -292,6 +292,22 @@ It prints `Open: https://mail.google.com/mail/u/<mailbox>/#drafts?compose=…`.
 Every draft is logged in `mailbox_drafts` — who asked, which mailbox, which
 thread — but the body is never stored; it lives only in Gmail.
 
+Traps in this lane, each one silent:
+
+- **The printed link can 404 for Alex.** The `/u/<mailbox>/` form
+  (`Workspace::GmailClient.draft_url`) picks the account when several are signed
+  in, and can still land on "account temporarily unavailable". Do not change it
+  without testing in his browser. The fallback is the macOS clipboard carrying
+  BOTH `public.html` and `public.utf8-plain-text` (set through `NSPasteboard`
+  with `osascript -l JavaScript`), so the reply pastes formatted.
+- **The drafter cannot attach files**, and re-creating a draft leaves the old one
+  in the thread; only Alex can discard it.
+- **Hand the Gmail gem plain MIME.** It base64-encodes `raw` itself; encoding
+  first sends gibberish, and no service double catches it.
+- **`make_creds(sub:)` is dropped with only a stderr line.** Assign `creds.sub`
+  after building the credential (`Workspace::Credentials` does); without it the
+  call authenticates as the service account, which has no mailbox.
+
 These run where the key is: on production (`heroku run`), or on a desk that can
 read the 1Password item. A mailbox must be proven on the SAME database the
 draft runs against.

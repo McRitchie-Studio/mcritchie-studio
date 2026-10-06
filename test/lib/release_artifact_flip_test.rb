@@ -6,11 +6,11 @@
 # THE DEFECT. `Release::ArtifactCommit.safe_to_commit?` was
 # `other_dirty_paths(...).empty?`, which a CLEAN tree satisfies vacuously — while
 # the comment directly above it always claimed the stronger conjunction, "the
-# expected doc(s) are the ONLY things dirty". So `commit_artifact_to_release` ran
-# its `checkout release` → `git commit` (silently a no-op with nothing staged) →
+# expected doc(s) are the ONLY things dirty". So `commit_artifact_to_accepted` ran
+# its `checkout <branch>` → `git commit` (silently a no-op with nothing staged) →
 # `ensure { checkout main }` dance on every run with nothing to commit. Measured
 # on the hub primary 2026-09-10: 191 flip pairs and ZERO `commit:` entries across
-# 400 reflog records, median dwell on `release` 1s.
+# 400 reflog records, median dwell on the target branch 1s. The target is `accepted`.
 #
 # WHY A FLIP COSTS ANYTHING. The primary is SHARED. `git checkout` unlinks each
 # file and writes it afresh, so every tracked file is briefly absent — measured
@@ -87,10 +87,10 @@ class ReleaseArtifactFlipTest < Minitest::Test
       out = run_dance(repo, dir, doc)
 
       assert_operator head_moves(repo), :>, before,
-                      "a dirty artifact MUST still flip to release; a first run that no-ops strands the doc"
-      assert_includes out, "committed retro.md to release"
-      count, = Open3.capture2("git", "-C", repo, "rev-list", "--count", "origin/release")
-      assert_equal "2", count.strip, "the artifact commit is pushed onto origin/release"
+                      "a dirty artifact MUST still flip to accepted; a first run that no-ops strands the doc"
+      assert_includes out, "committed retro.md to accepted"
+      count, = Open3.capture2("git", "-C", repo, "rev-list", "--count", "origin/accepted")
+      assert_equal "2", count.strip, "the artifact commit is pushed onto origin/accepted"
     end
   end
 
@@ -106,14 +106,14 @@ class ReleaseArtifactFlipTest < Minitest::Test
 
       assert_includes out, "other changes present", "unrelated dirt must still refuse, and say why"
       refute_includes out, "committed retro.md", "…never sweeping up unrelated work"
-      count, = Open3.capture2("git", "-C", repo, "rev-list", "--count", "origin/release")
-      assert_equal "1", count.strip, "nothing lands on release when the tree carries unrelated dirt"
+      count, = Open3.capture2("git", "-C", repo, "rev-list", "--count", "origin/accepted")
+      assert_equal "1", count.strip, "nothing lands on accepted when the tree carries unrelated dirt"
     end
   end
 
   private
 
-  # A bare origin plus a clone carrying `main` and `release`, and nothing else —
+  # A bare origin plus a clone carrying `main` and `accepted`, and nothing else —
   # this dance needs no Rails app, no database.yml and no bin/rails.
   def with_fixture
     Dir.mktmpdir("release-artifact-flip") do |dir|
@@ -134,8 +134,8 @@ class ReleaseArtifactFlipTest < Minitest::Test
       git(repo, "add", "README")
       git(repo, "commit", "-qm", "seed")
       git(repo, "push", "-q", "origin", "main")
-      git(repo, "branch", "release")
-      git(repo, "push", "-q", "origin", "release")
+      git(repo, "branch", "accepted")
+      git(repo, "push", "-q", "origin", "accepted")
 
       yield repo, dir
     end
@@ -147,7 +147,7 @@ class ReleaseArtifactFlipTest < Minitest::Test
     setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
             %(def repo_path(_repo) = #{repo.inspect})
     script = %(ARGV.replace(["--yes"]); load #{BIN.inspect}; #{setup}; ) +
-             %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")}
+             %{commit_artifact_to_accepted("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")}
     env = OutboundSeams.env("MCR_PRIMARY_LOCK_DIR" => dir)
     out, err, status = Open3.capture3(env, "ruby", "-e", script)
     assert_predicate status, :success?, "the dance must not crash the child: #{err}"

@@ -29,10 +29,13 @@ The bank is the **single source of truth**; the tracked doc
   that comparison: CI and every desk have the doc but an empty database.
 
 Because the bank is canonical and generated, **hand-edited lesson lists are
-retired** — `docs/agents/shared/MEMORY.md` is a pointer stub, and local provider
-memory (`~/.claude/projects/*/memory/MEMORY.md`) is scratch history, never a source
-of truth. Don't hand-write a lesson into a doc; **bank it** so every runtime
-(Claude, Codex) sees the same set.
+retired**; `docs/agents/shared/MEMORY.md` is a pointer stub. Two kinds of knowledge
+go to two places. A **durable operating rule about a mechanism** goes into the
+module or SOP that owns that mechanism, in the same PR, verified against the code.
+A **graded lesson from a past session** goes into the Insight Bank, so every
+runtime (Claude, Codex) sees the same set. Local provider memory
+(`~/.claude/projects/*/memory/`) is scratch, never a source of truth; once one of
+its rules is promoted, the memory file points at the owning doc.
 
 ## The dream bank (worked decisions)
 
@@ -47,10 +50,10 @@ by themselves, because a hook's context is capped at 10,000 characters. Procedur
 ## Agent-Specific Memory
 
 Durable agent-specific memory belongs in tracked docs under
-`docs/agents/agents/<agent-id>/`. System-wide *lessons* go in the **Insight Bank**
-(above), not a hand-edited file. Local provider memory such as
-`~/.claude/projects/*/memory/MEMORY.md` can be useful scratch history, but it is
-not a source of truth.
+`docs/agents/agents/<agent-id>/`. A system-wide operating rule goes into the module
+that owns its mechanism; a graded lesson goes into the **Insight Bank** (above).
+Local provider memory such as `~/.claude/projects/*/memory/MEMORY.md` is scratch:
+it is not a source of truth, and a promoted note points at its owning doc.
 
 Agent-specific memory includes:
 - Task context and progress notes

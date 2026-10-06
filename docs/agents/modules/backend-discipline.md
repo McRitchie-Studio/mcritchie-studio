@@ -14,6 +14,17 @@ rescue_and_log(target:, parent:)
 
 Do not swallow provider failures silently. If a user-facing flow fails, make the failure visible to support and future agents.
 
+`rescue_and_log` is a **controller** concern (studio-engine
+`app/controllers/concerns/studio/error_handling.rb`) and it **re-raises**. Inside a
+bulk loop it ends the run at the first bad row. Outside a controller use
+`ErrorLog.capture!`; in a tight loop, where that pages Sentry per row, write the
+`ErrorLog` directly and swallow a failure of the log write itself.
+
+A guard that strips secrets from an error must keep a bounded fault token, shaped
+(leading letter, word characters, a length cap) rather than matched by a character
+class: a PEM header is only letters, hyphens and spaces. Test both directions: the
+secret is gone, and the vendor's fault token survives.
+
 ### Never interpolate an exception message that quotes its input
 
 Some exceptions carry the thing that failed to parse. `JSON::ParserError` is the
@@ -205,6 +216,76 @@ Validate everything before irreversible side effects:
 - Deployments or production data repair.
 
 Persist external IDs, transaction signatures, payment intent IDs, and webhook event IDs as soon as they are known. Add a reconciler when an external system can succeed while the local process fails.
+
+- **When reviewed code exists for a fix, run that code, never a hand-retyped
+  equivalent**, against production. An ad-hoc copy has had no review and no tests.
+  Before any bulk write, check one row's full result, not just "it succeeded".
+- **Before dropping a table, paste every external identifier that exists nowhere
+  else** (an on-chain address, an S3 key) into the migration comment. The external
+  object outlives the table; the pointer to it does not.
+- **A flag stamped in the same transaction as a send is not proof of the send.**
+  Verify an outbox per row (`sent`, `sent_at`, `error`): a send that neither raises
+  nor sends strands with nothing to retry it.
+- **A kill switch must gate every door.** Grep every opener of the feature it hides;
+  an ungated one becomes a dead button when the flag is off.
+- **A registered cron is not a running one.** Check its last enqueue time.
+
+## Lookups, Predicates And Writers
+
+- **Filter inside the query in a fallback chain** (`pin || newest_open ||
+  newest_any`). A post-filter drops the excluded winner to the next RUNG and skips
+  the rest of its own candidates.
+- **Enumerate every shape the producer returns** before writing an absence test:
+  nil, empty, malformed, and tombstoned (a released row that keeps its record).
+  If a sibling function already draws the line, match it.
+- **Before changing what a predicate matches, grep every call site** and ask what
+  each uses it for. One that gates both a label and a mutation (retire, delete,
+  notify) should split, with the mutation pinned to the old population.
+- **A second writer to a table copies the first writer's guards**, the create/adopt
+  fallback above all. A fix for a weak shared primitive belongs in the primitive,
+  not at one call site.
+- **Key lookups on a field that does not churn** (email, an external id) and raise
+  rather than fall back to an arbitrary row. For a rename, sweep the old value,
+  every value derived from it (slugs, cache keys, URLs) and, in a swap, both sides.
+- **Swapping unique values between two rows** defeats row-at-a-time writers: park
+  (null) the rows first, then assign. Test it from the pre-swap state.
+- **An importer that dedupes by name** must test two namesakes with different
+  external ids and assert both survive.
+- **A model callback is not a reconciler.** Production rows change only when saved,
+  so a roster or default change that must reach production needs a data migration.
+- **Rename a string consumers assert on in two steps:** let consumers accept both
+  names, then tighten after the engine ships.
+- **Before rerouting a URL**, list what the old page did on load (replayed a cart,
+  read params, consumed a one-shot) and who returns through it: auth callbacks,
+  purchase hand-offs.
+
+## Rails Traps
+
+- **A `before_save` that rewrites a field voids a write at HTTP 200.** Read back the
+  field you wrote. If the rule is intended, raise at the write path's front door and
+  keep the callback as the silent backstop.
+- **Adding a keyword argument rebinds a brace-less trailing hash** (`m(a, "k" => v)`
+  becomes keywords and raises). A trailing optional positional is immune.
+- **A JSON endpoint never `redirect_to`s.** `fetch` follows the redirect, the error
+  names another action, and `rescue_from StandardError` turns its `UnknownFormat`
+  into a 500.
+- **Reading a CSP directive by its method clears it**: `policy.frame_src` with no
+  arguments deletes the directive. Read `policy.directives["frame-src"]`.
+- **Rendering outside a request emits `example.org` URLs** unless
+  `Rails.application.routes.default_url_options` is set. Set that, not
+  `ActionController::Base.default_url_options`, which overrides the live host.
+- **`defined?(Rails)` is true for a namespace-only module** some gems define; gate gem
+  code on `Rails.respond_to?(:env)`.
+- **`Time.zone.parse` returns midnight for garbage.** Parse a guard boundary with
+  `Time.zone.iso8601`, which raises.
+- **`Net::HTTP` sends `User-Agent: Ruby` when none is set.** Echo the request from a
+  header-printing service before recording what a server saw.
+- **Rack 3 trusts a client-sent `Forwarded:` header over `X-Forwarded-For`.** Behind
+  the Heroku router set `Rack::Request.forwarded_priority = [:x_forwarded]` (the hub:
+  `config/initializers/forwarded_headers.rb`), after confirming no proxy hop sits in front.
+- **Tests run the async cable adapter.** After shipping a cable feature, probe
+  production with `ActionCable.server.pubsub.broadcast`; a 101 on `/cable` proves only
+  the route.
 
 ## Data Modeling
 

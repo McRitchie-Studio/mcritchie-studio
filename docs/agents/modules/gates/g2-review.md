@@ -195,19 +195,12 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   `ci:fail` of its own, never through `CiGate.gate_row`. So read `state` and
   `metadata.outcome` beside a `fail` before calling it a red CI.
 
-  All of these were once collapsed onto `ci:fail`, which wrote a red-CI bounce that
-  never happened into a task's permanent gate history —
-  `/tasks/gate-logs-auth-as-red` took `unreadable` out,
-  `/tasks/refused-review-records-fail` `no_checks` and `unverified`, and
-  `/tasks/no-pr-records-as-fail` `no_pr`.
-
-  **Adding a fifth is THREE edits, not one.** This used to say "its entry in
-  `GateRun::NO_VERDICT_RESULTS`", which named the last of the three and read as though
-  it were the whole job. A new no-verdict value needs, in the same change:
+  **Adding a fifth is THREE edits, not one.** A new no-verdict value needs, in the
+  same change:
 
   1. `CiGate::GATE_ROW_<NAME>` **and its `when` arm** in `CiGate.gate_row` — without
      the arm the state rides the producer's `else` and collapses onto
-     `fail`/`unverified`, which is the defect all four of the tasks above fixed;
+     `fail`/`unverified`, which is the defect this list exists to prevent;
   2. its entry in `CiGate::GATE_ROW_NO_VERDICT` — the producer-side set;
   3. its entry in `GateRun::NO_VERDICT_RESULTS` — the set the CARD reads.
 
@@ -226,18 +219,9 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   | `pending` | CI checks exist and **have not settled**. Builder-side only — review's gate-zero grades an unsettled CI `fail`, because "may this merge NOW" has a legitimate no | wait for CI, then re-run the gate |
   | `running` | A **cert lane started** and has not reported. Re-emitted as a heartbeat while the lane runs | wait; if the beat stops, the lane was killed |
 
-  `/tasks/pending-ci-paints-check` found this one: `pending` matched no arm, so it fell
-  to the card's `✓` default and a CI that was **still running** was painted in the
-  permanent record as one that **passed**. Its four siblings each manufactured a
-  FAILURE, which gets audited because it blocks somebody. This manufactured a SUCCESS,
-  and nobody audits a green.
-
-  **That task also moved the card's default, which is why the rule above is now about
-  arms rather than about avoiding a silent green.** The glyph chain used to end
-  `else ["✓", …]`, so `pass` and every unclassified value shared one arm — four
-  consecutive defects arrived by that route. `pass` is now an explicit arm and the
-  fall-through renders `?`. A value with no arm is therefore a VISIBLE gap rather than
-  a false pass; it is still a defect, and the three edits above are still owed.
+  **The card's fall-through renders `?`, and `pass` is an explicit arm.** A value with
+  no arm is a VISIBLE gap rather than a false pass; it is still a defect, and the
+  three edits above are still owed.
 
   **The producer's `else` did NOT move, deliberately.** `CiGate.gate_row` still answers
   `fail`/`unverified` for a state it cannot classify. That is a GATE — an allow-list
@@ -258,6 +242,30 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   failures): a board blip never breaks the review loop. Dry-run
   (`bin/pr-review` without `--run`) prints the would-run gate writes without
   posting them.
+
+## Reading CI, bounces and claims by hand
+
+Gate-zero reads CI for you. When you read it yourself:
+
+- **Green on the PR is not green on the merge.** If the base moved, build the merge
+  preview (`git merge-tree --write-tree`) after a fetch and run the suites that can
+  reach the change, `test/docs` above all. `MERGEABLE` speaks about text only.
+- **Check whose run is red** (`gh run view <id> --json headSha` against the head
+  from `gh pr view <n> --json headRefOid`, never from a handoff; key a watcher on that
+  SHA). A red spec the diff cannot reach that fails on other PRs is a shared flake.
+- **Parse `gh` as JSON; a running check has `conclusion: ""`.** Read a run before
+  re-running it (`gh run rerun` overwrites its logs), never on `accepted`, `release`
+  or `main`; for a receipt guard re-run the whole workflow, not `--failed`.
+- **An Actions outage reads as red CI** (a `startup_failure`, jobs failed while
+  queued): check githubstatus.com first. Only `status: COMPLETED` is settled.
+- **Run `bin/task bounces <slug>` yourself**; a relayed breaker state is stale.
+- **A renewing review lease proves a session, not a reviewer.** Corroborate with the
+  head, a scout report or a recent update; run `bin/task review-claim status <slug>`
+  before spawning a reviewer, and never steal a review.
+- **A pop that refuses while CI is green** is first an author pop
+  (`bin/reviewer-select <slug> --dry`), then an ingestion gap; never force the lease.
+- **A force-push does not retract.** The old SHA stays fetchable on a public repo;
+  only a GitHub Support purge removes published PII or a secret.
 
 ## UI surfaces
 
