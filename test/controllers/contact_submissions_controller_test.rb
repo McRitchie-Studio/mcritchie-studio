@@ -8,8 +8,16 @@ require "test_helper"
 #                  the consent rules held server-side, bots turned away.
 class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   VALID = { name: "Jordan Lee", email: "jordan@example.com", message: "I would like a quote." }.freeze
+  PROOF = ContactSubmissionsController::PROOF_FIELD
 
+  # What the page's script writes: the signed render time, reversed.
+  def browser_proof(rendered_at = 10.seconds.ago)
+    ContactSubmissionsController.proof_for(rendered_at).reverse
+  end
+
+  # A person's submission by default: the page's proof, written long enough ago.
   def submit(**fields)
+    fields = { PROOF => browser_proof }.merge(fields)
     post contact_form_path, params: { contact_submission: VALID.merge(fields) },
                        headers: { "User-Agent" => "ContactTest/1.0" }
   end
@@ -192,6 +200,73 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
     assert_select "[data-test='contact-sent']"
     assert_select "[data-test='contact-sent-sms']", count: 0
+  end
+
+  # --- [integration] the browser proof ---------------------------------------
+
+  test "[component] the page carries a signed render time and the script that writes it" do
+    get contact_form_path
+
+    input = css_select("form[data-test='contact-form'] input[type='hidden'][data-test='contact-proof']").first
+    assert input, "the proof field is inside the form"
+    assert_equal "contact_submission[#{PROOF}]", input["name"]
+    assert_nil input["value"], "the server never writes the proof into the field itself"
+    rendered_at = ContactSubmissionsController.verifier.verified(input["data-proof"], purpose: :contact_form)
+    assert_in_delta Time.current.to_f, rendered_at, 5
+    assert_equal "$el.value = $el.dataset.proof.split('').reverse().join('')", input["x-init"]
+  end
+
+  # The RobertniB bot posts the HTML back without running the page's script.
+  test "[integration] a post without the browser proof is kept flagged and Alex is not emailed" do
+    assert_difference -> { ContactSubmission.count } => 1, -> { Studio::EmailDelivery.count } => 0 do
+      submit(PROOF => "")
+    end
+
+    assert_equal "no_browser_proof", ContactSubmission.recent.first.spam_reason
+    assert_redirected_to contact_form_path
+    follow_redirect!
+    assert_select "[data-test='contact-sent']", text: /your message is on its way/
+  end
+
+  test "[integration] the token copied unreversed, forged, or expired is no proof" do
+    stale = browser_proof
+    [ContactSubmissionsController.proof_for(10.seconds.ago), "not-a-token", "x--y".reverse].each do |written|
+      assert_no_difference -> { Studio::EmailDelivery.count } do
+        submit(PROOF => written)
+      end
+      assert_equal "no_browser_proof", ContactSubmission.recent.first.spam_reason, written
+    end
+
+    travel ContactSubmissionsController::PROOF_TTL + 1.minute do
+      assert_no_difference -> { Studio::EmailDelivery.count } do
+        submit(PROOF => stale)
+      end
+      assert_equal "no_browser_proof", ContactSubmission.recent.first.spam_reason, "an expired proof"
+    end
+  end
+
+  test "[integration] a post sooner than a person can type is kept flagged and not emailed" do
+    assert_difference -> { ContactSubmission.count } => 1, -> { Studio::EmailDelivery.count } => 0 do
+      submit(PROOF => browser_proof(1.second.ago))
+    end
+
+    assert_equal "too_fast", ContactSubmission.recent.first.spam_reason
+  end
+
+  test "[integration] a post just past the minimum fill time reaches Alex unflagged" do
+    rendered_at = (ContactSubmissionsController::MIN_FILL_SECONDS + 0.5).seconds.ago
+    assert_difference -> { Studio::EmailDelivery.count }, 1 do
+      submit(PROOF => browser_proof(rendered_at))
+    end
+
+    refute ContactSubmission.recent.first.flagged?
+  end
+
+  test "[integration] a refused submission re-renders with a fresh proof" do
+    submit(sms_care_consent: "1")
+
+    assert_response :unprocessable_entity
+    assert_select "input[data-test='contact-proof'][data-proof]", count: 1
   end
 
   # The honeypot used to be `company_url`. A browser's address autofill matches
