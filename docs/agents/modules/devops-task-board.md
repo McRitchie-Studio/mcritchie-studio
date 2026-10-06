@@ -637,9 +637,8 @@ prints `repos: a,b` either way) and resolves for nobody: the release conductor
 reads it as a phantom repo and ABORTS the sweep — measured 2026-09-15 on
 `/tasks/sweep-stale-signer-claims`, where nothing was promoted, recorded or
 deployed. The same shape in `--risk` fails silently instead of loudly, and 1117
-board tasks were carrying it: `Release::BuilderPolicy`'s `blocked_risk_tags` and
-`ReviewerSelector::RISK_DOMAINS` both match EXACTLY, so a joined tag misses both
-and the gate fails open (31 tasks slipped the auto-QA block; 464 lost a domain
+board tasks were carrying it: `ReviewerSelector::RISK_DOMAINS` matches EXACTLY,
+so a joined tag misses it and the gate fails open (464 tasks lost a domain
 reviewer light).
 
 The prose flags — `--accept`, `--test`, `--checks` — are repeatable too but are

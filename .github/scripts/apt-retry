@@ -28,14 +28,11 @@
 # killed at 90s and succeeded on attempt 2 at 277s — a flat 90s would have gone
 # red, a flat 300s would have burned 300s before retrying.
 #
-# WHY A SCRIPT, AND NOT AN INLINE `run:` BLOCK. It was inline first, and that broke
-# bin/lib/ci_test_command.rb — the cert that reads ci.yml to prove it can SEE every
-# unit CI runs. `if sudo timeout -k 10 "$budget" ...` hands an interpolated token to
-# a command position, so the parser correctly REFUSED to claim it knew what the step
-# ran, and test/lib/ci_test_command_test.rb went red. The parser is right and its
-# exception list is keyed on executables PROVEN to exec nothing — `timeout` is not
-# one, it execs an argument by definition. So the loop moved here, leaving a literal,
-# readable invocation in the workflow. Do not inline it again.
+# WHY A SCRIPT, AND NOT AN INLINE `run:` BLOCK. An inline loop puts an interpolated
+# token (`if sudo timeout -k 10 "$budget" ...`) in a command position, where a reader
+# of the workflow cannot tell what the step runs, and it copies the budgets into every
+# job. Here the budgets live once, under test, and each workflow step stays a literal,
+# readable invocation. Do not inline it again.
 set -uo pipefail
 
 # Overridable ONLY so the test can exercise the real file quickly instead of a

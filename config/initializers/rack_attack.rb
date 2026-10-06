@@ -17,6 +17,29 @@ if Rails.env.test?
 end
 
 class Rack::Attack
+  ### Counter store
+  # A throttle is only as good as the counter behind it. Rails.cache in
+  # production is a file store on each dyno's own disk, so counters kept there
+  # reset on every deploy and restart, and each web dyno counts separately (two
+  # dynos let a caller through at twice the limit). Production therefore keeps
+  # the counters in Solid Cache, in the primary database (config/cache.yml),
+  # where every dyno and every release reads the same rows.
+  #
+  # The store is Rack::Attack's own rather than Rails.cache, so moving the
+  # counters moves nothing else: the tokens other code caches in Rails.cache
+  # (Github::AppToken, Tiktok::OauthClient) stay off the database.
+  #
+  # Solid Cache answers a transient database error (a lost connection, a
+  # timeout) with nil rather than raising, and Rack::Attack then counts the
+  # request as the first in its window: a database outage opens the throttles
+  # instead of closing the app. Development and test keep Rails.cache (a memory
+  # or null store); the throttle tests install their own store.
+  def self.counter_store(env = Rails.env)
+    env.production? ? SolidCache::Store.new : Rails.cache
+  end
+
+  cache.store = counter_store
+
   ### Throttle: login (engine route) — IP + email
   throttle("login/ip", limit: 10, period: 1.minute) do |req|
     req.ip if req.post? && req.path == "/login"

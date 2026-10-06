@@ -14,11 +14,9 @@ class HeartbeatAllSpansTest < ActionDispatch::IntegrationTest
                           opened_at: at, seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
 
-  test "routes to the all_activities action and keeps the old spans alias" do
+  test "routes to the all_activities action" do
     assert_equal "/xan/heartbeat/activities", heartbeat_all_activities_path
-    assert_equal "/xan/heartbeat/spans", heartbeat_all_spans_path
     assert_routing "/xan/heartbeat/activities", controller: "heartbeat", action: "all_activities"
-    assert_recognizes({ controller: "heartbeat", action: "all_activities" }, "/xan/heartbeat/spans")
   end
 
   test "renders activities from every session, newest-first, without auth" do

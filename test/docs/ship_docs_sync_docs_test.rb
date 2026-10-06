@@ -90,7 +90,7 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
   #
   # WHY THE CODE HALF IS ASSERTED STRUCTURALLY AND THE BEHAVIOUR HALF IS NOT RE-RUN HERE.
   # The runnable proof of the branch already exists and is BEHAVIOURAL, not textual:
-  # test/lib/release_cli_test.rb `load`s bin/release.rb in a subprocess, stubs
+  # test/lib/release_cli_post_deploy_test.rb `load`s bin/release.rb in a subprocess, stubs
   # Release::GateWorkspace.path, and asserts the ARGV the installer is actually shelled
   # with — once with a workspace present, once without. Re-executing that harness from a
   # Rails-loaded docs test would duplicate a slow subprocess for no new information. So
@@ -206,7 +206,7 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
   # renders "run `` by hand", an empty backtick pair strictly worse than the bare name.
   #
   # A source scan cannot tell a nil interpolation from a good one. That half is proved by
-  # EXECUTION, in test/lib/release_cli_test.rb, which loads bin/release.rb in a subprocess
+  # EXECUTION, in test/lib/release_cli_post_deploy_test.rb, which loads bin/release.rb in a subprocess
   # and drives sync_agent_docs with the raise placed on BOTH sides of the resolution. Both
   # tests are pinned by name in BEHAVIOURAL_PINS above, so the runnable half cannot quietly
   # leave the suite while this file keeps asserting the shape.
@@ -258,7 +258,7 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
     assert_equal ["installer"], names,
                  "the warn branches interpolate #{names.inspect}. This guard tracks ONE variable — the " \
                  "`installer` seeded absolute below — and can only prove the seed covers a name it knows. " \
-                 "If you renamed it, rename it here and in test/lib/release_cli_test.rb."
+                 "If you renamed it, rename it here and in test/lib/release_cli_post_deploy_test.rb."
   end
 
   test "[static] sync_agent_docs seeds an absolute installer path before anything that can raise" do
@@ -329,7 +329,7 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
     # THE BLIND SPOT, pinned so nobody mistakes this scan for the whole proof. The naive fix
     # — interpolate `installer` in the rescue WITHOUT seeding it — passes here, because a
     # source scan cannot see that the local is nil at that moment. It is caught by execution,
-    # in test/lib/release_cli_test.rb's
+    # in test/lib/release_cli_post_deploy_test.rb's
     # test_sync_agent_docs_rescue_names_an_absolute_installer_before_resolution.
     naive = after.sub(/installer = File\.expand_path.*\n/, "  root = Release::GateWorkspace.path(x)\n")
     assert warn_commands_in(naive).map(&:last).all? { |command| interpolated_command?(command) },
@@ -338,11 +338,11 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
   end
 
   test "[static] the behavioural proof of the installer source is still in the suite" do
-    body = File.read(Rails.root.join("test", "lib", "release_cli_test.rb"))
+    body = File.read(Rails.root.join("test", "lib", "release_cli_post_deploy_test.rb"))
 
     BEHAVIOURAL_PINS.each do |name|
       assert_includes body, "def #{name}",
-                      "test/lib/release_cli_test.rb no longer defines #{name}. That subprocess test is " \
+                      "test/lib/release_cli_post_deploy_test.rb no longer defines #{name}. That subprocess test is " \
                       "the RUNNABLE half of this claim — it stubs GateWorkspace.path and asserts the " \
                       "installer ARGV — and the structural test above deliberately does not duplicate " \
                       "it. If you renamed it, rename it here; if you deleted it, this file is now the " \

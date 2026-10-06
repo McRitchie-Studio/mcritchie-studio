@@ -34,13 +34,11 @@ require "minitest/mock"
 # ---------------------------------------------------------------------------
 # THE WHOLE CHAIN, not just its last link (added by hub-hook-comment-overreaches).
 #
-# bin/lib/ci_test_command.rb documents WHY the ecosystem's CI line keeps the shape
-# `bin/rails db:test:prepare test test:system`, and part of that rationale is that the
-# line builds its own stylesheet. That paragraph used to state the condition as "a
-# rake-routed, path-free line fires the hook for free" — a condition CELL A below
-# satisfies and fails. Prose cannot be trusted with a five-link mechanism, and grepping
-# a sentence can never catch it drifting, so each link is asserted here instead and the
-# comment points at this file.
+# The ecosystem's CI line keeps the shape `bin/rails db:test:prepare test test:system`,
+# and part of the reason is that the line builds its own stylesheet. "A rake-routed,
+# path-free line fires the hook for free" is NOT the condition — CELL A below satisfies
+# it and fails. Prose cannot be trusted with a five-link mechanism, and grepping a
+# sentence can never catch it drifting, so each link is asserted here instead.
 #
 # Measured ON CI, each cell deleting app/assets/builds/tailwind.css first — turf-monster
 # run 34382943177, attempt 1 (ubuntu-latest, which resolved to the ubuntu-24.04 image).
@@ -53,8 +51,8 @@ require "minitest/mock"
 # The links that produce those three outcomes:
 #
 #   1. `db:test:prepare` is not a rails COMMAND, so the whole line routes through RAKE
-#      and every token becomes a rake task. (Owned by test/lib/ci_test_command_test.rb,
-#      which pins the line's shape.)
+#      and every token becomes a rake task. (test/models/release/repos_test.rb pins the
+#      line's shape.)
 #   2. Rake's `test` task carries NO prerequisites — the true half of the old claim, and
 #      the half that made a false conclusion look sound elsewhere.
 #   3. Its BODY is `Rails::TestUnit::Runner.run_from_rake("test", Array(ENV["TEST"]))`
@@ -103,11 +101,11 @@ class TestPrepareAssetHookTest < ActiveSupport::TestCase
   # `test:prepare`, else `spec:prepare`, else `db:test:prepare`. railties always defines
   # `test:prepare`, so the first branch always wins in a Rails app and `db:test:prepare`
   # is never enhanced. Lose that asymmetry and `bin/rails db:test:prepare` alone would
-  # build the stylesheet, and ci_test_command.rb's cell A would stop being true.
+  # build the stylesheet, and cell A above would stop being true.
   test "[unit] the build hangs off test:prepare and NOT off db:test:prepare" do
     refute_includes Rake::Task["db:test:prepare"].prerequisites, "tailwindcss:build",
                     "db:test:prepare now builds the stylesheet too, so the bare form and the " \
-                    "form that names a test task no longer differ. bin/lib/ci_test_command.rb " \
+                    "form that names a test task no longer differ. Cell A in this file's header " \
                     "describes an asymmetry that has stopped existing."
   end
 
@@ -119,9 +117,8 @@ class TestPrepareAssetHookTest < ActiveSupport::TestCase
   # halves are asserted together so the pair cannot drift apart.
   test "[unit] rake's test task reaches the hook by SPAWNING the argless rails command" do
     assert_empty Rake::Task["test"].prerequisites,
-                 "rake's `test` task grew a prerequisite. The mechanism " \
-                 "bin/lib/ci_test_command.rb documents (no prerequisite, but a shell-out in " \
-                 "the body) is out of date."
+                 "rake's `test` task grew a prerequisite. The mechanism this file's header " \
+                 "documents (no prerequisite, but a shell-out in the body) is out of date."
 
     spawned = with_env("TEST" => nil, "TESTOPTS" => nil) { spawn_from_rake_task("test") }
 
@@ -143,7 +140,7 @@ class TestPrepareAssetHookTest < ActiveSupport::TestCase
     assert_empty prepare_tasks_invoked_by(["test/lib/tasks/test_prepare_asset_hook_test.rb"]),
                  "a path argument must suppress run_prepare_task; if it stopped doing so, " \
                  "bin/ci-shard and bin/fast-check no longer need their explicit test:prepare " \
-                 "step and bin/lib/ci_test_command.rb's cell C needs rewriting."
+                 "step and cell C in this file's header needs rewriting."
 
     assert_empty prepare_tasks_invoked_by(["-n", "/some_test/"]),
                  "a -n filter must suppress run_prepare_task, for the same reason."
@@ -186,7 +183,7 @@ class TestPrepareAssetHookTest < ActiveSupport::TestCase
       assert_empty prepare_tasks_invoked_by(spawned.drop(2)),
                    "with #{name}=#{value} rake's `test` task spawned #{spawned.inspect}, and that " \
                    "argv still reaches run_prepare_task. A filter no longer silences the tailwind " \
-                   "hook, so cell C in bin/lib/ci_test_command.rb has gone stale."
+                   "hook, so cell C in this file's header has gone stale."
     end
   end
 

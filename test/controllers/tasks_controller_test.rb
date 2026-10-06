@@ -1756,8 +1756,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     # IDENTIFIERS: the comma is the delimiter the form itself wrote. These must
     # still split, or "auth, solana, migration" files ONE tag that
-    # ReviewerSelector::RISK_DOMAINS and auto_qa's blocked_risk_tags — both exact
-    # matchers — can never look up, and the gate fails open.
+    # ReviewerSelector::RISK_DOMAINS — an exact matcher — can never look up, and
+    # the gate fails open.
     assert_equal %w[mcritchie-studio turf-monster], devops["repositories"]
     assert_equal %w[auth solana migration], devops["risk_tags"]
   end

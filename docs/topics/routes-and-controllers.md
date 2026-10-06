@@ -84,8 +84,6 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/people/search` — GET JSON people search (ILIKE on first_name, last_name, slug, aliases). Used by News edit sidebar.
 - `/people/duplicates` — GET admin UI listing detected duplicate Person groups (Levenshtein distance scoring).
 - `/people/merge` — GET render the person-merge form (pick keep/merge slugs). `POST /people/merge` → `PeopleController#merge_execute` consolidates contracts, roster spots, coaches, and athlete grades from source → keep person, then deletes source.
-- `/activities` — Redirects to `/agents`; historical activity remains available
-  through task timelines and the API
 - `/usages` — Usage table
 - `/admin/dashboard` — Admin dashboard with four quick links, a users table, and a request-log table backed by `error_logs`.
 - `/admin/ai_builder_multiple` — Admin dashboard for latest AI Builder Multiple index weeks, cohort coverage, the latest 9 Saturday-Friday UTC weekly commit cache ranges by tracked builder, builder weekly commit pace metrics, and CSV export paths. `/admin/ai_builder_multiple.json` returns the same latest index data and commit log ranges as JSON. Includes a caveat that this is public GitHub builder activity, not a true productivity measure.
