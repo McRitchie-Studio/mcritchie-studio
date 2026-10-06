@@ -1617,6 +1617,11 @@ end
 # athlete with a team and no look yet (e2e/music_video_search_rows.spec.js).
 require Rails.root.join("db/seeds/data/search_rows_video.rb").to_s
 SearchRowsVideo.seed!
+# A non-sports person for the naming search ("Who is this on screen?"), which
+# leaves athletes to the swap search (e2e/music_video_search_rows.spec.js).
+Person.find_by(first_name: "Test", last_name: "Actor Delta") ||
+  Person.create!(first_name: "Test", last_name: "Actor Delta", primary_vocation: "actor", vocations: ["actor"],
+                 avatar_url: SearchRowsVideo::AVATAR)
 # /music_videos/test-cinematic-look-picker-demo — two open cards and one recast, a
 # synthetic athlete with three looks (a sheet, none, one building) and a rookie
 # with none (e2e/music_video_look_picker.spec.js).
