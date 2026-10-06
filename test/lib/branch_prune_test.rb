@@ -85,6 +85,14 @@ class BranchPruneTest < Minitest::Test
     end
   end
 
+  # [control] rev bites on a ref that does not resolve, rather than returning its name.
+  def test_integration_rev_raises_on_a_ref_that_does_not_resolve
+    with_remote do |work, _origin|
+      error = assert_raises(RuntimeError) { rev(work, "feat/no-such-branch") }
+      assert_match(/feat\/no-such-branch.*#{Regexp.escape(work)}.*exit 128/, error.message)
+    end
+  end
+
   def test_unit_cli_refuses_without_an_agent_token
     Dir.mktmpdir do |not_a_repo|
       out, status = run_cli(not_a_repo, token: "")
@@ -129,7 +137,16 @@ class BranchPruneTest < Minitest::Test
     out
   end
 
-  def rev(dir, ref) = git(dir, "rev-parse", ref).strip
+  # `git rev-parse` prints the ref name and exits 128 on a missing ref, so the
+  # status is checked here and a failure raises naming the ref, dir and exit code.
+  def rev(dir, ref)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "git", "-C", dir, "rev-parse", "--verify", ref)
+    unless status.success?
+      raise "git rev-parse #{ref.inspect} failed in #{dir} (exit #{status.exitstatus}): #{err.strip}"
+    end
+
+    out.strip
+  end
 
   def commit(dir, branch, msg)
     git(dir, "checkout", "-q", branch)
