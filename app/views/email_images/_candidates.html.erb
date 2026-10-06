@@ -45,7 +45,7 @@
             <% end %>
             <% unless artifact.retired? %>
               <%= button_to "Retire", retire_candidate_email_image_path(brief, artifact_slug: artifact.slug),
-                            class: "btn btn-sm btn-secondary", form: { data: { test: "retire-form" } } %>
+                            class: "btn btn-sm btn-neutral", form: { data: { test: "retire-form" } } %>
             <% end %>
           </div>
         </figcaption>

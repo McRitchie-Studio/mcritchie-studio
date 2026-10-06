@@ -64,23 +64,26 @@
         <h2 class="text-sm font-bold text-heading">Candidates</h2>
         <%= render "candidates", brief: @brief, candidates: @candidates, preview_artifact: @preview_artifact %>
       </div>
-
-      <div class="card p-4 space-y-2" data-test="email-preview-panel">
-        <h2 class="text-sm font-bold text-heading">In the email</h2>
-        <% if @preview_artifact %>
-          <p class="text-3xs text-muted">
-            The <%= @brief.app %> email shell at 600 px, as an inbox draws it<%= @brief.text_mode == "none" ? ", with the headline set as live text over the art" : "" %>.
-            Alt text: &ldquo;<%= @brief.effective_alt_text %>&rdquo;.
-          </p>
-          <div class="overflow-x-auto rounded-lg border border-subtle bg-[#f4f5f7]">
-            <iframe src="<%= preview_email_image_path(@brief, candidate: @preview_artifact.slug) %>"
-                    title="Email preview" data-test="email-preview" loading="lazy"
-                    class="block mx-auto border-0" style="width:648px;max-width:none;height:560px;"></iframe>
-          </div>
-        <% else %>
-          <p class="text-2xs text-muted">Generate a round to see a candidate in the email.</p>
-        <% end %>
-      </div>
     </div>
+  </div>
+
+  <%# FULL WIDTH, because the email is a fixed 600 px card: inside the
+      candidates column it was clipped at desktop widths. Below 648 px the
+      frame scrolls sideways inside its own box, never the page. %>
+  <div class="card p-4 space-y-2" data-test="email-preview-panel">
+    <h2 class="text-sm font-bold text-heading">In the email</h2>
+    <% if @preview_artifact %>
+      <p class="text-3xs text-muted">
+        The <%= @brief.app %> email shell at 600 px, as an inbox draws it<%= @brief.text_mode == "none" ? ", with the headline set as live text over the art" : "" %>.
+        Alt text: &ldquo;<%= @brief.effective_alt_text %>&rdquo;.
+      </p>
+      <div class="overflow-x-auto rounded-lg border border-subtle bg-[#f4f5f7]">
+        <iframe src="<%= preview_email_image_path(@brief, candidate: @preview_artifact.slug) %>"
+                title="Email preview" data-test="email-preview" loading="lazy"
+                class="block mx-auto border-0" style="width:648px;max-width:none;height:520px;"></iframe>
+      </div>
+    <% else %>
+      <p class="text-2xs text-muted">Generate a round to see a candidate in the email.</p>
+    <% end %>
   </div>
 </div>
