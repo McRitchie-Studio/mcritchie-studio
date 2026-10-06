@@ -131,8 +131,12 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    **Nothing on a card has to be pressed**: every card starts **Not named** and
    **Don't Swap Person**, and **Cast confirmed** is ready as soon as the vision
    pass has posted people; it moves the video from `digested` to
-   `cast_confirmed`. Naming is optional and builds the artist rolodex: a
-   typeahead over artists (names and aliases) and People, each result a
+   `cast_confirmed`. Naming is optional and builds the artist rolodex. It sits
+   collapsed behind a quiet "Who is this on screen? (optional)" link, apart
+   from the swap's "Replace with": a typeahead over artists (names and aliases)
+   and People who are not athletes or coaches (sports people are offered by the
+   swap search; one already linked to an artist still comes back as that
+   artist), each result a
    headshot (a neutral placeholder when there is none), the name, the primary
    vocation and the current team (`People::SearchRows`; an artist with no
    Person reads "musician" or "group"). Picking a person from People makes

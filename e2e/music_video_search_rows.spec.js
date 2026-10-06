@@ -91,14 +91,16 @@ test("the artist search draws the same row, and a headshot that fails falls back
   await page.route("**/icon.png", (route) => route.abort());
   await page.goto(VIDEO);
 
+  await card(page).locator("[data-test='name-artist-open']").click();
   const who = card(page).locator("[data-test='performer-typeahead']");
   await who.getByRole("combobox").fill("test");
-  const person = row(who, "Test Rookie Bravo");
-  await expect(person.locator("[data-test='search-row-vocation']")).toHaveText("athlete");
-  await expect(person.locator("[data-test='search-row-team']")).toHaveText("Test City Testers");
+  // A person not yet an artist, with a failed headshot; the athlete belongs to the swap search, not here.
+  const person = row(who, "Test Actor Delta");
+  await expect(person.locator("[data-test='search-row-vocation']")).toHaveText("actor");
   await expect(person.locator("[data-test='search-row-badge']")).toHaveText("people");
   await expect(person.locator("[data-test='search-row-placeholder']")).toBeVisible();
   await expect(person.locator("img")).toHaveCount(0);
+  await expect(row(who, "Test Rookie Bravo")).toHaveCount(0);
 
   // An artist with no Person: the placeholder and "musician".
   const artist = row(who, "Test Artist A").first();
@@ -137,6 +139,7 @@ test("an older search answer that arrives late does not reopen or repaint the li
   });
   await page.goto(VIDEO);
 
+  await card(page).locator("[data-test='name-artist-open']").click();
   const who = card(page).locator("[data-test='performer-typeahead']");
   const combo = who.getByRole("combobox");
   const list = who.locator("[data-test='typeahead-results']");
@@ -145,8 +148,8 @@ test("an older search answer that arrives late does not reopen or repaint the li
   await slow;
 
   // A newer query answers first, and the operator closes the list.
-  await combo.fill("rookie");
-  await expect(row(who, "Test Rookie Bravo")).toHaveCount(1);
+  await combo.fill("actor delta");
+  await expect(row(who, "Test Actor Delta")).toHaveCount(1);
   await combo.press("Escape");
   await expect(list).toBeHidden();
 
@@ -157,5 +160,5 @@ test("an older search answer that arrives late does not reopen or repaint the li
   await page.waitForTimeout(300);
   await expect(list).toBeHidden();
   expect(await who.locator("[data-test='typeahead-option'] [data-test='search-row-name']").allTextContents())
-    .toEqual(["Test Rookie Bravo"]);
+    .toEqual(["Test Actor Delta"]);
 });

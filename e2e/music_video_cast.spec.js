@@ -10,6 +10,11 @@ const { loginWithMagicLink } = require("./helpers");
 const card = (page, n) => page.locator(`[data-test='performer-card'][data-ordinal='${n}']`);
 // The card has a second combobox (the swap search): name the artist one.
 const who = (page, n) => card(page, n).locator("[data-test='performer-typeahead']").getByRole("combobox");
+// Naming is collapsed behind a quiet link: open it first.
+const openNaming = async (page, n) => {
+  await card(page, n).locator("[data-test='name-artist-open']").click();
+  await expect(who(page, n)).toBeFocused();
+};
 
 test("operator confirms the cast without naming everyone, naming two and marking one an extra", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
@@ -25,7 +30,13 @@ test("operator confirms the cast without naming everyone, naming two and marking
   const confirm = page.getByRole("button", { name: "Cast confirmed" });
   await expect(confirm).toBeEnabled();
 
+  // The naming search is collapsed by default, apart from the swap's "Replace with".
+  await expect(card(page, 1).locator("[data-test='naming-panel']")).toBeHidden();
+  await expect(card(page, 1).locator("[data-test='name-artist-open']")).toHaveText("Who is this on screen? (optional)");
+
   // Person 1: an alias finds Test Artist A; picking it saves and reloads the card.
+  await openNaming(page, 1);
+  await expect(card(page, 1).locator("[data-test='naming-panel']")).toContainText("Who is this on screen? (optional)");
   await who(page, 1).fill("test alias a");
   const option = card(page, 1).locator("[data-test='typeahead-option']").first();
   await expect(option).toContainText("Test Artist A");
@@ -35,6 +46,7 @@ test("operator confirms the cast without naming everyone, naming two and marking
   await expect(card(page, 1).locator("[data-test='performer-badge']")).toHaveText("Named");
 
   // Person 2: nobody matches, so the operator creates the artist inline.
+  await openNaming(page, 2);
   await who(page, 2).fill("Test Artist E");
   await card(page, 2).locator("[data-test='typeahead-create']").click();
   await expect(card(page, 2).getByLabel("New artist name")).toHaveValue("Test Artist E");
@@ -42,6 +54,7 @@ test("operator confirms the cast without naming everyone, naming two and marking
   await expect(card(page, 2).locator("[data-test='performer-artist']")).toContainText("Test Artist E");
 
   // Person 3: the quiet extra link still records an extra.
+  await card(page, 3).locator("[data-test='name-artist-open']").click();
   await card(page, 3).getByRole("button", { name: "Mark as extra" }).click();
   await expect(card(page, 3).locator("[data-test='performer-badge']")).toHaveText("Extra");
   await expect(page.locator("[data-test='cast-named-count']")).toContainText("2 of 7 named (1 marked extras)");
