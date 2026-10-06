@@ -42,11 +42,10 @@ class GateRun < ApplicationRecord
   RELEASE_KEYS = GATES.select { |_, gate| gate["grain"] == "release" }.keys.freeze
   SUBJECT_TYPES = %w[task release].freeze
   # Gates no producer opens any more. No gate list, card chip or bin/gate verb
-  # offers them; their rows stay valid so history reads and a stale in-flight row
-  # can still close. g1_cert was the local cert, retired for the PR's settled CI
-  # (docs/agents/archive/g1-cert-2026-10-06.md). The board's local-check indicator
-  # still reads its in-flight rows, and the API still accepts the key so that
-  # indicator's fixtures can mint one; both go with the indicator itself.
+  # offers them, and the gates API refuses to write one (RETIRED_GATE_KEY). Their
+  # rows stay valid so history reads, and so the one-time close of the stale
+  # in-flight ones (lib/tasks/gate_runs.rake) can save them. g1_cert was the local
+  # cert, retired for the PR's settled CI (docs/agents/archive/g1-cert-2026-10-06.md).
   RETIRED_GATES = { "g1_cert" => { "grain" => "task" } }.freeze
   RETIRED_KEYS = RETIRED_GATES.keys.freeze
 
@@ -226,7 +225,6 @@ class GateRun < ApplicationRecord
         source: source,
         metadata: metadata.presence || {}
       )
-      run.send(:stamp_g1_testing_window, :open)
       run
     rescue ActiveRecord::RecordNotUnique
       retries += 1
@@ -247,9 +245,9 @@ class GateRun < ApplicationRecord
   #
   # Left to `open!` those stragglers did real damage, both halves of it invisible
   # to the cert that caused them: one landing after `close!` created attempt n+1
-  # carrying a lone `running` row (a PHANTOM ATTEMPT — Cert::LocalCheckReader
-  # reads in-flight attempts, so the board showed a cert that had already
-  # finished as live forever), and one landing between the terminal row and the
+  # carrying a lone `running` row (a PHANTOM ATTEMPT — the board's since-removed
+  # local-check indicator read in-flight attempts, so it showed a cert that had
+  # already finished as live forever), and one landing between the terminal row and the
   # close repainted `running` OVER the verdict. Ordered shutdown in the certs
   # (CertEmission::Heartbeat#stop) keeps that from happening on the normal path;
   # this keeps it from MATTERING on any path, including the SIGKILL the certs
@@ -311,7 +309,6 @@ class GateRun < ApplicationRecord
         metadata: run.metadata.merge(metadata.presence || {})
       )
     end
-    run.send(:stamp_g1_testing_window, :close)
     run
   end
 
@@ -333,6 +330,23 @@ class GateRun < ApplicationRecord
   # ---- reads -----------------------------------------------------------------
 
   # The newest attempt per gate key — what the UI chips render.
+  # Close every in-flight attempt on a retired gate, once. Nothing opens a retired
+  # gate any more, so an attempt still open is one whose producer died before it
+  # closed (a killed local cert). It is closed with NO verdict: success stays nil,
+  # so Insights::TaskGrader (which counts success: false) does not read an
+  # abandoned run as a failure. Idempotent: a second run finds nothing in flight.
+  # Run by the release's post_deploy_cmd (`bin/rails gate_runs:close_retired`).
+  # Returns the number closed; raises if any row would not save.
+  def self.close_retired_in_flight!(now: Time.current)
+    closed = 0
+    where(key: RETIRED_KEYS).in_flight.find_each do |run|
+      run.update!(finished_at: now,
+                  metadata: run.metadata.merge("closed_reason" => "retired gate: no producer will close it"))
+      closed += 1
+    end
+    closed
+  end
+
   # The grain of a live or retired gate key; nil for an unknown one.
   def self.grain_for(key)
     (GATES[key.to_s] || RETIRED_GATES[key.to_s])&.dig("grain")
@@ -415,30 +429,5 @@ class GateRun < ApplicationRecord
     return unless Task::TestingPhases::REVIEW_GATE_KEYS.include?(key)
 
     Task.find_by(slug: subject_slug)&.refresh_testing_phases_safely
-  end
-
-  # Mirror the g1_cert testing WINDOW onto three flat tasks columns
-  # (g1_testing_started_at / g1_testing_finished_at / g1_failed_at) so a task row
-  # carries its cert window without walking gate_runs. ONLY the g1_cert task gate
-  # moves them — every other gate (dor, dor_review, the G2 lanes) leaves them
-  # untouched. Called from the write funnel (open!/close!): open stamps the
-  # latest attempt's start; close stamps finished_at and toggles g1_failed_at
-  # (set on a red close, cleared on a green retry). update_columns skips callbacks
-  # (no re-entrancy, mirrors GatesProjection.refresh!) and the whole thing is
-  # best-effort — a stamp failure never breaks the gate write.
-  def stamp_g1_testing_window(phase)
-    return unless subject_type == "task" && key == "g1_cert"
-
-    columns =
-      case phase
-      when :open  then { g1_testing_started_at: started_at }
-      when :close then { g1_testing_finished_at: finished_at, g1_failed_at: success ? nil : finished_at }
-      end
-    return if columns.blank?
-
-    Task.find_by(slug: subject_slug)&.update_columns(columns) # rubocop:disable Rails/SkipsModelValidations
-  rescue StandardError => e
-    Rails.logger.warn("[gate-g1-stamp] #{subject_slug} #{phase}: #{e.class}: #{e.message}")
-    nil
   end
 end

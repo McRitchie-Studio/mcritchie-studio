@@ -440,7 +440,7 @@ the views by re-ordering them to chronology: logical progress order is the produ
   `blocked_at, blocked_from, blocked_by, block_kind` — when / from where / who /
   why), then the lifecycle chain: `created_at, updated_at → queued_at,
   sizes_revealed_at, started_at → g1_testing_started_at, g1_testing_finished_at,
-  g1_failed_at → submitted_at, reviewed_at, assembled_at, completed_at,
+  g1_failed_at (frozen: nothing writes them since the local cert retired) → submitted_at, reviewed_at, assembled_at, completed_at,
   archived_at`, then the cache stamps `gates_cached_at, testing_phases_cached_at`.
   The block set is a HEADER, **not** the first link of the chain:
   `Task#clear_block_on_forward_move` NULLs all four the moment a task leaves

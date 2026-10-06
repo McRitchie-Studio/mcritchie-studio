@@ -120,45 +120,20 @@ class GateRunTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] opening a g1_cert task gate stamps tasks.g1_testing_started_at" do
-    assert_nil @task.g1_testing_started_at
+  # The g1_testing_* columns were the local cert's window mirror. The cert is
+  # retired and its stamp is gone; the columns stay for the dead-columns migration,
+  # so a write on a legacy g1_cert row (the one-time stale close) must leave them be.
+  test "[unit] closing a legacy g1_cert row no longer stamps the g1 testing window columns" do
+    GateRun.create!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert",
+                    attempt: 1, started_at: 10.minutes.ago)
+    run = GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
 
-    freeze_time do
-      open_gate(key: "g1_cert")
-      assert_equal Time.current, @task.reload.g1_testing_started_at
-      assert_nil @task.g1_testing_finished_at
-      assert_nil @task.g1_failed_at
-    end
-  end
-
-  test "[unit] closing g1_cert --success stamps finished_at and leaves g1_failed_at nil" do
-    open_gate(key: "g1_cert")
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
-
-    @task.reload
-    assert @task.g1_testing_started_at.present?
-    assert @task.g1_testing_finished_at.present?
-    assert_nil @task.g1_failed_at, "a green close clears g1_failed_at"
-  end
-
-  test "[unit] closing g1_cert --failed stamps g1_failed_at, a green retry clears it" do
-    open_gate(key: "g1_cert")
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
-    assert @task.reload.g1_failed_at.present?, "a red close sets g1_failed_at"
-
-    open_gate(key: "g1_cert") # attempt 2
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
-    assert_nil @task.reload.g1_failed_at, "a green retry clears g1_failed_at"
-  end
-
-  test "[unit] a non-g1_cert gate does not stamp the g1 testing window columns" do
-    open_gate(key: "dor")
-    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: false)
-
+    assert_equal "failed", run.status, "the stale row still closes: the retired key validates on update"
     @task.reload
     assert_nil @task.g1_testing_started_at
     assert_nil @task.g1_testing_finished_at
-    assert_nil @task.g1_failed_at, "a red DoR close must NOT touch g1_failed_at"
+    assert_nil @task.g1_failed_at
+    assert_not GateRun.private_method_defined?(:stamp_g1_testing_window)
   end
 
   test "[unit] g1_cert is retired: no gate list offers it, bin/gate refuses it, its old rows still validate" do
