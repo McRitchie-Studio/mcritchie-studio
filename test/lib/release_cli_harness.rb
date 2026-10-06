@@ -1336,6 +1336,7 @@ class ReleaseCliHarness < Minitest::Test
       puts "  - mcritchie-studio/old-ship-a redis=11"
       ["reclaim candidates:", true]
     end
+    #{ReleaseArchiveSeams::PRUNE_STUB}
   RUBY
 
 

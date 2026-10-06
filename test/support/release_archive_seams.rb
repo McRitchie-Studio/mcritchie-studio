@@ -35,6 +35,25 @@
 # them. The stub therefore mirrors the two methods production actually reads off the
 # Process::Status — `success?` and `exitstatus` — rather than faking the whole class.
 module ReleaseArchiveSeams
+  # The two pruners (bin/prune-session-markers, bin/prune-branches). Each stub
+  # returns what the real seam returns: the tool's tagged summary line, parsed by
+  # the real parser. Interpolated into ISOLATION_STUB, and usable alone by a test
+  # whose archive stubs are otherwise its own.
+  PRUNE_STUB = <<~RUBY.freeze
+    def prune_session_markers(apply:)
+      out = "\#{MarkerPrune::SUMMARY_TAG} " +
+            JSON.generate(pruner: "session-markers", applied: apply, count: 3, sessions: 1, kept_sessions: 4,
+                          sample: ["a.json", "a.heartbeat", "a.mascot-heal"], refusal: nil)
+      MarkerPrune.parse_summary(out) || {}
+    end
+    def prune_branches(apply:)
+      out = "\#{BranchPrune::SUMMARY_TAG} " +
+            JSON.generate(pruner: "branches", applied: apply, count: 2, skipped: { "open PR" => 1 },
+                          sample: ["feat/done-a", "feat/done-b"], refusal: nil)
+      BranchPrune.parse_summary(out) || {}
+    end
+  RUBY
+
   # Every seam `archive` uses to touch the filesystem. Interpolate into a stub
   # passed as `run_cli(..., setup:)`. Add to it whenever a new seam appears —
   # SHELL_POISON below will tell you when one has.
@@ -64,6 +83,7 @@ module ReleaseArchiveSeams
     def commit_artifact_to_release(repo, paths, message)
       nil
     end
+    #{PRUNE_STUB}
   RUBY
 
   # Poison every shell primitive bin/release.rb owns. Any un-stubbed path that

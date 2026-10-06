@@ -149,7 +149,8 @@ frozen_size:
   # frozen at the size it was split at, so the rule still holds: a new test does not
   # go to the bottom of an existing file, it goes beside its subcommand in a NEW file
   # that requires the harness, or the ceiling it grows is raised here with the reason.
-  test/lib/release_cli_harness.rb: 2044
+  # +1 (prune-session-markers-and-branches): ARCHIVE_DRY_STUB carries the pruner seam.
+  test/lib/release_cli_harness.rb: 2045
   test/lib/release_cli_archive_test.rb: 162
   test/lib/release_cli_conductor_test.rb: 398
   test/lib/release_cli_core_test.rb: 343
