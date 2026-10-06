@@ -15,6 +15,10 @@ require "test_helper"
 # the difference. A per-card query makes the second render cost more; nothing else
 # here does.
 class BoardQueryBudgetTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   # Count a render's queries from a COLD query cache, the way production starts
   # every request. Without the clear this measures nothing: an integration test
   # holds one connection for the whole test, so the ActiveRecord query cache

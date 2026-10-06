@@ -4,6 +4,10 @@ require "test_helper"
 # build-lane crew circle, through the real /tasks board render path
 # (build_step_columns → task_mascot_face → Pokemon#display_sprite).
 class BoardCardShinyMascotTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     Pokemon.create!(dex: 303, name: "Gyarados", slug: "gyarados", types: %w[water flying],
                     generation: 1,

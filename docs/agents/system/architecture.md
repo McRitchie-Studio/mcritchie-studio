@@ -64,5 +64,11 @@ The rest is in `config/routes.rb`.
 
 ## Access
 
-The landing page, dashboard, agent and task reads, usages and `/docs` render
-without a session. Task writes, `/error_logs` and `/admin/*` need an admin.
+Every page needs an admin unless `AdminWall::PUBLIC` lists it
+(`app/controllers/concerns/admin_wall.rb`): a default-deny wall, and an admin
+wall because hub signup is open. Public: the landing, legal, packages, `/build`
+funnel, contact, schedule and `/links` pages, unsubscribe and email tracking,
+sign-in, the NFL pages, and `/tasks/:slug/local_review`. A signed-in non-admin
+reaches only their own profile. The API (bearer), `/webhooks/*` (signed) and
+`/up` sit outside the wall. `test/integration/admin_wall_test.rb` walks the
+route table, so a new route is walled until it is listed.

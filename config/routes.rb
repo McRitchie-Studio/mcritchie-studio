@@ -74,24 +74,23 @@ Rails.application.routes.draw do
 
   get "dashboard", to: "dashboard#index"
   # Task-development trends dashboard (stage speed, cycle time, tokens, cost,
-  # estimate-vs-actual). Public-read like the other board surfaces.
+  # estimate-vs-actual). Admin-only like the other board surfaces (AdminWall).
   get "intelligence", to: "intelligence#index", as: :intelligence
   # Pokédex — read-only spawn/activity surface for session mascots.
   get "pokedex", to: "pokemon#index", as: :pokedex
   # Board split: /tasks is the Build lane, /deployments is the Deploy lane (+ the
   # current-release module), /stages is the two-workflow stage guide. All three
-  # are public-read like /tasks (mutations stay admin-gated in TasksController).
+  # are admin-only, reads included (AdminWall).
   # The findings TRIAGE inbox — agent follow-ups wait here for an operator call.
-  # Reading is open like the boards; promote/dismiss are admin-gated (promote
-  # MINTS a task — the operator's lane, mirrored by the API's file/list-only split).
+  # Admin-only like the boards (AdminWall); promote MINTS a task
+  # (the operator's lane, mirrored by the API's file/list-only split).
   get "triage", to: "triage#index", as: :triage
   post "triage/:slug/promote", to: "triage#promote", as: :promote_triage_finding
   post "triage/:slug/dismiss", to: "triage#dismiss", as: :dismiss_triage_finding
   get "deployments", to: "tasks#deployments", as: :deployments
   # THE MODEL PIPELINE BOARD — every character model in flight across five lanes
-  # (designed → defined → source → model → generation), public-read like the boards
-  # above, with the hand-placement PATCH and the rank POST admin-gated in
-  # ModelPipelineController.
+  # (designed → defined → source → model → generation), admin-only like the boards
+  # above (AdminWall), reads and writes alike.
   #
   # NOT `/models`. `Studio.routes` already draws the model-page protocol at
   # `/models/:model/:id` and `/models/:model/random` (see
@@ -102,7 +101,7 @@ Rails.application.routes.draw do
   post "model_pipeline/reorder", to: "model_pipeline#reorder", as: :reorder_model_pipeline
   patch "model_pipeline/:slug", to: "model_pipeline#update", as: :model_pipeline_look
   # The epic view: every epic with its progress by stage, and one epic's tasks
-  # grouped by stage on the board's own card (EpicsController, public-read).
+  # grouped by stage on the board's own card (EpicsController, admin-only).
   get "epics", to: "epics#index", as: :epics
   get "epics/:slug", to: "epics#show", as: :epic
   get "deployments/all", to: "releases#index", as: :all_deployments
@@ -280,7 +279,7 @@ Rails.application.routes.draw do
     collection do
       post :reorder
       # /tasks/recent — flat recency list surfacing testing-phase durations +
-      # gate verdicts per task. Public-read like the board; declared on the
+      # gate verdicts per task. Admin-only like the board; declared on the
       # collection so "recent" is never swallowed as a :slug by #show.
       get :recent
     end

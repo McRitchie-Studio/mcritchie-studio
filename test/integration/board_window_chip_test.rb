@@ -9,6 +9,10 @@ require "turbo/broadcastable/test_helper"
 # that `bin/task wait-window` polls, and the Next Release card's production
 # window with its Approve button on both of ITS render paths.
 class BoardWindowChipTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   include Turbo::Broadcastable::TestHelper
 
   setup do

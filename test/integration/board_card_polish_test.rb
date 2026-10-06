@@ -6,6 +6,10 @@ require "test_helper"
 #   #3b activity label moved INSIDE the message box, in white (text-heading)
 #   #4  the redundant assignee name chip is removed
 class BoardCardPolishTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     @shannon = Agent.create!(name: "Shannon", slug: "shannon")
   end

@@ -1,13 +1,11 @@
 # /epics — the epic view (devops-v3-design.md sections 3 and 10, piece 7). An epic
 # is the handle its tasks carry (tasks.epic_slug); there is no Epic table, so both
-# pages read Task through EpicSummary. Public-read like the boards they link from.
+# pages read Task through EpicSummary. Admin-only, like the boards they link from.
 class EpicsController < ApplicationController
   include TaskCardPreloads
 
-  skip_before_action :require_authentication
-
   # The tasks one epic page draws. An epic is dozens of tasks, not thousands, but
-  # the page is public and preloads each task's events, so the read is bounded the
+  # the page preloads each task's events, so the read is bounded the
   # way the board's archive column is (HOTFIX archived-board-crashes-prod) — the
   # newest SHOW_LIMIT, with the true total in the header.
   SHOW_LIMIT = 200

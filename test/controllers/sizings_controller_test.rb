@@ -1,15 +1,19 @@
 require "test_helper"
 
 class SizingsControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     @admin = users(:alex)
     @viewer = users(:viewer)
     @task = tasks(:new_task)
   end
 
-  # === GET show (public) ===
+  # === GET show ===
 
-  test "show renders sizing page without login" do
+  test "show renders sizing page for an admin" do
     get task_sizing_path(@task)
     assert_response :success
     assert_select "h2", @task.title
@@ -84,6 +88,7 @@ class SizingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "update requires login" do
+    reset!
     patch task_sizing_path(@task), params: { task: { po_size: "medium" } }
     assert_response :redirect
     @task.reload

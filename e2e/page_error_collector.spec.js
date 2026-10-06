@@ -1,5 +1,8 @@
 const { test, expect } = require("@playwright/test");
-const { watchPageErrors } = require("./helpers");
+const { watchPageErrors, VISITOR } = require("./helpers");
+
+// What a visitor sees: signed out, not the suite's default admin session.
+test.use({ storageState: VISITOR });
 
 // THE CONTRACT OF `watchPageErrors` ITSELF — the live-broadcast family's shared
 // "the page stayed clean" watcher (e2e/helpers.js).

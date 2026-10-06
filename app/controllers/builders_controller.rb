@@ -1,5 +1,4 @@
 class BuildersController < ApplicationController
-  skip_before_action :require_authentication, only: [:index, :all, :history]
   before_action :require_admin, only: [:archive, :restore]
   before_action :set_builder, only: [:archive, :restore]
 

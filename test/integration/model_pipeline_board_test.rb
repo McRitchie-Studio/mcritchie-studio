@@ -16,6 +16,10 @@ require "test_helper"
 #   THE RANK ROUND-TRIPS     the shared Studio::Board::Reorderable action restamps the
 #                            lane and the next render comes back in the new order.
 class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     Appearance.delete_all
     AppearanceReferencePhoto.delete_all
@@ -284,19 +288,15 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
 
   # ── the gate ──────────────────────────────────────────────────────────────────
 
-  # THE READ IS PUBLIC and spends nothing, matching /contents and /tasks beside it; every
-  # write is admin, because hub signup is open and a session is therefore no control.
-  test "a visitor reads the board but is given no way to write to it" do
+  # THE READ AND EVERY WRITE ARE ADMIN, because hub signup is open and a session is
+  # therefore no control (AdminWall).
+  test "a visitor is sent to sign-in from the board" do
+    reset!
     look!("Quiet", colorway: "bills home")
 
     get model_pipeline_path
 
-    assert_response :success
-    assert_select "[data-board-column='defined'] .kanban-card", 1
-    board = css_select("section[data-test='studio-board']").first["x-data"]
-    assert_match(/"moveUrl":null/, board, "a visitor is offered no cross-lane endpoint")
-    assert_match(/"reorderUrl":null/, board, "a visitor is offered no reorder endpoint")
-    refute_match(/cursor-grab/, response.body)
+    assert_redirected_to login_path
   end
 
   test "an admin is given both endpoints" do
@@ -318,17 +318,18 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
     log_in_as(users(:viewer))
 
     patch model_pipeline_look_path(look.slug), params: { appearance: { stage: "generation" } }, as: :json
-    assert_response :redirect
+    assert_response :forbidden
     assert_nil look.reload.stage
 
     post reorder_model_pipeline_path(format: :json), params: { slugs: [look.slug] }
-    assert_response :redirect
+    assert_response :forbidden
     assert_equal seeded_rank, look.reload.position
   end
 
   # A JSON REQUEST WITH NO SESSION GETS A 401, not the HTML redirect — the engine answers
   # the format it was asked in, and the board primitive reads the body for its toast.
   test "a visitor with no session cannot drag" do
+    reset!
     look = look!("Quiet", colorway: "bills home")
 
     patch model_pipeline_look_path(look.slug), params: { appearance: { stage: "generation" } }, as: :json

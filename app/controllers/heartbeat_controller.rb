@@ -9,16 +9,11 @@ class HeartbeatController < ApplicationController
   # #feedback renders the per-action grading drawer, #grade upserts a grade (and
   # banks/discards it), and #insights is the curated Insight Bank.
   #
-  # The pages READ without a login. Every other action is a WRITE (grade, bank,
-  # discard, clear, confirm) and needs an admin: a banked grade's text is served by
-  # GET /api/v1/insights and printed into every new agent session's context, so a
-  # public write is a prompt-injection path. The agent write path is the bearer-gated
-  # /api/v1 endpoint, which forces `grader: xan`. test/controllers/heartbeat_controller_test.rb
-  # pins the split to the route table.
-  READ_ACTIONS = %i[show all_activities pipeline feedback feedback_activity insights].freeze
-
-  skip_before_action :require_authentication, only: READ_ACTIONS
-  before_action :require_admin_for_write, except: READ_ACTIONS
+  # Every action, read or write, needs an admin (AdminWall). A banked grade's text
+  # is served by GET /api/v1/insights and printed into every new agent session's
+  # context, so a public write is a prompt-injection path. The agent write path is
+  # the bearer-gated /api/v1 endpoint, which forces `grader: xan`.
+  # test/controllers/heartbeat_controller_test.rb pins every heartbeat route behind the wall.
 
   # The shared feed read-layer (session_options, pokemon/soul/grade/transition
   # lookups) — the same bulk queries /agents/activities reuses.
@@ -91,8 +86,8 @@ class HeartbeatController < ApplicationController
   #   1. ACTIVITIES    — recent narrated activities
   #   2. INSIGHTS      — Xan's banked grades (the distilled lessons)
   #   3. CONFIRMATIONS — McRitchie's mcr grades (the confirmed subset)
-  # A public read (like the rest of the heartbeat); the column-2 Confirm button
-  # posts an mcr grade through #confirm, an admin write.
+  # Admin-only, like the rest of the heartbeat; the column-2 Confirm button posts
+  # an mcr grade through #confirm.
   PIPELINE_ACTIVITIES    = 40
   PIPELINE_SPANS = PIPELINE_ACTIVITIES
   PIPELINE_INSIGHTS = 40
@@ -320,21 +315,6 @@ class HeartbeatController < ApplicationController
   end
 
   private
-
-  # The write gate, format-aware because the drawers and inline cells post JSON and
-  # Turbo: a visitor gets the login answer require_authentication gives (a redirect
-  # on HTML, 401 otherwise), a signed-in non-admin gets 403 (a redirect on HTML).
-  # The engine's require_admin redirects every format, and a JSON fetch that follows
-  # a redirect to an HTML page surfaces as a 500 on the original POST.
-  def require_admin_for_write
-    return if admin?
-    return require_authentication unless logged_in?
-
-    respond_to do |format|
-      format.html { redirect_to root_path, alert: "Not authorized" }
-      format.any  { head :forbidden }
-    end
-  end
 
   # The session whose activity log we show by default: the one with the most recent
   # activity or action. Activity-primary now, so a session can narrate an activity before its first tool-call

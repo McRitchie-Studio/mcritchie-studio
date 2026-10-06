@@ -5,8 +5,8 @@ require Rails.root.join("db/seeds/data/look_picker_video.rb").to_s
 require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 # [unit] "Generate a new look" on a cast card, the record half: a named look
-# for the athlete the operator chose, the athlete taken as the performer's
-# recast, and the look left for the operator to cast. It starts no build and
+# for the athlete the operator chose, cast at once as the performer's recast
+# (the card saves every pick; there is no Cast button). It starts no build and
 # calls no generator. Every athlete here is synthetic.
 class MusicVideosCreateRecastLookTest < ActiveSupport::TestCase
   setup do
@@ -19,36 +19,34 @@ class MusicVideosCreateRecastLookTest < ActiveSupport::TestCase
 
   def maker(performer, **attrs) = MusicVideos::CreateRecastLook.new(performer, **{ person_slug: @athlete.slug, descriptor: "Broncos blue" }.merge(attrs))
 
-  test "a first look is made for a look-less athlete, becomes their default, and he is taken as the recast with no look chosen" do
+  test "a first look is made for a look-less athlete, becomes their default, and he is cast in it" do
     look = maker(@open, person_slug: @rookie.slug).call
 
     assert_equal [@rookie.slug, "Broncos blue"], [look.person_slug, look.descriptor]
     assert look.default?
     assert_nil look.sheet_build_state, "the record half starts no build"
-    assert_equal [@rookie.slug, nil], @open.reload.values_at(:recast_person_slug, :recast_appearance_slug)
-    assert @open.recast_pending?, "the look is the operator's to cast"
+    assert_equal [@rookie.slug, look.slug], @open.reload.values_at(:recast_person_slug, :recast_appearance_slug)
+    assert @open.recast?
   end
 
-  test "a new look for an athlete already cast leaves the cast look in place and is not the default" do
-    cast = @saved.recast_appearance_slug
-
+  test "a new look for an athlete already cast is cast in place of the old one and is not the default" do
     look = maker(@saved, descriptor: "  Broncos   blue ").call
 
     assert_equal "Broncos blue", look.descriptor
     assert_not look.default?
-    assert_equal cast, @saved.reload.recast_appearance_slug
+    assert_equal look.slug, @saved.reload.recast_appearance_slug
     assert_includes Appearance.recastable.where(person_slug: @athlete.slug), look
   end
 
-  test "generating for a different athlete than the one saved replaces him and drops the old look and keep" do
+  test "generating for a different athlete than the one saved replaces him in the new look and drops the keep" do
     kept = @video.video_performers.find_by!(ordinal: 3)
     kept.update!(recast_keep: true)
 
-    maker(@saved, person_slug: @rookie.slug).call
-    maker(kept, person_slug: @rookie.slug, descriptor: "Road grey").call
+    first = maker(@saved, person_slug: @rookie.slug).call
+    second = maker(kept, person_slug: @rookie.slug, descriptor: "Road grey").call
 
-    assert_equal [@rookie.slug, nil], @saved.reload.values_at(:recast_person_slug, :recast_appearance_slug)
-    assert_equal [@rookie.slug, false], kept.reload.values_at(:recast_person_slug, :recast_keep)
+    assert_equal [@rookie.slug, first.slug], @saved.reload.values_at(:recast_person_slug, :recast_appearance_slug)
+    assert_equal [@rookie.slug, second.slug, false], kept.reload.values_at(:recast_person_slug, :recast_appearance_slug, :recast_keep)
   end
 
   test "a reference photo is kept for a person with no stored headshot" do
@@ -79,7 +77,7 @@ class MusicVideosCreateRecastLookTest < ActiveSupport::TestCase
     assert_nil maker(@open, descriptor: "Away White").refusal
   end
 
-  test "taking a new athlete rewrites the chunk prompts; a look for the athlete already cast leaves them alone" do
+  test "a generated look rewrites the chunk prompts, for the athlete already cast or a new one" do
     video = RecastVideo.seed!
     alpha = RecastVideo.athlete!
     jacket = video.video_performers.find_by!(ordinal: 1)
@@ -88,7 +86,8 @@ class MusicVideosCreateRecastLookTest < ActiveSupport::TestCase
     assert(named.any? { |prompt| prompt.include?("Test Athlete Alpha") })
 
     MusicVideos::CreateRecastLook.new(jacket, person_slug: alpha.slug, descriptor: "Alternate Black").call
-    assert_equal named, video.reload.video_chunks.map(&:prompt)
+    assert(video.reload.video_chunks.map(&:prompt).any? { |prompt| prompt.include?("like the Alternate Black model provided") })
+    assert_not_equal named, video.video_chunks.map(&:prompt)
 
     MusicVideos::CreateRecastLook.new(jacket, person_slug: @rookie.slug, descriptor: "Road grey").call
     prompts = video.reload.video_chunks.map(&:prompt)

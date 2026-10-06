@@ -71,6 +71,10 @@ const config = {
 };
 
 if (!externalBaseURL) {
+  // The ops pages sit behind the admin wall, so every spec starts signed in as the seeded
+  // admin (e2e/global-setup.js). Visitor specs opt out with helpers.js's VISITOR state.
+  config.globalSetup = require.resolve("./e2e/global-setup.js");
+  config.use.storageState = require("./e2e/global-setup.js").ADMIN_STATE;
   config.webServer = {
     // tailwindcss:build is LOAD-BEARING, and its absence is invisible until every page
     // 500s. app/assets/builds/ is GITIGNORED — a fresh checkout (a new worktree, or any

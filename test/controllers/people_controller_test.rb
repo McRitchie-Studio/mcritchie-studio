@@ -5,7 +5,11 @@ class PeopleControllerTest < ActionDispatch::IntegrationTest
     @admin = users(:alex)
   end
 
-  test "index renders without login" do
+  test "index sends a visitor to sign-in and renders for an admin" do
+    get people_path
+    assert_redirected_to login_path
+
+    log_in_as(@admin)
     get people_path
     assert_response :success
   end
@@ -322,9 +326,7 @@ class PeopleControllerTest < ActionDispatch::IntegrationTest
     person = Person.create!(first_name: "Test", last_name: "Vocation Guarded", athlete: true)
 
     get person_path(person.slug)
-    assert_response :success
-    assert_select "[data-test='vocations-form']", 0
-    assert_select "[data-test='person-vocation']", "athlete"
+    assert_redirected_to "/login"
     vocations!(person, vocations: %w[actor], primary_vocation: "actor")
     assert_redirected_to "/login"
 

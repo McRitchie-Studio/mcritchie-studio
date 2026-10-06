@@ -1,16 +1,20 @@
 require "test_helper"
 
 # [integration] the OPSD distillation pipeline page — three columns (Activities →
-# Insights → Confirmations) — plus the McRitchie "Confirm" write. The read page is
-# a public meta surface; the confirm write needs an admin, so its tests log in.
+# Insights → Confirmations) — plus the McRitchie "Confirm" write. The page and the
+# confirm write both need an admin, so its tests log in.
 class AlexPipelineTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   def span(session_id:, reason:, **attrs)
     AgentActivity.create!({ session_id: session_id, category: attrs.delete(:category) || "Verify",
                           reason_slug: reason, opened_at: Time.current,
                           seq: attrs.delete(:seq) || 0 }.merge(attrs))
   end
 
-  test "[integration] the pipeline page is public and renders all three columns" do
+  test "[integration] the pipeline page renders all three columns" do
     get xan_pipeline_path
 
     assert_response :success

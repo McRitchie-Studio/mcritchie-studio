@@ -2,8 +2,9 @@ require "test_helper"
 require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 # [unit] A performer's recast: an athlete and one of that athlete's own live
-# looks, or keep as is, never both; what counts as answered; and how a
-# cinematic card closes without an artist while a music video's does not.
+# looks; no swap is the default (the legacy keep as is reads the same); only a
+# swap waiting for its look is owed anything; naming an artist is optional, so
+# a card with no artist and no swap is resolved and the cast confirms.
 # Every artist and athlete here is synthetic.
 class VideoPerformerRecastTest < ActiveSupport::TestCase
   setup do
@@ -45,27 +46,33 @@ class VideoPerformerRecastTest < ActiveSupport::TestCase
     assert_includes @performer.errors[:recast_appearance_slug], "needs the athlete it belongs to"
   end
 
-  test "keep as is and a recast cannot both be set" do
+  test "keep is the swap turned off: alone it reads as no swap, with an athlete it is remembered, never a recast" do
     assert recast(recast_keep: true).valid?
     assert @performer.recast_decided?
+    assert_not @performer.swap?
+    assert_not @performer.swap_remembered?
     assert_nil @performer.recast_label
 
-    assert_not recast(recast_keep: true, recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug).valid?
-    assert_includes @performer.errors[:recast_keep], "cannot be set on a performer who is recast"
+    assert recast(recast_keep: true, recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug).valid?
+    assert @performer.swap_remembered?
+    assert_not @performer.swap?
+    assert_not @performer.recast?
+    assert_not @performer.recast_pending?
+    assert @performer.resolved?
+    assert_nil @performer.swap_person
+    assert_nil @performer.swap_look
   end
 
-  test "an untouched performer and an athlete without a look are not answered; an extra nobody recast is" do
-    assert_not @performer.recast_decided?
+  test "an untouched performer is not swapped and owes nothing; only an athlete without a look is owed one" do
+    assert @performer.recast_decided?
+    assert_not @performer.swap?
 
     @performer.update!(recast_person_slug: @athlete.slug)
+    assert @performer.swap?
     assert @performer.recast_pending?
     assert_not @performer.recast_decided?
+    assert_not @performer.resolved?, "a swap waiting for its look is the one thing a card can owe"
     assert_equal "Test Athlete Alpha", @performer.recast_label
-
-    extra = @video.video_performers.create!(ordinal: 2, label: "woman in the doorway", extra: true)
-    assert extra.recast_decided?
-    extra.update!(recast_person_slug: @athlete.slug)
-    assert_not extra.recast_decided?
   end
 
   test "a look retired after the recast leaves the row saveable" do
@@ -75,44 +82,76 @@ class VideoPerformerRecastTest < ActiveSupport::TestCase
     assert @performer.reload.update(label: "man in the blue jacket")
   end
 
-  test "a music video card needs an artist or an extra: a recast does not close it" do
-    @performer.update!(recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug)
-
-    assert_not @performer.resolved?
-    assert_not @video.cast_ready?
-    assert_equal "Person 1 is neither an artist nor an extra", @video.cast_blocker
-  end
-
-  test "a cinematic card closes on a recast or keep as is, with no artist" do
-    @video.update!(kind: "cinematic")
+  test "a card with no artist and no swap counts as resolved, and the cast confirms with nothing pressed" do
     second = @video.video_performers.create!(ordinal: 2, label: "woman in the doorway")
-    assert_not @performer.resolved?
-    assert_equal "Person 1 and Person 2 are neither recast, kept as is, an artist nor an extra", @video.cast_blocker
 
-    @performer.update!(recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug)
     assert @performer.resolved?
-    assert_not @video.reload.cast_ready?
-
-    second.update!(recast_person_slug: @athlete.slug)
-    assert_not second.resolved?, "an athlete with no look is not an answer"
-    second.update!(recast_person_slug: nil, recast_keep: true)
+    assert_not @performer.named?
     assert second.resolved?
+    assert @video.reload.cast_ready?
+    assert_nil @video.cast_blocker
 
-    @video.reload.confirm_cast!
-    assert_equal "cast_confirmed", @video.reload.stage
+    @video.confirm_cast!
+    assert @video.reload.cast_confirmed?
     assert_nil @performer.reload.artist_slug
   end
 
-  test "the video reads who is still owed a recast answer" do
+  test "a cinematic video confirms the same way, and a swap waiting for its look does not hold the confirm" do
+    @video.update!(kind: "cinematic")
+    @performer.update!(recast_person_slug: @athlete.slug)
+
+    assert_not @performer.resolved?
+    assert @video.reload.cast_ready?, "the swap stays editable after the confirm"
+    @video.confirm_cast!
+    assert_equal "cast_confirmed", @video.reload.stage
+  end
+
+  test "naming is optional and kept: an artist names a card, an extra stays an extra" do
+    Artist.create!(slug: "test-artist-a", name: "Test Artist A", kind: "person")
+    @performer.update!(artist_slug: "test-artist-a")
+    extra = @video.video_performers.create!(ordinal: 2, label: "woman in the doorway", extra: true)
+
+    assert @performer.named?
+    assert_not extra.named?
+    assert extra.extra?
+    assert [@performer, extra].all?(&:resolved?)
+  end
+
+  test "the video reads who is still owed a look" do
     second = @video.video_performers.create!(ordinal: 2, label: "woman in the doorway")
-    assert_equal [1, 2], @video.reload.recast_open.map(&:ordinal)
+    assert_empty @video.reload.recast_open
+    assert @video.recast_assigned?
+
+    second.update!(recast_person_slug: @athlete.slug)
+    assert_equal [2], @video.reload.recast_open.map(&:ordinal)
     assert_not @video.recast_assigned?
 
-    @performer.update!(recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug)
-    assert_equal [2], @video.reload.recast_open.map(&:ordinal)
-
-    second.update!(recast_keep: true)
+    second.update!(recast_appearance_slug: @home.slug)
     assert @video.reload.recast_assigned?
     assert_not MusicVideo.new.recast_assigned?
+  end
+
+  # The production row this change shipped onto (bigxthaplug-6wa, 2026-10-05),
+  # rebuilt with synthetic people: a confirmed music video, Person 1 recast to
+  # an athlete in a look, Persons 2-5 saved under the old "keep as is", no
+  # artists named. It must read: Person 1 swapped, 2-5 not, cast still confirmed.
+  test "a confirmed cast with one recast and four kept reads as one swap and four not" do
+    others = (2..5).map { |n| @video.video_performers.create!(ordinal: n, label: "person #{n}", recast_keep: true) }
+    @performer.update!(recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug)
+    @video.update!(stage: "cast_confirmed")
+    @video.reload
+
+    assert @video.cast_confirmed?
+    assert @performer.reload.swap?
+    assert @performer.recast?
+    others.each(&:reload).each do |p|
+      assert_not p.swap?, "#{p.name} is not swapped"
+      assert p.resolved?
+      assert_not p.named?
+    end
+    assert_empty @video.recast_open
+    assert @video.recast_assigned?
+    assert_equal [1], @video.video_performers.select(&:swap?).map(&:ordinal)
+    assert_equal "the cast is already confirmed", @video.cast_blocker
   end
 end

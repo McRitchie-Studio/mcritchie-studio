@@ -1,6 +1,8 @@
 module MusicVideos
   # The operator's answer for one performer: an existing artist, a person from
   # People (an artist is made for them), a brand-new artist, an extra, or clear.
+  # Naming is optional and stays editable after the cast is confirmed; a name
+  # says who stays in a prompt, so the video's stored prompts follow.
   class ResolvePerformer
     class Refused < StandardError; end
 
@@ -9,14 +11,13 @@ module MusicVideos
     end
 
     def call(artist_slug: nil, person_slug: nil, new_artist_name: nil, new_artist_kind: nil, extra: false, clear: false)
-      raise Refused, "the cast is already confirmed" if @performer.music_video.cast_confirmed?
-
       VideoPerformer.transaction do
         attrs = if clear then { artist_slug: nil, extra: false }
                 elsif extra then { artist_slug: nil, extra: true }
                 else { artist_slug: pick_artist(artist_slug, person_slug, new_artist_name, new_artist_kind).slug, extra: false }
                 end
         @performer.update!(attrs)
+        ClipPrompts.refresh!(@performer.music_video)
       end
       @performer
     end

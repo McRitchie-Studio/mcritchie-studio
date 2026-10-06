@@ -1,6 +1,4 @@
 class TeamGradesController < ApplicationController
-  skip_before_action :require_authentication
-
   # GET /nfl-team-grades/:team_slug
   def show
     @team = Team.find_by(slug: params[:team_slug], league: "nfl")

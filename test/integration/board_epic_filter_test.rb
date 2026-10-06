@@ -10,6 +10,10 @@ require "turbo/broadcastable/test_helper"
 # A live partial renders from two paths, and a chip that shows on one and not the
 # other is the defect Shannon's checklist names; so both are asserted, not one.
 class BoardEpicFilterTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   include Turbo::Broadcastable::TestHelper
 
   setup do

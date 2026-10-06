@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { loginWithMagicLink } = require("./helpers");
+const { loginWithMagicLink, VISITOR } = require("./helpers");
 
 // The /model_pipeline swim-lane board — every character model in flight, five lanes, drag
 // to move. Rendered through the studio/board ENGINE PRIMITIVE, so these specs assert the
@@ -57,18 +57,14 @@ test("the board tells the operator that a drag triggers nothing", async ({ page 
   await expect(numberOf("defined", "Defined Lanefixture")).toHaveText("no #");
 });
 
-test("a visitor reading the board is offered no way to write to it", async ({ page }) => {
-  await page.goto("/model_pipeline");
-  await expect(page.locator(BOARD)).toHaveCount(1);
+test.describe("a visitor", () => {
+  test.use({ storageState: VISITOR });
 
-  // The factory's own config, read off the live Alpine scope: no endpoints means a
-  // cross-lane drop reverts and a reorder posts nothing.
-  const opts = await page.locator(BOARD).evaluate((el) => {
-    const d = window.Alpine.$data(el);
-    return { moveUrl: d.moveUrl, reorderUrl: d.reorderUrl };
+  test("a visitor is sent to sign-in instead of the board", async ({ page }) => {
+    await page.goto("/model_pipeline");
+    await expect(page).toHaveURL(/\/(login|signin)$/);
+    await expect(page.locator(BOARD)).toHaveCount(0);
   });
-  expect(opts.moveUrl).toBeFalsy();
-  expect(opts.reorderUrl).toBeFalsy();
 });
 
 test("an admin drag forward persists and the card says the data has not caught up", async ({ page }) => {

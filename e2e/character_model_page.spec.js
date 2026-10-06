@@ -14,8 +14,9 @@ const { loginWithMagicLink } = require("./helpers");
 // NOTHING HERE SPENDS MONEY. The seeded identity and candidates are fixtures written
 // straight onto the rows (e2e/seed.rb), so no Higgsfield call and no search query
 // happens. The Search button IS now reachable in principle — the keyless Wikimedia
-// Commons provider makes a provider available on every machine — but it is admin-only
-// and this spec browses anonymously, and it is never clicked.
+// Commons provider makes a provider available on every machine — and this spec browses
+// as the seeded admin (the page sits behind the admin wall), so it is offered, and it is
+// never clicked.
 //
 // The person is "Drew Lockfixture" rather than a real seeded athlete so this spec's
 // failures can never be confused with the artifact-gate specs that read Burrow.
@@ -96,11 +97,9 @@ test("both halves render on one page, side by side at desktop and stacked on a p
   await expect(page.locator("[data-test='search-configured'][data-provider='wikimedia-commons']"))
     .toHaveCount(1);
 
-  // THE BUTTON IS STILL ABSENT, for a DIFFERENT reason than it used to be — it is
-  // admin-only and this spec browses anonymously, where before it was also missing
-  // because nothing could be searched. Two causes collapsed into one, so this half
-  // proves less than it looks; CharacterModelPageTest holds the single-cause versions.
-  await expect(page.locator("[data-test='search-button']")).toHaveCount(0);
+  // THE BUTTON IS OFFERED to the admin this spec browses as, and never clicked here:
+  // clicking it would issue a real query. CharacterModelPageTest holds the gate.
+  await expect(page.locator("[data-test='search-button']")).toHaveCount(1);
 
   // STACKS ON A PHONE, and nothing spills sideways. The horizontal-overflow check is
   // the one that catches a long unbroken URL widening a grid track — the identity

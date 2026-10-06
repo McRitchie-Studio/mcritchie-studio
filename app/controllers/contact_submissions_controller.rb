@@ -7,8 +7,6 @@
 # request knows (IP, user agent) and keeps bots out with a rate limit and a
 # honeypot, the same shape as BuildController's public form.
 class ContactSubmissionsController < ApplicationController
-  skip_before_action :require_authentication
-
   # A public form that writes a row and sends an email: bounded per IP.
   rate_limit to: 5, within: 1.minute, only: :create,
              with: -> { redirect_to contact_form_path, alert: "Too many messages. Try again in a minute." }

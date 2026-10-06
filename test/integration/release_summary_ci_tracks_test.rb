@@ -7,6 +7,10 @@ require "test_helper"
 # repo's own release-candidate CI (folded live from the ingested CiCheckJob rows) and
 # linking to its Actions run when there is one.
 class ReleaseSummaryCiTracksTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "[integration] each member lane's Assembling meter reads that repo's G3 CI, linked to the run" do
     Release.delete_all
     GithubWorkflowRun.delete_all

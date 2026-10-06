@@ -8,6 +8,10 @@ require "test_helper"
 #   B) the standalone GitHub Actions panel is GONE — the per-repo CI progress bars
 #      carry the CI signal now, so no #github-actions-panel renders at all.
 class DeploymentsOwnerFacesTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     Release.delete_all
     ReleaseConductorClaim.delete_all
