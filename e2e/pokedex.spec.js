@@ -23,10 +23,12 @@ test.describe("pokedex admin wall", () => {
   });
 });
 
-// [e2e] Board navigation reaches the spawned-Pokemon Pokédex, as the seeded admin.
-// Data-agnostic, but local lane only (prod-smoke has no admin session), so NOT
-// @qa-readonly.
-test("pokedex is linked from the board nav and renders", async ({ page }) => {
+// [e2e] Board navigation reaches the spawned-Pokemon Pokédex, and its collection grid
+// draws, as the seeded admin. Local lane only (prod-smoke has no admin session), so
+// NOT @qa-readonly. Data-agnostic all the same: it asserts the grid's STRUCTURE (a
+// cell per species, every cell in a drawable state) and derives the expected count
+// from the page's own dex total rather than from any fixture.
+test("pokedex is linked from the board nav and its grid draws a cell per species", async ({ page }) => {
   const board = await page.goto("/deployments");
   expect(board.ok()).toBe(true);
 
@@ -41,16 +43,8 @@ test("pokedex is linked from the board nav and renders", async ({ page }) => {
   await expect(page.locator("[data-test='pokemon-card']")).toBeVisible();
   await expect(page.locator("[data-test='shiny-card']")).toBeVisible();
   await expect(page.locator("[data-test='recent-pokemon-actions']")).toBeVisible();
-});
 
-// [e2e] The collection grid, as the seeded admin. Data-agnostic like the test above:
-// it asserts the grid's STRUCTURE (a cell per seeded species, every cell in a
-// drawable state) and derives the expected count from the page's own dex total
-// rather than from any fixture.
-test("pokedex collection grid draws a cell per species and flips shiny", async ({ page }) => {
-  const response = await page.goto("/pokedex");
-  expect(response.ok()).toBe(true);
-
+  // The collection grid.
   await expect(page.locator("[data-test='dex-grid']")).toBeVisible();
   await expect(page.locator("[data-test='dex-legend']")).toBeVisible();
 

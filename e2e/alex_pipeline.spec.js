@@ -23,9 +23,14 @@ test.describe("xan pipeline admin wall", () => {
 // Activities (narrated AgentActivity rows) → Insights (Xan's banked grades) →
 // Confirmations (McRitchie's mcr grades). An admin page; the happy path here is the
 // page rendering, as the seeded admin, with all three columns and the nav's link out
-// to the cross-session All Activities view. Local lane only (no admin session in
-// prod-smoke), so NOT @qa-readonly.
-test("xan pipeline renders the three distillation columns", async ({ page }) => {
+// to the cross-session All Activities view.
+//
+// The same visit then covers the A2 "Test runs" band (seeded): the release
+// test-scope verdicts, a pass and a fail pill, the phase/tier/host chips derived
+// from the scope registry, and a grade link; and a banked test-run grade surfaces
+// as a Column-2 insight with an ACTION Confirm button (confirm-of-action parity).
+// Seeded and signed in as the admin, so local lane only — NOT @qa-readonly.
+test("xan pipeline renders the distillation columns and the gradeable test-runs band", async ({ page }) => {
   const res = await page.goto("/xan/pipeline");
   expect(res.ok()).toBe(true);
 
@@ -51,17 +56,8 @@ test("xan pipeline renders the three distillation columns", async ({ page }) => 
   const allActivities = page.locator("[data-test='hb-nav-all-spans']");
   await expect(allActivities).toBeVisible();
   await expect(allActivities).toHaveAttribute("href", "/xan/heartbeat/activities");
-});
 
-// [e2e] A2 happy path (seeded, local only — NOT @qa-readonly, since it asserts
-// seeded rows): the "Test runs" band renders the release test-scope verdicts, a
-// pass and a fail pill, the phase/tier/host chips derived from the scope
-// registry, and a grade link; and a banked test-run grade surfaces as a Column-2
-// insight with an ACTION Confirm button (confirm-of-action parity).
-test("xan pipeline shows the gradeable test-runs band", async ({ page }) => {
-  const res = await page.goto("/xan/pipeline");
-  expect(res.ok()).toBe(true);
-
+  // The A2 "Test runs" band.
   const band = page.locator("[data-test='pl-test-runs']");
   await expect(band).toBeVisible();
 
