@@ -94,6 +94,9 @@ require_relative "../../lib/task_usage_sandbox"
 #                      the guard sits after each writer's early returns, so a fixture
 #                      whose cwd shape returns early proves nothing about that writer
 #                      (the mascot heal shipped uncovered exactly that way).
+#   bin/prune-session-markers  DELETES the markers of ended sessions, through
+#                      +delete_entry+ (guarded like +delete+), listing them with
+#                      +entries+ (a read). The rule is in bin/lib/marker_prune.rb.
 #   bin/agent-marker,  READ-only. Unguarded on purpose: a read cannot pollute — so
 #   bin/atomic-capture-hook  agent-marker resolving its own read path by hand is
 #                      allowed. Each such method is named, with its reason, in the
