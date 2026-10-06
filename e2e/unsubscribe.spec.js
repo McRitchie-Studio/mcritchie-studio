@@ -1,4 +1,8 @@
 const { test, expect } = require("@playwright/test");
+const { VISITOR } = require("./helpers");
+
+// What a visitor sees: signed out, not the suite's default admin session.
+test.use({ storageState: VISITOR });
 
 // [e2e] The unsubscribe link in every broadcast, in a real browser: the page
 // names the reader's address (never which email; that is captured, not shown),

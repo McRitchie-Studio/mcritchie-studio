@@ -6,6 +6,10 @@
 // reach, and a consenting visitor lands on the confirmation with the
 // operator's notice sent.
 const { test, expect } = require("@playwright/test");
+const { VISITOR } = require("./helpers");
+
+// What a visitor sees: signed out, not the suite's default admin session.
+test.use({ storageState: VISITOR });
 
 test("a visitor opts in to texts on the contact page and sees it confirmed", async ({ page }) => {
   await page.goto("/contact");
