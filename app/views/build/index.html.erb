@@ -8,7 +8,7 @@
             [ "showcase", "Showcase", @showcase_count ],
             [ "all", "All", @counts.values.sum ] ] %>
 <% pill = { "draft" => "border-subtle text-muted", "queued" => "border-primary text-primary",
-            "building" => "border-amber-400 text-amber-500", "live" => "border-green-500 text-green-600 dark:text-green-400",
+            "building" => "border-warning text-warning-ink", "live" => "border-success text-success-ink",
             "cancelled" => "border-subtle text-muted line-through" } %>
 
 <section class="max-w-6xl mx-auto px-4 py-10" data-test="app-requests-page">
@@ -51,7 +51,7 @@
               <span class="rounded-full border px-2 py-0.5 text-xs font-semibold <%= pill[req.status] %>" data-test="app-request-status"><%= req.status %></span>
               <span class="text-xs text-muted"><%= req.tier.titleize %></span>
               <% if req.showcase? %>
-                <span class="rounded-full border border-amber-400 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-300" data-test="app-request-showcase">Showcase</span>
+                <span class="rounded-full border border-warning px-2 py-0.5 text-xs font-semibold text-warning-ink" data-test="app-request-showcase">Showcase</span>
               <% end %>
             </div>
             <span class="text-xs text-muted whitespace-nowrap" title="<%= (req.queued_at || req.created_at).iso8601 %>">

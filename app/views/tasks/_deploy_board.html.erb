@@ -61,11 +61,16 @@
 <% end %>
 
 <%= render "components/elapsed_label_script" %>
-<%# kanbanBoard must be defined inline (before Alpine CDN defer evaluates x-data) %>
+<%# kanbanBoard stays inline. Alpine (deferred) starts before the importmap modules
+    run, so a factory defined in app/javascript would not exist yet when x-data first
+    evaluates. The live effects it hands cards to are modules (board/live_fx_dom). %>
 <script>
-function kanbanBoard(live) {
+function kanbanBoard(live, liveFx) {
   return {
     live: !!live, // animate Turbo-Streamed card updates (turbo_stream_from "deployments")
+    // The page renders the LiveBoardFx module (tasks/_deployments_live_fx). Known from
+    // the server, because the module may not have run yet when init() does.
+    liveFx: !!liveFx,
     _pendingMoves: {},
     agentFilter: '',
     hiddenApps: [],
@@ -124,7 +129,7 @@ function kanbanBoard(live) {
         this.initSortables();
         if (this.live) {
           this.observeLive();
-          if (!window.LiveBoardFx) this.installExitStreamFallback();
+          if (!this.liveFx && !window.LiveBoardFx) this.installExitStreamFallback();
         }
       });
     },
@@ -266,8 +271,8 @@ function kanbanBoard(live) {
           // Revert: drop the card back into its SOURCE zone, which always exists
           // (the zone is sourced from evt.from, never a card's stage).
           fromZone.insertBefore(card, fromZone.querySelector('.kanban-empty'));
-          card.classList.add('ring-2', 'ring-red-500');
-          setTimeout(() => card.classList.remove('ring-2', 'ring-red-500'), 1500);
+          card.classList.add('ring-2', 'ring-[color:var(--color-danger)]');
+          setTimeout(() => card.classList.remove('ring-2', 'ring-[color:var(--color-danger)]'), 1500);
           this.showToast(err.message || 'Move failed', 'error');
           this.updateCounts();
           return;
@@ -365,7 +370,7 @@ function kanbanBoard(live) {
       this._pendingMoves[slug] = true;
 
       const card = document.getElementById('card-' + slug);
-      const useLiveExit = !!window.LiveBoardFx;
+      const useLiveExit = this.liveFx || !!window.LiveBoardFx;
 
       try {
         if (card && !useLiveExit) await this.animateCardExit(card, 'archive');
@@ -450,7 +455,7 @@ document.addEventListener('turbo:before-cache', function() {
     so the live animations, the e2e specs and anyone reading the DOM take the beat from
     ONE place instead of restating it. A spec that restated it went stale the day the
     beat changed, and its failure looked like a broken animation rather than a stale test. %>
-<section x-data="kanbanBoard(<%= live_updates.to_json %>)" data-test="kanban-board"
+<section x-data="kanbanBoard(<%= live_updates.to_json %>, <%= (live_updates && crew_board == :deploy).to_json %>)" data-test="kanban-board"
          @scroll.window="measureLanes()"
          @resize.window="measureLanes()"
          data-beat-ms="<%= (Release::BOARD_FLIP_CADENCE * 1000).round %>" class="min-h-screen">
@@ -631,7 +636,7 @@ document.addEventListener('turbo:before-cache', function() {
             <% if stage == "submitted" && current_page != "deployments" %>
               <%= link_to "docs",
                     review_events_hub_path,
-                    class: "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition",
+                    class: "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition",
                     "data-test": "submitted-review-docs-link" %>
             <% end %>
             <%# A capped column counts what EXISTS, not what it drew — a badge reading
@@ -737,7 +742,7 @@ document.addEventListener('turbo:before-cache', function() {
            x-transition:leave="transition ease-in duration-200"
            x-transition:leave-start="opacity-100 translate-x-0"
            x-transition:leave-end="opacity-0 translate-x-8"
-           :class="toast.type === 'success' ? 'bg-mint-900/90 border-mint-700 text-mint-300' : 'bg-red-900/90 border-red-700 text-red-300'"
+           :class="toast.type === 'success' ? 'bg-success/10 border-success/40 text-success-ink' : 'bg-danger/10 border-danger/40 text-danger-ink'"
            class="px-4 py-2.5 rounded-lg border text-sm font-medium shadow-lg backdrop-blur-sm">
         <span x-text="toast.message"></span>
       </div>

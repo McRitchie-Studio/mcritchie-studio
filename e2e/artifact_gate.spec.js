@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
+const { CONTRAST, eachTheme, CHIP_ON_TINT } = require("./contrast");
 
 // [e2e] The model library and the inspection gate, on the Person-anchored model.
 //
@@ -46,6 +47,17 @@ test("operator approves the artifacts and the gate closes", async ({ page }) => 
 
   // The jersey is a GUESS until confirmed, and says so out loud.
   await expect(page.locator("body")).toContainText("GUESSED FROM HOME/AWAY");
+
+  // [component] The card's status chips come from status_tone, so they read in
+  // both themes (see status_tones.spec.js for the measure and the floor).
+  await eachTheme(page, async (theme) => {
+    const chips = await page.evaluate(CONTRAST, "[data-test='artifact-status-chip']");
+    expect(chips.length, `${theme}: status chips render`).toBeGreaterThan(0);
+    for (const chip of chips) {
+      expect(chip.ratio, `${theme}: chip "${chip.text}" contrast`).toBeGreaterThanOrEqual(CHIP_ON_TINT);
+    }
+  });
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
   // Fill the one empty slot, targeted by its cast rather than by position —
   // a positional selector picked the wrong form and the failure looked like a

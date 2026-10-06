@@ -6,7 +6,7 @@
   <div class="h-2 flex-1 min-w-16 rounded-full bg-inset border border-subtle overflow-hidden"
        role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= epic.progress_percent %>"
        aria-label="<%= epic.done_count %> of <%= epic.total %> tasks done">
-    <div class="h-full rounded-full <%= epic.complete? ? "bg-green-500 dark:bg-green-400" : "bg-violet-500 dark:bg-violet-400" %>"
+    <div class="h-full rounded-full <%= epic.complete? ? "bg-success" : "bg-primary" %>"
          style="width: <%= epic.progress_percent %>%;"></div>
   </div>
   <span class="shrink-0 text-xs tabular-nums text-secondary"><%= epic.done_count %>/<%= epic.total %> done</span>

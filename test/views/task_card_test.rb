@@ -62,18 +62,17 @@ class TaskCardTest < ActionView::TestCase
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "blocked", card["data-stage-glow"]
-    assert_includes card["class"], "bg-red-50"
+    assert_includes card["class"].split, "bg-danger/10"
     assert_includes card["class"], "task-card-stage-glow-blocked"
     assert_not_includes card["class"], "studio-border-glow"
-    assert_includes card["class"], "dark:bg-red-950/40"
-    assert_includes card["class"], "hover:bg-red-100/70"
+    assert_no_match(/dark:/, card["class"], "a token tint serves both themes")
+    assert_includes card["class"].split, "hover:bg-danger/20"
     assert_includes card["style"], "--task-card-glow-color: #ef4444"
     assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
     assert_includes card["style"], "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
     assert_includes card["style"], "border-color: var(--task-card-glow-border-color)"
     assert_includes card["style"], "box-shadow: var(--task-card-glow-shadow)"
-    assert_includes rendered, "hover:text-red-700"
-    assert_includes rendered, "dark:hover:text-red-300"
+    assert_includes rendered, "hover:text-danger-ink"
   end
 
   # SITTING IN THE QUEUE IS NOT A SIGNAL. A submitted card nobody has picked up
@@ -165,7 +164,7 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "approval", card["data-stage-glow"]
     assert_includes card["class"], "task-card-stage-glow-approval"
     assert_includes card["class"], "studio-border-glow"
-    assert_includes card["class"], "bg-amber-50"
+    assert_includes card["class"].split, "bg-warning/10"
     assert_select "[data-test='operator-approval-waiting']", text: "WAITING APPROVAL"
     badge_classes = css_select("[data-test='operator-approval-waiting']").first["class"].split
     assert_includes badge_classes, "motion-safe:animate-pulse"
@@ -257,7 +256,7 @@ class TaskCardTest < ActionView::TestCase
     # being safe and this assertion is what says so.
     assert_equal 1, attended.css("[data-test='operator-approval-waiting']").size,
       "the WAITING APPROVAL bar is the tell that outlives the ring"
-    assert_includes attended["class"], "bg-amber-50",
+    assert_includes attended["class"].split, "bg-warning/10",
       "the amber card tone is the second tell that outlives the ring"
   end
 
@@ -371,7 +370,7 @@ class TaskCardTest < ActionView::TestCase
     assert bar, "a held member renders the HELD FROM RELEASE bar"
     assert_includes bar.text, "HELD FROM RELEASE"
     assert_includes bar.text, "mcritchie-studio"
-    assert_includes bar["class"], "bg-amber-500", "the held marker wears the amber scheme"
+    assert_includes bar["class"].split, "bg-warning", "the held marker wears the amber scheme"
     assert_select "[data-test='release-inclusion-in']", count: 0
   end
 
@@ -584,7 +583,7 @@ class TaskCardTest < ActionView::TestCase
 
     box = css_select("[data-test='activity-box']").first
     assert_equal "clarification", box["data-activity-type"]
-    assert_includes box["class"], "border-cyan-300"
+    assert_includes box["class"].split, "border-primary/40"
 
     label = css_select("[data-test='activity-type-label']").first
     assert_equal "Clarification", label.text
@@ -650,11 +649,11 @@ class TaskCardTest < ActionView::TestCase
                      unresolved_feedback: nil, ever_blocked: true }
 
     card = css_select("#card-#{task.slug}").first
-    assert_includes card["class"], "bg-amber-50"
-    assert_includes card["class"], "dark:bg-amber-950/40"
-    assert_includes card["class"], "hover:bg-amber-100/70"
+    assert_includes card["class"].split, "bg-warning/10"
+    assert_no_match(/dark:/, card["class"])
+    assert_includes card["class"].split, "hover:bg-warning/20"
     assert_select "[data-test='cleared-feedback']", { count: 0 }, "the RE-REVIEW badge is dropped; the amber tone carries it"
-    assert_not_includes card["class"], "bg-red-50", "a cleared block is amber, not red"
+    assert_not_includes card["class"].split, "bg-danger/10", "a cleared block is amber, not red"
   end
 
   test "[component] an open block still wins red over amber" do
@@ -667,8 +666,8 @@ class TaskCardTest < ActionView::TestCase
                      unresolved_feedback: feedback, ever_blocked: true }
 
     card = css_select("#card-#{task.slug}").first
-    assert_includes card["class"], "bg-red-50"
-    assert_not_includes card["class"], "bg-amber-50"
+    assert_includes card["class"].split, "bg-danger/10"
+    assert_not_includes card["class"].split, "bg-warning/10"
     # Past the seam the block TINTS but does not ring — see the deploy-stage tests below.
     assert_nil card["data-stage-glow"]
     assert_not_includes card["class"], "task-card-stage-glow-blocked"
@@ -695,9 +694,8 @@ class TaskCardTest < ActionView::TestCase
       render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
 
       card = css_select("#card-#{task.slug}").first
-      assert_includes card["class"], "bg-red-50", "#{stage}: the inner tint still says blocked"
-      assert_includes card["class"], "dark:bg-red-950/40", "#{stage}: tinted in dark theme too"
-      assert_not_includes card["class"], "border-red-200", "#{stage}: the border belongs to the stage now"
+      assert_includes card["class"].split, "bg-danger/10", "#{stage}: the inner tint still says blocked"
+      assert_not_includes card["class"].split, "border-danger/40", "#{stage}: the border belongs to the stage now"
       assert_not_includes card["class"], "task-card-stage-glow-blocked", "#{stage}: no red ring past the seam"
       assert_not_includes card["style"].to_s, "#ef4444", "#{stage}: no red glow color, no red halo"
       assert_select "a[data-test='blocker-summary'][href='#{task_path(task.slug)}']", text: "please fix it"
@@ -736,7 +734,7 @@ class TaskCardTest < ActionView::TestCase
     assert_equal task_path(task.slug), bar["href"], "the bar links to the detail page (the full ▼ Details live there)"
     assert_includes bar.text, "Stage move skips server guard", "shows the stored 4-6 word summary, not a generic label"
     refute_includes bar.text, "re-gate it before resubmit", "the full details stay on the detail page"
-    assert_includes bar["class"], "bg-red-500", "the blocker bar wears the red scheme"
+    assert_includes bar["class"].split, "bg-danger", "the blocker bar wears the red scheme"
   end
 
   test "[component] the approval CTA, blocker-summary and CI meter bars share the card_bar geometry" do
@@ -839,10 +837,10 @@ class TaskCardTest < ActionView::TestCase
 
     chip = css_select("[data-test='task-card-claim-progress']").first
     assert_equal "true", chip["data-progress-quiet"], "precondition: this is the quiet (alarm) state"
-    assert_includes chip["class"], "text-amber-700", "the alarm tone must be legible on the LIGHT theme"
-    assert_includes chip["class"], "dark:text-amber-300", "and carry its own tone on the DARK theme"
-    assert_not_includes chip["class"], "text-amber-300/90",
-                        "the dark-only tone is illegible on a light surface — pair it or lose it"
+    assert_includes chip["class"].split, "text-warning-ink",
+                    "the alarm tone is the warning ink, derived per theme to stay legible on both"
+    assert_no_match(/\b(dark:)?text-amber-/, chip["class"],
+                    "a palette tone is dark-only or light-only; the ink is neither")
   end
 
   # The chip names the artifact the task ACTUALLY produced. A review check-in is not
@@ -939,7 +937,7 @@ class TaskCardTest < ActionView::TestCase
     bar = css_select("[data-test='resubmission-state']").first
     assert bar, "a bounced task whose head has not moved must say so on the card"
     assert_includes bar.text, "FEEDBACK NOT ADDRESSED"
-    assert_includes bar.to_s, "bg-red-500"
+    assert_includes bar["class"].split, "bg-danger"
     assert_includes bar["title"], "has not moved"
   end
 
@@ -952,7 +950,7 @@ class TaskCardTest < ActionView::TestCase
     assert bar
     assert_includes bar.text, "ADDRESSED"
     assert_not_includes bar.text, "NOT ADDRESSED"
-    assert_includes bar.to_s, "bg-amber-500", "an addressed resubmission is a heads-up, not an alarm"
+    assert_includes bar["class"].split, "bg-warning", "an addressed resubmission is a heads-up, not an alarm"
   end
 
   test "[component] the resubmission bar links to the task detail" do

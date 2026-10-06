@@ -1,11 +1,5 @@
 <div class="card p-6">
-  <% if news.errors.any? %>
-    <div class="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
-      <% news.errors.full_messages.each do |msg| %>
-        <p><%= msg %></p>
-      <% end %>
-    </div>
-  <% end %>
+  <%= render "shared/form_errors", record: news %>
 
   <%= form_with model: news, url: news.persisted? ? news_path(news.slug) : news_index_path do |f| %>
     <!-- Source (New stage) -->
@@ -97,12 +91,12 @@
         <%= f.text_field :primary_person_slug, class: "input-field", placeholder: "lionel-messi" %>
         <% if news.primary_person_slug.present? %>
           <% rec = Person.find_by(slug: news.primary_person_slug) %>
-          <p class="mt-1 text-[10px] font-mono flex items-center gap-1">
-            <span class="inline-block w-1.5 h-1.5 rounded-full <%= rec ? 'bg-green-400' : 'bg-red-400' %>"></span>
+          <p class="mt-1 text-3xs font-mono flex items-center gap-1">
+            <span class="inline-block w-1.5 h-1.5 rounded-full <%= rec ? 'bg-success' : 'bg-danger' %>"></span>
             <% if rec %>
-              <a href="<%= people_path(q: rec.full_name) %>" class="text-green-400 hover:text-green-300 underline">found</a>
+              <a href="<%= people_path(q: rec.full_name) %>" class="text-success-ink hover:text-success-ink underline">found</a>
             <% else %>
-              <span class="text-red-400">missing</span>
+              <span class="text-danger-ink">missing</span>
             <% end %>
           </p>
         <% end %>
@@ -112,12 +106,12 @@
         <%= f.text_field :primary_team_slug, class: "input-field", placeholder: "argentina" %>
         <% if news.primary_team_slug.present? %>
           <% rec = Team.find_by(slug: news.primary_team_slug) %>
-          <p class="mt-1 text-[10px] font-mono flex items-center gap-1">
-            <span class="inline-block w-1.5 h-1.5 rounded-full <%= rec ? 'bg-green-400' : 'bg-red-400' %>"></span>
+          <p class="mt-1 text-3xs font-mono flex items-center gap-1">
+            <span class="inline-block w-1.5 h-1.5 rounded-full <%= rec ? 'bg-success' : 'bg-danger' %>"></span>
             <% if rec %>
-              <a href="<%= teams_path(q: rec.name) %>" class="text-green-400 hover:text-green-300 underline">found</a>
+              <a href="<%= teams_path(q: rec.name) %>" class="text-success-ink hover:text-success-ink underline">found</a>
             <% else %>
-              <span class="text-red-400">missing</span>
+              <span class="text-danger-ink">missing</span>
             <% end %>
           </p>
         <% end %>
@@ -130,12 +124,12 @@
         <%= f.text_field :secondary_person_slug, class: "input-field" %>
         <% if news.secondary_person_slug.present? %>
           <% rec = Person.find_by(slug: news.secondary_person_slug) %>
-          <p class="mt-1 text-[10px] font-mono flex items-center gap-1">
-            <span class="inline-block w-1.5 h-1.5 rounded-full <%= rec ? 'bg-green-400' : 'bg-red-400' %>"></span>
+          <p class="mt-1 text-3xs font-mono flex items-center gap-1">
+            <span class="inline-block w-1.5 h-1.5 rounded-full <%= rec ? 'bg-success' : 'bg-danger' %>"></span>
             <% if rec %>
-              <a href="<%= people_path(q: rec.full_name) %>" class="text-green-400 hover:text-green-300 underline">found</a>
+              <a href="<%= people_path(q: rec.full_name) %>" class="text-success-ink hover:text-success-ink underline">found</a>
             <% else %>
-              <span class="text-red-400">missing</span>
+              <span class="text-danger-ink">missing</span>
             <% end %>
           </p>
         <% end %>
@@ -145,12 +139,12 @@
         <%= f.text_field :secondary_team_slug, class: "input-field" %>
         <% if news.secondary_team_slug.present? %>
           <% rec = Team.find_by(slug: news.secondary_team_slug) %>
-          <p class="mt-1 text-[10px] font-mono flex items-center gap-1">
-            <span class="inline-block w-1.5 h-1.5 rounded-full <%= rec ? 'bg-green-400' : 'bg-red-400' %>"></span>
+          <p class="mt-1 text-3xs font-mono flex items-center gap-1">
+            <span class="inline-block w-1.5 h-1.5 rounded-full <%= rec ? 'bg-success' : 'bg-danger' %>"></span>
             <% if rec %>
-              <a href="<%= teams_path(q: rec.name) %>" class="text-green-400 hover:text-green-300 underline">found</a>
+              <a href="<%= teams_path(q: rec.name) %>" class="text-success-ink hover:text-success-ink underline">found</a>
             <% else %>
-              <span class="text-red-400">missing</span>
+              <span class="text-danger-ink">missing</span>
             <% end %>
           </p>
         <% end %>

@@ -12,8 +12,10 @@ require_relative "../../lib/music_videos/object_keys"
 require_relative "../../lib/music_videos/vtt_timing"
 
 # The agent side of `digest video <url>` (docs/agents/agents/pokemon/sops/digest-video.md):
-# download → H.264 MP4 → R2 → POST /api/v1/music_videos. It runs where the
-# download works (the operator's Mac); the app itself holds nothing Mac-specific.
+# download → H.264 MP4 → R2 → POST /api/v1/music_videos → the 25 s chunks
+# (a tiler: ChunkTiling::Runner, injected by bin/digest-video). It runs where
+# the download works (the operator's Mac); the app itself holds nothing
+# Mac-specific, and a dyno has no ffmpeg to cut chunks with.
 # Lyric text never leaves this process: captions become timings here.
 module DigestVideo
   class Failure < StandardError; end
@@ -167,7 +169,7 @@ module DigestVideo
   class Runner
     def initialize(workdir:, shell:, storage:, api:, out: $stdout, from_dir: nil, dry_run: false,
                    encoder: "libx264", ytdlp: "yt-dlp", bucket: "mcritchie-studio-dev", cookies_from_browser: nil,
-                   kind: "music_video")
+                   kind: "music_video", tiler: nil)
       raise Failure, "kind must be one of: #{KINDS.join(', ')}" unless KINDS.include?(kind)
 
       @kind = kind
@@ -182,6 +184,7 @@ module DigestVideo
       @ytdlp = ytdlp
       @bucket = bucket
       @cookies_from_browser = cookies_from_browser
+      @tiler = tiler
     end
 
     def call(url)
@@ -204,13 +207,19 @@ module DigestVideo
       keys = object_keys(payload)
       payload.merge!(kind: @kind, platform: platform, source_id: id, duration_ms: duration_ms(mp4),
                      source_object_key: keys.source_mp4, info_object_key: keys.info_json, caption_timing: timing)
-      return report_dry_run(payload, mp4) if @dry_run
+      if @dry_run
+        report_dry_run(payload, mp4)
+        @tiler&.call(planned(payload), mp4)
+        return payload
+      end
 
+      @tiler&.problem&.then { |why| raise Failure, why } # before any upload
       @api.authenticate # before any upload, so a failed login leaves nothing in R2
       store(keys, mp4, DigestVideo.sanitize_info(info, platform: platform))
       data = @api.create(payload)
       FileUtils.rm_f(vtts) # lyric text; kept until recorded so a --from-dir retry still has timings
       report(data, payload)
+      @tiler&.call(data, mp4) # a re-digest of a tiled source keeps its chunks (ChunkTiling::Runner)
       data
     end
 
@@ -332,6 +341,12 @@ module DigestVideo
         file.flush
         @storage.put(keys.info_json, file.path, "application/json")
       end
+    end
+
+    # What a dry run would record, as the tiler reads a recorded video.
+    def planned(payload)
+      { "slug" => "(not recorded)", "duration_ms" => payload[:duration_ms],
+        "source_object_key" => payload[:source_object_key], "performers" => [], "chunks" => [] }
     end
 
     def report_dry_run(payload, mp4)

@@ -209,6 +209,59 @@
     };
   })();
 
+  // One cast card's title and how much of it shows, rooted on the card (outside
+  // swapCard and namingCard, so every name here is card-prefixed to stay clear of
+  // theirs). The title is the named artist's name, else "Person N", and follows
+  // each naming save (naming-saved) without a reload; Clear or Mark as extra
+  // puts "Person N" back. The description and sightings fold behind the title:
+  // level 0 shows neither; 1 the description and ONE row of the clearly visible
+  // chips, as many as fit, then "+N more"; 2 every chip in both groups.
+  window.castCardDisclosure = function () {
+    return {
+      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0, cardFitSeq: 0,
+      init() {
+        const d = this.$root.dataset;
+        this.cardOrdinal = Number(d.ordinal); this.cardName = d.cardName || "";
+        this.cardClear = Number(d.clearCount) || 0; this.cardPartial = Number(d.partialCount) || 0;
+        this.cardFit = this.cardClear;
+      },
+      cardOnNamed(detail) {
+        if (!detail || detail.ordinal !== this.cardOrdinal) return;
+        this.cardName = detail.named && detail.named.kind === "artist" ? (detail.named.name || "") : "";
+      },
+      cardMore() { return this.cardClear - this.cardFit + this.cardPartial; },
+      cardToggle() {
+        this.cardLevel = this.cardLevel > 0 ? 0 : 1;
+        this.cardFitRow();
+      },
+      cardExpandAll() { this.cardLevel = 2; },
+      // Show every clear chip and let the browser lay them out (two frames, so
+      // the x-show changes are painted), then measure once: keep the chips on
+      // the first line, less any "+N more" would push off it. Re-run on a resize.
+      async cardFitRow() {
+        if (this.cardLevel !== 1) return;
+        const mine = ++this.cardFitSeq; // a newer pass (a resize, a re-open) supersedes this one
+        this.cardFit = this.cardClear;
+        await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+        if (this.cardLevel !== 1 || mine !== this.cardFitSeq) return;
+        const row = document.getElementById("person-" + this.cardOrdinal + "-clear-row");
+        const chips = row ? Array.from(row.querySelectorAll("[data-test='sighting']")) : [];
+        if (chips.length === 0) return;
+        const line = chips[0].getBoundingClientRect().top + 4;
+        const first = chips.filter((c) => c.getBoundingClientRect().top < line);
+        let fit = first.length;
+        if (fit < chips.length || this.cardPartial > 0) {
+          const more = row.querySelector("[data-test='sightings-more']");
+          const moreWidth = (more && more.offsetParent !== null ? more.getBoundingClientRect().width : 72) + 8;
+          const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+          const right = row.getBoundingClientRect().right;
+          while (fit > 1 && first[fit - 1].getBoundingClientRect().right + gap + moreWidth > right) fit--;
+        }
+        this.cardFit = fit;
+      },
+    };
+  };
+
   // The swap on one cast card, rooted over the whole card body: the Replace with
   // search, the chosen athlete and the look picker near the top, and the Keep
   // Original / Swap back button pinned at the bottom. Picking a person is the swap; Keep
@@ -656,12 +709,10 @@
                      downloads: @chunk_downloads, sheets: @recast_sheets, overlap_ms: @video.chunk_overlap_ms.to_i %>
         <% end %>
       </div>
-    <% elsif @video.cast_confirmed? %>
+    <% else %>
       <div class="empty-state text-muted" data-test="chunks-empty">
         No chunks yet. Run <span class="font-mono">bin/find-clips <%= @video.slug %> --tile</span> on the Mac.
       </div>
-    <% else %>
-      <div class="empty-state text-muted" data-test="chunks-locked">Chunks come after the cast is confirmed.</div>
     <% end %>
   </section>
 </section>

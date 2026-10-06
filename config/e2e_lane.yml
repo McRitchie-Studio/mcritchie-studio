@@ -371,7 +371,17 @@
 # Keep Original made while the pick's save is in flight land in order, so the server ends
 # where the card does. Measured with `npx playwright test --list` on the tree merged with
 # accepted => 219.
-total_specs: 219
+#
+# 219 -> 220 on 2026-10-06 (/tasks/board-effects-become-modules):
+# e2e/deployments_exit_fx.spec.js gains a spec, not quarantined: the board/live_fx module
+# the page loaded times every exit inside the beat the board publishes (data-beat-ms).
+# It replaces the Ruby source-text pin of the same rule. Measured with
+# `npx playwright test --list`.
+#
+# 220 -> 223 on 2026-10-06 (/tasks/status-colours-from-tokens):
+# e2e/status_tones.spec.js adds three specs, not quarantined: the form error box, the
+# stage badges and the blocked crew badge keep their text contrast in light and dark.
+total_specs: 223
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -577,7 +587,9 @@ quarantined: 10
 # 208 -> 209: the second music_video_recast.spec.js spec, saves in order
 # (/tasks/replace-with-keep-original). Measured on the tree merged with accepted:
 # `npx playwright test --list --grep-invert @quarantine` => 209.
-executed: 209
+# 209 -> 210: the deployments_exit_fx.spec.js beat-fit spec (/tasks/board-effects-become-modules).
+# 210 -> 213: the three status_tones.spec.js specs (/tasks/status-colours-from-tokens).
+executed: 213
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

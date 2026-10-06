@@ -12,9 +12,9 @@
   chip, and two chips in one row are easier to merge than one row rewritten
   twice. Keep the chip's markup here; keep the row it sits in over there.
 
-  Colour is the house violet pair, one class per theme (dark: variants, the
-  card's own tone idiom), so the chip reads as a different KIND of handle from
-  the mono task slug next to it and clears contrast on both surfaces.
+  Colour is the primary role's tint (theme tokens, right in both themes), so
+  the chip reads as a different KIND of handle from the mono task slug next to
+  it.
   Server-rendered conditionally, so no Alpine display gating is needed.
 %>
 <% epic_slug = local_assigns.fetch(:epic_slug).to_s %>
@@ -23,5 +23,5 @@
      data-test="task-epic-chip"
      data-epic="<%= epic_slug %>"
      title="Epic <%= epic_slug %> — show only this epic's tasks"
-     class="inline-flex items-center shrink-0 max-w-[9rem] px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none truncate border transition bg-violet-100 text-violet-700 border-violet-200 hover:bg-violet-200 hover:border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-700/60 dark:hover:bg-violet-900/70 dark:hover:border-violet-500/70"><%= epic_slug %></a>
+     class="inline-flex items-center shrink-0 max-w-[9rem] px-1.5 py-0.5 rounded text-3xs font-semibold leading-none truncate transition <%= status_tone(:primary) %> hover:bg-primary/20"><%= epic_slug %></a>
 <% end %>

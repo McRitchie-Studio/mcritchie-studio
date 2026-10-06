@@ -8,7 +8,7 @@
   <div class="card p-6 mb-6">
     <div class="flex items-baseline justify-between mb-1">
       <h3 class="text-lg font-bold text-heading">Testing gates</h3>
-      <span class="text-[10px] text-muted uppercase tracking-wide">gate verdicts</span>
+      <span class="text-3xs text-muted uppercase tracking-wide">gate verdicts</span>
     </div>
     <p class="text-muted text-xs mb-4">
       The task-owned gates and their latest attempt — G1 Cert (full suite + lint) → DoR (builder + review gate-zero) → G2 Review (primary + light).
@@ -19,12 +19,12 @@
         <div class="bg-surface-alt rounded-lg p-3">
           <p class="label-upper"><%= GateRun::GATES.dig(key, "label") %></p>
           <p class="text-heading text-sm font-semibold"><%= gate_attempt_label(run) || "—" %></p>
-          <p class="text-[10px] uppercase tracking-wide <%= gate_status_class(run) %>">
+          <p class="text-3xs uppercase tracking-wide <%= gate_status_class(run) %>">
             <%= run ? run.status.humanize : "Not run" %>
           </p>
           <% if run && run.sops.any? %>
             <details class="mt-2">
-              <summary class="text-[10px] text-muted uppercase tracking-wide cursor-pointer select-none">
+              <summary class="text-3xs text-muted uppercase tracking-wide cursor-pointer select-none">
                 <%= pluralize(run.sops.size, "SOP") %>
               </summary>
               <ul class="mt-1 space-y-0.5">
@@ -72,13 +72,13 @@
                       a gate that cannot classify must refuse; a record that cannot classify
                       must say so rather than congratulate. %>
                   <% result = entry["result"].to_s %>
-                  <% glyph, tone = if result == "fail" then ["✗", "text-rose-400"]
-                                   elsif result == "pass" then ["✓", "text-emerald-400"]
-                                   elsif GateRun::IN_FLIGHT_RESULTS.include?(result) then ["◌", "text-amber-400"]
-                                   elsif GateRun::NO_VERDICT_RESULTS.include?(result) then ["⚠", "text-amber-400"]
+                  <% glyph, tone = if result == "fail" then ["✗", "text-danger-ink"]
+                                   elsif result == "pass" then ["✓", "text-success-ink"]
+                                   elsif GateRun::IN_FLIGHT_RESULTS.include?(result) then ["◌", "text-warning-ink"]
+                                   elsif GateRun::NO_VERDICT_RESULTS.include?(result) then ["⚠", "text-warning-ink"]
                                    else ["?", "text-muted"]
                                    end %>
-                  <li class="text-[11px] text-muted flex items-baseline gap-1" data-result="<%= result %>">
+                  <li class="text-2xs text-muted flex items-baseline gap-1" data-result="<%= result %>">
                     <span class="<%= tone %>" data-test="gate-sop-glyph"><%= glyph %></span>
                     <span class="text-body"><%= entry["sop"] %></span>
                     <% if (sop_duration = gate_sop_duration_label(entry["duration_ms"])) %>

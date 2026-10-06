@@ -9,11 +9,11 @@
   <!-- Pipeline Overview -->
   <div class="flex flex-wrap items-center gap-2 mb-8">
     <% stages = [
-      { name: "New", color: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
-      { name: "Reviewed", color: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30" },
-      { name: "Processed", color: "bg-mint/20 text-mint border-mint/30" },
-      { name: "Refined", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
-      { name: "Concluded", color: "bg-violet/20 text-violet border-violet/30" },
+      { name: "New", color: "bg-primary/20 text-primary border-primary/40" },
+      { name: "Reviewed", color: "bg-warning/20 text-warning-ink border-warning/40" },
+      { name: "Processed", color: "bg-success/20 text-success-ink border-success/40" },
+      { name: "Refined", color: "bg-success/20 text-success-ink border-success/40" },
+      { name: "Concluded", color: "bg-primary/20 text-primary border-primary/40" },
       { name: "Archived", color: "bg-surface-alt text-muted border-subtle" }
     ] %>
     <% stages.each_with_index do |stage, i| %>
@@ -32,7 +32,7 @@
     <div class="card p-6">
       <div class="flex items-start gap-4">
         <div class="shrink-0 w-24">
-          <span class="badge bg-blue-500/20 text-blue-300 border-blue-500/30">New</span>
+          <span class="badge bg-primary/20 text-primary border-primary/40">New</span>
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-3 mb-2">
@@ -56,7 +56,7 @@
     <div class="card p-6">
       <div class="flex items-start gap-4">
         <div class="shrink-0 w-24">
-          <span class="badge bg-yellow-500/20 text-yellow-300 border-yellow-500/30">Reviewed</span>
+          <span class="badge bg-warning/20 text-warning-ink border-warning/40">Reviewed</span>
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-3 mb-2">
@@ -80,7 +80,7 @@
     <div class="card p-6">
       <div class="flex items-start gap-4">
         <div class="shrink-0 w-24">
-          <span class="badge bg-mint/20 text-mint border-mint/30">Processed</span>
+          <span class="badge bg-success/20 text-success-ink border-success/40">Processed</span>
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-3 mb-2">
@@ -104,7 +104,7 @@
     <div class="card p-6">
       <div class="flex items-start gap-4">
         <div class="shrink-0 w-24">
-          <span class="badge bg-emerald-500/20 text-emerald-300 border-emerald-500/30">Refined</span>
+          <span class="badge bg-success/20 text-success-ink border-success/40">Refined</span>
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-3 mb-2">
@@ -128,7 +128,7 @@
     <div class="card p-6">
       <div class="flex items-start gap-4">
         <div class="shrink-0 w-24">
-          <span class="badge bg-violet/20 text-violet border-violet/30">Concluded</span>
+          <span class="badge bg-primary/20 text-primary border-primary/40">Concluded</span>
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-3 mb-2">

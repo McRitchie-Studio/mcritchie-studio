@@ -40,7 +40,7 @@
       <div class="min-w-0">
         <div class="font-mono text-2xl font-bold leading-none tabular-nums text-heading" data-test="devops-typical"
              data-seconds="<%= median %>"><%= release_flow_duration(median) %></div>
-        <div class="mt-1 text-[11px] leading-tight text-muted">
+        <div class="mt-1 text-2xs leading-tight text-muted">
           typical release <span class="whitespace-nowrap">· avg <span class="tabular-nums" data-test="devops-mean"><%= release_flow_duration(mean) %></span></span>
         </div>
       </div>
@@ -87,7 +87,7 @@
                title="<%= phase[:label] %> · typically <%= release_flow_duration(seconds) %> — <%= phase[:hint] %>"></div>
         <% end %>
       </div>
-      <div class="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] leading-tight text-secondary" data-test="devops-phase-legend">
+      <div class="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-3xs leading-tight text-secondary" data-test="devops-phase-legend">
         <% medians.each do |phase, seconds| %>
           <span class="inline-flex items-center gap-1" data-test="devops-phase" data-phase="<%= phase[:key] %>" data-seconds="<%= seconds %>"
                 title="<%= phase[:hint] %>">
@@ -102,7 +102,7 @@
     <% if outliers.any? %>
       <% dominant = outliers.map(&:dominant_phase).tally.max_by { |_phase, count| count }&.first %>
       <% dominant_label = Release::Flow::PHASES.find { |phase| phase[:key] == dominant }&.dig(:label) %>
-      <p class="mt-auto pt-2 text-[11px] leading-tight text-muted" data-test="devops-outlier-note">
+      <p class="mt-auto pt-2 text-2xs leading-tight text-muted" data-test="devops-outlier-note">
         <span class="font-medium text-heading"><%= pluralize(outliers.size, "slow release") %></span>
         (<%= outliers.map { |entry| release_flow_duration(entry.total) }.join(", ") %>)<% if dominant_label %> — most of it in <%= dominant_label %><% end %>
       </p>

@@ -61,8 +61,8 @@
           <% @deliveries.each do |d| %>
             <tr class="border-b border-subtle/50">
               <td class="p-2 text-heading"><%= d.contact.email %><% if d.contact.first_name.present? %> <span class="text-muted">(<%= d.contact.first_name %>)</span><% end %></td>
-              <td class="p-2 <%= d.opened_at ? 'text-green-300' : 'text-muted' %>"><%= d.opened_at ? "#{d.open_count}×" : "—" %></td>
-              <td class="p-2 <%= d.clicked_at ? 'text-green-300' : 'text-muted' %>"><%= d.clicked_at ? "#{d.click_count}×" : "—" %></td>
+              <td class="p-2 <%= d.opened_at ? 'text-success-ink' : 'text-muted' %>"><%= d.opened_at ? "#{d.open_count}×" : "—" %></td>
+              <td class="p-2 <%= d.clicked_at ? 'text-success-ink' : 'text-muted' %>"><%= d.clicked_at ? "#{d.click_count}×" : "—" %></td>
             </tr>
           <% end %>
         </tbody>
@@ -74,11 +74,7 @@
     <!-- EDITOR FORM -->
     <div class="lg:w-2/5">
       <%= form_with model: @broadcast, url: broadcast_path(@broadcast), method: :patch do |f| %>
-        <% if @broadcast.errors.any? %>
-          <div class="card p-3 mb-4 text-sm text-red-300 bg-red-900/30">
-            <%= @broadcast.errors.full_messages.to_sentence %>
-          </div>
-        <% end %>
+        <%= render "shared/form_errors", record: @broadcast %>
 
         <div class="card p-5 space-y-4">
           <div>

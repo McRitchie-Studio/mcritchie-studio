@@ -415,7 +415,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
 
   # The root card <div>'s class list, pulled from the broadcast card so a tone
   # assertion sees ONLY the card's own tone class — not a footer button's
-  # hover:bg-* utility (every card carries hover:bg-amber-50 / hover:bg-red-50).
+  # hover:bg-* utility (every card carries hover:bg-warning/10 / hover:bg-danger/10).
   def broadcast_card_class(stream, slug)
     stream.to_html[/<div id="card-#{Regexp.escape(slug)}"[^>]*\bclass="([^"]*)"/, 1].to_s
   end
@@ -433,8 +433,8 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.task_event(intent) }
 
     tone = broadcast_card_class(streams.first, task.slug)
-    assert_includes tone, "bg-amber-50", "a qa_feedback in the loaded set → ever_blocked=true → amber re-review tone"
-    assert_not_includes tone, "bg-red-50", "a cleared (resolved) block is amber, not red"
+    assert_includes tone.split, "bg-warning/10", "a qa_feedback in the loaded set → ever_blocked=true → amber re-review tone"
+    assert_not_includes tone.split, "bg-danger/10", "a cleared (resolved) block is amber, not red"
     assert_not_includes tone, "bg-surface", "a cleared block is not the plain tone"
     # The RE-REVIEW badge was dropped as redundant — the amber tone above carries it.
     assert_not_includes streams.first.to_html, "RE-REVIEW", "the badge is gone; the amber tone carries re-review"
@@ -448,8 +448,8 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
 
     tone = broadcast_card_class(streams.first, task.slug)
     assert_includes tone, "bg-surface", "no qa_feedback in the loaded set → ever_blocked=false → plain tone"
-    assert_not_includes tone, "bg-amber-50", "a never-blocked card is plain, not amber"
-    assert_not_includes tone, "bg-red-50", "a never-blocked card is plain, not red"
+    assert_not_includes tone.split, "bg-warning/10", "a never-blocked card is plain, not amber"
+    assert_not_includes tone.split, "bg-danger/10", "a never-blocked card is plain, not red"
   end
 
   # --- live CI progress: a workflow_job push morphs just the bar slot ----------

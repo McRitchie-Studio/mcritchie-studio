@@ -239,11 +239,22 @@ class FindClipsTest < Minitest::Test
     assert_empty api.posts
   end
 
-  def test_tile_also_waits_for_the_cast
-    api = FakeApi.new(video(stage: "digested"))
-    shell = FakeShell.new
-    assert_raises(FindClips::Failure) { run_finder(api:, shell:, tile: true) }
-    assert_empty shell.calls
+  # Chunks are cut at digest, before the cast: a re-tile need not wait for it either.
+  def test_tile_does_not_wait_for_the_cast
+    api = FakeApi.new(video(stage: "digested").merge("performers" => []))
+    rows, storage, = run_finder(api:, shell: FakeShell.new(duration: "72.000000"), tile: true)
+    assert_equal 4, rows.size
+    assert_equal %w[unknown], rows.map { |r| r[:cast_shape] }.uniq, "nobody is cast yet"
+    assert_equal 4, storage.puts.size
+    assert_equal ["chunk"], api.posts.map { |_p, b| b[:kind] }
+  end
+
+  # --tile replaces whatever chunks are there: it is the explicit re-tile.
+  def test_tile_replaces_chunks_already_there
+    api = FakeApi.new(video.merge("chunks" => [{ "ordinal" => 1 }], "chunk_ms" => 25_000, "chunk_overlap_ms" => 5_000))
+    rows, = run_finder(api:, shell: FakeShell.new(duration: "72.000000"), tile: true)
+    assert_equal 4, rows.size
+    assert_equal 1, api.posts.size
   end
 
   def test_silencedetect_output_parses_to_ms_pairs

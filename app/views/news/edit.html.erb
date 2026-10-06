@@ -31,14 +31,14 @@
                 <p class="text-heading text-sm font-semibold" x-text="person.full_name"></p>
                 <span class="text-[9px] text-muted font-mono" x-text="'#' + person.id"></span>
               </div>
-              <p class="text-[10px] text-primary font-mono mt-0.5" x-text="person.slug"></p>
+              <p class="text-3xs text-primary font-mono mt-0.5" x-text="person.slug"></p>
               <template x-if="person.aliases && person.aliases.length > 0">
-                <p class="text-[10px] text-muted mt-0.5">aka <span x-text="person.aliases.join(', ')"></span></p>
+                <p class="text-3xs text-muted mt-0.5">aka <span x-text="person.aliases.join(', ')"></span></p>
               </template>
               <template x-if="person.teams && person.teams.length > 0">
                 <div class="flex flex-wrap gap-1 mt-1.5">
                   <template x-for="team in person.teams" :key="team">
-                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-900/50 text-blue-300 border border-blue-700/50" x-text="team"></span>
+                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold <%= status_tone(:primary) %>" x-text="team"></span>
                   </template>
                 </div>
               </template>
@@ -54,11 +54,11 @@
                     <p class="text-heading text-sm font-semibold" x-text="person.full_name"></p>
                     <span class="text-[9px] text-muted font-mono" x-text="'#' + person.id"></span>
                   </div>
-                  <p class="text-[10px] text-primary font-mono mt-0.5" x-text="person.slug"></p>
+                  <p class="text-3xs text-primary font-mono mt-0.5" x-text="person.slug"></p>
                   <template x-if="person.teams && person.teams.length > 0">
                     <div class="flex flex-wrap gap-1 mt-1.5">
                       <template x-for="team in person.teams" :key="team">
-                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-900/50 text-blue-300 border border-blue-700/50" x-text="team"></span>
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold <%= status_tone(:primary) %>" x-text="team"></span>
                       </template>
                     </div>
                   </template>

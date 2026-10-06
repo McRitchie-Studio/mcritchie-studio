@@ -174,8 +174,9 @@ them in THIS session, with a terminal attached.
    ```
 
    Review already merged the task's PR onto `accepted` in step 2, so the sweep
-   promotes **all of `accepted`** onto `release` via ONE batch PR per repo
-   (`--base release --head accepted`). `--task` curates which tasks are RECORDED
+   promotes **all of `accepted`** onto `release` per repo: a fast-forward when
+   `release` is contained in `accepted`, the batch PR (`--base release --head
+   accepted`) only when it has diverged. `--task` curates which tasks are RECORDED
    as members; it does **not** narrow which COMMITS ride along. It then runs the
    **G3 pre-QA gate** (GitHub CI's verdict for each app's `origin/release` SHA),
    deploys QA, and flips the member `assembled` only on QA-green.

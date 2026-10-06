@@ -60,10 +60,10 @@
   %>
   <div class="flex items-center justify-center gap-1 mt-1.5">
     <% if scheme.nil? || scheme == :pass %>
-      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded <%= letter_grade_class(pass_letter) %>" title="Pass grade <%= pass_num || "n/a" %>/10"><%= pass_letter %></span>
+      <span class="text-3xs font-bold px-1.5 py-0.5 rounded <%= letter_grade_class(pass_letter) %>" title="Pass grade <%= pass_num || "n/a" %>/10"><%= pass_letter %></span>
     <% end %>
     <% if scheme.nil? || scheme == :run %>
-      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded <%= letter_grade_class(run_letter) %>" title="Run grade <%= run_num || "n/a" %>/10"><%= run_letter %></span>
+      <span class="text-3xs font-bold px-1.5 py-0.5 rounded <%= letter_grade_class(run_letter) %>" title="Run grade <%= run_num || "n/a" %>/10"><%= run_letter %></span>
     <% end %>
   </div>
 </div>

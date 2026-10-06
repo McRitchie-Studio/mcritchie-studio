@@ -150,7 +150,8 @@ style, script or Leaflet of its own.
 
 ## JS Modules (importmap)
 
-- `kanban_board` — drag-and-drop task board with optimistic DOM moves, API transitions, toast notifications. Race-condition guard (`_pendingMoves`) prevents concurrent API calls for same task. Attached to `window.kanbanBoard` for Alpine `x-data` access.
+- `board/*` — the `/deployments` board effects and the elapsed ticker (`app/javascript/board`, pinned with `pin_all_from`). Pure modules hold the decisions and shapes (`live_fx`, `release_fx`, `ticker`, `colors`) and have node:test unit tests in `test/javascript` (`bin/test-js`, the CI `javascript` job). The `*_dom` modules wire them to the page and install `window.LiveBoardFx`, `window.ReleaseFx` and the ticker once; the partials `tasks/_deployments_live_fx` and `tasks/_release_ticker` import them with a `type="module"` script. A Stimulus controller can import the pure modules unchanged.
+- The deploy board's `kanbanBoard` Alpine factory stays inline in `tasks/_deploy_board`: Alpine starts before importmap modules run, so a factory defined in a module would not exist when `x-data` first evaluates.
 - `dropping_text` — animated text effect on landing page. Tracks timer IDs and cleans up on `turbo:before-cache` to prevent memory leaks.
 - `alex_chat` — Alpine.js `alexChat()` component for AI chat UI. Handles message sending via POST `/chat`, loading states, auto-scroll, basic markdown formatting. HTML-escape happens before markdown transforms (XSS-safe). Attached to `window.alexChat`.
 - `depth_chart` — Alpine `depthChart(reorderUrl)` component for `/teams/:slug/depth-chart`. Wires SortableJS per position (drag-reorder, locked rows filter out), calls reorder/toggle_lock endpoints. Attached to `window.depthChart`.

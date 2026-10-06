@@ -56,7 +56,7 @@
     <button type="submit" :disabled="sending || !email" class="btn btn-primary btn-lg w-full disabled:cursor-wait disabled:opacity-60">
       <span x-text="sending ? 'Sending…' : 'Email me a sign-in link'">Email me a sign-in link</span>
     </button>
-    <p x-show="error" x-cloak class="text-xs text-red-400 text-center mt-2" x-text="error"></p>
+    <p x-show="error" x-cloak class="text-xs text-danger-ink text-center mt-2" x-text="error"></p>
     <p class="text-xs text-muted text-center mt-2">One tap from your inbox, no password.</p>
   </form>
 </div>

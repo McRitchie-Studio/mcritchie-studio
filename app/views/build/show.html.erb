@@ -172,11 +172,11 @@
            x-text="(name.replace(/-+$/, '') || 'yourapp') + '.mcritchie.studio'">yourapp.mcritchie.studio</p>
         <p class="mt-2 text-sm min-h-5" aria-live="polite" data-test="build-availability">
           <span x-show="state === 'checking'" x-cloak class="text-muted">Checking…</span>
-          <span x-show="state === 'available'" x-cloak class="text-green-600 dark:text-green-400">Available</span>
-          <span x-show="state === 'taken'" x-cloak class="text-red-500" x-text="reason"></span>
+          <span x-show="state === 'available'" x-cloak class="text-success-ink">Available</span>
+          <span x-show="state === 'taken'" x-cloak class="text-danger-ink" x-text="reason"></span>
         </p>
         <% if req.errors[:subdomain].any? || req.errors[:base].any? %>
-          <p class="mt-1 text-sm text-red-500" data-test="build-errors"><%= (req.errors[:subdomain] + req.errors[:base]).to_sentence %></p>
+          <p class="mt-1 text-sm text-danger-ink" data-test="build-errors"><%= (req.errors[:subdomain] + req.errors[:base]).to_sentence %></p>
         <% end %>
         <%# Disabled only for a name we KNOW is refused. Not while a check is in
             flight: the server re-validates on submit, and a button that greys

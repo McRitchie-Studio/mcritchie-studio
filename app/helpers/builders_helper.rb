@@ -4,7 +4,7 @@ module BuildersHelper
     safe_join(
       [
         content_tag(:span, date.strftime("%b %-d"), class: "block normal-case tracking-normal text-secondary"),
-        (content_tag(:span, date.year, class: "block text-[10px] text-muted mt-0.5") unless date.year == Time.now.utc.year)
+        (content_tag(:span, date.year, class: "block text-3xs text-muted mt-0.5") unless date.year == Time.now.utc.year)
       ].compact
     )
   end
@@ -27,7 +27,7 @@ module BuildersHelper
     content_tag(
       :span,
       score,
-      class: "ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-[10px] font-bold leading-none border align-middle",
+      class: "ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-3xs font-bold leading-none border align-middle",
       style: styles.fetch(score.to_i, styles[1]),
       title: "Normalized score from this builder's five-year cached weekly history"
     )
@@ -41,7 +41,7 @@ module BuildersHelper
     safe_join(
       [
         content_tag(:span, "Q#{quarter.quarter}", class: "block text-secondary"),
-        content_tag(:span, quarter.year, class: "block text-[10px] text-muted mt-0.5")
+        content_tag(:span, quarter.year, class: "block text-3xs text-muted mt-0.5")
       ]
     )
   end

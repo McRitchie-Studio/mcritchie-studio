@@ -27,7 +27,7 @@
           <h3 class="text-sm font-bold uppercase tracking-wider text-primary">
             Workflow <%= i + 1 %> · <%= workflow %>
           </h3>
-          <span class="text-[11px] text-secondary">
+          <span class="text-2xs text-secondary">
             <%= workflow == "Build" ? "per task · feature agent" : "per release · devops" %>
           </span>
         </div>
@@ -49,24 +49,24 @@
               <div class="space-y-2 text-xs">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   <div>
-                    <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Responsible</div>
+                    <div class="uppercase tracking-wide text-3xs text-muted font-semibold mb-0.5">Responsible</div>
                     <div class="text-heading font-medium"><%= row[:who] %></div>
                   </div>
                   <div>
-                    <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Next →</div>
+                    <div class="uppercase tracking-wide text-3xs text-muted font-semibold mb-0.5">Next →</div>
                     <div class="text-secondary leading-relaxed"><%= devops_next_html(row[:nxt]) %></div>
                   </div>
                 </div>
                 <%# Deploy steps outline their tests-run + gate (per devops-cycle-design §1.2). %>
                 <% if row[:tests].present? %>
                   <div>
-                    <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Tests run</div>
+                    <div class="uppercase tracking-wide text-3xs text-muted font-semibold mb-0.5">Tests run</div>
                     <div class="text-secondary leading-relaxed"><%= row[:tests] %></div>
                   </div>
                 <% end %>
                 <% if row[:gate].present? %>
                   <div>
-                    <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Gate</div>
+                    <div class="uppercase tracking-wide text-3xs text-muted font-semibold mb-0.5">Gate</div>
                     <div class="text-secondary leading-relaxed"><%= row[:gate] %></div>
                   </div>
                 <% end %>
@@ -78,8 +78,8 @@
     <% end %>
   </div>
 
-  <p class="text-[11px] text-muted mt-6">
-    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold <%= task_stage_count_classes("archived") %>">Archived</span>
+  <p class="text-2xs text-muted mt-6">
+    <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= task_stage_count_classes("archived") %>">Archived</span>
     is the terminal resting state — both shipped work filed away (Archive completed tasks) and abandoned tickets end up here.
   </p>
 </section>

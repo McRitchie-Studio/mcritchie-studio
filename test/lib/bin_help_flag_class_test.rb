@@ -379,6 +379,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "jobs"                   => :delegates,
     "dev"                    => :delegates,
     "island-background"      => :delegates,
+    "test-js"                => :delegates, # execs `node --test`, which owns --help; runs tests, mutates nothing
     # --- CONFIRMED subcommand-position gaps, each with a filed task -----------
     #
     # Found by the sweep that shipped the bin/release fix

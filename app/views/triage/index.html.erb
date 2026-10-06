@@ -22,7 +22,7 @@
       <h3 class="text-lg font-bold text-heading">Open</h3>
       <p class="text-sm text-secondary">
         Newest first. Promote mints a real task; dismiss retires the finding.
-        <span class="text-amber-700 dark:text-amber-300">⚠ Prior art</span> means nobody
+        <span class="text-warning-ink">⚠ Prior art</span> means nobody
         checked what was already there — read it as an open question, not as "nothing was".
       </p>
     </div>
@@ -49,7 +49,7 @@
                     back into a blank, which is the exact read that turned a
                     long-standing unsandboxed iframe into a "this ship caused
                     it" advisory. Amber is the house quiet-warning pair. %>
-                <p class="text-xs mt-2 <%= finding.prior_art_investigated? ? "text-muted" : "text-amber-700 dark:text-amber-300 font-semibold" %>">
+                <p class="text-xs mt-2 <%= finding.prior_art_investigated? ? "text-muted" : "text-warning-ink font-semibold" %>">
                   <%= finding.prior_art_investigated? ? "Prior art" : "⚠ Prior art" %>:
                   <%= finding.prior_art_summary %>
                 </p>

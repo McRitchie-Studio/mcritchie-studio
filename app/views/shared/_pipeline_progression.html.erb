@@ -16,7 +16,7 @@
   { num: 12, label: "reviewed" }
 ] %>
 
-<div class="flex items-center gap-1 mb-4 px-1 text-[11px] font-mono text-muted overflow-x-auto flex-wrap">
+<div class="flex items-center gap-1 mb-4 px-1 text-2xs font-mono text-muted overflow-x-auto flex-wrap">
   <% news_steps.each_with_index do |step, i| %>
     <span class="whitespace-nowrap <%= highlight == 'news' ? 'text-secondary' : 'opacity-40' %>"><%= step[:num] %>.<%= step[:label] %></span>
     <% if i < news_steps.length - 1 %>

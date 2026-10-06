@@ -107,6 +107,23 @@ jobs:
         if: always()
         run: bin/rubocop -f github
 
+  # The JavaScript unit tests (test/javascript, for app/javascript/board), on
+  # node:test with no npm install: bin/test-js is the whole lane.
+  javascript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run JavaScript unit tests
+        run: bin/test-js
+
   island_animator:
     runs-on: ubuntu-latest
     timeout-minutes: 45

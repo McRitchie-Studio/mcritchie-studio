@@ -1,11 +1,5 @@
 <div class="card p-6" x-data="{ workflow: '<%= content.workflow.presence || "video" %>' }">
-  <% if content.errors.any? %>
-    <div class="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
-      <% content.errors.full_messages.each do |msg| %>
-        <p><%= msg %></p>
-      <% end %>
-    </div>
-  <% end %>
+  <%= render "shared/form_errors", record: content %>
 
   <%= form_with model: content, url: content.persisted? ? content_path(content.slug) : contents_path, multipart: true do |f| %>
     <!-- Workflow -->

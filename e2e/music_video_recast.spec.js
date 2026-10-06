@@ -50,11 +50,16 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(search(page, 1)).toBeVisible();
   await expect(keepButton(page, 1)).toBeHidden();
   await expect(recast(page, 1).locator("input[type='checkbox']")).toHaveCount(0);
-  // Replace with is at the top, above the sightings; the bottom block (swap toggle, then naming) is under them.
+  // Replace with is at the top, above the sightings (folded behind the title, so open them); the bottom
+  // block (swap toggle, then naming) is under them.
   const top = async (sel) => (await card(page, 1).locator(sel).first().boundingBox()).y;
-  expect(await top("[data-test='replace-with']")).toBeLessThan(await top("[data-test='sighting']"));
-  expect(await top("[data-test='sighting']")).toBeLessThan(await top("[data-test='card-bottom']"));
+  await card(page, 1).locator("[data-test='performer-title']").click();
+  await expect(card(page, 1).locator("[data-test='card-details']")).toBeVisible();
+  expect(await top("[data-test='replace-with']")).toBeLessThan(await top("[data-test='card-details']"));
+  expect(await top("[data-test='card-details']")).toBeLessThan(await top("[data-test='card-bottom']"));
   expect(await top("[data-test='card-bottom']")).toBeLessThan(await top("[data-test='performer-resolution']"));
+  await card(page, 1).locator("[data-test='performer-title']").click();
+  await expect(card(page, 1).locator("[data-test='card-details']")).toBeHidden();
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
   await expect(recast(page, 1)).not.toContainText("Check to replace");
   await expect(recast(page, 1).locator("[role='switch']")).toHaveCount(0);

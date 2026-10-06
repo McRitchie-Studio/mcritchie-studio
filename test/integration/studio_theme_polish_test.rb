@@ -15,12 +15,13 @@ class StudioThemePolishTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='stage-workflow']", count: 2
     assert_select "[data-test='stage-guide-card'].rounded-lg.bg-surface", minimum: 1
 
-    assert_includes response.body, "bg-blue-100 text-blue-800"
-    assert_includes response.body, "dark:bg-blue-900/50 dark:text-blue-200"
-    assert_includes response.body, "bg-primary-100 text-primary-900"
-    assert_includes response.body, "dark:bg-primary-900/50 dark:text-primary-200"
+    # Stage badges come from status_tone: engine tokens that serve both themes.
+    assert_includes response.body, "bg-primary/10 text-heading border border-primary/40"
+    assert_includes response.body, "bg-warning/10 text-warning-ink border border-warning/40"
     refute_includes response.body, "bg-blue-900/50 text-blue-300",
       "task stage badges should not render as dark-only blue pills"
+    refute_match(/dark:(bg|text|border)-(blue|primary)-/, response.body,
+      "a token badge needs no dark: twin")
   end
 
   test "[component] layout nav and link sidebar use tokenized interactive states" do

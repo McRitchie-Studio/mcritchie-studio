@@ -14,7 +14,7 @@
 
   tiles = [
     { label: "Tasks tracked",   value: number_with_delimiter(s[:total_tasks]),            accent: "text-heading" },
-    { label: "Shipped",         value: number_with_delimiter(s[:shipped_tasks]),          accent: "text-mint" },
+    { label: "Shipped",         value: number_with_delimiter(s[:shipped_tasks]),          accent: "text-success-ink" },
     { label: "Total spend",     value: number_to_currency(s[:total_spend]),               accent: "text-primary" },
     { label: "Tokens burned",   value: number_with_delimiter(s[:total_tokens]),           accent: "text-heading" },
     { label: "Avg cycle time",  value: "#{s[:avg_cycle_hours]}h",                         accent: "text-heading" },
@@ -41,7 +41,7 @@
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3" data-test="summary-tiles">
     <% tiles.each do |tile| %>
       <div class="card p-4">
-        <p class="text-[11px] uppercase tracking-wide text-muted"><%= tile[:label] %></p>
+        <p class="text-2xs uppercase tracking-wide text-muted"><%= tile[:label] %></p>
         <p class="text-2xl font-bold mt-1 <%= tile[:accent] %>"><%= tile[:value] %></p>
       </div>
     <% end %>
@@ -203,7 +203,7 @@
                   </td>
                   <td class="px-5 py-2.5 text-center text-secondary uppercase"><%= row[:dev_size] %></td>
                   <td class="px-5 py-2.5 text-center text-secondary uppercase"><%= row[:actual_size] %></td>
-                  <td class="px-5 py-2.5 text-right font-mono <%= row[:delta].positive? ? 'text-ember' : (row[:delta].negative? ? 'text-mint' : 'text-muted') %>">
+                  <td class="px-5 py-2.5 text-right font-mono <%= row[:delta].positive? ? 'text-ember' : (row[:delta].negative? ? 'text-success-ink' : 'text-muted') %>">
                     <%= row[:delta].positive? ? "+#{row[:delta]}" : row[:delta] %>
                   </td>
                 </tr>

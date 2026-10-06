@@ -20,7 +20,7 @@
 <div id="app-ladder-detail" class="space-y-3" data-test="app-ladder-detail"
      data-rendered-at="<%= (Time.current.to_f * 1000).to_i %>">
   <% if cards.any? %>
-    <p class="text-[11px] text-muted">
+    <p class="text-2xs text-muted">
       <%= pluralize(cards.size, "repo") %> on the ladder · newest suite restart first · each card opens its GitHub Actions run
     </p>
     <% cards.each do |card| %>

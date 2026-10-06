@@ -29,7 +29,8 @@
 #     The SWEEP primitive (prepare runs this same sweep for the whole queue).
 #     ACCEPTED-LADDER SEMANTIC NARROWING: review already merged each feat PR into
 #     `accepted`, so `merge <slug>` no longer touches the named task's feat PR — it
-#     PROMOTES all of `accepted` onto `release` (ONE batch PR per repo,
+#     PROMOTES all of `accepted` onto `release` (per repo a fast-forward when
+#     `release` is contained in `accepted`, the batch PR only when it has diverged;
 #     promote_accepted_to_release!) and records the NAMED slugs' membership in a
 #     SINGLE `heroku run` (membership + merged:"release"; the STAGE stays `reviewed`
 #     — it flips to `assembled` only on prepare's QA-green). It therefore lands
@@ -310,8 +311,9 @@ RELEASE_BRANCH = "release"
 
 # The accepted-ladder's first rung (same name in every repo). Review MERGES each
 # feat PR into `accepted` (the board derives merged:"accepted"); the sweep then promotes ALL
-# of `accepted` onto `release` via ONE batch PR per repo (promote_accepted_to_release!
-# uses this as the `--head`). KEPT — the batch PR's head needs the branch name.
+# of `accepted` onto `release` per repo: a fast-forward when `release` is contained in
+# `accepted`, the batch PR only when it has diverged (promote_accepted_to_release!, which
+# uses this as the batch PR's `--head`). KEPT — that head needs the branch name.
 # (Phase 3 Slice 4 retired the release→accepted base-retarget stopgap that used to
 # live here; Phase 4 deleted its last remnant.)
 ACCEPTED_BRANCH = "accepted"
@@ -2235,7 +2237,8 @@ def merge
     # 3. PROMOTE accepted → release (the accepted-ladder's SECOND rung). SEMANTIC
     #    NARROWING (accepted-ladder): `merge <slug>` no longer merges the named task's
     #    ONE feat PR — review already merged it into `accepted`. It now promotes ALL of
-    #    `accepted` onto `release` via ONE batch PR per repo and records the NAMED
+    #    `accepted` onto `release` per repo (a fast-forward when `release` is contained
+    #    in `accepted`, the batch PR only when it has diverged) and records the NAMED
     #    slugs' membership. So it lands EVERY reviewed change on `accepted`, not just
     #    the named one — use it to force a specific reviewed task onto the RC ahead of
     #    the sweep. Idempotent + fail-closed (accepted level with release → skip the
@@ -2361,9 +2364,11 @@ rescue ArgumentError => e
 end
 
 # --- primary-checkout lock ---------------------------------------------------
-# Serializes what STILL flips the primary's HEAD. As of 2026-07-12 that is ONE
-# caller: the artifact-commit dance (commit_artifact_to_accepted), which checks out
-# `accepted` to commit a generated doc and returns to `main`.
+# Serializes the one bin/release writer left in a primary checkout: the artifact
+# commit (commit_artifact_to_accepted). It no longer flips HEAD — since
+# harden-artifact-commit-onto-accepted it builds its commit from origin/accepted in a
+# throwaway index — but it still restores the committed paths in the primary's index
+# and working tree, so it keeps the lock and still skips while another holder has it.
 #
 # The gate suites moved to the gate workspace, and the SHIP moved to its own
 # workspace + ref pushes (push_frozen_main / repin_consumers / deploy_app) — so
@@ -3197,9 +3202,11 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   timeout    = budget
   interval   = ci_poll_interval
   last_state = nil
+  refreshes = CiStatus.gh_auth_summary[:refreshes]
   ci = nil
   loop do
     ci = ci_verdict(repo, sha)
+    refreshes = say_ci_token_refresh(repo, refreshes)
     return ci unless ci_poll_action(ci) == :wait
 
     remaining = deadline - monotonic_s
@@ -3214,6 +3221,17 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
     last_state = ci[:state]
     sleep([interval, remaining].min)
   end
+end
+
+# A wait past one App token's hour re-mints the read token (CiStatus.gh_read_status).
+# Say so, with the token's LENGTH only, so a long hold shows why it kept reading.
+# Returns the refresh count to compare against on the next read.
+def say_ci_token_refresh(repo, seen)
+  auth = CiStatus.gh_auth_summary
+  if auth[:refreshes] > seen.to_i
+    say("  #{repo}: re-minted the GitHub App read token (#{auth[:token_length]} chars) — the wait outlived the last one")
+  end
+  auth[:refreshes]
 end
 
 # Resolve GitHub CI's verdict for a `repo` `sha` — G3's origin/#{RELEASE_BRANCH}
@@ -6822,19 +6840,30 @@ end
 
 # Best-effort: commit a generated doc (a `retro` doc or the `delete-later.md`
 # ledger `archive` updates) onto `accepted` so it stops piling up as uncommitted dirt
-# in the primary. NON-FATAL — any problem leaves the doc uncommitted (which no
-# longer blocks anything: the ship deploys from its own workspace and only ADVISES
-# on a dirty primary) and never aborts retro/archive. The IO seam around the pure
-# Release::ArtifactCommit:
+# in the primary. NON-FATAL — any problem leaves the doc uncommitted in the primary's
+# working tree (which no longer blocks anything: the ship deploys from its own
+# workspace and only ADVISES on a dirty primary) and never aborts retro/archive.
+# The IO seam around the pure Release::ArtifactCommit:
 #   - commit ONLY when the doc is the SOLE uncommitted change (never sweep up dirt),
-#   - build on origin/accepted's tip (ff-only) so the push fast-forwards and the NEXT
-#     promote carries it to `release` and the ship after it to `main`,
+#   - build the commit on origin/accepted's tip, by SHA, so the push fast-forwards and
+#     the NEXT promote carries it to `release` and the ship after it to `main`,
 #   - `accepted`, never `release`: a commit on `release` alone is one `accepted`
 #     lacks, and the next promote could not fast-forward (Release::PromotePlan),
-#   - ALWAYS restore the checkout to `main` (ensure), even on failure,
 #   - SKIP (doc stays uncommitted) when another invocation holds the primary
-#     checkout — never flip HEAD under a running pre-QA gate suite
-#     (with_primary_checkout, wait: false).
+#     checkout (with_primary_checkout, wait: false).
+#
+# NO LOCAL BRANCH, NO FLIP (harden-artifact-commit-onto-accepted). This used to
+# `checkout accepted` in the primary, ff-merge, commit, push and `ensure` back to
+# `main`. The hub primary's local `accepted` sat 3,284 commits behind origin with a
+# delete-later.md that differed from main's, so the checkout refused outright; and a
+# push refused because a review merge landed meanwhile stranded the commit on local
+# `accepted` while the ensure took the doc out of the working tree, under a step line
+# that said "left uncommitted". Now artifact_commit_onto_accepted builds the commit in
+# a throwaway index from origin/accepted and pushes the SHA. No local branch is read
+# or written, HEAD never moves, and a refused push is rebuilt once on the new tip.
+# Only after the push lands are the named paths put back to `main`'s state, which is
+# exactly what the old flip back to `main` did to them.
+#
 # `abs_path` takes one path OR many — many for the archive beat's docs sweep,
 # which retires a batch of frozen snapshots and rewrites the ledger as ONE
 # logical change. All of them must be named here, or the safety check reads the
@@ -6852,18 +6881,12 @@ def commit_artifact_to_accepted(repo, abs_path, message)
     return
   end
 
-  # NOTHING TO COMMIT IS NOT A REFUSAL — and it must be answered BEFORE the
-  # flip. The generated doc usually regenerates to the same bytes, and the dance
-  # used to check out `release`, run a `git commit` that silently did nothing,
-  # and `ensure` its way back to `main` to establish that. Measured on the hub
-  # primary 2026-09-10: 191 such flip pairs, ZERO commits. The checkout is
-  # SHARED, and each flip blinds every desk-side command and git's credential
-  # helper for ~0.4-0.7s.
-  #
-  # It says one line rather than skipping silently: every other outcome of this
-  # method reports, so a silent arm would be the only way for an operator
-  # reading an archive log to be unable to tell the dance from a crash. Nothing
-  # is lost by saying it — this path never committed anything.
+  # NOTHING TO COMMIT IS NOT A REFUSAL — and it is answered before any fetch, lock
+  # or git write. The generated doc usually regenerates to the same bytes (measured
+  # on the hub primary 2026-09-10: 191 checkout flips for ZERO commits, back when
+  # this method flipped HEAD). It says one line rather than skipping silently:
+  # every other outcome reports, so a silent arm would leave an operator reading an
+  # archive log unable to tell a no-op from a crash.
   if Release::ArtifactCommit.nothing_to_commit?(status, rels)
     step("#{rel} unchanged — nothing to commit, and the checkout was not flipped")
     return
@@ -6874,48 +6897,86 @@ def commit_artifact_to_accepted(repo, abs_path, message)
     return
   end
 
-  # Read on `main`, BEFORE the flip: a named path absent from the primary's working
-  # tree is a REMOVAL (the source of a retired doc's `git mv`), and everything else is
-  # content to add. The flip can resurrect a removed path, so this must be read now.
+  # A named path absent from the working tree is a REMOVAL (the source of a retired
+  # doc's `git mv`); everything else is content to add. Naming the source matters:
+  # rel-20261006-f6a119 committed a retired doc at both paths (e8f121d4) when only
+  # the archive copy was named.
   gone, present = rels.partition { |r| !File.exist?(File.join(path, r)) }
 
-  sh("git", "-C", path, "fetch", "origin", ACCEPTED_BRANCH, "--quiet", capture: true)
-
-  # BEST-EFFORT lock (wait: false): if another invocation holds the primary
-  # checkout, SKIP rather than stall archive/retro behind it, and NEVER flip HEAD
-  # under a running suite (the rel-20260708-496cd8 false-negative G3). The doc
-  # simply stays uncommitted — a non-fatal fallback that costs nothing now: a dirty
-  # primary no longer blocks a ship, it only earns an advisory.
-  done = false
+  outcome = nil
   res = with_primary_checkout(repo, wait: false) do
-    _, co = sh("git", "-C", path, "checkout", ACCEPTED_BRANCH, capture: true)
-    if co
-      _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{ACCEPTED_BRANCH}", capture: true)
-      if ff
-        # A REMOVAL MUST BE RE-STAGED HERE, NOT TRUSTED TO RIDE THE FLIP. A `git mv`
-        # on `main` stages the source's deletion, but when the local `accepted` is
-        # OLDER than `main` and predates that source, the deletion carries over as
-        # nothing, and the ff-merge onto origin/accepted then writes the file back.
-        # `git add` cannot stage it either, since the path exists on disk again
-        # (and a missing pathspec makes git add abort the WHOLE batch).
-        # rel-20261006-f6a119 committed a retired doc at both paths this way (e8f121d4).
-        # `git rm --ignore-unmatch` drops it from index and disk, whatever the flip did.
-        sh("git", "-C", path, "rm", "-q", "-r", "--ignore-unmatch", "--", *gone, capture: true) if gone.any?
-        sh("git", "-C", path, "add", "--all", "--", *present, capture: true) if present.any?
-        _, committed = sh("git", "-C", path, "commit", "-m", message, capture: true)
-        _, done = sh("git", "-C", path, "push", "origin", ACCEPTED_BRANCH, capture: true) if committed
-      end
-    end
-  ensure
-    sh("git", "-C", path, "checkout", "main", capture: true)
+    outcome = artifact_commit_onto_accepted(path, gone, present, message)
+    restore_committed_artifacts(path, rels) if outcome.first == :landed
   end
   if res == :busy
     step("left #{rel} uncommitted (primary checkout busy — a concurrent bin/release gate/ship holds #{repo}) — commit it via a docs PR")
     return
   end
 
-  step(done ? "committed #{rel} to #{ACCEPTED_BRANCH} (ships on the next release)" \
-            : "left #{rel} uncommitted (commit/push failed) — commit it via a docs PR")
+  kind, detail = outcome
+  if kind == :landed
+    step(detail ? "committed #{rel} to #{ACCEPTED_BRANCH} (#{detail}; ships on the next release)"                 : "committed #{rel} to #{ACCEPTED_BRANCH} (ships on the next release)")
+  else
+    step("left #{rel} uncommitted in the #{repo} primary's working tree (#{detail}) — no local branch was " \
+         "written and origin/#{ACCEPTED_BRANCH} does not have it; commit it via a docs PR")
+  end
+end
+
+# Build the artifact commit on origin/accepted's tip and push it by SHA, retrying
+# ONCE when the push is refused (a review merge moved accepted between the fetch and
+# the push). Returns [:landed, note_or_nil] or [:failed, reason]. Touches no branch,
+# no HEAD and not the primary's own index: the tree is assembled in a throwaway index
+# (GIT_INDEX_FILE) read from origin/accepted, then the named paths are taken from the
+# working tree. `commit-tree` runs no commit hooks; the push still runs pre-push.
+def artifact_commit_onto_accepted(path, gone, present, message)
+  last = "push to #{ACCEPTED_BRANCH} refused twice: #{ACCEPTED_BRANCH} kept moving"
+  2.times do |attempt|
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet",
+                    "+refs/heads/#{ACCEPTED_BRANCH}:refs/remotes/origin/#{ACCEPTED_BRANCH}", capture: true)
+    return [:failed, "could not fetch origin/#{ACCEPTED_BRANCH}"] unless fetched
+
+    base, = git_capture("-C", path, "rev-parse", "--verify", "refs/remotes/origin/#{ACCEPTED_BRANCH}^{commit}")
+    sha = build_artifact_commit(path, base.strip, gone, present, message)
+    return [:failed, "could not build the commit on origin/#{ACCEPTED_BRANCH}"] unless sha
+    return [:landed, "#{ACCEPTED_BRANCH} already had it"] if sha == :unchanged
+
+    _, pushed = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+    return [:landed, attempt.zero? ? nil : "rebuilt on the new tip after #{ACCEPTED_BRANCH} moved"] if pushed
+  end
+  [:failed, last]
+end
+
+# The commit object for `present` + `gone` on top of `base`, or :unchanged when the
+# resulting tree is base's own, or nil on any git failure.
+def build_artifact_commit(path, base, gone, present, message)
+  Dir.mktmpdir("artifact-index") do |tmp|
+    env = { "GIT_INDEX_FILE" => File.join(tmp, "index") }
+    git = ->(*args) { sh("git", "-C", path, *args, capture: true, env: env) }
+    return nil unless git.call("read-tree", base)[1]
+    return nil if gone.any? && !git.call("rm", "-q", "-r", "--cached", "--ignore-unmatch", "--", *gone)[1]
+    return nil if present.any? && !git.call("add", "--all", "--", *present)[1]
+
+    tree, ok = git.call("write-tree")
+    return nil unless ok
+    base_tree, = git_capture("-C", path, "rev-parse", "#{base}^{tree}")
+    return :unchanged if tree.strip == base_tree.strip
+
+    sha, ok = git.call("commit-tree", tree.strip, "-p", base, "-m", message)
+    ok ? sha.strip : nil
+  end
+end
+
+# Put the named paths back to HEAD's state now that origin/accepted carries them —
+# what the old `ensure { checkout main }` did to them, and nothing more: tracked
+# paths are restored in index and working tree, and a named path HEAD does not
+# track (a first-run retro doc) is removed. Best-effort; a failure only leaves the
+# doc as harmless dirt on the primary.
+def restore_committed_artifacts(path, rels)
+  known, = git_capture("-C", path, "ls-files", "--", *rels)
+  in_head, = git_capture("-C", path, "ls-tree", "-r", "--name-only", "HEAD", "--", *rels)
+  tracked = (known.lines + in_head.lines).map(&:chomp).reject(&:empty?).uniq
+  sh("git", "-C", path, "restore", "--source=HEAD", "--staged", "--worktree", "--", *tracked, capture: true) if tracked.any?
+  (rels - tracked).each { |r| FileUtils.rm_f(File.join(path, r)) }
 end
 
 # Publish (or idempotently skip) one gem, then collapse its release → main at the
@@ -8796,7 +8857,7 @@ def archive
 
   # 10. Retire the frozen docs + roll the ledger. This STAGES tracked changes
   #     (git mv + the ledger rewrite), which the commit below then carries to
-  #     `release` as ONE artifact commit.
+  #     `accepted` as ONE artifact commit.
   say("")
   step("docs archive: bin/archive-docs")
   docs_sweep = sweep_docs(apply: true)

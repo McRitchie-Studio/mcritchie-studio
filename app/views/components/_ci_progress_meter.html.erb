@@ -35,9 +35,9 @@
 <% if progress.respond_to?(:present?) && progress.present? %>
   <% marks, overflowed = ci_meter_marks(progress, cap: inline ? ApplicationHelper::CI_METER_INLINE_MARK_CAP : ApplicationHelper::CI_METER_MARK_CAP) %>
   <% tone = case progress.state
-     when :green then { fill: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" }
-     when :red then { fill: "bg-red-500", text: "text-red-700 dark:text-red-300" }
-     else { fill: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" }
+     when :green then { fill: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" } # measured meter tone
+     when :red then { fill: "bg-red-500", text: "text-red-700 dark:text-red-300" } # measured meter tone
+     else { fill: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" } # measured meter tone
      end %>
   <% summary = "#{progress.passed} of #{progress.total} CI checks passed" \
        + (progress.failed.positive? ? ", #{progress.failed} failed" : "") \
@@ -104,9 +104,9 @@
       <%= rail_html %>
       <%# A fixed clock column, so a list of inline meters keeps its rails aligned
           whether a row's clock reads "9s" or "1h 04m". %>
-      <span class="flex w-9 shrink-0 justify-end text-[10px] leading-none"><%= clock_html %></span>
+      <span class="flex w-9 shrink-0 justify-end text-3xs leading-none"><%= clock_html %></span>
     <% else %>
-    <div class="flex items-center justify-between gap-2 text-[10px] leading-none">
+    <div class="flex items-center justify-between gap-2 text-3xs leading-none">
       <span class="font-semibold uppercase tracking-wide text-muted truncate" data-test="<%= test_id %>-label"><%= label %></span>
       <%= clock_html %>
     </div>

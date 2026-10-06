@@ -10,7 +10,7 @@
 <% if mascot %>
   <span class="ml-auto flex shrink-0 items-center gap-1" title="Conductor: <%= name %>"
         data-test="<%= local_assigns.fetch(:test_id) %>-conductor">
-    <span class="hidden text-[11px] font-medium @[19rem]:inline" data-test="<%= local_assigns.fetch(:test_id) %>"
+    <span class="hidden text-2xs font-medium @[19rem]:inline" data-test="<%= local_assigns.fetch(:test_id) %>"
           style="<%= "color: #{mascot.signature_color};" if mascot.signature_color.present? %>"><%= name %></span>
     <% if mascot.sprite_url.present? %>
       <img src="<%= mascot.sprite_url %>" alt="<%= name %>" width="24" height="24" loading="lazy"

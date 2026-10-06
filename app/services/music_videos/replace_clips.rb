@@ -3,8 +3,11 @@ module MusicVideos
   # there OF THAT KIND. The seam candidates and the chunks (bin/find-clips
   # --tile) coexist: posting one never touches the other. The clip files are
   # already in R2; only their keys arrive. The hub fills each prompt from the
-  # cast and its recasts (ClipPrompts), so the template lives in one place (ClipPrompt). Clips need a
-  # confirmed cast; approvals on the old set are dropped and counted.
+  # cast and its recasts (ClipPrompts), so the template lives in one place (ClipPrompt). Seam
+  # candidates need a confirmed cast; approvals on the old set are dropped and
+  # counted. Chunks do not: bin/digest-video cuts them as soon as the source is
+  # recorded, and an uncast chunk carries the generic prompt until the hub
+  # labels it from the cast (LabelChunks).
   #
   # A chunk set arrives with the chunk length and overlap it was cut at (25 s
   # and 5 s unless sent); the video records them with the set. A chunk cut at
@@ -43,7 +46,7 @@ module MusicVideos
       extra = @rows.flat_map { |row| row.is_a?(Hash) ? row.keys - fields : ["(not an object)"] }.uniq
       raise Refused.new("unpermitted keys (#{chunk? ? 'a chunk has no seam, and ' : ''}the hub fills the prompt): #{extra.join(', ')}", "UNPERMITTED_KEYS") if extra.any?
 
-      check_tiling! if chunk?
+      return check_tiling! if chunk? # chunks are cut at digest, before anyone is cast
       return if @video.cast_confirmed?
 
       raise Refused.new("the cast is not confirmed yet: #{@video.cast_blocker || 'confirm it first'}", "CAST_NOT_CONFIRMED")

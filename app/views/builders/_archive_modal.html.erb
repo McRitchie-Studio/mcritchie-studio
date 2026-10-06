@@ -45,7 +45,7 @@
       <form method="post" :action="selectedBuilder && selectedBuilder.archivePath">
         <input type="hidden" name="_method" value="patch">
         <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
-        <button type="submit" class="btn bg-rose-500/90 text-white hover:bg-rose-500">
+        <button type="submit" class="btn bg-danger text-white hover:bg-danger">
           Archive From Focus
         </button>
       </form>

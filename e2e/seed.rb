@@ -113,6 +113,11 @@ Task.create!(
   blocked_by: "avi",
   block_kind: "rework"
 )
+# Its crew history, so the card's stage avatars draw the blocker's red ✕
+# (status_tones.spec.js measures that badge's contrast in both themes).
+TaskEvent.create!(task_slug: "task-ea8541e4b5b6", to_stage: "designed", occurred_at: 2.days.ago, actor: "carl")
+TaskEvent.create!(task_slug: "task-ea8541e4b5b6", from_stage: "designed", to_stage: "building",
+                  occurred_at: 1.day.ago, seconds_in_from: 3600, actor: "shannon")
 
 # Session-resume fixture: a task claimed by a Claude session — drives the …<last4>
 # badge + click-to-copy resume control on the /tasks board.

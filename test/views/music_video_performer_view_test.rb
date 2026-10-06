@@ -33,7 +33,7 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='performer-card'][data-ordinal='2'][data-resolved='true'][data-named='false']" do
       assert_select "[data-test='performer-still'][data-key='#{@key}'] img[src='https://signed.example/p2.jpg?X-Amz-Signature=abc']"
       assert_select "[data-test='still-unreachable'][hidden]"
-      assert_select "h2", "Person 2"
+      assert_select "h2 [data-test='performer-title-name']", "Person 2"
       assert_select "[data-test='performer-label']", "armchair"
     end
   end
@@ -54,6 +54,83 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_operator at.("performer-resolution"), :<, at.("performer-typeahead")
     assert_select "[data-test='card-bottom'].mt-auto", 1, "pinned to the bottom, so cards in a row line up"
     assert_select "[data-test='performer-recast'].flex.flex-col.flex-1", 1, "the card body is the flex column it is pinned in"
+  end
+
+  # Piece 12 (Alex, 2026-10-06): the title names the person once named, and the description and
+  # sightings fold behind it: one press for the description and one row of clear chips, then all.
+  test "an unnamed card is titled Person N, a folded disclosure button with no secondary label showing" do
+    @performer.update!(confidence_note: "Seen in the armchair throughout.")
+    render_card
+
+    assert_select "[data-test='performer-card'][x-data='castCardDisclosure()'][data-card-name=''][data-clear-count='10'][data-partial-count='4'][data-level='0']" do |card|
+      assert_includes card.first["@naming-saved.window"], "cardOnNamed($event.detail)"
+    end
+    assert_select "h2 > button[type='button'][data-test='performer-title'][aria-expanded='false'][aria-controls='person-2-details']" do |button|
+      assert_equal "cardToggle()", button.first["@click"]
+      assert_select "[data-test='performer-title-name'][x-text=?]", "cardName || 'Person 2'", text: "Person 2"
+      assert_select "[data-test='performer-title-ordinal'][x-cloak][x-show='cardName']", "Person 2"
+    end
+    assert_select "[data-test='performer-label']", "armchair", "the visible-cue label stays out of the fold"
+    assert_select "#person-2-details[data-test='card-details'][x-show='cardLevel > 0'][x-cloak]" do
+      assert_select "[data-test='performer-note']", "Seen in the armchair throughout."
+      assert_select "[data-test='sightings-clear']"
+      assert_select "[data-test='sightings-partial']"
+    end
+  end
+
+  test "a named card is titled by the artist's name, Person N beside it" do
+    @performer.update!(artist_slug: Artist.create!(slug: "test-artist-b", name: "Test Artist B", kind: "person").slug)
+    render_card
+
+    assert_select "[data-test='performer-card'][data-card-name='Test Artist B']"
+    assert_select "[data-test='performer-title']" do
+      assert_select "[data-test='performer-title-name']", "Test Artist B"
+      assert_select "[data-test='performer-title-ordinal']:not([x-cloak])", "Person 2"
+    end
+  end
+
+  test "a card marked as an extra keeps Person N" do
+    @performer.update!(extra: true)
+    render_card
+
+    assert_select "[data-test='performer-card'][data-card-name='']"
+    assert_select "[data-test='performer-title-name']", "Person 2"
+    assert_select "[data-test='performer-title-ordinal'][x-cloak]"
+  end
+
+  test "folded one level shows one row of clear chips and +N more; the partial chips wait for the second level" do
+    render_card
+    chips = css_select("[data-test='sightings-clear'] #person-2-clear-row > [data-test='sighting']")
+
+    assert_equal (0..9).map { |i| "cardLevel === 2 || #{i} < cardFit" }, chips.map { |c| c["x-show"] }
+    assert chips.all? { |c| c.name == "a" && c["target"] == "_blank" }, "every chip still links to its second"
+    assert_select "#person-2-clear-row > button[type='button'][data-test='sightings-more'][x-cloak]" do |more|
+      assert_equal "cardLevel === 1 && cardMore() > 0", more.first["x-show"]
+      assert_equal "cardExpandAll()", more.first["@click.stop"]
+    end
+    assert_select "[data-test='sightings-clear']" do |row|
+      assert_includes row.first["@click"], "cardExpandAll()", "pressing the row opens every chip"
+      assert_includes row.first["@click"], "closest('a')", "a chip press follows its link instead"
+    end
+    assert_select "[data-test='sightings-partial'][x-show='cardLevel === 2'][x-cloak] a[data-test='sighting']", 4
+  end
+
+  test "partial sightings alone still open: the row holds only +N more" do
+    @performer.update!(sightings: [{ "t_ms" => 12_000, "visibility" => "partial" }])
+    render_card
+
+    assert_select "[data-test='sightings-clear'] .label-upper", 0
+    assert_select "[data-test='sightings-clear'] [data-test='sighting']", 0
+    assert_select "[data-test='sightings-clear'] [data-test='sightings-more']", 1
+    assert_select "[data-test='performer-card'][data-clear-count='0'][data-partial-count='1']"
+  end
+
+  test "a card with no description and no sightings has nothing to fold" do
+    @performer.update!(sightings: [], confidence_note: nil)
+    render_card
+
+    assert_select "[data-test='card-details']", 0
+    assert_select "[data-test='performer-title']", 1
   end
 
   test "an unreachable still says so instead of a broken image" do
