@@ -53,7 +53,9 @@ class ReleaseCliRollbackTest < ReleaseCliHarness
 
   # $calls collects every seam in order, so a test reads the sequence the command ran.
   # The Heroku read answers `heroku` until `heroku rollback` runs, then `after`.
-  def stub(migrations: [], dispatch_ok: true, heroku_ok: true, heroku: HEROKU, after: after_rollback("succeeded"))
+  # `rake:` answers whether the hub's target tree carries the devops backfill rake.
+  def stub(migrations: [], dispatch_ok: true, heroku_ok: true, heroku: HEROKU, after: after_rollback("succeeded"),
+           rake: true)
     <<~RUBY
       $calls = []
       def conductor(ruby, read_only: false)
@@ -64,6 +66,7 @@ class ReleaseCliRollbackTest < ReleaseCliHarness
       def git_capture(*args)
         $calls << [:git, args.join(" ")]
         return [#{migrations.join("\n").inspect}, true] if args.include?("diff")
+        return ["", #{rake}] if args.last.to_s.end_with?(":lib/tasks/devops_columns_backfill.rake")
         ["", true]
       end
       def heroku_releases(app, limit: 5)
@@ -128,6 +131,29 @@ class ReleaseCliRollbackTest < ReleaseCliHarness
     assert_includes restamp, %(seal: "red"), "G4's seal is re-stamped red"
     assert_includes out, "studio-engine 0.91.0: stays published on RubyGems"
     assert_includes out, "main is untouched"
+    assert_includes out.split("main is untouched").last,
+                    "devops backfill (the hub target 4ab11111 carries lib/tasks/devops_columns_backfill.rake): once " \
+                    "you roll forward, run `heroku run bin/rails tasks:backfill_devops_columns --app mcritchie-studio`",
+                    "the completion output names the backfill step after the rollback lands"
+    assert_includes calls(out), ["git", "-C /tmp/mcritchie-studio cat-file -e #{HUB_OLD}:lib/tasks/devops_columns_backfill.rake"],
+                    "the rake is read from the hub's TARGET tree by SHA, with no checkout"
+  end
+
+  def test_a_hub_target_without_the_backfill_rake_prints_no_backfill_step
+    out = run_cli(["rel-new", "--mode", "auto"], setup: stub(rake: false), call: CALL)
+
+    refute_includes out, "EXIT=", "the rollback itself is unaffected"
+    refute_includes out, "backfill_devops_columns", "no rake in the target and no columns migration in range: no step"
+  end
+
+  def test_a_hub_range_adding_the_columns_migration_names_the_backfill_in_its_refusal
+    migration = "db/migrate/20261006150000_add_devops_columns_to_tasks.rb"
+    out = run_cli(["rel-new", "--mode", "auto"], setup: stub(migrations: [migration], rake: false), call: CALL)
+
+    assert_includes out, "EXIT=1", "the schema check still refuses"
+    assert_includes out, "devops backfill (the hub range adds the devops columns migration 20261006150000)",
+                    "the plan tells whoever rolls back by hand that the backfill is owed on roll-forward"
+    assert_empty deploys(out)
   end
 
   def test_rollback_without_authority_prints_the_plan_and_deploys_nothing

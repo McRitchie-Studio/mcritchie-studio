@@ -9028,10 +9028,12 @@ def rollback(slug = nil)
     step("git (read-only): db/migrate files each shipped SHA adds over the previous one")
     plan.check_migrations!(->(repo, from, to) { rollback_migrations_added(repo, from, to) })
   end
+  backfill = rollback_devops_backfill_step(plan)
   plan.resolve_heroku_versions!(->(app) { DRY ? nil : heroku_releases(app, limit: 50) }) unless plan.refused?
 
   say("")
   plan.lines.each { |line| say(line) }
+  say("  #{backfill}") if backfill
   if plan.refused?
     say("")
     abort!("refusing to roll back #{rel_slug.empty? ? 'a release' : rel_slug} — nothing deployed:\n  " +
@@ -9081,6 +9083,7 @@ def rollback(slug = nil)
   say("⏪ Rolled back #{rel_slug}: #{plan.seal_summary.delete_prefix('rolled back: ')}.")
   say("   main is untouched — the release's code is still on main and accepted. Land a revert on accepted " \
       "through a task before the next ship, or that ship redeploys it.")
+  say("   #{backfill}") if backfill
   close_role_span("rolled back #{rel_slug}")
 rescue SystemExit
   @rollback_failed_event&.call
@@ -9144,6 +9147,19 @@ def rollback_migrations_added(repo, shipped, previous)
   out, ok = git_capture("-C", path, "diff", "--name-only", "--no-renames", "--diff-filter=A", previous, shipped,
                         "--", Release::RollbackPlan::MIGRATE_DIR)
   ok ? out.lines.map(&:strip).reject(&:empty?) : nil
+end
+
+# The plan's devops backfill line (see RollbackPlan#devops_backfill_step), with the
+# rake's presence read from the hub's target tree as a git object, never a checkout.
+# A SHA the clone lacks was already fetched by the migration check. nil when the plan
+# has no hub app, or was refused before the trees were read.
+def rollback_devops_backfill_step(plan)
+  hub = plan.apps.find { |a| a.repo == APP }
+  return nil unless hub
+
+  rake = git_capture("-C", repo_path(APP), "cat-file", "-e",
+                     "#{hub.to_sha}:#{Release::RollbackPlan::DEVOPS_BACKFILL_RAKE}").last
+  plan.devops_backfill_step(rake_in_target: rake)
 end
 
 # Redeploy one app at its previous SHA through its strategy. Aborts on a failed

@@ -26,13 +26,18 @@ class AppRequest < ApplicationRecord
   SUBDOMAIN_FORMAT = /\A[a-z0-9][a-z0-9-]{1,28}[a-z0-9]\z/
 
   # Names that route somewhere of ours, or plausibly will. The satellites'
-  # subdomains are added from config/satellites.yml, so a new satellite is
-  # reserved the day it is registered, not the day someone notices.
+  # subdomains and slugs are added from config/satellites.yml, so a new
+  # satellite is reserved the day it is registered, not the day someone notices.
+  # The slug counts too: an app whose production_url is not a subdomain of ours
+  # (rolio is a herokuapp host) still keeps its name.
+  # `chain` holds chain-ops' planned host, chain.mcritchie.studio, which has no
+  # DNS yet, so satellites.yml's production_url (null) cannot reserve it.
   RESERVED = %w[
     www app api admin qa staging dev test demo status docs help support blog
     mail email smtp imap pop ftp ns ns1 ns2 cdn static assets auth login signin
     signup register account billing build stack packages credentials v1
     mcritchie studio team security root
+    chain
   ].freeze
 
   # The names the name field types, one after another, as its placeholder — so
@@ -79,13 +84,14 @@ class AppRequest < ApplicationRecord
 
   def self.reserved_names
     satellites = Rails.root.join("config/satellites.yml")
-    hosts = YAML.safe_load_file(satellites).fetch("satellites", []).filter_map do |sat|
+    rows = YAML.safe_load_file(satellites).fetch("satellites", [])
+    hosts = rows.filter_map do |sat|
       host = URI.parse(sat["production_url"].to_s).host.to_s
       host.delete_suffix(".#{PARENT_DOMAIN}") if host.end_with?(".#{PARENT_DOMAIN}")
     rescue URI::InvalidURIError
       nil
     end
-    (RESERVED + hosts).uniq
+    (RESERVED + hosts + rows.filter_map { |sat| sat["slug"].presence }).uniq
   end
 
   # Why NAME cannot be claimed, or nil when it can. The one answer the live

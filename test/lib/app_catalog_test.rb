@@ -126,6 +126,11 @@ class AppCatalogTest < Minitest::Test
     groups = AppCatalog.release_groups
     assert_equal AppCatalog.apps.map(&:slug) + AppCatalog.libraries.map(&:slug), groups.map { |g| g[:key] }
     assert_includes groups.find { |g| g[:key] == "turf-vault" }[:aliases], "vault"
+    hidden = groups.select { |g| g[:hide_when_empty] }.map { |g| g[:key] }
+    assert_equal AppCatalog.apps.select { |app| app.archived? || app.repo.nil? }.map(&:slug), hidden,
+                 "only an archived or repo-less app's group hides when empty"
+    assert_includes hidden, "commercial-welding"
+    refute_includes hidden, "cyvasse"
 
     rows = AppCatalog.seed_rows
     assert_equal (0...rows.size).to_a, rows.map { |row| row[:position] }

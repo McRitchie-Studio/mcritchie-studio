@@ -14,7 +14,9 @@ class App < ApplicationRecord
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true
 
-  scope :active, -> { where(status: "active") }
+  # No `active` scope: status here is config/apps.yml's word, where a live app
+  # may be showcase or delinquent, so `where(status: "active")` would drop Turf
+  # Monster. Ask AppCatalog (`Entry#live?`) whether an app is live.
 
   def self.default
     find_by(slug: DEFAULT_SLUG)

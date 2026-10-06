@@ -2,29 +2,32 @@ module LinkTreeHelper
   def public_link_sections
     sections = []
 
-    # Studio/NFL/Directory links show only to admins: most of them lead behind
-    # the admin wall (AdminWall). The sections below stay public.
+    # Studio and Directory show only to admins: they lead behind the admin wall
+    # (AdminWall). NFL is public on purpose: both of its pages are in
+    # AdminWall::PUBLIC (nfl#index, games#season), so a visitor gets it too.
     if admin?
-      sections += [
-        { title: "Studio", links: [
-          { label: "Dashboard", href: dashboard_path, emoji: "📊", hover_emoji: "📈", desc: "Overview + activity" },
-          { label: "Agents", href: agents_path, emoji: "🦞", hover_emoji: "🤝", desc: "Meet the McRitchie agents" },
-          { label: "Builders", href: builders_path, emoji: "🏗️", hover_emoji: "🚀", desc: "Builder roster + commit pace" },
-          { label: "Tasks", href: tasks_path, emoji: "✅", hover_emoji: "🚦", desc: "Task board" },
-          { label: "News", href: news_index_path, emoji: "📰", hover_emoji: "🔎", desc: "News pipeline" },
-          { label: "Content", href: contents_path, emoji: "🎬", hover_emoji: "✨", desc: "Content pipeline" },
-          { label: "Models", href: model_pipeline_path, emoji: "🪪", hover_emoji: "🎭", desc: "Character model pipeline" },
-        ] },
-        { title: "NFL", links: [
-          { label: "NFL Hub", href: nfl_hub_path, emoji: "🏈", hover_emoji: "📈", desc: "Rankings + grades" },
-          { label: "2026 Season", href: games_season_path(2026), emoji: "📅", hover_emoji: "🏟️", desc: "Schedule + results" },
-        ] },
-        { title: "Directory", links: [
-          { label: "Teams", href: teams_path, emoji: "🛡️", hover_emoji: "📋", desc: "All teams" },
-          { label: "People", href: people_path, emoji: "👤", hover_emoji: "🪪", desc: "Players + staff" },
-          { label: "Docs", href: docs_path, emoji: "📚", hover_emoji: "🔎", desc: "Documentation" },
-        ] },
-      ]
+      sections << { title: "Studio", links: [
+        { label: "Dashboard", href: dashboard_path, emoji: "📊", hover_emoji: "📈", desc: "Overview + activity" },
+        { label: "Agents", href: agents_path, emoji: "🦞", hover_emoji: "🤝", desc: "Meet the McRitchie agents" },
+        { label: "Builders", href: builders_path, emoji: "🏗️", hover_emoji: "🚀", desc: "Builder roster + commit pace" },
+        { label: "Tasks", href: tasks_path, emoji: "✅", hover_emoji: "🚦", desc: "Task board" },
+        { label: "News", href: news_index_path, emoji: "📰", hover_emoji: "🔎", desc: "News pipeline" },
+        { label: "Content", href: contents_path, emoji: "🎬", hover_emoji: "✨", desc: "Content pipeline" },
+        { label: "Models", href: model_pipeline_path, emoji: "🪪", hover_emoji: "🎭", desc: "Character model pipeline" },
+      ] }
+    end
+
+    sections << { title: "NFL", links: [
+      { label: "NFL Hub", href: nfl_hub_path, emoji: "🏈", hover_emoji: "📈", desc: "Rankings + grades" },
+      { label: "2026 Season", href: games_season_path(2026), emoji: "📅", hover_emoji: "🏟️", desc: "Schedule + results" },
+    ] }
+
+    if admin?
+      sections << { title: "Directory", links: [
+        { label: "Teams", href: teams_path, emoji: "🛡️", hover_emoji: "📋", desc: "All teams" },
+        { label: "People", href: people_path, emoji: "👤", hover_emoji: "🪪", desc: "Players + staff" },
+        { label: "Docs", href: docs_path, emoji: "📚", hover_emoji: "🔎", desc: "Documentation" },
+      ] }
     end
 
     # Public on purpose: the App Builder is the funnel's front door and the
