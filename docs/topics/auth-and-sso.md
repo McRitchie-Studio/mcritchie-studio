@@ -14,7 +14,6 @@ Studio.configure do |config|
   config.welcome_message = ->(user) { "Welcome to McRitchie Studio, #{user.display_name}!" }
   config.auth_methods = %i[magic_link google]
   config.registration_params = [:name, :email]
-  config.magic_link_token_name = "magic_link_mcritchie_v1"
   config.configure_sso_user = ->(user) { user.role = "viewer" }
 end
 ```

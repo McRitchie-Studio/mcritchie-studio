@@ -63,6 +63,17 @@ class VideoPerformerRecastTest < ActiveSupport::TestCase
     assert_nil @performer.swap_look
   end
 
+  # The card's state from the remembered person and the Keep Original flag (recast_keep).
+  test "swap_state: none with nobody remembered (kept or not), kept, pending, recast" do
+    assert_equal "none", @performer.swap_state
+    assert_equal "none", recast(recast_keep: true).swap_state, "the old keep as is with nobody named reads as no pick"
+    assert_equal "recast", recast(recast_keep: false, recast_person_slug: @athlete.slug, recast_appearance_slug: @home.slug).swap_state
+    assert_equal "kept", recast(recast_keep: true).swap_state, "Keep Original over a remembered athlete and look"
+    assert_equal "kept", recast(recast_appearance_slug: nil).swap_state, "a remembered athlete with no look is kept too"
+    assert_equal "pending", recast(recast_keep: false).swap_state
+    assert_equal "none", recast(recast_person_slug: nil, recast_keep: false).swap_state
+  end
+
   test "an untouched performer is not swapped and owes nothing; only an athlete without a look is owed one" do
     assert @performer.recast_decided?
     assert_not @performer.swap?
@@ -144,7 +155,9 @@ class VideoPerformerRecastTest < ActiveSupport::TestCase
     assert @video.cast_confirmed?
     assert @performer.reload.swap?
     assert @performer.recast?
+    assert_equal "recast", @performer.swap_state, "Person 1 shows the athlete, Keep Original unchecked"
     others.each(&:reload).each do |p|
+      assert_equal "none", p.swap_state, "#{p.name} shows only the Replace with search"
       assert_not p.swap?, "#{p.name} is not swapped"
       assert p.resolved?
       assert_not p.named?

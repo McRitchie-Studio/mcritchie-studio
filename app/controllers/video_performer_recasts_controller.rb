@@ -54,10 +54,10 @@ class VideoPerformerRecastsController < ApplicationController
   end
 
   # What the card shows once the server has the pick: the stored athlete and
-  # look (remembered while off), and the state the card reads (off, pending, recast).
+  # look (remembered while Keep Original is checked), and the card's state
+  # (VideoPerformer#swap_state: none, kept, pending, recast).
   def saved_json
-    state = if @performer.recast? then "recast" elsif @performer.recast_pending? then "pending" else "off" end
-    { state:, person_slug: @performer.recast_person_slug, appearance_slug: @performer.recast_appearance_slug,
+    { state: @performer.swap_state, person_slug: @performer.recast_person_slug, appearance_slug: @performer.recast_appearance_slug,
       label: @performer.recast_label, message: notice_for(@performer) }
   end
 
