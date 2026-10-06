@@ -353,6 +353,63 @@ class TaskBoardTest < Minitest::Test
     end
   end
 
+  # ── [unit] handed_token: the bearer a parent process passes down ────────────
+  #
+  # bin/ship mints ONE token per run and exports it in AGENT_API_TOKEN; each
+  # child CLI's `token` helper asks here before minting its own. The reader is
+  # the whole seam, so its three answers are pinned: a value, a blank, an absence.
+
+  def test_unit_handed_token_reads_the_parents_token_from_the_environment
+    assert_equal "tok-from-ship", TaskBoard.handed_token({ "AGENT_API_TOKEN" => "tok-from-ship" })
+    assert_equal "tok-trimmed", TaskBoard.handed_token({ "AGENT_API_TOKEN" => "  tok-trimmed\n" }),
+                 "a shell export's stray whitespace is not part of the bearer"
+  end
+
+  def test_unit_handed_token_is_nil_when_unset_or_blank_so_the_secret_chain_still_runs
+    assert_nil TaskBoard.handed_token({})
+    assert_nil TaskBoard.handed_token({ "AGENT_API_TOKEN" => "" })
+    assert_nil TaskBoard.handed_token({ "AGENT_API_TOKEN" => "   " }),
+               "a set-but-blank var is NOT a token — letting it through would send `Bearer ` and 401 every call"
+  end
+
+  def test_unit_handed_token_defaults_to_the_process_environment
+    with_env("AGENT_API_TOKEN" => "tok-env") { assert_equal "tok-env", TaskBoard.handed_token }
+    with_env("AGENT_API_TOKEN" => nil) { assert_nil TaskBoard.handed_token }
+  end
+
+  # ── [integration] mint_token: the one POST /api/v1/auth a ship makes ───────
+
+  def test_integration_mint_token_posts_the_secret_and_returns_the_bearer
+    with_stub_server(payload: '{"token":"tok-minted","expires_at":"2030-01-01T00:00:00Z"}') do |port, requests|
+      token = TaskBoard.mint_token(base_url: "http://127.0.0.1:#{port}", secret: "s3cret")
+
+      assert_equal "tok-minted", token
+      req = requests.first
+      assert_equal ["POST", "/api/v1/auth"], [req[:method], req[:path]]
+      assert_equal({ "secret" => "s3cret" }, JSON.parse(req[:body]))
+      assert_nil req[:headers]["authorization"], "the mint itself carries no bearer"
+    end
+  end
+
+  def test_integration_mint_token_is_nil_when_the_board_answers_without_a_token
+    with_stub_server(status: "401 Unauthorized", payload: '{"error":"bad secret","error_code":"UNAUTHORIZED"}') do |port, _|
+      assert_nil TaskBoard.mint_token(base_url: "http://127.0.0.1:#{port}", secret: "wrong"),
+                 "a refusal is nil, not a raise — the caller (bin/ship) degrades to per-child mints"
+    end
+    with_stub_server(payload: "<html>502</html>") do |port, _|
+      assert_nil TaskBoard.mint_token(base_url: "http://127.0.0.1:#{port}", secret: "s"),
+                 "an unreadable body is nil for the same reason"
+    end
+  end
+
+  def test_unit_mint_token_makes_no_request_without_a_secret
+    with_stub_server do |port, requests|
+      assert_nil TaskBoard.mint_token(base_url: "http://127.0.0.1:#{port}", secret: nil)
+      assert_nil TaskBoard.mint_token(base_url: "http://127.0.0.1:#{port}", secret: "  ")
+      assert_empty requests, "a blank secret is not POSTed — the board would only 401 it"
+    end
+  end
+
   # ── [integration] request shape against a localhost stub ────────────────────
 
   def test_integration_request_sends_bearer_and_json_body

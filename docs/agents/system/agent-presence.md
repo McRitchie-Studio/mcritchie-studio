@@ -596,7 +596,7 @@ size was, and the size was wrong.
 ### Slice 3 — `bin/ship` publishes its phase
 
 The one place the runlock genuinely cannot answer, because a ship *spans* both
-states: cert (`bin/ship`'s `2/8 G1 cert`) and CI wait (`6/8 CI settle wait`). It wrote
+states: the pre-flight (`bin/ship`'s `5/8 pre-flight`) and CI wait (`6/8 CI settle wait`). It wrote
 nothing locally for its entire ~12-minute run. This is what remains of
 `/tasks/certs-publish-no-phase` once §5(b) is accounted for.
 
@@ -623,7 +623,7 @@ cannot see closes no cost. So the reader gained three things:
    certs launched from one shell share a group, and deleting one of them from the
    arithmetic is the expensive direction. A supervisor whose runner has not
    appeared yet keeps its full weight, which covers the real ~11s window between
-   `bin/ship`'s 2/8 and the lane's runlock.
+   `bin/ship`'s 5/8 and the lane's runlock.
 
 ### Slice 4 — sweeps publish locally
 

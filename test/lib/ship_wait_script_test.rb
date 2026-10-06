@@ -276,7 +276,7 @@ class ShipWaitScriptTest < Minitest::Test
 
   def test_a_dead_pid_with_no_sentinel_reports_failed
     with_state do |dir|
-      seed_log(dir, "ship: 4/8 open PR")
+      seed_log(dir, "ship: 3/8 open PR")
       dead = Process.spawn("/bin/sh", "-c", "exit 0", out: File::NULL, err: File::NULL)
       Process.wait(dead)
 

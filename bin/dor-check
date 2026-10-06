@@ -292,8 +292,8 @@ def agent_secret
     die!("AGENT_API_SECRET not found (checked ENV, #{dotenv}, 1Password)")
 end
 
-def token
-  @token ||= api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
+def token # a bearer bin/ship handed down (AGENT_API_TOKEN, TaskBoard#handed_token), else one minted here
+  @token ||= TaskBoard.handed_token || api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
 end
 
 def api(method, path, body = nil, auth: true)
