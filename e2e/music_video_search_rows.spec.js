@@ -95,7 +95,7 @@ test("the artist search draws the same row, and a headshot that fails falls back
   await page.route("**/icon.png", (route) => route.abort());
   await page.goto(VIDEO);
 
-  await card(page).locator("[data-test='name-artist-open']").click();
+  // The naming search is always open: nothing to press first.
   const who = card(page).locator("[data-test='performer-typeahead']");
   await who.getByRole("combobox").fill("test");
   // A person not yet an artist, with a failed headshot; the athlete belongs to the swap search, not here.
@@ -138,7 +138,7 @@ test("an older search answer that arrives late does not reopen or repaint the li
   });
   await page.goto(VIDEO);
 
-  await card(page).locator("[data-test='name-artist-open']").click();
+  // The naming search is always open: nothing to press first.
   const who = card(page).locator("[data-test='performer-typeahead']");
   const combo = who.getByRole("combobox");
   const list = who.locator("[data-test='typeahead-results']");

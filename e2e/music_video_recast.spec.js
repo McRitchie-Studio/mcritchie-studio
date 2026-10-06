@@ -191,13 +191,13 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await page.reload();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "none");
 
-  // Person 2 named after someone who has looks is offered the swap, never given it: one click picks him.
-  await card(page, 2).locator("[data-test='name-artist-open']").click();
+  // Person 2 named after someone who has looks is offered the swap at once (no reload), never given it:
+  // one click picks him.
   await card(page, 2).locator("[data-test='performer-typeahead'] input[role='combobox']").fill("test athlete alpha");
   await card(page, 2).locator("[data-test='typeahead-option']").filter({ hasText: "Test Athlete Alpha" }).first().click();
   await expect(card(page, 2).locator("[data-test='performer-artist-name']")).toHaveText("Test Athlete Alpha");
   await expect(card(page, 2).locator("[data-test='performer-artist-utility']")).toContainText("athlete");
-  await expect(card(page, 2).locator("[data-test='performer-artist-change']")).toBeVisible();
+  await expect(card(page, 2).locator("[data-test='performer-artist-clear']")).toBeVisible();
   await expect(recast(page, 2)).toHaveAttribute("data-state", "none");
   const offer = recast(page, 2).locator("[data-test='swap-offer']");
   await expect(offer).toHaveText("Swap with Test Athlete Alpha?");

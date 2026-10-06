@@ -122,7 +122,7 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   await expect(picker).toHaveAttribute("data-state", "none");
   await expect(picker.locator("[data-test='keep-toggle']")).toBeHidden();
   await expect(picker.locator("[data-test='look-picker']")).toBeHidden();
-  await picker.getByRole("combobox").fill("demo");
+  await picker.locator("[data-test='recast-typeahead']").getByRole("combobox").fill("demo");
   // The search row says what is saved for each person: the default look's sheet and name beside the count.
   const delta = picker.locator("[data-test='recast-option']").filter({ hasText: "Demo Winger Delta" });
   await expect(delta.locator("[data-test='search-row-badge']")).toHaveText(/^\d+ looks$/);
@@ -173,7 +173,7 @@ test("an athlete with no look is offered generate first look, and the new look c
 
   const picker = recast(page, 3);
   await expect(picker).toHaveAttribute("data-state", "none");
-  await picker.getByRole("combobox").fill("novice echo");
+  await picker.locator("[data-test='recast-typeahead']").getByRole("combobox").fill("novice echo");
   const rookie = picker.locator("[data-test='recast-option']").filter({ hasText: "Demo Novice Echo" });
   await expect(rookie.locator("[data-test='search-row-badge']")).toHaveText("0 looks");
   await rookie.click();
