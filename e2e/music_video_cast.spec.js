@@ -31,6 +31,35 @@ test("operator confirms the cast without naming everyone, naming two and marking
   await expect(who(page, 1)).toHaveAttribute("placeholder", "Search artists and people");
   await expect(card(page, 1).locator("[data-test='performer-resolution'] label")).toHaveText("Who is this on screen? (optional)");
   await expect(card(page, 1).locator("[data-test='name-artist-open']")).toHaveCount(0);
+
+  // The description and sightings fold behind the title. Pressing Person 2 opens one row of the clearly
+  // visible chips with "+N more" for the rest; pressing that shows every chip; the title folds them again.
+  const title = card(page, 2).locator("[data-test='performer-title']");
+  const details = card(page, 2).locator("[data-test='card-details']");
+  const partial = card(page, 2).locator("[data-test='sightings-partial']");
+  const more = card(page, 2).locator("[data-test='sightings-more']");
+  const visibleTops = (loc) => loc.evaluateAll((els) => els.filter((e) => e.offsetParent).map((e) => e.getBoundingClientRect().top));
+  await expect(title).toHaveText(/^Person 2/);
+  await expect(title).toHaveAttribute("aria-expanded", "false");
+  await expect(details).toBeHidden();
+  await title.click();
+  await expect(title).toHaveAttribute("aria-expanded", "true");
+  await expect(more).toBeVisible();
+  await expect(partial).toBeHidden();
+  const row = await visibleTops(card(page, 2).locator("[data-test='sightings-clear'] [data-test='sighting']"));
+  expect(row.length).toBeGreaterThan(0);
+  expect(row.length).toBeLessThan(10);
+  const moreTop = (await more.boundingBox()).y;
+  for (const t of row) expect(Math.abs(t - moreTop)).toBeLessThan(4);
+  await expect(more).toHaveText(`+${10 - row.length + 4} more`);
+  await expect(card(page, 2).locator("a[data-test='sighting']").first()).toHaveAttribute("target", "_blank");
+  await more.click();
+  await expect(partial).toBeVisible();
+  await expect(more).toBeHidden();
+  expect((await visibleTops(card(page, 2).locator("[data-test='sighting']"))).length).toBe(14);
+  await title.click();
+  await expect(details).toBeHidden();
+  await expect(title).toHaveAttribute("aria-expanded", "false");
   // Every save below happens in place: this marker would vanish on a reload.
   await page.evaluate(() => { window.__castNoReload = true; });
 
@@ -43,6 +72,10 @@ test("operator confirms the cast without naming everyone, naming two and marking
   await expect(card(page, 1).locator("[data-test='naming-saved']")).toBeVisible();
   await expect(card(page, 1).locator("[data-test='performer-artist']")).toContainText("Test Artist A");
   await expect(card(page, 1).locator("[data-test='performer-badge']")).toHaveText("Named");
+  // The title follows the name without a reload, Person 1 beside it.
+  await expect(card(page, 1).locator("[data-test='performer-title-name']")).toHaveText("Test Artist A");
+  await expect(card(page, 1).locator("[data-test='performer-title-ordinal']")).toBeVisible();
+  await expect(card(page, 1).locator("[data-test='performer-title-ordinal']")).toHaveText("Person 1");
   await expect(who(page, 1)).toHaveValue("");
   await expect(who(page, 1)).toBeVisible();
 
@@ -62,6 +95,8 @@ test("operator confirms the cast without naming everyone, naming two and marking
   await expect(card(page, 4).locator("[data-test='naming-saved']")).toBeVisible();
   await expect(card(page, 4).locator("[data-test='performer-artist']")).toBeHidden();
   await expect(card(page, 4).locator("[data-test='performer-badge']")).toHaveText("Not named");
+  await expect(card(page, 4).locator("[data-test='performer-title-name']")).toHaveText("Person 4");
+  await expect(card(page, 4).locator("[data-test='performer-title-ordinal']")).toBeHidden();
 
   // Person 3: the quiet extra link records an extra, a small chip that can be removed and set again.
   await card(page, 3).getByRole("button", { name: "Mark as extra" }).click();
@@ -72,6 +107,8 @@ test("operator confirms the cast without naming everyone, naming two and marking
   await expect(card(page, 3).locator("[data-test='naming-saved']")).toBeVisible();
   await card(page, 3).getByRole("button", { name: "Mark as extra" }).click();
   await expect(card(page, 3).locator("[data-test='performer-badge']")).toHaveText("Extra");
+  await expect(card(page, 3).locator("[data-test='performer-title-name']")).toHaveText("Person 3");
+  await expect(card(page, 2).locator("[data-test='performer-title-name']")).toHaveText("Test Artist E");
   await expect(page.locator("[data-test='cast-named-count']")).toContainText("2 of 7 named (1 marked extras)");
   expect(await page.evaluate(() => window.__castNoReload)).toBe(true);
 
