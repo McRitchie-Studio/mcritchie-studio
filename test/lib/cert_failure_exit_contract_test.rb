@@ -8,7 +8,7 @@
 # the one failure nobody investigates, because nothing asks them to.
 #
 # WHAT THIS FILE IS, AND IS NOT. `bin/ship` and `bin/fast-check` were reported on
-# 2026-08-29 to exit 0 after failing at step 2/8 in a repo with no `bin/rails`.
+# 2026-08-29 to exit 0 after failing at the pre-flight in a repo with no `bin/rails`.
 # Re-measured on this tree they BOTH exit 1, and the paths that made them exit
 # correctly are dated: `b4f8fce8` (2026-08-25) turned an unlaunchable lane from an
 # unrescued Errno::ENOENT into a red lane with a diagnosis. So these are not tests
@@ -31,6 +31,10 @@ require "open3"
 require "tmpdir"
 require "fileutils"
 require "json"
+# THE NETWORK FLOOR. bin/ship mints one board token per run before its first
+# step, so a child here reaches for the board the moment it starts; this pins
+# the board unroutable for the whole process (every child inherits it).
+require_relative "../support/outbound_seams"
 
 class CertFailureExitContractTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -39,27 +43,31 @@ class CertFailureExitContractTest < Minitest::Test
 
   # ------------------------------------------------------------- bin/ship ----
 
-  # THE PRE-FLIGHT IS NOT A GATE (DevOps v3 phase 2b). A red bin/fast-check at 2/8 is
-  # reported loudly and the ship carries on to the push; in THIS harness the push then
-  # dies (no origin), which is the step that must own the non-zero exit — never the
-  # pre-flight, and never a silent 0.
-  def test_ship_reports_a_red_pre_flight_and_continues_to_the_push
+  # THE PUSH COMES FIRST, AND A FAILED PUSH OWNS THE EXIT. bin/ship pushes at 2/8
+  # and runs the optional pre-flight at 5/8, after the PR, so CI is already running
+  # while it does. In THIS harness the push dies (no origin): that is the step that
+  # must own the non-zero exit — never a silent 0 — and the pre-flight, which comes
+  # after it, must not have spoken at all. (That a RED pre-flight is reported and
+  # walked past is proven with a real origin in test/lib/ship_test.rb.)
+  def test_a_failed_push_owns_the_exit_and_the_pre_flight_has_not_run_before_it
     out, code = ship(cert_exit: 1)
 
     assert_equal 1, code, "the push failed in this harness — a failed step must never yield exit 0"
-    assert_match(/2\/8 pre-flight — RED/, out, "the red pre-flight is named")
-    assert_match(/3\/8 push/, out, "and the run went PAST it — a pre-flight does not stop the line")
+    assert_match(/2\/8 push — git push/, out, "the push is the step that ran and failed")
+    assert_match(/git push failed/, out, "and the refusal names it")
+    refute_match(/pre-flight/, out, "the pre-flight runs AFTER the push; it has nothing to say before one lands")
     refute_match(/did NOT certify/, out, "the retired cert refusal never prints")
   end
 
-  # The OTHER shape: `system` returns nil when the runner cannot be spawned. That is
-  # a red pre-flight like any other, reported and then walked past.
-  def test_ship_reports_a_missing_pre_flight_runner_and_continues
+  # The OTHER shape: a runner that cannot be spawned at all. Before the push it is
+  # never reached, so an unlaunchable pre-flight changes nothing about a failed
+  # push — the exit is the push's, and no spawn error leaks into the transcript.
+  def test_a_missing_pre_flight_runner_is_not_reached_before_the_push
     out, code = ship(cert_exit: :missing)
 
     assert_equal 1, code, "the push failed in this harness"
-    assert_match(/2\/8 pre-flight — RED/, out, "an unlaunchable runner is a red pre-flight")
-    assert_match(/3\/8 push/, out)
+    assert_match(/2\/8 push — git push/, out)
+    refute_match(/pre-flight|Errno::ENOENT|fast-check/, out, "the runner was never consulted before the push")
   end
 
   # THE CONTROL. Without it, the assertions above are satisfied by a `bin/ship`
@@ -150,8 +158,8 @@ class CertFailureExitContractTest < Minitest::Test
   private
 
   # Drive the REAL bin/ship with a stubbed board CLI and a stubbed cert runner, in
-  # a throwaway git repo. It never reaches the network: it dies at 2/8, or (the
-  # control) returns before its first side effect.
+  # a throwaway git repo. It never reaches the network: it dies at the 2/8 push (no
+  # origin), or (the control) returns before its first side effect.
   def ship(cert_exit:, stage: "building")
     with_repo do |tmp, repo, bin|
       write(bin, "task", <<~RUBY_STUB)
@@ -168,8 +176,8 @@ class CertFailureExitContractTest < Minitest::Test
       unless cert_exit == :missing
         write(bin, "fast-check", "#!/bin/sh\necho 'stub cert: red' >&2\nexit #{cert_exit}\n")
       end
-      # `gh` must exist but must never succeed: reaching it at all would mean the
-      # cert failure did not stop the run.
+      # `gh` must exist but must never succeed: the push dies first in this harness
+      # (no origin), so reaching gh at all would mean a failed push did not stop the run.
       write(bin, "gh", "#!/bin/sh\necho 'stub gh should never be reached' >&2\nexit 1\n")
 
       File.write(File.join(repo, "a.txt"), "changed\n")
@@ -178,6 +186,10 @@ class CertFailureExitContractTest < Minitest::Test
           "SHIP_FAST_CHECK_BIN" => File.join(bin, "fast-check"),
           "SHIP_GH_BIN" => File.join(bin, "gh"),
           "SHIP_ROOT" => repo, "SHIP_CI_WAIT" => "off",
+          # The ship's own up-front board mint: the secret chain stops at ENV (never
+          # the desk's .env or 1Password) and the board is unroutable, so the mint
+          # fails fast and the run goes on exactly as it would with no token.
+          "AGENT_API_SECRET" => "test-secret", "TASK_API_BASE" => OutboundSeams::UNROUTABLE,
           # bin/ship publishes a presence claim into the session-marker store
           # (bin/lib/presence_claim.rb), so this harness must PIN that store like
           # any other writer. Unpinned it is refused outright under the suite's

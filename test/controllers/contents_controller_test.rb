@@ -368,14 +368,17 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     Content::AttachVideo.stub(:store, ->(key:, body:) { "https://cdn.test/#{key}" }, &block)
   end
 
-  # Every ESPN read the draft makes, answered for the Bills: 3-1, won yesterday.
+  # Every ESPN read the draft makes, answered for the Bills: 3-1, won at 17:00Z on the
+  # latest day that carries no prime-time tag (#mnf, #tnf), so the caption reads the same any day.
   def stub_espn(won: true)
+    kickoff = 1.day.ago.utc
+    kickoff -= 1.day while kickoff.monday? || kickoff.thursday?
     Content::DraftXCopy.fetch = lambda do |url|
       case url
       when %r{/teams\z}     then { "sports" => [{ "leagues" => [{ "teams" => [{ "team" => { "id" => "2", "displayName" => "Buffalo Bills" } }] }] }] }
       when %r{/teams/2\z}   then { "team" => { "record" => { "items" => [{ "summary" => "3-1" }] } } }
       when %r{/schedule\z}
-        { "events" => [{ "date" => 1.day.ago.utc.strftime("%Y-%m-%dT17:00Z"), "shortName" => "NE @ BUF",
+        { "events" => [{ "date" => kickoff.strftime("%Y-%m-%dT17:00Z"), "shortName" => "NE @ BUF",
                          "competitions" => [{ "status" => { "type" => { "completed" => true } }, "competitors" => [
                            { "winner" => won, "score" => { "displayValue" => "27" }, "team" => { "id" => "2" } },
                            { "winner" => !won, "score" => { "displayValue" => "20" }, "team" => { "id" => "17", "displayName" => "New England Patriots" } }

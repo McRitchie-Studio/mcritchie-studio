@@ -219,12 +219,12 @@ class RemedyHintGuardTest < Minitest::Test
   EXEMPT = [
     # --- ship's step transcript ------------------------------------------------
     # `say "N/8 <step> — <command>"` ECHOES what ship is about to run, in the same
-    # register as its neighbour `say "3/8 push — git push -u origin #{branch}"`.
+    # register as its neighbour `say "2/8 push — git push -u origin #{branch}"`.
     # That neighbour is the proof it is a transcript and not a hint: nobody argues
     # `git push` should be absolute. The reader is being told what happened, not
     # what to do; the remedy, when there is one, is the die! line underneath.
-    { file: "bin/ship", match: /say "2\/8 pre-flight — running/, why: "step transcript, not a handed-over command" },
-    { file: "bin/ship", match: /say "5\/8 record —/, why: "step transcript, not a handed-over command" },
+    { file: "bin/ship", match: /say "5\/8 pre-flight — running/, why: "step transcript, not a handed-over command" },
+    { file: "bin/ship", match: /say "4\/8 record —/, why: "step transcript, not a handed-over command" },
     { file: "bin/ship", match: /say "7\/8 dor — running/, why: "step transcript, not a handed-over command" },
     { file: "bin/ship", match: /say "8\/8 submit —/, why: "step transcript, not a handed-over command" },
 
@@ -601,7 +601,10 @@ class RemedyHintGuardTest < Minitest::Test
       "SHIP_GH_BIN" => task_bin,
       "CLAUDE_PROJECTS_DIR" => root,
       "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111",
-      "TASK_CLAIM_NONCE" => "inst-default"
+      "TASK_CLAIM_NONCE" => "inst-default",
+      # ship mints one board token up front; the chain stops at ENV (never a .env
+      # or the vault) and the board is unroutable, so the mint fails fast.
+      "AGENT_API_SECRET" => "test-secret"
     )
   end
 end
