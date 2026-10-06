@@ -5,12 +5,12 @@ require "test_helper"
 # A DOC MUST NOT PRESCRIBE A HUB-ONLY SCRIPT THROUGH THE DESK'S OWN bin/.
 #
 # MEASURED 2026-09-10 (task handoff-narration-overclaims-four). The canonical handoff
-# block in devops-task-board.md prescribed `<desk>/bin/ship <task-slug>`. A hub desk
-# carries bin/ship, so it works there; a turf-monster or rolio desk carries none, so a
+# block in devops-task-board.md prescribed `<desk>/bin/submit <task-slug>`. A hub desk
+# carries bin/submit, so it works there; a turf-monster or rolio desk carries none, so a
 # builder pasting it got `No such file or directory` — the exact failure the change that
 # wrote it existed to kill. Nothing caught it: the entry-doc guard
 # (test/docs/fast_lane_hub_path_docs_test.rb) reads only the entry docs and modules/fast-lane.md, and its
-# BARE pattern exempts any `/`-prefixed form by design, so `<desk>/bin/ship` passes it.
+# BARE pattern exempts any `/`-prefixed form by design, so `<desk>/bin/submit` passes it.
 #
 # The rule here is narrower than that guard and complementary to it: in ANY fenced block
 # under docs/, a desk-placeholder path (`<desk>/bin/…`, `<worktree>/bin/…`) must not name
@@ -20,9 +20,9 @@ class DeskRelativeHubScriptDocsTest < ActiveSupport::TestCase
 
   # Scripts only the hub carries. Each must really be an executable in THIS repo's bin/
   # (asserted below), so the list cannot drift into naming phantoms.
-  HUB_ONLY = %w[ship ship-wait fast-check dor-check task].freeze
+  HUB_ONLY = %w[submit submit-wait ship ship-wait fast-check dor-check task].freeze
 
-  # Longest-first so `ship` never shadows `ship-wait` in the alternation.
+  # Longest-first so `submit` never shadows `submit-wait` (nor `ship` `ship-wait`).
   DESK_BIN = %r{<(?:desk|worktree)>/bin/(#{Regexp.union(HUB_ONLY.sort_by { |s| -s.size })})(?![\w-])}
 
   def self.fenced_lines
@@ -58,10 +58,10 @@ class DeskRelativeHubScriptDocsTest < ActiveSupport::TestCase
   end
 
   test "[unit] the pattern bites the measured form and spares the absolute one" do
-    assert_match DESK_BIN, "<desk>/bin/ship <task-slug>"
+    assert_match DESK_BIN, "<desk>/bin/submit <task-slug>"
     assert_match DESK_BIN, "<worktree>/bin/fast-check <task-slug>"
-    assert_equal "ship-wait", "<desk>/bin/ship-wait x".match(DESK_BIN)[1], "ship shadowed ship-wait"
-    refute_match DESK_BIN, "/Users/alex/projects/mcritchie-studio/bin/ship <task-slug>"
+    assert_equal "submit-wait", "<desk>/bin/submit-wait x".match(DESK_BIN)[1], "submit shadowed submit-wait"
+    refute_match DESK_BIN, "/Users/alex/projects/mcritchie-studio/bin/submit <task-slug>"
     refute_match DESK_BIN, "<desk>/bin/rails test"
   end
 

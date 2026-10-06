@@ -47,7 +47,7 @@ Use the production board by default. Do not add `--local`.
 
 - The operator named exactly one task (or answered "What task?").
 - That task is `submitted` (or already `reviewed`) with an open PR based on
-  **`accepted`**. The ladder is `accepted → release → main`, and `bin/ship`
+  **`accepted`**. The ladder is `accepted → release → main`, and `bin/submit`
   pins base `accepted`; nothing in the pipeline produces a PR based on
   `release`. If you find one, **retarget it to `accepted`** — that is a
   mis-based PR, not grounds to bounce the task.
@@ -223,7 +223,7 @@ minutes.** Measured from the last 60 `mcritchie-studio` workflow runs
 
 | Stage | What waits | Measured |
 |---|---|---|
-| Build → `submitted` | `bin/task begin`, edit, `bin/ship` (incl. `bin/fast-check`) | ~4-7 min |
+| Build → `submitted` | `bin/task begin`, edit, `bin/submit` (incl. `bin/fast-check`) | ~4-7 min |
 | **CI payment #1** | feat-branch `pull_request` CI — review's gate-zero only claims a GREEN PR | **~8 min** (median 8m11s; range 7m21s-9m46s) |
 | Step 2 review | Carl + light, in parallel | ~3-6 min |
 | **CI payment #2** | the `accepted → release` batch PR's `pull_request` CI, which the G3 gate waits on | **~8-10 min** (measured 8m11s, 9m55s) |

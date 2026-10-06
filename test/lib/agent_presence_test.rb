@@ -11,7 +11,7 @@
 #
 # THE BUG CLASS THIS FILE EXISTS FOR. `ps aux | grep -E "fast-check|rails test"` is
 # the check this reader replaces, and it is correct BY COINCIDENCE of naming. It
-# has already cost: two idle `bin/ship` processes in a CI wait read as competing
+# has already cost: two idle `bin/submit` processes in a CI wait read as competing
 # certs and nearly held off a launch, and a 45-minute run was lost to a sweep that
 # no status command reports. So the assertions here are about the two directions of
 # error separately — a corpse must never be counted, and a live thing must never be
@@ -332,7 +332,7 @@ class AgentPresenceTest < Minitest::Test
   # --- supervisor claims: the OTHER writer, and the arithmetic that keeps one -------
   # --- workload counted ONCE -------------------------------------------------------
   #
-  # `bin/ship` publishes a claim of its own (bin/lib/presence_claim.rb) because it
+  # `bin/submit` publishes a claim of its own (bin/lib/presence_claim.rb) because it
   # SPANS both states — it certifies, then it waits on CI — and the process name is
   # identical in both. Measured live on 2026-09-01: five ship groups, all at 0.0%
   # CPU, all reported UNATTRIBUTED and the machine called BUSY; four were parked in

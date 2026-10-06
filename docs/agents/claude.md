@@ -29,7 +29,7 @@ no size exemption. Name the fixed-path script and stand in the desk:
 
 cd <desk>   #   ... the worktree begin printed; build there ...
 
-/Users/alex/projects/.agents/bin/ship-wait <task-slug> --launch -m "Commit message"
+/Users/alex/projects/.agents/bin/submit-wait <task-slug> --launch -m "Commit message"
 ```
 
 `/Users/alex/projects/.agents/bin` is the fast-lane tooling installed at a fixed
@@ -41,10 +41,10 @@ runs the same scripts.
 - Nobody hand-stamps `merged`, `pr_url` or the author set: the board derives
   them from GitHub. `--agent <soul>` is optional.
 - A cold ship takes about 12 minutes, so run it in the background with
-  `bin/ship-wait`; do not hand-roll a pgrep watcher.
+  `bin/submit-wait`; do not hand-roll a pgrep watcher.
 - `bin/fast-check` is an optional pre-flight; the cert gate (test-only included)
   reads only the PR's settled green CI.
-- `bin/ship` stops at `submitted`. Never merge, deploy, or push `main` unless Alex
+- `bin/submit` stops at `submitted`. Never merge, deploy, or push `main` unless Alex
   assigned you that lane in this session.
 - Detail: `mcritchie-studio/docs/agents/modules/building-sop.md` and
   `mcritchie-studio/docs/agents/modules/fast-lane.md`.

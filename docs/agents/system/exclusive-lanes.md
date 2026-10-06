@@ -28,7 +28,7 @@ hurt before formalizing.
 The `backend_migration` lane (a `migration_lane_claims` row claimed with
 `bin/task migration-lane acquire`) was deleted in devops-v3 piece 4b-ii-b. The
 real protection is the duplicate-migration collision check that `bin/dor-check`
-and `bin/ship` run (`bin/lib/migration_collision.rb`): two open PRs cannot land
+and `bin/submit` run (`bin/lib/migration_collision.rb`): two open PRs cannot land
 migrations that collide.
 
 `tasks.requires_migration` stays as a plain flag. Set it when a task needs a

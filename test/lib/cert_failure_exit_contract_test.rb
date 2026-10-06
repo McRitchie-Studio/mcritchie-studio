@@ -7,7 +7,7 @@
 # next command in a chain — has nothing else to go on, and a silent success is
 # the one failure nobody investigates, because nothing asks them to.
 #
-# WHAT THIS FILE IS, AND IS NOT. `bin/ship` and `bin/fast-check` were reported on
+# WHAT THIS FILE IS, AND IS NOT. `bin/submit` and `bin/fast-check` were reported on
 # 2026-08-29 to exit 0 after failing at the pre-flight in a repo with no `bin/rails`.
 # Re-measured on this tree they BOTH exit 1, and the paths that made them exit
 # correctly are dated: `b4f8fce8` (2026-08-25) turned an unlaunchable lane from an
@@ -22,7 +22,7 @@
 # success path through the same binary.
 #
 # READ `$?` BARE. The reported exit-0 could not be reproduced, and the likeliest
-# explanation is the measurement: `bin/ship ... | tail -20` reports TAIL's status,
+# explanation is the measurement: `bin/submit ... | tail -20` reports TAIL's status,
 # which is 0 for every command on earth. These cases run the binary with no pipe.
 
 require "bundler/setup"
@@ -31,19 +31,19 @@ require "open3"
 require "tmpdir"
 require "fileutils"
 require "json"
-# THE NETWORK FLOOR. bin/ship mints one board token per run before its first
+# THE NETWORK FLOOR. bin/submit mints one board token per run before its first
 # step, so a child here reaches for the board the moment it starts; this pins
 # the board unroutable for the whole process (every child inherits it).
 require_relative "../support/outbound_seams"
 
 class CertFailureExitContractTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
-  SHIP = File.join(ROOT, "bin/ship")
+  SHIP = File.join(ROOT, "bin/submit")
   FAST_CHECK = File.join(ROOT, "bin/fast-check")
 
-  # ------------------------------------------------------------- bin/ship ----
+  # ------------------------------------------------------------- bin/submit ----
 
-  # THE PUSH COMES FIRST, AND A FAILED PUSH OWNS THE EXIT. bin/ship pushes at 2/8
+  # THE PUSH COMES FIRST, AND A FAILED PUSH OWNS THE EXIT. bin/submit pushes at 2/8
   # and runs the optional pre-flight at 5/8, after the PR, so CI is already running
   # while it does. In THIS harness the push dies (no origin): that is the step that
   # must own the non-zero exit — never a silent 0 — and the pre-flight, which comes
@@ -70,7 +70,7 @@ class CertFailureExitContractTest < Minitest::Test
     refute_match(/pre-flight|Errno::ENOENT|fast-check/, out, "the runner was never consulted before the push")
   end
 
-  # THE CONTROL. Without it, the assertions above are satisfied by a `bin/ship`
+  # THE CONTROL. Without it, the assertions above are satisfied by a `bin/submit`
   # that exits 1 unconditionally. This drives a real exit-0 path through the same
   # binary: a task already past the seam is a no-op handoff, and a no-op is a
   # success.
@@ -157,7 +157,7 @@ class CertFailureExitContractTest < Minitest::Test
 
   private
 
-  # Drive the REAL bin/ship with a stubbed board CLI and a stubbed cert runner, in
+  # Drive the REAL bin/submit with a stubbed board CLI and a stubbed cert runner, in
   # a throwaway git repo. It never reaches the network: it dies at the 2/8 push (no
   # origin), or (the control) returns before its first side effect.
   def ship(cert_exit:, stage: "building")
@@ -190,7 +190,7 @@ class CertFailureExitContractTest < Minitest::Test
           # the desk's .env or 1Password) and the board is unroutable, so the mint
           # fails fast and the run goes on exactly as it would with no token.
           "AGENT_API_SECRET" => "test-secret", "TASK_API_BASE" => OutboundSeams::UNROUTABLE,
-          # bin/ship publishes a presence claim into the session-marker store
+          # bin/submit publishes a presence claim into the session-marker store
           # (bin/lib/presence_claim.rb), so this harness must PIN that store like
           # any other writer. Unpinned it is refused outright under the suite's
           # sandbox — which is the guard working — and, run standalone with the
@@ -217,7 +217,7 @@ class CertFailureExitContractTest < Minitest::Test
     end
   end
 
-  # A real git repo with one commit — `bin/ship` commits, and `bin/fast-check`
+  # A real git repo with one commit — `bin/submit` commits, and `bin/fast-check`
   # diffs a git tree.
   def with_repo
     Dir.mktmpdir("exit-contract") do |tmp|

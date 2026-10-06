@@ -271,7 +271,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
   # THE HANDOFF ITSELF NO LONGER DROPS ANYTHING (2026-09-09). `submitted` joined
   # APPROVAL_REQUEST_STAGES, so step 3 is now the merge, not the ship. The test that
   # holds that half is in test/integration/ship_preserves_approval_request_test.rb,
-  # which drives the real PATCH `bin/ship` issues.
+  # which drives the real PATCH `bin/submit` issues.
 
   test "[unit] merging a task drops its pending request and says so on the record" do
     task = Task.create!(title: "Approval Drop Receipt Row", stage: "building",
@@ -284,7 +284,7 @@ class TaskApprovalRequestGuardTest < ActiveSupport::TestCase
     assert_equal "waiting", task.reload.approval_status, "step 2: the request lands at building"
     assert_nil task.devops["approval_request_dropped_at"], "nothing dropped yet"
 
-    task.submit! # step 3: what bin/ship does — and it must NOT drop the request
+    task.submit! # step 3: what bin/submit does — and it must NOT drop the request
     assert_equal "waiting", task.reload.approval_status,
                  "the handoff carries the request into review; this is the 2026-09-09 fix"
     assert_nil task.devops["approval_request_dropped_at"], "so there is nothing to receipt yet"

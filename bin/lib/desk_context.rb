@@ -86,7 +86,7 @@ module DeskContext
   # THE ANCHOR IS PER-PROCESS, NOT PER-SESSION — measured 2026-09-01, and it is
   # the one thing a reader must not get wrong about this field. ONE `claude` CLI
   # process hosts MANY concurrent agent sessions: on this machine, pid 60790 was
-  # the anchor for four sessions at once (three of them mid-`bin/ship` on
+  # the anchor for four sessions at once (three of them mid-`bin/submit` on
   # unrelated tasks), out of eight distinct CLI processes running. So the anchor
   # is one-to-MANY with sessions, and two consequences follow:
   #
@@ -102,7 +102,7 @@ module DeskContext
   # ancestry to an anchor and joining on it looks like it names the session
   # burning the CPU, and it does not — every sibling session in the same CLI
   # process resolves to whichever desk happens to record that anchor. Measured
-  # directly: a probe attributed three foreign `bin/ship` runs to this desk with
+  # directly: a probe attributed three foreign `bin/submit` runs to this desk with
   # full confidence. Nothing on disk currently maps a heavy pid to a session.
   #
   # AND `session_id` IS NOT UNIQUE PER AGENT EITHER — measured 2026-09-01 during

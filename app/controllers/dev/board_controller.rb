@@ -61,7 +61,7 @@ module Dev
     #   1. flag the operator-approval request WITHOUT moving the card, so the tester
     #      can walk into the WAITING APPROVAL state;
     #   2. RUN CI — open a PR-shaped run of DEV_CI_CHECK_COUNT checks and settle one
-    #      every DEV_CI_BEAT_SECONDS, mirroring `bin/ship`, which opens the PR and
+    #      every DEV_CI_BEAT_SECONDS, mirroring `bin/submit`, which opens the PR and
     #      then waits on CI with the task still on the builder's desk. This is the
     #      beat the card's CI meter exists for, and it was previously unreachable
     #      from these buttons: the marks flip and the clock ticks live;

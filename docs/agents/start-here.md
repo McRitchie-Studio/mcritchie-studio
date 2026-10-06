@@ -105,8 +105,8 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Pokemon download tiktok SOP (yt-dlp download of a TikTok video; unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
 | Pokemon download instagram SOP (yt-dlp download of an Instagram reel or post; cookie path unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
-| Fast lane (`bin/task begin` / `bin/ship`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
-| Fast lane entry rules (where each command runs, author set, ship-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |
+| Fast lane (`bin/task begin` / `bin/submit`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
+| Fast lane entry rules (where each command runs, author set, submit-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |

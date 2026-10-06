@@ -2,7 +2,7 @@
 # (Task#cache_derived_pr_url!). Enqueued by tasks#show, which serves the recorded
 # column and never waits on GitHub itself (task-show-never-waits-github).
 #
-# Best-effort, like TaskMergedRungRefreshJob: the column is a cache that bin/ship
+# Best-effort, like TaskMergedRungRefreshJob: the column is a cache that bin/submit
 # also writes, so a failed fill is logged and swallowed, and the next show heals it.
 class TaskPrUrlCacheJob < ApplicationJob
   def perform(slug, derivation: nil)

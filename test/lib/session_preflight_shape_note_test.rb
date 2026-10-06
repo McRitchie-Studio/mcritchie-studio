@@ -107,13 +107,13 @@ class SessionPreflightShapeNoteTest < Minitest::Test
                  "allow-list, so red, pending and unreadable all refuse there.\n#{output}")
 
     # The other half of the same rule, and the half this note is read at: a CI
-    # still running is a WAIT for the builder (bin/ship holds for it), never a
+    # still running is a WAIT for the builder (bin/submit holds for it), never a
     # reason to run a local suite. Until /tasks/dor-reads-settled-ci-verdict this
     # asserted the PROVISIONAL fast-cert credit; that route is gone, and a note that
     # still promised it would send a builder to a hatch the gate no longer reads.
     assert_match(/WAITING/, output,
                  "the note states the green condition but not what a builder sees on a PENDING CI: " \
-                 "a WAIT, held by bin/ship, owing no local run. Stopping at the green is how the " \
+                 "a WAIT, held by bin/submit, owing no local run. Stopping at the green is how the " \
                  "correction to the over-strict wording reproduced its cost one cell over.\n#{output}")
     refute_match(/provisional/i, output,
                  "the note still promises the PROVISIONAL fast-cert credit, a route bin/dor-check no " \

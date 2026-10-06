@@ -10,7 +10,7 @@ const { test, expect } = require("@playwright/test");
 // (the thing the operator reviews with) is reachable from a demo at all.
 //
 // THE SUBMIT BEAT USED TO SETTLE, AND THIS SPEC ASSERTED IT. That was the defect
-// written down as a guarantee: `bin/ship` discarded requests the documented build
+// written down as a guarantee: `bin/submit` discarded requests the documented build
 // flow told builders to set, so a builder who asked for Mr. McRitchie's eyes got
 // none — three times in one night, on turf PRs 644, 647 and 653. `submitted` joined
 // Task::APPROVAL_REQUEST_STAGES on 2026-09-09 and the seam moved to `reviewed`, so
@@ -70,7 +70,7 @@ test("Advance walks a fixture into WAITING APPROVAL, then settles it", async ({ 
   await page.reload();
   await expect(card, "the CI beat must not move the card").toHaveAttribute("data-stage", "building");
   await expect(card.locator("[data-test='task-card-ci-progress']"),
-    "a building card carries its PR's CI meter — that is the window bin/ship waits in").toBeVisible();
+    "a building card carries its PR's CI meter — that is the window bin/submit waits in").toBeVisible();
   await expect(card.locator("[data-test='ci-check-symbol']")).toHaveCount(10);
 
   // The handoff beat: submitting CARRIES the request, so the bar rides along and the

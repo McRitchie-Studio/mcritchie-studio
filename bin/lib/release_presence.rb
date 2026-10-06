@@ -50,7 +50,7 @@ require_relative "presence_claim"
 # WHERE THE CLAIM LIVES — the session-marker namespace, via PresenceClaim
 # ------------------------------------------------------------------------------------
 # `.agents/sessions/<key>.presence-<kind>-<pid>`, which is §4's own nomination and what
-# slice 3's `bin/lib/presence_claim.rb` already writes for `bin/ship`. This module owns
+# slice 3's `bin/lib/presence_claim.rb` already writes for `bin/submit`. This module owns
 # no file format and no writer: it is the release CLI's phase vocabulary wrapped around
 # that shared claim.
 #
@@ -74,7 +74,7 @@ require_relative "presence_claim"
 # WHAT THIS MODULE STILL DECIDES FOR ITSELF — `pgid: pid`
 # ------------------------------------------------------------------------------------
 # `PresenceClaim.open` defaults `pgid` to `Process.getpgid(pid)`, which is right for
-# `bin/ship`: ship spawns `bin/fast-check` with `system` and no `pgroup:`, so the runner
+# `bin/submit`: ship spawns `bin/fast-check` with `system` and no `pgroup:`, so the runner
 # lands in the ship's OWN group and the group is a true second subject. `bin/release` is
 # NOT shaped that way. It never calls `setpgrp`, so its group is whatever LAUNCHED it —
 # under the agent harness a `/bin/zsh -c …` wrapper shared with the rest of the session
@@ -208,7 +208,7 @@ module ReleasePresence
 
       pid = Process.pid
       # pgid: pid — NOT PresenceClaim's `Process.getpgid` default. See the header; this is
-      # the one decision this module makes differently from `bin/ship`, and it is what
+      # the one decision this module makes differently from `bin/submit`, and it is what
       # keeps a killed sweep gradeable as a corpse.
       @claim = PresenceClaim.open(kind: kind, root: target, projects_dir: projects_dir,
                                   session_id: session_id, task_slug: task_slug,

@@ -357,7 +357,7 @@
 
   <%# CI progress meter — a symbolic row (few checks) or the numeric "X / Y" bar for
       this PR's GitHub CI run, and a LINK that opens the PR in a new tab. BUILDING and
-      SUBMITTED stages: `bin/ship` opens the PR and then waits for its CI while the
+      SUBMITTED stages: `bin/submit` opens the PR and then waits for its CI while the
       task is STILL BUILDING (gate-submit-on-green-ci), so that wait is exactly the
       window an operator wants to watch — the meter appears on the building card the
       moment the PR exists and follows it across the submit move. Once a task is
@@ -368,7 +368,7 @@
       components/_ci_progress_slot so a live workflow_job webhook can morph JUST this
       meter in place (it ticks up with no reload). %>
   <%# Sits directly above the CI meter because they are the SAME slot across time:
-      the local cert runs, finishes, bin/ship opens the PR, and the CI meter takes
+      the local cert runs, finishes, bin/submit opens the PR, and the CI meter takes
       over. show_local_check? requires a blank pr_url, so the two never stack. %>
   <% if show_local_check?(task, pr_url) %>
     <%= render "components/local_check_slot",

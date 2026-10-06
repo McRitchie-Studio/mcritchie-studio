@@ -454,7 +454,7 @@ bin/dor-check <task-slug>
 
 Exit 0 = ready to advance `submitted → reviewed`, which since 2026-09-24 means
 the PR's CI has **settled green**. A CI still running exits 1 under a `⏳ …
-WAITING on CI` headline — not a failure, a wait; `bin/ship` holds at step 6/8 for
+WAITING on CI` headline — not a failure, a wait; `bin/submit` holds at step 6/8 for
 exactly this, so the ordinary handoff never sees it. The verdict opens+closes the
 `dor` gate with its evidence as SOPs. `--json` records no gate attempt, so
 `bin/dor-check <task-slug> --json` before the ship is a free read-only probe for
@@ -476,12 +476,12 @@ what `--gate-role review` exists for.
 
 **Read this section as the gate's contract.** `bin/dor-check` still never waits
 for CI: it grades whatever state it finds. What changed first
-(`gate-submit-on-green-ci`, 2026-08-16) is **when `bin/ship` calls it** — the
+(`gate-submit-on-green-ci`, 2026-08-16) is **when `bin/submit` calls it** — the
 wrapper holds at step 6/8 until the PR's CI settles, so in the ordinary case this
 gate is handed a GREEN CI. What changed second (`dor-reads-settled-ci-verdict`,
 2026-09-24) is what a still-pending CI means when the wait times out: there is no
 provisional credit any more, so the builder-side verdict is a **WAIT** (exit 1) and
-`bin/ship` stops at 7/8 to be re-run once CI reports.
+`bin/submit` stops at 7/8 to be re-run once CI reports.
 
 That reversed a dated decision, which is worth stating rather than leaving to be
 rediscovered. The original reasoning (`ci-gate-review-handoff`, 2026-07-09) was
@@ -606,8 +606,8 @@ attempt n+1.
       now visible.** The role asymmetry covers the *unread* family and `pending`;
       a **RED** CI has always blocked BOTH roles, and since the exempt path
       started evaluating CI at all (2026-09-05) that block reaches a doc-only diff
-      too. `bin/ship` runs `bin/dor-check <slug>` at step **7/8** and dies on its
-      exit code, so **a docs task with a red CI now fails `bin/ship` at 7/8**
+      too. `bin/submit` runs `bin/dor-check <slug>` at step **7/8** and dies on its
+      exit code, so **a docs task with a red CI now fails `bin/submit` at 7/8**
       rather than sailing through. That is the correct direction — this repo's CI
       grades prose — and it was undocumented until now. Measured 2026-09-05
       against the exempt path in the builder role: `red` → exit 1, `green` and

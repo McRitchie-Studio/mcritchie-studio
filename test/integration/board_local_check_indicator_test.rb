@@ -51,7 +51,7 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
 
   test "[component] a dead runner renders STALLED, not a spinner that never ends" do
     # The failure this whole feature exists to prevent: a killed cert (routine —
-    # a cold bin/ship outruns some harness timeouts) must not keep claiming work.
+    # a cold bin/submit outruns some harness timeouts) must not keep claiming work.
     task = building_task
     stale = Cert::LocalCheck::STALE_AFTER + 2.minutes
     open_cert(task.slug, sops: [running_sop(at: stale.ago)], started_at: 20.minutes.ago)
@@ -147,8 +147,8 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
 
   # --- [integration] the handover to the CI meter ---
 
-  test "[integration] the indicator yields the slot once bin/ship opens the PR" do
-    # The two must never stack: bin/ship runs the cert, then opens the PR, and from
+  test "[integration] the indicator yields the slot once bin/submit opens the PR" do
+    # The two must never stack: bin/submit runs the cert, then opens the PR, and from
     # that moment the CI meter owns this slot.
     task = building_task(devops: { "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999" })
     open_cert(task.slug, sops: [running_sop])

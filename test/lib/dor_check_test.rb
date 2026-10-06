@@ -1391,7 +1391,7 @@ class DorCheckTest < Minitest::Test
 
   # THE WAIT. Builder-side a running CI used to credit a fast cert provisionally and
   # pass; with no cert to credit it is NOT ready — but it is not failed either, and the
-  # headline says which. bin/ship reads exit 1 and does not move the task.
+  # headline says which. bin/submit reads exit 1 and does not move the task.
   def test_a_pending_ci_is_a_wait_for_the_builder_not_a_failure
     out, code = check_ci(SUITE_CONTRACT, "pending")
     assert_equal 1, code, "a pending CI must not reach submitted: #{out}"
@@ -1807,7 +1807,7 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_pending_ci_is_a_wait_at_submit_that_names_where_the_verdict_lands
-    # gate-submit-on-green-ci: bin/ship holds at step 6/8 for exactly this, so the
+    # gate-submit-on-green-ci: bin/submit holds at step 6/8 for exactly this, so the
     # ordinary handoff never sees it; a hand-run verdict is told to come back, and told
     # that ship resumes at this step.
     out, code = ci_check("pending")
@@ -2001,7 +2001,7 @@ class DorCheckTest < Minitest::Test
   def test_missing_pr_refuses_because_there_is_no_verdict_to_read
     # No PR yet + no injection → :no_pr via the real (gh-free) path. The suite evidence
     # is the PR's CI verdict, so with no PR there is none: not ready, with "open the PR"
-    # as the move (bin/ship does that before it runs this verdict).
+    # as the move (bin/submit does that before it runs this verdict).
     out, code = with_changed_files("app/models/agent.rb") do
       with_env("DOR_CHECK_CI_STATUS" => "") { check(BACKEND_CONTRACT) }
     end

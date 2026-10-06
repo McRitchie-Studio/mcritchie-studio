@@ -33,7 +33,7 @@ and 7 ("Certs and evidence").
 ## Who runs it
 
 The **feature (builder) agent**, from the task worktree — by hand, or through
-`bin/ship`, which runs it at step 5/8, after the push and the PR so CI is already
+`bin/submit`, which runs it at step 5/8, after the push and the PR so CI is already
 running, and **carries on whatever it says**. A red pre-flight is printed loudly
 there because it almost always means a red CI ten minutes later; it is not a
 refusal. `SHIP_PREFLIGHT=off` skips it.

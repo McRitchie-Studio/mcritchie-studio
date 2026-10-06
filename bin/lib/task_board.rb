@@ -20,7 +20,7 @@ require_relative "op_meter"
 #
 # Tokens stay per-process: every CLI mints its own 24h token per run (the
 # memoized `token` helper stays in each script) UNLESS a parent handed one down
-# in AGENT_API_TOKEN (`handed_token` below) — bin/ship mints once and exports it,
+# in AGENT_API_TOKEN (`handed_token` below) — bin/submit mints once and exports it,
 # so one ship costs one mint instead of one per child `bin/task` call. Only the
 # narration stack (bin/lib/agent_api.rb) uses the shared disk cache.
 #
@@ -46,7 +46,7 @@ module TaskBoard
   # resolves in the agent vault. See bin/lib/op_vaults.rb for why the vault
   # name is no longer written down in eleven places.
   SECRET_REF = OpVaults.ref("Agent API Secret", "AGENT_API_SECRET")
-  # A bearer handed down by a parent process. bin/ship mints one per run and
+  # A bearer handed down by a parent process. bin/submit mints one per run and
   # exports it here so its child CLIs skip their own POST /api/v1/auth; a CLI run
   # on its own finds it unset and mints as before.
   TOKEN_ENV = "AGENT_API_TOKEN"
@@ -195,7 +195,7 @@ module TaskBoard
 
   # Mint one 24h bearer from the secret: POST /api/v1/auth. Returns the token, or
   # nil when there is no secret or the board answered without one — the caller
-  # keeps its own posture (bin/ship degrades to per-child mints; a CLI die!s).
+  # keeps its own posture (bin/submit degrades to per-child mints; a CLI die!s).
   # A transport error propagates, as `request` promises.
   def mint_token(base_url:, secret:, read_timeout: 30)
     return nil if secret.to_s.strip.empty?

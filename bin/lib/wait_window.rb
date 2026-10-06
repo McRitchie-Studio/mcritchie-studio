@@ -16,7 +16,7 @@
 #
 # BOUNDED BY CONSTRUCTION. The loop's deadline is the LATEST open end plus the
 # grace, recomputed on every read, so a wait can never outlive the window it
-# watches (the ship-wait family's rule: a watcher that can hang forever is the
+# watches (the submit-wait family's rule: a watcher that can hang forever is the
 # defect in a new shape). A read that fails is not an answer: three consecutive
 # failures exit 1 rather than reading "no windows" into a broken board.
 #

@@ -7,7 +7,7 @@
 #   ruby -Itest test/lib/ci_wait_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 #
-# The integration half — that bin/ship actually CALLS this, and that a red CI
+# The integration half — that bin/submit actually CALLS this, and that a red CI
 # leaves the task in `building` — lives in test/lib/ship_test.rb. Both halves are
 # needed: this file proves the rule, that one proves the rule is on the path.
 require "minitest/autorun"
@@ -192,7 +192,7 @@ class CiWaitTest < Minitest::Test
 
   def test_a_read_the_token_was_refused_is_flagged_apart_from_a_verdict
     # F2. :unreadable is a 401/403 on the TOKEN. It SETTLES — waiting cannot mend a
-    # credential — which is precisely why it needs a name of its own: bin/ship's
+    # credential — which is precisely why it needs a name of its own: bin/submit's
     # token-refresh advisory fired on :unverified and said nothing on the one state
     # whose remedy IS the token. The integration half is in test/lib/ship_test.rb.
     refused = settle(probe_over(:unreadable))

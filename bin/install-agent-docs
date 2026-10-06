@@ -200,7 +200,7 @@ fi
 
 # ── FAST-LANE TOOLING AT A FIXED PATH ─────────────────────────────────────────
 #
-# THE CAUSE THIS REMOVES. The fast-lane scripts (bin/task, bin/ship, bin/ship-wait,
+# THE CAUSE THIS REMOVES. The fast-lane scripts (bin/task, bin/submit, bin/submit-wait,
 # bin/fast-check, bin/dor-check, bin/release, bin/agent-worktree, bin/agent-activity,
 # bin/gh-auth-refresh and bin/lib/**) used to run only from the hub PRIMARY checkout,
 # which other sessions move with `git checkout`. A tracked file is absent for
@@ -234,9 +234,10 @@ tooling_sha() {
 
 # Is the fixed path installed and intact: the link, a runnable script behind it, and
 # the tree's `.complete` marker. One predicate for the check report and for the bin/
-# the hooks name.
+# the hooks name. A tree installed before the bin/ship → bin/submit rename carries only
+# `ship`, and is still a complete install until the next production ship replaces it.
 fast_lane_tooling_installed() {
-  [ -L "$TOOLING_LINK" ] && [ -x "$TOOLING_LINK/ship" ] && [ -f "$TOOLING_LINK/../.complete" ]
+  [ -L "$TOOLING_LINK" ] && { [ -x "$TOOLING_LINK/submit" ] || [ -x "$TOOLING_LINK/ship" ]; } && [ -f "$TOOLING_LINK/../.complete" ]
 }
 
 # The bin/ every managed hook, the status line and the git credential helper name:

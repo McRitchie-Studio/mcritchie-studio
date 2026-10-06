@@ -6,14 +6,14 @@ require "test_helper"
 # this test existed nothing checked it against the filesystem.
 #
 # MEASURED, 2026-09-09 (task ship-path-misleads-satellites). Both generated entry docs
-# instructed `bin/ship <task-slug> -m "…"` "run from that worktree". From a SATELLITE
+# instructed `bin/submit <task-slug> -m "…"` "run from that worktree". From a SATELLITE
 # desk (turf-monster, rolio, mcritchie-industries) that path does not exist: every
 # fast-lane script lives only in mcritchie-studio/bin, and the launch dies instantly as
-# `nohup: bin/ship: No such file or directory`. It cost several builders time in one
+# `nohup: bin/submit: No such file or directory`. It cost several builders time in one
 # night, and turf-monster is the busiest satellite on the board.
 #
 # WHY THE SENTENCE READ AS CORRECT. The fast-lane section is written from a HUB desk,
-# where `bin/ship` really is on the path — a hub worktree checks the scripts out — and
+# where `bin/submit` really is on the path — a hub worktree checks the scripts out — and
 # the very next clause says "run from that worktree". So the instruction is true for the
 # desk its author was standing in and false for every other one, which is the failure
 # mode a grep for the sentence can never catch.
@@ -23,7 +23,7 @@ require "test_helper"
 # So the guard is keyed on the filesystem, not on prose:
 #
 #   * test_fast_lane_scripts_live_in_the_hub — the FACT the instruction depends on. If
-#     bin/ship is renamed, moved, or deleted, this reddens first.
+#     bin/submit is renamed, moved, or deleted, this reddens first.
 #   * test_documented_hub_paths_resolve — every hub-absolute path the docs PRINT is
 #     mapped back to this repo and must be an executable file. So the doc cannot name a
 #     script that does not exist.
@@ -38,7 +38,7 @@ require "test_helper"
 #     catches up. BOTH directions, and only since 2026-09-09 — see the completeness
 #     assertion inside that test for what the subset checks alone could not see.
 #   * test_no_satellite_checkout_carries_a_fast_lane_script — the same fact read off
-#     disk. If a satellite ever grows a `bin/ship` shim (option (b) in the PR body),
+#     disk. If a satellite ever grows a `bin/submit` shim (option (b) in the PR body),
 #     this goes red and the table must be revisited rather than silently going stale.
 #     It inspects whatever sibling checkouts exist and is deliberately NOT the only
 #     assertion in its file — see the note above that test for why it carries no skip.
@@ -52,12 +52,12 @@ require "test_helper"
 #     TaskTree#refusal — its only caller — so from the hub against a satellite task it
 #     exits 1: "this run roots at …/mcritchie-studio (branch main), which is not
 #     <slug>'s tree — refusing to run against it."
-#   * bin/ship RE-ROOTS, LOUDLY. It reads TaskTree.assess directly because it wants
+#   * bin/submit RE-ROOTS, LOUDLY. It reads TaskTree.assess directly because it wants
 #     :resolved_root, prints "re-rooting at the task worktree <desk> (you ran from
 #     <cwd>)" and carries on there; it die!s only when resolved_root is nil (no desk on
 #     disk, or a multi-repo tie). Its own comment says so: ship "re-roots rather than
 #     refuses when the task's worktree exists on disk — loudly". The first draft of this
-#     header attached the pre-flight's verbatim refusal to bin/ship, which is the
+#     header attached the pre-flight's verbatim refusal to bin/submit, which is the
 #     highest-credibility claim form in this house pointed at the wrong command.
 #
 # Either way a `cd <hub>` earlier in the block does NOT excuse a bare form for any
@@ -72,7 +72,7 @@ require "test_helper"
 # "no crisp classifier separates them". That keyed the guard on fence LANGUAGE when the
 # property that matters is COPY-PASTEABILITY. The "good prompt" ```text block exists to be
 # pasted verbatim into a new session, and 3617fa35 (ms#1339) rewrapped it with a bare
-# `bin/ship <task> -m` still inside while #1334's fix was in review. It undid no landed
+# `bin/submit <task> -m` still inside while #1334's fix was in review. It undid no landed
 # fix (its parent already had the bare form); the two collided. Three rules were weighed:
 #
 #   * OPT-IN MARKER on pasteable blocks — rejected: it fails OPEN. A new pasteable block
@@ -119,11 +119,11 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   HUB_PREFIX = "/Users/alex/projects/mcritchie-studio"
 
   # Commands the docs instruct a builder to run STANDING IN THE TASK'S DESK. For these
-  # the bare `bin/…` form is wrong from every desk but the hub's. `ship-wait` is here
-  # because it LAUNCHES bin/ship, so it inherits the cwd contract exactly: it lives only
+  # the bare `bin/…` form is wrong from every desk but the hub's. `submit-wait` is here
+  # because it LAUNCHES bin/submit, so it inherits the cwd contract exactly: it lives only
   # in the hub, and the docs tell a builder to run it from the desk. It must precede
-  # `ship` in this list — Regexp.union alternates in order, so a leading `ship` would
-  # match the `ship` inside `bin/ship-wait` and report the wrong command in the remedy.
+  # `submit` in this list — Regexp.union alternates in order, so a leading `submit` would
+  # match the `submit` inside `bin/submit-wait` and report the wrong command in the remedy.
   #
   # `gh-auth-refresh` is here for the same reason from a different door: it is run from
   # WHEREVER the builder stands when a token lapses, and mid-ship that is the desk. It
@@ -131,14 +131,14 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
   # resolves its helper from its own __dir__, so the hub-absolute form works from any cwd.
   # It is usually wrapped — eval "$(bin/gh-auth-refresh --export)" — and BARE is not
   # anchored to the line start, so the wrapper does not hide it.
-  DESK_RUN = %w[ship-wait ship fast-check dor-check gh-auth-refresh].freeze
+  DESK_RUN = %w[submit-wait submit fast-check dor-check gh-auth-refresh].freeze
 
   # The info-string token that excuses a fence from the pasteable scan. See the header.
   NOT_PASTEABLE = "not-pasteable"
 
   # Until 2026-09-24 exactly one fence was excused: the in-flight roster mock-up in
   # index.md's communication-style section, which illustrates chat OUTPUT
-  # (`bin/ship restyle-…` beside meter glyphs), not a command. The map dropped that
+  # (`bin/submit restyle-…` beside meter glyphs), not a command. The map dropped that
   # mock-up (communication-style.md carries it), so today NONE is excused; the cap
   # stays at one so the old shape remains legal. Raising it is a decision, not a fix.
   MAX_EXCUSED_FENCES = 1
@@ -222,7 +222,7 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     body.each_line.with_index(1) do |line, number|
       # lstrip FIRST. A fence indented inside a list item is still a fence, and matching
       # on the raw line silently left every such block unparsed — the scan would sail
-      # past an indented fence without ever entering it, so a bare `bin/ship` there was
+      # past an indented fence without ever entering it, so a bare `bin/submit` there was
       # unpinned. Measured on review, 2026-09-09.
       if line.lstrip.start_with?("```")
         if current
@@ -318,7 +318,7 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     # Non-vacuity: the docs carry no excused fence today, so prove on a known sample
     # that the marker parser still finds one — an empty `excused` above is only
     # evidence when the parser can see the marker at all.
-    sample = "```#{NOT_PASTEABLE}\nbin/ship some-task\n```\n```text\nplain\n```\n"
+    sample = "```#{NOT_PASTEABLE}\nbin/submit some-task\n```\n```text\nplain\n```\n"
     assert_equal 1, fences(sample).count(&:excused?),
                  "no #{NOT_PASTEABLE} fence found in a sample that carries one — the info-string parser is broken"
   end
@@ -350,8 +350,8 @@ class FastLaneHubPathDocsTest < ActiveSupport::TestCase
     refute template.excused?, "the good-prompt template is marked #{NOT_PASTEABLE} — it exists " \
                               "to be pasted, so it may never be excused"
     text = template.lines.map(&:last).join
-    assert_includes text, "#{HUB_PREFIX}/bin/ship",
-                    "the good-prompt template no longer names #{HUB_PREFIX}/bin/ship"
+    assert_includes text, "#{HUB_PREFIX}/bin/submit",
+                    "the good-prompt template no longer names #{HUB_PREFIX}/bin/submit"
   end
 
   # Every alternative in BARE must really match its command; an alternative that never

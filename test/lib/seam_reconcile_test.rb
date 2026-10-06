@@ -17,7 +17,7 @@ class SeamReconcileTest < Minitest::Test
 
   # --- the three build/review-seam anomalies -----------------------------------
 
-  # A killed bin/ship: PR open + green, no live build claim. Review cannot see
+  # A killed bin/submit: PR open + green, no live build claim. Review cannot see
   # this today because claim-next-review only pops `submitted`.
   def test_flags_ship_interrupted_on_a_green_open_pr_with_a_dead_build_claim
     f = SeamReconcile.classify(task(stage: "building"),

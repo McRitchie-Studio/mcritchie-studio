@@ -143,7 +143,7 @@ class TaskClaimGateTest < ActiveSupport::TestCase
   #
   # THE SAME DEFECT LIVED IN A SECOND FILE, one word wide. ClaimLease's
   # disposition legend read ":held_by_other … → the gate warns/refuses". Seven
-  # consumers read that disposition — bin/task's build gate, bin/ship's ownership
+  # consumers read that disposition — bin/task's build gate, bin/submit's ownership
   # guard, bin/task's heartbeat renewal, and the four claim models — and NOT ONE
   # of them warns and proceeds. "warns" named a branch that has never existed.
   #

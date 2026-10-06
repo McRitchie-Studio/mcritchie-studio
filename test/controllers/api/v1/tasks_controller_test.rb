@@ -38,7 +38,7 @@ module Api
       end
 
       # [integration] devops-v3 4c-i: the board DERIVES the PR url and caches it into
-      # a blank `devops.pr_url`, so bin/ship can skip its write and its read-back still
+      # a blank `devops.pr_url`, so bin/submit can skip its write and its read-back still
       # pins the exact PR. The derivation runs in TaskPrUrlCacheJob, never in the
       # request; the index queues nothing.
       test "show queues the PR url fill and the next show serves the cached url" do

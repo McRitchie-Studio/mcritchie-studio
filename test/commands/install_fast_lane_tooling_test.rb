@@ -76,7 +76,7 @@ class InstallFastLaneToolingTest < Minitest::Test
 
     assert File.symlink?(link), ".agents/bin must be a symlink"
     assert_equal "tooling/#{@sha}/bin", File.readlink(link), "relative, so the projects root can move"
-    %w[ship ship-wait task fast-check dor-check release agent-worktree agent-activity gh-auth-refresh].each do |script|
+    %w[submit submit-wait ship ship-wait task fast-check dor-check release agent-worktree agent-activity gh-auth-refresh].each do |script|
       assert File.executable?(File.join(link, script)), "#{script} must be installed executable"
     end
     tree = File.join(tooling_root, @sha)
@@ -176,7 +176,7 @@ class InstallFastLaneToolingTest < Minitest::Test
   # names the fixed path FIRST, read it as a broken Ruby install and fell back by hand.
   #
   # WHY THE OLD TESTS PASSED THROUGH IT. The install test asserted PRESENCE and
-  # EXECUTABILITY of nine named scripts and booted exactly one, `ship-wait`, a script
+  # EXECUTABILITY of nine named scripts and booted exactly one, `submit-wait`, a script
   # that needs no Rails, asserting only `refute_match(/cannot load such file/)`. Nothing
   # in the suite ever BOOTED a Rails-booting script from the installed tree, so the
   # install could ship five scripts that cannot run and stay green. These tests close
@@ -282,7 +282,7 @@ class InstallFastLaneToolingTest < Minitest::Test
     assert_includes out, "OK: #{link} -> tooling/#{@sha}/bin"
   end
 
-  # [integration] the installed ship-wait runs from a desk it does not live in, and
+  # [integration] the installed submit-wait runs from a desk it does not live in, and
   # acts on THAT desk: its state dir is the cwd's tree, not the tooling dir.
   def test_integration_installed_scripts_act_on_the_cwd_desk
     install!
@@ -291,7 +291,7 @@ class InstallFastLaneToolingTest < Minitest::Test
     system("git", "-C", desk, "init", "-q", exception: true)
 
     out, err, status = Open3.capture3(SessionEnv.neutralized({ "HOME" => @home }),
-                                      File.join(link, "ship-wait"), "some-task", "--timeout", "1", chdir: desk)
+                                      File.join(link, "submit-wait"), "some-task", "--timeout", "1", chdir: desk)
     text = out + err
     refute_match(/cannot load such file/, text)
     refute status.success?, "no ship log exists, so the wait cannot succeed"

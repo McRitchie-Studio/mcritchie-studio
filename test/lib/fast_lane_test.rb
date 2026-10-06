@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # [unit] Pure-logic tests for bin/lib/fast_lane.rb — the skip/resume decisions
-# behind the fast-lane wrappers (`bin/task begin`, `bin/ship`). The wrappers'
+# behind the fast-lane wrappers (`bin/task begin`, `bin/submit`). The wrappers'
 # orchestration is exercised end-to-end in test/lib/task_begin_test.rb and
 # test/lib/ship_test.rb; THIS file pins the decisions those runs depend on.
 # Run directly:
@@ -90,13 +90,13 @@ class FastLaneTest < Minitest::Test
   # correct helper the script never calls fixes nothing.
 
   # The bin/ of the checkout these tests ship in — the real hub bin dir, so the
-  # fallback arm is asserted against the real bin/ship rather than a fixture.
+  # fallback arm is asserted against the real bin/submit rather than a fixture.
   HUB_BIN = File.expand_path("../../bin", __dir__)
 
-  # A bare `bin/ship`, and ONLY a bare one: the lookbehind exempts any path form
-  # (/Users/…/bin/ship, ./bin/ship). Same shape as the docs guard in
+  # A bare `bin/submit`, and ONLY a bare one: the lookbehind exempts any path form
+  # (/Users/…/bin/submit, ./bin/submit). Same shape as the docs guard in
   # test/docs/fast_lane_hub_path_docs_test.rb.
-  BARE_SHIP = %r{(?<![\w/.-])bin/ship(?![\w-])}
+  BARE_SHIP = %r{(?<![\w/.-])bin/submit(?![\w-])}
 
   # [cd-target, ship, slug] parsed out of `cd <desk> && <ship> <slug>`.
   def parse_handoff(command)
@@ -120,21 +120,21 @@ class FastLaneTest < Minitest::Test
     end
   end
 
-  # The defect itself. A satellite desk carries no bin/ship, so the bare form the
-  # hint used to print died as `nohup: bin/ship: No such file or directory`.
+  # The defect itself. A satellite desk carries no bin/submit, so the bare form the
+  # hint used to print died as `nohup: bin/submit: No such file or directory`.
   def test_handoff_command_is_never_bare
     Dir.mktmpdir("desk-without-ship") do |desk|
       command = FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN)
       refute_match BARE_SHIP, command,
-                   "the hint printed a bare bin/ship, which resolves only from a hub desk"
+                   "the hint printed a bare bin/submit, which resolves only from a hub desk"
     end
     # Non-vacuity: the pattern must really bite the form this test forbids.
-    assert_match BARE_SHIP, "hand off with: bin/ship fix-nav-bug",
+    assert_match BARE_SHIP, "hand off with: bin/submit fix-nav-bug",
                  "BARE_SHIP does not match the bare form, so the assertion above proves nothing"
   end
 
-  # The cwd half. bin/ship roots at the cwd's git toplevel and, off a foreign root,
-  # RE-ROOTS at the task's desk loudly rather than refusing (bin/ship's `--- rooting ---`
+  # The cwd half. bin/submit roots at the cwd's git toplevel and, off a foreign root,
+  # RE-ROOTS at the task's desk loudly rather than refusing (bin/submit's `--- rooting ---`
   # block); it dies only when no desk resolves. Naming the desk is still half the
   # instruction: the re-root is a correction the reader must notice, and the cert WRITERS
   # run by hand next (bin/fast-check, bin/full-suite-check) DO refuse a foreign root —
@@ -156,7 +156,7 @@ class FastLaneTest < Minitest::Test
       FileUtils.chmod("+x", desk_ship)
 
       _cd, ship, = parse_handoff(FastLane.handoff_command("fix-nav-bug", desk, HUB_BIN))
-      assert_equal desk_ship, ship, "a desk that carries bin/ship must be handed its own"
+      assert_equal desk_ship, ship, "a desk that carries bin/submit must be handed its own"
     end
   end
 

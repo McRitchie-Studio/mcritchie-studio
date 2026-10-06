@@ -397,7 +397,7 @@ class ReleasePresenceIntegrationTest < Minitest::Test
   # Against `PresenceClaim`'s own `Process.getpgid` default this fails: the killed sweep
   # grades :live via the group subject, COUNTED, with no TTL to expire — an unbounded
   # wedge, and the exact inverse of the rule this module is named for. That default is
-  # right for `bin/ship`, which spawns its runner into its own group; it is wrong here.
+  # right for `bin/submit`, which spawns its runner into its own group; it is wrong here.
   def test_a_killed_sweep_is_a_corpse_to_the_real_reader_not_just_to_its_own_helper
     with_store do |store, root|
       pid = spawn_conductor(store, root, kind: "sweep", lane: "release:prepare")

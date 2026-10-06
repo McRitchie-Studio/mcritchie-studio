@@ -71,7 +71,7 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      runner for `e2e/`/`tests/`), write a `[control]` line in `checks_run` naming
      a file from the diff. A `NO-SIGNAL` verdict is **not** a refusal; it asks
      you for that sentence.
-  4. `bin/ship` never runs it. Run it after your last commit (the stamp is bound
+  4. `bin/submit` never runs it. Run it after your last commit (the stamp is bound
      to the tree) and never beside a ship (it swaps test files in place).
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
@@ -213,7 +213,7 @@ http://localhost:<port>/_studio/local_emails` (desks default to
 `LOCAL_EMAIL_CAPTURE=1`).
 
 **Give him the chance to answer, but do not stall.** The request survives
-`bin/ship` and keeps pulsing in the review column. **The merge does NOT wait for
+`bin/submit` and keeps pulsing in the review column. **The merge does NOT wait for
 him**: the reviewer sees an `OPERATOR APPROVAL STILL WAITING` block with your
 latest handoff note, then merges on its own verdict, and the move to `reviewed`
 settles the request. So make that note say what he should look at. If his answer
@@ -228,19 +228,19 @@ bin/fast-check <slug>          # diff-mapped tests + core spine + rubocop on cha
 ```
 
 It records nothing; the PR's settled green CI is the verdict. A red lane here
-usually means a red CI later, so fix it first. `bin/ship` runs it for you at step
+usually means a red CI later, so fix it first. `bin/submit` runs it for you at step
 5/8, after the push and the PR so CI is already running, and carries on whatever
 it says.
 
 ## Step 6 — Ship to the seam (stops at `submitted`)
 
 A cold ship takes **~12 minutes**, longer than some harnesses allow one foreground
-command. So **run it in the background, and wait for it with `bin/ship-wait`**,
+command. So **run it in the background, and wait for it with `bin/submit-wait`**,
 naming the fixed-path script and standing in the desk:
 
 ```bash
-/Users/alex/projects/.agents/bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
-/Users/alex/projects/.agents/bin/ship-wait <task-slug>                                # attach to one already running
+/Users/alex/projects/.agents/bin/submit-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
+/Users/alex/projects/.agents/bin/submit-wait <task-slug>                                # attach to one already running
 ```
 
 The ship commits, pushes, opens the **non-draft** PR into **`accepted`** led by
@@ -251,15 +251,15 @@ the task URL, records `pr_url`, runs the pre-flight while CI is already running,
 
 - `/Users/alex/projects/.agents/bin` is the fast-lane tooling at a fixed path that
   no `git checkout` can move. If it is missing, the hub's
-  `/Users/alex/projects/mcritchie-studio/bin/ship-wait` runs the same script.
-- `bin/ship-wait` exits **0 succeeded · 1 failed · 2 still running at the
+  `/Users/alex/projects/mcritchie-studio/bin/submit-wait` runs the same script.
+- `bin/submit-wait` exits **0 succeeded · 1 failed · 2 still running at the
   timeout · 3 usage · 4 nothing to watch**. It returns at once when the ship has
-  finished, and takes its verdict from the ship's LOG, because `bin/ship` can
+  finished, and takes its verdict from the ship's LOG, because `bin/submit` can
   exit 0 on a run that never reached the seam.
-- **Do not hand-roll `while pgrep -f "bin/ship <slug>"`.** The pattern also
+- **Do not hand-roll `while pgrep -f "bin/submit <slug>"`.** The pattern also
   matches every SIBLING watcher shell carrying it, so the wait never fires.
 - If the wait is cut short, re-run it. If the SHIP is cut short, **re-run
-  `bin/ship`**: it resumes and finishes in seconds once CI has settled. A killed
+  `bin/submit`**: it resumes and finishes in seconds once CI has settled. A killed
   ship leaves the task in `building`, where the review sweep never looks.
 - `--launch` names the log for you, by slug. Redirecting by hand? Use
   `scratchpad/ship-<task-slug>.log`, never a bare `ship.log`: sibling agents share
@@ -269,7 +269,7 @@ the task URL, records `pr_url`, runs the pre-flight while CI is already running,
   finishes reaches the verdict as a WAIT. `SHIP_CI_WAIT=off` disarms the wait.
 - Ship refuses a **duplicate migration install** and names both files and the
   other PR. The owning task keeps the copy; re-run and ship resumes.
-- The base is always **`accepted`**. `bin/ship` is **not** `bin/release ship`
+- The base is always **`accepted`**. `bin/submit` is **not** `bin/release ship`
   (the G4 production deploy).
 - Ship has no `--steal`. It refuses only when another live session's desk is
   bound to the task with uncommitted changes; claim over it with
@@ -277,7 +277,7 @@ the task URL, records `pr_url`, runs the pre-flight while CI is already running,
 - Review's gate-zero still holds the **authoritative** CI verdict and bounces a
   red-CI task back with the failing checks named.
 - Moving by hand (`bin/task move <slug> submitted`) does **not** wait for CI; the
-  wait lives in `bin/ship`.
+  wait lives in `bin/submit`.
 
 **Before you launch:** land every change (a push mid-wait restarts CI), probe
 with `bin/dor-check <slug> --json` (read-only, no gate attempt), and clear the

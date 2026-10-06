@@ -213,7 +213,7 @@ class SessionMarkersTest < Minitest::Test
 
   # WHY THIS TIER EXISTS. Every marker in this store is written by one process and
   # read by ANOTHER (the statusline reads what bin/atomic-event wrote; a presence
-  # reader reads what bin/ship wrote), which is the only arrangement in which a
+  # reader reads what bin/submit wrote), which is the only arrangement in which a
   # torn read is reachable at all. A plain `File.write` is open(O_CREAT|O_TRUNC)
   # and THEN write, so the marker is observable at ZERO BYTES for the width of
   # that gap — measured on the cert runlock at 4.6% of reads taken the moment it

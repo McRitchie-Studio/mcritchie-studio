@@ -160,7 +160,7 @@ retract a wrong block, post `bin/task note <slug> --handoff "…" --resolves-fee
   ```
 - **Fresh session, or taking over a held task** — reclaim the desk in one move.
   `begin` re-creates/rebinds the worktree, moves the task back to `building`, and
-  preflights; `--steal` takes it over a stale **builder** claim (`bin/ship` has no
+  preflights; `--steal` takes it over a stale **builder** claim (`bin/submit` has no
   `--steal`). If the holder is a REVIEWER, ask them to release it instead —
   `bin/task review-claim release <slug>` — because a steal mid-review strands the
   reviewer's verdict; the refusal you got names which holder you have:
@@ -189,10 +189,10 @@ bin/task note <slug> --handoff "Fixed <the gap>: <what changed>, tied to the blo
 # 2. Commit → G1 cert → push → PR (base accepted, led by the task URL) →
 #    bin/dor-check → move submitted. The forward move off `building` clears the
 #    live block; review picks it up from the submitted seam.
-bin/ship <slug> -m "<commit message>"
+bin/submit <slug> -m "<commit message>"
 ```
 
-`bin/ship` stops at `submitted`. It does **not** merge, deploy, or touch
+`bin/submit` stops at `submitted`. It does **not** merge, deploy, or touch
 `release`/`main` — review owns the next move.
 
 ## Done when

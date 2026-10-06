@@ -2,7 +2,7 @@
 
 The entry map ([`../index.md`](../index.md), installed as `AGENTS.md`) carries the
 fast lane in one table. This page is the long form: where each command runs, how
-the author set is stamped, how `bin/ship` waits, and the long-form fallback. The
+the author set is stamped, how `bin/submit` waits, and the long-form fallback. The
 step-by-step build flow is [`building-sop.md`](building-sop.md); board mechanics
 are [`devops-task-board.md`](devops-task-board.md). The rationale and measurements
 this page no longer carries are frozen verbatim in
@@ -26,7 +26,7 @@ them first; the long form below is the fallback.
 
 cd <desk>   #   ... the worktree begin printed; build there ...
 
-/Users/alex/projects/.agents/bin/ship <task-slug> -m "Commit message"
+/Users/alex/projects/.agents/bin/submit <task-slug> -m "Commit message"
 ```
 
 **Run the tooling from its fixed path.** `bin/install-agent-docs`, which the
@@ -66,10 +66,10 @@ out a `git checkout` window and then name the file they could not reach — noth
 boots Rails can have the checkout immunity the rest of the tooling has.
 
 **Name the hub's script; stand in the desk.** Every fast-lane command —
-`bin/task`, `bin/ship`, `bin/ship-wait`, `bin/fast-check`, `bin/dor-check` —
+`bin/task`, `bin/submit`, `bin/submit-wait`, `bin/fast-check`, `bin/dor-check` —
 lives ONLY in `/Users/alex/projects/mcritchie-studio/bin`. A **satellite** desk
-(the table below names all five) carries none of them, so the bare `bin/ship`
-dies there as `nohup: bin/ship: No such file or directory`. Only a **hub** desk
+(the table below names all five) carries none of them, so the bare `bin/submit`
+dies there as `nohup: bin/submit: No such file or directory`. Only a **hub** desk
 has them.
 
 **The path picks the SCRIPT, the cwd picks the TREE it acts on.** Both halves are
@@ -80,7 +80,7 @@ load-bearing, and the two writers disagree about what a wrong cwd costs you:
   satellite task it exits 1: *"this run roots at
   /Users/alex/projects/mcritchie-studio (branch main), which is not <slug>'s tree —
   refusing to run against it."*
-- **`bin/ship` RE-ROOTS — loudly, not silently.** When the task's desk is on disk
+- **`bin/submit` RE-ROOTS — loudly, not silently.** When the task's desk is on disk
   it prints `re-rooting at the task worktree <desk> (you ran from <cwd>)` and
   carries on THERE. It dies only when no desk resolves — absent from disk, or a
   multi-repo tie. Every gate it then runs re-verifies the root from its own cwd.
@@ -124,7 +124,7 @@ each from GitHub and keeps its old column as a cache:
 | authors | the PR's commits: `<soul>@mcritchie.studio` emails and soul `Co-Authored-By` trailers (`Task#derived_authors`) | read live on every review |
 
 So review does not run `bin/task merged` (it remains a manual override for a PR
-GitHub cannot place, and prints "no longer needed"), `bin/ship` writes `pr_url`
+GitHub cannot place, and prints "no longer needed"), `bin/submit` writes `pr_url`
 only when the board names a different PR, and `bin/reviewer-select` plus the
 review-claim backstop exclude the derived authors UNION any stamps.
 
@@ -192,7 +192,7 @@ re-running the create line resumes cleanly, and only the OTHER create flags on i
 
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
-task URL. `bin/ship` — the HUB's script, run with that worktree as the cwd —
+task URL. `bin/submit` — the HUB's script, run with that worktree as the cwd —
 runs steps 5-6 (commit → push → **non-draft** PR into `accepted` led by the task
 URL → record `pr_url` (skipped when the board already derives it) → optional
 `bin/fast-check` pre-flight, while CI is already running → **wait for CI to
@@ -205,30 +205,30 @@ its own still mints from the secret chain). Re-running either after a failure
 slug** (`bin/task begin <task-slug>`). Mechanics:
 `docs/agents/modules/devops-task-board.md`.
 
-**`bin/ship` waits for CI before the verdict** (`gate-submit-on-green-ci`). CI
+**`bin/submit` waits for CI before the verdict** (`gate-submit-on-green-ci`). CI
 runs the full suite in ~9 min on the PR, so `submitted` carries a settled GREEN
 CI, and a red CI is caught while the desk is still warm. The wait decides
 nothing — `bin/dor-check` runs next and owns the verdict — and it is bounded at
 both ends: a run that never appears or never finishes reaches the verdict as a
 WAIT. `SHIP_CI_WAIT=off` disarms it.
 
-**Budget ~12 minutes for a cold `bin/ship`.** That exceeds what some agent
+**Budget ~12 minutes for a cold `bin/submit`.** That exceeds what some agent
 harnesses allow one foreground command, so **run it in the background — and wait
-for it with `bin/ship-wait`**:
+for it with `bin/submit-wait`**:
 
 ```bash
-cd <desk>   #   ... the worktree begin printed; ship-wait roots the ship at the cwd ...
-/Users/alex/projects/.agents/bin/ship-wait <task-slug> --launch -m "Commit message"
-/Users/alex/projects/.agents/bin/ship-wait <task-slug>   # attach to one already running
+cd <desk>   #   ... the worktree begin printed; submit-wait roots the ship at the cwd ...
+/Users/alex/projects/.agents/bin/submit-wait <task-slug> --launch -m "Commit message"
+/Users/alex/projects/.agents/bin/submit-wait <task-slug>   # attach to one already running
 ```
 
 It exits **0 succeeded · 1 failed · 2 still running at the timeout**, returns
 IMMEDIATELY when the ship has already finished, and takes its verdict from the
-ship's LOG — `bin/ship` can exit 0 on a run that never reached the seam, so
+ship's LOG — `bin/submit` can exit 0 on a run that never reached the seam, so
 "the process is gone" is never an outcome. **Do not hand-roll a `pgrep`
 watcher.** A pattern naming the ship also matches every sibling watcher shell
 that names it, so the condition is true forever and the wait can never fire.
-If a wait is cut short, re-run it; if the SHIP is cut short, re-run `bin/ship`
+If a wait is cut short, re-run it; if the SHIP is cut short, re-run `bin/submit`
 (it resumes and finishes in seconds once CI has settled). A killed ship leaves
 the task in `building` with its PR already open, which the review sweep does not
 pop.
@@ -236,7 +236,7 @@ pop.
 **Reading a ship you did not launch.** A `building` task with an open green PR is
 three different states, and each one has a different move:
 
-- **Live:** `bin/ship-wait <task-slug>` from the desk attaches and says live,
+- **Live:** `bin/submit-wait <task-slug>` from the desk attaches and says live,
   succeeded or failed. Ask it before resuming, even when the agent that launched
   the ship reports "completed".
 - **Unfinished:** a desk with modified or untracked files is a build still in
@@ -259,14 +259,14 @@ local lane; if its heartbeat stops, the board flips that lane to `STALLED`.
 **What the wrappers do NOT do — read before trusting them:**
 
 - They change **no gate semantics**. Every gate still runs and owns its verdict.
-- `bin/ship` **stops at `submitted`**. It never merges, never deploys, never
+- `bin/submit` **stops at `submitted`**. It never merges, never deploys, never
   touches `release`/`main`.
-- `bin/ship` has **no `--steal`**. The desk is the build claim: ship refuses only
+- `bin/submit` has **no `--steal`**. The desk is the build claim: ship refuses only
   when another live session's desk is bound to the task with uncommitted changes,
   and names that desk. Claim over it with `bin/task begin <task-slug> --steal`,
   then ship. Your own desk never refuses you.
 - **You still write the tests** (step 4). Neither wrapper invents test tiers.
-- `bin/ship` is **not** `bin/release ship`. `bin/release ship` is the **G4
+- `bin/submit` is **not** `bin/release ship`. `bin/release ship` is the **G4
   production deploy** (`release → main`, ship-authority only).
 - `begin` passes `--root <worktree>` to `bin/session-preflight`, so its verdict
   describes the worktree it just created, not the primary checkout.
@@ -349,7 +349,7 @@ with `/Users/alex/projects/mcritchie-studio/bin/task update <task> --local-url h
 chat. The request rides through the handoff and keeps pulsing in review, so hand
 off rather than stalling on an answer. Update docs if behavior changes. Then hand
 off, WITH THE DESK AS CWD, using the hub's copy of the script —
-/Users/alex/projects/mcritchie-studio/bin/ship <task> -m "<commit message>" (a
+/Users/alex/projects/mcritchie-studio/bin/submit <task> -m "<commit message>" (a
 satellite desk carries no copy of it; only the cwd is the desk's) — it
 commits, pushes, opens the non-draft PR into accepted led by the task URL, runs
 the optional pre-flight while CI runs, waits for the PR's CI to settle, runs

@@ -134,7 +134,7 @@
 #       back and stamps the desk with it when that differs (or says UNSTAMPED
 #       when no builder is on record). Never fatal. The
 #       resume form takes no OTHER create flag: one is REFUSED, naming
-#       `bin/task update <slug>`, never dropped in silence. bin/ship is the
+#       `bin/task update <slug>`, never dropped in silence. bin/submit is the
 #       handoff twin. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|archived
@@ -294,7 +294,7 @@ require_relative "lib/bin_helpers"
 require_relative "lib/task_tree"
 require_relative "lib/fast_lane"
 require_relative "lib/desk_claim"
-# The desk's git identity: the soul `bin/ship` authors from, stamped into the desk
+# The desk's git identity: the soul `bin/submit` authors from, stamped into the desk
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
 require_relative "../lib/commit_identity"
 require_relative "lib/stamp_confirmation"
@@ -317,7 +317,7 @@ require_relative "lib/approval_request_notice"
 # the bare form, and never a 90-character path in front of every flag list.
 SELF_CMD = FastLane.remedy_command("task", __dir__).freeze
 # The self-service credential fix every lane is told to run itself. Same reasoning,
-# and bin/ship has carried the routed form since wave 1 (GH_AUTH_REFRESH_CMD there).
+# and bin/submit has carried the routed form since wave 1 (GH_AUTH_REFRESH_CMD there).
 GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__).freeze
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
@@ -1126,7 +1126,7 @@ end
 # taken the latest fix.
 #
 # `submitted` JOINED THE LIST ON 2026-09-09, which is why the most common move this
-# warning ever fired on — the `bin/ship` handoff — is now silent: it no longer drops
+# warning ever fired on — the `bin/submit` handoff — is now silent: it no longer drops
 # anything. The warning's remaining job is the merge boundary, `reviewed` and past.
 APPROVAL_REQUEST_STAGES = %w[designed building submitted].freeze
 
@@ -1331,7 +1331,7 @@ def agent_secret
     die!("AGENT_API_SECRET not found (checked ENV, #{dotenv}, 1Password)")
 end
 
-# The bearer: one a parent process handed down (bin/ship mints once per run and
+# The bearer: one a parent process handed down (bin/submit mints once per run and
 # exports AGENT_API_TOKEN), else minted here from the secret chain.
 def token
   @token ||= TaskBoard.handed_token ||
@@ -2282,7 +2282,7 @@ end
 #
 # `new` stamped the desk from --agent, the builder begin was TOLD about. The
 # authoritative soul is the one the claim RECORDED — devops.built_by, the value
-# bin/ship authors its own commit from (CommitIdentity.soul_of) — and it differs
+# bin/submit authors its own commit from (CommitIdentity.soul_of) — and it differs
 # from --agent in exactly the cases Task#builder_to_stamp resolves without one: a
 # resume with no --agent keeps the builder already on record, and a create with no
 # --agent falls to the persona or the assignee. Reading the claim back, rather than
@@ -2584,7 +2584,7 @@ when "begin"
   # gate holds on BOTH paths: a fresh/designed task rides the explicit child
   # `move building` (which enforces it), and a resume of an already-`building`
   # task runs the SAME gate inline below — a resume must never bypass a live
-  # foreign build claim. bin/ship is the handoff twin at the other end.
+  # foreign build claim. bin/submit is the handoff twin at the other end.
   usage = "usage: #{$PROGRAM_NAME} begin --title \"Three To Five Words\" [--repo APP] [--agent SOUL] [--steal] [create flags]  |  " \
           "#{$PROGRAM_NAME} begin <slug> [--agent SOUL] [--dev-size SIZE] [--steal]"
   # --steal: the house build-claim override, same meaning as on `move` — take
@@ -2689,7 +2689,7 @@ when "begin"
   # instance, before the worktree/preflight steps that are the session's first
   # real tool calls — so the fast-lane trail is task-attributed from the start
   # (fast-lane-narrates-activities). Non-fatal; the agent stays free to open its
-  # own finer-grained activities in between, and bin/ship closes the trail.
+  # own finer-grained activities in between, and bin/submit closes the trail.
   narrate("start", "--category", "Explore", "--task", slug,
           "--reason", "orient: #{task["title"].to_s.strip.empty? ? slug : task["title"]}")
 
@@ -2777,7 +2777,7 @@ when "begin"
   puts "task: #{BASE_URL}/tasks/#{slug}"
   # Absolute script + the desk to run it from, on its own line so it is
   # copy-pasteable verbatim. See FastLane.handoff_command for why the bare
-  # `bin/ship <slug>` this replaced was wrong from every desk but the hub's.
+  # `bin/submit <slug>` this replaced was wrong from every desk but the hub's.
   puts "next: build in the worktree, then hand off with:"
   puts "  #{FastLane.handoff_command(slug, worktree_dir, __dir__)}"
 when "update"

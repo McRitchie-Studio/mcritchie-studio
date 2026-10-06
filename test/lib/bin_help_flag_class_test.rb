@@ -285,10 +285,10 @@ class BinHelpFlagClassTest < Minitest::Test
     "ledger-guard"           => :own_guard,
     # --- OptionParser ---------------------------------------------------------
     "ship"                   => :optparse,
-    # ship-wait rescues OptionParser::ParseError to REFUSE with its usage banner and
+    # submit-wait rescues OptionParser::ParseError to REFUSE with its usage banner and
     # exit code 3, not to step over it — and it parses before any side effect, so
     # `--help` and `--bogus` both act on nothing. The parser's refusal is intact.
-    "ship-wait"              => :optparse,
+    "submit-wait"              => :optparse,
     "rotate-heroku-ci-key"   => :optparse,
     "dor-check"              => :optparse,
     "fast-check"             => :optparse,

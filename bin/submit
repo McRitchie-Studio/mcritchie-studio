@@ -1,0 +1,839 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/submit — the fast-lane HANDOFF wrapper: one command from "code done" to
+# `submitted`.
+#
+# Collapses the standing pre-handoff sequence — commit → push → NON-DRAFT PR into
+# `accepted` (body led by the task URL) → record pr_url → optional pre-flight
+# (bin/fast-check) → WAIT for CI to settle → DoR verdict (bin/dor-check) → move
+# `submitted` → read-back verify — into one idempotent, resumable command. Its
+# inverse is `bin/task begin`, which collapses the session-start sequence.
+#
+# THE PUSH COMES BEFORE THE PRE-FLIGHT so GitHub CI starts the moment the PR
+# exists; the ~1 min pre-flight then runs while CI is already running instead of
+# holding it back. Nothing is lost by the order: the pre-flight records nothing
+# and never stops the ship, so it has no say in what gets pushed.
+#
+# THE CI WAIT (step 6, gate-submit-on-green-ci) holds the handoff while the PR's
+# CI is still running, so `submitted` carries a GREEN CI — the one verdict per
+# tree that bin/dor-check reads. It decides nothing itself — see
+# bin/lib/ci_wait.rb for why that boundary is the whole design — and it is bounded
+# at both ends, falling through to the DoR verdict if CI never appears or never
+# finishes. Disarm with SHIP_CI_WAIT=off.
+#
+# ORCHESTRATION plus the two guards the handoff seam itself owns. Every spawned
+# gate still runs and still owns its verdict: bin/dor-check closes the DoR gate,
+# bin/task move read-back-verifies the stage write. bin/fast-check is NOT a gate:
+# it is the optional local pre-flight, run at step 5 for the builder's benefit and
+# reported loudly, and the ship carries on whatever it said — the PR's settled
+# green CI is the verdict, at step 7. But the move-to-SUBMITTED path has no
+# claim gate of its own (only move-to-building does), so ship asks two questions
+# BEFORE its first side effect:
+#
+#   * the BUILD-STAGE SEAM — the task must be [building] (or [submitted], a
+#     resume). Ship hands off a build; it never teleports a `designed` task
+#     past the claim/dev-size/baseline stamps the building move records.
+#   * HOLDER OWNERSHIP — the same desk rule the build gate enforces
+#     (bin/lib/desk_claim.rb): a task bound to a DIFFERENT live session's desk that
+#     has uncommitted changes refuses, naming the desk. Nothing else does: there is
+#     no lease to read, and a reviewer's hold is the separate review claim, which
+#     ship does not take. The takeover line names `bin/task begin <slug> --steal`,
+#     because ship has no --steal of its own and handing off work is never the
+#     moment to seize it. Session-less runs degrade claim-free, exactly as
+#     `move`/`begin` do.
+#
+# Ship sequences the rest, and skips a step whose OUTCOME is already durably
+# recorded — which is exactly what makes a rerun after a partial failure
+# CONTINUE from where it died instead of duplicating work:
+#
+#   * clean tree            → commit skipped
+#   * branch already pushed → push is a no-op
+#   * open PR exists        → repaired in place (`gh pr ready` if draft — the
+#                             known finish --pr trap: a DRAFT PR defers
+#                             reviewers and the sweep skips it — and
+#                             `gh pr edit --base` if mis-based), never duplicated
+#   * pr_url already equal  → record skipped
+#   * already `submitted`   → move skipped; the read-back verify still runs
+#
+# ROOTING: run it from the task's worktree. From anywhere else it re-roots at
+# the task's worktree LOUDLY when that worktree exists on disk (the reader
+# remedy — every gate it then spawns re-verifies the root itself), and refuses
+# when it can't find the task's tree (TaskTree).
+#
+# Usage:
+#   bin/submit <task-slug>                     # commit message defaults to the task title
+#   bin/submit <task-slug> -m "Commit message"
+#
+# Test seams (the house pattern — each defaults to the real sibling tool):
+#   SHIP_TASK_BIN         board CLI (default bin/task)
+#   SHIP_FAST_CHECK_BIN   pre-flight runner (default bin/fast-check)
+#   SHIP_PREFLIGHT        `off` skips the optional pre-flight at 5/8 (default: run it)
+#   SHIP_DOR_CHECK_BIN    DoR gate (default bin/dor-check)
+#   SHIP_GH_BIN           GitHub CLI (default gh)
+#   SHIP_ROOT             explicit code root — bypasses the root guard (CI/tests)
+#   SHIP_BASE_BRANCH      PR base (default accepted — the ladder's first rung)
+#   SHIP_PROJECTS_DIR     root-guard worktree glob root (tests)
+#   SHIP_CI_WAIT          `off` disarms the CI settle wait (default: armed)
+#   SHIP_CI_WAIT_TIMEOUT  seconds to wait on a RUNNING CI (default 900)
+#   SHIP_CI_WAIT_APPEARANCE  seconds to wait for a run to EXIST (default 120)
+#   SHIP_CI_WAIT_INTERVAL poll interval, floored at 2s (default 20)
+#   SHIP_CI_STATE         injected CiStatus state (tests — `state:green`)
+#   AGENT_API_TOKEN       a board bearer to reuse; ship mints one per run and exports
+#                         it to its child CLIs (bin/lib/task_board.rb#handed_token)
+#
+# Exit code: 0 = task verified `submitted` with an open non-draft PR; 1 = a step
+# failed (fix what it printed, then re-run — ship resumes).
+
+require "json"
+require "open3"
+require "optparse"
+
+require_relative "lib/repo_root"
+require_relative "lib/task_tree"
+require_relative "lib/fast_lane"
+require_relative "lib/stacked_pr"
+require_relative "lib/gh_auth_retry"
+require_relative "lib/pr_overlap"
+require_relative "lib/migration_collision"
+require_relative "lib/session_identity"
+require_relative "lib/presence_claim"
+require_relative "lib/ci_status"
+require_relative "lib/ci_wait"
+require_relative "lib/desk_claim"
+require_relative "lib/projects_root"
+require_relative "lib/task_board"
+require_relative "../lib/commit_identity"
+
+ROOT = File.expand_path("..", __dir__)
+TASK_BIN = ENV.fetch("SHIP_TASK_BIN", File.expand_path("task", __dir__))
+FAST_CHECK_BIN = ENV.fetch("SHIP_FAST_CHECK_BIN", File.expand_path("fast-check", __dir__))
+DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __dir__))
+
+# ── remedy forms of the fast-lane scripts ship NAMES in a refusal ─────────────
+# Absolute and resolvable, so a builder standing on a turf-monster, rolio, or gem
+# desk can paste them: bin/submit, bin/task, bin/fast-check and bin/dor-check all
+# live in mcritchie-studio/bin ALONE, so the bare form ship
+# used to print resolved only from a hub desk and died as `No such file or
+# directory` everywhere else. Resolved from THIS script's own __dir__ — the very
+# ship that is speaking, and its siblings beside it — which is why it can never be
+# mis-pointed; see FastLane.remedy_command for the full policy.
+#
+# DELIBERATELY NOT the *_BIN seams above. Those are the EXECUTION path and are
+# ENV-overridable so tests can point them at stubs; a remedy names the real script
+# the READER is being sent to, and must stay true when the seam is redirected.
+SHIP_CMD = FastLane.remedy_command("submit", __dir__)
+TASK_CMD = FastLane.remedy_command("task", __dir__)
+FAST_CHECK_CMD = FastLane.remedy_command("fast-check", __dir__)
+DOR_CHECK_CMD = FastLane.remedy_command("dor-check", __dir__)
+# The token refresh is the one remedy here that is ALREADY self-service house-wide
+# (AGENTS.md prints it bare), but it is a hub-only script like the rest, so the
+# reader on a satellite desk needs the same absolute form.
+GH_AUTH_REFRESH_CMD = FastLane.remedy_command("gh-auth-refresh", __dir__)
+GH_BIN = ENV.fetch("SHIP_GH_BIN", "gh")
+# A minted App installation token, populated only if a gh write refuses on
+# credentials (see gh_capture). Held for THIS run so one mint covers the rest of it.
+@gh_token = nil
+BASE_BRANCH = ENV.fetch("SHIP_BASE_BRANCH", "accepted")
+BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+# The narration CLI (fast-lane-narrates-activities): ship CLOSES the cycle's
+# activity trail — the twin of `bin/task begin`'s orient open. Overridable for tests.
+ACTIVITY_BIN = ENV.fetch("SHIP_ACTIVITY_BIN", File.expand_path("agent-activity", __dir__))
+# Stages past the seam ship hands off at — ship must never regress one of these.
+PAST_SUBMITTED = %w[reviewed assembled shipped archived].freeze
+# How many open PRs the overlap advisory inspects. Truncation is REPORTED, never
+# silent — an advisory that quietly checked half the queue would be worse than none.
+OVERLAP_PR_LIMIT = 50
+# Ladder branches whose PRs overlap everything by construction (the release train's
+# batch promote), excluded so the advisory stays signal.
+RELEASE_BATCH_HEADS = %w[accepted release].freeze
+
+def die!(msg)
+  warn "submit: #{msg}"
+  exit 1
+end
+
+def say(msg)
+  warn "submit: #{msg}"
+end
+
+# Best-effort narration (fast-lane-narrates-activities): ship closes the cycle's
+# activity trail with the handoff outcome. NON-FATAL — never fails the ship; a run
+# with no session identity skips it, mirroring the claim-gate degrade.
+def narrate(*args)
+  return if SessionIdentity.identity.first.nil?
+
+  system(ACTIVITY_BIN, *args, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
+options = { message: nil }
+OptionParser.new do |o|
+  o.banner = "Usage: #{$PROGRAM_NAME} <task-slug> [-m MESSAGE]"
+  o.on("-m", "--message MESSAGE", "Commit message (default: the task title)") { |v| options[:message] = v }
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end.parse!
+
+slug = ARGV.shift
+die!("usage: #{$PROGRAM_NAME} <task-slug> [-m MESSAGE]") if slug.to_s.strip.empty? || slug.start_with?("-")
+
+# --- one board token per ship ------------------------------------------------
+# Every child board CLI (bin/task show/update/move, bin/dor-check, and the
+# bin/task reads inside bin/fast-check and bin/dor-check) mints its own 24h bearer
+# unless one is handed down in AGENT_API_TOKEN. A ship makes seven or more such
+# calls, so it mints ONCE here, through the same transport and secret chain the
+# CLIs use, and exports the token to every child it spawns. Best-effort by
+# construction: a mint that fails leaves the var unset and each child mints its
+# own, exactly as before — the token is a saving, never a gate.
+def hand_down_board_token!
+  if TaskBoard.handed_token
+    say "auth — reusing the board token handed in (#{TaskBoard::TOKEN_ENV})."
+    return
+  end
+
+  secret = TaskBoard.agent_secret(File.join(ROOT, ".env"))
+  token = TaskBoard.mint_token(base_url: BASE_URL, secret: secret)
+  if token
+    ENV[TaskBoard::TOKEN_ENV] = token
+    say "auth — one board token minted for this run; every board call reuses it."
+  else
+    say "auth — no board token minted up front (#{secret ? "the board answered without one" : "no secret found"}); " \
+        "each board call mints its own."
+  end
+rescue StandardError => e
+  say "auth — no board token minted up front (#{e.class}: #{e.message}); each board call mints its own."
+end
+
+hand_down_board_token!
+
+# --- the task record ---------------------------------------------------------
+
+# The full task JSON via the board CLI (never a hand-rolled HTTP call — the CLI
+# owns auth and the exit-code contract). Aborts when the record can't be read:
+# every later step keys on it.
+def fetch_task!(slug)
+  out = IO.popen([TASK_BIN, "show", slug, "--json"], &:read)
+  die!("could not read task #{slug.inspect} (#{TASK_BIN} show failed) — is the slug right?") unless $?.success?
+
+  JSON.parse(out)
+rescue JSON::ParserError
+  die!("unparseable task record for #{slug.inspect} from #{TASK_BIN} show --json")
+end
+
+task = fetch_task!(slug)
+devops = task.dig("metadata", "devops") || {}
+stage = task["stage"].to_s
+title = task["title"].to_s
+task_url = "#{BASE_URL}/tasks/#{slug}"
+branch = [devops["branch"], "feat/#{slug}"].find { |v| !v.to_s.strip.empty? }
+
+if PAST_SUBMITTED.include?(stage)
+  say "#{slug} is already [#{stage}] — past the submitted seam; nothing to ship."
+  puts "Task: #{task_url}"
+  exit 0
+end
+
+# --- the build-stage seam ----------------------------------------------------
+# Ship hands off a BUILD; it never starts one. A task that was never claimed at
+# `building` (still `designed`) must walk the seam through `bin/task begin` /
+# `move building` — where the build-claim gate, the dev-size stamp, and the
+# usage baseline live — not be teleported designed→submitted by the handoff
+# wrapper. Asked before any side effect.
+unless %w[building submitted].include?(stage)
+  die!("#{slug} is [#{stage}] — ship hands off a BUILD (building → submitted). " \
+       "Claim it first: #{TASK_CMD} begin #{slug} (or #{TASK_CMD} move #{slug} building), then re-run #{SHIP_CMD} #{slug}.")
+end
+
+# --- builder ownership -------------------------------------------------------
+# The desk is the build claim (bin/lib/desk_claim.rb), asked BEFORE the first side
+# effect (commit/push/PR/move): the move-to-submitted path has no claim gate of its
+# own, so without this a second session could hand off — and commit into — a task
+# whose desk holds another live session's uncommitted work. That is the only case
+# that refuses. Ship has no --steal of its own; the takeover line names
+# `bin/task begin <slug> --steal`. A session-less run degrades claim-free.
+mover_session = SessionIdentity.identity.first
+unless mover_session.nil?
+  projects_dir = [ENV["SHIP_PROJECTS_DIR"], ENV["CLAUDE_PROJECTS_DIR"]].map { |v| v.to_s.strip }.find { |v| !v.empty? }
+  projects_dir ||= ProjectsRoot.default_projects_dir
+  blockers = DeskClaim.blocking_on_disk(slug, session: mover_session, projects_dir: projects_dir)
+  unless blockers.empty?
+    warn "submit: " + DeskClaim.refusal(slug, blockers, steal_command: "#{TASK_CMD} begin #{slug} --steal",
+                                                    retry_command: "#{SHIP_CMD} #{slug}").join("\n")
+    exit 1
+  end
+end
+
+# --- rooting -----------------------------------------------------------------
+# An explicit SHIP_ROOT is the deliberate CI/test seam (bypasses the guard, same
+# contract as FAST_CHECK_ROOT). Otherwise root at the cwd's git toplevel and ask
+# the root guard whether that IS the task's tree; ship WRITES (a commit), but
+# unlike the pre-flight it re-roots rather than refuses when the task's worktree
+# exists on disk — loudly, and every gate it then runs re-verifies the root from
+# its own cwd, so a wrong re-root cannot survive to a recorded verdict.
+root = ENV["SHIP_ROOT"].to_s.strip
+if root.empty?
+  root = RepoRoot.git_toplevel(Dir.pwd) || Dir.pwd
+  assessment = TaskTree.assess(task_bin: TASK_BIN, slug: slug, root: root, devops: devops,
+                               projects_dir: ENV["SHIP_PROJECTS_DIR"])
+  # standing_in_task_desk — you are physically AT …/.worktrees/<slug>, even if HEAD is
+  # detached mid-rebase. ship is a WRITER (it commits), so it takes the same vouch
+  # bin/fast-check takes through TaskTree#refusal. ship reads `assess` directly
+  # rather than `#refusal` (it wants :resolved_root), so it
+  # has to honor the vouch explicitly; it had been getting it for free from a
+  # short-circuit inside assess until 2026-08-09.
+  #
+  # What this line does NOT do, measured: it does not restore a lane. A detached HEAD
+  # at the task's own desk still exits 1 either way, at the pre-existing branch guard
+  # below. What it changes is WHICH refusal speaks — without it the root guard goes
+  # first and calls the task's own desk "not <slug>'s tree", which is false (it IS the
+  # desk; only HEAD is detached) and sends the builder somewhere else. The branch
+  # guard's message names the rebase, which is the true one.
+  assessment = nil if assessment && assessment[:standing_in_task_desk]
+  if assessment
+    resolved = assessment[:resolved_root]
+    die!(assessment[:message]) unless resolved
+
+    say "re-rooting at the task worktree #{resolved} (you ran from #{root})"
+    root = resolved
+  end
+else
+  root = File.expand_path(root)
+end
+
+def git(root, *args)
+  out = IO.popen(["git", "-C", root, *args], err: File::NULL, &:read).to_s.strip
+  [out, $?.success?]
+end
+
+# A push that CAPTURES git's combined output (its rejection hints go to stderr), so
+# the caller can tell a non-fast-forward apart from a real failure. lease:true adds
+# --force-with-lease — safe by construction: it refuses unless the remote tip is
+# still the one our remote-tracking ref records (never a bare --force).
+def git_push(root, branch, lease: false)
+  cmd = ["git", "-C", root, "push"]
+  cmd << "--force-with-lease" if lease
+  cmd += ["-u", "origin", branch]
+  out = IO.popen(cmd, err: [:child, :out], &:read).to_s
+  [out, $?.success?]
+end
+
+actual_branch, = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+unless actual_branch == branch
+  die!("#{root} has #{actual_branch.inspect} checked out, not the task branch #{branch.inspect} — " \
+       "check the branch out (or finish the rebase) before shipping.")
+end
+
+# --- presence: publish the phase, so a peer can READ what this run costs ------
+#
+# A ship SPANS both states — it runs the pre-flight (expensive) and then it waits
+# on CI (free) — and the PROCESS NAME is identical in both, so the claim names
+# the phase.
+#
+# MEASURED on this box, 2026-09-01, by the reader this feeds
+# (bin/agent-presence): five `bin/submit` groups, all at 0.0% CPU, all reported
+# UNATTRIBUTED and the machine called BUSY. Four were parked in a CI wait costing
+# nothing; the fifth had spawned bin/fast-check eleven seconds earlier and was
+# about to take a core-set for ten minutes. Nothing on disk told them apart.
+#
+# The weights below are the SHIP'S OWN cost, and they are deliberately not
+# uniform. `5/8 pre-flight` carries `suite` because bin/fast-check publishes no
+# claim of its own: this line is the only thing that says a suite is running.
+# Over-reporting cost buys a peer some delay; under-reporting it buys a saturated
+# machine and a lost 45-minute run, so that is the side to err on.
+#
+# Publishing is best-effort by construction (SessionMarkers.write rescues to nil):
+# a marker must never take down the ship it is describing. Clearing is an
+# OPTIMIZATION ONLY — a killed ship leaves its claim behind and the reader grades
+# it a corpse on the very next read, with no timeout to elapse.
+PRESENCE_PHASES = {
+  commit: ["1/8 commit", PresenceClaim::WORKING, PresenceClaim::LIGHT],
+  push: ["2/8 push", PresenceClaim::WORKING, PresenceClaim::LIGHT],
+  pr: ["3/8 pr", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  record: ["4/8 record", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  preflight: ["5/8 pre-flight", PresenceClaim::WORKING, PresenceClaim::SUITE],
+  ci: ["6/8 ci", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  dor: ["7/8 dor", PresenceClaim::WORKING, PresenceClaim::LIGHT],
+  submit: ["8/8 submit", PresenceClaim::WAITING, PresenceClaim::IDLE]
+}.freeze
+
+PRESENCE = PresenceClaim.open(kind: "ship", root: root, session_id: mover_session, task_slug: slug)
+at_exit { PRESENCE.clear }
+
+def presence!(step)
+  lane, phase, weight = PRESENCE_PHASES.fetch(step)
+  PRESENCE.publish(phase: phase, weight: weight, lane: lane)
+end
+
+# --- 1/8 commit --------------------------------------------------------------
+presence!(:commit)
+
+git(root, "update-index", "-q", "--refresh") # never commit on stat-stale dirt (a false-dirty index)
+porcelain, = git(root, "status", "--porcelain")
+if porcelain.empty?
+  say "1/8 commit — working tree clean, nothing to commit."
+else
+  message = options[:message].to_s.strip
+  message = title if message.empty?
+  die!("nothing to use as a commit message (no -m and the task has no title)") if message.empty?
+
+  say "1/8 commit — committing #{porcelain.lines.size} changed path(s): #{message.inspect}"
+
+  # AUTHORED AS THE CLAIMING SOUL. The desk's git identity names whoever the
+  # checkout happens to carry — the operator, or a relic from some earlier
+  # session — and never the soul on the board, so the author is set per COMMIT
+  # from devops.built_by. lib/commit_identity.rb owns that decision and is the
+  # ONLY commit path here: a bare `git commit` at this seam reopens the defect.
+  result = CommitIdentity.commit!(root, message, devops)
+  die!("git #{result.failed} failed in #{root}") unless result.ok
+
+  if result.soul
+    say "1/8 commit — authored as #{result.name} <#{result.email}> (devops.built_by)"
+  else
+    # Never fabricate an author. Say plainly that the commit is unattributed and
+    # name the repair — a commit that admits it is unattributed is recoverable,
+    # one laundered under a guessed soul is not.
+    say "1/8 commit — WARNING: this task names no builder (devops.built_by is blank), so the " \
+        "commit carries the checkout's own git identity, not a soul. Attribute future commits " \
+        "with: #{TASK_CMD} move #{slug} building --actor <soul>"
+  end
+end
+
+# --- 2/8 push ----------------------------------------------------------------
+# Pushed BEFORE the pre-flight: the PR at 3/8 starts GitHub CI, and the ~1 min
+# pre-flight at 5/8 then runs while CI is already underway.
+presence!(:push)
+
+# A plain push fast-forwards the common case (first push, or the branch only
+# grew). It fails NON-FAST-FORWARD when the branch was REBASED — routine here,
+# because accepted moves constantly and desks rebase onto it. That is not an error
+# to paper over with a merge (git's own "pull before pushing" hint reintroduces the
+# pre-rebase history) nor with a bare --force (which would clobber a genuine
+# foreign commit). --force-with-lease threads the needle: it replays a rebased
+# branch, and REFUSES when the remote tip is not the one our remote-tracking ref
+# records — i.e. when someone else pushed. So: try plain; on a non-fast-forward,
+# retry with the lease; if the lease refuses, real foreign work is on the remote —
+# stop and send the operator to reconcile.
+say "2/8 push — git push -u origin #{branch}"
+out, pushed = git_push(root, branch)
+unless pushed
+  if FastLane.push_rejected_non_fast_forward?(out)
+    say "2/8 push — non-fast-forward (the branch was rebased); retrying with --force-with-lease."
+    out, leased = git_push(root, branch, lease: true)
+    unless leased
+      die!("push refused by --force-with-lease: origin/#{branch} moved under you — someone else pushed a commit " \
+           "your branch does not have. This is NOT a rebase, and ship never force-pushes over foreign work. " \
+           "Reconcile first (git fetch origin #{branch}; git rebase origin/#{branch}), then re-run #{SHIP_CMD} #{slug}.\n#{out}")
+    end
+  else
+    die!("git push failed — resolve it and re-run #{SHIP_CMD} #{slug}.\n#{out}")
+  end
+end
+
+# --- 3/8 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
+presence!(:pr)
+
+# One `gh` call, with a single mint-and-retry when it fails on CREDENTIALS.
+#
+# PATs were retired in the 2026-07-29 org migration, so the ambient `gh` login reads
+# fine and then refuses the one write that matters ("Resource not accessible by
+# personal access token"). Recovering that by hand cost every ship and every reviewer
+# merge on 2026-08-10. Now ship mints an App installation token itself and retries
+# ONCE — the token rides the retried child's env and is never printed.
+#
+# The retry is narrow on purpose: a failure that is not an auth failure returns
+# untouched (a merge conflict re-run with a fresh token just fails again), and a mint
+# that cannot happen returns gh's ORIGINAL error rather than a confusing one about
+# credentials.
+def gh_run(root, args)
+  env = @gh_token ? { "GH_TOKEN" => @gh_token } : {}
+  out, err, status = Open3.capture3(env, GH_BIN, *args, chdir: root)
+  [out.to_s, err.to_s, status.success?]
+end
+
+def gh_capture(root, *args)
+  out, err, ok = gh_run(root, args)
+  return [out, true] if ok
+
+  # gh reports failures on STDERR. Classify on both streams but hand the caller
+  # STDOUT — `pr list --json` parses stdout, and folding stderr into it would feed
+  # warnings to JSON.parse. (The first version of this read only stdout, so the
+  # classifier saw "" and never retried; ship's own error line printed empty, which
+  # is what gave it away.)
+  failure = [out, err].join("\n").strip
+  return [failure, false] if @gh_token || !GhAuthRetry.auth_failure?(failure)
+
+  say "auth — gh refused on credentials; minting a GitHub App token and retrying once."
+  # identity: "agent" IS THE ESCAPE HATCH, used deliberately. GhAuthRetry now defaults to
+  # the session's lane (GH_APP_ITEM), and this command WRITES pull requests — a grant the
+  # deployer App is denied by design. A stray `export GH_APP_ITEM=github.mcritchie-admin`
+  # leaking into a build session is documented, not theoretical (see
+  # docs/agents/agents/avi/sops/qa-release.md), and under it an unnamed recovery would mint
+  # the one App that CANNOT open the PR this line exists to open. bin/lib/gh_identity.rb
+  # cites exactly this call site as why explicit outranks the environment.
+  @gh_token = GhAuthRetry.mint(root: root, identity: "agent")
+  unless @gh_token
+    # Report the reason the mint ACTUALLY gave. This used to hardcode "1Password
+    # unavailable?", which became wrong the moment an unreadable GH_APP_ITEM grew its own
+    # nil path — the operator was sent to 1Password for a typo in their own export.
+    reason = GhAuthRetry.last_error
+    say "auth — could not mint an App token#{reason.empty? ? ' (1Password unavailable?)' : " (#{reason})"}; " \
+        "reporting gh's original error."
+    return [failure, false]
+  end
+
+  out2, err2, ok2 = gh_run(root, args)
+  [ok2 ? out2 : [out2, err2].join("\n").strip, ok2]
+end
+
+list_json, listed = gh_capture(root, "pr", "list", "--head", branch, "--state", "open",
+                               "--json", "number,url,isDraft,baseRefName")
+die!("gh pr list failed:\n#{list_json.strip}") unless listed
+
+existing = FastLane.open_pr(list_json)
+if existing
+  number = existing["number"].to_s
+  pr_url = existing["url"].to_s
+  say "3/8 pr — open PR ##{number} already exists (#{pr_url})"
+  if existing["isDraft"]
+    # The known trap this wrapper exists to close: a DRAFT PR defers reviewers
+    # and the qa-release sweep skips it — the task strands. Mark it ready.
+    say "3/8 pr — PR ##{number} is a DRAFT; marking it ready for review."
+    ready_out, ready = gh_capture(root, "pr", "ready", number)
+    die!("gh pr ready #{number} failed:\n#{ready_out.strip}") unless ready
+  end
+  # A NON-`accepted` BASE IS TWO DIFFERENT SITUATIONS, and until 2026-09-13 this treated
+  # both as the mis-based one (/tasks/ship-retargets-stacked-prs).
+  #
+  #   the base is ANOTHER OPEN PR's head  → a DELIBERATE STACK. Leave it alone.
+  #   anything else                       → mis-based. Repair it, as before.
+  #
+  # MEASURED on turf #701, stacked on turf #624 by the operator's decision: retargeting it
+  # to `accepted` produced three false refusals from one action — the test-only shape claim
+  # broke because the observed diff then carried the PARENT's six files, GitHub could not
+  # compute a merge so it queued NO run (dor-check: "waiting can never clear the conflict"),
+  # and the [control] line "named no file from this diff". The ship had to be finished by
+  # hand. Nothing about the PR was wrong; the base was the point.
+  #
+  # WHY "OPEN" IS THE WHOLE TEST. A merged parent is already gone — GitHub retargets its
+  # children onto the parent's own base when it merges — and a closed-unmerged parent, or a
+  # deleted branch, is a stack whose premise has evaporated: the child would wait forever
+  # for a branch nobody is shipping. None of those is OPEN, so all of them still get
+  # repaired, which is the behaviour this self-heal was written for. `release` and `main`,
+  # the dangerous mis-bases, are never an open PR's head either.
+  #
+  # AN UNREADABLE PROBE FALLS BACK TO THE REPAIR, and says so. A wrongly-retargeted stack is
+  # loud and recoverable (`gh pr edit <n> --base <parent>`); an unrepaired mis-base is quiet.
+  # An earlier version of this comment justified that by saying "nothing downstream repairs a
+  # mis-based PR — no gate reads baseRefName for this", and that was FALSE when it was written:
+  # bin/pr-review's merge_feature_pr read baseRefName and retargeted THEN MERGED, which is the
+  # reviewer half of this same bug (/tasks/review-guards-stacked-prs). Both halves now ask
+  # StackedPr, so they cannot answer differently again.
+  if existing["baseRefName"] != BASE_BRANCH
+    parent_base = existing["baseRefName"].to_s
+    stack = StackedPr.assess(parent_base) do |branch|
+      gh_capture(root, "pr", "list", "--head", branch, "--state", "open", "--json", "number,url")
+    end
+    parent = stack[:parent]
+    if parent
+      say "3/8 pr — PR ##{number} is based on #{parent_base.inspect}, which is open PR " \
+          "##{parent["number"]}'s branch — a deliberate STACK, so the base stands. " \
+          "##{parent["number"]} merges FIRST; GitHub retargets this to #{BASE_BRANCH} when it does."
+    else
+      why = StackedPr.why(stack)
+      say "3/8 pr — PR ##{number} is based on #{parent_base.inspect} (#{why}); retargeting to #{BASE_BRANCH}."
+      retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
+      die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
+    end
+  end
+else
+  say "3/8 pr — opening a non-draft PR into #{BASE_BRANCH}"
+  body = FastLane.pr_body(task_url, devops["acceptance"])
+  out, created = gh_capture(root, "pr", "create", "--base", BASE_BRANCH, "--head", branch,
+                            "--title", title.empty? ? slug : title, "--body", body)
+  die!("gh pr create failed: #{out.strip}") unless created
+
+  pr_url = out[%r{https://\S+/pull/\d+}].to_s
+  die!("gh pr create succeeded but printed no PR URL:\n#{out}") if pr_url.empty?
+end
+
+# --- same-file overlap with other open PRs (ADVISORY) ------------------------
+# Asked HERE because here is where it can be answered: the diff is final and the
+# sibling PRs are open. bin/session-preflight asks the same question inside
+# `bin/task begin`, where the branch has no commits yet — so it can only ever
+# answer "none". See bin/lib/pr_overlap.rb for what that blind spot cost.
+#
+# Never fatal: every failure path (no gh, unreadable PR, bad JSON) simply skips.
+def changed_since_base(root)
+  base_ref = "origin/#{BASE_BRANCH}"
+  IO.popen(["git", "-C", root, "diff", "--name-only", "#{base_ref}...HEAD"], &:read).to_s.split("\n")
+end
+
+# The OTHER open PRs, with their file paths, in ONE call. The first version fetched
+# `pr view --json files` per open PR, which cost ~11s on EVERY ship for advice — a
+# price no advisory should charge. `pr list` carries `files` directly.
+#
+# Fetched once and shared by BOTH checks below (same-file advisory + duplicate
+# migration block), so adding the second check costs no extra round trip.
+# Returns nil — meaning "could not ask" — on any failure path.
+def sibling_prs(root, branch, self_pr_url)
+  limit = OVERLAP_PR_LIMIT
+  list_json, ok = gh_capture(root, "pr", "list", "--state", "open", "--limit", limit.to_s,
+                             "--json", "number,title,url,headRefName,files")
+  return nil unless ok
+
+  prs = JSON.parse(list_json)
+  say "overlap — more than #{limit} open PRs; checked the #{limit} most recent." if prs.size >= limit
+  prs = prs.reject { |pr|
+    head = pr["headRefName"].to_s
+    head == branch || pr["url"].to_s == self_pr_url.to_s ||
+      # The release train's own `accepted → release` batch PR overlaps EVERYTHING by
+      # construction (it carries every merged file). Naming it as a collision would
+      # make the advisory noise on every ship during a release window.
+      RELEASE_BATCH_HEADS.include?(head)
+  }
+  prs.each { |pr| pr["files"] = Array(pr["files"]).map { |f| f["path"] } }
+  prs
+rescue StandardError
+  nil
+end
+
+def overlap_advisory(mine, prs)
+  return if mine.empty? || prs.nil?
+
+  items = PrOverlap.report(mine, prs)
+  PrOverlap.lines(items).each { |line| say line }
+rescue StandardError
+  nil # advice is never worth failing a ship over
+end
+
+# --- duplicate migration install (BLOCKS) ------------------------------------
+# Two branches installing ONE engine migration under two host timestamps merge
+# CLEANLY — different filenames — and then raise DuplicateMigrationNameError on every
+# db:migrate, INCLUDING the Heroku release phase. Three times on 2026-08-13/14. See
+# bin/lib/migration_collision.rb for the mechanism and both detection keys.
+#
+# Two legs, deliberately independent:
+#   LOCAL  — my added migrations vs the ones already on origin/accepted. Needs no gh,
+#            so it still fires when GitHub is unreachable. This is the leg that
+#            catches a copy some already-MERGED PR put on the base.
+#   REMOTE — my added migrations vs every other OPEN PR's paths. Needs the shared
+#            `pr list` payload; degrades to a spoken skip when it is missing, because
+#            an unasked question must never read as a clean answer.
+def migration_collisions(root, mine, prs)
+  ours = MigrationCollision.local_installs(mine) { |path| first_line(File.join(root, path)) }
+  return [] if ours.empty?
+
+  sources = [{ "label" => "already on origin/#{BASE_BRANCH}", "kind" => "branch",
+               "installs" => base_installs(root) }]
+  if prs.nil?
+    say "migrations — could NOT read the open-PR set; checked origin/#{BASE_BRANCH} only. " \
+        "A sibling PR installing this same migration would not be seen."
+  else
+    prs.each do |pr|
+      sources << { "label" => pr["title"].to_s, "kind" => "pr", "number" => pr["number"],
+                   "url" => pr["url"].to_s,
+                   "installs" => MigrationCollision.installs(Array(pr["files"])) }
+    end
+  end
+  # A branch can also collide with ITSELF — two installs in one diff.
+  sources << { "label" => "this branch", "kind" => "self", "installs" => ours }
+
+  MigrationCollision.report(ours, sources)
+end
+
+def first_line(path)
+  File.open(path, &:gets)
+rescue SystemCallError
+  nil
+end
+
+# Every migration on the base ref, with provenance, in two local git calls.
+# `git grep` exits non-zero on "no matches", which is a normal empty result here, so
+# stderr is discarded and the empty string speaks for itself.
+def base_installs(root)
+  MigrationCollision.ref_installs("origin/#{BASE_BRANCH}") do |args|
+    IO.popen(["git", "-C", root, *args], err: File::NULL, &:read).to_s
+  end
+rescue StandardError
+  []
+end
+
+mine = changed_since_base(root)
+prs = sibling_prs(root, branch, pr_url)
+overlap_advisory(mine, prs)
+
+collisions = migration_collisions(root, mine, prs)
+if MigrationCollision.blocking?(collisions)
+  MigrationCollision.lines(collisions).each { |line| warn "submit: #{line}" }
+  die!("duplicate migration install — resolve it before this PR moves to submitted.")
+end
+
+# --- 4/8 record pr_url -------------------------------------------------------
+# THE BOARD DERIVES IT NOW (devops-v3 4c-i). A show of a task with a blank
+# `devops.pr_url` queues a background lookup of the PR on the task branch
+# (TaskPrUrlCacheJob → Task#cache_derived_pr_url!); the request itself never waits
+# on GitHub. A later show serves the cached url as `pr_url_or_derived`. When that
+# names the PR this run opened there is nothing to write. Ship still writes when the
+# board names a DIFFERENT PR (a stale or foreign url) or could not answer — the
+# read-back at 8/8 pins the exact URL either way.
+presence!(:record)
+
+# The board's answer, or "" when the show fails or predates the field: a failed
+# read here only means ship writes the url itself, as it always did.
+def board_pr_url(slug)
+  out = IO.popen([TASK_BIN, "show", slug, "--json"], err: File::NULL, &:read)
+  return "" unless $?.success?
+
+  data = JSON.parse(out)
+  data["pr_url_or_derived"].to_s.empty? ? data.dig("metadata", "devops", "pr_url").to_s : data["pr_url_or_derived"].to_s
+rescue JSON::ParserError, SystemCallError
+  ""
+end
+
+if devops["pr_url"].to_s == pr_url
+  say "4/8 record — pr_url already recorded."
+elsif board_pr_url(slug) == pr_url
+  say "4/8 record — skipped: the board derives pr_url #{pr_url} from the branch."
+else
+  say "4/8 record — bin/task update #{slug} --pr-url #{pr_url}"
+  die!("recording the PR URL failed (#{TASK_BIN} update)") unless system(TASK_BIN, "update", slug, "--pr-url", pr_url)
+end
+
+# --- 5/8 pre-flight (bin/fast-check, optional) --------------------------------
+# The local pre-flight is information for the builder, not a gate: it runs the
+# diff-mapped tests, the spine and rubocop on the changed files, and records
+# NOTHING. It runs HERE, after the push and the PR, so GitHub CI is already
+# running while it does; whatever it says, the ship carries on — the PR's settled
+# green CI is the verdict, and step 7's dor-check reads it. A red pre-flight is
+# printed LOUDLY so the builder reads it before CI repeats it ten minutes later;
+# SHIP_PREFLIGHT=off skips the run.
+
+presence!(:preflight)
+if ENV["SHIP_PREFLIGHT"].to_s.strip.casecmp?("off")
+  say "5/8 pre-flight — skipped (SHIP_PREFLIGHT=off); CI is the verdict."
+else
+  say "5/8 pre-flight — running bin/fast-check #{slug} (optional; nothing is recorded; CI is already running)"
+  if system(FAST_CHECK_BIN, slug, chdir: root)
+    say "5/8 pre-flight — green. CI still runs the full suite on the PR."
+  else
+    say "5/8 pre-flight — RED (exit #{$?&.exitstatus}). Read bin/fast-check's output above: a red lane " \
+        "here almost always means a red CI in ~10 minutes, and step 7 REFUSES a red CI. The PR is " \
+        "already open, so CI will say so on the record; fix and re-run #{SHIP_CMD} #{slug} if it does."
+  end
+end
+
+# --- 6/8 CI settle wait (bin/lib/ci_wait.rb) ---------------------------------
+# Hold the handoff while the PR's CI is still RUNNING, so the DoR verdict below
+# grades a REAL CI state instead of a WAITING verdict on a pending one. This step
+# decides NOTHING: whatever state the wait settles on,
+# dor-check runs next and owns the verdict exactly as it always has. A red CI
+# stops the handoff because dor-check refuses it — not because this step did.
+#
+# Why the wait moved here at all (gate-submit-on-green-ci): the builder no longer
+# pays for a local FULL suite (~31 min against CI's ~9 for the identical command),
+# so the wall-clock that used to justify submitting before CI settled is gone. The
+# trade is ~20 min back to the builder, `submitted` carrying a green CI rather than
+# a provisional one, and a red CI landing in the session that still has the
+# worktree warm instead of bouncing into a cold one.
+#
+# It is bounded on BOTH ends and degrades to the old behaviour: a run that never
+# appears (`:absent`), one that never finishes (`:timeout`), and a CI we could never
+# READ (`:unread`) all fall through to dor-check, which then applies precisely the
+# rules it applied before this step existed. The three are REPORTED separately —
+# see ci_wait.rb: a failed read is not evidence that the PR has no CI.
+
+presence!(:ci)
+if CiWait.enabled?(ENV)
+  cfg = CiWait.config(ENV)
+  say "6/8 ci — waiting for CI to settle on the PR (timeout #{cfg[:timeout_s]}s, poll #{cfg[:interval_s]}s)"
+  wait = CiWait.settle(
+    probe: -> { CiStatus.evaluate(pr_url, ENV["SHIP_CI_STATE"])[:state] },
+    timeout_s: cfg[:timeout_s], appearance_s: cfg[:appearance_s], interval_s: cfg[:interval_s],
+    reporter: ->(state, polls, left) { say "6/8 ci — #{state}; #{left.round}s left (poll #{polls})" }
+  )
+  say "6/8 ci — #{CiWait.summary(wait)}"
+  # Named, not silent: every give-up path hands a NON-green state to dor-check, and
+  # the operator must be able to tell "CI said no" from "we stopped asking" from
+  # "we never got through" — three different facts with three different remedies.
+  if wait.timed_out?
+    say "6/8 ci — the DoR verdict below decides; re-run #{SHIP_CMD} #{slug} once CI reports."
+  elsif wait.unread?
+    # A failed READ, not an absent run — so the remedy is the credential/network, not
+    # the repo. Named separately because "re-run once CI reports" is useless advice
+    # when the problem is that nobody could ask.
+    say "6/8 ci — the DoR verdict below decides; if it cannot read CI either, refresh the " \
+        "token (eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\") and re-run #{SHIP_CMD} #{slug}."
+  elsif wait.token_refused?
+    # THE INVERSION this branch closes (review of ship-waiter-misreports-ci): the
+    # advisory above fires on :unverified — a gh/network fault, which a re-run may
+    # well clear on its own — while :unreadable, ci_status.rb's name for a 401/403
+    # where the token IS the remedy, got no line at all. It settles rather than
+    # waiting because no amount of waiting mends a credential, and settling quietly
+    # is exactly how a blind read gets mistaken for a verdict.
+    say "6/8 ci — that read was REFUSED (401/403), which is the TOKEN and not a CI verdict: " \
+        "refresh it (eval \"$(#{GH_AUTH_REFRESH_CMD} --export)\") and re-run #{SHIP_CMD} #{slug} " \
+        "if the DoR verdict below is blind too."
+  end
+else
+  say "6/8 ci — wait disabled (SHIP_CI_WAIT=off); the DoR verdict grades whatever CI it finds."
+end
+
+# --- 7/8 DoR verdict (bin/dor-check) -----------------------------------------
+# Always runs — the verdict closes the gate; there is no cached skip for it.
+presence!(:dor)
+
+say "7/8 dor — running bin/dor-check #{slug}"
+unless system(DOR_CHECK_BIN, slug, chdir: root)
+  # The verdict is dor-check's: a RED CI means fix the failure and push; a CI still
+  # running (SHIP_CI_WAIT=off, or the settle timeout) means re-run once it reports.
+  # No local run stands in for it.
+  die!("bin/dor-check refused — read what it flagged above (a RED CI: fix and push; a CI still " \
+       "running: wait for it), then re-run #{SHIP_CMD} #{slug} (it resumes here).")
+end
+
+# --- 8/8 submit + read-back verify -------------------------------------------
+presence!(:submit)
+# bin/task move already refuses a silently-non-persisting write; the fresh show
+# below is ship's own end-to-end read-back so the summary NEVER reports a stage
+# the board doesn't hold.
+
+if stage == "submitted"
+  say "8/8 submit — task already [submitted]; verifying."
+else
+  say "8/8 submit — bin/task move #{slug} submitted"
+  die!("the move to submitted failed — see above; re-run #{SHIP_CMD} #{slug}.") unless system(TASK_BIN, "move", slug, "submitted")
+end
+
+final = fetch_task!(slug)
+final_stage = final["stage"].to_s
+# The derived value when the board serves one (it is the recorded url when one is
+# recorded), else the raw column — an older board has no `pr_url_or_derived`.
+final_pr = final["pr_url_or_derived"].to_s
+final_pr = final.dig("metadata", "devops", "pr_url").to_s if final_pr.empty?
+unless final_stage == "submitted"
+  die!("read-back verify FAILED: the board shows [#{final_stage}], not [submitted]. Do not hand off; " \
+       "re-run #{SHIP_CMD} #{slug} (if it recurs the board write is failing server-side — check ErrorLog).")
+end
+# Pin the EXACT URL this run recorded — never accept any non-empty value. A
+# stale/foreign pr_url left on the board (with the --pr-url write silently
+# dropped) once passed here as "persisted", and the summary handed review the
+# WRONG PR. Equality subsumes the old blank check.
+unless final_pr == pr_url
+  die!("read-back verify FAILED: the board holds pr_url #{final_pr.empty? ? "(blank)" : final_pr} — " \
+       "not the PR this run recorded (#{pr_url}). The --pr-url write did not land, or a stale/foreign " \
+       "URL sits on the task. Do not hand off; re-run #{SHIP_CMD} #{slug} " \
+       "(if it recurs the board write is failing server-side — check ErrorLog).")
+end
+
+say "shipped to the submitted seam — review picks it up from here."
+# Close the cycle's activity trail with the real handoff outcome (twin of begin's
+# orient open) — names the submitted stage and the PR so the trail reads end-to-end.
+narrate("end", "--outcome", "shipped #{slug} → submitted; PR #{final_pr}")
+puts "Task: #{task_url}"
+puts "PR: #{final_pr}"
+puts "branch: #{branch}"
+puts "stage: submitted (read back verified)"

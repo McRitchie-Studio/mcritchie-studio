@@ -771,7 +771,7 @@ end
 #     the streak, so an approval pause of any length never trips it.
 def run_concluded_success?(run_id, chdir: nil, poll: 10, unreadable_limit: 30)
   # A CONDUCTOR PARKED ON A GITHUB ACTIONS POLL CONSUMES NOTHING. That distinction is
-  # cost #4 of docs/agents/system/agent-presence.md — two idle `bin/ship` processes in a
+  # cost #4 of docs/agents/system/agent-presence.md — two idle `bin/submit` processes in a
   # CI wait read as competing certs and nearly held off a launch — and `phase: waiting` is
   # the field the reader already honours for it (weight 0). The claim stays COUNTED, so
   # this sweep's process group is still ATTRIBUTED rather than falling back into the

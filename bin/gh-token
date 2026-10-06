@@ -14,7 +14,7 @@
 #
 # WHY THIS EXISTS. The 2026-07-29 org migration retired personal access tokens:
 # every `gh` write now authenticates as a GitHub App INSTALLATION token that lives
-# about an hour. Before this, each script solved that alone — bin/ship grew its own
+# about an hour. Before this, each script solved that alone — bin/submit grew its own
 # mint-and-retry, bin/pr-review never did, and every reviewer merge on 2026-08-10
 # stopped so a human could mint by hand. N scripts meant N chances to forget, and a
 # script written next year starts out broken the same way. So acquisition lives HERE
@@ -51,7 +51,7 @@
 # boundary that any caller crosses by forgetting a flag is not a boundary, so the
 # env var is honoured here too and the two legs finally agree. Precedence is
 # --identity > GH_APP_ITEM > agent: an explicit flag is a caller stating its lane
-# outright (bin/ship genuinely needs the PR-writing App), which must still win.
+# outright (bin/submit genuinely needs the PR-writing App), which must still win.
 #
 # NO LOCK, DELIBERATELY. Five agents hitting expiry at the same moment will mint
 # five tokens, and that is FINE: a mint takes seconds, every minted token is

@@ -57,7 +57,7 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
    `{ "error": "...", "error_code": "UNAUTHORIZED" }`.
 4. **One token per ship.** `bin/task` and `bin/dor-check` send a bearer handed
    down in `AGENT_API_TOKEN` when one is set, and mint their own from the
-   secret only when it is not. `bin/ship` mints once per run and exports it to
+   secret only when it is not. `bin/submit` mints once per run and exports it to
    every board call it spawns (`bin/lib/task_board.rb#handed_token`). When the
    board answers `401` to a handed token, `bin/task` names the variable; unset
    it to mint afresh.
@@ -867,7 +867,7 @@ api PATCH /api/v1/tasks/task-XXXX '{
 # Preferred CLI path for the pre-PR operator validation gate:
 bin/task update task-XXXX --local-url http://localhost:3001/admin/users --approval waiting
 # `waiting` is legal for as long as the local demo it points at can be served —
-# `designed`, `building` and `submitted` — so it SURVIVES `bin/ship`. Any save at
+# `designed`, `building` and `submitted` — so it SURVIVES `bin/submit`. Any save at
 # `reviewed` or later settles an open request to `none` (settled — never a
 # fabricated `approved`).
 

@@ -446,7 +446,7 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "ci_meter_stage? is the CARD's narrower stage set, not the reader's" do
-    assert ci_meter_stage?("building"), "the ship-wait window is the point"
+    assert ci_meter_stage?("building"), "the submit-wait window is the point"
     assert ci_meter_stage?("submitted")
     assert_not ci_meter_stage?("reviewed"), "past submitted the run is history"
     assert_not ci_meter_stage?("designed")

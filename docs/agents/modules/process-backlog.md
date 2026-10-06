@@ -237,7 +237,7 @@ Do not force work together that will not go. Two tasks conflict — and must be
 **serialized**, not paired — when any of these holds:
 
 - Same repo **and** overlapping files (an SOP edit and a rewrite of the same SOP).
-- Both add a migration. Their `schema.rb` changes conflict, and `bin/ship` refuses
+- Both add a migration. Their `schema.rb` changes conflict, and `bin/submit` refuses
   a second install of the same migration under a different filename.
 - One's acceptance depends on the other's merge (a stack). Build the parent,
   merge it, then start the child. Never arm autopilot on a stack.
@@ -257,7 +257,7 @@ Take the desk and claim the task:
   cd /Users/alex/projects/mcritchie-studio && bin/task begin <slug> --agent <your-soul>
 
 Then read docs/agents/modules/building-sop.md and follow it end to end. Write the
-test tiers your shape requires. Hand off with bin/ship <slug> -m "<message>" from
+test tiers your shape requires. Hand off with bin/submit <slug> -m "<message>" from
 your worktree — run it in the BACKGROUND, it takes ~12 minutes.
 
 STOP at submitted. Do not merge, deploy, or touch release/main.
@@ -308,7 +308,7 @@ while helping nobody.
 The pivot, exactly:
 
 1. **Stop launching builders.** Do not kill the ones in flight — a killed
-   `bin/ship` leaves a task in `building` with its PR already open, which the
+   `bin/submit` leaves a task in `building` with its PR already open, which the
    review sweep does not pop. Let them finish and land.
 2. **Run [`pr-review`](../agents/carl/sops/pr-review.md) — sized against what is
    still building.** Read that SOP and run it: it claims reviewable green-CI PRs

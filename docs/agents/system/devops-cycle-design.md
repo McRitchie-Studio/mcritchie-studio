@@ -1716,7 +1716,7 @@ The heartbeat agent will not merge-race conflicting work:
   the docs don't conflict on `release` *after* passing review. Warning-only (it
   never blocks); the conductor reads it to choose order / rebase the loser.
 - **Migrations:** two tasks touching `db/schema.rb` or migrations → the
-  duplicate-migration collision check in `bin/dor-check` and `bin/ship`
+  duplicate-migration collision check in `bin/dor-check` and `bin/submit`
   (`bin/lib/migration_collision.rb`) refuses the colliding one; there is no
   lane (see `exclusive-lanes.md`).
 - **studio-engine + consumers:** gem publish → consumer lockfile bump → app

@@ -464,7 +464,7 @@ module ApplicationHelper
 
   # A task's PR-head CI progress (a Ci::CheckProgress) for the board card's
   # progress bar — blank until the task has a PR with a CI run, which now happens
-  # while it is still BUILDING (bin/ship opens the PR, then waits on CI). The board preloads these in one batch (@ci_progress_by_slug); this is
+  # while it is still BUILDING (bin/submit opens the PR, then waits on CI). The board preloads these in one batch (@ci_progress_by_slug); this is
   # the single-card fallback for the Turbo re-render path. Reads through
   # Ci::ProgressReader, which is cached and degrades to blank on any error.
   def task_ci_progress(task)
@@ -607,7 +607,7 @@ module ApplicationHelper
   # Which stages wear the CI meter ON THE BOARD CARD. Deliberately NARROWER than
   # Ci::ProgressReader::TASK_STAGES_WITH_CI (which runs through `assembled`, since the
   # reader also feeds the release surfaces): a card shows the meter only while its CI
-  # is LIVE NEWS — building (bin/ship opened the PR and is waiting on CI) and
+  # is LIVE NEWS — building (bin/submit opened the PR and is waiting on CI) and
   # submitted (awaiting review). Past that the run is history and the meter is stale
   # noise, so the whole slot drops.
   CI_METER_STAGES = %w[building submitted].freeze
@@ -618,12 +618,12 @@ module ApplicationHelper
 
   # --- Local check (the cert running on someone's machine right now) -----------
   #
-  # The CI meter's counterpart for the window BEFORE a PR exists. `bin/ship` runs
+  # The CI meter's counterpart for the window BEFORE a PR exists. `bin/submit` runs
   # the cert first and opens the PR after, so the slowest, least visible stretch of
   # a task's life had no board signal at all — a fast-check has been observed past
   # seven minutes with its card showing nothing.
   #
-  # ONLY `building`, and ONLY until the PR exists. The moment bin/ship opens the
+  # ONLY `building`, and ONLY until the PR exists. The moment bin/submit opens the
   # PR the CI meter takes this slot over, and two live progress widgets stacked on
   # one card would compete for the same glance. So the handover is exclusive by
   # construction, not by tuning: this asks for `pr_url` to be blank, and

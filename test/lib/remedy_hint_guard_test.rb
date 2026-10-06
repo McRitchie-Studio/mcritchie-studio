@@ -2,7 +2,7 @@
 
 # [unit][integration] THE REMEDY HINTS THE FAST-LANE SCRIPTS PRINT MUST RESOLVE.
 #
-# THE DEFECT THIS CLOSES. bin/ship, bin/fast-check, bin/dor-check and bin/task
+# THE DEFECT THIS CLOSES. bin/submit, bin/fast-check, bin/dor-check and bin/task
 # live in mcritchie-studio/bin ALONE — no satellite
 # (turf-monster, rolio) and no gem (studio-engine, solana-studio, turf-vault)
 # carries any of them. A builder on one of those desks therefore reached the
@@ -32,10 +32,10 @@
 # ── WHY THE END-TO-END ASSERTION IS KEYED ON THE FILESYSTEM ──────────────────
 #
 # MEASURED ON PR #1341: a grep-shaped assertion is BLIND to this defect.
-# test/lib/task_begin_test.rb:205 asserted `assert_includes out, "bin/ship
+# test/lib/task_begin_test.rb:205 asserted `assert_includes out, "bin/submit
 # #{SLUG}"` and stayed GREEN when the printed line was mutated back to the bare
 # form — because an absolute path CONTAINS that substring
-# (".../bin/ship <slug>" includes "bin/ship <slug>"). Several assertions in
+# (".../bin/submit <slug>" includes "bin/submit <slug>"). Several assertions in
 # test/lib/ship_test.rb have the same shape and the same blindness. So the
 # end-to-end test here does not ask what the line SAYS. It takes the first token
 # of the printed command and asks the disk: is that an absolute path, and is it
@@ -84,7 +84,7 @@ class RemedyHintGuardTest < Minitest::Test
 
   # bare `bin/<hub-only script>`, optional subcommand words, then an OPERAND — an
   # interpolation (`#{`), a `<placeholder>`, or a `--flag`. The negative lookbehind
-  # keeps an already-absolute path (".../bin/ship") from matching.
+  # keeps an already-absolute path (".../bin/submit") from matching.
   #
   # THE `--flag` ARM WAS ADDED IN WAVE 2, AND IT WAS NOT COSMETIC. The original rule
   # took an operand to be a slug — an interpolation or an angle-bracket placeholder —
@@ -140,7 +140,7 @@ class RemedyHintGuardTest < Minitest::Test
   # The files this guard sweeps. WAVE 1 (remedy-hints-print-bare-paths) routed the four
   # highest-traffic scripts plus the two shared COMPOSERS: bin/lib/fast_cert.rb composes
   # both certs' zero-evidence refusals, and lib/claim_holder.rb composes the claim
-  # refusal BOTH bin/ship and bin/task print — sweeping the composer rather than only
+  # refusal BOTH bin/submit and bin/task print — sweeping the composer rather than only
   # the caller is what found two bare `bin/task review-claim …` lines a file-by-file
   # read had missed.
   #
@@ -158,7 +158,7 @@ class RemedyHintGuardTest < Minitest::Test
   # bin/release.rb (7 — and MOST are correctly bare, since the conductor runs bin/release
   # from the hub primary by SOP), bin/conductor (5),
   # bin/control-check (4), bin/qa-intake (4),
-  # bin/lib/desk_guard.rb (1), bin/ship-wait (1), lib/open_pr_guard.rb (1).
+  # bin/lib/desk_guard.rb (1), bin/submit-wait (1), lib/open_pr_guard.rb (1).
   # Add a file here as it is cleaned; the sweep is what keeps it clean afterwards.
   #
   # WAVE 3 (refusal-remedy-must-round-trip) added bin/reviewer-select, and it was
@@ -168,7 +168,7 @@ class RemedyHintGuardTest < Minitest::Test
   # count taken with a narrower rule and carried forward as though it still held.
   # A filed count is a measurement with a date, not a fact; re-measure before you
   # trust one.
-  SWEPT = %w[bin/ship bin/fast-check bin/dor-check
+  SWEPT = %w[bin/submit bin/fast-check bin/dor-check
              lib/claim_holder.rb
              bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
              bin/session-preflight bin/lib/block_recipe.rb
@@ -223,10 +223,10 @@ class RemedyHintGuardTest < Minitest::Test
     # That neighbour is the proof it is a transcript and not a hint: nobody argues
     # `git push` should be absolute. The reader is being told what happened, not
     # what to do; the remedy, when there is one, is the die! line underneath.
-    { file: "bin/ship", match: /say "5\/8 pre-flight — running/, why: "step transcript, not a handed-over command" },
-    { file: "bin/ship", match: /say "4\/8 record —/, why: "step transcript, not a handed-over command" },
-    { file: "bin/ship", match: /say "7\/8 dor — running/, why: "step transcript, not a handed-over command" },
-    { file: "bin/ship", match: /say "8\/8 submit —/, why: "step transcript, not a handed-over command" },
+    { file: "bin/submit", match: /say "5\/8 pre-flight — running/, why: "step transcript, not a handed-over command" },
+    { file: "bin/submit", match: /say "4\/8 record —/, why: "step transcript, not a handed-over command" },
+    { file: "bin/submit", match: /say "7\/8 dor — running/, why: "step transcript, not a handed-over command" },
+    { file: "bin/submit", match: /say "8\/8 submit —/, why: "step transcript, not a handed-over command" },
 
     # --- recorded gate evidence ------------------------------------------------
     # `"cmd" => "bin/dor-check <slug> --gate <gate>"` is a FIELD on a GateRun
@@ -320,7 +320,7 @@ class RemedyHintGuardTest < Minitest::Test
     # Named individually because a collapse in ONE file disappears into a healthy total.
     # bin/session-preflight is deliberately absent: wave 2 fixed its usage banners with
     # $PROGRAM_NAME and reworded one prose line, and it routes no remedy of its own.
-    %w[bin/ship bin/dor-check
+    %w[bin/submit bin/dor-check
        lib/claim_holder.rb bin/task bin/pr-review bin/lib/ci_gate.rb bin/lib/ci_status.rb
        bin/lib/block_recipe.rb bin/reviewer-select].each do |rel|
       assert_operator per_file.fetch(rel), :>=, 2,
@@ -342,11 +342,11 @@ class RemedyHintGuardTest < Minitest::Test
   # guard that reads SOURCE TEXT cannot watch.
   #
   # So this asks the VALUE. It is the same move the end-to-end test at the bottom makes
-  # for what bin/ship PRINTS, applied to what the shared COMPOSERS HOLD — and the
-  # composers are where wave 1 argued the leverage is, because bin/dor-check, bin/ship
+  # for what bin/submit PRINTS, applied to what the shared COMPOSERS HOLD — and the
+  # composers are where wave 1 argued the leverage is, because bin/dor-check, bin/submit
   # and bin/task all speak through them. (The two SCRIPTS in the swept set cannot be
   # required — they run on load — so their constants are pinned from the outside
-  # instead: bin/ship by test_ships_claim_refusal_prints_commands_that_resolve_on_disk
+  # instead: bin/submit by test_ships_claim_refusal_prints_commands_that_resolve_on_disk
   # below, bin/task by test/lib/task_begin_test.rb's banner and resume assertions.)
   COMPOSED_REMEDY_CONSTANTS = {
     "bin/lib/ci_gate.rb" => ["CiGate", %w[TASK_CMD]],
@@ -387,7 +387,7 @@ class RemedyHintGuardTest < Minitest::Test
   def test_the_instruction_regex_separates_an_instruction_from_prose
     instructions = [
       'abort "Re-run bin/fast-check #{slug}."',
-      'die!("... then re-run bin/ship #{slug} (it resumes here).")',
+      'die!("... then re-run bin/submit #{slug} (it resumes here).")',
       'warn "record by hand: bin/task update #{slug} --checks ..."',
       '"Verify: bin/task show #{slug} -v."',
       'steal_command: "bin/task begin #{slug} --steal"',
@@ -465,7 +465,7 @@ class RemedyHintGuardTest < Minitest::Test
   # --- the helper --------------------------------------------------------------
 
   def test_remedy_command_names_an_absolute_executable_for_every_swept_script
-    %w[ship fast-check dor-check task].each do |script|
+    %w[submit fast-check dor-check task].each do |script|
       line = FastLane.remedy_command(script, BIN, "some-task")
       first = line.split(" ").first
 
@@ -497,10 +497,10 @@ class RemedyHintGuardTest < Minitest::Test
 
   def test_resolve_bin_still_names_an_absolute_path_when_nothing_exists
     # The reader gets a path they can reason about ("that file is missing")
-    # instead of a bare word that hides the question ("which bin/ship?").
+    # instead of a bare word that hides the question ("which bin/submit?").
     line = FastLane.resolve_bin("ship", ["/nonexistent/a/bin", "/nonexistent/b/bin"])
 
-    assert_equal "/nonexistent/b/bin/ship", line
+    assert_equal "/nonexistent/b/bin/submit", line
     assert_equal File.expand_path(line), line
   end
 
@@ -515,7 +515,7 @@ class RemedyHintGuardTest < Minitest::Test
       FileUtils.chmod(0o755, File.join(hub, "ship"))
 
       assert_equal File.join(hub, "ship"), FastLane.resolve_bin("ship", [desk, hub]),
-                   "a file that cannot be RUN is not a resolution — `bin/ship` there still fails"
+                   "a file that cannot be RUN is not a resolution — `bin/submit` there still fails"
     end
   end
 
@@ -525,7 +525,7 @@ class RemedyHintGuardTest < Minitest::Test
     assert_equal "#{File.join(BIN, 'task')} move some-task building", line
   end
 
-  # --- end to end: what bin/ship ACTUALLY PRINTS -------------------------------
+  # --- end to end: what bin/submit ACTUALLY PRINTS -------------------------------
   #
   # The claim refusal is the highest-traffic remedy in the house and the one that
   # fires EARLIEST — before ship has rooted — so its reader is the most likely to
@@ -560,7 +560,7 @@ class RemedyHintGuardTest < Minitest::Test
       end
 
       # and the two remedies it owes are both there, by NAME of the script
-      assert commands.any? { |c| c.include?("/bin/ship ") }, "the retry path must be named:\n#{combined}"
+      assert commands.any? { |c| c.include?("/bin/submit ") }, "the retry path must be named:\n#{combined}"
       assert commands.any? { |c| c.include?("/bin/task ") }, "the takeover path must be named:\n#{combined}"
     end
   end
@@ -571,7 +571,7 @@ class RemedyHintGuardTest < Minitest::Test
   # directory, or a BARE `bin/<script>` — so the assertion above can catch the
   # bare form rather than silently skipping it.
   def printed_commands(text)
-    text.scan(%r{(?:/[^\s"']*)?bin/(?:ship|task|fast-check|dor-check)(?:[ \t]+[^\s"'\n]+)*})
+    text.scan(%r{(?:/[^\s"']*)?bin/(?:submit|ship|task|fast-check|dor-check)(?:[ \t]+[^\s"'\n]+)*})
         .map(&:strip).uniq
   end
 

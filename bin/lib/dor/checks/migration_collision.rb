@@ -13,7 +13,7 @@ require "json"
 # with it. Three of these were caught by hand on 2026-08-13 before they merged.
 #
 # WHY THE MERGE GATE, when session-preflight already reports this at build time and
-# bin/ship at handoff: both judge ONE branch against the base at the moment they run,
+# bin/submit at handoff: both judge ONE branch against the base at the moment they run,
 # and neither can see the case this exists for — two branches, each honestly clean
 # when it was certified, that collide only once the FIRST one merges. The merge gate
 # is the last read before `accepted` takes both, which is why the sibling-PR leg below

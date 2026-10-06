@@ -7,7 +7,7 @@
 # WHY THE MERGE GATE NEEDS ITS OWN COPY. Rails groups migrations by CLASS NAME, so
 # two files under different timestamps that parse to one class raise
 # DuplicateMigrationNameError on every db:migrate — including the Heroku release
-# phase. bin/session-preflight has reported this since it was written, and bin/ship
+# phase. bin/session-preflight has reported this since it was written, and bin/submit
 # at handoff, but BOTH judge one branch against the base at the moment they run.
 # Neither can see the case that actually bit on 2026-08-13: two branches, each
 # honestly clean when it was certified, that collide only once the first one merges.
