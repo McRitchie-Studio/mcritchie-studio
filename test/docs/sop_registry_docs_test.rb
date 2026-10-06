@@ -300,4 +300,3 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
     refute_match OLD_COMMAND, "run bin/submit-wait x"
   end
 end
-
