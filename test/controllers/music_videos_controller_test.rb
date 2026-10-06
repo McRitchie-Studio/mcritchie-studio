@@ -142,7 +142,9 @@ class MusicVideosControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     rows = JSON.parse(response.body).index_by { |r| r["slug"] }
-    assert_equal [cache.url, "athlete", "Test City Testers"], rows.fetch(rostered.slug).values_at("avatar_url", "vocation", "team")
+    assert_not rows.key?(rostered.slug), "an athlete is offered in the swap search, not as the person on screen"
+    assert_equal [cache.url, "athlete", "Test City Testers"],
+                 People::SearchRows.for([rostered.slug]).fetch(rostered.slug).to_h.values_at(:avatar_url, :vocation, :team)
     assert_equal ["https://img.example/plain.png", nil, nil],
                  rows.fetch("test-rowfinder-plain").values_at("avatar_url", "vocation", "team")
     assert_equal [nil, "group", nil], rows.fetch("test-rowfinder-band").values_at("avatar_url", "vocation", "team")

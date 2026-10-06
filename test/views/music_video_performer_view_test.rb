@@ -57,7 +57,15 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     render_card
 
     assert_select "[data-test='performer-badge']", "Not named"
-    assert_select "[data-test='performer-artist-optional']", /Optional: name the artist to add them to the rolodex/
+    # Collapsed by default: a quiet link, the search behind it under its own heading.
+    assert_select "[data-test='performer-artist-optional'][x-data='{ naming: false }']" do
+      assert_select "button[data-test='name-artist-open'][x-show='!naming']", /Who is this on screen\?\s+\(optional\)/
+      assert_select "[data-test='naming-panel'][x-show='naming'][x-cloak]" do
+        assert_select "p.label-upper", /Who is this on screen\?/
+        assert_select "[data-test='performer-typeahead']", 1
+      end
+    end
+    assert_select "[data-test='swap-body'] p.label-upper", "Replace with"
     assert_select "button[data-test='mark-extra']", "Mark as extra"
     assert_select "button", text: "Extra, not a named artist", count: 0
 
@@ -342,6 +350,6 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
 
     assert_select "[data-test='performer-card'][data-resolved='true']"
     assert_select "[data-test='performer-typeahead']", 1
-    assert_select "[data-test='performer-artist-optional']", /Optional/
+    assert_select "[data-test='performer-artist-optional']", /\(optional\)/
   end
 end
