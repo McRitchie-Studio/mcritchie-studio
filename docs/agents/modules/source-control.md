@@ -213,6 +213,13 @@ The transport view of a normal task. The lifecycle itself is
 | Promote `accepted → release` | `bin/release prepare` | QA | agent |
 | Fast-forward `release → main` | `bin/release ship` | **ship** | **deployer** |
 
+The promote is a **fast-forward** whenever `release` is contained in `accepted`, so
+after a ship `accepted`, `release` and `main` share one commit id and the CI verdict on
+the `accepted` head carries to `release` and `main` by SHA. Everything prepare and
+archive commit (the consumer lock bump, the retro and ledger docs) lands on `accepted`
+first for that reason. A batch PR runs only when `release` has diverged, and
+`accepted` is then carried onto its merge commit.
+
 Two rules that are about source control, not process:
 
 - **Feature PRs target `accepted`.** Never `release`, never `main`. `bin/ship`
