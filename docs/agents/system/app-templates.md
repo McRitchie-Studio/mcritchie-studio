@@ -39,9 +39,10 @@ gallery), `:leveling` and `:age_gate` (engine surfaces).
 declaration are both `%i[magic_link google]`; turf-monster declares
 `%i[magic_link google wallet]`. `Studio.routes` draws the Solana sign-in routes
 (`auth/solana/nonce`, `auth/solana/verify`, `auth/phantom/callback`) behind
-`Studio.draw_auth_routes && Studio.auth_method?(:wallet)`; the wallet button in the
-auth modal shows only when `auth_method?(:wallet)` and `feature?(:web3)` both hold.
-A wallet app opts into both knobs.
+`Studio.draw_auth_routes && Studio.auth_method?(:wallet)`; the wallet button that
+`solana-studio` contributes to the auth modal defaults to showing only when
+`auth_method?(:wallet)` and `feature?(:web3)` both hold. A wallet app opts into
+both knobs.
 
 ## Enforced, not observed
 
@@ -58,12 +59,13 @@ someone to re-read this page.
   violation.
 - `Web2AppBoundary::ALLOWLIST` is **empty**, and the hub passes structurally: its
   Gemfile carries `studio-engine` and no `solana-studio`. Keep the machinery. An
-  entry, when an app needs one, is audited three ways and any one goes red alone:
-  its `justified_by` paths must still exist (else `:stale_exemption`), it must name
-  a `clearing_task` or an `unfiled_reason` (else `:nameless_exemption`), and the
-  app must still carry the gem (else `:obsolete_exemption`). The unit tier keeps
-  all three covered over fixtures; the integration tier proves the check still
-  bites the real tree.
+  entry, when an app needs one, is audited on every run and any audit goes red
+  alone: at least one `justified_by` path must still exist (`:stale_exemption`;
+  none listed is `:unjustified_exemption`), it must name a `clearing_task` or an
+  `unfiled_reason` (`:nameless_exemption`), its `doc` must exist
+  (`:missing_doc_pointer`), and the app must still carry the gem
+  (`:obsolete_exemption`). The unit tier covers every audit over fixtures; the
+  integration tier proves the check still bites the real tree.
 - The guard speaks for the repo it runs in, because CI checks out no sibling
   repo. Only the hub carries it today; a sibling app that wants the same
   enforcement copies the lib and its test.
