@@ -55,6 +55,12 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
 
    Missing/invalid/expired tokens return `401` with
    `{ "error": "...", "error_code": "UNAUTHORIZED" }`.
+4. **One token per ship.** `bin/task` and `bin/dor-check` send a bearer handed
+   down in `AGENT_API_TOKEN` when one is set, and mint their own from the
+   secret only when it is not. `bin/ship` mints once per run and exports it to
+   every board call it spawns (`bin/lib/task_board.rb#handed_token`). When the
+   board answers `401` to a handed token, `bin/task` names the variable; unset
+   it to mint afresh.
 
 ### Secret hygiene
 

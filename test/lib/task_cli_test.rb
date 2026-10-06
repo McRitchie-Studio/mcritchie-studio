@@ -138,7 +138,7 @@ class TaskCliTest < Minitest::Test
       end
       len = headers["content-length"]
       body = len ? client.read(len.to_i) : ""
-      requests << { method: method, path: path, body: body }
+      requests << { method: method, path: path, body: body, headers: headers }
 
       status, payload = response_for(method, path, body)
       client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
@@ -1063,6 +1063,47 @@ class TaskCliTest < Minitest::Test
     assert_match(/- first bullet here/, out)
     assert_match(/- second bullet here/, out)
     assert_match(/agent_context: the why behind it/, out)
+  end
+
+  # --- one board token per ship: the CLI honours a handed-down bearer ----------
+  #
+  # bin/ship mints once per run and exports AGENT_API_TOKEN; every bin/task it
+  # spawns must send THAT bearer and skip its own POST /api/v1/auth. Asserted on
+  # the wire, because the saving is a request that does not happen.
+
+  # [integration] With a token handed in, the CLI sends it and never mints.
+  def test_a_handed_token_is_sent_as_the_bearer_and_no_mint_is_made
+    requests, out, err, status = run_task(["show", "demo-task", "--json"],
+                                          env: { "AGENT_API_TOKEN" => "tok-from-ship" })
+
+    assert status.success?, err
+    assert_equal "demo-task", JSON.parse(out)["slug"]
+    assert_empty requests.select { |r| r[:path] == "/api/v1/auth" },
+                 "a handed token is reused; the CLI must not spend a mint of its own"
+    assert_equal ["Bearer tok-from-ship"], requests.map { |r| r[:headers]["authorization"] }.uniq,
+                 "and every call carries the handed bearer"
+  end
+
+  # [integration] The control: with none handed in, the CLI mints as it always has.
+  def test_without_a_handed_token_the_cli_mints_its_own
+    requests, _out, err, status = run_task(["show", "demo-task", "--json"], env: { "AGENT_API_TOKEN" => nil })
+
+    assert status.success?, err
+    assert_equal 1, requests.count { |r| r[:path] == "/api/v1/auth" }, "exactly one mint per CLI run"
+    assert_equal "Bearer stub-token", requests.last[:headers]["authorization"], "with the token the board minted"
+  end
+
+  # [integration] A handed token the board refuses names the var, not the secret
+  # chain the run never consulted — so the reader fixes the right thing.
+  def test_a_refused_handed_token_names_the_environment_variable
+    _requests, _out, err, status = run_task(["show", "demo-task", "--json"],
+                                            env: { "AGENT_API_TOKEN" => "tok-stale" }, fail_get: 401,
+                                            fail_get_body: JSON.generate("error" => "token expired"))
+
+    refute status.success?
+    assert_match(/401/, err)
+    assert_includes err, "AGENT_API_TOKEN", "the refusal must name the handed-in var"
+    assert_includes err, "unset it to mint afresh"
   end
 
   # The default `show` stays terse — it counts the acceptance items, it does not

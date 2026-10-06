@@ -4,11 +4,16 @@
 # bin/ship — the fast-lane HANDOFF wrapper: one command from "code done" to
 # `submitted`.
 #
-# Collapses the standing pre-handoff sequence — commit → optional pre-flight
-# (bin/fast-check) → push → NON-DRAFT PR into `accepted` (body led by the task
-# URL) → record pr_url → WAIT for CI to settle → DoR verdict (bin/dor-check) →
-# move `submitted` → read-back verify — into one idempotent, resumable command.
-# Its inverse is `bin/task begin`, which collapses the session-start sequence.
+# Collapses the standing pre-handoff sequence — commit → push → NON-DRAFT PR into
+# `accepted` (body led by the task URL) → record pr_url → optional pre-flight
+# (bin/fast-check) → WAIT for CI to settle → DoR verdict (bin/dor-check) → move
+# `submitted` → read-back verify — into one idempotent, resumable command. Its
+# inverse is `bin/task begin`, which collapses the session-start sequence.
+#
+# THE PUSH COMES BEFORE THE PRE-FLIGHT so GitHub CI starts the moment the PR
+# exists; the ~1 min pre-flight then runs while CI is already running instead of
+# holding it back. Nothing is lost by the order: the pre-flight records nothing
+# and never stops the ship, so it has no say in what gets pushed.
 #
 # THE CI WAIT (step 6, gate-submit-on-green-ci) holds the handoff while the PR's
 # CI is still running, so `submitted` carries a GREEN CI — the one verdict per
@@ -20,7 +25,7 @@
 # ORCHESTRATION plus the two guards the handoff seam itself owns. Every spawned
 # gate still runs and still owns its verdict: bin/dor-check closes the DoR gate,
 # bin/task move read-back-verifies the stage write. bin/fast-check is NOT a gate:
-# it is the optional local pre-flight, run at step 2 for the builder's benefit and
+# it is the optional local pre-flight, run at step 5 for the builder's benefit and
 # reported loudly, and the ship carries on whatever it said — the PR's settled
 # green CI is the verdict, at step 7. But the move-to-SUBMITTED path has no
 # claim gate of its own (only move-to-building does), so ship asks two questions
@@ -63,7 +68,7 @@
 # Test seams (the house pattern — each defaults to the real sibling tool):
 #   SHIP_TASK_BIN         board CLI (default bin/task)
 #   SHIP_FAST_CHECK_BIN   pre-flight runner (default bin/fast-check)
-#   SHIP_PREFLIGHT        `off` skips the optional pre-flight at 2/8 (default: run it)
+#   SHIP_PREFLIGHT        `off` skips the optional pre-flight at 5/8 (default: run it)
 #   SHIP_DOR_CHECK_BIN    DoR gate (default bin/dor-check)
 #   SHIP_GH_BIN           GitHub CLI (default gh)
 #   SHIP_ROOT             explicit code root — bypasses the root guard (CI/tests)
@@ -74,6 +79,8 @@
 #   SHIP_CI_WAIT_APPEARANCE  seconds to wait for a run to EXIST (default 120)
 #   SHIP_CI_WAIT_INTERVAL poll interval, floored at 2s (default 20)
 #   SHIP_CI_STATE         injected CiStatus state (tests — `state:green`)
+#   AGENT_API_TOKEN       a board bearer to reuse; ship mints one per run and exports
+#                         it to its child CLIs (bin/lib/task_board.rb#handed_token)
 #
 # Exit code: 0 = task verified `submitted` with an open non-draft PR; 1 = a step
 # failed (fix what it printed, then re-run — ship resumes).
@@ -95,6 +102,7 @@ require_relative "lib/ci_status"
 require_relative "lib/ci_wait"
 require_relative "lib/desk_claim"
 require_relative "lib/projects_root"
+require_relative "lib/task_board"
 require_relative "../lib/commit_identity"
 
 ROOT = File.expand_path("..", __dir__)
@@ -172,6 +180,35 @@ end.parse!
 
 slug = ARGV.shift
 die!("usage: #{$PROGRAM_NAME} <task-slug> [-m MESSAGE]") if slug.to_s.strip.empty? || slug.start_with?("-")
+
+# --- one board token per ship ------------------------------------------------
+# Every child board CLI (bin/task show/update/move, bin/dor-check, and the
+# bin/task reads inside bin/fast-check and bin/dor-check) mints its own 24h bearer
+# unless one is handed down in AGENT_API_TOKEN. A ship makes seven or more such
+# calls, so it mints ONCE here, through the same transport and secret chain the
+# CLIs use, and exports the token to every child it spawns. Best-effort by
+# construction: a mint that fails leaves the var unset and each child mints its
+# own, exactly as before — the token is a saving, never a gate.
+def hand_down_board_token!
+  if TaskBoard.handed_token
+    say "auth — reusing the board token handed in (#{TaskBoard::TOKEN_ENV})."
+    return
+  end
+
+  secret = TaskBoard.agent_secret(File.join(ROOT, ".env"))
+  token = TaskBoard.mint_token(base_url: BASE_URL, secret: secret)
+  if token
+    ENV[TaskBoard::TOKEN_ENV] = token
+    say "auth — one board token minted for this run; every board call reuses it."
+  else
+    say "auth — no board token minted up front (#{secret ? "the board answered without one" : "no secret found"}); " \
+        "each board call mints its own."
+  end
+rescue StandardError => e
+  say "auth — no board token minted up front (#{e.class}: #{e.message}); each board call mints its own."
+end
+
+hand_down_board_token!
 
 # --- the task record ---------------------------------------------------------
 
@@ -303,7 +340,7 @@ end
 # about to take a core-set for ten minutes. Nothing on disk told them apart.
 #
 # The weights below are the SHIP'S OWN cost, and they are deliberately not
-# uniform. `2/8 pre-flight` carries `suite` because bin/fast-check publishes no
+# uniform. `5/8 pre-flight` carries `suite` because bin/fast-check publishes no
 # claim of its own: this line is the only thing that says a suite is running.
 # Over-reporting cost buys a peer some delay; under-reporting it buys a saturated
 # machine and a lost 45-minute run, so that is the side to err on.
@@ -314,10 +351,10 @@ end
 # it a corpse on the very next read, with no timeout to elapse.
 PRESENCE_PHASES = {
   commit: ["1/8 commit", PresenceClaim::WORKING, PresenceClaim::LIGHT],
-  preflight: ["2/8 pre-flight", PresenceClaim::WORKING, PresenceClaim::SUITE],
-  push: ["3/8 push", PresenceClaim::WORKING, PresenceClaim::LIGHT],
-  pr: ["4/8 pr", PresenceClaim::WAITING, PresenceClaim::IDLE],
-  record: ["5/8 record", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  push: ["2/8 push", PresenceClaim::WORKING, PresenceClaim::LIGHT],
+  pr: ["3/8 pr", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  record: ["4/8 record", PresenceClaim::WAITING, PresenceClaim::IDLE],
+  preflight: ["5/8 pre-flight", PresenceClaim::WORKING, PresenceClaim::SUITE],
   ci: ["6/8 ci", PresenceClaim::WAITING, PresenceClaim::IDLE],
   dor: ["7/8 dor", PresenceClaim::WORKING, PresenceClaim::LIGHT],
   submit: ["8/8 submit", PresenceClaim::WAITING, PresenceClaim::IDLE]
@@ -365,29 +402,9 @@ else
   end
 end
 
-# --- 2/8 pre-flight (bin/fast-check, optional) --------------------------------
-# The local pre-flight is information for the builder, not a gate: it runs the
-# diff-mapped tests, the spine and rubocop on the changed files, and records
-# NOTHING. Whatever it says, the ship carries on to the push and the PR — the PR's
-# settled green CI is the verdict, and step 7's dor-check reads it. A red
-# pre-flight is printed LOUDLY here so the builder reads it before CI repeats it
-# ten minutes later; SHIP_PREFLIGHT=off skips the run.
-
-presence!(:preflight)
-if ENV["SHIP_PREFLIGHT"].to_s.strip.casecmp?("off")
-  say "2/8 pre-flight — skipped (SHIP_PREFLIGHT=off); CI is the verdict."
-else
-  say "2/8 pre-flight — running bin/fast-check #{slug} (optional; nothing is recorded)"
-  if system(FAST_CHECK_BIN, slug, chdir: root)
-    say "2/8 pre-flight — green. CI still runs the full suite on the PR."
-  else
-    say "2/8 pre-flight — RED (exit #{$?&.exitstatus}). Read bin/fast-check's output above: a red lane " \
-        "here almost always means a red CI in ~10 minutes, and step 7 REFUSES a red CI. Continuing " \
-        "to push + PR so CI can say so on the record; fix and re-run #{SHIP_CMD} #{slug} if it does."
-  end
-end
-
-# --- 3/8 push ----------------------------------------------------------------
+# --- 2/8 push ----------------------------------------------------------------
+# Pushed BEFORE the pre-flight: the PR at 3/8 starts GitHub CI, and the ~1 min
+# pre-flight at 5/8 then runs while CI is already underway.
 presence!(:push)
 
 # A plain push fast-forwards the common case (first push, or the branch only
@@ -400,11 +417,11 @@ presence!(:push)
 # records — i.e. when someone else pushed. So: try plain; on a non-fast-forward,
 # retry with the lease; if the lease refuses, real foreign work is on the remote —
 # stop and send the operator to reconcile.
-say "3/8 push — git push -u origin #{branch}"
+say "2/8 push — git push -u origin #{branch}"
 out, pushed = git_push(root, branch)
 unless pushed
   if FastLane.push_rejected_non_fast_forward?(out)
-    say "3/8 push — non-fast-forward (the branch was rebased); retrying with --force-with-lease."
+    say "2/8 push — non-fast-forward (the branch was rebased); retrying with --force-with-lease."
     out, leased = git_push(root, branch, lease: true)
     unless leased
       die!("push refused by --force-with-lease: origin/#{branch} moved under you — someone else pushed a commit " \
@@ -416,7 +433,7 @@ unless pushed
   end
 end
 
-# --- 4/8 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
+# --- 3/8 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
 presence!(:pr)
 
 # One `gh` call, with a single mint-and-retry when it fails on CREDENTIALS.
@@ -480,11 +497,11 @@ existing = FastLane.open_pr(list_json)
 if existing
   number = existing["number"].to_s
   pr_url = existing["url"].to_s
-  say "4/8 pr — open PR ##{number} already exists (#{pr_url})"
+  say "3/8 pr — open PR ##{number} already exists (#{pr_url})"
   if existing["isDraft"]
     # The known trap this wrapper exists to close: a DRAFT PR defers reviewers
     # and the qa-release sweep skips it — the task strands. Mark it ready.
-    say "4/8 pr — PR ##{number} is a DRAFT; marking it ready for review."
+    say "3/8 pr — PR ##{number} is a DRAFT; marking it ready for review."
     ready_out, ready = gh_capture(root, "pr", "ready", number)
     die!("gh pr ready #{number} failed:\n#{ready_out.strip}") unless ready
   end
@@ -522,18 +539,18 @@ if existing
     end
     parent = stack[:parent]
     if parent
-      say "4/8 pr — PR ##{number} is based on #{parent_base.inspect}, which is open PR " \
+      say "3/8 pr — PR ##{number} is based on #{parent_base.inspect}, which is open PR " \
           "##{parent["number"]}'s branch — a deliberate STACK, so the base stands. " \
           "##{parent["number"]} merges FIRST; GitHub retargets this to #{BASE_BRANCH} when it does."
     else
       why = StackedPr.why(stack)
-      say "4/8 pr — PR ##{number} is based on #{parent_base.inspect} (#{why}); retargeting to #{BASE_BRANCH}."
+      say "3/8 pr — PR ##{number} is based on #{parent_base.inspect} (#{why}); retargeting to #{BASE_BRANCH}."
       retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
       die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
     end
   end
 else
-  say "4/8 pr — opening a non-draft PR into #{BASE_BRANCH}"
+  say "3/8 pr — opening a non-draft PR into #{BASE_BRANCH}"
   body = FastLane.pr_body(task_url, devops["acceptance"])
   out, created = gh_capture(root, "pr", "create", "--base", BASE_BRANCH, "--head", branch,
                             "--title", title.empty? ? slug : title, "--body", body)
@@ -655,7 +672,7 @@ if MigrationCollision.blocking?(collisions)
   die!("duplicate migration install — resolve it before this PR moves to submitted.")
 end
 
-# --- 5/8 record pr_url -------------------------------------------------------
+# --- 4/8 record pr_url -------------------------------------------------------
 # THE BOARD DERIVES IT NOW (devops-v3 4c-i). A show of a task with a blank
 # `devops.pr_url` queues a background lookup of the PR on the task branch
 # (TaskPrUrlCacheJob → Task#cache_derived_pr_url!); the request itself never waits
@@ -678,12 +695,35 @@ rescue JSON::ParserError, SystemCallError
 end
 
 if devops["pr_url"].to_s == pr_url
-  say "5/8 record — pr_url already recorded."
+  say "4/8 record — pr_url already recorded."
 elsif board_pr_url(slug) == pr_url
-  say "5/8 record — skipped: the board derives pr_url #{pr_url} from the branch."
+  say "4/8 record — skipped: the board derives pr_url #{pr_url} from the branch."
 else
-  say "5/8 record — bin/task update #{slug} --pr-url #{pr_url}"
+  say "4/8 record — bin/task update #{slug} --pr-url #{pr_url}"
   die!("recording the PR URL failed (#{TASK_BIN} update)") unless system(TASK_BIN, "update", slug, "--pr-url", pr_url)
+end
+
+# --- 5/8 pre-flight (bin/fast-check, optional) --------------------------------
+# The local pre-flight is information for the builder, not a gate: it runs the
+# diff-mapped tests, the spine and rubocop on the changed files, and records
+# NOTHING. It runs HERE, after the push and the PR, so GitHub CI is already
+# running while it does; whatever it says, the ship carries on — the PR's settled
+# green CI is the verdict, and step 7's dor-check reads it. A red pre-flight is
+# printed LOUDLY so the builder reads it before CI repeats it ten minutes later;
+# SHIP_PREFLIGHT=off skips the run.
+
+presence!(:preflight)
+if ENV["SHIP_PREFLIGHT"].to_s.strip.casecmp?("off")
+  say "5/8 pre-flight — skipped (SHIP_PREFLIGHT=off); CI is the verdict."
+else
+  say "5/8 pre-flight — running bin/fast-check #{slug} (optional; nothing is recorded; CI is already running)"
+  if system(FAST_CHECK_BIN, slug, chdir: root)
+    say "5/8 pre-flight — green. CI still runs the full suite on the PR."
+  else
+    say "5/8 pre-flight — RED (exit #{$?&.exitstatus}). Read bin/fast-check's output above: a red lane " \
+        "here almost always means a red CI in ~10 minutes, and step 7 REFUSES a red CI. The PR is " \
+        "already open, so CI will say so on the record; fix and re-run #{SHIP_CMD} #{slug} if it does."
+  end
 end
 
 # --- 6/8 CI settle wait (bin/lib/ci_wait.rb) ---------------------------------

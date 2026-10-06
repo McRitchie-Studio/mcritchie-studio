@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # [integration] Harness tests for bin/ship — the fast-lane handoff wrapper
-# (commit → optional pre-flight → push → non-draft PR into accepted → record
-# pr_url → dor-check → move submitted → read-back verify). Follows the house seam
+# (commit → push → non-draft PR into accepted → record pr_url → optional
+# pre-flight → CI wait → dor-check → move submitted → read-back verify). Follows the house seam
 # pattern (test/lib/fast_check_test.rb): the REAL script is shelled via Open3
 # against a throwaway git repo (with a real bare `origin`, so the push lane is
 # exercised for real), with the board/cert/gate/GitHub CLIs stubbed via SHIP_*
@@ -15,6 +15,7 @@
 require "minitest/autorun"
 require "json"
 require "open3"
+require "socket"
 require "time"
 require "tmpdir"
 require "fileutils"
@@ -58,7 +59,7 @@ class ShipTest < Minitest::Test
         File.write(full, body)
       end
       write.call("app.rb", "puts :v1\n")
-      write.call(".gitignore", "stub.log\n*-stub\n")
+      write.call(".gitignore", "stub.log\nstub-tokens.log\n*-stub\n")
       base_files.each { |rel, body| write.call(rel, body) }
       git.call("init -q -b #{BRANCH}")
       git.call("config user.email tester@example.com")
@@ -87,11 +88,25 @@ class ShipTest < Minitest::Test
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
       log = ENV.fetch("STUB_LOG")
+      # The pre-flight stub carries a THIRD column: the tip of origin/#{BRANCH} as
+      # seen from its cwd (ship's root), or "unpushed". It is the only vantage point
+      # from which "had the push landed when the pre-flight ran?" can be answered.
+      extra = []
+      if "#{marker}" == "FAST"
+        tip = IO.popen(%w[git rev-parse --verify --quiet origin/#{BRANCH}], err: File::NULL, &:read).to_s.strip
+        extra << (tip.empty? ? "unpushed" : tip)
+      end
       # One log line per call: escape embedded newlines (the PR body is multi-line).
-      File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV].map { |a| a.to_s.gsub("\\n", "\\\\n") }.join("\\t")) }
+      File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV, *extra].map { |a| a.to_s.gsub("\\n", "\\\\n") }.join("\\t")) }
+      # The board token each child saw, one line per call, so a test can say whether
+      # ONE token served the whole ship or none did. A child mints for itself only
+      # when this is blank; the stub records the fact, never a secret.
+      if (tokens = ENV["STUB_TOKEN_LOG"].to_s) != ""
+        File.open(tokens, "a") { |f| f.puts(["#{marker}", ENV["AGENT_API_TOKEN"].to_s].join("\\t")) }
+      end
       # SNAPSHOT THE LIVE PRESENCE CLAIM. A claim is REWRITTEN at each boundary and
       # cleared on exit, so it cannot be observed after the run — only from inside
-      # it. Each stub runs DURING a known phase (FAST during 2/8, GH during 4/8,
+      # it. Each stub runs DURING a known phase (GH during 3/8, FAST during 5/8,
       # DOR during 7/8), which makes these stubs the only vantage point from which
       # the phase sequence is visible at all.
       if (snap = ENV["PRESENCE_SNAP_DIR"].to_s) != ""
@@ -175,6 +190,14 @@ class ShipTest < Minitest::Test
       "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
       "SHIP_ACTIVITY_BIN" => write_stub(dir, "activity-stub", "ACTIVITY"),
       "STUB_LOG" => log,
+      "STUB_TOKEN_LOG" => File.join(dir, "stub-tokens.log"),
+      # The ship's OWN board mint (one token per run) resolves the secret through
+      # the real chain — ENV, then the script's repo .env, then 1Password. Pinned
+      # here so it stops at ENV: the board is unroutable in this harness, so the
+      # mint fails fast and the children fall back to minting their own, and no
+      # test can spend a vault read or read the desk's .env. A token test overrides
+      # TASK_API_BASE with a stub board that answers the mint.
+      "AGENT_API_SECRET" => "test-secret",
       # The CI settle wait (step 6/8) is left ARMED here and handed an injected
       # GREEN, rather than switched off: every test in this file then drives the
       # real step, so a wait that stopped being called — or that broke the handoff
@@ -362,9 +385,11 @@ class ShipTest < Minitest::Test
       # the same-file OVERLAP ADVISORY's own `pr list` — asked after the PR exists so
       # it can exclude this one, and before the DoR verdict so the builder reads it
       # while a deliberate choice is still cheap. See bin/lib/pr_overlap.rb.
-      # The second `TASK show` is 5/8 asking the board whether it already derives the
+      # The second `TASK show` is 4/8 asking the board whether it already derives the
       # PR url; this board (the stub) predates the field, so ship writes it itself.
-      assert_equal ["TASK show", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK show", "TASK update", "DOR #{SLUG}",
+      # The pre-flight (FAST) comes AFTER the PR and the record: CI is already
+      # running by the time it starts.
+      assert_equal ["TASK show", "GH pr", "GH pr", "GH pr", "TASK show", "TASK update", "FAST #{SLUG}", "DOR #{SLUG}",
                     "TASK move", "TASK show"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
 
@@ -589,7 +614,7 @@ class ShipTest < Minitest::Test
   # ── A DELIBERATE STACK IS NOT A MISTAKE (/tasks/ship-retargets-stacked-prs) ────
   #
   # MEASURED 2026-09-13 on turf #701, stacked on turf #624 by the operator's decision:
-  # step 4/8 retargeted it to `accepted` because the base was not `accepted`, and that
+  # step 3/8 retargeted it to `accepted` because the base was not `accepted`, and that
   # ONE action produced three false refusals — the test-only claim broke (the observed
   # diff swelled to the parent's 6 files), the PR went DIRTY so GitHub queued no run at
   # all, and the [control] line "named no file from this diff". The ship had to be
@@ -613,7 +638,7 @@ class ShipTest < Minitest::Test
 
       assert status.success?, "a stacked ship must complete, got:\n#{err}"
       refute(lines.any? { |l| l[0] == "GH" && l[1, 2] == %w[pr edit] },
-             "step 4/8 retargeted a PR based on open PR #624's branch — that is a deliberate " \
+             "step 3/8 retargeted a PR based on open PR #624's branch — that is a deliberate " \
              "stack, and retargeting it strands the ship exactly as it did on turf #701")
     end
   end
@@ -705,22 +730,46 @@ class ShipTest < Minitest::Test
     end
   end
 
-  # --- the pre-flight is information, not a gate ---------------------------------
+  # --- the pre-flight is information, not a gate, and it runs AFTER the push -------
   #
-  # Since DevOps v3 phase 2b (/tasks/retire-local-cert-evidence) bin/fast-check is an
-  # OPTIONAL pre-flight that records nothing. Ship runs it at step 2, reports its
-  # verdict loudly, and carries on to the push and the PR whatever it said: the PR's
-  # settled green CI is the verdict, and step 7's dor-check reads it.
+  # bin/fast-check is an OPTIONAL pre-flight that records nothing. Ship runs it at
+  # step 5, after the push and the PR so GitHub CI is already running, reports its
+  # verdict loudly, and carries on whatever it said: the PR's settled green CI is
+  # the verdict, and step 7's dor-check reads it.
+
+  # [unit] The order. The pre-flight stub records the tip of origin/<branch> as it
+  # sees it from ship's root; that tip must already be the commit ship just made,
+  # and the PR must already be open. A pre-flight that ran first would see the
+  # remote one commit behind (or absent) and no `pr create` before it in the log.
+  def test_the_push_and_the_pr_land_before_the_pre_flight_runs
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir)
+
+      assert status.success?, err
+      fast = lines.find { |l| l[0] == "FAST" }
+      assert fast, "the pre-flight did run"
+      head = `git -C #{dir} rev-parse HEAD`.strip
+      assert_equal head, fast[2], "origin/#{BRANCH} must already carry ship's commit when the pre-flight starts"
+
+      create_at = lines.index { |l| l[0] == "GH" && l[2] == "create" }
+      record_at = lines.index { |l| l[0, 2] == %w[TASK update] }
+      fast_at = lines.index(fast)
+      assert create_at && create_at < fast_at, "the PR must be open before the pre-flight starts"
+      assert record_at && record_at < fast_at, "and pr_url recorded, so the board names the PR while the pre-flight runs"
+      ci_at = err.index("6/8 ci — ")
+      assert ci_at && err.index("5/8 pre-flight — ") < ci_at, "the CI wait follows the pre-flight"
+    end
+  end
 
   def test_a_red_pre_flight_is_reported_loudly_and_the_ship_carries_on
     with_repo do |dir|
       out, err, status, lines = run_ship(dir, extra_env: { "FAIL_FAST" => "1" })
 
       assert status.success?, "a red pre-flight must NOT stop the line: #{err}"
-      assert_includes err, "2/8 pre-flight — RED"
+      assert_includes err, "5/8 pre-flight — RED"
       assert_includes err, "step 7 REFUSES a red CI", "the builder is told where the verdict actually lands"
       assert_includes markers(lines), "FAST #{SLUG}", "the pre-flight did run"
-      assert_includes markers(lines), "GH pr", "…and the PR was still opened"
+      assert_includes markers(lines), "GH pr", "…and the PR was opened (before it, not because of it)"
       assert_includes markers(lines), "DOR #{SLUG}", "…and the verdict gate still ran"
       assert_includes out, "stage: submitted (read back verified)"
       _remote = `git -C #{dir} rev-parse origin/#{BRANCH} 2>/dev/null`.strip
@@ -733,8 +782,8 @@ class ShipTest < Minitest::Test
       _out, err, status, = run_ship(dir)
 
       assert status.success?, err
-      assert_includes err, "2/8 pre-flight — running bin/fast-check #{SLUG} (optional; nothing is recorded)"
-      assert_includes err, "2/8 pre-flight — green. CI still runs the full suite on the PR."
+      assert_includes err, "5/8 pre-flight — running bin/fast-check #{SLUG} (optional; nothing is recorded; CI is already running)"
+      assert_includes err, "5/8 pre-flight — green. CI still runs the full suite on the PR."
     end
   end
 
@@ -743,7 +792,7 @@ class ShipTest < Minitest::Test
       _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_PREFLIGHT" => "off" })
 
       assert status.success?, err
-      assert_includes err, "2/8 pre-flight — skipped (SHIP_PREFLIGHT=off)"
+      assert_includes err, "5/8 pre-flight — skipped (SHIP_PREFLIGHT=off)"
       refute_includes markers(lines), "FAST #{SLUG}", "the pre-flight did not run"
       assert_includes markers(lines), "DOR #{SLUG}", "the verdict gate still did"
     end
@@ -754,9 +803,109 @@ class ShipTest < Minitest::Test
       _out, err, status, lines = run_ship(dir, extra_env: { "SHIP_FAST_CHECK_BIN" => "/nonexistent/fast-check" })
 
       assert status.success?, "an unlaunchable pre-flight is a RED pre-flight, and a red pre-flight does not gate: #{err}"
-      assert_includes err, "2/8 pre-flight — RED"
+      assert_includes err, "5/8 pre-flight — RED"
       assert_includes markers(lines), "DOR #{SLUG}"
     end
+  end
+
+  # --- one board token per ship ------------------------------------------------
+  #
+  # Every child board CLI mints its own bearer unless one is handed down in
+  # AGENT_API_TOKEN. A ship spawns seven or more such calls, so it mints once and
+  # exports the token. These drive the REAL mint against a stub board and read the
+  # token back OUT OF EACH CHILD'S ENVIRONMENT, which is the only thing that shows
+  # the handoff reached the calls rather than merely being minted.
+
+  def test_one_board_token_is_minted_per_ship_and_handed_to_every_board_call
+    with_repo do |dir|
+      with_stub_board(token: "tok-ship-1") do |port, requests|
+        _out, err, status, lines = run_ship(dir, extra_env: { "TASK_API_BASE" => "http://127.0.0.1:#{port}" })
+
+        assert status.success?, err
+        assert_includes err, "one board token minted for this run"
+        mints = requests.select { |r| r[:path] == "/api/v1/auth" }
+        assert_equal 1, mints.size, "the ship mints exactly once"
+        assert_equal({ "secret" => "test-secret" }, JSON.parse(mints.first[:body]), "with the secret chain's answer")
+
+        seen = tokens_seen(dir)
+        board_calls = seen.select { |marker, _| %w[TASK DOR].include?(marker) }
+        assert_operator board_calls.size, :>=, 5, "a ship makes several board calls:\n#{markers(lines).join(', ')}"
+        assert_equal ["tok-ship-1"], board_calls.map(&:last).uniq,
+                     "every board call must carry the ONE token the ship minted"
+      end
+    end
+  end
+
+  def test_a_failed_mint_leaves_each_board_call_to_mint_its_own_and_never_stops_the_ship
+    with_repo do |dir|
+      # The harness default: the board is unroutable, so the up-front mint cannot
+      # succeed. The ship must say so and carry on; the children see NO token and
+      # fall back to their own secret chain, exactly as before the seam existed.
+      _out, err, status, = run_ship(dir)
+
+      assert status.success?, "a failed mint is a saving lost, never a refusal: #{err}"
+      assert_includes err, "each board call mints its own"
+      refute_includes err, "one board token minted"
+      assert_equal [""], tokens_seen(dir).map(&:last).uniq, "no child may see a token the ship never minted"
+    end
+  end
+
+  def test_a_token_handed_to_the_ship_is_reused_and_not_re_minted
+    with_repo do |dir|
+      with_stub_board(token: "tok-fresh") do |port, requests|
+        _out, err, status, = run_ship(dir, extra_env: {
+          "TASK_API_BASE" => "http://127.0.0.1:#{port}", "AGENT_API_TOKEN" => "tok-parent"
+        })
+
+        assert status.success?, err
+        assert_includes err, "reusing the board token handed in"
+        assert_empty requests.select { |r| r[:path] == "/api/v1/auth" }, "a handed token is never re-minted"
+        assert_equal ["tok-parent"], tokens_seen(dir).map(&:last).uniq
+      end
+    end
+  end
+
+  # [marker, token] per child board CLI call, in call order.
+  def tokens_seen(dir)
+    path = File.join(dir, "stub-tokens.log")
+    return [] unless File.exist?(path)
+
+    File.readlines(path, chomp: true).map { |l| l.split("\t", 2).then { |m, t| [m, t.to_s] } }
+  end
+
+  # A one-connection-at-a-time stub board that answers every request with a mint
+  # and records what it was asked. Only POST /api/v1/auth reaches it from a ship:
+  # every other board call goes through the TASK/DOR stubs, which never dial out.
+  def with_stub_board(token:)
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    requests = []
+    thread = Thread.new do
+      loop do
+        client = server.accept
+        line = client.gets
+        (client.close; next) if line.nil?
+
+        method, path, = line.split(" ")
+        headers = {}
+        while (h = client.gets) && h != "\r\n"
+          k, v = h.split(":", 2)
+          headers[k.strip.downcase] = v.strip if v
+        end
+        body = headers["content-length"] ? client.read(headers["content-length"].to_i) : ""
+        requests << { method: method, path: path, body: body }
+        payload = JSON.generate("token" => token)
+        client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
+                     "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+        client.close
+      end
+    rescue IOError, Errno::EBADF, Errno::ECONNRESET
+      nil
+    end
+    yield port, requests
+  ensure
+    server&.close
+    thread&.join(1)
   end
 
   def test_red_dor_check_aborts_before_move
@@ -871,7 +1020,7 @@ class ShipTest < Minitest::Test
     end
   end
 
-  # --- 5/8 record: the board derives the PR url (devops-v3 4c-i) ---------------
+  # --- 4/8 record: the board derives the PR url (devops-v3 4c-i) ---------------
 
   # A record whose board serves `pr_url_or_derived` — the recorded url when there is
   # one, else the PR the board found on the task branch (and cached).
@@ -882,7 +1031,7 @@ class ShipTest < Minitest::Test
   end
 
   # [integration] The board already names the PR ship opened, so ship writes nothing
-  # at 5/8 — and the read-back at 8/8 passes on the DERIVED value, with the raw
+  # at 4/8 — and the read-back at 8/8 passes on the DERIVED value, with the raw
   # `devops.pr_url` still blank.
   def test_record_skips_the_write_when_the_board_derives_the_same_pr
     with_repo do |dir|
@@ -894,7 +1043,7 @@ class ShipTest < Minitest::Test
 
       assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
       refute(lines.any? { |l| l[0, 2] == %w[TASK update] }, "a pr_url the board derives must not be written")
-      assert_includes out + err, "5/8 record — skipped: the board derives pr_url #{PR_URL}"
+      assert_includes out + err, "4/8 record — skipped: the board derives pr_url #{PR_URL}"
       assert_includes out, "PR: #{PR_URL}"
       assert_includes out, "stage: submitted (read back verified)"
     end
@@ -992,6 +1141,7 @@ class ShipTest < Minitest::Test
       "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
       "SHIP_ACTIVITY_BIN" => write_stub(dir, "activity-stub", "ACTIVITY"),
       "STUB_LOG" => log,
+      "AGENT_API_SECRET" => "test-secret", # the ship's own mint stops at ENV (see run_ship)
       "TASK_SHOW_JSON" => task_record,
       "TASK_SHOW_JSON_MOVED" => task_record(stage: "submitted", pr_url: PR_URL)
     )
@@ -1132,7 +1282,7 @@ class ShipTest < Minitest::Test
       dor = JSON.parse(File.read(File.join(snaps, "DOR.json")))
 
       # THE DISTINCTION, on disk, at the two boundaries that matter.
-      assert_equal ["working", "suite", "2/8 pre-flight"], cert.values_at("phase", "weight", "lane"),
+      assert_equal ["working", "suite", "5/8 pre-flight"], cert.values_at("phase", "weight", "lane"),
                    "the pre-flight phase is the one that costs everything — it must say so"
       assert_equal ["waiting", "idle", "6/8 ci"], ci.values_at("phase", "weight", "lane"),
                    "the CI wait costs NOTHING, and reading it as a competing cert is the whole defect"
@@ -1202,7 +1352,7 @@ class ShipTest < Minitest::Test
       # it there strands a .git/HEAD.lock and the assertion becomes a race with the
       # tmpdir teardown rather than a statement about claims. Parked in the slow
       # stub, the kill lands where this test says it lands.
-      claim = wait_for_claim(dir, lane: "2/8 pre-flight")
+      claim = wait_for_claim(dir, lane: "5/8 pre-flight")
       Process.kill("KILL", pid)
       Process.wait(pid)
 
@@ -1228,6 +1378,7 @@ class ShipTest < Minitest::Test
       "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
       "SHIP_ACTIVITY_BIN" => write_stub(dir, "activity-stub", "ACTIVITY"),
       "STUB_LOG" => log,
+      "AGENT_API_SECRET" => "test-secret", # the ship's own mint stops at ENV (see run_ship)
       "SHIP_CI_STATE" => "state:green",
       "TASK_SHOW_JSON" => task_record,
       "TASK_SHOW_JSON_MOVED" => task_record(stage: "submitted", pr_url: PR_URL)

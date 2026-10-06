@@ -50,7 +50,7 @@ class ShipWaitTest < Minitest::Test
   def test_sentinel_status_is_read_from_the_log
     assert_equal 0, ShipWait.sentinel_status(log("ship: done", SENTINEL_OK))
     assert_equal 1, ShipWait.sentinel_status(log("ship: boom", SENTINEL_BAD))
-    assert_nil ShipWait.sentinel_status(log("ship: 3/8 push"))
+    assert_nil ShipWait.sentinel_status(log("ship: 2/8 push"))
   end
 
   def test_last_sentinel_wins
@@ -60,7 +60,7 @@ class ShipWaitTest < Minitest::Test
   def test_exited_is_the_sentinels_presence_not_its_value
     assert ShipWait.exited?(log(SENTINEL_OK))
     assert ShipWait.exited?(log(SENTINEL_BAD))
-    refute ShipWait.exited?(log("ship: 5/8 record pr_url"))
+    refute ShipWait.exited?(log("ship: 4/8 record pr_url"))
   end
 
   # --- the verdict -----------------------------------------------------------
@@ -89,12 +89,12 @@ class ShipWaitTest < Minitest::Test
 
   def test_ended_without_the_line_is_failed_even_with_no_sentinel
     # The `--pid` lane: the captured PID is gone, the log holds no sentinel.
-    assert_equal :failed, ShipWait.verdict(log("ship: 4/8 open PR"), ended: true)
+    assert_equal :failed, ShipWait.verdict(log("ship: 3/8 open PR"), ended: true)
   end
 
   def test_a_sentinel_alone_ends_the_wait_without_any_pid
     # The attach-from-a-cold-session lane: no process, no PID, still terminal.
-    assert_equal :failed, ShipWait.verdict(log("ship: 4/8 open PR", SENTINEL_BAD), ended: false)
+    assert_equal :failed, ShipWait.verdict(log("ship: 3/8 open PR", SENTINEL_BAD), ended: false)
   end
 
   # --- exit codes ------------------------------------------------------------

@@ -184,13 +184,17 @@ re-running the create line resumes cleanly, and only the OTHER create flags on i
 `bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
 `move building` → `session-preflight`) and prints the worktree path, port, and
 task URL. `bin/ship` — the HUB's script, run with that worktree as the cwd —
-runs steps 5-6 (commit → optional `bin/fast-check` pre-flight → push →
-**non-draft** PR into `accepted` led by the task URL → record `pr_url` (skipped
-when the board already derives it) → **wait
-for CI to settle** → `bin/dor-check` → `move submitted` → read-back verify).
-Re-running either after a failure **resumes** — each skips the steps already
-durably recorded. Resume `begin` **by slug** (`bin/task begin <task-slug>`).
-Mechanics: `docs/agents/modules/devops-task-board.md`.
+runs steps 5-6 (commit → push → **non-draft** PR into `accepted` led by the task
+URL → record `pr_url` (skipped when the board already derives it) → optional
+`bin/fast-check` pre-flight, while CI is already running → **wait for CI to
+settle** → `bin/dor-check` → `move submitted` → read-back verify). The push comes
+before the pre-flight so CI starts about a minute sooner; the pre-flight's
+verdict never stops the ship. One ship mints one board token and hands it to
+every `bin/task` and `bin/dor-check` it spawns (`AGENT_API_TOKEN`; a CLI run on
+its own still mints from the secret chain). Re-running either after a failure
+**resumes** — each skips the steps already durably recorded. Resume `begin` **by
+slug** (`bin/task begin <task-slug>`). Mechanics:
+`docs/agents/modules/devops-task-board.md`.
 
 **`bin/ship` waits for CI before the verdict** (`gate-submit-on-green-ci`). CI
 runs the full suite in ~9 min on the PR, so `submitted` carries a settled GREEN
@@ -277,19 +281,20 @@ While building:
 
 Before handoff:
 
-5. Pre-flight — the task's **G1** step, optional
-   (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): commit, then run
+5. Commit, push, and open a PR **into `accepted`** (base `accepted`, not
+   `release`/`main`) whose body **leads with the task URL**, so CI starts at
+   once. Then the pre-flight — the task's **G1** step, optional
+   (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): run
    `bin/fast-check <task>` (diff-mapped tests + core spine + rubocop on changed
-   files, ~1 min). It records nothing; the PR's settled green CI is the verdict.
-   From a satellite desk name it `/Users/alex/projects/mcritchie-studio/bin/…`,
-   still standing in the desk.
-6. Push, open a PR **into `accepted`** (base `accepted`, not `release`/`main`)
-   whose body **leads with the task URL**, then run **`bin/dor-check <task>`** and
-   fix whatever it flags — it refuses an under-tested PR and its verdict closes
-   the gate. Then `bin/task move <task> submitted`: a pending CI is a WAIT (re-run
-   once it settles), a red CI blocks, and review's gate-zero holds the
-   authoritative CI verdict — a CI that flips red mid-review is bounced back with
-   the failing checks named.
+   files, ~1 min) while CI runs. It records nothing; the PR's settled green CI
+   is the verdict. From a satellite desk name it
+   `/Users/alex/projects/mcritchie-studio/bin/…`, still standing in the desk.
+6. Run **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
+   under-tested PR and its verdict closes the gate. Then
+   `bin/task move <task> submitted`: a pending CI is a WAIT (re-run once it
+   settles), a red CI blocks, and review's gate-zero holds the authoritative CI
+   verdict — a CI that flips red mid-review is bounced back with the failing
+   checks named.
 
 ### A good session prompt
 
@@ -313,9 +318,9 @@ off rather than stalling on an answer. Update docs if behavior changes. Then han
 off, WITH THE DESK AS CWD, using the hub's copy of the script —
 /Users/alex/projects/mcritchie-studio/bin/ship <task> -m "<commit message>" (a
 satellite desk carries no copy of it; only the cwd is the desk's) — it
-commits, runs the optional pre-flight, pushes, opens the non-draft PR into
-accepted led by the task URL, waits for the PR's CI to settle, runs dor-check,
-and moves the task to submitted (review's gate-zero still holds the
+commits, pushes, opens the non-draft PR into accepted led by the task URL, runs
+the optional pre-flight while CI runs, waits for the PR's CI to settle, runs
+dor-check, and moves the task to submitted (review's gate-zero still holds the
 authoritative CI verdict). Fall back to
 the long-form commands if the task spans repos or needs a bespoke PR body.
 Do not merge or deploy unless I explicitly assigned that lane.
