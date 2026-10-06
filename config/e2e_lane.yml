@@ -365,7 +365,7 @@
 # look repaints in place when its sheet is ready; a look-less athlete is offered generate
 # first look. Measured with `npx playwright test --list` on the tree merged with accepted
 # => 217.
-total_specs: 221
+total_specs: 220
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -568,7 +568,7 @@ quarantined: 10
 # 204 -> 207: the three music_video_look_picker.spec.js specs
 # (/tasks/recast-look-dropdown-and-generate). Measured on the tree merged with accepted:
 # `npx playwright test --list --grep-invert @quarantine` => 207.
-executed: 211
+executed: 210
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
