@@ -525,9 +525,9 @@ module ApplicationHelper
   # mode's 400s were never the problem (they measure ~8:1) and are unchanged — which is
   # also why this is invisible on the dark board and would have stayed unnoticed.
   CI_CHECK_SYMBOLS = {
-    passed:  { label: "passed",  color: "text-success-ink", spin: false },
-    failed:  { label: "failed",  color: "text-danger-ink",         spin: false },
-    pending: { label: "running", color: "text-warning-ink",     spin: true }
+    passed:  { label: "passed",  color: "text-emerald-800 dark:text-emerald-400", spin: false }, # measured meter tone
+    failed:  { label: "failed",  color: "text-red-800 dark:text-red-400",         spin: false }, # measured meter tone
+    pending: { label: "running", color: "text-amber-800 dark:text-amber-400",     spin: true }   # measured meter tone
   }.freeze
 
   def ci_check_symbol(check)
@@ -834,12 +834,12 @@ module ApplicationHelper
     case phase[:state].to_sym
     when :done
       coarse ? { fill: "bg-primary", value: "text-heading", label: "text-primary/80" }
-             : { fill: "bg-success", value: "text-success-ink", label: "text-muted" }
+             : { fill: "bg-mint-500", value: "text-mint-900 dark:text-mint-400", label: "text-muted" } # measured meter tone
     when :running
       coarse ? { fill: "bg-primary/80", value: "text-heading", label: "text-primary/80" }
-             : { fill: "bg-warning", value: "text-warning-ink", label: "text-muted" }
+             : { fill: "bg-amber-400", value: "text-amber-800 dark:text-amber-300", label: "text-muted" } # measured meter tone
     when :failed
-      { fill: "bg-danger", value: "text-danger-ink", label: "text-muted" }
+      { fill: "bg-red-500", value: "text-red-800 dark:text-red-300", label: "text-muted" } # measured meter tone
     when :na
       { fill: "bg-transparent", value: "text-body", label: "text-muted/50" }
     else

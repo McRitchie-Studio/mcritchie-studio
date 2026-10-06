@@ -29,6 +29,15 @@ class StatusColourTokensTest < ActiveSupport::TestCase
 
   COMMENT_LINE = %r{\A\s*(?:#|//|<%#|\*)}
 
+  # The CI and release meters lay their text over a tinted fill, and their
+  # palette pairs were measured for AA there by e2e/ci_meter_fit.spec.js and
+  # e2e/release_meter_fit.spec.js. The engine inks are derived against plain
+  # surfaces and fail over that fill (3.85:1 and 4.25:1 measured in CI), so
+  # these lines keep their measured pairs until the engine derives an ink
+  # against a tint. Each carries this marker; the count is pinned below.
+  METER_MARKER = "# measured meter tone"
+  METER_LINES = 9
+
   def source_files
     ROOTS.flat_map { |root| Dir[Rails.root.join(root, "**/*.{erb,rb}")] }
          .map { |path| path.delete_prefix("#{Rails.root}/") }
@@ -40,7 +49,8 @@ class StatusColourTokensTest < ActiveSupport::TestCase
       File.readlines(Rails.root.join(path)).each_with_index.filter_map do |line, index|
         comment = in_erb_comment || line.match?(COMMENT_LINE)
         in_erb_comment = (in_erb_comment || line.include?("<%#")) && !line.include?("%>")
-        "#{path}:#{index + 1}: #{line.strip}" if !comment && line.match?(pattern)
+        meter = line.include?(METER_MARKER)
+        "#{path}:#{index + 1}: #{line.strip}" if !comment && !meter && line.match?(pattern)
       end
     end
   end
@@ -48,6 +58,11 @@ class StatusColourTokensTest < ActiveSupport::TestCase
   test "[component] no hub view or helper draws a status colour from a fixed palette" do
     offenders = offending_lines(PALETTE, skip_files: DATA_PALETTE_FILES)
     assert_empty offenders, "use status_tone or the engine role tokens:\n#{offenders.join("\n")}"
+  end
+
+  test "[component] the meter exemption covers exactly the measured meter lines" do
+    marked = source_files.sum { |path| File.read(Rails.root.join(path)).scan(METER_MARKER).size }
+    assert_equal METER_LINES, marked, "a new meter-tone marker needs its own measurement; a removed one lowers METER_LINES"
   end
 
   test "[component] the data-palette exemption still names files that carry a palette" do

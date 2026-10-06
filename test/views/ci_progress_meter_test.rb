@@ -84,7 +84,7 @@ class CiProgressMeterTest < ActionView::TestCase
 
     fill = css_select("[data-test='task-ci-progress-fill']").first
     assert_includes fill["style"], "width: 100%", "every check settled — the bar is full"
-    assert_includes fill["class"].split, "bg-danger", "and RED is what says the run went bad"
+    assert_includes fill["class"], "bg-red-500", "and RED is what says the run went bad"
     assert_select "[data-test='task-ci-progress'][data-ci-state='red']", 1
   end
 
