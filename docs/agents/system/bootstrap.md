@@ -32,7 +32,8 @@ scoped to this app or this checkout. It publishes **globally**: the projects-roo
 `AGENTS.md` and `CLAUDE.md`, `~/.claude/skills` and `~/.codex/skills` (retired
 skills are deleted from both), `~/.claude/settings.json`,
 `/etc/codex/requirements.toml`, `~/.codex/config.toml` — the operator's own Codex
-TUI settings — `~/.codex/hooks.json`, and an appended block in `~/.zprofile`.
+TUI settings — `~/.codex/hooks.json`, the github.com credential helper line in
+`~/.gitconfig`, and an appended block in `~/.zprofile`.
 Every agent session on the machine reads what it writes. After
 bringup the roots are republished by the owned `sync_agent_docs` step of every
 production ship, so a second run is never owed — and it is **never** the answer

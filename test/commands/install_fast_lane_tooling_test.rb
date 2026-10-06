@@ -306,8 +306,10 @@ class InstallFastLaneToolingTest < Minitest::Test
   def test_integration_an_armed_unpinned_install_refuses_the_tooling_write
     fake_projects = File.join(@sandbox, "fake-projects")
     copy_root = File.join(fake_projects, "mcritchie-studio")
-    FileUtils.mkdir_p(File.join(copy_root, "bin"))
+    FileUtils.mkdir_p(File.join(copy_root, "bin", "lib"))
     FileUtils.cp(SCRIPT, File.join(copy_root, "bin", "install-agent-docs"))
+    # The installer resolves its default projects root through this sibling.
+    FileUtils.cp(File.join(ROOT, "bin", "lib", "projects_root.rb"), File.join(copy_root, "bin", "lib"))
     FileUtils.cp_r(File.join(ROOT, "docs"), copy_root)
     system("git", "-C", copy_root, "init", "-q", exception: true)
     system("git", "-C", copy_root, "-c", "user.email=t@t", "-c", "user.name=t", "add", "bin", exception: true)
