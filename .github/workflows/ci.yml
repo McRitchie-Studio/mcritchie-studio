@@ -128,9 +128,8 @@ jobs:
       - name: Install FFmpeg
         # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
         # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: an inline `"$budget"` in a command
-        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
-        # that must be able to SEE every unit CI runs).
+        # than inline here (short version: the step stays one literal, readable
+        # invocation, and the budgets live in one tested place).
         #
         # This bound is the backstop, not the mechanism: the script's own escalating
         # budgets total ~22 minutes, and 25 sits above that and well below the
@@ -206,9 +205,8 @@ jobs:
       - name: Install packages
         # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
         # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: an inline `"$budget"` in a command
-        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
-        # that must be able to SEE every unit CI runs).
+        # than inline here (short version: the step stays one literal, readable
+        # invocation, and the budgets live in one tested place).
         #
         # This bound is the backstop, not the mechanism: the script's own escalating
         # budgets total ~22 minutes, and 25 sits above that and well below the
@@ -438,9 +436,8 @@ jobs:
       - name: Install packages
         # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
         # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: an inline `"$budget"` in a command
-        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
-        # that must be able to SEE every unit CI runs).
+        # than inline here (short version: the step stays one literal, readable
+        # invocation, and the budgets live in one tested place).
         #
         # This bound is the backstop, not the mechanism: the script's own escalating
         # budgets total ~22 minutes, and 25 sits above that and well below the
@@ -480,10 +477,8 @@ jobs:
       # or if the suite finished without producing a receipt.
       #
       # `--shard=` RATHER THAN A BARE `1/4` IS DELIBERATE, and it is the same reason the
-      # `playwright` job writes `--shard=${{ … }}`. bin/lib/ci_test_command.rb refuses a
-      # step that hands a BARE interpolated token to a command it has not proven inert,
-      # because such a token might BE the command. Attached to a flag, the interpolation
-      # is unambiguously a value. See the header of bin/ci-shard.
+      # `playwright` job writes `--shard=${{ … }}`: attached to a flag, the interpolation
+      # is unambiguously a value, never the command. See the header of bin/ci-shard.
       - name: Run this shard of the Rails suite
         env:
           RAILS_ENV: test
@@ -588,9 +583,8 @@ jobs:
       - name: Install packages
         # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
         # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: an inline `"$budget"` in a command
-        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
-        # that must be able to SEE every unit CI runs).
+        # than inline here (short version: the step stays one literal, readable
+        # invocation, and the budgets live in one tested place).
         #
         # This bound is the backstop, not the mechanism: the script's own escalating
         # budgets total ~22 minutes, and 25 sits above that and well below the

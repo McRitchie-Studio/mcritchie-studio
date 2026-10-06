@@ -2,9 +2,6 @@ require "test_helper"
 require Rails.root.join("bin/lib/app_profile").to_s
 require "shellwords"
 require "open3"
-# The seam that answers "what does CI's Ruby suite amount to, as one command?" — a
-# bin/lib module, not an autoloaded app constant, so it is required explicitly.
-require Rails.root.join("bin", "lib", "ci_test_command").to_s
 
 class Release::ReposTest < ActiveSupport::TestCase
   test "classifies registered gems as :gem" do
@@ -962,16 +959,20 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # --- the hub's gate must cover what CI covers (the G3 system-test gap) ---
 
-  test "the hub's G3 gate runs CI's test command verbatim" do
-    # THE DRIFT GUARD, and the reason this file now parses ci.yml instead of
-    # re-pinning a literal. `bin/rails test` SKIPS test/system — so while the gate
-    # ran that and CI ran `db:test:prepare test test:system`, the gate's "full
-    # suite" was NOT CI's full suite and a system-test regression rode the release
-    # branch into QA ungated. A hard-coded string could drift out from under CI
-    # again in silence; asserting against ci.yml itself means changing either side
-    # alone fails HERE, at the seam, with the tiers named.
-    assert_equal ci_test_command, Release::Repos.qa_test_cmd("mcritchie-studio"),
-                 "the hub's G3 gate must run CI's full suite (base + system tiers), verbatim"
+  test "CI runs both tiers the hub's G3 gate names" do
+    # THE DRIFT GUARD between the registry and the workflow. The gate's command names
+    # two tiers, `test` and `test:system`; CI runs the first as the sharded `rails`
+    # matrix and the second as the `system` job. If either job stops running its tier,
+    # the gate names a suite CI never ran, so this fails here with the job named.
+    # test/lib/rails_lane_contract_test.rb asserts the shards cover the whole tree.
+    argv = Shellwords.split(Release::Repos.qa_test_cmd("mcritchie-studio"))
+    assert_includes argv, "test", "the gate names the base tier"
+    assert_includes argv, "test:system", "the gate names the system tier"
+
+    assert_includes ci_runs("rails"), "bin/ci-shard --shard=${{ matrix.shard }}/${{ strategy.job-total }}",
+                    "ci.yml's `rails` job no longer runs the sharded base tier the gate names"
+    assert_includes ci_runs("system"), "bin/rails db:test:prepare test:system",
+                    "ci.yml's `system` job no longer runs the system tier the gate names"
   end
 
   test "the hub's ship gate names the same suite as its pre-QA gate" do
@@ -996,30 +997,10 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   private
-    # WHAT CI'S RUBY SUITE AMOUNTS TO, AS ONE COMMAND — asked through the seam that
-    # already answers exactly that question.
-    #
-    # This used to dig `jobs.test.steps` out of ci.yml itself. That stopped being
-    # answerable on 2026-08-20, when the hub's Ruby suite was SHARDED: there is no
-    # `test` job any more, and no single step whose `run:` is the suite — the `rails`
-    # job runs a 4-way `bin/ci-shard` matrix and the `system` job runs the system tier.
-    #
-    # Re-pointing the dig at `jobs.rails` would have been the small edit and the wrong
-    # one: a shard's command is a SLICE, so the gate would have been asserted equal to a
-    # QUARTER of the suite and the release gated on it. CiTestCommand is where the
-    # "sharded lane, therefore the DEFAULT superset" argument is written down, checked
-    # structurally, and mutation-tested — so ask it, rather than re-deriving a weaker
-    # answer here.
-    def ci_test_command
-      root = Rails.root.to_s
-
-      # NOT VACUOUS. CiTestCommand.resolve falls back to DEFAULT for a repo with no CI
-      # suite at all, so a ci.yml that lost its Ruby lane entirely would still return
-      # the string this guard compares against and the guard would pass over nothing.
-      # Assert first that CI really does carry a Ruby suite this seam can account for.
-      assert CiTestCommand.sharded_lane?(root) || CiTestCommand.for_root(root).present?,
-             "ci.yml no longer carries a Ruby suite CiTestCommand can account for — the drift guard is blind"
-
-      CiTestCommand.resolve(root)
+    # The `run:` bodies of one job in the hub's own ci.yml, stripped.
+    def ci_runs(job)
+      ci = YAML.safe_load(Rails.root.join(".github/workflows/ci.yml").read, aliases: true)
+      steps = ci.dig("jobs", job, "steps") || []
+      steps.filter_map { |step| step["run"]&.strip }
     end
 end

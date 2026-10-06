@@ -101,28 +101,18 @@ class CiAptStepTimeoutTest < Minitest::Test
   end
 
   def test_the_retry_loop_stays_out_of_the_workflow
-    # THE REGRESSION THIS CATCHES, which is not hypothetical — it shipped, went red
-    # in CI, and is why the script exists. The loop was inline in ci.yml first, as
-    # `if sudo timeout -k 10 "$budget" bash -c '...'`. That hands an interpolated
-    # token to a command position, and bin/lib/ci_test_command.rb — the cert that
-    # reads ci.yml to prove it can SEE every unit CI runs — correctly REFUSED to
-    # claim it knew what the step ran. Three tests in
-    # test/lib/ci_test_command_test.rb went red, including the one asserting the hub
-    # has no unit the cert is blind to.
-    #
-    # The parser is right and cannot be relaxed for this: its exception list is keyed
-    # on executables PROVEN to exec nothing, and `timeout` execs an argument by
-    # definition — putting it on that list would blind the cert to `timeout 300
-    # $SUITE`. So the invariant is the other way round: the workflow step stays a
-    # literal, readable invocation, and anything with a variable in it lives in the
-    # script. Inline it again and this fails BEFORE CI does.
+    # The loop lives in .github/scripts/apt-retry, not inline in ci.yml. An inline
+    # `if sudo timeout -k 10 "$budget" bash -c '...'` puts an interpolated token in a
+    # command position, where a reader cannot tell what the step runs, and copies the
+    # budgets into every job. So the workflow step stays a literal, readable
+    # invocation, and anything with a variable in it lives in the script.
     inlined = apt_steps.select { |s| s[:step]["run"].to_s.match?(/for budget|\$\{?budget/) }
                        .map { |s| "#{s[:job]} :: #{s[:step]['name']}" }
 
     assert_empty inlined,
                  "these steps inline the retry loop instead of calling .github/scripts/apt-retry. An " \
-                 "interpolated token in a command position makes the step OPAQUE to " \
-                 "bin/lib/ci_test_command.rb and reddens test/lib/ci_test_command_test.rb:\n  " +
+                 "interpolated token in a command position hides what the step runs, and the " \
+                 "budgets belong in the one tested script:\n  " +
                  inlined.join("\n  ")
 
     not_calling = apt_steps.reject { |s| s[:step]["run"].to_s.include?(".github/scripts/apt-retry") }

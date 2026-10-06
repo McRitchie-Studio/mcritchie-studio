@@ -2,21 +2,19 @@
 
 # THE SHARDED LANE'S COVERAGE CONTRACT — the claim that licenses everything else.
 #
-# Three separate mechanisms lean on ONE property, and none of them can check it:
+# Two separate mechanisms lean on ONE property, and neither can check it:
 #
-#   · bin/lib/ci_test_command.rb tolerates the hub's split suite because the sharded
-#     lane plus the `system` job is a SUBSET of what `bin/rails db:test:prepare test
-#     test:system` runs — so the cert may fall back to that DEFAULT as a superset. It
-#     checks the SHAPE of the workflow; it cannot check the file sets.
 #   · bin/rails-executed-set-check asserts CI ran everything the SHARDED lane owns. It
 #     is silent about the files the contract EXCLUDES — by design, since another job
 #     runs them.
-#   · config/release_repos.yml gates G3/G4 on that same DEFAULT command.
+#   · config/release_repos.yml names `bin/rails db:test:prepare test test:system` as the
+#     suite at G3/G4, which is honest only while the sharded lane plus the `system` job
+#     covers what that command runs.
 #
 # The gap between them is exactly this: is `lane manifest ∪ excluded` the whole tree?
-# If the contract ever excludes a directory no other job runs, all three stay green and
+# If the contract ever excludes a directory no other job runs, both stay green and
 # a tier goes dark — the 2026-07-12 disease, one config file over. So it is asserted
-# here, on the real tree, rather than believed three times.
+# here, on the real tree, rather than believed twice.
 #
 # Run directly:
 #   ruby -Itest test/lib/rails_lane_contract_test.rb
@@ -68,8 +66,7 @@ class RailsLaneContractTest < Minitest::Test
                  "#{uncovered.length} committed test file(s) are in NEITHER the sharded lane NOR its " \
                  "declared exclusions: #{uncovered.first(10).inspect}. Nothing runs them, and every " \
                  "gate stays green — bin/rails-executed-set-check only audits the lane's own manifest, " \
-                 "and bin/lib/ci_test_command.rb's fallback to the DEFAULT full command is only honest " \
-                 "while this set is empty."
+                 "and the registry's full-suite command at G3/G4 is only honest while this set is empty."
   end
 
   def test_integration_the_manifest_and_the_exclusions_do_not_overlap
