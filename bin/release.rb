@@ -169,6 +169,9 @@ require_relative "../app/models/release/merge_plan"
 # behind prepare's self-healing sweep + merge, plus the batch-PR base assertion.
 # Rails-free.
 require_relative "../app/models/release/sweep_plan"
+# PromotePlan decides fast-forward or batch PR for the promote, the carry of
+# `release` back onto `accepted`, and which branch a consumer lock bump lands on.
+require_relative "../app/models/release/promote_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
 # Production authority (`ship --mode ask|timed|auto`) and the operator windows
@@ -1784,19 +1787,27 @@ ACCEPTED_MERGED = "accepted"
 # Promote each repo's `accepted` branch onto its `release` branch — the accepted-
 # ladder's SECOND rung (it replaces the sweep's N per-feat-PR merges). Review already
 # merged each feat PR into `accepted` and stamped merged:"accepted"; this lands ALL
-# of that accumulated work onto `release` via ONE batch PR PER REPO (a single-repo
-# release is exactly one PR, not N per task). Git-side + fail-closed PER repo:
+# of that accumulated work onto `release`, ONE promote PER REPO. Git-side +
+# fail-closed PER repo:
 #   * `git -C <path> fetch`, then ahead = rev-list origin/release..origin/accepted.
 #   * ahead == 0 (accepted level with release — nothing new, or a prior run already
-#     promoted): SKIP the PR. The caller STILL records membership + deploys — the
-#     reviewed members must ride THIS RC even when the code already landed.
-#   * ahead > 0: reuse an OPEN accepted→release PR or open one (`--base release
-#     --head accepted`), `gh pr merge` it. A gh-merge failure falls back to
-#     pr_merged? (an interrupted prior run merged it, its record write died) →
-#     treat as promoted; otherwise ABORT (fail-closed — nothing recorded, members
-#     stay `reviewed` for a clean re-run). A missing local checkout ABORTS too
-#     (never record members whose code was not promoted).
-# A DRY run PREVIEWS the one-batch-PR-per-repo plan without any git/gh call (so the
+#     promoted): SKIP the promote. The caller STILL records membership + deploys —
+#     the reviewed members must ride THIS RC even when the code already landed.
+#   * ahead > 0 and `release` CONTAINED in the `accepted` head (Release::PromotePlan):
+#     FAST-FORWARD — push that head to `release` by ref (fast_forward_release!). No PR
+#     and no merge commit, so `release` carries the very SHA whose CI `accepted`
+#     already ran, and the pre-QA gate credits that verdict by SHA.
+#   * ahead > 0 and `release` DIVERGED (it carries a commit `accepted` lacks — a
+#     hotfix on `release` or `main` not yet merged forward — or containment could
+#     not be read): the BATCH PR. Reuse an OPEN accepted→release PR or open one
+#     (`--base release --head accepted`), `gh pr merge` it. A gh-merge failure falls
+#     back to pr_merged? (an interrupted prior run merged it, its record write died)
+#     → treat as promoted; otherwise ABORT (fail-closed — nothing recorded, members
+#     stay `reviewed` for a clean re-run). Then carry `accepted` onto the merge
+#     commit (carry_release_onto_accepted), so the NEXT promote fast-forwards.
+#   * A missing local checkout ABORTS (never record members whose code was not
+#     promoted).
+# A DRY run PREVIEWS the one-promote-per-repo plan without any git/gh call (so the
 # preview is hermetic and prints exactly ONE promote line per repo). `label` names
 # the RC in the PR title when known (the --slug option; nil → a generic title).
 def promote_accepted_to_release!(repos, label: nil)
@@ -1823,7 +1834,8 @@ def promote_accepted_to_release!(repos, label: nil)
   checked_heads = DRY ? {} : refuse_misfiled_changelog!(targets)
   targets.each do |repo|
     if DRY
-      step("promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo}: open/reuse ONE " \
+      step("promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo}: fast-forward `#{RELEASE_BRANCH}` to the " \
+           "`#{ACCEPTED_BRANCH}` head by ref when `#{RELEASE_BRANCH}` is contained in it; otherwise open/reuse ONE " \
            "`gh pr create --base #{RELEASE_BRANCH} --head #{ACCEPTED_BRANCH}` batch PR and merge it")
       next
     end
@@ -1844,6 +1856,20 @@ def promote_accepted_to_release!(repos, label: nil)
       next
     end
 
+    # FAST-FORWARD OR BATCH PR. The head is the one the changelog guard checked when it
+    # read one (a gem), so the push lands exactly the tree that guard judged.
+    head = checked_heads[repo] || ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
+    release_sha = ref_sha(path, "origin/#{RELEASE_BRANCH}")
+    merge_base = (head.empty? || release_sha.empty?) ? "" : ref_merge_base(path, release_sha, head)
+    if Release::PromotePlan.promote(ahead: ahead, release_sha: release_sha, merge_base: merge_base) == :fast_forward
+      fast_forward_release!(repo, path, head, ahead)
+      next
+    end
+
+    step("#{repo}: `#{RELEASE_BRANCH}` is NOT contained in `#{ACCEPTED_BRANCH}` (it carries a commit " \
+         "`#{ACCEPTED_BRANCH}` lacks, such as a hotfix on `#{RELEASE_BRANCH}` or `main` not yet merged forward, " \
+         "or containment could not be read) — promoting by the batch PR, then carrying `#{ACCEPTED_BRANCH}` " \
+         "onto its merge commit so the next promote fast-forwards")
     pr_url = accepted_release_pr_url(repo, label: label)
     step("gh pr merge #{pr_url} --merge — promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo} " \
          "(#{ahead} commit#{ahead == 1 ? '' : 's'})")
@@ -1883,7 +1909,93 @@ def promote_accepted_to_release!(repos, label: nil)
                          "`bin/release prepare`; it resumes."
              ))
     end
+
+    # The merge commit is on `release` alone. Carry `accepted` onto it, so `release`
+    # carries nothing `accepted` lacks and the next promote fast-forwards.
+    carry_release_onto_accepted(repo, path)
   end
+end
+
+# A remote-tracking ref's SHA, or "" when it does not resolve. A read, so an
+# unreadable answer is "" rather than an abort: every caller treats "" as "cannot
+# prove containment" and takes the path that needs no proof.
+def ref_sha(path, ref)
+  out, ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "#{ref}^{commit}", capture: true)
+  ok ? out.to_s.strip : ""
+end
+
+# The merge base of two commits, or "" when git cannot answer.
+def ref_merge_base(path, left, right)
+  out, ok = sh("git", "-C", path, "merge-base", left, right, capture: true)
+  ok ? out.to_s.strip : ""
+end
+
+# THE FAST-FORWARD PROMOTE: push the `accepted` head to `release` by ref. The same
+# push the ship makes to `main` (push_frozen_main): no checkout, no working tree, and
+# no force flag of any kind, so git refuses anything but a fast-forward. A `release`
+# that moved off the containment checked a moment ago fails closed here and is never
+# overwritten. Then READ BACK the effect: the push's exit status is not the landing.
+def fast_forward_release!(repo, path, sha, ahead)
+  step("fast-forward #{RELEASE_BRANCH} → #{short(sha)} in #{repo} (#{ahead} commit#{ahead == 1 ? '' : 's'}; " \
+       "`#{RELEASE_BRANCH}` is contained in `#{ACCEPTED_BRANCH}` — ref push, no batch PR, no merge commit)")
+  out, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/#{RELEASE_BRANCH}", capture: true)
+  say(out.to_s.rstrip) unless out.to_s.strip.empty?
+  unless ok
+    abort!("could not fast-forward origin/#{RELEASE_BRANCH} to #{short(sha)} in #{repo} — git refused the ref " \
+           "update (did #{RELEASE_BRANCH} move?). NOT forcing. Nothing was recorded; members stay `reviewed`. " \
+           "Re-run `bin/release prepare`: it re-reads containment and resumes.")
+  end
+
+  _, fetched = sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, "--quiet", capture: true)
+  landed = fetched ? ref_sha(path, "origin/#{RELEASE_BRANCH}") : ""
+  unless landed == sha
+    abort!("the fast-forward of origin/#{RELEASE_BRANCH} in #{repo} did not read back at #{short(sha)} " \
+           "(read #{landed.empty? ? 'nothing' : short(landed)}) — fail closed. Re-run `bin/release prepare`.")
+  end
+
+  (@prepare_live ||= []) << "#{repo}: origin/#{RELEASE_BRANCH} fast-forwarded to #{short(sha)}"
+end
+
+# Carry `accepted` onto `release` after a commit landed on `release` first: the batch
+# PR's merge commit, or the merge-forward of `main`. When `accepted` is contained in
+# `release` this is a fast-forward ref push, and afterwards the two branches share one
+# commit, so the next promote fast-forwards and the consumer lock bump lands on
+# `accepted`. The content it carries is already reviewed (`accepted`) or already
+# shipped (`main`), the same content the ship's advance_accepted carries.
+#
+# NON-FATAL. When `accepted` gained a commit meanwhile (a review merge mid-sweep), it
+# is left alone and the next promote takes the batch PR again, which is the path that
+# needs no containment. No force flag: git refuses anything but a fast-forward.
+def carry_release_onto_accepted(repo, path)
+  return if DRY
+
+  sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+  release_sha  = ref_sha(path, "origin/#{RELEASE_BRANCH}")
+  accepted_sha = ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
+  merge_base   = (release_sha.empty? || accepted_sha.empty?) ? "" : ref_merge_base(path, accepted_sha, release_sha)
+
+  case Release::PromotePlan.carry_back(release_sha: release_sha, accepted_sha: accepted_sha, merge_base: merge_base)
+  when :level
+    nil
+  when :fast_forward
+    _, ok = sh("git", "-C", path, "push", "origin", "#{release_sha}:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+    if ok
+      step("  #{repo}: carried origin/#{ACCEPTED_BRANCH} onto origin/#{RELEASE_BRANCH} #{short(release_sha)} " \
+           "(fast-forward) — the two share one commit, so the next promote fast-forwards")
+      (@prepare_live ||= []) << "#{repo}: origin/#{ACCEPTED_BRANCH} fast-forwarded to #{short(release_sha)}"
+    else
+      say("  ⚠ #{repo}: could not carry origin/#{ACCEPTED_BRANCH} onto #{short(release_sha)} (did it move?) — " \
+          "left as is; the next promote takes the batch PR and tries again.")
+    end
+  when :diverged
+    say("  ⚠ #{repo}: origin/#{ACCEPTED_BRANCH} gained a commit while #{RELEASE_BRANCH} moved — not carried; " \
+        "the next promote takes the batch PR and tries again.")
+  else
+    say("  ⚠ #{repo}: could not read origin/#{RELEASE_BRANCH} and origin/#{ACCEPTED_BRANCH} to carry " \
+        "#{ACCEPTED_BRANCH} forward — left as is; the next promote takes the batch PR.")
+  end
+rescue StandardError => e
+  say("  ⚠ #{repo}: carrying origin/#{ACCEPTED_BRANCH} forward failed (#{e.message}) — left as is.")
 end
 
 # Find the OPEN accepted→release batch PR for a repo, or open one — idempotent
@@ -2246,8 +2358,8 @@ end
 
 # --- primary-checkout lock ---------------------------------------------------
 # Serializes what STILL flips the primary's HEAD. As of 2026-07-12 that is ONE
-# caller: the artifact-commit dance (commit_artifact_to_release), which checks out
-# `release` to commit a generated doc and returns to `main`.
+# caller: the artifact-commit dance (commit_artifact_to_accepted), which checks out
+# `accepted` to commit a generated doc and returns to `main`.
 #
 # The gate suites moved to the gate workspace, and the SHIP moved to its own
 # workspace + ref pushes (push_frozen_main / repin_consumers / deploy_app) — so
@@ -6183,10 +6295,19 @@ end
 
 # Bump each consumer's Gemfile.lock (and, only when the new version ESCAPES the
 # existing constraint, its Gemfile pin) to the just-published gem versions —
-# COMMITTED onto the consumer's origin/release, BEFORE the pre-QA gate and the
-# QA deploy. That one commit is what makes the whole move sound: the pre-QA CI
-# verdict targets the post-bump release SHA, QA bundles the new lock, and prod
-# ships the exact tree QA tested (ship's repin then finds nothing to do).
+# COMMITTED onto the consumer's origin/accepted and fast-forwarded onto its
+# origin/release, BEFORE the pre-QA gate and the QA deploy. That one commit is what
+# makes the whole move sound: the pre-QA CI verdict targets the post-bump SHA, QA
+# bundles the new lock, and prod ships the exact tree QA tested (ship's repin then
+# finds nothing to do).
+#
+# ACCEPTED FIRST, so `release` never carries a commit `accepted` lacks: the promote
+# just left the two branches on one commit, the bump is built on it, pushed to
+# `accepted`, and `release` fast-forwards to the same SHA. The ship then leaves
+# `accepted`, `release` and `main` on that commit, and the next promote is a
+# fast-forward again. Only when the two branches do NOT share a commit (a diverged
+# `release`, or `accepted` moved mid-sweep) does the bump land on `release` alone,
+# and the next promote's batch PR carries it back (Release::PromotePlan.bump_rung).
 #
 # Built in the repo's ship workspace pinned at origin/release's tip (the same
 # never-touch-the-primary mechanics as ship's repin_consumers), pushed by ref
@@ -6208,8 +6329,8 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
   await_published_gems!(published_gems) unless DRY
 
   gem_names = published_gems.keys
-  step("bump consumer locks for #{gem_names.join(', ')} on origin/#{RELEASE_BRANCH} — " \
-       "the pre-QA gate, QA, and prod must all build this SAME committed lock")
+  step("bump consumer locks for #{gem_names.join(', ')} on origin/#{ACCEPTED_BRANCH}, then fast-forward " \
+       "origin/#{RELEASE_BRANCH} to it — the pre-QA gate, QA, and prod must all build this SAME committed lock")
   app_groups.each do |group|
     repo = group["repo"]
 
@@ -6217,7 +6338,8 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       step("  #{repo}: bundle lock --update <gem> --conservative in the ship workspace @ origin/#{RELEASE_BRANCH} " \
            "(rewrite the Gemfile pin only if the new version escapes it) → install any new engine migrations " \
            "(<gem>:install:migrations + db:migrate on a throwaway database, so db/schema.rb lands with them) → " \
-           "commit + push origin #{RELEASE_BRANCH} (idempotent; no-op when already current)")
+           "commit + push origin #{ACCEPTED_BRANCH}, then fast-forward origin #{RELEASE_BRANCH} to it " \
+           "(onto #{RELEASE_BRANCH} alone only when the two branches do not share a commit; idempotent)")
       next
     end
 
@@ -6229,6 +6351,8 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
     out, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
     abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the consumer lock bump") unless ok
     tip = out.strip
+    accepted_out, accepted_ok = git_capture("-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}")
+    rung = Release::PromotePlan.bump_rung(release_sha: tip, accepted_sha: accepted_ok ? accepted_out.strip : "")
 
     with_ship_workspace(repo) do
       workspace = ship_workspace!(repo, tip)
@@ -6293,17 +6417,30 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       _, committed = sh("git", "-C", workspace, "commit", "-m", "bump #{bumps.join(', ')} for QA", capture: true)
       abort!("could not commit the consumer lock bump in #{repo}'s ship workspace") unless committed
 
-      # Push the detached commit onto `release` BY REF, fast-forward-checked (no
-      # --force) — a release branch that moved under us fails closed here,
-      # before the gate reads a SHA this bump isn't part of.
+      # `accepted` FIRST, by ref, fast-forward-checked (no --force). An `accepted`
+      # that moved under us (a review merge mid-sweep) refuses the push; the bump
+      # then lands on `release` alone, the diverged path, and says so.
+      if rung == :accepted
+        _, on_accepted = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+        unless on_accepted
+          rung = :release
+          say("  ⚠ #{repo}: origin/#{ACCEPTED_BRANCH} moved — the lock bump lands on origin/#{RELEASE_BRANCH} alone; " \
+              "the next promote's batch PR carries it back")
+        end
+      end
+
+      # Then `release`, the same commit BY REF, fast-forward-checked (no --force) — a
+      # release branch that moved under us fails closed here, before the gate reads
+      # a SHA this bump isn't part of.
       _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
       abort!("could not push the consumer lock bump to origin/#{RELEASE_BRANCH} in #{repo} (did #{RELEASE_BRANCH} move?)") unless pushed
 
-      step("  #{repo}: committed #{bumps.join(', ')} onto origin/#{RELEASE_BRANCH} — " \
+      landed = rung == :accepted ? "origin/#{ACCEPTED_BRANCH}, and fast-forwarded origin/#{RELEASE_BRANCH} to it" : "origin/#{RELEASE_BRANCH}"
+      step("  #{repo}: committed #{bumps.join(', ')} onto #{landed} — " \
            "the pre-QA gate + QA deploy now read the post-bump SHA")
       # PUSHED to a shared branch. A later repo's abort must not imply this was
       # rolled back — it wasn't (see prepare's rescue arm).
-      (@prepare_live ||= []) << "#{repo}: lock bump #{bumps.join(', ')} committed + pushed to origin/#{RELEASE_BRANCH}"
+      (@prepare_live ||= []) << "#{repo}: lock bump #{bumps.join(', ')} committed + pushed to #{landed}"
     end
   end
 end
@@ -6672,18 +6809,24 @@ def merge_forward_release_branches(app_groups, gem_groups: [])
     (@prepare_live ||= []) << "#{repo}: merge-forward origin/main merged + pushed to origin/#{RELEASE_BRANCH}"
 
     step("  #{repo}: origin/#{RELEASE_BRANCH} now contains origin/main — the gate + QA read the merged tree")
+
+    # The merge-forward commit is on `release` alone; carry `accepted` onto it, so the
+    # consumer lock bump below lands on `accepted` and the next promote fast-forwards.
+    carry_release_onto_accepted(repo, path)
   end
 end
 
 # Best-effort: commit a generated doc (a `retro` doc or the `delete-later.md`
-# ledger `archive` updates) onto `release` so it stops piling up as uncommitted dirt
+# ledger `archive` updates) onto `accepted` so it stops piling up as uncommitted dirt
 # in the primary. NON-FATAL — any problem leaves the doc uncommitted (which no
 # longer blocks anything: the ship deploys from its own workspace and only ADVISES
 # on a dirty primary) and never aborts retro/archive. The IO seam around the pure
 # Release::ArtifactCommit:
 #   - commit ONLY when the doc is the SOLE uncommitted change (never sweep up dirt),
-#   - build on origin/release's tip (ff-only) so the push fast-forwards and the NEXT
-#     ship's `main` ref push carries it — no main/release divergence,
+#   - build on origin/accepted's tip (ff-only) so the push fast-forwards and the NEXT
+#     promote carries it to `release` and the ship after it to `main`,
+#   - `accepted`, never `release`: a commit on `release` alone is one `accepted`
+#     lacks, and the next promote could not fast-forward (Release::PromotePlan),
 #   - ALWAYS restore the checkout to `main` (ensure), even on failure,
 #   - SKIP (doc stays uncommitted) when another invocation holds the primary
 #     checkout — never flip HEAD under a running pre-QA gate suite
@@ -6692,7 +6835,7 @@ end
 # which retires a batch of frozen snapshots and rewrites the ledger as ONE
 # logical change. All of them must be named here, or the safety check reads the
 # rest as unrelated work and strands the batch as dirt on the primary.
-def commit_artifact_to_release(repo, abs_path, message)
+def commit_artifact_to_accepted(repo, abs_path, message)
   return if DRY
 
   path = repo_path(repo)
@@ -6732,7 +6875,7 @@ def commit_artifact_to_release(repo, abs_path, message)
   # content to add. The flip can resurrect a removed path, so this must be read now.
   gone, present = rels.partition { |r| !File.exist?(File.join(path, r)) }
 
-  sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, "--quiet", capture: true)
+  sh("git", "-C", path, "fetch", "origin", ACCEPTED_BRANCH, "--quiet", capture: true)
 
   # BEST-EFFORT lock (wait: false): if another invocation holds the primary
   # checkout, SKIP rather than stall archive/retro behind it, and NEVER flip HEAD
@@ -6741,14 +6884,14 @@ def commit_artifact_to_release(repo, abs_path, message)
   # primary no longer blocks a ship, it only earns an advisory.
   done = false
   res = with_primary_checkout(repo, wait: false) do
-    _, co = sh("git", "-C", path, "checkout", RELEASE_BRANCH, capture: true)
+    _, co = sh("git", "-C", path, "checkout", ACCEPTED_BRANCH, capture: true)
     if co
-      _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
+      _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{ACCEPTED_BRANCH}", capture: true)
       if ff
         # A REMOVAL MUST BE RE-STAGED HERE, NOT TRUSTED TO RIDE THE FLIP. A `git mv`
-        # on `main` stages the source's deletion, but when the local `release` is
+        # on `main` stages the source's deletion, but when the local `accepted` is
         # OLDER than `main` and predates that source, the deletion carries over as
-        # nothing, and the ff-merge onto origin/release then writes the file back.
+        # nothing, and the ff-merge onto origin/accepted then writes the file back.
         # `git add` cannot stage it either, since the path exists on disk again
         # (and a missing pathspec makes git add abort the WHOLE batch).
         # rel-20261006-f6a119 committed a retired doc at both paths this way (e8f121d4).
@@ -6756,7 +6899,7 @@ def commit_artifact_to_release(repo, abs_path, message)
         sh("git", "-C", path, "rm", "-q", "-r", "--ignore-unmatch", "--", *gone, capture: true) if gone.any?
         sh("git", "-C", path, "add", "--all", "--", *present, capture: true) if present.any?
         _, committed = sh("git", "-C", path, "commit", "-m", message, capture: true)
-        _, done = sh("git", "-C", path, "push", "origin", RELEASE_BRANCH, capture: true) if committed
+        _, done = sh("git", "-C", path, "push", "origin", ACCEPTED_BRANCH, capture: true) if committed
       end
     end
   ensure
@@ -6767,7 +6910,7 @@ def commit_artifact_to_release(repo, abs_path, message)
     return
   end
 
-  step(done ? "committed #{rel} to #{RELEASE_BRANCH} (ships on the next release)" \
+  step(done ? "committed #{rel} to #{ACCEPTED_BRANCH} (ships on the next release)" \
             : "left #{rel} uncommitted (commit/push failed) — commit it via a docs PR")
 end
 
@@ -8682,7 +8825,7 @@ def archive
   docs = docs_summary(docs_sweep.out)
 
   # The doc retirement moved frozen snapshots and rolled the ledger's resolved rows into
-  # the archive — commit ALL of it to `release` so it rides the next ship instead of
+  # the archive — commit ALL of it to `accepted` so it rides the next ship instead of
   # becoming ship-preflight dirt. (The RECLAIM no longer writes here: since
   # `ledger-writes-to-primary`, `bin/agent-worktree` files desk records on the board, and
   # these two files are tracked history the archive beat still rolls.)
@@ -8696,7 +8839,7 @@ def archive
   artifact_paths += docs[:moved_paths].to_a.flat_map do |rel|
     [File.join(hub, DocsArchive.archive_path_for(rel)), File.join(hub, rel)]
   end
-  commit_artifact_to_release(
+  commit_artifact_to_accepted(
     "mcritchie-studio",
     artifact_paths,
     "ledger: delete-later after archive (#{archived_count} archived, #{reclaimed} reclaimed, " \
@@ -8895,9 +9038,9 @@ def retro
   File.write(path, markdown)
   say("✓ wrote #{path}")
 
-  # Commit the retro doc to `release` so it ships next round instead of becoming
-  # ship-preflight dirt (best-effort, non-fatal; see commit_artifact_to_release).
-  commit_artifact_to_release("mcritchie-studio", path, "retro: #{resolved}")
+  # Commit the retro doc to `accepted` so it ships next round instead of becoming
+  # ship-preflight dirt (best-effort, non-fatal; see commit_artifact_to_accepted).
+  commit_artifact_to_accepted("mcritchie-studio", path, "retro: #{resolved}")
 
   # 3. File the follow-ups. DEFAULT: the TRIAGE inbox (bin/triage) — a finding
   #    costs nothing sitting there, and only an operator promote mints a task
