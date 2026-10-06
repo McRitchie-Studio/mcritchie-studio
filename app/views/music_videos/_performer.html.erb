@@ -1,4 +1,4 @@
-<%# One person on the cast panel: the still and heading, Replace with (the swap), the description and sightings, then who is on screen (the optional artist name, the rolodex) at the bottom. Nothing here has to be pressed before the cast is confirmed. %>
+<%# One person on the cast panel, top to bottom: the still and heading; Replace with (the inputs to swap in a new player); the description and sightings; then, pinned to the bottom so cards in a row line up, the Keep Original / Swap back button and who is on screen (the optional artist name, the rolodex). Nothing here has to be pressed before the cast is confirmed. %>
 <% sightings = performer.sightings_by_time %>
 <% named_row = performer.artist&.person_slug && local_assigns.fetch(:recast_rows, {})[performer.artist.person_slug] %>
 <article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
@@ -22,7 +22,9 @@
     <% end %>
   </div>
 
-  <div class="p-4 flex flex-col gap-3 flex-1 min-w-0">
+  <% recast_looks = local_assigns.fetch(:recast_looks, {}) %>
+  <%= render layout: "music_videos/swap_card", locals: { performer:, video:, looks: recast_looks, rows: local_assigns.fetch(:recast_rows, {}),
+                                                        fresh_look: local_assigns[:fresh_look], css: "p-4 flex flex-col gap-3 flex-1 min-w-0" } do %>
     <header class="flex items-start justify-between gap-2 min-w-0">
       <div class="min-w-0">
         <h2 class="text-lg font-bold text-heading"><%= performer.name %></h2>
@@ -38,9 +40,8 @@
     </header>
 
     <%# Replace with sits at the top, under the still and the heading: it is the card's main job. %>
-    <%= render "music_videos/recast", performer: performer, video: video, looks: local_assigns.fetch(:recast_looks, {}),
-               rows: local_assigns.fetch(:recast_rows, {}), named_row:,
-               sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready], fresh_look: local_assigns[:fresh_look] %>
+    <%= render "music_videos/recast", performer: performer, video: video, looks: recast_looks, named_row:,
+               sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready] %>
 
     <% if performer.confidence_note.present? %>
       <p class="text-sm text-muted" data-test="performer-note"><%= performer.confidence_note %></p>
@@ -67,7 +68,10 @@
       </div>
     <% end %>
 
-    <div class="mt-auto pt-3 border-t border-subtle" data-test="performer-resolution">
+    <%# Pinned to the bottom (mt-auto): the swap's on/off, then who is on screen. %>
+    <div class="mt-auto pt-3 border-t border-subtle space-y-3 min-w-0" data-test="card-bottom">
+    <%= render "music_videos/swap_toggle", performer: %>
+    <div class="min-w-0" data-test="performer-resolution">
       <% if performer.artist || performer.extra? %>
         <div class="flex items-center justify-between gap-2 min-w-0">
           <% if performer.artist %>
@@ -164,6 +168,6 @@
         </div>
       <% end %>
     </div>
-
-  </div>
+    </div>
+  <% end %>
 </article>
