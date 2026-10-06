@@ -78,7 +78,7 @@ class RemedyHintGuardTest < Minitest::Test
   # remedy, so the same `No such file or directory` is reachable through it. Measured on
   # the shipped tree: adding it flags NOTHING that was not already flagged, so it closes
   # a hole at no cost in noise.
-  HUB_ONLY = %w[ship fast-check dor-check task session-preflight
+  HUB_ONLY = %w[submit fast-check dor-check task session-preflight
                 agent-worktree pr-review reviewer-select gh-auth-refresh release
                 gh-token].freeze
 
@@ -481,24 +481,24 @@ class RemedyHintGuardTest < Minitest::Test
       hub = File.join(root, "hub", "bin")
       FileUtils.mkdir_p(desk)
       FileUtils.mkdir_p(hub)
-      File.write(File.join(hub, "ship"), "#!/bin/sh\n")
-      FileUtils.chmod(0o755, File.join(hub, "ship"))
+      File.write(File.join(hub, "submit"), "#!/bin/sh\n")
+      FileUtils.chmod(0o755, File.join(hub, "submit"))
 
       # the desk has no ship → falls through to the hub's
-      assert_equal File.join(hub, "ship"), FastLane.resolve_bin("ship", [desk, hub])
+      assert_equal File.join(hub, "submit"), FastLane.resolve_bin("submit", [desk, hub])
 
       # give the desk one and it wins — resolution follows the DISK, so onboarding
       # a repo (or shimming a satellite) needs no registry edit anywhere
-      File.write(File.join(desk, "ship"), "#!/bin/sh\n")
-      FileUtils.chmod(0o755, File.join(desk, "ship"))
-      assert_equal File.join(desk, "ship"), FastLane.resolve_bin("ship", [desk, hub])
+      File.write(File.join(desk, "submit"), "#!/bin/sh\n")
+      FileUtils.chmod(0o755, File.join(desk, "submit"))
+      assert_equal File.join(desk, "submit"), FastLane.resolve_bin("submit", [desk, hub])
     end
   end
 
   def test_resolve_bin_still_names_an_absolute_path_when_nothing_exists
     # The reader gets a path they can reason about ("that file is missing")
     # instead of a bare word that hides the question ("which bin/submit?").
-    line = FastLane.resolve_bin("ship", ["/nonexistent/a/bin", "/nonexistent/b/bin"])
+    line = FastLane.resolve_bin("submit", ["/nonexistent/a/bin", "/nonexistent/b/bin"])
 
     assert_equal "/nonexistent/b/bin/submit", line
     assert_equal File.expand_path(line), line
@@ -510,11 +510,11 @@ class RemedyHintGuardTest < Minitest::Test
       hub = File.join(root, "hub", "bin")
       FileUtils.mkdir_p(desk)
       FileUtils.mkdir_p(hub)
-      File.write(File.join(desk, "ship"), "not executable\n")   # mode 0644
-      File.write(File.join(hub, "ship"), "#!/bin/sh\n")
-      FileUtils.chmod(0o755, File.join(hub, "ship"))
+      File.write(File.join(desk, "submit"), "not executable\n")   # mode 0644
+      File.write(File.join(hub, "submit"), "#!/bin/sh\n")
+      FileUtils.chmod(0o755, File.join(hub, "submit"))
 
-      assert_equal File.join(hub, "ship"), FastLane.resolve_bin("ship", [desk, hub]),
+      assert_equal File.join(hub, "submit"), FastLane.resolve_bin("submit", [desk, hub]),
                    "a file that cannot be RUN is not a resolution — `bin/submit` there still fails"
     end
   end
@@ -534,7 +534,7 @@ class RemedyHintGuardTest < Minitest::Test
   #
   # The assertion is deliberately not a substring match. It splits the printed
   # command, takes the script, and asks the DISK.
-  def test_ships_claim_refusal_prints_commands_that_resolve_on_disk
+  def test_submits_claim_refusal_prints_commands_that_resolve_on_disk
     Dir.mktmpdir do |root|
       work = File.join(root, "work")
       FileUtils.mkdir_p(work)
@@ -542,7 +542,7 @@ class RemedyHintGuardTest < Minitest::Test
       FakeDesk.build(root, task_slug: "held-task", session: "sess-rival-9999", dirty: true)
 
       out, err, status = Open3.capture3(
-        ship_env(root, task_bin), File.join(BIN, "ship"), "held-task", chdir: work
+        ship_env(root, task_bin), File.join(BIN, "submit"), "held-task", chdir: work
       )
       combined = "#{out}\n#{err}"
 
