@@ -230,18 +230,26 @@ module Api
         assert_equal 0, @video.video_clips.count
       end
 
-      test "chunks wait for the cast like candidates do" do
+      # bin/digest-video cuts the chunks the moment a source is recorded, before
+      # any cast; the seam candidates still wait for a confirmed one.
+      test "chunks are accepted before the cast is confirmed, with the generic prompt; candidates still wait" do
         digested = NightCallCast.seed!
+        digested.update!(duration_ms: 30_000)
         rows = MusicVideos::ChunkTiler.windows(30_000).map do |w|
           { ordinal: w.ordinal, start_ms: w.start_ms, end_ms: w.end_ms, cast_shape: "unknown", performer_ordinals: [],
             object_key: MusicVideos::ObjectKeys.chunk(source_key: digested.source_object_key, **w.to_h) }
         end
-        digested.update!(duration_ms: 30_000)
 
         post clips_api_v1_music_video_path(digested), params: { kind: "chunk", clips: rows }, headers: auth_headers, as: :json
+        assert_response :ok
+        assert_equal "digested", body.dig("data", "stage"), "chunks never move the stage"
+        assert_equal [1, 2], digested.video_chunks.pluck(:ordinal)
+        assert_equal [MusicVideos::ClipPrompt.fill(target: nil)], digested.video_chunks.pluck(:prompt).uniq
+
+        post clips_api_v1_music_video_path(digested), params: { clips: NightCallClips.rows }, headers: auth_headers, as: :json
         assert_response :conflict
         assert_equal "CAST_NOT_CONFIRMED", body["error_code"]
-        assert_equal 0, digested.video_clips.count
+        assert_equal 0, digested.clip_candidates.count
       end
 
       test "GET shows the clips alongside the performers" do

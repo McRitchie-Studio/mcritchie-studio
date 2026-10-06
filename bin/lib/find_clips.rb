@@ -3,9 +3,8 @@
 require "fileutils"
 require "json"
 require "tmpdir"
+require_relative "chunk_tiling"
 require_relative "digest_video"
-require_relative "../../lib/music_videos/chunk_tiler"
-require_relative "../../lib/music_videos/clip_cast"
 require_relative "../../lib/music_videos/clip_finder"
 require_relative "../../lib/music_videos/clip_prompt"
 require_relative "../../lib/music_videos/object_keys"
@@ -15,10 +14,12 @@ require_relative "../../lib/music_videos/object_keys"
 # to R2 and post the set to POST /api/v1/music_videos/:slug/clips. ffmpeg only;
 # no Python packages. Runs where the source MP4 is (the operator's Mac).
 #
-# With tile: true (bin/find-clips --tile) it measures only the duration and
-# cuts the whole video into overlapping chunks (MusicVideos::ChunkTiler): 25 s
-# with a 5 s overlap unless chunk_ms and overlap_ms say otherwise. They are
-# posted as kind "chunk". The seam candidates and the chunks never replace each other.
+# With tile: true (bin/find-clips --tile) it hands the video to the shared
+# chunk tiler (ChunkTiling::Runner, the one bin/digest-video runs on every new
+# source) to re-cut the whole video into overlapping chunks: 25 s with a 5 s
+# overlap unless chunk_ms and overlap_ms say otherwise, posted as kind "chunk"
+# and replacing the chunks there. Chunks need no confirmed cast; the seam
+# candidates do. The candidates and the chunks never replace each other.
 module FindClips
   Failure = DigestVideo::Failure
   READY = %w[cast_confirmed clips_ready].freeze
@@ -59,11 +60,6 @@ module FindClips
       err.scan(/Parsed_showinfo.*?pts_time:([\d.]+)/).flatten.map { |s| (s.to_f * 1000).round }
     end
 
-    def duration_ms(mp4)
-      out = run_out("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp4)
-      (out.to_f * 1000).round
-    end
-
     def levels(text)
       text.scan(/RMS_level=(\S+)/).flatten.map { |v| v == "-inf" ? -99.0 : [v.to_f, -99.0].max }
     end
@@ -75,13 +71,6 @@ module FindClips
       raise Failure, "#{cmd.first} failed: #{err.to_s.lines.last&.strip}" unless ok
 
       err
-    end
-
-    def run_out(*cmd)
-      out, err, ok = @shell.call(*cmd)
-      raise Failure, "#{cmd.first} failed: #{err.to_s.lines.last&.strip}" unless ok
-
-      out
     end
   end
 
@@ -106,21 +95,25 @@ module FindClips
       @dry_run = dry_run
       @count = count
       @bucket = bucket
-      @tile = tile
-      @tiling = { chunk_ms:, overlap_ms: }
+      @cutter = ChunkTiling::Cutter.new(storage:, shell:, out:, bucket:)
+      @tiler = if tile
+                 ChunkTiling::Runner.new(api:, storage:, shell:, out:, dry_run:, bucket:, chunk_ms:, overlap_ms:,
+                                         replace: true)
+               end
     end
 
     def call(slug)
-      why = @tile && MusicVideos::ChunkTiler.problem(**@tiling)
+      why = @tiler&.problem
       raise Failure, why if why
 
       video = @api.show(slug)
+      return @tiler.call(video, source_mp4(video)) if @tiler
+
       unless READY.include?(video["stage"])
         raise Failure, "#{slug} is #{video['stage']}: confirm the cast on /music_videos/#{slug} first"
       end
 
       mp4 = source_mp4(video)
-      return tile(video, mp4) if @tile
 
       proposals = find(video, mp4)
       raise Failure, "no window of continuous music spans a seam in #{slug}" if proposals.empty?
@@ -136,44 +129,6 @@ module FindClips
     end
 
     private
-
-    # --tile: the whole video as overlapping chunks, replacing only the chunks.
-    def tile(video, mp4)
-      rows = MusicVideos::ChunkTiler.windows(tiling_duration(video, mp4), **@tiling).map { |w| chunk_row(video, w) }
-      report_chunks(video, rows)
-      return rows if @dry_run
-
-      cut_and_upload(mp4, rows)
-      @api.post("/api/v1/music_videos/#{video['slug']}/clips",
-                { kind: "chunk", chunk_ms: @tiling[:chunk_ms], chunk_overlap_ms: @tiling[:overlap_ms], clips: rows })
-      @out.puts "posted #{rows.size} chunks for #{video['slug']}; the clip candidates are untouched"
-      rows
-    end
-
-    # The file on disk must be the digested video: its length within a second
-    # of the recorded one. The tiling ends at the shorter, so no chunk runs
-    # past the file or past what the hub knows.
-    def tiling_duration(video, mp4)
-      on_disk = @audio.duration_ms(mp4)
-      raise Failure, "ffprobe read no duration from #{mp4}" unless on_disk.positive?
-
-      recorded = video["duration_ms"]
-      return on_disk unless recorded.is_a?(Integer)
-
-      if (on_disk - recorded).abs > MusicVideos::ChunkTiler::END_TOLERANCE_MS
-        raise Failure, "#{File.basename(mp4)} runs #{on_disk} ms but #{video['slug']} is recorded at #{recorded} ms: " \
-                       "not the digested source"
-      end
-      [on_disk, recorded].min
-    end
-
-    def chunk_row(video, window)
-      cast = MusicVideos::ClipCast.label(video["performers"] || [], window.start_ms, window.end_ms)
-      key = MusicVideos::ObjectKeys.chunk(source_key: video["source_object_key"], ordinal: window.ordinal,
-                                          start_ms: window.start_ms, end_ms: window.end_ms)
-      { ordinal: window.ordinal, start_ms: window.start_ms, end_ms: window.end_ms, cast_shape: cast.cast_shape,
-        target_performer: cast.target, performer_ordinals: cast.present, object_key: key }
-    end
 
     def find(video, mp4)
       MusicVideos::ClipFinder.new(
@@ -206,22 +161,7 @@ module FindClips
       @storage.get(video["source_object_key"], path)
     end
 
-    # Re-encoded, so the in and out points are exact rather than keyframe-bound.
-    def cut_and_upload(mp4, rows)
-      Dir.mktmpdir("clips") do |dir|
-        rows.each do |r|
-          path = File.join(dir, File.basename(r[:object_key]))
-          _o, err, ok = @shell.call("ffmpeg", "-y", "-v", "error", "-ss", format("%.3f", r[:start_ms] / 1000.0), "-i", mp4,
-                                    "-t", format("%.3f", (r[:end_ms] - r[:start_ms]) / 1000.0), "-map", "0:v:0",
-                                    "-map", "0:a:0", "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
-                                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", path)
-          raise Failure, "ffmpeg cut failed: #{err.to_s.lines.last&.strip}" unless ok
-
-          @out.puts "uploading r2://#{@bucket}/#{r[:object_key]}"
-          @storage.put(r[:object_key], path, "video/mp4")
-        end
-      end
-    end
+    def cut_and_upload(mp4, rows) = @cutter.call(mp4, rows)
 
     def report(video, rows)
       people = (video["performers"] || []).to_h { |p| [p["ordinal"], p] }
@@ -233,20 +173,6 @@ module FindClips
                          target ? "Person #{target['ordinal']} (#{target['label']})" : "none")
       end
     end
-
-    def report_chunks(video, rows)
-      people = (video["performers"] || []).to_h { |p| [p["ordinal"], p] }
-      @out.puts "#{rows.size} chunks for #{video['slug']} (#{seconds(@tiling[:chunk_ms])} s on a " \
-                "#{seconds(MusicVideos::ChunkTiler.stride(**@tiling))} s stride)" \
-                "#{' (dry run: nothing cut, uploaded or posted)' if @dry_run}"
-      rows.each do |r|
-        target = people[r[:target_performer]]
-        @out.puts format("  %02d  %s-%s  %s  target %s", r[:ordinal], clock(r[:start_ms]), clock(r[:end_ms]), r[:cast_shape],
-                         target ? "Person #{target['ordinal']} (#{target['label']})" : "none")
-      end
-    end
-
-    def seconds(ms) = format("%g", ms / 1000.0)
 
     def clock(ms) = format("%d:%04.1f", ms / 60_000, (ms % 60_000) / 1000.0)
   end

@@ -129,13 +129,14 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "proposed", video.video_chunks.first.status, "chunk 1 shares the ordinal and is untouched"
   end
 
-  test "a video with a confirmed cast and no chunks says how to tile it; an unconfirmed one waits" do
+  test "a video with no chunks says how to tile it, cast confirmed or not" do
     log_in_as users(:alex)
     get music_video_path(@video)
     assert_select "[data-test='chunks-empty']", /bin\/find-clips steve-aoki-night-call-clips --tile/
     assert_select "[data-test='video-kind']", "Music video · Cast"
 
     get music_video_path(NightCallCast.seed!)
-    assert_select "[data-test='chunks-locked']", /after the cast is confirmed/
+    assert_select "[data-test='chunks-empty']", /bin\/find-clips steve-aoki-night-call --tile/
+    assert_select "[data-test='chunks-locked']", false, "chunks no longer wait for the cast"
   end
 end
