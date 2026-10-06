@@ -52,11 +52,13 @@ for the reference; it is safe anywhere on the line and starts nothing.
 there, and the approval lands on the record Alex's page reads.
 
 ```bash
-heroku run -a mcritchie-studio -- bin/email-image <subcommand> …
+heroku run --no-tty --exit-code -a mcritchie-studio -- bin/email-image <subcommand> …
 ```
 
-`heroku run` is non-interactive here: every subcommand takes its input from
-flags and prints and exits. The one-off dyno's disk vanishes when the command
+`--` keeps the CLI's own flags (`--notes`, `--no-download`) away from the
+Heroku CLI, `--exit-code` passes the CLI's status back (0 done, 1 refused or the
+round failed, 2 usage), and `--no-tty` keeps it non-interactive: every subcommand
+takes its input from flags, prints, and exits. The one-off dyno's disk vanishes when the command
 ends, so the files it writes are useless to you. Read the `url=` field instead
 and fetch each image into your scratch directory, then open it with Read:
 
