@@ -30,11 +30,14 @@ class AppRequest < ApplicationRecord
   # satellite is reserved the day it is registered, not the day someone notices.
   # The slug counts too: an app whose production_url is not a subdomain of ours
   # (rolio is a herokuapp host) still keeps its name.
+  # `chain` holds chain-ops' planned host, chain.mcritchie.studio, which has no
+  # DNS yet, so satellites.yml's production_url (null) cannot reserve it.
   RESERVED = %w[
     www app api admin qa staging dev test demo status docs help support blog
     mail email smtp imap pop ftp ns ns1 ns2 cdn static assets auth login signin
     signup register account billing build stack packages credentials v1
     mcritchie studio team security root
+    chain
   ].freeze
 
   # The names the name field types, one after another, as its placeholder — so

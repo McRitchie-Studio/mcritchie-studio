@@ -63,6 +63,12 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
+  # chain-ops' production_url is null until chain.mcritchie.studio exists, so
+  # RESERVED holds "chain" by hand.
+  test "chain stays reserved for chain-ops' planned host" do
+    assert_equal "That name is reserved.", AppRequest.unavailable_reason("chain")
+  end
+
   test "a claimed name is taken; a cancelled request releases it" do
     first = draft(user: users(:alex)).queue!("pawsome")
     assert_equal "That name is taken.", AppRequest.unavailable_reason("pawsome")
