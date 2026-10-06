@@ -94,6 +94,14 @@ A rejection is a teaching moment, not a punishment. Be specific about what *woul
 7. **Rebase, don't merge, when `main` advances.** Before opening a PR, fetch and rebase on `origin/main`. Keep history linear.
 8. **One in-flight branch per agent instance.** If you need to start something else, finish or abandon the current branch first.
 9. **Do not delete review evidence early.** Keep the branch and worktree until Avi confirms the PR is merged or intentionally abandoned.
+10. **Never `git stash` in a desk or a primary.** The stash list lives in the shared gitdir, so a `pop` can apply, and drop, another session's stash. Commit to a branch instead.
+11. **Never `git checkout`, `switch` or `reset` in a primary checkout.** Other sessions read docs and run scripts there, and a swap hands them a half-swapped tree. For a scratch tree use `git worktree add --detach <scratch-path> <sha>`.
+12. **A copied worktree is not isolated.** Its `.git` is a file pointing at the shared gitdir, so a commit in a `cp -r` or `rsync` copy moves the original desk's branch. Use `git worktree add --detach` or a real `git clone`.
+13. **Commit before you mutate.** `git checkout -- <file>` restores from the index, so after a mutation run it discards your unstaged edits along with the mutant, and nothing reports it.
+
+## Recovering lost staged work
+
+`git restore` and `checkout -- <paths>` leave no reflog entry, but STAGED content survives as dangling blobs until `git gc`. Find them by content, not path: `git fsck --no-reflogs --dangling`, then `git cat-file -p <blob>` and match on a known first line and the expected line count. Work that was never staged or committed is gone.
 
 ## When in doubt
 

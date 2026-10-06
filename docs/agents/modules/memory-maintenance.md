@@ -38,6 +38,11 @@ loaded partially, and was trimmed back to ~24KB by shortening over-long hooks.)
 - The **index** holds hooks, not detail. Each line is **≤ ~200 characters**.
 - **Verbose detail belongs in the topic file**, never the index. The index line
   exists only to make an agent remember the topic file is worth opening.
+- **The loader also caps lines (about 200).** A byte trim cannot fix a line-count
+  overflow. Consolidate a cluster into a `hub-*.md` file that carries its
+  members' index lines, so index → hub → member keeps every link alive.
+- **Never shorten a line through its link.** A hook cut inside `[Title](file.md)`
+  leaves an entry that still contains `](` and resolves to nothing.
 
 ## Owner & Cadence
 
@@ -94,7 +99,12 @@ or any time `MEMORY.md` exceeds budget, whichever comes first.
      grep -q "($f)" MEMORY.md || echo "ORPHAN FILE: $f"; done
    ```
 
-   Both loops should print nothing.
+   Both loops should print nothing. Check by resolving each target, never by
+   pattern: a truncated link still matches `](`. Once hubs exist, the orphan
+   loop above over-reports, because hub members are reachable in two hops. A
+   real orphan is a file linked from neither `MEMORY.md` nor any `hub-*.md`, and
+   the collection must accept both link shapes, `[Title](file.md)` and the
+   double-bracket wikilink.
 
 6. **Never memorialize what the repo already records.** If a fact already lives
    in `CLAUDE.md`, `AGENTS.md`, an active doc, or git history, it does not belong

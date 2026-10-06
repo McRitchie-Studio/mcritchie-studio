@@ -87,6 +87,14 @@ Agents should make decisions from the codebase in front of them. If a repo has a
 Parallel autonomy depends on isolation. Worktree and branch boundaries are part
 of the quality bar, not ceremony.
 
+**Standing copy authority.** An agent may correct binding or public copy without
+asking when all three hold: the code demonstrably contradicts the copy (measured
+at source), the change narrows or corrects the claim, and it ships with a guard
+that measures the behaviour rather than one that greps the sentence. Name the
+conditions and the proving source in `agent_context` so a reviewer can check
+them. Copy that adds a promise, changes what a user is owed, or touches money
+terms still needs Alex.
+
 Pushing a feature branch is how agents preserve work. Merging to `main` is how
 Avi or the release conductor integrates reviewed work. Do not collapse those two
 steps just to feel safer about code loss.

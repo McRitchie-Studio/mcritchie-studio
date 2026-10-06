@@ -111,6 +111,9 @@ noise dressed as signal.
   spec" is a finding.
 - Add `--key-method "<code>"` (+ optional `--key-lang bash|ruby|sql`) when one
   load-bearing call is worth copying — the exact line the next agent would rerun.
+- **Name the exact cell you checked** — the command shape, the ref, the input. A
+  receipt for a neighbouring command is not evidence about this one; record an
+  inference as an inference.
 - Prefer **one finding per decision**, not one per tool call. Several raw reads
   that together settle one question are **one** finding.
 - Close each activity with an `--outcome` that **synthesizes** its findings into

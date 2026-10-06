@@ -112,6 +112,13 @@ It prints four blocks, and every one of them is worth reading:
 4. **reprice** — each team whose rank or multiplier would change, and **how many
    paid picks the slate carries**.
 
+**The dry run cannot see the price impact of the lines it pulled.** The refresh
+reads expected scores from the slates in the database, and only the ingest writes
+them, so a dry run compares fresh lines with stale rows and reports
+`0 of 32 teams change price`. That is not "safe". On a slate with paid picks, the
+honest preview is the apply with no paid-pick override: it ingests, prints the
+real reprice, then refuses and rolls the prices back.
+
 **Judge the moves before you write anything.** A handful of half-point moves is
 an ordinary week. Every game moving, or a total moving by five, is a feed
 question, not a market one — check one game against a sportsbook by hand before

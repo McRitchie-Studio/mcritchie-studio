@@ -128,6 +128,13 @@ account as `RESEND_API_KEY`. A successful app response (`{"success":true}` from
 not prove provider delivery. A provider smoke is complete only when the durable
 outbox job finishes successfully and the provider accepts the message.
 
+`MAILER_FROM` is read only while SES is active (`Studio.ses_transport_ready?`);
+otherwise `RESEND_MAILER_FROM` is the sender that ships. Before pointing it at a
+domain, confirm the domain is verified (`GET https://api.resend.com/domains`):
+Resend rejects an unverified sender, and magic links are the sign-in path, so a
+wrong flip is an auth outage. Free apps send with the engine's default
+transactional mail; do not build per-app banners for them.
+
 SES helper tasks use SES API credentials:
 
 ```env
@@ -292,6 +299,12 @@ Minimum rules for broadcast surfaces:
    mailer host defaults so QA/worktree links do not point at production.
    Use `BROADCAST_HOST` only for an intentional campaign-specific host override.
 6. Add provider smoke proof before sending to a real list.
+7. Count opens and clicks from our own pixel and redirect only; Resend's events
+   are logged, never counted. A goal credit (`?ref=`) reaches only the hosts in
+   `EmailEvents::Results::APP_HOSTS`, so add a host there when a mail links to
+   a new app.
+8. Send the first waves to the most engaged players: one complaint in about a
+   thousand sends is already over Resend's complaint line.
 
 ## Recovery
 

@@ -123,7 +123,10 @@ progress against, even when the row can still quote a tick or an interval.
   `🥱 Nothing In Flight: <Denver time>` — a different emoji and a different
   word, so the two cases never blur at a glance. Time from
   `TZ=America/Denver date "+%-I:%M %p %Z"`; he reads reports well after they
-  land, and the clock lets him subtract without asking.
+  land, and the clock lets him subtract without asking. Run it in the same tool
+  batch that gathers the roster, before you compose, never from a mental clock.
+  Turn count is not elapsed time either: read the clock before deciding a time
+  budget is spent.
 - **Cap the block at 68 columns.** v1 had no cap, and on a real terminal the
   right-hand confidence mark truncated to `(roug` / `(firm` — the one field he
   cannot infer. Hold the name column to 28 and elide longer names with `…`.
@@ -163,6 +166,17 @@ Use these for the `firm` rows rather than guessing:
 Everything else — a review agent, an exploration sweep, a research fan-out — is
 `rough`. Estimate from the work's shape, and let the elapsed column carry the
 truth.
+
+## Claims in a report
+
+- **Report an action only after its tool call returns, in the same turn.** A task
+  URL goes in a message once the create's output names the slug; "shipping now"
+  or "Shannon is on it" needs the ship or the dispatch above it. If the turn is
+  ending instead, write what you will do, in the future tense.
+- **Attribute what you relay.** "Carl reports X", not "X"; mark anything you did
+  not check as unverified, with who claimed it.
+- **Date what the record can answer.** Evidence older than a claim cannot refute
+  it: say what the record shows at its date, and what would settle the rest.
 
 ## Review handoffs — hand a review link
 

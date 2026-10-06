@@ -13,6 +13,12 @@
 - Exception: Task uses `before_validation :generate_slug` with random hex (immutable)
 - Exception: SkillAssignment has no slug (join table)
 - Exception: Activity sets slug via `after_create` (needs id)
+- studio-engine's `Sluggable#set_slug` runs on **every** save, not just create, so a
+  row cannot keep a slug that differs from its `name_slug`. Because foreign keys are
+  slug strings, a change to `name_slug` renames existing rows and orphans their
+  children with no error. Keep the new `name_slug` byte-identical for every row
+  already in production, and pin it with a test that updates a row and asserts the
+  slug did not move.
 
 ## Foreign Keys
 - All foreign keys use slug strings, not integer IDs
@@ -24,6 +30,61 @@
 - Use specific rescues: `RecordNotFound`, `RecordInvalid`, `RuntimeError`
 - `RecordNotFound` is expected (no error log needed)
 - `RecordInvalid` / `RuntimeError` = log via `ErrorLog.capture!`
+
+## Guards, Refusals And Shared Constants
+- **Run a printed remedy against the state that printed it.** A refusal whose fix,
+  followed verbatim, leaves the refusal standing is a loop. When a remedy spans two
+  things that each hash something different (a working tree and a ref), say which
+  one each step moves.
+- **An allow-list entry asserts its own precondition**, ideally that the defect it
+  excuses is still present, so the entry fails when the defect is fixed. A reason
+  written only as a comment is not measured.
+- **Slice between markers only with checks.** Assert the start marker precedes the
+  end marker and that the exact old text is present; a reversed pair yields an
+  empty slice that inserts at index 0. A marker must be frozen text, never a value
+  the file's own workflow rewrites (a count, a total).
+- **One constant, one vocabulary.** A second caller that reads a shared map under
+  a different meaning gets its own named map, not borrowed keys.
+- **Record an event; do not infer it from two clocks.** Differencing a server
+  timestamp against a local mtime fails at every skew tolerance. Add the write that
+  makes the event observable.
+
+## Shell (zsh on macOS)
+- **A pipe reports the last stage's status.** `cmd | tail; echo $?` prints `tail`'s
+  0. Capture first: `out=$(cmd 2>&1); code=$?`, or redirect to a file. In zsh the
+  per-stage array is `$pipestatus` (lowercase, 1-indexed); `${PIPESTATUS[0]}`
+  expands empty. Reproduce any "script X exits 0 on failure" claim unpiped first.
+- **A zero exit is the weakest evidence.** Confirm the outcome itself: query the
+  row, read the log, curl the port.
+- **A probe that proves an absence must be able to find a presence.** `timeout` does
+  not exist here, so a command wrapped in it never runs and reads as "found nothing".
+  Bound waits with the tool that waits (`run_in_background`, `bin/ship-wait`).
+- **An empty read is not a value.** Test `[ -z "$x" ]` before comparing. A failing
+  pipeline stage yields empty output that `>>` appends without error, and
+  `out=$(grep -c x missing-file)` gives `""` while the substitution hides grep's
+  exit 2. When output is the only copy of something you will delete, assert it is
+  non-empty before deleting.
+- **zsh does not word-split `$var`.** Use an array (`E=(A=1 B=2); env -i "${E[@]}" cmd`)
+  or `${=var}`, and assert a sandbox variable inside the child.
+- **zsh traps:** `cmd 2>&1 >/dev/null` does not isolate stderr (MULTIOS duplicates
+  stdout), so send each stream to its own file; `echo ===` fails as an `=word`
+  expansion and aborts the compound command, so quote it.
+- **Backticks and `$(...)` execute inside double quotes.** Prose with backticks in
+  `-m`, `--body` or `--agent-context` runs as a command and vanishes from the text.
+  Write long text with a quoted heredoc (`cat > f <<'EOF'`), pass the file, and read
+  the stored value back.
+- **`env -i HOME=` is not isolation.** An empty `HOME` falls back to the real one.
+  Point it at a fresh `mktemp -d`, and include a command that fails there for the
+  right reason. To show a tool CREATES state, probe from a shell that provably lacks it.
+- **A child under another project's toolchain needs the original environment
+  restored** (`Bundler.original_env`), not an enumerated deny-list of variables.
+- **No shell state survives between agent turns.** Write the full path at every step
+  of a multi-step procedure; a variable or `cd` from an earlier step is gone.
+- **`heroku run … rails runner '<code>'` expands `$1`, `$4` in a remote shell.** Send
+  the script on stdin: `heroku run -a <app> --no-tty -- rails runner - < script.rb`.
+- **Never probe with a mutating command.** Read a script's source for the flags it
+  parses before passing `--help` or a guessed flag, and test state with a read, not
+  by re-running the command.
 
 ## API Controllers
 - Inherit from `Api::V1::BaseController` (ActionController::API)

@@ -58,6 +58,14 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
 - **Classify the shape**; it selects the tests you owe
   (`config/feature_shapes.yml`): `ui-only` · `ui+db` · `backend` · `library` ·
   `onchain` · `onchain-vertical` · `docs` · `test-only`.
+- **Shape by the files, never the hunk.** `bin/lib/code_diff.rb` classifies by file
+  type, so a comment-only `.rb` edit is not `docs`: re-shape to what the file is and
+  pay the tier with a test that fails when the trap the comment describes is sprung.
+  `docs` admits prose plus guard tests under `test/docs/`, and nothing else. A
+  studio-engine change a consumer can assert on is `library`, never `ui-only`. A
+  `.github/workflows` change is `backend`; its honest `[integration]` line is the
+  PR's own CI run of the changed workflow. Read `config/feature_shapes.yml` before
+  telling anyone what a shape refuses.
 - **`test-only`** is for a diff that is entirely test code. It has no tiers, but
   it is not the easy option:
   1. It is claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`,
@@ -70,6 +78,12 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      runner for `e2e/`/`tests/`), write a `[control]` line in `checks_run` naming
      a file from the diff. A `NO-SIGNAL` verdict is **not** a refusal; it asks
      you for that sentence.
+  4. Lead every `[control]` line with the test file's path or basename, the
+     command, and the failure you saw. A line naming no file from the diff is
+     refused (`bin/dor-check`'s `control_names_a_changed_file?`).
+  5. `bin/ship` does not run `bin/control-check`. Run it from the desk **after
+     your last commit**: its stamp is bound to the tree, so any later commit stales
+     it. Never run it beside a ship; it swaps test files in place while it runs.
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
 every session: `<app-slug> · <feature-slug> · <task URL>`.
