@@ -145,11 +145,13 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     sections = sidebar_link_sections
 
-    assert_equal ["Services", "Apps"], sections.map { |section| section.fetch(:title) }
+    assert_equal ["NFL", "Services", "Apps"], sections.map { |section| section.fetch(:title) }
     labels = sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
     refute_includes labels, "Dashboard"
     refute_includes labels, "Agents"
     refute_includes labels, "Builders"
+    refute_includes labels, "Teams"
+    refute_includes labels, "People"
   end
 
   test "the App Builder and the packages page are linked for everyone, signed in or not" do
@@ -186,7 +188,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     self.admin_enabled = false
     self.logged_in_enabled = true
 
-    assert_equal ["Services", "Apps"], sidebar_link_sections.map { |section| section.fetch(:title) }
+    assert_equal ["NFL", "Services", "Apps"], sidebar_link_sections.map { |section| section.fetch(:title) }
   end
 
   test "the admin's link hub reveals Studio with Agents and Builders together" do
@@ -204,6 +206,19 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
       "Builders should sit right after Agents"
     other_titles = sections.reject { |section| section.fetch(:title) == "Studio" }.map { |section| section.fetch(:title) }
     assert_equal ["NFL", "Directory", "Services", "Apps"], other_titles
+  end
+
+  # task public-nfl-cards-stay-public: both NFL links are public pages, so the
+  # section is no longer hidden from visitors; the walled Directory still is.
+  test "visitors get the public NFL section and never the Directory" do
+    self.admin_enabled = false
+    self.logged_in_enabled = false
+
+    nfl = public_link_sections.find { |section| section.fetch(:title) == "NFL" }
+
+    assert nfl, "a visitor should see the NFL section"
+    assert_equal [ "/nfl", "/games/2026" ], nfl.fetch(:links).map { |link| link.fetch(:href) }
+    refute public_link_sections.any? { |section| section.fetch(:title) == "Directory" }
   end
 
   private

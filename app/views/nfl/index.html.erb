@@ -187,26 +187,29 @@
       <p class="text-secondary text-sm">NFL head coaches and coordinators</p>
     <% end %>
 
-    <%= link_to teams_path, class: "card-hover p-6 block" do %>
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-2xl">🏟️</span>
-        <% if @team_count > 0 %>
-          <span class="text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full"><%= @team_count %> teams</span>
-        <% end %>
-      </div>
-      <h2 class="text-heading font-bold text-lg mb-1">Teams</h2>
-      <p class="text-secondary text-sm">All 32 NFL franchises</p>
-    <% end %>
+    <%# Teams and People lead behind the admin wall (AdminWall): a visitor gets the Rosters card above instead. %>
+    <% if admin? %>
+      <%= link_to teams_path, class: "card-hover p-6 block" do %>
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-2xl">🏟️</span>
+          <% if @team_count > 0 %>
+            <span class="text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full"><%= @team_count %> teams</span>
+          <% end %>
+        </div>
+        <h2 class="text-heading font-bold text-lg mb-1">Teams</h2>
+        <p class="text-secondary text-sm">All 32 NFL franchises</p>
+      <% end %>
 
-    <%= link_to people_path, class: "card-hover p-6 block" do %>
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-2xl">👤</span>
-        <% if @person_count > 0 %>
-          <span class="text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full"><%= @person_count %> players</span>
-        <% end %>
-      </div>
-      <h2 class="text-heading font-bold text-lg mb-1">People</h2>
-      <p class="text-secondary text-sm">Players, coaches, and personnel</p>
+      <%= link_to people_path, class: "card-hover p-6 block" do %>
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-2xl">👤</span>
+          <% if @person_count > 0 %>
+            <span class="text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full"><%= @person_count %> players</span>
+          <% end %>
+        </div>
+        <h2 class="text-heading font-bold text-lg mb-1">People</h2>
+        <p class="text-secondary text-sm">Players, coaches, and personnel</p>
+      <% end %>
     <% end %>
   </div>
 </section>

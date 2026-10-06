@@ -14,8 +14,9 @@ class NflControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", nfl_quarterback_rankings_path
     assert_select "a[href=?]", nfl_offensive_line_rankings_path
     assert_select "a[href=?]", nfl_pass_first_rankings_path
-    assert_select "a[href=?]", teams_path
-    assert_select "a[href=?]", people_path
+    # Teams and People are admin pages; test/integration/public_nfl_links_test.rb
+    # covers both sides of that gate.
+    assert_select "a[href=?]", nfl_rosters_path
   end
 
   test "hub does not require authentication" do
