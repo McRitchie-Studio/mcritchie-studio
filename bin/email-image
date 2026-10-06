@@ -6,24 +6,33 @@
 #
 # THE GUARD RUNS BEFORE THE RAILS BOOT and before any subcommand: `--help`
 # anywhere prints usage and exits, and an unrecognized flag refuses, so
-# `bin/email-image generate <brief> --help` can never enqueue a paid round
+# `bin/email-image generate <brief> --help` can never start a paid round
 # (test/lib/bin_help_flag_class_test.rb).
 require_relative "lib/cli_arg_guard"
 
 USAGE = <<~TEXT
   usage: bin/email-image list
-         bin/email-image brief --app <app> --email <key> [--variant <v>] --brand <kit> --headline "..." [--text-mode baked|none] [--format jpg|png] [--notes "..."]
-         bin/email-image generate <brief-slug> [--count N]
+         bin/email-image assets <brand-kit> [--out <dir>] [--no-download]
+         bin/email-image brief --app <app> --email <key> [--variant <v>] --brand <kit> --headline "..." [--subtext "..."] [--alt "..."] [--text-mode baked|none] [--format jpg|png] [--notes "..."] [--max-rounds N]
+         bin/email-image brief <brief-slug> [--headline "..."] [--subtext "..."] [--alt "..."] [--text-mode baked|none] [--format jpg|png] [--notes "..."] [--max-rounds N]
+         bin/email-image generate <brief-slug> [--notes "this round's direction"] [--count N] [--out <dir>] [--no-download]
+         bin/email-image show <brief-slug> [--out <dir>] [--no-download]
+         bin/email-image approve <brief-slug> <artifact-slug> --by <who>
+         bin/email-image retire <brief-slug> <artifact-slug>
          bin/email-image export <brief-slug> --into <dir-or-file> [--image-url <url>]
+
+  The email-image SOP (docs/agents/agents/pokemon/sops/email-image.md) is how an
+  agent runs these. `generate` buys images and waits for them (about a minute each).
 TEXT
 
 CliArgGuard.guard!(
   ARGV,
   program: "bin/email-image",
   usage: USAGE,
-  consequence: "nothing was created, generated or exported.",
+  consequence: "nothing was created, generated, approved or exported.",
+  bool: %w[--no-download],
   value: %w[--app --email --variant --brand --headline --subtext --alt --text-mode --format --notes
-            --count --into --image-url],
+            --count --into --image-url --out --by --max-rounds],
   allow_positional: true
 )
 

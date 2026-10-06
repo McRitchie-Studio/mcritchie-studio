@@ -25,12 +25,17 @@ module EmailImages
 
     DATA_URI = %r{\Adata:[\w/\-.+]+;base64,(?<data>.+)\z}m
     JPG_QUALITIES = [85, 80, 75, 70, 65, 60].freeze
+    # The second pass EmailImages::Generate asks for when the first is still
+    # over budget: visibly softer, but an email header that loads.
+    SQUEEZE_JPG_QUALITIES = [55, 50, 45, 40].freeze
+    SQUEEZE_PNG_COLORS = 64
 
     class CropFailed < StandardError; end
 
     def self.call(source, **kwargs) = new(source, **kwargs).call
 
-    def initialize(source, width:, height:, format: "jpg", max_bytes: EmailImages::BrandKit.max_bytes)
+    def initialize(source, width:, height:, format: "jpg", max_bytes: EmailImages::BrandKit.max_bytes, squeeze: false)
+      @squeeze = squeeze
       @source = source
       @width = Integer(width)
       @height = Integer(height)
@@ -51,7 +56,7 @@ module EmailImages
 
     def jpg(input)
       output = nil
-      JPG_QUALITIES.each do |quality|
+      (@squeeze ? SQUEEZE_JPG_QUALITIES : JPG_QUALITIES).each do |quality|
         output = render(input, quality: quality)
         break unless output.over_budget?(@max_bytes)
       end
@@ -59,6 +64,8 @@ module EmailImages
     end
 
     def png(input)
+      return render(input, colors: SQUEEZE_PNG_COLORS) if @squeeze
+
       output = render(input)
       output.over_budget?(@max_bytes) ? render(input, colors: 256) : output
     end

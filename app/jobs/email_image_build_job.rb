@@ -8,10 +8,10 @@ class EmailImageBuildJob < ApplicationJob
   queue_as :default
   discard_on StandardError
 
-  def perform(brief_slug, started_at, count = nil)
+  def perform(brief_slug, started_at, count = nil, notes = nil)
     brief = EmailImageBrief.find_by(slug: brief_slug)
     return unless brief
 
-    EmailImages::Build.run(brief, started_at: Time.iso8601(started_at), count: count)
+    EmailImages::Build.run(brief, started_at: Time.iso8601(started_at), count: count, notes: notes)
   end
 end

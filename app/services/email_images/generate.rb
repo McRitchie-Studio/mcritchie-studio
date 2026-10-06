@@ -19,12 +19,17 @@ module EmailImages
     class NoGenerator < StandardError; end
     class RoundsExhausted < StandardError; end
     class MissingReference < StandardError; end
+    # A paid image that will not fit the email byte budget even after a second,
+    # harder squeeze. Not a free refusal: the image was bought, so Build logs it.
+    class OverBudget < StandardError; end
 
     def self.call(brief, **kwargs) = new(brief, **kwargs).call
 
-    def initialize(brief, row: nil, count: nil)
+    def initialize(brief, row: nil, count: nil, round: nil, notes: nil)
       @brief = brief
       @row = row
+      @round = round
+      @notes = notes
       @count = (count || EmailImages::BrandKit.candidates_per_round).to_i.clamp(1, EmailImages::BrandKit.candidates_per_round)
     end
 
@@ -54,7 +59,7 @@ module EmailImages
                end
     end
 
-    def prompt = @prompt ||= EmailImages::Prompt.call(@brief)
+    def prompt = @prompt ||= EmailImages::Prompt.call(@brief, round: @round, round_notes: @notes)
 
     private
 
@@ -63,9 +68,7 @@ module EmailImages
                                         image_size: generate_size, num_images: 1)
       raise ImageGeneration::GenerationFailed, "#{row.label} returned no image" unless result.any?
 
-      preset = @brief.preset_config
-      cropped = EmailImages::Crop.call(result.primary_url, width: preset.width, height: preset.height,
-                                                           format: @brief.image_format)
+      cropped = fit_budget(result.primary_url)
       stored_url = Appearances::StoreGeneratedImage.call(cropped.data_uri, prefix: STORAGE_PREFIX,
                                                                            subject: @brief.storage_subject)
       Artifact.create!(
@@ -81,6 +84,24 @@ module EmailImages
         billable_units: result.billable_units,
         cost_usd: result.cost_usd
       )
+    end
+
+    # THE EMAIL BYTE BUDGET IS HARD (about 300 KB). Crop already steps a JPG
+    # down to quality 60 and quantizes a PNG; when that is still over, squeeze
+    # once more (JPG to quality 40, PNG to 64 colours), and if even that will
+    # not fit, refuse to store it rather than file a header no inbox should load.
+    def fit_budget(source)
+      preset = @brief.preset_config
+      crop = ->(**opts) { EmailImages::Crop.call(source, width: preset.width, height: preset.height,
+                                                         format: @brief.image_format, **opts) }
+      cropped = crop.call
+      return cropped unless cropped.over_budget?
+
+      cropped = crop.call(squeeze: true)
+      return cropped unless cropped.over_budget?
+
+      raise OverBudget, "the generated header is #{cropped.bytesize} bytes after squeezing, over the " \
+                        "#{EmailImages::BrandKit.max_bytes}-byte email budget; it was not stored"
     end
 
     def generate_size = @brief.preset_config&.generate_size.presence || row.image_size
