@@ -66,4 +66,26 @@ class DigestVideoCommandTest < Minitest::Test
     assert_includes out, "--kind KIND"
     assert_includes out, "music_video or cinematic"
   end
+
+  def test_help_names_the_tiling_flags
+    out, _err, status = run_script("--help")
+    assert status.success?
+    %w[--chunk --overlap --no-tile --retile].each { |flag| assert_includes out, flag }
+  end
+
+  # A tiling that cannot cut, or one that contradicts --no-tile, stops before any download.
+  def test_a_bad_tiling_stops_before_any_download
+    url = "https://www.youtube.com/watch?v=Sa7GSJJ_lOo"
+    _out, err, status = run_script(url, "--chunk", "5", "--overlap", "5")
+    refute status.success?
+    assert_includes err, "digest-video: the overlap (5000 ms) must be shorter than the chunk (5000 ms)"
+
+    _out, err, status = run_script(url, "--no-tile", "--chunk", "15")
+    refute status.success?
+    assert_includes err, "digest-video: --chunk sets the tiling: drop --no-tile"
+
+    _out, err, status = run_script(url, "--no-tile", "--retile")
+    refute status.success?
+    assert_includes err, "digest-video: --retile and --no-tile contradict each other"
+  end
 end

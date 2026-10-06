@@ -2,8 +2,9 @@
 # frozen_string_literal: true
 
 # digest video <url>: download a music video, store the H.264 MP4 and its
-# info.json in R2, and record it through the hub API. Agent side of the
-# digest-video SOP (docs/agents/agents/pokemon/sops/digest-video.md).
+# info.json in R2, record it through the hub API, then cut the whole video into
+# 25 s chunks that overlap 5 s and post them (the recast pipeline's chunks).
+# Agent side of the digest-video SOP (docs/agents/agents/pokemon/sops/digest-video.md).
 #
 #   bin/digest-video <url>                     # dev bucket, local API (localhost:3000)
 #   bin/digest-video <url> --api URL           # another hub, e.g. a desk server
@@ -12,13 +13,18 @@
 #   bin/digest-video <url> --production        # production bucket and https://mcritchie.studio
 #   bin/digest-video <url> --cookies-from-browser chrome   # lend yt-dlp the browser's session (a login wall)
 #   bin/digest-video <url> --kind cinematic    # a cinematic video, not a music video (the default)
+#   bin/digest-video <url> --chunk 15 --overlap 5   # 15 s chunks on a 10 s stride
+#   bin/digest-video <url> --no-tile           # record the source only; tile later with bin/find-clips --tile
+#   bin/digest-video <url> --retile            # replace chunks a re-digested source already has
 
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 require "bundler/setup" # aws-sdk-s3 for the R2 upload; before any gem loads
 require "optparse"
+require_relative "lib/chunk_tiling"
 require_relative "lib/digest_video"
 
-options = { production: false, dry_run: false, kind: "music_video", workdir: File.expand_path("~/projects/.corpus/music_videos"),
+options = { production: false, dry_run: false, kind: "music_video", tile: true, retile: false, chunk: 25.0, overlap: 5.0,
+            workdir: File.expand_path("~/projects/.corpus/music_videos"),
             encoder: RUBY_PLATFORM.include?("darwin") ? "h264_videotoolbox" : "libx264" }
 parser = OptionParser.new do |opts|
   opts.banner = "Usage: bin/digest-video <url> [options]"
@@ -34,6 +40,16 @@ parser = OptionParser.new do |opts|
   opts.on("--kind KIND", DigestVideo::KINDS, "what the video is: #{DigestVideo::KINDS.join(' or ')} (default music_video)") do |v|
     options[:kind] = v
   end
+  opts.on("--chunk SECONDS", Float, "how long a chunk runs (default 25)") do |v|
+    options[:chunk] = v
+    options[:tiling_flag] = "--chunk"
+  end
+  opts.on("--overlap SECONDS", Float, "how much a chunk repeats of the one before (default 5; under --chunk)") do |v|
+    options[:overlap] = v
+    options[:tiling_flag] = "--overlap"
+  end
+  opts.on("--no-tile", "record the source only; cut no chunks") { options[:tile] = false }
+  opts.on("--retile", "replace the chunks a re-digested source already has (the default keeps them)") { options[:retile] = true }
   opts.on("-h", "--help") do
     puts opts
     exit 0
@@ -50,14 +66,24 @@ if ARGV.size != 1
   abort(ARGV.empty? ? "digest-video: a URL is required" : "digest-video: exactly one URL, got #{ARGV.size}")
 end
 url = ARGV.first
+abort "digest-video: #{options[:tiling_flag]} sets the tiling: drop --no-tile" if options[:tiling_flag] && !options[:tile]
+abort "digest-video: --retile and --no-tile contradict each other" if options[:retile] && !options[:tile]
+tiling = { chunk_ms: (options[:chunk] * 1000).round, overlap_ms: (options[:overlap] * 1000).round }
+if options[:tile] && (why = MusicVideos::ChunkTiler.problem(**tiling))
+  abort "digest-video: #{why}"
+end
 
 begin
   DigestVideo.source_id(DigestVideo.platform_for(url), url) # fail fast on a host or link it cannot take, before any credential read
   target = DigestVideo.target(production: options[:production])
+  storage = DigestVideo::R2Storage.new(bucket: target[:bucket], suffix: target[:suffix])
+  api = DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__))
+  tiler = if options[:tile]
+            ChunkTiling::Runner.new(api:, storage:, shell: DigestVideo.shell, out: $stdout, dry_run: options[:dry_run],
+                                    bucket: target[:bucket], replace: options[:retile], **tiling)
+          end
   runner = DigestVideo::Runner.new(
-    workdir: options[:workdir], shell: DigestVideo.shell, out: $stdout,
-    storage: DigestVideo::R2Storage.new(bucket: target[:bucket], suffix: target[:suffix]),
-    api: DigestVideo::ApiClient.new(base_url: options[:api] || target[:api], repo_root: File.expand_path("..", __dir__)),
+    workdir: options[:workdir], shell: DigestVideo.shell, out: $stdout, storage:, api:, tiler:,
     from_dir: options[:from_dir], dry_run: options[:dry_run], encoder: options[:encoder], bucket: target[:bucket],
     cookies_from_browser: options[:cookies_from_browser], kind: options[:kind],
     ytdlp: ENV.fetch("YT_DLP", File.exist?(File.expand_path("~/.local/bin/yt-dlp")) ? File.expand_path("~/.local/bin/yt-dlp") : "yt-dlp")
