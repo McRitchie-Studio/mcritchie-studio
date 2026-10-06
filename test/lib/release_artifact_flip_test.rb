@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# [integration] Does the artifact-commit dance FLIP the shared primary checkout
-# when it has nothing to commit?
+# [integration] Does the artifact commit FLIP the shared primary checkout? Never,
+# since harden-artifact-commit-onto-accepted; this file first pinned the no-work case.
 #
 # THE DEFECT. `Release::ArtifactCommit.safe_to_commit?` was
 # `other_dirty_paths(...).empty?`, which a CLEAN tree satisfies vacuously — while
@@ -76,9 +76,11 @@ class ReleaseArtifactFlipTest < Minitest::Test
   end
 
   # THE OTHER HALF, and without it the test above is satisfied by a method that
-  # does nothing at all. An UNTRACKED artifact is a FIRST RUN: it must still flip,
-  # commit and push, or the doc is stranded forever.
-  def test_a_dirty_artifact_still_flips_and_commits
+  # does nothing at all. An UNTRACKED artifact is a FIRST RUN: it must still commit
+  # and push, or the doc is stranded forever. Since harden-artifact-commit-onto-accepted
+  # it does so WITHOUT a flip: the commit is built from origin/accepted in a throwaway
+  # index and pushed by SHA, so HEAD never moves even when there is work to do.
+  def test_a_dirty_artifact_commits_without_flipping
     with_fixture do |repo, dir|
       doc = File.join(repo, "retro.md")
       File.write(doc, "retro fixture") # untracked — the first-run case
@@ -86,11 +88,11 @@ class ReleaseArtifactFlipTest < Minitest::Test
 
       out = run_dance(repo, dir, doc)
 
-      assert_operator head_moves(repo), :>, before,
-                      "a dirty artifact MUST still flip to accepted; a first run that no-ops strands the doc"
+      assert_equal before, head_moves(repo), "the commit is built from origin/accepted; HEAD never moves"
       assert_includes out, "committed retro.md to accepted"
       count, = Open3.capture2("git", "-C", repo, "rev-list", "--count", "origin/accepted")
       assert_equal "2", count.strip, "the artifact commit is pushed onto origin/accepted"
+      refute_path_exists doc, "the committed doc leaves main's working tree, as the old flip back to main left it"
     end
   end
 
