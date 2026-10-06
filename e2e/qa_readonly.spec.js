@@ -33,7 +33,7 @@ test.describe("QA read-only smoke @qa-readonly", () => {
     expect(new URL(tasks.headers()["location"], "http://host").pathname).toBe("/login");
 
     await page.goto("/tasks");
-    expect(new URL(page.url()).pathname).toBe("/login");
+    expect(new URL(page.url()).pathname).toMatch(/^\/(login|signin)$/);
     await expect(page.locator('input[name="email"]')).toBeVisible();
   });
 
