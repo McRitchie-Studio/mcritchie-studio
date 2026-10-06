@@ -63,9 +63,9 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
 
   test "[component] recent renders stamped gate cells including the failed-then-passed retry story" do
     opened = Time.zone.parse("2026-07-08 09:00:00")
-    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", success: false, now: opened)
-    GateRun.open!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", now: opened + 10.minutes)
-    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", success: true, now: opened + 17.minutes)
+    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "dor", success: false, now: opened)
+    GateRun.open!(subject_type: "task", subject_slug: @new_task.slug, key: "dor", now: opened + 10.minutes)
+    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "dor", success: true, now: opened + 17.minutes)
     GateRun.open!(subject_type: "task", subject_slug: @new_task.slug, key: "g2a_primary")
 
     get recent_tasks_path
@@ -82,7 +82,7 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
     end
     assert_includes response.body, "attempt 2",
                     "the retry story stays one hover away on the cell title"
-    assert_includes response.body, "G1 Cert"
+    assert_includes response.body, "DoR (builder)"
     assert_includes response.body, "G2a Primary"
   end
 
