@@ -6689,6 +6689,11 @@ def commit_artifact_to_release(repo, abs_path, message)
     return
   end
 
+  # Read on `main`, BEFORE the flip: a named path absent from the primary's working
+  # tree is a REMOVAL (the source of a retired doc's `git mv`), and everything else is
+  # content to add. The flip can resurrect a removed path, so this must be read now.
+  gone, present = rels.partition { |r| !File.exist?(File.join(path, r)) }
+
   sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, "--quiet", capture: true)
 
   # BEST-EFFORT lock (wait: false): if another invocation holds the primary
@@ -6702,7 +6707,16 @@ def commit_artifact_to_release(repo, abs_path, message)
     if co
       _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
       if ff
-        sh("git", "-C", path, "add", "--all", "--", *rels, capture: true)
+        # A REMOVAL MUST BE RE-STAGED HERE, NOT TRUSTED TO RIDE THE FLIP. A `git mv`
+        # on `main` stages the source's deletion, but when the local `release` is
+        # OLDER than `main` and predates that source, the deletion carries over as
+        # nothing, and the ff-merge onto origin/release then writes the file back.
+        # `git add` cannot stage it either, since the path exists on disk again
+        # (and a missing pathspec makes git add abort the WHOLE batch).
+        # rel-20261006-f6a119 committed a retired doc at both paths this way (e8f121d4).
+        # `git rm --ignore-unmatch` drops it from index and disk, whatever the flip did.
+        sh("git", "-C", path, "rm", "-q", "-r", "--ignore-unmatch", "--", *gone, capture: true) if gone.any?
+        sh("git", "-C", path, "add", "--all", "--", *present, capture: true) if present.any?
         _, committed = sh("git", "-C", path, "commit", "-m", message, capture: true)
         _, done = sh("git", "-C", path, "push", "origin", RELEASE_BRANCH, capture: true) if committed
       end
@@ -8638,7 +8652,12 @@ def archive
   # anything ELSE is dirty, so omitting the retirements would strand them.
   hub = repo_path("mcritchie-studio")
   artifact_paths = [File.join(hub, DocsArchive::LEDGER), File.join(hub, DocsArchive::LEDGER_ARCHIVE)]
-  artifact_paths += docs[:moved_paths].to_a.map { |rel| File.join(hub, DocsArchive.archive_path_for(rel)) }
+  # BOTH SIDES of every move: the archive copy AND the live source's removal. Naming
+  # only the destination is how rel-20261006-f6a119 left a retired doc on `release`
+  # at two paths (e8f121d4) and reddened ArchivePathCollisionTest on the next candidate.
+  artifact_paths += docs[:moved_paths].to_a.flat_map do |rel|
+    [File.join(hub, DocsArchive.archive_path_for(rel)), File.join(hub, rel)]
+  end
   commit_artifact_to_release(
     "mcritchie-studio",
     artifact_paths,

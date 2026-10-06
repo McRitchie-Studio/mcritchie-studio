@@ -112,7 +112,8 @@ cleanup guards.
    Then runs both pruners with `--yes` (see [the pruners](#the-pruners-step-4--step-9)).
    A pruner that refuses or fails prints a warning; the archive goes on.
 10. Retires frozen docs + rolls the ledger (`bin/archive-docs`), then commits
-    that and the ledger to `release` in ONE artifact commit.
+    each move (the archive copy AND the live copy's removal) and the ledger to
+    `release` in ONE artifact commit.
 
 **`bin/release archive` ends at step 10. The ACT does not.** One step remains, and
 it is a separate command you run yourself:
