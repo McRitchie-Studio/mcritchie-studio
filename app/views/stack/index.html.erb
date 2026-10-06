@@ -5,7 +5,7 @@
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Stack</p>
     <h1 class="text-3xl font-bold text-heading mb-2">Every client's stack</h1>
     <p class="text-muted max-w-2xl">
-      Each client's tier and the software it runs on. The McRitchie Studio chest in a logo's corner means
+      Each client's app tier and status, its package tier, and the software it runs on. The McRitchie Studio chest in a logo's corner means
       we host it for them; a plain logo is the client's own account.
       <%= link_to "Client matrix", stack_matrix_path, class: "text-primary hover:underline whitespace-nowrap", data: { test: "stack-matrix-link" } %>
       <span class="text-muted" aria-hidden="true">·</span>
@@ -26,10 +26,11 @@
 
   <%# The table scrolls sideways inside its own box on a phone; the page never does. %>
   <div class="overflow-x-auto rounded-2xl border border-subtle bg-surface" data-test="stack-table">
-    <table class="w-full min-w-[820px] text-sm border-collapse">
+    <table class="w-full min-w-[920px] text-sm border-collapse">
       <thead>
         <tr class="border-b border-subtle text-left text-xs font-semibold uppercase tracking-wider text-muted">
           <th scope="col" class="sticky left-0 z-10 bg-surface px-4 py-3 w-56">Client</th>
+          <th scope="col" class="px-3 py-3">App</th>
           <th scope="col" class="px-3 py-3">Tier</th>
           <th scope="col" class="px-3 py-3">Software</th>
           <th scope="col" class="px-3 py-3 text-right">Google users</th>
@@ -55,6 +56,7 @@
                 </div>
               </div>
             </th>
+            <td class="px-3 py-3"><%= render "stack/app_standing", app: client.catalog_app %></td>
             <td class="px-3 py-3" data-test="stack-tier">
               <% if client.internal? %>
                 <span class="text-xs text-muted">Internal</span>
@@ -106,7 +108,7 @@
           </tr>
         <% end %>
         <% if @clients.empty? %>
-          <tr><td colspan="5" class="px-4 py-6 text-center text-muted">No clients recorded yet.</td></tr>
+          <tr><td colspan="6" class="px-4 py-6 text-center text-muted">No clients recorded yet.</td></tr>
         <% end %>
       </tbody>
     </table>

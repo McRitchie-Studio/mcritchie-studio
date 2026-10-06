@@ -101,4 +101,18 @@ class StackClientTest < ActiveSupport::TestCase
     refute_includes StackClient.find_by!(slug: "industries").software_keys([]), "slack",
                     "Industries' Slack pull has no production key, so it does not run Slack"
   end
+
+  test "[unit] catalog_app maps a client's workspace slug to its config/apps.yml record" do
+    assert_equal "mcritchie-studio", client(slug: "studio").catalog_app.slug
+    assert_equal "mcritchie-industries", client(slug: "industries").catalog_app.slug
+    welding = client.catalog_app
+    assert_equal %w[product active], [welding.tier, welding.status]
+    assert_nil client(slug: "family").catalog_app, "a workspace with no app record has none"
+  end
+
+  test "[unit] every seeded client has an app record" do
+    capture_io { load Rails.root.join("db/seeds/60_stack_clients.rb") }
+    orphans = StackClient.all.reject(&:catalog_app).map(&:slug)
+    assert_empty orphans, "stack clients with no config/apps.yml workspace: #{orphans.join(', ')}"
+  end
 end

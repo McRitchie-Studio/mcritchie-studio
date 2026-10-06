@@ -48,17 +48,29 @@ module ReleaseNotes
         tasks: [task]
       ).message
 
-      assert_includes message, "🏛️ Vault\n• [Mainnet vault proof](https://mcritchie.studio/tasks/task-eee555)"
+      assert_includes message, "🏛️ Turf Vault\n• [Mainnet vault proof](https://mcritchie.studio/tasks/task-eee555)"
     end
 
-    # Mirror of ApplicationHelper::APP_EMOJIS["rolio"] — the two glyph maps are
-    # kept in sync by hand, so rolio must carry the same 📇 here for grouping.
-    test "APP_GROUPS registers rolio with the 📇 glyph" do
-      rolio = Formatter::APP_GROUPS.find { |group| group[:aliases].include?("rolio") }
+    # Both glyph maps derive from config/apps.yml, so every catalog app and
+    # library groups under its own name and draws the board's glyph.
+    test "[integration] every catalog app and library resolves to a group and the board's glyph" do
+      helper = Object.new.extend(ApplicationHelper)
+      (AppCatalog.apps + AppCatalog.libraries).each do |entry|
+        group = Formatter::APP_GROUPS.find { |candidate| candidate[:aliases].include?(entry.slug) }
 
-      assert rolio, "expected an APP_GROUPS entry aliased to rolio"
-      assert_equal "📇", rolio[:emoji]
-      assert_equal "Rolio", rolio[:label]
+        assert group, "#{entry.slug} has no release-notes group"
+        assert_equal [entry.name, entry.emoji], [group[:label], group[:emoji]], entry.slug
+        assert_equal entry.emoji, helper.app_emoji(entry.slug), "#{entry.slug}: the board and the notes must draw one glyph"
+      end
+      assert_equal helper.app_emoji("turf-vault"), helper.app_emoji("vault"), "the vault alias resolves too"
+    end
+
+    test "[integration] a task on a catalog app the old hand list missed lands in its own group" do
+      task = tasks(:done_task)
+      task.update!(metadata: { "devops" => { "repositories" => ["moms-app"] } })
+      message = formatter_for(task).message
+
+      assert_includes message, "📚 Moms App\n• [#{task.title}]"
     end
 
     # --- production smoke seal ---------------------------------------------
