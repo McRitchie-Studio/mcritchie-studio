@@ -1,0 +1,48 @@
+<% content_for :title, "Alt videos · McRitchie Studio" %>
+
+<section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="alt-videos-index">
+  <header class="mb-6 min-w-0">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Recast pipeline</p>
+    <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2">Alt videos</h1>
+    <p class="text-sm text-muted">Every generated version of every source video, most recently worked on first. Build one with Build Clips on a source's cast page.</p>
+  </header>
+
+  <% if @alt_videos.empty? %>
+    <div class="empty-state text-muted" data-test="alt-videos-empty">No alt videos yet. Confirm a source's cast, tile it into chunks, then press Build Clips.</div>
+  <% else %>
+    <div class="flex flex-col gap-3">
+      <% @alt_videos.each do |alt| %>
+        <% with_primary, total = alt.progress %>
+        <% latest = alt.latest_stitch %>
+        <% stale = latest && latest.stale?(alt.clips.to_a) %>
+        <%= link_to music_video_alt_video_path(alt.music_video, alt),
+                    class: "card p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between min-w-0 hover:border-primary/60 transition-colors",
+                    data: { test: "alt-video-row", slug: alt.slug, primary: with_primary, total: total } do %>
+          <div class="min-w-0">
+            <p class="text-xs font-semibold uppercase tracking-wider text-primary"><%= alt.name %></p>
+            <p class="font-semibold text-heading break-words"><%= alt.music_video.title %></p>
+            <p class="text-sm text-muted break-words" data-test="alt-video-row-swaps"><%= alt.swaps_summary %></p>
+          </div>
+          <div class="flex flex-col sm:items-end gap-1.5 shrink-0 min-w-0">
+            <p class="text-sm text-body" data-test="alt-video-row-progress">
+              <span class="font-semibold text-heading"><%= with_primary %> of <%= total %></span> clips with a primary
+            </p>
+            <div class="h-2 w-full sm:w-40 rounded-full bg-surface-alt border border-subtle overflow-hidden" aria-hidden="true">
+              <div class="h-full bg-success" style="width: <%= total.zero? ? 0 : (100.0 * with_primary / total).round %>%"></div>
+            </div>
+            <p class="flex flex-wrap items-center gap-2 text-xs text-muted">
+              <% if latest.nil? %>
+                <span class="badge text-3xs bg-surface-alt text-muted border-subtle" data-test="alt-video-row-stitch">Not stitched</span>
+              <% elsif stale %>
+                <span class="badge text-3xs bg-warning/10 text-warning-ink border-warning/40" data-test="alt-video-row-stitch"><%= latest.name %> · stale</span>
+              <% else %>
+                <span class="badge text-3xs bg-success/10 text-success-ink border-success/40" data-test="alt-video-row-stitch"><%= latest.name %> · current</span>
+              <% end %>
+              <span data-test="alt-video-row-activity">Last activity <%= time_ago_in_words(alt.last_activity_at) %> ago</span>
+            </p>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
+</section>

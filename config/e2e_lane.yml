@@ -381,6 +381,13 @@
 # 220 -> 223 on 2026-10-06 (/tasks/status-colours-from-tokens):
 # e2e/status_tones.spec.js adds three specs, not quarantined: the form error box, the
 # stage badges and the blocked crew badge keep their text contrast in light and dark.
+#
+# 223 -> 223 on 2026-10-06 (/tasks/alt-videos-and-clip-builder): no count change. Three
+# music video specs are rewritten in place for alt videos: music_video_chunks.spec.js
+# (Build Clips opens an alt video of clip cards), music_video_stitch.spec.js (drop
+# versions, make an older one primary, the Watch full video modal) and
+# music_video_full_video.spec.js (the stitch on an alt video). Measured with
+# `npx playwright test --list` => 223, 213 with --grep-invert @quarantine.
 total_specs: 223
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was

@@ -1,43 +1,43 @@
-<%# The final stitch: the Generate full video button (on only when every chunk has a take and none is flagged), where the newest request stands, the latest finished stitch with a player and a download, marked stale once a chunk has moved on, and the earlier stitches, all kept. %>
-<% ready = video.ready_to_stitch? %>
+<%# An alt video's final stitch: the Generate full video button (on only when every clip has a primary version and none is flagged), where the newest request stands, the latest finished stitch with a player and a download, marked stale once a primary has moved on, and the earlier stitches, all kept. %>
+<% ready = alt_video.ready_to_stitch? %>
 <% newest = stitches.first %>
 <% latest = stitches.find(&:done?) %>
 <% open = newest if newest&.open? %>
-<% waiting_same = open && !open.stuck? && open.takes == VideoStitch.takes_of(chunks) %>
-<% stale = latest ? latest.stale_reasons(chunks) : [] %>
+<% waiting_same = open && !open.stuck? && open.takes == VideoStitch.takes_of(clips) %>
+<% stale = latest ? latest.stale_reasons(clips) : [] %>
 <div id="full-video" class="card p-4 mb-4 flex flex-col gap-4 min-w-0 scroll-mt-24" data-test="full-video"
      data-ready="<%= ready %>" data-latest="<%= latest&.number %>" data-state="<%= newest&.state %>">
   <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 min-w-0">
     <div class="min-w-0">
       <h3 class="text-lg font-bold text-heading">Full video</h3>
       <p class="text-sm text-muted mt-1">
-        One MP4 of the whole video: each chunk's current take crossfades into the next across their overlap, over the original source audio.
+        One MP4 of this alt video: each clip's primary version crossfades into the next across their overlap, over the original source audio.
       </p>
       <% unless ready %>
-        <p class="text-sm text-body mt-1 break-words" data-test="full-video-blocker">Not yet: <%= video.stitch_blocker %>.</p>
+        <p class="text-sm text-body mt-1 break-words" data-test="full-video-blocker">Not yet: <%= alt_video.stitch_blocker %>.</p>
       <% end %>
     </div>
-    <%= button_to "Generate full video", music_video_stitches_path(video), method: :post,
+    <%= button_to "Generate full video", music_video_alt_video_stitches_path(video, alt_video), method: :post,
                   class: "btn btn-primary w-full sm:w-auto shrink-0", disabled: !ready || waiting_same,
                   data: { test: "full-video-generate" }, form: { class: "shrink-0", data: { test: "full-video-form" } } %>
   </div>
 
   <% if open %>
     <div class="rounded-lg border border-primary/20 bg-primary/10 p-3 text-sm text-body min-w-0 break-words"
-         x-data="stitchProgress()" data-status-url="<%= music_video_stitch_path(video, open.number) %>" data-state="<%= open.state %>"
+         x-data="stitchProgress()" data-status-url="<%= music_video_alt_video_stitch_path(video, alt_video, open.number) %>" data-state="<%= open.state %>"
          data-test="full-video-open" data-number="<%= open.number %>">
       <% if open.stuck? %>
         <span class="font-semibold text-heading"><%= open.name %></span> has been running since <%= l(open.started_at, format: :short) %> with no answer.
-        Generate again to replace it, or run <span class="font-mono">bin/stitch-video <%= video.slug %> --force</span>.
+        Generate again to replace it, or run <span class="font-mono">bin/stitch-video <%= video.slug %> --alt <%= alt_video.number %> --force</span>.
       <% elsif open.running? %>
-        <span class="font-semibold text-heading"><%= open.name %></span> is stitching now (takes <%= open.take_list %>). It takes about as long as the video runs.
+        <span class="font-semibold text-heading"><%= open.name %></span> is stitching now (versions <%= open.take_list %>). It takes about as long as the video runs.
       <% elsif here %>
-        <span class="font-semibold text-heading"><%= open.name %></span> is queued on this hub (takes <%= open.take_list %>).
+        <span class="font-semibold text-heading"><%= open.name %></span> is queued on this hub (versions <%= open.take_list %>).
       <% else %>
         <span class="font-semibold text-heading"><%= open.name %></span> is waiting for
         <%# A QA hub runs the production env on the DEV bucket: --production there would stitch on production instead. %>
         <% target = (Studio.qa_environment? ? " --api #{request.base_url}" : " --production") if Rails.env.production? %>
-        <span class="font-mono">bin/stitch-video <%= video.slug %><%= target %></span> on the Mac (takes <%= open.take_list %>).
+        <span class="font-mono">bin/stitch-video <%= video.slug %> --alt <%= alt_video.number %><%= target %></span> on the Mac (versions <%= open.take_list %>).
         This server has no ffmpeg, so the stitch runs there and reports back.
       <% end %>
       <span x-show="changed" x-cloak class="block mt-2" data-test="full-video-changed">
@@ -68,7 +68,7 @@
       </div>
       <% if stale.any? %>
         <p class="text-sm text-warning-ink min-w-0 break-words" data-test="full-video-stale-why">
-          Made before the video changed: <%= stale.to_sentence %>. Generate again for a current one.
+          Made before the clips changed: <%= stale.to_sentence %>. Generate again for a current one.
         </p>
       <% end %>
       <% if url %>
@@ -83,7 +83,7 @@
                       class: "btn btn-outline btn-sm", data: { test: "full-video-download" } %>
         <% end %>
         <p class="text-xs text-muted min-w-0 break-words" data-test="full-video-takes">
-          Takes <%= latest.take_list %> · finished <%= l(latest.finished_at, format: :short) %>
+          Versions <%= latest.take_list %> · finished <%= l(latest.finished_at, format: :short) %>
         </p>
       </div>
       <% if latest.warnings.any? %>
@@ -105,7 +105,7 @@
           <li class="flex flex-wrap items-center justify-between gap-2 min-w-0" data-test="full-video-earlier" data-number="<%= stitch.number %>" data-state="<%= stitch.state %>">
             <span class="min-w-0 break-words">
               <span class="font-semibold text-heading"><%= stitch.name %></span>
-              <span class="text-muted">· <%= stitch.state %> · takes <%= stitch.take_list %><% if stitch.done? %> · <%= take_size(stitch.byte_size) %><% end %><% if stitch.failed? %> · <%= stitch.failure_reason %><% end %></span>
+              <span class="text-muted">· <%= stitch.state %> · versions <%= stitch.take_list %><% if stitch.done? %> · <%= take_size(stitch.byte_size) %><% end %><% if stitch.failed? %> · <%= stitch.failure_reason %><% end %></span>
             </span>
             <% if stitch.done? && (download = downloads[stitch.object_key]) %>
               <%= link_to "Download", download, download: stitch.object_key.split("/").last, class: "text-primary hover:underline shrink-0" %>

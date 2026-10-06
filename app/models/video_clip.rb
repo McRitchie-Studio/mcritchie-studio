@@ -7,15 +7,15 @@
 #   chunk      one tile of the whole video (MusicVideos::ChunkTiler), cut at
 #              the chunk length and overlap its video records (25 s and 5 s
 #              by default), the last one ending at the video's end. No seam.
-#              The operator swaps it by hand and uploads the result back as
-#              numbered takes (VideoChunkTake); a chunk can be flagged for a
-#              regenerate, which the next take clears.
+#              Cut once per source and shared by every alt video (AltVideo):
+#              each alt video's clip of a chunk (AltVideoClip) holds the MP4s
+#              generated from it. The regenerate_* columns are piece 3's,
+#              moved onto the clip and read by nothing here.
 class VideoClip < ApplicationRecord
   KINDS = %w[candidate chunk].freeze
   SEAMS = MusicVideos::ClipFinder::SEAMS
   CAST_SHAPES = MusicVideos::ClipCast::SHAPES
   STATUSES = %w[proposed approved rejected].freeze
-  REGENERATE_NOTE_MAX = 280
   LENGTH_MS = (MusicVideos::ClipFinder::MIN_MS..MusicVideos::ClipFinder::MAX_MS)
 
   belongs_to :music_video, foreign_key: :music_video_slug, primary_key: :slug, inverse_of: :video_clips
@@ -32,9 +32,6 @@ class VideoClip < ApplicationRecord
   validates :cast_shape, inclusion: { in: CAST_SHAPES }
   validates :status, inclusion: { in: STATUSES }
   validates :prompt, presence: true
-  validates :regenerate_note, length: { maximum: REGENERATE_NOTE_MAX }
-  validates :regenerate_requested_at, :regenerate_note,
-            absence: { message: "is for a chunk: a clip candidate is approved or rejected" }, unless: :chunk?
   validate :length_fits_the_kind
   validate :chunk_fits_the_videos_tiling, if: :chunk?
   validate :seam_inside_the_window
@@ -54,32 +51,23 @@ class VideoClip < ApplicationRecord
   # Who the swap prompt replaces (a swap turned off counts as not recast). The labelled target when the operator recast
   # them; else the first person in the window who is recast (a cinematic video
   # has no labelled target at all); else the labelled target, athlete unnamed.
-  def swap_target
+  # swaps: a MusicVideos::SwapSet (an alt video's snapshot); by default the
+  # cast card as it stands.
+  def swap_target(swaps = nil)
+    swapped = swaps ? ->(p) { swaps.swapped?(p.ordinal) } : :swap?.to_proc
     labelled = target
-    return labelled if labelled&.swap?
+    return labelled if labelled && swapped.call(labelled)
 
     present = Array(performer_ordinals)
-    music_video.video_performers.find { |p| present.include?(p.ordinal) && p.swap? } || labelled
+    music_video.video_performers.find { |p| present.include?(p.ordinal) && swapped.call(p) } || labelled
   end
 
-  # The generated takes uploaded for this chunk as it is cut now, oldest first.
-  # Read off the video's loaded takes, so a page of chunks costs one query.
-  def takes = chunk? ? music_video.chunk_takes.select { |take| take.for?(self) }.sort_by(&:number) : []
-
-  # The take the preview and the stitch use: the newest upload, unless the
-  # operator put an older one back in front. nil until a take arrives.
-  def current_take = takes.max_by { |take| [take.current_since, take.number] }
-
-  # The file to play for this chunk: its current take, else its own source cut.
-  def playback_object_key = current_take&.object_key || object_key
-
-  def regenerate_requested? = regenerate_requested_at.present?
-
-  def request_regenerate!(note = nil, at: Time.current)
-    update!(regenerate_requested_at: at, regenerate_note: note.to_s.squish.presence)
+  # Everyone in this window the swap set replaces, in cast order: whose
+  # character sheets the hand-off offers.
+  def swapped_present(swaps)
+    present = Array(performer_ordinals) | [target_performer].compact
+    swaps.to_a.select { |entry| present.include?(entry.performer_ordinal) }
   end
-
-  def clear_regenerate! = update!(regenerate_requested_at: nil, regenerate_note: nil)
 
   private
 

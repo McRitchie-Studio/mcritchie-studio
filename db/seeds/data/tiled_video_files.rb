@@ -3,10 +3,11 @@ require "tmpdir"
 require_relative "tiled_video"
 
 # Playable files for the tiled demo, so the local page's players, the stitch
-# preview and the final stitch have something to work on: a 72 s test pattern
-# with a beep track as the source, each chunk cut from it, and one generated
-# take for EVERY chunk, so the demo is ready to stitch and "Generate full
-# video" works locally. Each take is the same cut made to look different (and
+# full-video player and the final stitch have something to work on: a 72 s
+# test pattern with a beep track as the source, each chunk cut from it, and
+# alt video 1 with one generated version for EVERY clip, so it is ready to
+# stitch and "Generate full video" works locally. Each version is the same cut
+# made to look different (and
 # carrying a different tone, so a clip that is not muted is plain to hear), and
 # no two neighbours look alike, so a handover and a crossfade are plain to see:
 #
@@ -38,17 +39,23 @@ module TiledVideoFiles
       upload(video.source_object_key) { render_source(source, video.duration_ms) }
       video.video_chunks.each do |chunk|
         upload(chunk.object_key) { cut(source_file(source, video), chunk, File.join(dir, "chunk_#{chunk.ordinal}.mp4")) }
-        look = TAKES[chunk.ordinal]
-        next unless look && chunk.takes.empty?
+      end
+      alt = video.alt_videos.first || AltVideo.build_from!(video)
+      alt.clips.each do |clip|
+        look = TAKES[clip.chunk_ordinal]
+        chunk = clip.chunk_in(video.video_chunks.to_a)
+        next unless look && chunk && clip.versions.empty?
 
-        key = MusicVideos::ObjectKeys.take(source_key: video.source_object_key, ordinal: chunk.ordinal,
-                                           start_ms: chunk.start_ms, end_ms: chunk.end_ms, number: 1)
-        path = cut(source_file(source, video), chunk, File.join(dir, "take_#{chunk.ordinal}.mp4"), look:)
+        key = MusicVideos::ObjectKeys.alt_clip_version(source_key: video.source_object_key, alt_number: alt.number,
+                                                       ordinal: clip.chunk_ordinal, start_ms: clip.start_ms,
+                                                       end_ms: clip.end_ms, number: 1)
+        path = cut(source_file(source, video), chunk, File.join(dir, "version_#{clip.chunk_ordinal}.mp4"), look:)
         upload(key) { path }
-        TiledVideo.take!(chunk, number: 1, byte_size: File.size(path))
+        TiledVideo.version!(clip, number: 1, byte_size: File.size(path))
       end
     end
-    out.puts "  Tiled video files: source, #{video.video_chunks.count} chunks and #{video.chunk_takes.count} takes in #{Studio::S3.bucket}"
+    versions = AltVideoClipVersion.joins(:clip).where(alt_video_clips: { alt_video_slug: video.alt_videos.select(:slug) }).count
+    out.puts "  Tiled video files: source, #{video.video_chunks.count} chunks and #{versions} clip versions in #{Studio::S3.bucket}"
   rescue StandardError => e
     out.puts "  Tiled video files skipped: #{e.class.name.demodulize}"
   end
@@ -67,7 +74,7 @@ module TiledVideoFiles
     File.open(yield, "rb") { |io| Studio::S3.upload(key:, body: io, content_type: "video/mp4") }
   end
 
-  # The local source render, made on first need (a re-run may only owe a take).
+  # The local source render, made on first need (a re-run may only owe a version).
   def self.source_file(path, video)
     File.exist?(path) ? path : render_source(path, video.duration_ms)
   end
@@ -80,7 +87,7 @@ module TiledVideoFiles
            "-c:a", "aac", "-b:a", "48k", "-movflags", "+faststart", "-shortest", path)
   end
 
-  # look: a generated take's stand-in, the cut filtered so it is told apart.
+  # look: a generated version's stand-in, the cut filtered so it is told apart.
   def self.cut(source, chunk, path, look: nil)
     filters = look ? ["-vf", look.fetch(:vf), "-af", "asetrate=44100*2,aresample=44100,atempo=0.5"] : []
     length = chunk.duration_ms - (look && look[:short_ms]).to_i

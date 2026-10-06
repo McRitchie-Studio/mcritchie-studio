@@ -3,38 +3,42 @@
 require "test_helper"
 require Rails.root.join("db/seeds/data/tiled_video.rb").to_s
 
-# [unit] One stitch of a tiled video: where it is filed, the takes it records,
-# its states, and when it stops showing the video as it stands (stale).
+# [unit] One stitch of an alt video: where it is filed, the primary versions
+# it records, its states, and when it stops showing the alt video (stale).
 class VideoStitchTest < ActiveSupport::TestCase
   setup do
     @video = TiledVideo.seed!
-    @video.video_chunks.each { |chunk| TiledVideo.take!(chunk, number: 1, at: 1.hour.ago) }
-    @stitch = MusicVideos::RequestStitch.new(@video.reload).call.stitch
+    @alt = AltVideo.build_from!(@video)
+    @alt.clips.each { |clip| TiledVideo.version!(clip, number: 1, at: 1.hour.ago) }
+    @stitch = MusicVideos::RequestStitch.new(@alt.reload).call.stitch
   end
 
-  def chunks = @video.reload.video_chunks.to_a
+  def clips = @alt.reload.clips.to_a
 
   def done!(stitch = @stitch)
     stitch.start!.finish!({ "duration_ms" => 72_000, "byte_size" => 4_096, "width" => 320, "height" => 180, "frame_rate" => "12",
                           "warnings" => ["chunk 4's take runs short"] })
   end
 
-  test "a stitch is filed under the video's stitched folder and records each chunk's take" do
-    assert_equal "music_videos/test_artist_a/tiled_demo/stitched/tiled_demo_stitched_01.mp4", @stitch.object_key
+  test "a stitch is filed under the alt video's stitched folder and records each clip's primary version" do
+    assert_equal "music_videos/test_artist_a/tiled_demo/alt_videos/01/stitched/tiled_demo_alt_01_stitched_01.mp4", @stitch.object_key
     assert_equal "Stitch 1", @stitch.name
     assert_equal "requested", @stitch.state
     assert_equal [[1, 0, 25_000, 1], [2, 20_000, 45_000, 1], [3, 40_000, 65_000, 1], [4, 60_000, 72_000, 1]],
                  @stitch.takes.map { |t| t.values_at("ordinal", "start_ms", "end_ms", "take") }
     assert_equal "1, 1, 1, 1", @stitch.take_list
-    assert_equal [@stitch], @video.stitches.to_a
+    assert_equal [@stitch], @alt.stitches.to_a
+    assert_equal [@video.slug, @alt.slug], [@stitch.music_video_slug, @stitch.alt_video_slug]
   end
 
-  test "the request the stitcher reads resolves every take and the source to its object" do
+  test "the request the stitcher reads resolves every version and the source to its object" do
     request = @stitch.as_request
 
     assert_equal [1, "requested", @stitch.object_key, TiledVideo::SOURCE, 72_000, @video.slug],
                  request.values_at("number", "state", "object_key", "source_object_key", "source_duration_ms", "music_video_slug")
-    assert_equal @video.chunk_takes.map(&:object_key), request["takes"].map { |t| t["object_key"] }
+    assert_equal 1, request["alt_video"]
+    assert_equal clips.map { |c| c.primary_version.object_key }, request["takes"].map { |t| t["object_key"] }
+    assert(request["takes"].all? { |t| t["object_key"].include?("/alt_videos/01/clips/") })
     assert_equal %w[end_ms object_key ordinal start_ms take], request["takes"].first.keys.sort
   end
 
@@ -44,9 +48,9 @@ class VideoStitchTest < ActiveSupport::TestCase
     assert twin.errors.key?(:number)
     assert_raises(ActiveRecord::RecordNotUnique) { twin.save!(validate: false) }
 
-    @stitch.object_key = @stitch.object_key.sub("stitched_01", "stitched_09")
-    assert_not @stitch.valid?
-    assert_match(/must be .*stitched_01\.mp4/, @stitch.errors[:object_key].sole)
+    wrong = @stitch.dup.tap { |s| s.number = 5 }
+    assert_not wrong.valid?
+    assert_match(/must be .*alt_01_stitched_05\.mp4/, wrong.errors[:object_key].sole)
 
     @stitch.reload
     [[], [{ "ordinal" => 1 }], @stitch.takes + [@stitch.takes.first], [@stitch.takes.first.merge("take" => 0)],
@@ -110,37 +114,38 @@ class VideoStitchTest < ActiveSupport::TestCase
     assert_not_predicate VideoStitch.new(state: "requested"), :stuck?
   end
 
-  test "a stitch is current until a chunk moves on" do
+  test "a stitch is current until a clip's primary moves on" do
     done!
-    assert_empty @stitch.stale_reasons(chunks)
+    assert_empty @stitch.stale_reasons(clips)
     assert_not @stitch.stale?
   end
 
-  test "a newer take, an older take put back, and a regenerate flag each make it stale" do
+  test "a newer version, an older version put back, and a regenerate flag each make it stale" do
     done!
-    newer = TiledVideo.take!(chunks.second, number: 2)
-    assert_equal ["chunk 2 is now on take 2 (stitched with take 1)"], @stitch.stale_reasons(chunks)
+    newer = TiledVideo.version!(clips.second, number: 2)
+    assert_equal ["clip 2 is now on version 2 (stitched with version 1)"], @stitch.stale_reasons(clips)
 
-    chunks.second.takes.first.make_current!
-    assert_empty @stitch.stale_reasons(chunks), "take 1 is back in front: the stitch shows the video again"
-    newer.make_current!
+    clips.second.versions.first.make_primary!
+    assert_empty @stitch.stale_reasons(clips), "version 1 is back in front: the stitch shows the alt video again"
+    newer.make_primary!
 
-    chunks.third.request_regenerate!("the jersey flickers")
-    assert_equal ["chunk 2 is now on take 2 (stitched with take 1)", "chunk 3 is flagged for a regenerate"], @stitch.stale_reasons(chunks)
+    clips.third.request_regenerate!("the jersey flickers")
+    assert_equal ["clip 2 is now on version 2 (stitched with version 1)", "clip 3 is flagged for a regenerate"],
+                 @stitch.stale_reasons(clips)
     assert @stitch.stale?
   end
 
-  test "a re-tile makes every earlier stitch stale" do
-    done!
-    MusicVideos::ReplaceClips.new(@video, TiledVideo.chunk_rows(@video, chunk_ms: 15_000, overlap_ms: 5_000),
-                                  kind: "chunk", chunk_ms: 15_000, chunk_overlap_ms: 5_000).call
+  test "another alt video of the same source numbers its own stitches from 1" do
+    other = AltVideo.build_from!(@video)
+    other.clips.each { |clip| TiledVideo.version!(clip, number: 1) }
+    stitch = MusicVideos::RequestStitch.new(other.reload).call.stitch
 
-    assert_equal ["the video was re-tiled"], @stitch.stale_reasons(chunks)
+    assert_equal [1, 1], [@stitch.number, stitch.number]
+    assert_includes stitch.object_key, "/alt_videos/02/stitched/tiled_demo_alt_02_stitched_01.mp4"
   end
 
-  test "destroying the video drops its stitches" do
-    assert_difference -> { VideoStitch.count }, -1 do
-      @video.destroy!
-    end
+  test "an alt video with stitches cannot be destroyed out from under them" do
+    assert_raises(ActiveRecord::DeleteRestrictionError) { @alt.destroy! }
+    assert_equal 1, VideoStitch.count
   end
 end
