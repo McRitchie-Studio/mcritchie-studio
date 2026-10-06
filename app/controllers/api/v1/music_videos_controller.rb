@@ -41,10 +41,11 @@ module Api
       end
 
       # Stage 5: bin/find-clips replaces one kind of the video's clips: the
-      # seam candidates (the default), or with kind "chunk" the tiling, cut at
-      # chunk_ms and chunk_overlap_ms (25 s and 5 s unless sent). The other
-      # kind is left alone. Clip files are already in R2; the hub fills
-      # each prompt from the confirmed cast.
+      # seam candidates (the default, once the cast is confirmed), or with kind
+      # "chunk" the tiling, cut at chunk_ms and chunk_overlap_ms (25 s and 5 s
+      # unless sent), which bin/digest-video posts before anyone is cast. The
+      # other kind is left alone. Clip files are already in R2; the hub fills
+      # each prompt from the cast as it stands.
       def clips
         video = MusicVideo.find_by!(slug: params[:slug])
         body = params.to_unsafe_h
