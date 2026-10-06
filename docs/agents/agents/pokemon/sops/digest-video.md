@@ -318,44 +318,55 @@ sets on one video: running either never replaces the other.
    no `kind`, the post is the candidate set, as before. `GET` returns the
    candidates under `clips` and the chunks under `chunks`.
 6. **Hand the operator the chunks**, below the clip candidates on
-   `/music_videos/<slug>`: in time order, each with a preview, its window, the
-   cast shape, the target, who replaces them, and the prompt with a Copy button.
-   A chunk has no Approve or Reject, and never moves the video's stage.
+   `/music_videos/<slug>`: their windows in time order, and the source's alt
+   videos. A chunk has no Approve or Reject, and never moves the video's stage.
+   Chunks are cut once per source and shared by every alt video.
 
-### Generated takes and the stitch preview
+### Alt videos and the clip builder
 
-The operator swaps each chunk by hand in the Higgsfield web UI and brings the
-result back. All of it happens on `/music_videos/<slug>`, in the chunk's row.
+A source video yields many **alt videos**: one generated version each, with its
+own swaps (a Cowboys version and a Vikings version of the same music video).
+The cast cards are the working selection; an alt video keeps a snapshot.
 
-1. **Take the hand-off.** Each chunk row carries the three inputs: **Download
-   source chunk** (the cut file, served as an attachment), the swap prompt with
-   **Copy**, and **Character sheet** for the look the chunk's target was recast
-   as. With no sheet the row says so and links to the athlete; with nobody
-   recast it says there is no look.
-2. **Upload the result.** Choose the generated MP4 in the row and press
-   **Upload take**. Each upload is a numbered take, kept and never overwritten,
-   at `music_videos/<artist>/<video>/generated/<video>_chunk_<NN>_<mmss>_<mmss>_take_<NN>.mp4`.
-   The newest take is current; **Make current** on an older take puts it back
-   in front, and the next upload is current again. MP4 only, 100 MB at most.
+1. **Build Clips.** In the cast summary bar, beside **Cast confirmed**, press
+   **Build Clips** (on once the cast is confirmed and the video is tiled). It
+   makes the source's next alt video (`/music_videos/<slug>/alt_videos/<n>`)
+   from the swaps as they stand, with one **clip** per chunk, and opens it.
+   Editing the cast cards afterwards never changes an existing alt video:
+   change the cards and press Build Clips again for another version.
+2. **Take the hand-off** on each clip card, in time order: **Download 25 s
+   clip** (the source chunk, as an attachment), **Download character assets**
+   (the character sheet of each person this alt video swaps in that window),
+   and **Copy prompt** (built from the alt video's own swaps). With no sheet
+   the card says so and links to the athlete.
+3. **Drop the result.** Drag the Higgsfield MP4 onto the clip's drop zone, or
+   click it to choose the file; it uploads at once. Each upload is a numbered
+   **version**, kept and never overwritten, at
+   `music_videos/<artist>/<video>/alt_videos/<NN>/clips/<video>_alt_<NN>_chunk_<NN>_<mmss>_<mmss>_v<NN>.mp4`.
+   The newest version is primary; **Make primary** on an older one puts it
+   back in front, and the next upload is primary again. MP4 only, 100 MB at
+   most, checked in the browser before the upload and again on the server.
    The file rides the web request, so on a slow uplink a large file can pass
    Heroku's 30-second window: upload from the local hub then.
-3. **Request a regenerate** on a chunk whose take will not do, with an optional
-   note. The flagged chunks are listed above the preview. The next take
-   uploaded for that chunk clears its flag; **Clear** removes it by hand.
-4. **Watch the stitch preview**, above the chunk rows. It plays the whole video
-   as if stitched, with no stitched file: each chunk plays its current take,
-   or its own source cut when it has none (marked `source`), and hands over to
-   the next at the middle of their overlap. The original source audio plays
-   underneath and the clips are muted. Seek with the slider or a chunk marker.
-   The handover is a hard cut; the crossfade belongs to
+4. **Request a regenerate** on a clip whose primary will not do, with an
+   optional note. The flagged clips are listed at the top. The next upload
+   for that clip clears its flag; **Clear** removes it by hand.
+5. **Watch full video** opens a modal that plays the primary versions back to
+   back as if stitched, with no stitched file: a clip with no version plays its
+   source chunk (marked `source`), each hands over to the next at the middle of
+   their overlap, the original source audio plays underneath and the clips are
+   muted. The handover is a hard cut; the crossfade belongs to
    [the final stitch](#the-final-stitch).
-5. **Ready to stitch** shows when every chunk has a current take and none is
-   flagged (`MusicVideo#ready_to_stitch?`). Until then the line says what is
-   missing.
+6. **Find it again** at `/alt_videos` (Admin links, Video): every alt video
+   across every source, with clips that have a primary out of the total,
+   whether it is stitched, and the last activity.
 
-A re-tile at the same chunk length and overlap keeps every take and flag: a
-take belongs to a chunk by its number and window, not by row. A re-tile at
-another length leaves the old takes filed in R2 and on no chunk.
+A clip keeps its chunk's window. If the source is re-tiled at another length,
+the card says its window is no longer cut; build a new alt video.
+
+Piece 3's takes and piece 4's stitches were moved onto "alt video 1" of each
+source that had any by the `CreateAltVideos` migration (old objects stay
+where they were; `video_chunk_takes` is kept, read by nothing).
 
 Timing comes from each chunk's `start_ms` and `end_ms`
 (`lib/music_videos/stitch_timeline.rb`), never from a file's length: cut files
@@ -363,38 +374,40 @@ run a frame long and a generated file may differ slightly.
 
 ### The final stitch
 
-One MP4 of the whole video: every chunk's current take, crossfaded into the
+One MP4 of an alt video: every clip's primary version, crossfaded into the
 next across their overlap, over the original source audio. It runs where ffmpeg
 is. Production dynos have none, so on production the Mac does it.
 
-1. **Press Generate full video** in the **Full video** panel, above the chunk
-   rows on `/music_videos/<slug>`. The button is on only when the video is
-   ready to stitch; until then the panel says what holds it up. Pressing it
-   records stitch N with the take each chunk has at that moment.
+1. **Press Generate full video** in the **Full video** panel, above the clip
+   cards on `/music_videos/<slug>/alt_videos/<n>`. The button is on only when
+   every clip has a primary version and none is flagged; until then the panel
+   says what holds it up. Pressing it records stitch N of that alt video with
+   the version each clip has as primary at that moment.
 2. **On a local hub** (ffmpeg on `PATH`) a background job stitches at once. The
    panel says it is stitching and offers **Show it** when it finishes.
 3. **On production** the panel says stitch N is waiting. Run it from the Mac:
 
    ```bash
-   bin/stitch-video <slug> --production
+   bin/stitch-video <slug> --alt <n> --production
    ```
 
-   It fetches the takes and the source from R2 (1Password item
+   It fetches the primary versions and the source from R2 (1Password item
    `r2.mcritchie-studio`, as `bin/find-clips` does), stitches, uploads the MP4
    and reports through the API. Then reload the page.
 4. **Check the result** in the panel: a player, the length, size and frame
-   rate, the take numbers it used, and **Download**. Judge lip-sync here, on
+   rate, the version numbers it used, and **Download**. Judge lip-sync here, on
    the stitched file, not in the preview.
-5. **Stale.** A stitch is marked **Stale**, with the reason, once any chunk
-   gets a newer current take, has an older take put back, is flagged for a
-   regenerate, or the video is re-tiled. It still plays and downloads. Generate
+5. **Stale.** A stitch is marked **Stale**, with the reason, once any clip
+   gets a newer primary version, has an older one put back, or is flagged for
+   a regenerate. It still plays and downloads. Generate
    again for a current one; every stitch is numbered and kept.
 
 `bin/stitch-video` flags, the same set as `bin/find-clips`:
 
 | Flag | Does |
 |---|---|
-| (none) | dev bucket, the local hub at `localhost:3000` |
+| (none) | alt video 1, dev bucket, the local hub at `localhost:3000` |
+| `--alt N` | alt video N of the source |
 | `--api URL` | another hub, such as a desk server |
 | `--production` | the production bucket and `https://mcritchie.studio` |
 | `--source FILE` | use a source MP4 already on disk instead of fetching it |
@@ -403,8 +416,8 @@ is. Production dynos have none, so on production the Mac does it.
 
 With no request waiting, `bin/stitch-video` asks for one itself, so it also
 works without the button. Downloads are kept under
-`~/projects/.corpus/music_videos/stitch/<slug>/`, so a second stitch fetches
-only the takes that changed.
+`~/projects/.corpus/music_videos/stitch/<slug>/alt_<NN>/`, so a second stitch
+fetches only the versions that changed.
 
 What the stitch does (`lib/music_videos/stitch_plan.rb`, pure and unit-tested;
 `lib/music_videos/stitcher.rb` runs it):
