@@ -1,0 +1,97 @@
+<%# Where the alt video stands (clips with a primary version, flagged clips) and Watch full video: a modal that plays the primary versions back to back as if stitched, with no stitched file. Each clip hands over to the next at the middle of their overlap, over the original source audio; a clip with no version plays its source chunk, marked. The player is built only while the modal is open. %>
+<% with_primary, total = alt_video.progress %>
+<% flagged = clips.select(&:regenerate_requested?) %>
+<div class="card p-4 mb-4 flex flex-col gap-3 min-w-0" data-test="alt-progress" data-ready="<%= alt_video.ready_to_stitch? %>"
+     x-data="{ watching: false }" @keydown.escape.window="watching = false">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+    <div class="min-w-0">
+      <p class="text-sm text-body">
+        <span class="font-semibold text-heading" data-test="alt-progress-count"><%= with_primary %> of <%= total %></span>
+        clips have a primary version.
+      </p>
+      <div class="mt-2 h-2 w-full sm:w-64 rounded-full bg-surface-alt border border-subtle overflow-hidden" aria-hidden="true">
+        <div class="h-full bg-success" style="width: <%= total.zero? ? 0 : (100.0 * with_primary / total).round %>%"></div>
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary w-full sm:w-auto shrink-0" @click="watching = true" data-test="watch-open">
+      Watch full video
+    </button>
+  </div>
+
+  <div class="min-w-0" data-test="clips-flagged" data-count="<%= flagged.size %>">
+    <p class="label-upper mb-1.5">Regenerate requested</p>
+    <% if flagged.empty? %>
+      <p class="text-sm text-muted" data-test="clips-flagged-none">No clip is flagged.</p>
+    <% else %>
+      <ul class="flex flex-col gap-1 text-sm">
+        <% flagged.each do |clip| %>
+          <li class="min-w-0 break-words" data-test="flagged-clip" data-ordinal="<%= clip.chunk_ordinal %>">
+            <%= link_to clip.name, "#clip-#{clip.chunk_ordinal}", class: "font-semibold text-primary hover:underline" %>
+            <span class="text-muted font-mono tabular-nums">· <%= video_timecode(clip.start_ms) %>–<%= video_timecode(clip.end_ms) %></span>
+            <% if clip.regenerate_note.present? %><span class="text-body">· <%= clip.regenerate_note %></span><% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </div>
+
+  <template x-if="watching">
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70" @click.self="watching = false"
+         role="dialog" aria-modal="true" aria-labelledby="watch-title" data-test="watch-modal">
+      <div class="card w-full max-w-4xl max-h-full overflow-y-auto min-w-0" x-data="stitchPreview()" data-timeline="<%= watch.to_json %>"
+           data-test="stitch-preview" :data-playing="String(playing)" :data-chunk="now ? now.ordinal : ''" :data-source="now ? String(now.source) : ''">
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-subtle min-w-0">
+          <h2 id="watch-title" class="text-base font-bold text-heading truncate"><%= alt_video.name %> · full video</h2>
+          <button type="button" class="btn btn-outline btn-sm shrink-0" @click="watching = false" data-test="watch-close">Close</button>
+        </div>
+        <div class="relative bg-black w-full aspect-video max-h-[60vh]">
+          <video x-ref="a" muted playsinline preload="auto" class="absolute inset-0 w-full h-full object-contain"
+                 :class="active === 0 ? 'opacity-100' : 'opacity-0'" @error="loadFailed(0)" data-test="stitch-video"></video>
+          <video x-ref="b" muted playsinline preload="auto" class="absolute inset-0 w-full h-full object-contain"
+                 :class="active === 1 ? 'opacity-100' : 'opacity-0'" @error="loadFailed(1)" data-test="stitch-video"></video>
+          <span class="absolute top-2 left-2 badge text-xs bg-surface/90 text-heading border-subtle"
+                x-text="nowLabel" data-test="stitch-now"></span>
+          <p x-show="missing" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+             data-test="stitch-missing">This clip's file is not reachable.</p>
+          <p x-show="!missing && failed[active]" x-cloak class="absolute bottom-0 inset-x-0 p-2 text-xs text-center bg-surface/90 text-warning-ink"
+             data-test="stitch-load-failed">This clip's file did not load. The signed links last <%= AltVideosController::SIGNED_URL_TTL / 60 %> minutes: reload the page.</p>
+        </div>
+        <audio x-ref="audio" preload="auto" <% if audio_url %>src="<%= audio_url %>"<% end %> @error="audioFailed()" @ended="pause()" data-test="stitch-audio"></audio>
+
+        <div class="p-4 flex flex-col gap-3 min-w-0">
+          <div class="flex items-center gap-3 min-w-0">
+            <button type="button" class="btn btn-primary btn-sm shrink-0" @click="toggle()" data-test="stitch-toggle">
+              <span x-text="playing ? 'Pause' : 'Play'">Play</span>
+            </button>
+            <label class="sr-only" for="stitch-seek">Seek the full video</label>
+            <input id="stitch-seek" type="range" min="0" max="<%= watch[:duration_ms] %>" step="100" class="flex-1 min-w-0"
+                   :value="Math.round(t)" @input="seek(Number($event.target.value))" data-test="stitch-seek">
+            <span class="text-sm font-mono tabular-nums text-body shrink-0" data-test="stitch-time">
+              <span x-text="fmt(t)">0:00</span> / <%= video_timecode(watch[:duration_ms]) %>
+            </span>
+          </div>
+
+          <div class="flex gap-1 min-w-0" data-test="stitch-markers">
+            <% watch[:segments].each_with_index do |segment, i| %>
+              <button type="button" @click="seek(<%= segment[:from_ms] %>)" style="flex: <%= segment[:to_ms] - segment[:from_ms] %> 1 0%"
+                      class="min-w-0 rounded-lg border px-1 py-1.5 text-center text-3xs leading-tight <%= segment[:source] ? 'bg-warning/10 text-warning-ink border-warning/40' : 'bg-success/10 text-success-ink border-success/40' %>"
+                      :class="index === <%= i %> ? 'ring-2 ring-primary' : ''" :aria-current="index === <%= i %> ? 'true' : 'false'"
+                      title="Clip <%= segment[:ordinal] %>: on screen <%= video_timecode(segment[:from_ms]) %>–<%= video_timecode(segment[:to_ms]) %>"
+                      data-test="stitch-marker" data-ordinal="<%= segment[:ordinal] %>" data-source="<%= segment[:source] %>"
+                      data-from="<%= segment[:from_ms] %>" data-to="<%= segment[:to_ms] %>" data-flagged="<%= segment[:flagged] %>">
+                <span class="block font-semibold truncate"><%= segment[:ordinal] %><% if segment[:flagged] %> ⚑<% end %></span>
+                <span class="block truncate"><%= segment[:label] %></span>
+              </button>
+            <% end %>
+          </div>
+
+          <p class="text-xs text-muted">
+            Not a stitched file: each clip's primary version hands over to the next at the middle of their overlap. The original source audio plays underneath; the clips are muted.
+            Clips marked <span class="text-warning-ink font-semibold">source</span> have no version yet and play the source chunk.
+          </p>
+          <p x-show="!audioOk" x-cloak class="text-xs text-warning-ink" data-test="stitch-audio-missing">The source audio is not reachable, so the player runs silent.</p>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>

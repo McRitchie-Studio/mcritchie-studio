@@ -52,14 +52,15 @@ module TiledVideo
               .transform_keys(&:to_s)]
   end
 
-  # A take row as MusicVideos::StoreTake would record it, with no file behind it.
-  def self.take!(chunk, number:, at: Time.current, byte_size: 2_048)
-    video = chunk.music_video
-    video.chunk_takes.create!(
-      chunk_ordinal: chunk.ordinal, start_ms: chunk.start_ms, end_ms: chunk.end_ms, number:, byte_size:, current_since: at,
-      original_filename: "generated_#{chunk.ordinal}_#{number}.mp4",
-      object_key: MusicVideos::ObjectKeys.take(source_key: video.source_object_key, ordinal: chunk.ordinal,
-                                               start_ms: chunk.start_ms, end_ms: chunk.end_ms, number:)
+  # A clip version row as MusicVideos::StoreClipVersion would record it, with
+  # no file behind it.
+  def self.version!(clip, number:, at: Time.current, byte_size: 2_048)
+    alt = clip.alt_video
+    clip.versions.create!(
+      number:, byte_size:, primary_since: at, original_filename: "generated_#{clip.chunk_ordinal}_#{number}.mp4",
+      object_key: MusicVideos::ObjectKeys.alt_clip_version(source_key: alt.music_video.source_object_key, alt_number: alt.number,
+                                                           ordinal: clip.chunk_ordinal, start_ms: clip.start_ms,
+                                                           end_ms: clip.end_ms, number:)
     )
   end
 

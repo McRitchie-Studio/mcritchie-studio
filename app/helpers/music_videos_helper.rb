@@ -11,16 +11,18 @@ module MusicVideosHelper
   # 12_582_912 -> "12.0 MB"
   def take_size(bytes) = number_to_human_size(bytes, precision: 1, significant: false, strip_insignificant_zeros: false)
 
-  # What the stitch preview player reads: when each chunk is on screen
-  # (MusicVideos::StitchTimeline) and the file it plays there, its current
-  # take or, with none, its own source cut. urls is object key => signed URL.
-  def stitch_preview_data(chunks, urls)
-    segments = MusicVideos::StitchTimeline.segments(chunks)
+  # What the Watch full video player reads for an alt video: when each clip
+  # is on screen (MusicVideos::StitchTimeline, handover mid-overlap) and the
+  # file it plays there, its primary version or, with none, the source chunk.
+  # chunk_for is clip ordinal => source chunk; urls is object key => signed URL.
+  def alt_watch_data(clips, chunk_for, urls)
+    segments = MusicVideos::StitchTimeline.segments(clips)
     { duration_ms: MusicVideos::StitchTimeline.duration_ms(segments),
-      segments: segments.zip(chunks).map do |segment, chunk|
-        take = chunk.current_take
-        segment.to_h.merge(url: urls[chunk.playback_object_key], source: take.nil?,
-                           label: take ? take.name.downcase : "source", flagged: chunk.regenerate_requested?)
+      segments: segments.zip(clips).map do |segment, clip|
+        version = clip.primary_version
+        key = version&.object_key || chunk_for[clip.chunk_ordinal]&.object_key
+        segment.to_h.merge(url: key && urls[key], source: version.nil?,
+                           label: version ? version.name.downcase : "source", flagged: clip.regenerate_requested?)
       end }
   end
 

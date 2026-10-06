@@ -1,0 +1,53 @@
+<% content_for :title, "#{@alt_video.name} · #{@video.title} · McRitchie Studio" %>
+<%= render "components/copy_text_script" %>
+<%= render "music_videos/player_scripts" %>
+
+<section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="alt-video" data-number="<%= @alt_video.number %>">
+  <header class="mb-6 min-w-0">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2" data-test="alt-video-kicker">
+      Source video · <%= @alt_video.name %>
+    </p>
+    <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2 break-words"><%= @video.title %></h1>
+    <p class="text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span data-test="alt-video-clip-count"><%= pluralize(@clips.size, "clip") %></span>
+      <span>built <%= l(@alt_video.created_at, format: :short) %></span>
+      <%= link_to "Source video and cast", music_video_path(@video), class: "text-primary hover:underline", data: { test: "alt-video-source-link" } %>
+      <%= link_to "All alt videos", alt_videos_path, class: "text-primary hover:underline", data: { test: "alt-video-index-link" } %>
+    </p>
+  </header>
+
+  <div class="card p-4 mb-4 min-w-0" data-test="alt-video-swaps" data-count="<%= @swaps.size %>">
+    <p class="label-upper mb-2">Swaps <span class="normal-case tracking-normal">· snapshotted from the cast when the clips were built; editing the cast never changes them</span></p>
+    <% if @swaps.empty? %>
+      <p class="text-sm text-muted" data-test="alt-video-swaps-none">Nobody is swapped in this alt video: everyone stays as filmed.</p>
+    <% else %>
+      <ul class="flex flex-col gap-1.5 text-sm">
+        <% performers = @performers.index_by(&:ordinal) %>
+        <% @swaps.to_a.each do |entry| %>
+          <% performer = performers[entry.performer_ordinal] %>
+          <li class="min-w-0 break-words" data-test="alt-video-swap" data-ordinal="<%= entry.performer_ordinal %>">
+            <span class="text-body">Person <%= entry.performer_ordinal %></span>
+            <% if performer %><span class="text-muted">(<%= performer.label %>)</span><% end %>
+            <span class="text-muted">→</span>
+            <span class="font-semibold text-heading"><%= entry.label %></span>
+            <% unless entry.look_name %><span class="text-warning-ink">· no look was chosen</span><% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </div>
+
+  <% if @clips.any? %>
+    <%= render "alt_videos/watch", alt_video: @alt_video, clips: @clips, watch: @watch, audio_url: @urls[@video.source_object_key] %>
+    <%= render "alt_videos/full_video", video: @video, alt_video: @alt_video, clips: @clips, stitches: @stitches, urls: @stitch_urls,
+               downloads: @stitch_downloads, here: @stitch_here %>
+    <div class="flex flex-col gap-4" data-test="alt-clips">
+      <% @clips.each do |clip| %>
+        <%= render "alt_videos/clip", clip: clip, chunk: @chunk_for[clip.chunk_ordinal], alt_video: @alt_video, video: @video,
+                   swaps: @swaps, urls: @urls, downloads: @downloads, sheets: @sheets, overlap_ms: @video.chunk_overlap_ms.to_i %>
+      <% end %>
+    </div>
+  <% else %>
+    <div class="empty-state text-muted" data-test="alt-clips-empty">This alt video has no clips: its source had no chunks when it was built.</div>
+  <% end %>
+</section>

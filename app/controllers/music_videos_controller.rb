@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
-# /music_videos/:slug — the cast panel (music video pipeline, stage 2) with
-# each performer's recast, the
-# clip candidates (stage 5) and the chunks the whole video is tiled into, with
-# each chunk's hand-off, generated takes, the stitch preview and the final
-# stitched video. Admin only:
-# stills, clips and takes are private objects shown through short-lived signed URLs.
+# /music_videos/:slug — the source video's cast panel (music video pipeline,
+# stage 2) with each performer's recast (the working swap selection), the
+# clip candidates (stage 5), the chunks the whole video is tiled into, and its
+# alt videos: Build Clips snapshots the swaps into the next one, whose page
+# (AltVideosController) holds the generated clips and the stitch. Admin only:
+# stills and clips are private objects shown through short-lived signed URLs.
 class MusicVideosController < ApplicationController
   before_action :require_admin
   before_action :set_video
@@ -31,8 +31,8 @@ class MusicVideosController < ApplicationController
     # Each row reads its swap target off THIS video's loaded cast, not a copy per row.
     (@clips + @chunks).each { |clip| clip.association(:music_video).target = @video }
     load_looks
-    load_chunk_review
-    load_stitches
+    @clip_urls = signed_urls(@clips.map(&:object_key))
+    @alt_videos = @video.alt_videos.includes(:stitches, clips: :versions).to_a
   end
 
   def confirm_cast
@@ -56,29 +56,6 @@ class MusicVideosController < ApplicationController
     @look_sheets = Artifact.newest_character_sheets(@looks.map(&:slug))
     @sheet_row = Appearances::GenerateArtifact.preferred_row
     @sheet_ready = Appearances::GenerateArtifact.available?
-  end
-
-  # The recast round trip: each chunk's takes (one query, read off the video),
-  # the signed files the page plays and downloads, the recast looks' character
-  # sheets for the hand-off, and the stitch preview's timeline.
-  def load_chunk_review
-    @video.chunk_takes.load
-    take_keys = @chunks.flat_map { |chunk| chunk.takes.map(&:object_key) }
-    @clip_urls = signed_urls((@clips + @chunks).map(&:object_key) + take_keys + [@video.source_object_key])
-    @chunk_downloads = signed_urls(@chunks.map(&:object_key), download: true)
-    @recast_sheets = Artifact.newest_character_sheets(@performers.filter_map(&:recast_appearance_slug))
-    @stitch = helpers.stitch_preview_data(@chunks, @clip_urls)
-  end
-
-  # The final stitch: every stitch of the video, newest first, the signed
-  # files of the finished ones, and whether this hub can stitch on its own.
-  def load_stitches
-    @stitches = @video.stitches.to_a.reverse
-    @stitches.each { |stitch| stitch.association(:music_video).target = @video }
-    keys = @stitches.select(&:done?).map(&:object_key)
-    @stitch_urls = signed_urls(keys)
-    @stitch_downloads = signed_urls(keys, download: true)
-    @stitch_here = MusicVideos::Stitcher.available?
   end
 
   def set_video
