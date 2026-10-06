@@ -75,6 +75,7 @@ class BinHelpFlagClassTest < Minitest::Test
     # --- retrofitted onto the shared guard, 2026-08-31 ------------------------
     "archive-docs"           => :cli_arg_guard,
     # --- the archive's pruners ------------------------------------------------
+    "prune-branches"         => :cli_arg_guard,
     "prune-session-markers"  => :cli_arg_guard,
     # --- retrofitted 2026-08-31, /tasks/release-subcommand-drops-help ---------
     # The release machinery, and the sharpest instance the class has produced:
