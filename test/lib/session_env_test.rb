@@ -3,6 +3,7 @@
 require "minitest/autorun"
 require "open3"
 require "rbconfig"
+require "tmpdir"
 require_relative "../support/session_env"
 
 # The PRODUCTION counterpart, loaded for real so the drift guard below compares
@@ -171,6 +172,48 @@ class SessionEnvTest < Minitest::Test
   def test_control_an_empty_string_is_still_exported_to_the_child
     with_env("CLAUDE_CODE_SESSION_ID" => "live-operator-session", "CODEX_THREAD_ID" => nil) do
       assert_equal %("",nil), child_sees("CLAUDE_CODE_SESSION_ID" => "")
+    end
+  end
+
+  # ── git's global config follows a sandboxed HOME ───────────────────────────
+  #
+  # git reads GIT_CONFIG_GLOBAL ahead of $HOME/.gitconfig, so a runner that exports
+  # it hands the REAL file to a child whose HOME is a temp dir. bin/install-agent-docs
+  # then rewrote the machine's credential helper to a path that vanishes with the
+  # temp dir. Every installer test builds its env here, so the pin lives here.
+
+  def test_a_sandboxed_home_pins_git_config_global_inside_it
+    assert_equal "/sandbox/home/.gitconfig", SessionEnv.neutralized("HOME" => "/sandbox/home")["GIT_CONFIG_GLOBAL"]
+  end
+
+  def test_an_explicit_git_config_global_wins
+    env = SessionEnv.neutralized("HOME" => "/sandbox/home", "GIT_CONFIG_GLOBAL" => "/sandbox/other")
+    assert_equal "/sandbox/other", env["GIT_CONFIG_GLOBAL"]
+  end
+
+  def test_no_home_override_leaves_git_config_global_alone
+    refute SessionEnv.neutralized("FOO" => "1").key?("GIT_CONFIG_GLOBAL"),
+           "a child that keeps the real HOME keeps the real git config; nothing to pin"
+  end
+
+  # End to end through the real git CLI: the runner exports GIT_CONFIG_GLOBAL at a
+  # canary, the child gets a temp HOME through SessionEnv, and a `--global` write
+  # lands in the temp HOME while the canary stays byte-identical.
+  def test_a_global_git_write_from_a_sandboxed_child_never_reaches_the_runner_config
+    Dir.mktmpdir("session-env-git") do |dir|
+      canary = File.join(dir, "runner.gitconfig")
+      File.write(canary, "[user]\n\tname = Runner\n")
+      home = File.join(dir, "home")
+      Dir.mkdir(home)
+
+      with_env("GIT_CONFIG_GLOBAL" => canary) do
+        _out, status = Open3.capture2e(SessionEnv.neutralized("HOME" => home),
+                                       "git", "config", "--global", "--add", "sandbox.probe", "yes")
+        assert status.success?, "git config --global failed in the sandboxed child"
+      end
+
+      assert_equal "[user]\n\tname = Runner\n", File.read(canary), "the runner's git config was rewritten"
+      assert_match(/probe = yes/, File.read(File.join(home, ".gitconfig")))
     end
   end
 

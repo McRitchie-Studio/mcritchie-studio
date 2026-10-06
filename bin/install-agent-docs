@@ -1084,11 +1084,35 @@ install_codex_user_hook() {
 # bin/lib/credential_helper_install.rb carries, so the reset survives and a re-run
 # converges on one line. On a config with no reset, the reset is added ahead of the
 # helper. Nothing is rewritten when the helper already reads as wanted.
+#
+# The third argument says whether `helper` is the fixed path ("fixed") or the hub
+# primary's working-tree copy ("fallback", before the first ship installs the
+# tooling). A fallback never replaces a helper line that already exists: the hub
+# primary is a working tree, which credentials.md forbids as a helper path, and the
+# pattern would otherwise overwrite a working ~/.mcritchie snapshot line. It writes
+# the hub path only when the config names no helper at all.
 install_git_credential_helper() {
-  local gitconfig="$1" helper="$2" key="credential.https://github.com.helper" values ours has_reset
+  local gitconfig="$1" helper="$2" source="${3:-fixed}" key="credential.https://github.com.helper" values ours has_reset
   note_write "$gitconfig"
   [ "$MODE" = "manifest" ] && return 0
   command -v git >/dev/null 2>&1 || return 0
+
+  # Under an armed TASK_USAGE_SANDBOX (every test child) the config must sit inside
+  # the sandboxed HOME. A GIT_CONFIG_GLOBAL inherited from the runner names the real
+  # file, and rewriting it would point the machine's helper at a temp dir that later
+  # vanishes. Refuses; never degrades.
+  case "$(printf '%s' "${TASK_USAGE_SANDBOX:-}" | tr '[:upper:]' '[:lower:]')" in
+    ''|0|false|no|off) ;;
+    *)
+      case "$gitconfig" in
+        "$HOME"/*) ;;
+        *)
+          echo "ERROR: TASK_USAGE_SANDBOX is armed and the git config $gitconfig is outside HOME ($HOME); pin GIT_CONFIG_GLOBAL into the sandbox. Refusing to write the credential helper" >&2
+          exit 3
+          ;;
+      esac
+      ;;
+  esac
 
   # `--get-all` exits 1 when the key is absent; an absent key and a bare reset both
   # read as an empty string, and only one of them already carries the reset.
@@ -1096,6 +1120,10 @@ install_git_credential_helper() {
   if values="$(git config --file "$gitconfig" --get-all "$key" 2>/dev/null)"; then
     ours="$(printf '%s\n' "$values" | grep '/gh-app-git-credential$' || true)"
     [ "$ours" = "$helper" ] && return 0
+    if [ "$source" = fallback ] && [ -n "$ours" ]; then
+      echo "  $gitconfig ($key kept: no fast-lane tooling to point it at)"
+      return 0
+    fi
     printf '%s\n' "$values" | grep -qx '' && has_reset=yes
   fi
 
@@ -1373,9 +1401,15 @@ else
   echo "  Install that file as admin, or merge its McRitchie block into $CODEX_REQUIREMENTS_PATH."
 fi
 
+# The same bin/ the hooks above were pointed at, so the helper and the hooks agree.
+if [ "$HOOK_BIN" = "$TOOLING_LINK" ]; then
+  helper_source=fixed
+else
+  helper_source=fallback
+fi
 # GIT_CONFIG_GLOBAL is git's own override for the global file; the tests pin it, and an
 # operator who set it reads their git config there.
-install_git_credential_helper "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "$HOOK_BIN/gh-app-git-credential"
+install_git_credential_helper "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "$HOOK_BIN/gh-app-git-credential" "$helper_source"
 
 echo
 echo "Next reads for a fresh agent:"
