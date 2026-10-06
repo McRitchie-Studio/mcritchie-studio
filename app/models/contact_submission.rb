@@ -11,6 +11,9 @@
 #   - Nothing is pre-ticked. A box left alone is "no consent".
 #   - "No" cannot be combined with either "Yes".
 #   - The mobile number is optional, and required only with a "Yes".
+#
+# A row the controller judged to be a bot carries a `spam_reason`. It is kept,
+# so a person wrongly judged can still be found, but nobody is emailed about it.
 class ContactSubmission < ApplicationRecord
   # Bump when CONSENT_LABELS or DISCLOSURE_PARAGRAPHS change, so old rows keep
   # pointing at the wording their visitor actually saw.
@@ -44,6 +47,10 @@ class ContactSubmission < ApplicationRecord
   MESSAGE_LIMIT = 5_000
   USER_AGENT_LIMIT = 1_000
 
+  # Why the controller judged a submission to be a bot. See
+  # ContactSubmissionsController#spam_reason for how each is measured.
+  SPAM_REASONS = %w[no_browser_proof too_fast].freeze
+
   # Kept out of #inspect, so a logged or raised record does not carry them. The
   # request log's own filter is in config/initializers/filter_parameter_logging.rb.
   self.filter_attributes += %i[phone message]
@@ -61,16 +68,23 @@ class ContactSubmission < ApplicationRecord
   validates :message, presence: true, length: { maximum: MESSAGE_LIMIT }
   validates :phone, length: { maximum: PHONE_LIMIT }
   validates :disclosure_version, :disclosure_text, presence: true
+  validates :spam_reason, inclusion: { in: SPAM_REASONS }, allow_nil: true
   validate :phone_is_a_phone_number
   validate :phone_present_when_consenting
   validate :decline_excludes_consent
 
   scope :recent, -> { order(created_at: :desc) }
+  scope :flagged, -> { where.not(spam_reason: nil) }
+  scope :unflagged, -> { where(spam_reason: nil) }
 
   # Everything the visitor was shown beside the boxes: the three labels, then
   # the paragraphs under the form.
   def self.disclosure_text
     (CONSENT_LABELS.values + DISCLOSURE_PARAGRAPHS).join("\n\n")
+  end
+
+  def flagged?
+    spam_reason.present?
   end
 
   def sms_consent?
