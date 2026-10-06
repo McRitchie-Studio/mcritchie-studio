@@ -18,9 +18,11 @@ require_relative "op_meter"
 # bin/session-preflight and bin/devops-cycle raise for their callers to rescue).
 # Each script keeps its exact error rendering in its own thin `api` wrapper.
 #
-# Tokens stay per-process too: every CLI mints its own 24h token per run (the
-# memoized `token` helper stays in each script); only the narration stack
-# (bin/lib/agent_api.rb) uses the shared disk cache.
+# Tokens stay per-process: every CLI mints its own 24h token per run (the
+# memoized `token` helper stays in each script) UNLESS a parent handed one down
+# in AGENT_API_TOKEN (`handed_token` below) — bin/ship mints once and exports it,
+# so one ship costs one mint instead of one per child `bin/task` call. Only the
+# narration stack (bin/lib/agent_api.rb) uses the shared disk cache.
 #
 # POSTURE-FREE IS NOT THE SAME AS LENIENT. `request` still takes no view on the
 # status, but the BODY now has two readers and the caller picks by what it is
@@ -44,6 +46,10 @@ module TaskBoard
   # resolves in the agent vault. See bin/lib/op_vaults.rb for why the vault
   # name is no longer written down in eleven places.
   SECRET_REF = OpVaults.ref("Agent API Secret", "AGENT_API_SECRET")
+  # A bearer handed down by a parent process. bin/ship mints one per run and
+  # exports it here so its child CLIs skip their own POST /api/v1/auth; a CLI run
+  # on its own finds it unset and mints as before.
+  TOKEN_ENV = "AGENT_API_TOKEN"
 
   # Raised by the STRICT readers (`parse_body!`, `rows!`) for every answer a
   # caller cannot trust: an empty body, a body that is not JSON, a payload that
@@ -177,6 +183,26 @@ module TaskBoard
 
     code = res.code.to_s
     code.empty? ? "" : " [HTTP #{code}]"
+  end
+
+  # The token a parent process handed down in TOKEN_ENV, or nil when it is unset
+  # or blank. A CLI's `token` helper asks this FIRST and falls back to its own
+  # mint, so the secret chain below stays the path for a CLI run on its own.
+  def handed_token(env = ENV)
+    value = env[TOKEN_ENV].to_s.strip
+    value.empty? ? nil : value
+  end
+
+  # Mint one 24h bearer from the secret: POST /api/v1/auth. Returns the token, or
+  # nil when there is no secret or the board answered without one — the caller
+  # keeps its own posture (bin/ship degrades to per-child mints; a CLI die!s).
+  # A transport error propagates, as `request` promises.
+  def mint_token(base_url:, secret:, read_timeout: 30)
+    return nil if secret.to_s.strip.empty?
+
+    res = request(:post, "/api/v1/auth", base_url: base_url, body: { secret: secret }, read_timeout: read_timeout)
+    token = parse_body(res)["token"].to_s.strip
+    token.empty? ? nil : token
   end
 
   # The agent secret: ENV, then the given .env file, then 1Password — in that

@@ -9,10 +9,10 @@
 # checkpoint fires. Since /tasks/dor-reads-settled-ci-verdict the one verdict per
 # tree is the PR's settled green GitHub CI, which bin/dor-check reads at the
 # submit seam and review's gate-zero reads again. This script buys EARLINESS —
-# catch the obvious break in about a minute, before the push and the ~10-minute
-# CI round-trip — and nothing else. A red pre-flight is information for the
-# builder, never a gate: bin/ship runs it at step 2, prints its verdict loudly,
-# and carries on to the PR whatever it said.
+# catch the obvious break in about a minute, long before the ~10-minute CI
+# round-trip reports — and nothing else. A red pre-flight is information for the
+# builder, never a gate: bin/ship runs it at step 5, after the push and the PR so
+# CI is already running, prints its verdict loudly, and carries on whatever it said.
 #
 # Until DevOps v3 phase 2b (/tasks/retire-local-cert-evidence) this was the G1
 # fast CERT: it fingerprinted the tree, stamped a fast-cert receipt on

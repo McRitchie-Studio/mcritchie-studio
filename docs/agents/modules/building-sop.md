@@ -223,7 +223,8 @@ bin/fast-check <slug>          # diff-mapped tests + core spine + rubocop on cha
 
 It records nothing; the PR's settled green CI is the verdict. A red lane here
 usually means a red CI later, so fix it first. `bin/ship` runs it for you at step
-2/8 and carries on whatever it says.
+5/8, after the push and the PR so CI is already running, and carries on whatever
+it says.
 
 ## Step 6 — Ship to the seam (stops at `submitted`)
 
@@ -236,9 +237,11 @@ naming the fixed-path script and standing in the desk:
 /Users/alex/projects/.agents/bin/ship-wait <task-slug>                                # attach to one already running
 ```
 
-The ship commits, runs the pre-flight, pushes, opens the **non-draft** PR into
-**`accepted`** led by the task URL, records `pr_url`, **waits for CI to settle**,
-runs `bin/dor-check`, and moves the task to `submitted`.
+The ship commits, pushes, opens the **non-draft** PR into **`accepted`** led by
+the task URL, records `pr_url`, runs the pre-flight while CI is already running,
+**waits for CI to settle**, runs `bin/dor-check`, and moves the task to
+`submitted`. It mints one board token for the run and hands it to every
+`bin/task` and `bin/dor-check` call it spawns (`AGENT_API_TOKEN`).
 
 - `/Users/alex/projects/.agents/bin` is the fast-lane tooling at a fixed path that
   no `git checkout` can move. If it is missing, the hub's
