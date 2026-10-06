@@ -312,15 +312,14 @@ QA servers and production URLs used by `bin/qa-server`, `bin/release`, and
   during migration, but they are aliases, not the production target in release
   metadata or post-ship smoke checks.
 
-## Release builder autonomy
+## Production ship authority
 
-QA assembly autonomy is deterministic config, not agent judgment. The policy
-lives in `config/release_builder.yml` and is read by `Release::BuilderPolicy`:
-one reviewed task, one repo, and no blocked risk tags can proceed to QA assembly
-automatically; anything broader is a proposal that waits for operator
-confirmation. Production ship remains operator-gated regardless of that QA
-decision unless the session uses the explicit `full-cycle` production
-launcher or another already-approved rollout prompt.
+How `bin/release ship` takes production authority is config, not agent
+judgment: `production_ship.mode` in `config/release_builder.yml`, read by
+`Devops::Windows`, is `ask`, `timed` or `auto`, and an explicit `--mode` wins.
+QA assembly is never automatic; Avi's `qa-release` runs it. The explicit
+`full-cycle` launcher, or another already-approved rollout prompt, is what grants
+an agent production ship authority.
 
 ## Releasing a gem (producer-first)
 

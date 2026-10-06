@@ -271,9 +271,8 @@ class CiWorkflowTriggersTest < Minitest::Test
 
   # The system tier's exact body. It left the suite command when the lane was sharded —
   # 13 Capybara tests are not worth four runners each paying for a Chrome install — and
-  # a tier that moves into its own job is exactly the shape (spelling 4 in
-  # bin/lib/ci_test_command.rb's history) that once went un-enrolled and un-run. Enrolled
-  # here on the day it moved.
+  # a tier that moves into its own job is exactly the shape that once went un-enrolled
+  # and un-run. Enrolled here on the day it moved.
   SYSTEM_SCRIPT = "bin/rails db:test:prepare test:system"
 
   # Used only to FIND the lane. Whether that lane is CORRECT is decided by the positive

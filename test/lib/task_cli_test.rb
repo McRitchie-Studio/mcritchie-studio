@@ -2547,11 +2547,9 @@ class TaskCliTest < Minitest::Test
   #     repo, finds a phantom with no PR, and REFUSES at step 3a. It aborted a
   #     live QA sweep on /tasks/sweep-stale-signer-claims: nothing promoted,
   #     recorded or deployed.
-  #   risk_tags — the SILENT ones, and there were 1117 of them. Both readers
-  #     match EXACTLY, so a joined entry fails OPEN: 31 tasks would have hit
-  #     Release::BuilderPolicy's auto-QA `blocked_risk_tags` and did not, and 464
-  #     would have pulled a ReviewerSelector::RISK_DOMAINS reviewer light and did
-  #     not.
+  #   risk_tags — the SILENT one, and there were 1117 of them. The reader
+  #     matches EXACTLY, so a joined entry fails OPEN: 464 tasks would have
+  #     pulled a ReviewerSelector::RISK_DOMAINS reviewer light and did not.
   #
   # The refusal must fire in parse_flags — before auth, before any request — so a
   # rejected line leaves no half-written record behind it.

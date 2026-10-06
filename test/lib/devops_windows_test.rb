@@ -41,7 +41,7 @@ class DevopsWindowsTest < Minitest::Test
   end
 
   def test_missing_keys_fall_back_to_the_design_numbers
-    with_config("auto_qa: {}\n") do |config|
+    with_config("operator_windows: {}\n") do |config|
       assert_equal 10, Devops::Windows.minutes("approval", config)
       assert_equal 30, Devops::Windows.minutes("production", config)
       assert_equal "timed", Devops::Windows.production_ship_mode(config)

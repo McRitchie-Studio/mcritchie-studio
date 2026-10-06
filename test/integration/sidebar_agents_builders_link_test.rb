@@ -22,19 +22,13 @@ class SidebarAgentsBuildersLinkTest < ActionDispatch::IntegrationTest
 
     assert_select "#studio-link-sidebar a[href=?]", agents_path
     assert_select "#studio-link-sidebar a[href=?]", builders_path
-    # the Agents item must not regress to the old /activities route
-    assert_select "#studio-link-sidebar a[href=?]", activities_path, count: 0
+    # the Agents item must not regress to the retired /activities path
+    assert_select "#studio-link-sidebar a[href=?]", "/activities", count: 0
   end
 
   test "the old 'Meet the Agents' copy is gone" do
     get links_path
     assert_response :success
     assert_no_match(/Meet the Agents/, response.body)
-  end
-
-  test "public activities page redirects to agents" do
-    get activities_path
-
-    assert_redirected_to agents_path
   end
 end
