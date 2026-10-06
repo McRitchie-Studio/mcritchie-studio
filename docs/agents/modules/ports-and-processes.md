@@ -2,50 +2,35 @@
 
 Local app ports are assigned in hundreds so each app has room for worktree and parallel-test stacks.
 
-| App | Primary port | Reserved range |
-|-----|--------------|----------------|
-| McRitchie Studio | 3000 | 3000-3099 |
-| Turf Monster | 3100 | 3100-3199 |
-| Tax Studio | 3200 | 3200-3299 |
-| Rolio | 3300 | 3300-3399 reserved |
-| Chain Ops | 3400 | 3400-3499 |
-| McRitchie Industries | 3500 | 3500-3599 (3510 reserved) |
-| Cyvasse | 3600 | 3600-3699 |
-| Dads App | 3700 | 3700-3799 reserved |
-| Prisoners Dilemma | 3800 | 3800-3899 reserved |
-| Weekly Lock | 3900 | 3900-3999 reserved |
-| Rantly | 4000 | 4000-4099 reserved |
-| Portfolio | 4100 | 4100-4199 reserved |
-| 10&5 Hospitality | 4200 | 4200-4299 reserved |
-| Search Position | 4300 | 4300-4399 reserved |
+Each app's primary port is its `port` in `config/apps.yml` (the app catalog);
+its block is that port through port + 99. `config/satellites.yml` reserves the
+same blocks for desks, and `test/lib/app_registry_test.rb` fails if the two
+disagree.
 
-The durable app registry decision surface is
-`mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
-reserved, and its hosted QA/prod deploy targets are managed by the release
-registries. It is not managed by rebuild/nav automation. Chain Ops is planned for
-localnet/QA/node operations. McRitchie Industries is a managed studio-engine
-satellite (active in `config/satellites.yml`) and the successor to the retired
-Acquisition Studio prototype, which previously held this range.
-Caution: the unmanaged MSAA client workspace informally parks a dev app on
-`3510` inside this band — the worktree launcher excludes it
-(`reserved_ports` in `bin/agent-worktree`), and no McRitchie Industries side
-stack should sit on it until MSAA moves.
+| App | Primary port | Reserved range | Catalog status |
+|-----|--------------|----------------|----------------|
+| McRitchie Studio | 3000 | 3000-3099 | Active |
+| Turf Monster | 3100 | 3100-3199 | Showcase |
+| Tax Studio | 3200 | 3200-3299 | Archived |
+| Rolio | 3300 | 3300-3399 | Archived |
+| Chain Ops | 3400 | 3400-3499 | Archived |
+| McRitchie Industries | 3500 | 3500-3599 (3510 held) | Active |
+| Cyvasse | 3600 | 3600-3699 | Showcase |
+| Dads App | 3700 | 3700-3799 | Showcase |
+| Prisoners Dilemma | 3800 | 3800-3899 | Showcase |
+| Weekly Lock | 3900 | 3900-3999 | Showcase |
+| Rantly | 4000 | 4000-4099 | Showcase |
+| Portfolio | 4100 | 4100-4199 | Showcase |
+| 10&5 Hospitality | 4200 | 4200-4299 | Showcase |
+| Search Position | 4300 | 4300-4399 | Showcase |
+| Moms App | 4400 | 4400-4499 | Active |
 
-Cyvasse (`3600-3699`) is a planned managed satellite (`planned` in
-`config/satellites.yml`), the revival of Alex's first app. Production is the
-Heroku app `cyvasse`; it has no QA environment.
-
-Dads App (`3700-3799`) is a release-managed standalone (`reserved` in
-`config/satellites.yml`): a photo slideshow with no studio-engine and no
-database. Production is the Heroku app `dads-app` on one Eco dyno; it has no QA
-environment.
-
-The four showcase apps (`3800-4199`: Prisoners Dilemma, Weekly Lock, Rantly,
-Portfolio) are release-managed standalones like Dads App (`reserved` in
-`config/satellites.yml`, no studio-engine, no database). Production is the
-Heroku app `mcr-<repo>` for each; none has a QA environment. 10&5 Hospitality
-(`10and5`, `4200-4299`) and Search Position (`search-position`, `4300-4399`)
-are registered the same way.
+Archived apps keep their blocks; do not reuse `3200-4499`. Which apps are
+managed satellites, release-managed standalones or neither is in
+[`app-registry.md`](app-registry.md). The unmanaged MSAA client workspace
+informally parks a dev app on `3510` inside McRitchie Industries' block; the
+worktree launcher excludes it (`reserved_ports` in `bin/agent-worktree`), and no
+McRitchie Industries side stack should sit on it until MSAA moves.
 
 ## Primary Ports
 

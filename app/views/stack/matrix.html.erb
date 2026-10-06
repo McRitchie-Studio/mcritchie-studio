@@ -6,7 +6,7 @@
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Stack</p>
     <h1 class="text-3xl font-bold text-heading mb-2">Client matrix</h1>
     <p class="text-muted max-w-2xl">
-      Every client against its stack: the tier each is on, then every piece of software any of them runs.
+      Every client against its stack: its app tier and status, the package it is on, then every piece of software any of them runs.
       <%= link_to "List view", stack_path, class: "text-primary hover:underline whitespace-nowrap", data: { test: "stack-list-link" } %>
       <span class="text-muted" aria-hidden="true">·</span>
       <%= link_to "Credential detail", credentials_path, class: "text-primary hover:underline whitespace-nowrap" %>
@@ -69,6 +69,7 @@
       <%# The summary band: one row per fact, a column per client. %>
       <tbody data-test="matrix-summary">
         <% band = {
+             "App" => ->(c) { c.catalog_app },
              "Tier" => ->(c) { c.tier_name },
              "Price" => ->(c) { @matrix.price_label(c) },
              "Hosting" => ->(c) { @matrix.hosting_mode(c) },
@@ -83,7 +84,9 @@
               <% value = value_of.call(client) %>
               <td class="bg-surface-alt border-b border-subtle px-3 py-2 text-center whitespace-nowrap <%= label == 'Domain' ? 'font-mono text-xs' : '' %>"
                   data-test="matrix-summary-cell" data-client="<%= client.slug %>">
-                <% if value.blank? %>
+                <% if label == "App" %>
+                  <%= render "stack/app_standing", app: value, align: "items-center" %>
+                <% elsif value.blank? %>
                   <span class="text-muted">—</span>
                 <% elsif label == "Tier" && !client.internal? %>
                   <span class="inline-block rounded-full border border-primary text-primary px-2.5 py-0.5 text-xs font-semibold"><%= value %></span>

@@ -69,18 +69,19 @@ module AppContract
     nil
   end
 
-  # Whether the hub's APP_EMOJIS hash names this slug. Read inside that hash
-  # only: a `"<slug>" =>` line in any other hash in the helper must not pass.
-  # The board draws a badge per registry repo from APP_EMOJIS, and
-  # test/helpers/application_helper_test.rb fails CI for a repo with none.
-  def glyph_check(helper_text, slug)
-    block = helper_text.to_s[/^\s*APP_EMOJIS = \{\n(.*?)^\s*\}\.freeze/m, 1]
-    return Check.new(name: "hub badge glyph", ok: false, detail: "APP_EMOJIS not found in the helper",
-                     remedy: "run bin/register-app from a hub desk") if block.nil?
-
-    ok = block.match?(/^\s*"#{Regexp.escape(slug)}"\s*=>/)
-    Check.new(name: "hub badge glyph", ok: ok, detail: ok ? "in APP_EMOJIS" : "none",
-              remedy: "add \"#{slug}\" => \"<emoji>\" to APP_EMOJIS in app/helpers/application_helper.rb (in the hub, in the registration task)")
+  # Whether the hub's app catalog (config/apps.yml) gives this slug a glyph. The
+  # board draws a badge per registry repo from ApplicationHelper::APP_EMOJIS,
+  # which derives from the catalog, and test/helpers/application_helper_test.rb
+  # fails CI for a repo with none.
+  def glyph_check(catalog_text, slug)
+    catalog = YAML.safe_load(catalog_text.to_s) || {}
+    rows = Array(catalog["apps"]) + Array(catalog["libraries"])
+    row = rows.find { |r| r.is_a?(Hash) && r["slug"] == slug }
+    ok = !!(row && row["emoji"].to_s.strip != "")
+    Check.new(name: "hub badge glyph", ok: ok, detail: ok ? "#{row['emoji']} in config/apps.yml" : "no config/apps.yml record",
+              remedy: "add a #{slug} record to config/apps.yml in the hub, in the registration task, then run test/lib/app_registry_test.rb")
+  rescue Psych::Exception
+    Check.new(name: "hub badge glyph", ok: false, detail: "config/apps.yml does not parse", remedy: "fix config/apps.yml")
   end
 
   # Whether the hub's config/satellites.yml gives this slug a port block. Desks

@@ -3,7 +3,7 @@
 # [unit] AppProfile and AppContract — the deploy-profile expansion bin/register-app
 # writes, and the contract checks it runs first. The contract tests drive fake
 # probes. Four tests run the real CLI as a subprocess; only one of them reaches
-# the contract (bin/register-app from a tree without app/helpers), and that one
+# the contract (bin/register-app from the fixed-path tooling tree), and that one
 # calls git and heroku for real.
 
 require "minitest/autorun"
@@ -177,23 +177,34 @@ class AppProfileTest < Minitest::Test
     assert_equal ["fetch"], failed.map(&:name), "a stale origin/accepted must not pass silently"
   end
 
-  HELPER = <<~RUBY
-    module ApplicationHelper
-      OTHER = {
-        "demo" => "not a glyph"
-      }.freeze
+  CATALOG = <<~YAML
+    apps:
+      - slug: moms-app
+        emoji: "📚"
+      - slug: blank-app
+        emoji: ""
+    libraries:
+      - slug: studio-engine
+        emoji: "💎"
+    other:
+      - slug: demo
+        emoji: "not a glyph"
+  YAML
 
-      APP_EMOJIS = {
-        "rantly" => "📣",
-        "moms-app" => "📚"
-      }.freeze
-    end
-  RUBY
+  def test_glyph_check_reads_the_catalog_apps_and_libraries
+    assert AppContract.glyph_check(CATALOG, "moms-app").ok
+    assert AppContract.glyph_check(CATALOG, "studio-engine").ok
+    refute AppContract.glyph_check(CATALOG, "demo").ok, "a record outside apps/libraries must not pass"
+    refute AppContract.glyph_check(CATALOG, "blank-app").ok, "a record with no emoji draws no badge"
+    refute AppContract.glyph_check("", "moms-app").ok
+    refute AppContract.glyph_check("apps: [", "moms-app").ok, "an unparseable catalog fails, not raises"
+  end
 
-  def test_glyph_check_reads_only_the_app_emojis_hash
-    assert AppContract.glyph_check(HELPER, "moms-app").ok
-    refute AppContract.glyph_check(HELPER, "demo").ok, "a match in another hash must not pass"
-    refute AppContract.glyph_check("module X; end", "moms-app").ok
+  def test_the_hub_catalog_gives_every_profiled_app_a_glyph
+    root = File.expand_path("../..", __dir__)
+    registry = YAML.safe_load_file(File.join(root, "config/release_repos.yml"))
+    catalog = File.read(File.join(root, "config/apps.yml"))
+    registry.fetch("apps").each_key { |slug| assert AppContract.glyph_check(catalog, slug).ok, "#{slug} has no glyph" }
   end
 
   SATELLITES = <<~YAML
@@ -246,14 +257,14 @@ class AppProfileTest < Minitest::Test
     end
   end
 
-  def test_register_app_from_a_tree_without_app_helpers_fails_the_glyph_check_instead_of_crashing
+  def test_register_app_from_the_tooling_tree_reads_the_catalog_for_the_glyph
     Dir.mktmpdir do |dir|
       build_tooling_tree(dir)
       File.write(File.join(dir, "config", "release_repos.yml"), "apps: {}\n")
       out, status = Open3.capture2e({ "PROJECTS_DIR" => dir }, "ruby", File.join(dir, "bin", "register-app"),
                                     "nope-app", "--heroku-app", "nope-app", "--smoke-url", "https://127.0.0.1:9")
       refute_match(/Errno::ENOENT/, out)
-      assert_match(/FAIL  hub badge glyph\s+no app\/helpers here/, out)
+      assert_match(/FAIL  hub badge glyph\s+no config\/apps.yml record/, out)
       assert_equal 1, status.exitstatus
     end
   end
