@@ -35,7 +35,8 @@ assertion_free: 0
 # existing content was measured and rejected as the first move — 297 tests with 46
 # helpers and 56 constants interleaved, 9 of which have call sites spanning the whole
 # file, so a split needs planned harness extraction and risks silent test LOSS. See
-# the archived task split-release-cli-tests for the numbers.
+# the archived task split-release-cli-tests for the numbers. The planned split, harness
+# first, landed 2026-10-05 (release-cli-tests-by-subcommand); see its rows below.
 #
 # Freezing costs nothing and attacks the same mechanism: a new test has to go
 # somewhere else, which gives the suite several bottoms instead of one. That is the
@@ -137,10 +138,35 @@ frozen_size:
   # seed precedes the first line that can raise, plus a mutation proof over both
   # the reverted and corrected source — extends the EXISTING owner of this method's
   # claims, test/docs/ship_docs_sync_docs_test.rb, rather than appending here.
-  test/lib/release_cli_test.rb: 7671
   # +2 (2026-09-10, untagged-gem-publish-strands-work): gem_publish_stub gained tag:/ahead:, because the
   # re-run fixture modelled a LIVE version with a trailing tag, which allocation now REFUSES. The new tests
   # live in their own files; only the two-line note on the existing helper landed here.
+  # SPLIT 2026-10-05 (release-cli-tests-by-subcommand). Every note above is the history of
+  # the old single file, test/lib/release_cli_test.rb (ceiling 7671), which no longer
+  # exists. Its shared harness moved VERBATIM to test/lib/release_cli_harness.rb and its
+  # 315 tests to one file per bin/release subcommand, with a parity proof (same 315 names,
+  # byte-identical sources, 1132 assertion calls before and after). Each file below is
+  # frozen at the size it was split at, so the rule still holds: a new test does not
+  # go to the bottom of an existing file, it goes beside its subcommand in a NEW file
+  # that requires the harness, or the ceiling it grows is raised here with the reason.
+  # +1 (prune-session-markers-and-branches): ARCHIVE_DRY_STUB carries the pruner seam.
+  test/lib/release_cli_harness.rb: 2045
+  test/lib/release_cli_archive_test.rb: 162
+  test/lib/release_cli_conductor_test.rb: 398
+  test/lib/release_cli_core_test.rb: 343
+  test/lib/release_cli_deploy_app_test.rb: 370
+  test/lib/release_cli_frozen_main_test.rb: 763
+  test/lib/release_cli_merge_test.rb: 501
+  test/lib/release_cli_notes_test.rb: 46
+  test/lib/release_cli_post_deploy_test.rb: 317
+  test/lib/release_cli_pre_qa_gate_test.rb: 811
+  test/lib/release_cli_prepare_gems_test.rb: 355
+  test/lib/release_cli_prepare_sweep_test.rb: 446
+  test/lib/release_cli_prepare_test.rb: 156
+  test/lib/release_cli_repin_test.rb: 318
+  test/lib/release_cli_retro_test.rb: 283
+  test/lib/release_cli_ship_test.rb: 366
+  test/lib/release_cli_status_test.rb: 149
   # +27 (2026-09-07, conflicted-remedy-misreads-ci): ONE case pinning the text of
   # the conflicted blocker. The message inferred "the head SHA has ZERO check-runs"
   # from mergeStateStatus DIRTY alone — independent facts — and it was measured
