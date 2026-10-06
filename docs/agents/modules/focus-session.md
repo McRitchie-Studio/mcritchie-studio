@@ -126,6 +126,20 @@ Launch one builder per startable task, as many as the machine can carry:
   a migration, or one whose acceptance waits on the other's merge.
   Serialize those; say which you held and why.
 
+The cap counts agents; the machine runs out of suites first. Each certifying
+agent forks a Rails suite, and suites contend for Postgres and disk while `ps`
+shows them near idle. So:
+
+- Count concurrent suites, not agents, and do not let a low CPU reading talk you
+  past the two-certifying ceiling.
+- Read the live numbers (`uptime` against `sysctl -n hw.ncpu`), and want three
+  quiet samples in a row; load averages lag, and one lull fools a watcher.
+- When `bin/agent-presence` reads busy on load it cannot attribute, sum CPU and
+  RSS per process group before standing down: an all-zero group is residue.
+- A starved machine manufactures red herrings — missing fixtures, lost
+  savepoints, lane timeouts. Never raise `FAST_CHECK_LANE_TIMEOUT` for them; a
+  lane with little CPU over a long wall clock is unscheduled, not slow.
+
 Spawn each builder as a `pokemon` subagent with this brief, filled in:
 
 ```text
@@ -146,6 +160,27 @@ Narrate with bin/agent-activity. Report back: the PR URL, the pre-flight result,
 bin/task show <slug> -v                       # stage must read submitted; note pr_url and the head
 gh pr view <pr> --json headRefOid,state,mergeable,statusCheckRollup
 ```
+
+**Brief from sources, not accounts.** A brief is an instruction, so a false
+premise in it costs the recipient a disproof or ships a wrong fix.
+
+- A task's `agent_context` is a lead written when least was known. Verify any
+  fact from it, or from another agent's report, that a subagent will act on (one
+  `gh pr view --json state`, one grep), or pass it on marked unverified.
+- Counts, file lists and line numbers in a brief are measurements too. Derive
+  them from the remote ref, and print a PR's file count as its own value
+  (`gh pr view <n> --json files -q '.files | length'`); never trim a list with
+  `head`.
+- When a finding says a call cannot take some input, grep for the other callers
+  that pass it; the finding does not travel to them by itself.
+
+**A report that reads like a plan is a stall.** No notification wakes a subagent,
+so one that ends its turn "holding for the ship" stops there. Tell builders to
+launch `ship-wait` once, then loop `ship-wait <slug> --timeout 1200` in the
+foreground until it settles, and never launch a second ship. To resume one, read
+the task and PR state first, `git status` its desk (a stall can leave a mutation
+on disk), then `SendMessage` it to attach with `ship-wait <slug>` and no
+`--launch`.
 
 ## Step 4 — Review your own PRs
 
@@ -222,6 +257,13 @@ As each task reaches `reviewed`, update the plan, recompute **Next startable**,
 read the machine, and launch the next builder. When a builder's finding changes
 the plan, rewrite the pieces and log the decision before filing anything new.
 Stopping is fine: the plan is the state, and a fresh session resumes from it.
+
+Spend the most expensive model on audit, design and question rounds; builders and
+routine reviewers run on Opus once the plan exists (a tier C review still takes
+the strongest model). Subagents inherit the parent's model
+and its budget, so a long design session stops spawning once its tasks are filed,
+writes a handoff block into the plan with the next command for each in-flight
+task, and lets a cheaper session resume from it.
 
 ## Exit seam
 

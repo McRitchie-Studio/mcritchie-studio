@@ -279,6 +279,14 @@ point of a live watch is that it is live. Each report carries:
 At the end of the window, report totals: games watched, scoring events recorded,
 contests re-scored, anomalies by kind.
 
+**Filter the relay, and watch the loop separately.** Every `heroku run` cycle
+also prints the dyno's progress line (joined with `\r`), deprecation warnings and
+`INFO -- :` lines, so a relay that drops only blank lines fires several times a
+cycle and gets muted as noise. Relay with
+`tail -n 0 -F log/nfl-live-watch.log | tr -u '\r' '\n' | grep --line-buffered -vE '^Running .* on turf-monster-mainnet|DEPRECATION WARNING|You can emulate the previous behavior|\(called from |[[:space:]]INFO -- :|^[[:space:]]*$'`,
+and arm a second persistent watch on the loop's pid. A dead watcher is silent,
+exactly like a healthy loop. Poller timestamps are UTC.
+
 ## Anomalies — the part that needs judgment
 
 The cycle REPORTS rather than stops, for every kind below, and the table is the

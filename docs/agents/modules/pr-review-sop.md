@@ -174,6 +174,33 @@ reviewed`: it POSTs the intent and never touches the claim table. (The DEPLOY
 lane's `bin/task intent --to assembled` / `--to shipped` fallback stands: no claim
 gates those stages.)
 
+### Claiming and seating: the traps
+
+- **Review a NAMED task by acquiring it by slug.** The pop claims the top-ranked
+  reviewable task, which may be another session's, and a hold note does not stop it.
+  Ask the owner before reviewing another session's submitted task: it may be parked
+  on purpose, and merging a gem PR puts an irreversible publish in the next release.
+- **`none_reviewable` does not mean the queue is empty.** Claimed tasks drop out of
+  the pop, and a self-review refusal is silent there. When `bin/task list --stage
+  submitted` shows rows, run `bin/task review-claim status <slug>`, then
+  `bin/task review-claim acquire <slug> --agent <soul>`, which prints `YOU BUILT THIS`.
+- **Claim before you spawn.** The orchestrator takes the claim, or the brief tells
+  the reviewer to `acquire` (not `renew`) first. `renew` refuses on an unclaimed task.
+- **Read the selector; do not route around it.** It excludes avi as QA owner (QA must
+  stay independent of review), not as an author, so cycling `claim-next-review
+  --agent` until one soul pops overrides that silently. A pop proves authorship only.
+  The `excluded:` line names each author `(author — a soul never reviews their own
+  work)`; `chosen:` reads the same whether or not a guard fired.
+- **A fit-0 pick is a coin flip.** When every candidate scores 0, or the standing
+  primary is an author, seat on domain, choose the light for the read the primary
+  cannot reach, and say in the report that you overrode the selector and why.
+  Every fix-forward adds its reviewer to the author set; if no qualified independent
+  reviewer remains, review but withhold the merge and name what stays unverified.
+- **`--agent` on `bin/task begin` is an author stamp.** Naming carl for his domain
+  excludes the standing primary from that review.
+- **The selection logic is the tree the script lives in** (`bin/reviewer-select`
+  loads its own Rails app). To ask about merged behavior, run the desk's copy.
+
 Carl then **summons his LIGHT** (Step 2), his own child, nested under him.
 
 ## Step 2 — Carl reviews deep; the LIGHT reads AS its soul
@@ -240,6 +267,25 @@ bin/triage file --title "…" --prior-art "TM's deleted preview view carried the
 # omit --prior-art entirely -> recorded as "unknown" (nobody looked), and it says so
 ```
 
+### Review traps
+
+- **Pre-existing is not the same as non-blocking.** Ask whether the diff makes more
+  paths depend on the defect; if it does, the defect blocks this PR.
+- **Grep call sites on the merge preview, not the fork point.** When a PR changes what
+  a shared predicate matches, a consumer added to `accepted` after the fork sees the
+  new meaning. Exercise the user-visible path; a test that clicks a control should
+  assert its label.
+- **A stacked child's PR page lies after its parent merges.** GitHub keeps serving
+  the old diff and file list. Diff from `git merge-base <base> <head>` instead.
+- **A comment that names a defect is an unfiled finding.** Grep for the wrong text
+  repo-wide; the fix is an edit in the same PR or a card, never just the comment.
+- **When the verdict favours you, say so.** Run the decisive experiment yourself, and
+  have the light reproduce before it reads your account.
+- **When two passes of the same check miss a defect, change the frame.** A light
+  whose lens differs from the primary's finds what a repeated census cannot.
+- **A light shares its primary's session id and lease.** Only the soul separates
+  them, and nothing enforces the bounce rule, so re-read the board after a light reports.
+
 Reviewers may also broadcast in-app progress with
 `POST /api/v1/tasks/:slug/review_events` (primary = `primary` swimlane, light =
 light swimlane) — see [`parallel-agent-devops.md`](parallel-agent-devops.md#picking-the-domain-light-binreviewer-select).
@@ -283,7 +329,10 @@ Resolved — <slug>: <reason>** line; omit the section on a clean run.
 
 ## Step 4 — Verdict
 
-**Carl collects the light's read and drives the verdict.**
+**Carl collects the light's read and drives the verdict.** A quiet light is not a
+stalled one: messages arrive at its next tool round, and a clean desk fits hard work.
+Ask with `SendMessage` before stopping it, and before merging without its verdict say
+so and wait one more round. A blocker found after the merge costs a whole new task.
 
 - **Merge-ready** (no reviewer blocked) → **Carl merges the feat PR into
   `accepted`** — revalidate the head, `gh pr merge --merge --match-head-commit`,

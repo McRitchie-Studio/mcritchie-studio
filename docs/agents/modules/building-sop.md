@@ -57,7 +57,8 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
   selector's refusal states: [`pr-review-sop.md`](pr-review-sop.md).
 - **Classify the shape**; it selects the tests you owe
   (`config/feature_shapes.yml`): `ui-only` · `ui+db` · `backend` · `library` ·
-  `onchain` · `onchain-vertical` · `docs` · `test-only`.
+  `onchain` · `onchain-vertical` · `docs` · `test-only`. Shape by the files, never
+  the hunk ([`fast-lane.md`](fast-lane.md#the-long-form-fallback)).
 - **`test-only`** is for a diff that is entirely test code. It has no tiers, but
   it is not the easy option:
   1. It is claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`,
@@ -70,6 +71,8 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
      runner for `e2e/`/`tests/`), write a `[control]` line in `checks_run` naming
      a file from the diff. A `NO-SIGNAL` verdict is **not** a refusal; it asks
      you for that sentence.
+  4. `bin/ship` never runs it. Run it after your last commit (the stamp is bound
+     to the tree) and never beside a ship (it swaps test files in place).
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
 every session: `<app-slug> · <feature-slug> · <task URL>`.
@@ -107,6 +110,8 @@ cd /Users/alex/projects/mcritchie-studio/.worktrees/<slug>
 1. On a fresh desk, set it up first: `bundle install`, `bin/rails db:prepare`.
 2. Make the scoped change. Commit early and often; a peer claim can reset a desk
    under uncommitted work.
+   After any `db:migrate`, read the whole `git diff db/schema.rb`: the dump can
+   carry a sibling's column from a shared database. Keep only your own hunks.
 3. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the **owning active docs in the same pass**.
 4. Narrate with `bin/agent-activity`, one activity per unit of work, starting
@@ -122,7 +127,8 @@ them tier-tagged:
 bin/task update <slug> --checks "[unit] ..." --checks "[integration] ..."
 ```
 
-`--checks` and `--accept` **replace** the list; pass the full set each call.
+`--checks` and `--accept` **replace** the list; pass the full set each call. The
+other recording traps: [`task-board-api.md`](task-board-api.md#footguns-verified-will-bite-you), footgun 8.
 
 ## Step 4 — Decide: does this change earn a LOCAL REVIEW?
 
@@ -272,6 +278,10 @@ the task URL, records `pr_url`, runs the pre-flight while CI is already running,
   red-CI task back with the failing checks named.
 - Moving by hand (`bin/task move <slug> submitted`) does **not** wait for CI; the
   wait lives in `bin/ship`.
+
+**Before you launch:** land every change (a push mid-wait restarts CI), probe
+with `bin/dor-check <slug> --json` (read-only, no gate attempt), and clear the
+[traps the pre-flight cannot see](gates/g1-cert.md#traps-the-pre-flight-cannot-see).
 
 Keep the worktree and branch until review confirms the PR merged or was
 abandoned. A pushed branch preserves code; `main` is not a backup.

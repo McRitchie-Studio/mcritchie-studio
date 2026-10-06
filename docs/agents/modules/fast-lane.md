@@ -233,6 +233,24 @@ If a wait is cut short, re-run it; if the SHIP is cut short, re-run `bin/ship`
 the task in `building` with its PR already open, which the review sweep does not
 pop.
 
+**Reading a ship you did not launch.** A `building` task with an open green PR is
+three different states, and each one has a different move:
+
+- **Live:** `bin/ship-wait <task-slug>` from the desk attaches and says live,
+  succeeded or failed. Ask it before resuming, even when the agent that launched
+  the ship reports "completed".
+- **Unfinished:** a desk with modified or untracked files is a build still in
+  progress. Report it; resuming would commit someone's half-done work.
+- **Bounced:** a send-back also leaves the task in `building` with a green PR.
+  Read `resubmission` and `unresolved_feedback` before resuming.
+
+Only a finished-and-failed or absent ship on a clean desk with no open send-back
+is stranded; re-run the ship. Stopping an agent can stop the ship it launched, so
+check the ship's process before you believe a FAILED verdict. A watcher or
+monitor line describes a log at some past moment, often an earlier attempt: the
+board's stage and the check-runs at the head SHA are the verdicts. Never cut a
+long command's output with `| tail`; give it its own log from the first line.
+
 **Watch it on the board.** While ship waits, the task's card in `building` shows
 the PR's CI meter — `PR: <n>`, one mark per check, and a clock that freezes to the
 run's duration when checks settle. Before a PR exists, the card shows the current
@@ -274,6 +292,12 @@ Before editing a single file:
    GitHub CI is the one verdict, and `bin/fast-check` is the optional pre-flight
    before it, never evidence the gate reads. Read "owes the CI gate" as "is not
    exempt", never as "must run the full suite locally".
+   **Shape by the files, never the hunk.** `bin/lib/code_diff.rb` classifies by
+   file type: a comment-only `.rb` edit is not `docs`, and `docs` admits prose plus
+   guard tests under `test/docs/` and nothing else. A studio-engine change a
+   consumer can assert on is `library`, not `ui-only`. A `.github/workflows` change
+   is `backend`, and its honest `[integration]` line is the PR's own CI run of the
+   changed workflow.
 2. **Allocate an isolated worktree** (`bin/agent-worktree new <app> <task>`) on
    an allocated port. Do not edit on a primary checkout.
 3. **Run `/Users/alex/projects/mcritchie-studio/bin/session-preflight <task> --root <desk>`**

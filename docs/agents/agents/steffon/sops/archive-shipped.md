@@ -21,7 +21,7 @@ same kind of fact:
 |---|---|---|
 | archived tasks, completed releases | the **production board** | shared; `--local` is never added (see Entry) |
 | reclaimed worktrees, swept bytes, rotation verdicts | **this machine only** | never board state |
-| retired docs, ledger rollover | **the repo** | staged, then committed to `release` |
+| retired docs, ledger rollover | **the repo** | staged, then committed to `accepted` |
 
 So a **fresh Mac's first archive run sweeps almost nothing, and that is
 correct** — not an anomaly, and not a sign the sweep is broken. The disk numbers
@@ -29,7 +29,7 @@ describe the machine the command ran on. Never file them as pipeline state, and
 never compare them across machines.
 
 The doc retirement is the exception to "machine-local": it edits **tracked
-files**, so the run stages the moves and commits them to `release` with the
+files**, so the run stages the moves and commits them to `accepted` with the
 ledger in one artifact commit. It therefore does the same thing on any machine.
 
 ## Entry
@@ -47,6 +47,13 @@ Use the production board by default. Do not add `--local`.
 - At least one shipped task or completed release is ready to archive.
 - The worktree cleanup candidate is merged or main-equivalent.
 - No feature worktree with unmerged or dirty work is reclaimed.
+- No `bin/release` prepare or ship is running (`pgrep -fl "bin/release"`;
+  `bin/release status` does not show the conductor). The act commits onto
+  `release` and would race it; while one runs, do the infra halves and the orphan
+  sweep directly.
+- The members of the last shipped release stay `shipped` as the board's Last
+  Release panel; they archive when the next release ships, so WIP is never a
+  literal 0 right after a ship.
 
 If there is nothing to archive, **still run the orphan sweep** below, then report
 "nothing to archive" alongside its result and stop. The sweep reports orphans
@@ -113,7 +120,7 @@ cleanup guards.
    A pruner that refuses or fails prints a warning; the archive goes on.
 10. Retires frozen docs + rolls the ledger (`bin/archive-docs`), then commits
     each move (the archive copy AND the live copy's removal) and the ledger to
-    `release` in ONE artifact commit.
+    `accepted` in ONE artifact commit.
 
 **`bin/release archive` ends at step 10. The ACT does not.** One step remains, and
 it is a separate command you run yourself:
@@ -244,8 +251,8 @@ between the ledger and its archive. `bin/archive-docs` checks that against `HEAD
 before the roll and again after it, and an apply exits non-zero naming every
 destroyed row (a `--dry-run` reports and still exits 0, so a preview never wedges
 the callers that preview before confirming). `bin/release archive` **honours that
-exit code**: it aborts before `commit_artifact_to_release`, so the destroyed
-ledger is never committed to `release`.
+exit code**: it aborts before `commit_artifact_to_accepted`, so the destroyed
+ledger is never committed to `accepted`.
 
 Both halves are load-bearing, and the second one is easy to lose. When the
 refusal first shipped it was **inert** through the only caller that matters —
@@ -315,7 +322,7 @@ so it stays seven calls however large the board.
 |---|---|---|
 | `ORPHANED  <repo>#<n>` | neither merged nor closed, and no board state describes it | name it in the report, and decide: merge it, close it, or revive the task |
 | `abandoned on purpose  <repo>#<n>` | an abandonment receipt names that exact PR | nothing — the decision was made and recorded; it only needs to stay visible |
-| `warning: <repo>: could not list open PRs — NOT checked` | that repo **was not swept at all** | refresh the token and re-run; if it still fails, report the repo BY NAME as unchecked |
+| `warning: <repo>: could not list open PRs — NOT checked` | that repo **was not swept at all** | refresh the token and re-run; if it still fails, `gh repo view <owner>/<repo>` tells a retired repo ("Could not resolve", not a token fault) from a token problem; report the repo BY NAME as unchecked either way |
 
 `archived` is not a lock. **Reviving the task is a legitimate outcome** — often
 the right one when the PR still carries work nobody re-derived.
@@ -376,7 +383,8 @@ reclaimed, and regenerable disk is swept. Report:
   BOTH directions, so a contaminated UNKNOWN is not merely pessimistic, it is
   uninformative. That is what `bin/lib/toolchain_env.rb` exists to prevent; the
   interpreter line is how you confirm it did
-- **retired-doc count** and the ledger rows rolled over
+- **retired-doc count** and the ledger rows rolled over. With both at 0, a
+  `left N doc(s) uncommitted` advisory is a failed empty commit, not stranded work
 - **any doc skipped for being still referenced** — name the file AND its
   referrer, so the citation can be fixed deliberately rather than orphaned
 - **orphaned PRs** from `bin/task orphan-prs` — every `ORPHANED` line as

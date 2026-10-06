@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# The ship's push to main: commit_artifact_to_release, push_frozen_main, the printed
+# The ship's push to main: commit_artifact_to_accepted, push_frozen_main, the printed
 # reconcile, and the push-failure classifier.
 #
 # Part of the bin/release CLI suite, one file per subcommand. The
@@ -14,9 +14,9 @@ require_relative "release_cli_harness"
 class ReleaseCliFrozenMainTest < ReleaseCliHarness
   # [unit] While another invocation holds the checkout (the gate's suite run),
   # the artifact dance must SKIP — best-effort, non-fatal, HEAD untouched — not
-  # queue behind a ~6-min suite and never flip main↔release under it. The test
+  # queue behind a ~6-min suite and never flip main↔accepted under it. The test
   # process holds the flock exactly as the gate does.
-  def test_commit_artifact_to_release_skips_without_flipping_while_the_checkout_is_locked
+  def test_commit_artifact_to_accepted_skips_without_flipping_while_the_checkout_is_locked
     Dir.mktmpdir do |dir|
       clone = build_sibling_fixture(dir)
       doc = File.join(clone, "retro.md")
@@ -28,7 +28,7 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{clone.inspect})
       out = run_cli(["--yes"], setup: setup,
-                    call: %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
+                    call: %{commit_artifact_to_accepted("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
 
       assert_includes out, "left retro.md uncommitted", "the dance must skip while the checkout is locked"
       assert_includes out, "primary checkout busy", "…naming the concurrent holder as the reason"
@@ -36,32 +36,33 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
       assert_includes out, "DONE", "the skip stays NON-FATAL (archive/retro ride on)"
       head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
       assert_equal "main", head.strip, "HEAD must never leave main while the lock is held elsewhere"
-      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "release")
-      assert_equal "1", count.strip, "no commit lands on release while the checkout is locked"
+      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "--all")
+      assert_equal "1", count.strip, "no commit lands on any branch while the checkout is locked"
     ensure
       lock&.close
     end
   end
 
   # [unit] Uncontended, the dance still works end-to-end: takes the lock,
-  # commits the doc onto release, pushes, restores main, releases the lock.
-  def test_commit_artifact_to_release_commits_and_restores_main_when_uncontended
+  # commits the doc onto accepted, pushes, restores main, releases the lock.
+  def test_commit_artifact_to_accepted_commits_and_restores_main_when_uncontended
     Dir.mktmpdir do |dir|
       clone = build_sibling_fixture(dir)
+      run_git(clone, "push", "-q", "origin", "main:accepted")
       doc = File.join(clone, "retro.md")
       File.write(doc, "retro fixture")
 
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{clone.inspect})
       out = run_cli(["--yes"], setup: setup,
-                    call: %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
+                    call: %{commit_artifact_to_accepted("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
 
-      assert_includes out, "committed retro.md to release", "a free checkout commits the artifact"
+      assert_includes out, "committed retro.md to accepted", "a free checkout commits the artifact"
       assert_includes out, "DONE"
       head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
       assert_equal "main", head.strip, "the checkout is restored to main (ensure)"
-      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "origin/release")
-      assert_equal "2", count.strip, "the artifact commit is pushed onto origin/release"
+      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "origin/accepted")
+      assert_equal "2", count.strip, "the artifact commit is pushed onto origin/accepted, never origin/release"
       File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::RDWR | File::CREAT, 0o644) do |f|
         assert f.flock(File::LOCK_EX | File::LOCK_NB), "the dance must RELEASE the lock afterwards"
       end

@@ -1,8 +1,9 @@
 require "test_helper"
 
 # Integration: /deployments carries the fresh-deploy glow window END TO END.
-# The Last Release card self-describes its window (data-fresh-window-ms) and
-# the FX layer's JS timer renders from the SAME helper value, so the
+# The Last Release card self-describes its window (data-fresh-window-ms), the
+# router module's cleanup timer (board/release_fx_dom) reads that attribute, and
+# the router's CSS durations render from the SAME helper value, so the
 # release-ship e2e spec budgets its waits from the page itself instead of
 # racing a hardcoded 8s wall-clock window (task stabilize-release-ship-spec).
 class DeploymentsFreshWindowTest < ActionDispatch::IntegrationTest
@@ -18,7 +19,7 @@ class DeploymentsFreshWindowTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "#last-release[data-fresh-deploy='true'][data-fresh-window-ms='60000']"
-    assert_includes response.body, "const FRESH_DEPLOY_MS = 60000"
+    assert_includes response.body, "animation: lbfxFreshDeployGlow 60.0s linear both"
   end
 
   # THE OVERRIDE IS NOW THE SHORTER WINDOW, so this test discriminates in the opposite
@@ -28,9 +29,9 @@ class DeploymentsFreshWindowTest < ActionDispatch::IntegrationTest
   # would have passed while proving nothing. A ship 30s old is the discriminating case
   # today: FRESH under the 60s default, STALE under the 20s injection. The property is
   # unchanged and is the only reason this test exists — the card's rendered state and the
-  # client's timer both come from ONE value, so they can never disagree about when the
+  # glow's CSS and the client's timer (which reads data-fresh-window-ms) come from ONE value, so they can never disagree about when the
   # glow ends.
-  test "[integration] the injected window drives the card and the FX timer together" do
+  test "[integration] the injected window drives the card and the FX CSS together" do
     travel_to 30.seconds.ago do
       Release.open!.ship!(by: "test")
     end
@@ -40,7 +41,7 @@ class DeploymentsFreshWindowTest < ActionDispatch::IntegrationTest
       assert_response :success
 
       assert_select "#last-release[data-fresh-deploy='false'][data-fresh-window-ms='20000']"
-      assert_includes response.body, "const FRESH_DEPLOY_MS = 20000"
+      assert_includes response.body, "animation: lbfxFreshDeployGlow 20.0s linear both"
     end
 
     # And the same 30s-old ship IS still fresh under the production default — the half

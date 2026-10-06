@@ -34,6 +34,7 @@ rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
 | Public access | private by default; R2 has no public-access block because nothing is public until a custom domain or `r2.dev` URL is attached. Public serving is a per-bucket decision in the app's cutover task |
 | Private assets | served through app auth via presigned URLs, which R2 supports on the S3 endpoint |
 | Code discipline | writes fail loudly. Never wrap an upload in a rescue that returns success |
+| Active Storage on R2 | every R2 service in `config/storage.yml` sets `request_checksum_calculation: when_required` and `response_checksum_validation: when_required`. Active Storage sends Content-MD5 and aws-sdk-s3 adds a CRC32, and R2 refuses the pair. A `Studio::S3` probe sends no Content-MD5, so its success proves nothing about Active Storage |
 
 ## R2 — gaps against the S3 rules
 

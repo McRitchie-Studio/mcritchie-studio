@@ -163,6 +163,27 @@ map, because FACTS is readable by anyone with the repo. And **no FACTS value
 is ever copied into this public repo**, the task board, a PR body, or an
 Artifact.
 
+## Traps
+
+- **Name the item before you file it.** "The last email forwarded" is ambiguous:
+  the queue holds several unswept forwards, and Alex's own cc'd replies arrive
+  newer than the forward he means. List the `awaiting_sweep` items one line each,
+  say which you picked, and read before you file or ship.
+- **A quarantined item looks empty, not blocked.** Its body and attachment
+  columns are blank; the raw `.eml` is sealed in the desk bucket. Report it.
+- **Filing crosses two apps.** The desk queue is on the hub; `Studio::KnowledgeDoc`
+  rows live on the entity app. A query for them on the hub returns 0, which reads
+  as an empty layer rather than the wrong app.
+- **Read a document's metadata before its text.** `file <document>` shows an
+  Office or PDF file's title, author, last editor and edit time, which can reveal
+  a recycled template the body hides.
+- **A returned draft is diffed, not skimmed.** The same filename can be a new
+  revision (compare byte sizes), and a redline marks edits against the original,
+  not against the last round. Check every decision from the last call landed.
+- **Read the prior thread before drafting a reply** (`bin/mail thread` or
+  `workspace:thread`): list what was already said and what is still unanswered.
+  After Alex sends, file the SENT message, not the draft.
+
 ## Boundaries
 
 - Everything here is confidential by default: private buckets, private repos,

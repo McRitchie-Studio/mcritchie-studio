@@ -3,8 +3,9 @@
 ## Status: Active
 
 This is Avi's `qa-release` SOP: the self-healing release prepare sweep. It detects
-reviewed work and release stragglers, promotes `accepted → release` via ONE batch PR
-per repo, allocates each gem member's version, publishes it and bumps consumer locks
+reviewed work and release stragglers, promotes `accepted → release` per repo (a
+fast-forward when `release` is contained in `accepted`, the batch PR only when it has
+diverged), allocates each gem member's version, publishes it and bumps consumer locks
 (producer-first, before anything tests or deploys), runs the pre-QA gate, deploys QA,
 and flips members to `assembled` only on QA-green. `qa-deploy` is the legacy name.
 History and rationale cut from this page live in
@@ -43,9 +44,8 @@ Self-service; never `gh auth login`, never print the token
 
 ## Assembler claim — automatic, on the RELEASE record
 
-**`bin/release prepare` takes the lock for you**: the per-release `assembler` conductor
-claim, BEFORE the irreversible promote, renewed for the sweep's life and released on
-completion. There is **no `bin/devops-shift acquire steffon` step any more.**
+**`bin/release prepare` takes the lock for you**: the per-release `assembler` claim,
+BEFORE the irreversible promote, renewed for the sweep's life, released on completion.
 
 - **Stand down** — `🛑 <release> assembler already held — STAND DOWN` names the holder
   and **aborts before anything merges or deploys**. Announce the holder and STOP; its
@@ -97,9 +97,19 @@ bin/release prepare --yes
    `⚠ HELD <slug>: names parked <repo> (ladder: <ladder>) — <why>; left <stage>,
    never promoted or deployed.` A task naming a live AND a parked repo is held WHOLE.
 2. Open or resume the release candidate.
-3. **Promote `accepted → release`**: per repo with reviewed work, open (or reuse) ONE
-   `--base release --head accepted` batch PR and merge it. Idempotent: `accepted` level
-   with `release` skips the PR but still records + deploys. Membership is recorded
+3. **Promote `accepted → release`**: per repo with reviewed work, ONE promote.
+   - **Fast-forward** when `release` is contained in `accepted`: the `accepted` head is
+     pushed to `release` by ref, with no force flag, and read back. No PR, no merge
+     commit, so `release` carries the very SHA whose CI `accepted` already ran.
+   - **Batch PR** only when `release` has diverged (it carries a commit `accepted`
+     lacks, such as a hotfix on `release` or `main` not yet merged forward); the output
+     says so. Open (or reuse) ONE `--base release --head accepted` PR and merge it,
+     then `accepted` is carried onto the merge commit by a fast-forward, so the next
+     promote fast-forwards. If `accepted` moved meanwhile it is left alone, with a `⚠`
+     line, and the next promote takes the batch PR again.
+
+   Idempotent: `accepted` level with `release` skips the promote but still records +
+   deploys. Membership is recorded
    (re-stamping `merged: "release"`), skipping work stamped `merged: release`/`main`. A
    `reviewed` member with `merged: ""` is a HELD anomaly, warned and left `reviewed`.
 3b. **VERIFY the promote reached the candidate** (the stale-tree gate): per three-rung
@@ -110,7 +120,8 @@ bin/release prepare --yes
    gate and the gem publish), so a hotfix on `main` cannot block the ship. A conflict,
    failed push, or unmet containment **aborts**: resolve on a branch off
    `origin/release`, merge `origin/main` into it, push to `release`, re-run `bin/release
-   prepare`. **Do not `reset` `release` to "clean up" an aborted sweep.**
+   prepare`. **Do not `reset` `release` to "clean up" an aborted sweep.** A landed
+   merge-forward is carried onto `accepted` the same way as the batch PR's merge commit.
 4d. **Allocate gem versions, publish gem members, bump consumer locks — BEFORE
    the gate and QA** (producer-first — a RubyGems push can never be re-pushed).
 
@@ -125,8 +136,8 @@ bin/release prepare --yes
    minor, else patch; a member's `gem_bump` overrides), advances the **last published**
    version (the higher of the last `v*` tag and RubyGems), and commits the
    `version_file` **with its `Gemfile.lock` and rolled `CHANGELOG.md`** onto
-   `origin/accepted`; the ordinary batch PR carries it to `release`. Nothing is carried
-   back down from `release`. Phase 0 decides for EVERY gem before writing to ANY.
+   `origin/accepted`; the ordinary promote carries it to `release`. Phase 0 decides for
+   EVERY gem before writing to ANY.
 
    **The changelog roll.** A swept gem is a `gems:` entry a member touches
    (studio-engine and solana-studio; turf-vault is under `apps`, never versioned). Each
@@ -177,7 +188,11 @@ bin/release prepare --yes
    such a gem may ship gem-only). ANY failure aborts with **zero gems published**.
    Phase 2 publishes each gem's `origin/release` version (skip-if-live) and commits each
    consumer's `Gemfile.lock` bump (`bundle lock --update <gem> --conservative`) onto the
-   consumer's `origin/release`, **verified by reading the lock back** and retried on a
+   consumer's `origin/accepted` FIRST, then fast-forwards `origin/release` to the same
+   commit, so `release` never carries a commit `accepted` lacks. Only when the two
+   branches do not share a commit (a diverged `release`, or `accepted` moved mid-sweep)
+   does the bump land on `release` alone, with a `⚠` line; the next promote's batch PR
+   carries it back. The bump is **verified by reading the lock back** and retried on a
    3-attempt backoff (see CONSUMER LOCK BUMP). The same commit carries any new **engine
    migrations** (`<engine>:install:migrations` plus `db:migrate` against a throwaway
    database so `db/schema.rb` lands); a failed probe, an unexpected schema rewrite, or an
@@ -186,7 +201,9 @@ bin/release prepare --yes
 5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that exact SHA
    IS the verdict**; nothing runs locally. It polls a pending run, passes only on green,
    and fails closed on everything else. It may **credit** an existing green for the same
-   commit or the accepted head's **identical tree** (named in the gate note). It records
+   commit: after a fast-forward promote `origin/release` IS the accepted head, so its
+   verdict carries over by SHA. After a batch PR it may credit the accepted head's
+   **identical tree** instead (named in the gate note). It records
    SHA + command + verdict as a `pre_qa_gate` SOP; G4 re-reads the frozen SHA itself. A
    self-gated gem in a gem-only release earns the same identical-tree credit. A red gate,
    and why you must **not** blank the registry's `qa_test_cmd`:
@@ -247,16 +264,19 @@ An abort leaves the same board state as an interruption. Each abort names its ca
 | **QA DEPLOY DISPATCHED, RUN LIST UNREADABLE** (step 6 — "the run list could NOT be read afterwards — whether a run was created is UNKNOWN") | **Do NOT re-dispatch** — a second deploy can land on a live one. Fix the reader (`gh auth status`; `eval "$(bin/gh-auth-refresh --export)"`), then `gh run list --workflow <workflow> --limit 5`. If a run for that SHA is listed, `gh run watch <id> --exit-status`; only a readable list with no run makes a hand-dispatch safe | once the deploy's real state is KNOWN: re-run `prepare` (it resumes over the promoted/published work) |
 | **QA DEPLOY NOT DISPATCHED — NO BASELINE** (step 6 — "`gh run list` never answered/FAILED, so there is no baseline … NOT dispatching. NOTHING WAS DEPLOYED") | **The refusal is CORRECT.** Read the quoted `gh said:` line and its `→` remedy; a `HTTP 401: Bad credentials` means the sweep outlived its ~1h token: re-mint. The promote and any gem publish have ALREADY happened | fix what gh named, then re-run `prepare`; it resumes over the merged/published work |
 | **QA deploy / boot FAILED** ("never returned /up 200") | **FIRST scroll up for `⚠ <workflow>: … NOTHING WAS DEPLOYED; this is not a boot failure`** — then the app was never deployed and the rows above apply. Otherwise fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |
-| **STALE TREE** (step 3b — "prepare refused: … would deploy a tree that does NOT contain `accepted`") | **The good outcome — the sweep caught itself.** READ THE REFUSAL FIRST. **LOST STAMP** naming a task → run the two commands it prints (`bin/task merged <slug> accepted`, plus `bin/task move <slug> reviewed` unless already there). A commit no task owns → `gh pr create --repo <owner/name> --base release --head accepted …`, **watch that PR's CI to green**, then `gh pr merge <pr-url> --merge --match-head-commit <the accepted head the abort names>`. Never push or reset `release`; there is deliberately no flag | re-run `prepare`; it promotes nothing new, re-gates, and re-deploys QA over the tree that now carries the work |
+| **STALE TREE** (step 3b — "prepare refused: … would deploy a tree that does NOT contain `accepted`") | **The good outcome — the sweep caught itself.** READ THE REFUSAL FIRST. **LOST STAMP** naming a task → run the two commands it prints (`bin/task merged <slug> accepted`, plus `bin/task move <slug> reviewed` unless already there). A commit no task owns → `gh pr create --repo <owner/name> --base release --head accepted …`, **watch that PR's CI to green**, then `gh pr merge <pr-url> --merge --match-head-commit <the accepted head the abort names>` (the abort prints a short SHA; gh needs the full one from `git rev-parse origin/accepted`). Never push or reset `release`; there is deliberately no flag | re-run `prepare`; it promotes nothing new, re-gates, and re-deploys QA over the tree that now carries the work |
 | **STALE TREE — rung could NOT be read** (step 3b — "a failed read is not a clean read") | Clone the repo as a sibling, or `git fetch origin` in it, so `origin/release..origin/accepted` can be read | re-run `prepare` |
 | **`accepted → release` promote failed** (a conflict on the batch PR) | Resolve the conflict on the batch PR (or `bin/task block` the offending member) | re-run `prepare` |
+| **Fast-forward refused** ("could not fast-forward origin/release … did release move?") | Someone pushed `release` between the containment read and the push. Never force it | re-run `prepare`; it re-reads containment and takes the fast-forward or the batch PR |
 | **CHANGELOG MISFILE GUARD REFUSED THE PROMOTE** (step 3 — "the CHANGELOG misfile guard REFUSED the promote — NOTHING was promoted, recorded or deployed", then per gem "would file N line(s) written under '## Unreleased' beneath a version that already shipped without them" or "the promote would CONFLICT in CHANGELOG.md") | Nothing was promoted in ANY repo. Merge `origin/release` into a branch off the gem's `accepted`, move every line filed under a shipped version back under `## Unreleased` (resolve a conflict the same way), and push that merge straight onto `accepted` — **not a PR**, which `bin/dor-check` refuses. Fail-closed variants ("git fetch failed", "could not resolve…", "git merge-tree could not predict", git 2.38+) name their fix. A commit landing on `accepted` meanwhile fails the pinned merge: re-run | re-run `prepare`; it resumes |
 | **Member left `reviewed` with `merged: ""`** (review never landed its feat PR on `accepted`) | Re-review the task so `pr-review` merges it onto `accepted` | re-run `prepare` |
 | **`⚠ HELD <slug>: names parked <repo> (ladder: <ladder>) — <why>; left <stage>, never promoted or deployed.`** (step 1 — not an abort; `bin/release merge <slug>` refuses the same task) | **Do not force it through.** If the repo carries no work, drop it (`bin/task update <slug> --repo …`, which REPLACES the list); if the repo is being revived, set `ladder: three-rung` on its registry row in a task of its own. A parked repo in the deploy plan is refused at step 3b, same fix | re-run `prepare`; the task sweeps once no repo it names is parked |
 | **MULTI-REPO PR RECORD INCOMPLETE** (step 3a — "multi-repo task(s) with an incomplete PR record") | Record the missing PR — `bin/task update <slug> --pr-url-for <repo>=<pr-url>` — or drop the repo with no work (`bin/task update <slug> --repo …`). Nothing was promoted | re-run `prepare`; the member sweeps with every repo it names |
-| **ACCEPTED NOT COVERED BY THE PROMOTE** (step 4a-bis — "`accepted` carries commits for X, a repo this release's members NAME, but this sweep would promote only Y") | Usually a PARTIAL earlier promote. Land it (`bin/release merge <slug>`, fanning out over every repo the task names) or drop X from the task; `bin/release status` shows git and board side by side. A repo NO member names is out of scope | re-run `prepare` once every member-named ahead repo rides |
+| **ACCEPTED NOT COVERED BY THE PROMOTE** (step 4a-bis — "`accepted` carries commits for X, a repo this release's members NAME, but this sweep would promote only Y") | Usually a PARTIAL earlier promote. Land it (`bin/release merge <slug>`, fanning out over every repo the task names) or drop X from the task; `bin/release status` shows git and board side by side. A repo NO member names is out of scope. When a gem repo's only ahead commit is this sweep's own producer lock bump, `bin/release merge` skips it (`merged: release`); a hand `--base release --head accepted` PR lands it, prepare reuses an open one, and the next run publishes ANOTHER gem version: say so before promoting | re-run `prepare` once every member-named ahead repo rides |
 | **A REPO CANNOT CERTIFY `accepted`** (inside the promote — "promote refused — <repo> (suite workflow "CI") cannot certify `accepted`") | Add `accepted` to that repo's suite workflow `on.push.branches` (reference: `mcritchie-studio/.github/workflows/ci.yml`, deliberately no `concurrency:` block) and land it on the repo's `accepted`. Do **not** drop the repo from the sweep. Exempt only by declaration (`Release::AcceptedCertification::GEM_SUITE_WORKFLOWS` nil; none today) | re-run `prepare`; it resumes |
-| **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **WAIT — nothing to fix.** Watch the compact index bundler reads: `curl -sS https://index.rubygems.org/info/<gem> \| tail -5`, not the API or HTML page. Do **not** bump the version | re-run `prepare`; the publish skips as already-live and the bump lands |
+| **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **WAIT — nothing to fix.** Watch the compact index bundler reads: `curl -sS https://index.rubygems.org/info/<gem> \| tail -5`, not the API or HTML page. Do **not** bump the version. If sibling consumers already resolved the new version, it is not propagation but a dependency cap in that consumer: land a consumer task running `bundle lock --update <gem> <capped-dep> --conservative` | re-run `prepare`; the publish skips as already-live and the bump lands |
+| **`record op returned no JSON`** (prepare's record step) | The record step runs `Release::Conductor` on PRODUCTION via `heroku run`, against production's deployed `config/release_repos.yml` and guards. A repo registered in this same release is unknown there. Ship the hub registry change first: hold the new repo's tasks (`included_in_release: false`) and sweep the hub tasks with `--task`. A conductor guard fix likewise takes effect only once it is live on `main` | re-run `prepare` for the new repo in the next cycle |
+| **SWEEP LOOKS HUNG, or a QA lane is red** (not an abort) | A sweep at 0% CPU with no sockets is waiting in a `gh` child: check `pgrep -P <pid>`, the child's age and the run it watches. On a red, ask whether a test actually ran and failed: a runner setup step, an API 5xx, or a `Bundler::GemNotFound` naming the version this sweep just published ("the author has removed it") is a re-run, never an eject. Re-run ALL jobs (`gh run rerun <id>`, not `--failed`): the `*_executed_set` guards re-read receipts. A still-open G3 attempt may be a peer's live sweep, and its candidate may absorb your task: read your task's stage once `bin/release status` reads `none active` | let the sweep finish, or re-run `prepare` (it stands down before anything irreversible) |
 
 `prepare` never force-ships a red candidate: eject it or fix it forward.
 
@@ -283,7 +303,7 @@ bin/task show <task> --json | jq '{stage, merged, release_slug}'
 | `assembled` | `"release"` | Healthy member, QA-green. |
 
 ⚠️ **The board state does NOT say why.** The latest **G3 Candidate** attempt closed
-`failed` is an **ABORT**; still open is an **INTERRUPTION**.
+`failed` is an **ABORT**; still open is an **INTERRUPTION** (or a peer's live sweep).
 
 ## Exit Seam
 
