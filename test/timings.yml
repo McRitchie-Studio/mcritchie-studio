@@ -169,7 +169,6 @@ test/lib/archive_docs_cli_test.rb: 4.92
 test/lib/artifact_sweep_test.rb: 0.09
 test/lib/atomic_capture_hook_test.rb: 4.43
 test/lib/atomic_event_cli_test.rb: 23.38
-test/lib/bcrypt_test_cost_test.rb: 0.02
 test/lib/bin_helpers_test.rb: 0.06
 test/lib/board_cadence_mirror_test.rb: 0.04
 test/lib/bounce_check_cli_test.rb: 8.96

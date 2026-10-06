@@ -87,6 +87,6 @@ site connection, primary-domain setting, disabled `www` prefix, and
 - Alpine.js via CDN for interactivity
 - Montserrat font (Google Fonts CDN)
 - ERB views, import maps, no JS frameworks
-- Passwordless auth via magic links, Google OAuth, and Solana wallet. `has_secure_password` remains on `User` only as a dormant compatibility fallback.
+- Passwordless auth via magic links and Google OAuth. `User` has no `has_secure_password` and stores no password.
 - Email delivery uses `Studio::Email` with SES as the target transport and Resend as rollback. Cross-app operations live in `docs/agents/modules/email-operations.md`; McRitchie-specific wiring lives in `docs/email-delivery.md`.
 - **Studio engine gem** — `gem "studio-engine", "~> 0.11"` from RubyGems; release/adoption checklist lives in `studio-engine/docs/RELEASE.md`

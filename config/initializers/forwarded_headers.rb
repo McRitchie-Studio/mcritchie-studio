@@ -10,7 +10,7 @@
 #
 #     Forwarded: for=203.0.113.9
 #
-# and every per-IP throttle in config/initializers/rack_attack.rb (login/ip,
+# and every per-IP throttle in config/initializers/rack_attack.rb (magic_link/ip,
 # signup/ip, sso_continue/ip, oauth_callback/ip, chat/ip) counts them as that
 # address, a fresh one on each request if they like, or someone else's.
 #

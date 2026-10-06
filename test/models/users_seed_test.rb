@@ -53,7 +53,7 @@ class UsersSeedTest < ActiveSupport::TestCase
   #
   # So the guard belongs on the callback, which is the thing doing the work.
   test "a parked identity cannot be saved into a role the roster contradicts" do
-    mack = User.create!(email: "mack@mcritchie.studio", name: "Mack McRitchie", password: "password")
+    mack = User.create!(email: "mack@mcritchie.studio", name: "Mack McRitchie")
 
     mack.update!(role: "admin")
 
