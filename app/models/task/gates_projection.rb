@@ -2,7 +2,7 @@
 
 class Task
   # Materialized LATEST-ATTEMPT-PER-GATE snapshot — the newest GateRun for each
-  # task-grain gate (G1 Cert, DoR builder, DoR review, G2a Primary, G2b Light),
+  # task-grain gate (DoR builder, DoR review, G2a Primary, G2b Light),
   # denormalized onto the task row (gates jsonb) exactly like Task::TestingPhases.
   # A PURE function of the
   # task's gate_runs (GateRun.latest_by_key computes the read), so recompute is
@@ -13,12 +13,12 @@ class Task
   # membership — intentionally OUT of this per-task projection (release surfaces
   # read gate_runs directly).
   module GatesProjection
-    # v2: the two DoR gates (dor, dor_review) joined the task-grain set. Bumping
-    # the version self-heals every cached 3-key projection on first access
-    # (cached_or_built rebuilds from gate_runs on a version mismatch — no backfill).
-    VERSION = 2
+    # Bump the version whenever the task-grain set changes (v3: g1_cert retired):
+    # it self-heals every cached projection on first access (cached_or_built
+    # rebuilds from gate_runs on a version mismatch — no backfill).
+    VERSION = 3
 
-    # The task-grain gate keys this projection snapshots (g1_cert, dor, dor_review,
+    # The task-grain gate keys this projection snapshots (dor, dor_review,
     # g2a_primary, g2b_light). Every key is always present in the map — a
     # never-attempted gate carries the all-nil row — so consumers never key-check.
     GATE_KEYS = GateRun::TASK_KEYS

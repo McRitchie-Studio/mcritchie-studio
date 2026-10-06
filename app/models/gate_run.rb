@@ -3,7 +3,6 @@
 # One ATTEMPT at a named testing GATE — the branded checkpoints of the devops
 # pipeline (docs/agents/modules/gates/):
 #
-#   G1 Cert       (task)    shape tiers + full-suite + rubocop (self-closing cert)
 #   DoR (builder) (task)    the builder's dor-check verdict at submit (own gate)
 #   DoR (review)  (task)    the primary reviewer's gate-zero dor-check (own gate)
 #   G2a Primary   (task)    the primary senior review
@@ -11,11 +10,9 @@
 #   G3 Candidate  (release) pre-QA gate + QA deploy + boot smoke + post_deploy
 #   G4 Ship       (release) frozen-SHA gate + prod deploy + /up + smoke seal
 #
-# The two DoR gates are the OPTION-B split: the (since retired) local cert owned g1_cert
-# open+close on its own; the Definition-of-Ready verdict is its OWN gate, with a
-# separate attempt for the builder (`dor`, dor-check at submit) and the reviewer's
-# gate-zero (`dor_review`, dor-check --gate-role review). CI stays a handoff, not
-# a gate.
+# The Definition-of-Ready verdict is its OWN gate, with a separate attempt for
+# the builder (`dor`, dor-check at submit) and the reviewer's gate-zero
+# (`dor_review`, dor-check --gate-role review). CI stays a handoff, not a gate.
 #
 # Each row is one attempt: started_at → finished_at, success (nil while in
 # flight), and a `sops` jsonb list of the test SOPs executed inside the window
@@ -31,9 +28,8 @@
 # close! UPDATES the open row (the one write path that broadcasts on update).
 class GateRun < ApplicationRecord
   # Order in this literal defines flow order (KEYS = GATES.keys): the two DoR
-  # gates sit between g1_cert and the G2 review lanes.
+  # gates come first, then the G2 review lanes.
   GATES = {
-    "g1_cert"      => { "label" => "G1 Cert",      "grain" => "task" },
     "dor"          => { "label" => "DoR (builder)", "grain" => "task" },
     "dor_review"   => { "label" => "DoR (review)",  "grain" => "task" },
     "g2a_primary"  => { "label" => "G2a Primary",  "grain" => "task" },
@@ -45,6 +41,11 @@ class GateRun < ApplicationRecord
   TASK_KEYS    = GATES.select { |_, gate| gate["grain"] == "task" }.keys.freeze
   RELEASE_KEYS = GATES.select { |_, gate| gate["grain"] == "release" }.keys.freeze
   SUBJECT_TYPES = %w[task release].freeze
+  # Gates nothing opens any more. Their rows stay valid so history reads and a
+  # stale in-flight row can still close, but no gate list, chip, API route or
+  # bin/gate verb offers them. g1_cert was the local cert, retired for the PR's
+  # settled CI (docs/agents/archive/g1-cert-2026-10-06.md).
+  RETIRED_KEYS = %w[g1_cert].freeze
 
   # The keys a sops entry keeps (normalize_sop slices to these); `at` is stamped
   # server-side so entries are orderable even when the producer sends none.
@@ -162,7 +163,7 @@ class GateRun < ApplicationRecord
 
   validates :subject_type, inclusion: { in: SUBJECT_TYPES }
   validates :subject_slug, presence: true
-  validates :key, inclusion: { in: KEYS }
+  validates :key, inclusion: { in: KEYS + RETIRED_KEYS }
   validates :attempt, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :started_at, presence: true
   validate :key_grain_matches_subject_type

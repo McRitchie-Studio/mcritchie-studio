@@ -414,7 +414,7 @@ end
 
 # Ladder branches whose PRs carry every merged file by construction (the release
 # train's `accepted → release` batch promote). Excluded from the migration check so a
-# release window does not make it collide with everything. Mirrors bin/ship.
+# release window does not make it collide with everything. Mirrors bin/submit.
 RELEASE_BATCH_HEADS = %w[accepted release].freeze
 
 def first_line(path)

@@ -219,7 +219,7 @@ class Task < ApplicationRecord
   # Narrated activities (AgentActivity); nullified so they outlive the task.
   has_many :agent_activities, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
   has_many :atomic_events, class_name: "AgentActivity", foreign_key: :task_slug, primary_key: :slug
-  # Runs of the task-owned testing gates (G1 Cert, G2a/G2b review lanes).
+  # Runs of the task-owned testing gates (DoR, G2a/G2b review lanes).
   has_many :gate_runs, -> { where(subject_type: "task") },
            foreign_key: :subject_slug, primary_key: :slug, dependent: :delete_all
   # The per-task review claim (TaskReviewClaim): at most one live pr-review session.

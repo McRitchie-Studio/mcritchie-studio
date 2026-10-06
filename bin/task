@@ -1027,7 +1027,7 @@ end
 # to happen in SILENCE, and the silence is the defect this warning closes.
 #
 # Reproduced 2026-09-07: an agent set --approval waiting at `building`, read it back
-# as "waiting", then ran bin/ship. The handoff move cleared it, `local_url` from the
+# as "waiting", then ran bin/submit. The handoff move cleared it, `local_url` from the
 # same call survived, and nothing was printed. So the agent believed it had asked,
 # the board never pulsed, and Mr. McRitchie was never asked — a human gate that
 # reports success and does nothing.

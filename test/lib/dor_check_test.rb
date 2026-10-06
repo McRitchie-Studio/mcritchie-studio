@@ -1814,7 +1814,7 @@ class DorCheckTest < Minitest::Test
     assert_equal 1, code, out
     assert_match(/WAITING on CI/, out)
     assert_match(/still RUNNING/, out)
-    assert_match(/bin\/ship waits for exactly this/, out, "the wait names the wrapper that holds for it")
+    assert_match(/bin\/submit waits for exactly this/, out, "the wait names the wrapper that holds for it")
   end
 
   def test_review_gate_zero_still_blocks_pending_ci

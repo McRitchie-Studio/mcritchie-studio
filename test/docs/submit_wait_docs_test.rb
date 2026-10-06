@@ -42,14 +42,14 @@ class SubmitWaitDocsTest < ActiveSupport::TestCase
       body = norm(rel)
       assert_match(/run it in the background/i, body,
         "#{rel} is listed here because it carries the background advice")
-      assert_match(/run it in the background[^.]{0,160}bin\/ship-wait/im, body,
+      assert_match(/run it in the background[^.]{0,160}bin\/submit-wait/im, body,
         "#{rel} must end the background sentence with the command, not stop at the advice")
     end
   end
 
   test "[static] every one of those docs shows a runnable submit-wait invocation" do
     BACKGROUND_DOCS.each do |rel|
-      assert_match(/bin\/ship-wait <task-slug> --launch/, norm(rel),
+      assert_match(/bin\/submit-wait <task-slug> --launch/, norm(rel),
         "#{rel} must show the copy-pasteable form, not merely mention the script")
     end
   end
@@ -70,7 +70,7 @@ class SubmitWaitDocsTest < ActiveSupport::TestCase
 
   test "[static] the canonical section documents the exit codes the caller branches on" do
     body = norm("modules/devops-task-board.md")
-    assert_match(/bin\/ship-wait/, body)
+    assert_match(/bin\/submit-wait/, body)
     { "0" => /SUCCEEDED/, "1" => /FAILED/, "2" => /TIMEOUT/, "3" => /USAGE/, "4" => /NO LOG/ }.each do |code, label|
       assert_match(/\| #{code} \|[^|]*#{label}/, body,
         "the exit-code table must carry #{code} → #{label.source}; the caller branches on it")

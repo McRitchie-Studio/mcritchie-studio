@@ -156,7 +156,7 @@ class SubmitWaitScriptTest < Minitest::Test
       assert_operator elapsed, :<, FAST_S, "took #{elapsed.round(2)}s"
       assert_match(/FAILED/, err)
       assert_match(/dor-check refused/, err, "the failure relays ship's own last line")
-      assert_match(/re-run bin\/ship #{SLUG}/, err, "the refusal names the remedy")
+      assert_match(/re-run bin\/submit #{SLUG}/, err, "the refusal names the remedy")
     end
   end
 
@@ -268,7 +268,7 @@ class SubmitWaitScriptTest < Minitest::Test
       _out, err, code, = run_wait(dir, launch, extra_env: { "SHIP_WAIT_SHIP_BIN" => ship })
       assert_equal ShipWait::EXIT_USAGE, code, "a second concurrent ship on one task races the same PR"
       assert_match(/ALREADY RUNNING/, err)
-      assert_match(/bin\/ship-wait #{SLUG}/, err, "the refusal names the attach command")
+      assert_match(/bin\/submit-wait #{SLUG}/, err, "the refusal names the attach command")
     end
   end
 

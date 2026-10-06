@@ -118,7 +118,7 @@ module AgentPresence
   HEAVY_PATTERNS = [
     [:suite,   /\b(bin\/)?rails\s+test\b/],
     [:cert,    /\bbin\/(fast-check|dor-check)\b/],
-    [:ship,    /\bbin\/ship\b/],
+    [:ship,    /\bbin\/(submit|ship)\b/], # bin/ship is the alias of bin/submit
     [:sweep,   /\bbin\/release(\.rb)?\b/],
     [:suite,   /\brspec\b/],
     [:e2e,     /\bplaywright\b/]
