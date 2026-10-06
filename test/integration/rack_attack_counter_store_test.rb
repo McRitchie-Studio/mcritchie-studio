@@ -51,7 +51,7 @@ class RackAttackCounterStoreTest < ActionDispatch::IntegrationTest
 
   test "[unit] throttle limits and periods are unchanged" do
     expected = {
-      "login/ip" => [10, 60], "login/email" => [5, 60], "signup/ip" => [5, 60],
+      "magic_link/ip" => [10, 60], "magic_link/email" => [5, 60], "signup/ip" => [5, 60],
       "sso_continue/ip" => [5, 60], "oauth_callback/ip" => [20, 60],
       "chat/ip" => [10, 60], "chat/user" => [30, 600]
     }

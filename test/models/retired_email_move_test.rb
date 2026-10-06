@@ -26,7 +26,7 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
   end
 
   def stale_admin
-    User.create!(name: "Turf Monster", email: OLD, role: "admin", password: "password")
+    User.create!(name: "Turf Monster", email: OLD, role: "admin")
   end
 
   # A row shaped like one already sitting in production: created under whatever
@@ -34,7 +34,7 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
   # `update_column` is the only way to make a row the current roster disagrees
   # with — which is precisely the state this migration exists to find.
   def deployed(email, role:, name: "Someone")
-    user = User.create!(name: name, email: email, password: "password")
+    user = User.create!(name: name, email: email)
     user.update_column(:role, role)
     user
   end
@@ -92,7 +92,7 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
   # left holding admin while they decide, which is the whole risk.
   test "the migration demotes rather than collides when the new address is taken" do
     row = stale_admin
-    other = User.create!(name: "Turf Monster", email: NEW, role: "admin", password: "password")
+    other = User.create!(name: "Turf Monster", email: NEW, role: "admin")
 
     migrate(:up)
 
@@ -138,7 +138,7 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
   end
 
   test "the migration leaves a row no parked identity claims alone" do
-    stranger = User.create!(name: "Stranger", email: "stranger@example.com", role: "admin", password: "password")
+    stranger = User.create!(name: "Stranger", email: "stranger@example.com", role: "admin")
 
     migrate(:up)
 
@@ -219,7 +219,7 @@ class RetiredEmailMoveTest < ActiveSupport::TestCase
   # stale row holding admin while they decide.
   test "the seed demotes rather than collides when the new address is taken" do
     row = stale_admin
-    User.create!(name: "Turf Monster", email: NEW, role: "viewer", password: "password")
+    User.create!(name: "Turf Monster", email: NEW, role: "viewer")
 
     run_seed
 

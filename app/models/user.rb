@@ -86,11 +86,12 @@ class User < ApplicationRecord
     "team@mcritchie.studio" => "McRitchie Studio Team"
   }.freeze
 
-  # Passwordless app: email auth is magic-link only, plus Google.
-  # has_secure_password stays as a DORMANT fallback (password_digest column) but
-  # `validations: false` is required so Google/magic-link users — who have no
-  # password — can be created.
-  has_secure_password validations: false
+  # Passwordless app: email auth is magic-link only, plus Google. There is no
+  # has_secure_password, so no `authenticate` and no `password=`: studio-engine's
+  # POST /login (drawn up to 0.90) has nothing to check a password against. The
+  # release migration nulled every stored digest, and the column is ignored until
+  # a later release drops it (/tasks/hub-drops-stale-password-digests).
+  self.ignored_columns += %w[password_digest]
   has_one_attached :avatar
 
   # email is nullable (a Google-only user may have none) and unique when present.

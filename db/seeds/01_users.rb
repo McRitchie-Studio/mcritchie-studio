@@ -59,10 +59,6 @@ end
 User::PARKED_IDENTITIES.each do |data|
   user = User.find_or_create_by!(email: data[:email]) do |u|
     u.name = data[:name]
-    # Login is passwordless (magic-link/Google); the password exists only
-    # as a dev/e2e convenience. NEVER plant the weak literal on prod — a random
-    # digest there means a prod re-seed can't introduce a guessable credential.
-    u.password = Rails.env.production? ? SecureRandom.hex(24) : "password"
     u.role = data[:role]
   end
 

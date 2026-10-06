@@ -26,8 +26,8 @@ Studio.configure do |config|
   config.sidebar_sections = ->(view) { view.sidebar_link_sections }
   config.nav_spinner_min_ms = 300
 
-  # Passwordless: magic-link email + Google. No :password — has_secure_password
-  # stays on the model only as a dormant fallback.
+  # Passwordless: magic-link email + Google. No :password, and User has no
+  # has_secure_password (/tasks/hub-drops-stale-password-digests).
   #
   # No :wallet, deliberately. The hub carries no on-chain PRODUCT surface —
   # wallet identity belongs to turf-monster — and studio-engine draws

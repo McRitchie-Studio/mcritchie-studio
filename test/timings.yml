@@ -10,7 +10,7 @@
 # asserted by test/lib/test_shard_test.rb and enforced at runtime by
 # bin/rails-executed-set-check, which re-derives the expected set from the tree.
 #
-# Measured 2026-10-06 · 1044 files · 3685.8s total,
+# Measured 2026-10-06 · 1043 files · 3685.8s total,
 # the mean of 3 source(s), 12 receipt(s), commits a4d9f648, 2f4f04ec, ad177dda.
 # Regenerate from green CI shard receipts, not a local run: subprocess-heavy CLI suites
 # cost far more on a runner than on a Mac, so local weights misbalance the lane.
@@ -363,7 +363,6 @@ test/lib/artifact_sweep_test.rb: 0.32
 test/lib/atomic_capture_hook_test.rb: 3.69
 test/lib/atomic_event_cli_test.rb: 25.61
 test/lib/base_movement_audit_test.rb: 1.9
-test/lib/bcrypt_test_cost_test.rb: 0.03
 test/lib/bin_help_flag_class_test.rb: 0.19
 test/lib/bin_helpers_test.rb: 0.08
 test/lib/block_recipe_test.rb: 0.05

@@ -7,7 +7,7 @@ class UserTest < ActiveSupport::TestCase
   end
 
   test "display_name returns capitalized email prefix when name is blank" do
-    user = User.create!(email: "newuser@example.com", password: "password")
+    user = User.create!(email: "newuser@example.com")
     assert_equal "Newuser", user.display_name
   end
 
@@ -37,7 +37,7 @@ class UserTest < ActiveSupport::TestCase
   end
 
   test "avatar_initials uses email when no name" do
-    user = User.create!(email: "test@example.com", password: "password")
+    user = User.create!(email: "test@example.com")
     assert_equal "T", user.avatar_initials
   end
 
@@ -128,7 +128,7 @@ class UserTest < ActiveSupport::TestCase
 
   # The same property through the door it is actually reachable by: a real signup.
   test "an unparked stranger does not inherit a parked seat" do
-    user = User.create!(email: "stranger@example.com", password: "password")
+    user = User.create!(email: "stranger@example.com")
 
     refute user.admin?, "an unparked stranger was handed a parked admin seat"
     assert_equal "viewer", user.role
@@ -187,7 +187,7 @@ class UserTest < ActiveSupport::TestCase
   # was tautological: the callback means the row is created a viewer, so setting
   # role: "admin" was a no-op and the assertion could not fail.
   test "a parked identity cannot be saved into a role the roster contradicts" do
-    mack = User.create!(email: "mack@mcritchie.studio", name: "Mack McRitchie", password: "password")
+    mack = User.create!(email: "mack@mcritchie.studio", name: "Mack McRitchie")
 
     mack.update!(role: "admin")
 

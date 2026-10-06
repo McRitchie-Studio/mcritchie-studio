@@ -309,6 +309,13 @@ from a live agent session.
 *presence* (`ENV.key?`, a shell's `${VAR+set}`) sees a session that isn't there.
 `SessionEnv.neutralized` normalizes a blank session override to unset for you.
 
+**A sandboxed `HOME` takes git's global config with it.** When the overrides set
+`HOME`, `SessionEnv.neutralized` pins `GIT_CONFIG_GLOBAL` to `<HOME>/.gitconfig`
+unless the caller names it. git reads that variable ahead of `$HOME/.gitconfig`, so
+an exported one would hand the real file to a child that believes it is sandboxed.
+`bin/install-agent-docs` backs this with its own floor: under an armed
+`TASK_USAGE_SANDBOX` it refuses (exit 3) to write a git config outside `HOME`.
+
 **Two neutralizers, held in lockstep by a test — not by trust.** `SessionEnv`
 (`test/support/session_env.rb`) covers tests, including an agent running
 `bin/rails test` by hand in a worktree. `Release::GateEnv`

@@ -93,12 +93,20 @@ module SessionEnv
   # override ("" / nil / "  ") normalizes to UNSET, because a blank session id
   # means "no session" and an exported empty string is a lie about that. Non-
   # session keys pass through untouched, blank or not.
+  #
+  # A child whose HOME is sandboxed gets git's global config sandboxed WITH it:
+  # GIT_CONFIG_GLOBAL is pinned to <HOME>/.gitconfig unless the caller names it.
+  # git reads GIT_CONFIG_GLOBAL ahead of $HOME/.gitconfig, so a runner that exports
+  # it would otherwise hand the real file to a child that believes it is sandboxed,
+  # and bin/install-agent-docs would rewrite the machine's credential helper there.
   def neutralized(overrides = {})
     env = NEUTRALIZED.dup
     overrides.each do |key, value|
       key = key.to_s
       env[key] = SESSION_KEYS.include?(key) ? presence(value) : value
     end
+    home = env["HOME"]
+    env["GIT_CONFIG_GLOBAL"] = File.join(home, ".gitconfig") if home && !env.key?("GIT_CONFIG_GLOBAL")
     env
   end
 

@@ -218,6 +218,7 @@ class TestShardTest < Minitest::Test
     stale = TestShard.load_timings(File.join(root, "test", "timings.yml")).keys - lane
 
     assert_empty stale, "test/timings.yml weighs files the lane no longer runs; regenerate it " \
-                        "from green CI receipts with bin/measure-test-timings --from <dir>"
+                        "from green CI receipts with bin/measure-test-timings --from <dir>, or delete " \
+                        "the named line(s) for a deleted or renamed test file"
   end
 end

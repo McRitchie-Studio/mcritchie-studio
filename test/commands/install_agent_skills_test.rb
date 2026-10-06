@@ -116,6 +116,21 @@ class InstallAgentSkillsTest < Minitest::Test
     File.join(@home, ".zprofile")
   end
 
+  # Run the working tree's installer (not `git archive HEAD`, which would test the
+  # last commit) from a checkout-less export: no .git, so no tooling install and
+  # every command falls back to `hub`.
+  def run_exported_installer(hub)
+    exported = File.join(@sandbox, "exported-tree")
+    %w[bin/install-agent-docs bin/lib/projects_root.rb docs/agents/index.md docs/agents/claude.md].each do |rel|
+      FileUtils.mkdir_p(File.dirname(File.join(exported, rel)))
+      FileUtils.cp(File.join(ROOT, rel), File.join(exported, rel))
+    end
+    Open3.capture3(
+      SessionEnv.neutralized(default_env.merge("AGENT_DOCS_RUNTIME_ROOT" => hub)),
+      File.join(exported, "bin", "install-agent-docs"), "install"
+    )
+  end
+
   def installed_gitconfig
     File.join(@home, ".gitconfig")
   end
@@ -721,19 +736,8 @@ class InstallAgentSkillsTest < Minitest::Test
   def test_integration_hooks_fall_back_to_the_hub_primary_without_the_tooling
     assert jq_available?, "jq is required for settings hook install; CI and every desk have it"
 
-    # The working tree's files (not `git archive HEAD`, which would test the last
-    # commit), laid out as a checkout-less export: no .git, so no tooling install.
-    exported = File.join(@sandbox, "exported-tree")
-    %w[bin/install-agent-docs bin/lib/projects_root.rb docs/agents/index.md docs/agents/claude.md].each do |rel|
-      FileUtils.mkdir_p(File.dirname(File.join(exported, rel)))
-      FileUtils.cp(File.join(ROOT, rel), File.join(exported, rel))
-    end
     hub = "/stable/mcritchie-studio"
-
-    out, err, status = Open3.capture3(
-      SessionEnv.neutralized(default_env.merge("AGENT_DOCS_RUNTIME_ROOT" => hub)),
-      File.join(exported, "bin", "install-agent-docs"), "install"
-    )
+    out, err, status = run_exported_installer(hub)
 
     assert status.success?, "install failed: #{err}"
     assert_includes out, "skipped fast-lane tooling", "the control: this tree installs no tooling"
@@ -745,6 +749,25 @@ class InstallAgentSkillsTest < Minitest::Test
       "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{hub}/bin/atomic-capture-hook"
     assert_includes File.read(installed_codex_requirements), %(command = "#{hub}/bin/codex-session-title")
     assert_equal "#{hub}/bin/gh-app-git-credential", github_helper_values.last
+  end
+
+  # Before the first ship the helper would name the hub primary, a working tree. A
+  # helper line the operator already wired (a ~/.mcritchie snapshot from
+  # bin/install-git-credential-helper) is the safer of the two, so it stays.
+  def test_integration_fallback_keeps_an_existing_snapshot_helper_line
+    snapshot = File.join(@home, ".mcritchie", "git-credential", "current", "bin", "gh-app-git-credential")
+    File.write(installed_gitconfig, <<~GITCONFIG)
+      [credential "https://github.com"]
+      	helper =
+      	helper = #{snapshot}
+    GITCONFIG
+
+    out, err, status = run_exported_installer("/stable/mcritchie-studio")
+
+    assert status.success?, "install failed: #{err}"
+    assert_includes out, "skipped fast-lane tooling", "the control: this tree installs no tooling"
+    assert_equal ["", snapshot], github_helper_values,
+      "without the fixed path, the snapshot line survives and no hub path is written"
   end
 
   # ── integration: the global git credential helper for github.com ────────────
@@ -788,6 +811,43 @@ class InstallAgentSkillsTest < Minitest::Test
     assert status.success?, "install failed: #{err}"
     assert_equal ["", "#{tooling_bin}/gh-app-git-credential"], github_helper_values,
       "a fresh config gets the reset BEFORE the helper, so a generic helper cannot answer github.com first"
+  end
+
+  # A runner that exports GIT_CONFIG_GLOBAL must not hand the real git config to the
+  # sandboxed install: SessionEnv pins it inside the temp HOME, so the helper lands
+  # there and the runner's file stays byte-identical.
+  def test_integration_an_exported_git_config_global_never_reaches_the_install
+    canary = runner_gitconfig_canary
+    previous = ENV["GIT_CONFIG_GLOBAL"]
+    ENV["GIT_CONFIG_GLOBAL"] = canary
+    begin
+      _out, err, status = run_installer("install")
+    ensure
+      previous.nil? ? ENV.delete("GIT_CONFIG_GLOBAL") : ENV["GIT_CONFIG_GLOBAL"] = previous
+    end
+
+    assert status.success?, "install failed: #{err}"
+    assert_equal RUNNER_GITCONFIG, File.read(canary), "the runner's git config was rewritten"
+    assert_equal ["", "#{tooling_bin}/gh-app-git-credential"], github_helper_values
+  end
+
+  # The installer's own floor: under an armed TASK_USAGE_SANDBOX a git config outside
+  # HOME is refused, so a test that bypasses SessionEnv's pin goes
+  # red instead of rewriting the machine's credential helper.
+  def test_integration_sandboxed_install_refuses_a_git_config_outside_home
+    canary = runner_gitconfig_canary
+
+    _out, err, status = run_installer("install", "GIT_CONFIG_GLOBAL" => canary, "TASK_USAGE_SANDBOX" => "1")
+
+    assert_equal 3, status.exitstatus, "the installer must refuse, not degrade: #{err}"
+    assert_match(/git config #{Regexp.escape(canary)} is outside HOME/, err)
+    assert_equal RUNNER_GITCONFIG, File.read(canary), "the refusal wrote the config anyway"
+  end
+
+  RUNNER_GITCONFIG = "[credential \"https://github.com\"]\n\thelper =\n\thelper = /real/bin/gh-app-git-credential\n"
+
+  def runner_gitconfig_canary
+    File.join(@sandbox, "runner.gitconfig").tap { |path| File.write(path, RUNNER_GITCONFIG) }
   end
 
   def test_integration_manifest_names_the_gitconfig

@@ -28,7 +28,7 @@ class ClientIpSpoofTest < ActionDispatch::IntegrationTest
   # Every IP-keyed throttle in config/initializers/rack_attack.rb, with a request
   # it counts.
   IP_TIERS = {
-    "login/ip" => ["/login", "POST"],
+    "magic_link/ip" => ["/magic_link", "POST"],
     "signup/ip" => ["/signup", "POST"],
     "sso_continue/ip" => ["/sso_continue", "POST"],
     "oauth_callback/ip" => ["/auth/google_oauth2/callback", "GET"],
@@ -70,7 +70,7 @@ class ClientIpSpoofTest < ActionDispatch::IntegrationTest
   end
 
   test "[unit] with no spoof, the address is the one the router appended" do
-    env = heroku_env("/login")
+    env = heroku_env("/magic_link")
 
     assert_equal CLIENT, Rack::Attack::Request.new(env).ip
     assert_equal CLIENT, remote_ip(env)
@@ -84,7 +84,7 @@ class ClientIpSpoofTest < ActionDispatch::IntegrationTest
 
   SPOOFS.each do |name, headers|
     test "[unit] #{name} does not change the address Rack::Attack or Rails sees" do
-      env = heroku_env("/login", **headers)
+      env = heroku_env("/magic_link", **headers)
 
       assert_equal CLIENT, Rack::Attack::Request.new(env).ip
       assert_equal CLIENT, remote_ip(env)
@@ -98,7 +98,7 @@ class ClientIpSpoofTest < ActionDispatch::IntegrationTest
   end
 
   test "[unit] a Forwarded header cannot set the host or the scheme either" do
-    env = heroku_env("/login", "HTTP_FORWARDED" => "for=#{CLAIMED};host=evil.example;proto=http",
+    env = heroku_env("/magic_link", "HTTP_FORWARDED" => "for=#{CLAIMED};host=evil.example;proto=http",
                                "HTTP_HOST" => "mcritchie.studio", "HTTP_X_FORWARDED_PROTO" => "https")
 
     assert_equal "mcritchie.studio", ActionDispatch::Request.new(env).host
