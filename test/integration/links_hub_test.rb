@@ -6,7 +6,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "Links"
     assert_match "Turf Monster", response.body
-    # Studio/NFL/Directory links are walled off until sign-in
+    # Studio and Directory links are admin-only; NFL is public (public_nfl_links_test.rb)
     assert_select "a[href=?]", dashboard_path, count: 0
   end
 
