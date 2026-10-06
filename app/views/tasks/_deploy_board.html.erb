@@ -61,11 +61,16 @@
 <% end %>
 
 <%= render "components/elapsed_label_script" %>
-<%# kanbanBoard must be defined inline (before Alpine CDN defer evaluates x-data) %>
+<%# kanbanBoard stays inline. Alpine (deferred) starts before the importmap modules
+    run, so a factory defined in app/javascript would not exist yet when x-data first
+    evaluates. The live effects it hands cards to are modules (board/live_fx_dom). %>
 <script>
-function kanbanBoard(live) {
+function kanbanBoard(live, liveFx) {
   return {
     live: !!live, // animate Turbo-Streamed card updates (turbo_stream_from "deployments")
+    // The page renders the LiveBoardFx module (tasks/_deployments_live_fx). Known from
+    // the server, because the module may not have run yet when init() does.
+    liveFx: !!liveFx,
     _pendingMoves: {},
     agentFilter: '',
     hiddenApps: [],
@@ -124,7 +129,7 @@ function kanbanBoard(live) {
         this.initSortables();
         if (this.live) {
           this.observeLive();
-          if (!window.LiveBoardFx) this.installExitStreamFallback();
+          if (!this.liveFx && !window.LiveBoardFx) this.installExitStreamFallback();
         }
       });
     },
@@ -365,7 +370,7 @@ function kanbanBoard(live) {
       this._pendingMoves[slug] = true;
 
       const card = document.getElementById('card-' + slug);
-      const useLiveExit = !!window.LiveBoardFx;
+      const useLiveExit = this.liveFx || !!window.LiveBoardFx;
 
       try {
         if (card && !useLiveExit) await this.animateCardExit(card, 'archive');
@@ -450,7 +455,7 @@ document.addEventListener('turbo:before-cache', function() {
     so the live animations, the e2e specs and anyone reading the DOM take the beat from
     ONE place instead of restating it. A spec that restated it went stale the day the
     beat changed, and its failure looked like a broken animation rather than a stale test. %>
-<section x-data="kanbanBoard(<%= live_updates.to_json %>)" data-test="kanban-board"
+<section x-data="kanbanBoard(<%= live_updates.to_json %>, <%= (live_updates && crew_board == :deploy).to_json %>)" data-test="kanban-board"
          @scroll.window="measureLanes()"
          @resize.window="measureLanes()"
          data-beat-ms="<%= (Release::BOARD_FLIP_CADENCE * 1000).round %>" class="min-h-screen">
