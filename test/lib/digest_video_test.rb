@@ -195,6 +195,62 @@ class DigestVideoTest < Minitest::Test
     end
   end
 
+  # Stands in for ChunkTiling::Runner (its own test covers the cutting).
+  class FakeTiler
+    attr_reader :calls
+
+    def initialize(log, problem: nil)
+      @log = log
+      @problem = problem
+      @calls = []
+    end
+
+    def problem = @problem
+
+    def call(video, mp4)
+      @log << :tile
+      @calls << [video, File.basename(mp4)]
+      []
+    end
+  end
+
+  def test_tiles_the_recorded_source_right_after_the_record
+    log = []
+    tiler = FakeTiler.new(log)
+    Dir.mktmpdir do |dir|
+      DigestVideo::Runner.new(workdir: dir, shell: FakeShell.new, storage: FakeStorage.new(log), api: FakeApi.new(log),
+                              out: StringIO.new, encoder: "libx264", tiler:).call(URL)
+    end
+    assert_equal %i[authenticate put put create tile], log
+    video, mp4 = tiler.calls.first
+    assert_equal "steve-aoki-night-call", video["slug"], "the hub's record, not the payload"
+    assert_equal "Sa7GSJJ_lOo.mp4", mp4, "the playable file that was stored"
+  end
+
+  def test_dry_run_plans_the_chunks_from_the_local_file_and_records_nothing
+    log = []
+    tiler = FakeTiler.new(log)
+    Dir.mktmpdir do |dir|
+      DigestVideo::Runner.new(workdir: dir, shell: FakeShell.new, storage: FakeStorage.new(log), api: FakeApi.new(log),
+                              out: StringIO.new, encoder: "libx264", dry_run: true, tiler:).call(URL)
+    end
+    assert_equal %i[tile], log
+    video, = tiler.calls.first
+    assert_equal [243_117, "#{KEY}.mp4", []], video.values_at("duration_ms", "source_object_key", "chunks")
+  end
+
+  def test_a_tiling_that_cannot_cut_stops_before_any_upload
+    log = []
+    error = assert_raises(DigestVideo::Failure) do
+      Dir.mktmpdir do |dir|
+        DigestVideo::Runner.new(workdir: dir, shell: FakeShell.new, storage: FakeStorage.new(log), api: FakeApi.new(log),
+                                out: StringIO.new, encoder: "libx264", tiler: FakeTiler.new(log, problem: "no")).call(URL)
+      end
+    end
+    assert_equal "no", error.message
+    assert_empty log
+  end
+
   def test_buckets_default_to_dev
     assert_equal "mcritchie-studio-dev", DigestVideo.target(production: false)[:bucket]
     assert_equal "mcritchie-studio-production", DigestVideo.target(production: true)[:bucket]
