@@ -1,8 +1,9 @@
 // [e2e] Replace with on a cast card: the people search is on every card, no
 // toggle first. The operator searches an athlete in the wide three-column list,
 // and picking him IS the swap: it saves at once in his default look; switching
-// the look saves again; the chunk prompts below follow each save without a
-// reload. A dropped save says so and Retry sends it again. The one button
+// the look saves again; the swap count above the cards follows each save
+// without a reload, and Build Clips snapshots the swap into an alt video whose
+// prompts name it. A dropped save says so and Retry sends it again. The one button
 // pinned at the bottom of the card reads Keep Original while swapping (turns the
 // swap off and hides it, remembering him) and Swap back to <name> while kept
 // (restores him), in the same place; picking someone else swaps to them.
@@ -46,7 +47,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(page.locator("[data-test='cast-confirmed']")).toBeVisible();
 
   // Seeded under the old "keep as is" with nobody: only the search, no toggle, no hint, no Keep Original.
-  const prompt = page.locator("#chunk-1 [data-test='chunk-prompt']");
+  const swapCount = page.locator("[data-test='cast-swap-count']");
   await expect(search(page, 1)).toBeVisible();
   await expect(keepButton(page, 1)).toBeHidden();
   await expect(recast(page, 1).locator("input[type='checkbox']")).toHaveCount(0);
@@ -58,7 +59,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
   await expect(recast(page, 1)).not.toContainText("Check to replace");
   await expect(recast(page, 1).locator("[role='switch']")).toHaveCount(0);
-  await expect(prompt).toContainText("Replace the main person on screen in this video with {athlete}");
+  await expect(swapCount).toHaveText(/^0 of \d+$/);
 
   // The list is wider than the field, three columns per row, and stays on screen.
   const combo = search(page, 1);
@@ -76,7 +77,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   expect(look.x).toBeGreaterThan(name.x);
   expect(Math.abs(look.y - name.y)).toBeLessThan(name.height * 2);
 
-  // The pick is the swap: saved at once in his default look, Keep Original under his sheet, the chunks follow.
+  // The pick is the swap: saved at once in his default look, Keep Original under his sheet, the count follows.
   await option.click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "recast");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
@@ -89,11 +90,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   expect(Math.abs(button.width - sheet.width)).toBeLessThan(2);
   await expect(combo).toHaveValue("");
   await expect(recast(page, 1).locator("[data-test='look-cast']")).toHaveCount(0);
-  await expect(prompt).toContainText("Replace the man in the red jacket in this video with Test Athlete Alpha, the football player.");
-  await expect(prompt).toContainText("(like the Home Blue model provided)");
-  await expect(prompt).not.toContainText("music video");
-  await expect(page.locator("#chunk-1 [data-test='chunk-recast']")).toContainText("Test Athlete Alpha > Home Blue");
-  await expect(page.locator("[data-test='chunk-prompt']").filter({ hasText: "Test Athlete Alpha" })).toHaveCount(4);
+  await expect(swapCount).toHaveText(/^1 of \d+$/);
 
   // Switching the look saves it too.
   const trigger = recast(page, 1).locator("[data-test='look-trigger']");
@@ -101,8 +98,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(recast(page, 1).locator("[data-test='look-option-name']")).toHaveText(["Home Blue", "Away White"]);
   await recast(page, 1).locator("[data-test='look-option']").filter({ hasText: "Away White" }).click();
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
-  await expect(prompt).toContainText("(like the Away White model provided)");
-  await expect(page.locator("#chunk-1 [data-test='chunk-recast']")).toContainText("Test Athlete Alpha > Away White");
+  await expect(trigger).toHaveText("Away White");
 
   // A dropped save says so; Retry sends it again.
   let drop = true;
@@ -115,7 +111,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   drop = false;
   await recast(page, 1).locator("[data-test='swap-retry']").click();
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
-  await expect(prompt).toContainText("(like the Home Blue model provided)");
+  await expect(trigger).toHaveText("Home Blue");
   await page.unroute("**/performers/1/recast");
 
   // A reload reads the save back: the athlete block, the look, Keep Original under the sheet.
@@ -155,8 +151,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   // Read once settled: a read mid-render can land a few pixels short.
   await expect.poll(() => fromBottom(swapBack(page, 1))).toBe(keepAt);
   await expect(search(page, 1)).toBeVisible();
-  await expect(prompt).toContainText("with {athlete}, the football player");
-  await expect(page.locator("#chunk-1 [data-test='chunk-recast']")).toHaveCount(0);
+  await expect(swapCount).toHaveText(/^0 of \d+$/);
 
   // A reload still reads kept; Swap back restores the same athlete and look with no re-pick.
   await page.reload();
@@ -167,7 +162,16 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await expect(recast(page, 1).locator("[data-test='swap-athlete-name']")).toHaveText("Test Athlete Alpha");
   await expect(trigger).toHaveText("Home Blue");
-  await expect(prompt).toContainText("(like the Home Blue model provided)");
+  await expect(swapCount).toHaveText(/^1 of \d+$/);
+
+  // Build Clips snapshots the swap: the new alt video's prompts name the athlete and look.
+  await page.locator("[data-test='cast-progress']").getByRole("button", { name: "Build Clips" }).click();
+  const clipPrompt = page.locator("[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-prompt']");
+  await expect(clipPrompt).toContainText("Replace the man in the red jacket in this video with Test Athlete Alpha, the football player.");
+  await expect(clipPrompt).toContainText("(like the Home Blue model provided)");
+  await expect(clipPrompt).not.toContainText("music video");
+  await expect(page.locator("[data-test='alt-video-swap'][data-ordinal='1']")).toContainText("Test Athlete Alpha > Home Blue");
+  await page.goto(VIDEO);
 
   // Kept again, then a pick from the search ends the keep and swaps to the new person.
   await keepButton(page, 1).click();
