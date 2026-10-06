@@ -1097,6 +1097,23 @@ install_git_credential_helper() {
   [ "$MODE" = "manifest" ] && return 0
   command -v git >/dev/null 2>&1 || return 0
 
+  # Under an armed TASK_USAGE_SANDBOX (every test child) the config must sit inside
+  # the sandboxed HOME. A GIT_CONFIG_GLOBAL inherited from the runner names the real
+  # file, and rewriting it would point the machine's helper at a temp dir that later
+  # vanishes. Refuses; never degrades.
+  case "$(printf '%s' "${TASK_USAGE_SANDBOX:-}" | tr '[:upper:]' '[:lower:]')" in
+    ''|0|false|no|off) ;;
+    *)
+      case "$gitconfig" in
+        "$HOME"/*) ;;
+        *)
+          echo "ERROR: TASK_USAGE_SANDBOX is armed and the git config $gitconfig is outside HOME ($HOME); pin GIT_CONFIG_GLOBAL into the sandbox. Refusing to write the credential helper" >&2
+          exit 3
+          ;;
+      esac
+      ;;
+  esac
+
   # `--get-all` exits 1 when the key is absent; an absent key and a bare reset both
   # read as an empty string, and only one of them already carries the reset.
   has_reset=no

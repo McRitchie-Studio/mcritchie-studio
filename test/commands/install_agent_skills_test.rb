@@ -813,6 +813,43 @@ class InstallAgentSkillsTest < Minitest::Test
       "a fresh config gets the reset BEFORE the helper, so a generic helper cannot answer github.com first"
   end
 
+  # A runner that exports GIT_CONFIG_GLOBAL must not hand the real git config to the
+  # sandboxed install: SessionEnv pins it inside the temp HOME, so the helper lands
+  # there and the runner's file stays byte-identical.
+  def test_integration_an_exported_git_config_global_never_reaches_the_install
+    canary = runner_gitconfig_canary
+    previous = ENV["GIT_CONFIG_GLOBAL"]
+    ENV["GIT_CONFIG_GLOBAL"] = canary
+    begin
+      _out, err, status = run_installer("install")
+    ensure
+      previous.nil? ? ENV.delete("GIT_CONFIG_GLOBAL") : ENV["GIT_CONFIG_GLOBAL"] = previous
+    end
+
+    assert status.success?, "install failed: #{err}"
+    assert_equal RUNNER_GITCONFIG, File.read(canary), "the runner's git config was rewritten"
+    assert_equal ["", "#{tooling_bin}/gh-app-git-credential"], github_helper_values
+  end
+
+  # The installer's own floor: under an armed TASK_USAGE_SANDBOX a git config outside
+  # HOME is refused, so a test that bypasses SessionEnv's pin goes
+  # red instead of rewriting the machine's credential helper.
+  def test_integration_sandboxed_install_refuses_a_git_config_outside_home
+    canary = runner_gitconfig_canary
+
+    _out, err, status = run_installer("install", "GIT_CONFIG_GLOBAL" => canary, "TASK_USAGE_SANDBOX" => "1")
+
+    assert_equal 3, status.exitstatus, "the installer must refuse, not degrade: #{err}"
+    assert_match(/git config #{Regexp.escape(canary)} is outside HOME/, err)
+    assert_equal RUNNER_GITCONFIG, File.read(canary), "the refusal wrote the config anyway"
+  end
+
+  RUNNER_GITCONFIG = "[credential \"https://github.com\"]\n\thelper =\n\thelper = /real/bin/gh-app-git-credential\n"
+
+  def runner_gitconfig_canary
+    File.join(@sandbox, "runner.gitconfig").tap { |path| File.write(path, RUNNER_GITCONFIG) }
+  end
+
   def test_integration_manifest_names_the_gitconfig
     out, err, status = run_installer("manifest")
     assert status.success?, "manifest failed: #{err}"
