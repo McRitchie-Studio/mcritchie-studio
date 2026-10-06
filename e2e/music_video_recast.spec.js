@@ -11,6 +11,8 @@ const { loginWithMagicLink } = require("./helpers");
 
 const card = (page, n) => page.locator(`[data-test='performer-card'][data-ordinal='${n}']`);
 const recast = (page, n) => card(page, n).locator("[data-test='performer-recast']");
+// The swap search, not the look dropdown's trigger (also a combobox).
+const search = (page, n) => recast(page, n).locator("[data-test='recast-typeahead'] input[role='combobox']");
 
 test("operator turns Swap Person on, picks an athlete and a look that save at once, and sees the prompt change", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
@@ -25,7 +27,7 @@ test("operator turns Swap Person on, picks an athlete and a look that save at on
   await expect(recast(page, 1)).toHaveAttribute("data-state", "off");
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await expect(toggle).toHaveText("Don’t Swap Person");
-  await expect(recast(page, 1).getByRole("combobox")).toBeHidden();
+  await expect(search(page, 1)).toBeHidden();
   await expect(prompt).toContainText("Replace the main person on screen in this video with {athlete}");
 
   // On reveals the search; nothing is saved until a pick.
@@ -33,7 +35,7 @@ test("operator turns Swap Person on, picks an athlete and a look that save at on
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await expect(toggle).toHaveText("Swap Person");
   await expect(recast(page, 1)).toHaveAttribute("data-state", "open");
-  const combo = recast(page, 1).getByRole("combobox");
+  const combo = search(page, 1);
   await expect(combo).toBeFocused();
 
   // The list is wider than the field, three columns per row, and stays on screen.

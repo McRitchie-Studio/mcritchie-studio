@@ -127,52 +127,61 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    recasts on the old set and says how many of each (`meta.dropped_labels`,
    `meta.dropped_recasts`); a confirmed cast answers `409 CAST_CONFIRMED`.
 5. **Hand the operator the cast panel**, `/music_videos/<slug>` (admin). Each card
-   shows the still, the sightings as links to that second of the video, and a
-   typeahead over artists (names and aliases) and People. Each result is one
-   row: a headshot (a neutral placeholder when there is none), the name, then
-   the primary vocation and the current team (`People::SearchRows`; an artist
-   with no Person reads "musician" or "group"). Picking a person from
-   People makes them an artist; "Create new artist" adds one; "Extra, not a named
-   artist" closes a card. **Cast confirmed** unlocks when every card is closed and
-   moves the video from `digested` to `cast_confirmed`. A `cinematic` video
-   credits no artists, so there a card also closes on its recast answer (below)
-   and naming an artist is optional.
-6. **The operator recasts**, on the same card, under "Replaced by": a typeahead
-   over every Person, drawn with the same row and a looks count. A person who
-   has a default look also shows it on a second line of the row: that look's
-   character-sheet thumbnail and its name ("Primary look"), apart from the
-   headshot, so the row says what is saved for them. People who have a look
-   come first; then exact name, prefix, anywhere. Picking someone saves
-   nothing yet. It opens the **look dropdown**: one row per look, with
-   the look's character-sheet thumbnail (a placeholder while it has none), its
-   name, a "default" mark and where its sheet stands (ready, building, failed,
-   none). The look picked is previewed large, with a link to the look's own
-   page; **Cast as Athlete > Look** saves it. The arrow keys, Home, End, Enter,
-   Space and Escape work the list. Or "Keep as is".
+   shows the still and the sightings as links to that second of the video.
+   **Nothing on a card has to be pressed**: every card starts **Not named** and
+   **Don't Swap Person**, and **Cast confirmed** is ready as soon as the vision
+   pass has posted people; it moves the video from `digested` to
+   `cast_confirmed`. Naming is optional and builds the artist rolodex: a
+   typeahead over artists (names and aliases) and People, each result a
+   headshot (a neutral placeholder when there is none), the name, the primary
+   vocation and the current team (`People::SearchRows`; an artist with no
+   Person reads "musician" or "group"). Picking a person from People makes
+   them an artist; "Create new artist" adds one; the quiet "Mark as extra"
+   still records an extra. No column says "unnamed": it is a card with neither
+   an artist nor the extra flag. Names lock with the confirm.
+6. **The operator swaps**, on the same card, with the **Swap Person** toggle
+   (checked = Swap Person, unchecked = Don't Swap Person). Off is the default;
+   a card saved under the old "Keep as is" reads the same. On reveals the
+   people search: a list wider than the card, three columns per row (the
+   headshot; the name, vocation, team and looks count; the person's default
+   look as a character-sheet thumbnail and name, or "No look yet"). People who
+   have a look come first; then exact name, prefix, anywhere. **Every pick
+   saves at once**, with no Save or Cast button: picking a person saves them
+   in their default look (else their first), and the card shows them with
+   their headshot, name and team and a Change button. The **look dropdown**
+   lists one row per look, with the look's character-sheet thumbnail (a
+   placeholder while it has none), its name, a "default" mark and where its
+   sheet stands (ready, building, failed, none); picking a row saves that
+   look, previewed large with a link to the look's own page. The arrow keys,
+   Home, End, Enter, Space and Escape work the list. Turning the toggle off
+   clears the swap. The card says Saving…, Saved, or Not saved with Retry; the
+   save is a JSON `PATCH` to the recast endpoint, and the prompts, targets and
+   hand-offs below repaint after it without a reload.
 7. **A new look, from the card.** The dropdown's last row is **Generate a new
-   look**; a person with **no look yet** (listed with "0 looks") gets
-   **Generate first look** in its place. The form asks for the look's name,
-   which is the uniform or colours the sheet is drawn in ("Broncos blue"), an
-   optional jersey number, and a reference photo URL that only a person with
-   no stored headshot needs. Submitting makes the look, takes the athlete as
-   the card's recast, and starts the look's character sheet through the one
-   existing build (`Appearances::SheetBuild`, in a job; see
+   look**; a person with **no look yet** (listed with "0 looks", saved alone
+   as a pending swap) gets **Generate first look** in its place. The form asks
+   for the look's name, which is the uniform or colours the sheet is drawn in
+   ("Broncos blue"), an optional jersey number, and a reference photo URL that
+   only a person with no stored headshot needs. Submitting makes the look,
+   **casts the card in it**, and starts the look's character sheet through the
+   one existing build (`Appearances::SheetBuild`, in a job; see
    `docs/topics/content-pipeline.md`, "Character
    sheets"). **It costs money**: one sheet per press, single-digit thousands
    of tokens (`config/image_generators.yml`). The card previews the new look
    as building and repaints itself when the sheet is ready, about two minutes.
-   The new look is **not cast for him**: he still presses "Cast as". A look
-   may be cast while its sheet is building, or with none; its chunks show the
-   sheet once there is one. Where no generator is configured, or the person
-   has no headshot, the look is still made and the card says why no sheet
-   started; build it later from the look's page. "Or add a look by hand" opens
-   the look form on the person's page and returns to the card on save. An
-   athlete with no look cast does not close a card, and their name already
-   fills the prompts. The recast can change before and after the cast is
-   confirmed. **Only the operator sets it**: the agent never proposes who
-   replaces anyone, and generating a look is admin only. So is the person
-   page's own look form, its "Make default" and its "Attach image"; an
-   attached image must be an `https://` URL on a public host.
+   A look may be cast while its sheet is building, or with none; its chunks
+   show the sheet once there is one. Where no generator is configured, or the
+   person has no headshot, the look is still made and the card says why no
+   sheet started; build it later from the look's page. "Or add a look by hand"
+   opens the look form on the person's page and returns to the card on save,
+   where the swap waits for that look to be picked. A swap with no look is the
+   one thing a card can owe ("needs a look" in the summary); it does not hold
+   the confirm, and the athlete's name already fills the prompts. The swap can
+   change before and after the cast is confirmed. **Only the operator sets
+   it**: the agent never proposes who replaces anyone, and generating a look
+   is admin only. So is the person page's own look form, its "Make default"
+   and its "Attach image"; an attached image must be an `https://` URL on a
+   public host.
 
 The Night Call proof is the dev seed (`db/seeds/data/night_call_cast.rb`): seven
 people, stills and sightings, no names.

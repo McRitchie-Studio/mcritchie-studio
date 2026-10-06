@@ -62,7 +62,8 @@
       </p>
     <% end %>
 
-    <div x-show="!athlete || searching" <%= "x-cloak" if athlete %> class="relative min-w-0" @click.outside="open = false" data-test="recast-typeahead">
+    <div x-show="!athlete || searching" <%= "x-cloak" if athlete %> class="relative min-w-0" @click.outside="open = false"
+         @resize.window.debounce.100ms="if (open) fitList()" data-test="recast-typeahead">
       <label class="sr-only" for="recast-search-<%= n %>">Who replaces <%= performer.name %>?</label>
       <div class="flex items-center gap-2 min-w-0">
         <input id="recast-search-<%= n %>" x-ref="search" type="text" autocomplete="off" role="combobox"

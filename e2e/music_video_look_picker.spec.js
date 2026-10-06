@@ -91,7 +91,6 @@ test("operator opens the look dropdown, previews a look, and generates a new one
   await expect(picker).toHaveAttribute("data-state", "recast");
   await expect(trigger).toHaveText(name);
   await expect(preview.locator("[data-test='look-preview-label']")).toHaveText(`Demo Winger Delta > ${name}`);
-  await expect(page.locator("[data-test='chunk-prompt']").filter({ hasText: `like the ${name} model provided` }).first()).toBeAttached();
   // The card repaints itself when the sheet is ready: no reload here.
   await expect(preview).toHaveAttribute("data-state", "ready", { timeout: 20000 });
   await expect(preview.locator("[data-test='look-preview-image']")).toBeVisible();
@@ -142,10 +141,9 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   expect(await delta.locator("[data-test='search-row-name']").evaluate((el) => el.clientWidth)).toBeGreaterThan(120);
   expect(await delta.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(delta.locator("[data-test='search-row-look-name']")).toBeVisible();
-  await page.waitForTimeout(100);
-  const list = await picker.locator("[data-test='recast-results']").boundingBox();
-  expect(list.x).toBeGreaterThanOrEqual(0);
-  expect(list.x + list.width).toBeLessThanOrEqual(390);
+  // The list re-fits itself to the narrower window.
+  const results = picker.locator("[data-test='recast-results']");
+  await expect.poll(async () => { const box = await results.boundingBox(); return box.x >= 0 && box.x + box.width <= 390; }).toBe(true);
   await page.setViewportSize({ width: 1280, height: 720 });
   await delta.click();
 

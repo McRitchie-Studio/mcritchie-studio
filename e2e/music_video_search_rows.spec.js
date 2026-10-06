@@ -13,6 +13,8 @@ const VIDEO = "/music_videos/test-cinematic-search-rows-demo";
 const card = (page) => page.locator("[data-test='performer-card'][data-ordinal='1']");
 const recast = (page) => card(page).locator("[data-test='performer-recast']");
 const row = (scope, name) => scope.locator("[role='option']").filter({ hasText: name });
+// The swap search, not the look dropdown's trigger (also a combobox).
+const search = (page) => recast(page).locator("[data-test='recast-typeahead'] input[role='combobox']");
 
 test("operator finds a look-less athlete in Replaced by and is offered a first look", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
@@ -20,10 +22,10 @@ test("operator finds a look-less athlete in Replaced by and is offered a first l
   await expect(recast(page)).toHaveAttribute("data-state", "off");
   await recast(page).locator("[data-test='swap-toggle']").click();
   await expect(recast(page)).toHaveAttribute("data-state", "open");
-  await expect(recast(page).getByRole("combobox")).toHaveAttribute("placeholder", "Search people by name");
+  await expect(search(page)).toHaveAttribute("placeholder", "Search people by name");
 
   // Everyone named "test" is listed; a person with looks comes first.
-  await recast(page).getByRole("combobox").fill("test");
+  await search(page).fill("test");
   const options = recast(page).locator("[data-test='recast-option']");
   await expect(options.first()).toContainText("Test Athlete Alpha");
   await expect(options.first().locator("[data-test='search-row-badge']")).toHaveText("2 looks");
@@ -32,7 +34,7 @@ test("operator finds a look-less athlete in Replaced by and is offered a first l
   await expect(options.first().locator("img")).toHaveCount(0);
 
   // The look-less athlete: headshot, vocation, team, and "0 looks".
-  await recast(page).getByRole("combobox").fill("rookie");
+  await search(page).fill("rookie");
   const rookie = row(recast(page), "Test Rookie Bravo");
   await expect(rookie).toHaveCount(1);
   await expect(rookie.locator("[data-test='search-row-headshot']")).toBeVisible();
@@ -51,7 +53,7 @@ test("operator finds a look-less athlete in Replaced by and is offered a first l
   await expect(chosen.locator("[data-test='swap-athlete-name']")).toHaveText("Test Rookie Bravo");
   await expect(chosen.locator("[data-test='swap-athlete-team']")).toHaveText("Test City Testers");
   await expect(chosen.locator("[data-test='search-row-headshot']")).toBeVisible();
-  await expect(recast(page).getByRole("combobox")).toBeHidden();
+  await expect(search(page)).toBeHidden();
   await expect(recast(page).locator("[data-test='recast-no-look']")).toContainText("Test Rookie Bravo has no look yet");
   await expect(recast(page).locator("[data-test='look-trigger']")).toBeHidden();
   await expect(recast(page).locator("[data-test='look-generate-form']")).toContainText("First look for Test Rookie Bravo");
@@ -77,7 +79,7 @@ test("operator finds a look-less athlete in Replaced by and is offered a first l
   await expect(recast(page).locator("[data-test='look-preview-label']")).toHaveText("Test Rookie Bravo > Training Grey");
   // Change reopens the search on the chosen athlete; the list still finds him with his look now.
   await recast(page).locator("[data-test='swap-change']").click();
-  await recast(page).getByRole("combobox").fill("rookie");
+  await search(page).fill("rookie");
   await expect(row(recast(page), "Test Rookie Bravo").locator("[data-test='search-row-badge']")).toHaveText("1 look");
   await recast(page).locator("[data-test='swap-change-cancel']").click();
   await expect(recast(page).locator("[data-test='swap-athlete-name']")).toHaveText("Test Rookie Bravo");
@@ -113,7 +115,7 @@ test("the artist search draws the same row, and a headshot that fails falls back
   } else {
     await recast(page).locator("[data-test='swap-change']").click();
   }
-  const combo = recast(page).getByRole("combobox");
+  const combo = search(page);
   await combo.fill("test athlete");
   const alpha = row(recast(page), "Test Athlete Alpha");
   await expect(alpha).toHaveCount(1);
