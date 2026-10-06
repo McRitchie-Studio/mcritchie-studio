@@ -131,21 +131,27 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    **Nothing on a card has to be pressed**: every card starts **Not named** and
    not swapped, and **Cast confirmed** is ready as soon as the vision
    pass has posted people; it moves the video from `digested` to
-   `cast_confirmed`. Naming is optional and builds the artist rolodex. It sits
-   collapsed behind a quiet "Who is this on screen? (optional)" link, apart
-   from the swap's "Replace with": a typeahead over artists (names and aliases)
+   `cast_confirmed`. A card reads top to bottom: the still and "Person N";
+   **Replace with** (step 6); the description and sightings; then, pinned to
+   the bottom so cards in a row line up, the **Keep Original / Swap back**
+   button and **who is on screen**. Naming is optional and builds the artist
+   rolodex: a small "Who is this on screen? (optional)" label over a search
+   input that is always open, quieter than Replace with: a typeahead over artists (names and aliases)
    and People who are not athletes or coaches (sports people are offered by the
    swap search; one already linked to an artist still comes back as that
    artist), each result a
    headshot (a neutral placeholder when there is none), the name, the primary
    vocation and the current team (`People::SearchRows`; an artist with no
-   Person reads "musician" or "group"). Picking a person from People makes
-   them an artist; "Create new artist" adds one; the quiet "Mark as extra"
-   still records an extra. No column says "unnamed": it is a card with neither
-   an artist nor the extra flag. A named card shows who is on screen under
-   "On screen" with the person's headshot, vocation and team, and a Change
-   button; naming stays editable after the confirm, and the stored prompts
-   follow each change.
+   Person reads "musician" or "group"). A pick names the card and saves at
+   once (a JSON `PATCH`, no reload; Saving…, Saved, or Not saved with Retry);
+   picking a person from People makes them an artist; "Create new artist" adds
+   one; the "Mark as extra" text link records an extra, shown as a small
+   removable chip. No column says "unnamed": it is a card with neither an
+   artist nor the extra flag. A named card shows the person's headshot,
+   vocation and team with a small **Clear**, the search still open underneath;
+   the header badge follows each save, naming someone who has looks offers
+   **Swap with <name>?** at once, naming stays editable after the confirm, and
+   the stored prompts follow each change.
 6. **The operator swaps**, on the same card, under **Replace with**, which sits
    at the top of the card, under the still and the "Person N" heading and above
    the description and sightings: a people search on every card, with no toggle
@@ -166,16 +172,16 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    (ready, building, failed, none); picking a row saves that look, previewed
    large with a link to the look's own page. The arrow keys, Home, End, Enter,
    Space and Escape work the list.
-   While swapping, a full-width **Keep Original** button sits directly under
-   the look's character-sheet preview (under the look step when the person has
-   no look yet). Pressing it stops the swap and hides the chosen person, the
-   look dropdown and the preview, but **remembers** them (`recast_keep`):
-   nothing reads them while kept (prompts, swap target and hand-off treat the
-   person as kept). The card then reads "Not swapped. <name> is remembered.
-   Swap back"; the name or **Swap back** restores them in one press with no
-   re-pick (a remembered look since retired falls back to "needs a look").
-   Picking someone else from the search, which stays on the card, swaps to
-   them. The card says
+   Once someone is picked, one button pinned at the bottom of the card, just
+   above who is on screen, turns the swap off and on in the same place. While
+   swapping it reads **Keep Original**: pressing it stops the swap and hides
+   the chosen person, the look dropdown and the preview, but **remembers** them
+   (`recast_keep`): nothing reads them while kept (prompts, swap target and
+   hand-off treat the person as kept). The button then reads **Swap back to
+   <name>** with their headshot, and restores them in one press with no
+   re-pick (a remembered look since retired falls back to "needs a look"). A
+   card with nobody remembered shows neither. Picking someone else from the
+   search, which stays on the card, swaps to them. The card says
    Saving…, Saved, or Not saved with Retry; each change is a JSON `PATCH` to
    the recast endpoint, sent one at a time in the order made (a change made
    while one is in flight waits for it), so the server always ends where the
