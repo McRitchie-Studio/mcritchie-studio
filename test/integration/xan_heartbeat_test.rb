@@ -6,6 +6,10 @@ require "test_helper"
 # roll up underneath as a read-only drill-down; actions with a null agent_activity_id
 # fall into the "Unlabeled" group. Read-only meta surface, so it needs no auth.
 class AlexHeartbeatTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   def event(session: "sess-A", at: Time.current, **attrs)
     AgentActivity.create!({ session_id: session, category: "Explore", reason_slug: "find issue with api",
                           opened_at: at, seq: attrs.fetch(:seq, 0) }.merge(attrs))

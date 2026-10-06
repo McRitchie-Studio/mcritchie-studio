@@ -5,6 +5,10 @@ require "test_helper"
 # the single-line overflow-fade title, the data-driven app emoji, the footer
 # actions, the whole-card click target, and the removal of the → QA chip.
 class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "kanban card: full-width title link, app emojis, footer actions, click target" do
     task = Task.create!(
       title: "board card title sample",

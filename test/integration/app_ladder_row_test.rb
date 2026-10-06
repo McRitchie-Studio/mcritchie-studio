@@ -6,6 +6,10 @@ require "test_helper"
 # that exist to stop a stale or absent verdict reading as a pass must survive all
 # the way to the markup, not just the model.
 class AppLadderRowTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     Task.delete_all
     Activity.delete_all

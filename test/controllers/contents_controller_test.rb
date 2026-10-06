@@ -1,6 +1,10 @@
 require "test_helper"
 
 class ContentsControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     @admin = users(:alex)
     @viewer = users(:viewer)
@@ -76,6 +80,7 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "create requires login" do
+    reset!
     assert_no_difference "Content.count" do
       post contents_path, params: { content: { title: "Should fail" } }
     end
@@ -213,6 +218,7 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "review_step requires login" do
+    reset!
     post review_step_content_path(@posted_content.slug)
     assert_response :redirect
     @posted_content.reload
@@ -261,7 +267,7 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@viewer)
     post reorder_contents_path(format: :json),
          params: { slugs: [@idea_content.slug] }, as: :json
-    assert_response :redirect
+    assert_response :forbidden
   end
 
   # === News → Content bridge ===
@@ -531,14 +537,12 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "a visitor sees the preview and none of the controls" do
+  test "a visitor is sent to sign-in from the content page" do
     content = ready_video_post
+    reset!
     get content_path(content.slug)
 
-    assert_select "[data-test='x-post-preview']"
-    assert_select "[data-test='video-post-x-post']", 0
-    assert_select "[data-test='video-post-x-redraft']", 0
-    assert_select "[data-test='video-post-x-copy-field']", 0
+    assert_redirected_to login_path
   end
 
   test "exceptions from the draft are shown above the button" do

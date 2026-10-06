@@ -1,6 +1,10 @@
 require "test_helper"
 
 class TaskTimelineTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   # [component] the timeline section renders on the public task show page,
   # with a badge per transition.
   test "task show page renders the stage timeline with event badges" do

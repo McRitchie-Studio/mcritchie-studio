@@ -1,7 +1,7 @@
 require "test_helper"
 
-# [integration] who may write on the heartbeat surface. The pages read without a
-# login; every grade, bank, discard, clear and confirm write needs an admin, because
+# [integration] who may use the heartbeat surface. Every page and every grade, bank,
+# discard, clear and confirm write needs an admin (the hub's admin wall), because
 # a banked grade's text is served by GET /api/v1/insights and printed into every new
 # agent session's context by bin/session-insights. A visitor is sent to log in
 # (format-aware: 401 on JSON and Turbo, a login redirect on HTML); a signed-in
@@ -148,11 +148,19 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     assert_equal "mcr", ActionGrade.for_activity(e).last.grader
   end
 
-  # ── reads stay public ──────────────────────────────────────────────────────
+  # ── reads need an admin too ────────────────────────────────────────────────
 
-  test "[integration] the heartbeat pages and drawers read without a login" do
+  test "[integration] the heartbeat pages send a visitor to sign-in" do
+    [xan_heartbeat_path, heartbeat_all_activities_path, xan_pipeline_path, xan_insights_path].each do |path|
+      get path
+      assert_redirected_to login_path
+    end
+  end
+
+  test "[integration] the heartbeat pages and drawers read for an admin" do
     a = action
     e = activity
+    log_in_as(users(:alex))
 
     get xan_heartbeat_path
     assert_response :success
@@ -175,6 +183,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     grade = ActionGrade.create!(agent_activity: e, grader: "xan", disposition: "good",
                                 slug: "promote this activity to a guardrail")
     grade.bank!
+    log_in_as(users(:alex))
 
     get xan_insights_path
 
@@ -188,6 +197,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     grade = ActionGrade.create!(agent_activity: e, grader: "mcr", disposition: "not",
                                 slug: "the activity was noisy")
     grade.bank!
+    log_in_as(users(:alex))
 
     get xan_insights_path
 

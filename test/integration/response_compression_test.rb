@@ -4,6 +4,10 @@ require "test_helper"
 # Rack::Deflater is installed; this proves it actually fires on the page that
 # needed it, and stays off for a client that did not ask.
 class ResponseCompressionTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "[integration] a page response is gzipped for a client that accepts it" do
     get deployments_path, headers: { "HTTP_ACCEPT_ENCODING" => "gzip" }
 

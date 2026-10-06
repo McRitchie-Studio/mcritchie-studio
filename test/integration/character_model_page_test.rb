@@ -20,6 +20,10 @@ require "test_helper"
 # money), and the one test that drives the search action injects a fake through the
 # controller's collaborator.
 class CharacterModelPageTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     Appearance.delete_all
     AppearanceReferencePhoto.delete_all
@@ -390,14 +394,14 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
                   count: limit + 2
   end
 
-  # THE READ IS PUBLIC, THE PURCHASES ARE NOT. #show matches the person page beside
-  # it; #search and #mint each spend real money, so an anonymous POST must reach the
-  # login wall rather than the provider.
-  test "[integration] an anonymous visitor can read the page but cannot spend on it" do
+  # NEITHER THE READ NOR THE PURCHASES ARE PUBLIC. #search and #mint each spend real
+  # money, so an anonymous POST must reach the login wall rather than the provider.
+  test "[integration] an anonymous visitor can neither read the page nor spend on it" do
+    reset!
     cache_headshot
 
     get page_path
-    assert_response :success
+    assert_redirected_to "/login"
 
     Appearances::ImageSearch.stub(:available?, true) do
       Appearances::ImageSearch.stub(:search, ->(**) { raise "an anonymous POST must never reach a provider" }) do
@@ -449,26 +453,14 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     assert_nil @look.reload.higgsfield_reference_id, "a refused mint buys no identity"
   end
 
-  # THE PAGE OFFERS NO CONTROL IT WOULD REFUSE. #show is public, so without the view
-  # guards every reader is shown a button whose only effect is a bounce to the
-  # landing page — and the most expensive button on the page reads as available to
-  # anybody who can load it.
-  test "[component] a non-admin reader is offered no purchase controls" do
+  # A signed-in non-admin is turned back by the admin wall before any control renders.
+  test "[component] a non-admin reader is turned back from the page" do
     log_in_as(users(:viewer))
     cache_headshot
 
-    Appearances::ImageSearch.stub(:available?, true) do
-      Appearances::ImageSearch.stub(:provider_name, "fake") do
-        get page_path
-      end
-    end
+    get page_path
 
-    assert_response :success
-    assert_select "[data-test='reference-input-panel']", { count: 1 },
-                  "the read half still renders for a non-admin"
-    assert_select "[data-test='search-button']", count: 0
-    assert_select "form[action='#{search_person_appearance_path(@person.slug, @look.slug)}']", count: 0
-    assert_select "form[action='#{mint_person_appearance_path(@person.slug, @look.slug)}']", count: 0
+    assert_redirected_to root_path
   end
 
   # ---- where a failure goes --------------------------------------------------

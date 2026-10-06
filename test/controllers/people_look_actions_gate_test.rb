@@ -82,17 +82,15 @@ class PeopleLookActionsGateTest < ActionDispatch::IntegrationTest
                 "details#new-model"]
 
     get person_path(@person.slug)
-    assert_response :success
-    assert_select "[data-test='default-look-badge']", 1
-    controls.each { |control| assert_select control, 0 }
+    assert_redirected_to "/login", "the person page sits behind the admin wall"
 
     log_in_as users(:viewer)
     get person_path(@person.slug)
-    assert_response :success
-    controls.each { |control| assert_select control, 0 }
+    assert_redirected_to root_path
 
     log_in_as users(:alex)
     get person_path(@person.slug)
+    assert_select "[data-test='default-look-badge']", 1
     assert_select controls[0], 1
     assert_select controls[1], 1, "one Make default, for the look that is not the default"
     assert_select controls[2], 2, "one attach form per look"

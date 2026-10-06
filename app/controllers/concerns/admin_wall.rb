@@ -53,8 +53,11 @@ module AdminWall
                       reset_release rebroadcast_release_modules]
   }.transform_values(&:freeze).freeze
 
-  # controller_path => actions any signed-in user may reach: their own account.
+  # controller_path => actions any signed-in user may reach: their own account and
+  # their own /build request.
   SIGNED_IN = {
+    # The /build funnel's name step: a customer claims a subdomain for their draft.
+    "build" => %w[update],
     "studio/profiles" => %w[show edit update avatar unlink_google subscribe_newsletter unsubscribe_newsletter],
     "studio/onboarding" => %w[first_name skip_first_name]
   }.transform_values(&:freeze).freeze

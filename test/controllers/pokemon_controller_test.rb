@@ -1,6 +1,10 @@
 require "test_helper"
 
 class PokemonControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   # Every SQL call the page makes, schema/transaction bookkeeping aside. CACHE hits
   # are COUNTED, deliberately: Rails' per-request query cache collapses a repeated
   # identical query, so excluding them would hide an N+1 whose rows happen to ask the

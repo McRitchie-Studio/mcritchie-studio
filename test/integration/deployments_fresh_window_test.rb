@@ -6,6 +6,10 @@ require "test_helper"
 # release-ship e2e spec budgets its waits from the page itself instead of
 # racing a hardcoded 8s wall-clock window (task stabilize-release-ship-spec).
 class DeploymentsFreshWindowTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "[integration] a fresh ship renders the glow state and self-describes its window" do
     rel = Release.open!
     rel.ship!(by: "test")

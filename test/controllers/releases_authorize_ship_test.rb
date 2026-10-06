@@ -41,7 +41,7 @@ class ReleasesAuthorizeShipTest < ActionDispatch::IntegrationTest
   test "[integration] a signed-in non-admin and a guest are refused and grant nothing" do
     log_in_as(@viewer)
     post authorize_ship_deployment_path(@release.slug), headers: { "Accept" => "application/json" }
-    assert_response :redirect
+    assert_response :forbidden
     refute @release.reload.ship_authorization_granted?
 
     reset!
