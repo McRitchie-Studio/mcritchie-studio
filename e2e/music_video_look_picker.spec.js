@@ -120,7 +120,7 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   if ((await picker.getAttribute("data-state")) === "kept") await picker.locator("[data-test='swap-back']").click();
   if ((await picker.getAttribute("data-state")) !== "none") await picker.locator("[data-test='swap-clear']").click();
   await expect(picker).toHaveAttribute("data-state", "none");
-  await expect(picker.locator("[data-test='keep-original-note']")).toBeHidden();
+  await expect(picker.locator("[data-test='keep-toggle']")).toBeHidden();
   await expect(picker.locator("[data-test='look-picker']")).toBeHidden();
   await picker.getByRole("combobox").fill("demo");
   // The search row says what is saved for each person: the default look's sheet and name beside the count.

@@ -2,10 +2,11 @@
 // toggle first. The operator searches an athlete in the wide three-column list,
 // and picking him IS the swap: it saves at once in his default look; switching
 // the look saves again; the chunk prompts below follow each save without a
-// reload. A dropped save says so and Retry sends it again. The Keep Original
-// button under the look's sheet turns the swap off and hides it, remembering
-// him; Swap back (or his name) restores him; picking someone else swaps to
-// them. Replace with sits at the top of the card. Saves land in the
+// reload. A dropped save says so and Retry sends it again. The one button
+// pinned at the bottom of the card reads Keep Original while swapping (turns the
+// swap off and hides it, remembering him) and Swap back to <name> while kept
+// (restores him), in the same place; picking someone else swaps to them.
+// Replace with sits at the top of the card, naming at the bottom. Saves land in the
 // order made, so a change made while one is in flight never leaves the server
 // behind the card. A cinematic video, so no prompt says "music video". Wholly
 // synthetic data, seeded by e2e/seed.rb from db/seeds/data/recast_video.rb:
@@ -49,10 +50,11 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(search(page, 1)).toBeVisible();
   await expect(keepButton(page, 1)).toBeHidden();
   await expect(recast(page, 1).locator("input[type='checkbox']")).toHaveCount(0);
-  // Replace with is at the top: above the sightings and the optional naming.
+  // Replace with is at the top, above the sightings; the bottom block (swap toggle, then naming) is under them.
   const top = async (sel) => (await card(page, 1).locator(sel).first().boundingBox()).y;
-  expect(await top("[data-test='performer-recast']")).toBeLessThan(await top("[data-test='sighting']"));
-  expect(await top("[data-test='performer-recast']")).toBeLessThan(await top("[data-test='performer-resolution']"));
+  expect(await top("[data-test='replace-with']")).toBeLessThan(await top("[data-test='sighting']"));
+  expect(await top("[data-test='sighting']")).toBeLessThan(await top("[data-test='card-bottom']"));
+  expect(await top("[data-test='card-bottom']")).toBeLessThan(await top("[data-test='performer-resolution']"));
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
   await expect(recast(page, 1)).not.toContainText("Check to replace");
   await expect(recast(page, 1).locator("[role='switch']")).toHaveCount(0);
@@ -131,15 +133,27 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(page.locator("details#new-model [data-test='new-model-return']")).toBeVisible();
   await page.goBack();
 
-  // Keep Original: the swap is off and hidden, he is remembered, and the blank comes back to the prompts.
+  // Keep Original, at the bottom above the naming: the swap is off and hidden, he is remembered, and the
+  // blank comes back to the prompts. Swap back takes the same place, so it is where the eye already is.
+  // Measured against the naming block it sits on, which does not move between the two states.
+  const fromBottom = async (button) => {
+    const [n, b] = [await card(page, 1).locator("[data-test='performer-resolution']").boundingBox(), await button.boundingBox()];
+    return Math.round(n.y - b.y);
+  };
+  // Both states settle at the same distance: the h-10 button and the space-y-3 gap above the naming.
+  const keepAt = 40 + 12;
+  await expect.poll(() => fromBottom(keepButton(page, 1))).toBe(keepAt);
+  expect(await top("[data-test='keep-original']")).toBeLessThan(await top("[data-test='performer-resolution']"));
   await keepButton(page, 1).click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "kept");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
   await expect(trigger).toBeHidden();
   await expect(recast(page, 1).locator("[data-test='look-preview']")).toBeHidden();
-  await expect(recast(page, 1).locator("[data-test='keep-original-note']")).toHaveText(
-    /Not swapped\.\s+Test Athlete Alpha\s+is remembered\.\s+Swap back/);
+  await expect(keepButton(page, 1)).toBeHidden();
+  await expect(swapBack(page, 1)).toHaveText(/Swap back to\s+Test Athlete Alpha/);
+  // Read once settled: a read mid-render can land a few pixels short.
+  await expect.poll(() => fromBottom(swapBack(page, 1))).toBe(keepAt);
   await expect(search(page, 1)).toBeVisible();
   await expect(prompt).toContainText("with {athlete}, the football player");
   await expect(page.locator("#chunk-1 [data-test='chunk-recast']")).toHaveCount(0);
@@ -155,18 +169,12 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(trigger).toHaveText("Home Blue");
   await expect(prompt).toContainText("(like the Home Blue model provided)");
 
-  // Kept again: the name restores him too.
-  await keepButton(page, 1).click();
-  await expect(recast(page, 1)).toHaveAttribute("data-state", "kept");
-  await recast(page, 1).locator("[data-test='swap-back-name']").click();
-  await expect(recast(page, 1)).toHaveAttribute("data-state", "recast");
-  await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
-
   // Kept again, then a pick from the search ends the keep and swaps to the new person.
   await keepButton(page, 1).click();
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await pick(page, 1, "rookie", "Test Rookie Bravo");
-  await expect(recast(page, 1).locator("[data-test='keep-original-note']")).toBeHidden();
+  await expect(swapBack(page, 1)).toBeHidden();
+  await expect(keepButton(page, 1)).toBeVisible();
   await expect(recast(page, 1).locator("[data-test='swap-athlete-name']")).toHaveText("Test Rookie Bravo");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await page.reload();
@@ -177,7 +185,8 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await recast(page, 1).locator("[data-test='swap-clear']").click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "none");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
-  await expect(recast(page, 1).locator("[data-test='keep-original-note']")).toBeHidden();
+  await expect(keepButton(page, 1)).toBeHidden();
+  await expect(swapBack(page, 1)).toBeHidden();
   await expect(search(page, 1)).toBeFocused();
   await page.reload();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "none");
