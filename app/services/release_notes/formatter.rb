@@ -220,9 +220,13 @@ module ReleaseNotes
       @sha[0, 7]
     end
 
+    # Every group gets a heading, "No deployed tasks" when empty, except a
+    # `hide_when_empty` group (an archived or repo-less app), drawn only when a
+    # task names it.
     def group_lines
       grouped_tasks = tasks_by_group
-      APP_GROUPS.flat_map do |group|
+      shown = APP_GROUPS.reject { |group| group[:hide_when_empty] && grouped_tasks.fetch(group[:key], []).empty? }
+      shown.flat_map do |group|
         tasks = grouped_tasks.fetch(group[:key], [])
         lines = ["#{group[:emoji]} #{group[:label]}"]
         lines.concat(task_lines(tasks))

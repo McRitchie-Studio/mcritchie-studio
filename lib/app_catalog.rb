@@ -70,9 +70,11 @@ module AppCatalog
     end
   end
 
-  # One release-notes group per app, then per library, in catalog order.
+  # One release-notes group per app, then per library, in catalog order. An
+  # archived or repo-less app cannot ship code, so its group is `hide_when_empty`:
+  # the notes draw it only when a task in the release names it.
   def release_groups
-    @release_groups ||= (apps.map { |entry| group(entry.slug, entry.name, entry.emoji, [entry.slug]) } +
+    @release_groups ||= (apps.map { |entry| group(entry.slug, entry.name, entry.emoji, [entry.slug], hide_when_empty: entry.archived? || entry.repo.nil?) } +
                          libraries.map { |lib| group(lib.slug, lib.name, lib.emoji, [lib.slug] + lib.aliases) }).freeze
   end
 
@@ -85,8 +87,8 @@ module AppCatalog
     rows.each_with_index.map { |row, index| row.merge(position: index).freeze }.freeze
   end
 
-  def group(key, label, emoji, aliases)
-    { key: key, label: label, emoji: emoji, aliases: aliases.freeze }.freeze
+  def group(key, label, emoji, aliases, hide_when_empty: false)
+    { key: key, label: label, emoji: emoji, aliases: aliases.freeze, hide_when_empty: hide_when_empty }.freeze
   end
 
   # Parse and validate catalog YAML text into a frozen Catalog.
