@@ -140,4 +140,16 @@ class ContactSubmissionTest < ActiveSupport::TestCase
     refute_includes row.inspect, "My private note"
     assert_includes row.inspect, "Jordan Lee"
   end
+
+  test "a spam reason must be one the controller measures, and marks the row flagged" do
+    assert build.tap(&:save!).then { |row| !row.flagged? && ContactSubmission.unflagged.include?(row) }
+
+    row = build(spam_reason: "too_fast")
+    assert row.save, row.errors.full_messages.to_sentence
+    assert row.flagged?
+    assert_includes ContactSubmission.flagged, row
+    refute_includes ContactSubmission.unflagged, row
+
+    refute build(spam_reason: "looked_odd").valid?
+  end
 end

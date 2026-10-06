@@ -13,6 +13,7 @@ test.use({ storageState: VISITOR });
 
 test("a visitor opts in to texts on the contact page and sees it confirmed", async ({ page }) => {
   await page.goto("/contact");
+  const loadedAt = Date.now();
 
   const care = page.locator("[data-test='consent-care']");
   const marketing = page.locator("[data-test='consent-marketing']");
@@ -49,11 +50,20 @@ test("a visitor opts in to texts on the contact page and sees it confirmed", asy
   await expect(page.getByRole("textbox", { name: "Leave this field empty" })).toHaveCount(0);
   await expect(trap).toHaveValue("");
 
+  // The page's script wrote the browser proof (the signed render time,
+  // reversed); a bot that skips the script leaves it blank.
+  const proof = page.locator("[data-test='contact-proof']");
+  const signed = await proof.getAttribute("data-proof");
+  await expect(proof).toHaveValue(signed.split("").reverse().join(""));
+
   const email = `opt-in-${Date.now()}@example.test`;
   await page.getByLabel("Name", { exact: true }).fill("Jordan Lee");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await phone.fill("(303) 555-0142");
   await page.getByLabel("Message", { exact: true }).fill("Please text me about my project.");
+  // A person takes longer than the minimum fill time; a script does not.
+  const minMs = Number(await proof.getAttribute("data-min-seconds")) * 1000 + 500;
+  await page.waitForTimeout(Math.max(0, minMs - (Date.now() - loadedAt)));
   await page.locator("[data-test='contact-submit']").click();
 
   await expect(page.locator("[data-test='contact-sent']")).toContainText("your message is on its way");

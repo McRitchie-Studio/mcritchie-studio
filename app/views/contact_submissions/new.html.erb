@@ -66,6 +66,14 @@
         <input type="text" name="contact_submission[<%= honeypot %>]" id="contact_submission_<%= honeypot %>" tabindex="-1" autocomplete="off" data-test="contact-honeypot">
       </div>
 
+      <%# The browser proof: the signed render time sits in a data attribute and
+          only the page's script writes it, reversed, into the field. A bot that
+          posts the HTML back without running it sends the field blank. %>
+      <% proof = ContactSubmissionsController::PROOF_FIELD %>
+      <input type="hidden" name="contact_submission[<%= proof %>]" id="contact_submission_<%= proof %>"
+             data-proof="<%= form_proof %>" data-min-seconds="<%= ContactSubmissionsController::MIN_FILL_SECONDS %>"
+             x-init="$el.value = $el.dataset.proof.split('').reverse().join('')" data-test="contact-proof">
+
       <fieldset class="space-y-3" data-test="contact-consent">
         <legend class="text-sm font-semibold text-heading mb-2">Text messages</legend>
         <label class="flex items-start gap-3 text-secondary">
