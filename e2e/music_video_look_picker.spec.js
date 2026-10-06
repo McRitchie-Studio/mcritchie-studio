@@ -1,8 +1,8 @@
 // [e2e] The look dropdown on a cast card. The operator opens it and sees each
-// look of the chosen athlete with its character-sheet thumbnail, previews one,
-// and generates a new look without leaving the card; the card shows the look
-// building and repaints itself when the sheet is ready, and the look can be
-// cast. An athlete with no look is offered "Generate first look". The server's
+// look of the chosen athlete with its character-sheet thumbnail; picking one
+// casts it at once; generating a new look without leaving the card casts the
+// new look, shows it building and repaints itself when the sheet is ready. An
+// athlete with no look is saved as pending and offered "Generate first look". The server's
 // generator is the e2e fake (config/initializers/e2e_image_generation.rb), so
 // nothing is spent. Wholly synthetic data, seeded by e2e/seed.rb from
 // db/seeds/data/look_picker_video.rb: only the operator says who is on screen
@@ -23,13 +23,13 @@ test("operator opens the look dropdown, previews a look, and generates a new one
   // The saved card previews the look it is cast in, large, with the way to the look's own page.
   const picker = recast(page, 2);
   await expect(picker).toHaveAttribute("data-state", "recast");
-  await expect(picker.locator("[data-test='recast-label']")).toHaveText("Demo Winger Delta > Home Orange");
+  await expect(picker.locator("[data-test='swap-athlete-name']")).toHaveText("Demo Winger Delta");
   const preview = picker.locator("[data-test='look-preview']");
   await expect(preview.locator("[data-test='look-preview-label']")).toHaveText("Demo Winger Delta > Home Orange");
   await expect(preview.locator("[data-test='look-preview-image']")).toBeVisible();
   await expect(preview.locator("[data-test='look-preview-image']")).toHaveJSProperty("complete", true);
   await expect(preview.locator("[data-test='look-page-link']")).toHaveAttribute("href", /^\/people\/demo-winger-delta\/models\/look-[0-9a-f]+$/);
-  await expect(picker.locator("[data-test='look-cast']")).toBeHidden();
+  await expect(picker.locator("[data-test='look-cast']")).toHaveCount(0);
   await expect(picker.locator("[data-test='look-building-note']")).toContainText("Alternate Blue");
 
   // The dropdown: a row per look with its sheet thumbnail or a placeholder, the default mark, the build state.
@@ -54,7 +54,7 @@ test("operator opens the look dropdown, previews a look, and generates a new one
   await expect(option(picker, "Away White").locator("[data-test='look-option-default']")).toBeHidden();
   await expect(picker.locator("[data-test='look-generate-option']")).toHaveText(/Generate a new look/);
 
-  // By keyboard: down one row, Enter. A pick only previews; nothing is saved until Cast.
+  // By keyboard: down one row, Enter. The pick is cast at once: no Cast button to press.
   await page.keyboard.press("ArrowDown");
   await expect(trigger).toHaveAttribute("aria-activedescendant", "look-option-2-1");
   await page.keyboard.press("Enter");
@@ -62,8 +62,8 @@ test("operator opens the look dropdown, previews a look, and generates a new one
   await expect(trigger).toBeFocused();
   await expect(preview.locator("[data-test='look-preview-label']")).toHaveText("Demo Winger Delta > Away White");
   await expect(preview.locator("[data-test='look-preview-empty']")).toContainText("No character sheet yet");
-  await expect(picker.locator("[data-test='look-cast']")).toHaveText("Cast as Demo Winger Delta > Away White");
-  await expect(picker.locator("[data-test='recast-label']")).toHaveText("Demo Winger Delta > Home Orange");
+  await expect(picker.locator("[data-test='swap-saved']")).toBeVisible();
+  await expect(picker).toHaveAttribute("data-state", "recast");
   // Escape closes without changing the pick.
   await page.keyboard.press("ArrowDown");
   await expect(picker.locator("[data-test='look-list']")).toBeVisible();
@@ -85,10 +85,11 @@ test("operator opens the look dropdown, previews a look, and generates a new one
   await form.locator("input[name='number']").fill("12");
   await form.getByRole("button", { name: "Generate look" }).click();
 
-  // Back on the same card: the cast look stands, and the new look is previewed while its sheet builds.
+  // Back on the same card, cast in the new look while its sheet builds.
   await expect(page).toHaveURL(/\/music_videos\/test-cinematic-look-picker-demo\?look=look-[0-9a-f]+#person-2$/);
   await expect(card(page, 2)).toBeInViewport();
-  await expect(picker.locator("[data-test='recast-label']")).toHaveText("Demo Winger Delta > Home Orange");
+  await expect(picker).toHaveAttribute("data-state", "recast");
+  await expect(trigger).toHaveText(name);
   await expect(preview.locator("[data-test='look-preview-label']")).toHaveText(`Demo Winger Delta > ${name}`);
   // The card repaints itself when the sheet is ready: no reload here.
   await expect(preview).toHaveAttribute("data-state", "ready", { timeout: 20000 });
@@ -98,11 +99,6 @@ test("operator opens the look dropdown, previews a look, and generates a new one
   await expect(option(picker, name).locator("[data-test='look-thumb-image']")).toBeVisible();
   await expect(option(picker, name)).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Escape");
-
-  // And it can be cast.
-  await picker.locator("[data-test='look-cast']").click();
-  await expect(picker.locator("[data-test='recast-label']")).toHaveText(`Demo Winger Delta > ${name}`);
-  await expect(picker.locator("[data-test='look-cast']")).toBeHidden();
 });
 
 test("a building look repaints in place when the poll says its sheet is ready, and an image that fails falls back to the placeholder", async ({ page }) => {
@@ -118,9 +114,11 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   });
   await page.goto(VIDEO);
 
-  // An open card: nothing is chosen until the typeahead says so.
+  // A card not swapped: on reveals the search, and nothing is chosen until the search says so.
   const picker = recast(page, 1);
-  if ((await picker.getAttribute("data-state")) !== "open") await picker.getByRole("button", { name: "Change" }).click();
+  if ((await picker.getAttribute("data-state")) !== "off") await picker.locator("[data-test='swap-toggle']").click();
+  await expect(picker).toHaveAttribute("data-state", "off");
+  await picker.locator("[data-test='swap-toggle']").click();
   await expect(picker).toHaveAttribute("data-state", "open");
   await expect(picker.locator("[data-test='look-picker']")).toBeHidden();
   await picker.getByRole("combobox").fill("demo");
@@ -134,22 +132,28 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   await expect(novice.locator("[data-test='search-row-name']")).toBeVisible();
   if ((await novice.locator("[data-test='search-row-badge']").textContent()) === "0 looks") {
     await expect(novice.locator("[data-test='search-row-look']")).toBeHidden();
+    await expect(novice.locator("[data-test='search-row-no-look']")).toHaveText("No look yet");
   }
-  // At phone width the name keeps most of the row (it may ellipsize under a wide font, never vanish),
-  // and the row does not spill past the list.
+  // At phone width the list stays on screen; the look drops under the name (the name keeps most of the row,
+  // it may ellipsize under a wide font, never vanish), and the row does not spill past the list.
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(delta.locator("[data-test='search-row-name']")).toBeVisible();
   expect(await delta.locator("[data-test='search-row-name']").evaluate((el) => el.clientWidth)).toBeGreaterThan(120);
   expect(await delta.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(delta.locator("[data-test='search-row-look-name']")).toBeVisible();
+  // The list re-fits itself to the narrower window.
+  const results = picker.locator("[data-test='recast-results']");
+  await expect.poll(async () => { const box = await results.boundingBox(); return box.x >= 0 && box.x + box.width <= 390; }).toBe(true);
   await page.setViewportSize({ width: 1280, height: 720 });
   await delta.click();
 
-  // The default look is previewed first; the building one says so in its row and in the note.
+  // The pick saves him in his default look; the building one says so in its row and in the note.
   await expect(picker.locator("[data-test='look-preview-label']")).toHaveText("Demo Winger Delta > Home Orange");
-  await expect(picker.locator("[data-test='look-cast']")).toHaveText("Cast as Demo Winger Delta > Home Orange");
+  await expect(picker).toHaveAttribute("data-state", "recast");
+  await expect(picker.locator("[data-test='swap-athlete-name']")).toHaveText("Demo Winger Delta");
   await picker.locator("[data-test='look-trigger']").click();
   await option(picker, "Alternate Blue").click();
+  await expect(picker.locator("[data-test='swap-saved']")).toBeVisible();
   await expect(picker.locator("[data-test='look-preview']")).toHaveAttribute("data-state", /^(building|ready)$/);
   await expect(picker.locator("[data-test='look-cast-no-sheet']")).toBeVisible();
 
@@ -158,7 +162,7 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   expect(polls).toBeGreaterThan(0);
   await expect(picker.locator("[data-test='look-preview-empty']")).toContainText("could not be loaded");
   await expect(picker.locator("[data-test='look-cast-no-sheet']")).toBeHidden();
-  await expect(picker).toHaveAttribute("data-state", "open");
+  await expect(picker).toHaveAttribute("data-state", "recast");
 });
 
 test("an athlete with no look is offered generate first look, and the new look can be cast", async ({ page }) => {
@@ -167,14 +171,16 @@ test("an athlete with no look is offered generate first look, and the new look c
   await page.goto(VIDEO);
 
   const picker = recast(page, 3);
-  await expect(picker).toHaveAttribute("data-state", "open");
+  await expect(picker).toHaveAttribute("data-state", "off");
+  await picker.locator("[data-test='swap-toggle']").click();
   await picker.getByRole("combobox").fill("novice echo");
   const rookie = picker.locator("[data-test='recast-option']").filter({ hasText: "Demo Novice Echo" });
   await expect(rookie.locator("[data-test='search-row-badge']")).toHaveText("0 looks");
   await rookie.click();
 
-  // Nothing is saved by the pick; the card offers the first look in place of a dropdown.
-  await expect(picker).toHaveAttribute("data-state", "open");
+  // The pick saves him alone, pending; the card offers the first look in place of a dropdown.
+  await expect(picker).toHaveAttribute("data-state", "pending");
+  await expect(picker.locator("[data-test='swap-athlete-name']")).toHaveText("Demo Novice Echo");
   await expect(picker.locator("[data-test='recast-no-look']")).toHaveText("Demo Novice Echo has no look yet.");
   await expect(picker.locator("[data-test='look-trigger']")).toBeHidden();
   const form = picker.locator("[data-test='look-generate-form']");
@@ -186,10 +192,9 @@ test("an athlete with no look is offered generate first look, and the new look c
   await form.locator("input[name='descriptor']").fill(name);
   await form.getByRole("button", { name: "Generate look" }).click();
 
-  // The athlete is taken, the look is his default, and the card still asks for the cast.
-  await expect(picker).toHaveAttribute("data-state", "pending");
-  await expect(picker.locator("[data-test='recast-label']")).toHaveText("Demo Novice Echo");
-  await expect(card(page, 3)).toHaveAttribute("data-resolved", "false");
+  // He is cast in his new first look, which is his default; the card is closed.
+  await expect(picker).toHaveAttribute("data-state", "recast");
+  await expect(card(page, 3)).toHaveAttribute("data-resolved", "true");
   const preview = picker.locator("[data-test='look-preview']");
   await expect(preview.locator("[data-test='look-preview-label']")).toHaveText(`Demo Novice Echo > ${name}`);
   await expect(preview).toHaveAttribute("data-state", "ready", { timeout: 20000 });
@@ -197,9 +202,4 @@ test("an athlete with no look is offered generate first look, and the new look c
   await picker.locator("[data-test='look-trigger']").click();
   await expect(option(picker, name).locator("[data-test='look-option-default']")).toBeVisible();
   await page.keyboard.press("Escape");
-
-  await picker.locator("[data-test='look-cast']").click();
-  await expect(picker).toHaveAttribute("data-state", "recast");
-  await expect(picker.locator("[data-test='recast-label']")).toHaveText(`Demo Novice Echo > ${name}`);
-  await expect(card(page, 3)).toHaveAttribute("data-resolved", "true");
 });

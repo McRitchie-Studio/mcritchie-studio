@@ -5,7 +5,7 @@
   <% if target %>
     <%= target.name %><% if target.artist %> · <span class="font-semibold text-heading"><%= target.artist.name %></span><% end %>
     <span class="text-muted">(<%= target.label %>)</span>
-    <% if target.recast_person %>
+    <% if target.swap? %>
       <span class="block mt-1 break-words" data-test="<%= prefix %>-recast">
         <span class="label-upper mr-1">Replaced by</span>
         <span class="font-semibold text-heading"><%= target.recast_label %></span>

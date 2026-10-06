@@ -41,7 +41,7 @@ module Api
         post_clips(NightCallClips.rows, video: digested)
         assert_response :conflict
         assert_equal "CAST_NOT_CONFIRMED", body["error_code"]
-        assert_match "neither an artist nor an extra", body["error"]
+        assert_equal "the cast is not confirmed yet: confirm it first", body["error"], "naming is optional: nothing blocks but the confirm itself"
         assert_equal 0, digested.video_clips.count
       end
 

@@ -33,7 +33,6 @@ class VideoPerformersController < ApplicationController
   end
 
   def refusal_for(r)
-    return "the cast is already confirmed" if @video.cast_confirmed?
     return if r[:extra] || r[:clear] || r[:artist_slug] || r[:person_slug] || r[:new_artist_name]
 
     "choose an artist or person, or name a new artist"

@@ -11,7 +11,7 @@ module MusicVideos
       present = Array(clip.performer_ordinals).filter_map { |n| people[n] } - [target]
       labelled, background = present.partition(&:artist_slug)
       ClipPrompt.fill(target: target&.label, others: labelled.map(&:label), background: background.any?,
-                      athlete: target&.recast_person&.full_name, look: target&.recast_appearance&.descriptor,
+                      athlete: target&.swap_person&.full_name, look: target&.swap_look&.descriptor,
                       video_kind: video.kind)
     end
 

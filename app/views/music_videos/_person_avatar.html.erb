@@ -1,0 +1,12 @@
+<%# A person's headshot, or a neutral placeholder while there is none (or it fails to load). `person` is the Alpine expression naming the row ({ avatar_url }), which may be null; `failed` is the flag set on it when the image errors. %>
+<span class="<%= size %> shrink-0 rounded-full bg-inset border border-subtle overflow-hidden flex items-center justify-center text-muted"
+      data-test="search-row-avatar">
+  <template x-if="<%= person %> && <%= person %>.avatar_url && !<%= person %>.<%= failed %>">
+    <img :src="<%= person %>.avatar_url" alt="" loading="lazy" class="block w-full h-full object-cover" @error="<%= person %>.<%= failed %> = true"
+         data-test="search-row-headshot">
+  </template>
+  <svg x-show="!<%= person %> || !<%= person %>.avatar_url || <%= person %>.<%= failed %>" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+       class="<%= icon %>" data-test="search-row-placeholder">
+    <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.5-8 5.5 0 .8.7 1.5 1.5 1.5h13c.8 0 1.5-.7 1.5-1.5 0-3-3.6-5.5-8-5.5Z"/>
+  </svg>
+</span>
