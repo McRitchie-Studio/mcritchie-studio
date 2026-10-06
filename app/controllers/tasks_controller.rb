@@ -73,7 +73,7 @@ class TasksController < ApplicationController
 
   # /stages/sop — the operator's DevOps SOP as an accountability-swimlane
   # infographic (one row per owner). Static guide; data lives in
-  # ApplicationHelper#devops_sop_lanes. Public-read like /stages.
+  # ApplicationHelper#devops_sop_lanes. Admin-only, like /stages.
   def sop
   end
 

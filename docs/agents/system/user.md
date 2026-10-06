@@ -1,30 +1,32 @@
 # User Guide
 
-The pages an operator opens on the hub, and what each one needs. Routes are in
-`config/routes.rb`; the ones `studio-engine` draws (sign-in, error logs, local
-review, local inbox) come from `Studio.routes`.
+The pages an operator opens on the hub, and what each one needs. Every page
+needs an admin unless `AdminWall::PUBLIC` lists it
+(`app/controllers/concerns/admin_wall.rb`). Routes are in `config/routes.rb`;
+the ones `studio-engine` draws (sign-in, error logs, local review, local inbox)
+come from `Studio.routes`.
 
 ## Pages
 
 | Page | Shows | Needs |
 |------|-------|-------|
 | `/` | The public McRitchie Studio landing page: positioning, Alex's profile, contact | nothing |
-| `/dashboard` | Every registered agent, task counts by stage, the twenty latest activities | nothing |
-| `/agents`, `/agents/:slug` | The agent grid; one agent's skills, recent tasks and activity | nothing |
-| `/agents/:slug/activities` | The cross-session narrated activity feed with grade cells | sign-in |
-| `/tasks` | The Build board: `designed`, `building` and `submitted` lanes; a blocked task glows red in `building` | nothing |
-| `/deployments` | The full pipeline as six lanes, with drag-and-drop | nothing |
-| `/tasks/:slug` | One task: acceptance, conversation, stage events, approval state | nothing |
+| `/dashboard` | Every registered agent, task counts by stage, the twenty latest activities | admin |
+| `/agents`, `/agents/:slug` | The agent grid; one agent's skills, recent tasks and activity | admin |
+| `/agents/:slug/activities` | The cross-session narrated activity feed with grade cells | admin |
+| `/tasks` | The Build board: `designed`, `building` and `submitted` lanes; a blocked task glows red in `building` | admin |
+| `/deployments` | The full pipeline as six lanes, with drag-and-drop | admin |
+| `/tasks/:slug` | One task: acceptance, conversation, stage events, approval state | admin |
 | `/tasks/new`, `/tasks/:slug/edit` | Create or edit a task | admin |
 | `/tasks/:slug/local_review` | The WAITING APPROVAL hop: mints a single-use link into the builder's desk | nothing |
-| `/stages`, `/stages/sop` | The two-workflow stage guide and the DevOps SOP by owner | nothing |
-| `/epics`, `/epics/:slug` | Epics and their tasks | nothing |
-| `/deployments/:slug` | One release candidate and its members | nothing |
-| `/usages` | API cost and tokens per agent | nothing |
+| `/stages`, `/stages/sop` | The two-workflow stage guide and the DevOps SOP by owner | admin |
+| `/epics`, `/epics/:slug` | Epics and their tasks | admin |
+| `/deployments/:slug` | One release candidate and its members | admin |
+| `/usages` | API cost and tokens per agent | admin |
 | `/error_logs`, `/error_logs/:id` | Captured errors; one error with its backtrace | admin |
-| `/docs`, `/docs/*path` | The agent docs under `docs/agents`, rendered | nothing |
-| `/xan/heartbeat`, `/xan/pipeline`, `/xan/insights` | A session's actions for grading; the activity pipeline; the banked insights | nothing |
-| `/activities` | Redirects to `/agents` | nothing |
+| `/docs`, `/docs/*path` | The agent docs under `docs/agents`, rendered | admin |
+| `/xan/heartbeat`, `/xan/pipeline`, `/xan/insights` | A session's actions for grading; the activity pipeline; the banked insights | admin |
+| `/activities` | Redirects to `/agents` | admin, at `/agents` |
 
 ## Task stages
 
@@ -57,4 +59,6 @@ to the page under review. Detail:
   consumes.
 - Sessions carry across the satellites through the hub's SSO; each satellite
   assigns the role named in `config/satellites.yml`.
-- Reads are public; task writes and `/error_logs` need an admin.
+- The ops pages, reads included, need an admin: hub signup is open, so a plain
+  sign-in keeps nobody out. A visitor is sent to `/login`; a signed-in non-admin
+  is turned back with "Not authorized" (JSON and Turbo requests get 401 or 403).

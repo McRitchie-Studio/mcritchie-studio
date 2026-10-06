@@ -86,8 +86,8 @@ class HeartbeatController < ApplicationController
   #   1. ACTIVITIES    — recent narrated activities
   #   2. INSIGHTS      — Xan's banked grades (the distilled lessons)
   #   3. CONFIRMATIONS — McRitchie's mcr grades (the confirmed subset)
-  # A public read (like the rest of the heartbeat); the column-2 Confirm button
-  # posts an mcr grade through #confirm, an admin write.
+  # Admin-only, like the rest of the heartbeat; the column-2 Confirm button posts
+  # an mcr grade through #confirm.
   PIPELINE_ACTIVITIES    = 40
   PIPELINE_SPANS = PIPELINE_ACTIVITIES
   PIPELINE_INSIGHTS = 40
