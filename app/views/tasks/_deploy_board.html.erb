@@ -686,11 +686,6 @@ document.addEventListener('turbo:before-cache', function() {
 
           <%# Every per-card local here is a BATCH load_board already computed, handed
               in explicitly so a column of cards costs one query instead of one each.
-              `local_check` was the one this board was missing: /deployments calls
-              load_board (so @local_check_by_slug is populated) but did not pass it,
-              and tasks/_task_card falls back to Cert::LocalCheckReader#for_task per
-              card — a GateRun query per building card with no PR yet. tasks/_board
-              has always passed it; this row now matches.
 
               review_in_progress? gets the same treatment: it runs per card, and
               without the preload that call costs two task_events queries each.
@@ -705,7 +700,6 @@ document.addEventListener('turbo:before-cache', function() {
                   resubmission: @resubmissions&.fetch(task.slug, nil),
                   ever_blocked: @ever_blocked_slugs&.include?(task.slug),
                   ci_progress: @ci_progress_by_slug&.fetch(task.slug, nil),
-                  local_check: @local_check_by_slug&.fetch(task.slug, nil),
                   review_in_progress: task.review_in_progress?(events: task.task_events.to_a) %>
           <% end %>
 

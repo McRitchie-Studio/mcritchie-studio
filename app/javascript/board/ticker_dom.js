@@ -11,7 +11,7 @@
 //   window      the operator-window chip (tasks/_window_chip): "mm:ss" to data-ends-at,
 //               then data-lapsed-label; flips the chip's data-window-state and marks
 //               data-window-urgent inside the last minute
-import { clockFmt, shortFmt, agoFmt, windowState, countdown, localCheckStalled } from "board/ticker";
+import { clockFmt, shortFmt, agoFmt, windowState, countdown } from "board/ticker";
 
 function tickWindow(el, now) {
   const endsAt = parseInt(el.dataset.endsAt || "0", 10);
@@ -33,47 +33,9 @@ function tickWindow(el, now) {
   else delete chip.dataset.windowUrgent;
 }
 
-// Freeze a killed local check at its LAST HEARTBEAT, not at this browser's
-// observation time.
-function stallQuietLocalCheck(el, now) {
-  const root = el.closest("[data-local-check-stale-at]");
-  if (!root || !localCheckStalled(root.dataset.localCheckState, root.dataset.localCheckStaleAt, now)) return false;
-
-  root.dataset.localCheckState = "stalled";
-  root.setAttribute("aria-label", "Local check stalled — heartbeat stopped");
-  root.title = "Local check stalled — heartbeat stopped";
-
-  const spinner = root.querySelector("[data-test$='-spinner']");
-  const warning = root.querySelector("[data-test$='-stalled-icon']");
-  if (spinner) {
-    spinner.hidden = true;
-    spinner.classList.add("hidden");
-  }
-  if (warning) {
-    warning.hidden = false;
-    warning.classList.remove("hidden");
-  }
-
-  const label = root.querySelector("[data-test$='-label']");
-  if (label) label.textContent = label.dataset.stalledLabel || "Local check — stalled";
-  root.querySelectorAll("[data-local-check-tone]").forEach((node) => {
-    node.classList.remove("text-primary");
-    node.classList.add("text-warning-ink");
-  });
-
-  el.removeAttribute("data-release-ticker");
-  el.dataset.localCheckClock = "stalled";
-  el.textContent = el.dataset.localCheckFreezeLabel || shortFmt(
-    parseInt(el.dataset.localCheckFreezeSeconds || "0", 10)
-  );
-  el.title = "Local check clock frozen at the last heartbeat";
-  return true;
-}
-
 function tick() {
   const now = Math.floor(Date.now() / 1000);
   document.querySelectorAll("[data-release-ticker]").forEach((el) => {
-    if (stallQuietLocalCheck(el, now)) return;
     if (el.dataset.mode === "window") return tickWindow(el, now);
     const since = parseInt(el.dataset.since || "0", 10);
     if (!since) return;

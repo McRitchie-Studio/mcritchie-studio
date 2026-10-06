@@ -210,7 +210,6 @@ test/integration/board_ci_progress_test.rb: 4.69
 test/integration/board_cleared_block_card_test.rb: 0.69
 test/integration/board_epic_filter_test.rb: 6.31
 test/integration/board_lane_pin_test.rb: 1.33
-test/integration/board_local_check_indicator_test.rb: 2.55
 test/integration/board_query_budget_test.rb: 6.07
 test/integration/board_ready_cache_clear_test.rb: 0.31
 test/integration/board_task_rank_test.rb: 3.6
@@ -912,8 +911,6 @@ test/services/avi_sizer_test.rb: 0.09
 test/services/broadcasts/analytics_test.rb: 0.65
 test/services/broadcasts/cyvasse_night_test.rb: 0.26
 test/services/broadcasts/cyvasse_your_games_test.rb: 0.18
-test/services/cert/local_check_reader_test.rb: 0.19
-test/services/cert/local_check_test.rb: 0.25
 test/services/ci/progress_reader_gem_release_branch_test.rb: 2.67
 test/services/ci/progress_reader_test.rb: 10.51
 test/services/ci/run_reconciler_test.rb: 0.2

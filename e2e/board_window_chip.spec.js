@@ -7,7 +7,7 @@ const { test, expect } = require("@playwright/test");
 // label; a card with nothing waiting wears no chip.
 //
 // THE SPEC OWNS ITS OWN FIXTURES, and does not add them to e2e/seed.rb — the
-// discipline e2e/board_local_check.spec.js and e2e/ci_meter_fit.spec.js keep, and
+// discipline e2e/ci_meter_fit.spec.js keeps, and
 // measured again here: three seeded window cards turned e2e/overflow_fade.spec.js
 // red (it picks the board's card title closest to its edge, so any permanent card
 // is a change to its input; the two waiting cards also float to the top of the
@@ -58,7 +58,7 @@ test("a waiting approval's card wears a ticking countdown, a lapsed one reads th
     const devops = { kind: "feature", repositories: ["mcritchie-studio"], approval_status: "waiting" };
     // A request posted NOW: Task#stamp_operator_approval_request fills approval_requested_at.
     // Params are permitted FLAT on this endpoint and `devops` is its own top-level
-    // key the controller normalizes into metadata (the board_local_check idiom).
+    // key the controller normalizes into metadata.
     minted.push(await mintTask(page, liveSlug, { title: "Window live approval demo", stage: "building", devops }));
     // A request an hour old: the stamp KEEPS a caller-supplied approval_requested_at.
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
