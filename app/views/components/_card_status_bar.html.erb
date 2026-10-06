@@ -11,10 +11,10 @@
   not a synchronized strobe.
 %>
 <% schemes = {
-     amber:  "bg-amber-500 text-black border-amber-300 shadow-sm shadow-amber-400/40 hover:bg-amber-400",
-     red:    "bg-red-500 text-white border-red-400 shadow-sm shadow-red-500/40 hover:bg-red-400",
-     violet: "bg-violet-500/90 text-white border-violet-400/70 shadow-sm shadow-violet-500/30 hover:bg-violet-500",
-     mint:   "bg-mint-500 text-black border-mint-300 shadow-sm shadow-mint-400/40 hover:bg-mint-400",
+     amber:  "bg-warning text-black border-warning/40 shadow-sm hover:brightness-110",
+     red:    "bg-danger text-white border-danger shadow-sm hover:brightness-110",
+     violet: "bg-primary text-white border-primary/40 shadow-sm hover:brightness-110",
+     mint:   "bg-success text-black border-success/40 shadow-sm hover:brightness-110",
    } %>
 <% tone = schemes.fetch(scheme.to_sym, schemes[:amber]) %>
 <%# The label-CTA VARIANT of the shared components/_card_bar shell: centered, bold,

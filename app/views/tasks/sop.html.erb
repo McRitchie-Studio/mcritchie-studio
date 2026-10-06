@@ -14,9 +14,9 @@
   <p class="text-muted text-sm mb-3 max-w-3xl leading-relaxed">
     The cycle as <b class="text-secondary">accountability lanes</b> — one row per owner, steps flowing
     left → right. Node colors mark the <b class="text-secondary">kind</b> of step; amber
-    <b class="text-amber-700 dark:text-amber-300">◇ pulses</b> are live intent markers (who's on it
+    <b class="text-warning-ink">◇ pulses</b> are live intent markers (who's on it
     right now). <b class="text-secondary">Click any step</b> to expand its Owner, Expectation, and Gate.
-    A <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-3xs align-middle">⚠</span>
+    A <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-warning text-white text-3xs align-middle">⚠</span>
     flags where this picture differs from the implemented model.
   </p>
   <p class="text-[12.5px] text-body mb-4 max-w-3xl rounded-lg border border-subtle bg-surface-alt px-3 py-2 leading-relaxed">
@@ -90,8 +90,8 @@
                 <dd class="text-body"><%= step[:note] %></dd>
               <% end %>
               <% if step[:diverges].present? %>
-                <dt class="text-2xs uppercase tracking-wide text-amber-600 dark:text-amber-400 font-semibold pt-0.5">⚠ Diverges</dt>
-                <dd class="text-amber-700 dark:text-amber-300"><%= step[:diverges] %></dd>
+                <dt class="text-2xs uppercase tracking-wide text-warning-ink font-semibold pt-0.5">⚠ Diverges</dt>
+                <dd class="text-warning-ink"><%= step[:diverges] %></dd>
               <% end %>
             </dl>
           </div>

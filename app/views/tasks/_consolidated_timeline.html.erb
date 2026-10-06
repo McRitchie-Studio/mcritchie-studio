@@ -42,13 +42,13 @@
           <span class="text-3xs uppercase tracking-wide text-muted">Dev</span>
           <span class="font-mono font-semibold uppercase text-secondary"><%= task.dev_size.presence&.upcase || "—" %></span>
         </span>
-        <span class="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border <%= size_miss ? "border-yellow-500/40 bg-yellow-500/10" : "border-subtle bg-surface" %>"
+        <span class="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border <%= size_miss ? "border-warning/40 bg-warning/10" : "border-subtle bg-surface" %>"
               title="<%= size_miss ? "Auto-derived from measured usage — differs from Avi's forecast" : "Auto-derived from measured usage at ship" %>">
-          <span class="text-3xs uppercase tracking-wide <%= size_miss ? "text-yellow-600 dark:text-yellow-400" : "text-muted" %>">Actual</span>
-          <span class="font-mono font-semibold uppercase <%= size_miss ? "text-yellow-700 dark:text-yellow-300" : "text-secondary" %>"><%= task.actual_size.presence&.upcase || "—" %></span>
+          <span class="text-3xs uppercase tracking-wide <%= size_miss ? "text-warning-ink" : "text-muted" %>">Actual</span>
+          <span class="font-mono font-semibold uppercase <%= size_miss ? "text-warning-ink" : "text-secondary" %>"><%= task.actual_size.presence&.upcase || "—" %></span>
         </span>
         <% if size_miss %>
-          <span class="text-3xs text-yellow-600 dark:text-yellow-400" title="Measured actual size differs from Avi's PO forecast">&ne; forecast</span>
+          <span class="text-3xs text-warning-ink" title="Measured actual size differs from Avi's PO forecast">&ne; forecast</span>
         <% end %>
       </div>
     <% end %>
@@ -59,7 +59,7 @@
     <ol class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3" data-test="timeline-grid">
       <% blocks.each do |block| %>
         <% started_at = (block.occurred_at && block.seconds) ? block.occurred_at - block.seconds : nil %>
-        <li class="relative isolate flex flex-col bg-surface rounded-lg p-3 border <%= block.in_progress? ? "border-green-400/50" : "border-subtle" %>"
+        <li class="relative isolate flex flex-col bg-surface rounded-lg p-3 border <%= block.in_progress? ? "border-success/40" : "border-subtle" %>"
             data-test="timeline-block" data-stage="<%= block.evolution? ? "evolve" : block.to_stage %>" data-in-progress="<%= block.in_progress? %>">
           <% if block.in_progress? %>
             <%# Live-work indicator: a soft green tint PULSING behind the card content
@@ -67,7 +67,7 @@
                 rest). isolate + -z-10 keep it above the card's own background but
                 beneath every content layer, so only the backdrop pulses. %>
             <span aria-hidden="true" data-test="timeline-pulse"
-                  class="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-green-500/15 animate-pulse"></span>
+                  class="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-success/15 animate-pulse"></span>
           <% end %>
 
           <% if block.evolution? %>
@@ -173,7 +173,7 @@
                       once past 60 min. Formatted inline (NOT window.elapsedLabel,
                       which the board's coarser ticker shares) so only this card changes. %>
                   <span class="tabular-nums inline-flex items-center gap-1 px-1.5 py-0.5 rounded
-                               bg-green-500/15 border border-green-400/50 text-green-700 dark:text-green-200" data-test="timeline-live"
+                               bg-success/15 border border-success/40 text-success-ink" data-test="timeline-live"
                         x-data="{ start: <%= block.live_since.to_i %>, now: Math.floor(Date.now() / 1000) }"
                         x-init="setInterval(() => now = Math.floor(Date.now() / 1000), 1000)">
                     &#9201; <span x-text="(() => { let e = Math.max(0, now - start); let h = Math.floor(e / 3600), m = Math.floor((e % 3600) / 60), s = e % 60; return h > 0 ? h + ':' + String(m).padStart(2, '0') : m + ':' + String(s).padStart(2, '0'); })()">…</span>

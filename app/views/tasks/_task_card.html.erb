@@ -52,10 +52,10 @@
 <% mascot_signature_color = nil unless mascot_signature_color.to_s.match?(/\A#[0-9a-f]{6}\z/i) %>
 <% card_tone = case block_state
    when :blocked then blocked_tint_only ?
-     "bg-red-50 border-subtle hover:border-primary/40 hover:bg-red-100/70 dark:bg-red-950/40 dark:hover:bg-red-900/40" :
-     "bg-red-50 border-red-200 hover:border-red-300 hover:bg-red-100/70 dark:bg-red-950/40 dark:border-red-800/60 dark:hover:border-red-600/70 dark:hover:bg-red-900/40"
-   when :cleared then "bg-amber-50 border-amber-200 hover:border-amber-300 hover:bg-amber-100/70 dark:bg-amber-950/40 dark:border-amber-800/60 dark:hover:border-amber-600/70 dark:hover:bg-amber-900/40"
-   when :never then waiting_for_approval ? "bg-amber-50 border-amber-300 hover:border-amber-400 hover:bg-amber-100/70 dark:bg-amber-950/35 dark:border-amber-500/70 dark:hover:border-amber-400 dark:hover:bg-amber-900/35" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
+     "bg-danger/10 border-subtle hover:border-primary/40 hover:bg-danger/20" :
+     "bg-danger/10 border-danger/40 hover:border-danger/40 hover:bg-danger/20"
+   when :cleared then "bg-warning/10 border-warning/40 hover:border-warning/40 hover:bg-warning/20"
+   when :never then waiting_for_approval ? "bg-warning/10 border-warning/40 hover:border-warning hover:bg-warning/20" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
    else "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
    end %>
 <%# WHICH GLOW THIS CARD WEARS, if any. `submitted` is not a glow OF ITS OWN: a task
@@ -213,17 +213,17 @@
       ClaimLease). Both evidence associations are preloaded by load_board, so the chip
       reads them from loaded rows and adds no query per card.
 
-      The quiet tone is the house amber pair (text-amber-700 dark:text-amber-300), not a
-      dark-only class: the ALARM state is the one that most needs to be legible, and
-      amber-300 on a near-white light-theme surface is the one place it would wash out. %>
+      The quiet tone is the warning ink (status_tone's text part), not a dark-only
+      class: the ALARM state is the one that most needs to be legible, and the ink is
+      derived per theme to stay legible on a near-white light-theme surface. %>
   <% if task.stage == "building" && task.claim_live? %>
     <% progress_seconds = task.progress_seconds_ago %>
     <% progress_quiet = task.claim_progress_quiet? %>
-    <div class="flex items-center gap-1.5 mb-1.5 text-3xs <%= progress_quiet ? "text-amber-700 dark:text-amber-300" : "text-muted" %>"
+    <div class="flex items-center gap-1.5 mb-1.5 text-3xs <%= progress_quiet ? "text-warning-ink" : "text-muted" %>"
          data-test="task-card-claim-progress"
          data-progress-quiet="<%= progress_quiet %>"
          title="<%= claim_progress_title(task, progress_seconds) %>">
-      <span class="w-1.5 h-1.5 rounded-full bg-mint-400 animate-pulse shrink-0"></span>
+      <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse shrink-0"></span>
       <span class="truncate"><%= claim_progress_summary(task, progress_seconds) %></span>
     </div>
   <% end %>
@@ -266,10 +266,10 @@
   <% if task.requires_migration || task.requires_release_conductor? %>
     <div class="flex items-center justify-end gap-1 mb-1">
       <% if task.requires_migration %>
-        <span class="px-1.5 py-0.5 rounded text-3xs font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires a migration">MIG</span>
+        <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= status_tone(:warning) %>" title="Requires a migration">MIG</span>
       <% end %>
       <% if task.requires_release_conductor? %>
-        <span class="px-1.5 py-0.5 rounded text-3xs font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release conductor lane">REL</span>
+        <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= status_tone(:warning) %>" title="Requires release conductor lane">REL</span>
       <% end %>
     </div>
   <% end %>
@@ -404,7 +404,7 @@
   <% end %>
 
   <% if task.stage == 'failed' && task.error_message.present? %>
-    <p class="text-xs text-red-700 dark:text-red-300 truncate mt-1"><%= task.error_message %></p>
+    <p class="text-xs text-danger-ink truncate mt-1"><%= task.error_message %></p>
   <% end %>
 
   <%# Footer timestamp row: created-at (🌱, floats left) and updated-at (✏️,
@@ -465,7 +465,7 @@
     <% if task.stage != 'archived' %>
       <button type="button" @click.stop="archiveTask('<%= task.slug %>')"
               data-test="task-card-archive"
-              class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-amber-700 hover:bg-amber-50 dark:hover:text-yellow-300 dark:hover:bg-yellow-900/20 transition" title="Archive">
+              class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-warning-ink hover:bg-warning/20 transition" title="Archive">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
         </svg>
@@ -474,7 +474,7 @@
     <% end %>
     <button type="button" @click.stop="deleteTask('<%= task.slug %>')"
             data-test="task-card-delete"
-            class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-red-700 hover:bg-red-50 dark:hover:text-red-300 dark:hover:bg-red-900/20 transition <%= 'border-l border-subtle' unless task.stage == 'archived' %>" title="Delete">
+            class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-2xs font-medium text-muted hover:text-danger-ink hover:bg-danger/20 transition <%= 'border-l border-subtle' unless task.stage == 'archived' %>" title="Delete">
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
       </svg>

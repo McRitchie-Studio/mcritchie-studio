@@ -154,7 +154,7 @@
                     <span class="font-bold <%= gate_status_class(run) %>"><%= gate_verdict_glyph(run) %></span>
                     <%= run.label %>
                     <% if run.attempt.to_i > 1 %>
-                      <span class="ml-0.5 rounded bg-inset border border-subtle px-1 text-[9px] font-bold <%= run.status == "failed" ? "text-rose-400" : "text-muted" %>"
+                      <span class="ml-0.5 rounded bg-inset border border-subtle px-1 text-[9px] font-bold <%= run.status == "failed" ? "text-danger-ink" : "text-muted" %>"
                             data-test="recent-gate-attempts"
                             title="<%= run.attempt %> attempts — retried gate runs are first-class signal">×<%= run.attempt %></span>
                     <% end %>

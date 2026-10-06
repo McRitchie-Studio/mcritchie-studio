@@ -32,7 +32,7 @@
     <%# THE AGE OF THE ANSWER, always shown. A capacity number with no timestamp on it is
         the kind of number people trust for a week. `stale` flips it to a warning tone
         rather than hiding it: an old reading is still the only reading there is. %>
-    <div class="shrink-0 text-right text-3xs <%= panel.stale? ? "text-amber-600 dark:text-amber-400 font-semibold" : "text-muted" %>"
+    <div class="shrink-0 text-right text-3xs <%= panel.stale? ? "text-warning-ink font-semibold" : "text-muted" %>"
          data-test="desk-panel-freshness">
       <% if panel.unsynced? %>
         never synced
@@ -90,17 +90,17 @@
         went away outside `bin/agent-worktree remove` — the exact class of loss this whole
         change exists to end. It is never inferred away as "probably fine"; it is shown. %>
     <% if panel.vanished.any? %>
-      <div class="mt-3 rounded-lg border border-amber-500/50 bg-amber-50/60 px-3 py-2 dark:bg-amber-950/30"
+      <div class="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2"
            data-test="desk-panel-vanished">
-        <p class="text-2xs font-semibold text-amber-700 dark:text-amber-300">
+        <p class="text-2xs font-semibold text-warning-ink">
           <%= pluralize(panel.vanished.size, "desk") %> left without a teardown record
         </p>
-        <p class="text-3xs text-amber-700/80 dark:text-amber-300/80">
+        <p class="text-3xs text-warning-ink">
           An open ledger record, absent from the latest snapshot — removed outside <code class="font-mono">bin/agent-worktree remove</code>.
         </p>
         <ul class="mt-1.5 space-y-0.5">
           <% panel.vanished.each do |desk| %>
-            <li class="truncate font-mono text-3xs text-amber-800 dark:text-amber-200" title="<%= desk.worktree_path %>">
+            <li class="truncate font-mono text-3xs text-warning-ink" title="<%= desk.worktree_path %>">
               <%= desk.label.presence || desk.worktree_path %>
             </li>
           <% end %>
@@ -117,10 +117,10 @@
             <span class="font-semibold text-heading"><%= app[:slug] %></span>
             <span class="tabular-nums text-muted"><%= app[:total] %></span>
             <% if app[:dirty].to_i.positive? %>
-              <span class="tabular-nums text-amber-600 dark:text-amber-400" title="dirty"><%= app[:dirty] %> dirty</span>
+              <span class="tabular-nums text-warning-ink" title="dirty"><%= app[:dirty] %> dirty</span>
             <% end %>
             <% if app[:free].to_i.positive? %>
-              <span class="tabular-nums text-mint-600 dark:text-mint-400" title="cleared for reclaim"><%= app[:free] %> free</span>
+              <span class="tabular-nums text-success-ink" title="cleared for reclaim"><%= app[:free] %> free</span>
             <% end %>
           </span>
         <% end %>
@@ -141,7 +141,7 @@
                   <span class="truncate text-2xs font-medium text-heading" title="<%= desk.worktree_path %>">
                     <%= desk.label.presence || desk.desk_slug.presence || desk.worktree_path %>
                   </span>
-                  <span class="shrink-0 text-3xs uppercase tracking-wide <%= desk.dirty? ? "text-amber-600 dark:text-amber-400" : "text-muted" %>">
+                  <span class="shrink-0 text-3xs uppercase tracking-wide <%= desk.dirty? ? "text-warning-ink" : "text-muted" %>">
                     <%= desk.dirty? ? "dirty" : desk.health.presence || "—" %>
                   </span>
                 </div>
@@ -152,7 +152,7 @@
                 <%# THE SAFETY LINE, on every desk. Either the sweep cleared it and says why,
                     or it is holding it and says why. A desk with neither is stated as such
                     rather than left blank — a blank cell reads as "nothing to see". %>
-                <p class="mt-0.5 line-clamp-2 text-3xs <%= desk.cleanup_candidate? ? "text-mint-700 dark:text-mint-300" : "text-muted" %>"
+                <p class="mt-0.5 line-clamp-2 text-3xs <%= desk.cleanup_candidate? ? "text-success-ink" : "text-muted" %>"
                    data-test="desk-safety">
                   <%= desk.safety_account %>
                 </p>

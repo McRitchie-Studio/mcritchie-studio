@@ -49,12 +49,12 @@
     <% lane.moments.each_with_index do |moment, index| %>
       <% timing = moment_timings&.fetch(moment, nil) %>
       <% complete = timing&.event.present? || review_moment_complete?(lane.events, moment) %>
-      <li class="flex gap-2 rounded-md border p-2 <%= complete ? "border-green-500/40 bg-green-500/10" : "border-subtle bg-inset/40" %>"
+      <li class="flex gap-2 rounded-md border p-2 <%= complete ? "border-success/40 bg-success/10" : "border-subtle bg-inset/40" %>"
           data-test="review-moment"
           data-moment="<%= moment %>"
           data-complete="<%= complete %>"
           data-timing-status="<%= timing&.status || "expected" %>">
-        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded border <%= complete ? "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200" : "border-subtle bg-surface text-muted" %> text-2xs font-bold tabular-nums"><%= index + 1 %></span>
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded border <%= complete ? "border-success/40 bg-success/10 text-success-ink" : "border-subtle bg-surface text-muted" %> text-2xs font-bold tabular-nums"><%= index + 1 %></span>
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="text-sm font-semibold text-heading"><%= review_moment_display_label(lane.role, moment) %></p>

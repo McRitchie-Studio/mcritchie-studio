@@ -35,9 +35,9 @@
 <% if progress.respond_to?(:present?) && progress.present? %>
   <% marks, overflowed = ci_meter_marks(progress, cap: inline ? ApplicationHelper::CI_METER_INLINE_MARK_CAP : ApplicationHelper::CI_METER_MARK_CAP) %>
   <% tone = case progress.state
-     when :green then { fill: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" }
-     when :red then { fill: "bg-red-500", text: "text-red-700 dark:text-red-300" }
-     else { fill: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" }
+     when :green then { fill: "bg-success", text: "text-success-ink" }
+     when :red then { fill: "bg-danger", text: "text-danger-ink" }
+     else { fill: "bg-warning", text: "text-warning-ink" }
      end %>
   <% summary = "#{progress.passed} of #{progress.total} CI checks passed" \
        + (progress.failed.positive? ? ", #{progress.failed} failed" : "") \

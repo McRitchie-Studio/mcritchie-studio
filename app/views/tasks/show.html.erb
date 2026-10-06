@@ -16,7 +16,7 @@
         <div class="flex items-center gap-3 mt-2">
           <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
           <% if @task.priority > 0 %>
-            <span class="text-xs text-yellow-400 font-medium">Priority <%= @task.priority %></span>
+            <span class="text-xs text-warning-ink font-medium">Priority <%= @task.priority %></span>
           <% end %>
           <% if @task.agent_slug.present? %>
             <%= link_to @task.agent_slug, agent_path(@task.agent_slug), class: "text-xs text-primary hover:text-primary-300" %>
@@ -36,7 +36,7 @@
                 class="inline-flex items-center gap-1.5 rounded-md border border-subtle bg-inset px-2 py-1 whitespace-nowrap hover:border-primary/40 transition"
                 :title="copied ? 'Copied!' : 'Copy resume command'">
           <code class="text-xs text-body normal-case font-normal tracking-normal"><%= @task.resume_command_display %></code>
-          <span class="text-xs" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'"></span>
+          <span class="text-xs" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-success-ink' : 'text-muted'"></span>
         </button>
         <span x-ref="resumeCmd" class="hidden"><%= @task.resume_command %></span>
         <%# The live dot attests that the BUILDER'S RUN IS STILL HERE, nothing more — it
@@ -45,14 +45,14 @@
             State the progress fact next to it rather than letting "live" be read as
             "progressing" (the 2026-07-13 lie). Informational: no verdict, no reclaim. %>
         <% if @task.claim_live? %>
-          <span class="inline-flex items-center gap-1 text-xs text-mint-300"
+          <span class="inline-flex items-center gap-1 text-xs text-success-ink"
                 data-test="task-claim-live"
                 title="Build claim is live — a session looks active in another terminal (last heartbeat ~<%= @task.claim_heartbeat_seconds_ago %>s ago). Resume anyway?">
-            <span class="w-1.5 h-1.5 rounded-full bg-mint-400 animate-pulse"></span>live
+            <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>live
           </span>
-          <%# Quiet wears the house amber pair so the alarm state stays legible on the
+          <%# Quiet wears the warning ink so the alarm state stays legible on the
               light theme too; healthy uses the theme-aware muted token. %>
-          <span class="inline-flex items-center gap-1 text-xs <%= @task.claim_progress_quiet? ? "text-amber-700 dark:text-amber-300" : "text-muted" %>"
+          <span class="inline-flex items-center gap-1 text-xs <%= @task.claim_progress_quiet? ? "text-warning-ink" : "text-muted" %>"
                 data-test="task-claim-progress"
                 data-progress-quiet="<%= @task.claim_progress_quiet? %>"
                 title="<%= claim_progress_title(@task) %>">
@@ -72,17 +72,16 @@
         field on this page read clear. See Task::Resubmission. %>
     <% if @resubmission&.surfaced? %>
       <% unaddressed = @resubmission.unaddressed? %>
-      <%# Theme-aware tint, mirroring _task_card's blocked/cleared tones (bg-red-50 /
-          dark:bg-red-950-40) — a dark-only palette here would be unreadable in light
-          mode. The BADGES below carry their own dark chip background, so they read in
-          both themes exactly as the neighbouring block banner's badges do. %>
-      <div class="mb-4 rounded-lg border p-3 <%= unaddressed ? "border-red-300 bg-red-50 dark:border-red-700/60 dark:bg-red-950/40" : "border-amber-300 bg-amber-50 dark:border-amber-700/60 dark:bg-amber-950/30" %>"
+      <%# Theme-aware tint from status_tone, the same danger and warning roles as
+          _task_card's blocked and cleared tones, so the panel and its badges read in
+          both themes. %>
+      <div class="mb-4 rounded-lg border p-3 <%= unaddressed ? "border-danger/40 bg-danger/10" : "border-warning/40 bg-warning/10" %>"
            data-test="task-resubmission" data-state="<%= @resubmission.state %>">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="px-2 py-1 rounded text-2xs font-bold <%= unaddressed ? "bg-red-900/60 text-red-200 border border-red-700/60" : "bg-amber-900/60 text-amber-200 border border-amber-700/60" %>"
+          <span class="px-2 py-1 rounded text-2xs font-bold <%= unaddressed ? status_tone(:danger) : status_tone(:warning) %>"
                 data-test="task-resubmission-label"><%= @resubmission.label %></span>
           <% if @resubmission.breaker_tripped? %>
-            <span class="px-2 py-1 rounded text-2xs font-bold bg-red-900/60 text-red-200 border border-red-700/60"
+            <span class="px-2 py-1 rounded text-2xs font-bold <%= status_tone(:danger) %>"
                   data-test="task-breaker-state"
                   title="A repeat send-back is a review deadlock, and a deadlock is the operator's call.">BREAKER ARMED · <%= @resubmission.send_back_phrase %></span>
           <% end %>
@@ -101,11 +100,11 @@
       <div class="mb-4 rounded-lg border border-subtle bg-surface-alt p-3">
         <div class="flex flex-wrap items-center gap-2">
           <% if @task.review_in_progress? %>
-            <span class="px-2 py-1 rounded text-2xs font-bold bg-violet-900/50 text-violet-200 border border-violet-700/50"
+            <span class="px-2 py-1 rounded text-2xs font-bold <%= status_tone(:primary) %>"
                   data-test="task-review-in-progress">REVIEW STARTED</span>
           <% end %>
           <% if @unresolved_feedback_activity %>
-            <span class="px-2 py-1 rounded text-2xs font-bold bg-red-900/60 text-red-200 border border-red-700/60"
+            <span class="px-2 py-1 rounded text-2xs font-bold <%= status_tone(:danger) %>"
                   data-test="task-unresolved-feedback">UNRESOLVED QA FEEDBACK</span>
           <% end %>
         </div>
@@ -163,9 +162,9 @@
     </div>
 
     <% if @task.error_message.present? %>
-      <div class="bg-red-900/30 border border-red-700/50 rounded-lg p-3 mb-4">
-        <p class="text-xs text-red-400 uppercase tracking-wider mb-1">Error</p>
-        <p class="text-red-300 text-sm"><%= @task.error_message %></p>
+      <div class="bg-danger/10 border border-danger/40 rounded-lg p-3 mb-4">
+        <p class="text-xs text-danger-ink uppercase tracking-wider mb-1">Error</p>
+        <p class="text-danger-ink text-sm"><%= @task.error_message %></p>
       </div>
     <% end %>
 
@@ -174,7 +173,7 @@
         <div class="flex items-center justify-between mb-3">
           <p class="label-upper">DevOps handoff</p>
           <% if @task.requires_release_conductor? %>
-            <span class="px-1.5 py-0.5 rounded text-3xs font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50">RELEASE LANE</span>
+            <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= status_tone(:warning) %>">RELEASE LANE</span>
           <% end %>
         </div>
 
@@ -410,7 +409,7 @@
       </div>
       <% if @task.requires_migration %>
         <div class="flex items-center gap-2 mt-3 pt-3 border-t border-subtle">
-          <span class="px-1.5 py-0.5 rounded text-3xs font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50">MIG</span>
+          <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= status_tone(:warning) %>">MIG</span>
           <span class="text-xs text-secondary">Requires a migration</span>
         </div>
       <% end %>

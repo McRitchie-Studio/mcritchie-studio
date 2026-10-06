@@ -1,4 +1,6 @@
 module ApplicationHelper
+  include StatusToneHelper
+
   # qa_environment? / show_environment_banner? / environment_banner_message
   # moved into studio-engine 0.30 (Studio.qa_environment? and friends, rendered
   # by studio/banners/_environment). Since 0.33 the layout does not name that
@@ -52,8 +54,8 @@ module ApplicationHelper
   # utilities already used elsewhere in the task views.
   def testing_phase_status_class(status)
     case status
-    when "completed"   then "text-emerald-400"
-    when "in_progress" then "text-amber-400"
+    when "completed"   then "text-success-ink"
+    when "in_progress" then "text-warning-ink"
     else "text-muted"
     end
   end
@@ -102,9 +104,9 @@ module ApplicationHelper
   # the phase chip above: passed/failed are terminal colors, in-flight ticks amber.
   def gate_status_class(run)
     case run&.status
-    when "passed"    then "text-emerald-400"
-    when "failed"    then "text-rose-400"
-    when "in_flight" then "text-amber-400"
+    when "passed"    then "text-success-ink"
+    when "failed"    then "text-danger-ink"
+    when "in_flight" then "text-warning-ink"
     else "text-muted"
     end
   end
@@ -379,18 +381,10 @@ module ApplicationHelper
     override&.positive? ? override : FRESH_DEPLOY_WINDOW_DEFAULT_MS
   end
 
+  # A stage's count chip on the board, the stages page and the epic pages: the
+  # stage word through status_tone, so every stage reads in both themes.
   def task_stage_count_classes(stage)
-    case stage.to_s
-    when "designed"  then "bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/50 dark:text-blue-200 dark:border-blue-700/50"
-    when "building"  then "bg-mint-100 text-mint-900 border border-mint-200 dark:bg-mint-900/50 dark:text-mint-200 dark:border-mint-700/50"
-    when "submitted" then "bg-amber-100 text-amber-900 border border-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:border-amber-700/50"
-    when "reviewed"  then "bg-cyan-100 text-cyan-900 border border-cyan-200 dark:bg-cyan-900/50 dark:text-cyan-200 dark:border-cyan-700/50"
-    when "assembled" then "bg-primary-100 text-primary-900 border border-primary-300 dark:bg-primary-900/50 dark:text-primary-200 dark:border-primary-700/50"
-    when "shipped"   then "bg-green-100 text-green-900 border border-green-200 dark:bg-green-900/50 dark:text-green-200 dark:border-green-700/50"
-    when "blocked"   then "bg-red-100 text-red-900 border border-red-200 dark:bg-red-900/50 dark:text-red-200 dark:border-red-700/50"
-    when "archived"  then "bg-surface-alt text-muted border border-subtle"
-    else "bg-surface-alt text-muted border border-subtle"
-    end
+    status_tone(stage)
   end
 
   def task_activity_badge_scheme(activity)
@@ -402,28 +396,20 @@ module ApplicationHelper
     end
   end
 
+  # The tinted box behind a task card's latest activity, by activity type.
   def task_activity_box_classes(activity)
-    case activity&.activity_type.to_s
-    when "qa_feedback"
-      "border-amber-300 bg-amber-50/80 dark:border-amber-700/60 dark:bg-amber-950/30"
-    when "clarification"
-      "border-cyan-300 bg-cyan-50/80 dark:border-cyan-700/60 dark:bg-cyan-950/30"
-    when "handoff"
-      "border-mint-300 bg-mint-50/80 dark:border-mint-700/60 dark:bg-mint-950/30"
-    else
-      "border-subtle bg-inset/60"
-    end
+    status_tone(activity&.activity_type, :panel)
   end
 
   def release_state_classes(state)
     case state.to_s
-    when "assembling" then "bg-blue-900/50 text-blue-300"
-    when "assembled"  then "bg-amber-900/50 text-amber-300"
-    when "shipped"    then "bg-green-900/50 text-green-300"
+    when "assembling" then status_tone(:primary)
+    when "assembled"  then status_tone(:warning)
+    when "shipped"    then status_tone(:success)
     when "abandoned"  then "bg-surface-alt text-muted"
     # Not a release STATE — the GEM-ONLY pill's tone (a violet 💎 gem accent),
     # rendered beside the state badge for a gem_only? release on _release_summary.
-    when "gem_only"   then "bg-violet-900/50 text-violet-300"
+    when "gem_only"   then status_tone(:primary)
     else "bg-surface-alt text-muted"
     end
   end
@@ -539,9 +525,9 @@ module ApplicationHelper
   # mode's 400s were never the problem (they measure ~8:1) and are unchanged — which is
   # also why this is invisible on the dark board and would have stayed unnoticed.
   CI_CHECK_SYMBOLS = {
-    passed:  { label: "passed",  color: "text-emerald-800 dark:text-emerald-400", spin: false },
-    failed:  { label: "failed",  color: "text-red-800 dark:text-red-400",         spin: false },
-    pending: { label: "running", color: "text-amber-800 dark:text-amber-400",     spin: true }
+    passed:  { label: "passed",  color: "text-success-ink", spin: false },
+    failed:  { label: "failed",  color: "text-danger-ink",         spin: false },
+    pending: { label: "running", color: "text-warning-ink",     spin: true }
   }.freeze
 
   def ci_check_symbol(check)
@@ -690,7 +676,7 @@ module ApplicationHelper
   # Pill classes for the post-ship production smoke SEAL badge (🟢/🔴) on a release
   # card — green = the @qa-readonly suite passed against prod, red = it failed.
   def release_smoke_seal_classes(seal)
-    seal&.green? ? "bg-green-900/50 text-green-300" : "bg-red-900/50 text-red-300"
+    seal&.green? ? "bg-success/10 text-success-ink" : "bg-danger/10 text-danger-ink"
   end
 
   # The hover tooltip for the seal badge: the verdict line + when it was checked.
@@ -848,12 +834,12 @@ module ApplicationHelper
     case phase[:state].to_sym
     when :done
       coarse ? { fill: "bg-primary", value: "text-heading", label: "text-primary/80" }
-             : { fill: "bg-mint-500", value: "text-mint-900 dark:text-mint-400", label: "text-muted" }
+             : { fill: "bg-success", value: "text-success-ink", label: "text-muted" }
     when :running
       coarse ? { fill: "bg-primary/80", value: "text-heading", label: "text-primary/80" }
-             : { fill: "bg-amber-400", value: "text-amber-800 dark:text-amber-300", label: "text-muted" }
+             : { fill: "bg-warning", value: "text-warning-ink", label: "text-muted" }
     when :failed
-      { fill: "bg-red-500", value: "text-red-800 dark:text-red-300", label: "text-muted" }
+      { fill: "bg-danger", value: "text-danger-ink", label: "text-muted" }
     when :na
       { fill: "bg-transparent", value: "text-body", label: "text-muted/50" }
     else
@@ -1326,10 +1312,10 @@ module ApplicationHelper
   # (There was a `:stale` tone here too until 2026-08-20 — see Ci::LadderRung for why
   # it was removed rather than recoloured.)
   APP_LADDER_TONES = {
-    green: { fill: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-500/40" },
-    pending: { fill: "bg-amber-500", text: "text-amber-700 dark:text-amber-300", border: "border-amber-500/40" },
-    red: { fill: "bg-rose-500", text: "text-rose-700 dark:text-rose-300", border: "border-rose-500/40" },
-    conflicted: { fill: "bg-rose-500", text: "text-rose-700 dark:text-rose-300", border: "border-rose-500/40" }
+    green: { fill: "bg-success", text: "text-success-ink", border: "border-success/40" },
+    pending: { fill: "bg-warning", text: "text-warning-ink", border: "border-warning/40" },
+    red: { fill: "bg-danger", text: "text-danger-ink", border: "border-danger/40" },
+    conflicted: { fill: "bg-danger", text: "text-danger-ink", border: "border-danger/40" }
   }.freeze
 
   APP_LADDER_FADED = { fill: "bg-transparent", text: "text-muted opacity-60", border: "border-subtle" }.freeze
@@ -1342,8 +1328,8 @@ module ApplicationHelper
   # is merely ABOUT it. Nothing ever parks at `main` (Ci::AppLadder::PARKED_STAMP omits
   # it), so an amber wash there would draw a state the board cannot hold — which is why
   # this could not simply reuse the parked tone.
-  APP_LADDER_RUNNING = { fill: "bg-transparent", text: "text-amber-700 dark:text-amber-300",
-                         border: "border-amber-500/40" }.freeze
+  APP_LADDER_RUNNING = { fill: "bg-transparent", text: "text-warning-ink",
+                         border: "border-warning/40" }.freeze
 
   # THE SEGMENT'S FIVE TONES, under their OWN names — and the separate vocabulary is
   # the point, not tidiness.
@@ -1422,9 +1408,9 @@ module ApplicationHelper
   # never colour alone. Running pulses (and holds still for reduced motion); a phase
   # that does not apply (a gem has no deploy) is a dashed outline, and is not counted.
   RELEASE_APP_TRACKER_SEGMENT = {
-    done: "bg-emerald-500",
-    running: "bg-amber-500 animate-pulse motion-reduce:animate-none",
-    failed: "bg-red-500",
+    done: "bg-success",
+    running: "bg-warning animate-pulse motion-reduce:animate-none",
+    failed: "bg-danger",
     pending: "bg-[var(--color-border-strong)]",
     na: "border border-dashed border-[var(--color-border-strong)]"
   }.freeze
@@ -1526,10 +1512,10 @@ module ApplicationHelper
   }.freeze
 
   APP_LADDER_POSITION_TONES = {
-    attention: "text-rose-700 dark:text-rose-300",
+    attention: "text-danger-ink",
     in_release: "text-primary",
-    queued: "text-amber-700 dark:text-amber-300",
-    verifying: "text-amber-700 dark:text-amber-300",
+    queued: "text-warning-ink",
+    verifying: "text-warning-ink",
     at_rest: "text-muted"
   }.freeze
 

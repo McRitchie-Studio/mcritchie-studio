@@ -61,8 +61,8 @@
           <% @deliveries.each do |d| %>
             <tr class="border-b border-subtle/50">
               <td class="p-2 text-heading"><%= d.contact.email %><% if d.contact.first_name.present? %> <span class="text-muted">(<%= d.contact.first_name %>)</span><% end %></td>
-              <td class="p-2 <%= d.opened_at ? 'text-green-300' : 'text-muted' %>"><%= d.opened_at ? "#{d.open_count}×" : "—" %></td>
-              <td class="p-2 <%= d.clicked_at ? 'text-green-300' : 'text-muted' %>"><%= d.clicked_at ? "#{d.click_count}×" : "—" %></td>
+              <td class="p-2 <%= d.opened_at ? 'text-success-ink' : 'text-muted' %>"><%= d.opened_at ? "#{d.open_count}×" : "—" %></td>
+              <td class="p-2 <%= d.clicked_at ? 'text-success-ink' : 'text-muted' %>"><%= d.clicked_at ? "#{d.click_count}×" : "—" %></td>
             </tr>
           <% end %>
         </tbody>

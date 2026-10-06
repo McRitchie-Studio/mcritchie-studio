@@ -63,7 +63,7 @@
 <% linked = run_url.present? %>
 
 <% card_classes = ["rounded-xl border bg-surface p-4 block min-w-0 transition-colors",
-                   attention ? "border-amber-500/40" : "border-subtle",
+                   attention ? "border-warning/40" : "border-subtle",
                    at_rest ? "opacity-60 hover:opacity-100 focus-within:opacity-100" : nil,
                    local_assigns[:card_class]].compact.join(" ") %>
 <% card_classes += " group hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" if linked %>

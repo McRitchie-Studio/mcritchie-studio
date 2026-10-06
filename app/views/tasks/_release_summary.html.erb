@@ -60,7 +60,7 @@
                     data-test="release-ship-approve"
                     data-approve-url="<%= authorize_ship_deployment_path(rel.slug) %>"
                     title="Grant production authority now — the timed ship deploys as soon as this lands"
-                    class="shrink-0 px-2 py-0.5 rounded text-3xs font-bold uppercase tracking-wide border transition bg-sky-600 text-white border-sky-500 hover:bg-sky-500 dark:bg-sky-500 dark:text-sky-950 dark:border-sky-400 dark:hover:bg-sky-400 disabled:opacity-60 disabled:cursor-wait"
+                    class="shrink-0 px-2 py-0.5 rounded text-3xs font-bold uppercase tracking-wide border transition bg-primary text-white border-primary hover:brightness-110 disabled:opacity-60 disabled:cursor-wait"
                     onclick="event.stopPropagation(); (async (btn) => {
                       btn.disabled = true; btn.textContent = 'Approving…';
                       const csrf = document.querySelector('meta[name=csrf-token]')?.content;

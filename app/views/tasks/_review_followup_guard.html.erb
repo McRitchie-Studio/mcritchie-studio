@@ -2,10 +2,10 @@
 <% reviewers = Task.normalize_reviewers(review_intent.metadata["reviewers"]) %>
 <% agents_by_slug = agents.index_by(&:slug) %>
 
-<section class="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4" data-test="review-followup-guard">
+<section class="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-4" data-test="review-followup-guard">
   <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
     <div class="min-w-0">
-      <p class="text-3xs font-bold uppercase tracking-wide text-amber-700 dark:text-amber-200">Review in progress</p>
+      <p class="text-3xs font-bold uppercase tracking-wide text-warning-ink">Review in progress</p>
       <h3 class="mt-1 text-base font-semibold text-heading">Do not interrupt the branch under review.</h3>
       <p class="mt-1 max-w-3xl text-sm text-secondary">
         Review has started for this task. Keep this PR stable while reviewers work; capture new scope or fixes in a follow-up task instead of pushing another change here.
@@ -17,7 +17,7 @@
             <% slug = reviewer["slug"].to_s %>
             <% agent = agents_by_slug[slug] %>
             <% role = Task.normalize_review_role(reviewer["weight"]) || reviewer["weight"].presence %>
-            <span class="inline-flex items-center gap-1.5 rounded border border-amber-500/30 bg-surface px-2 py-1 text-xs text-secondary"
+            <span class="inline-flex items-center gap-1.5 rounded border border-warning/40 bg-surface px-2 py-1 text-xs text-secondary"
                   data-test="review-followup-reviewer"
                   data-role="<%= role %>">
               <% if agent %>

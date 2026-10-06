@@ -29,7 +29,7 @@
     <button type="button"
             x-data="{ copied: false }"
             class="group relative flex w-full items-center gap-2 rounded-lg border border-subtle bg-inset px-3 py-2 mb-3 text-left transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
-            :class="copied ? 'border-mint-400/60' : ''"
+            :class="copied ? 'border-success/40' : ''"
             data-clip="<%= launcher[:heartbeat] %>"
             data-test="heartbeat-name"
             @click="window.copyText($el.dataset.clip); copied = true; setTimeout(() => copied = false, 1400)"
@@ -37,7 +37,7 @@
             title="<%= "Copy: #{launcher[:heartbeat]}" %>">
       <code class="min-w-0 break-words text-sm font-semibold normal-case tracking-normal text-heading"><%= launcher[:heartbeat] %></code>
       <span class="ml-auto shrink-0 text-3xs text-muted group-hover:text-body" x-show="!copied">Copy</span>
-      <span class="ml-auto shrink-0 text-3xs text-mint-300" x-show="copied" x-cloak x-transition.opacity>Copied &#10003;</span>
+      <span class="ml-auto shrink-0 text-3xs text-success-ink" x-show="copied" x-cloak x-transition.opacity>Copied &#10003;</span>
     </button>
     <% end %>
 
@@ -47,7 +47,7 @@
         <button type="button"
                 x-data="{ copied: false }"
                 class="group relative flex w-full items-start gap-3 rounded-lg border border-subtle bg-inset px-3 py-2 text-left transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
-                :class="copied ? 'border-mint-400/60' : ''"
+                :class="copied ? 'border-success/40' : ''"
                 data-clip="<%= act %>"
                 data-test="action"
                 data-action="<%= act %>"
@@ -57,7 +57,7 @@
           <code class="mt-0.5 shrink-0 break-words rounded bg-surface px-1.5 py-0.5 text-xs font-medium normal-case tracking-normal text-primary"><%= act %></code>
           <span class="min-w-0 flex-1 text-sm text-body"><%= action_description(act) %></span>
           <span class="shrink-0 text-3xs text-muted group-hover:text-body" x-show="!copied">Copy</span>
-          <span class="shrink-0 text-3xs text-mint-300" x-show="copied" x-cloak x-transition.opacity>&#10003;</span>
+          <span class="shrink-0 text-3xs text-success-ink" x-show="copied" x-cloak x-transition.opacity>&#10003;</span>
         </button>
       <% end %>
     </div>

@@ -1,19 +1,19 @@
 <% if Rails.env.local? %>
-  <div x-data="devDeployTools()" data-test="dev-deploy-tools" class="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50/80 dark:border-amber-700/40 dark:bg-amber-950/30 px-1.5 py-1">
+  <div x-data="devDeployTools()" data-test="dev-deploy-tools" class="flex items-center gap-1.5 rounded-lg border border-warning/40 bg-warning/10 px-1.5 py-1">
     <%# Labelled RELEASE (its sibling is TASK) — it steps a fixture RELEASE through
         the tracker, not a task card. %>
-    <span class="text-3xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400/90"
+    <span class="text-3xs font-bold uppercase tracking-wider text-warning-ink"
           title="Dev/test only — steps a fixture release through the tracker">Release</span>
     <button type="button" @click="post('open_release')" :disabled="busy"
             title="Open a fixture release at step 1 (Testing)"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Open</button>
     <button type="button" @click="post('advance_release')" :disabled="busy"
             title="Advance one tracker step: Testing, Assembling, Deploying QA, Confirming, Deploying"
-            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-amber-300 disabled:opacity-40 transition whitespace-nowrap">Advance →</button>
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-warning-ink disabled:opacity-40 transition whitespace-nowrap">Advance →</button>
     <%# Ship lives HERE, not in the TASK group: it ships the active RELEASE. %>
     <button type="button" @click="post('ship_release')" :disabled="busy"
             title="Ship the active release → Last Release glows for its deploy window, Next Release resets"
-            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-mint-300 disabled:opacity-40 transition">Ship</button>
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-success-ink disabled:opacity-40 transition">Ship</button>
     <%# The SPURIOUS redraw, by hand. Re-broadcasts both release cards with nothing
         changed — the exact shape a CI upsert used to send on every queued /
         in_progress / completed event, which the Last Release card answered with a
@@ -24,7 +24,7 @@
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Redraw</button>
     <button type="button" @click="post('reset_release')" :disabled="busy"
             title="Clear the fixture release"
-            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-red-300 disabled:opacity-40 transition">Reset</button>
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-danger-ink disabled:opacity-40 transition">Reset</button>
   </div>
   <script>
     // x-data factory — defined inline before the deferred Alpine CDN runs.

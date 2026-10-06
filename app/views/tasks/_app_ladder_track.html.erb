@@ -16,7 +16,7 @@
     only the fill: a wash says work is PARKED on this rung, an outline says a suite is
     merely RUNNING about it. Nothing ever parks at `main`, so a wash there would draw a
     state the board cannot hold — and e2e/app_ladder_row.spec.js enforces exactly that,
-    asserting `bg-amber-500` only ever appears on `data-progress='here'`.
+    asserting `bg-warning` only ever appears on `data-progress='here'`.
 
     Everything is precomputed by Ci::AppLadder::Card#track and resolved to ONE tone name
     by app_ladder_segment_tone; this partial draws, it does not derive. `data-tone` is

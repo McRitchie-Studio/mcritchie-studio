@@ -38,7 +38,7 @@
               <template x-if="person.teams && person.teams.length > 0">
                 <div class="flex flex-wrap gap-1 mt-1.5">
                   <template x-for="team in person.teams" :key="team">
-                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-900/50 text-blue-300 border border-blue-700/50" x-text="team"></span>
+                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold <%= status_tone(:primary) %>" x-text="team"></span>
                   </template>
                 </div>
               </template>
@@ -58,7 +58,7 @@
                   <template x-if="person.teams && person.teams.length > 0">
                     <div class="flex flex-wrap gap-1 mt-1.5">
                       <template x-for="team in person.teams" :key="team">
-                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-900/50 text-blue-300 border border-blue-700/50" x-text="team"></span>
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold <%= status_tone(:primary) %>" x-text="team"></span>
                       </template>
                     </div>
                   </template>

@@ -72,10 +72,10 @@
                       a gate that cannot classify must refuse; a record that cannot classify
                       must say so rather than congratulate. %>
                   <% result = entry["result"].to_s %>
-                  <% glyph, tone = if result == "fail" then ["✗", "text-rose-400"]
-                                   elsif result == "pass" then ["✓", "text-emerald-400"]
-                                   elsif GateRun::IN_FLIGHT_RESULTS.include?(result) then ["◌", "text-amber-400"]
-                                   elsif GateRun::NO_VERDICT_RESULTS.include?(result) then ["⚠", "text-amber-400"]
+                  <% glyph, tone = if result == "fail" then ["✗", "text-danger-ink"]
+                                   elsif result == "pass" then ["✓", "text-success-ink"]
+                                   elsif GateRun::IN_FLIGHT_RESULTS.include?(result) then ["◌", "text-warning-ink"]
+                                   elsif GateRun::NO_VERDICT_RESULTS.include?(result) then ["⚠", "text-warning-ink"]
                                    else ["?", "text-muted"]
                                    end %>
                   <li class="text-2xs text-muted flex items-baseline gap-1" data-result="<%= result %>">
