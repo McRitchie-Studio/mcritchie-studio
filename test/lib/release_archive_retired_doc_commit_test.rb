@@ -17,8 +17,8 @@
 # commit_artifact_to_release reads it as a removal (absent on `main` before the flip)
 # and `git rm`s it after the ff.
 #
-# WHY A FILE OF ITS OWN: the release CLI files are frozen append hotspots
-# (config/test_health.yml). Nothing here touches a real repo: the integration
+# WHY A FILE OF ITS OWN: the release CLI files are frozen append hotspots under the
+# suite's size ratchet. Nothing here touches a real repo: the integration
 # fixture is a bare origin plus a clone in a tmpdir, under OutboundSeams.
 
 require "bundler/setup"
