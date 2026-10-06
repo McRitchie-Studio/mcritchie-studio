@@ -291,7 +291,9 @@ rolled-back code writes `pr_url`, `branch`, `approval_status` and `session_id` o
 as devops keys, so their columns go stale while it runs. When the fix ships, run
 `bin/rails tasks:backfill_devops_columns` on the hub app (`heroku run … --app
 mcritchie-studio`) and read its last line: it exits non-zero while any row still
-diverges, so re-run it until it reports `0 still diverge(s)`. It is idempotent.
+diverges, so re-run it until it reports `0 still diverge(s)`. It is idempotent. `bin/release
+rollback` prints this step while it can apply: when the hub range adds the columns
+migration, or the hub's target tree still carries the rake.
 
 **The seal runs the shipped tree's specs** (the hub's ship workspace at the frozen SHA,
 never the primary). **⚪ unsealed** means those specs could not run, and says why; it
