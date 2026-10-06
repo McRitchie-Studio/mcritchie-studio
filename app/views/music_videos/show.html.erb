@@ -218,7 +218,7 @@
   // chips, as many as fit, then "+N more"; 2 every chip in both groups.
   window.castCardDisclosure = function () {
     return {
-      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0,
+      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0, cardFitSeq: 0,
       init() {
         const d = this.$root.dataset;
         this.cardOrdinal = Number(d.ordinal); this.cardName = d.cardName || "";
@@ -240,9 +240,10 @@
       // the first line, less any "+N more" would push off it. Re-run on a resize.
       async cardFitRow() {
         if (this.cardLevel !== 1) return;
+        const mine = ++this.cardFitSeq; // a newer pass (a resize, a re-open) supersedes this one
         this.cardFit = this.cardClear;
         await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-        if (this.cardLevel !== 1) return;
+        if (this.cardLevel !== 1 || mine !== this.cardFitSeq) return;
         const row = document.getElementById("person-" + this.cardOrdinal + "-clear-row");
         const chips = row ? Array.from(row.querySelectorAll("[data-test='sighting']")) : [];
         if (chips.length === 0) return;
