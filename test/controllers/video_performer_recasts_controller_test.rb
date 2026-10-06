@@ -97,9 +97,12 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_nil performer(1).recast_person_slug
 
+    # The admin wall answers a signed-in non-admin's JSON request with an empty 403.
     log_in_as users(:viewer)
-    save(1, person_slug: @athlete.slug, appearance_slug: @home.slug)
-    assert_response :redirect
+    patch music_video_performer_recast_path(@video, 1),
+          params: { person_slug: @athlete.slug, appearance_slug: @home.slug }.to_json,
+          headers: { "Content-Type" => "application/json", "Accept" => "application/json" }
+    assert_response :forbidden
     assert_nil performer(1).recast_person_slug
   end
 
