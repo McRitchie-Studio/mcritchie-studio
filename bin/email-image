@@ -2,7 +2,31 @@
 # frozen_string_literal: true
 
 # Email header briefs from the command line (epic email-image-builder).
-# Logic lives in EmailImages::Cli; run with no arguments for usage.
+# Logic lives in EmailImages::Cli; run with --help for usage.
+#
+# THE GUARD RUNS BEFORE THE RAILS BOOT and before any subcommand: `--help`
+# anywhere prints usage and exits, and an unrecognized flag refuses, so
+# `bin/email-image generate <brief> --help` can never enqueue a paid round
+# (test/lib/bin_help_flag_class_test.rb).
+require_relative "lib/cli_arg_guard"
+
+USAGE = <<~TEXT
+  usage: bin/email-image list
+         bin/email-image brief --app <app> --email <key> [--variant <v>] --brand <kit> --headline "..." [--text-mode baked|none] [--format jpg|png] [--notes "..."]
+         bin/email-image generate <brief-slug> [--count N]
+         bin/email-image export <brief-slug> --into <dir-or-file> [--image-url <url>]
+TEXT
+
+CliArgGuard.guard!(
+  ARGV,
+  program: "bin/email-image",
+  usage: USAGE,
+  consequence: "nothing was created, generated or exported.",
+  value: %w[--app --email --variant --brand --headline --subtext --alt --text-mode --format --notes
+            --count --into --image-url],
+  allow_positional: true
+)
+
 require_relative "../config/environment"
 
 exit EmailImages::Cli.new(ARGV).run
