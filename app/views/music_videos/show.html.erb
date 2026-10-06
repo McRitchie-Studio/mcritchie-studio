@@ -209,6 +209,53 @@
     };
   })();
 
+  // One cast card's title and how much of it shows, rooted on the card (outside
+  // swapCard and namingCard, so every name here is card-prefixed to stay clear of
+  // theirs). The title is the named artist's name, else "Person N", and follows
+  // each naming save (naming-saved) without a reload; Clear or Mark as extra
+  // puts "Person N" back. The description and sightings fold behind the title:
+  // level 0 shows neither; 1 the description and ONE row of the clearly visible
+  // chips, as many as fit, then "+N more"; 2 every chip in both groups.
+  window.castCardDisclosure = function () {
+    return {
+      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0,
+      init() {
+        const d = this.$root.dataset;
+        this.cardOrdinal = Number(d.ordinal); this.cardName = d.cardName || "";
+        this.cardClear = Number(d.clearCount) || 0; this.cardPartial = Number(d.partialCount) || 0;
+        this.cardFit = this.cardClear;
+      },
+      cardOnNamed(detail) {
+        if (!detail || detail.ordinal !== this.cardOrdinal) return;
+        this.cardName = detail.named && detail.named.kind === "artist" ? (detail.named.name || "") : "";
+      },
+      cardMore() { return this.cardClear - this.cardFit + this.cardPartial; },
+      cardToggle() {
+        this.cardLevel = this.cardLevel > 0 ? 0 : 1;
+        this.cardFitRow();
+      },
+      cardExpandAll() { this.cardLevel = 2; },
+      // Show every clear chip, keep those on the first line, then drop one at a
+      // time until "+N more" fits on that line too. Re-run on a resize.
+      async cardFitRow() {
+        if (this.cardLevel !== 1) return;
+        this.cardFit = this.cardClear;
+        await this.$nextTick();
+        const row = document.getElementById("person-" + this.cardOrdinal + "-clear-row");
+        const chips = row ? Array.from(row.querySelectorAll("[data-test='sighting']")) : [];
+        if (chips.length === 0) return;
+        const line = chips[0].getBoundingClientRect().top + 4;
+        this.cardFit = chips.filter((c) => c.getBoundingClientRect().top < line).length;
+        await this.$nextTick();
+        const more = row.querySelector("[data-test='sightings-more']");
+        while (this.cardLevel === 1 && this.cardFit > 1 && more && more.offsetParent !== null && more.getBoundingClientRect().top >= line) {
+          this.cardFit--;
+          await this.$nextTick();
+        }
+      },
+    };
+  };
+
   // The swap on one cast card, rooted over the whole card body: the Replace with
   // search, the chosen athlete and the look picker near the top, and the Keep
   // Original / Swap back button pinned at the bottom. Picking a person is the swap; Keep

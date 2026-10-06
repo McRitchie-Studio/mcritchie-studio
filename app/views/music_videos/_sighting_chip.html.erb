@@ -1,0 +1,8 @@
+<%# One sighting on a cast card: the timecode, a link to that second of the source video when it has one. show: an Alpine x-show expression, when the card folds it. %>
+<% href = video.timecode_url(sighting["t_ms"]) %>
+<% css = "font-mono tabular-nums text-xs px-2 py-1 rounded-md border #{chip}" %>
+<% if href %>
+  <a href="<%= href %>" target="_blank" rel="noopener" class="<%= css %> hover:border-primary" data-test="sighting" data-t-ms="<%= sighting["t_ms"] %>"<% if local_assigns[:show] %> x-show="<%= show %>"<% end %>><%= video_timecode(sighting["t_ms"]) %></a>
+<% else %>
+  <span class="<%= css %>" data-test="sighting" data-t-ms="<%= sighting["t_ms"] %>"<% if local_assigns[:show] %> x-show="<%= show %>"<% end %>><%= video_timecode(sighting["t_ms"]) %></span>
+<% end %>
