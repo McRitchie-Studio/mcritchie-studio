@@ -37,6 +37,12 @@ test("operator opens the look dropdown, previews a look, and generates a new one
   await expect(trigger).toHaveText("Home Orange");
   await trigger.click();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  // The keyboard steps below must not race the pointer. The click scrolled the card into
+  // view, so the sticky navbar compacts (~32 px) and the page slides up under the parked
+  // pointer, leaving it over the first row; Chromium then sends that row a late, trusted
+  // mouseenter, and its `lookActive = i` overwrites whatever ArrowDown, End or Enter just
+  // chose. Park the pointer off the card so only the keys drive the highlight.
+  await page.mouse.move(0, 0);
   const rows = picker.locator("[data-test='look-option']");
   await expect(rows.locator("[data-test='look-option-name']")).toHaveText(["Home Orange", "Away White", "Alternate Blue"]);
   await expect(rows.locator("[data-test='look-option-state']")).toHaveText(["Character sheet ready", "No character sheet yet", "Character sheet building…"]);
