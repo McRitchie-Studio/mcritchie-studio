@@ -235,23 +235,28 @@
         this.cardFitRow();
       },
       cardExpandAll() { this.cardLevel = 2; },
-      // Show every clear chip, keep those on the first line, then drop one at a
-      // time until "+N more" fits on that line too. Re-run on a resize.
+      // Show every clear chip and let the browser lay them out (two frames, so
+      // the x-show changes are painted), then measure once: keep the chips on
+      // the first line, less any "+N more" would push off it. Re-run on a resize.
       async cardFitRow() {
         if (this.cardLevel !== 1) return;
         this.cardFit = this.cardClear;
-        await this.$nextTick();
+        await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+        if (this.cardLevel !== 1) return;
         const row = document.getElementById("person-" + this.cardOrdinal + "-clear-row");
         const chips = row ? Array.from(row.querySelectorAll("[data-test='sighting']")) : [];
         if (chips.length === 0) return;
         const line = chips[0].getBoundingClientRect().top + 4;
-        this.cardFit = chips.filter((c) => c.getBoundingClientRect().top < line).length;
-        await this.$nextTick();
-        const more = row.querySelector("[data-test='sightings-more']");
-        while (this.cardLevel === 1 && this.cardFit > 1 && more && more.offsetParent !== null && more.getBoundingClientRect().top >= line) {
-          this.cardFit--;
-          await this.$nextTick();
+        const first = chips.filter((c) => c.getBoundingClientRect().top < line);
+        let fit = first.length;
+        if (fit < chips.length || this.cardPartial > 0) {
+          const more = row.querySelector("[data-test='sightings-more']");
+          const moreWidth = (more && more.offsetParent !== null ? more.getBoundingClientRect().width : 72) + 8;
+          const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+          const right = row.getBoundingClientRect().right;
+          while (fit > 1 && first[fit - 1].getBoundingClientRect().right + gap + moreWidth > right) fit--;
         }
+        this.cardFit = fit;
       },
     };
   };

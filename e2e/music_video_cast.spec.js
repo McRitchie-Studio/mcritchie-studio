@@ -46,11 +46,21 @@ test("operator confirms the cast without naming everyone, naming two and marking
   await expect(title).toHaveAttribute("aria-expanded", "true");
   await expect(more).toBeVisible();
   await expect(partial).toBeHidden();
-  const row = await visibleTops(card(page, 2).locator("[data-test='sightings-clear'] [data-test='sighting']"));
-  expect(row.length).toBeGreaterThan(0);
+  // The fit measures after a paint, so wait for it: every chip shown sits on the line with "+N more".
+  const clearChips = card(page, 2).locator("[data-test='sightings-clear'] [data-test='sighting']");
+  const offLine = async () => {
+    const moreTop = (await more.boundingBox()).y;
+    return (await visibleTops(clearChips)).filter((t) => Math.abs(t - moreTop) >= 4).length;
+  };
+  await expect.poll(offLine).toBe(0);
+  const row = await visibleTops(clearChips);
+  expect(row.length).toBeGreaterThan(1);
   expect(row.length).toBeLessThan(10);
-  const moreTop = (await more.boundingBox()).y;
-  for (const t of row) expect(Math.abs(t - moreTop)).toBeLessThan(4);
+  // As many as fit: the space left after "+N more" could not take another chip.
+  const moreBox = await more.boundingBox();
+  const rowBox = await card(page, 2).locator("[data-test='sightings-clear-row']").boundingBox();
+  const chipBox = await card(page, 2).locator("[data-test='sightings-clear'] [data-test='sighting']").first().boundingBox();
+  expect(rowBox.x + rowBox.width - (moreBox.x + moreBox.width)).toBeLessThan(chipBox.width + 6 + 8);
   await expect(more).toHaveText(`+${10 - row.length + 4} more`);
   await expect(card(page, 2).locator("a[data-test='sighting']").first()).toHaveAttribute("target", "_blank");
   await more.click();
