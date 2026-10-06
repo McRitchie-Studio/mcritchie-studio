@@ -25,7 +25,7 @@ test("operator confirms the cast without naming everyone, naming two and marking
   // Nothing has to be pressed: every card reads Not named and is not swapped, and Cast confirmed is ready.
   await expect(page.locator("[data-test='performer-badge']").filter({ hasText: "Not named" })).toHaveCount(7);
   await expect(page.locator("[data-test='performer-card'][data-resolved='true']")).toHaveCount(7);
-  await expect(page.locator("[data-test='performer-recast'][data-state='off']")).toHaveCount(7);
+  await expect(page.locator("[data-test='performer-recast'][data-state='none']")).toHaveCount(7);
   await expect(page.locator("[data-test='cast-named-count']")).toContainText("Nobody named. Naming is optional");
   const confirm = page.getByRole("button", { name: "Cast confirmed" });
   await expect(confirm).toBeEnabled();
