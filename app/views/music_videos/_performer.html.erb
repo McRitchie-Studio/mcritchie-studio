@@ -1,4 +1,4 @@
-<%# One person on the cast panel: stills, sightings, who is on screen (the optional artist name, the rolodex), then Replace with (the swap). Nothing here has to be pressed before the cast is confirmed. %>
+<%# One person on the cast panel: the still and heading, Replace with (the swap), the description and sightings, then who is on screen (the optional artist name, the rolodex) at the bottom. Nothing here has to be pressed before the cast is confirmed. %>
 <% sightings = performer.sightings_by_time %>
 <% named_row = performer.artist&.person_slug && local_assigns.fetch(:recast_rows, {})[performer.artist.person_slug] %>
 <article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
@@ -36,6 +36,11 @@
         <span class="badge text-3xs bg-surface-alt text-muted border-subtle shrink-0" data-test="performer-badge">Not named</span>
       <% end %>
     </header>
+
+    <%# Replace with sits at the top, under the still and the heading: it is the card's main job. %>
+    <%= render "music_videos/recast", performer: performer, video: video, looks: local_assigns.fetch(:recast_looks, {}),
+               rows: local_assigns.fetch(:recast_rows, {}), named_row:,
+               sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready], fresh_look: local_assigns[:fresh_look] %>
 
     <% if performer.confidence_note.present? %>
       <p class="text-sm text-muted" data-test="performer-note"><%= performer.confidence_note %></p>
@@ -160,8 +165,5 @@
       <% end %>
     </div>
 
-    <%= render "music_videos/recast", performer: performer, video: video, looks: local_assigns.fetch(:recast_looks, {}),
-               rows: local_assigns.fetch(:recast_rows, {}), named_row:,
-               sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready], fresh_look: local_assigns[:fresh_look] %>
   </div>
 </article>

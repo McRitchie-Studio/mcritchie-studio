@@ -1,4 +1,4 @@
-<%# Replace with: the people search is on every card, no toggle first. Picking a person IS the swap: it saves at once in their default look and shows the chosen athlete (headshot, name, vocation and team) and their look dropdown. Once someone is remembered, a Keep Original checkbox (unchecked while swapping) turns the swap off: the athlete and look stay remembered (recast_keep), hidden and read by nothing, until it is unchecked or another person is picked from the search, which unchecks it. Clear on the chosen athlete forgets them. Every change saves through the JSON variant of the recast endpoint (window.swapCard), in order: a visible saving, saved or not saved state, and Retry. Editable after the cast is confirmed; the prompts below follow each save. %>
+<%# Replace with: the people search is on every card, no toggle first. Picking a person IS the swap: it saves at once in their default look and shows the chosen athlete (headshot, name, vocation and team) and their look dropdown. While swapping, a full-width Keep Original button under the look's character sheet turns the swap off: the athlete and look stay remembered (recast_keep), hidden and read by nothing, until Swap back (or the name) restores them or another person is picked from the search. Clear on the chosen athlete forgets them. Every change saves through the JSON variant of the recast endpoint (window.swapCard), in order: a visible saving, saved or not saved state, and Retry. Editable after the cast is confirmed; the prompts below follow each save. %>
 <% athlete = performer.recast_person %>
 <% recast_path = music_video_performer_recast_path(video, performer.ordinal) %>
 <% looks_url = recast_athlete_looks_path("__slug__", format: :json) %>
@@ -16,7 +16,7 @@
      row = local_assigns.fetch(:rows, {})[athlete.slug] || People::SearchRows::BLANK
      { slug: athlete.slug, name: athlete.full_name, **row.to_h, looks: looks.fetch(athlete.slug, []).map(&:to_h) }
    end %>
-<div x-data="swapCard()" class="pt-3 border-t border-subtle min-w-0 space-y-2" data-test="performer-recast"
+<div x-data="swapCard()" class="py-3 border-y border-subtle min-w-0 space-y-2" data-test="performer-recast"
      data-state="<%= state %>" :data-state="state" :data-save="save"
      data-save-url="<%= recast_path %>" data-search-url="<%= search_recast_athletes_path(format: :json) %>"
      data-looks-url="<%= looks_url %>" data-new-look-url="<%= new_look_url %>"
@@ -66,14 +66,13 @@
     </button>
   <% end %>
 
-  <%# Shown once someone is remembered; unchecked while swapping. Checked hides the swap below and keeps the person for later. %>
-  <label x-show="athlete" <%= "x-cloak" unless athlete %> class="flex items-center gap-2 text-sm text-body cursor-pointer select-none min-w-0 w-fit" data-test="keep-original">
-    <input type="checkbox" class="w-4 h-4 shrink-0 rounded border-subtle accent-primary" :checked="keep" <%= "checked" if kept %>
-           @change="setKeep($event.target.checked)" data-test="keep-original-box">
-    <span class="font-semibold text-heading">Keep Original</span>
-  </label>
+  <%# Kept: the swap is off and hidden; the name and Swap back each restore it in one press. %>
   <p x-show="athlete && keep" <%= "x-cloak" unless kept %> class="text-xs text-muted break-words" data-test="keep-original-note">
-    Not swapped. <span x-text="athlete ? athlete.name : ''"><%= athlete&.full_name if kept %></span> is remembered; uncheck to swap back.
+    Not swapped.
+    <button type="button" @click="swapBack()" class="font-semibold text-heading hover:text-primary hover:underline" data-test="swap-back-name"
+            x-text="athlete ? athlete.name : ''"><%= athlete&.full_name if kept %></button>
+    is remembered.
+    <button type="button" @click="swapBack()" class="font-semibold text-primary hover:underline" data-test="swap-back">Swap back</button>
   </p>
 
   <div x-show="swapping" <%= "x-cloak" unless swapping %> class="space-y-2 min-w-0" data-test="swap-body">
@@ -95,5 +94,7 @@
     </p>
 
     <%= render "music_videos/look_picker", performer: performer, video: video, sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready] %>
+    <%# No look to preview yet (a pending pick): the same button closes the swap block instead. %>
+    <button type="button" x-show="!chosen" <%= "x-cloak" if performer.recast? %> @click="keepOriginal()" class="btn btn-outline btn-sm w-full" data-test="keep-original-pending">Keep Original</button>
   </div>
 </div>

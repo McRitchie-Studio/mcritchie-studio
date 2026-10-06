@@ -76,6 +76,8 @@
       <a :href="chosen ? chosen.url : '#'" class="text-xs text-primary hover:underline shrink-0" data-test="look-page-link">Open look</a>
     </figcaption>
   </figure>
+  <%# Directly under the character sheet: turns the swap off and remembers this athlete and look (swapCard#keepOriginal). %>
+  <button type="button" x-show="chosen" x-cloak @click="keepOriginal()" class="btn btn-outline btn-sm w-full" data-test="keep-original">Keep Original</button>
 
   <p x-show="chosen && chosen.state !== 'ready'" x-cloak class="text-3xs text-muted" data-test="look-cast-no-sheet">
     This look has no character sheet yet. It is cast; its chunks show the sheet once it is built.

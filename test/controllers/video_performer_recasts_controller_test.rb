@@ -58,7 +58,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_equal [["Home Blue", true, "empty"], ["Away White", false, "empty"]],
                    JSON.parse(node.first["data-athlete"])["looks"].map { |look| look.values_at("descriptor", "default", "state") }
       assert_select "[data-test='performer-recast'][data-keep='false']"
-      assert_select "[data-test='keep-original']:not([x-cloak]) input[type='checkbox'][data-test='keep-original-box']:not([checked])"
+      assert_select "[data-test='swap-body']:not([x-cloak]) [data-test='look-preview'] + button[data-test='keep-original']", "Keep Original"
       assert_select "[data-test='swap-body']:not([x-cloak]) [data-test='swap-athlete-name']", "Test Athlete Alpha"
       assert_select "[data-test='look-cast']", 0
     end
@@ -171,7 +171,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert(@video.video_chunks.reload.all? { |c| c.prompt.include?("{athlete}") })
     follow_redirect!
     assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='performer-recast'][data-state='kept'][data-keep='true']" do |node|
-      assert_select "input[data-test='keep-original-box'][checked]"
+      assert_select "[data-test='keep-original-note']:not([x-cloak]) button[data-test='swap-back']", "Swap back"
       assert_select "[data-test='swap-body'][x-cloak]"
       assert_equal "Test Athlete Alpha", JSON.parse(node.first["data-athlete"])["name"], "the card still knows who is remembered"
     end
@@ -184,7 +184,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
     assert_not performer(1).recast_keep?
     follow_redirect!
     assert_select "[data-test='performer-card'][data-ordinal='1'] [data-test='performer-recast'][data-state='none']" do
-      assert_select "[data-test='keep-original'][x-cloak]"
+      assert_select "[data-test='keep-original-note'][x-cloak]"
       assert_select "[data-test='performer-recast'][data-athlete]", 0
     end
     assert_select "[data-test='cast-swap-count']", "0 of 2"

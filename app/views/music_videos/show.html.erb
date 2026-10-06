@@ -162,7 +162,7 @@
     };
   })();
 
-  // Replace with on one cast card: the people search, Keep Original, the
+  // Replace with on one cast card: the people search, the Keep Original button, the
   // chosen athlete and the look picker. Picking a person is the swap; Keep
   // Original turns it off and remembers them. Every change is saved at once as
   // JSON to the recast endpoint, one request at a time and in the order made,
@@ -204,11 +204,14 @@
       },
       // "Swap with <name>?": the person the card is named after, picked as if from the search.
       offerSwap() { this.choose(JSON.parse(this.$root.dataset.offer)); },
-      // Checked: not swapped, the person and look remembered. Unchecked: swap back to them.
-      setKeep(checked) {
-        if (!this.athlete || checked === this.keep) return;
-        this.keep = checked; this.open = false; this.listOpen = false;
-        this.persist(checked ? { keep: "1" } : { swap: "1" });
+      // Keep Original (under the look's sheet): not swapped, the person and look remembered.
+      keepOriginal() { this.setKeep(true); },
+      // Swap back (or the remembered name): the swap returns with no re-pick.
+      swapBack() { this.setKeep(false); },
+      setKeep(kept) {
+        if (!this.athlete || kept === this.keep) return;
+        this.keep = kept; this.open = false; this.listOpen = false;
+        this.persist(kept ? { keep: "1" } : { swap: "1" });
       },
       // Forget the person entirely: the card is back to the search alone.
       clearPerson() {
