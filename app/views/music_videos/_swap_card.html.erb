@@ -1,0 +1,20 @@
+<%# The swap's one Alpine root (window.swapCard) over a cast card's whole body, so the Replace with section near the top and the Keep Original / Swap back button pinned at the bottom share one state and one ordered save queue. Carries what the card was saved with: the athlete, the look, recast_keep, and the endpoints. Used as a layout: the card body is the block. %>
+<% athlete = performer.recast_person %>
+<% looks = local_assigns.fetch(:looks, {}) %>
+<% state = performer.swap_state %>
+<%# Batched by the panel (no query per card); the naming endpoint passes none and loads its own. %>
+<% offer = MusicVideos::CastCardNaming.offer(performer, rows: local_assigns[:rows], looks: local_assigns[:looks]) %>
+<% saved_athlete = if athlete
+     row = local_assigns.fetch(:rows, {})[athlete.slug] || People::SearchRows::BLANK
+     { slug: athlete.slug, name: athlete.full_name, **row.to_h, looks: looks.fetch(athlete.slug, []).map(&:to_h) }
+   end %>
+<div x-data="swapCard()" class="<%= local_assigns[:css] %>" data-test="performer-recast"
+     data-state="<%= state %>" :data-state="state" :data-save="save"
+     data-save-url="<%= music_video_performer_recast_path(video, performer.ordinal) %>" data-search-url="<%= search_recast_athletes_path(format: :json) %>"
+     data-looks-url="<%= recast_athlete_looks_path("__slug__", format: :json) %>"
+     data-new-look-url="<%= person_path("__slug__", return_to: "#{music_video_path(video)}#person-#{performer.ordinal}", anchor: "new-model") %>"
+     data-saved-person="<%= performer.recast_person_slug %>" data-saved-look="<%= performer.recast_appearance_slug %>" data-keep="<%= state == "kept" %>"
+     data-ordinal="<%= performer.ordinal %>" @naming-saved.window="onNamed($event.detail)"
+     data-fresh-look="<%= local_assigns[:fresh_look] %>"<% if saved_athlete %> data-athlete="<%= saved_athlete.to_json %>"<% end %><% if offer %> data-offer="<%= offer.to_json %>"<% end %>>
+  <%= yield %>
+</div>
