@@ -36,23 +36,70 @@
     };
   };
 
-  // The cast typeahead: search artists and People, then one form submit.
-  window.castTypeahead = function () {
+  // Who is on screen, at the bottom of a cast card: an always-open search of
+  // artists and People. A pick, a new artist, Mark as extra or Clear saves at
+  // once as JSON (no reload). Each says the whole answer, so a change made while
+  // one is in flight replaces any still waiting and the server ends on the last.
+  // Each save tells the card (naming-saved): the header badge and swapCard's
+  // "Swap with <name>?" offer follow it.
+  window.namingCard = function () {
     return {
       ...window.typeaheadSearch(),
-      creating: false, artistSlug: "", personSlug: "", newName: "", newKind: "person",
+      named: null, creating: false, newName: "", newKind: "person",
+      save: "", error: "", inflight: false, queued: null, lastBody: null,
+      init() { const d = this.$root.dataset; this.named = d.named ? JSON.parse(d.named) : null; },
       reset() { this.creating = false; },
       get exactMatch() {
         const q = this.query.trim().toLowerCase();
         return this.results.some((r) => r.name.toLowerCase() === q);
       },
       choose(r) {
-        this.artistSlug = r.type === "artist" ? r.slug : "";
-        this.personSlug = r.type === "person" ? r.slug : "";
-        this.newName = ""; this.settle(r);
-        this.$nextTick(() => this.$refs.form.requestSubmit());
+        this.settle(r); this.query = ""; this.creating = false;
+        this.named = { kind: "artist", slug: r.type === "artist" ? r.slug : "", name: r.name, avatar_url: r.avatar_url, vocation: r.vocation, team: r.team };
+        this.persist(r.type === "artist" ? { artist_slug: r.slug } : { person_slug: r.slug });
       },
-      startCreate() { this.newName = this.query.trim(); this.artistSlug = ""; this.personSlug = ""; this.open = false; this.creating = true; },
+      startCreate() { this.newName = this.query.trim(); this.open = false; this.creating = true; },
+      createArtist() {
+        const name = this.newName.trim();
+        if (!name) return;
+        this.creating = false; this.query = "";
+        this.named = { kind: "artist", slug: "", name, vocation: this.newKind === "group" ? "group" : "musician" };
+        this.persist({ new_artist_name: name, new_artist_kind: this.newKind });
+      },
+      markExtra() { this.named = { kind: "extra" }; this.persist({ extra: "1" }); },
+      clear() { this.named = null; this.persist({ clear: "1" }); },
+      persist(body) {
+        this.lastBody = body; this.save = "saving"; this.error = "";
+        if (this.inflight) { this.queued = body; return; }
+        this.send(body);
+      },
+      retry() { if (this.lastBody && !this.inflight) this.send(this.lastBody); },
+      async send(body) {
+        this.inflight = true;
+        let ok = false;
+        try {
+          const token = document.querySelector("meta[name='csrf-token']");
+          const resp = await fetch(this.$root.dataset.saveUrl, {
+            method: "PATCH", credentials: "same-origin",
+            headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-Token": token ? token.content : "" },
+            body: JSON.stringify(body),
+          });
+          const json = (resp.headers.get("Content-Type") || "").includes("json") ? await resp.json() : {};
+          if (!resp.ok || !("named" in json)) throw new Error(json.error || "The server answered " + resp.status + ".");
+          if (!this.queued) {
+            this.named = json.named;
+            window.dispatchEvent(new CustomEvent("naming-saved",
+              { detail: { ordinal: Number(this.$root.dataset.ordinal), named: json.named, offer: json.offer } }));
+          }
+          ok = true;
+        } catch (e) {
+          this.error = e.message && e.message !== "Failed to fetch" ? e.message : "The connection dropped.";
+        }
+        this.inflight = false;
+        if (this.queued) { const next = this.queued; this.queued = null; return this.send(next); }
+        this.save = ok ? "saved" : "failed";
+        if (ok) window.refreshCastOutputs();
+      },
     };
   };
 
@@ -162,105 +209,119 @@
     };
   })();
 
-  // Swap Person on one cast card: the toggle, the people search, the chosen
-  // athlete and the look picker. Every pick is saved at once as JSON to the
-  // recast endpoint, one request at a time (a pick made while one is in flight
-  // waits and supersedes any other waiting one), so the server always ends on
-  // the operator's last pick. The card shows what it shows at once; the save
-  // state says whether the server has it, with Retry when it does not.
+  // The swap on one cast card, rooted over the whole card body: the Replace with
+  // search, the chosen athlete and the look picker near the top, and the Keep
+  // Original / Swap back button pinned at the bottom. Picking a person is the swap; Keep
+  // Original turns it off and remembers them. Every change is saved at once as
+  // JSON to the recast endpoint, one request at a time and in the order made,
+  // so the server always ends where the card does. A pick or a Clear says the
+  // whole recast, so it drops any change still waiting behind the one in
+  // flight; Keep Original and its undo are relative, so they queue behind it.
+  // The card shows a change at once; the save state says whether the server
+  // has it, with Retry (which resends the stalled change and whatever followed).
   window.swapCard = function () {
     return window.mixComponents(window.typeaheadSearch(), window.lookPicker(), {
-      on: false, searching: false, savedPerson: "", savedLook: "", save: "", error: "",
-      inflight: false, queued: null, lastBody: null,
+      keep: false, offer: null, savedPerson: "", savedLook: "", save: "", error: "",
+      inflight: false, queue: [],
       init() {
         const data = this.$root.dataset;
         this.savedPerson = data.savedPerson || ""; this.savedLook = data.savedLook || "";
-        this.on = data.swapOn === "true";
+        this.offer = data.offer ? JSON.parse(data.offer) : null;
         if (data.athlete) {
+          this.keep = data.keep === "true";
           this.setAthlete(JSON.parse(data.athlete), data.freshLook || this.savedLook);
           // An athlete saved with no look: nothing is previewed as if it were cast.
           if (!this.savedLook && !data.freshLook) this.lookSlug = "";
         }
-        this.$watch("open", (open) => { if (open) this.$nextTick(() => this.fitList()); });
+        this.$watch("open", (open) => { if (open) this.$nextTick(() => requestAnimationFrame(() => this.fitList())); });
       },
-      // off: not swapped. open: on, nobody saved yet. pending: an athlete with no look. recast: both saved.
+      // Swapping: someone is picked and Keep Original is unchecked.
+      get swapping() { return !!this.athlete && !this.keep; },
+      // What the card shows (VideoPerformer#swap_state): none, kept, pending (no look), recast.
       get state() {
-        if (!this.on) return "off";
-        if (!this.savedPerson) return "open";
-        return this.savedLook ? "recast" : "pending";
+        if (!this.athlete) return "none";
+        if (this.keep) return "kept";
+        return this.lookSlug ? "recast" : "pending";
       },
       reset() {},
-      // Off remembers the athlete and look (the server keeps them, read by nothing);
-      // on brings them straight back. On with nobody remembered saves nothing until a pick.
-      toggle() {
-        this.on = !this.on;
-        this.open = false;
-        if (this.on) {
-          if (this.athlete) { this.searching = false; this.persist({ swap: "1" }); return; }
-          this.searching = true; this.save = ""; this.error = "";
-          this.$nextTick(() => setTimeout(() => this.$refs.search && this.$refs.search.focus()));
-          return;
-        }
-        this.searching = false;
-        if (this.savedPerson || this.inflight || this.athlete) this.persist({ keep: "1" });
-        else { this.save = ""; this.error = ""; }
-      },
-      // "Swap with <name>?": the person the card is named after, in their default look.
-      offerSwap() {
-        const offer = JSON.parse(this.$root.dataset.offer);
-        this.on = true; this.searching = false; this.open = false;
-        this.setAthlete(offer, "");
-        this.persist({ person_slug: offer.slug, appearance_slug: this.lookSlug });
-      },
-      changeAthlete() {
-        this.searching = true; this.query = ""; this.results = []; this.open = false;
-        this.$nextTick(() => setTimeout(() => this.$refs.search.focus()));
-      },
-      // A person from the search: cast at once in their default look (else their first); a person with no look is saved alone.
+      // A person from the search is the swap: Keep Original unchecks, and they are
+      // cast at once in their default look (else their first); a person with no look is saved alone.
       choose(r) {
-        this.settle(r); this.searching = false;
+        this.settle(r); this.query = ""; this.keep = false;
         this.setAthlete(r, "");
         this.persist({ person_slug: r.slug, appearance_slug: this.lookSlug });
+      },
+      // "Swap with <name>?": the person the card is named after, picked as if from the search.
+      offerSwap() { if (this.offer) this.choose(this.offer); },
+      // The naming search saved: offer the person now named, if they have a look.
+      onNamed(detail) { if (detail.ordinal === Number(this.$root.dataset.ordinal)) this.offer = detail.offer || null; },
+      // The one button pinned at the bottom of the card (music_videos/_swap_toggle), in the same
+      // place in both states. Keep Original: not swapped, the person and look remembered.
+      keepOriginal() { this.setKeep(true); },
+      // Swap back to <name>: the swap returns with no re-pick.
+      swapBack() { this.setKeep(false); },
+      setKeep(kept) {
+        if (!this.athlete || kept === this.keep) return;
+        this.keep = kept; this.open = false; this.listOpen = false;
+        this.persist(kept ? { keep: "1" } : { swap: "1" });
+      },
+      // Forget the person entirely: the card is back to the search alone.
+      clearPerson() {
+        this.keep = false; this.clearAthlete();
+        this.persist({ clear: "1" });
+        this.$nextTick(() => setTimeout(() => this.$refs.search && this.$refs.search.focus()));
       },
       onLookPicked() {
         if (this.athlete) this.persist({ person_slug: this.athlete.slug, appearance_slug: this.lookSlug });
       },
       persist(body) {
-        this.lastBody = body;
-        if (this.inflight) { this.queued = body; this.save = "saving"; return; }
-        this.send(body);
+        const whole = !!(body.person_slug || body.clear);
+        if (whole) this.queue = [body]; else this.queue.push(body);
+        this.save = "saving"; this.error = "";
+        if (!this.inflight) this.drain();
       },
-      retry() { if (this.lastBody && !this.inflight) this.send(this.lastBody); },
-      async send(body) {
+      retry() { if (!this.inflight && this.queue.length) this.drain(); },
+      async drain() {
         this.inflight = true; this.save = "saving"; this.error = "";
-        let ok = false;
-        try {
-          const token = document.querySelector("meta[name='csrf-token']");
-          const resp = await fetch(this.$root.dataset.saveUrl, {
-            method: "PATCH", credentials: "same-origin",
-            headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-Token": token ? token.content : "" },
-            body: JSON.stringify(body),
-          });
-          const json = (resp.headers.get("Content-Type") || "").includes("json") ? await resp.json() : {};
-          if (!resp.ok || !json.state) throw new Error(json.error || "The server answered " + resp.status + ".");
-          this.savedPerson = json.person_slug || ""; this.savedLook = json.appearance_slug || "";
-          // Back on with a remembered look that is gone: the card asks for a look again.
-          if (body.swap && this.athlete) this.lookSlug = this.savedLook;
-          ok = true;
-        } catch (e) {
-          this.error = e.message && e.message !== "Failed to fetch" ? e.message : "The connection dropped.";
+        while (this.queue.length) {
+          const body = this.queue.shift();
+          try {
+            const json = await this.send(body);
+            this.savedPerson = json.person_slug || ""; this.savedLook = json.appearance_slug || "";
+            // Back to a remembered look that is gone: the card asks for a look again
+            // (unless a later change already says otherwise).
+            if (body.swap && this.athlete && !this.keep && this.queue.length === 0) this.lookSlug = this.savedLook;
+          } catch (e) {
+            // Stall here, in order: Retry resends this change, then what followed it.
+            this.queue.unshift(body);
+            this.error = e.message && e.message !== "Failed to fetch" ? e.message : "The connection dropped.";
+            this.inflight = false; this.save = "failed";
+            return;
+          }
         }
-        this.inflight = false;
-        if (this.queued) { const next = this.queued; this.queued = null; return this.send(next); }
-        this.save = ok ? "saved" : "failed";
-        if (ok) window.refreshCastOutputs();
+        this.inflight = false; this.save = "saved";
+        window.refreshCastOutputs();
+      },
+      async send(body) {
+        const token = document.querySelector("meta[name='csrf-token']");
+        const resp = await fetch(this.$root.dataset.saveUrl, {
+          method: "PATCH", credentials: "same-origin",
+          headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-Token": token ? token.content : "" },
+          body: JSON.stringify(body),
+        });
+        const json = (resp.headers.get("Content-Type") || "").includes("json") ? await resp.json() : {};
+        if (!resp.ok || !json.state) throw new Error(json.error || "The server answered " + resp.status + ".");
+        return json;
       },
       // The results list is wider than the card: slide it back inside the window.
-      fitList() {
+      // Measured only once the list is painted: a box read while x-show still hides it is
+      // empty, and the shift worked out from it pushed the list off a phone screen.
+      fitList(tries = 0) {
         const list = this.$refs.results;
-        if (!list) return;
+        if (!list || !this.open) return;
         list.style.transform = "";
         const box = list.getBoundingClientRect();
+        if (box.width === 0) { if (tries < 10) requestAnimationFrame(() => this.fitList(tries + 1)); return; }
         const gutter = 16;
         let dx = Math.min(0, window.innerWidth - gutter - box.right);
         if (box.left + dx < gutter) dx = gutter - box.left;

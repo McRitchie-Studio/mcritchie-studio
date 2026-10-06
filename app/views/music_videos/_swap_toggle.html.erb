@@ -1,0 +1,12 @@
+<%# The swap's one on/off control, pinned at the bottom of the card in the same place and at the same height in both states: "Keep Original" while swapping, "Swap back to <name>" (with their headshot) while kept. A card with nobody remembered shows neither. Inside window.swapCard (music_videos/_swap_card). %>
+<% state = performer.swap_state %>
+<% athlete = performer.recast_person %>
+<div x-show="athlete" <%= "x-cloak" if state == "none" %> class="min-w-0" data-test="keep-toggle">
+  <button type="button" x-show="!keep" <%= "x-cloak" if state == "kept" %> @click="keepOriginal()"
+          class="btn btn-outline btn-sm w-full h-10" data-test="keep-original">Keep Original</button>
+  <button type="button" x-show="keep" <%= "x-cloak" unless state == "kept" %> @click="swapBack()"
+          class="btn btn-primary btn-sm w-full h-10 flex items-center justify-center gap-2 min-w-0" data-test="swap-back">
+    <%= render "music_videos/person_avatar", person: "athlete", size: "w-6 h-6", icon: "w-4 h-4", failed: "avatarFailed" %>
+    <span class="truncate">Swap back to <span x-text="athlete ? athlete.name : ''" data-test="swap-back-name"><%= athlete&.full_name if state == "kept" %></span></span>
+  </button>
+</div>

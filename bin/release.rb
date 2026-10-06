@@ -176,6 +176,9 @@ require_relative "../app/models/release/cli"
 require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
 require_relative "lib/projects_root"
+# Sizes how long a gate holds a PENDING CI verdict from the workflows that produce it
+# (task gem-gate-outwaits-consumer-ci). Pure and Rails-free; see ci_poll_budget_for.
+require_relative "lib/ci_poll_budget"
 # CleanCheck is the pure verdict behind the `deploy-with-task` clean-LADDER GUARD
 # (`bin/release status --clean-only`): given BOTH rungs the expedite walks — work
 # riding `release` (board + release-ahead-of-main git count) and work parked on
@@ -2993,7 +2996,7 @@ end
 #                   heals mid-sweep), so it aborts on the first read with the remedy.
 #   * else        — a :pending/:none/:unverified verdict that never reached green before
 #                   the poll timed out: let CI finish and re-run. None is ever a pass.
-def pre_qa_ci_abort(repo, sha, ci)
+def pre_qa_ci_abort(repo, sha, ci, budget = ci_poll_timeout)
   case ci[:state]
   when :red
     named = Array(ci[:failing]).join(", ")
@@ -3017,7 +3020,7 @@ def pre_qa_ci_abort(repo, sha, ci)
   else
     "pre-QA gate HELD for #{repo}: GitHub CI reached NO green verdict for #{short(sha)} (#{ci_detail(ci)}) before " \
       "the poll timed out. CI is the G3 verdict now and FAILS CLOSED on anything but green — a still-pending or " \
-      "absent verdict never certifies a SHA. The gate POLLED origin/#{RELEASE_BRANCH} until ~#{ci_poll_timeout}s " \
+      "absent verdict never certifies a SHA. The gate POLLED origin/#{RELEASE_BRANCH} until ~#{budget}s " \
       "elapsed; let CI conclude (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `bin/release prepare`."
   end
 end
@@ -3028,6 +3031,36 @@ end
 # runner — or a test collapse it to a single read (timeout 0) — without touching code.
 def ci_poll_interval = ENV.fetch("RELEASE_CI_POLL_INTERVAL", "15").to_i
 def ci_poll_timeout  = ENV.fetch("RELEASE_CI_POLL_TIMEOUT", "1200").to_i
+def ci_poll_ceiling  = ENV.fetch("RELEASE_CI_POLL_CEILING", "7200").to_i
+
+# THE G3 + GEM-GATE POLL BUDGET for `repo` at `sha`, sized from the workflows that
+# produce its verdict (CiPollBudget) instead of the flat ci_poll_timeout. Observed
+# 2026-10-05/06: studio-engine's verdict carries Consumer CI and the browser lane, which
+# outlast 1200 s on a fresh release tip, so every sweep aborted at the gem preflight on
+# a still-PENDING verdict and needed a manual re-run once CI went green.
+#
+# It widens ONLY the wait on a pending verdict: red and unreadable still abort on the
+# first read, and a verdict pending at the deadline still fails closed. ci_poll_timeout
+# stays the FLOOR (an operator's RELEASE_CI_POLL_TIMEOUT still widens it; a test's 0
+# still collapses a repo with no readable workflows to one read) and ci_poll_ceiling the
+# hard cap. Workflows are read from the repo's own clone AT THE SHA, so the budget is the
+# one for the tree under test; any read fault keeps the floor. G4 (test_gate) does not
+# use this: production-deploy runs inside Alex's 30-minute window.
+def ci_poll_budget_for(repo, sha)
+  path = repo_path(repo)
+  return ci_poll_timeout unless Dir.exist?(path)
+
+  listing, ok = git_capture("-C", path, "ls-tree", "--name-only", sha.to_s, ".github/workflows/")
+  return ci_poll_timeout unless ok
+
+  texts = listing.lines.map(&:strip).select { |f| f.end_with?(".yml", ".yaml") }.filter_map do |file|
+    text, read = git_capture("-C", path, "show", "#{sha}:#{file}")
+    text if read
+  end
+  CiPollBudget.budget_s(texts, floor: ci_poll_timeout, ceiling: ci_poll_ceiling)
+rescue StandardError
+  ci_poll_timeout
+end
 
 def monotonic_s = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
@@ -3045,8 +3078,8 @@ def monotonic_s = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 # token fault polling cannot fix — and a timeout returns the LAST still-pending verdict,
 # never a fabricated green. The caller runs ci_pass? on the returned Hash, so ONLY a
 # genuine :green certifies; every other outcome aborts the gate.
-def poll_ci_verdict(repo, sha, deadline: monotonic_s + ci_poll_timeout)
-  timeout    = ci_poll_timeout
+def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + budget)
+  timeout    = budget
   interval   = ci_poll_interval
   last_state = nil
   ci = nil
@@ -3085,11 +3118,12 @@ end
 # `diverged` is true when the SHA shares neither SHA nor tree with the accepted
 # head, so its verdict could only come from its own run. G4 classifies the four
 # through Release::ShipSequence.ship_gate_kind; G3 reads ci + credited as before.
-def resolve_release_ci_verdict(repo, path, sha)
+def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   # ONE shared poll budget: the tree credit may spend part of it WAITING on the
   # in-flight accepted run, and a wait that times out then falls through must not
-  # spend a SECOND full window polling the release SHA.
-  deadline = monotonic_s + ci_poll_timeout
+  # spend a SECOND full window polling the release SHA. G3 passes the workflow-sized
+  # ci_poll_budget_for; G4 keeps the flat default.
+  deadline = monotonic_s + budget
   credit = nil
   diagnostic = nil
   diverged = false
@@ -3131,7 +3165,7 @@ def resolve_release_ci_verdict(repo, path, sha)
   # replaces the single read that aborted every sweep's first run on a pending CI. The
   # poll shares the gate's deadline (see above) so the tree-credit wait + this poll
   # never exceed one window together.
-  ci = credit || poll_ci_verdict(repo, sha, deadline: deadline)
+  ci = credit || poll_ci_verdict(repo, sha, budget: budget, deadline: deadline)
   { ci: ci, credited: !credit.nil?, diagnostic: (credit ? nil : diagnostic), diverged: diverged }
 end
 
@@ -3186,7 +3220,8 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
     # verdict resolution below credits the IDENTICAL TREE already earned instead of
     # re-running it — fail-closed into the poll on any non-credit. Repo-generic; see
     # resolve_release_ci_verdict.
-    verdict  = resolve_release_ci_verdict(repo, path, sha)
+    budget   = ci_poll_budget_for(repo, sha)
+    verdict  = resolve_release_ci_verdict(repo, path, sha, budget: budget)
     ci       = verdict[:ci]
     credited = verdict[:credited]
     ok = ci_pass?(ci)
@@ -3202,7 +3237,7 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
     record_qa_gate(rel_slug, repo, sha, cmd, ci, ok)
     next if ok
 
-    abort!(pre_qa_ci_abort(repo, sha, ci))
+    abort!(pre_qa_ci_abort(repo, sha, ci, budget))
   end
 
   # SELF-GATED GEM pass — a GEM-ONLY release's own G3 verdict. A self-gated gem
@@ -3240,7 +3275,8 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
       abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the pre-QA gate — fetch, then re-run") unless ok
       sha = out.strip
 
-      verdict  = resolve_release_ci_verdict(repo, path, sha)
+      budget   = ci_poll_budget_for(repo, sha)
+      verdict  = resolve_release_ci_verdict(repo, path, sha, budget: budget)
       ci       = verdict[:ci]
       credited = verdict[:credited]
       ok = ci_pass?(ci)
@@ -3251,7 +3287,7 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
       record_qa_gate(rel_slug, repo, sha, cmd, ci, ok)
       next if ok
 
-      abort!(pre_qa_ci_abort(repo, sha, ci))
+      abort!(pre_qa_ci_abort(repo, sha, ci, budget))
     end
   end
 end
@@ -5961,7 +5997,9 @@ def gem_ci_failure(repo, sha, version)
   end
 
   say("  gem CI gate: GitHub's verdict for #{repo}@#{short(sha)} — the tip this publish would push")
-  ci = poll_ci_verdict(repo, sha)
+  # Held for the WORKFLOW-SIZED budget, not the flat window: the verdict carries Consumer
+  # CI, which outlasts 1200 s on a fresh tip (see ci_poll_budget_for). Still fail-closed.
+  ci = poll_ci_verdict(repo, sha, budget: ci_poll_budget_for(repo, sha))
   return nil if ci_pass?(ci)
 
   gem_ci_abort(repo, sha, version, ci)
