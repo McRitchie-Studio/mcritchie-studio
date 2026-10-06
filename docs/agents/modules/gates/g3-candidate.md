@@ -267,7 +267,14 @@ certifies on **exactly one** state (`green`). A just-merged `release` SHA report
 CI `pending` for the first minutes, so the gate **polls** the not-yet-concluded states
 (`none`/`pending`/`unverified`) — holding and re-reading until CI concludes or a bounded
 timeout elapses — instead of aborting the sweep's first run on the first pending read
-(`RELEASE_CI_POLL_TIMEOUT` / `RELEASE_CI_POLL_INTERVAL` bound it; defaults ~1200s / 15s).
+(re-read every `RELEASE_CI_POLL_INTERVAL`, default 15s). The window is **sized from the
+workflows on the SHA under test**: the longest `needs:` chain of job `timeout-minutes` plus
+10 min of queue headroom, never below `RELEASE_CI_POLL_TIMEOUT` (default 1200s) and never
+above `RELEASE_CI_POLL_CEILING` (default 7200s); an unreadable workflow set keeps the
+1200s floor. The gem publish gate uses the same budget, because studio-engine's verdict
+includes Consumer CI, which outlasts 1200s on a fresh tip
+(`bin/lib/ci_poll_budget.rb`, task `gem-gate-outwaits-consumer-ci`). Only the wait on a
+pending verdict widens: red and unreadable still abort on the first read.
 A false green here deploys an **untested** SHA to QA, so an absent, still-pending, or
 unreadable verdict must **never** read as a pass:
 
