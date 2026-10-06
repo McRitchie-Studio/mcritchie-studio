@@ -104,6 +104,7 @@ heartbeat file on disk has a row, and each soul SOP row is labelled
 | Pokemon download youtube SOP (yt-dlp H.264 download of a YouTube video or section) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | Pokemon download tiktok SOP (yt-dlp download of a TikTok video; unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
 | Pokemon download instagram SOP (yt-dlp download of an Instagram reel or post; cookie path unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
+| Pokemon email image SOP (make an email header with Alex in a Claude Code session: show base assets, generate, iterate, approve on his word, export) | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane (`bin/task begin` / `bin/submit`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane entry rules (where each command runs, author set, submit-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |
