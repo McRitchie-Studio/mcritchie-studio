@@ -1,8 +1,32 @@
 const { test, expect } = require("@playwright/test");
+const { VISITOR } = require("./helpers");
 
-// [e2e] Public board navigation reaches the spawned-Pokemon Pokédex. This stays
-// data-agnostic so it can run against local seed, QA, and production.
-test("pokedex is linked from the board nav and renders @qa-readonly", async ({ page }) => {
+// [e2e] The Pokédex and the board that links to it sit behind the admin wall
+// (app/controllers/concerns/admin_wall.rb). @qa-readonly: bin/prod-smoke runs this
+// against QA and PRODUCTION as a visitor, so it asserts the wall — the visitor is
+// sent to sign-in from both, and never reaches the board nav's Pokédex link.
+test.describe("pokedex admin wall", () => {
+  test.use({ storageState: VISITOR });
+
+  test("pokedex and its board nav send a visitor to sign-in @qa-readonly", async ({ page, request }) => {
+    for (const path of ["/pokedex", "/deployments"]) {
+      const res = await request.get(path, { maxRedirects: 0 });
+      expect(res.status(), `${path} is walled`).toBe(302);
+      expect(new URL(res.headers()["location"], "http://host").pathname, `${path} redirects to sign-in`).toBe("/login");
+
+      await page.goto(path);
+      expect(new URL(page.url()).pathname, `${path} lands on sign-in`).toMatch(/^\/(login|signin)$/);
+      await expect(page.locator('input[name="email"]')).toBeVisible();
+      await expect(page.locator("a[href='/pokedex']")).toHaveCount(0);
+      await expect(page.locator("[data-test='pokedex']")).toHaveCount(0);
+    }
+  });
+});
+
+// [e2e] Board navigation reaches the spawned-Pokemon Pokédex, as the seeded admin.
+// Data-agnostic, but local lane only (prod-smoke has no admin session), so NOT
+// @qa-readonly.
+test("pokedex is linked from the board nav and renders", async ({ page }) => {
   const board = await page.goto("/deployments");
   expect(board.ok()).toBe(true);
 
@@ -19,11 +43,11 @@ test("pokedex is linked from the board nav and renders @qa-readonly", async ({ p
   await expect(page.locator("[data-test='recent-pokemon-actions']")).toBeVisible();
 });
 
-// [e2e] The collection grid. Data-agnostic like the test above — it runs against local
-// seed, QA, and production, so it asserts the grid's STRUCTURE (a cell per seeded
-// species, every cell in a drawable state) and derives the expected count from the
-// page's own dex total rather than from any fixture.
-test("pokedex collection grid draws a cell per species and flips shiny @qa-readonly", async ({ page }) => {
+// [e2e] The collection grid, as the seeded admin. Data-agnostic like the test above:
+// it asserts the grid's STRUCTURE (a cell per seeded species, every cell in a
+// drawable state) and derives the expected count from the page's own dex total
+// rather than from any fixture.
+test("pokedex collection grid draws a cell per species and flips shiny", async ({ page }) => {
   const response = await page.goto("/pokedex");
   expect(response.ok()).toBe(true);
 
