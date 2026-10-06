@@ -6,9 +6,10 @@ require Rails.root.join("db/seeds/data/recast_video.rb").to_s
 
 # [component] One performer card on the cast panel: its still on a signed URL,
 # its sightings as YouTube timecode links, the optional artist typeahead, and
-# the Swap Person toggle (off by default; on, the chosen athlete or the people
-# search, the look dropdown, its preview and the generate form): off, recast,
-# pending, legacy kept, and after the cast is confirmed.
+# Replace with (the people search on every card; a pick is the swap and shows
+# the chosen athlete, the look dropdown, its preview and the generate form;
+# the bottom-pinned Keep Original / Swap back button once someone is remembered): none, recast, kept, pending,
+# legacy kept, the production shape, and after the cast is confirmed.
 class MusicVideoPerformerViewTest < ActionView::TestCase
   setup do
     @video = NightCallCast.seed!
@@ -37,6 +38,24 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     end
   end
 
+  # Top to bottom: heading; Replace with (inputs to swap a player in); description and sightings;
+  # then pinned at the bottom the Keep Original / Swap back button and, under it, who is on screen.
+  test "Replace with sits at the top of the card; the swap toggle and naming are pinned at the bottom" do
+    @performer.update!(confidence_note: "Seen in the armchair throughout.")
+    render_card
+    at = ->(test) { rendered.index(%(data-test="#{test}")) || flunk("#{test} not rendered") }
+
+    assert_operator at.("performer-label"), :<, at.("replace-with")
+    assert_operator at.("replace-with"), :<, at.("performer-note")
+    assert_operator at.("replace-with"), :<, at.("sightings-clear")
+    assert_operator at.("sightings-partial"), :<, at.("card-bottom")
+    assert_operator at.("card-bottom"), :<, at.("keep-toggle")
+    assert_operator at.("keep-toggle"), :<, at.("performer-resolution")
+    assert_operator at.("performer-resolution"), :<, at.("performer-typeahead")
+    assert_select "[data-test='card-bottom'].mt-auto", 1, "pinned to the bottom, so cards in a row line up"
+    assert_select "[data-test='performer-recast'].flex.flex-col.flex-1", 1, "the card body is the flex column it is pinned in"
+  end
+
   test "an unreachable still says so instead of a broken image" do
     render_card(urls: {})
 
@@ -53,52 +72,49 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='sightings-partial'] a", text: "3:27"
   end
 
-  test "an unnamed performer reads Not named, with the optional typeahead, create-new and extra controls" do
+  test "an unnamed performer reads Not named, with the naming search always open, create-new and extra controls" do
     render_card
 
-    assert_select "[data-test='performer-badge']", "Not named"
-    # Collapsed by default: a quiet link, the search behind it under its own heading.
-    assert_select "[data-test='performer-artist-optional'][x-data='{ naming: false }']" do
-      assert_select "button[data-test='name-artist-open'][x-show='!naming']", /Who is this on screen\?\s+\(optional\)/
-      assert_select "[data-test='naming-panel'][x-show='naming'][x-cloak]" do
-        assert_select "p.label-upper", /Who is this on screen\?/
-        assert_select "[data-test='performer-typeahead']", 1
-      end
-    end
-    assert_select "[data-test='swap-body'] p.label-upper", "Replace with"
-    assert_select "button[data-test='mark-extra']", "Mark as extra"
-    assert_select "button", text: "Extra, not a named artist", count: 0
-
-    assert_select "[data-test='performer-typeahead'][x-data='castTypeahead()'][data-search-url='/artists/search.json']" do
-      assert_select "form[action='/music_videos/steve-aoki-night-call/performers/2'] input[name='_method'][value='patch']"
-      assert_select "input[role='combobox'][x-model='query']"
-      assert_select "input[type='hidden'][name='artist_slug']"
-      assert_select "input[type='hidden'][name='person_slug']"
+    assert_select "[data-test='performer-badge'][data-state='none']", "Not named"
+    assert_select "[data-test='performer-badge'][x-text]", 1, "the badge follows a naming save without a reload"
+    # No link or Change to press first: a small label and the input, quieter than Replace with.
+    assert_select "[data-test='performer-resolution'][x-data='namingCard()'][data-search-url='/artists/search.json'][data-ordinal='2']" do |node|
+      assert_equal "/music_videos/steve-aoki-night-call/performers/2", node.first["data-save-url"]
+      assert_nil node.first["data-named"]
+      assert_select "label.text-xs[for='artist-search-2']", /Who is this on screen\?\s+\(optional\)/
+      assert_select "[data-test='performer-typeahead']:not([x-show]):not([x-cloak]) input#artist-search-2[role='combobox'][x-model='query'][placeholder='Search artists and people'].py-1\\.5", 1
       assert_select "[data-test='typeahead-create']"
-      assert_select "[data-test='create-artist'] input[name='new_artist_name']"
+      assert_select "[data-test='create-artist'][x-cloak] button[data-test='create-artist-submit']", "Create and link"
+      assert_select "button[data-test='mark-extra']:not([x-cloak])", "Mark as extra"
+      assert_select "[data-test='performer-artist'][x-cloak]", 1
+      assert_select "[data-test='performer-extra'][x-cloak]", 1
+      assert_select "form", 0, "every naming change saves itself as JSON"
     end
-    assert_select "form[action='/music_videos/steve-aoki-night-call/performers/2'] input[name='extra'][value='1']"
+    assert_select "[data-test='name-artist-open'], [data-test='performer-artist-change'], [data-test='naming-panel']", 0
+    assert_select "[data-test='replace-with'] > div > label.label-upper[for='recast-search-2']", "Replace with"
     assert_includes rendered, %(@input.debounce.250ms="search()")
+    assert_includes rendered, %(@click="markExtra()")
   end
 
   # A synthetic artist: only the operator maps an on-screen person to a real one.
-  test "a labelled performer shows its artist and a Change control, not the typeahead" do
+  test "a named performer shows its artist with a small Clear, the search still open underneath" do
     @performer.update!(artist_slug: Artist.create!(slug: "test-artist-a", name: "Test Artist A", kind: "person").slug)
     render_card
 
     assert_select "[data-test='performer-card'][data-resolved='true'][data-named='true']"
-    assert_select "[data-test='performer-badge']", "Named"
-    assert_select "[data-test='performer-artist'][title='test-artist-a']" do
-      assert_select "p.label-upper", "On screen"
-      assert_select "[data-test='performer-artist-name']", "Test Artist A"
-      assert_select "[data-test='performer-artist-utility']", "musician"
-      assert_select "svg[data-test='performer-artist-placeholder']:not([hidden])"
+    assert_select "[data-test='performer-badge'][data-state='named']", "Named"
+    assert_select "[data-test='performer-resolution']" do |node|
+      assert_equal({ "kind" => "artist", "slug" => "test-artist-a", "name" => "Test Artist A", "avatar_url" => nil,
+                     "vocation" => "musician", "team" => nil }, JSON.parse(node.first["data-named"]))
+      assert_select "[data-test='performer-artist']:not([x-cloak])" do
+        assert_select "[data-test='performer-artist-name']", "Test Artist A"
+        assert_select "[data-test='performer-artist-utility']", "musician"
+        assert_select "button[data-test='performer-artist-clear']", "Clear"
+      end
+      assert_select "[data-test='performer-typeahead']:not([x-cloak]) input[role='combobox']", 1
     end
-    assert_select "[data-test='performer-resolution']", text: /test-artist-a/, count: 0
-    assert_select "[data-test='performer-typeahead']", 0
-    assert_select "button[data-test='performer-artist-change']", "Change"
-    assert_select "input[name='clear'][value='1']"
-    assert_select "[data-test='swap-offer']", 0, "an artist with no Person and no looks offers no swap"
+    assert_select "[data-test='swap-offer']", 1
+    assert_nil css_select("[data-test='performer-recast']").first["data-offer"], "an artist with no Person and no looks offers no swap"
   end
 
   # A synthetic athlete: only the operator says who is on screen and who replaces them.
@@ -112,17 +128,19 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     @performer.update!(artist_slug: artist.slug)
     render_card(recast_looks: MusicVideos::LookOptions.for([athlete.slug]), recast_rows: People::SearchRows.for([athlete.slug]))
 
-    assert_select "[data-test='performer-artist'] img[data-test='performer-artist-headshot'][src=?]", cache.url
+    named = JSON.parse(css_select("[data-test='performer-resolution']").first["data-named"])
+    assert_equal [cache.url, "athlete", "Test City Testers"], named.values_at("avatar_url", "vocation", "team")
     assert_select "[data-test='performer-artist-utility']", "athlete · Test City Testers"
-    assert_select "[data-test='performer-recast'][data-state='off'][data-swap-on='false']" do |node|
+    assert_select "[data-test='performer-recast'][data-state='none'][data-keep='false']" do |node|
       offer = JSON.parse(node.first["data-offer"])
       assert_equal ["test-athlete-alpha", "Test Athlete Alpha", "Test City Testers"], offer.values_at("slug", "name", "team")
       assert_equal ["Home Blue", "Away White"], offer["looks"].pluck("descriptor")
-      assert_select "button[data-test='swap-offer']", "Swap with Test Athlete Alpha?"
-      assert_select "[data-test='swap-off-note']", "Check to replace this person with an athlete and choose a look."
+      assert_select "button[data-test='swap-offer'][x-show=?]", "offer && (!swapping || athlete.slug !== offer.slug)", /Swap with/
+      assert_select "[data-test='recast-typeahead'] input[role='combobox']", 1, "the search is there beside the offer"
     end
     assert_nil @performer.reload.recast_person_slug, "the offer is offered, not done"
     assert_includes rendered, %(@click="offerSwap()")
+    assert_includes rendered, %(@naming-saved.window="onNamed($event.detail)")
   end
 
   test "once the cast is confirmed the name and the swap both stay open to change" do
@@ -130,28 +148,37 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     @video.confirm_cast!
     render_card(@performer.reload)
 
-    assert_select "[data-test='performer-extra']"
-    assert_select "[data-test='performer-resolution'] button[data-test='performer-artist-change']", "Change"
-    assert_select "[data-test='performer-recast'][data-state='off'][data-save-url=?]", recast_path
-    assert_select "button[data-test='swap-toggle'][role='switch']", 1
-    assert_includes rendered, %(@click="toggle()")
+    # An extra is a small removable chip, the search still open beside it.
+    assert_select "[data-test='performer-resolution'] [data-test='performer-extra']:not([x-cloak])", /An extra, not a named artist/ do
+      assert_select "button[data-test='performer-extra-remove'][aria-label='Not an extra']"
+    end
+    assert_select "[data-test='performer-resolution'] button[data-test='mark-extra'][x-cloak]", 1
+    assert_select "[data-test='performer-resolution'] [data-test='performer-typeahead'] input[role='combobox']", 1
+    assert_select "[data-test='performer-badge'][data-state='extra']", "Extra"
+    assert_select "[data-test='performer-recast'][data-state='none'][data-save-url=?]", recast_path
+    assert_select "[data-test='recast-typeahead']:not([x-show]) input[role='combobox']", 1
+    assert_includes rendered, %(@click="keepOriginal()")
+    assert_includes rendered, %(@click="swapBack()")
     assert_includes rendered, %(@click="retry()")
-    assert_includes rendered, %(@click="changeAthlete()")
+    assert_includes rendered, %(@click="clearPerson()")
   end
 
-  test "a card with no swap: the toggle reads Don't Swap Person, off, and the search waits behind it" do
+  test "a card with no pick shows only the Replace with search: no toggle, no hint, no Keep Original" do
     render_card
 
-    assert_select "[data-test='performer-recast'][x-data='swapCard()'][data-state='off']" do |node|
+    assert_select "[data-test='performer-recast'][x-data='swapCard()'][data-state='none'][data-keep='false']" do |node|
       assert_equal ["", "", "/music_videos/steve-aoki-night-call/performers/2/recast"],
                    node.first.attributes.values_at("data-saved-person", "data-saved-look", "data-save-url").map(&:value)
-      assert_select "button[data-test='swap-toggle'][role='switch'][aria-checked='false']", "Don’t Swap Person"
-      assert_select "[data-test='swap-off-note']", "Check to replace this person with an athlete and choose a look."
-      assert_select "[data-test='swap-body'][x-show='on'][x-cloak]" do
-        assert_select "[data-test='recast-typeahead'][x-show='!athlete || searching']" do
-          assert_select "input[role='combobox'][placeholder='Search people by name']"
-          assert_select "[data-test='recast-no-match']", /No person matches that name/
-        end
+      # Always there: not behind a toggle, not hidden while someone is chosen.
+      assert_select "[data-test='recast-typeahead']:not([x-show]):not([x-cloak])" do
+        assert_select "input#recast-search-2[role='combobox'][placeholder='Search people by name']"
+        assert_select "[data-test='recast-no-match']", /No person matches that name/
+      end
+      # Nobody remembered: the bottom toggle waits hidden, neither Keep Original nor Swap back.
+      assert_select "[data-test='card-bottom'] [data-test='keep-toggle'][x-show='athlete'][x-cloak]", 1
+      assert_select "input[type='checkbox']", 0, "no Keep Original checkbox"
+      assert_select "[data-test='keep-original-note']", 0, "no muted kept line under the search"
+      assert_select "[data-test='swap-body'][x-show='swapping'][x-cloak]" do
         assert_select "[data-test='look-picker'][x-show='athlete']", 1
       end
       assert_select "[data-test='swap-save-state'][role='status']" do
@@ -164,39 +191,76 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='performer-recast'][data-new-look-url=?]",
                   "/people/__slug__?return_to=%2Fmusic_videos%2Fsteve-aoki-night-call%23person-2#new-model"
     assert_select "[data-test='performer-recast'][data-athlete]", 0, "nobody is chosen until the search says so"
+    assert_select "[data-test='swap-toggle'], [role='switch']", 0, "no Swap Person toggle"
+    assert_no_match(/Swap Person|Check to replace|Pick who replaces them/, rendered)
     assert_select "button", text: "Keep as is", count: 0
     assert_select "[data-test='look-cast']", 0, "every pick saves itself: no Cast button"
     assert_select "[data-test='performer-recast'] form[action=?]", recast_path, 0
   end
 
-  test "a swap turned off remembers the athlete: the card is off but carries him for the toggle to restore" do
+  test "kept: the athlete is remembered, the bottom button reads Swap back to him, and the swap block waits hidden" do
     athlete = RecastVideo.athlete!
     away = athlete.appearances.order(:created_at, :id).last
     @performer.update!(recast_person_slug: athlete.slug, recast_appearance_slug: away.slug, recast_keep: true)
     render_card
 
-    assert_select "[data-test='performer-recast'][data-state='off'][data-swap-on='false']" do |node|
+    assert_select "[data-test='performer-recast'][data-state='kept'][data-keep='true']" do |node|
       assert_equal [athlete.slug, away.slug], node.first.attributes.values_at("data-saved-person", "data-saved-look").map(&:value)
       assert_equal "Test Athlete Alpha", picker_data["name"]
-      assert_select "button[data-test='swap-toggle'][aria-checked='false']", "Don’t Swap Person"
+      # One button, same place as Keep Original: now Swap back to <name>, with his headshot.
+      assert_select "[data-test='card-bottom'] [data-test='keep-toggle']:not([x-cloak])" do
+        assert_select "button[data-test='swap-back']:not([x-cloak])", /Swap back to\s+Test Athlete Alpha/ do
+          assert_select "[data-test='search-row-avatar']", 1
+          assert_select "[data-test='swap-back-name']", "Test Athlete Alpha"
+        end
+        assert_select "button[data-test='keep-original'][x-cloak]", 1
+      end
+      assert_includes rendered, %(@click="swapBack()")
       assert_select "[data-test='swap-body'][x-cloak]"
+      assert_select "[data-test='recast-typeahead']:not([x-cloak]) input[role='combobox']", 1, "a new pick is the other way out"
     end
+    assert_select "[data-test='performer-card'][data-resolved='true']"
   end
 
-  test "on with nobody picked asks who, and says nothing is saved until then" do
-    render_card
-
-    assert_select "[data-test='swap-pick-note'][x-show='on && !athlete']", /Pick who replaces them\. Nothing is saved until you do\./
-  end
-
-  test "the legacy kept card reads the same as no swap" do
+  test "the legacy kept card with nobody remembered reads as no pick: the search alone" do
     @performer.update!(recast_keep: true)
     render_card
 
-    assert_select "[data-test='performer-recast'][data-state='off'][data-saved-person='']" do
-      assert_select "button[data-test='swap-toggle'][aria-checked='false']", "Don’t Swap Person"
+    assert_select "[data-test='performer-recast'][data-state='none'][data-keep='false'][data-saved-person='']" do
+      assert_select "[data-test='keep-toggle'][x-cloak]"
+      assert_select "[data-test='swap-body'][x-cloak]"
     end
     assert_select "[data-test='performer-card'][data-resolved='true']"
+  end
+
+  # The production row piece 10 shipped onto and this card must read the same (bigxthaplug-6wa,
+  # 2026-10-05), rebuilt with synthetic people: Person 1 swapped to an athlete in a look,
+  # Persons 2-5 saved under the old keep as is with nobody, the cast confirmed.
+  test "the production shape: Person 1 shows the athlete with Keep Original unchecked, the rest only the search" do
+    athlete = RecastVideo.athlete!
+    home = athlete.appearances.order(:created_at, :id).first
+    video = RecastVideo.video!
+    first = video.video_performers.find_by!(ordinal: 1)
+    first.update!(recast_person_slug: athlete.slug, recast_appearance_slug: home.slug, recast_keep: false)
+    others = (3..5).map { |n| video.video_performers.create!(ordinal: n, label: "person #{n}", recast_keep: true) }
+    others.unshift(video.video_performers.find_by!(ordinal: 2).tap { |p| p.update!(recast_keep: true) })
+    looks = MusicVideos::LookOptions.for([athlete.slug])
+
+    render_card(first, urls: {}, recast_looks: looks)
+    assert_select "[data-test='performer-recast'][data-state='recast'][data-keep='false']" do
+      assert_select "[data-test='swap-body']:not([x-cloak]) [data-test='swap-athlete-name']", "Test Athlete Alpha"
+      assert_select "[data-test='card-bottom'] [data-test='keep-toggle']:not([x-cloak]) button[data-test='keep-original']:not([x-cloak])", "Keep Original"
+      assert_select "button[data-test='swap-back'][x-cloak]", 1
+      assert_equal home.slug, css_select("[data-test='performer-recast']").first["data-saved-look"]
+    end
+
+    others.each do |p|
+      @rendered = +"" # one card at a time
+      render_card(p.reload, urls: {}, recast_looks: looks)
+      assert_select "[data-test='performer-recast'][data-state='none'][data-saved-person='']", 1, p.name
+      assert_select "[data-test='keep-toggle'][x-cloak]", 1, "#{p.name} shows neither Keep Original nor Swap back"
+      assert_select "[data-test='swap-body'][x-cloak]", 1
+    end
   end
 
   # The picker is an Alpine template the browser fills (e2e/music_video_look_picker.spec.js).
@@ -313,8 +377,8 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     render_card(recast_rows: People::SearchRows.for([lookless.slug]))
 
     assert_select "[data-test='performer-recast'][data-state='pending']" do
-      assert_select "button[data-test='swap-toggle'][aria-checked='true']", "Swap Person"
-      assert_select "[data-test='swap-athlete-name']", "Test Athlete Gamma"
+      assert_select "[data-test='card-bottom'] [data-test='keep-toggle']:not([x-cloak]) button[data-test='keep-original']:not([x-cloak])", "Keep Original"
+      assert_select "[data-test='swap-body']:not([x-cloak]) [data-test='swap-athlete-name']", "Test Athlete Gamma"
       assert_select "[data-test='recast-pending'][x-cloak]", 1, "no looks to choose from: the note waits hidden"
       assert_equal({ "slug" => "test-athlete-gamma", "name" => "Test Athlete Gamma", "avatar_url" => nil, "vocation" => "athlete",
                      "team" => nil, "looks" => [] }, picker_data)
@@ -323,7 +387,7 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
   end
 
   # A synthetic athlete and team: only the operator says who replaces an on-screen person.
-  test "a recast card shows the chosen athlete's avatar, name and team, every look and the saved one, and Change" do
+  test "a recast card shows the chosen athlete's avatar, name and team, every look and the saved one, and Clear" do
     athlete = RecastVideo.athlete!
     team = Team.create!(slug: "test-city-testers", name: "Test City Testers")
     Athlete.create!(person_slug: athlete.slug, sport: "football", team_slug: team.slug)
@@ -335,12 +399,12 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='performer-recast'][data-state='recast']" do |node|
       assert_equal [athlete.slug, away.slug, home.slug],
                    node.first.attributes.values_at("data-saved-person", "data-saved-look", "data-fresh-look").map(&:value)
-      assert_select "button[data-test='swap-toggle'][aria-checked='true']", "Swap Person"
-      assert_select "[data-test='swap-athlete'][x-show='athlete && !searching']" do
+      assert_select "[data-test='card-bottom'] [data-test='keep-toggle']:not([x-cloak]) button[data-test='keep-original']:not([x-cloak])", "Keep Original"
+      assert_select "[data-test='swap-body'][x-show='swapping']:not([x-cloak]) [data-test='swap-athlete']" do
         assert_select "[data-test='search-row-avatar'] template[x-if='athlete && athlete.avatar_url && !athlete.avatarFailed']"
         assert_select "[data-test='swap-athlete-name']", "Test Athlete Alpha"
         assert_select "[data-test='swap-athlete-team'][x-text=?]", "athlete ? athlete.team : ''"
-        assert_select "button[data-test='swap-change']", "Change"
+        assert_select "button[data-test='swap-clear']", "Clear"
       end
       assert_equal ["test-athlete-alpha", "Test Athlete Alpha", "athlete", "Test City Testers"],
                    picker_data.values_at("slug", "name", "vocation", "team")
@@ -382,6 +446,6 @@ class MusicVideoPerformerViewTest < ActionView::TestCase
 
     assert_select "[data-test='performer-card'][data-resolved='true']"
     assert_select "[data-test='performer-typeahead']", 1
-    assert_select "[data-test='performer-artist-optional']", /\(optional\)/
+    assert_select "[data-test='performer-resolution'] label", /\(optional\)/
   end
 end

@@ -114,14 +114,15 @@ test("a building look repaints in place when the poll says its sheet is ready, a
   });
   await page.goto(VIDEO);
 
-  // A card not swapped: on reveals the search, and nothing is chosen until the search says so.
+  // A card with nobody picked shows the search alone; nothing is chosen until the search says so.
+  // (A retry may find it picked: Clear forgets the person.)
   const picker = recast(page, 1);
-  if ((await picker.getAttribute("data-state")) !== "off") await picker.locator("[data-test='swap-toggle']").click();
-  await expect(picker).toHaveAttribute("data-state", "off");
-  await picker.locator("[data-test='swap-toggle']").click();
-  await expect(picker).toHaveAttribute("data-state", "open");
+  if ((await picker.getAttribute("data-state")) === "kept") await picker.locator("[data-test='swap-back']").click();
+  if ((await picker.getAttribute("data-state")) !== "none") await picker.locator("[data-test='swap-clear']").click();
+  await expect(picker).toHaveAttribute("data-state", "none");
+  await expect(picker.locator("[data-test='keep-toggle']")).toBeHidden();
   await expect(picker.locator("[data-test='look-picker']")).toBeHidden();
-  await picker.getByRole("combobox").fill("demo");
+  await picker.locator("[data-test='recast-typeahead']").getByRole("combobox").fill("demo");
   // The search row says what is saved for each person: the default look's sheet and name beside the count.
   const delta = picker.locator("[data-test='recast-option']").filter({ hasText: "Demo Winger Delta" });
   await expect(delta.locator("[data-test='search-row-badge']")).toHaveText(/^\d+ looks$/);
@@ -171,9 +172,8 @@ test("an athlete with no look is offered generate first look, and the new look c
   await page.goto(VIDEO);
 
   const picker = recast(page, 3);
-  await expect(picker).toHaveAttribute("data-state", "off");
-  await picker.locator("[data-test='swap-toggle']").click();
-  await picker.getByRole("combobox").fill("novice echo");
+  await expect(picker).toHaveAttribute("data-state", "none");
+  await picker.locator("[data-test='recast-typeahead']").getByRole("combobox").fill("novice echo");
   const rookie = picker.locator("[data-test='recast-option']").filter({ hasText: "Demo Novice Echo" });
   await expect(rookie.locator("[data-test='search-row-badge']")).toHaveText("0 looks");
   await rookie.click();

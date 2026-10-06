@@ -1,19 +1,27 @@
 # frozen_string_literal: true
 
 # The operator's answer for one performer on the cast panel: an artist, a
-# person from People, a new artist, an extra, or clear.
+# person from People, a new artist, an extra, or clear. Naming is optional.
+#
+# The cast card's always-visible "Who is this on screen?" search saves each
+# pick at once through the JSON variant (Accept: application/json): 200 with
+# what the card shows (MusicVideos::CastCardNaming), 422 with the refusal. The
+# HTML variant redirects back to the card, as before.
 class VideoPerformersController < ApplicationController
   before_action :require_admin
   before_action :set_performer
 
   def update
     refusal = refusal_for(resolution)
-    return back(alert: "#{@performer.name} not updated: #{refusal}.") if refusal
+    return refuse("#{refusal}.") if refusal
 
     rescue_and_log(target: @video) { MusicVideos::ResolvePerformer.new(@performer).call(**resolution) }
-    back(notice: notice_for(@performer.reload))
+    @performer.reload
+    return render(json: saved_json) if json?
+
+    back(notice: notice_for(@performer))
   rescue MusicVideos::ResolvePerformer::Refused, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
-    back(alert: "#{@performer.name} not updated: #{e.message}")
+    refuse(e.message)
   end
 
   private
@@ -36,6 +44,19 @@ class VideoPerformersController < ApplicationController
     return if r[:extra] || r[:clear] || r[:artist_slug] || r[:person_slug] || r[:new_artist_name]
 
     "choose an artist or person, or name a new artist"
+  end
+
+  def json? = request.format.json?
+
+  def refuse(reason)
+    return render(json: { error: "#{@performer.name} not updated: #{reason}" }, status: 422) if json?
+
+    back(alert: "#{@performer.name} not updated: #{reason}")
+  end
+
+  def saved_json
+    { named: MusicVideos::CastCardNaming.state(@performer), offer: MusicVideos::CastCardNaming.offer(@performer),
+      message: notice_for(@performer) }
   end
 
   def back(**flash)
