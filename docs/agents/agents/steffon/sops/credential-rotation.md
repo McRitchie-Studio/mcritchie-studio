@@ -10,16 +10,14 @@ public leak) rotates here first; lesser issues are triaged in
 `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`: `source ~/.zprofile.admin`, never through a pipe (the token lands
 in a subshell); with no such file, Alex runs `bin/setup-1pass-token --admin` once.
 **Placeholders:** `<VAR>` is the env-var name; `<item>` `<field>` `<vault>` the 1Password home;
-`<app>` `<file>` `<repo>` `<env>` one target. Substitute each. `$NEW`, `$OLD`, `$APPS` and
-`$ROTATED_AT` are shell variables this SOP assigns.
+`<app>` `<file>` `<repo>` `<env>` one target; substitute each. This SOP assigns `$NEW`, `$OLD`,
+`$APPS`, `$ROTATED_AT`.
 
-**Never print the value** in a terminal, transcript, task, PR, commit, log or report. List key
-names (`jq -r 'keys[]'`) and file names (`grep -rl`); hold the value in one shell variable. Digests
-stay in the shell, because the repo is public. A pushed value survives a force-push; a GitHub
-Support purge is Alex's call.
+**Never print the value** anywhere durable. List key names (`jq -r 'keys[]'`) and file names
+(`grep -rl`); hold the value in one shell variable; keep digests in the shell (the repo is
+public). A pushed value survives a force-push; a GitHub Support purge is Alex's call.
 
 ### Compare by digest — and a digest of nothing is not a comparison
-
 Two EMPTY values match: `sha256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`,
 which an unset var, a stripped `.env` line and a failed read all produce. Every comparison goes
 through this helper, pasted into the shell that runs Phases 4 and 5:
@@ -34,20 +32,17 @@ digest() {
   printf '%s' "$v" | shasum -a 256 | cut -c1-16
 }
 ```
-Reads: the vault (4.2), an app (`heroku config --json --app <app> | jq -r '.["<VAR>"] // empty' |
-digest`), and a `.env`, stripping one quote pair:
+Reads: the vault (4.2), an app (§2.1), and a `.env`, stripping one quote pair:
 ```bash
 grep -m1 '^<VAR>=' <file> | sed -E 's/^[^=]+=//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/' | digest
 ```
-EMPTY is the answer: stop, and never retry with a bare `shasum`. `heroku config:get` is banned
-(absent and empty print the same newline); ask `heroku config --json --app <app> | jq
-'has("<VAR>")'`. A failed Heroku read is empty on stdout, so first `heroku auth:whoami`
-(alex@mcritchie.studio) and `heroku config --json --app <app> | jq 'length'` (0 is a failed read).
+EMPTY is the answer: stop; never retry with a bare `shasum`. `heroku config:get` is banned (absent
+and empty print the same newline): ask `jq 'has("<VAR>")'` of `heroku config --json`. A failed
+read is empty on stdout: first `heroku auth:whoami`, then `jq 'length'` (0 is a failed read).
 
 ## Phase 1 — Enumerate every store
 
-Before minting, write one line per store: where, who writes it, value or public half. That list
-is the rotation; every later phase walks it.
+Before minting, list every store (where, writer, value or public half): the list is the rotation.
 
 | Store | How to ask | Writer |
 |---|---|---|
@@ -65,13 +60,12 @@ for app in $(heroku apps --all --json | jq -r '.[].name'); do
     "$(heroku config --json --app "$app" | jq 'has("<VAR>")')"
 done
 ```
-`keys=0` is a failed read. A lane sees only its own vaults; on `(101)` check `op service-account
-ratelimit`. Dependabot is its own store: `studio-engine`'s `consumer-ci.yml` reads
-`MCRITCHIE_AGENT_APP_ID` and `MCRITCHIE_AGENT_PRIVATE_KEY` from it on Dependabot PRs. Each desk
-holds the primary `.env` as it was at the desk's birth. The hub's CI `HEROKU_API_KEY`
-(`heroku.studio.applications`) is scripted: `bin/rotate-heroku-ci-key --dry-run`, then without
-the flag; then refresh `HEROKU_STUDIO_APPLICATIONS_API_KEY` in `~/.zprofile.admin`. The admin
-lane writes an Actions secret with the value on stdin:
+`keys=0` is a failed read. A lane sees only its own vaults (on `(101)`, check
+`op service-account ratelimit`). Dependabot is its own store; `studio-engine`'s `consumer-ci.yml` reads
+`MCRITCHIE_AGENT_APP_ID` and `MCRITCHIE_AGENT_PRIVATE_KEY` there. Desks hold birth-day `.env`
+copies. The hub's CI `HEROKU_API_KEY` (`heroku.studio.applications`) is scripted:
+`bin/rotate-heroku-ci-key --dry-run`, then without the flag, then refresh
+`HEROKU_STUDIO_APPLICATIONS_API_KEY` in `~/.zprofile.admin`. Actions secrets (4.4), admin lane:
 ```bash
 export GH_TOKEN="$(GH_APP_ITEM=github.mcritchie-admin /Users/alex/projects/mcritchie-studio/bin/gh-token)"
 : "${NEW:?refusing to set an empty value}" && printf '%s' "$NEW" | gh secret set <VAR> --env <env> -R McRitchie-Studio/<repo>
@@ -79,23 +73,21 @@ export GH_TOKEN="$(GH_APP_ITEM=github.mcritchie-admin /Users/alex/projects/mcrit
 
 ## Phase 2 — The data question
 
-What did the old value authenticate or ENCRYPT, and does that survive? An API key that only
-authenticated costs nothing extra. `SECRET_KEY_BASE` logs everyone out and kills magic links:
-announce it. A registered public half (a Solana key, a webhook secret) moves first (Phase 3).
-`MANAGED_WALLET_ENCRYPTION_KEY` is §2.1, which replaces 4.1 to 4.5. `RAILS_MASTER_KEY`
-re-encrypts: `EDITOR='code --wait' bin/rails credentials:edit`, copy the plaintext to
+What did the old value authenticate or ENCRYPT, and does it survive? A key that only authenticates
+costs nothing extra. `SECRET_KEY_BASE` logs everyone out and kills magic links: announce it. A
+registered public half (a Solana key, a webhook secret) moves first (Phase 3).
+`MANAGED_WALLET_ENCRYPTION_KEY` is §2.1 (it replaces 4.1 to 4.5). `RAILS_MASTER_KEY` re-encrypts:
+`EDITOR='code --wait' bin/rails credentials:edit`, copy the plaintext to
 `(umask 077; : > "$TMPDIR/creds.$$")`, delete the `.enc` and `config/master.key`, re-run
-`credentials:edit`, paste, commit the new `.enc`, `rm -f` the scratch file; key and ciphertext
-go live in one deploy, per app. The old value stays retrievable until a migration verifies, and
-a migration the running release cannot perform means no rotation.
+`credentials:edit`, paste, commit the new `.enc`, `rm -f` the scratch file; key and ciphertext go
+live in one deploy, per app. Keep the old value until a migration verifies; no migration in the
+running release, no rotation.
 
 ### 2.1 `MANAGED_WALLET_ENCRYPTION_KEY` — deploy first, then migrate
-
-`MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS` opens old rows and never seals. Per app holding the key:
-**Gate 0**, the code is RUNNING (pass only on `VERIFIED -- N of N row(s) open under the current
-key alone.` with N equal to the runner's count; record N); then mint, and hold the live old key
-(the vault and app digests of it match, none EMPTY, `$OLD` is 64 hex; otherwise stop, route to
-Jasper):
+`MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS` opens old rows, never seals. Per app: **Gate 0**, the
+code RUNS (only `VERIFIED -- N of N row(s) open under the current key alone.`, N equal to the
+runner's count; record N); mint; hold the live old key (vault and app digests match, none EMPTY,
+`$OLD` is 64 hex; otherwise stop and route to Jasper):
 ```bash
 heroku run --exit-code --app turf-monster-mainnet bin/rails solana:verify_managed_wallet_keys
 heroku run --exit-code --app turf-monster-mainnet bin/rails runner \
@@ -106,8 +98,8 @@ printf '%s' "$NEW" | digest; printf '%s' "$OLD" | digest
 heroku config --json --app turf-monster-mainnet | jq -r '.["MANAGED_WALLET_ENCRYPTION_KEY"] // empty' | digest
 [[ "$OLD" =~ ^[0-9a-fA-F]{64}$ ]] && echo "OLD: 64 hex" || echo "OLD: NOT 64 hex"
 ```
-Rehearse on a one-off dyno, app untouched. Pass only on header `ROTATION`, `total: N
-would-migrate: N  already-new: 0  failed: 0`, and a last line `DRY RUN CLEAN`:
+Rehearse on a one-off dyno, app untouched. Pass only on header `ROTATION`, the counts
+`total: N  would-migrate: N  already-new: 0  failed: 0`, and a last line `DRY RUN CLEAN`:
 ```bash
 : "${NEW:?NEW is not set}" && : "${OLD:?OLD is not set}" && [ "$NEW" != "$OLD" ] &&
 heroku run --exit-code --app turf-monster-mainnet \
@@ -125,8 +117,7 @@ heroku config:set "MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$OLD" \
 ```
 Migrate (replaces 4.5): the same task with `--env "DRY_RUN=1"`, then without it. Complete only on
 `failed: 0`, `Read-back: T of T` and a last line `COMPLETE`; `NOT COMPLETE` is safe to re-run.
-Old ciphertext in a backup still opens with the old key, so a COMPROMISED key is an incident:
-rotate, move funds to fresh wallets, destroy old backups, tell Alex.
+A COMPROMISED key is an incident (old backups still open with it): rotate, move funds, tell Alex.
 
 ## Phase 3 — Order the moves
 
@@ -151,7 +142,7 @@ proposals, read the mask below, then propose ONE transaction, `removeMember(<old
 `addMember(<new pubkey>, { mask: $WANT_MASK })`, threshold unchanged, clean approvers only (two
 transactions stale the second, 6007). Then the devnet seat PR, then Phase 4.
 ```bash
-OLD_MEMBER=<old pubkey>
+OLD_MEMBER=<old pubkey>   # squads_members() is defined in the next section
 BEFORE=$(squads_members) || BEFORE=
 WANT_MASK=$(printf '%s\n' "$BEFORE" | awk -v k="$OLD_MEMBER" '$1==k { print $2 }')
 WANT_THRESHOLD=$(printf '%s\n' "$BEFORE" | awk '$1=="threshold" { print $2 }')
@@ -162,7 +153,6 @@ printf 'expect %s members at threshold %s after the rotation\n' "$WANT_COUNT" "$
 ```
 
 #### Verifying the Squads rotation
-
 ```bash
 SQUADS_CLUSTER=<cluster>   # devnet or mainnet; no default. Live chain, not squad.json.
 squads_members() {
@@ -196,25 +186,20 @@ check_squads_rotation() {
 }
 check_squads_rotation
 ```
-A mask FAIL is fixed now, while the approvers are present, by another transaction:
-`removeMember(<new pubkey>)` + `addMember(<new pubkey>, { mask: $WANT_MASK })`.
+Fix a mask FAIL now with one more transaction: `removeMember(<new pubkey>)` + `addMember(<new pubkey>, { mask: $WANT_MASK })`.
 
 ## Phase 4 — Execute
 
-An empty `$NEW` succeeds and empties every store, so each write chains its guard with `&&`: an
-interactive shell prints a bare refusal and runs the next line anyway.
-
 ### 4.1 Mint, and put the value in `$NEW`
-
-Mint at the provider. If Alex holds the value as `$T` (`credential-filing` §5), he either runs
-Phases 4 and 5 himself or enters it here; say which.
+Mint at the provider. An empty `$NEW` empties every store, so each write chains its guard with `&&`
+(an interactive shell prints a bare refusal and runs on). If Alex holds the value as `$T`
+(`credential-filing` §5), he runs Phases 4 and 5 or enters it here; say which.
 ```bash
 read -rs NEW                   # in the shell that runs Phases 4 and 5
 printf '%s' "$NEW" | digest    # non-EMPTY, matches the provider's copy
 ```
 
 ### 4.2 File it in 1Password FIRST
-
 On the writing lane, which field history makes reversible. Update `authorization-id`, `used-by`
 and the scope notes in the same edit when they changed:
 ```bash
@@ -223,12 +208,10 @@ op item get "<item>" --vault <vault> --fields label="<field>" --reveal | digest 
 ```
 
 ### 4.3 Update every registration, and prove each is accepted
-
 Per registration row: update it, then make the far side accept the new identity (an on-chain
 read, a signed request, a test webhook). A dashboard that looks updated is not a proof.
 
 ### 4.4 Write the runtime stores
-
 Heroku, never for `MANAGED_WALLET_ENCRYPTION_KEY` (§2.1):
 ```bash
 : "${NEW:?refusing to write — NEW is empty and this would blank <VAR> on every app}" &&
@@ -250,8 +233,7 @@ for f in /Users/alex/projects/*/.worktrees/*/.env; do
   mv "$tmp" "$f"; chmod 600 "$f"
 done
 ```
-Env snapshots, after `bin/ecosystem-build`; this irreversible sweep keeps the fresh one (to keep
-the stale ones too, skip it and say so in the receipt):
+Env snapshots, after `bin/ecosystem-build`; this irreversible sweep keeps only the fresh one:
 ```bash
 : "${ROTATED_AT:?stamp ROTATED_AT above, when the Heroku writes finished}" &&
 for snap in /Users/alex/projects/mcritchie-studio/tmp/env-snapshot-*.json; do
@@ -267,19 +249,15 @@ done
 ```
 
 ### 4.5 Migrate the data
-
 Phase 2's answer, while the old value still works.
 
 ## Phase 5 — Verify liveness, store by store
 
-Every digest is compared with `$NEW`'s, and neither side may be EMPTY.
-
 | Store | Proof |
 |---|---|
-| 1Password, Heroku config, `.env` | the digests match |
+| 1Password, Heroku config, `.env` | the digest equals `$NEW`'s, and neither side is EMPTY |
 | Heroku runtime | `heroku run --exit-code --app <app> bin/rails runner '<a call only the new value can make>'` |
 | Actions · Dependabot | the consuming workflow re-runs green · the next Dependabot `consumer-ci` run is green |
-| Registration | the far side accepts a signed request, or the account reads back |
 | Managed wallets | `solana:verify_managed_wallet_keys` prints `still-previous-key: 0` and `VERIFIED -- T of T` |
 
 Not proofs: a green deploy, `config:get` returning, a task exiting 0 (read its counters), "the
@@ -287,7 +265,7 @@ app is still up".
 
 ## Phase 6 — Retire the old value
 
-Only after Phase 5 passed for every store; after a migration, after 24 to 48 hours of normal use.
+Only after Phase 5 passed everywhere (after a migration, 24 to 48 hours later); then `unset NEW T`.
 
 | Source | Revoke with |
 |---|---|
@@ -296,8 +274,6 @@ Only after Phase 5 passed for every store; after a migration, after 24 to 48 hou
 | Signer, Squads member | already evicted in 4.3 |
 | Managed-wallet old key | `heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS --app <app>`, then the verifier; keep the 1Password field while an old backup could return |
 
-Then `unset NEW` (and `unset T`).
-
 ## Rollback
 
 Before Phase 6: put the old value back in the runtime stores, revert every registration, restore
@@ -305,24 +281,19 @@ the 1Password field from history, and re-run Phase 5. After Phase 6: forward onl
 
 | Symptom | Do this |
 |---|---|
-| One app 401s | re-run the fleet sweep; digest-compare each |
 | The far side rejects the app | old value back on the app, finish 4.3, re-flip |
 | The app cannot read credentials | restore the old `RAILS_MASTER_KEY`; deploy key and `.enc` together |
 | Managed-wallet reads fail | one `config:set` of `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$OLD`, keeping the new key |
-| Abandon a managed-wallet rotation | swap both values in ONE `config:set`, migrate, wait for `VERIFIED` |
 | Stores read `<VAR>=` and Phase 5 said MATCH | restore the old value everywhere; restart at 4.1 |
 
 ## Phase 7 — The receipt
 
-Append a row to the **Rotation log** in [`secrets-rotation.md`](../../../system/secrets-rotation.md)
-through the normal cycle, with no values and no digests:
+Append, with no values or digests, to the **Rotation log** in [`secrets-rotation.md`](../../../system/secrets-rotation.md):
 `| <YYYY-MM-DD, UTC> | <1Password item name> | <why> | <stores updated> | <how verified> | <old value revoked: yes/no + when> | <task URL> |`.
-Update [`credential-inventory.md`](../../../modules/credential-inventory.md) only when a recorded
-fact (authorization id, scope, consumer) changed.
+Update [`credential-inventory.md`](../../../modules/credential-inventory.md) only when a recorded fact changed.
 
 ## Background — not needed to execute
 
-- `docs/agents/system/secrets-rotation.md` holds per-credential recipes; this SOP wins.
-- `docs/agents/modules/credentials.md` (the lanes); `turf-monster/docs/SOLANA.md` (signers).
-- History: the long form, with its rationale and measurements, is
-  [`credential-rotation-2026-10-05.md`](../../../archive/credential-rotation-2026-10-05.md).
+`system/secrets-rotation.md` (recipes; this SOP wins), `modules/credentials.md`, `turf-monster/docs/SOLANA.md`.
+
+History: the long form, with rationale and measurements, is [`credential-rotation-2026-10-05.md`](../../../archive/credential-rotation-2026-10-05.md).
