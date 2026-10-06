@@ -7,8 +7,6 @@ trajectory at `/xan/heartbeat` **live** - one `AgentAction` row per tool call.
 
 It is the half-2 producer for the consumer half (the `/api/v1/agent_actions`
 endpoint and `AgentAction` model). The hook only writes; the endpoint persists.
-The legacy `/api/v1/atomic_actions` route remains a compatibility alias, but new
-docs and installs should point at `/api/v1/agent_actions`.
 
 ## What it does
 

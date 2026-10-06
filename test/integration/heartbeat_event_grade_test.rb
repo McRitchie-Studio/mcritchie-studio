@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [integration] the E2 span-level grade endpoint: POST /xan/heartbeat/events/:id/grade
+# [integration] the E2 span-level grade endpoint: POST /xan/heartbeat/activities/:id/grade
 # upserts ONE ActionGrade for (event, grader) and returns JSON only. It mirrors the
 # per-action #grade semantics (disposition/slug/long_form/intent=bank|discard) but
 # targets a narrated AgentActivity SPAN and never touches a view — E2 is deliberately

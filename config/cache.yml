@@ -1,0 +1,28 @@
+# Solid Cache settings. Solid Cache backs one store: Rack::Attack's throttle
+# counters in production (config/initializers/rack_attack.rb). Rails.cache is a
+# separate store and is not configured here.
+#
+# No `database:` key, so the table lives in the primary database beside Solid
+# Queue's (db/migrate/*_create_solid_cache_entries.rb). Every dyno, and every
+# deploy, reads and writes the same rows.
+default: &default
+  store_options:
+    # A throttle key names its period window, so a counter is dead once the
+    # window passes; a day is far beyond the longest period in rack_attack.rb.
+    max_age: <%= 1.day.to_i %>
+    max_size: <%= 256.megabytes %>
+    namespace: <%= Rails.env %>
+    # Trim old rows on the Solid Queue worker (SolidCache::ExpiryJob), not on a
+    # thread inside the web dyno. A web process's pool (database.yml) has room
+    # for more connections than Puma has threads, and an expiry thread would
+    # take one beyond the budget in config/puma.rb.
+    expiry_method: :job
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+
+production:
+  <<: *default

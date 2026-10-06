@@ -76,10 +76,8 @@ Rails.application.routes.draw do
   # Task-development trends dashboard (stage speed, cycle time, tokens, cost,
   # estimate-vs-actual). Public-read like the other board surfaces.
   get "intelligence", to: "intelligence#index", as: :intelligence
-  # Pokédex — read-only spawn/activity surface for session mascots. /pokemon
-  # stays as a compatibility alias for the earlier reference-data inspector URL.
+  # Pokédex — read-only spawn/activity surface for session mascots.
   get "pokedex", to: "pokemon#index", as: :pokedex
-  get "pokemon", to: "pokemon#index", as: :pokemon
   # Board split: /tasks is the Build lane, /deployments is the Deploy lane (+ the
   # current-release module), /stages is the two-workflow stage guide. All three
   # are public-read like /tasks (mutations stay admin-gated in TasksController).
@@ -204,32 +202,17 @@ Rails.application.routes.draw do
   # by design so it stays view-free from the drawer/turbo stream path.
   post "xan/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
   # The per-activity grading drawer body, lazy-loaded into the shared turbo-frame
-  # on an activity's grade click. Old /events paths stay as compatibility aliases.
+  # on an activity's grade click.
   get  "xan/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
-  post "xan/heartbeat/events/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_event_grade
-  get  "xan/heartbeat/events/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_event_feedback
   # Every AgentActivity across ALL sessions, newest-first, paginated 100/page —
   # the cross-session analogue of the per-session heartbeat.
   get  "xan/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
-  get  "xan/heartbeat/spans", to: "heartbeat#all_activities", as: :heartbeat_all_spans
   get  "xan/insights", to: "heartbeat#insights", as: :xan_insights
   # The OPSD distillation pipeline, left→right: Activities → Insights (Xan's
   # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
   # (mcr) confirmation of an insight and redirects back (a no-JS form action).
   get  "xan/pipeline", to: "heartbeat#pipeline", as: :xan_pipeline
   post "xan/pipeline/confirm/:id", to: "heartbeat#confirm", as: :xan_pipeline_confirm
-
-  # LEGACY /alex/* — the seat's slug until 2026-09-24 (the human operator is Alex
-  # now; the orchestrator is Xan). Every GET under it 301s to the same path under
-  # /xan, QUERY STRING INCLUDED, so a bookmarked `?session_id=…` deep link or a
-  # printed handoff still lands on the page it named. The POST endpoints (grade,
-  # confirm) are form actions the pages themselves render, never a public URL, so
-  # they moved without a shim. Retire alongside Task::SOUL_ALIASES, one release on.
-  legacy_seat = redirect { |_params, request| request.fullpath.sub(%r{\A/alex/}, "/xan/") }
-  get "alex/heartbeat",       to: legacy_seat
-  get "alex/heartbeat/*rest", to: legacy_seat, format: false
-  get "alex/insights",        to: legacy_seat
-  get "alex/pipeline",        to: legacy_seat
 
   resources :chat, only: [:index, :create]
   resources :schedule, only: [:index]
@@ -476,7 +459,6 @@ Rails.application.routes.draw do
   get "games/:year", to: "games#season", as: :games_season, constraints: { year: /\d{4}/ }
   get "games/:year/week/:week", to: "games#week", as: :games_week
   get "games/:year/week/:week/:slug", to: "games#show", as: :game_show
-  get "activities", to: redirect("/agents"), as: :activities
   resources :usages, only: [:index]
 
   get "docs", to: "docs#index"
@@ -631,7 +613,6 @@ Rails.application.routes.draw do
       # hook POSTs one AgentAction per agent step. Best-effort: a capture miss
       # returns 204, never a 500 (telemetry must not break the work it observes).
       resources :agent_actions, only: [:create]
-      resources :atomic_actions, only: [:create]
       # Agent-narration sink — the agent OPENs a meaningful activity
       # (category+reason) and CLOSEs it with a result; raw actions attribute to the
       # open activity.
@@ -646,13 +627,6 @@ Rails.application.routes.draw do
           # takes the computed per-activity usage back and stamps it.
           get  :windows
           post :reconcile
-        end
-      end
-      # Compatibility path for existing capture/narration hooks.
-      resources :atomic_events, only: [:create] do
-        collection do
-          post :close
-          post :close_all
         end
       end
       # DevOps SHIFT lease (devops-shift-lease) — at most one live conductor per role
@@ -673,8 +647,6 @@ Rails.application.routes.draw do
       # can never forge McRitchie's audit.
       get  "agent_activities/awaiting_grade", to: "activity_grades#awaiting", as: :awaiting_grade_agent_activities
       post "agent_activities/:id/grade",      to: "activity_grades#create",   as: :grade_agent_activity
-      get  "atomic_events/awaiting_grade", to: "event_grades#awaiting", as: :awaiting_grade_atomic_events
-      post "atomic_events/:id/grade",      to: "event_grades#create",   as: :grade_atomic_event
       # Eagerly draw (or return) a session's Pokémon mascot before any task exists,
       # so a SessionStart hook can show it on the status line in seconds.
       post "sessions/:session_id/mascot", to: "sessions#mascot"

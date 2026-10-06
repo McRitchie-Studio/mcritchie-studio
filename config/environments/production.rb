@@ -80,8 +80,10 @@ Rails.application.configure do
   # want to log everything, set the level to "debug".
   config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
 
-  # Use a different cache store in production.
-  # config.cache_store = :mem_cache_store
+  # Rails.cache is the default file store, one per dyno. Rack::Attack keeps its
+  # throttle counters in its own Solid Cache store on the primary database
+  # instead (config/initializers/rack_attack.rb), so they are shared by every
+  # dyno and survive a deploy.
 
   # Background jobs run through Solid Queue so enqueued mail/auth work survives
   # web dyno restarts. Keep at least one worker dyno scaled in production.

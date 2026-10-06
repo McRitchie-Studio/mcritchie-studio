@@ -642,21 +642,13 @@ class Release
       release
     end
 
-    # The reviewed tasks eligible to ride the next release (the default queue the
-    # release-builder autonomy policy evaluates).
+    # The reviewed tasks eligible to ride the next release.
     def eligible_tasks
       Task.where(stage: "reviewed").order(:position).to_a
     end
 
     def eligible_task_slugs
       eligible_tasks.map(&:slug)
-    end
-
-    # Read-only release-builder policy decision for the reviewed queue. The
-    # caller still owns any side effects: this only says whether QA assembly can
-    # proceed automatically or should be proposed for operator confirmation.
-    def builder_policy_decision(tasks = nil)
-      Release::BuilderPolicy.evaluate(tasks || eligible_tasks)
     end
 
     # Record the QA deployment URL on the release (the deploy itself is run by
