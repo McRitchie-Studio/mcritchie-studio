@@ -29,10 +29,14 @@ test("admin briefs, generates, approves and previews an email header", async ({ 
   await expect(page.locator("[data-test='build-status']")).toBeVisible();
 
   // The fake round runs async in the server; poll the page until it lands.
+  // A failed round is reported on the page; surface its reason instead of
+  // timing out on an empty grid.
   await expect(async () => {
     await page.reload();
+    const status = page.locator("[data-test='build-status'][data-state='failed']");
+    if (await status.count()) throw new Error(`the fake round failed: ${await status.innerText()}`);
     await expect(page.locator("[data-test='candidate']")).toHaveCount(2, { timeout: 1_000 });
-  }).toPass({ timeout: 30_000 });
+  }).toPass({ timeout: 20_000 });
   await expect(page.locator("[data-test='rounds']")).toContainText("1 of 4");
   await expect(page.locator("[data-test='spend']")).toContainText("tokens");
 
