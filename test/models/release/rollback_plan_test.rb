@@ -166,5 +166,70 @@ class Release
       assert_equal({ "turf-monster" => "aa11111111", "mcritchie-studio" => "hub1111111" }, plan.evidence["to"])
       assert_equal "rolled back: turf-monster aa222222 → aa111111; mcritchie-studio hub22222 → hub11111", plan.seal_summary
     end
+    test "[unit] a rolled-back release is never a rollback target: R3 goes back to R1, not R2" do
+      plan = RollbackPlan.build(
+        target: target("slug" => "rel-r3"),
+        history: [
+          { "slug" => "rel-r2", "rolled_back" => { "at" => "2026-10-05T10:00:00Z" },
+            "shipped_shas" => { "mcritchie-studio" => "hubBAD0000", "turf-monster" => "bb00000000" } },
+          { "slug" => "rel-r1", "shipped_shas" => { "mcritchie-studio" => "hub1111111", "turf-monster" => "aa11111111" } }
+        ]
+      )
+
+      assert_not plan.refused?, plan.refusals.inspect
+      assert_equal({ "turf-monster" => "aa11111111", "mcritchie-studio" => "hub1111111" }, plan.evidence["to"])
+      assert_equal %w[rel-r1 rel-r1], plan.apps.map(&:to_release), "R2's known-bad SHAs are walked past"
+    end
+
+    CONFIGURED = [
+      { "version" => 307, "current" => true, "status" => "succeeded", "description" => "Deploy aa222222" },
+      { "version" => 306, "status" => "succeeded", "description" => "Update REDIS_URL by heroku-redis" },
+      { "version" => 305, "status" => "succeeded", "description" => "Set ACTIVE_STORAGE_BACKEND config vars" },
+      { "version" => 304, "status" => "succeeded", "description" => "Deploy aa111111" }
+    ].freeze
+
+    test "[unit] the plan lists every config change the heroku rollback reverts, by name" do
+      plan = RollbackPlan.build(target: target, history: history).resolve_heroku_versions!(->(_app) { CONFIGURED })
+      turf = plan.apps.find { |a| a.repo == "turf-monster" }
+
+      assert_equal 304, turf.heroku_version
+      assert_equal ["v305 Set ACTIVE_STORAGE_BACKEND config vars", "v306 Update REDIS_URL by heroku-redis"],
+                   turf.config_reverts, "config and add-on releases count; the Deploy rows do not"
+      text = plan.lines.join("\n")
+      assert_includes text, "REVERTS CONFIG: v305 Set ACTIVE_STORAGE_BACKEND config vars"
+      assert_includes text, "REVERTS CONFIG: v306 Update REDIS_URL by heroku-redis"
+    end
+
+    test "[unit] --mode auto refuses a config revert; --mode ask may run it" do
+      reverting = RollbackPlan.build(target: target, history: history).resolve_heroku_versions!(->(_app) { CONFIGURED })
+      assert_match(/ACTIVE_STORAGE_BACKEND.*--mode auto and --yes never revert config/, reverting.authority_refusal("auto"))
+      assert_nil reverting.authority_refusal("ask"), "ask shows the list and confirms it separately"
+
+      clean = RollbackPlan.build(target: target, history: history)
+                          .resolve_heroku_versions!(->(_app) { [CONFIGURED[0], CONFIGURED[3]] })
+      assert_empty clean.config_reverts
+      assert_nil clean.authority_refusal("auto"), "with nothing to revert, auto runs"
+      assert_includes clean.lines.join("\n"), "reverts no config"
+    end
+
+    test "[unit] a retry finds the app already rolled back and reverts nothing more" do
+      releases = [{ "version" => 308, "current" => true, "status" => "succeeded", "description" => "Rollback to v304" }] + CONFIGURED.map { |r| r.merge("current" => false) }
+      plan = RollbackPlan.build(target: target, history: history).resolve_heroku_versions!(->(_app) { releases })
+      turf = plan.apps.find { |a| a.repo == "turf-monster" }
+
+      assert turf.already_live
+      assert_empty turf.config_reverts
+      assert_nil plan.authority_refusal("auto")
+    end
+
+    test "[unit] release_phase_verdict waits for the new release to be current and succeeded" do
+      assert_equal :pending, RollbackPlan.release_phase_verdict(CONFIGURED, after: 307), "not created yet"
+      pending = [{ "version" => 308, "current" => false, "status" => "pending", "description" => "Rollback to v304" }]
+      assert_equal :pending, RollbackPlan.release_phase_verdict(pending + CONFIGURED, after: 307)
+      failed = [{ "version" => 308, "status" => "failed", "description" => "Rollback to v304" }]
+      assert_equal :failed, RollbackPlan.release_phase_verdict(failed + CONFIGURED, after: 307)
+      live = [{ "version" => 308, "current" => true, "status" => "succeeded", "description" => "Rollback to v304" }]
+      assert_equal :succeeded, RollbackPlan.release_phase_verdict(live, after: 307)
+    end
   end
 end

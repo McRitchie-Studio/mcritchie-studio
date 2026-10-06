@@ -18,9 +18,20 @@ class Release
   #                    deployed the previous SHA. The repo's own script cannot do it:
   #                    it pushes without force, so Heroku rejects an older commit, and
   #                    its IDL allow-list dance runs only forward. Heroku's rollback
-  #                    restores that release's slug AND its config vars, which carry
-  #                    the IDL allow-list the old slug boots against. It is the same
+  #                    restores that release's slug AND its config vars. It is the same
   #                    mechanism turf's bin/deploy uses when its own smoke fails.
+  #
+  # THE CONFIG REVERT, and why heroku rollback is still the strategy. Rolling back to
+  # vN reverts every config var set since vN, add-on vars included. The alternative,
+  # a new release of vN's slug over today's config (the Platform API's
+  # `POST /apps/:app/releases {slug}`), keeps the config but can strand the slug:
+  # turf pins the IDL the slug boots against in EXPECTED_IDL_HASH, a config var its
+  # forward deploy tightens to the NEW hash, so the old slug would fail turf's boot
+  # verification. The pin and the slug travel together only in a rollback. So the
+  # plan reads the Heroku releases newer than vN, lists every config change the
+  # rollback reverts by its release description (which names keys, never values),
+  # refuses `--mode auto` when there is any, and under `--mode ask` shows them and
+  # asks for a separate confirm.
   #
   # THE SCHEMA REFUSAL. Migrations run in each app's Procfile release phase, so the
   # database is already at the shipped schema; old code against a newer schema is
@@ -44,7 +55,8 @@ class Release
     DEPLOY_DESCRIPTION = /\ADeploy\s+([0-9a-f]{7,40})\b/i
 
     AppStep = Struct.new(:repo, :strategy, :adapter, :from_sha, :to_sha, :to_release,
-                         :migrations, :heroku_version, keyword_init: true)
+                         :migrations, :heroku_version, :heroku_current, :config_reverts,
+                         :already_live, keyword_init: true)
     GemNote = Struct.new(:repo, :version, keyword_init: true)
 
     attr_reader :release_slug, :apps, :gems, :notes, :refusals
@@ -68,6 +80,43 @@ class Release
         return mode
       end
       assume_yes ? "auto" : "plan"
+    end
+
+    # The config changes a rollback to `version` reverts: every release newer than it
+    # that is not a `Deploy` and not a rollback to that same version, as
+    # "v305 Set ACTIVE_STORAGE_BACKEND config vars", oldest first. Heroku's
+    # descriptions name the keys a release changed, never their values.
+    def self.config_changes_since(releases, version)
+      rows = Array(releases).select { |r| r.is_a?(Hash) && (r["version"] || r[:version]).to_i > version.to_i }
+      rows.sort_by { |r| (r["version"] || r[:version]).to_i }.filter_map do |r|
+        text = (r["description"] || r[:description]).to_s.strip
+        next if DEPLOY_DESCRIPTION.match?(text)
+        next if rollback_to?(text, version)
+
+        "v#{(r['version'] || r[:version]).to_i} #{text}"
+      end
+    end
+
+    def self.rollback_to?(description, version) = description.to_s.match?(/\ARollback to v#{version.to_i}\b/i)
+
+    # The newest release version in a `heroku releases` read, or 0.
+    def self.newest_version(releases)
+      Array(releases).select { |r| r.is_a?(Hash) }.map { |r| (r["version"] || r[:version]).to_i }.max.to_i
+    end
+
+    # Did the release `heroku rollback` created (the first version newer than
+    # `after`) go live? :succeeded once it is current and succeeded, :failed when
+    # Heroku says failed, :pending while it has not appeared or is still releasing.
+    def self.release_phase_verdict(releases, after:)
+      row = Array(releases).select { |r| r.is_a?(Hash) && (r["version"] || r[:version]).to_i > after.to_i }
+                           .min_by { |r| (r["version"] || r[:version]).to_i }
+      return :pending unless row
+
+      status = (row["status"] || row[:status]).to_s
+      return :failed if status == "failed"
+      return :succeeded if status == "succeeded" && (row["current"] || row[:current]) == true
+
+      :pending
     end
 
     # The Heroku release version (an Integer) that deployed `sha`, newest first, or
@@ -147,12 +196,32 @@ class Release
         next if releases.nil?
 
         app.heroku_version = self.class.heroku_version_for(releases, app.to_sha)
-        next if app.heroku_version
-
-        @refusals << "#{app.repo}: no succeeded Heroku release on #{heroku_app} deployed #{short(app.to_sha)} " \
-                     "(`heroku releases --app #{heroku_app}`) — nothing to roll back to"
+        unless app.heroku_version
+          @refusals << "#{app.repo}: no succeeded Heroku release on #{heroku_app} deployed #{short(app.to_sha)} " \
+                       "(`heroku releases --app #{heroku_app}`) — nothing to roll back to"
+          next
+        end
+        app.heroku_current = self.class.newest_version(releases)
+        current = releases.find { |r| r.is_a?(Hash) && (r["current"] || r[:current]) == true } || {}
+        app.already_live = (current["status"] || current[:status]).to_s == "succeeded" &&
+                           self.class.rollback_to?(current["description"] || current[:description], app.heroku_version)
+        app.config_reverts = app.already_live ? [] : self.class.config_changes_since(releases, app.heroku_version)
       end
       self
+    end
+
+    # Every config change the rollback would revert, as "<repo>: v305 Set …".
+    def config_reverts
+      @apps.flat_map { |a| Array(a.config_reverts).map { |c| "#{a.repo}: #{c}" } }
+    end
+
+    # Why `mode` may not run this plan, or nil. `auto` never reverts config: a
+    # config change since the target release needs an operator to read it.
+    def authority_refusal(mode)
+      return nil unless mode.to_s == "auto" && config_reverts.any?
+
+      "the rollback would revert config set since the target release (#{config_reverts.join('; ')}). " \
+        "--mode auto and --yes never revert config; run --mode ask, read the list, and confirm it"
     end
 
     # The command each app's redeploy runs, as the plan prints it.
@@ -186,6 +255,18 @@ class Release
         out << "  #{app.repo} (#{app.strategy}): #{short(app.from_sha)} → #{short(app.to_sha)} " \
                "(shipped by #{app.to_release})"
         out << "      #{command_for(app)}"
+        if app.strategy == "repo_script"
+          if app.already_live
+            out << "      already live: the current Heroku release is the rollback to v#{app.heroku_version} — skipped"
+          elsif app.config_reverts.nil?
+            out << "      config changes since the target release: not read under --dry-run"
+          elsif app.config_reverts.empty?
+            out << "      reverts no config: no config change since v#{app.heroku_version}"
+          else
+            app.config_reverts.each { |c| out << "      REVERTS CONFIG: #{c}" }
+          end
+          out << "      then wait for the new Heroku release to succeed"
+        end
         url = smoke_url_for(app)
         out << "      then smoke #{url}/up" unless url.empty?
       end
@@ -257,8 +338,8 @@ class Release
       @notes << "data is not rolled back: rows written and post-deploy backfills run since the release stay."
       return unless @apps.any? { |a| a.strategy == "repo_script" }
 
-      @notes << "heroku rollback restores that release's config vars as well as its slug; a config var changed " \
-                "since then reverts with it."
+      @notes << "heroku rollback restores that release's config vars as well as its slug; every config change " \
+                "since then reverts with it (listed per app above). --mode auto refuses when there is any."
     end
 
     def plan_app(repo, adapter, shipped)
@@ -302,6 +383,11 @@ class Release
     # not touch the repo carries no entry, so the walk goes back past it.
     def previous_for(repo)
       @history.each do |release|
+        # A release that was itself rolled back never ran in production afterwards
+        # as the known-good state; going back to it would redeploy bad code.
+        rolled = release["rolled_back"]
+        next if rolled.is_a?(Hash) && !rolled.empty?
+
         sha = hash_of(release["shipped_shas"])[repo].to_s
         sha = release["deployed_sha"].to_s if sha.empty? && repo == @hub
         return [sha, release["slug"].to_s] unless sha.empty?
