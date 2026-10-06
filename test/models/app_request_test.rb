@@ -55,6 +55,14 @@ class AppRequestTest < ActiveSupport::TestCase
     satellite_hosts.each { |name| assert_equal "That name is reserved.", AppRequest.unavailable_reason(name), "#{name} is a live satellite" }
   end
 
+  # rolio's production_url is a herokuapp host, not a subdomain of ours, so its
+  # slug is what keeps the name from being claimed.
+  test "every satellite's slug is reserved, whatever its production_url" do
+    %w[rolio chain-ops turf-monster cyvasse].each do |name|
+      assert_equal "That name is reserved.", AppRequest.unavailable_reason(name), "#{name} has a satellites.yml row"
+    end
+  end
+
   test "a claimed name is taken; a cancelled request releases it" do
     first = draft(user: users(:alex)).queue!("pawsome")
     assert_equal "That name is taken.", AppRequest.unavailable_reason("pawsome")

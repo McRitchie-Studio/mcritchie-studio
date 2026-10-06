@@ -5,8 +5,8 @@
 # have their own readers must agree with it. config/satellites.yml (ports, navbar,
 # bin/ecosystem-build), config/release_repos.yml (how each repo ships) and
 # config/qa_environments.yml (QA and production targets) are each read here and
-# compared row by row; any slug, port, Heroku app, status word or engine flag
-# that disagrees is named in the failure.
+# compared row by row; any slug, port, Heroku app, production URL, status word
+# or engine flag that disagrees is named in the failure.
 #
 # Adding an app: add its record to config/apps.yml, run this file, and fix what
 # it names. Each rule below also has a test that breaks one row and expects the
@@ -21,6 +21,14 @@ class AppRegistryTest < Minitest::Test
   # Ladders that keep a repo out of the conductor's sweep.
   PARKED_LADDERS = %w[dormant planned blocked].freeze
   HEROKU_REMOTE = %r{\Ahttps://git\.heroku\.com/(?<app>[^/]+)\.git\z}
+  # Apps whose production_url may disagree, each with the reason. Remove a row
+  # when its question is answered; test_every_production_url_exception_is_still_needed
+  # fails once the two files agree.
+  PRODUCTION_URL_EXCEPTIONS = {
+    "cyvasse" => "Alex owns the Cyvasse URL decision: https://cyvasse.xyz (apps.yml) and " \
+                 "https://cyvasse.mcritchie.studio (satellites.yml) both answer, the second 301s to the first " \
+                 "(satellites-legend-and-catalog-urls, 2026-10-06)"
+  }.freeze
 
   def self.load_yaml(rel) = YAML.safe_load_file(File.join(ROOT, rel))
 
@@ -49,6 +57,9 @@ class AppRegistryTest < Minitest::Test
       errors << "#{slug}: name #{row['display_name'].inspect} in satellites.yml, #{app.name.inspect} in apps.yml" unless row["display_name"] == app.name
       errors << "#{slug}: emoji #{row['emoji']} in satellites.yml, #{app.emoji} in apps.yml" unless row["emoji"] == app.emoji
       errors << "#{slug}: heroku_app #{row['heroku_app'].inspect} in satellites.yml, #{app.heroku_app.inspect} in apps.yml" unless row["heroku_app"] == app.heroku_app
+      unless row["production_url"] == app.production_url || PRODUCTION_URL_EXCEPTIONS.key?(slug)
+        errors << "#{slug}: production_url #{row['production_url'].inspect} in satellites.yml, #{app.production_url.inspect} in apps.yml"
+      end
       errors.concat(status_disagreements(app, row["status"]))
       if row["description"].to_s.include?("no studio-engine") && app.engine
         errors << "#{slug}: satellites.yml says no studio-engine, apps.yml says engine: true"
@@ -170,6 +181,23 @@ class AppRegistryTest < Minitest::Test
                     "cyvasse: port 3700 in satellites.yml, 3600 in apps.yml"
     assert_includes satellite_disagreements(CATALOG, with_satellite("cyvasse", display_name: "Cyvase")),
                     "cyvasse: name \"Cyvase\" in satellites.yml, \"Cyvasse\" in apps.yml"
+  end
+
+  def test_a_production_url_mismatch_is_named
+    assert_includes satellite_disagreements(CATALOG, with_satellite("rolio", production_url: "https://rolio.mcritchie.studio")),
+                    "rolio: production_url \"https://rolio.mcritchie.studio\" in satellites.yml, " \
+                    "\"https://rolio-prod-82e96784b462.herokuapp.com\" in apps.yml"
+    assert_includes satellite_disagreements(CATALOG, with_satellite("chain-ops", production_url: "https://chain.mcritchie.studio")),
+                    "chain-ops: production_url \"https://chain.mcritchie.studio\" in satellites.yml, nil in apps.yml"
+  end
+
+  def test_every_production_url_exception_is_still_needed
+    by_slug = SATELLITES.to_h { |row| [row["slug"], row] }
+    PRODUCTION_URL_EXCEPTIONS.each_key do |slug|
+      app = CATALOG.apps.find { |entry| entry.slug == slug }
+      refute_equal app.production_url, by_slug.fetch(slug)["production_url"],
+                   "#{slug}'s production_url now agrees; drop its PRODUCTION_URL_EXCEPTIONS row"
+    end
   end
 
   def test_status_words_map_onto_the_catalog
