@@ -51,7 +51,7 @@
     <section class="space-y-2" data-test="epic-stage" data-stage="<%= stage %>">
       <h2 class="flex items-center gap-2 text-sm font-semibold text-heading">
         <%= Task::STAGE_LABELS.fetch(stage) %>
-        <span class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none <%= task_stage_count_classes(stage) %>"><%= stage_tasks.size %></span>
+        <span class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-3xs font-bold leading-none <%= task_stage_count_classes(stage) %>"><%= stage_tasks.size %></span>
       </h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
         <% stage_tasks.each do |task| %>

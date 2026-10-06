@@ -31,9 +31,9 @@
                 <p class="text-heading text-sm font-semibold" x-text="person.full_name"></p>
                 <span class="text-[9px] text-muted font-mono" x-text="'#' + person.id"></span>
               </div>
-              <p class="text-[10px] text-primary font-mono mt-0.5" x-text="person.slug"></p>
+              <p class="text-3xs text-primary font-mono mt-0.5" x-text="person.slug"></p>
               <template x-if="person.aliases && person.aliases.length > 0">
-                <p class="text-[10px] text-muted mt-0.5">aka <span x-text="person.aliases.join(', ')"></span></p>
+                <p class="text-3xs text-muted mt-0.5">aka <span x-text="person.aliases.join(', ')"></span></p>
               </template>
               <template x-if="person.teams && person.teams.length > 0">
                 <div class="flex flex-wrap gap-1 mt-1.5">
@@ -54,7 +54,7 @@
                     <p class="text-heading text-sm font-semibold" x-text="person.full_name"></p>
                     <span class="text-[9px] text-muted font-mono" x-text="'#' + person.id"></span>
                   </div>
-                  <p class="text-[10px] text-primary font-mono mt-0.5" x-text="person.slug"></p>
+                  <p class="text-3xs text-primary font-mono mt-0.5" x-text="person.slug"></p>
                   <template x-if="person.teams && person.teams.length > 0">
                     <div class="flex flex-wrap gap-1 mt-1.5">
                       <template x-for="team in person.teams" :key="team">

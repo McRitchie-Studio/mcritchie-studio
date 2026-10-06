@@ -136,7 +136,7 @@ function newsBoardChrome() {
     # gap 5 — the per-column agent chip, pushed to the right of the column header.
     agent_chip = lambda do |stage|
       agent = stage_agents[stage]
-      agent ? %(<span class="text-[10px] text-muted ml-auto">#{agent}</span>).html_safe : nil
+      agent ? %(<span class="text-3xs text-muted ml-auto">#{agent}</span>).html_safe : nil
     end
     # gap 1 — the Archived toggle binds straight to the chrome-state home.
     archived_toggle = %(<button @click="toggleState('showArchived')" :class="state.showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'" class="px-3 py-2 rounded-lg text-sm font-medium transition" data-test="news-archived-toggle">Archived</button>).html_safe

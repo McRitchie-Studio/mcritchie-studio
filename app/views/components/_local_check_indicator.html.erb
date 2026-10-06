@@ -30,7 +30,7 @@
 <% summary = check.stalled? ?
      "Local check stalled — no heartbeat for #{compact_elapsed_short(check.seconds_since_heartbeat)}" :
      "Local check running: #{check.label}" %>
-<div class="local-check-indicator flex w-full items-center justify-between gap-2 text-[10px] leading-none"
+<div class="local-check-indicator flex w-full items-center justify-between gap-2 text-3xs leading-none"
      data-test="<%= test_id %>"
      data-local-check-state="<%= check.state %>"
      <% unless check.stalled? %>data-local-check-stale-at="<%= check.stale_at.to_i %>"<% end %>

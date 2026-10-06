@@ -22,11 +22,11 @@
       <span class="label-upper text-muted">Jersey</span>
       <span class="text-heading font-bold text-lg"><%= plan.colorway || "unknown" %></span>
       <% if plan.colorway_guessed? %>
-        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/50 text-amber-300 border border-amber-700/50">
+        <span class="px-2 py-0.5 rounded text-3xs font-bold bg-amber-900/50 text-amber-300 border border-amber-700/50">
           GUESSED FROM HOME/AWAY
         </span>
       <% else %>
-        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/50 text-emerald-300 border border-emerald-700/50">
+        <span class="px-2 py-0.5 rounded text-3xs font-bold bg-emerald-900/50 text-emerald-300 border border-emerald-700/50">
           CONFIRMED
         </span>
       <% end %>
@@ -67,7 +67,7 @@
             <% scheme = slot.reuse? ? "bg-emerald-900/50 text-emerald-300 border-emerald-700/50"
                       : slot.reskin? ? "bg-amber-900/50 text-amber-300 border-amber-700/50"
                       : "bg-rose-900/50 text-rose-300 border-rose-700/50" %>
-            <span class="px-2 py-0.5 rounded text-[10px] font-bold border <%= scheme %>">
+            <span class="px-2 py-0.5 rounded text-3xs font-bold border <%= scheme %>">
               <%= slot.status_label.upcase %>
             </span>
           </div>

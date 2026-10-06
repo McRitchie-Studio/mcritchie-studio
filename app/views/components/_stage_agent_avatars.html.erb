@@ -177,7 +177,7 @@
               </div>
               <% if blocked && ci == block_idx %>
                 <%# Blocked here — the latest agent's timer becomes a red ✕. %>
-                <span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-[10px] font-bold leading-none
+                <span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-3xs font-bold leading-none
                              bg-red-500/30 text-red-200 border border-red-400/70 ring-1 ring-surface"
                       data-test="crew-blocked" title="Blocked at this stage">✕</span>
               <% elsif cluster.live_since %>

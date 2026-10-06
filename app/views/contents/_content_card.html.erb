@@ -30,16 +30,16 @@
   <%# Metadata %>
   <div class="flex flex-wrap items-center gap-1.5 mb-1">
     <% if content.source_type.present? %>
-      <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/50 text-blue-300 border border-blue-700/50"><%= content.source_type %></span>
+      <span class="px-1.5 py-0.5 rounded text-3xs font-bold bg-blue-900/50 text-blue-300 border border-blue-700/50"><%= content.source_type %></span>
     <% end %>
     <% if content.content_type.present? %>
-      <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-300 border border-violet-700/50"><%= content.content_type.humanize %></span>
+      <span class="px-1.5 py-0.5 rounded text-3xs font-bold bg-violet-900/50 text-violet-300 border border-violet-700/50"><%= content.content_type.humanize %></span>
     <% end %>
   </div>
 
   <% if content.description.present? %>
-    <p class="text-[10px] text-secondary truncate"><%= content.description.truncate(60) %></p>
+    <p class="text-3xs text-secondary truncate"><%= content.description.truncate(60) %></p>
   <% end %>
 
-  <p class="text-[10px] text-muted mt-1"><%= time_ago_in_words(content.created_at) %> ago</p>
+  <p class="text-3xs text-muted mt-1"><%= time_ago_in_words(content.created_at) %> ago</p>
 <% end %>

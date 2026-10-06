@@ -21,7 +21,7 @@
     tiny type, plus this bar's tone. The shell owns the card_bar_base_classes geometry
     (width/radius/border/inset) so this bar, the blocker-summary bar, and the CI meter
     all read as one evenly-stacked set. `flashing` adds the seeded out-of-phase pulse. %>
-<% content_classes = "flex items-center justify-center gap-1.5 text-[10px] font-bold leading-tight #{tone} #{'motion-safe:animate-pulse' if flashing}" %>
+<% content_classes = "flex items-center justify-center gap-1.5 text-3xs font-bold leading-tight #{tone} #{'motion-safe:animate-pulse' if flashing}" %>
 <% pulse_style = ("animation-delay: var(--task-pulse-delay, 0s); animation-duration: var(--task-pulse-duration, 2s);" if flashing) %>
 <% bar_body = capture do %><% if icon %><span aria-hidden="true"><%= icon %></span><% end %><span><%= label %></span><% if action_label %><span class="opacity-60">·</span><span class="font-semibold"><%= action_label %></span><span aria-hidden="true">→</span><% end %><% end %>
 <%= render "components/card_bar",

@@ -24,23 +24,23 @@
 
   <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
     <div class="rounded-lg border border-subtle bg-surface px-3 py-3">
-      <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Created</p>
+      <p class="text-3xs uppercase tracking-wide text-muted font-semibold">Created</p>
       <p class="mt-1 font-mono text-sm text-heading"><%= release_duration_time(deployment["started_at"] || @release.created_at) %></p>
     </div>
     <div class="rounded-lg border border-subtle bg-surface px-3 py-3">
-      <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Assembled</p>
+      <p class="text-3xs uppercase tracking-wide text-muted font-semibold">Assembled</p>
       <p class="mt-1 font-mono text-sm text-heading"><%= release_duration_time(deployment["assembled_at"] || @release.assembled_at) %></p>
     </div>
     <div class="rounded-lg border border-subtle bg-surface px-3 py-3">
-      <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Confirmed</p>
+      <p class="text-3xs uppercase tracking-wide text-muted font-semibold">Confirmed</p>
       <p class="mt-1 font-mono text-sm text-heading"><%= release_duration_time(deployment["confirmed_at"] || @release.confirmed_at) %></p>
     </div>
     <div class="rounded-lg border border-subtle bg-surface px-3 py-3">
-      <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Shipped</p>
+      <p class="text-3xs uppercase tracking-wide text-muted font-semibold">Shipped</p>
       <p class="mt-1 font-mono text-sm text-heading"><%= release_duration_time(deployment["shipped_at"] || @release.shipped_at) %></p>
     </div>
     <div class="rounded-lg border border-subtle bg-surface px-3 py-3">
-      <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Deployment</p>
+      <p class="text-3xs uppercase tracking-wide text-muted font-semibold">Deployment</p>
       <p class="mt-1 font-mono text-xl font-bold text-heading"><%= release_duration_label(deployment["deployment_seconds"]) %></p>
     </div>
   </div>
@@ -55,7 +55,7 @@
         <% Release::DurationCache::STAGE_DEFINITIONS.each_key do |key| %>
           <% row = stages[key] || {} %>
           <div class="rounded border border-subtle bg-surface-alt px-3 py-3">
-            <p class="text-[10px] uppercase tracking-wide text-muted font-semibold"><%= release_duration_stage_name(key) %></p>
+            <p class="text-3xs uppercase tracking-wide text-muted font-semibold"><%= release_duration_stage_name(key) %></p>
             <p class="mt-1 font-mono text-xl font-bold text-heading"><%= release_duration_label(row["average_seconds"]) %></p>
             <p class="mt-1 text-xs text-muted"><%= row["sample_count"].to_i %> completed · <%= row["missing_count"].to_i %> missing</p>
           </div>
@@ -67,19 +67,19 @@
       <h3 class="text-lg font-bold text-heading mb-3">Integrity</h3>
       <dl class="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Task Transitions</dt>
+          <dt class="text-3xs uppercase tracking-wide text-muted font-semibold">Task Transitions</dt>
           <dd class="font-mono text-heading"><%= number_with_delimiter(integrity["task_event_count"].to_i) %></dd>
         </div>
         <div>
-          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Release Steps</dt>
+          <dt class="text-3xs uppercase tracking-wide text-muted font-semibold">Release Steps</dt>
           <dd class="font-mono text-heading"><%= number_with_delimiter(integrity["release_event_count"].to_i) %></dd>
         </div>
         <div>
-          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Missing Task Durations</dt>
+          <dt class="text-3xs uppercase tracking-wide text-muted font-semibold">Missing Task Durations</dt>
           <dd class="font-mono text-heading"><%= number_with_delimiter(integrity["missing_task_stage_spans"].to_i) %></dd>
         </div>
         <div>
-          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Missing Release Steps</dt>
+          <dt class="text-3xs uppercase tracking-wide text-muted font-semibold">Missing Release Steps</dt>
           <dd class="font-mono text-heading"><%= number_with_delimiter(integrity["missing_release_steps"].to_i) %></dd>
         </div>
       </dl>
@@ -113,7 +113,7 @@
                 <% span = row.dig("stages", key) || {} %>
                 <td class="px-4 py-3 text-right">
                   <span class="font-mono text-heading"><%= release_duration_label(span["seconds"]) %></span>
-                  <span class="block text-[10px] uppercase tracking-wide text-muted"><%= span["status"] %></span>
+                  <span class="block text-3xs uppercase tracking-wide text-muted"><%= span["status"] %></span>
                 </td>
               <% end %>
             </tr>

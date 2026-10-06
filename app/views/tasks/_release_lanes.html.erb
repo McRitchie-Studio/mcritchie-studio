@@ -31,7 +31,7 @@
         <span class="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-subtle bg-inset text-sm leading-none"
               data-test="release-lane-emoji"><%= lane[:emoji] %></span>
         <span class="truncate text-sm font-semibold text-heading"><%= lane[:repo] %></span>
-        <span class="shrink-0 rounded border border-subtle px-1 text-[10px] font-semibold uppercase tracking-wide text-muted"><%= lane[:kind] %></span>
+        <span class="shrink-0 rounded border border-subtle px-1 text-3xs font-semibold uppercase tracking-wide text-muted"><%= lane[:kind] %></span>
       </div>
       <div class="grid grid-cols-2 gap-x-4 gap-y-2 @[40rem]:grid-cols-4">
         <% lane[:phases].each do |phase| %>

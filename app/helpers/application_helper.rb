@@ -1299,7 +1299,7 @@ module ApplicationHelper
     pattern = /\b(#{stages.join('|')})\b/
     ERB::Util.html_escape(text).to_str.gsub(pattern) do |word|
       tag.span(Task::STAGE_LABELS.fetch(word),
-               class: "inline-block px-1.5 py-0.5 rounded text-[11px] font-bold align-baseline #{task_stage_count_classes(word)}")
+               class: "inline-block px-1.5 py-0.5 rounded text-2xs font-bold align-baseline #{task_stage_count_classes(word)}")
     end.html_safe
   end
 

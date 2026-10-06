@@ -9,7 +9,7 @@
     <% if label %>
       <span class="text-[9px] uppercase tracking-wide text-muted"><%= label %></span>
     <% end %>
-    <code x-ref="cmd" class="text-[10px] text-body normal-case font-normal tracking-normal"><%= command %></code>
-    <span class="text-[10px]" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'"></span>
+    <code x-ref="cmd" class="text-3xs text-body normal-case font-normal tracking-normal"><%= command %></code>
+    <span class="text-3xs" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'"></span>
   </button>
 </div>

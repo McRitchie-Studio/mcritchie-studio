@@ -20,7 +20,7 @@
   <div class="card p-6 mb-6">
     <div class="flex items-baseline justify-between mb-1">
       <h3 class="text-lg font-bold text-heading">Testing phases</h3>
-      <span class="text-[10px] text-muted uppercase tracking-wide">durable timing</span>
+      <span class="text-3xs text-muted uppercase tracking-wide">durable timing</span>
     </div>
     <p class="text-muted text-xs mb-4">
       How long this task spent in each testing phase — Build → Local Certification → CI → Review.
@@ -35,7 +35,7 @@
           <% end %>
           <p class="label-upper"><%= Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label") %></p>
           <p class="text-heading text-sm font-semibold"><%= testing_phase_duration_label(span) %></p>
-          <p class="text-[10px] uppercase tracking-wide <%= testing_phase_status_class(span["status"]) %>">
+          <p class="text-3xs uppercase tracking-wide <%= testing_phase_status_class(span["status"]) %>">
             <%= (span["status"] || "missing").humanize %>
           </p>
         </div>
@@ -60,9 +60,9 @@
               <p class="text-heading text-sm font-semibold">
                 <%= release_duration_label(run.duration_seconds) %><%= " so far" if run.in_flight? %>
               </p>
-              <p class="text-[10px] uppercase tracking-wide <%= gate_status_class(run) %>"><%= run.status.humanize %></p>
+              <p class="text-3xs uppercase tracking-wide <%= gate_status_class(run) %>"><%= run.status.humanize %></p>
               <% if run.started_at %>
-                <p class="text-[10px] text-muted mt-0.5 font-mono whitespace-nowrap"><%= deployment_range_times(lane_range) %></p>
+                <p class="text-3xs text-muted mt-0.5 font-mono whitespace-nowrap"><%= deployment_range_times(lane_range) %></p>
               <% end %>
             </div>
           <% end %>

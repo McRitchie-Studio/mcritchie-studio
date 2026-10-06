@@ -95,7 +95,7 @@
       <% end %>
 
       <% if @chart_weeks.any? %>
-        <div class="mt-4 flex justify-between text-[11px] text-muted font-mono">
+        <div class="mt-4 flex justify-between text-2xs text-muted font-mono">
           <span><%= ai_short_date(@chart_weeks.first.week_start_date) %></span>
           <span><%= ai_short_date(@chart_weeks.last.week_start_date) %></span>
         </div>
@@ -170,7 +170,7 @@
               <div class="w-2 rounded-t bg-emerald-400" style="height: <%= ai_coverage_percent(week.ai_builder_count, @minimum_cohort_size) %>%"></div>
               <div class="w-2 rounded-t bg-sky-400" style="height: <%= ai_coverage_percent(week.control_builder_count, @minimum_cohort_size) %>%"></div>
             </div>
-            <span class="text-[10px] text-muted font-mono whitespace-nowrap"><%= week.week_start_date.strftime("%m/%d") %></span>
+            <span class="text-3xs text-muted font-mono whitespace-nowrap"><%= week.week_start_date.strftime("%m/%d") %></span>
           </div>
         <% end %>
       </div>
@@ -277,7 +277,7 @@
                         "https://github.com/#{repo.repo_full_name}",
                         target: "_blank",
                         rel: "noopener",
-                        class: "rounded border border-subtle bg-surface px-2 py-1 text-[11px] text-secondary hover:text-heading hover:border-primary/40 transition" %>
+                        class: "rounded border border-subtle bg-surface px-2 py-1 text-2xs text-secondary hover:text-heading hover:border-primary/40 transition" %>
                 <% end %>
               </div>
             <% end %>
@@ -287,19 +287,19 @@
             <div class="grid grid-cols-4 gap-2 mt-3 text-center">
               <div>
                 <p class="text-sm font-bold text-heading"><%= ai_count(row[:observations_count]) %></p>
-                <p class="text-[10px] text-muted uppercase">Commits</p>
+                <p class="text-3xs text-muted uppercase">Commits</p>
               </div>
               <div>
                 <p class="text-sm font-bold text-heading"><%= ai_count(row[:metric_weeks_count]) %></p>
-                <p class="text-[10px] text-muted uppercase">Weeks</p>
+                <p class="text-3xs text-muted uppercase">Weeks</p>
               </div>
               <div>
                 <p class="text-sm font-bold text-heading"><%= ai_count(row[:complete_metric_weeks_count]) %></p>
-                <p class="text-[10px] text-muted uppercase">Complete</p>
+                <p class="text-3xs text-muted uppercase">Complete</p>
               </div>
               <div>
                 <p class="text-sm font-bold text-heading"><%= ai_count(row[:active_repos_count]) %></p>
-                <p class="text-[10px] text-muted uppercase">Repos</p>
+                <p class="text-3xs text-muted uppercase">Repos</p>
               </div>
             </div>
           </div>

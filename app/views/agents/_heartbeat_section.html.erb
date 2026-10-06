@@ -36,8 +36,8 @@
             :aria-label="copied ? 'Copied!' : '<%= j "Copy: #{launcher[:heartbeat]}" %>'"
             title="<%= "Copy: #{launcher[:heartbeat]}" %>">
       <code class="min-w-0 break-words text-sm font-semibold normal-case tracking-normal text-heading"><%= launcher[:heartbeat] %></code>
-      <span class="ml-auto shrink-0 text-[10px] text-muted group-hover:text-body" x-show="!copied">Copy</span>
-      <span class="ml-auto shrink-0 text-[10px] text-mint-300" x-show="copied" x-cloak x-transition.opacity>Copied &#10003;</span>
+      <span class="ml-auto shrink-0 text-3xs text-muted group-hover:text-body" x-show="!copied">Copy</span>
+      <span class="ml-auto shrink-0 text-3xs text-mint-300" x-show="copied" x-cloak x-transition.opacity>Copied &#10003;</span>
     </button>
     <% end %>
 
@@ -56,8 +56,8 @@
                 title="<%= "Copy: #{act}" %>">
           <code class="mt-0.5 shrink-0 break-words rounded bg-surface px-1.5 py-0.5 text-xs font-medium normal-case tracking-normal text-primary"><%= act %></code>
           <span class="min-w-0 flex-1 text-sm text-body"><%= action_description(act) %></span>
-          <span class="shrink-0 text-[10px] text-muted group-hover:text-body" x-show="!copied">Copy</span>
-          <span class="shrink-0 text-[10px] text-mint-300" x-show="copied" x-cloak x-transition.opacity>&#10003;</span>
+          <span class="shrink-0 text-3xs text-muted group-hover:text-body" x-show="!copied">Copy</span>
+          <span class="shrink-0 text-3xs text-mint-300" x-show="copied" x-cloak x-transition.opacity>&#10003;</span>
         </button>
       <% end %>
     </div>

@@ -17,17 +17,17 @@
     <div class="rounded-2xl border border-subtle bg-surface px-5 py-4" data-test="matrix-mrr">
       <p class="text-xs font-semibold uppercase tracking-wider text-muted">Total MRR</p>
       <p class="text-2xl font-bold text-heading tabular-nums" data-test="matrix-mrr-value"><%= number_to_currency(@matrix.mrr, precision: 0) %></p>
-      <p class="text-[11px] text-muted">At list price; internal and custom tiers add nothing.</p>
+      <p class="text-2xs text-muted">At list price; internal and custom tiers add nothing.</p>
     </div>
     <div class="rounded-2xl border border-subtle bg-surface px-5 py-4">
       <p class="text-xs font-semibold uppercase tracking-wider text-muted">Paying clients</p>
       <p class="text-2xl font-bold text-heading tabular-nums" data-test="matrix-paying-count"><%= @matrix.paying_clients.size %></p>
-      <p class="text-[11px] text-muted">of <%= pluralize(@clients.size, "client") %> on the page</p>
+      <p class="text-2xs text-muted">of <%= pluralize(@clients.size, "client") %> on the page</p>
     </div>
     <div class="rounded-2xl border border-subtle bg-surface px-5 py-4">
       <p class="text-xs font-semibold uppercase tracking-wider text-muted">Software in use</p>
       <p class="text-2xl font-bold text-heading tabular-nums"><%= @matrix.groups.sum { |group| group.software.size } %></p>
-      <p class="text-[11px] text-muted">across <%= pluralize(@matrix.groups.size, "category") %></p>
+      <p class="text-2xs text-muted">across <%= pluralize(@matrix.groups.size, "category") %></p>
     </div>
   </div>
 

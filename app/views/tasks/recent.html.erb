@@ -41,7 +41,7 @@
       Build → Local Certification → CI → Review — and the latest verdict on
       each testing gate, each with its local start → end stamps.
     </p>
-    <p class="text-[11px] text-muted uppercase tracking-wide">
+    <p class="text-2xs text-muted uppercase tracking-wide">
       <%= @tasks.size %> most recently updated · archived excluded
     </p>
   </header>
@@ -62,11 +62,11 @@
               <div class="flex items-center gap-2 min-w-0">
                 <%= link_to task.title, task_path(task.slug),
                       class: "font-semibold text-heading hover:text-primary transition truncate" %>
-                <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold <%= task_stage_count_classes(task.stage) %>"
+                <span class="shrink-0 px-1.5 py-0.5 rounded text-3xs font-bold <%= task_stage_count_classes(task.stage) %>"
                       data-test="recent-task-stage"><%= task.stage_label %></span>
                 <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
               </div>
-              <div class="flex items-center gap-2 text-[11px] text-muted min-w-0">
+              <div class="flex items-center gap-2 text-2xs text-muted min-w-0">
                 <span class="truncate font-mono"><%= task.slug %></span>
                 <span class="shrink-0" title="<%= task.updated_at.in_time_zone.strftime("%b %-d, %Y %-I:%M %p") %>">
                   ✏️ <%= compact_time_ago(task.updated_at) %>
@@ -89,7 +89,7 @@
                       <span class="absolute top-1 right-1"><%= phase_face_avatar_tag(face, px: 20, title: "#{Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label")}: #{face.name}") %></span>
                     <% end %>
                     <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= phase_short_labels[key] %></p>
-                    <p class="text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap <%= testing_phase_status_class(span["status"]) %>">
+                    <p class="text-2xs font-mono font-semibold tabular-nums whitespace-nowrap <%= testing_phase_status_class(span["status"]) %>">
                       <%= testing_phase_compact_label(span) %>
                     </p>
                     <% if range %>
@@ -98,7 +98,7 @@
                            data-start="<%= range[:started_at].to_i %>"
                            <% if range[:ended_at] %>data-end="<%= range[:ended_at].to_i %>"<% end %>>
                         <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(range) %></span>
-                        <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(range) %></span>
+                        <span class="text-secondary text-3xs leading-tight" data-range-time><%= deployment_range_times(range) %></span>
                       </div>
                     <% end %>
                   </div>
@@ -121,7 +121,7 @@
                           <span class="absolute top-1 right-1"><%= phase_face_avatar_tag(soul, px: 20, title: "#{lane_label} review: #{soul.name}") %></span>
                         <% end %>
                         <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= lane_label %></p>
-                        <p class="text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap <%= gate_status_class(run) %>">
+                        <p class="text-2xs font-mono font-semibold tabular-nums whitespace-nowrap <%= gate_status_class(run) %>">
                           <%= release_duration_label(run.duration_seconds) %><%= "+" if run.in_flight? %>
                         </p>
                         <div class="flex flex-col items-center leading-tight font-mono mt-0.5"
@@ -129,7 +129,7 @@
                              data-start="<%= run.started_at.to_i %>"
                              <% if run.finished_at %>data-end="<%= run.finished_at.to_i %>"<% end %>>
                           <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(lane_range) %></span>
-                          <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(lane_range) %></span>
+                          <span class="text-secondary text-3xs leading-tight" data-range-time><%= deployment_range_times(lane_range) %></span>
                         </div>
                       </div>
                     <% end %>
@@ -159,7 +159,7 @@
                             title="<%= run.attempt %> attempts — retried gate runs are first-class signal">×<%= run.attempt %></span>
                     <% end %>
                   </p>
-                  <p class="text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap <%= gate_status_class(run) %>">
+                  <p class="text-2xs font-mono font-semibold tabular-nums whitespace-nowrap <%= gate_status_class(run) %>">
                     <%= release_duration_label(run.duration_seconds) %><%= "+" if run.in_flight? %>
                   </p>
                   <div class="flex flex-col items-center leading-tight font-mono mt-0.5"
@@ -167,7 +167,7 @@
                        data-start="<%= run.started_at.to_i %>"
                        <% if run.finished_at %>data-end="<%= run.finished_at.to_i %>"<% end %>>
                     <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(gate_range) %></span>
-                    <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(gate_range) %></span>
+                    <span class="text-secondary text-3xs leading-tight" data-range-time><%= deployment_range_times(gate_range) %></span>
                   </div>
                 </div>
               <% end %>

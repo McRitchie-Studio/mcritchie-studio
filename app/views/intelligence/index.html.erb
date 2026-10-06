@@ -41,7 +41,7 @@
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3" data-test="summary-tiles">
     <% tiles.each do |tile| %>
       <div class="card p-4">
-        <p class="text-[11px] uppercase tracking-wide text-muted"><%= tile[:label] %></p>
+        <p class="text-2xs uppercase tracking-wide text-muted"><%= tile[:label] %></p>
         <p class="text-2xl font-bold mt-1 <%= tile[:accent] %>"><%= tile[:value] %></p>
       </div>
     <% end %>

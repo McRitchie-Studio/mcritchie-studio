@@ -104,9 +104,9 @@
       <%= rail_html %>
       <%# A fixed clock column, so a list of inline meters keeps its rails aligned
           whether a row's clock reads "9s" or "1h 04m". %>
-      <span class="flex w-9 shrink-0 justify-end text-[10px] leading-none"><%= clock_html %></span>
+      <span class="flex w-9 shrink-0 justify-end text-3xs leading-none"><%= clock_html %></span>
     <% else %>
-    <div class="flex items-center justify-between gap-2 text-[10px] leading-none">
+    <div class="flex items-center justify-between gap-2 text-3xs leading-none">
       <span class="font-semibold uppercase tracking-wide text-muted truncate" data-test="<%= test_id %>-label"><%= label %></span>
       <%= clock_html %>
     </div>

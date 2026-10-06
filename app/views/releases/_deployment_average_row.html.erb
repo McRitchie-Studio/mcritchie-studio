@@ -8,10 +8,10 @@
 <% stages = averages["stages"] || {} %>
 <tr class="bg-surface-alt" data-test="deployment-average-row">
   <td class="px-4 py-2.5">
-    <span class="text-[11px] font-bold uppercase tracking-wide text-primary"><%= label %></span>
+    <span class="text-2xs font-bold uppercase tracking-wide text-primary"><%= label %></span>
   </td>
   <td class="px-4 py-2.5">
-    <span class="text-[10px] text-muted"><%= averages["sample_count"].to_i %> release<%= "s" unless averages["sample_count"].to_i == 1 %></span>
+    <span class="text-3xs text-muted"><%= averages["sample_count"].to_i %> release<%= "s" unless averages["sample_count"].to_i == 1 %></span>
   </td>
   <% Release::DEPLOYMENT_STAGES.each do |stage| %>
     <% row = stages[stage[:key]] || {} %>

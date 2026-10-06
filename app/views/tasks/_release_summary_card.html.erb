@@ -43,12 +43,12 @@
     <%# NEXT %>
     <section class="min-w-0" data-test="release-summary-next" data-state="<%= rel ? "open" : "queued" %>">
       <div class="flex min-w-0 items-center gap-2" data-test="release-summary-next-line">
-        <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Next</span>
+        <span class="shrink-0 text-3xs font-semibold uppercase tracking-wide text-muted">Next</span>
         <% if rel %>
-          <span class="min-w-0 truncate text-[11px] font-medium text-heading" data-test="release-summary-next-state"><%= release_state_label(rel, current: true) %><span class="font-normal text-muted" title="in progress" data-test="release-summary-next-clock" data-release-ticker data-since="<%= rel.created_at.to_i %>" data-prefix=" · "> · <%= release_elapsed_clock(rel) %></span></span>
+          <span class="min-w-0 truncate text-2xs font-medium text-heading" data-test="release-summary-next-state"><%= release_state_label(rel, current: true) %><span class="font-normal text-muted" title="in progress" data-test="release-summary-next-clock" data-release-ticker data-since="<%= rel.created_at.to_i %>" data-prefix=" · "> · <%= release_elapsed_clock(rel) %></span></span>
           <%= render "tasks/release_summary_mascot", mascot: rel.mascot, name: rel.mascot_name, test_id: "release-summary-next-mascot" %>
         <% else %>
-          <span class="text-[11px] italic text-muted" data-test="release-summary-next-state">none active</span>
+          <span class="text-2xs italic text-muted" data-test="release-summary-next-state">none active</span>
         <% end %>
       </div>
       <% if rel %>
@@ -59,7 +59,7 @@
             <% end %>
           </div>
         <% else %>
-          <p class="mt-1 text-[11px] text-muted" data-test="release-summary-next-note">no members yet</p>
+          <p class="mt-1 text-2xs text-muted" data-test="release-summary-next-note">no members yet</p>
         <% end %>
       <% else %>
         <% if next_counts.any? %>
@@ -67,7 +67,7 @@
             <%= render "tasks/app_count_cluster", entries: next_counts, test_id: "release-summary-next-counts" %>
           </div>
         <% end %>
-        <p class="mt-1 truncate text-[11px] text-muted" data-test="release-summary-next-note">
+        <p class="mt-1 truncate text-2xs text-muted" data-test="release-summary-next-note">
           <% if queued_total.positive? %>
             <%= pluralize(queued_total, "task") %> queued on accepted
           <% else %>
@@ -82,9 +82,9 @@
     <%# LAST %>
     <section class="min-w-0" data-test="release-summary-last">
       <div class="flex min-w-0 items-center gap-2" data-test="release-summary-last-line">
-        <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Last</span>
+        <span class="shrink-0 text-3xs font-semibold uppercase tracking-wide text-muted">Last</span>
         <% if last %>
-          <span class="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-heading" data-test="release-summary-last-shipped">
+          <span class="flex min-w-0 items-center gap-1.5 text-2xs font-medium text-heading" data-test="release-summary-last-shipped">
             <% if (seal = last.smoke_seal) %>
               <span class="shrink-0 leading-none" data-test="release-summary-seal" data-seal-status="<%= seal.status %>" title="<%= release_smoke_seal_title(seal) %>"><%= seal.badge %></span>
             <% end %>
@@ -92,7 +92,7 @@
           </span>
           <%= render "tasks/release_summary_mascot", mascot: last.mascot, name: last.mascot_name, test_id: "release-summary-last-mascot" %>
         <% else %>
-          <span class="text-[11px] italic text-muted">none yet</span>
+          <span class="text-2xs italic text-muted">none yet</span>
         <% end %>
       </div>
       <% if last_counts.any? %>

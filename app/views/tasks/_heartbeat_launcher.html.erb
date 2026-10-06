@@ -40,7 +40,7 @@
     <div class="min-w-0 flex-1">
       <div class="flex items-baseline gap-2">
         <span class="text-sm font-semibold text-heading" data-test="heartbeat-soul-name"><%= soul.name.presence || launcher[:agent_slug].titleize %></span>
-        <span class="text-[11px] text-muted"><%= launcher[:label] %></span>
+        <span class="text-2xs text-muted"><%= launcher[:label] %></span>
       </div>
       <div class="mt-2 flex flex-col gap-1">
         <% rows.each_with_index do |(row_kind, text), row_index| %>
@@ -49,7 +49,7 @@
                data-copy-row-index="<%= row_index + 1 %>">
             <%= render "tasks/workflow_copy_chip", text: text, row_kind: row_kind %>
             <% description = row_kind == "heartbeat" ? heartbeat_description(launcher) : action_description(text) %>
-            <span class="truncate text-[11px] text-muted" data-test="heartbeat-row-description"
+            <span class="truncate text-2xs text-muted" data-test="heartbeat-row-description"
                   title="<%= description %>"><%= description %></span>
           </div>
         <% end %>
@@ -76,7 +76,7 @@
       <%= avatar %>
       <div class="min-w-0">
         <div class="truncate text-sm font-semibold leading-tight text-heading" data-test="heartbeat-soul-name"><%= soul.name.presence || launcher[:agent_slug].titleize %></div>
-        <div class="truncate text-[11px] leading-tight text-muted"><%= launcher[:label] %></div>
+        <div class="truncate text-2xs leading-tight text-muted"><%= launcher[:label] %></div>
       </div>
     </div>
     <div class="grid min-w-0 grid-cols-2 gap-1">

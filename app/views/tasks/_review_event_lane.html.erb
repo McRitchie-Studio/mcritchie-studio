@@ -23,14 +23,14 @@
 
   <div class="mt-4 rounded-md border border-subtle bg-surface-alt p-3" data-test="review-role-stats">
     <div class="mb-2 flex items-center justify-between gap-2">
-      <p class="text-[10px] font-semibold uppercase tracking-wide text-muted">Top <%= review_role_short_label(lane.role) %> reviewers</p>
-      <span class="text-[10px] text-muted">tasks</span>
+      <p class="text-3xs font-semibold uppercase tracking-wide text-muted">Top <%= review_role_short_label(lane.role) %> reviewers</p>
+      <span class="text-3xs text-muted">tasks</span>
     </div>
     <% if lane.top_agents.any? %>
       <ol class="space-y-2">
         <% lane.top_agents.each_with_index do |stat, index| %>
           <li class="flex items-center gap-2" data-test="review-role-stat" data-agent="<%= stat.slug %>">
-            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-subtle bg-surface text-[10px] font-bold text-muted"><%= index + 1 %></span>
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-subtle bg-surface text-3xs font-bold text-muted"><%= index + 1 %></span>
             <% if stat.agent %>
               <%= render "components/agent_avatar", agent: stat.agent, size: "xs" %>
             <% end %>
@@ -54,12 +54,12 @@
           data-moment="<%= moment %>"
           data-complete="<%= complete %>"
           data-timing-status="<%= timing&.status || "expected" %>">
-        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded border <%= complete ? "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200" : "border-subtle bg-surface text-muted" %> text-[11px] font-bold tabular-nums"><%= index + 1 %></span>
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded border <%= complete ? "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200" : "border-subtle bg-surface text-muted" %> text-2xs font-bold tabular-nums"><%= index + 1 %></span>
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="text-sm font-semibold text-heading"><%= review_moment_display_label(lane.role, moment) %></p>
             <% if show_task_events && timing %>
-              <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide tabular-nums <%= review_moment_duration_classes(timing) %>"
+              <span class="rounded border px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wide tabular-nums <%= review_moment_duration_classes(timing) %>"
                     data-test="review-moment-duration"
                     data-duration-seconds="<%= timing.seconds %>">
                 <%= review_moment_duration_label(timing) %>
@@ -90,7 +90,7 @@
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide <%= review_status_classes(event.review_status) %>">
+                  <span class="rounded border px-1.5 py-0.5 text-3xs font-bold uppercase tracking-wide <%= review_status_classes(event.review_status) %>">
                     <%= event.review_status %>
                   </span>
                   <h3 class="text-sm font-semibold text-heading"><%= review_moment_display_label(lane.role, event.review_moment) %></h3>
@@ -99,26 +99,26 @@
                   <p class="mt-2 text-sm text-body whitespace-pre-wrap"><%= event.review_message %></p>
                 <% end %>
               </div>
-              <time class="shrink-0 text-[11px] text-muted" datetime="<%= event.occurred_at.iso8601 %>" title="<%= event.occurred_at.strftime("%b %d, %Y %H:%M") %>">
+              <time class="shrink-0 text-2xs text-muted" datetime="<%= event.occurred_at.iso8601 %>" title="<%= event.occurred_at.strftime("%b %d, %Y %H:%M") %>">
                 <%= event.occurred_at.strftime("%b %d, %H:%M") %>
               </time>
             </div>
 
             <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs md:grid-cols-4">
               <div class="min-w-0">
-                <dt class="text-[10px] uppercase tracking-wide text-muted">Actor</dt>
+                <dt class="text-3xs uppercase tracking-wide text-muted">Actor</dt>
                 <dd class="truncate text-secondary"><%= event.actor.presence || "—" %></dd>
               </div>
               <div class="min-w-0">
-                <dt class="text-[10px] uppercase tracking-wide text-muted">Model</dt>
+                <dt class="text-3xs uppercase tracking-wide text-muted">Model</dt>
                 <dd class="truncate font-mono text-secondary"><%= event.model.presence || "—" %></dd>
               </div>
               <div class="min-w-0">
-                <dt class="text-[10px] uppercase tracking-wide text-muted">Tokens</dt>
+                <dt class="text-3xs uppercase tracking-wide text-muted">Tokens</dt>
                 <dd class="font-mono tabular-nums text-secondary"><%= event.tokens_total ? number_with_delimiter(event.tokens_total) : "—" %></dd>
               </div>
               <div class="min-w-0">
-                <dt class="text-[10px] uppercase tracking-wide text-muted">Cost</dt>
+                <dt class="text-3xs uppercase tracking-wide text-muted">Cost</dt>
                 <dd class="font-mono tabular-nums text-secondary"><%= event.cost.present? ? "~$#{format("%.2f", event.cost)}" : "—" %></dd>
               </div>
             </dl>

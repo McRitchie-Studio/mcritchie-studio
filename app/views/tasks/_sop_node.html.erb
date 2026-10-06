@@ -22,11 +22,11 @@
         <div class="text-sm font-semibold leading-tight text-heading"><%= step[:label] %></div>
       <% end %>
       <% if step[:note] %>
-        <div class="text-[10px] text-muted mt-1 leading-tight"><%= step[:note] %></div>
+        <div class="text-3xs text-muted mt-1 leading-tight"><%= step[:note] %></div>
       <% end %>
     </div>
     <% if step[:diverges] %>
-      <span class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500 text-white text-[11px] flex items-center justify-center cursor-help shadow-md"
+      <span class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500 text-white text-2xs flex items-center justify-center cursor-help shadow-md"
             title="<%= step[:diverges] %>" data-sop-diverges>⚠</span>
     <% end %>
   </div>

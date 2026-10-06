@@ -111,28 +111,28 @@
         <div class="space-y-3">
           <% if @news.author.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">Author</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Author</p>
               <p class="text-heading text-sm"><%= @news.author %></p>
             </div>
           <% end %>
 
           <% if @news.published_at.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">Published</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Published</p>
               <p class="text-heading text-sm"><%= @news.published_at.strftime("%b %d, %Y %H:%M") %></p>
             </div>
           <% end %>
 
           <% if @news.url.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">Source</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Source</p>
               <a href="<%= @news.url %>" target="_blank" class="text-primary text-sm hover:text-primary-300 truncate block"><%= @news.url.gsub(%r{https?://}, '').truncate(40) %></a>
             </div>
           <% end %>
 
           <% if @news.x_post_url.present? %>
             <div>
-              <p class="text-[10px] text-muted uppercase tracking-wider">X Post</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">X Post</p>
               <a href="<%= @news.x_post_url %>" target="_blank" class="text-primary text-sm hover:text-primary-300">View Post</a>
             </div>
           <% end %>
@@ -146,16 +146,16 @@
           <div class="space-y-3">
             <% if @news.primary_person.present? %>
               <div>
-                <p class="text-[10px] text-muted uppercase tracking-wider">Primary Person</p>
+                <p class="text-3xs text-muted uppercase tracking-wider">Primary Person</p>
                 <p class="text-heading text-sm"><%= @news.primary_person %></p>
                 <% if @news.primary_person_slug.present? %>
                   <% person_record = @people_by_slug[@news.primary_person_slug] %>
                   <div class="flex items-center gap-1.5 mt-0.5">
                     <span class="inline-block w-1.5 h-1.5 rounded-full <%= person_record ? 'bg-green-400' : 'bg-red-400' %>"></span>
                     <% if person_record %>
-                      <a href="<%= people_path(q: person_record.full_name) %>" class="text-[10px] font-mono text-primary hover:text-primary-300"><%= @news.primary_person_slug %></a>
+                      <a href="<%= people_path(q: person_record.full_name) %>" class="text-3xs font-mono text-primary hover:text-primary-300"><%= @news.primary_person_slug %></a>
                     <% else %>
-                      <span class="text-[10px] font-mono text-muted"><%= @news.primary_person_slug %></span>
+                      <span class="text-3xs font-mono text-muted"><%= @news.primary_person_slug %></span>
                     <% end %>
                     <span class="text-[9px] text-muted"><%= person_record ? 'found' : 'missing' %></span>
                   </div>
@@ -164,16 +164,16 @@
             <% end %>
             <% if @news.primary_team.present? %>
               <div>
-                <p class="text-[10px] text-muted uppercase tracking-wider">Primary Team</p>
+                <p class="text-3xs text-muted uppercase tracking-wider">Primary Team</p>
                 <p class="text-heading text-sm"><%= @news.primary_team %></p>
                 <% if @news.primary_team_slug.present? %>
                   <% team_record = @teams_by_slug[@news.primary_team_slug] %>
                   <div class="flex items-center gap-1.5 mt-0.5">
                     <span class="inline-block w-1.5 h-1.5 rounded-full <%= team_record ? 'bg-green-400' : 'bg-red-400' %>"></span>
                     <% if team_record %>
-                      <a href="<%= teams_path(q: team_record.name) %>" class="text-[10px] font-mono text-primary hover:text-primary-300"><%= @news.primary_team_slug %></a>
+                      <a href="<%= teams_path(q: team_record.name) %>" class="text-3xs font-mono text-primary hover:text-primary-300"><%= @news.primary_team_slug %></a>
                     <% else %>
-                      <span class="text-[10px] font-mono text-muted"><%= @news.primary_team_slug %></span>
+                      <span class="text-3xs font-mono text-muted"><%= @news.primary_team_slug %></span>
                     <% end %>
                     <span class="text-[9px] text-muted"><%= team_record ? 'found' : 'missing' %></span>
                   </div>
@@ -182,16 +182,16 @@
             <% end %>
             <% if @news.secondary_person.present? %>
               <div>
-                <p class="text-[10px] text-muted uppercase tracking-wider">Secondary Person</p>
+                <p class="text-3xs text-muted uppercase tracking-wider">Secondary Person</p>
                 <p class="text-heading text-sm"><%= @news.secondary_person %></p>
                 <% if @news.secondary_person_slug.present? %>
                   <% person_record = @people_by_slug[@news.secondary_person_slug] %>
                   <div class="flex items-center gap-1.5 mt-0.5">
                     <span class="inline-block w-1.5 h-1.5 rounded-full <%= person_record ? 'bg-green-400' : 'bg-red-400' %>"></span>
                     <% if person_record %>
-                      <a href="<%= people_path(q: person_record.full_name) %>" class="text-[10px] font-mono text-primary hover:text-primary-300"><%= @news.secondary_person_slug %></a>
+                      <a href="<%= people_path(q: person_record.full_name) %>" class="text-3xs font-mono text-primary hover:text-primary-300"><%= @news.secondary_person_slug %></a>
                     <% else %>
-                      <span class="text-[10px] font-mono text-muted"><%= @news.secondary_person_slug %></span>
+                      <span class="text-3xs font-mono text-muted"><%= @news.secondary_person_slug %></span>
                     <% end %>
                     <span class="text-[9px] text-muted"><%= person_record ? 'found' : 'missing' %></span>
                   </div>
@@ -200,16 +200,16 @@
             <% end %>
             <% if @news.secondary_team.present? %>
               <div>
-                <p class="text-[10px] text-muted uppercase tracking-wider">Secondary Team</p>
+                <p class="text-3xs text-muted uppercase tracking-wider">Secondary Team</p>
                 <p class="text-heading text-sm"><%= @news.secondary_team %></p>
                 <% if @news.secondary_team_slug.present? %>
                   <% team_record = @teams_by_slug[@news.secondary_team_slug] %>
                   <div class="flex items-center gap-1.5 mt-0.5">
                     <span class="inline-block w-1.5 h-1.5 rounded-full <%= team_record ? 'bg-green-400' : 'bg-red-400' %>"></span>
                     <% if team_record %>
-                      <a href="<%= teams_path(q: team_record.name) %>" class="text-[10px] font-mono text-primary hover:text-primary-300"><%= @news.secondary_team_slug %></a>
+                      <a href="<%= teams_path(q: team_record.name) %>" class="text-3xs font-mono text-primary hover:text-primary-300"><%= @news.secondary_team_slug %></a>
                     <% else %>
-                      <span class="text-[10px] font-mono text-muted"><%= @news.secondary_team_slug %></span>
+                      <span class="text-3xs font-mono text-muted"><%= @news.secondary_team_slug %></span>
                     <% end %>
                     <span class="text-[9px] text-muted"><%= team_record ? 'found' : 'missing' %></span>
                   </div>
@@ -225,36 +225,36 @@
         <p class="label-upper mb-3">Timeline</p>
         <div class="space-y-2">
           <div class="bg-surface-alt rounded-lg p-3">
-            <p class="text-[10px] text-muted uppercase tracking-wider">Created</p>
+            <p class="text-3xs text-muted uppercase tracking-wider">Created</p>
             <p class="text-heading text-sm"><%= @news.created_at.strftime("%b %d, %H:%M") %></p>
           </div>
           <% if @news.reviewed_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Reviewed</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Reviewed</p>
               <p class="text-heading text-sm"><%= @news.reviewed_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @news.processed_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Processed</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Processed</p>
               <p class="text-heading text-sm"><%= @news.processed_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @news.refined_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Refined</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Refined</p>
               <p class="text-heading text-sm"><%= @news.refined_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @news.concluded_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Concluded</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Concluded</p>
               <p class="text-heading text-sm"><%= @news.concluded_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>
           <% if @news.archived_at %>
             <div class="bg-surface-alt rounded-lg p-3">
-              <p class="text-[10px] text-muted uppercase tracking-wider">Archived</p>
+              <p class="text-3xs text-muted uppercase tracking-wider">Archived</p>
               <p class="text-heading text-sm"><%= @news.archived_at.strftime("%b %d, %H:%M") %></p>
             </div>
           <% end %>

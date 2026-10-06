@@ -25,7 +25,7 @@
             <% docs.each do |doc| %>
               <%= link_to doc[:label],
                           doc_path(doc[:path]),
-                          class: "inline-flex min-h-7 items-center rounded border border-white/10 bg-white/5 px-2.5 text-[11px] font-semibold text-secondary hover:border-primary/40 hover:text-heading transition",
+                          class: "inline-flex min-h-7 items-center rounded border border-white/10 bg-white/5 px-2.5 text-2xs font-semibold text-secondary hover:border-primary/40 hover:text-heading transition",
                           data: { test: "agent-file-link", file: doc[:path] } %>
             <% end %>
           </div>

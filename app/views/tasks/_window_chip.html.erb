@@ -44,7 +44,7 @@
         <% if urgent %>data-window-urgent="true"<% end %>
         title="<%= title %>"
         aria-label="<%= title %>"
-        class="inline-flex items-center gap-1 shrink-0 max-w-[11rem] px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none tabular-nums border <%= tones.fetch(window.kind) %> data-[window-state=lapsed]:opacity-70 data-[window-urgent=true]:motion-safe:animate-pulse">
+        class="inline-flex items-center gap-1 shrink-0 max-w-[11rem] px-1.5 py-0.5 rounded text-3xs font-semibold leading-none tabular-nums border <%= tones.fetch(window.kind) %> data-[window-state=lapsed]:opacity-70 data-[window-urgent=true]:motion-safe:animate-pulse">
     <span aria-hidden="true" class="text-[9px] leading-none"><%= glyphs.fetch(window.kind) %></span>
     <span class="truncate"
           data-test="task-window-clock"

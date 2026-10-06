@@ -24,7 +24,7 @@ module Admin::AiBuilderMultipleHelper
     safe_join(
       [
         content_tag(:span, ai_short_date(date), class: "block normal-case tracking-normal text-secondary"),
-        (content_tag(:span, date.year, class: "block text-[10px] text-muted mt-0.5") unless date.year == Time.now.utc.year)
+        (content_tag(:span, date.year, class: "block text-3xs text-muted mt-0.5") unless date.year == Time.now.utc.year)
       ].compact
     )
   end
