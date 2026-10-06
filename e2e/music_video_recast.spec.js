@@ -54,6 +54,7 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   // block (swap toggle, then naming) is under them.
   const top = async (sel) => (await card(page, 1).locator(sel).first().boundingBox()).y;
   await card(page, 1).locator("[data-test='performer-title']").click();
+  await expect(card(page, 1).locator("[data-test='card-details']")).toBeVisible();
   expect(await top("[data-test='replace-with']")).toBeLessThan(await top("[data-test='card-details']"));
   expect(await top("[data-test='card-details']")).toBeLessThan(await top("[data-test='card-bottom']"));
   expect(await top("[data-test='card-bottom']")).toBeLessThan(await top("[data-test='performer-resolution']"));
