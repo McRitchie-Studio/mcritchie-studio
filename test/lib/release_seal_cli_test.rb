@@ -4,13 +4,13 @@
 # Standalone:
 #   ruby -Itest test/lib/release_seal_cli_test.rb
 #
-# It drives the REAL bin/release.rb in a subprocess (like release_cli_test.rb) and
+# It drives the REAL bin/release.rb in a subprocess (like the release CLI tests) and
 # uses real git fixtures to prove WHICH tree's specs the seal runs: the ship
 # workspace pinned at the frozen SHA, never the primary (rel-20260925-3b1f5c sealed
 # a false red from the primary's PRE-ship specs).
 #
-# A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is frozen at its size by
-# the suite's test-health ratchet, so the seal's cases moved here, named for their concern.
+# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
+# the suite's test-health ratchet, so the seal's cases live here, named for their concern.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"

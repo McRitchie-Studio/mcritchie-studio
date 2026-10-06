@@ -3,8 +3,7 @@
 # `bin/release init` and `bin/release prepare`: the dry-run plan, the merge-forward
 # ordering, QA dispatch, the QA dyno boot wait and the Steffon handoff.
 #
-# Part of the bin/release CLI suite, split by subcommand from the old
-# test/lib/release_cli_test.rb (release-cli-tests-by-subcommand, 2026-10-05). The
+# Part of the bin/release CLI suite, one file per subcommand. The
 # shared subprocess harness, fixtures and stub constants live in
 # test/lib/release_cli_harness.rb. Run directly:
 #   ruby -Itest test/lib/release_cli_prepare_test.rb

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # Standalone test for bin/agent-worktree's pure helpers — port allocation and
-# the finish --pr handoff (PR-URL parse + task stamp). Mirrors
-# test/lib/release_cli_test.rb: it `load`s the script in a clean subprocess so the
+# the finish --pr handoff (PR-URL parse + task stamp). Mirrors the release CLI
+# tests: it `load`s the script in a clean subprocess so the
 # guarded dispatch (`if $PROGRAM_NAME == __FILE__`) never fires, redefines the
 # I/O-bound helpers (allocated_ports / port_listening? / port_pid / process_cwd)
 # as stubs, and exercises the real allocation + adoption-guard logic. Run directly:

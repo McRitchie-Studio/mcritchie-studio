@@ -110,7 +110,7 @@ class ReleaseMergeForwardTest < ActiveSupport::TestCase
   # `scan(/abort!/).size >= 4` against 6 present clauses — two of slack, so the
   # fetch and push aborts could BOTH be deleted with the suite still green. A
   # count is a proxy; the clauses are the property. (Behavioural coverage for the
-  # fetch/push failures lives in release_cli_test.rb, driven against real repos.)
+  # fetch/push failures lives in the release CLI repin tests, test_merge_forward_*.)
   test "every fallible step in the merge-forward is captured and feeds an abort" do
     # A `sh` whose result is thrown away is the bug this PR exists to fix.
     {

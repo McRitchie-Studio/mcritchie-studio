@@ -24,8 +24,8 @@
 # a remedy it cannot honour. A refusal that names the wrong remedy is worse than one
 # that names none, because the reader ACTS on it.
 #
-# WHY THIS FILE EXISTS SEPARATELY. test/lib/release_cli_test.rb owns the integration
-# coverage of pre_qa_gate, and it is the suite's worst APPEND hotspot — frozen at its
+# WHY THIS FILE EXISTS SEPARATELY. The release CLI pre-QA gate tests own the
+# integration coverage of pre_qa_gate, and they are an APPEND hotspot, frozen at their
 # ceiling in config/test_health.yml by design. The ratchet's stated out is a new file
 # named for its concern, which is what this is; test/lib/release_auth_remedy_message_test.rb
 # is the same move for the ship lane's auth message, and `eval_helper` is

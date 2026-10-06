@@ -15,9 +15,9 @@ require "tmpdir"
 # publish. Two reviewers reproduced it. Its unit tests were green throughout,
 # because the decisions lived in the shell where no test could reach them.
 #
-# A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is frozen at its size by
-# config/test_health.yml, precisely so new work lands somewhere else. The flow
-# tests there stub this function wholesale (it does real bundler and rails work,
+# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
+# config/test_health.yml, precisely so new work lands somewhere else. The release
+# CLI flow tests stub this function wholesale (it does real bundler and rails work,
 # and their "workspace" is a bare tmpdir); here `sh` is stubbed instead, so the
 # REAL function runs.
 class ReleaseEngineMigrationInstallTest < Minitest::Test

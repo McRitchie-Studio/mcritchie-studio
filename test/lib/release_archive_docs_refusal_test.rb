@@ -19,9 +19,9 @@
 #
 # Run directly:  ruby -Itest test/lib/release_archive_docs_refusal_test.rb
 #
-# It lives outside test/lib/release_cli_test.rb deliberately: that file is a frozen
-# hotspot in config/test_health.yml (7364 lines, 26 of the last 200 merged PRs), and the
-# ratchet's remedy for "I need to add something" is a new named home, not an append.
+# A file of its own, named for its concern: the release CLI files are frozen hotspots in
+# config/test_health.yml, and the ratchet's remedy for "I need to add something" is a
+# new named home, not an append.
 
 require "minitest/autorun"
 require "open3"
@@ -96,7 +96,7 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
 
   # Spawn the REAL CLI: argv is set before `load` (DRY/PROD/ASSUME_YES are read from ARGV
   # at load time), the stubs are injected after, then the real entrypoint is called.
-  # Returns [combined output, exit status]. Unlike the release_cli_test helper this does
+  # Returns [combined output, exit status]. Unlike the release CLI harness's run_cli this does
   # NOT assert success — a refusal exiting non-zero is the expected result here.
   def run_archive(dir, argv: ["archive", "--yes", "--local"])
     script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{STUBS}; archive)
