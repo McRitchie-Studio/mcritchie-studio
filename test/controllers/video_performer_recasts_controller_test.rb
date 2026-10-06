@@ -306,7 +306,7 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       get music_video_path(video)
       assert_select "[data-test='performer-card'][data-resolved='true'][data-named='false']", 2
       assert_select "[data-test='performer-badge']", text: "Not named", count: 2
-      assert_select "[data-test='performer-artist-optional']", 2
+      assert_select "[data-test='performer-resolution'] [data-test='performer-typeahead'] input[role='combobox']", 2
       assert_select "[data-test='performer-recast'][data-state='none']", 2
       assert_select "[data-test='cast-named-count']", /Nobody named\. Naming is optional/
       assert_select "[data-test='confirm-cast-form'] button:not([disabled])", "Cast confirmed"
@@ -315,6 +315,49 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_equal "cast_confirmed", video.reload.stage
       assert_equal [nil, nil], video.video_performers.map(&:artist_slug)
     end
+  end
+
+  # What the always-open "Who is this on screen?" search sends: JSON in, what the card shows out.
+  def save_name(ordinal, **body)
+    patch music_video_performer_path(@video, ordinal), params: body.to_json,
+                                                       headers: { "Content-Type" => "application/json", "Accept" => "application/json" }
+    response.body.present? ? response.parsed_body : {} # the admin wall's 403 is empty
+  end
+
+  test "the naming search's JSON saves: a pick names the card and offers the swap, extra, clear, refusal; viewers get no save" do
+    log_in_as users(:alex)
+    artist = Artist.create!(slug: "test-athlete-alpha-artist", name: "Test Athlete Alpha", kind: "person", person_slug: @athlete.slug)
+
+    body = save_name(2, artist_slug: artist.slug)
+    assert_response :success
+    assert_equal({ "kind" => "artist", "slug" => artist.slug, "name" => "Test Athlete Alpha", "avatar_url" => nil,
+                   "vocation" => "athlete", "team" => nil }, body["named"])
+    assert_equal ["test-athlete-alpha", ["Home Blue", "Away White"]], [body["offer"]["slug"], body["offer"]["looks"].pluck("descriptor")]
+    assert_equal "Person 2 is Test Athlete Alpha.", body["message"]
+    assert_equal artist.slug, performer(2).artist_slug
+    assert_nil performer(2).recast_person_slug, "naming offers the swap, never does it"
+
+    body = save_name(2, extra: "1")
+    assert_equal [{ "kind" => "extra" }, nil], body.values_at("named", "offer")
+    assert performer(2).extra?
+
+    body = save_name(2, clear: "1")
+    assert_equal [nil, nil], body.values_at("named", "offer")
+    assert_not performer(2).named?
+
+    body = save_name(2, new_artist_name: "Test Artist E", new_artist_kind: "group")
+    assert_equal ["Test Artist E", "group"], body["named"].values_at("name", "vocation")
+
+    assert_no_difference -> { ErrorLog.count } do
+      body = save_name(2, nothing: "1")
+      assert_response :unprocessable_entity
+      assert_equal "Person 2 not updated: choose an artist or person, or name a new artist.", body["error"]
+    end
+
+    log_in_as users(:viewer)
+    save_name(2, clear: "1")
+    assert_response :forbidden
+    assert performer(2).named?
   end
 
   test "a confirmed cast can still be named, and the stored prompts are refreshed with it" do

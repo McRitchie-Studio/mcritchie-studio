@@ -1,6 +1,5 @@
 <%# One person on the cast panel, top to bottom: the still and heading; Replace with (the inputs to swap in a new player); the description and sightings; then, pinned to the bottom so cards in a row line up, the Keep Original / Swap back button and who is on screen (the optional artist name, the rolodex). Nothing here has to be pressed before the cast is confirmed. %>
 <% sightings = performer.sightings_by_time %>
-<% named_row = performer.artist&.person_slug && local_assigns.fetch(:recast_rows, {})[performer.artist.person_slug] %>
 <article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
          data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>" data-named="<%= performer.named? %>">
   <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset rounded-t-xl overflow-hidden">
@@ -30,17 +29,16 @@
         <h2 class="text-lg font-bold text-heading"><%= performer.name %></h2>
         <p class="text-sm text-body break-words" data-test="performer-label"><%= performer.label %></p>
       </div>
-      <% if performer.artist %>
-        <span class="badge text-3xs bg-success/10 text-success-ink border-success/40 shrink-0" data-test="performer-badge">Named</span>
-      <% elsif performer.extra? %>
-        <span class="badge text-3xs bg-surface-alt text-secondary border-subtle shrink-0" data-test="performer-badge">Extra</span>
-      <% else %>
-        <span class="badge text-3xs bg-surface-alt text-muted border-subtle shrink-0" data-test="performer-badge">Not named</span>
-      <% end %>
+      <%# Follows the naming search's saves (window.namingCard dispatches naming-saved). %>
+      <% badge = performer.artist ? "named" : (performer.extra? ? "extra" : "none") %>
+      <span x-data="{ b: '<%= badge %>' }" @naming-saved.window="if ($event.detail.ordinal === <%= performer.ordinal %>) b = $event.detail.named ? ($event.detail.named.kind === 'extra' ? 'extra' : 'named') : 'none'"
+            class="badge text-3xs shrink-0" data-state="<%= badge %>" :data-state="b"
+            :class="{ named: 'bg-success/10 text-success-ink border-success/40', extra: 'bg-surface-alt text-secondary border-subtle', none: 'bg-surface-alt text-muted border-subtle' }[b]"
+            x-text="{ named: 'Named', extra: 'Extra', none: 'Not named' }[b]" data-test="performer-badge"><%= { "named" => "Named", "extra" => "Extra", "none" => "Not named" }[badge] %></span>
     </header>
 
     <%# Replace with sits at the top, under the still and the heading: it is the card's main job. %>
-    <%= render "music_videos/recast", performer: performer, video: video, looks: recast_looks, named_row:,
+    <%= render "music_videos/recast", performer: performer, video: video, looks: recast_looks,
                sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready] %>
 
     <% if performer.confidence_note.present? %>
@@ -71,103 +69,7 @@
     <%# Pinned to the bottom (mt-auto): the swap's on/off, then who is on screen. %>
     <div class="mt-auto pt-3 border-t border-subtle space-y-3 min-w-0" data-test="card-bottom">
     <%= render "music_videos/swap_toggle", performer: %>
-    <div class="min-w-0" data-test="performer-resolution">
-      <% if performer.artist || performer.extra? %>
-        <div class="flex items-center justify-between gap-2 min-w-0">
-          <% if performer.artist %>
-            <%# Who is on screen, drawn like the swap's chosen athlete (headshot, name, vocation and team) but under its own heading; the slug is a tooltip only. %>
-            <div class="min-w-0 flex-1" data-test="performer-artist" data-slug="<%= performer.artist_slug %>" title="<%= performer.artist_slug %>">
-              <p class="label-upper mb-1.5">On screen</p>
-              <div class="flex items-center gap-3 min-w-0">
-                <span class="w-11 h-11 shrink-0 rounded-full bg-inset border border-subtle overflow-hidden flex items-center justify-center text-muted" data-test="performer-artist-avatar">
-                  <% if named_row&.avatar_url %>
-                    <img src="<%= named_row.avatar_url %>" alt="" loading="lazy" class="block w-full h-full object-cover"
-                         onerror="this.hidden = true; this.nextElementSibling.hidden = false" data-test="performer-artist-headshot">
-                  <% end %>
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="w-6 h-6" <%= "hidden" if named_row&.avatar_url %> data-test="performer-artist-placeholder">
-                    <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.5-8 5.5 0 .8.7 1.5 1.5 1.5h13c.8 0 1.5-.7 1.5-1.5 0-3-3.6-5.5-8-5.5Z"/>
-                  </svg>
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="block text-sm font-semibold text-heading truncate" data-test="performer-artist-name"><%= performer.artist.name %></span>
-                  <span class="block text-xs text-muted truncate" data-test="performer-artist-utility"><%= [named_row&.vocation || (performer.artist.group? ? "group" : "musician"), named_row&.team].compact.join(" · ") %></span>
-                </span>
-              </div>
-            </div>
-          <% else %>
-            <%# Under the same On screen heading as a named artist, so its Change reads as renaming who is on screen, not the swap below. %>
-            <div class="min-w-0 flex-1">
-              <p class="label-upper mb-1.5">On screen</p>
-              <p class="text-sm text-body" data-test="performer-extra">An extra, not a named artist</p>
-            </div>
-          <% end %>
-          <%= button_to "Change", music_video_performer_path(video, performer.ordinal), method: :patch,
-                        params: { clear: "1" }, class: "btn btn-outline btn-sm shrink-0 self-end",
-                        "aria-label": "Change who is on screen", data: { test: "performer-artist-change" } %>
-        </div>
-      <% else %>
-        <%# Naming is optional and kept apart from the swap: collapsed behind a quiet link, under its own heading, and its search offers artists and non-sports People only (Artists::Search), so an athlete meant for Replace with is not picked as the person on screen. %>
-        <div x-data="{ naming: false }" class="min-w-0" data-test="performer-artist-optional">
-          <button type="button" x-show="!naming" @click="naming = true; $nextTick(() => setTimeout(() => document.getElementById('artist-search-<%= performer.ordinal %>').focus()))"
-                  class="text-xs text-muted hover:text-primary hover:underline" data-test="name-artist-open">
-            Who is this on screen? <span class="italic">(optional)</span>
-          </button>
-          <div x-show="naming" x-cloak class="space-y-1.5 min-w-0" data-test="naming-panel">
-            <p class="label-upper">Who is this on screen? <span class="normal-case tracking-normal">(optional)</span></p>
-            <div x-data="castTypeahead()" data-search-url="<%= search_artists_path(format: :json) %>"
-                 @click.outside="open = false" class="relative" data-test="performer-typeahead">
-              <%= form_with url: music_video_performer_path(video, performer.ordinal), method: :patch, local: true,
-                            html: { "x-ref": "form" } do %>
-                <input type="hidden" name="artist_slug" :value="artistSlug">
-                <input type="hidden" name="person_slug" :value="personSlug">
-                <label class="sr-only" for="artist-search-<%= performer.ordinal %>">Who is <%= performer.name %>?</label>
-                <input id="artist-search-<%= performer.ordinal %>" type="text" autocomplete="off" role="combobox"
-                       aria-autocomplete="list" :aria-expanded="open" aria-controls="artist-results-<%= performer.ordinal %>"
-                       placeholder="Search artists and people"
-                       class="input-field py-2 text-sm" x-model="query" @input.debounce.250ms="search()"
-                       @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
-                       @keydown.enter.prevent="pickActive()" @keydown.escape="open = false">
-
-                <div x-show="open" x-cloak id="artist-results-<%= performer.ordinal %>" role="listbox"
-                     class="absolute z-20 left-0 right-0 mt-1 card shadow-lg max-h-80 overflow-y-auto p-1" data-test="typeahead-results">
-                  <template x-for="(r, i) in results" :key="r.type + r.slug">
-                    <%= render "music_videos/search_row", option_test: "typeahead-option", hint: "r.hint",
-                               badge: "r.type === 'person' ? 'people' : r.kind",
-                               badge_class: "r.kind === 'group' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-alt text-secondary border-subtle'" %>
-                  </template>
-                  <p x-show="!loading && failed" class="px-3 py-2 text-sm text-warning-ink">Search failed. Try again.</p>
-                  <p x-show="!loading && !failed && results.length === 0" class="px-3 py-2 text-sm text-muted">No artist or person matches.</p>
-                  <button type="button" x-show="!loading && query.trim().length > 0 && !exactMatch" @click="startCreate()"
-                          class="w-full text-left rounded-lg px-3 py-2 text-sm text-primary hover:bg-surface-alt" data-test="typeahead-create">
-                    Create new artist “<span x-text="query.trim()"></span>”
-                  </button>
-                </div>
-
-                <div x-show="creating" x-cloak class="mt-2 flex flex-col sm:flex-row gap-2" data-test="create-artist">
-                  <input type="text" name="new_artist_name" x-model="newName" :disabled="!creating" aria-label="New artist name"
-                         class="input-field py-2 text-sm flex-1 min-w-0">
-                  <select name="new_artist_kind" x-model="newKind" :disabled="!creating" aria-label="Kind"
-                          class="input-field py-2 text-sm sm:w-auto">
-                    <option value="person">Person</option>
-                    <option value="group">Group</option>
-                  </select>
-                  <button type="submit" class="btn btn-primary btn-sm" :disabled="newName.trim().length === 0">Create and link</button>
-                </div>
-              <% end %>
-            </div>
-            <div class="flex flex-wrap items-center justify-between gap-x-3 text-xs text-muted">
-              <span>Names the artist in the rolodex. Not who replaces them.</span>
-              <span class="flex items-center gap-3">
-                <%= button_to "Mark as extra", music_video_performer_path(video, performer.ordinal), method: :patch,
-                              params: { extra: "1" }, class: "text-xs text-muted hover:text-primary hover:underline",
-                              form: { class: "inline" }, data: { test: "mark-extra" } %>
-                <button type="button" @click="naming = false" class="hover:text-primary hover:underline" data-test="name-artist-close">Close</button>
-              </span>
-            </div>
-          </div>
-        </div>
-      <% end %>
-    </div>
+    <%= render "music_videos/naming", performer:, video:, rows: local_assigns.fetch(:recast_rows, {}) %>
     </div>
   <% end %>
 </article>

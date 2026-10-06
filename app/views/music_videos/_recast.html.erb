@@ -2,11 +2,6 @@
 <% athlete = performer.recast_person %>
 <% n = performer.ordinal %>
 <% swapping = performer.swap_state.in?(%w[pending recast]) %>
-<% named_person = performer.artist&.person %>
-<% offer = if named_person && looks.fetch(named_person.slug, []).any?
-     named = local_assigns[:named_row] || People::SearchRows::BLANK
-     { slug: named_person.slug, name: named_person.full_name, **named.to_h, looks: looks.fetch(named_person.slug).map(&:to_h) }
-   end %>
 <div class="pt-3 border-t border-subtle min-w-0 space-y-2" data-test="replace-with">
   <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-w-0">
     <label class="label-upper" for="recast-search-<%= n %>">Replace with</label>
@@ -44,13 +39,11 @@
     </div>
   </div>
 
-  <% if offer %>
-    <%# Named after someone who has looks: offered, never done for him. One click picks them, in their default look. %>
-    <button type="button" x-show="!swapping || athlete.slug !== '<%= j offer[:slug] %>'" <%= "x-cloak" if swapping && athlete.slug == offer[:slug] %> @click="offerSwap($el.dataset.offer)" data-offer="<%= offer.to_json %>"
-            class="btn btn-outline btn-sm max-w-full" data-test="swap-offer">
-      <span class="truncate">Swap with <%= offer[:name] %>?</span>
-    </button>
-  <% end %>
+  <%# Named after someone who has looks (swapCard#offer, kept current by the naming search): offered, never done for him. One click picks them, in their default look. %>
+  <button type="button" x-show="offer && (!swapping || athlete.slug !== offer.slug)" x-cloak @click="offerSwap()"
+          class="btn btn-outline btn-sm max-w-full" data-test="swap-offer">
+    <span class="truncate">Swap with <span x-text="offer ? offer.name : ''"></span>?</span>
+  </button>
 
   <div x-show="swapping" <%= "x-cloak" unless swapping %> class="space-y-2 min-w-0" data-test="swap-body">
     <div class="flex items-center gap-3 min-w-0 rounded-lg border border-subtle bg-surface-alt p-2" data-test="swap-athlete">

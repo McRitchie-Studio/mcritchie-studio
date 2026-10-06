@@ -36,23 +36,70 @@
     };
   };
 
-  // The cast typeahead: search artists and People, then one form submit.
-  window.castTypeahead = function () {
+  // Who is on screen, at the bottom of a cast card: an always-open search of
+  // artists and People. A pick, a new artist, Mark as extra or Clear saves at
+  // once as JSON (no reload). Each says the whole answer, so a change made while
+  // one is in flight replaces any still waiting and the server ends on the last.
+  // Each save tells the card (naming-saved): the header badge and swapCard's
+  // "Swap with <name>?" offer follow it.
+  window.namingCard = function () {
     return {
       ...window.typeaheadSearch(),
-      creating: false, artistSlug: "", personSlug: "", newName: "", newKind: "person",
+      named: null, creating: false, newName: "", newKind: "person",
+      save: "", error: "", inflight: false, queued: null, lastBody: null,
+      init() { const d = this.$root.dataset; this.named = d.named ? JSON.parse(d.named) : null; },
       reset() { this.creating = false; },
       get exactMatch() {
         const q = this.query.trim().toLowerCase();
         return this.results.some((r) => r.name.toLowerCase() === q);
       },
       choose(r) {
-        this.artistSlug = r.type === "artist" ? r.slug : "";
-        this.personSlug = r.type === "person" ? r.slug : "";
-        this.newName = ""; this.settle(r);
-        this.$nextTick(() => this.$refs.form.requestSubmit());
+        this.settle(r); this.query = ""; this.creating = false;
+        this.named = { kind: "artist", slug: r.type === "artist" ? r.slug : "", name: r.name, avatar_url: r.avatar_url, vocation: r.vocation, team: r.team };
+        this.persist(r.type === "artist" ? { artist_slug: r.slug } : { person_slug: r.slug });
       },
-      startCreate() { this.newName = this.query.trim(); this.artistSlug = ""; this.personSlug = ""; this.open = false; this.creating = true; },
+      startCreate() { this.newName = this.query.trim(); this.open = false; this.creating = true; },
+      createArtist() {
+        const name = this.newName.trim();
+        if (!name) return;
+        this.creating = false; this.query = "";
+        this.named = { kind: "artist", slug: "", name, vocation: this.newKind === "group" ? "group" : "musician" };
+        this.persist({ new_artist_name: name, new_artist_kind: this.newKind });
+      },
+      markExtra() { this.named = { kind: "extra" }; this.persist({ extra: "1" }); },
+      clear() { this.named = null; this.persist({ clear: "1" }); },
+      persist(body) {
+        this.lastBody = body; this.save = "saving"; this.error = "";
+        if (this.inflight) { this.queued = body; return; }
+        this.send(body);
+      },
+      retry() { if (this.lastBody && !this.inflight) this.send(this.lastBody); },
+      async send(body) {
+        this.inflight = true;
+        let ok = false;
+        try {
+          const token = document.querySelector("meta[name='csrf-token']");
+          const resp = await fetch(this.$root.dataset.saveUrl, {
+            method: "PATCH", credentials: "same-origin",
+            headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-Token": token ? token.content : "" },
+            body: JSON.stringify(body),
+          });
+          const json = (resp.headers.get("Content-Type") || "").includes("json") ? await resp.json() : {};
+          if (!resp.ok || !("named" in json)) throw new Error(json.error || "The server answered " + resp.status + ".");
+          if (!this.queued) {
+            this.named = json.named;
+            window.dispatchEvent(new CustomEvent("naming-saved",
+              { detail: { ordinal: Number(this.$root.dataset.ordinal), named: json.named, offer: json.offer } }));
+          }
+          ok = true;
+        } catch (e) {
+          this.error = e.message && e.message !== "Failed to fetch" ? e.message : "The connection dropped.";
+        }
+        this.inflight = false;
+        if (this.queued) { const next = this.queued; this.queued = null; return this.send(next); }
+        this.save = ok ? "saved" : "failed";
+        if (ok) window.refreshCastOutputs();
+      },
     };
   };
 
@@ -174,11 +221,12 @@
   // has it, with Retry (which resends the stalled change and whatever followed).
   window.swapCard = function () {
     return window.mixComponents(window.typeaheadSearch(), window.lookPicker(), {
-      keep: false, savedPerson: "", savedLook: "", save: "", error: "",
+      keep: false, offer: null, savedPerson: "", savedLook: "", save: "", error: "",
       inflight: false, queue: [],
       init() {
         const data = this.$root.dataset;
         this.savedPerson = data.savedPerson || ""; this.savedLook = data.savedLook || "";
+        this.offer = data.offer ? JSON.parse(data.offer) : null;
         if (data.athlete) {
           this.keep = data.keep === "true";
           this.setAthlete(JSON.parse(data.athlete), data.freshLook || this.savedLook);
@@ -204,7 +252,9 @@
         this.persist({ person_slug: r.slug, appearance_slug: this.lookSlug });
       },
       // "Swap with <name>?": the person the card is named after, picked as if from the search.
-      offerSwap(offer) { this.choose(JSON.parse(offer)); },
+      offerSwap() { if (this.offer) this.choose(this.offer); },
+      // The naming search saved: offer the person now named, if they have a look.
+      onNamed(detail) { if (detail.ordinal === Number(this.$root.dataset.ordinal)) this.offer = detail.offer || null; },
       // The one button pinned at the bottom of the card (music_videos/_swap_toggle), in the same
       // place in both states. Keep Original: not swapped, the person and look remembered.
       keepOriginal() { this.setKeep(true); },
