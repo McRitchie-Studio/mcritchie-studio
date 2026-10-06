@@ -960,6 +960,7 @@ bin/devops-tests --lane qa_acceptance
 
 ```bash
 bin/rails test
+bin/test-js        # node:test units for app/javascript/board (test/javascript)
 npm test
 ```
 

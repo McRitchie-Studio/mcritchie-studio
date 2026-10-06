@@ -64,13 +64,24 @@ class LastReleaseFxRouterTest < ActionDispatch::IntegrationTest
                   "with nothing shipped the slot still names itself, or swapping INTO a release reads as no change"
   end
 
-  test "[component] /deployments ships the router, and its default is silence" do
+  test "[component] /deployments loads the router module" do
     get deployments_path
     assert_response :success
 
-    assert_includes response.body, "window.ReleaseFx", "the router installs on the deploy board"
-    assert_includes response.body, "SILENT_KINDS", "the declared-silent short circuit rides along"
-    refute_includes response.body, "if (!freshDeployGlow(fresh)) burst(fresh, true)",
-                    "the unconditional burst fallback is gone — silence is the default now"
+    # The router is the board/release_fx_dom module, installed by board/live_fx_dom;
+    # its default of silence is held by test/javascript/release_fx_test.js and
+    # e2e/last_release_fx_router.spec.js.
+    assert_select "script[type=module]", text: %r{import "board/live_fx_dom"}, count: 1
+    importmap = css_select("script[type=importmap]").first&.text.to_s
+    assert_includes importmap, %("board/release_fx_dom"), "the router module is pinned"
+  end
+
+  test "[component] the board publishes the beat its exits are timed to" do
+    get deployments_path
+    assert_response :success
+
+    # Rendered from Release::BOARD_FLIP_CADENCE; e2e/deployments_exit_fx.spec.js reads
+    # it here instead of restating it.
+    assert_select "[data-test=kanban-board][data-beat-ms=?]", (Release::BOARD_FLIP_CADENCE * 1000).round.to_s, count: 1
   end
 end

@@ -38,7 +38,7 @@ async function recordGhosts(page) {
           // offset. This used to be `setTimeout(() => record.mid = sample(node), 320)`,
           // and the numbers say why that could only ever work by luck:
           //
-          //   _deployments_live_fx.html.erb: SLIDE_OFF_MS = 300
+          //   board/live_fx: SLIDE_OFF_MS = 300
           //   slide.finished.then(() => ghost.remove())   <- the ghost is DELETED the
           //                                                 instant the animation ends
           //
@@ -241,5 +241,23 @@ test("the same move under reduced motion lands the card with no ghost at all", a
 
   await expect(page.locator("#dropzone-shipped #card-live-ship-slide-calm-demo")).toBeVisible({ timeout: 10_000 });
   expect(await page.evaluate(() => window.__ghosts.length)).toBe(0);
+  expect(pageErrors, report()).toHaveLength(0);
+});
+
+// The exit timings live in the board/live_fx module and the beat in Ruby
+// (Release::BOARD_FLIP_CADENCE, published as data-beat-ms). This asks the module the
+// board actually loaded whether every exit fits the beat the board actually publishes,
+// so neither side can move without the other noticing. It also proves the effects
+// modules installed on the page.
+test("the loaded effects module times every exit inside the published beat", async ({ page }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+
+  await openBoard(page, "no-preference");
+  await expect.poll(() => page.evaluate(() => !!(window.LiveBoardFx && window.ReleaseFx))).toBe(true);
+
+  const BEAT_MS = Number(await page.getAttribute("[data-test='kanban-board']", "data-beat-ms"));
+  expect(BEAT_MS).toBeGreaterThan(0);
+  const broken = await page.evaluate(async (beat) => (await import("board/live_fx")).exceedsBeat(beat), BEAT_MS);
+  expect(broken).toEqual([]);
   expect(pageErrors, report()).toHaveLength(0);
 });

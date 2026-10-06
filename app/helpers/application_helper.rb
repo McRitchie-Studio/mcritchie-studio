@@ -347,9 +347,10 @@ module ApplicationHelper
   # The Last Release "fresh deploy" glow window, in milliseconds: how long a
   # just-shipped release glows before settling into read-only history. ONE
   # value drives every consumer — the server-rendered card state + glow phase
-  # (tasks/_last_release), the FX partial's CSS animation durations and JS
-  # cleanup timer (tasks/_deployments_live_fx), and the card's
-  # data-fresh-window-ms attribute, which the release-ship e2e spec reads to
+  # (tasks/_last_release), the router partial's CSS animation durations
+  # (tasks/_release_fx_router), and the card's data-fresh-window-ms attribute,
+  # which the router module's cleanup timer (board/release_fx_dom) and the
+  # release-ship e2e spec read to
   # budget its waits. FRESH_DEPLOY_WINDOW_MS injects a wider window for the
   # e2e server (playwright.config.js webServer env): the ORIGINAL 8s window
   # raced that spec's own arrival waits under machine load — an expired glow is
@@ -600,7 +601,7 @@ module ApplicationHelper
   # ticking "7m 23s" (format_elapsed_clock, the release ticker's shape) redraws every
   # second where "7m" redraws once a minute — and the seconds tier stays exact
   # because that is the tier a CI run actually lives in. MUST stay in step with
-  # shortFmt() in tasks/_release_ticker (data-mode="short"), or the server-rendered
+  # shortFmt() in board/ticker (data-mode="short"), or the server-rendered
   # first paint and the first tick disagree.
   def compact_elapsed_short(secs)
     return nil if secs.nil?
@@ -1031,8 +1032,8 @@ module ApplicationHelper
   end
 
   # The elapsed clock for the ACTIVE Next Release ticker -- the SERVER-side
-  # initial value the _release_ticker JS then advances every second ("45s" /
-  # "7m 23s" / "1h 04m"). Mirrors that JS `fmt()` EXACTLY so the first tick
+  # initial value the board/ticker_dom module then advances every second ("45s" /
+  # "7m 23s" / "1h 04m"). Mirrors board/ticker's `clockFmt()` EXACTLY so the first tick
   # doesn't jump format. `now` is injectable for deterministic tests.
   def release_elapsed_clock(release, now: Time.current)
     format_elapsed_clock(elapsed_seconds(release.created_at, now) || 0)

@@ -64,7 +64,7 @@ class DeploymentsBroadcaster
   # cable failure can NEVER break the release write that triggered it (SEV-1 guard).
   # `fx` is the REASON this fired, declared to the client rather than left for it to
   # infer. It rides the #last-release stream as data-fx and the ReleaseFx router reads
-  # it (see tasks/_release_fx_router): a kind the router lists as silent short-circuits
+  # it (see board/release_fx): a kind the router lists as silent short-circuits
   # to no animation; anything else is a hint its handlers may consult. Declaring the
   # reason is the fix for a client that had to GUESS one — see `slots` below.
   #

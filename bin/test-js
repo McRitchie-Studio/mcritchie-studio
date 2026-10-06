@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# [unit] The JavaScript unit tests (test/javascript, for app/javascript/board).
+#
+# node:test and node:assert only: no npm install. The hook in test/javascript/support
+# maps the importmap's "board/*" specifiers onto app/javascript/board so the modules
+# run unchanged. CI runs this in the `javascript` job (.github/workflows/ci.yml).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+files=("$@")
+if [ ${#files[@]} -eq 0 ]; then
+  files=(test/javascript/*_test.js)
+fi
+
+exec node --import ./test/javascript/support/register.mjs --test "${files[@]}"
