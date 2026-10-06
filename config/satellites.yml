@@ -1,5 +1,6 @@
-# Satellite registry — single source of truth for all satellite apps in the
-# McRitchie ecosystem.
+# Satellite registry: each app's port block, navbar link and bin/ecosystem-build
+# row. An app's identity, tier and status live in config/apps.yml (AppCatalog);
+# test/lib/app_registry_test.rb fails when a row here disagrees with it.
 #
 # Read by:
 #   * app/helpers/link_tree_helper.rb (navbar SSO links, via Satellite.active)
@@ -7,6 +8,7 @@
 #   * bin/ecosystem-build (clone + bundle + bring-up loop)
 #
 # To add a new satellite:
+#   0. Add the app's record to config/apps.yml first.
 #   1. Validate the range and entry:
 #        bin/register-satellite --slug <app> --port <range-start> \
 #          --description "One-line summary" --dry-run
@@ -36,12 +38,14 @@
 #   status           — active | planned | reserved
 #                      Only `active` satellites are touched by bin/ecosystem-build
 #                      and appear in the navbar. `reserved` protects a port range
-#                      without making the app managed.
+#                      without making the app managed. An app archived in
+#                      config/apps.yml is `reserved`; `active` is for a live app;
+#                      `planned` is for an app with no production Heroku app yet.
 
 satellites:
   - slug: turf-monster
     display_name: Turf Monster
-    emoji: "🏈"
+    emoji: "🐊"
     port: 3100
     heroku_app: turf-monster-mainnet
     production_url: https://turfmonster.media
@@ -57,18 +61,18 @@ satellites:
     heroku_app: tax-studio
     production_url: https://tax.mcritchie.studio
     role: viewer
-    description: Tax planning workspace
+    description: Tax planning workspace; archived, port block kept
     deploy_provider: heroku
-    status: planned
+    status: reserved
 
   - slug: rolio
     display_name: "Rolio"
     emoji: "📇"
     port: 3300
-    heroku_app: "rolio"
+    heroku_app: "rolio-prod"
     production_url: "https://rolio.mcritchie.studio"
     role: "viewer"
-    description: "Relationship operating workspace; reserved until promoted into the managed stack"
+    description: "Relationship operating workspace; archived, port block kept"
     deploy_provider: "other"
     status: "reserved"
 
@@ -76,12 +80,12 @@ satellites:
     display_name: "Chain Ops"
     emoji: "⛓️"
     port: 3400
-    heroku_app: "chain-ops"
+    heroku_app: null
     production_url: "https://chain.mcritchie.studio"
     role: "admin"
-    description: "Solana environment control plane for localnet, QA, and future node operations"
+    description: "Solana localnet and QA control plane; archived, port block kept"
     deploy_provider: "heroku"
-    status: "planned"
+    status: "reserved"
 
   - slug: mcritchie-industries
     display_name: "McRitchie Industries"
@@ -103,7 +107,7 @@ satellites:
     role: "viewer"
     description: "Hex strategy board game, revived from Alex's first app"
     deploy_provider: "heroku"
-    status: "planned"
+    status: "active"
 
   - slug: dads-app
     display_name: "Dads App"
@@ -145,7 +149,7 @@ satellites:
     heroku_app: "mcr-rantly"
     production_url: "https://rantly.mcritchie.studio"
     role: "viewer"
-    description: "Showcase rebuild of Rantly, the social network with a 140-character minimum; release-managed standalone (no studio-engine, no database)"
+    description: "Showcase rebuild of Rantly, the social network with a 140-character minimum; release-managed standalone on studio-engine"
     deploy_provider: "heroku"
     status: "reserved"
 
