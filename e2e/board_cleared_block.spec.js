@@ -13,8 +13,8 @@ test("a cleared block renders the amber re-review card", async ({ page }) => {
   await expect(card).toBeVisible();
 
   // Amber "look again" tone, not the red blocked tone.
-  await expect(card).toHaveClass(/bg-amber-50/);
-  await expect(card).not.toHaveClass(/bg-red-50/);
+  await expect(card).toHaveClass(/(^|\s)bg-warning\/10(\s|$)/);
+  await expect(card).not.toHaveClass(/(^|\s)bg-danger\/10(\s|$)/);
 
   // The RE-REVIEW badge was dropped; the amber tone carries re-review. Neither the
   // cleared-feedback badge nor the red UNRESOLVED QA bar renders on the card.
