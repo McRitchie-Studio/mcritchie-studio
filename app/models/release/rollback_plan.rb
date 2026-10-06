@@ -248,6 +248,33 @@ class Release
       app.adapter["smoke_url"].to_s.strip
     end
 
+    # THE DEVOPS BACKFILL STEP (rollback-prints-devops-backfill). Hub code older than
+    # devops-keys-become-columns writes pr_url, branch, approval_status and session_id
+    # only as devops keys, so a rollback across it leaves those columns stale, and the
+    # production-deploy SOP says to re-run the backfill rake after rolling forward.
+    # A one-off step must not become permanent noise, so it prints only while it can
+    # apply: the hub range adds the columns migration (that rollback is refused by the
+    # schema check, so the step tells whoever rolls back by hand what they owe), or the
+    # hub's target tree carries the rake (the command exists in the code being
+    # deployed). Once the rake is deleted and no range crosses the migration, the line
+    # is gone. `rake_in_target` is read by bin/release from git objects; nil = unread.
+    # Returns the line, or nil.
+    DEVOPS_COLUMNS_MIGRATION = "20261006150000".freeze
+    DEVOPS_BACKFILL_RAKE = "lib/tasks/devops_columns_backfill.rake".freeze
+
+    def devops_backfill_step(rake_in_target:)
+      hub = @apps.find { |a| a.repo == @hub }
+      return nil unless hub
+
+      crosses = Array(hub.migrations).any? { |m| File.basename(m).start_with?("#{DEVOPS_COLUMNS_MIGRATION}_") }
+      return nil unless crosses || rake_in_target == true
+
+      why = crosses ? "the hub range adds the devops columns migration #{DEVOPS_COLUMNS_MIGRATION}" :
+                      "the hub target #{short(hub.to_sha)} carries #{DEVOPS_BACKFILL_RAKE}"
+      "devops backfill (#{why}): once you roll forward, run `heroku run bin/rails tasks:backfill_devops_columns " \
+        "--app #{@hub}` and re-run it until it reports 0 still diverge(s); it is idempotent"
+    end
+
     # The printed plan, one line per fact.
     def lines
       out = ["rollback plan for #{@release_slug}:"]

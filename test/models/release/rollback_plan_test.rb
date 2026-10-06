@@ -231,5 +231,29 @@ class Release
       live = [{ "version" => 308, "current" => true, "status" => "succeeded", "description" => "Rollback to v304" }]
       assert_equal :succeeded, RollbackPlan.release_phase_verdict(live, after: 307)
     end
+
+    test "[unit] the devops backfill step prints only while it can apply" do
+      plan = RollbackPlan.build(target: target, history: history).check_migrations!(no_migrations)
+
+      assert_nil plan.devops_backfill_step(rake_in_target: false), "no rake in the target, no migration in range"
+      assert_nil plan.devops_backfill_step(rake_in_target: nil), "an unread rake is not a present one"
+      assert_includes plan.devops_backfill_step(rake_in_target: true),
+                      "the hub target hub11111 carries lib/tasks/devops_columns_backfill.rake"
+      assert_includes plan.devops_backfill_step(rake_in_target: true),
+                      "heroku run bin/rails tasks:backfill_devops_columns --app mcritchie-studio"
+    end
+
+    test "[unit] a hub range adding the devops columns migration names the backfill step" do
+      added = ->(repo, _f, _t) { repo == "mcritchie-studio" ? ["db/migrate/20261006150000_add_devops_columns_to_tasks.rb"] : [] }
+      plan = RollbackPlan.build(target: target, history: history).check_migrations!(added)
+
+      assert plan.refused?, "the schema check still refuses the range"
+      assert_includes plan.devops_backfill_step(rake_in_target: false),
+                      "the hub range adds the devops columns migration 20261006150000"
+
+      other = ->(repo, _f, _t) { repo == "turf-monster" ? ["db/migrate/20261006150000_add_devops_columns_to_tasks.rb"] : [] }
+      turf_only = RollbackPlan.build(target: target, history: history).check_migrations!(other)
+      assert_nil turf_only.devops_backfill_step(rake_in_target: false), "only the hub range counts"
+    end
   end
 end
