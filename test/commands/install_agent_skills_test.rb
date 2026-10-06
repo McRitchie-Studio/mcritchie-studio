@@ -116,6 +116,21 @@ class InstallAgentSkillsTest < Minitest::Test
     File.join(@home, ".zprofile")
   end
 
+  # Run the working tree's installer (not `git archive HEAD`, which would test the
+  # last commit) from a checkout-less export: no .git, so no tooling install and
+  # every command falls back to `hub`.
+  def run_exported_installer(hub)
+    exported = File.join(@sandbox, "exported-tree")
+    %w[bin/install-agent-docs bin/lib/projects_root.rb docs/agents/index.md docs/agents/claude.md].each do |rel|
+      FileUtils.mkdir_p(File.dirname(File.join(exported, rel)))
+      FileUtils.cp(File.join(ROOT, rel), File.join(exported, rel))
+    end
+    Open3.capture3(
+      SessionEnv.neutralized(default_env.merge("AGENT_DOCS_RUNTIME_ROOT" => hub)),
+      File.join(exported, "bin", "install-agent-docs"), "install"
+    )
+  end
+
   def installed_gitconfig
     File.join(@home, ".gitconfig")
   end
@@ -721,19 +736,8 @@ class InstallAgentSkillsTest < Minitest::Test
   def test_integration_hooks_fall_back_to_the_hub_primary_without_the_tooling
     assert jq_available?, "jq is required for settings hook install; CI and every desk have it"
 
-    # The working tree's files (not `git archive HEAD`, which would test the last
-    # commit), laid out as a checkout-less export: no .git, so no tooling install.
-    exported = File.join(@sandbox, "exported-tree")
-    %w[bin/install-agent-docs bin/lib/projects_root.rb docs/agents/index.md docs/agents/claude.md].each do |rel|
-      FileUtils.mkdir_p(File.dirname(File.join(exported, rel)))
-      FileUtils.cp(File.join(ROOT, rel), File.join(exported, rel))
-    end
     hub = "/stable/mcritchie-studio"
-
-    out, err, status = Open3.capture3(
-      SessionEnv.neutralized(default_env.merge("AGENT_DOCS_RUNTIME_ROOT" => hub)),
-      File.join(exported, "bin", "install-agent-docs"), "install"
-    )
+    out, err, status = run_exported_installer(hub)
 
     assert status.success?, "install failed: #{err}"
     assert_includes out, "skipped fast-lane tooling", "the control: this tree installs no tooling"
@@ -745,6 +749,25 @@ class InstallAgentSkillsTest < Minitest::Test
       "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{hub}/bin/atomic-capture-hook"
     assert_includes File.read(installed_codex_requirements), %(command = "#{hub}/bin/codex-session-title")
     assert_equal "#{hub}/bin/gh-app-git-credential", github_helper_values.last
+  end
+
+  # Before the first ship the helper would name the hub primary, a working tree. A
+  # helper line the operator already wired (a ~/.mcritchie snapshot from
+  # bin/install-git-credential-helper) is the safer of the two, so it stays.
+  def test_integration_fallback_keeps_an_existing_snapshot_helper_line
+    snapshot = File.join(@home, ".mcritchie", "git-credential", "current", "bin", "gh-app-git-credential")
+    File.write(installed_gitconfig, <<~GITCONFIG)
+      [credential "https://github.com"]
+      	helper =
+      	helper = #{snapshot}
+    GITCONFIG
+
+    out, err, status = run_exported_installer("/stable/mcritchie-studio")
+
+    assert status.success?, "install failed: #{err}"
+    assert_includes out, "skipped fast-lane tooling", "the control: this tree installs no tooling"
+    assert_equal ["", snapshot], github_helper_values,
+      "without the fixed path, the snapshot line survives and no hub path is written"
   end
 
   # ── integration: the global git credential helper for github.com ────────────
