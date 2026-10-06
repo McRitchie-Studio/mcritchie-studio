@@ -662,7 +662,7 @@ class InstallAgentSkillsTest < Minitest::Test
   # the fixed path, leaves exactly one of each (no hub-path twin beside the new one),
   # and keeps the operator's own hooks.
   def test_integration_repoints_hub_primary_hooks_to_the_fixed_path_without_twins
-    skip "jq is required for settings hook install" unless jq_available?
+    assert jq_available?, "jq is required for settings hook install; CI and every desk have it"
 
     hub = "/stable/mcritchie-studio"
     board = "ATOMIC_CAPTURE_URL=https://mcritchie.studio"
@@ -702,7 +702,7 @@ class InstallAgentSkillsTest < Minitest::Test
   end
 
   def test_integration_leaves_a_foreign_status_line_alone
-    skip "jq is required for settings hook install" unless jq_available?
+    assert jq_available?, "jq is required for settings hook install; CI and every desk have it"
 
     FileUtils.mkdir_p(File.dirname(installed_settings))
     File.write(installed_settings, JSON.pretty_generate(
@@ -719,7 +719,7 @@ class InstallAgentSkillsTest < Minitest::Test
   # checkout, so no tooling is installed and nothing exists at <projects>/.agents/bin.
   # Every command then names the hub primary, the only copy that exists.
   def test_integration_hooks_fall_back_to_the_hub_primary_without_the_tooling
-    skip "jq is required for settings hook install" unless jq_available?
+    assert jq_available?, "jq is required for settings hook install; CI and every desk have it"
 
     # The working tree's files (not `git archive HEAD`, which would test the last
     # commit), laid out as a checkout-less export: no .git, so no tooling install.
