@@ -331,8 +331,8 @@ class Task < ApplicationRecord
   # DeploymentsBroadcaster.release_modules, which pushes only the release slots.
   after_commit :broadcast_app_ladder_if_rung_changed, on: %i[create update destroy]
 
-  # approval_status lives in metadata, so changing it writes no stage and no
-  # TaskEvent; push the card when the derived value actually changes.
+  # Changing approval_status writes no stage and no TaskEvent, so push the card
+  # when the value actually changes.
   after_update_commit :broadcast_operator_approval_change, if: :saved_change_to_approval_status?
   # The settle at `reviewed` leaves a note for whoever set the request. After
   # commit and rescued: surface it, never block the move.
@@ -659,16 +659,24 @@ class Task < ApplicationRecord
       next if dev["mascot"] == slug && dev["mascot_session"] == sid && shiny_value?(dev["mascot_shiny"]) == shiny &&
               dev.key?("mascot_gender") && Pokemon.normalize_gender(dev["mascot_gender"]) == gender
 
-      merged = task.metadata.deep_dup
-      d = (merged["devops"] ||= {})
-      d["mascot"] = slug
-      d["mascot_session"] = sid
-      d["mascot_shiny"] = shiny
-      d["mascot_gender"] = gender
       pokemon = Pokemon.find_by(slug: slug)
-      d["mascot_color"] = pokemon&.signature_color
-      d["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
-      task.update_columns(metadata: merged)
+      # Locked and reloaded, so the restamp builds on the row as it stands and
+      # cannot write back a key another writer changed since the batch loaded.
+      # update_columns skips #mirror_devops_columns, so the mirrored columns ride
+      # along from the same hash.
+      task.with_lock do
+        merged = task.metadata.deep_dup
+        d = (merged["devops"] ||= {})
+        d["mascot"] = slug
+        d["mascot_session"] = sid
+        d["mascot_shiny"] = shiny
+        d["mascot_gender"] = gender
+        d["mascot_color"] = pokemon&.signature_color
+        d["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
+        columns = DEVOPS_MIRRORED_KEYS.select { |key| task.has_attribute?(key) }
+                                      .index_with { |key| d[key].to_s.strip.presence }
+        task.update_columns(metadata: merged, **columns.symbolize_keys) # rubocop:disable Rails/SkipsModelValidations
+      end
       restamped += 1
     rescue StandardError => e
       log = ErrorLog.capture!(e)
@@ -2366,8 +2374,10 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # True when this save changed the derived approval_status. saved_change_to_*
-  # tracks columns, not a JSON scalar, so compare before and after.
+  # True when this save changed approval_status. The devops key is the write
+  # surface and the column mirrors it, so this compares the key before the save
+  # with the value after it, not the column: the save that first fills an
+  # unbackfilled column moves the column but not the status.
   def saved_change_to_approval_status?
     return false unless saved_change_to_metadata?
 
