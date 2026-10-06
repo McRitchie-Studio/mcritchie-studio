@@ -205,4 +205,20 @@ class TestShardTest < Minitest::Test
     assert_operator contract[:shards], :>=, 1
     refute_empty contract[:include_globs], "the lane must own at least one glob"
   end
+
+  # A line for a deleted file is never read, so it costs nothing at run time, but it is
+  # the tell that the weights predate the tree: a file split in two leaves its old weight
+  # here and its halves at the median. The guard is one-way on purpose: a NEW file without
+  # a line is fine (it packs at the median, see above) and must never turn the lane red.
+  def test_unit_the_live_timings_name_no_file_the_lane_no_longer_runs
+    root = File.expand_path("../..", __dir__)
+    contract = TestShard.load_contract(File.join(root, "config", "rails_lane.yml"))
+    lane = TestShard.candidate_files(root: root, include_globs: contract[:include_globs],
+                                     exclude_globs: contract[:exclude_globs])
+    stale = TestShard.load_timings(File.join(root, "test", "timings.yml")).keys - lane
+
+    assert_empty stale, "test/timings.yml weighs files the lane no longer runs; regenerate it " \
+                        "from green CI receipts with bin/measure-test-timings --from <dir>, or delete " \
+                        "the named line(s) for a deleted or renamed test file"
+  end
 end

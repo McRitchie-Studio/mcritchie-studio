@@ -19,8 +19,8 @@
 # answer predicts whether CI can install. Waiting on the other would be a wait that
 # proves nothing — a gate that cannot observe the thing it gates on.
 #
-# A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is 7356 lines and frozen at that
-# size by config/test_health.yml, precisely so new work lands somewhere else.
+# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
+# config/test_health.yml, precisely so new work lands somewhere else.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"

@@ -2840,7 +2840,7 @@ end
 # SHA read here is the post-bump one and its tree no longer matches accepted's).
 # Then this answers nil, the credit refuses, and the gate polls the post-bump SHA
 # exactly as today — the cross-PR contract pinned on #588, asserted by the
-# lock-bump interaction test in release_cli_test.
+# lock-bump tests in test/lib/release_cli_pre_qa_gate_test.rb.
 #
 # Answers {accepted_sha:, tree:} ONLY when both trees resolve and match and the
 # SHAs DIFFER (the same-SHA case is fast_forward_promote?'s, checked first).
@@ -8768,7 +8768,7 @@ end
 # the payload now rides as a url-safe Base64 blob (alphabet [A-Za-z0-9_-]=, zero
 # shell metacharacters) that the remote runner decodes — as quote-free as the
 # bare `slug.inspect` literal the other conductor callers already pass safely.
-# Pure (no Rails) so it's unit-tested standalone in test/lib/release_cli_test.rb.
+# Pure (no Rails) so it's unit-tested standalone in test/lib/release_cli_retro_test.rb.
 def retro_record_ruby(slug, answers)
   answers_b64 = Base64.urlsafe_encode64(answers.to_json)
   "rel = Release::Retro.resolve(#{slug.inspect}); " \

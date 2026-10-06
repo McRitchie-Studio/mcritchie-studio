@@ -3,8 +3,7 @@
 # post_deploy_cmd on QA and production, the agent-docs sync after a ship, and the
 # QA smoke records that ride the post-deploy hook.
 #
-# Part of the bin/release CLI suite, split by subcommand from the old
-# test/lib/release_cli_test.rb (release-cli-tests-by-subcommand, 2026-10-05). The
+# Part of the bin/release CLI suite, one file per subcommand. The
 # shared subprocess harness, fixtures and stub constants live in
 # test/lib/release_cli_harness.rb. Run directly:
 #   ruby -Itest test/lib/release_cli_post_deploy_test.rb

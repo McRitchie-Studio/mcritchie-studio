@@ -48,18 +48,29 @@
 # 166s, 189s and 200s — a 55s spread the packer had predicted as ZERO. Look at what LPT
 # does with a suite this skewed and it is obvious in hindsight. It puts each of the six
 # heaviest files in its own bucket, so each shard's floor becomes ITS HEAVIEST FILE.
-# Shard 1 owned test/lib/release_cli_test.rb (204s local, then the heaviest in the repo)
-# and came last at 200s. (That file was split by subcommand on 2026-10-05, task
-# release-cli-tests-by-subcommand, into test/lib/release_cli_*_test.rb, so it no longer
-# sets the floor; the next heaviest is test/lib/dor_check_test.rb.) YOU CANNOT SHARD BELOW YOUR HEAVIEST FILE, and past the point where
-# the biggest file sets the floor, another shard buys nothing while costing a slot.
+# Shard 1 owned the release CLI suite, then one 204s file and the heaviest in the repo,
+# and came last at 200s. YOU CANNOT SHARD BELOW YOUR HEAVIEST FILE, and past the point
+# where the biggest file sets the floor, another shard buys nothing while costing a slot.
+#
+# THE FLOOR NOW. The release CLI suite is one file per subcommand, none above 42s. The
+# heaviest files (test/timings.yml, the mean of three green CI runs) are
+# test/lib/reviewer_select_test.rb (247s), test/commands/pr_review_command_test.rb
+# (180s), test/lib/dor_check_test.rb (156s) and test/lib/ship_test.rb (133s). Those are
+# SUMMED test seconds: each shard runs four parallel workers, so reviewer_select's 247s
+# splits across a shard's four workers rather than standing as one 247s block.
+#
+# Packed on those weights the shards' test steps measured 219s, 225s, 275s and 288s
+# (run 37436420684): a 69s spread where the packer predicted none. There is no measured
+# speed-up yet: the slowest shard's 288s sits inside the 266-299s that accepted's recent
+# slowest shards ran at. Per-file cost swings by a third between runs, which is larger
+# than what re-weighting recovers.
 #
 # So four it is, and the next lever is NOT more matrix entries. It is either the 56s of
 # setup that does not shard (container init 20s, apt 11s, gem propagation 11s, ruby 7s),
-# or the handful of end-to-end CLI files that set the floor — and /tasks/groom-slowest-
-# test-files carries the measurement showing their cost IS the end-to-end round-trips,
-# which is what makes them worth having. Raise this again only with a measurement that
-# the heaviest FILE no longer sets the floor.
+# or the cost of the handful of end-to-end CLI files that dominate a shard's work, and
+# /tasks/groom-slowest-test-files carries the measurement showing their cost IS the
+# end-to-end round-trips, which is what makes them worth having. Raise this again only
+# with a measurement that another shard shortens the slowest one.
 shards: 4
 
 # Every test file this lane owns.

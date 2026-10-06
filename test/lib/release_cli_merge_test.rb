@@ -3,8 +3,7 @@
 # `bin/release merge` and `eject`: membership, promote, the review gate, the assembler
 # claim, record_merged_main and the batch runner snippets.
 #
-# Part of the bin/release CLI suite, split by subcommand from the old
-# test/lib/release_cli_test.rb (release-cli-tests-by-subcommand, 2026-10-05). The
+# Part of the bin/release CLI suite, one file per subcommand. The
 # shared subprocess harness, fixtures and stub constants live in
 # test/lib/release_cli_harness.rb. Run directly:
 #   ruby -Itest test/lib/release_cli_merge_test.rb

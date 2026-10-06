@@ -23,8 +23,8 @@
 # registry gains an invented `parked-app` rather than borrowing rolio, so the tests
 # pin the rule and survive the day rolio is re-laddered.
 #
-# A NEW FILE, not an addition to test/lib/release_cli_test.rb — that file is frozen at
-# its ceiling by the suite's frozen-hotspot ratchet, and this is the out it names. (The
+# A FILE OF ITS OWN, not an addition to a release CLI file: those are frozen at their
+# ceilings by the suite's frozen-hotspot ratchet, and this is the out it names. (The
 # ratchet's config is deliberately not named by path here: nothing below reads it, and
 # a path citation would map this file to every edit of that config in bin/fast-check.)
 require "minitest/autorun"

@@ -10,14 +10,13 @@
 #   ruby -Itest test/lib/release_ship_mode_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 #
-# A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is frozen at its size by
+# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
 # the suite's test-health ratchet precisely so new work lands somewhere else
 # (and naming that ratchet's config file here would map this file onto it in
 # the fast cert, which pins how many tests that path reaches). The harness
 # below is the small one (a sealed subprocess loading the script with the ship
-# conductor stubbed) rather than a copy of that file's private harness; the
-# conductor stub is that file's SHIP_STUB, copied as the sibling files copy what
-# they need.
+# conductor stubbed) rather than the shared release CLI harness; the conductor
+# stub is the harness's SHIP_STUB, copied as the sibling files copy what they need.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
@@ -30,7 +29,7 @@ class ReleaseShipModeTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 
   # Lazy + memoized so forked test workers each get their own dir, and REMOVED
-  # after the run — the shape test/lib/release_cli_test.rb uses.
+  # after the run — the shape the release CLI harness uses.
   def self.lock_dir
     @lock_dir ||= begin
       dir = Dir.mktmpdir("release-ship-mode-locks")
