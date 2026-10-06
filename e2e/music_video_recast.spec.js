@@ -34,6 +34,9 @@ test("operator turns Swap Person on, picks an athlete and a look that save at on
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await expect(toggle).toHaveText("Swap Person");
+  // The box is checked by colour alone: no off-state class left behind to fight it.
+  await expect(toggle.locator("span").first()).toHaveClass(/bg-primary/);
+  await expect(toggle.locator("span").first()).not.toHaveClass(/bg-surface/);
   await expect(recast(page, 1)).toHaveAttribute("data-state", "open");
   const combo = search(page, 1);
   await expect(combo).toBeFocused();

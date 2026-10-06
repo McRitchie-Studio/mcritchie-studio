@@ -18,10 +18,10 @@
      data-fresh-look="<%= local_assigns[:fresh_look] %>"<% if saved_athlete %> data-athlete="<%= saved_athlete.to_json %>"<% end %>>
   <div class="flex flex-wrap items-center justify-between gap-2 min-w-0">
     <button type="button" role="switch" aria-checked="<%= on %>" :aria-checked="on ? 'true' : 'false'" @click="toggle()"
-            class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors min-w-0
-                   <%= on ? 'border-primary bg-primary/10 text-heading' : 'border-subtle bg-surface text-body' %>"
+            class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors min-w-0"
             :class="on ? 'border-primary bg-primary/10 text-heading' : 'border-subtle bg-surface text-body'" data-test="swap-toggle">
-      <span class="w-5 h-5 shrink-0 rounded-md border-2 flex items-center justify-center <%= on ? 'bg-primary border-primary' : 'border-subtle bg-surface' %>"
+      <%# The on and off colours live only in :class: Alpine never removes a static class, so a static one would fight the bound one after a toggle. %>
+      <span class="w-5 h-5 shrink-0 rounded-md border-2 flex items-center justify-center"
             :class="on ? 'bg-primary border-primary' : 'border-subtle bg-surface'" aria-hidden="true">
         <svg x-show="on" <%= "x-cloak" unless on %> viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="3" class="w-3.5 h-3.5 text-white">
           <path d="m4.5 10.5 3.5 3.5 7.5-8" stroke-linecap="round" stroke-linejoin="round"/>
