@@ -226,51 +226,39 @@ is baked in to rot at the next rotation.
 export governs **both** legs — the git credential helper and the token broker —
 so the two can never disagree about which identity a session is.
 
-### Wiring (global, one time)
+### Wiring (global)
 
 **Never point `~/.gitconfig` at a path inside a working tree.** `git checkout`
 unlinks and recreates a file whose content differs between two commits, so for a
 window the helper DOES NOT EXIST and any git operation needing credentials dies
-with `gh-app-git-credential: No such file or directory` — measured four times on
-2026-09-10 while the hub primary moved. Install a snapshot outside every working
-tree instead, and wire THAT path:
+with `gh-app-git-credential: No such file or directory`.
+
+The production ship wires it. `bin/install-agent-docs`, the owned `sync_agent_docs`
+step of `bin/release ship`, points the helper at the fixed-path tooling copy, a
+`git archive` of the shipped tree behind an atomically swapped symlink that no
+checkout touches ([`fast-lane.md`](fast-lane.md)). The line it runs:
 
 ```bash
-cd /Users/alex/projects/mcritchie-studio
-bin/install-git-credential-helper            # installs, then prints the git config command to run
-bin/install-git-credential-helper --check    # what is installed, and whether it is stale
+git config --file ~/.gitconfig --replace-all credential."https://github.com".helper \
+  "/Users/alex/projects/.agents/bin/gh-app-git-credential" '/gh-app-git-credential$'
 ```
 
-The installer copies the helper's whole closure into
-`~/.mcritchie/git-credential/versions/<digest>/` and points a stable `current`
-symlink at it, so the wired path never moves.
+It is a `--replace-all` carrying a value-pattern because
+`[credential "https://github.com"]` holds TWO values here, an empty reset and
+then the helper: a plain `git config … helper "<path>"` fails with *cannot
+overwrite multiple values with a single value*, while a bare `--replace-all`
+collapses both and lets the generic `[credential] helper = osxkeychain` answer
+github.com. The pattern rewrites only this helper's own line, so the reset
+survives and a re-run converges on one value; on a config with no reset the
+installer adds the reset ahead of the helper. Until the first ship installs the
+tooling, the line names the hub primary's copy.
 
-**Install FIRST, then run the command it prints, as printed.** The wired path
-points inside `~/.mcritchie/`, which does not exist until the installer creates
-it — wiring first would aim github.com at a missing file, and the empty reset
-this command preserves means `osxkeychain` will not answer in its place:
-
-```bash
-bin/install-git-credential-helper            # creates ~/.mcritchie/... and prints the line below
-git config --global --replace-all credential."https://github.com".helper \
-  "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential" '/gh-app-git-credential$'
-```
-
-It is a `--replace-all` carrying a value-pattern, because `[credential "https://github.com"]` already holds TWO
-values here — an empty reset, then the in-tree path — and (measured 2026-09-14 on
-an isolated copy of `~/.gitconfig`) a plain `git config … helper "<path>"` fails
-with *cannot overwrite multiple values with a single value*, while a bare
-`--replace-all` succeeds and collapses both, dropping the empty reset that stops
-the generic `[credential] helper = osxkeychain` answering github.com. The pattern
-matches only this helper's own lines — the in-tree path today, an installed
-snapshot on a later run — so the command converges on one value instead of
-appending a second. On a machine with one value or none, git adds it. Mechanics
-and the reasoning: `bin/lib/credential_helper_install.rb`.
-
-**Re-run the INSTALLER after any change to the helper or anything it reaches** —
-`bin/install-git-credential-helper`, and `--check` says when that is due. It
-re-prints the wiring command; the wired path itself does not move, so there is
-usually nothing to re-wire.
+`bin/install-git-credential-helper` is the by-hand alternative from before the
+fixed path: it snapshots the helper's closure into
+`~/.mcritchie/git-credential/versions/<digest>/` and prints the wiring line
+(it never edits `~/.gitconfig`). The next ship repoints a line wired that way to
+the fixed path, so prefer the ship's wiring. Mechanics: `bin/install-agent-docs`
+(`install_git_credential_helper`) and `bin/lib/credential_helper_install.rb`.
 
 Confirm access with a **real** read/write — not the repo permissions API, which
 reflects the *account's* access, not the *token's* grant (this once masked a
