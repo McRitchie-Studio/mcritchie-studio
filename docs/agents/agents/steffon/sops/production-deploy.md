@@ -256,6 +256,13 @@ production. Details: [`../../../modules/gates/g4-ship.md`](../../../modules/gate
 "retried once after 30s boot-window wait"** is healthy; **Red** persisted through the
 retry. The seal never auto-rolls-back: the rollback commands print and you decide.
 
+**After a hub rollback, re-run the devops backfill once you roll forward.** The
+rolled-back code writes `pr_url`, `branch`, `approval_status` and `session_id` only
+as devops keys, so their columns go stale while it runs. When the fix ships, run
+`bin/rails tasks:backfill_devops_columns` on the hub app (`heroku run … --app
+mcritchie-studio`) and read its last line: it exits non-zero while any row still
+diverges, so re-run it until it reports `0 still diverge(s)`. It is idempotent.
+
 **The seal runs the shipped tree's specs** (the hub's ship workspace at the frozen SHA,
 never the primary). **⚪ unsealed** means those specs could not run, and says why; it
 is not a red seal and prints no rollback. Fix the cause, then re-seal:
