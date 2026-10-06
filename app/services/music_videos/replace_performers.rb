@@ -2,7 +2,8 @@ module MusicVideos
   # The cast seam: the agent's vision pass posts the whole performer set and it
   # replaces what is there. Operator labels and recasts on the old set are
   # dropped (the grouping may have changed), and each count dropped is
-  # reported. A confirmed cast is never replaced. The agent sends FIELDS and
+  # reported. A confirmed cast is never replaced. Any chunks already cut are
+  # relabelled from the new set (LabelChunks). The agent sends FIELDS and
   # nothing else: who a performer is, and who replaces them, is the operator's.
   class ReplacePerformers
     FIELDS = %w[ordinal label still_object_keys sightings confidence_note].freeze
@@ -37,6 +38,7 @@ module MusicVideos
         dropped_recasts = old.count { |p| p.recast_person_slug.present? || p.recast_keep? }
         @video.video_performers.destroy_all
         performers = @rows.map { |row| @video.video_performers.create!(attributes(row)) }
+        LabelChunks.call(@video) # chunks cut at digest learn who is on screen
         Outcome.new(performers:, dropped_labels: dropped, dropped_recasts:)
       end
     end

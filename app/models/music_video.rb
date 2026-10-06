@@ -48,7 +48,8 @@ class MusicVideo < ApplicationRecord
 
   def to_param = slug
 
-  # Clips come after the cast, so a clips_ready video's cast is confirmed too.
+  # Seam candidates come after the cast, so a clips_ready video's cast is
+  # confirmed too. Chunks do not wait for it (bin/digest-video cuts them).
   def cast_confirmed? = CAST_CONFIRMED_STAGES.include?(stage)
 
   def cinematic? = kind == "cinematic"
@@ -72,6 +73,7 @@ class MusicVideo < ApplicationRecord
       raise CastNotReady, cast_blocker unless cast_ready?
 
       update!(stage: "cast_confirmed")
+      MusicVideos::LabelChunks.call(self) # the named artists and extras set who each chunk targets
     end
   end
 

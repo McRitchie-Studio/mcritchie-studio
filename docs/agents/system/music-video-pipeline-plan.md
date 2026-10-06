@@ -31,7 +31,11 @@ inputs complete in the UI.
 in R2 and creates a `MusicVideo` record through `POST /api/v1/music_videos`: type
 `music_video` (the default) or `cinematic` (`--kind cinematic`), platform, source
 URL and id, title, duration and stage. It links the credited primary and featured
-artists.
+artists. Then, still on the Mac (a dyno has no ffmpeg), it cuts the whole video
+into the recast pipeline's chunks (below, under Clips) and posts them, before
+anyone is cast: one source's chunks serve every alt video made from it. A
+re-digest keeps chunks already cut at the same tiling and replaces chunks of
+another tiling only with `--retile`; `--no-tile` skips the chunks.
 
 Captions are read for **timing and section structure only**. Lyric text is never
 stored.
@@ -100,7 +104,8 @@ Built by `music-video-clip-finder`: `bin/find-clips`, the `video_clips` table,
 One approved clip moves the video to `clips_ready`. The agent's steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#stage-5-clips).
 
-**Chunks.** Beside the candidates, `bin/find-clips <slug> --tile` cuts the whole
+**Chunks.** Beside the candidates, the digest (`bin/digest-video`), or
+`bin/find-clips <slug> --tile` for an older source or a new tiling, cuts the whole
 video into 25-second chunks on a 20-second stride (0-25, 20-45, 40-65 and on), so
 each shares 5 seconds with the one before. Chunk length and overlap are
 parameters (`--chunk`, `--overlap`); the video records the pair its chunks were
@@ -108,9 +113,12 @@ cut with. The last chunk ends at the video's end
 and may be shorter; a tail the previous chunk already covers makes no extra
 chunk. A chunk has no seam and no approval. Chunks are `video_clips` rows of kind
 `chunk`; the candidates are kind `candidate`. Each kind numbers its own ordinals
-and is replaced on its own. Built by `tile-video-into-overlapping-chunks`, the
+and is replaced on its own. Chunks need no confirmed cast (the candidates do):
+cut at digest they are `unknown` with the generic prompt, and the hub relabels
+them from the cast when the vision pass posts it and when the cast is confirmed
+(`MusicVideos::LabelChunks`). Built by `tile-video-into-overlapping-chunks`, the
 first piece of the recast pipeline, which swaps every chunk and stitches them
-back. The steps are in
+back; moved into the digest by `digest-cuts-chunks-on-upload`. The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#chunks-the-whole-video-tiled).
 
 **Alt videos and the clip builder.** A source video (a `music_videos` row,
@@ -231,6 +239,7 @@ Already filed, in build order:
 3. `music-video-cast-panel`
 4. `music-video-clip-finder`
 5. `tile-video-into-overlapping-chunks`
+6. `digest-cuts-chunks-on-upload`
 
 Alongside: `asset-tree-browser`. Later, not yet filed: measuring the TikTok download
 and the Instagram cookie path, the artist reference and look stages, and the pipeline 4

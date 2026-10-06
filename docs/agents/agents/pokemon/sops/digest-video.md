@@ -4,11 +4,11 @@
 
 The Pokémon's `digest-video` SOP: stage 1 of pipeline 3 in the
 [music video pipeline plan](../../../system/music-video-pipeline-plan.md). Alex
-says `digest video <url>`; the agent downloads the video, stores it, and records
-it so the cast stage can start.
+says `digest video <url>`; the agent downloads the video, stores it, records
+it, and cuts it into the recast pipeline's chunks, so the cast stage can start.
 
 It runs on Alex's Mac, where the download works; YouTube often blocks cloud IPs.
-`bin/digest-video <url>` runs steps 1 to 5 in one go:
+`bin/digest-video <url>` runs steps 1 to 7 in one go:
 
 ```bash
 bin/digest-video <url>                   # dev bucket, API at localhost:3000
@@ -18,9 +18,14 @@ bin/digest-video <url> --dry-run         # download and print the plan only
 bin/digest-video <url> --production      # production bucket and mcritchie.studio
 bin/digest-video <url> --cookies-from-browser chrome   # lend yt-dlp the browser's session
 bin/digest-video <url> --kind cinematic  # a cinematic video; the default is music_video
+bin/digest-video <url> --chunk 15 --overlap 5   # 15 s chunks on a 10 s stride
+bin/digest-video <url> --no-tile         # record the source only; cut no chunks
+bin/digest-video <url> --retile          # replace the chunks a re-digested source already has
 ```
 
-It writes the dev bucket unless `--production` is passed.
+It writes the dev bucket unless `--production` is passed. The stages run in
+this order: download, store the source, record it, chunks (step 6), report.
+The cast (stage 2) comes after, and the chunks do not wait for it.
 
 ## 1. Pick the sub-SOP by host
 
@@ -84,10 +89,37 @@ If the sub-SOP fetched captions, the script turns them into cue times and
 lyric text: the API refuses any field it does not know and any caption timing
 that carries more than times and a section kind.
 
-## 6. Report
+## 6. Cut the chunks
 
-Report the video's title, duration, the R2 key, the credited artists and any
-unresolved credits; the script prints all of them. The next act is stage 2, the cast.
+Right after the record, the script cuts the whole video into 25 s chunks that
+overlap 5 s and posts them, with the same tiler `bin/find-clips --tile` runs
+(`bin/lib/chunk_tiling.rb`; the steps are in
+[Chunks](#chunks-the-whole-video-tiled), below). It runs here, on the Mac,
+because a production dyno has no ffmpeg, and once per source, because one
+source's chunks serve every alt video made from it. `--chunk` and `--overlap`
+set the tiling (defaults 25 and 5); `--no-tile` skips the step; `--dry-run`
+prints the chunks it would cut and cuts, uploads and posts nothing.
+
+Nobody is cast yet, so every chunk is `unknown` with nobody on screen and
+carries the generic prompt ("the singer", or "the main person on screen" for a
+cinematic video). The hub labels the chunks from the cast when the vision pass
+posts it and again when the operator confirms it (`MusicVideos::LabelChunks`),
+and the prompts follow.
+
+**A re-digest cuts nothing twice.** A second digest of the same source gets the
+existing record back (step 4). If that record already has chunks at the same
+chunk length and overlap, the script keeps them and says so: the hub accepted
+them only as the whole tiling of the video, and the source never changes under
+a recorded video, so a re-cut would only upload the same files again. If its
+chunks were cut at another length or overlap, the script keeps them too and
+names `--retile`, which replaces them. Takes and regenerate flags survive a
+re-tile only at the same length and overlap (see the next stage).
+
+## 7. Report
+
+Report the video's title, duration, the R2 key, the credited artists, any
+unresolved credits and the chunks; the script prints all of them. The next act
+is stage 2, the cast.
 
 ## Stage 2: Cast
 
@@ -222,8 +254,9 @@ people, stills and sightings, no names.
 
 Once the cast is confirmed, `bin/find-clips` proposes 25-second clips, cuts
 them to R2 and records them. It uses ffmpeg only; install nothing else. With
-`--tile` it cuts the whole video into overlapping chunks instead
-([Chunks](#chunks-the-whole-video-tiled), below).
+`--tile` it re-cuts the whole video into overlapping chunks instead
+([Chunks](#chunks-the-whole-video-tiled), below); the digest already cut them
+once, so `--tile` is for a source digested before 2026-10-06 or a new tiling.
 
 ```bash
 bin/find-clips <slug>                  # dev bucket, API at localhost:3000
@@ -259,8 +292,9 @@ bin/find-clips <slug> --tile --chunk 15 --overlap 5   # 15 s chunks on a 10 s st
    `POST /api/v1/music_videos/<slug>/clips` with `ordinal`, `start_ms`, `end_ms`,
    `seam`, `seam_ms`, `cast_shape`, `target_performer`, `performer_ordinals` and
    `object_key`. The hub fills each prompt from the template in
-   `lib/music_videos/clip_prompt.rb`. It refuses a video whose cast is not
-   confirmed (`409 CAST_NOT_CONFIRMED`) and a prompt or status sent by the agent
+   `lib/music_videos/clip_prompt.rb`. It refuses candidates for a video whose
+   cast is not confirmed (`409 CAST_NOT_CONFIRMED`; chunks are never refused
+   for that) and a prompt or status sent by the agent
    (`UNPERMITTED_KEYS`). A replace drops approvals on the old set and says how
    many (`meta.dropped_approvals`). Old clip files stay in the bucket.
 7. **Hand the operator the clips**, below the cast on `/music_videos/<slug>`:
@@ -286,10 +320,13 @@ video".
 
 ### Chunks: the whole video, tiled
 
-`bin/find-clips <slug> --tile` cuts the WHOLE video into chunks instead of
-picking candidates. It takes the same flags (`--api`, `--source`, `--dry-run`,
-`--production`); `--count` does not apply. The chunks and the candidates are two
-sets on one video: running either never replaces the other.
+`bin/digest-video` cuts the WHOLE video into chunks when it records the source
+(step 6 above). `bin/find-clips <slug> --tile` runs the same tiler again, to
+tile a source digested before then or to change the tiling, and always replaces
+the chunks there. It takes the same flags as the candidate run (`--api`,
+`--source`, `--dry-run`, `--production`); `--count` does not apply. Neither
+needs a confirmed cast. The chunks and the candidates are two sets on one
+video: posting either never replaces the other.
 
 1. **Tile.** By default 25 s chunks on a 20 s stride, so each shares 5 s with
    the one before: 0-25, 20-45, 40-65 and on. `--chunk <seconds>` and
@@ -303,7 +340,10 @@ sets on one video: running either never replaces the other.
 2. **Check the source.** The file on disk must run within 1 s of the recorded
    duration, or the script stops: it is not the digested video. The tiling ends
    at the shorter of the two.
-3. **Label.** As for a candidate: cast shape, target and who is present.
+3. **Label.** As for a candidate: cast shape, target and who is present, from
+   the cast as it is when the chunks are cut. Chunks cut before the cast (the
+   digest's) are `unknown` with nobody present; the hub relabels every chunk
+   from the cast when the vision pass posts it and when the cast is confirmed.
 4. **Cut and store.** Re-encoded like a candidate, uploaded to
    `music_videos/<artist>/<video>/chunks/<video>_chunk_<NN>_<mmss>_<mmss>.mp4`.
 5. **Post the set**: `POST /api/v1/music_videos/<slug>/clips` with
