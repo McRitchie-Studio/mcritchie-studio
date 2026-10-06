@@ -123,10 +123,8 @@ progress against, even when the row can still quote a tick or an interval.
   `🥱 Nothing In Flight: <Denver time>` — a different emoji and a different
   word, so the two cases never blur at a glance. Time from
   `TZ=America/Denver date "+%-I:%M %p %Z"`; he reads reports well after they
-  land, and the clock lets him subtract without asking. Run it in the same tool
-  batch that gathers the roster, before you compose, never from a mental clock.
-  Turn count is not elapsed time either: read the clock before deciding a time
-  budget is spent.
+  land, and the clock lets him subtract without asking. Run it with the roster
+  reads, before you compose; never use a mental clock or a turn count.
 - **Cap the block at 68 columns.** v1 had no cap, and on a real terminal the
   right-hand confidence mark truncated to `(roug` / `(firm` — the one field he
   cannot infer. Hold the name column to 28 and elide longer names with `…`.

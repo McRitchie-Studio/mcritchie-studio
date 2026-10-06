@@ -138,6 +138,20 @@ bin/task update <slug> --checks "[unit] ..." --checks "[integration] ..."
 
 `--checks` and `--accept` **replace** the list; pass the full set each call.
 
+- **Repeat the flag for each entry.** `--checks "[unit] a" "[integration] b"` stores
+  only the first; `bin/task update` ignores the stray value and exits 0.
+- **Tag each line with one tier, at its start.** `[unit]` and `[integration]` go on
+  separate lines; `[unit+integration]` credits neither.
+- **`--test` and `--checks` are different fields.** `--test` fills `test_plan`,
+  which the preflight requires at `begin`; `--checks` fills `checks_run`, the only
+  field `bin/dor-check` grades tiers from. Filling one never satisfies the other.
+- **Keep shell out of recorded text.** Inside double quotes the shell runs anything
+  in backticks or `$(…)`, with your credentials, and the write still succeeds with
+  the words gone. Write long prose to a file with a quoted heredoc (`<<'EOF'`) and
+  pass `"$(cat file)"`; use `git commit -F` and `gh pr create --body-file` likewise.
+- **Read every write back** with `bin/task show <slug> -v`. A successful exit is
+  not evidence the record holds what you sent.
+
 ## Step 4 — Decide: does this change earn a LOCAL REVIEW?
 
 Ask: *would Alex want to see this running before it rides the pipeline?*
@@ -286,6 +300,20 @@ the task URL, records `pr_url`, runs the pre-flight while CI is already running,
   red-CI task back with the failing checks named.
 - Moving by hand (`bin/task move <slug> submitted`) does **not** wait for CI; the
   wait lives in `bin/ship`.
+
+**Before you launch**, three cheap checks save a whole CI cycle:
+
+- **Land every change first.** A push during the CI wait restarts CI under the
+  waiter; the verdict still refuses correctly, so let CI settle on the final head
+  and re-run `bin/ship`.
+- **Probe the verdict read-only:** `bin/dor-check <slug> --json` from the desk
+  names missing tiers and a bad `[control]` line in seconds, and records no gate
+  attempt. Its complaint about the PR or CI is expected before the ship.
+- **Clear the traps the pre-flight cannot see** — a `test/docs` guard, a new
+  `bin/` script, your own test run holding the test database:
+  [`gates/g1-cert.md`](gates/g1-cert.md#traps-the-pre-flight-cannot-see). A diff
+  touching `e2e/` also owes re-derived counts in `config/e2e_lane.yml`
+  ([`testing.md`](testing.md)).
 
 Keep the worktree and branch until review confirms the PR merged or was
 abandoned. A pushed branch preserves code; `main` is not a backup.

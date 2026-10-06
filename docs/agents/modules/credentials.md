@@ -14,6 +14,38 @@ Credential docs are split into two layers:
 - Do not edit agent tool permissions or `.claude/settings*.json` to gain credential access.
 - If a permission is missing, report the exact vault, item, and operation needed instead of inventing a workaround.
 
+## Commands that print what they touch
+
+Before running anything near a credential, ask what it prints. Each of these has
+put a live secret in a transcript:
+
+- **`heroku releases:info <v>` prints every config var in plaintext.** For a
+  release's log use `heroku releases:output <v>`.
+- **`heroku config:set VAR=… ` echoes the value it set**, multi-line secrets
+  included. Run it as `heroku config:set … >/dev/null 2>&1; echo "exit $?"`.
+- **`heroku config:get` cannot verify anything**: absent, empty and a failed read all
+  print one bare newline. Test presence with a control:
+  `heroku config --json -a <app> | jq 'length'` (0 means the read failed), then
+  `jq '(.NAME // "") != ""'`.
+- **Any "only stderr" redirect in zsh** — see
+  [`../system/coding-standards.md`](../system/coding-standards.md#shell-zsh-on-macos):
+  `2>&1 >/dev/null` still carries stdout.
+
+**Hunting a leak must not repeat it.** Use a slice of the live variable as the grep
+needle (`needle="${SECRET:200:60}"`), report paths and counts only, and tell a real
+token from a format example by its length. Once printed, a credential is
+compromised: rotate first, then clean the copies.
+
+## 1Password CLI quirks
+
+- `op item delete` (and `--archive`) refuses a Password-category item whose password
+  is empty (`Password item requires ps value`): set a placeholder with `op item edit`
+  first.
+- `op item create "<label>[file]=<path>"` rejects a label with more than one period.
+- Never repoint the ambient `OP_SERVICE_ACCOUNT_TOKEN` at the admin token to get
+  unblocked. That hands every agent write access to every vault; prefix it to one
+  read, as shown below.
+
 ## Personal data in a public repo
 
 **`mcritchie-studio` and its sibling repos are PUBLIC.** Confirm rather than

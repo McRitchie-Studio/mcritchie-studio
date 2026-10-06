@@ -293,6 +293,48 @@ bin/scratch-backup verify  bin/agent-worktree   # exit 0 = intact, 3 = not
 bin/scratch-backup list                         # your namespace, with statuses
 ```
 
+`save` refuses, without `--force`, to overwrite a backup that differs from the file,
+so a re-save after edits changes nothing and the next `restore` reverts them. Never
+silence its output. The scratchpad itself does not survive the session: hand work on
+by committing it to the desk branch or inlining it in the task's `agent_context`, and
+park stranded work on a pushed `rescue/<slug>-<date>` branch.
+
+## Desk Traps
+
+- **Read current truth from `origin/accepted`, never a primary.** A primary sits on
+  `main`, often far behind; a miss there means "not shipped yet", and a version read
+  from its tree describes its last fetch. Use `git show origin/accepted:<path>` or
+  your desk. A doc merged to `accepted` reaches Alex's primary only at a production ship.
+- **Commit as soon as a coherent change exists.** A peer who claims the same task
+  lands at the same path and a takeover resets it; uncommitted work is unrecoverable.
+- **Confirm the database before trusting a hand-run data command:**
+  `bin/rails runner 'puts ActiveRecord::Base.connection_db_config.database'`. A
+  satellite desk without `.env.development.local` reaches the shared
+  `<app>_development`, and no guard there refuses it.
+- **A seed that fails its network fetch aborts `up` before the server starts**, and
+  the seeds after it never run. Re-run `up` (the existing DB migrates and skips
+  seeds) and load any later seed you need by hand.
+- **`db:prepare` can dump a sibling's migration into `db/schema.rb`.** If your branch
+  adds no migration, `git checkout origin/accepted -- db/schema.rb` before shipping.
+- **`up` accepts a server that is already running, and a dev server never reloads
+  gems.** After a gem bump, `down` then `up`, and before a demo fetch a string only
+  your change contains.
+- **A fresh tree lacks every gitignored artifact.** When a failure's own control fails
+  too, reproduce it at the same SHA in a known-good tree before calling it a finding.
+- **A vanished desk after a merge is usually the normal teardown.** Ask the remote:
+  `git ls-remote --heads origin feat/<slug>`, the PR state, `bin/task show <slug>`.
+- **`remove --force` overrides the content guard only for a merged PR** (it needs a
+  working `gh`) and never overrides the dirty guard. Rescue dirty work to a pushed
+  `rescue/<slug>-<date>` branch first.
+- **On a full band, read why before provisioning:** group the withheld reasons from
+  `cleanup --reclaim`. Desks held by the idle clock free themselves within the window
+  (a fleet-wide board write resets it everywhere at once). Never reclaim a `_ship`
+  workspace or a reviewer's throwaway.
+- **Never run `bin/install-agent-docs` by hand, least of all from a desk.** It
+  publishes the tree it runs in, committed or not, as the machine-wide entry docs. On
+  an entry-doc branch, preflight's drift line is expected; the ship publishes.
+  `bin/install-agent-docs check` is the read-only form.
+
 ## Multi-Agent Safety & Merge Patterns
 
 Agents converging on one branch each get `git worktree add -b <branch> .worktrees/<slug>

@@ -49,6 +49,17 @@
   timestamp against a local mtime fails at every skew tolerance. Add the write that
   makes the event observable.
 
+## Ruby Traps
+- **Read an opt-in ENV flag as `ENV["X"] == "1"`, never `.present?`**, whenever it
+  gates spending, deleting or overwriting. `"0"`, `"no"` and `"false"` are all present,
+  so every spelling of no means yes.
+- **Set a wall-clock hour with `time.change(hour: N)`, never `beginning_of_day +
+  N.hours`.** On a DST transition day the sum lands an hour off. Test the transition
+  day itself, not a date in the other offset.
+- **`sub`/`gsub` interpret backslashes in a replacement STRING:** `\'` is the text
+  after the match, so splicing literal code can duplicate a file's tail. Use the block
+  form, `s.sub(anchor) { replacement }`, for text carrying quotes or backslashes.
+
 ## Shell (zsh on macOS)
 - **A pipe reports the last stage's status.** `cmd | tail; echo $?` prints `tail`'s
   0. Capture first: `out=$(cmd 2>&1); code=$?`, or redirect to a file. In zsh the

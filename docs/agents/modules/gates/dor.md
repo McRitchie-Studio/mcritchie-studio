@@ -329,6 +329,20 @@ the gem-release shape, where a gem task names its CONSUMER repos so the gates ca
 reason the gem owes the PR while the consumers do not. The gate says so in a
 suggestion rather than implying coverage it does not have.
 
+Two record-keeping traps follow from reading only recorded PRs:
+
+- **An unrecorded companion PR is invisible.** The gate can be green while a
+  second repo's PR on the same branch is red. Before trusting a multi-repo
+  verdict, look in every repo the work could touch
+  (`gh pr list --repo <owner/repo> --head feat/<slug>`), then record what you
+  find with `bin/task update <slug> --repo <a> --repo <b>` and
+  `--pr-url-for <repo>=<url>`.
+- **A recorded PR that merges first blocks the verdict for good.** The CI half
+  refuses a MERGED PR as "not an OPEN review target", and nothing the builder can
+  do clears it. So a change that must land before another repo's CI can go green
+  is a separate task, not a second PR on this one. Never edit `pr_urls` to make the
+  gate pass; that destroys the record it reads.
+
 **The local working tree is never a fallback from a foreign root.** This is the
 rule that closes the 08-08 hole by construction rather than by every reader
 remembering to ask. The old reasoning — recorded in this file, and wrong — was
@@ -442,7 +456,9 @@ Exit 0 = ready to advance `submitted → reviewed`, which since 2026-09-24 means
 the PR's CI has **settled green**. A CI still running exits 1 under a `⏳ …
 WAITING on CI` headline — not a failure, a wait; `bin/ship` holds at step 6/8 for
 exactly this, so the ordinary handoff never sees it. The verdict opens+closes the
-`dor` gate with its evidence as SOPs.
+`dor` gate with its evidence as SOPs. `--json` records no gate attempt, so
+`bin/dor-check <task-slug> --json` before the ship is a free read-only probe for
+missing tiers and a bad `[control]` line.
 
 ### Review side (the `dor_review` gate)
 

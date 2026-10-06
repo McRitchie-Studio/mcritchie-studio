@@ -102,6 +102,28 @@ run was refused before any lane ran.
 A dirty tree is **not** refused any more — nothing is stamped, so there is
 nothing to stamp wrong.
 
+## Traps the pre-flight cannot see
+
+A green pre-flight covers only what the diff maps to. Each of these reaches CI
+first, at the cost of a full ship cycle:
+
+- **`test/docs` guards.** A prose or `bin/` change maps to its neighbours, never to
+  `test/docs/`, so a guard that pins a line or a citation reddens only in CI. Run
+  `bin/rails test test/docs` yourself before shipping such a diff. When you reword
+  a comment, keeping its line count keeps every citation below it in place.
+- **A new hub `bin/` script.** It fails `test/lib/bin_help_flag_class_test.rb`
+  until it has a row in that file's `MANIFEST` constant; there is no file named
+  "manifest". Add the row in the same commit.
+- **Your own test run.** A suite left running in the background holds the desk's
+  test database, so `test-prepare` dies on `PG::ObjectInUse` and reads like a red
+  diff. Stop it, and confirm `pg_stat_activity` shows no sessions on that database.
+- **Prose that widens the mapped lane.** The grep rung matches a config by its full
+  path or its quoted basename, in comments too. Name a config the file does not
+  read by its bare basename, or it counts toward the cap.
+- **Lint by the wrapper.** Run `bin/rubocop <paths>`, the command this lane runs.
+  `rubocop --force-exclusion` drops excluded paths without a word; compare
+  "Inspecting N files" with the number you passed.
+
 ## UI surfaces
 
 The task's "Testing gates" card still carries a G1 chip keyed `g1_cert`. Nothing

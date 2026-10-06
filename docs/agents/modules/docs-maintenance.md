@@ -8,7 +8,7 @@ Docs are part of the product surface for agents. When code changes behavior, upd
 - Ecosystem map and recovery: `mcritchie-studio/docs/ECOSYSTEM.md`, `docs/agents/system/house-burn-down.md`
 - Shared email operations: `mcritchie-studio/docs/agents/modules/email-operations.md`
 - App-specific behavior: the owning repo's README, runbook, and topic docs
-- Audit process: `mcritchie-studio/docs/agents/modules/audit-playbook.md`
+- Audit process, and the rules for correcting a claim in prose: `mcritchie-studio/docs/agents/modules/audit-playbook.md`
 - Historical audits and prompts: archive or ledger once their live facts are promoted
 
 ## Editing The Entry Docs (`AGENTS.md` / `CLAUDE.md`)
@@ -218,36 +218,6 @@ check. And lane 4's own: it catches **rot** — a citation whose file moved unde
 never a citation that was **wrong when it was written**, because an author reading the
 wrong line copies the anchor off that same wrong line. A green lane 4 says the pointer
 still lands where its author put it. It does not say the sentence is true.
-
-## Correcting A Claim
-
-A corrective diff is where false claims enter. Search rules live in
-[`audit-playbook.md`](audit-playbook.md); these are the writing rules.
-
-- **Find every site before changing one** — `bin/`, `lib/`, `test/` assertion
-  messages, `config/`, generated roots, and the rest of the file you are editing.
-  A partial pass leaves two authoritative truths. Your new explanatory comment
-  means the sweep is unfinished, not done.
-- **Name each hit's subject.** The same words can be true elsewhere; report
-  corrected and verified-true sites separately.
-- **The replacement sentence is a new claim.** Prove it like code.
-- **Tense follows `accepted`.** Work in an open PR takes the future tense and its
-  task slug. A link to a file another PR adds goes in backticks: live
-  `docs/agents` links must be servable (`test/integration/doc_reference_servability_test.rb`),
-  so a link outside `docs/agents` is always a backticked path.
-- **Prose that says automation runs code names the caller** — the `Procfile`,
-  `config/recurring.yml`, a `post_deploy_cmd`, a workflow step.
-- **After an operator-driven rewrite or a scripted patch, re-read** the touched
-  comments end to end, and grep for the value you moved away from. Record a
-  rejected approach as rejected.
-- **A false doc often copies a false comment.** Grep the code for the claim's
-  wording, and file the comment too.
-- **A global proof stamp vouches for every row**; refreshing it re-asserts rows
-  the new run never exercised, so qualify them in place.
-- **History is read at its SHA** (`git show <sha>:<path>`); a carried-over patch
-  describes the tree it was written against, so re-measure it before applying.
-- **Examples use synthetic data** (`555-01xx`, `example.com`). Before shipping a
-  public-repo diff, grep it for every real value the session handled.
 
 ## Drift Review
 
