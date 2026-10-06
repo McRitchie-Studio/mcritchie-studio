@@ -174,7 +174,7 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
         return { "archivable" => [], "kept" => [] } if ruby.include?("archivable_completed_slugs")
         { "archived" => [], "kept" => [], "count" => 0 }
       end
-      def commit_artifact_to_release(*)
+      def commit_artifact_to_accepted(*)
         puts(#{COMPLETED.inspect})
       end
     RUBY

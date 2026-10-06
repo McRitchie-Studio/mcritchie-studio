@@ -6,7 +6,7 @@
 # resolved row. That refusal was INERT through the only caller that matters: sweep_docs
 # returns `[out, status.success?]` and BOTH call sites took `.first`, dropping the
 # boolean on the floor. So the warning printed, the beat carried on, and
-# commit_artifact_to_release git-added the ledger plus its archive and pushed them to
+# commit_artifact_to_accepted git-added the ledger plus its archive and pushed them to
 # `release` — committing the exact loss archive-docs had just refused.
 #
 # WHY THIS TEST DRIVES bin/release AND NOT bin/archive-docs. The sub-command already
@@ -80,7 +80,7 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
   end
 
   # Everything bin/release's `archive` reaches that is NOT the doc sweep. `conductor` is
-  # the board (Rails + a dyno); commit_artifact_to_release is the git write whose
+  # the board (Rails + a dyno); commit_artifact_to_accepted is the git write whose
   # NON-execution is the assertion. Both are replaced after `load`, so the production
   # script grows no test-only seam.
   STUBS = <<~RUBY
@@ -89,7 +89,7 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
       { "archived" => [], "kept" => [], "count" => 0 }
     end
 
-    def commit_artifact_to_release(*)
+    def commit_artifact_to_accepted(*)
       puts(#{COMMITTED.inspect})
     end
   RUBY
@@ -119,7 +119,7 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
       assert_includes out, "DELETE-LATER LEDGER",
                        "the refusal the child printed must reach the operator:\n#{out}"
       refute_includes out, COMMITTED,
-                       "commit_artifact_to_release MUST NOT run — this is the line that " \
+                       "commit_artifact_to_accepted MUST NOT run — this is the line that " \
                        "commits the destroyed ledger to `release` and makes the loss " \
                        "permanent:\n#{out}"
     end
@@ -134,7 +134,7 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
 
       assert_predicate status, :success?, "a clean sweep must not abort the archive beat:\n#{out}"
       assert_includes out, COMMITTED,
-                       "a clean sweep must still reach commit_artifact_to_release:\n#{out}"
+                       "a clean sweep must still reach commit_artifact_to_accepted:\n#{out}"
     end
   end
 

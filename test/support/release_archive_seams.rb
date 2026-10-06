@@ -6,7 +6,7 @@
 #
 # WHY THIS EXISTS (measured 2026-08-28, not hypothesised). `archive` reaches
 # outside its own process five ways: conductor, reclaim_worktrees,
-# sweep_artifacts, sweep_docs and commit_artifact_to_release. Its tests stubbed
+# sweep_artifacts, sweep_docs and commit_artifact_to_accepted. Its tests stubbed
 # the first two. The other three ran FOR REAL, with `apply: true`, against the
 # developer's own machine:
 #
@@ -16,7 +16,7 @@
 #     idempotent: the next run dies on "fatal: destination exists". That is why
 #     the suite's failure count moved 6 -> 8 on an unchanged tree, which read as
 #     flakiness and taught everyone to discount its own signal.
-#   * commit_artifact_to_release is the sharp one. It is gated on `return if
+#   * commit_artifact_to_accepted is the sharp one. It is gated on `return if
 #     DRY`, and these tests run --yes with NO --dry-run, so DRY is false. Its
 #     only other gate is ArtifactCommit.safe_to_commit?, which PERMITS the
 #     commit when the expected docs are the only dirty paths — precisely the
@@ -80,7 +80,7 @@ module ReleaseArchiveSeams
         status: StubExitStatus.new(0)
       )
     end
-    def commit_artifact_to_release(repo, paths, message)
+    def commit_artifact_to_accepted(repo, paths, message)
       nil
     end
     #{PRUNE_STUB}

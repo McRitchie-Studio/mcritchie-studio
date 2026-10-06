@@ -960,7 +960,7 @@ class ReleaseCliHarness < Minitest::Test
   # REGRESSION (rel-20260708-496cd8, then rel-20260711-7f2913): the gates used to
   # run their multi-minute suite ON the primary after a transient `git checkout
   # release`, so a concurrent `bin/release archive`/`retro` artifact dance
-  # (commit_artifact_to_release) — or any process the ADVISORY flock does not bind
+  # (commit_artifact_to_accepted) — or any process the ADVISORY flock does not bind
   # (another agent session, a hand-run git) — could flip that primary main↔release
   # mid-suite. With the test env autoloading LAZILY, the running suite then
   # resolved code from the WRONG tree → false failures → a false-negative gate.

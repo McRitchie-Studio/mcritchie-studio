@@ -21,7 +21,7 @@ same kind of fact:
 |---|---|---|
 | archived tasks, completed releases | the **production board** | shared; `--local` is never added (see Entry) |
 | reclaimed worktrees, swept bytes, rotation verdicts | **this machine only** | never board state |
-| retired docs, ledger rollover | **the repo** | staged, then committed to `release` |
+| retired docs, ledger rollover | **the repo** | staged, then committed to `accepted` |
 
 So a **fresh Mac's first archive run sweeps almost nothing, and that is
 correct** — not an anomaly, and not a sign the sweep is broken. The disk numbers
@@ -29,7 +29,7 @@ describe the machine the command ran on. Never file them as pipeline state, and
 never compare them across machines.
 
 The doc retirement is the exception to "machine-local": it edits **tracked
-files**, so the run stages the moves and commits them to `release` with the
+files**, so the run stages the moves and commits them to `accepted` with the
 ledger in one artifact commit. It therefore does the same thing on any machine.
 
 ## Entry
@@ -120,7 +120,7 @@ cleanup guards.
    A pruner that refuses or fails prints a warning; the archive goes on.
 10. Retires frozen docs + rolls the ledger (`bin/archive-docs`), then commits
     each move (the archive copy AND the live copy's removal) and the ledger to
-    `release` in ONE artifact commit.
+    `accepted` in ONE artifact commit.
 
 **`bin/release archive` ends at step 10. The ACT does not.** One step remains, and
 it is a separate command you run yourself:
@@ -251,8 +251,8 @@ between the ledger and its archive. `bin/archive-docs` checks that against `HEAD
 before the roll and again after it, and an apply exits non-zero naming every
 destroyed row (a `--dry-run` reports and still exits 0, so a preview never wedges
 the callers that preview before confirming). `bin/release archive` **honours that
-exit code**: it aborts before `commit_artifact_to_release`, so the destroyed
-ledger is never committed to `release`.
+exit code**: it aborts before `commit_artifact_to_accepted`, so the destroyed
+ledger is never committed to `accepted`.
 
 Both halves are load-bearing, and the second one is easy to lose. When the
 refusal first shipped it was **inert** through the only caller that matters —
