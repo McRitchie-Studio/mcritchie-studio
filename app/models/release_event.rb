@@ -10,6 +10,7 @@ class ReleaseEvent < ApplicationRecord
     prod_smoke
     release_notes
     archive_tasks
+    rollback
   ].freeze
   STATUSES = %w[started completed failed].freeze
   USAGE_REQUIRED_SOURCES = %w[api agent cli].freeze

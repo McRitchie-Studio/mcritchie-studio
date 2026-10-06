@@ -57,8 +57,8 @@ class SealRetryWiringTest < ActionDispatch::IntegrationTest
     assert_match(/FAILED/, result.seal.summary)
     assert_match(/retried once after 30s boot-window wait/, result.seal.summary,
       "a red seal proves it was NOT a boot-window blip — the retry is on the record")
-    cmds = result.seal.rollback_commands(repo: "mcritchie-studio", heroku_app: "mcritchie-studio", deployed_sha: "abc1234")
-    assert_includes cmds[0], "heroku rollback --app mcritchie-studio"
+    cmds = result.seal.rollback_commands(repo: "mcritchie-studio", deployed_sha: "abc1234", release_slug: "rel-x")
+    assert_includes cmds[0], "bin/release rollback rel-x"
   end
 
   test "[integration] a first-attempt pass seals GREEN immediately — one run, no sleep, no retry note" do

@@ -93,6 +93,14 @@
 #     /up, run any member's post_deploy_cmd on the PROD app (aborts on non-zero),
 #     stamp deployed_sha + flip to shipped (shipped+main = done).
 #
+#   bin/release rollback [<release>] [--mode ask|auto] [--by NAME] [--dry-run] [--yes]
+#     Redeploy the previous shipped SHA of every app the release deployed (the
+#     newest shipped release by default). A PLAN unless production authority is
+#     given (--mode ask confirms; --mode auto or --yes proceeds). Refuses a release
+#     whose shipped SHA adds db/migrate files the previous SHA lacks, naming them.
+#     Moves no ref: main keeps the release's code. Records a `rollback` release
+#     event and a red seal. Gems stay published. See `rollback` below.
+#
 #   bin/release archive [--prod] [--dry-run] [--yes]
 #     The DevOps loop's CONCLUSION (shipped → archived): archive every shipped
 #     task that ISN'T a member of the last shipped release (those members stay
@@ -199,6 +207,10 @@ require_relative "../app/models/release/stale_tree_check"
 # red-seal alert prints (step 5c). Rails-free, so the alert comes from the SAME
 # source the notes/board read on prod.
 require_relative "../app/models/release/smoke_seal"
+# RollbackPlan is the pure plan behind `bin/release rollback`: the previous shipped SHA
+# per app, the redeploy per strategy, and every refusal (schema ahead, a later
+# release, no prior SHA). Rails-free.
+require_relative "../app/models/release/rollback_plan"
 # ProdSmoke resolves the prod base URL for the seal smoke (bin/prod-smoke shares it).
 require_relative "../app/models/release/prod_smoke"
 # SealRetry is the seal's ONE caller-side boot-window retry (step 5c): first
@@ -7626,7 +7638,7 @@ def run_seal_smoke(root, ship_sha, rel_slug, reseal: false)
   say("🔴 PRODUCTION SMOKE SEAL FAILED — #{PROD_URL}")
   say("   The deploy already landed; this is a post-ship SEAL, so the ship is NOT aborted.")
   say("   Roll back ONLY if you decide to (the seal never auto-rolls-back):")
-  seal.rollback_commands(repo: APP, heroku_app: APP, deployed_sha: ship_sha[APP]).each { |c| say("     #{c}") }
+  seal.rollback_commands(repo: APP, deployed_sha: ship_sha[APP], release_slug: rel_slug).each { |c| say("     #{c}") }
   say("")
   seal.status
 end
@@ -8967,6 +8979,253 @@ rescue SystemExit, StandardError => e
   say("  ⚠ G4 gate seal not re-stamped — board write failed (#{e.message})")
 end
 
+# --- rollback: redeploy the previous shipped SHA per app ---------------------
+# `bin/release rollback [<release>] [--mode ask|auto] [--by NAME]`.
+#
+# A red seal used to print advice (a `heroku rollback` for the hub only, a revert
+# pushed to Heroku, an abandon! that cannot touch a shipped release). This runs it,
+# for every app the release deployed, through Release::RollbackPlan:
+#
+#   * PLAN BY DEFAULT. With no authority (and always under --dry-run) it reads the
+#     board and the git trees, prints the plan, and deploys nothing. A real run
+#     takes production authority the way `ship --mode` does: `--mode ask` confirms
+#     at the prompt, `--mode auto` or `--yes` proceeds. `--mode timed` is refused.
+#   * REFUSALS before anything moves: the release is not the newest shipped one, a
+#     ship is in flight, an app has no earlier shipped SHA, or the shipped SHA
+#     carries db/migrate files the previous SHA lacks (named; the release phase
+#     already ran them, so old code would meet a newer schema).
+#   * THE REDEPLOY per strategy, satellites first and the hub last: the hub's
+#     prod-deploy workflow with sha=<previous>, a force push for git_push_heroku,
+#     `heroku rollback v<N>` for repo_script. Each non-hub app is smoked on /up.
+#   * NO REF MOVES. main, release and accepted stay put; the release's code stays
+#     on main, so the next ship redeploys it unless a revert lands on accepted.
+#   * THE RECORD: a `rollback` release event (started, then completed or failed)
+#     carrying both SHAs per app, a red seal whose summary names the rollback, the
+#     release's metadata["rolled_back"], and G4's seal re-stamped red. The release
+#     stays `shipped` and its members stay `shipped`: their code is still on main.
+#     Every record write is best-effort once a deploy has run.
+#   * GEMS are named and left published: a gem version cannot be unpublished.
+def rollback(slug = nil)
+  by = opt_value("--by") || ENV["USER"] || "operator"
+  slug = slug.to_s.strip
+  slug = opt_value("--slug").to_s.strip if slug.empty?
+  authority = begin
+    Release::RollbackPlan.authority(explicit: opt_value("--mode"), assume_yes: ASSUME_YES, dry: DRY)
+  rescue ArgumentError => e
+    abort!(e.message)
+  end
+
+  say("Roll back a shipped release (redeploy the previous shipped SHA per app)#{PROD ? ' (PROD)' : ' (local)'}" \
+      "#{authority == 'plan' ? ' — PLAN ONLY' : ''}")
+  warn_local!
+
+  step("record (read-only): the release, its shipped SHAs, and the releases shipped before it")
+  read = conductor(rollback_read_ruby(slug), read_only: true)
+  plan = Release::RollbackPlan.build(target: read["release"], history: read["history"],
+                                     later: read["later"], shipping: read["shipping"], hub: APP)
+  rel_slug = plan.release_slug
+  unless plan.refused?
+    step("git (read-only): db/migrate files each shipped SHA adds over the previous one")
+    plan.check_migrations!(->(repo, from, to) { rollback_migrations_added(repo, from, to) })
+  end
+  plan.resolve_heroku_versions!(->(app) { DRY ? nil : heroku_releases(app, limit: 50) }) unless plan.refused?
+
+  say("")
+  plan.lines.each { |line| say(line) }
+  if plan.refused?
+    say("")
+    abort!("refusing to roll back #{rel_slug.empty? ? 'a release' : rel_slug} — nothing deployed:\n  " +
+           plan.refusals.join("\n  "))
+  end
+
+  if authority == "plan"
+    say("")
+    say("✓ Plan only — nothing deployed, nothing recorded. Run it with --mode ask (confirm at the prompt) " \
+        "or --mode auto: bin/release rollback #{rel_slug} --mode ask")
+    return
+  end
+
+  refusal = plan.authority_refusal(authority)
+  abort!("refusing to roll back #{rel_slug} — nothing deployed: #{refusal}") if refusal
+
+  if authority == "ask"
+    abort!("aborted — rollback not confirmed; nothing deployed") unless
+      confirm("Roll back #{rel_slug} in production — redeploy #{plan.apps.size} app(s) to the previous SHA?")
+    rollback_confirm_config_reverts!(plan)
+  end
+
+  acquire_conductor_claim!("deployer", rel_slug)
+  # The plan's later/shipping read predates the prompt, which can wait any length of
+  # time. Read them again under the claim, before anything deploys.
+  recheck = conductor(rollback_read_ruby(rel_slug), read_only: true)
+  if recheck["later"] || recheck["shipping"]
+    abort!("refusing to roll back #{rel_slug} — nothing deployed: while waiting, " \
+           "#{recheck['later'] ? "#{recheck['later']} shipped" : "#{recheck['shipping']} started deploying to production"}")
+  end
+  open_role_span("steffon", "rollback #{rel_slug} → prod")
+  @rollback_span = true
+  run_key = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+  @rollback_failed_event = lambda do
+    record_release_event(rel_slug, "rollback", "failed", actor: by, metadata: plan.evidence,
+                                                         idempotency_key: "#{rel_slug}:rollback:failed:#{run_key}")
+  end
+  record_release_event(rel_slug, "rollback", "started",
+                       actor: by, message: "authority: --mode #{authority}", metadata: plan.evidence,
+                       idempotency_key: "#{rel_slug}:rollback:started:#{run_key}")
+
+  plan.apps.each { |app| rollback_app(plan, app) }
+  @rollback_failed_event = nil
+
+  rollback_record(plan, rel_slug, by, run_key)
+  say("")
+  say("⏪ Rolled back #{rel_slug}: #{plan.seal_summary.delete_prefix('rolled back: ')}.")
+  say("   main is untouched — the release's code is still on main and accepted. Land a revert on accepted " \
+      "through a task before the next ship, or that ship redeploys it.")
+  close_role_span("rolled back #{rel_slug}")
+rescue SystemExit
+  @rollback_failed_event&.call
+  close_role_span("rollback aborted") if @rollback_span
+  raise
+ensure
+  release_conductor_claim!
+end
+
+# A config revert needs its own answer. --yes cannot give it: the operator has to
+# read the list, so a --yes run with config to revert refuses here.
+def rollback_confirm_config_reverts!(plan)
+  reverts = plan.config_reverts
+  return if reverts.empty?
+
+  if ASSUME_YES
+    abort!("refusing to roll back #{plan.release_slug} — nothing deployed: it reverts config (#{reverts.join('; ')}) " \
+           "and --yes cannot confirm that; run --mode ask without --yes and answer the prompt")
+  end
+  say("")
+  say("⚠ heroku rollback reverts these config changes (names only; values are never read):")
+  reverts.each { |line| say("   #{line}") }
+  return if confirm("Revert those config changes along with the code?")
+
+  abort!("aborted — config revert not confirmed; nothing deployed")
+end
+
+# The board read behind the plan: the release (Release.last_shipped when no slug is
+# named), up to 30 releases shipped before it with their rolled_back marks, the
+# newest shipped after it, and any release whose production deploy started but has
+# not shipped. Ordered on COALESCE(shipped_at, created_at), as last_shipped is, so a
+# NULL shipped_at sorts neither first nor out.
+def rollback_read_ruby(slug)
+  find = slug.empty? ? "Release.last_shipped" : "Release.find_by(slug: #{slug.inspect})"
+  "r = #{find}; " \
+  "abort(#{(slug.empty? ? 'no shipped release to roll back' : "no release #{slug}").inspect}) unless r; " \
+  "at = r.shipped_at || r.created_at; " \
+  "shipped = Release.where(state: 'shipped').where.not(id: r.id); " \
+  "earlier = shipped.where('COALESCE(shipped_at, created_at) < ?', at)" \
+  ".order(Arel.sql('COALESCE(shipped_at, created_at) DESC')).limit(30); " \
+  "later = shipped.where('COALESCE(shipped_at, created_at) > ?', at)" \
+  ".order(Arel.sql('COALESCE(shipped_at, created_at) DESC')).first; " \
+  "cur = Release.current; " \
+  "puts({release: {slug: r.slug, state: r.state, deployed_sha: r.deployed_sha, " \
+  "shipped_shas: (r.metadata['shipped_shas'] || {}), rolled_back: r.metadata['rolled_back'], " \
+  "repos: Release::Conductor.repo_plan(r)}, " \
+  "history: earlier.map { |e| {slug: e.slug, deployed_sha: e.deployed_sha, shipped_shas: (e.metadata['shipped_shas'] || {}), " \
+  "rolled_back: e.metadata['rolled_back']} }, " \
+  "later: later&.slug, shipping: (cur && cur.event_started?('deploy_prod') ? cur.slug : nil)}.to_json)"
+end
+
+# The db/migrate files `shipped` adds over `previous`, read from git objects in the
+# app's checkout (never a checkout of either SHA). A SHA the clone lacks is fetched
+# from origin first. nil when the trees cannot be compared, which the plan refuses.
+def rollback_migrations_added(repo, shipped, previous)
+  path = repo_path(repo)
+  missing = [shipped, previous].reject { |sha| git_capture("-C", path, "cat-file", "-e", "#{sha}^{commit}").last }
+  git_capture("-C", path, "fetch", "--quiet", "origin") if missing.any?
+  # --no-renames: a renumbered migration is a NEW version to the schema, but git's
+  # rename detection would report it as R and the A filter would drop it.
+  out, ok = git_capture("-C", path, "diff", "--name-only", "--no-renames", "--diff-filter=A", previous, shipped,
+                        "--", Release::RollbackPlan::MIGRATE_DIR)
+  ok ? out.lines.map(&:strip).reject(&:empty?) : nil
+end
+
+# Redeploy one app at its previous SHA through its strategy. Aborts on a failed
+# deploy or a /up that never answers 200: a rollback that leaves an app down must
+# say so, not record success.
+def rollback_app(plan, app)
+  path = repo_path(app.repo)
+  say("")
+  step("rollback #{app.repo} → #{short(app.to_sha)} via #{app.strategy}: #{plan.command_for(app)}")
+  ok =
+    case app.strategy
+    when "github_actions"
+      dispatch_and_watch(app.adapter["workflow"].to_s, { "sha" => app.to_sha }, chdir: path)
+    when "git_push_heroku"
+      sh("git", "-C", path, "push", "--force", plan.remote_for(app), "#{app.to_sha}:refs/heads/#{plan.branch_for(app)}").last
+    when "repo_script"
+      abort!("#{app.repo}: no Heroku release resolved for #{short(app.to_sha)}") unless app.heroku_version || DRY
+      if app.already_live
+        say("  #{app.repo} already runs the rollback to v#{app.heroku_version} — skipped")
+        true
+      else
+        sh("heroku", "rollback", "v#{app.heroku_version}", "--app", app.adapter["heroku_app"].to_s).last &&
+          rollback_await_heroku_release(app)
+      end
+    end
+  abort!("rollback of #{app.repo} failed (#{plan.command_for(app)}) — later apps were not touched") unless ok || DRY
+
+  url = plan.smoke_url_for(app)
+  return if url.empty?
+  return if wait_for_boot(url, attempts: 24, delay: 5)
+
+  abort!("rollback of #{app.repo} deployed #{short(app.to_sha)} but #{url}/up never returned 200")
+end
+
+# `heroku rollback` returns once Heroku creates the release, before it goes live, and
+# the old dynos keep answering /up meanwhile. So /up proves nothing until the new
+# release (the first version newer than the one read for the plan) is current and
+# succeeded. True on success; false on a failed release or after ~5 minutes.
+def rollback_await_heroku_release(app, attempts: 60, delay: 5)
+  return true if DRY
+
+  heroku_app = app.adapter["heroku_app"].to_s
+  step("wait for the Heroku release after v#{app.heroku_current} on #{heroku_app} to succeed")
+  attempts.times do |i|
+    verdict = Release::RollbackPlan.release_phase_verdict(heroku_releases(heroku_app, limit: 5), after: app.heroku_current)
+    if verdict == :succeeded
+      say("  release succeeded and is current")
+      return true
+    end
+    if verdict == :failed
+      say("  ✗ the new Heroku release on #{heroku_app} FAILED (`heroku releases:info --app #{heroku_app}`)")
+      return false
+    end
+    sleep(delay) unless i == attempts - 1
+  end
+  say("  ✗ the new Heroku release on #{heroku_app} did not succeed within #{attempts * delay}s")
+  false
+end
+
+# The board record of a completed rollback, in one conductor call: the red seal
+# naming the rollback and metadata["rolled_back"] first, then the completed event,
+# so a hub rolled back to code that predates the `rollback` step still keeps the
+# seal and the mark when the event's validation refuses. Then G4's seal is
+# re-stamped red. Best-effort: the deploys already ran.
+def rollback_record(plan, rel_slug, by, run_key)
+  step("record: rollback completed + red seal on #{rel_slug}")
+  rolled = plan.evidence.merge("at" => Time.now.utc.iso8601, "by" => by)
+  conductor(
+    "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+    "r.record_smoke_seal!(Release::SmokeSeal.from_result(passed: false, summary: #{plan.seal_summary.inspect}, " \
+    "checked_at: Time.current)); " \
+    "r.update!(metadata: r.metadata.merge('rolled_back' => #{rolled.inspect})); " \
+    "Release::Conductor.record_event!(release: r, step: 'rollback', status: 'completed', source: 'conductor', " \
+    "actor: #{by.inspect}, message: #{plan.seal_summary.inspect}, metadata: #{plan.evidence.inspect}, " \
+    "idempotency_key: #{"#{rel_slug}:rollback:completed:#{run_key}".inspect}); " \
+    "puts({ rolled_back: r.slug, sealed: r.smoke_seal&.status }.to_json)"
+  )
+  restamp_g4_seal(rel_slug, "red")
+rescue SystemExit, StandardError => e
+  say("  ⚠ rollback not recorded on the board (#{e.message}); the deploys above stand")
+end
+
 # `bin/release notes <release> [--post] [--force]` — re-post a shipped release's
 # notes to Discord, e.g. after the ship's own delivery failed. A DRY RUN by default:
 # it prints the notes and the planned message split (each message measured against
@@ -9034,6 +9293,7 @@ if __FILE__ == $PROGRAM_NAME
   when "ship"     then ship
   when "finalize" then finalize(Release::Cli.positional_slugs(ARGV).first)
   when "reseal"   then reseal(Release::Cli.positional_slugs(ARGV).first)
+  when "rollback" then rollback(Release::Cli.positional_slugs(ARGV).first)
   when "status"   then status
   when "archive"  then archive
   when "retro"    then retro
