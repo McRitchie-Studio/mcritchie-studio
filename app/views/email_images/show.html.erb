@@ -30,6 +30,10 @@
     <div class="lg:col-span-5 space-y-4 min-w-0">
       <div class="card p-4 space-y-3" data-test="generate-panel">
         <h2 class="text-sm font-bold text-heading">Generate</h2>
+        <p class="text-2xs text-muted" data-test="sop-note">
+          Rounds normally run from a Claude Code session: ask an agent to run the
+          <span class="font-mono">email-image</span> SOP for <span class="font-mono break-all"><%= @brief.slug %></span>.
+        </p>
         <%= render "build_status", brief: @brief %>
         <dl class="text-2xs grid grid-cols-2 gap-x-3 gap-y-1">
           <dt class="text-muted">Rounds</dt><dd class="text-body" data-test="rounds"><%= @brief.rounds_used %> of <%= @brief.max_rounds %></dd>
@@ -47,9 +51,9 @@
         <% elsif @brief.rounds_exhausted? %>
           <p class="text-2xs text-muted">All rounds are used. Change the brief, or raise its round limit.</p>
         <% else %>
-          <%= button_to "Generate #{EmailImages::BrandKit.candidates_per_round} candidates", generate_email_image_path(@brief),
-                        class: "btn btn-sm btn-primary w-full", form: { data: { test: "generate-form" } } %>
-          <p class="text-3xs text-muted">Costs money: one paid image per candidate. Do not press twice.</p>
+          <%= button_to "Generate #{EmailImages::BrandKit.candidates_per_round} candidates here", generate_email_image_path(@brief),
+                        class: "btn btn-sm btn-neutral w-full", form: { data: { test: "generate-form" } } %>
+          <p class="text-3xs text-muted">Fallback only. Costs money: one paid image per candidate. Do not press twice.</p>
         <% end %>
       </div>
 
@@ -77,9 +81,13 @@
         The <%= @brief.app %> email shell at 600 px, as an inbox draws it<%= @brief.text_mode == "none" ? ", with the headline set as live text over the art" : "" %>.
         Alt text: &ldquo;<%= @brief.effective_alt_text %>&rdquo;.
       </p>
+      <%# SANDBOXED: no scripts, forms, popups or top navigation run in the
+          frame, as in an inbox. `allow-same-origin` alone stays so the admin
+          session reaches the admin-only preview URL and its own styles load;
+          with no `allow-scripts` beside it, same-origin grants no script access. %>
       <div class="overflow-x-auto rounded-lg border border-subtle bg-[#f4f5f7]">
         <iframe src="<%= preview_email_image_path(@brief, candidate: @preview_artifact.slug) %>"
-                title="Email preview" data-test="email-preview" loading="lazy"
+                title="Email preview" data-test="email-preview" loading="lazy" sandbox="allow-same-origin"
                 class="block mx-auto border-0" style="width:648px;max-width:none;height:520px;"></iframe>
       </div>
     <% else %>

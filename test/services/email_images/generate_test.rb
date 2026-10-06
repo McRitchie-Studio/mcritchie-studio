@@ -89,4 +89,59 @@ class EmailImages::GenerateTest < ActiveSupport::TestCase
       assert_includes error.message, "openai_gpt5_sheet"
     end
   end
+
+  # THE EMAIL BYTE BUDGET (Carl, piece-1 review): Generate reads
+  # Crop#over_budget?, squeezes once more, and refuses rather than store a
+  # header no inbox should load.
+  OverBudgetOutput = Struct.new(:over) do
+    def over_budget? = over
+    def bytesize = over ? 400_000 : 200_000
+    def data_uri = "data:image/jpeg;base64,AAAA"
+  end
+
+  test "an over-budget crop is squeezed again and stored when that fits" do
+    calls = []
+    crop = lambda do |_source, **opts|
+      calls << opts
+      OverBudgetOutput.new(!opts[:squeeze])
+    end
+    with_fake_header_generator do |stored|
+      EmailImages::Crop.stub(:call, crop) { EmailImages::Generate.call(@brief, count: 1) }
+
+      assert_equal [nil, true], calls.map { |c| c[:squeeze] }
+      assert_equal 1, stored.size
+    end
+  end
+
+  test "a header still over budget after the squeeze is refused and not stored" do
+    with_fake_header_generator do |stored|
+      EmailImages::Crop.stub(:call, ->(*, **) { OverBudgetOutput.new(true) }) do
+        error = assert_raises(EmailImages::Generate::OverBudget) { EmailImages::Generate.call(@brief, count: 1) }
+        assert_includes error.message, "300000-byte email budget"
+      end
+
+      assert_empty stored
+      assert_equal 0, @brief.candidates.count
+    end
+  end
+
+  test "the real squeeze makes a smaller JPG than the first pass" do
+    first = EmailImages::Crop.call(EmailImageFakes.vendor_png, width: 1200, height: 600, max_bytes: 1)
+    squeezed = EmailImages::Crop.call(EmailImageFakes.vendor_png, width: 1200, height: 600, max_bytes: 1, squeeze: true)
+
+    assert_equal 60, first.quality
+    assert_equal 40, squeezed.quality
+    assert_operator squeezed.bytesize, :<, first.bytesize
+  end
+
+  test "a round's number and notes ride in the prompt the model sees and the record keeps" do
+    with_fake_header_generator do
+      artifact = EmailImages::Generate.call(@brief, count: 1, round: 2, notes: "  bigger   gator ").sole
+
+      assert_includes artifact.prompt, "Round 2 direction: bigger gator"
+      assert_equal artifact.prompt, EmailImageFakes::Adapter.calls.sole[:prompt]
+      line = EmailImages::Prompt.round_of(artifact.prompt)
+      assert_equal [2, "bigger gator"], [line.round, line.notes]
+    end
+  end
 end
