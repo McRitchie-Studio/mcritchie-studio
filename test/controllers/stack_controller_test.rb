@@ -33,6 +33,31 @@ class StackControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-client='turf-monster'] [data-software='google']", 0, "Pro does not include Google"
   end
 
+  test "[integration] each client shows its app tier and status from config/apps.yml" do
+    StackClient.create!(slug: "family", name: "McRitchie Family", tier: StackClient::INTERNAL, position: 95)
+    log_in_as users(:alex)
+    get stack_path
+
+    assert_response :success
+    turf = AppCatalog.app("turf-monster")
+    assert_select "[data-client='turf-monster'] [data-test='stack-app'][data-app='turf-monster']" \
+                  "[data-app-tier='#{turf.tier}'][data-app-status='#{turf.status}']", 1
+    assert_select "[data-client='turf-monster'] [data-test='stack-app']", text: /Product\s+Showcase/
+    assert_select "[data-client='family'] [data-test='stack-app'][data-app='']", { text: "—", count: 1 },
+                  "a client with no app record draws a dash"
+  end
+
+  test "[integration] the matrix summary band leads with the app tier and status" do
+    StackClient.create!(slug: "studio", name: "McRitchie Studio", tier: StackClient::INTERNAL, position: 90)
+    log_in_as users(:alex)
+    get stack_matrix_path
+
+    assert_response :success
+    assert_equal "app", css_select("[data-test='matrix-summary-row']").first["data-field"]
+    assert_select "[data-field='app'] [data-client='studio'] [data-test='stack-app'][data-app-tier='studio'][data-app-status='active']", 1
+    assert_select "[data-field='app'] [data-client='turf-monster'] [data-test='stack-app']", text: /Product\s+Showcase/
+  end
+
   # [component] GET /stack/matrix — the same clients as columns, software rows
   # by category, each cell ms (Studio chest), own (check) or none (dash).
   test "a visitor who is not signed in is sent to log in from the matrix" do

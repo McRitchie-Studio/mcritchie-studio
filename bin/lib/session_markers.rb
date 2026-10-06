@@ -94,6 +94,9 @@ require_relative "../../lib/task_usage_sandbox"
 #                      the guard sits after each writer's early returns, so a fixture
 #                      whose cwd shape returns early proves nothing about that writer
 #                      (the mascot heal shipped uncovered exactly that way).
+#   bin/prune-session-markers  DELETES the markers of ended sessions, through
+#                      +delete_entry+ (guarded like +delete+), listing them with
+#                      +entries+ (a read). The rule is in bin/lib/marker_prune.rb.
 #   bin/agent-marker,  READ-only. Unguarded on purpose: a read cannot pollute — so
 #   bin/atomic-capture-hook  agent-marker resolving its own read path by hand is
 #                      allowed. Each such method is named, with its reason, in the
@@ -247,6 +250,39 @@ module SessionMarkers
     path
   rescue StandardError
     nil
+  end
+
+  # Every marker in the store as {name:, mtime:}, for the pruner (bin/lib/marker_prune.rb).
+  # Unguarded — a read cannot pollute the store. Dot-prefixed names (a publish in
+  # flight, see +write+) are skipped, so the pruner never sees a half-written file.
+  def entries(projects_dir)
+    dir = File.dirname(marker_path("", projects_dir, "x"))
+    return [] unless File.directory?(dir)
+
+    Dir.children(dir).reject { |name| name.start_with?(".") }.filter_map do |name|
+      path = File.join(dir, name)
+      { name: name, mtime: File.mtime(path) } if File.file?(path)
+    rescue StandardError
+      nil
+    end
+  rescue StandardError
+    []
+  end
+
+  # Delete ONE marker named by its file name, through the same guard as +delete+.
+  # The name must be a plain entry of the store: no separator, no leading dot.
+  # Returns true when a file was removed.
+  def delete_entry(name, projects_dir, env: ENV, state_dir: TaskUsageSandbox.real_state_dir)
+    name = name.to_s
+    return false if name.empty? || name.include?(File::SEPARATOR) || name.start_with?(".")
+
+    path = write_path("", projects_dir, name, env: env, state_dir: state_dir)
+    return false unless File.file?(path)
+
+    File.delete(path)
+    true
+  rescue StandardError
+    false
   end
 
   # Raw contents of a marker; nil when absent/unreadable. Unguarded — a read

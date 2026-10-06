@@ -18,6 +18,25 @@ class AppsSeedTest < ActiveSupport::TestCase
     assert_equal first, App.count, "re-running the seed must not create duplicates"
   end
 
+  test "[unit] the seed writes one row per catalog app and library, as the catalog says" do
+    run_seed
+    rows = AppCatalog.seed_rows
+    assert_equal rows.map { |row| row[:slug] }.sort, App.pluck(:slug).sort
+    rows.each do |row|
+      app = App.find_by!(slug: row[:slug])
+      assert_equal row.slice(:name, :color, :emoji, :status, :position),
+                   { name: app.name, color: app.color, emoji: app.emoji, status: app.status, position: app.position },
+                   "#{row[:slug]} drifted from config/apps.yml"
+    end
+  end
+
+  test "[unit] a slug the name does not spell survives the save" do
+    run_seed
+    assert_equal "10&5 Hospitality", App.find_by!(slug: "10and5").name,
+                 "Sluggable would rename 10and5 to 10-5-hospitality if the name drove the slug"
+    assert_nil App.find_by(slug: "10-5-hospitality")
+  end
+
   test "McRitchie Studio is lavender and Turf Monster is green" do
     run_seed
     assert_equal "#B57EDC", App.find_by!(slug: "mcritchie-studio").color

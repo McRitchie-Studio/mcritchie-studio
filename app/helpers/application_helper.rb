@@ -1052,37 +1052,16 @@ module ApplicationHelper
     format("%dh %02dm", hours, mins)
   end
 
-  # Canonical app/repo slug → emoji map for the compact app indicators on task
-  # cards and current-release member pills. Mirrors the glyphs in
-  # ReleaseNotes::Formatter::APP_GROUPS (kept independent so views don't reach
-  # into the service); keep the two in sync if an app is added or its glyph
-  # changes.
+  # App/repo slug → glyph for the compact app indicators on task cards and
+  # current-release member pills: every app and library in config/apps.yml, plus
+  # library aliases (turf-vault's "vault"). Derived through AppCatalog, the same
+  # source ReleaseNotes::Formatter::APP_GROUPS reads, so the board and the release
+  # notes draw one glyph per app. To add or change a glyph, edit config/apps.yml.
   #
-  # It must cover EVERY repo in the release registry (config/release_repos.yml):
-  # the /deployments lane badge renders this glyph raw, so an unmapped member
-  # repo draws an empty box instead of an identity. Pinned by
+  # The /deployments lane badge renders this glyph raw, so every repo in the
+  # release registry (config/release_repos.yml) needs a catalog record. Pinned by
   # ApplicationHelperTest ("every release-registry repo has a glyph").
-  APP_EMOJIS = {
-    "mcritchie-studio"     => "🪎",
-    "mcritchie-industries" => "📐",
-    "turf-monster"         => "🐊",
-    "studio-engine"        => "💎",
-    "turf-vault"           => "🏛️",
-    "vault"                => "🏛️",
-    "solana-studio"        => "🧱",
-    "chain-ops"            => "⛓️",
-    "tax-studio"           => "📊",
-    "rolio"                => "📇",
-    "cyvasse"              => "🐉",
-    "dads-app"             => "🎞️",
-    "prisoners-dilemma"    => "🎲",
-    "weekly-lock"          => "🏈",
-    "rantly"               => "📣",
-    "portfolio"            => "🗂️",
-    "10and5"               => "🍽️",
-    "search-position"      => "🔎",
-    "moms-app"             => "📚"
-  }.freeze
+  APP_EMOJIS = AppCatalog.emoji_map
 
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.
   def app_emoji(repo)

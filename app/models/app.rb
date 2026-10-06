@@ -1,5 +1,6 @@
-# The canonical managed-app registry. Source of truth for an app's display name
-# and STATUS-LINE IDENTITY (color + emoji). The Task model stamps an app's color
+# The managed-app registry rows, seeded from config/apps.yml (AppCatalog) by
+# db/seeds/00_apps.rb: an app's display name and STATUS-LINE IDENTITY (color +
+# emoji) as the database holds them. The Task model stamps an app's color
 # onto a task's devops (see Task#sync_app_identity) so bin/statusline can tint the
 # app slug without DB access (bin/task / bin/agent-worktree are API clients), the
 # same way the Pokémon mascot's signature color rides the marker.
@@ -19,10 +20,10 @@ class App < ApplicationRecord
     find_by(slug: DEFAULT_SLUG)
   end
 
-  # Sluggable#set_slug assigns `slug = name_slug` on save; for an app the slug IS
-  # the repo slug, which equals the parameterized name ("McRitchie Studio" →
-  # "mcritchie-studio"), so this keeps slug and name in lockstep.
+  # Sluggable#set_slug assigns `slug = name_slug` on save. An app's slug is its
+  # repo slug from config/apps.yml, which a name does not always spell
+  # ("10&5 Hospitality" is `10and5`), so the set slug stands.
   def name_slug
-    name.to_s.parameterize
+    slug.presence || name.to_s.parameterize
   end
 end

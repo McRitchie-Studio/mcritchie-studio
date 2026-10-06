@@ -1,0 +1,10 @@
+<%# The client's app tier and status, read from config/apps.yml through AppCatalog. A client with no app record draws a dash. %>
+<% if app %>
+  <% status_class = { "active" => "text-success-ink", "showcase" => "text-primary", "delinquent" => "text-warning-ink" }.fetch(app.status, "text-muted") %>
+  <span class="inline-flex flex-col <%= local_assigns.fetch(:align, "items-start") %> gap-0.5" data-test="stack-app" data-app="<%= app.slug %>" data-app-tier="<%= app.tier %>" data-app-status="<%= app.status %>">
+    <span class="text-xs font-semibold text-heading whitespace-nowrap"><%= app.emoji %> <%= app.tier_label || "No tier" %></span>
+    <span class="text-[11px] font-semibold uppercase tracking-wider <%= status_class %>"><%= app.status_label %></span>
+  </span>
+<% else %>
+  <span class="text-muted" data-test="stack-app" data-app="">—</span>
+<% end %>

@@ -1,0 +1,75 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# prune-session-markers — remove the narration markers of sessions that are over.
+#
+#   bin/prune-session-markers            # dry run: counts and the first 20 names
+#   bin/prune-session-markers --yes      # remove them
+#   bin/prune-session-markers --days 14  # a wider window (default 7, or MARKER_PRUNE_WINDOW_DAYS)
+#
+# `bin/release archive` drives it: the dry run in its preview, --yes after the
+# confirm. Which sessions are kept, and why: bin/lib/marker_prune.rb.
+#
+# The last line of output is the tagged summary (MARKER_PRUNE_SUMMARY {json}) the
+# archive reads.
+
+require_relative "lib/cli_arg_guard"
+require_relative "lib/marker_prune"
+require_relative "lib/projects_root"
+require_relative "lib/session_identity"
+
+USAGE = <<~TXT
+  usage: bin/prune-session-markers [--root <path>] [--days <n>] [--dry-run] [--yes]
+
+    Remove the session markers of sessions that are over: older than the window,
+    not this session, no live presence claim or renewer, no desk bound to them.
+
+    --root <path>   projects root (default: $CLAUDE_PROJECTS_DIR, else this checkout's)
+    --days <n>      window in days (default: $MARKER_PRUNE_WINDOW_DAYS, else 7)
+    --dry-run       report only (the default without --yes)
+    --yes           remove the markers
+    --help, -h      this text — REMOVES NOTHING
+TXT
+
+ARGS = CliArgGuard.guard!(
+  ARGV,
+  program: "prune-session-markers",
+  usage: USAGE,
+  bool: %w[--dry-run --yes],
+  value: %w[--root --days],
+  help_exit: 0,
+  consequence: "NOTHING was removed."
+)
+
+apply = ARGS.bool?("--yes") && !ARGS.bool?("--dry-run")
+root = ARGS.first("--root") || ENV["CLAUDE_PROJECTS_DIR"].to_s.strip.then { |v| v.empty? ? nil : v } ||
+       ProjectsRoot.default_projects_dir
+root = File.expand_path(root)
+days = MarkerPrune.window_days(ENV, ARGS.first("--days"))
+
+entries = SessionMarkers.entries(root)
+live, refusal = MarkerPrune.live_session_ids(root, entries, table: ProcessTable.process_table(ps: ProcessTable.ps_bin))
+plan =
+  if refusal
+    MarkerPrune::Plan.new(prune: [], kept_sessions: [], pruned_sessions: [], refusal: refusal)
+  else
+    MarkerPrune.plan(entries: entries, now: Time.now, window_days: days,
+                     current_session_id: SessionIdentity.id(ENV),
+                     live_session_ids: live,
+                     desk_session_ids: MarkerPrune.desk_session_ids(root))
+  end
+
+puts "session markers: #{entries.size} on disk, window #{days} day(s)"
+if plan.refusal
+  puts "  refused: #{plan.refusal}"
+else
+  puts "  #{plan.prune.size} marker(s) across #{plan.pruned_sessions.size} ended session(s) " \
+       "#{apply ? 'to remove' : 'would go'}; #{plan.kept_sessions.size} session(s) kept"
+  plan.names.first(MarkerPrune::SAMPLE_SIZE).each { |n| puts "    #{n}" }
+  puts "    …(+#{plan.prune.size - MarkerPrune::SAMPLE_SIZE})" if plan.prune.size > MarkerPrune::SAMPLE_SIZE
+end
+
+removed = apply ? MarkerPrune.apply!(plan, root) : nil
+puts "  removed #{removed.size} marker(s)" if apply
+puts MarkerPrune.summary_line(MarkerPrune.summary(plan, applied: apply, removed: removed))
+exit(plan.refusal ? 1 : 0)

@@ -96,8 +96,11 @@ cleanup guards.
 1. Plans the archivable shipped tasks (a board read).
 2. Previews the worktree reclaim (`bin/agent-worktree cleanup --reclaim`).
 3. Previews the artifact sweep (`bin/clean-artifacts --dry-run`).
-4. Previews the doc retirement (`bin/archive-docs --dry-run`).
-5. **`--dry-run` stops here.** Everything above mutates nothing.
+4. Previews the doc retirement (`bin/archive-docs --dry-run`) and both pruners
+   (`bin/prune-session-markers --dry-run`, `bin/prune-branches --dry-run`): counts
+   and the first names of what would go.
+5. **`--dry-run` stops here.** Everything above mutates nothing on the board, the
+   disk or the remote (the branch preview refreshes the hub's remote-tracking refs).
 6. One confirm authorizes every mutation below.
 7. Archives on the board (`shipped → archived`).
 8. Runs the full reclaim sweep (`bin/agent-worktree cleanup --reclaim --yes`: every desk,
@@ -106,6 +109,8 @@ cleanup guards.
    [`clean-infra`](clean-infra.md).
 9. Sweeps the regenerable artifacts (`bin/clean-artifacts`) — **after** the
    reclaim, so worktrees that just went away are not swept and counted twice.
+   Then runs both pruners with `--yes` (see [the pruners](#the-pruners-step-4--step-9)).
+   A pruner that refuses or fails prints a warning; the archive goes on.
 10. Retires frozen docs + rolls the ledger (`bin/archive-docs`), then commits
     that and the ledger to `release` in ONE artifact commit.
 
@@ -174,6 +179,27 @@ Run the sweep on its own any time — but note that `bin/clean-artifacts` has **
 bin/clean-artifacts --dry-run     # report only
 bin/clean-artifacts --skip-audit  # sweep without booting any app (fast)
 ```
+
+### The pruners (step 4 / step 9)
+
+Both default to a dry run; `--yes` applies. Each prints a tagged summary line the
+archive turns into its `session markers:` and `merged branches:` lines.
+
+**`bin/prune-session-markers`** removes every marker of a session that is over
+from `<projects>/.agents/sessions` (this machine only). A session is kept, with
+all its markers, when it is this session, when any of its markers was touched
+inside the window (`MARKER_PRUNE_WINDOW_DAYS`, default 7, or `--days`), when a
+presence claim of it grades live, when a renewer pid of it is running, or when a
+desk's `.agent-context.json` names it. With no process table it refuses.
+
+**`bin/prune-branches`** deletes remote `feat/*` branches on the hub whose tip is
+in `origin/main` and whose task is `shipped` or `archived` on the board. It never
+touches `main`, `release` or `accepted`, a branch with an open PR, or a branch a
+desk has checked out. It runs as the agent GitHub App, pushes each delete with a
+lease on the tip it planned against, and refuses outright when any read fails:
+origin's branches, the merged set, the desks (`git worktree list`), the open PRs
+or the board. A failed delete push is reported as a refusal. Logic and refusals: `bin/lib/marker_prune.rb`,
+`bin/lib/branch_prune.rb`.
 
 ### The doc retirement (step 4 / step 10)
 

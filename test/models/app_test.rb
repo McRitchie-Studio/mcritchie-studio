@@ -18,9 +18,10 @@ class AppTest < ActiveSupport::TestCase
     assert_not dup.valid?, "slug must be unique"
   end
 
-  test "Sluggable derives the slug from the name on save" do
-    app = App.create!(name: "Chain Ops", slug: "placeholder", color: "#38BDF8")
-    assert_equal "chain-ops", app.slug, "the slug is (re)derived from the parameterized name"
-    assert_equal "chain-ops", app.to_param
+  test "a set slug stands when the name does not spell it" do
+    app = App.create!(name: "10&5 Hospitality", slug: "10and5", color: "#0D9488")
+    assert_equal "10and5", app.reload.slug, "the repo slug from config/apps.yml is the identity"
+    app.update!(name: "Ten and Five")
+    assert_equal "10and5", app.reload.slug, "a rename does not move the slug"
   end
 end
