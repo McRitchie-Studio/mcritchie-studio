@@ -60,7 +60,7 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
       assert_includes out, "committed retro.md to accepted", "a free checkout commits the artifact"
       assert_includes out, "DONE"
       head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
-      assert_equal "main", head.strip, "the checkout is restored to main (ensure)"
+      assert_equal "main", head.strip, "HEAD stays on main (the commit is built from origin)"
       count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "origin/accepted")
       assert_equal "2", count.strip, "the artifact commit is pushed onto origin/accepted, never origin/release"
       File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::RDWR | File::CREAT, 0o644) do |f|

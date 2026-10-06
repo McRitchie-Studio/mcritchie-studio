@@ -116,7 +116,8 @@ Stage movement:
    pr-review primary merges the PR into `accepted`, stamps `merged: accepted`,
    and moves the task (`reviewed` ⟺ the code is on `accepted`).
 6. `assembled` is the `qa-release` sweep's move: it promotes all of `accepted`
-   onto `release` in one batch PR per repo, deploys QA, and flips members to
+   onto `release` per repo (a fast-forward, or the batch PR only when `release` has
+   diverged), deploys QA, and flips members to
    `assembled` only on QA-green, recording QA URL, release SHA, and checks.
 7. Move to `shipped` only after the final approved target is deployed or otherwise
    complete, post-deploy verification is recorded, and cleanup status is clear.
@@ -347,8 +348,8 @@ counts prior send-backs and refuses to answer a read it could not make.
 > walks a three-rung ladder, **`accepted` → `release` → `main`**. A feature PR
 > targets **`accepted`**; **`reviewed`** = review merged it there (`reviewed` ⟺
 > code on `accepted`); **`assembled`** = the `qa-release` sweep (`bin/release
-> prepare`) promoted all of `accepted` onto `release` in one batch PR per repo and
-> QA went green; **`shipped`** = `production-deploy` (`bin/release ship`)
+> prepare`) promoted all of `accepted` onto `release` (a fast-forward per repo, or
+> the batch PR only when `release` has diverged) and QA went green; **`shipped`** = `production-deploy` (`bin/release ship`)
 > fast-forwarded `release → main`. Full spec:
 > [`devops-cycle-design.md`](../system/devops-cycle-design.md) §1.
 
@@ -913,7 +914,7 @@ procedure lives:
 | Step | Owner | SOP | What it does to the task |
 |---|---|---|---|
 | Review | Carl, one per PR, spun by a pr-review session | [`pr-review`](../agents/carl/sops/pr-review.md) (role SOPs: [primary](../agents/carl/sops/pr-review-primary.md), [light](../agents/carl/sops/pr-review-light.md)) | merge-ready: merges the feat PR into `accepted`, stamps `merged: accepted`, moves it to `reviewed`. request-changes: `bin/task block <slug> --kind rework --agent carl` back to the builder |
-| QA release | Avi | [`qa-release`](../agents/avi/sops/qa-release.md) | promotes all of `accepted` onto `release` (one batch PR per repo), deploys QA, flips members to `assembled` only on QA-green |
+| QA release | Avi | [`qa-release`](../agents/avi/sops/qa-release.md) | promotes all of `accepted` onto `release` (a fast-forward per repo, or the batch PR when diverged), deploys QA, flips members to `assembled` only on QA-green |
 | Production | Steffon | [`production-deploy`](../agents/steffon/sops/production-deploy.md) | fast-forwards `release → main`, stamps `merged: main`, moves members to `shipped` |
 
 Production stays gated until Alex explicitly approves release work.
