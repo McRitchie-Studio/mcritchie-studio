@@ -1,9 +1,9 @@
 require "test_helper"
 
 # End-to-end coverage of the unified /l/<token> link flow (Studio::Link), the
-# [integration] tier for the engine's standard-link-model. mcritchie-studio runs
-# with Studio.magic_link_store = :database, so magic-link sign-in goes through
-# Studio::LinksController + /l, and referral links share the same entry point.
+# [integration] tier for the engine's standard-link-model. Every magic link is a
+# Studio::Link row, so magic-link sign-in goes through Studio::LinksController +
+# /l, and referral links share the same entry point.
 class StudioLinkTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
   setup { ActiveJob::Base.queue_adapter = :test }
@@ -24,7 +24,6 @@ class StudioLinkTest < ActionDispatch::IntegrationTest
   # --- magic link via /l ---------------------------------------------------
 
   test "request mints a short Studio::Link magic link (database store)" do
-    assert_equal :database, Studio.magic_link_store
     assert_difference -> { Studio::Link.magic_links.count }, 1 do
       post magic_link_request_path, params: { email: "fresh@example.com" }
     end
