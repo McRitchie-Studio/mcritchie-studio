@@ -209,7 +209,7 @@ module Api
         end
 
         AgentAction.stub(:capture, stub) do
-          post api_v1_atomic_actions_path,
+          post api_v1_agent_actions_path,
                params: @body.merge(atomic_event_id: 4242), headers: @headers, as: :json
         end
 
@@ -221,7 +221,7 @@ module Api
       test "[integration] pins the action to the hook-supplied atomic_event_id" do
         event = AgentActivity.open_event!(session_id: "sess-abc", category: "Explore", reason_slug: "orient")
 
-        post api_v1_atomic_actions_path,
+        post api_v1_agent_actions_path,
              params: @body.merge(atomic_event_id: event.id), headers: @headers, as: :json
 
         assert_response :created

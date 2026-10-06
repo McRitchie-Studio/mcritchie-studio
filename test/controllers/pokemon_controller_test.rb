@@ -88,14 +88,6 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[integration] pokemon path remains a compatibility alias" do
-    get pokemon_path
-
-    assert_response :success
-    assert_select "[data-test=pokedex]"
-    assert_select "h1", "Pokémon"
-  end
-
   test "[component] the collection grid draws every species in its state" do
     Pokemon.create!(dex: 4, name: "Charmander", slug: "charmander", generation: 1,
                     base: "charmander", evolution: ["charmeleon"],

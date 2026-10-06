@@ -24,7 +24,6 @@ review, local inbox) come from `Studio.routes`.
 | `/error_logs`, `/error_logs/:id` | Captured errors; one error with its backtrace | admin |
 | `/docs`, `/docs/*path` | The agent docs under `docs/agents`, rendered | nothing |
 | `/xan/heartbeat`, `/xan/pipeline`, `/xan/insights` | A session's actions for grading; the activity pipeline; the banked insights | nothing |
-| `/activities` | Redirects to `/agents` | nothing |
 
 ## Task stages
 

@@ -35,13 +35,11 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     assert_equal "unauthenticated", response.parsed_body["error"]
   end
 
-  test "[integration] a visitor cannot grade an activity on either route: 401, nothing written" do
+  test "[integration] a visitor cannot grade an activity: 401, nothing written" do
     e = activity
 
     assert_no_difference -> { ActionGrade.count } do
       post heartbeat_activity_grade_path(e), params: BANK, as: :json
-      assert_response :unauthorized
-      post heartbeat_event_grade_path(e), params: BANK, as: :json
       assert_response :unauthorized
     end
   end
