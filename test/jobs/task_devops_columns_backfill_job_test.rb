@@ -78,4 +78,19 @@ class TaskDevopsColumnsBackfillJobTest < ActiveJob::TestCase
 
     assert_match(/updated \d+ task\(s\); 0 still diverge/, out)
   end
+  # Regression: the rake called perform_now, and ApplicationJob's retry_on
+  # StandardError swallowed the failure into a queued retry, so the rake died on
+  # a NoMethodError for `updated` instead of the job's own error.
+  test "[unit] rake tasks:backfill_devops_columns raises the job's own error" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("tasks:backfill_devops_columns")
+    task = Rake::Task["tasks:backfill_devops_columns"]
+    task.reenable
+    boom = Class.new(StandardError)
+
+    Task.stub(:in_batches, ->(*, **) { raise boom, "the job's own failure" }) do
+      error = assert_raises(boom) { capture_io { task.invoke } }
+      assert_equal "the job's own failure", error.message
+    end
+    assert_no_enqueued_jobs only: TaskDevopsColumnsBackfillJob
+  end
 end
