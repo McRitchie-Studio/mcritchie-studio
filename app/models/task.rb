@@ -115,6 +115,11 @@ class Task < ApplicationRecord
   # The settled resolution: a waiting request outside APPROVAL_REQUEST_STAGES
   # clears to "none", never "approved", because nobody granted it.
   OPERATOR_APPROVAL_NONE = "none".freeze
+  # Every value approval_status may hold; anything else is a 422.
+  OPERATOR_APPROVAL_STATUSES = [
+    OPERATOR_APPROVAL_WAITING, OPERATOR_APPROVAL_APPROVED,
+    OPERATOR_APPROVAL_CHANGES_REQUESTED, OPERATOR_APPROVAL_NONE
+  ].freeze
   # Request sources that mean the operator lane. "web" is stamped only by the
   # admin-gated TasksController#update; Api::V1::TasksController clamps a
   # caller-supplied "web" to "api". Attribution only: it gates no approval value.
@@ -138,6 +143,15 @@ class Task < ApplicationRecord
     "epic_slug" => "the tasks.epic_slug column — set it with " \
                    "`bin/task update <slug> --epic <epic-slug>` (`--epic none` clears it)"
   }.freeze
+  # Devops keys that also live in an indexed top-level column, because hot paths
+  # query them: the board sorts on approval_status, the merged-PR webhook finds a
+  # task by pr_url and branch, and the Pokédex finds one by session_id. The JSON
+  # key stays the write surface every caller already uses, and
+  # #mirror_devops_columns copies each key into its column on every save, so the
+  # two never disagree once saved. Each reader takes the column and falls back to
+  # the key for a row TaskDevopsColumnsBackfillJob has not reached. Retiring a key
+  # means moving its name into DEVOPS_COLUMN_KEYS and dropping the fallback.
+  DEVOPS_MIRRORED_KEYS = %w[pr_url branch approval_status session_id].freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url
     requires_release_conductor included_in_release agent_context session_id session_provider mascot
@@ -233,6 +247,10 @@ class Task < ApplicationRecord
   validates :po_size,     inclusion: { in: SIZES }, allow_nil: true
   validates :dev_size,    inclusion: { in: SIZES }, allow_nil: true
   validates :actual_size, inclusion: { in: SIZES }, allow_nil: true
+  # Gated on change, so a legacy row holding an odd value still saves untouched.
+  validates :approval_status, inclusion: { in: OPERATOR_APPROVAL_STATUSES,
+                                           message: "must be one of #{OPERATOR_APPROVAL_STATUSES.join(", ")}" },
+                              allow_nil: true, if: :will_save_change_to_approval_status?
 
   attr_readonly :slug # the readable handle is set once at creation, then immutable
 
@@ -249,6 +267,9 @@ class Task < ApplicationRecord
   before_validation :sync_mascot_display, on: :create
   # The app's status-line tint (App#color), from the first repository, for bin/statusline.
   before_validation :sync_app_identity, on: :create
+  # Last before validation, so the approval_status inclusion check reads the
+  # mirrored column. See #mirror_devops_columns.
+  before_validation :mirror_devops_columns
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
   # Leaving `building` forward resolves the block, so blocked_at always means
@@ -288,6 +309,9 @@ class Task < ApplicationRecord
   # Who built this belongs to the build claim; registered after the claim stamp so
   # it reads the claimer. See #enforce_builder_stamp.
   before_save :enforce_builder_stamp
+  # Last of the before_saves: the approval settles and stamps above rewrite devops
+  # keys, and the columns must land on the same UPDATE as the keys they mirror.
+  before_save :mirror_devops_columns
   # One TaskEvent per save that lands a stage: the genesis on create, one per transition.
   after_create :record_genesis_event
   after_update :record_transition_event, if: :saved_change_to_stage?
@@ -342,7 +366,7 @@ class Task < ApplicationRecord
   # the gaps let a drag slot a card between two others.
   scope :ordered, -> {
     order(Arel.sql(
-      "CASE WHEN metadata -> 'devops' ->> 'approval_status' = '#{OPERATOR_APPROVAL_WAITING}' THEN 1 ELSE 0 END DESC, " \
+      "CASE WHEN tasks.approval_status = '#{OPERATOR_APPROVAL_WAITING}' THEN 1 ELSE 0 END DESC, " \
         "position DESC NULLS LAST, created_at DESC"
     ))
   }
@@ -567,7 +591,8 @@ class Task < ApplicationRecord
 
       metadata = task.metadata.deep_dup
       metadata["devops"]["approval_status"] = OPERATOR_APPROVAL_NONE
-      task.update_column(:metadata, metadata) # rubocop:disable Rails/SkipsModelValidations
+      # The column rides along: update_columns skips #mirror_devops_columns.
+      task.update_columns(metadata: metadata, approval_status: OPERATOR_APPROVAL_NONE) # rubocop:disable Rails/SkipsModelValidations
       settled << task.slug
     end
     settled
@@ -721,7 +746,7 @@ class Task < ApplicationRecord
   # The Claude or Codex session that worked this task, captured by bin/task on
   # create and on the claim, so the operator can see and reopen it.
   def devops_session_id
-    devops.fetch("session_id", "").presence
+    session_id
   end
 
   # Which CLI the session belongs to; nil means "claude".
@@ -904,8 +929,23 @@ class Task < ApplicationRecord
     devops_list("abandoned_prs")
   end
 
-  def approval_status
-    devops.fetch("approval_status", "").presence
+  # Readers and writers for DEVOPS_MIRRORED_KEYS. A reader takes the column and
+  # falls back to the devops key for a row the backfill has not reached. A writer
+  # sets both, so an attribute write and a devops write land the same value. An
+  # in-place devops mutation reaches the column at the next save.
+  DEVOPS_MIRRORED_KEYS.each do |key|
+    define_method(key) do
+      super().presence || devops[key].to_s.strip.presence
+    end
+
+    define_method("#{key}=") do |value|
+      text = value.to_s.strip.presence
+      merged = (metadata || {}).deep_dup
+      merged["devops"] = {} unless merged["devops"].is_a?(Hash)
+      text ? merged["devops"][key] = text : merged["devops"].delete(key)
+      self.metadata = merged
+      super(text)
+    end
   end
 
   def waiting_for_operator_approval?
@@ -1230,6 +1270,8 @@ class Task < ApplicationRecord
   end
 
   def devops_url(name)
+    return pr_url if name.to_s == "pr"
+
     devops.fetch("#{name}_url", "").presence
   end
 
@@ -2460,6 +2502,17 @@ class Task < ApplicationRecord
     devops["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
     # A fresh draw starts a fresh evolution line.
     devops.delete("mascot_stage")
+  end
+
+  # Copy each DEVOPS_MIRRORED_KEYS key into its column, on every validation and
+  # save. The key is the source while both exist: every writer, old code included,
+  # writes it, so a cleared key clears the column too.
+  def mirror_devops_columns
+    source = metadata.is_a?(Hash) && metadata["devops"].is_a?(Hash) ? metadata["devops"] : {}
+    DEVOPS_MIRRORED_KEYS.each do |key|
+      value = source[key].to_s.strip.presence
+      write_attribute(key, value) unless read_attribute(key) == value
+    end
   end
 
   # Strip any devops key that shadows a column, on every save. Two layers on

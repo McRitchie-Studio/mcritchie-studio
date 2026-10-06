@@ -205,8 +205,9 @@ class GithubWorkflowRunIngestJob < ApplicationJob
   # ── pull_request merged → refresh the merged cache ──────────────────────
   # A merged PR is the moment a task's code lands on a rung. Match the task by the
   # PR url it recorded, then by the head branch (`feat/<slug>`, or a recorded
-  # `devops.branch`), so a task that never stamped its pr_url is found too, and
-  # refresh each match inline — this job is already off the request path.
+  # branch), both indexed task columns, so a task that never stamped its pr_url
+  # is found too, and refresh each match inline — this job is already off the
+  # request path.
   def ingest_pull_request(payload)
     pr = payload["pull_request"] || {}
     return unless payload["action"].to_s == "closed" && pr["merged"]
@@ -223,7 +224,8 @@ class GithubWorkflowRunIngestJob < ApplicationJob
   def tasks_for_pull_request(url, branch)
     scopes = []
     if url.present?
-      scopes << Task.where("metadata->'devops'->>'pr_url' = ?", url)
+      # The indexed column Task#mirror_devops_columns keeps equal to devops.pr_url.
+      scopes << Task.where(pr_url: url)
       # `pr_urls` is a repo-keyed map (Task::DEVOPS_MAP_KEYS). The CASE (not an
       # AND, which Postgres may reorder) keeps a malformed non-object value from
       # raising inside jsonb_each_text.
@@ -231,7 +233,7 @@ class GithubWorkflowRunIngestJob < ApplicationJob
                            "'object' THEN metadata->'devops'->'pr_urls' ELSE '{}'::jsonb END) AS e(k, v) WHERE e.v = ?)", url)
     end
     if branch.present?
-      scopes << Task.where("metadata->'devops'->>'branch' = ?", branch)
+      scopes << Task.where(branch: branch)
       scopes << Task.where(slug: branch.delete_prefix("feat/")) if branch.start_with?("feat/")
     end
     scopes.flat_map(&:to_a).uniq(&:id)
