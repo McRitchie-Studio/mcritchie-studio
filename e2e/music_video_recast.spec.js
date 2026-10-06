@@ -106,11 +106,27 @@ test("operator turns Swap Person on, picks an athlete and a look that save at on
   await expect(page.locator("details#new-model [data-test='new-model-return']")).toBeVisible();
   await page.goBack();
 
-  // Off clears the swap and puts the blank back.
-  await recast(page, 1).locator("[data-test='swap-toggle']").click();
+  // Off turns the swap off but remembers him: the blank comes back to the prompts.
+  const swapToggle = recast(page, 1).locator("[data-test='swap-toggle']");
+  await swapToggle.click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "off");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
   await expect(prompt).toContainText("with {athlete}, the football player");
+  await expect(page.locator("#chunk-1 [data-test='chunk-recast']")).toHaveCount(0);
+
+  // A reload still reads off, and on again restores the same athlete and look with no re-pick.
   await page.reload();
-  await expect(recast(page, 1).locator("[data-test='swap-toggle']")).toHaveAttribute("aria-checked", "false");
+  await expect(swapToggle).toHaveAttribute("aria-checked", "false");
+  await swapToggle.click();
+  await expect(recast(page, 1)).toHaveAttribute("data-state", "recast");
+  await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();
+  await expect(recast(page, 1).locator("[data-test='swap-athlete-name']")).toHaveText("Test Athlete Alpha");
+  await expect(recast(page, 1).locator("[data-test='look-trigger']")).toHaveText("Home Blue");
+  await expect(prompt).toContainText("(like the Home Blue model provided)");
+
+  // Person 2 was never swapped: on with nobody asks who and saves nothing.
+  await recast(page, 2).locator("[data-test='swap-toggle']").click();
+  await expect(recast(page, 2)).toHaveAttribute("data-state", "open");
+  await expect(recast(page, 2).locator("[data-test='swap-pick-note']")).toHaveText("Pick who replaces them. Nothing is saved until you do.");
+  await expect(recast(page, 2).locator("[data-test='swap-saved']")).toBeHidden();
 });

@@ -154,7 +154,12 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    sheet stands (ready, building, failed, none); picking a row saves that
    look, previewed large with a link to the look's own page. The arrow keys,
    Home, End, Enter, Space and Escape work the list. Turning the toggle off
-   clears the swap. The card says Saving…, Saved, or Not saved with Retry; the
+   stops the swap but **remembers** the athlete and look (`recast_keep`):
+   nothing reads them while it is off (prompts, swap target and hand-off treat
+   the person as kept), and turning it back on restores them with no re-pick
+   (a remembered look since retired falls back to "needs a look"). On with
+   nobody picked yet says "Pick who replaces them" and saves nothing until a
+   pick. The card says Saving…, Saved, or Not saved with Retry; the
    save is a JSON `PATCH` to the recast endpoint, and the prompts, targets and
    hand-offs below repaint after it without a reload.
 7. **A new look, from the card.** The dropdown's last row is **Generate a new
