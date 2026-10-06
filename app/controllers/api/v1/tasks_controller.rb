@@ -153,7 +153,7 @@ module Api
       # they supersede. `pr_url_or_derived` is the recorded `devops.pr_url`. When
       # that is blank the request does NOT ask GitHub (a slow GitHub would hold it
       # past Heroku's 30s router limit): it queues TaskPrUrlCacheJob to derive the
-      # PR on the task branch into the column, and a later show serves it. bin/ship's
+      # PR on the task branch into the column, and a later show serves it. bin/submit's
       # record step skips its write when this names the PR it opened, and writes the
       # url itself otherwise; its read-back verifies it either way.
       def derived_facts_json(task)

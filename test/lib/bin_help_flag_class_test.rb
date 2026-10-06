@@ -286,11 +286,11 @@ class BinHelpFlagClassTest < Minitest::Test
     "devops-shift"           => :own_guard,
     "ledger-guard"           => :own_guard,
     # --- OptionParser ---------------------------------------------------------
-    "ship"                   => :optparse,
-    # ship-wait rescues OptionParser::ParseError to REFUSE with its usage banner and
+    "submit"                 => :optparse,
+    # submit-wait rescues OptionParser::ParseError to REFUSE with its usage banner and
     # exit code 3, not to step over it — and it parses before any side effect, so
     # `--help` and `--bogus` both act on nothing. The parser's refusal is intact.
-    "ship-wait"              => :optparse,
+    "submit-wait"            => :optparse,
     "rotate-heroku-ci-key"   => :optparse,
     "dor-check"              => :optparse,
     "fast-check"             => :optparse,
@@ -361,6 +361,8 @@ class BinHelpFlagClassTest < Minitest::Test
     "rails-executed-set-check" => :subcommand,
     # --- binstubs -------------------------------------------------------------
     "release"                => :delegates, # sh binstub: execs bin/release.rb, which owns --help
+    "ship"                   => :delegates, # sh alias: execs bin/submit, which owns --help
+    "ship-wait"              => :delegates, # sh alias: execs bin/submit-wait, which owns --help
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/atomic-event-help-mutates,
     # 2026-09-01). It carried the identical exposure — `close-open --help` closed every
     # open activity — because it is an 8-line shim that `load`s bin/atomic-event and
@@ -590,10 +592,10 @@ class BinHelpFlagClassTest < Minitest::Test
     end
   end
 
-  # The two binstubs whose TARGET lives in this same bin/, mapped to the script that
+  # The binstubs whose TARGET lives in this same bin/, mapped to the script that
   # owns `--help` for them. The other :delegates entries (rails, rake, bundle,
   # rubocop, …) hand off to a gem outside this repo, which this file cannot assert
-  # about; these two it can.
+  # about; these it can.
   #
   # WHY THIS EXISTS. :delegates was, until 2026-09-01, the last bucket in this manifest
   # with no wiring assertion behind it — the exact condition this file spent a hundred
@@ -604,13 +606,19 @@ class BinHelpFlagClassTest < Minitest::Test
   # would have rested on prose. Prose does not fail CI. This does.
   IN_REPO_DELEGATES = {
     "release"        => "release.rb",
-    "agent-activity" => "atomic-event"
+    "agent-activity" => "atomic-event",
+    "ship"           => "submit",
+    "ship-wait"      => "submit-wait"
   }.freeze
+
+  # A target owns a REAL guard when it calls the shared guard or leaves an
+  # OptionParser refusal intact (test_optparse_scripts_leave_the_parsers_refusal_intact).
+  REAL_GUARDS = %i[cli_arg_guard optparse].freeze
 
   def test_the_in_repo_delegating_stubs_reach_a_guarded_script
     IN_REPO_DELEGATES.each do |stub, target|
       assert_equal :delegates, MANIFEST[stub], "bin/#{stub} is no longer a delegating stub"
-      assert_equal :cli_arg_guard, MANIFEST[target],
+      assert_includes REAL_GUARDS, MANIFEST[target],
                    "bin/#{stub} delegates to bin/#{target}, so bin/#{target} must own a REAL guard — " \
                    "a stub whose target is unguarded is a gap wearing a safe label"
 

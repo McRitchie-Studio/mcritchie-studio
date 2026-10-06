@@ -92,6 +92,10 @@ module LinkTreeHelper
         { label: "Merge people", href: merge_people_path, emoji: "🔀", hover_emoji: "✅", desc: "Resolve duplicate people" },
         { label: "Duplicates", href: duplicates_people_path, emoji: "👥", hover_emoji: "🧹", desc: "Duplicate candidates" },
       ] },
+      # The recast pipeline: every generated version of every source video.
+      { title: "Video", links: [
+        { label: "Alt videos", href: alt_videos_path, emoji: "🎬", hover_emoji: "🔁", desc: "Every recast version, with clip progress" },
+      ] },
     ]
   end
 

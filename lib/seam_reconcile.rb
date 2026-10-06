@@ -9,13 +9,13 @@ require "time"
 #
 # The DevOps cycle is four SOPs meeting at four seams. Each SOP asserts its own
 # exit and trusts its inbound seam, so when a step dies between the two — a
-# killed `bin/ship`, an armed merge whose TTL lapsed, a merge that landed while
+# killed `bin/submit`, an armed merge whose TTL lapsed, a merge that landed while
 # its stamp did not — the work strands in a state that READS like an earlier one.
 # Nothing alerts anyone, because "further along than the board says" is invisible
 # to a query that only reads the board.
 #
 # The 2026-08-18 session produced all three live:
-#   · two `bin/ship` runs and a sweep were killed mid-flight by the harness;
+#   · two `bin/submit` runs and a sweep were killed mid-flight by the harness;
 #   · two reviews ended with a merge ARMED rather than landed;
 #   · `bin/review-autopilot list --all` already carried `refused` rows
 #     ("Merge already in progress", a bare 405) that nothing reads.
@@ -59,7 +59,7 @@ module SeamReconcile
   # `repair_for`. These are prescriptions, never executed from here.
   REPAIRS = {
     stamp_lost: "bin/task merged %{slug} accepted && bin/task move %{slug} reviewed",
-    ship_interrupted: "bin/ship %{slug}   # resumes; or move submitted and review it now",
+    ship_interrupted: "bin/submit %{slug}   # resumes; or move submitted and review it now",
     verdict_stranded: "re-read the PR head + CI: verdict holds => re-arm; base moved => re-review",
     merge_never_landed: "re-review %{slug} so pr-review lands its feat PR on accepted",
     sweep_unfinished: "read the release's latest G3 attempt: closed failed => ABORT (fix the " \
@@ -69,7 +69,7 @@ module SeamReconcile
   # One-line explanation of what the reading MEANS, for the report.
   SUMMARIES = {
     stamp_lost: "PR is MERGED but the task never got its git-location stamp",
-    ship_interrupted: "PR is open and green with no live build claim — a killed bin/ship",
+    ship_interrupted: "PR is open and green with no live build claim — a killed bin/submit",
     verdict_stranded: "a merge-ready verdict is recorded but no merge landed",
     merge_never_landed: "stage is reviewed with no merged stamp — review never landed the PR",
     sweep_unfinished: "merged onto release but never assembled"
@@ -191,9 +191,9 @@ module SeamReconcile
 
   # --- per-stage decisions ----------------------------------------------------
 
-  # A killed `bin/ship`: the PR is open and green, but the task never reached
+  # A killed `bin/submit`: the PR is open and green, but the task never reached
   # `submitted` — and `bin/task claim-next-review` only pops `submitted`, so
-  # review CANNOT see it. It is NOT healed automatically: `bin/ship` also
+  # review CANNOT see it. It is NOT healed automatically: `bin/submit` also
   # certifies, records checks_run and runs dor-check, none of which a bare stage
   # move would do.
   def building_anomaly(pr_state, ci, build_claim_live)

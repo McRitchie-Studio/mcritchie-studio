@@ -51,7 +51,7 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
 
   test "[component] a dead runner renders STALLED, not a spinner that never ends" do
     # The failure this whole feature exists to prevent: a killed cert (routine —
-    # a cold bin/ship outruns some harness timeouts) must not keep claiming work.
+    # a cold bin/submit outruns some harness timeouts) must not keep claiming work.
     task = building_task
     stale = Cert::LocalCheck::STALE_AFTER + 2.minutes
     open_cert(task.slug, sops: [running_sop(at: stale.ago)], started_at: 20.minutes.ago)
@@ -147,8 +147,8 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
 
   # --- [integration] the handover to the CI meter ---
 
-  test "[integration] the indicator yields the slot once bin/ship opens the PR" do
-    # The two must never stack: bin/ship runs the cert, then opens the PR, and from
+  test "[integration] the indicator yields the slot once bin/submit opens the PR" do
+    # The two must never stack: bin/submit runs the cert, then opens the PR, and from
     # that moment the CI meter owns this slot.
     task = building_task(devops: { "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999" })
     open_cert(task.slug, sops: [running_sop])
@@ -162,9 +162,11 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
   test "[integration] the gates card never paints a RUNNING lane with the pass glyph" do
     # The `running` marker rides the SAME sops list the task's gate card renders, which
     # painted everything not "fail" green — a killed runner's lane read as PASSED.
+    # The card paints live gates only, so the lanes ride a DoR attempt here.
     task = building_task(slug: "local-check-gates")
-    open_cert(task.slug, sops: [running_sop,
-                                { "sop" => "spine", "result" => "pass", "at" => Time.current.iso8601 }])
+    GateRun.create!(subject_type: "task", subject_slug: task.slug, key: "dor", attempt: 1,
+                    started_at: 40.seconds.ago,
+                    sops: [running_sop, { "sop" => "spine", "result" => "pass", "at" => Time.current.iso8601 }])
 
     log_in_as(@admin)
     get task_path(task)
@@ -172,6 +174,22 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-result='running'] [data-test='gate-sop-glyph']", text: "◌"
     assert_select "[data-result='pass'] [data-test='gate-sop-glyph']", text: "✓"
+  end
+
+  test "[integration] the gates card never paints the retired g1_cert gate" do
+    task = building_task(slug: "local-check-retired-gate")
+    open_cert(task.slug, sops: [running_sop])
+
+    log_in_as(@admin)
+    get task_path(task)
+    assert_response :success
+    assert_select "h3", text: "Testing gates", count: 0
+
+    # Control: a live gate on the same task brings the card back.
+    GateRun.close!(subject_type: "task", subject_slug: task.slug, key: "dor", success: true)
+    get task_path(task)
+    assert_select "h3", text: "Testing gates", count: 1
+    assert_no_match(/G1 Cert/, response.body)
   end
 
   test "[integration] a submitted task shows no local-check indicator" do

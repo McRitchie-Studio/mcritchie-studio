@@ -47,7 +47,7 @@
 #     task's audit spine (the same spine `bin/task move` writes) — never silent.
 #
 #   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--prod] [--dry-run]
-#     Avi's SELF-HEALING qa-deploy — the whole middle of the pipeline:
+#     Avi's SELF-HEALING qa-release — the whole middle of the pipeline:
 #       1. DETECT the work: every `reviewed` task + any `assembled` straggler not
 #          riding the current RC (nothing + no active release → idempotent no-op).
 #       2. Ensure a candidate exists (Release.current_or_open!).
@@ -771,7 +771,7 @@ end
 #     the streak, so an approval pause of any length never trips it.
 def run_concluded_success?(run_id, chdir: nil, poll: 10, unreadable_limit: 30)
   # A CONDUCTOR PARKED ON A GITHUB ACTIONS POLL CONSUMES NOTHING. That distinction is
-  # cost #4 of docs/agents/system/agent-presence.md — two idle `bin/ship` processes in a
+  # cost #4 of docs/agents/system/agent-presence.md — two idle `bin/submit` processes in a
   # CI wait read as competing certs and nearly held off a launch — and `phase: waiting` is
   # the field the reader already honours for it (weight 0). The claim stays COUNTED, so
   # this sweep's process group is still ATTRIBUTED rather than falling back into the
@@ -2283,7 +2283,7 @@ def merge
   end
 end
 
-# --- prepare (Avi's self-healing qa-deploy) ------------------------------
+# --- prepare (Avi's self-healing qa-release) ------------------------------
 
 # The one-shot DETECTION read: every `reviewed` task + any `assembled` straggler
 # off the current RC — each with its PR url, repo, and `merged` git-location —
@@ -3444,7 +3444,7 @@ def prepare
            "(got #{task_slugs.size}). Nothing was merged or deployed.")
   end
 
-  say("Prepare release — Avi qa-deploy (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  say("Prepare release — Avi qa-release (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
   # LOCAL PRESENCE — the twin of the board `assembler` claim taken further down, and it
@@ -3499,7 +3499,7 @@ def prepare
   if cands.empty? && active.nil?
     say("")
     say("✓ Nothing to prepare — no reviewed work, no assembled stragglers, no active release (idempotent no-op).")
-    close_role_span("qa-deploy no-op — nothing to prepare")
+    close_role_span("qa-release no-op — nothing to prepare")
     return
   end
   cands.each do |c|
@@ -3743,13 +3743,13 @@ def prepare
       say("")
       say("✓ Dry run: #{landed.size} task(s) would sweep onto a fresh candidate — the repo plan (and the QA deploy preview) " \
           "becomes available once the sweep records; re-run without --dry-run.")
-      close_role_span("qa-deploy dry-run — sweep previewed")
+      close_role_span("qa-release dry-run — sweep previewed")
       return
     end
     say("")
     say("✓ Nothing to deploy — the release has no members yet" \
         "#{left_reviewed.any? ? " (#{left_reviewed.join(', ')} held — see the ⚠ line for each)" : ''}.")
-    close_role_span("qa-deploy no-op — no members to deploy")
+    close_role_span("qa-release no-op — no members to deploy")
     return
   end
 

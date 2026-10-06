@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] The decision rules behind bin/ship-wait (bin/lib/ship_wait.rb).
+# [unit] The decision rules behind bin/submit-wait (bin/lib/ship_wait.rb).
 #
 # WHAT THESE ARE FOR, and why they are not "it waits" tests. A watcher test that
 # asserts the watcher WAITS passes on a watcher that waits FOREVER — which is
 # precisely the defect this family exists to kill (task ship-wait-has-no-primitive:
-# `while pgrep -f "bin/ship <slug>"` can never be false, and an immortal watcher is
+# `while pgrep -f "bin/submit <slug>"` can never be false, and an immortal watcher is
 # indistinguishable from a slow job). So every test here pins a FIRING condition:
 # the exact input on which the verdict must be terminal, and the exact input on
 # which "ended" must NOT be read as "succeeded".
@@ -36,7 +36,7 @@ class ShipWaitTest < Minitest::Test
   end
 
   # THE LINE IS MATCHED WHOLE, NOT AS A SUBSTRING. The same phrase appears in
-  # bin/ship's header comment, in these docs, and in any log that quotes them —
+  # bin/submit's header comment, in these docs, and in any log that quotes them —
   # a watcher that fires on its own documentation is the same class of bug as one
   # that greps its own command line.
   def test_a_quoted_mention_of_the_line_is_not_the_line
@@ -73,7 +73,7 @@ class ShipWaitTest < Minitest::Test
     assert_equal :succeeded, ShipWait.verdict(log("ship: 8/8", SUCCESS, SENTINEL_OK), ended: true)
   end
 
-  # THE CRUX. bin/ship EXITS 0 ON FAILURE, so a zero status is not a verdict.
+  # THE CRUX. bin/submit EXITS 0 ON FAILURE, so a zero status is not a verdict.
   # Read the exit code here instead of the log and this is the test that reddens.
   def test_a_zero_exit_status_without_the_line_is_a_FAILURE
     text = log("ship: bin/dor-check refused — fix everything it flagged", SENTINEL_OK)

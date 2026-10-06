@@ -121,35 +121,43 @@ first piece of the recast pipeline, which swaps every chunk and stitches them
 back; moved into the digest by `digest-cuts-chunks-on-upload`. The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#chunks-the-whole-video-tiled).
 
-**Generated takes and the stitch preview.** The operator swaps each chunk by
-hand and uploads the generated MP4 back on the chunk's row, which also carries
-the hand-off: the source chunk as a download, the prompt, and the recast look's
-character sheet. Each upload is a numbered take in `video_chunk_takes`, kept and
-never overwritten; the newest is current unless the operator puts an older one
-back. A chunk can be flagged "request regenerate" with a note; the next take
-clears it. A preview player plays the current takes back to back as if stitched,
-without a stitched file: it hands over at the middle of each overlap
-(`MusicVideos::StitchTimeline`), falls back to a chunk's source cut where there
-is no take, and plays the original source audio underneath with the clips
-muted. `MusicVideo#ready_to_stitch?` is true when every chunk has a current take
-and none is flagged; the final stitch reads it, and each chunk's file from
-`VideoClip#current_take`. Built by `generated-takes-and-stitch-preview`, piece 3
-of the recast pipeline. The steps are in
-[`digest-video`](../agents/pokemon/sops/digest-video.md#generated-takes-and-the-stitch-preview).
+**Alt videos and the clip builder.** A source video (a `music_videos` row,
+"Source video" on screen) yields many alt videos, each one generated version
+with its own swaps. **Build Clips** in the cast summary bar makes the source's
+next `alt_videos` row, numbered per source, with the cast cards' swaps
+snapshotted into its `swaps` jsonb, and one `alt_video_clips` row per chunk.
+The snapshot is jsonb, not a child table, because it is written once, read
+whole and never edited (as `video_stitches.takes`); a later edit of the cast
+cards changes no alt video. The clip card, on
+`/music_videos/<slug>/alt_videos/<n>`, hands off the source chunk, the swapped
+people's character sheets and the prompt (`MusicVideos::ClipPrompts.for(chunk,
+swaps:)` fed the snapshot, who is on screen read from the chunk), and takes the
+generated MP4 by drag and drop. Each upload is a numbered version in
+`alt_video_clip_versions`, kept; the latest `primary_since` is the primary, so
+exactly one holds by construction. Versions are their own table because a clip
+exists before any version and keeps every upload. A clip can be flagged
+"request regenerate"; the next upload clears it. **Watch full video** opens a
+modal that plays the primaries back to back as if stitched
+(`MusicVideos::StitchTimeline`, handover mid-overlap, source audio, the source
+chunk where a clip has no version). `/alt_videos` lists every alt video with
+its progress. Built by `generated-takes-and-stitch-preview` (piece 3) and
+reshaped by `alt-videos-and-clip-builder` (piece 13). The steps are in
+[`digest-video`](../agents/pokemon/sops/digest-video.md#alt-videos-and-the-clip-builder).
 
-**The final stitch.** "Generate full video", on once the video is ready to
-stitch, records a numbered stitch in `video_stitches` with the take each chunk
-has at that moment. ffmpeg crossfades the picture of consecutive takes across
-each overlap, lays the original source audio under the whole length untouched,
-and writes H.264 and AAC in MP4 to the video's `stitched/` folder. The plan is
+**The final stitch.** "Generate full video", on an alt video once every clip
+has a primary version and none is flagged (`AltVideo#ready_to_stitch?`),
+records a numbered stitch of that alt video in `video_stitches` with the
+version each clip has as primary at that moment. ffmpeg crossfades the picture
+of consecutive versions across each overlap, lays the original source audio
+under the whole length untouched, and writes H.264 and AAC in MP4 to the alt
+video's `stitched/` folder. The plan is
 `MusicVideos::StitchPlan` (pure: inputs, the frames each chunk owns, crossfade
 offsets, the filter graph, the ffmpeg arguments), run by
 `MusicVideos::Stitcher`. Takes are normalised to the best any take offers and
 never more than the source, in size and in frame rate. A stitch is `requested`,
 `running`, then `done` or `failed` with the reason. The page shows the latest
-with a player and a download, and marks it stale once a chunk has a different
-current take or a regenerate flag, or the video is re-tiled. Every stitch is
-kept. Built by `stitch-takes-into-full-video`, piece 4 of the recast pipeline.
+with a player and a download, and marks it stale once a clip has a different
+primary version or a regenerate flag. Every stitch is kept. Built by `stitch-takes-into-full-video`, piece 4 of the recast pipeline.
 The steps are in
 [`digest-video`](../agents/pokemon/sops/digest-video.md#the-final-stitch).
 
@@ -161,7 +169,7 @@ JSON API and gives the UI. Nothing Mac-specific goes in the app, so the agent si
 can move off the Mac later.
 
 The final stitch needs ffmpeg, and production dynos have none. So the stitch is
-one library with two callers: `bin/stitch-video <slug>` on the Mac, which
+one library with two callers: `bin/stitch-video <slug> --alt <n>` on the Mac, which
 fulfils a request through the API, and `StitchVideoJob`, which the button
 enqueues only where ffmpeg is on `PATH` (a local hub). On production a request
 stays `requested` until the Mac runs the bin.
@@ -179,9 +187,12 @@ Record slugs stay kebab-case, the app's existing convention.
 | `music_video_artists` | video ↔ artist, role `primary` or `featured`. Groups such as Migos are credited directly |
 | `video_performers` | Person N, linked artist (nullable), stills, sightings, confidence; the recast: athlete (`recast_person_slug`), look (`recast_appearance_slug`), or `recast_keep` |
 | `appearances` | gains a nullable music video link |
-| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status; on a chunk, the regenerate flag (`regenerate_requested_at`, `regenerate_note`) |
-| `video_chunk_takes` | one generated MP4 uploaded back for a chunk: video (`music_video_slug`), `chunk_ordinal`, the chunk's window (`start_ms`, `end_ms`), take `number`, asset, size, and `current_since` (the latest is the current take) |
-| `video_stitches` | one full-length stitch: video (`music_video_slug`), stitch `number`, `state` (`requested`, `running`, `done`, `failed`) with `failure_reason`, the take each chunk had (`takes`: ordinal, window, take number), asset, and the result's duration, size, frame size, frame rate and notes |
+| `video_clips` | kind (`candidate` or `chunk`), start, end, seam (candidates only), cast shape, target performer, prompt, asset, status. Chunks are cut once per source and shared by every alt video. The chunk regenerate columns are piece 3's, now unread |
+| `alt_videos` | one generated version of a source: `slug` (`<source>-alt-<n>`), source (`music_video_slug`), `number` per source, and `swaps` (jsonb snapshot: performer ordinal, person and look slugs and names) |
+| `alt_video_clips` | alt video (`alt_video_slug`) × chunk: `chunk_ordinal`, the chunk's window (`start_ms`, `end_ms`), the regenerate flag (`regenerate_requested_at`, `regenerate_note`) |
+| `alt_video_clip_versions` | one generated MP4 uploaded back for a clip (`alt_video_clip_id`): version `number`, asset, size, file name, and `primary_since` (the latest is the primary) |
+| `video_chunk_takes` | piece 3's takes, moved onto alt video 1 of their source by `CreateAltVideos`; kept, read by nothing, for a later drop |
+| `video_stitches` | one full-length stitch of an alt video (`alt_video_slug`; `music_video_slug` is its source): stitch `number` per alt video, `state` (`requested`, `running`, `done`, `failed`) with `failure_reason`, the version each clip had (`takes`: ordinal, window, version number), asset, and the result's duration, size, frame size, frame rate and notes |
 
 ## Artist seed
 
@@ -207,8 +218,9 @@ music_videos/<artist>/<video>/source/<artist>_<video>_feat_<…>.mp4
 music_videos/<artist>/<video>/stills/person_01_0230.jpg
 music_videos/<artist>/<video>/clips/<video>_clip_01_<seam>_<shape>_<start>_<end>.mp4
 music_videos/<artist>/<video>/chunks/<video>_chunk_01_<start>_<end>.mp4
-music_videos/<artist>/<video>/generated/<video>_chunk_01_<start>_<end>_take_01.mp4
-music_videos/<artist>/<video>/stitched/<video>_stitched_01.mp4
+music_videos/<artist>/<video>/alt_videos/01/clips/<video>_alt_01_chunk_01_<start>_<end>_v01.mp4
+music_videos/<artist>/<video>/alt_videos/01/stitched/<video>_alt_01_stitched_01.mp4
+music_videos/<artist>/<video>/generated/…  and  stitched/…   piece 3-4 objects, kept in place
 music_videos/<artist>/<video>/looks/person_01_<name>_<video>/character_sheet.png
 artists/<artist>/…                      general artist images
 ```

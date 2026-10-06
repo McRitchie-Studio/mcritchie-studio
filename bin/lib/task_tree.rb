@@ -25,7 +25,7 @@ require_relative "projects_root"
 #     worktree instead: that could run a STALE worktree while the operator's real
 #     edits sat untested in the checkout they ran from. Fail closed, say where to run.
 #
-#   * bin/ship and bin/dor-check RE-ROOT (#assess → :resolved_root), loudly. ship
+#   * bin/submit and bin/dor-check RE-ROOT (#assess → :resolved_root), loudly. ship
 #     commits, so it wants the task's desk when one resolves; dor-check grades the
 #     DIFF, and a foreign diff reads as a real diff: run the review gate-zero from a
 #     primary checkout carrying one unrelated dirty .md and the gate observes a
@@ -133,7 +133,7 @@ module TaskTree
     # rather than a short-circuit, because the two consumers want opposite answers
     # (the REFUSE-vs-RESOLVE split at the top of this file):
     #
-    #   bin/fast-check and bin/ship accept it — the operator is physically working at
+    #   bin/fast-check and bin/submit accept it — the operator is physically working at
     #     the task's desk, and a pre-flight run mid-rebase costs nothing durable.
     #   bin/dor-check must NOT: a detached HEAD is not the PR's state, and a diff read
     #     from it is graded as though it were. That direction fails SILENT and passing.
@@ -184,7 +184,7 @@ module TaskTree
 
   # The refusal text: where you ARE, where the task's tree IS, and the concrete `cd`
   # that fixes it when the worktree is on disk. bin/fast-check dies with it on ANY
-  # foreign root; bin/ship dies with it only when no desk resolves (otherwise it
+  # foreign root; bin/submit dies with it only when no desk resolves (otherwise it
   # re-roots).
   #
   # `resolved` is the VALIDATED destination when the caller already computed one. It
@@ -221,7 +221,7 @@ module TaskTree
   # the standing DOR_CHECK_DIFF_ROOT override, and an overridden guard guards nothing.
   #
   # `prefer_repo` threads through every branch because this text is advice someone
-  # FOLLOWS, and it is what bin/ship and bin/fast-check die! with — dropping the repo
+  # FOLLOWS, and it is what bin/submit and bin/fast-check die! with — dropping the repo
   # filter here sent callers to a validated-but-wrong-repo desk while claiming the tie
   # was broken.
   def desk_advice(worktree_slug, expected_branch, projects_dir,

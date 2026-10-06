@@ -793,7 +793,7 @@ def merge_feature_pr(slug, pr_url, merge_head: nil)
   # head. Only a base that is already `accepted` proceeds, and only a base PROVEN unclaimed
   # self-heals — a merged parent, a closed-unmerged one, a deleted branch, `release`, `main`.
   #
-  # THE ASYMMETRY WITH bin/ship IS DELIBERATE AND SHARED-PREDICATE STILL HOLDS. Both halves
+  # THE ASYMMETRY WITH bin/submit IS DELIBERATE AND SHARED-PREDICATE STILL HOLDS. Both halves
   # ask ONE question (StackedPr.assess); only the POLICY differs, where the cost does. ship
   # repairs on a doubt — a wrong retarget is loud and recoverable and ship never merges — while
   # here the retarget is followed one line later by a MERGE, so a wrong guess puts the parent's

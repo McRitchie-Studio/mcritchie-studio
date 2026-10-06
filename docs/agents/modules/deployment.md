@@ -734,7 +734,7 @@ the Next Release G3 slot over Turbo Streams, so the board's CI progress bars **t
 up live with no reload** as each check passes.
 
 **Where the card's meter shows, and what it says.** The meter rides a task card from
-`building` through `submitted` — `building` included because `bin/ship` opens the PR
+`building` through `submitted` — `building` included because `bin/submit` opens the PR
 and then WAITS on its CI (`gate-submit-on-green-ci`) with the task still on the
 builder's desk, which is the window an operator most wants to watch. Past `submitted`
 the run is history and the slot drops. One row: the PR number on the left (parsed

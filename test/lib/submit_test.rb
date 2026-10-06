@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [integration] Harness tests for bin/ship — the fast-lane handoff wrapper
+# [integration] Harness tests for bin/submit — the fast-lane handoff wrapper
 # (commit → push → non-draft PR into accepted → record pr_url → optional
 # pre-flight → CI wait → dor-check → move submitted → read-back verify). Follows the house seam
 # pattern (test/lib/fast_check_test.rb): the REAL script is shelled via Open3
@@ -9,7 +9,7 @@
 # env seams. The skip decisions themselves are unit-tested in
 # test/lib/fast_lane_test.rb.
 # Run directly:
-#   ruby -Itest test/lib/ship_test.rb
+#   ruby -Itest test/lib/submit_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
@@ -25,14 +25,14 @@ require_relative "../support/outbound_seams"
 require_relative "../support/fake_desk"
 require_relative "../../bin/lib/tree_fingerprint"
 
-class ShipTest < Minitest::Test
-  BIN = File.expand_path("../../bin/ship", __dir__)
+class SubmitTest < Minitest::Test
+  BIN = File.expand_path("../../bin/submit", __dir__)
   SLUG = "fast-lane-demo"
   BRANCH = "feat/#{SLUG}"
 
-  # The board bin/ship renders task links against — DERIVED from the pin, not
+  # The board bin/submit renders task links against — DERIVED from the pin, not
   # spelled out. It used to be the literal "https://mcritchie.studio/tasks/…",
-  # which passed only because run_ship left TASK_API_BASE unpinned and bin/ship
+  # which passed only because run_ship left TASK_API_BASE unpinned and bin/submit
   # fell through to its production default. Two problems with that: the assertion
   # "the PR body must LEAD with the task URL" was really asserting the production
   # HOST, and no containment floor could pin the board without a false red here.
@@ -172,7 +172,7 @@ class ShipTest < Minitest::Test
     JSON.generate(record)
   end
 
-  # Run bin/ship with every seam stubbed. Returns [out, err, status, log_lines]
+  # Run bin/submit with every seam stubbed. Returns [out, err, status, log_lines]
   # where log_lines is the parsed stub log ([[marker, argv...], ...] in call order).
   def run_ship(dir, args: [SLUG], extra_env: {}, show_json: nil, moved_json: nil)
     log = File.join(dir, "stub.log")
@@ -234,7 +234,7 @@ class ShipTest < Minitest::Test
   # THE REGRESSION CARL CAUGHT. `gh_capture`'s mint-FAILURE branch returned an
   # undefined local (`first` after a rename to `failure`) — valid Ruby, a NameError
   # at runtime, on the exact path that promises to report gh's original error. It
-  # survived because bin/ship is rubocop-excluded and nothing executed the branch.
+  # survived because bin/submit is rubocop-excluded and nothing executed the branch.
   # This drives a real ship whose gh ALWAYS refuses on credentials and whose mint
   # ALWAYS fails, so the branch runs: ship must fail with gh's REAL error, not a
   # NameError, and must never hang or mint anything real.
@@ -268,7 +268,7 @@ class ShipTest < Minitest::Test
 
   # --- the CI settle wait (step 6/8, gate-submit-on-green-ci) -------------------
   # The RULE is unit-tested in test/lib/ci_wait_test.rb with no clock and no gh.
-  # These prove the rule is ON THE PATH — that bin/ship really calls it, that the
+  # These prove the rule is ON THE PATH — that bin/submit really calls it, that the
   # DoR gate still owns the verdict afterwards, and that neither give-up path can
   # advance a task on its own. A pin nobody exercised is advice.
 
@@ -943,7 +943,7 @@ class ShipTest < Minitest::Test
       _out, err, status, lines = run_ship(dir, show_json: task_record(stage: "designed"))
 
       refute status.success?, "a designed task must not be teleported past the building seam"
-      assert_includes err, "ship hands off a BUILD"
+      assert_includes err, "submit hands off a BUILD"
       assert_includes err, "bin/task begin #{SLUG}", "the refusal must name the claim path"
       assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step may run on an unbuilt task"
       refute_equal "", `git -C #{dir} status --porcelain`.strip, "the dirty tree must be left uncommitted"
@@ -1117,12 +1117,12 @@ class ShipTest < Minitest::Test
   # "it still ships" could be asserted without ever being observed.
   #
   # WHAT IS ACTUALLY TRUE, measured (2026-08-09): ship REFUSES a detached HEAD at the
-  # task's own desk, and always has. It dies at the branch guard in bin/ship — which
+  # task's own desk, and always has. It dies at the branch guard in bin/submit — which
   # is PRE-EXISTING, live on `main`, and untouched by this PR — because a detached
   # HEAD is not the task branch. There was never a regression here to restore, and
   # these tests assert the refusal, not a lane that does not exist.
   #
-  # What the root-guard line in bin/ship does change is WHICH refusal you get. Without
+  # What the root-guard line in bin/submit does change is WHICH refusal you get. Without
   # it the root guard speaks first and says the desk "is not <slug>'s tree", which is
   # false — it IS the task's desk; only HEAD is detached — and it sends the builder
   # somewhere else. With it, ship falls through to the branch guard, which names the
@@ -1184,7 +1184,7 @@ class ShipTest < Minitest::Test
 
       # The root guard must NOT be the one speaking: the desk IS the task's tree, so
       # "not <slug>'s tree" would be a false diagnosis pointing the builder elsewhere.
-      # This is the one thing the bin/ship root-guard line changes, so it is asserted
+      # This is the one thing the bin/submit root-guard line changes, so it is asserted
       # positively rather than as a bare refute of a string that may never appear.
       refute_includes blame, "is not fast-lane-demo's tree",
                       "the root guard must defer to the branch guard at the task's own desk"
@@ -1237,7 +1237,7 @@ class ShipTest < Minitest::Test
   # --- presence: the phase this run is in, published for peers to READ ---------
   #
   # THE DEFECT, measured on this box on 2026-09-01 with the slice-1 reader
-  # (bin/agent-presence) pointed at a live machine: FIVE `bin/ship` groups, every
+  # (bin/agent-presence) pointed at a live machine: FIVE `bin/submit` groups, every
   # one at 0.0% CPU, all reported UNATTRIBUTED and the machine called BUSY. Four
   # were parked in a CI wait costing nothing; the fifth had spawned bin/fast-check
   # eleven seconds earlier and was about to take a core-set for ten minutes.
@@ -1409,7 +1409,7 @@ class ShipTest < Minitest::Test
   # --- 1/8 commit authorship (desk-commits-wrong-soul) ------------------------
   #
   # THE BEHAVIOUR PROOF for lib/commit_identity.rb. Its own unit tests drive the
-  # module directly; these two run the REAL bin/ship and read the author back OUT
+  # module directly; these two run the REAL bin/submit and read the author back OUT
   # OF GIT, which is the only thing that shows the identity actually reached the
   # commit rather than merely being computed.
   #

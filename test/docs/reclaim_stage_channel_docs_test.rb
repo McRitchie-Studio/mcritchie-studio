@@ -47,7 +47,7 @@ class ReclaimStageChannelDocsTest < ActiveSupport::TestCase
   ].freeze
 
   # Markdown-emphasis-insensitive read (the house pattern, mirrors
-  # ship_wait_docs_test.rb): drop * and ` and collapse whitespace, so a
+  # submit_wait_docs_test.rb): drop * and ` and collapse whitespace, so a
   # line-wrapped phrase matches as one run.
   def norm(rel)
     File.read(AGENTS.join(rel)).gsub(/[*`]/, "").gsub(/\s+/, " ")

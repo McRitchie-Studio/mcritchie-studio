@@ -3,7 +3,7 @@
 require "json"
 
 # FastLane — the pure decisions behind the two fast-lane ORCHESTRATION wrappers,
-# `bin/task begin` (create → worktree → bind → claim → preflight) and `bin/ship`
+# `bin/task begin` (create → worktree → bind → claim → preflight) and `bin/submit`
 # (commit → pre-flight → push → PR → record → submit).
 #
 # The wrappers collapse the standing DevOps cycle into one command each WITHOUT
@@ -52,11 +52,11 @@ module FastLane
   end
 
   # THE HANDOFF LINE `bin/task begin` PRINTS LAST — the final instruction a builder
-  # reads before working, and until 2026-09-09 the wrong one. It printed `bin/ship
+  # reads before working, and until 2026-09-09 the wrong one. It printed `bin/submit
   # <slug>`, the BARE form, which resolves ONLY from a hub desk: every fast-lane
   # script (ship, fast-check, dor-check, task) lives in
   # mcritchie-studio/bin alone, so a builder on a turf-monster or rolio desk who
-  # followed the tool's own hint got `nohup: bin/ship: No such file or directory`.
+  # followed the tool's own hint got `nohup: bin/submit: No such file or directory`.
   # PR #1334 corrected that sentence in the entry docs (docs/agents/claude.md and
   # index.md) and pinned it with test/docs/fast_lane_hub_path_docs_test.rb; this is the
   # half the TOOL speaks — and the tool wins any disagreement, because it speaks last
@@ -65,40 +65,40 @@ module FastLane
   # THE PATH IS ONLY HALF THE INSTRUCTION. The path picks the SCRIPT; the cwd picks
   # the TREE it acts on — and ship does NOT refuse a foreign root. It roots at the cwd's
   # git toplevel, then RE-ROOTS at the task's desk and says so ("re-rooting at the task
-  # worktree … (you ran from …)", bin/ship's `--- rooting ---` block), running every gate
+  # worktree … (you ran from …)", bin/submit's `--- rooting ---` block), running every gate
   # chdir'd to the resolved desk; it dies ONLY when no desk resolves on disk. So the cwd
   # is still half the instruction, for two reasons that are not a refusal by ship: (1) a
   # re-root is a correction the reader has to notice and trust, not the tree they chose;
   # (2) the pre-flight the builder runs by hand afterwards refuses ANY foreign root
   # outright — "this run roots at …/mcritchie-studio (branch main), which is not <slug>'s
   # tree — refusing to run against it". That string is TaskTree#refusal_message, and ship
-  # dies with the SAME string when no desk resolves (bin/ship: `die!(assessment[:message])
+  # dies with the SAME string when no desk resolves (bin/submit: `die!(assessment[:message])
   # unless resolved`); what ship never does is refuse a root it CAN re-root from. A hint
   # that fixes only the path leaves the builder one by-hand run from that refusal.
   # This line names BOTH and is copy-pasteable verbatim: `cd <desk> && <ship> <slug>`.
   #
-  # WHY THE FORM IS UNCONDITIONALLY ABSOLUTE — never a bare `bin/ship`, not even for
+  # WHY THE FORM IS UNCONDITIONALLY ABSOLUTE — never a bare `bin/submit`, not even for
   # a hub desk. A bare form is correct only when the reader's cwd happens to carry the
   # script, so it encodes an assumption about the reader that the printer cannot
   # check. An absolute path is longer and cannot be wrong; and ONE arm means the arm
   # the guard exercises is the arm every builder is handed.
   #
   # WHICH ship is resolved against the FILESYSTEM, not against the repo's identity:
-  # the desk's own bin/ship when the desk carries an executable one (every hub desk
+  # the desk's own bin/submit when the desk carries an executable one (every hub desk
   # does), else the hub's — the script beside the bin/task that is speaking. Two
   # reasons for desk-first over always-hub. (1) It leaves the hub lane byte-identical
   # to the bare form it replaces, so the busiest desk in the house changes nothing but
-  # the printed path. (2) bin/ship resolves its GATES from its own __dir__
+  # the printed path. (2) bin/submit resolves its GATES from its own __dir__
   # (bin/fast-check, bin/dor-check, bin/task) and a primary routinely lags `accepted`,
   # so pointing a fresh desk at a stale primary's gates would be a real regression
-  # bought for nothing. A satellite desk carries no bin/ship and falls through to the
+  # bought for nothing. A satellite desk carries no bin/submit and falls through to the
   # hub, which is exactly what the docs now prescribe. Resolving by EXISTENCE rather
   # than by repo slug also self-heals: onboard a repo, or give a satellite a shim, and
   # the hint follows the disk instead of a registry that has to be remembered.
   def handoff_command(slug, worktree_dir, hub_bin_dir)
-    desk_ship = File.join(worktree_dir.to_s, "bin", "ship")
-    ship = File.executable?(desk_ship) ? desk_ship : File.expand_path("ship", hub_bin_dir.to_s)
-    "cd #{worktree_dir} && #{ship} #{slug}"
+    desk_submit = File.join(worktree_dir.to_s, "bin", "submit")
+    submit = File.executable?(desk_submit) ? desk_submit : File.expand_path("submit", hub_bin_dir.to_s)
+    "cd #{worktree_dir} && #{submit} #{slug}"
   end
 
   # Did a `git push` fail specifically because the branch is NON-FAST-FORWARD —
@@ -116,7 +116,7 @@ module FastLane
   #
   # A REMEDY IS AN INSTRUCTION, AND AN INSTRUCTION MUST RESOLVE. When a fast-lane
   # script refuses, it hands the reader a command to run — "Re-run bin/fast-check
-  # <slug>", "re-run bin/ship <slug>". Every one of those scripts (ship, fast-check,
+  # <slug>", "re-run bin/submit <slug>". Every one of those scripts (ship, fast-check,
   # dor-check, task) lives in mcritchie-studio/bin ALONE, so the
   # bare form resolves only from a hub desk. A builder standing on a turf-monster,
   # rolio, or gem desk — who reached the script through its ABSOLUTE path, because
@@ -157,8 +157,8 @@ module FastLane
   #   A HANDOFF remedy names a script for a DIFFERENT tree (`bin/task begin` runs at
   #   the hub and points at the desk it just made), so it passes the desk's bin dir
   #   FIRST and the hub's second — desk-first, hub-fallback. Desk-first is not
-  #   cosmetic there: bin/ship resolves its GATES from its own __dir__ (bin/ship#TASK_BIN,
-  #   bin/ship#FAST_CHECK_BIN, bin/ship#DOR_CHECK_BIN), so always-hub would silently
+  #   cosmetic there: bin/submit resolves its GATES from its own __dir__ (bin/submit#TASK_BIN,
+  #   bin/submit#FAST_CHECK_BIN, bin/submit#DOR_CHECK_BIN), so always-hub would silently
   #   re-point every HUB task's gate lane at the primary checkout, which routinely
   #   lags `accepted`. That is a gate-selection change wearing a hint fix's clothes.
   #
@@ -170,7 +170,7 @@ module FastLane
   # leads with `cd <desk> &&`. A re-run remedy is the opposite case: the reader is
   # standing in the tree already (they just ran the script from it, and for the
   # pre-flight the tree check proved it), so a `cd` would restate where they are. The
-  # one seam that speaks BEFORE rooting — bin/ship's claim refusal — is safe for the
+  # one seam that speaks BEFORE rooting — bin/submit's claim refusal — is safe for the
   # same reason from the other side: ship RE-ROOTS to the task's desk rather than
   # refusing, and says so.
   #

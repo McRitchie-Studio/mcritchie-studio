@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_06_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -168,6 +168,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_180000) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_agents_on_slug", unique: true
     t.index ["status"], name: "index_agents_on_status"
+  end
+
+  create_table "alt_video_clip_versions", force: :cascade do |t|
+    t.bigint "alt_video_clip_id", null: false
+    t.bigint "byte_size", null: false
+    t.datetime "created_at", null: false
+    t.integer "number", null: false
+    t.string "object_key", null: false
+    t.string "original_filename"
+    t.datetime "primary_since", null: false
+    t.datetime "updated_at", null: false
+    t.index ["alt_video_clip_id", "number"], name: "index_alt_video_clip_versions_on_alt_video_clip_id_and_number", unique: true
+    t.index ["object_key"], name: "index_alt_video_clip_versions_on_object_key", unique: true
+  end
+
+  create_table "alt_video_clips", force: :cascade do |t|
+    t.string "alt_video_slug", null: false
+    t.integer "chunk_ordinal", null: false
+    t.datetime "created_at", null: false
+    t.integer "end_ms", null: false
+    t.string "regenerate_note"
+    t.datetime "regenerate_requested_at"
+    t.integer "start_ms", null: false
+    t.datetime "updated_at", null: false
+    t.index ["alt_video_slug", "chunk_ordinal"], name: "index_alt_video_clips_on_alt_video_slug_and_chunk_ordinal", unique: true
+  end
+
+  create_table "alt_videos", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "music_video_slug", null: false
+    t.integer "number", null: false
+    t.string "slug", null: false
+    t.jsonb "swaps", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["music_video_slug", "number"], name: "index_alt_videos_on_music_video_slug_and_number", unique: true
+    t.index ["slug"], name: "index_alt_videos_on_slug", unique: true
   end
 
   create_table "app_requests", force: :cascade do |t|
@@ -2182,6 +2218,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_180000) do
   end
 
   create_table "video_stitches", force: :cascade do |t|
+    t.string "alt_video_slug", null: false
     t.bigint "byte_size"
     t.datetime "created_at", null: false
     t.integer "duration_ms"
@@ -2198,7 +2235,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_180000) do
     t.datetime "updated_at", null: false
     t.jsonb "warnings", default: [], null: false
     t.integer "width"
-    t.index ["music_video_slug", "number"], name: "index_video_stitches_on_music_video_slug_and_number", unique: true
+    t.index ["alt_video_slug", "number"], name: "index_video_stitches_on_alt_video_slug_and_number", unique: true
     t.index ["object_key"], name: "index_video_stitches_on_object_key", unique: true
   end
 
@@ -2237,6 +2274,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_180000) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "agent_actions", "agent_activities", on_delete: :nullify
+  add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "app_requests", "users"
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"

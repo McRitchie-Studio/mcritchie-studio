@@ -121,7 +121,7 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_not task.waiting_for_operator_approval?
   end
 
-  # ── the CI beat: the window `bin/ship` spends waiting on CI, made clickable ────
+  # ── the CI beat: the window `bin/submit` spends waiting on CI, made clickable ────
 
   test "[integration] the beat after approval RUNS a scripted CI without moving the card" do
     post dev_board_generate_path

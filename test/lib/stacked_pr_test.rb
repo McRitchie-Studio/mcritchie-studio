@@ -5,7 +5,7 @@ require "json"
 require_relative "../../bin/lib/stacked_pr"
 
 # The shared predicate both halves of the stacked-PR guard ask
-# (/tasks/review-guards-stacked-prs). bin/ship and bin/pr-review answered this question
+# (/tasks/review-guards-stacked-prs). bin/submit and bin/pr-review answered this question
 # separately for a release, which is how the reviewer half kept retargeting and merging
 # stacks after the builder half stopped.
 class StackedPrTest < Minitest::Test
@@ -108,7 +108,7 @@ class StackedPrTest < Minitest::Test
 
   # ── AT A MERGE, ANYTHING UNPROVEN REFUSES (/tasks/review-refuses-unread-base) ────
   #
-  # These two INVERT the answers bin/ship gets, deliberately, and the inversion is the
+  # These two INVERT the answers bin/submit gets, deliberately, and the inversion is the
   # point. ship calls StackedPr.assess and repairs on a doubt: a wrongly-retargeted stack
   # is loud and recoverable (`gh pr edit <n> --base <parent>`) and ship never merges, so
   # guessing wrong costs a retarget. guard_base is REVIEW's caller, and there the retarget
@@ -117,7 +117,7 @@ class StackedPrTest < Minitest::Test
   # The cost asymmetry inverts at the merge, so the decision inverts with it.
   #
   # This deliberately contradicts ms#1391's bullet "Empty or unread base falls to the
-  # repair path". That bullet was written for bin/ship's arm and is still right there.
+  # repair path". That bullet was written for bin/submit's arm and is still right there.
   def test_an_unreadable_probe_REFUSES_rather_than_retargeting
     sp = spies("gh: 502 Bad Gateway", false)
 

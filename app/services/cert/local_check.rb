@@ -3,7 +3,7 @@ module Cert
   #
   # The operator's question is "this task has been in `building` a while — is
   # anything actually happening?" Until now the board could not answer it: the
-  # PR CI meter only appears once `bin/ship` has opened a PR, and everything
+  # PR CI meter only appears once `bin/submit` has opened a PR, and everything
   # BEFORE that — the cert that runs first, and is the slow part — was invisible.
   # Observed live: a `bin/fast-check` ran past seven minutes against an advertised
   # ~1 minute while its card showed nothing at all.
@@ -16,7 +16,7 @@ module Cert
   #
   # WHY LIVENESS IS THE POINT, not decoration. A start/stop marker alone would
   # spin forever whenever the runner is killed, and killed runners are ROUTINE
-  # here: the operating model itself warns that a cold `bin/ship` exceeds what
+  # here: the operating model itself warns that a cold `bin/submit` exceeds what
   # some agent harnesses allow one foreground command and tells agents to expect
   # to re-run it. A spinner that cannot die would report "working" for precisely
   # the abandoned tasks this feature exists to expose — worse than showing

@@ -15,11 +15,11 @@ require "test_helper"
 # transition event; the three leaks that shape had are at the bottom of this file.
 #
 # THE SEAM MOVED on 2026-09-09, from the `submitted` boundary to the `reviewed` one.
-# `bin/ship`'s handoff was discarding requests the documented build flow told builders
+# `bin/submit`'s handoff was discarding requests the documented build flow told builders
 # to set — three times in one night, on turf PRs 644, 647 and 653. The window now
 # matches the artifact: a desk is reclaimable once the work merges, which is exactly
 # `reviewed`. The end-to-end half of that regression, driven through the real PATCH
-# `bin/ship` issues, is test/integration/ship_preserves_approval_request_test.rb.
+# `bin/submit` issues, is test/integration/submit_preserves_approval_request_test.rb.
 class TaskApprovalWindowTest < ActiveSupport::TestCase
   test "[unit] submitting from building carries a waiting approval into review" do
     # THE REGRESSION for the defect measured three times on 2026-09-09 (turf PRs

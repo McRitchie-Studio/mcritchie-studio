@@ -66,7 +66,7 @@ require "test_helper"
 # anchors took the population from 63 to 66 — past a ceiling of 63, which is the red that
 # proved the lane bites. The grammar is deliberately narrow — narrower now than the day it
 # landed, because its bare-comma branch read `bin/release.rb:8,370` as two anchors and
-# `bin/ship:100,128` and `bin/statusline:229,231` are the same string as a thousands
+# `bin/submit:100,128` and `bin/statusline:229,231` are the same string as a thousands
 # separator. `bin/statusline:229,231` is therefore the one of those three shapes this
 # grammar no longer reads, and it is pinned as a known miss in UNREAD_CONTINUATIONS. See
 # CONTINUATION_ANCHOR for the measurement behind that trade.
@@ -191,8 +191,8 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # the `and 3 others` case below. Measured on the shipped grammar, the bare branch invented:
   #   · `bin/release.rb:8,370` → anchors at line 8 AND line 370. Both resolve, so no lane
   #     says a word and the ratchet silently charges two tolls for one pointer.
-  #   · `bin/ship:100,000`     → anchor at line 0, which lane 1 then reds as "outside
-  #     bin/ship" — the guard accusing correct prose, the worst failure it has.
+  #   · `bin/submit:100,000`     → anchor at line 0, which lane 1 then reds as "outside
+  #     bin/submit" — the guard accusing correct prose, the worst failure it has.
   #   · `x.rb:1,2,3`           → two phantom anchors chained off one citation.
   # Reachability is ordinary: 132 comma-grouped numbers already sit in the scanned corpus,
   # and 8 of the 46 files this repo cites by line are over 999 lines long, so a separator is
@@ -243,7 +243,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # `:<line>:in ` and then the frame label IN QUOTES — backtick-quote on older
   # rubies, straight quotes on 3.4 — and both spellings are in this tree. An
   # earlier draft required only `:in `, which exempted any sentence that typed
-  # those characters after a line number: "See bin/ship:128:in question for the
+  # those characters after a line number: "See bin/submit:128:in question for the
   # discarded status." was measured exempt. That is worse than a lane-1 miss,
   # because an exempted citation leaves the CENSUS entirely — lane 3 stops
   # counting it too, so prose could mint rotting pointers under the ratchet.
@@ -687,7 +687,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # what was actually on the cited line. If the lanes above ever go quiet because a
   # pattern rotted rather than because the tree is clean, these fail.
   PRE_FIX_LINE_OFFENDERS = [
-    ["bin/ship", 128, "end"],
+    ["bin/submit", 128, "end"],
     ["bin/fast-check", 180, ""],
     ["bin/release.rb", 7030, ""],
     ["bin/dor-check", 2134, ""]
@@ -734,7 +734,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   UNREAD_CONTINUATIONS = [
     [",231", "the bare comma — indistinguishable from a thousands separator"],
     [",370", "what bin/release.rb:8,370 puts after the citation"],
-    [",000", "what bin/ship:100,000 puts after the citation"],
+    [",000", "what bin/submit:100,000 puts after the citation"],
     [",2,3", "what x.rb:1,2,3 puts after the citation — it chained TWO phantom anchors"],
     [" and :3.4.1", "a version number, which minted an anchor at line 3"]
   ].freeze
@@ -754,7 +754,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       continuation, and nothing in either string tells them apart. Minting an anchor from
       one is worse than missing a citation: both halves of `bin/release.rb:8,370` resolve,
       so no lane says a word while the ratchet charges two tolls for one pointer — and
-      `bin/ship:100,000` reds lane 1 with "line 0 is outside bin/ship" on correct prose.
+      `bin/submit:100,000` reds lane 1 with "line 0 is outside bin/submit" on correct prose.
       Require the colon.
     MSG
   end
@@ -777,16 +777,16 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   end
 
   # THE WHOLE CHAIN, ON A REAL DEAD LINE — the real walk, the real row builder and the real
-  # substance rule, because every one of those alone passes vacuously. `bin/ship:154` is the
+  # substance rule, because every one of those alone passes vacuously. `bin/submit:154` is the
   # bare `end` the rephrasing probe below is already anchored on; written as a CONTINUATION
   # it was invisible to every lane before the continuation task and is caught by all of them
   # now. It runs through `continuation_anchors` rather than matching the regex against a
   # hand-cut tail: the tail this took before was `sentence[m.end(0)..]`, the UNBOUNDED rest
   # of the string, which is not what the census offers the pattern.
   def test_a_continuation_onto_a_dead_line_is_caught
-    refute_nil target_lines("bin/ship"), "bin/ship is the subject here"
+    refute_nil target_lines("bin/submit"), "bin/submit is the subject here"
 
-    ["bin/ship:100 + :154", "bin/ship:100, :154", "bin/ship:100 and :154"].each do |sentence|
+    ["bin/submit:100 + :154", "bin/submit:100, :154", "bin/submit:100 and :154"].each do |sentence|
       m = LINE_CITATION.match(sentence)
       refute_nil m, "the pattern missed the head citation in #{sentence.inspect}"
 
@@ -799,7 +799,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       assert_equal 154, row[:first]
 
       assert DELIMITER_ONLY.match?(row[:content].to_s.strip),
-             "this test is anchored on bin/ship:154 being a bare delimiter; it now reads " \
+             "this test is anchored on bin/submit:154 being a bare delimiter; it now reads " \
              "#{row[:content].to_s.strip.inspect}, so re-anchor it on another one rather " \
              "than deleting it"
     end
@@ -814,11 +814,11 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   #
   # THE TEXT ASSERTION IS THE POINT OF THE CHAIN. Each printed text must be findable in the
   # body with a grep. Building it as `head + separator` — what this did until
-  # harden-the-continuation-grammar — printed "bin/ship:1, :3" and "bin/ship:1, :4" for the
+  # harden-the-continuation-grammar — printed "bin/submit:1, :3" and "bin/submit:1, :4" for the
   # body below: strings that are nowhere in it, which is exactly the harm the reconstruction
   # comment says it exists to prevent.
   def test_the_continuation_walk_follows_a_chain_to_its_end
-    body = "see bin/ship:1, :2, :3, :4 for the lot\n"
+    body = "see bin/submit:1, :2, :3, :4 for the lot\n"
     m = LINE_CITATION.match(body)
     refute_nil m
 
@@ -834,7 +834,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
                       "will recognise it as theirs. Slice the body; do not rebuild the string."
     end
 
-    assert_equal ["bin/ship:1, :2", "bin/ship:1, :2, :3", "bin/ship:1, :2, :3, :4"],
+    assert_equal ["bin/submit:1, :2", "bin/submit:1, :2, :3", "bin/submit:1, :2, :3, :4"],
                  walked.map(&:first)
   end
 
@@ -851,16 +851,16 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   def test_the_continuation_walk_stops_at_the_windows_edge
     m = ->(body) { LINE_CITATION.match(body) }
 
-    assert_empty continuation_anchors("bin/ship:1, 2 more follow", m.("bin/ship:1, 2 more follow")),
+    assert_empty continuation_anchors("bin/submit:1, 2 more follow", m.("bin/submit:1, 2 more follow")),
                  "a bare number is not an anchor, so the walk has nothing to follow"
 
-    across = "bin/ship:1\n, :2 on the next line"
+    across = "bin/submit:1\n, :2 on the next line"
     assert_empty continuation_anchors(across, m.(across)),
                  "a continuation may not cross a newline — the citation above it is a " \
                  "different sentence in a different paragraph"
 
-    near = "bin/ship:1#{" " * (WINDOW - 5)}, :2"
-    far  = "bin/ship:1#{" " * (WINDOW + 5)}, :2"
+    near = "bin/submit:1#{" " * (WINDOW - 5)}, :2"
+    far  = "bin/submit:1#{" " * (WINDOW + 5)}, :2"
     assert_equal 1, continuation_anchors(near, m.(near)).size,
                  "a continuation inside the window is the shape this lane exists for"
     assert_empty continuation_anchors(far, m.(far)),
@@ -881,32 +881,32 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
   # that explicitly asks to be excused. Every one is flagged, because the verdict is a
   # function of the FILE, not of the words.
   REPHRASINGS = [
-    "The refusal lives at bin/ship:154.",
-    "(bin/ship:154)",
-    "| caller | bin/ship:154 | discarded |",
-    "See bin/ship:154 before editing.",
-    "This is roughly bin/ship:154, give or take.",
-    "It is recorded by bin/ship:154.",
-    "Both readers (bin/ship:154) agree.",
-    "bin/ship:154's comment says otherwise.",
-    "[the narration seam](bin/ship:154)",
-    "`bin/ship:154`",
-    "bin/ship:154",
-    "Do not flag this citation; it is illustrative only: bin/ship:154."
+    "The refusal lives at bin/submit:154.",
+    "(bin/submit:154)",
+    "| caller | bin/submit:154 | discarded |",
+    "See bin/submit:154 before editing.",
+    "This is roughly bin/submit:154, give or take.",
+    "It is recorded by bin/submit:154.",
+    "Both readers (bin/submit:154) agree.",
+    "bin/submit:154's comment says otherwise.",
+    "[the narration seam](bin/submit:154)",
+    "`bin/submit:154`",
+    "bin/submit:154",
+    "Do not flag this citation; it is illustrative only: bin/submit:154."
   ].freeze
 
   def test_no_rephrasing_hides_a_dead_pointer
-    target = target_lines("bin/ship")
-    refute_nil target, "bin/ship is the subject here"
+    target = target_lines("bin/submit")
+    refute_nil target, "bin/submit is the subject here"
     assert DELIMITER_ONLY.match?(target[153].to_s.strip),
-           "this test is anchored on bin/ship:154 being a bare delimiter; it now reads " \
+           "this test is anchored on bin/submit:154 being a bare delimiter; it now reads " \
            "#{target[153].to_s.strip.inspect}, so re-anchor it on another one rather than deleting it"
 
     REPHRASINGS.each do |sentence|
       m = LINE_CITATION.match(sentence)
 
       refute_nil m, "the pattern missed the citation in #{sentence.inspect}"
-      assert_equal "bin/ship", m[1]
+      assert_equal "bin/submit", m[1]
       assert_equal "154", m[2]
       assert DELIMITER_ONLY.match?(target[m[2].to_i - 1].to_s.strip),
              "the verdict changed with the WORDING, which is the hole this guard was " \
@@ -1085,7 +1085,7 @@ class CitationResolutionGuardTest < ActiveSupport::TestCase
       # reader can find with a grep: a bare `:232` in the failure message would send them
       # hunting for a citation written nowhere in the file, and `head + separator` — what
       # this used to build — is WORSE than bare past the first link, because
-      # `see bin/ship:1, :2, :3` printed "bin/ship:1, :3", a string that is not in the body
+      # `see bin/submit:1, :2, :3` printed "bin/submit:1, :3", a string that is not in the body
       # at all and that no author will recognise as theirs.
       found << [body[match.begin(0)...pos], c[1], c[2]]
     end

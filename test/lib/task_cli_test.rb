@@ -1067,7 +1067,7 @@ class TaskCliTest < Minitest::Test
 
   # --- one board token per ship: the CLI honours a handed-down bearer ----------
   #
-  # bin/ship mints once per run and exports AGENT_API_TOKEN; every bin/task it
+  # bin/submit mints once per run and exports AGENT_API_TOKEN; every bin/task it
   # spawns must send THAT bearer and skip its own POST /api/v1/auth. Asserted on
   # the wire, because the saving is a request that does not happen.
 

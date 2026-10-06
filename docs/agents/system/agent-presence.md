@@ -22,7 +22,7 @@ One session, five agents, 2026-09-01. Full numbers on the task record.
 | 1 | Could not identify which live session held a piece of work | 372 of 747 session records name a task (49.8%). Resolved only by messaging the peer; had it been unreachable, live work would have been archived |
 | 2 | An agent starved for 60+ minutes | Three certs launched with no shared view of capacity; load 355, swap 98%, 530 MB free of 22 GB |
 | 3 | A 45-minute run lost | SIGTERM at its 2700s ceiling, 11% complete, killed by a `bin/release prepare` sweep no status command reports |
-| 4 | Process name mistaken for process state | Two idle `bin/ship` processes in a CI wait read as competing certs. The grep that usually gets this right is right *by coincidence* |
+| 4 | Process name mistaken for process state | Two idle `bin/submit` processes in a CI wait read as competing certs. The grep that usually gets this right is right *by coincidence* |
 | 5 | Every snapshot went stale between read and act | A load average of "31, falling" was 190 when acted on |
 
 **One number needed correcting, and the correction moved a design decision.** The
@@ -183,7 +183,7 @@ began_at          ISO — when the RUN began; fixed across every republish
 **Two subjects, not one**, for the reason the runlock has always carried two: a
 supervisor can be killed while the work it spawned SURVIVES — reparented, still
 burning the machine, still holding a test DB — and a claim naming only the
-supervisor reports that worst case as `dead`. `bin/ship` spawns its cert with
+supervisor reports that worst case as `dead`. `bin/submit` spawns its cert with
 `system` and no `pgroup:`, so the runner lives in the ship's own group, which
 makes the group the subject that stays true after the ship dies.
 
@@ -258,11 +258,11 @@ hidden inside each git dir where `git status` cannot see it.
 certs must be taught to publish a phase. They largely already do. What remains
 is narrower and should be re-scoped: **read the phase certs already publish**,
 and add an explicit `phase` field only where one process genuinely spans both
-states — which is `bin/ship`, not the cert.
+states — which is `bin/submit`, not the cert.
 
 ### (c) Sweeps and ships
 
-`bin/ship` wrote **nothing locally for its entire ~12-minute run**. Its eight
+`bin/submit` wrote **nothing locally for its entire ~12-minute run**. Its eight
 phases existed only as stderr strings and header comments; the boundary that
 matters is cert → CI wait. Slice 3 landed the ship half (`bin/lib/presence_claim.rb`).
 `bin/release prepare` takes flocks — invisible to anything not itself contending
@@ -287,7 +287,7 @@ sweep that read as `backstop: sweep pgid 57266 … UNATTRIBUTED` now reads as
 Two things it decides for itself, both load-bearing:
 
 - **`pgid` records the writer's own pid, not the group it runs in.**
-  `PresenceClaim`'s default is `Process.getpgid`, which is right for `bin/ship` —
+  `PresenceClaim`'s default is `Process.getpgid`, which is right for `bin/submit` —
   ship spawns `bin/fast-check` into its own group, so the group is a true second
   subject. `bin/release` is not shaped that way: it never calls `setpgrp`, so its
   group is the one it *inherited* from the launching shell (measured:
@@ -593,21 +593,21 @@ plus a policy question about orchestrators. Diagnosed properly (§5(a)) it is
 sessions whose records go stale. The severity was never in question; only the
 size was, and the size was wrong.
 
-### Slice 3 — `bin/ship` publishes its phase
+### Slice 3 — `bin/submit` publishes its phase
 
 The one place the runlock genuinely cannot answer, because a ship *spans* both
-states: the pre-flight (`bin/ship`'s `5/8 pre-flight`) and CI wait (`6/8 CI settle wait`). It wrote
+states: the pre-flight (`bin/submit`'s `5/8 pre-flight`) and CI wait (`6/8 CI settle wait`). It wrote
 nothing locally for its entire ~12-minute run. This is what remains of
 `/tasks/certs-publish-no-phase` once §5(b) is accounted for.
 
 **Landed — the WRITER half.** `bin/lib/presence_claim.rb` publishes the §4 record
-through `SessionMarkers` (so no new store, and `bin/ship` never names `.agents`),
-and `bin/ship` republishes it at each of the eight boundaries it already prints.
+through `SessionMarkers` (so no new store, and `bin/submit` never names `.agents`),
+and `bin/submit` republishes it at each of the eight boundaries it already prints.
 The atomic write path in §4 landed with it.
 
 **The READER hop landed with it, and it had to.** A first cut shipped the writer
 alone, on the reasoning that slice 1 owned the reader — and the claims went
-somewhere nothing looked. Measured on the live machine: a `bin/ship` parked in its
+somewhere nothing looked. Measured on the live machine: a `bin/submit` parked in its
 CI wait, publishing `waiting/idle` correctly on disk, was STILL reported under
 `backstop:` as unattributed and the machine still called BUSY. A claim the reader
 cannot see closes no cost. So the reader gained three things:
@@ -623,7 +623,7 @@ cannot see closes no cost. So the reader gained three things:
    certs launched from one shell share a group, and deleting one of them from the
    arithmetic is the expensive direction. A supervisor whose runner has not
    appeared yet keeps its full weight, which covers the real ~11s window between
-   `bin/ship`'s 5/8 and the lane's runlock.
+   `bin/submit`'s 5/8 and the lane's runlock.
 
 ### Slice 4 — sweeps publish locally
 
@@ -663,7 +663,7 @@ because it is arithmetic over what they publish.
   an anchor and thereby name the session burning the CPU. **It does not work, and
   it fails in the confident direction.** One `claude` CLI process hosts MANY
   concurrent sessions: on 2026-09-01 pid 60790 anchored four at once — three of
-  them mid-`bin/ship` on unrelated tasks — out of eight distinct CLI processes on
+  them mid-`bin/submit` on unrelated tasks — out of eight distinct CLI processes on
   the box. A probe built exactly that way attributed three foreign ships to one
   desk with full confidence. So the anchor is one-to-**many** with sessions, and:
   - a **dead** anchor still proves the session is gone (its host is gone) — the

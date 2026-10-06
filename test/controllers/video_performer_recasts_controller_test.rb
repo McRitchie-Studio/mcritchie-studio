@@ -62,8 +62,6 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='swap-body']:not([x-cloak]) [data-test='swap-athlete-name']", "Test Athlete Alpha"
       assert_select "[data-test='look-cast']", 0
     end
-    assert_select "#chunk-1 [data-test='chunk-recast']", /Test Athlete Alpha > Away White/
-    assert_select "#chunk-1 [data-test='chunk-prompt']", /with Test Athlete Alpha, the football player/
     assert_select "[data-test='cast-swap-count']", "1 of 2"
   end
 
@@ -175,8 +173,6 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='swap-body'][x-cloak]"
       assert_equal "Test Athlete Alpha", JSON.parse(node.first["data-athlete"])["name"], "the card still knows who is remembered"
     end
-    assert_select "#chunk-1 [data-test='chunk-recast']", 0
-    assert_select "#chunk-1 [data-test='chunk-look-sheet'], #chunk-1 [data-test='chunk-look-sheet-missing']", 0
     assert_select "[data-test='cast-swap-count']", "0 of 2"
 
     recast(1, clear: "1")

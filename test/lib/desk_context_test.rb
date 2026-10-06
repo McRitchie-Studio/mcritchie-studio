@@ -242,7 +242,7 @@ class DeskContextTest < Minitest::Test
   end
 
   # MEASURED 2026-09-01: one `claude` CLI process hosts MANY concurrent sessions —
-  # pid 60790 anchored four at once, three of them mid-`bin/ship` on unrelated tasks.
+  # pid 60790 anchored four at once, three of them mid-`bin/submit` on unrelated tasks.
   # So the anchor is one-to-MANY with sessions, and `session_id` is the only unique
   # key here. This pins that: two DIFFERENT sessions sharing one anchor stay two
   # holders, and neither the grade nor the join collapses them.

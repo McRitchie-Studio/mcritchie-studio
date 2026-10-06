@@ -150,7 +150,7 @@ Order matters, because studio-engine is a published gem:
 
 Operational notes for the gem repo, which behaves differently from an app:
 
-- **The fast lane does not work for gem repos.** `bin/task begin` / `bin/ship`
+- **The fast lane does not work for gem repos.** `bin/task begin` / `bin/submit`
   assume an app checkout. Use plain worktrees and the long-form commands.
 - **Gem-repo PRs target `accepted`, like every other repo.** studio-engine
   declares `ladder: three-rung` in `config/release_repos.yml` and carries all

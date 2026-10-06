@@ -124,7 +124,7 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
       "the re-run reset the meter to the fresh (latest) attempt"
   end
 
-  test "[integration] a BUILDING card shows its PR CI while bin/ship waits on it" do
+  test "[integration] a BUILDING card shows its PR CI while bin/submit waits on it" do
     # The gate-submit-on-green-ci window: the PR is open and CI is running, but the
     # task is still on the builder's desk. This is the state the operator watches.
     task = building_task(branch: "feat/ci-building-demo", pr: 55)
@@ -234,7 +234,7 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     )
   end
 
-  # Same shape as submitted_task, one stage earlier — the ship-wait desk.
+  # Same shape as submitted_task, one stage earlier — the submit-wait desk.
   def building_task(branch:, pr:)
     submitted_task(branch: branch, pr: pr).tap { |task| task.update!(stage: "building") }
   end

@@ -71,12 +71,6 @@ only that act.
 it is a single-task production expedite, never part of the heartbeat
 composition.
 
-## Legacy Aliases
-
-The old launcher name still refers to the same work:
-
-- `qa-deploy` -> [`qa-release`](sops/qa-release.md)
-
 ## Handoff
 
 End every Avi heartbeat with a short report:

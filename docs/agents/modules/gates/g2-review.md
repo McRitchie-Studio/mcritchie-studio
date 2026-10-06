@@ -9,7 +9,7 @@ and **G2b Light** (key `g2b_light`, the focused second read). **Carl** (the
 `pr-review` owner — one Carl per PR) owns both lanes' open and close; the light
 fills its own.
 
-The gate flow order: [G1 Cert](g1-cert.md) → [DoR](dor.md) → **G2 Review**
+The gate flow order: [DoR](dor.md) → **G2 Review**
 (this doc) → [G3 Candidate](g3-candidate.md) → [G4 Ship](g4-ship.md).
 
 ## What this gate verifies
@@ -116,7 +116,7 @@ What the review session records, per reviewed task:
    ```
 
    which opens+closes the **`dor_review` gate** with its verdict (its OWN gate —
-   see [`dor.md`](dor.md) — never touching the builder's G1 Cert or the G2 review
+   see [`dor.md`](dor.md) — never touching the builder's `dor` gate or the G2 review
    lanes; that is exactly what the `--gate-role review` flag exists for).
 3. **Close** — after both reviewers return, each lane closes from **its own
    reviewer's latest scout report**: `merge-ready` → `--success`; any other
@@ -271,7 +271,7 @@ Gate-zero reads CI for you. When you read it yourself:
 
 - **Task gates card** — the "Testing gates" card on
   `https://mcritchie.studio/tasks/<slug>` renders the G2a Primary and G2b
-  Light chips beside G1 Cert and the two DoR chips: latest attempt (`×n` badge),
+  Light chips beside the two DoR chips: latest attempt (`×n` badge),
   status, and the expandable `scout-report` SOP list (the gate-zero dor-check
   now records on the separate `dor_review` chip, not on G2a).
 - **Deployments tracker note** — the review wave does NOT touch the release
@@ -295,6 +295,6 @@ Gate-zero reads CI for you. When you read it yourself:
 - [`dor.md`](dor.md) — the DoR gate; its `dor_review` half is this gate's
   gate-zero (`bin/dor-check --gate-role review`), opened by Carl as he
   proceeds past CI.
-- [`g1-cert.md`](g1-cert.md) — the builder cert gate that precedes DoR.
+- [`../pre-flight.md`](../pre-flight.md) — the builder's optional local pre-flight before DoR.
 - [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write
   surface.

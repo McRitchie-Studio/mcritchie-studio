@@ -44,7 +44,7 @@ Local Demo: http://localhost:<port>/<path>
 Local Inbox: http://localhost:<port>/_studio/local_emails   # only for email/auth flows
 ```
 
-The request survives `bin/ship`; the window closes at `reviewed`. **The desk is NOT yet
+The request survives `bin/submit`; the window closes at `reviewed`. **The desk is NOT yet
 reclaimable there** — `RECLAIMABLE_STAGES` is `%w[shipped archived]`. Then commit, `finish`,
 record the PR and `checks_run`, and move to `submitted`. Exceptions: read-only audits, the
 deploy owner, and emergencies (say why).
@@ -211,7 +211,7 @@ ruby -I lib -r desk_activity \
   "$PWD/.worktrees/<slug>"
 ```
 
-`move … building`, `begin` and `bin/ship` **refuse** only when another live session's bound
+`move … building`, `begin` and `bin/submit` **refuse** only when another live session's bound
 desk has uncommitted changes; `--steal` overrides. **A REVIEWER is asked, never stolen from**
 (`bin/task review-claim release <slug>`, run by them).
 

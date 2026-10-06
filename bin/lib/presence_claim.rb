@@ -19,11 +19,11 @@ require_relative "projects_root"
 #   cert claims (1 on disk, 1 live)
 #     LIVE  mcritchie-studio/primary-refusal-names-waived-lane  pid 53432  3m
 #   backstop: 6 heavy workload(s) carry NO claim — UNATTRIBUTED, not idle:
-#     ship pgid 43603 (2 procs)  ruby …/bin/ship stale-engine-web3-comments …
-#     ship pgid 60237 (2 procs)  ruby …/bin/ship runbook-names-dead-host …
-#     ship pgid 62081 (2 procs)  ruby bin/ship backup-collisions-are-silent …
-#     ship pgid 63580 (2 procs)  ruby bin/ship archive-refuses-unknown-holder …
-#     ship pgid 75015 (3 procs)  ruby …/bin/ship restore-web3-modal-coverage …
+#     ship pgid 43603 (2 procs)  ruby …/bin/submit stale-engine-web3-comments …
+#     ship pgid 60237 (2 procs)  ruby …/bin/submit runbook-names-dead-host …
+#     ship pgid 62081 (2 procs)  ruby bin/submit backup-collisions-are-silent …
+#     ship pgid 63580 (2 procs)  ruby bin/submit archive-refuses-unknown-holder …
+#     ship pgid 75015 (3 procs)  ruby …/bin/submit restore-web3-modal-coverage …
 #   verdict: BUSY
 #
 # Every one of those five groups measured 0.0% CPU. FOUR were parked in a CI wait,
@@ -31,7 +31,7 @@ require_relative "projects_root"
 # earlier and was about to cost a whole core-set for ten minutes. The reader could
 # not tell them apart, so it called the machine BUSY on the strength of four idle
 # waiters — and an agent reading that holds off for nothing. Invert it and the
-# error is worse: an agent that discounts `bin/ship` launches straight into the
+# error is worse: an agent that discounts `bin/submit` launches straight into the
 # fifth one's suite.
 #
 # That is cost #4 in the design, reproduced live. The process NAME is identical in
@@ -72,8 +72,8 @@ require_relative "projects_root"
 # private path builder, and a containment test that re-derives the mutation set
 # from source. A new store would have to re-earn all four. So this class holds no
 # path: it builds a SUFFIX and a body, and SessionMarkers builds and guards the
-# path. That is also why bin/ship can call it without appearing in the containment
-# test's ALLOWED_CONSTRUCTORS — bin/ship never names the store.
+# path. That is also why bin/submit can call it without appearing in the containment
+# test's ALLOWED_CONSTRUCTORS — bin/submit never names the store.
 class PresenceClaim
   SCHEMA_VERSION = 1
 
@@ -93,7 +93,7 @@ class PresenceClaim
 
   # A run with no agent session still publishes. The filename needs a namespace
   # key, not a session, and a claim that exists exactly when the process exists is
-  # the whole point — a session-less `bin/ship` run by hand consumes the machine
+  # the whole point — a session-less `bin/submit` run by hand consumes the machine
   # identically. The BODY still reports `session_id: null`, so nothing is claimed
   # that is not known.
   def self.unbound_key(pid) = "unbound-#{pid}"
@@ -106,7 +106,7 @@ class PresenceClaim
   # can be killed while the work it spawned SURVIVES — reparented to launchd, still
   # burning the machine and still holding a test DB — and a claim naming only the
   # supervisor reports that worst case as `dead`, which is the one direction this
-  # design may never fail in. `bin/ship` spawns bin/fast-check with `system` and no
+  # design may never fail in. `bin/submit` spawns bin/fast-check with `system` and no
   # `pgroup:`, so the child runs in the SHIP'S OWN group: the group is exactly the
   # right second subject, and it is what makes a SIGKILLed ship whose pre-flight
   # lives on still grade live.

@@ -74,7 +74,7 @@ module Ci
     # blank track, never a silent fallback to `main`.
     GEM_CI_BRANCHES = { "three-rung" => Release::BRANCH, "two-rung" => "main" }.freeze
 
-    # Which stages can show a CI bar. BUILDING is in the list because `bin/ship`
+    # Which stages can show a CI bar. BUILDING is in the list because `bin/submit`
     # opens the PR and then WAITS for its CI (gate-submit-on-green-ci) while the task
     # is still building — the ~12 minutes an operator most wants to watch tick. It is
     # a stage gate, not the whole test: eligible_task? still demands a pr_url AND a

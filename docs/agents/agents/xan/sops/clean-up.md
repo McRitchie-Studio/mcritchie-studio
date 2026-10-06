@@ -292,6 +292,6 @@ Report to Alex:
 ## Background — not needed to execute
 
 The two-workflow release model is `../../../system/devops-cycle-design.md`, the gates
-(G1–G4) are `../../../modules/gates/`, and worktree mechanics are `../../../modules/worktrees.md`.
+(DoR, G2–G4) are `../../../modules/gates/`, and worktree mechanics are `../../../modules/worktrees.md`.
 
 History: the long form, with rationale and incident history, is [`clean-up-2026-10-05.md`](../../../archive/clean-up-2026-10-05.md).

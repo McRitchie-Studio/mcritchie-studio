@@ -27,7 +27,7 @@
 # boundary, so the resolution lives in ONE place that all three callers share.
 #
 # PRECEDENCE: explicit > GH_APP_ITEM > agent. An explicit identity is a caller
-# stating its lane outright (bin/ship genuinely needs the PR-writing App even when
+# stating its lane outright (bin/submit genuinely needs the PR-writing App even when
 # invoked from an odd shell), and that must still win over an ambient export.
 module GhIdentity
   # identity => 1Password item name.

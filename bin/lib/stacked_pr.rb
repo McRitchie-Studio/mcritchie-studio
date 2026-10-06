@@ -11,12 +11,12 @@ require_relative "fast_lane"
 # does not move.
 #
 # MEASURED 2026-09-13 on turf #701, stacked on turf #624 while #624 was HELD for a credential
-# rotation: bin/ship retargeted it and the ship stranded (three false refusals from one
+# rotation: bin/submit retargeted it and the ship stranded (three false refusals from one
 # action), and bin/pr-review would have retargeted AND MERGED it — dragging the held change
 # onto `accepted` ahead of the rotation, which is the exact outcome the stack existed to
 # prevent.
 #
-# ONE QUESTION, TWO POLICIES. bin/ship (the builder half) and bin/pr-review (the reviewer
+# ONE QUESTION, TWO POLICIES. bin/submit (the builder half) and bin/pr-review (the reviewer
 # half) ask the same question — #assess — and must not answer IT differently; the reviewer
 # half was filed precisely because the two had drifted for a release. What each caller DOES
 # with the answer is policy, and policy is allowed to differ where the COST does:
@@ -77,7 +77,7 @@ module StackedPr
   # where a test drives it with spies and can assert what was NOT called.
   #
   # AT A MERGE, ANYTHING UNPROVEN REFUSES (/tasks/review-refuses-unread-base). This is REVIEW's
-  # caller, and its answers deliberately INVERT the ones bin/ship gets from #assess:
+  # caller, and its answers deliberately INVERT the ones bin/submit gets from #assess:
   #
   #   ship (calls #assess)     doubt ⇒ REPAIR. A wrongly-retargeted stack is loud and
   #                            recoverable (`gh pr edit <n> --base <parent>`), and ship never

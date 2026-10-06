@@ -30,7 +30,7 @@ and build the whole task, whatever surfaces it touches, and you stop at
 5. Decide deliberately whether the change earns Alex's local look
    (`--local-url` and `--approval waiting`, verified with `bin/verify-review-hop`).
 6. Hand off from the desk, in the background, naming the hub's script:
-   `/Users/alex/projects/mcritchie-studio/bin/ship-wait <slug> --launch -m "<message>"`;
+   `/Users/alex/projects/mcritchie-studio/bin/submit-wait <slug> --launch -m "<message>"`;
    it takes about twelve minutes. Exit 0 means `submitted`.
 7. Report to the session that spawned you: the PR URL, the pre-flight result, the CI
    state, and anything you left undone. It spawns your reviewer.

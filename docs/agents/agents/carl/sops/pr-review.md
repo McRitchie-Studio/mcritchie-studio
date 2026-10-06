@@ -208,7 +208,7 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
   head, which is a deliberate STACK. `bin/pr-review` REFUSES those and names the
   parent: retargeting a stack changes what the PR MERGES without moving its head,
   so `--match-head-commit` cannot see it. Leave the task `submitted` and re-review
-  once the parent lands. `bin/ship` is deliberately the opposite: it repairs on a
+  once the parent lands. `bin/submit` is deliberately the opposite: it repairs on a
   doubt, because it never merges.
 
   A reviewer who finds a zappable defect **fixes it forward**: lease-push a

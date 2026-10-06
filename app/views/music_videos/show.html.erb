@@ -209,6 +209,59 @@
     };
   })();
 
+  // One cast card's title and how much of it shows, rooted on the card (outside
+  // swapCard and namingCard, so every name here is card-prefixed to stay clear of
+  // theirs). The title is the named artist's name, else "Person N", and follows
+  // each naming save (naming-saved) without a reload; Clear or Mark as extra
+  // puts "Person N" back. The description and sightings fold behind the title:
+  // level 0 shows neither; 1 the description and ONE row of the clearly visible
+  // chips, as many as fit, then "+N more"; 2 every chip in both groups.
+  window.castCardDisclosure = function () {
+    return {
+      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0, cardFitSeq: 0,
+      init() {
+        const d = this.$root.dataset;
+        this.cardOrdinal = Number(d.ordinal); this.cardName = d.cardName || "";
+        this.cardClear = Number(d.clearCount) || 0; this.cardPartial = Number(d.partialCount) || 0;
+        this.cardFit = this.cardClear;
+      },
+      cardOnNamed(detail) {
+        if (!detail || detail.ordinal !== this.cardOrdinal) return;
+        this.cardName = detail.named && detail.named.kind === "artist" ? (detail.named.name || "") : "";
+      },
+      cardMore() { return this.cardClear - this.cardFit + this.cardPartial; },
+      cardToggle() {
+        this.cardLevel = this.cardLevel > 0 ? 0 : 1;
+        this.cardFitRow();
+      },
+      cardExpandAll() { this.cardLevel = 2; },
+      // Show every clear chip and let the browser lay them out (two frames, so
+      // the x-show changes are painted), then measure once: keep the chips on
+      // the first line, less any "+N more" would push off it. Re-run on a resize.
+      async cardFitRow() {
+        if (this.cardLevel !== 1) return;
+        const mine = ++this.cardFitSeq; // a newer pass (a resize, a re-open) supersedes this one
+        this.cardFit = this.cardClear;
+        await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+        if (this.cardLevel !== 1 || mine !== this.cardFitSeq) return;
+        const row = document.getElementById("person-" + this.cardOrdinal + "-clear-row");
+        const chips = row ? Array.from(row.querySelectorAll("[data-test='sighting']")) : [];
+        if (chips.length === 0) return;
+        const line = chips[0].getBoundingClientRect().top + 4;
+        const first = chips.filter((c) => c.getBoundingClientRect().top < line);
+        let fit = first.length;
+        if (fit < chips.length || this.cardPartial > 0) {
+          const more = row.querySelector("[data-test='sightings-more']");
+          const moreWidth = (more && more.offsetParent !== null ? more.getBoundingClientRect().width : 72) + 8;
+          const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+          const right = row.getBoundingClientRect().right;
+          while (fit > 1 && first[fit - 1].getBoundingClientRect().right + gap + moreWidth > right) fit--;
+        }
+        this.cardFit = fit;
+      },
+    };
+  };
+
   // The swap on one cast card, rooted over the whole card body: the Replace with
   // search, the chosen athlete and the look picker near the top, and the Keep
   // Original / Swap back button pinned at the bottom. Picking a person is the swap; Keep
@@ -330,164 +383,9 @@
     });
   };
 
-  // One clip row: load the signed clip only when asked, and copy its prompt.
-  window.clipRow = function () {
-    return {
-      open: false, failed: false, copied: false, manual: false,
-      preview() {
-        const player = this.$refs.player;
-        player.src = this.$root.dataset.src;
-        this.open = true;
-        player.play().catch(() => {});
-      },
-      async copy() {
-        const ok = await window.copyText(this.$refs.prompt.textContent.trim());
-        if (ok === false) { this.selectPrompt(); this.manual = true; return; }
-        this.copied = true; this.manual = false;
-        setTimeout(() => { this.copied = false; }, 1400);
-      },
-      selectPrompt() {
-        const range = document.createRange();
-        range.selectNodeContents(this.$refs.prompt);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-      },
-    };
-  };
-
-  // The stitch preview: plays the chunks back to back as if stitched, without
-  // a stitched file. The server sends when each chunk is on screen
-  // (MusicVideos::StitchTimeline: handover at the middle of each overlap) and
-  // the file it plays. The source audio is the clock; the two muted videos
-  // follow it, one on screen and one holding the next chunk ready.
-  window.stitchPreview = function () {
-    return {
-      segments: [], durationMs: 0, t: 0, index: 0, active: 0, playing: false, audioOk: true,
-      frame: null, wallBase: 0, wallAt: 0, failed: [false, false],
-      init() {
-        const data = JSON.parse(this.$root.dataset.timeline);
-        this.segments = data.segments; this.durationMs = data.duration_ms;
-        this.audioOk = !!this.$refs.audio.getAttribute("src");
-        if (this.segments.length) this.show(0);
-      },
-      destroy() { this.pause(); },
-      get now() { return this.segments[this.index] || null; },
-      get missing() { return !!this.now && !this.now.url; },
-      get nowLabel() { return this.now ? "Chunk " + this.now.ordinal + " · " + this.now.label : ""; },
-      fmt(ms) {
-        const s = Math.floor(ms / 1000);
-        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-      },
-      // The video clock in ms: the source audio while it plays, else a timer.
-      clock() {
-        if (this.audioOk) return this.$refs.audio.currentTime * 1000;
-        return this.wallBase + (performance.now() - this.wallAt);
-      },
-      startWall() { this.wallBase = this.t; this.wallAt = performance.now(); },
-      audioFailed() { this.audioOk = false; this.startWall(); },
-      // A video whose file would not load (an expired link, a format the browser cannot play).
-      loadFailed(which) { if ([this.$refs.a, this.$refs.b][which].getAttribute("src")) this.failed[which] = true; },
-      // The last segment that has started by ms.
-      indexAt(ms) {
-        let found = 0;
-        this.segments.forEach((seg, i) => { if (ms >= seg.from_ms) found = i; });
-        return found;
-      },
-      // Point one video at a segment's file, at the frame the clock ms falls on:
-      // the offset comes from the chunk's recorded start, never the file's length.
-      cue(video, seg, ms, exact = false) {
-        if (!seg.url) { video.dataset.ordinal = ""; video.removeAttribute("src"); video.load(); return; }
-        if (video.dataset.ordinal !== String(seg.ordinal)) {
-          video.dataset.ordinal = String(seg.ordinal);
-          this.failed[video === this.$refs.a ? 0 : 1] = false;
-          video.src = seg.url;
-        }
-        let want = Math.max(0, (ms - seg.start_ms) / 1000);
-        if (Number.isFinite(video.duration)) want = Math.min(want, Math.max(0, video.duration - 0.05));
-        // A file shorter than its window has run out: hold its last frame.
-        if (video.ended && want >= video.duration - 0.1) return;
-        const off = Math.abs(video.currentTime - want);
-        if (video.paused || exact) { if (off > 0.03) video.currentTime = want; return; }
-        // Playing: pull a drifting video back onto the clock, at most once a second,
-        // aiming a little ahead to cover the seek itself.
-        const now = performance.now();
-        if (off > 0.2 && !video.seeking && now - Number(video.dataset.syncedAt || 0) > 1000) {
-          video.dataset.syncedAt = String(now);
-          video.currentTime = want + 0.1;
-        }
-      },
-      // Put segment i on screen and load the one after it into the other video.
-      show(i) {
-        const seg = this.segments[i], next = this.segments[i + 1];
-        const pair = [this.$refs.a, this.$refs.b];
-        if (pair[1 - this.active].dataset.ordinal === String(seg.ordinal)) this.active = 1 - this.active;
-        const front = pair[this.active], back = pair[1 - this.active];
-        const handover = i !== this.index;
-        this.index = i;
-        this.cue(front, seg, this.t, handover);
-        back.pause();
-        if (this.playing && seg.url) front.play().catch(() => {});
-        if (next) this.cue(back, next, next.from_ms);
-      },
-      tick() {
-        if (!this.playing) return;
-        this.t = Math.min(this.clock(), this.durationMs);
-        if (this.t >= this.durationMs) { this.pause(); return; }
-        const i = this.indexAt(this.t);
-        if (i !== this.index) this.show(i);
-        else if (this.now.url) this.cue([this.$refs.a, this.$refs.b][this.active], this.now, this.t);
-        this.frame = requestAnimationFrame(() => this.tick());
-      },
-      play() {
-        if (!this.segments.length || this.playing) return;
-        if (this.t >= this.durationMs) this.seek(0);
-        this.playing = true;
-        this.startWall();
-        if (this.audioOk) {
-          this.$refs.audio.currentTime = this.t / 1000;
-          this.$refs.audio.play().catch(() => this.audioFailed());
-        }
-        this.show(this.index);
-        this.frame = requestAnimationFrame(() => this.tick());
-      },
-      pause() {
-        this.playing = false;
-        cancelAnimationFrame(this.frame);
-        this.$refs.audio.pause(); this.$refs.a.pause(); this.$refs.b.pause();
-      },
-      toggle() { this.playing ? this.pause() : this.play(); },
-      seek(ms) {
-        if (!this.segments.length) return;
-        this.t = Math.min(Math.max(0, ms), this.durationMs);
-        if (this.audioOk) this.$refs.audio.currentTime = this.t / 1000;
-        this.startWall();
-        this.show(this.indexAt(this.t));
-      },
-    };
-  };
-
-  // A stitch that is waiting or running: ask the server every few seconds
-  // whether it has moved on, and offer the reload when it has. Never reloads
-  // on its own: the operator may be mid-upload further down the page.
-  window.stitchProgress = function () {
-    return {
-      timer: null, changed: false, lost: false,
-      init() { this.timer = setInterval(() => this.check(), 4000); },
-      destroy() { clearInterval(this.timer); },
-      async check() {
-        try {
-          const resp = await fetch(this.$root.dataset.statusUrl, { headers: { Accept: "application/json" } });
-          if (!resp.ok) throw new Error(String(resp.status));
-          const body = await resp.json();
-          this.lost = false;
-          if (body.state !== this.$root.dataset.state) { this.changed = true; clearInterval(this.timer); }
-        } catch (e) { this.lost = true; }
-      },
-    };
-  };
 </script>
 <%= render "components/copy_text_script" %>
+<%= render "music_videos/player_scripts" %>
 
 <section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="cast-panel">
   <header class="mb-6 min-w-0">
@@ -539,13 +437,20 @@
         <%= named.zero? ? "Nobody" : "#{named} of #{@performers.size}" %> named<%= " (#{@performers.count(&:extra?)} marked extras)" if @performers.any?(&:extra?) %>. Naming is optional: it builds the artist rolodex.
       </span>
     </p>
-    <% if @video.cast_confirmed? %>
-      <span class="badge bg-success/10 text-success-ink border-success/40 text-xs" data-test="cast-confirmed">Cast confirmed</span>
-    <% else %>
-      <%= button_to "Cast confirmed", confirm_cast_music_video_path(@video), method: :post,
-                    class: "btn btn-primary w-full sm:w-auto", disabled: !@video.cast_ready?,
-                    form: { data: { test: "confirm-cast-form" } } %>
-    <% end %>
+    <div class="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0">
+      <% if @video.cast_confirmed? %>
+        <span class="badge bg-success/10 text-success-ink border-success/40 text-xs justify-center" data-test="cast-confirmed">Cast confirmed</span>
+      <% else %>
+        <%= button_to "Cast confirmed", confirm_cast_music_video_path(@video), method: :post,
+                      class: "btn btn-primary w-full sm:w-auto", disabled: !@video.cast_ready?,
+                      form: { data: { test: "confirm-cast-form" } } %>
+      <% end %>
+      <%# Build Clips: the next alt video, from the swaps above as they stand now. %>
+      <%= button_to "Build Clips", music_video_alt_videos_path(@video), method: :post,
+                    class: "btn #{@video.cast_confirmed? ? 'btn-primary' : 'btn-outline'} w-full sm:w-auto", disabled: !@video.can_build_clips?,
+                    title: @video.build_clips_blocker&.upcase_first,
+                    form: { data: { test: "build-clips-form" } } %>
+    </div>
   </div>
 
   <% if @performers.empty? %>
@@ -629,13 +534,13 @@
   <section class="mt-10" data-test="chunks-panel" id="chunks">
     <header class="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1"><%= @video.kind_label %> · Chunks</p>
+        <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Source video · Chunks and alt videos</p>
         <h2 class="text-xl font-bold text-heading">Whole video, in chunks</h2>
         <p class="text-sm text-muted mt-1" data-test="chunks-tiling">
           <% if (tiling = @video.chunk_tiling) %>
             <%= clip_seconds(tiling[:chunk_ms]) %> s chunks on a <%= clip_seconds(tiling[:chunk_ms] - tiling[:overlap_ms]) %> s stride<% if tiling[:overlap_ms].positive? %>, so each shares <%= clip_seconds(tiling[:overlap_ms]) %> s with the one before<% end %>.
           <% end %>
-          Separate from the clip candidates above.
+          Cut once and shared by every alt video. Each alt video swaps them with its own cast: generate, upload and stitch on its page.
         </p>
       </div>
       <% if @chunks.any? %>
@@ -646,14 +551,33 @@
       <% end %>
     </header>
     <% if @chunks.any? %>
-      <%= render "music_videos/stitch_preview", video: @video, chunks: @chunks, stitch: @stitch,
-                 audio_url: @clip_urls[@video.source_object_key] %>
-      <%= render "music_videos/full_video", video: @video, chunks: @chunks, stitches: @stitches, urls: @stitch_urls,
-                 downloads: @stitch_downloads, here: @stitch_here %>
-      <div class="flex flex-col gap-4">
+      <ol class="flex flex-wrap gap-1.5 mb-4" data-test="chunk-windows">
         <% @chunks.each do |chunk| %>
-          <%= render "music_videos/chunk", chunk: chunk, video: @video, clip_urls: @clip_urls,
-                     downloads: @chunk_downloads, sheets: @recast_sheets, overlap_ms: @video.chunk_overlap_ms.to_i %>
+          <li class="badge text-xs bg-surface-alt text-body border-subtle font-mono tabular-nums" data-test="chunk-window" data-ordinal="<%= chunk.ordinal %>">
+            <%= chunk.ordinal %> · <%= video_timecode(chunk.start_ms) %>–<%= video_timecode(chunk.end_ms) %>
+          </li>
+        <% end %>
+      </ol>
+      <div class="card p-4 flex flex-col gap-3 min-w-0" data-test="source-alt-videos" data-count="<%= @alt_videos.size %>">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0">
+          <p class="label-upper">Alt videos of this source</p>
+          <%= link_to "All alt videos", alt_videos_path, class: "text-sm text-primary hover:underline", data: { test: "alt-videos-index-link" } %>
+        </div>
+        <% if @alt_videos.empty? %>
+          <p class="text-sm text-muted" data-test="source-alt-videos-none">None yet. Build Clips (above, beside Cast confirmed) makes alt video 1 from the swaps as they stand.</p>
+        <% else %>
+          <ul class="flex flex-col gap-2">
+            <% @alt_videos.each do |alt| %>
+              <% with_primary, total = alt.progress %>
+              <li class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 min-w-0 text-sm" data-test="source-alt-video" data-number="<%= alt.number %>">
+                <span class="min-w-0 break-words">
+                  <%= link_to alt.name, music_video_alt_video_path(@video, alt), class: "font-semibold text-primary hover:underline" %>
+                  <span class="text-muted">· <%= alt.swaps_summary %></span>
+                </span>
+                <span class="text-body shrink-0"><%= with_primary %> of <%= total %> clips with a primary<% if alt.latest_stitch %> · <%= alt.latest_stitch.name.downcase %><% end %></span>
+              </li>
+            <% end %>
+          </ul>
         <% end %>
       </div>
     <% else %>

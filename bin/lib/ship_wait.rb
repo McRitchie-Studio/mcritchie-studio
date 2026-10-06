@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# bin/lib/ship_wait.rb — the decision logic behind `bin/ship-wait`.
+# bin/lib/ship_wait.rb — the decision logic behind `bin/submit-wait`.
 #
 # ONE job: given the text of a ship LOG and one boolean saying whether the run
 # has ENDED, return a verdict — `:succeeded`, `:failed`, or `:running`. Every
@@ -8,11 +8,11 @@
 # assert the rule directly instead of inferring it from a wall-clock.
 #
 # THE DEFECT THIS EXISTS TO KILL (task ship-wait-has-no-primitive, 2026-09-09).
-# `bin/ship` runs ~12 minutes now that it waits for CI, the docs say "run it in
+# `bin/submit` runs ~12 minutes now that it waits for CI, the docs say "run it in
 # the background", and there they stop. So every builder invents a watcher, and
 # the obvious invention cannot fire:
 #
-#     while pgrep -f "bin/ship <slug>" >/dev/null; do sleep 30; done
+#     while pgrep -f "bin/submit <slug>" >/dev/null; do sleep 30; done
 #
 # The loop's OWN command line contains the string it greps for. Measured across
 # one session: one builder left 30+ orphaned shells this way and fell back to
@@ -28,7 +28,7 @@
 # SIBLING: a second watcher started while the first still runs, or a single
 # orphan left behind by an earlier attempt. Then each shell's argv carries the
 # pattern the other greps for, both conditions are true forever, and neither can
-# ever exit — with `bin/ship` not running at all. Reproduced with two concurrent
+# ever exit — with `bin/submit` not running at all. Reproduced with two concurrent
 # shells: both reported the condition still TRUE after six polls against no ship.
 # That is why the orphan count in the report is not incidental colour. It is the
 # fuel: the first watcher a session starts looks like it works, and every one
@@ -39,7 +39,7 @@
 # launcher appends to the log — never from `pgrep`/`pkill`/`ps | grep`. A pattern
 # that can match a sibling is the whole disease.
 #
-# AND ENDED IS NOT FAILED. `bin/ship` can exit 0 on a run that did not reach the
+# AND ENDED IS NOT FAILED. `bin/submit` can exit 0 on a run that did not reach the
 # seam, so process absence proves nothing about OUTCOME. The authoritative fact is
 # a line ship prints only after its own end-to-end read-back verify:
 #
@@ -49,12 +49,12 @@
 # WHEN to stop waiting. An exit status is never consulted for the verdict — it is
 # relayed to the reader and nothing more.
 module ShipWait
-  # bin/ship's final stdout line, printed only after the read-back verify passes
-  # (bin/ship's last `puts`). The one string that means "this ship reached the
+  # bin/submit's final stdout line, printed only after the read-back verify passes
+  # (bin/submit's last `puts`). The one string that means "this ship reached the
   # submitted seam". Nothing else in ship's output is terminal-and-positive.
   SUCCESS_LINE = "stage: submitted (read back verified)"
 
-  # The marker `bin/ship-wait --launch` appends to the log after the ship process
+  # The marker `bin/submit-wait --launch` appends to the log after the ship process
   # exits. It makes the LOG self-sufficient: a wait attaching later — a new
   # session, a re-run after the harness killed the first watcher — reads a
   # terminal state without needing the process to still exist, or a PID at all.
@@ -79,7 +79,7 @@ module ShipWait
   module_function
 
   # Did this ship reach the seam? Exact-line, not a substring: the phrase also
-  # appears in bin/ship's own header comment and in these docs, and a watcher
+  # appears in bin/submit's own header comment and in these docs, and a watcher
   # that greps its own documentation is the same class of bug as one that greps
   # its own command line.
   def succeeded?(text)

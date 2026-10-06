@@ -70,7 +70,9 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='clips-locked']"
   end
 
-  # [component] the chunk list on the page: in time order, apart from the candidates.
+  # [component] the chunk list on the page: in time order, apart from the
+  # candidates, shrunk to its windows and the source's alt videos (piece 13:
+  # each chunk's hand-off and generated versions live on the alt video page).
   test "a tiled video lists its chunks in time order, apart from the clip candidates" do
     video = TiledVideo.seed!
     log_in_as users(:alex)
@@ -79,16 +81,14 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test='video-kind']", "Cinematic video · Cast"
     assert_select "[data-test='clips-panel'] [data-test='clip-row']", 1
-    assert_select "[data-test='clips-panel'] [data-test='chunk-row']", 0
+    assert_select "[data-test='clips-panel'] [data-test='chunk-window']", 0
     assert_select "[data-test='cast-panel'] [data-test='chunks-panel'] [data-test='clip-row']", 0
-    assert_equal %w[1 2 3 4], css_select("[data-test='chunks-panel'] [data-test='chunk-row']").map { |row| row["data-ordinal"] }
+    assert_equal %w[1 2 3 4], css_select("[data-test='chunks-panel'] [data-test='chunk-window']").map { |row| row["data-ordinal"] }
     assert_equal ["0:00–0:25", "0:20–0:45", "0:40–1:05", "1:00–1:12"],
-                 css_select("[data-test='chunk-window']").map { |w| w.text.strip[/\A\S+/] }
-    assert_select "[data-test='chunk-row'][data-ordinal='4'][data-src*='tiled_demo_chunk_04_0100_0112.mp4'][data-src*='X-Amz-Signature']"
+                 css_select("[data-test='chunk-window']").map { |w| w.text.strip[/\S+\z/] }
     assert_select "[data-test='chunks-count']", /4 chunks\s+· 0:00–1:12/
-    assert_select "[data-test='chunk-prompt']", 4
     assert_select "[data-test='chunks-tiling']", /25 s chunks on a 20 s stride, so each shares 5 s with the one before\./
-    assert_select "[data-test='chunk-overlap']", 3
+    assert_select "[data-test='source-alt-videos'][data-count='0'] [data-test='alt-videos-index-link'][href='/alt_videos']"
     assert_select "[data-test='clips-approved-count']", /0 of 1/
   end
 
@@ -112,8 +112,8 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     get music_video_path(video)
 
     assert_select "[data-test='chunks-tiling']", /15 s chunks on a 10 s stride, so each shares 5 s with the one before\./
-    assert_select "[data-test='chunk-row']", 7
-    assert_select "[data-test='chunk-row'][data-ordinal='2'] [data-test='chunk-window']", /0:10–0:25\s+· 15\.0 s/
+    assert_select "[data-test='chunk-window']", 7
+    assert_select "[data-test='chunk-window'][data-ordinal='2']", /0:10–0:25/
   end
 
   test "a chunk cannot be approved: the decision route reaches candidates only" do
@@ -140,9 +140,10 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='chunks-locked']", false, "chunks no longer wait for the cast"
   end
 
-  # bin/digest-video cuts the chunks before anyone is cast: the page lists them,
-  # with the hand-off and the generic prompt, while the cast still waits.
-  test "an unconfirmed video lists the chunks the digest cut, generic prompt and all" do
+  # bin/digest-video cuts the chunks before anyone is cast: the page lists them
+  # while the cast still waits, and Build Clips stays off until the confirm
+  # (the hand-off and the prompt live on an alt video's clip cards).
+  test "an unconfirmed video lists the chunks the digest cut, with Build Clips off" do
     video = NightCallCast.seed!
     video.update!(duration_ms: 30_000)
     rows = MusicVideos::ChunkTiler.windows(30_000).map do |w|
@@ -155,9 +156,8 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-test='video-stage']", "Digested"
-    assert_select "[data-test='chunk-row']", 2
-    assert_select "[data-test='chunk-take-state']", /No take yet/
+    assert_select "[data-test='chunk-window']", 2
     assert_select "[data-test='chunks-empty']", false
-    assert_includes response.body, ERB::Util.html_escape(MusicVideos::ClipPrompt.fill(target: nil))
+    assert_select "[data-test='build-clips-form'] button[disabled][title='Confirm the cast first']", "Build Clips"
   end
 end

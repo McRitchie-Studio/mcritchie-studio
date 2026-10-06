@@ -355,7 +355,7 @@ class TaskBoardTest < Minitest::Test
 
   # ── [unit] handed_token: the bearer a parent process passes down ────────────
   #
-  # bin/ship mints ONE token per run and exports it in AGENT_API_TOKEN; each
+  # bin/submit mints ONE token per run and exports it in AGENT_API_TOKEN; each
   # child CLI's `token` helper asks here before minting its own. The reader is
   # the whole seam, so its three answers are pinned: a value, a blank, an absence.
 
@@ -394,7 +394,7 @@ class TaskBoardTest < Minitest::Test
   def test_integration_mint_token_is_nil_when_the_board_answers_without_a_token
     with_stub_server(status: "401 Unauthorized", payload: '{"error":"bad secret","error_code":"UNAUTHORIZED"}') do |port, _|
       assert_nil TaskBoard.mint_token(base_url: "http://127.0.0.1:#{port}", secret: "wrong"),
-                 "a refusal is nil, not a raise — the caller (bin/ship) degrades to per-child mints"
+                 "a refusal is nil, not a raise — the caller (bin/submit) degrades to per-child mints"
     end
     with_stub_server(payload: "<html>502</html>") do |port, _|
       assert_nil TaskBoard.mint_token(base_url: "http://127.0.0.1:#{port}", secret: "s"),

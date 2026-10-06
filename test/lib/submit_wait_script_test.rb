@@ -1,19 +1,19 @@
 # frozen_string_literal: true
 
-# [integration] Harness tests for bin/ship-wait — the REAL script, shelled via
+# [integration] Harness tests for bin/submit-wait — the REAL script, shelled via
 # Open3 against a throwaway state directory and a stub ship (house pattern:
-# test/lib/ship_test.rb, test/lib/fast_check_test.rb).
+# test/lib/submit_test.rb, test/lib/fast_check_test.rb).
 #
 # THE POINT OF THIS FILE, stated so nobody weakens it later. A watcher test that
 # asserts "it waits" PASSES ON A WATCHER THAT WAITS FOREVER, and waiting forever
 # is the exact defect (task ship-wait-has-no-primitive: five builders reinvented
-# `while pgrep -f "bin/ship <slug>"`, whose condition can never go false once a
+# `while pgrep -f "bin/submit <slug>"`, whose condition can never go false once a
 # sibling shell carries the pattern). So every test here proves the watcher
 # **FIRES** — it returns, within a wall-clock bound, with the right code:
 #
 #   * against an ALREADY-FINISHED ship, it returns at once (the case the naive
 #     loop gets most wrong);
-#   * with a DECOY sibling process whose command line carries `bin/ship <slug>`,
+#   * with a DECOY sibling process whose command line carries `bin/submit <slug>`,
 #     it STILL returns at once — a process-table pattern would match that decoy
 #     and hang;
 #   * against a ship that exited 0 having never reached the seam, it returns
@@ -25,7 +25,7 @@
 # discriminator, not decoration.
 #
 # Run directly:
-#   ruby -Itest test/lib/ship_wait_script_test.rb
+#   ruby -Itest test/lib/submit_wait_script_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
@@ -36,8 +36,8 @@ require_relative "../support/session_env"
 require_relative "../support/outbound_seams"
 require_relative "../../bin/lib/ship_wait"
 
-class ShipWaitScriptTest < Minitest::Test
-  BIN = File.expand_path("../../bin/ship-wait", __dir__)
+class SubmitWaitScriptTest < Minitest::Test
+  BIN = File.expand_path("../../bin/submit-wait", __dir__)
   LIB = File.expand_path("../../bin/lib/ship_wait.rb", __dir__)
   SLUG = "ship-wait-demo"
   SUCCESS = ShipWait::SUCCESS_LINE
@@ -87,7 +87,7 @@ class ShipWaitScriptTest < Minitest::Test
     [out, err, status.exitstatus, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started]
   end
 
-  # A stand-in for bin/ship: sleeps, prints, exits with a chosen code.
+  # A stand-in for bin/submit: sleeps, prints, exits with a chosen code.
   def stub_ship(dir, prints:, exits: 0, sleeps: 0)
     path = File.join(dir, "ship-stub")
     File.write(path, <<~SH)
@@ -106,14 +106,14 @@ class ShipWaitScriptTest < Minitest::Test
   # deadlock happens: the orphans from earlier attempts keep every later watcher
   # alive.
   #
-  # THE BODY MUST BE COMPOUND. `sh -c 'sleep 30 # bin/ship <slug>'` is a SIMPLE
+  # THE BODY MUST BE COMPOUND. `sh -c 'sleep 30 # bin/submit <slug>'` is a SIMPLE
   # command, so sh execs `sleep` and REPLACES ITSELF — the pattern vanishes from
   # the process table and the decoy proves nothing. That is not a hypothetical:
   # the first cut of this fixture did exactly that, and mutation A (pgrep put
   # back) left this test GREEN. A loop keeps the shell, and therefore its argv,
   # alive. `assert_decoy_carries_the_pattern` re-checks it every run.
   def spawn_decoy(slug = SLUG)
-    pid = Process.spawn("/bin/sh", "-c", "n=0; while [ $n -lt 300 ]; do n=$((n+1)); sleep 0.1; done # bin/ship #{slug}",
+    pid = Process.spawn("/bin/sh", "-c", "n=0; while [ $n -lt 300 ]; do n=$((n+1)); sleep 0.1; done # bin/submit #{slug}",
                         out: File::NULL, err: File::NULL)
     @decoys << pid
     sleep 0.3 # let it land in the process table before the wait looks
@@ -123,7 +123,7 @@ class ShipWaitScriptTest < Minitest::Test
   # The fixture's own precondition, asserted rather than assumed.
   def assert_decoy_carries_the_pattern(pid, slug = SLUG)
     argv = IO.popen(["ps", "-o", "command=", "-p", pid.to_s], &:read).to_s
-    assert_includes argv, "bin/ship #{slug}",
+    assert_includes argv, "bin/submit #{slug}",
       "the decoy must really carry the pattern in its argv, or this test proves nothing"
   end
 
@@ -152,11 +152,11 @@ class ShipWaitScriptTest < Minitest::Test
       _out, err, code, elapsed = run_wait(dir, [SLUG, *BOUNDED])
 
       assert_equal ShipWait::EXIT_FAILED, code,
-        "bin/ship EXITS 0 ON FAILURE — the verdict must come from the log. stderr:\n#{err}"
+        "bin/submit EXITS 0 ON FAILURE — the verdict must come from the log. stderr:\n#{err}"
       assert_operator elapsed, :<, FAST_S, "took #{elapsed.round(2)}s"
       assert_match(/FAILED/, err)
       assert_match(/dor-check refused/, err, "the failure relays ship's own last line")
-      assert_match(/re-run bin\/ship #{SLUG}/, err, "the refusal names the remedy")
+      assert_match(/re-run bin\/submit #{SLUG}/, err, "the refusal names the remedy")
     end
   end
 
@@ -268,7 +268,7 @@ class ShipWaitScriptTest < Minitest::Test
       _out, err, code, = run_wait(dir, launch, extra_env: { "SHIP_WAIT_SHIP_BIN" => ship })
       assert_equal ShipWait::EXIT_USAGE, code, "a second concurrent ship on one task races the same PR"
       assert_match(/ALREADY RUNNING/, err)
-      assert_match(/bin\/ship-wait #{SLUG}/, err, "the refusal names the attach command")
+      assert_match(/bin\/submit-wait #{SLUG}/, err, "the refusal names the attach command")
     end
   end
 

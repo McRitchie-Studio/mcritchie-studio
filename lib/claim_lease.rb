@@ -3,7 +3,7 @@
 require "time"
 
 # RETIRED FOR THE BUILD CLAIM (devops-v3 piece 4b-i): the desk is the build claim
-# (bin/lib/desk_claim.rb), so bin/task and bin/ship no longer write or read this
+# (bin/lib/desk_claim.rb), so bin/task and bin/submit no longer write or read this
 # lease, and a build task's claim keys are absent. Readers treat absent as
 # unclaimed. This module stays for the leases that still use it (review, release
 # conductor, devops shift) and for the archive holder guard.
@@ -46,7 +46,7 @@ module ClaimLease
   # the mistake this paragraph exists to stop. Until 2026-09-09 the build claim was
   # renewed ONLY by bin/statusline, which runs when Claude Code PAINTS. A HEADLESS
   # AGENT SHELL PAINTS NOTHING, so a headless build renewed nothing and ran unclaimed
-  # from two minutes in — while a cold `bin/ship` takes ~12 minutes BY DESIGN
+  # from two minutes in — while a cold `bin/submit` takes ~12 minutes BY DESIGN
   # (gate-submit-on-green-ci waits for CI). Measured that night: one task lapsed ~2
   # minutes after `begin`, was adopted by a second session, and its builder had to
   # `--steal` his own task back; another was found lapsed 8.6 HOURS while its PR sat

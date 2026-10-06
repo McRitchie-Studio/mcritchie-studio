@@ -172,7 +172,7 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    board itself cannot mint a session for another server, which is why it hands
    off instead of minting. It refuses any `local_url` that is not loopback.
 5. If Alex approves, finish DoR, commit, push, open the PR, and hand off.
-   If he has not answered yet, hand off anyway — `bin/ship` carries the request
+   If he has not answered yet, hand off anyway — `bin/submit` carries the request
    into `submitted` and the card keeps pulsing in the review column.
 6. If changes are requested, set `--approval changes_requested` and keep the task
    in `building` until the next validation packet is ready.
@@ -195,7 +195,7 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
 
    **The seam used to sit at `submitted`, and that was the bug** (fixed
    2026-09-09). The documented flow above tells a builder to ask before the PR,
-   and the documented `bin/ship` then discarded the request on its move to
+   and the documented `bin/submit` then discarded the request on its move to
    `submitted` — measured three times in one night, on turf PRs 644, 647 and 653.
    Following the docs produced the discard every time, and the pulse is the only
    mechanism that asks for Alex's attention at all.
@@ -513,7 +513,7 @@ Supported fields:
 | `branch` | The feature branch, opened as a PR into `accepted`. Every repo keeps persistent `accepted` and `release` branches (same names everywhere): review lands feature PRs on `accepted`; `release` is the QA candidate. |
 | `pr_url` | GitHub PR URL |
 | `local_url` | Worktree review URL, rendered as the `Local Demo` card button |
-| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`. `waiting` floats and pulses the card, and is legal wherever the local demo it points at can still be served: `designed`, `building` and `submitted`. **Asking for it at `reviewed` or later is REFUSED** — a 422 naming the stage and the value, so `bin/task update <task> --approval waiting` exits NON-ZERO there instead of reporting success for a write that reaches nothing. Ask before the work merges; a request set at `building` SURVIVES `bin/ship` and keeps pulsing through review (fixed 2026-09-09 — the seam used to sit at `submitted`, so the documented ship discarded it). A `waiting` request the task carries into `reviewed` never blocks the merge; it settles to `none` (never a fabricated `approved`) and the board posts a comment on the task addressed to whoever asked, saying the work merged with the request unanswered — a state-machine settle, not a request. `--approval approved` and `--approval changes_requested` stay legal at every stage, so a decision the operator gave in words is always recordable |
+| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`. `waiting` floats and pulses the card, and is legal wherever the local demo it points at can still be served: `designed`, `building` and `submitted`. **Asking for it at `reviewed` or later is REFUSED** — a 422 naming the stage and the value, so `bin/task update <task> --approval waiting` exits NON-ZERO there instead of reporting success for a write that reaches nothing. Ask before the work merges; a request set at `building` SURVIVES `bin/submit` and keeps pulsing through review (fixed 2026-09-09 — the seam used to sit at `submitted`, so the documented ship discarded it). A `waiting` request the task carries into `reviewed` never blocks the merge; it settles to `none` (never a fabricated `approved`) and the board posts a comment on the task addressed to whoever asked, saying the work merged with the request unanswered — a state-machine settle, not a request. `--approval approved` and `--approval changes_requested` stay legal at every stage, so a decision the operator gave in words is always recordable |
 | `approval_requested_at` | Server-stamped ISO8601 timestamp when approval first enters `waiting` |
 | `approval_request_dropped_at` | Server-stamped ISO8601 timestamp of the LAST time a pending `waiting` request was discarded by a save past the request stages. **Merging destroys a pending request** — a request that survived the handoff is settled to `none` when review moves the task to `reviewed`. That is deliberate (the work has merged and the desk serving the local demo is reclaimable, so the request points at a page nobody can open), but it used to be silent, so the agent believed it had asked and nobody had been. Until 2026-09-09 the HANDOFF dropped it too, which is the defect this row previously described. `bin/task move` prints a loud warning naming the discarded request, and this stamp is the durable receipt it compares. The warning asks whether **THIS move** dropped it — the request read `waiting` going in and the destination cannot hold one, or this stamp moved across the write — never how OLD the stamp is. So a move **into** `designed`/`building`/`submitted` (a rework resume, `bin/task begin <slug> --steal`, or the ship handoff, which no longer drops anything) is silent, one drop is announced exactly once, and a re-run of a move past the window does not re-announce it. Unknowns resolve to warning wherever either half can still see the drop — an unreadable pre-read is announced by the stamp moving. It is SILENT on a real drop only when NEITHER half sees it: the pre-read did not show `waiting` (the board was unreadable, or a writer set it after the read) **and** the stamp reads the same on both sides of the write (the board is too old to write one at all, or the fresh stamp renders in the same second as the last). Those states are indistinguishable to the CLI from a move that dropped nothing, and after the move `approval_status` reads `none` either way — so a quiet move is weak evidence, never a receipt. **Get the operator's eyes BEFORE the work merges** |
 | `approval_requested_by` | Server-stamped soul slug of whoever FIRST opened the request: the write's soul actor, else `built_by`, `persona`, or the assignee. Blank when none is a known soul, never a session id. A caller-supplied value wins, and a re-request keeps the first setter. The settle's note at `reviewed` is addressed to this soul |
@@ -637,7 +637,7 @@ During handoff, the agent updates:
 - a `handoff` note on the task conversation summarizing what changed, what was
   verified, and what the reviewer should inspect first
 
-## Fast Lane: `bin/task begin` and `bin/ship`
+## Fast Lane: `bin/task begin` and `bin/submit`
 
 Two orchestration wrappers collapse the cycle's bookends into one command each.
 **They are the default path for a single-repo task** — the entry docs
@@ -693,27 +693,27 @@ cd <desk>                            # the worktree begin printed
 ```
 
 **Both halves of that are load-bearing, and `begin` now prints them for you.**
-The PATH picks the script: every fast-lane script — `bin/task`, `bin/ship`,
+The PATH picks the script: every fast-lane script — `bin/task`, `bin/submit`,
 `bin/fast-check`, `bin/dor-check` — lives in
-mcritchie-studio/bin ALONE, so a bare `bin/ship` on a turf-monster or rolio desk
-dies as `nohup: bin/ship: No such file or directory`. The CWD picks the TREE the
-script acts on — and `bin/ship` does **not refuse** a foreign root. It roots at the
+mcritchie-studio/bin ALONE, so a bare `bin/submit` on a turf-monster or rolio desk
+dies as `nohup: bin/submit: No such file or directory`. The CWD picks the TREE the
+script acts on — and `bin/submit` does **not refuse** a foreign root. It roots at the
 cwd's git toplevel and then **re-roots at the task's desk, loudly** (`re-rooting at
-the task worktree … (you ran from …)`, `bin/ship`'s `--- rooting ---` block),
+the task worktree … (you ran from …)`, `bin/submit`'s `--- rooting ---` block),
 running every gate `chdir`'d there; it dies only when no desk resolves on disk.
 Stand in the desk anyway, for the two reasons that are NOT a refusal by ship: a
 re-root is a correction you have to notice and trust rather than the tree you
 chose, and the pre-flight you run by hand afterwards — `bin/fast-check` —
 refuses ANY foreign root outright (`this run roots at … which is not <slug>'s
-tree — refusing to run against it`). `bin/ship` dies with that
+tree — refusing to run against it`). `bin/submit` dies with that
 same text when no desk resolves; it never refuses a root it can re-root from.
 `bin/task begin` closes by printing the resolved `cd <desk> && <absolute
-bin/ship> <task-slug>` line, ready to paste — a hub desk ships its own `bin/`, so
+bin/submit> <task-slug>` line, ready to paste — a hub desk ships its own `bin/`, so
 there it names the desk's script; a satellite desk has none, so there it names
 the hub's.
 
 **Both wrappers talk to GitHub, and that credential expires ~hourly BY DESIGN.**
-`bin/ship` pushes, opens the PR, and polls `gh pr checks`; `begin`'s preflight
+`bin/submit` pushes, opens the PR, and polls `gh pr checks`; `begin`'s preflight
 reads PR state. When one of those refuses — `Bad credentials`, a 401/403, an
 unreadable CI, a `gh auth login` prompt — it is **yours to fix, and NOT an
 escalation to Alex**: run `eval "$(bin/gh-auth-refresh --export)"`, read
@@ -725,7 +725,7 @@ keyring it would write to, so the one step that looks like the fix is refused
 outright and would repair the wrong store anyway. Architecture, the two lane
 identities, and a symptom→fix table: [`source-control.md`](source-control.md).
 
-Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
+Run `bin/submit` from the task worktree (elsewhere it re-roots at the worktree,
 loudly). Before its first side effect it enforces the two handoff-seam guards
 the child gates don't own: the task must be `building` (or `submitted` — a
 resume; a `designed` task is sent back through `bin/task begin`), and the
@@ -779,7 +779,7 @@ point:
   can be 100% sleep and 0% read. `settle` times the probe; whatever the measured read
   does not account for is named as unbounded wall-clock rather than blamed on `gh`.
   A read the TOKEN was refused (`unreadable`, a 401/403) settles at once — waiting
-  cannot mend a credential — and `bin/ship` points at `bin/gh-auth-refresh` for it,
+  cannot mend a credential — and `bin/submit` points at `bin/gh-auth-refresh` for it,
   not only for the gh/network fault a re-run may clear on its own.
 - **An unknown state settles.** `CiStatus`'s state list may grow; a state the wait
   has never heard of degrades to the behaviour that predates it, never to an
@@ -788,19 +788,19 @@ point:
 `SHIP_CI_WAIT=off` disarms it. Note the wait lives in the **wrapper**: a hand-run
 `bin/task move <slug> submitted` still does not wait, and `bin/dor-check`'s own
 semantics are untouched. Owned by `bin/lib/ci_wait.rb`; the rule is proven in
-`test/lib/ci_wait_test.rb` and its presence on the path in `test/lib/ship_test.rb`.
+`test/lib/ci_wait_test.rb` and its presence on the path in `test/lib/submit_test.rb`.
 
-### Waiting for a backgrounded ship — `bin/ship-wait`
+### Waiting for a backgrounded ship — `bin/submit-wait`
 
-The CI wait makes a cold `bin/ship` a **~12-minute** command, so **run it in the
-background — and wait for it with `bin/ship-wait`**. That sentence used to stop
+The CI wait makes a cold `bin/submit` a **~12-minute** command, so **run it in the
+background — and wait for it with `bin/submit-wait`**. That sentence used to stop
 one clause earlier, and the gap cost real time: five builders in one session each
 filled it with the same watcher, and it cannot fire.
 
 ```bash
-bin/ship-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
-bin/ship-wait <task-slug>                                # attach to one already running
-bin/ship-wait <task-slug> --log <path> --pid <pid>       # attach to one you launched yourself
+bin/submit-wait <task-slug> --launch -m "Commit message"   # start the ship, then block
+bin/submit-wait <task-slug>                                # attach to one already running
+bin/submit-wait <task-slug> --log <path> --pid <pid>       # attach to one you launched yourself
 ```
 
 **Run the fixed-path copy, not the hub primary's.** The hub primary is a checkout
@@ -815,7 +815,7 @@ production ship runs from the tree it just shipped, installs the fast-lane tooli
 to `/Users/alex/projects/.agents/tooling/<sha>/` and atomically swaps the symlink
 `/Users/alex/projects/.agents/bin` onto it. Nothing checks that directory out, and
 the installed scripts still act on the desk you stand in. So name
-`/Users/alex/projects/.agents/bin/ship-wait`, from any desk, hub or satellite. The
+`/Users/alex/projects/.agents/bin/submit-wait`, from any desk, hub or satellite. The
 hub's absolute path stays a working fallback for one release. The desk-handoff
 re-exec (`MCR_SKIP_DESK_HANDOFF`) and the hub-move diagnosis that used to paper over
 the window are deleted.
@@ -825,7 +825,7 @@ the window are deleted.
 | Code | Means | Do |
 |------|-------|----|
 | `0` | SUCCEEDED — the log carries `stage: submitted (read back verified)` | hand off |
-| `1` | FAILED — the run ended without that line | read the log, re-run `bin/ship` (it resumes) |
+| `1` | FAILED — the run ended without that line | read the log, re-run `bin/submit` (it resumes) |
 | `2` | TIMEOUT — still running when `--timeout` elapsed | nothing is wrong; wait again |
 | `3` | USAGE — bad invocation, or a ship for that slug is already running | read the refusal |
 | `4` | NO LOG — nothing to watch, and `--launch` was not given | `--launch`, or point `--log` at your redirect |
@@ -833,9 +833,9 @@ the window are deleted.
 **Four properties, and each one is a mistake somebody already made:**
 
 - **It never matches itself.** There is no `pgrep`, `pkill` or `ps` scrape in
-  `bin/ship-wait` or `bin/lib/ship_wait.rb`. Liveness is a PID captured at launch
+  `bin/submit-wait` or `bin/lib/ship_wait.rb`. Liveness is a PID captured at launch
   (`Process.kill(0, pid)`) or a sentinel line the launcher appends to the log.
-  The reinvention — `while pgrep -f "bin/ship <slug>"; do sleep 30; done` — is
+  The reinvention — `while pgrep -f "bin/submit <slug>"; do sleep 30; done` — is
   immortal, and the mechanism is worth stating exactly, because the folk version
   is half wrong. On macOS `pgrep` excludes **itself and its ancestors** by
   default, so a LONE watcher does exit; the deadlock needs a **sibling** — a
@@ -845,13 +845,13 @@ the window are deleted.
   agents waking repeatedly to report "still pending". Each wake-up costs a turn
   in the builder's session AND one in the orchestrator's.
 - **The LOG holds the verdict — not the process table, and not the exit code.**
-  `bin/ship` can exit 0 on a run that never reached the seam, so "the process is
+  `bin/submit` can exit 0 on a run that never reached the seam, so "the process is
   gone" answers WHEN to stop waiting and never WHAT happened. The authoritative
   fact is ship's own post-read-back line, `stage: submitted (read back
   verified)`, matched whole rather than as a substring.
 - **Already-done returns AT ONCE.** The first read happens before the first
   sleep. This is the case the naive loop gets most wrong, and the case
-  `test/lib/ship_wait_script_test.rb` pins with a wall-clock bound — because a
+  `test/lib/submit_wait_script_test.rb` pins with a wall-clock bound — because a
   test that only asserts "it waits" passes on a watcher that waits forever.
 - **It is bounded** (`--timeout`, default 1800s; `--interval`, default 10s,
   floored at 1). A wait that can hang forever is the same defect in a new shape.
@@ -866,15 +866,15 @@ It has to: a stale sentinel left in place would make the very first read
 terminal, and the fast path would credit the OLD run's verdict to the new ship,
 instantly and wrongly.
 
-**It does not wait on CI, deliberately.** `bin/ship` already does, through
+**It does not wait on CI, deliberately.** `bin/submit` already does, through
 `bin/lib/ci_wait.rb`, which keys on `CiStatus`'s **named** states and knows that
 an ABSENT check is not a PENDING one. A second CI wait here would be a second
 copy of that allow-list, and the two would drift the first time either grew a
 state. Waiting for the ship subsumes waiting for its CI.
 
-Owned by `bin/lib/ship_wait.rb` (the decision rules) and `bin/ship-wait` (the
+Owned by `bin/lib/ship_wait.rb` (the decision rules) and `bin/submit-wait` (the
 CLI); proven in `test/lib/ship_wait_test.rb` (unit) and
-`test/lib/ship_wait_script_test.rb` (the real script, including a decoy sibling
+`test/lib/submit_wait_script_test.rb` (the real script, including a decoy sibling
 process that a pattern-based watcher would hang on).
 
 With the PR open, ship asks two questions of the sibling PRs in **one**
@@ -888,15 +888,15 @@ keeps its copy, the other drops it. Ship refuses to move the task to `submitted`
 until it is resolved. Both checks also run at `bin/session-preflight`, where the
 migration one adds a local leg (the base ref) that needs no GitHub at all.
 
-**Limits, stated plainly.** `bin/ship` stops at the `submitted` seam — it never
+**Limits, stated plainly.** `bin/submit` stops at the `submitted` seam — it never
 merges, never deploys, never touches `release`/`main`. It has **no `--steal` of
 its own**; takeover is `bin/task begin <task-slug> --steal`, then ship — and
 only against a **builder**, never against a live review. Neither
-wrapper writes your tests. And `bin/ship` is **not** `bin/release ship`: despite
+wrapper writes your tests. And `bin/submit` is **not** `bin/release ship`: despite
 the name collision, `bin/release ship` is the **G4 production deploy**
-(`release → main`, ship-authority only), while `bin/ship#BASE_BRANCH` pins
+(`release → main`, ship-authority only), while `bin/submit#BASE_BRANCH` pins
 it to `accepted` and halts at `submitted`. The collision is fail-safe in
-the dangerous direction — reaching for `bin/ship` when you meant production does
+the dangerous direction — reaching for `bin/submit` when you meant production does
 strictly less — but it has already caused one false alarm in a review brief, so
 name the distinction rather than assume it.
 
@@ -1181,7 +1181,7 @@ Never commit webhook URLs.
 A task is claimed while a desk bound to it exists on this machine: a worktree
 whose `.agent-context.json` names the task (`bin/agent-worktree holder <slug>`
 lists them). There is no lease, no TTL and no renewer. `bin/task move <slug>
-building`, `bin/task begin <slug>` and `bin/ship` refuse in exactly one case: a
+building`, `bin/task begin <slug>` and `bin/submit` refuse in exactly one case: a
 **different live session's** desk is bound to the task **and** has uncommitted
 changes. The refusal names that desk; `--steal` on `move` or `begin` claims over it
 and leaves its files on disk. Every other case claims freely, and the focus session
@@ -1304,10 +1304,10 @@ bump from the task's `kind`.
 ## Remedy hints name a command you can actually run
 
 **Every command a fast-lane script tells you to run is an absolute path.** When
-`bin/ship`, `bin/fast-check` or `bin/dor-check` refuses
+`bin/submit`, `bin/fast-check` or `bin/dor-check` refuses
 and hands you a next move, the line it prints is pasteable from wherever you are
-standing — `/Users/…/mcritchie-studio/bin/ship <slug>`, never a bare
-`bin/ship <slug>`.
+standing — `/Users/…/mcritchie-studio/bin/submit <slug>`, never a bare
+`bin/submit <slug>`.
 
 **Why it has to be.** Every one of those scripts, plus `bin/task`, lives in
 `mcritchie-studio/bin` **alone**. No satellite (`turf-monster`, `rolio`) and no
@@ -1320,7 +1320,7 @@ moment they were already stuck.
 | Thing | Shape | Why |
 |-------|-------|-----|
 | a RE-RUN remedy (`Re-run <abs>/bin/fast-check <slug>`) | absolute script, **no `cd`** | you are already standing in the tree — the root guard proved it before the cert ran |
-| a HANDOFF remedy (`cd <desk> && <abs>/bin/ship <slug>`) | absolute script **and** the desk | it points at a tree you are *not* in; the path picks the script, the cwd picks the tree it acts on |
+| a HANDOFF remedy (`cd <desk> && <abs>/bin/submit <slug>`) | absolute script **and** the desk | it points at a tree you are *not* in; the path picks the script, the cwd picks the tree it acts on |
 | a script named as a SUBJECT (`bin/dor-check credits this receipt only alongside a green CI`) | stays bare | prose, not an instruction — nobody pastes a sentence's subject |
 | a usage banner | `$PROGRAM_NAME` | it names the program the reader actually invoked — absolute when they reached it absolutely, bare when they typed it bare |
 | a step transcript (`4/8 record — bin/task update …`), a board-recorded `"cmd"` field | stays bare | a transcript or a durable record — neither is addressed to a reader standing anywhere |

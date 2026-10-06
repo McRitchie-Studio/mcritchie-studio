@@ -374,7 +374,7 @@ class TaskReviewClaim < ApplicationRecord
   # The holder descriptor the CLI skip message + the status read render.
   #
   # `agent` is the reviewing SOUL, and it is here because a refusal has to name
-  # somebody to ASK. bin/ship's held-task refusal routes a live review to "ask them
+  # somebody to ASK. bin/submit's held-task refusal routes a live review to "ask them
   # to release" rather than to `--steal`, and "ask them" is useless without a them:
   # the row has carried `holder_agent` since the crew seat rode the claim, and it
   # simply was not published. `label` is the session's mascot, which paints a card

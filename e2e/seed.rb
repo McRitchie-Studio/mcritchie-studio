@@ -444,9 +444,9 @@ working_claim_task = Task.create!(
 # the callbacks so the quiet chip's reader still has one to read.
 working_claim_task.update_columns(metadata: { "devops" => e2e_claim })
 TaskEvent.where(task_slug: working_claim_task.slug).update_all(occurred_at: 6.hours.ago)
-# An OPEN gate: the cert is running right now. This is the evidence that keeps a
+# An OPEN gate: a DoR attempt is running right now. This is the evidence that keeps a
 # slow-but-healthy build off the quiet list, however long it stays silent.
-GateRun.create!(subject_type: "task", subject_slug: working_claim_task.slug, key: "g1_cert",
+GateRun.create!(subject_type: "task", subject_slug: working_claim_task.slug, key: "dor",
                 attempt: 1, started_at: 3.minutes.ago,
                 created_at: 3.minutes.ago, updated_at: 3.minutes.ago)
 
@@ -859,7 +859,7 @@ AgentAction.create!(session_id: "sess-tp-ci", kind: "test_scope", event_slug: "c
                     summary: "test scope ci_test COMPLETED · ci · pass · bin/rails test test:system · 5m")
 
 # Testing-gates demo, on the same task: attempt-aware GATE verdicts so
-# /tasks/testing-phases-demo also renders the "Testing gates" card — a G1 Cert
+# /tasks/testing-phases-demo also renders the "Testing gates" card — a DoR (builder) gate
 # that failed once and passed on attempt 2 (exercising the retry count), a
 # passed primary review lane, and a light lane still in flight.
 # Idempotent reseed: gate runs are slug-keyed and Task.delete_all skips destroy
@@ -867,11 +867,11 @@ AgentAction.create!(session_id: "sess-tp-ci", kind: "test_scope", event_slug: "c
 # below (the spec hard-asserts "attempt 2") — clear them first, mirroring the
 # task_events.delete_all above.
 tp.gate_runs.delete_all
-GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "g1_cert", success: false,
+GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "dor", success: false,
                sops: [{ "sop" => "full-suite", "cmd" => "bin/rails test", "result" => "fail", "duration_ms" => 412_000 }],
                now: tp_anchor + 8.minutes)
-GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g1_cert", now: tp_anchor + 10.minutes)
-GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "g1_cert", success: true,
+GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "dor", now: tp_anchor + 10.minutes)
+GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "dor", success: true,
                sops: [{ "sop" => "full-suite", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 405_000 },
                       { "sop" => "rubocop", "cmd" => "bin/rubocop", "result" => "pass", "duration_ms" => 21_000 },
                       { "sop" => "dor-check", "cmd" => "bin/dor-check #{tp.slug}", "result" => "pass" },

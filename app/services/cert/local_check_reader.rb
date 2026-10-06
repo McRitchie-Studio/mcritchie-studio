@@ -5,7 +5,7 @@ module Cert
   # a GateRun query per card on a board that renders dozens.
   class LocalCheckReader
     # Only `building` tasks can be inside a local cert, and only until the PR
-    # exists — once `bin/ship` opens it, the PR CI meter takes the slot over. The
+    # exists — once `bin/submit` opens it, the PR CI meter takes the slot over. The
     # task card applies that stage/PR filter; this reader answers the narrower
     # question of which supplied slugs has a reportable attempt open.
     def for_tasks(tasks, now: Time.current)

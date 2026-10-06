@@ -330,7 +330,7 @@ class FastCertTest < Minitest::Test
   # they are in. Observed live 2026-08-15 — a diff touching
   # config/initializers/studio.rb mapped to 45 test files and bin/fast-check was
   # still running at 39m34s against a lane g1-cert.md budgets at ~1 minute, which
-  # bin/ship runs by default.
+  # bin/submit runs by default.
 
   def test_mapping_reports_what_each_changed_file_maps_to
     with_tree(

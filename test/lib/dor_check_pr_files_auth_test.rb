@@ -15,7 +15,7 @@
 #   2. gh prints "Bad credentials (HTTP 401)" on STDERR, which File::NULL discarded —
 #      so there was no text left for GhAuthRetry.auth_failure? or
 #      CiStatus.unreadable_cause to classify. The failure could not even be NAMED,
-#      let alone recovered by the mint-once-and-retry seam bin/ship and bin/pr-review
+#      let alone recovered by the mint-once-and-retry seam bin/submit and bin/pr-review
 #      have used since PR 832.
 #
 # EVERY TEST HERE DRIVES THE REAL READ. No DOR_CHECK_PR_FILES injection: the gh

@@ -20,7 +20,7 @@
 # run is the leak TaskUsageSandbox exists to close.
 #
 # The killed-writer rule is asserted at the integration tier, in
-# test/lib/ship_test.rb, where a real ship is really SIGKILLed.
+# test/lib/submit_test.rb, where a real ship is really SIGKILLed.
 
 require "minitest/autorun"
 require "json"
@@ -59,7 +59,7 @@ class PresenceClaimTest < Minitest::Test
   # supervisor can be SIGKILLed while the work it spawned survives — reparented,
   # still burning the machine, still holding a test DB — and a claim naming only the
   # supervisor reports that worst case as `dead`, which is the single direction this
-  # design may never fail in. bin/ship spawns its cert with `system` and no
+  # design may never fail in. bin/submit spawns its cert with `system` and no
   # `pgroup:`, so the runner lives in the ship's own group; the group is therefore
   # the subject that stays true after the ship dies.
   def test_unit_the_record_carries_the_process_GROUP_as_a_second_subject
@@ -159,7 +159,7 @@ class PresenceClaimTest < Minitest::Test
 
   # ── the session-less run ────────────────────────────────────────────────────
 
-  # A `bin/ship` run by hand consumes the machine identically to one an agent
+  # A `bin/submit` run by hand consumes the machine identically to one an agent
   # launched, so it must still publish. The filename needs a namespace key, not a
   # session — but the RECORD must not invent one, because "we do not know whose
   # this is" and "nobody's" are different answers and collapsing them is the lie
@@ -233,7 +233,7 @@ class PresenceClaimTest < Minitest::Test
 
   # ── containment — the guard is ON THE PATH ──────────────────────────────────
 
-  # bin/ship is NOT in the containment test's ALLOWED_CONSTRUCTORS and must never
+  # bin/submit is NOT in the containment test's ALLOWED_CONSTRUCTORS and must never
   # need to be: it never names the store. This class holds no path either — it
   # builds a SUFFIX, and SessionMarkers builds and GUARDS the path. These two
   # assert that the guard really is reached, because a writer that resolved its own
