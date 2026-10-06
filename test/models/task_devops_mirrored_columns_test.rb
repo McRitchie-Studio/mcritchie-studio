@@ -152,4 +152,31 @@ class TaskDevopsMirroredColumnsTest < ActiveSupport::TestCase
 
     assert_equal "feat/branch-seed-sample", t.reload.read_attribute(:branch)
   end
+  # Regression: resync_session_mascots! wrote the metadata it loaded at the start
+  # of its loop with update_columns, so a pr_url, branch, approval_status or
+  # session_id another writer saved meanwhile went back in the key while the
+  # column kept the new value.
+  test "[integration] resync_session_mascots! leaves the four columns equal to their keys" do
+    Pokemon.create!(dex: 1, name: "Resync", slug: "resync-mon", generation: 1)
+    t = task("session_id" => "sess-resync", "pr_url" => PR_URL, "branch" => "feat/old",
+             "approval_status" => "waiting")
+    # An old mascot stamp, so the resync restamps this row.
+    t.update_columns(metadata: t.metadata.deep_merge("devops" => { "mascot" => "resync-mon", "mascot_session" => "old" })) # rubocop:disable Rails/SkipsModelValidations
+    newer_pr = "#{PR_URL}0"
+
+    # Another writer saves between the resync's read and its write.
+    concurrent = lambda do |*|
+      Task.find(t.id).update!(pr_url: newer_pr, branch: "feat/new", approval_status: "approved")
+      nil
+    end
+    SessionMascot.stub(:find_by, concurrent) { assert_equal 1, Task.resync_session_mascots! }
+
+    t.reload
+    Task::DEVOPS_MIRRORED_KEYS.each do |key|
+      assert_equal t.devops[key].to_s.strip.presence, t.read_attribute(key), "#{key}: column equals key"
+    end
+    assert_equal newer_pr, t.devops["pr_url"], "the concurrent write survives the restamp"
+    assert_equal "approved", t.read_attribute(:approval_status)
+    assert_equal "sess-resync", t.devops["mascot_session"]
+  end
 end
