@@ -1,6 +1,10 @@
 require "test_helper"
 
 class BuildersControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "index renders builder roster with latest thirteen commit ranges and total" do
     person = Person.create!(
       first_name: "Yukihiro",
@@ -153,38 +157,12 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_match "2/2 weeks", response.body
   end
 
-  test "all renders focus and archived builders without roster actions for visitors" do
-    focus = Builder.create!(
-      person: Person.create!(first_name: "Focus", last_name: "Builder"),
-      github_login: "focus-builder",
-      primary_language: "Ruby",
-      active: true,
-      included_in_roster: true
-    )
-    archived = Builder.create!(
-      person: Person.create!(first_name: "Archived", last_name: "Builder"),
-      github_login: "archived-builder",
-      primary_language: "Ruby",
-      active: true,
-      included_in_roster: false
-    )
-    tracked = TrackedGithubBuilder.create!(
-      github_login: archived.github_login,
-      display_name: archived.display_name,
-      cohort: "control_builder",
-      active: true
-    )
-    create_cache(tracked, GithubCommitRange.for_week_start(Date.new(2026, 1, 3)), 12)
-
-    get all_builders_path(language: "Ruby")
-
-    assert_response :success
-    assert_select "h2", "All Ruby Builders"
-    assert_match focus.github_login, response.body
-    assert_match archived.github_login, response.body
-    assert_select "form[action=?]", archive_builder_path(focus.github_login, redirect_to: "/builders/all?language=Ruby"), count: 0
-    assert_select "form[action=?]", restore_builder_path(archived.github_login, redirect_to: "/builders/all?language=Ruby"), count: 0
-    assert_select "td", text: "12"
+  test "a visitor is sent to sign-in from every builders page" do
+    reset!
+    [builders_path, all_builders_path(language: "Ruby")].each do |path|
+      get path
+      assert_redirected_to login_path
+    end
   end
 
   test "all renders roster actions for admins" do

@@ -4,6 +4,10 @@ require "test_helper"
 # exercise the ERB components through the normal layout without adding browser
 # behavior or persistence coverage.
 class StudioThemePolishTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "[component] stages guide renders tokenized light and dark stage badges" do
     get stages_path
     assert_response :success

@@ -17,9 +17,14 @@ class MusicVideosController < ApplicationController
     # Loaded ON the association, so each clip's swap target reads the same rows.
     @performers = @video.video_performers.to_a
     ActiveRecord::Associations::Preloader.new(records: @performers,
-                                              associations: %i[artist recast_person recast_appearance]).call
+                                              associations: [{ artist: :person }, :recast_person, :recast_appearance]).call
     # Each recast athlete's look dropdown rows: thumbnail, default mark, build state.
-    @recast_looks = MusicVideos::LookOptions.for(@performers.filter_map(&:recast_person_slug))
+    # The recast athletes, and the people the cards are named after (the named
+    # block's headshot, and the "Swap with <name>?" offer when they have looks).
+    people = (@performers.filter_map(&:recast_person_slug) + @performers.filter_map { |p| p.artist&.person_slug }).uniq
+    @recast_looks = MusicVideos::LookOptions.for(people)
+    # Each person's block on the card: headshot, vocation, team.
+    @recast_rows = People::SearchRows.for(people)
     @still_urls = signed_urls(@performers.flat_map(&:still_object_keys))
     @clips = @video.clip_candidates.to_a
     @chunks = @video.video_chunks.to_a

@@ -18,6 +18,10 @@ require "test_helper"
 # writes). Leg 3 asserts the STRUCTURE the browser will build from these bytes,
 # which is the strongest claim available here — see its own note.
 class AtTimeGemAdoptionTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   RETIRED = %w[
     app/helpers/at_time_helper.rb
     app/views/shared/_at_time_script.html.erb

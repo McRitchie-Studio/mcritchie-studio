@@ -1,6 +1,10 @@
 require "test_helper"
 
 class TriageControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     @admin = users(:alex)
     @viewer = users(:viewer)
@@ -11,7 +15,7 @@ class TriageControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
-  test "[component] index renders open findings for any visitor" do
+  test "[component] index renders open findings for an admin" do
     get triage_path
     assert_response :success
     assert_match @finding.title, response.body
@@ -20,10 +24,7 @@ class TriageControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", deployments_path
   end
 
-  test "[component] promote controls render only for an admin" do
-    get triage_path
-    refute_match 'value="Promote"', response.body
-
+  test "[component] promote controls render for an admin" do
     log_in_as(@admin)
     get triage_path
     assert_match 'value="Promote"', response.body

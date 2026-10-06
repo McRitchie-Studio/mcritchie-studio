@@ -378,7 +378,6 @@ class BinHelpFlagClassTest < Minitest::Test
     "importmap"              => :delegates,
     "jobs"                   => :delegates,
     "dev"                    => :delegates,
-    "docker-entrypoint"      => :delegates,
     "island-background"      => :delegates,
     # --- CONFIRMED subcommand-position gaps, each with a filed task -----------
     #

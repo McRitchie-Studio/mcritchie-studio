@@ -9,6 +9,10 @@ require "test_helper"
 # never PATCH the stage) still matters, and the Building lane still collapses below
 # 1400px on the Deploy board so a stalled task is reachable via "All Stages".
 class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "a blocked task renders as a building card in the Building dropzone, no Blocked column" do
     task = Task.create!(title: "stalled needs attention", stage: "building")
     task.block!(by: "avi", kind: "rework")

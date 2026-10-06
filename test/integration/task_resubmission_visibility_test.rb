@@ -14,6 +14,10 @@ require "test_helper"
 # reviewer briefed that a merge-ready verdict was on record — while the circuit
 # breaker read TRIPPED and the head had not moved since the send-back.
 class TaskResubmissionVisibilityTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   BOUNCE_AT = Time.utc(2026, 9, 2, 14, 3, 57)
 
   setup do

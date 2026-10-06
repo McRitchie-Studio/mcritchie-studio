@@ -5,7 +5,10 @@
 // the emailed link lands in the local inbox, and following it returns to the
 // SAME draft — then they claim a name and see the build queued.
 const { test, expect } = require("@playwright/test");
-const { blockThirdPartyRequests, loginWithMagicLink } = require("./helpers");
+const { blockThirdPartyRequests, loginWithMagicLink, VISITOR } = require("./helpers");
+
+// What a visitor sees: signed out, not the suite's default admin session.
+test.use({ storageState: VISITOR });
 
 test("a signed-out visitor's prompt survives sign-in, then they claim a name and see it queued", async ({ page }) => {
   await blockThirdPartyRequests(page);

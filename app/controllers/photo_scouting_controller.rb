@@ -21,7 +21,7 @@
 # worse than no page, because the operator would calibrate against a picture of the
 # system that was not true.
 #
-# ⚠ THE PAGE IS PUBLIC TO READ AND ADMIN-ONLY TO WRITE, and `require_admin` rather
+# ⚠ THE PAGE IS ADMIN-ONLY TO READ AND TO WRITE (AdminWall), and `require_admin` rather
 # than a session is the gate for the same reason it is on AppearancesController: hub
 # signup is OPEN — magic-link and Google are both create-or-login — so "needs a
 # session" means "needs an email address" and is no control at all. #search buys one
@@ -31,10 +31,9 @@
 # stranger's opinion mixed into that column would corrupt the one signal this page
 # exists to collect.
 class PhotoScoutingController < ApplicationController
-  skip_before_action :require_authentication, only: [:show]
   # BEFORE the record lookups, exactly as on AppearancesController: a request that
   # may not write has no business costing us three queries on its way to a redirect.
-  before_action :require_admin, except: [:show]
+  before_action :require_admin
   before_action :set_person
   before_action :set_appearance
 

@@ -395,6 +395,10 @@ class RankingsControllerTest < ActionDispatch::IntegrationTest
 
   test "confirm draft pick requires admin" do
     post confirm_draft_pick_path(player_id: "david-bailey", team_id: "buffalo-bills")
+    assert_redirected_to login_path
+
+    log_in_as(users(:viewer))
+    post confirm_draft_pick_path(player_id: "david-bailey", team_id: "buffalo-bills")
     assert_redirected_to root_path
   end
 

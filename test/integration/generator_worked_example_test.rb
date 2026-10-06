@@ -22,6 +22,10 @@ require "test_helper"
 # is no credential and nothing to spend; the suite-wide OPENAI_NO_LIVE_CALLS trap is the
 # backstop.
 class GeneratorWorkedExampleTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   CAPABILITY = Appearances::GenerateArtifact::CAPABILITY
   SHEET_ROW = "openai_gpt5_sheet".freeze
 

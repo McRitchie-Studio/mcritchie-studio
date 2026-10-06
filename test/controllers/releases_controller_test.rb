@@ -1,6 +1,10 @@
 require "test_helper"
 
 class ReleasesControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   def release_with_member
     release = Release.create!(slug: "rel-controller-metrics", branch: "release", state: "shipped")
     release.update_columns( # rubocop:disable Rails/SkipsModelValidations

@@ -9,15 +9,11 @@
 #   bin/ci-shard --manifest       print every file the lane owns, one per line
 #   bin/ci-shard --explain        print all buckets with their projected seconds
 #
-# WHY CI USES THE `--shard=` SPELLING AND NOT THE BARE ONE. bin/lib/ci_test_command.rb
-# — the cert lane's parser — refuses any step that hands a BARE interpolated token to a
-# command it has not proven inert, because such a token might BE the command rather than
-# an argument to it. `bin/ci-shard ${{ matrix.shard }}/…` tokenizes with `${{` standing
-# alone in argument position and trips exactly that rule; `--shard=${{ matrix.shard }}/…`
-# attaches the interpolation to a flag, where it is unambiguously a VALUE. The
-# `playwright` job has always been written this way for the same reason. This is not
-# dodging the guard — it is writing the invocation in the form whose meaning the guard
-# can actually read.
+# WHY CI USES THE `--shard=` SPELLING AND NOT THE BARE ONE. A BARE interpolated token
+# (`bin/ci-shard ${{ matrix.shard }}/…`) stands alone in argument position, where a
+# reader cannot tell a value from a command; `--shard=${{ matrix.shard }}/…` attaches the
+# interpolation to a flag, where it is unambiguously a VALUE. The `playwright` job is
+# written the same way.
 #
 # THE SHAPE OF THE THING. The suite used to be one command on one runner —
 # `bin/rails db:test:prepare test test:system`, 411s of tests behind 91s of setup while
@@ -32,8 +28,8 @@
 # lose: Rails SKIPS its own test:prepare hook whenever an argument looks like a path, and
 # every invocation below passes paths. CI's old one-command line (quoted above) named
 # rake's `test` TASK, whose body spawns an argless `rails test` that fires the hook for
-# free, so nothing here used to need saying (bin/lib/ci_test_command.rb carries the chain
-# and its two edges).
+# free, so nothing here used to need saying (test/lib/tasks/test_prepare_asset_hook_test.rb
+# asserts the chain and its two edges).
 # Pass paths without it and every view-rendering test errors with `The asset "tailwind.css"
 # is not present in the asset pipeline` (the same trap bin/fast-check documents). Keeping
 # both inside this one command means a shard cannot be run un-prepared.

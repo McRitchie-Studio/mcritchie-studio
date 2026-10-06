@@ -1,6 +1,10 @@
 require "test_helper"
 
 class PokemonControllerTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   # Every SQL call the page makes, schema/transaction bookkeeping aside. CACHE hits
   # are COUNTED, deliberately: Rails' per-request query cache collapses a repeated
   # identical query, so excluding them would hide an N+1 whose rows happen to ask the
@@ -86,14 +90,6 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=pokemon-newest-seen]" do
       assert_select "a[href=?]", task_path(task.slug), "Order Session Filter Recency"
     end
-  end
-
-  test "[integration] pokemon path remains a compatibility alias" do
-    get pokemon_path
-
-    assert_response :success
-    assert_select "[data-test=pokedex]"
-    assert_select "h1", "Pokémon"
   end
 
   test "[component] the collection grid draws every species in its state" do

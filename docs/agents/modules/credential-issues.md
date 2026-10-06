@@ -42,7 +42,7 @@ The location is decided by what is private and what an agent can write:
 | Candidate | Why not |
 |---|---|
 | A file in `mcritchie-studio` | **The repo is PUBLIC** |
-| The task board | **The board is public-read.** `TasksController::PUBLIC_ACTIONS` includes `:index` and `:show` and skips authentication, so a task's title, acceptance, context and notes are readable by anyone. This is not hypothetical: `credential-rotation` records a full production config dump written into a task and rendered on the board on 2026-09-09 |
+| The task board | **The board is admin-only, but it is no vault.** The hub's admin wall (`app/controllers/concerns/admin_wall.rb`) keeps visitors out, yet a task's title, acceptance, context and notes reach every admin session and every agent holding the API secret. This is not hypothetical: `credential-rotation` records a full production config dump written into a task and rendered on the board on 2026-09-09 |
 | 1Password | The ambient agent lane is **read-only**; logging there means escalating a mid-work session to the admin lane for a note |
 | **GitHub Issues, private repo** | Private; an agent writes one with no PR cycle; open/closed *is* the weekly queue; the whole review is one command |
 

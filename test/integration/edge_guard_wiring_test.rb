@@ -51,7 +51,7 @@ class EdgeGuardWiringTest < ActionDispatch::IntegrationTest
   end
 
   test "an armed guard admits a request from the edge and the app still renders" do
-    status, = armed.call(rack_env_for("/tasks", "HTTP_X_EDGE_SECRET" => SECRET))
+    status, = armed.call(rack_env_for("/", "HTTP_X_EDGE_SECRET" => SECRET))
 
     assert_equal 200, status, "edge traffic must reach the app normally"
   end

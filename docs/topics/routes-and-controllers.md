@@ -2,7 +2,15 @@
 
 > **When to read this:** Adding a route, writing a new controller, debugging a write-action error log, or understanding the URL surface.
 
-## HTML Routes (public monitoring, auth-gated mutations)
+## HTML Routes
+
+Every HTML route needs an admin unless `AdminWall::PUBLIC` in
+`app/controllers/concerns/admin_wall.rb` lists it; that list is the one place a page
+becomes public, and `test/integration/admin_wall_test.rb` walks the route table to
+prove it. A controller never spells its own `skip_before_action :require_authentication`.
+Public today: the landing, legal, about, packages, `/build` funnel, `/contact`,
+`/schedule`, `/links`, unsubscribe and email-tracking pages, sign-in, the NFL pages,
+and `/tasks/:slug/local_review`.
 
 - `/` — Landing page (hero with Denver bg, about, get in touch with the Google booking frame, acquisition criteria, contact)
 - `/contact` — Public contact form and SMS opt-in page (`ContactSubmissionsController`). GET renders the form, three unticked consent boxes and the carrier disclosure; POST stores a `ContactSubmission` and emails alex@mcritchie.studio through the engine outbox. Bounded by `rate_limit` (5 per minute per IP) and a honeypot field. The app sends no SMS; the phone provider does. This URL is registered with the carrier, so do not move it.
@@ -19,7 +27,7 @@
 - `/tasks/:slug` — Task detail with transition buttons. Includes a Sealed-bid sizing summary card and an "Edit →" link to the sizing sub-page.
 - `/review_events` — Review process hub. Linked from the Submitted column's `docs` link on the deployments board; shows heavy/light swimlanes, top role owners, canonical moment order, and recent submitted/reviewed/assembled/shipped task drilldowns.
 - `/tasks/:slug/review_events` — Read-only task review event timeline. Linked from reviewed/live-review cards on the task stage timeline. Groups reviewer check-ins into heavy/light swimlanes recorded by `POST /api/v1/tasks/:slug/review_events`, with per-step durations derived from the review intent and checkpoint timestamps.
-- `/tasks/:slug/sizing` — Sealed-bid sizing sub-page (admin update, public read). Form for `pm_size` / `po_size` / `dev_size` / `actual_size` + `requires_migration` toggle. See `docs/agents/system/sizing-rubric.md` and `exclusive-lanes.md`.
+- `/tasks/:slug/sizing` — Sealed-bid sizing sub-page (admin only). Form for `pm_size` / `po_size` / `dev_size` / `actual_size` + `requires_migration` toggle. See `docs/agents/system/sizing-rubric.md` and `exclusive-lanes.md`.
 - `/news` — News pipeline Kanban board (6 columns: new→reviewed→processed→refined→concluded→archived). SortableJS drag-and-drop. Inline `newsBoard()` Alpine function. Column focus: click header to expand single column full-width (hides others, click again to unfocus).
 - `/news/new` — Create news article (admin required)
 - `/news/:slug` — News detail (two-column: content + sidebar with timeline). Shows green/red dots next to slug fields indicating whether Person/Team records exist.
@@ -76,8 +84,6 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/people/search` — GET JSON people search (ILIKE on first_name, last_name, slug, aliases). Used by News edit sidebar.
 - `/people/duplicates` — GET admin UI listing detected duplicate Person groups (Levenshtein distance scoring).
 - `/people/merge` — GET render the person-merge form (pick keep/merge slugs). `POST /people/merge` → `PeopleController#merge_execute` consolidates contracts, roster spots, coaches, and athlete grades from source → keep person, then deletes source.
-- `/activities` — Redirects to `/agents`; historical activity remains available
-  through task timelines and the API
 - `/usages` — Usage table
 - `/admin/dashboard` — Admin dashboard with four quick links, a users table, and a request-log table backed by `error_logs`.
 - `/admin/ai_builder_multiple` — Admin dashboard for latest AI Builder Multiple index weeks, cohort coverage, the latest 9 Saturday-Friday UTC weekly commit cache ranges by tracked builder, builder weekly commit pace metrics, and CSV export paths. `/admin/ai_builder_multiple.json` returns the same latest index data and commit log ranges as JSON. Includes a caveat that this is public GitHub builder activity, not a true productivity measure.

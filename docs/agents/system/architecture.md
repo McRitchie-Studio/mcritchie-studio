@@ -11,6 +11,7 @@ The pages: [`user.md`](user.md). The ecosystem: `docs/ECOSYSTEM.md`.
 | Views | ERB; Tailwind compiled by `tailwindcss-rails`; Alpine.js, the Montserrat font and the light/dark theme come from `studio-engine`'s head partial |
 | JavaScript | Import maps, no build step: Turbo and Chart.js (`config/importmap.rb`) |
 | Jobs | Solid Queue (`worker: bin/jobs`) |
+| Rate limits | Rack::Attack (`config/initializers/rack_attack.rb`); production counts in Solid Cache on the primary database, so every dyno and every deploy share one count; the client address comes from X-Forwarded-For alone, never a client-written `Forwarded` header (`config/initializers/forwarded_headers.rb`) |
 | Storage | Active Storage on Cloudflare R2: `mcritchie-studio-production` in production, `mcritchie-studio-dev` on desks and QA (`config/storage.yml`) |
 | Email | Resend through `Studio::Email.deliver`; the durable outbox is `studio_email_deliveries` |
 | Auth | `studio-engine` passwordless sign-in: magic link and Google (`config.auth_methods` in `config/initializers/studio.rb`); no wallet auth, since the hub has no on-chain surface |
@@ -63,5 +64,11 @@ The rest is in `config/routes.rb`.
 
 ## Access
 
-The landing page, dashboard, agent and task reads, usages and `/docs` render
-without a session. Task writes, `/error_logs` and `/admin/*` need an admin.
+Every page needs an admin unless `AdminWall::PUBLIC` lists it
+(`app/controllers/concerns/admin_wall.rb`): a default-deny wall, and an admin
+wall because hub signup is open. Public: the landing, legal, packages, `/build`
+funnel, contact, schedule and `/links` pages, unsubscribe and email tracking,
+sign-in, the NFL pages, and `/tasks/:slug/local_review`. A signed-in non-admin
+reaches only their own profile. The API (bearer), `/webhooks/*` (signed) and
+`/up` sit outside the wall. `test/integration/admin_wall_test.rb` walks the
+route table, so a new route is walled until it is listed.

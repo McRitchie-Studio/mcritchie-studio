@@ -1,5 +1,4 @@
 class RankingsController < ApplicationController
-  skip_before_action :require_authentication
   before_action :require_admin, only: [:confirm_draft_pick]
   before_action :set_season, only: [:quarterback, :offensive_line, :receiving, :rushing, :defense, :pass_rush, :coverage, :pass_first, :team_unit, :prospects]
   before_action :set_impact_context, only: [:player_impact, :confirm_draft_pick]

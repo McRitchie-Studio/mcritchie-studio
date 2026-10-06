@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { loginWithMagicLink } = require("./helpers");
+const { loginWithMagicLink, VISITOR } = require("./helpers");
 
 // [e2e] THE PHOTO SCOUTING PAGE, in a browser — the operator's acceptance test:
 // "I should have a good idea of what the raw found images look like and which ones your
@@ -72,13 +72,15 @@ test("the raw set, the picks and the honesty panel render, and reflow on a phone
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("a visitor with no session is offered no spending button and no verdict control", async ({ page }) => {
-  // HUB SIGNUP IS OPEN, so a session is not a cost control and `require_admin` is the
-  // gate. A control nobody but an admin may use is furniture on everyone else's page.
-  await openScouting(page);
+test.describe("a visitor", () => {
+  test.use({ storageState: VISITOR });
 
-  await expect(page.locator("[data-test='scouting-search-button']")).toHaveCount(0);
-  await expect(page.locator("[data-test='verdict-control']")).toHaveCount(0);
+  test("a visitor with no session is sent to sign-in before any spending button", async ({ page }) => {
+    // HUB SIGNUP IS OPEN, so a session is not a cost control: the page sits behind the
+    // admin wall, and a visitor never sees a control at all.
+    await page.goto(PERSON);
+    await expect(page).toHaveURL(/\/(login|signin)$/);
+  });
 });
 
 test("an admin records a verdict and the agreement figures move without a reload", async ({ page }) => {

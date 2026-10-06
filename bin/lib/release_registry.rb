@@ -15,8 +15,8 @@ module ReleaseRegistry
   module_function
 
   # The repo's own gate command (`release_check:` on its row), or nil. A gem repo
-  # has no ci.yml for CiTestCommand to read and no `bin/rails` to prepare a test DB
-  # with; its row carries the command that IS its suite (bin/release-check).
+  # has no Rails suite and no `bin/rails` to prepare a test DB with; its row carries
+  # the command that IS its suite (bin/release-check).
   def release_check_cmd(repo)
     slug = repo.to_s.strip
     return nil if slug.empty?

@@ -171,16 +171,16 @@ class AppearancesGenerateTest < ActionDispatch::IntegrationTest
     assert_equal 0, Artifact.count
   end
 
-  # THE PAGE IS PUBLIC AND MUST RENDER WITH NO CREDENTIAL ANYWHERE. This is the
-  # state on every desk, so a page that 500s here is a page nobody can develop on.
-  test "the model page renders for the public with generation switched off" do
+  # THE PAGE MUST RENDER WITH NO CREDENTIAL ANYWHERE. This is the state on every
+  # desk, so a page that 500s here is a page nobody can develop on.
+  test "the model page renders with generation switched off" do
+    log_in_as(@admin)
     with_env("OPENAI_API_KEY" => nil) { get person_appearance_path(@person.slug, @look.slug) }
 
     assert_response :success
     assert_select "[data-test=model-output-panel]"
     assert_select "[data-test=zero-shot-generate]"
     assert_match(/OPENAI_API_KEY/, response.body, "the page names the variable rather than shrugging")
-    assert_select "form[action=?]", generate_path, count: 0, message: "no control the public may not use"
   end
 
   # THE PROVENANCE STAMP IS ON THE PAGE, not only in the database. The operator

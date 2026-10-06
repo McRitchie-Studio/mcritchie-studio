@@ -7,6 +7,10 @@ require "test_helper"
 # are injected through the CI_PROGRESS_FIXTURES seam so the render never touches the
 # network; the live re-run case folds ingested CiCheckJob rows directly.
 class BoardCiProgressTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   TASK_SHA = "task-head-sha".freeze        # 8 checks -> symbolic
   RELEASE_SHA = "release-head-sha".freeze  # 8 checks -> symbolic
   MANY_SHA = "task-many-sha".freeze        # 14 checks -> numeric bar

@@ -5,16 +5,18 @@ require "test_helper"
 # Reuses the per-session activity table + drawer; there is no per-session "Unlabeled" group
 # here. Read-only meta surface, like the per-session heartbeat — no auth.
 class HeartbeatAllSpansTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   def span(session: "sess-A", at: Time.current, **attrs)
     AgentActivity.create!({ session_id: session, category: "Explore", reason_slug: "find issue with api",
                           opened_at: at, seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
 
-  test "routes to the all_activities action and keeps the old spans alias" do
+  test "routes to the all_activities action" do
     assert_equal "/xan/heartbeat/activities", heartbeat_all_activities_path
-    assert_equal "/xan/heartbeat/spans", heartbeat_all_spans_path
     assert_routing "/xan/heartbeat/activities", controller: "heartbeat", action: "all_activities"
-    assert_recognizes({ controller: "heartbeat", action: "all_activities" }, "/xan/heartbeat/spans")
   end
 
   test "renders activities from every session, newest-first, without auth" do

@@ -8,6 +8,18 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
 
   driven_by :selenium, using: :headless_chrome, screen_size: SCREEN_SIZE
 
+  # The board sits behind the admin wall (AdminWall), so every system test starts as the
+  # seeded admin, signed in through the same magic-link door a person uses: the confirm
+  # page submits itself and lands on the home page. A named admin, so the engine's
+  # first-name onboarding modal never covers the page under test.
+  setup { sign_in_through_magic_link(users(:alex)) }
+
+  def sign_in_through_magic_link(user)
+    user.update_columns(first_name: user.name.to_s.split.first || "Admin") if user.first_name.blank?
+    visit link_path(token: Studio::Link.create_magic_link(email: user.email).token)
+    assert_current_path "/"
+  end
+
   # How long to wait for a control to stop moving before clicking it.
   SETTLE_TIMEOUT = 5
 

@@ -12,6 +12,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     @in_progress_task = tasks(:in_progress_task)
     @done_task = tasks(:done_task)
     @failed_task = tasks(:failed_task)
+    # The board sits behind the admin wall; a test about a visitor or a viewer
+    # signs that session in (or calls reset!) itself.
+    log_in_as(@admin)
   end
 
   # === HTML page tests ===
@@ -1413,11 +1416,12 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "full-cycle"               # the Xan full-cycle ship launcher
   end
 
-  test "deployments and stages are public (no login required)" do
+  test "deployments and stages send a visitor to sign-in" do
+    reset!
     get deployments_path
-    assert_response :success
+    assert_redirected_to login_path
     get stages_path
-    assert_response :success
+    assert_redirected_to login_path
   end
 
   test "[component] sop renders the four accountability swimlanes" do
@@ -1439,9 +1443,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Build to the accepted criteria" # an expand detail body
   end
 
-  test "[component] sop is public (no login required)" do
+  test "[component] sop sends a visitor to sign-in" do
+    reset!
     get sop_path
-    assert_response :success
+    assert_redirected_to login_path
   end
 
   test "[component] sop shows no ⚠ divergence markers — the model is fully implemented" do
@@ -1516,9 +1521,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "dashboard link is hidden from non-admins" do
+  test "a non-admin is turned back from the board" do
+    log_in_as(@viewer)
     get tasks_path
-    assert_select %(a[href="#{admin_dashboard_path}"]), count: 0
+    assert_redirected_to root_path
+    assert_equal "Not authorized", flash[:alert]
   end
 
   test "board pages omit removed DevOps Cycle link for admins" do
@@ -1749,8 +1756,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     # IDENTIFIERS: the comma is the delimiter the form itself wrote. These must
     # still split, or "auth, solana, migration" files ONE tag that
-    # ReviewerSelector::RISK_DOMAINS and auto_qa's blocked_risk_tags — both exact
-    # matchers — can never look up, and the gate fails open.
+    # ReviewerSelector::RISK_DOMAINS — an exact matcher — can never look up, and
+    # the gate fails open.
     assert_equal %w[mcritchie-studio turf-monster], devops["repositories"]
     assert_equal %w[auth solana migration], devops["risk_tags"]
   end
@@ -2424,10 +2431,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@viewer)
     patch task_path(@new_task.slug, format: :json),
           params: { task: { stage: "done" } }, as: :json
-    assert_response :redirect
+    assert_response :forbidden
   end
 
   test "moves require login" do
+    reset!
     patch task_path(@new_task.slug, format: :json),
           params: { task: { stage: "done" } }, as: :json
     # Format-aware auth (OPSEC-046): AJAX/JSON gets a clean 401, not an HTML redirect.
@@ -2468,10 +2476,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     log_in_as(@viewer)
     post reorder_tasks_path(format: :json),
          params: { slugs: [@new_task.slug] }, as: :json
-    assert_response :redirect
+    assert_response :forbidden
   end
 
   test "reorder requires login" do
+    reset!
     post reorder_tasks_path(format: :json),
          params: { slugs: [@new_task.slug] }, as: :json
     assert_response :unauthorized

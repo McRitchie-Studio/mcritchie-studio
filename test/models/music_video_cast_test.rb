@@ -1,7 +1,7 @@
 require "test_helper"
 
-# [unit] The stage transition guard: digested -> cast_confirmed only when there
-# are performers and each is an artist or an extra. Plus the timecode link.
+# [unit] The stage transition guard: digested -> cast_confirmed once there are
+# performers; naming them is optional. Plus the timecode link.
 class MusicVideoCastTest < ActiveSupport::TestCase
   setup do
     @video = MusicVideo.create!(slug: "night-call", platform: "youtube", source_url: "https://www.youtube.com/watch?v=Sa7",
@@ -19,14 +19,15 @@ class MusicVideoCastTest < ActiveSupport::TestCase
     assert_equal "digested", @video.reload.stage
   end
 
-  test "an open performer blocks the confirm and is named" do
+  test "unnamed performers do not block the confirm" do
     add(1, artist_slug: "test-artist-a")
     add(2)
     add(3)
 
-    error = assert_raises(MusicVideo::CastNotReady) { @video.confirm_cast! }
-    assert_equal "Person 2 and Person 3 are neither an artist nor an extra", error.message
-    assert_equal "digested", @video.reload.stage
+    assert @video.cast_ready?
+    assert_nil @video.cast_blocker
+    @video.confirm_cast!
+    assert_equal "cast_confirmed", @video.reload.stage
   end
 
   test "artists and extras together confirm the cast, once" do

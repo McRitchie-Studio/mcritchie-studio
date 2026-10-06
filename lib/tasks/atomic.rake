@@ -1,6 +1,6 @@
 namespace :atomic do
   # LOCAL DEMO DATA — not a historical backfill. AgentAction capture is
-  # forward-only and nothing emits rows yet, so /alex/heartbeat is empty until a
+  # forward-only and nothing emits rows yet, so /xan/heartbeat is empty until a
   # session runs. This seeds ONE representative greenfield trajectory (boot ->
   # recall -> intake -> design -> build -> submit) so the view has something to
   # render locally. Guarded out of production.
@@ -12,7 +12,7 @@ namespace :atomic do
   # the final activity OPEN (no outcome) so the view renders a real "…in progress" row.
   # The first couple of boot actions are captured with NO activity open, so they land in
   # the read-only "Unlabeled" group (context the agent never narrated).
-  desc "LOCAL-ONLY: seed a representative narrated activity trajectory so /alex/heartbeat has data."
+  desc "LOCAL-ONLY: seed a representative narrated activity trajectory so /xan/heartbeat has data."
   task demo_seed: :environment do
     raise "atomic:demo_seed is local demo data — refusing to run in production." if Rails.env.production?
 
@@ -152,6 +152,6 @@ namespace :atomic do
     puts "atomic:demo_seed — captured #{created}/#{total} action(s) and #{seeded_activities.count} activity(s) " \
          "(#{seeded_activities.open.count} open) for session #{session_id} (mascot #{mascot}, task #{task_slug})."
     warn "  WARNING: only #{created}/#{total} captured — check ErrorLog." if created != total
-    puts "  View it at /alex/heartbeat"
+    puts "  View it at /xan/heartbeat"
   end
 end

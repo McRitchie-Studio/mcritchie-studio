@@ -75,11 +75,25 @@ module Artists
     end
 
     test "a bare person carries their own vocation, or none" do
-      Person.create!(first_name: "Test", last_name: "Searchrow Coach", coach: true)
+      Person.create!(first_name: "Test", last_name: "Searchrow Actor", vocations: ["actor"], primary_vocation: "actor")
       Person.create!(first_name: "Test", last_name: "Searchrow Nobody")
 
-      assert_equal({ "test-searchrow-coach" => "coach", "test-searchrow-nobody" => nil },
+      assert_equal({ "test-searchrow-actor" => "actor", "test-searchrow-nobody" => nil },
                    Search.call("test searchrow").to_h { |r| [r.slug, r.vocation] })
+    end
+
+    # Naming who is on screen is not choosing who replaces them: sports people
+    # belong to the swap search, unless they are already linked to an artist.
+    test "athletes and coaches not linked to an artist are not offered; a linked one comes back as the artist" do
+      Person.create!(first_name: "Test", last_name: "Sportsrow Athlete", athlete: true)
+      Person.create!(first_name: "Test", last_name: "Sportsrow Coach", coach: true)
+      Person.create!(first_name: "Test", last_name: "Sportsrow Listed", vocations: ["athlete"], primary_vocation: "athlete")
+      Person.create!(first_name: "Test", last_name: "Sportsrow Singer")
+      assert_equal ["test-sportsrow-singer"], Search.call("test sportsrow").map(&:slug)
+
+      rapper = Person.create!(first_name: "Test", last_name: "Sportsrow Rapper", athlete: true)
+      Artist.create!(slug: "test-sportsrow-rapper", name: "Test Sportsrow Rapper", kind: "person", person_slug: rapper.slug)
+      assert_equal [%w[artist test-sportsrow-rapper]], Search.call("sportsrow rapper").map { |r| [r.type, r.slug] }
     end
 
     test "matching ignores case and extra spaces, and LIKE wildcards are literal" do

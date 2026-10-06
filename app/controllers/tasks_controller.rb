@@ -8,15 +8,9 @@ class TasksController < ApplicationController
   board_reorderable model: Task, id_attr: :slug, param: :slugs
 
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  # `local_review` joins the public read actions deliberately — see the action.
-  # It is the board's WAITING APPROVAL CTA, and gating it on a board session is
-  # what broke one-click review: a logged-out click 302'd to /login, and
-  # require_authentication keeps no return_to, so the click was thrown away.
-  PUBLIC_ACTIONS = [:index, :show, :recent, :review_events, :review_events_hub,
-                    :deployments, :stages, :sop, :local_review].freeze
-
-  skip_before_action :require_authentication, only: PUBLIC_ACTIONS
-  before_action :require_admin, except: PUBLIC_ACTIONS
+  # Every action needs an admin (AdminWall) except `local_review`, the board's
+  # WAITING APPROVAL CTA: a logged-out click must reach the desk's own sign-in,
+  # because require_authentication keeps no return_to and would throw the click away.
   before_action :set_task, only: [:show, :review_events, :local_review, :edit, :update, :destroy, :comment, :block, :unblock]
 
   # /tasks — Workflow 1 (Build, feature agent): designed → building → submitted
@@ -79,7 +73,7 @@ class TasksController < ApplicationController
 
   # /stages/sop — the operator's DevOps SOP as an accountability-swimlane
   # infographic (one row per owner). Static guide; data lives in
-  # ApplicationHelper#devops_sop_lanes. Public-read like /stages.
+  # ApplicationHelper#devops_sop_lanes. Admin-only, like /stages.
   def sop
   end
 

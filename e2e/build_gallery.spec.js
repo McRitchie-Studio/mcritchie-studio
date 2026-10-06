@@ -4,7 +4,10 @@
 // config/build_examples.yml). What only a browser proves: the row really scrolls
 // sideways, a screenshot really loads, and the edge fade follows the scroll.
 const { test, expect } = require("@playwright/test");
-const { blockThirdPartyRequests } = require("./helpers");
+const { blockThirdPartyRequests, VISITOR } = require("./helpers");
+
+// What a visitor sees: signed out, not the suite's default admin session.
+test.use({ storageState: VISITOR });
 
 test("the gallery scrolls sideways, its screenshot loads, and the fade follows the scroll", async ({ page }) => {
   await blockThirdPartyRequests(page);

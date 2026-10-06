@@ -1,5 +1,4 @@
 <% content_for :title, "#{@video.title} · Cast · McRitchie Studio" %>
-<% resolved = @performers.count(&:resolved?) %>
 <script>
   // What both cast-card typeaheads share: a debounced search whose answer is
   // dropped once a newer search or a pick has superseded it, and the list keys.
@@ -57,18 +56,13 @@
     };
   };
 
-  // The look step of "Replaced by", shared by the open card (an athlete picked
-  // in the typeahead) and the saved card (an athlete read off the page): a
-  // listbox of the athlete's looks, a preview of the one picked, and the
-  // generate form. A pick only previews; "Cast as" saves it. While a look's
-  // character sheet is building, the rows are polled and repainted in place.
+  // The look step of "Replaced by": a listbox of the athlete's looks, a
+  // preview of the one picked, and the generate form. Mixed into swapCard,
+  // which saves each pick (onLookPicked). While a look's character sheet is
+  // building, the rows are polled and repainted in place.
   window.lookPicker = function () {
     return {
-      athlete: null, lookSlug: "", savedLook: "", listOpen: false, lookActive: 0, genOpen: false, genBusy: false, lookTimer: null,
-      init() {
-        const data = this.$root.dataset;
-        if (data.athlete) this.setAthlete(JSON.parse(data.athlete), data.savedLook || "", data.freshLook || "");
-      },
+      athlete: null, lookSlug: "", listOpen: false, lookActive: 0, genOpen: false, genBusy: false, lookTimer: null,
       destroy() { clearTimeout(this.lookTimer); },
       get looks() { return this.athlete ? this.athlete.looks : []; },
       get chosen() { return this.looks.find((l) => l.slug === this.lookSlug) || null; },
@@ -80,11 +74,10 @@
       get newLookUrl() {
         return this.athlete ? this.$root.dataset.newLookUrl.replace("__slug__", encodeURIComponent(this.athlete.slug)) : "#";
       },
-      // Previewed first: the look just generated, else the saved look, else the default.
-      setAthlete(athlete, saved, fresh) {
-        this.athlete = athlete; this.savedLook = saved || "";
-        const first = athlete.looks.find((l) => l.slug === fresh) || athlete.looks.find((l) => l.slug === this.savedLook) ||
-                      athlete.looks.find((l) => l.default);
+      // Shown first: the preferred look (just generated, or saved), else the default, else the first.
+      setAthlete(athlete, preferred) {
+        this.athlete = athlete;
+        const first = athlete.looks.find((l) => l.slug === preferred) || athlete.looks.find((l) => l.default) || athlete.looks[0];
         this.lookSlug = first ? first.slug : "";
         this.listOpen = false; this.genBusy = false; this.genOpen = athlete.looks.length === 0;
         this.watchBuilds();
@@ -119,6 +112,7 @@
         this.closeList(); this.$refs.lookTrigger.focus();
         if (i >= this.looks.length) return this.startGenerate();
         this.lookSlug = this.looks[i].slug; this.genOpen = false;
+        this.onLookPicked();
       },
       // x-show paints on a timeout, so the focus waits one too.
       startGenerate() { this.genOpen = true; this.$nextTick(() => setTimeout(() => this.$refs.genName.focus())); },
@@ -147,12 +141,131 @@
     return parts.reduce((mixed, part) => Object.defineProperties(mixed, Object.getOwnPropertyDescriptors(part)), {});
   };
 
-  // The recast typeahead: search People and pick one; the look picker above
-  // takes it from there. Nothing is saved until a look is cast or generated.
-  window.recastTypeahead = function () {
+  // After a recast saves, the prompts, swap targets and hand-offs below were
+  // rewritten on the server: fetch the page again and swap in those sections
+  // (Alpine starts the new nodes itself). Only the newest refresh paints.
+  window.refreshCastOutputs = (function () {
+    let seq = 0;
+    return async function () {
+      const mine = ++seq;
+      try {
+        const resp = await fetch(window.location.pathname + window.location.search, { headers: { Accept: "text/html" } });
+        if (!resp.ok || mine !== seq) return;
+        const doc = new DOMParser().parseFromString(await resp.text(), "text/html");
+        if (mine !== seq) return;
+        ["cast-progress", "clips-panel", "chunks-panel"].forEach((name) => {
+          const fresh = doc.querySelector("[data-test='" + name + "']");
+          const old = document.querySelector("[data-test='" + name + "']");
+          if (fresh && old) old.replaceWith(document.importNode(fresh, true));
+        });
+      } catch (e) { /* the page still shows the last render; a reload brings it up to date */ }
+    };
+  })();
+
+  // Swap Person on one cast card: the toggle, the people search, the chosen
+  // athlete and the look picker. Every pick is saved at once as JSON to the
+  // recast endpoint, one request at a time (a pick made while one is in flight
+  // waits and supersedes any other waiting one), so the server always ends on
+  // the operator's last pick. The card shows what it shows at once; the save
+  // state says whether the server has it, with Retry when it does not.
+  window.swapCard = function () {
     return window.mixComponents(window.typeaheadSearch(), window.lookPicker(), {
-      reset() { this.clearAthlete(); },
-      choose(r) { this.settle(r); this.setAthlete(r, ""); },
+      on: false, searching: false, savedPerson: "", savedLook: "", save: "", error: "",
+      inflight: false, queued: null, lastBody: null,
+      init() {
+        const data = this.$root.dataset;
+        this.savedPerson = data.savedPerson || ""; this.savedLook = data.savedLook || "";
+        this.on = data.swapOn === "true";
+        if (data.athlete) {
+          this.setAthlete(JSON.parse(data.athlete), data.freshLook || this.savedLook);
+          // An athlete saved with no look: nothing is previewed as if it were cast.
+          if (!this.savedLook && !data.freshLook) this.lookSlug = "";
+        }
+        this.$watch("open", (open) => { if (open) this.$nextTick(() => this.fitList()); });
+      },
+      // off: not swapped. open: on, nobody saved yet. pending: an athlete with no look. recast: both saved.
+      get state() {
+        if (!this.on) return "off";
+        if (!this.savedPerson) return "open";
+        return this.savedLook ? "recast" : "pending";
+      },
+      reset() {},
+      // Off remembers the athlete and look (the server keeps them, read by nothing);
+      // on brings them straight back. On with nobody remembered saves nothing until a pick.
+      toggle() {
+        this.on = !this.on;
+        this.open = false;
+        if (this.on) {
+          if (this.athlete) { this.searching = false; this.persist({ swap: "1" }); return; }
+          this.searching = true; this.save = ""; this.error = "";
+          this.$nextTick(() => setTimeout(() => this.$refs.search && this.$refs.search.focus()));
+          return;
+        }
+        this.searching = false;
+        if (this.savedPerson || this.inflight || this.athlete) this.persist({ keep: "1" });
+        else { this.save = ""; this.error = ""; }
+      },
+      // "Swap with <name>?": the person the card is named after, in their default look.
+      offerSwap() {
+        const offer = JSON.parse(this.$root.dataset.offer);
+        this.on = true; this.searching = false; this.open = false;
+        this.setAthlete(offer, "");
+        this.persist({ person_slug: offer.slug, appearance_slug: this.lookSlug });
+      },
+      changeAthlete() {
+        this.searching = true; this.query = ""; this.results = []; this.open = false;
+        this.$nextTick(() => setTimeout(() => this.$refs.search.focus()));
+      },
+      // A person from the search: cast at once in their default look (else their first); a person with no look is saved alone.
+      choose(r) {
+        this.settle(r); this.searching = false;
+        this.setAthlete(r, "");
+        this.persist({ person_slug: r.slug, appearance_slug: this.lookSlug });
+      },
+      onLookPicked() {
+        if (this.athlete) this.persist({ person_slug: this.athlete.slug, appearance_slug: this.lookSlug });
+      },
+      persist(body) {
+        this.lastBody = body;
+        if (this.inflight) { this.queued = body; this.save = "saving"; return; }
+        this.send(body);
+      },
+      retry() { if (this.lastBody && !this.inflight) this.send(this.lastBody); },
+      async send(body) {
+        this.inflight = true; this.save = "saving"; this.error = "";
+        let ok = false;
+        try {
+          const token = document.querySelector("meta[name='csrf-token']");
+          const resp = await fetch(this.$root.dataset.saveUrl, {
+            method: "PATCH", credentials: "same-origin",
+            headers: { "Content-Type": "application/json", Accept: "application/json", "X-CSRF-Token": token ? token.content : "" },
+            body: JSON.stringify(body),
+          });
+          const json = (resp.headers.get("Content-Type") || "").includes("json") ? await resp.json() : {};
+          if (!resp.ok || !json.state) throw new Error(json.error || "The server answered " + resp.status + ".");
+          this.savedPerson = json.person_slug || ""; this.savedLook = json.appearance_slug || "";
+          // Back on with a remembered look that is gone: the card asks for a look again.
+          if (body.swap && this.athlete) this.lookSlug = this.savedLook;
+          ok = true;
+        } catch (e) {
+          this.error = e.message && e.message !== "Failed to fetch" ? e.message : "The connection dropped.";
+        }
+        this.inflight = false;
+        if (this.queued) { const next = this.queued; this.queued = null; return this.send(next); }
+        this.save = ok ? "saved" : "failed";
+        if (ok) window.refreshCastOutputs();
+      },
+      // The results list is wider than the card: slide it back inside the window.
+      fitList() {
+        const list = this.$refs.results;
+        if (!list) return;
+        list.style.transform = "";
+        const box = list.getBoundingClientRect();
+        const gutter = 16;
+        let dx = Math.min(0, window.innerWidth - gutter - box.right);
+        if (box.left + dx < gutter) dx = gutter - box.left;
+        if (dx) list.style.transform = "translateX(" + dx + "px)";
+      },
     });
   };
 
@@ -349,18 +462,21 @@
   </div>
 
   <div class="card p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3 justify-between" data-test="cast-progress">
+    <%# Naming and swapping are both optional: the summary counts them, and only a swap still waiting for its look is called out. %>
+    <% swapped = @performers.count(&:swap?) %>
+    <% named = @performers.count(&:named?) %>
+    <% waiting = @video.recast_open.size %>
     <p class="text-sm text-body">
-      <span class="font-semibold text-heading" data-test="cast-resolved-count"><%= resolved %> of <%= @performers.size %></span>
-      <%= @video.cinematic? ? "people answered: recast, kept as is, labelled or marked as extras." : "people labelled or marked as extras." %>
-      <% unless @video.cast_confirmed? || @video.cast_ready? %>
-        <span class="text-muted">Cast confirmed unlocks when every person <%= @video.cinematic? ? "has an answer" : "is one or the other" %>.</span>
-      <% end %>
-      <% if @performers.any? %>
-        <span class="block mt-1" data-test="recast-progress">
-          <span class="font-semibold text-heading"><%= @performers.count(&:recast?) %></span> recast,
-          <span class="font-semibold text-heading"><%= @video.recast_open.size %></span> still to answer under “Replaced by”.
-        </span>
-      <% end %>
+      <span class="block" data-test="recast-progress">
+        <span class="font-semibold text-heading" data-test="cast-swap-count"><%= swapped %> of <%= @performers.size %></span>
+        <%= @performers.size == 1 ? "person" : "people" %> swapped; the rest stay as filmed.
+        <% if waiting.positive? %>
+          <span class="text-warning-ink" data-test="recast-waiting"><%= waiting %> still <%= waiting == 1 ? "needs" : "need" %> a look.</span>
+        <% end %>
+      </span>
+      <span class="block mt-1 text-muted" data-test="cast-named-count">
+        <%= named.zero? ? "Nobody" : "#{named} of #{@performers.size}" %> named<%= " (#{@performers.count(&:extra?)} marked extras)" if @performers.any?(&:extra?) %>. Naming is optional: it builds the artist rolodex.
+      </span>
     </p>
     <% if @video.cast_confirmed? %>
       <span class="badge bg-success/10 text-success-ink border-success/40 text-xs" data-test="cast-confirmed">Cast confirmed</span>
@@ -379,7 +495,7 @@
     <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
       <% @performers.each do |performer| %>
         <%= render "music_videos/performer", performer: performer, video: @video, still_urls: @still_urls, recast_looks: @recast_looks,
-                   sheet_row: @sheet_row, sheet_ready: @sheet_ready, fresh_look: params[:look] %>
+                   recast_rows: @recast_rows, sheet_row: @sheet_row, sheet_ready: @sheet_ready, fresh_look: params[:look] %>
       <% end %>
     </div>
   <% end %>

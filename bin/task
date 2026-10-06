@@ -765,13 +765,11 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 #                 typed the same night, by the operator who had just watched the
 #                 first one abort. The failure mode does not teach, because the
 #                 record looks right — which is the whole argument for a guard.
-#   risk_tags     the SILENT readers, and 1117 tasks already carry a joined entry.
-#                 Release::BuilderPolicy intersects the tags with auto_qa's
-#                 blocked_risk_tags and ReviewerSelector looks each tag up in
-#                 RISK_DOMAINS: BOTH match EXACTLY, so a joined entry matches
-#                 nothing and the gate fails OPEN. 31 tasks would have hit the
-#                 auto-QA block and did not; 464 would have pulled a domain
-#                 reviewer light and did not. (Release::GemVersion is the one
+#   risk_tags     the SILENT reader, and 1117 tasks already carry a joined entry.
+#                 ReviewerSelector looks each tag up in RISK_DOMAINS and matches
+#                 EXACTLY, so a joined entry matches nothing and the gate fails
+#                 OPEN: 464 tasks would have pulled a domain reviewer light and
+#                 did not. (Release::GemVersion is the one
 #                 reader unharmed — BREAKING_TAG is a substring regex.)
 #
 # WHY THESE TWO AND NOT THE OTHER THREE. `--accept`, `--test` and `--checks` carry
@@ -1306,8 +1304,8 @@ def refuse_comma_list!(flag, value, remedy: nil)
        "  #{remedy}\n" \
        "Accepted as typed it stores a single joined entry that renders identically to the correct " \
        "pair (`bin/task show` prints both as `a,b`) and is read correctly by nothing: the release " \
-       "conductor resolves it to a phantom repo and ABORTS the sweep, Release::BuilderPolicy's " \
-       "blocked_risk_tags never matches it, and ReviewerSelector::RISK_DOMAINS pulls no light. " \
+       "conductor resolves it to a phantom repo and ABORTS the sweep, and " \
+       "ReviewerSelector::RISK_DOMAINS pulls no light. " \
        "The prose flags — --accept, --test, --checks — are NOT guarded: a comma is legal there.")
 end
 

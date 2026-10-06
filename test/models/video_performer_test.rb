@@ -15,11 +15,12 @@ class VideoPerformerTest < ActiveSupport::TestCase
                                   sightings: [{ "t_ms" => 18_000, "visibility" => "clear" }] }.merge(attrs))
   end
 
-  test "a well-formed performer is valid and open" do
+  test "a well-formed performer is valid, unnamed, and owes nothing" do
     p = performer
     assert p.valid?, p.errors.full_messages.inspect
     assert_equal "Person 1", p.name
-    assert_not p.resolved?
+    assert_not p.named?
+    assert p.resolved?
   end
 
   test "sightings carry only an integer time and clear or partial" do
@@ -37,11 +38,11 @@ class VideoPerformerTest < ActiveSupport::TestCase
     assert performer(still_object_keys: []).valid?
   end
 
-  test "an artist or an extra resolves it, never both" do
+  test "an artist names it, an extra marks it, never both" do
     Artist.create!(slug: "test-artist-a", name: "Test Artist A", kind: "person")
 
-    assert performer(artist_slug: "test-artist-a").resolved?
-    assert performer(extra: true).resolved?
+    assert performer(artist_slug: "test-artist-a").named?
+    assert performer(extra: true).extra?
     assert_not performer(artist_slug: "test-artist-a", extra: true).valid?
   end
 

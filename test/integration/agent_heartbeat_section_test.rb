@@ -10,6 +10,10 @@ require "test_helper"
 # Assertions read the SERVER-RENDERED data-clip + visible text (Nokogiri can't see
 # Alpine-toggled state), matching the copy-launcher convention on /deployments.
 class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   # Create the souls this spec visits locally (transactional fixtures roll them
   # back). NOT global fixtures — other suites create avi/carl/shannon agents in
   # their own setup, so a shared fixture would collide on the unique slug.

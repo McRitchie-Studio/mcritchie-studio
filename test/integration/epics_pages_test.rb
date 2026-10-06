@@ -5,6 +5,10 @@ require "test_helper"
 # by stage, the board links reach /epics, and the conductor's release notes nest a
 # release's tasks under their epics.
 class EpicsPagesTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     @building = Task.create!(title: "Epic page building task", stage: "building", epic_slug: "devops-v3")
     @shipped = Task.create!(title: "Epic page shipped task", stage: "shipped", epic_slug: "devops-v3")

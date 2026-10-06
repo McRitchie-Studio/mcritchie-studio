@@ -2,9 +2,13 @@ require "test_helper"
 
 # [integration] The orchestrator seat works end to end under `xan`: heartbeat
 # attribution lands on it through the API, reviewer selection seats and excludes
-# it, the legacy `alex` slug rides the alias into both, and the /alex/* pages
-# forward to /xan/* with their query strings intact.
+# it, the legacy `alex` slug rides the alias into both, and the seat's pages
+# answer under /xan.
 class XanSeatTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   fixtures :agents
 
   # ── Heartbeat attribution ────────────────────────────────────────────────
@@ -84,28 +88,6 @@ class XanSeatTest < ActionDispatch::IntegrationTest
     assert_response :success
     get xan_insights_path
     assert_response :success
-  end
-
-  test "the legacy /alex paths redirect permanently and keep their query string" do
-    get "/alex/heartbeat?session_id=sess-A&page=2"
-    assert_response :moved_permanently
-    assert_equal "http://www.example.com/xan/heartbeat?session_id=sess-A&page=2", response.location
-
-    get "/alex/heartbeat"
-    assert_redirected_to "http://www.example.com/xan/heartbeat"
-
-    get "/alex/heartbeat/activities?page=3"
-    assert_response :moved_permanently
-    assert_equal "http://www.example.com/xan/heartbeat/activities?page=3", response.location
-
-    get "/alex/insights"
-    assert_redirected_to "http://www.example.com/xan/insights"
-
-    get "/alex/pipeline"
-    assert_redirected_to "http://www.example.com/xan/pipeline"
-
-    follow_redirect!
-    assert_response :success, "the forward lands on a page that renders"
   end
 
   test "the launcher enters the seat as xan" do

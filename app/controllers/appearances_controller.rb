@@ -18,15 +18,14 @@
 # reachable without a session" means "reachable by anyone willing to type an email
 # address", which is not a control over a paid endpoint at all. `require_admin` is
 # the gate that costs something to get through, and it matches contents_controller
-# beside it. #show stays public, matching the person page it is reached from.
+# beside it. #show needs an admin too, like the person page it is reached from (AdminWall).
 #
 # Nothing here runs from a callback, a sweep or a page render either: the render
 # path reads rows and asks `available?`, and neither question spends.
 class AppearancesController < ApplicationController
-  skip_before_action :require_authentication, only: [:show]
   # BEFORE set_appearance ON PURPOSE. A request that may not spend has no business
   # costing us two lookups on its way to being refused.
-  before_action :require_admin, except: [:show]
+  before_action :require_admin
   before_action :set_appearance
 
   # THE PAGE THE OPERATOR JUDGES THE PIPELINE BY: the reference photographs on one

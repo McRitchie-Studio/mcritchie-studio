@@ -3,6 +3,10 @@ require "test_helper"
 # /tasks/recent — the flat recency list showcasing per-task testing-phase
 # durations + gate verdict chips. Public-read; the kanban board is untouched.
 class RecentTasksViewTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     @new_task = tasks(:new_task)
     @in_progress_task = tasks(:in_progress_task)

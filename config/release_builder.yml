@@ -1,24 +1,7 @@
-# Release builder autonomy policy.
-#
-# Read by Release::BuilderPolicy. This config decides whether a reviewed-task
-# queue is eligible for automatic QA assembly, or whether the release conductor
-# should only propose the plan and wait for operator confirmation.
-#
-# Production shipping authority is separate from QA assembly. The default path
-# remains gated; the autonomous_kickoff names the operator phrase that explicitly
-# grants agents production ship authority after the same deterministic gates pass.
-
-auto_qa:
-  max_tasks: 1
-  max_repos: 1
-  blocked_risk_tags:
-    - migration
-    - payment
-    - solana
+# Release builder settings: how production ship takes authority, and the
+# operator windows. Read by Devops::Windows.
 
 production_ship:
-  operator_gated: true
-  autonomous_kickoff: "full-cycle"
   # How `bin/release ship` takes production authority when no --mode is passed
   # (devops-v3-design.md section 6, decision 2). One of:
   #   ask   — the interactive confirm prompt; holds until a human answers.

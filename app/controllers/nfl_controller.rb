@@ -1,6 +1,4 @@
 class NflController < ApplicationController
-  skip_before_action :require_authentication
-
   def index
     @season = Season.find_by(year: 2025, league: "nfl")
     @team_count = Team.nfl.count

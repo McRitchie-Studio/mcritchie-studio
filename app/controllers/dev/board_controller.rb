@@ -8,11 +8,10 @@ module Dev
   # as defense in depth. Mutations are scoped to fixtures (metadata.dev_fixture),
   # so a real task is never touched.
   class BoardController < ApplicationController
-    # A local-only convenience tool — no login required (the value is skipping
-    # auth gymnastics). Safe because it is gated to Rails.env.local? at both the
+    # A local-only convenience tool on AdminWall::PUBLIC — no login required (the
+    # value is skipping auth gymnastics). Safe because it is gated to Rails.env.local? at both the
     # route and the action. CSRF still applies in the browser (the buttons send
     # the token); it's off in the test env as usual.
-    skip_before_action :require_authentication, raise: false
     before_action :ensure_local!
 
     FIXTURE_MARK = "dev_fixture"
