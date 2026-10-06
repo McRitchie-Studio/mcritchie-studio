@@ -30,9 +30,9 @@
       <span x-text="on ? 'Swap Person' : 'Don’t Swap Person'"><%= on ? "Swap Person" : "Don’t Swap Person" %></span>
     </button>
     <span role="status" aria-live="polite" class="text-xs min-w-0" data-test="swap-save-state">
-      <span x-show="save === 'saving'" x-cloak class="text-muted">Saving…</span>
-      <span x-show="save === 'saved'" x-cloak class="text-success-ink">Saved</span>
-      <span x-show="save === 'failed'" x-cloak class="text-warning-ink">
+      <span x-show="save === 'saving'" x-cloak class="text-muted" data-test="swap-saving">Saving…</span>
+      <span x-show="save === 'saved'" x-cloak class="text-success-ink" data-test="swap-saved">Saved</span>
+      <span x-show="save === 'failed'" x-cloak class="text-warning-ink" data-test="swap-failed">
         Not saved. <button type="button" @click="retry()" class="font-semibold underline hover:text-heading" data-test="swap-retry">Retry</button>
       </span>
     </span>
