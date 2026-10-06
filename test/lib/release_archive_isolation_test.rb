@@ -2,8 +2,8 @@
 
 # [unit] `bin/release archive` must reach the machine ONLY through stubbed seams.
 #
-# THE DEFECT THIS EXISTS TO CATCH (found 2026-08-28). release_cli_test.rb's two
-# archive tests stubbed the conductor and the worktree reclaim, but not
+# THE DEFECT THIS EXISTS TO CATCH. The release CLI's two
+# archive tests once stubbed the conductor and the worktree reclaim, but not
 # sweep_artifacts, sweep_docs or commit_artifact_to_release — and `archive` calls
 # all three with `apply: true`. So `bin/rails test` ran bin/clean-artifacts and
 # bin/archive-docs FOR REAL: 32.9 MB reclaimed across 9 repos and 32 worktrees,
@@ -31,8 +31,8 @@ require_relative "../support/release_archive_seams"
 class ReleaseArchiveIsolationTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 
-  # The board read/write and the worktree reclaim, which release_cli_test.rb also
-  # stubs. Kept minimal and local: this file's subject is the FILESYSTEM seams,
+  # The board read/write and the worktree reclaim, which the release CLI archive tests
+  # also stub. Kept minimal and local: this file's subject is the FILESYSTEM seams,
   # and depending on another test class's constants would couple the two.
   BOARD_STUB = <<~RUBY
     def conductor(ruby, read_only: false)

@@ -14,8 +14,8 @@ require "tmpdir"
 # against a published 0.9.1, with PRs #313 and #245 both red on
 # `Check this engine does not trail turf_monster`.
 #
-# A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is frozen at its size by
-# config/test_health.yml (7669), precisely so new work lands somewhere else. This
+# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
+# config/test_health.yml, precisely so new work lands somewhere else. This
 # follows test/lib/release_engine_migration_install_test.rb's pattern — the REAL
 # function runs, with `sh`/`git_capture` stubbed, so the decisions under test are
 # the ones the shell actually makes rather than a model's idea of them.

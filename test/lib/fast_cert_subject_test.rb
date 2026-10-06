@@ -499,7 +499,7 @@ class FastCertSubjectTest < Minitest::Test
     # test/models/task_test.rb when the rewritten operator-approval suite ran that
     # file 59 lines past its ceiling, and test/lib/release_producer_lock_bump_test.rb
     # (prepare-skips-engine-own-lock) is a new file rather than an append to the
-    # frozen hotspot test/lib/release_cli_test.rb (7669, at its ceiling). Each header
+    # frozen release CLI hotspot, then at its ceiling. Each header
     # cites this config to say why it is a new file rather than an append, which is
     # exactly the reference the mapper is supposed to follow. That the same cause now
     # accounts for four of the five increments is the pattern working, not drifting —

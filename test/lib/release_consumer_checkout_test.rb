@@ -15,7 +15,7 @@
 #     (DocsArchive::CommandFailed)
 #
 # read from a script that was itself running out of `…/studio-engine/mcritchie_studio`.
-# Three archive tests in test/lib/release_cli_test.rb went red in `mcritchie_studio
+# Three release CLI archive tests went red in `mcritchie_studio
 # suite vs this engine`, the gem publish preflight failed with them, and a checkpoint
 # release stopped. The hub's OWN CI is green on those same three tests, because in the
 # projects-root layout both spellings are one directory — which is exactly why the
@@ -260,8 +260,8 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
   end
 
   # Evaluate one bin/release helper in a clean subprocess with the projects root
-  # pinned. (Mirrors release_cli_test's eval_helper; kept local because that file is
-  # a frozen hotspot in config/test_health.yml.)
+  # pinned. (Mirrors the release CLI harness's eval_helper; kept local because the
+  # harness is a frozen hotspot in config/test_health.yml.)
   def eval_helper(workspace, expr)
     env = SessionEnv.neutralized("PROJECTS_DIR" => workspace)
     out, err, status = Open3.capture3(env, "ruby", "-e", %(load #{BIN.inspect}; print(#{expr})))

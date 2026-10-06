@@ -16,13 +16,11 @@
 # install is still named, because a machine that has never been provisioned genuinely
 # needs it, but it must come second and conditionally.
 #
-# WHY THIS FILE EXISTS SEPARATELY. `release_cli_test.rb` is the suite's worst APPEND
-# hotspot — 7,598 lines, touched by 26 of the last 200 PRs, all colliding at the
-# bottom of one file — and the test-health ratchet refuses further growth by design.
-# It offers two outs: a new file named for its concern, or a documented ceiling raise.
-# This ceiling had already been raised four times; a fifth would have been the wrong
-# answer to a guard doing its job. `eval_helper` is re-implemented here rather than
-# shared, exactly as test/lib/release_consumer_checkout_test.rb does.
+# WHY THIS FILE EXISTS SEPARATELY. The release CLI files are the suite's APPEND
+# hotspots, and the test-health ratchet refuses their growth by design. It offers two
+# outs: a new file named for its concern, or a documented ceiling raise; this is the
+# first. `eval_helper` is re-implemented here rather than shared, exactly as
+# test/lib/release_consumer_checkout_test.rb does.
 require "minitest/autorun"
 require "open3"
 require_relative "../support/session_env"
@@ -57,10 +55,9 @@ class ReleaseAuthRemedyMessageTest < Minitest::Test
                     "wrong-remedy defect this file exists to prevent"
   end
 
-  # MOVED HERE from release_cli_test.rb, which is the suite's worst append hotspot
-  # and at its ratchet ceiling. This assertion is purely about the AUTH MESSAGE,
-  # so it belongs in the file named for that concern rather than at the bottom of
-  # a 7,598-line general file — which is exactly what the ratchet asks for.
+  # This assertion is purely about the AUTH MESSAGE, so it belongs in the file
+  # named for that concern rather than at the bottom of a general release CLI
+  # file, which is exactly what the ratchet asks for.
   #
   # THE MESSAGE, not just the label — the label is only useful if the sentence the
   # operator reads changes with it. The auth message must not send anyone to
@@ -93,8 +90,8 @@ class ReleaseAuthRemedyMessageTest < Minitest::Test
 
   private
 
-  # Re-implemented rather than shared: release_cli_test.rb's copy is private to that
-  # file, and importing it would re-couple this concern to the hotspot.
+  # Re-implemented rather than shared: the release CLI harness's copy would load the
+  # whole harness, and importing it would re-couple this concern to the hotspot.
   def eval_helper(expr)
     out, err, status = Open3.capture3(
       SessionEnv.neutralized({}), "ruby", "-e", %(load #{BIN.inspect}; print(#{expr}))

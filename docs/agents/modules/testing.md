@@ -1036,7 +1036,7 @@ hub CI run distinguishes them**. Any hub tool that derives a directory from a re
 NAME therefore has a path bug that only the consumer lane can see. That is how
 `bin/release`'s `repo_path` shipped pointing at a `mcritchie-studio` that does not
 exist there — `bin/archive-docs --repo=` got the miss and `git -C` raised
-`DocsArchive::CommandFailed`, reddening three `test/lib/release_cli_test.rb`
+`DocsArchive::CommandFailed`, reddening three release CLI
 archive tests and stopping a release.
 
 Two rules follow:

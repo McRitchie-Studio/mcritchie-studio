@@ -46,7 +46,7 @@
 #   FAIL-CLOSED (the board)  — TASK_API_BASE/ATOMIC_CAPTURE_URL point at an
 #     unroutable loopback port. Nothing listens, so a board call is refused
 #     instantly and locally. Same fail-closed choice, and the same spelling, as
-#     test/lib/release_cli_test.rb's UNROUTABLE_API_BASE, which was added after
+#     the release CLI harness's UNROUTABLE_API_BASE, which was added after
 #     that suite filed 39 real findings into the operator's live triage inbox.
 #   SEALED BINARIES (gh, op, heroku, ssh) — a recording stub of each sits FIRST on
 #     the child's PATH, and the named env seams (CI_STATUS_GH_BIN,
