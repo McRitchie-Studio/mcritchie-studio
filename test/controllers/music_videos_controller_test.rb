@@ -74,8 +74,10 @@ class MusicVideosControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Cast confirmed.", flash[:notice]
     assert_equal "cast_confirmed", @video.reload.stage
 
+    # Naming stays editable after the confirm (it is optional, and Change is always offered).
     label(1, clear: "1")
-    assert_equal @artist.slug, @video.video_performers.find_by!(ordinal: 1).artist_slug
+    assert_nil @video.video_performers.find_by!(ordinal: 1).artist_slug
+    assert_equal "Person 1 cleared.", flash[:notice]
   end
 
   test "picking a person from People makes them an artist, once" do

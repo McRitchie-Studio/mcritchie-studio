@@ -205,6 +205,13 @@
         if (this.savedPerson || this.inflight || this.athlete) this.persist({ keep: "1" });
         else { this.save = ""; this.error = ""; }
       },
+      // "Swap with <name>?": the person the card is named after, in their default look.
+      offerSwap() {
+        const offer = JSON.parse(this.$root.dataset.offer);
+        this.on = true; this.searching = false; this.open = false;
+        this.setAthlete(offer, "");
+        this.persist({ person_slug: offer.slug, appearance_slug: this.lookSlug });
+      },
       changeAthlete() {
         this.searching = true; this.query = ""; this.results = []; this.open = false;
         this.$nextTick(() => setTimeout(() => this.$refs.search.focus()));

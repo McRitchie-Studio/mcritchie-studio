@@ -1,6 +1,6 @@
 <%# One person on the cast panel: stills, sightings, the optional artist name (the rolodex), and the Swap Person toggle. Nothing here has to be pressed before the cast is confirmed. %>
 <% sightings = performer.sightings_by_time %>
-<% editable = !video.cast_confirmed? %>
+<% named_row = performer.artist&.person_slug && local_assigns.fetch(:recast_rows, {})[performer.artist.person_slug] %>
 <article id="person-<%= performer.ordinal %>" class="card flex flex-col min-w-0 scroll-mt-24"
          data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>" data-named="<%= performer.named? %>">
   <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset rounded-t-xl overflow-hidden">
@@ -66,19 +66,32 @@
       <% if performer.artist || performer.extra? %>
         <div class="flex items-center justify-between gap-2 min-w-0">
           <% if performer.artist %>
-            <p class="min-w-0" data-test="performer-artist" data-slug="<%= performer.artist_slug %>">
-              <span class="font-semibold text-heading"><%= performer.artist.name %></span>
-              <span class="text-xs text-muted"><%= performer.artist.kind %> · <span class="font-mono"><%= performer.artist_slug %></span></span>
-            </p>
+            <%# Who is on screen, drawn like the swap's chosen athlete (headshot, name, vocation and team) but under its own heading; the slug is a tooltip only. %>
+            <div class="min-w-0 flex-1" data-test="performer-artist" data-slug="<%= performer.artist_slug %>" title="<%= performer.artist_slug %>">
+              <p class="label-upper mb-1.5">On screen</p>
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="w-11 h-11 shrink-0 rounded-full bg-inset border border-subtle overflow-hidden flex items-center justify-center text-muted" data-test="performer-artist-avatar">
+                  <% if named_row&.avatar_url %>
+                    <img src="<%= named_row.avatar_url %>" alt="" loading="lazy" class="block w-full h-full object-cover"
+                         onerror="this.hidden = true; this.nextElementSibling.hidden = false" data-test="performer-artist-headshot">
+                  <% end %>
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="w-6 h-6" <%= "hidden" if named_row&.avatar_url %> data-test="performer-artist-placeholder">
+                    <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.5-8 5.5 0 .8.7 1.5 1.5 1.5h13c.8 0 1.5-.7 1.5-1.5 0-3-3.6-5.5-8-5.5Z"/>
+                  </svg>
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm font-semibold text-heading truncate" data-test="performer-artist-name"><%= performer.artist.name %></span>
+                  <span class="block text-xs text-muted truncate" data-test="performer-artist-utility"><%= [named_row&.vocation || (performer.artist.group? ? "group" : "musician"), named_row&.team].compact.join(" · ") %></span>
+                </span>
+              </div>
+            </div>
           <% else %>
             <p class="text-sm text-muted" data-test="performer-extra">Extra, not a named artist</p>
           <% end %>
-          <% if editable %>
-            <%= button_to "Change", music_video_performer_path(video, performer.ordinal), method: :patch,
-                          params: { clear: "1" }, class: "btn btn-outline btn-sm shrink-0" %>
-          <% end %>
+          <%= button_to "Change", music_video_performer_path(video, performer.ordinal), method: :patch,
+                        params: { clear: "1" }, class: "btn btn-outline btn-sm shrink-0 self-end", data: { test: "performer-artist-change" } %>
         </div>
-      <% elsif editable %>
+      <% else %>
         <%# Naming is optional and kept apart from the swap: collapsed behind a quiet link, under its own heading, and its search offers artists and non-sports People only (Artists::Search), so an athlete meant for Replace with is not picked as the person on screen. %>
         <div x-data="{ naming: false }" class="min-w-0" data-test="performer-artist-optional">
           <button type="button" x-show="!naming" @click="naming = true; $nextTick(() => setTimeout(() => document.getElementById('artist-search-<%= performer.ordinal %>').focus()))"
@@ -139,13 +152,11 @@
             </div>
           </div>
         </div>
-      <% else %>
-        <p class="text-sm text-muted" data-test="performer-unlabelled">Not named.</p>
       <% end %>
     </div>
 
     <%= render "music_videos/recast", performer: performer, video: video, looks: local_assigns.fetch(:recast_looks, {}),
-               rows: local_assigns.fetch(:recast_rows, {}),
+               rows: local_assigns.fetch(:recast_rows, {}), named_row:,
                sheet_row: local_assigns[:sheet_row], sheet_ready: local_assigns[:sheet_ready], fresh_look: local_assigns[:fresh_look] %>
   </div>
 </article>

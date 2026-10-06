@@ -142,9 +142,16 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    Person reads "musician" or "group"). Picking a person from People makes
    them an artist; "Create new artist" adds one; the quiet "Mark as extra"
    still records an extra. No column says "unnamed": it is a card with neither
-   an artist nor the extra flag. Names lock with the confirm.
+   an artist nor the extra flag. A named card shows who is on screen under
+   "On screen" with the person's headshot, vocation and team, and a Change
+   button; naming stays editable after the confirm, and the stored prompts
+   follow each change.
 6. **The operator swaps**, on the same card, with the **Swap Person** toggle
-   (checked = Swap Person, unchecked = Don't Swap Person). Off is the default;
+   (checked = Swap Person, unchecked = Don't Swap Person). Off is the default,
+   and reads "Check to replace this person with an athlete and choose a look."
+   A card named after someone who has looks also offers **Swap with <name>?**:
+   one click turns the swap on with them in their default look (never done
+   for him);
    a card saved under the old "Keep as is" reads the same. On reveals the
    people search: a list wider than the card, three columns per row (the
    headshot; the name, vocation, team and looks count; the person's default

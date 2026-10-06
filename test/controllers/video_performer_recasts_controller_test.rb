@@ -276,4 +276,19 @@ class VideoPerformerRecastsControllerTest < ActionDispatch::IntegrationTest
       assert_equal [nil, nil], video.video_performers.map(&:artist_slug)
     end
   end
+
+  test "a confirmed cast can still be named, and the stored prompts are refreshed with it" do
+    log_in_as users(:alex)
+    assert @video.cast_confirmed?
+    artist = Artist.create!(slug: "test-artist-a", name: "Test Artist A", kind: "person")
+    calls = 0
+    refresh = MusicVideos::ClipPrompts.method(:refresh!)
+    MusicVideos::ClipPrompts.stub(:refresh!, ->(video) { calls += 1; refresh.call(video) }) do
+      patch music_video_performer_path(@video, 2), params: { artist_slug: artist.slug }
+    end
+
+    assert_equal "Person 2 is Test Artist A.", flash[:notice]
+    assert_equal artist.slug, performer(2).artist_slug
+    assert_equal 1, calls
+  end
 end

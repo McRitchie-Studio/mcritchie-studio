@@ -129,4 +129,21 @@ test("operator turns Swap Person on, picks an athlete and a look that save at on
   await expect(recast(page, 2)).toHaveAttribute("data-state", "open");
   await expect(recast(page, 2).locator("[data-test='swap-pick-note']")).toHaveText("Pick who replaces them. Nothing is saved until you do.");
   await expect(recast(page, 2).locator("[data-test='swap-saved']")).toBeHidden();
+
+  // Person 2 named after someone who has looks is offered the swap, never given it: one click does it.
+  await card(page, 2).locator("[data-test='name-artist-open']").click();
+  await card(page, 2).locator("[data-test='performer-typeahead'] input[role='combobox']").fill("test athlete alpha");
+  await card(page, 2).locator("[data-test='typeahead-option']").filter({ hasText: "Test Athlete Alpha" }).first().click();
+  await expect(card(page, 2).locator("[data-test='performer-artist-name']")).toHaveText("Test Athlete Alpha");
+  await expect(card(page, 2).locator("[data-test='performer-artist-utility']")).toContainText("athlete");
+  await expect(card(page, 2).locator("[data-test='performer-artist-change']")).toBeVisible();
+  await expect(recast(page, 2)).toHaveAttribute("data-state", "off");
+  await expect(recast(page, 2).locator("[data-test='swap-off-note']")).toHaveText("Check to replace this person with an athlete and choose a look.");
+  const offer = recast(page, 2).locator("[data-test='swap-offer']");
+  await expect(offer).toHaveText("Swap with Test Athlete Alpha?");
+  await offer.click();
+  await expect(recast(page, 2)).toHaveAttribute("data-state", "recast");
+  await expect(recast(page, 2).locator("[data-test='swap-saved']")).toBeVisible();
+  await expect(recast(page, 2).locator("[data-test='look-trigger']")).toHaveText("Home Blue");
+  await expect(offer).toBeHidden();
 });

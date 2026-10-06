@@ -64,5 +64,6 @@ test("operator confirms the cast without naming everyone, naming two and marking
   await confirm.click();
   await expect(page.locator("[data-test='cast-confirmed']")).toBeVisible();
   await expect(page.locator("[data-test='video-stage']")).toHaveText("Cast confirmed");
-  await expect(card(page, 7).locator("[data-test='performer-unlabelled']")).toHaveText("Not named.");
+  // Naming stays optional after the confirm: the quiet link is still there.
+  await expect(card(page, 7).locator("[data-test='name-artist-open']")).toBeVisible();
 });
