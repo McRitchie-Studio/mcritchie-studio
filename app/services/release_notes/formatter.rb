@@ -1,24 +1,8 @@
 module ReleaseNotes
   class Formatter
     PRODUCTION_TASK_BASE_URL = "https://mcritchie.studio/tasks".freeze
-    APP_GROUPS = [
-      { key: "mcritchie-studio", label: "McRitchie Studio", emoji: "🪎", aliases: ["mcritchie-studio"] },
-      { key: "turf-monster", label: "Turf Monster", emoji: "🐊", aliases: ["turf-monster"] },
-      { key: "studio-engine", label: "Studio Engine", emoji: "💎", aliases: ["studio-engine"] },
-      { key: "vault", label: "Vault", emoji: "🏛️", aliases: ["turf-vault", "vault"] },
-      { key: "solana-studio", label: "Solana Studio", emoji: "🧱", aliases: ["solana-studio"] },
-      { key: "rolio", label: "Rolio", emoji: "📇", aliases: ["rolio"] },
-      { key: "mcritchie-industries", label: "McRitchie Industries", emoji: "📐",
-        aliases: ["mcritchie-industries"] },
-      { key: "cyvasse", label: "Cyvasse", emoji: "🐉", aliases: ["cyvasse"] },
-      { key: "dads-app", label: "Dads App", emoji: "🎞️", aliases: ["dads-app"] },
-      { key: "prisoners-dilemma", label: "Prisoners Dilemma", emoji: "🎲", aliases: ["prisoners-dilemma"] },
-      { key: "weekly-lock", label: "Weekly Lock", emoji: "🏈", aliases: ["weekly-lock"] },
-      { key: "rantly", label: "Rantly", emoji: "📣", aliases: ["rantly"] },
-      { key: "portfolio", label: "Portfolio", emoji: "🗂️", aliases: ["portfolio"] },
-      { key: "10and5", label: "10&5 Hospitality", emoji: "🍽️", aliases: ["10and5"] },
-      { key: "search-position", label: "Search Position", emoji: "🔎", aliases: ["search-position"] }
-    ].freeze
+    # One group per app, then per library, in config/apps.yml order (AppCatalog).
+    APP_GROUPS = AppCatalog.release_groups
 
     # Discord caps a single message at 10 embeds. The deploy header now rides in the
     # message `content` (an H1 + an H3 masked link), NOT as a lead embed, so all 10
