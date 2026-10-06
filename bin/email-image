@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Email header briefs from the command line (epic email-image-builder).
+# Logic lives in EmailImages::Cli; run with no arguments for usage.
+require_relative "../config/environment"
+
+exit EmailImages::Cli.new(ARGV).run

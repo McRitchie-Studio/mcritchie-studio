@@ -108,7 +108,7 @@ module ImageGeneration
       urls = Array(reference_urls).compact_blank
       raise GenerationError, "#{row.label} needs a reference image" if urls.empty?
 
-      payload = perform(body: request_body(prompt: prompt, reference_urls: offered(urls)))
+      payload = perform(body: request_body(prompt: prompt, reference_urls: offered(urls), size: tool_size(image_size)))
       images = extract_images(payload)
       raise GenerationError, "#{row.label} returned no image" if images.empty?
 
@@ -127,7 +127,19 @@ module ImageGeneration
     # THE REFERENCE, AS BYTES. Public so a caller can pre-flight a reference
     # without buying a generation — the failure it catches (an S3 key that moved)
     # is otherwise only visible after paying.
+    #
+    # A `data:` URI IS ALREADY BYTES and passes through untouched, under the same
+    # size cap. EmailImages::Generate hands brand marks over this way, read from
+    # this repo's public/ folder, so a reference never depends on a deployed URL.
     def data_uri_for(url)
+      if url.to_s.start_with?("data:")
+        if url.bytesize > MAX_REFERENCE_BYTES * 4 / 3 + 64
+          raise GenerationError, "inline reference is over the #{MAX_REFERENCE_BYTES} byte cap"
+        end
+
+        return url.to_s
+      end
+
       bytes, content_type = fetch_reference(url)
       "data:#{content_type};base64,#{Base64.strict_encode64(bytes)}"
     end
@@ -152,19 +164,33 @@ module ImageGeneration
     # the reference first and the instruction second, and the instruction refers to "the
     # reference" it has just been shown. Interleaving or reordering would be a change to the
     # one request shape a ten-panel sheet has ever come back from.
-    def request_body(prompt:, reference_urls:)
+    def request_body(prompt:, reference_urls:, size: nil)
       images = Array(reference_urls).map do |url|
         { type: "input_image", image_url: data_uri_for(url) }
       end
+      tool = { type: "image_generation" }
+      tool[:size] = size if size
 
       {
         model: row.model.presence || "gpt-5",
-        tools: [{ type: "image_generation" }],
+        tools: [tool],
         input: [{
           role: "user",
           content: images + [{ type: "input_text", text: prompt }]
         }]
       }
+    end
+
+    # THE TOOL'S `size`, sent ONLY WHEN ASKED FOR. The image tool takes
+    # "1024x1024", "1536x1024", "1024x1536" or "auto"; anything else (a fal-style
+    # preset name a shared caller passes every adapter) is not this vendor's
+    # vocabulary and is dropped. With no size the body is exactly the character
+    # sheet's measured request shape, unchanged.
+    TOOL_SIZES = %w[1024x1024 1536x1024 1024x1536 auto].freeze
+
+    def tool_size(image_size)
+      value = image_size.to_s
+      TOOL_SIZES.include?(value) ? value : nil
     end
 
     # EVERY image_generation_call's base64 result, decoded into a data URI.

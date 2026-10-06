@@ -146,6 +146,17 @@ Rails.application.routes.draw do
   # page renders deal correspondence.
   get "communications", to: "communications#index", as: :communications
 
+  # Email header briefs (EmailImagesController, require_admin): a brief, its
+  # generated candidates, approve/retire, and a preview inside the real email
+  # shell. Epic email-image-builder, piece 1.
+  resources :email_images, param: :slug, only: %i[index create show update] do
+    member do
+      post :generate
+      get :preview
+      post "candidates/:artifact_slug/approve", action: :approve, as: :approve_candidate
+      post "candidates/:artifact_slug/retire", action: :retire, as: :retire_candidate
+    end
+  end
   # /assets — the object store as a folder tree (AssetsController, require_admin).
   # Query params only: Sprockets owns /assets/*, and cascades /assets itself here.
   get "assets", to: "assets#index", as: :asset_browser

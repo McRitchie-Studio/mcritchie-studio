@@ -1,0 +1,21 @@
+<%# The brief's round (EmailImages::Build): generating with a self-refresh,
+    stale, done, or failed with the reason. Nothing before the first round. %>
+<% state = brief.build_stale? ? "stale" : brief.build_state %>
+<% if state.present? %>
+  <div data-test="build-status" data-state="<%= state %>" role="status"
+       class="rounded-lg border p-2 text-2xs space-y-1 <%= state == 'failed' ? 'border-danger/40 bg-danger/10 text-danger-ink' : 'border-subtle bg-surface text-body' %>"
+       <% if state == "building" %>x-data x-init="setTimeout(() => window.location.reload(), 10000)"<% end %>>
+    <% case state %>
+    <% when "building" %>
+      <p class="font-semibold text-heading">Generating candidates &middot; started <%= time_ago_in_words(brief.build_started_at) %> ago</p>
+      <p class="text-muted">A minute or two per image. This refreshes itself; <%= link_to "refresh now", request.path, class: "underline" %>.</p>
+    <% when "stale" %>
+      <p>The last round started <%= time_ago_in_words(brief.build_started_at) %> ago and never finished. You can generate again.</p>
+    <% when "done" %>
+      <p>Last round finished <%= time_ago_in_words(brief.build_finished_at) %> ago.</p>
+    <% when "failed" %>
+      <p class="font-semibold">The last round failed<% if brief.build_finished_at %> <%= time_ago_in_words(brief.build_finished_at) %> ago<% end %>.</p>
+      <p class="break-words"><%= brief.build_error.presence || "No reason was recorded." %></p>
+    <% end %>
+  </div>
+<% end %>

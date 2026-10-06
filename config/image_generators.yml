@@ -153,6 +153,35 @@ generators:
         naming the equipment. The look is operator-approved; the CLAIM is not met.
     docs_url: https://platform.openai.com/docs/api-reference/responses
 
+  # EMAIL HEADER ART (epic email-image-builder, piece 1) — the same Responses
+  # endpoint and pinned snapshot as the sheet row, asked for a landscape image.
+  #
+  # A SEPARATE ROW, NOT A NEW CAPABILITY ON THE SHEET ROW, because the two differ
+  # in what they send: this row passes the image tool's `size` (1536x1024, cropped
+  # to the 1200x600 preset by EmailImages::Crop) and offers EVERY reference — the
+  # brand's mascot or logo plus a style anchor — where the sheet row's `one` is a
+  # likeness belief about faces that does not apply to a logo. The reasoning on
+  # the sheet row's `reference_arity` still governs that row and nothing here
+  # changes it.
+  #
+  # No `unit_price_usd`, for the reason the sheet row gives: tokens across two
+  # billing schedules, no honest single rate. cost_usd stays nil, "unpriced".
+  openai_image_header:
+    label: GPT-5 image generation, email header (Responses)
+    adapter: openai
+    endpoint: https://api.openai.com/v1/responses
+    model: gpt-5-2025-08-07
+    api_version: v1
+    credential_env: OPENAI_API_KEY
+    billing_unit: tokens
+    reference_field: input_image
+    reference_arity: many
+    image_size: "1536x1024"
+    capabilities:
+      - email_header
+    measured: MEASURED_PLACEHOLDER
+    docs_url: https://platform.openai.com/docs/api-reference/responses
+
   # A SINGLE PORTRAIT, CHEAPLY AND FAST — which is all this row is registered for.
   #
   # IT SHIPPED OVERCLAIMING and this is the corrected row. It previously listed
