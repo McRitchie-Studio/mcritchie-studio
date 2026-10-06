@@ -4478,6 +4478,7 @@ class ReleaseCliTest < Minitest::Test
       puts "  - mcritchie-studio/old-ship-a redis=11"
       ["reclaim candidates:", true]
     end
+    #{ReleaseArchiveSeams::PRUNE_STUB}
   RUBY
 
   def test_archive_dry_run_previews_the_plan_and_mutates_nothing

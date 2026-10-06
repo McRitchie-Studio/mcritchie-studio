@@ -242,6 +242,10 @@ require_relative "lib/docs_archive"
 # when the doc sweep fails, so a ledger-loss claim is backed by a row count rather
 # than by the sub-command's exit code. See ledger_verdict.
 require_relative "lib/ledger_guard"
+# The two pruners' summary contracts — `archive` drives bin/prune-session-markers
+# and bin/prune-branches as steps and parses their tagged JSON lines.
+require_relative "lib/marker_prune"
+require_relative "lib/branch_prune"
 # Repo NAME → checkout DIRECTORY. The registry's hyphenated name is not always the
 # directory on disk: studio-engine's consumer-ci checks each consumer out at its
 # UNDERSCORED matrix label, so `repo_path` looks for the checkout instead of
@@ -8329,6 +8333,44 @@ def sweep_summary(out)
   ArtifactSweep.parse_summary(out) || {}
 end
 
+# The two pruners, driven like the artifact sweep: apply: false is each tool's own
+# dry run (counts and the first 20 names, nothing removed), apply: true removes.
+# Each returns its parsed summary hash ({} when the line is absent), and a pruner
+# that fails or refuses is a warning, never a failed archive: the board write has
+# landed, and both are idempotent, so the next run picks up what this one left.
+#
+# prune_session_markers is MACHINE-LOCAL like the artifact sweep. prune_branches
+# deletes on the hub REMOTE, as the agent GitHub App; what it refuses is in
+# bin/lib/branch_prune.rb.
+def prune_session_markers(apply:)
+  run_pruner(["bin/prune-session-markers", apply ? "--yes" : "--dry-run"]) { |out| MarkerPrune.parse_summary(out) }
+end
+
+def prune_branches(apply:)
+  cmd = ["bin/prune-branches", "--repo", repo_path("mcritchie-studio"), apply ? "--yes" : "--dry-run"]
+  run_pruner(cmd) { |out| BranchPrune.parse_summary(out) }
+end
+
+def run_pruner(cmd)
+  out, = Open3.capture2e(*cmd)
+  print(out)
+  yield(out) || {}
+rescue StandardError => e
+  say("⚠ #{cmd.first} failed (#{e.class}: #{e.message}); archive continues")
+  {}
+end
+
+# The archive's line for one pruner's summary, preview or applied.
+def prune_report_line(label, summary)
+  return "⚠ #{label}: no summary (the pruner's output is above)" if summary.empty?
+  return "⚠ #{label}: refused — #{summary[:refusal]}" if summary[:refusal]
+
+  verb = summary[:applied] ? "removed" : "would remove"
+  sample = summary[:sample].to_a.first(5)
+  more = summary[:count].to_i > sample.size ? ", …" : ""
+  "✓ #{label}: #{verb} #{summary[:count]}#{sample.empty? ? '' : " (#{sample.join(', ')}#{more})"}"
+end
+
 # The DOC sweep, driven the same way as the log sweep: apply: false is the tool's
 # own --dry-run. It `git mv`s frozen snapshots — dated audits, release retros,
 # misfiled dated designs — out of the LIVE doc tree into docs/agents/archive/,
@@ -8478,6 +8520,15 @@ def archive
   end
   docs_preview = docs_summary(docs_preview_sweep.out)
 
+  # 4b. Pruner PREVIEWS — each tool's own dry run: the session markers of ended
+  #     sessions, and the merged feat/* branches on the hub remote.
+  say("")
+  step("session marker prune preview: bin/prune-session-markers --dry-run")
+  markers_preview = prune_session_markers(apply: false)
+  say("")
+  step("branch prune preview: bin/prune-branches --dry-run")
+  branches_preview = prune_branches(apply: false)
+
   # 5. --dry-run stops here: the plan + all three previews are shown, nothing mutated.
   if DRY
     say("")
@@ -8486,12 +8537,16 @@ def archive
     if docs_preview[:moved]
       say("  would retire #{docs_preview[:moved]} frozen doc(s) and roll #{docs_preview[:ledger_rolled]} ledger row(s)")
     end
+    say("  #{prune_report_line('session markers', markers_preview)}")
+    say("  #{prune_report_line('merged branches', branches_preview)}")
     return
   end
 
   # 6. ONE confirm authorizes the board write, the worktree teardown, the
   #    artifact sweep, and the doc retirement (--yes skips).
-  abort!("aborted — archive not confirmed") unless confirm("Archive #{archivable.size} shipped tasks + reclaim worktrees + sweep artifacts + retire #{docs_preview[:moved] || 0} frozen doc(s)?")
+  abort!("aborted — archive not confirmed") unless confirm("Archive #{archivable.size} shipped tasks + reclaim worktrees + sweep artifacts + " \
+                                                          "retire #{docs_preview[:moved] || 0} frozen doc(s) + prune " \
+                                                          "#{markers_preview[:count] || 0} marker(s) and #{branches_preview[:count] || 0} branch(es)?")
 
   # 7. Archive on the board (shipped → archived). A board WRITE.
   step("record: Release::Conductor.archive_completed!")
@@ -8518,6 +8573,15 @@ def archive
   say("")
   step("artifact sweep: bin/clean-artifacts")
   sweep = sweep_summary(sweep_artifacts(apply: true).first)
+
+  # 9b. Prune the ended sessions' markers and the merged branches. Best-effort for
+  #     the same reason as the sweep: the board write is done.
+  say("")
+  step("session marker prune: bin/prune-session-markers --yes")
+  markers = prune_session_markers(apply: true)
+  say("")
+  step("branch prune: bin/prune-branches --yes")
+  branches = prune_branches(apply: true)
 
   # 10. Retire the frozen docs + roll the ledger. This STAGES tracked changes
   #     (git mv + the ledger rewrite), which the commit below then carries to
@@ -8588,6 +8652,8 @@ def archive
   ArtifactSweep.rotation_report_lines(sweep).each { |line| say(line) }
   say("✓ Retired #{docs[:moved] || 0} frozen doc(s) into #{DocsArchive::ARCHIVE_DIR}/ " \
       "and rolled #{docs[:ledger_rolled] || 0} ledger row(s) — moved, never deleted")
+  say(prune_report_line("session markers", markers))
+  say(prune_report_line("merged branches", branches))
   if docs[:skipped].to_a.any?
     say("⚠ Left in place, still referenced (fix the referrer first, then they retire on the next run):")
     docs[:skipped].each { |s| say("    #{s[:path]} — cited by #{s[:referrers].join(', ')}") }
