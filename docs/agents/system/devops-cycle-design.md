@@ -1317,9 +1317,9 @@ claim retro "never … mutates the board". That sentence was false, and its bein
 false is why nobody expected a *test* exercising `--followup` to reach production:
 `test_retro_collects_repeated_answer_flags_into_the_runner_payload` shelled out to
 the real `bin/triage` on every suite run and filed 39 live "fix flake" findings —
-45% of the open inbox. The test now stubs the seam, and `release_cli_test.rb` pins
-`TASK_API_BASE` at an unroutable loopback base so no test in that file can reach
-the live board again.)
+45% of the open inbox. The test now stubs the seam, and the release CLI harness
+(`test/lib/release_cli_harness.rb`) pins `TASK_API_BASE` at an unroutable loopback
+base so no test built on it can reach the live board again.)
 
 ---
 
