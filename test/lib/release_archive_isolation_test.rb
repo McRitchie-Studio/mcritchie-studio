@@ -4,11 +4,11 @@
 #
 # THE DEFECT THIS EXISTS TO CATCH. The release CLI's two
 # archive tests once stubbed the conductor and the worktree reclaim, but not
-# sweep_artifacts, sweep_docs or commit_artifact_to_release — and `archive` calls
+# sweep_artifacts, sweep_docs or commit_artifact_to_accepted — and `archive` calls
 # all three with `apply: true`. So `bin/rails test` ran bin/clean-artifacts and
 # bin/archive-docs FOR REAL: 32.9 MB reclaimed across 9 repos and 32 worktrees,
 # and a `git mv` in the PRIMARY checkout that the next run then died on. The
-# rationale, and why commit_artifact_to_release was the sharpest of the three,
+# rationale, and why commit_artifact_to_accepted was the sharpest of the three,
 # is recorded in test/support/release_archive_seams.rb.
 #
 # WHY A POISON RATHER THAN A DIFF. The obvious guard — capture `git status`

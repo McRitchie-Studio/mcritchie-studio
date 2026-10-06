@@ -51,23 +51,27 @@
 #          riding the current RC (nothing + no active release → idempotent no-op).
 #       2. Ensure a candidate exists (Release.current_or_open!).
 #       3. PROMOTE + RECORD: review already merged each feat PR into `accepted`, so
-#          the sweep PROMOTES all of `accepted` onto `release` via ONE batch PR per
-#          repo (promote_accepted_to_release!; a `reviewed` member with no code on
-#          `accepted` is a HELD anomaly, warned + left behind), then records
-#          membership + merged:"release" in ONE `heroku run`. Stages stay `reviewed`.
+#          the sweep PROMOTES all of `accepted` onto `release`, ONE promote per repo
+#          (promote_accepted_to_release!): a FAST-FORWARD ref push when `release` is
+#          contained in `accepted`, the batch PR only when `release` has diverged (a
+#          `reviewed` member with no code on `accepted` is a HELD anomaly, warned +
+#          left behind), then records membership + merged:"release" in ONE `heroku
+#          run`. Stages stay `reviewed`.
 #       4c. MERGE-FORWARD: make origin/release CONTAIN origin/main in every app
 #          AND gem repo (a hotfix pushed straight to main must never be reverted
 #          by the release). Merged in a detached workspace, never the primary,
 #          BEFORE the gate — so the SHA the gate certifies is the SHA that
 #          deploys — and BEFORE the gem publish, so gems publish the post-merge
-#          tree. Aborts loudly on a conflict or a push that did not take.
+#          tree. Aborts loudly on a conflict or a push that did not take. A
+#          merge-forward commit is then carried onto `accepted` (a fast-forward).
 #       4d. GEM MEMBERS (publish-gems-before-qa) — two phases, because a RubyGems
 #          push is irreversible: preflight EVERY swept gem (fail-closed fetch,
 #          version bumped, stranded-work guard, changelog rollable, a swept
 #          consumer declares it; ANY failure aborts with ZERO gems published),
 #          THEN publish each to RubyGems + commit each consumer's lock bump onto
-#          origin/release — BEFORE the gate and QA (ship's publish stays the
-#          idempotent verify). The version commit carries version_file +
+#          origin/accepted and fast-forward origin/release to it — BEFORE the
+#          gate and QA, so `release` never carries a commit `accepted` lacks
+#          (ship's publish stays the idempotent verify). The version commit carries version_file +
 #          Gemfile.lock + the CHANGELOG rolled into the allocated version.
 #       5. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
@@ -2959,15 +2963,14 @@ end
 
 # Did the batch-PR promote mint a merge commit whose TREE is the accepted head's
 # tree — a different SHA snapshotting IDENTICAL content? That is the LIVE promote
-# shape (`gh pr merge --merge`), and it holds whenever `accepted` was not behind
-# `release` at merge time — the common case. It BREAKS whenever release carries
-# commits accepted lacks: above all the consumer lock-bump commits `bin/release
-# prepare` lands on `release` when a gem rides (publish-gems-before-qa, PR #588 —
-# its step 4d commits the bump BEFORE pre_qa_gate resolves origin/release, so the
-# SHA read here is the post-bump one and its tree no longer matches accepted's).
-# Then this answers nil, the credit refuses, and the gate polls the post-bump SHA
-# exactly as today — the cross-PR contract pinned on #588, asserted by the
-# lock-bump tests in test/lib/release_cli_pre_qa_gate_test.rb.
+# shape of the DIVERGED path (`gh pr merge --merge`; a contained `release` is
+# fast-forwarded instead and answers fast_forward_promote?). It holds whenever
+# `accepted` was not behind `release` at merge time. It BREAKS whenever release
+# carries commits accepted lacks: a consumer lock bump that landed on `release`
+# alone because the two branches did not share a commit. Then this answers nil,
+# the credit refuses, and the gate polls the post-bump SHA — the cross-PR contract
+# pinned on #588, asserted by the lock-bump tests in
+# test/lib/release_cli_pre_qa_gate_test.rb.
 #
 # Answers {accepted_sha:, tree:} ONLY when both trees resolve and match and the
 # SHAs DIFFER (the same-SHA case is fast_forward_promote?'s, checked first).
@@ -3554,11 +3557,14 @@ def prepare
 
   # 4. PROMOTE accepted → release (the accepted-ladder's SECOND rung). Review already
   #    merged each feat PR into `accepted` (merged:"accepted"), so the sweep no longer
-  #    merges N per-task feat PRs — it lands ALL of `accepted` onto `release` via ONE
-  #    batch PR per repo (a single-repo release = exactly one PR). Git-FIRST (the
+  #    merges N per-task feat PRs — it lands ALL of `accepted` onto `release`, ONE
+  #    promote per repo: a FAST-FORWARD ref push when `release` is contained in
+  #    `accepted` (the normal case: `release` then carries the SHA whose CI `accepted`
+  #    already ran), the batch PR only when `release` has diverged. Git-FIRST (the
   #    irreversible step); the record write follows. Idempotent + fail-closed:
-  #    accepted level with release → skip the PR but still record + deploy; a promote
-  #    conflict / missing checkout ABORTS (members stay `reviewed` for a clean re-run).
+  #    accepted level with release → skip the promote but still record + deploy; a
+  #    promote conflict / missing checkout ABORTS (members stay `reviewed` for a clean
+  #    re-run).
   # 4a. EXPEDITE GUARD (opt-in, `deploy-with-task` step 3). The promote below
   #     lands the WHOLE `accepted` branch on `release` — `--task` curates which
   #     tasks are RECORDED as members, never which COMMITS ride along — so an
@@ -3771,11 +3777,13 @@ def prepare
   #     swept gem (fail-closed fetch, version parses, stranded-work guard, a
   #     swept consumer declares it) and aborts on ANY failure with ZERO gems
   #     published; only then does phase 2 publish and commit each consumer's
-  #     Gemfile.lock bump onto its release branch. Ordering is load-bearing:
-  #     the lock commits land BEFORE pre_qa_gate resolves origin/release, so
-  #     the CI verdict targets the post-bump SHA, QA bundles the new lock, and
-  #     prod ships the exact tree QA tested. Ship's publish stays as the
-  #     idempotent verify (already-live → skip).
+  #     Gemfile.lock bump onto its `accepted` and fast-forward its `release` to
+  #     that commit. Ordering is load-bearing: the lock commits land BEFORE
+  #     pre_qa_gate resolves origin/release, so the CI verdict targets the
+  #     post-bump SHA, QA bundles the new lock, and prod ships the exact tree QA
+  #     tested; and because `accepted` carries the bump too, that SHA is the
+  #     `accepted` head, so the gate credits its verdict by SHA. Ship's publish
+  #     stays as the idempotent verify (already-live → skip).
   #
   #     PHASE 0 leads: ALLOCATE each swept gem's version from its members and
   #     commit it (with its Gemfile.lock and its rolled CHANGELOG.md) onto
@@ -3801,9 +3809,9 @@ def prepare
   #     above only ever bumped `app` members, so every publish left the engine's
   #     own lock behind and reddened every open engine PR. It is a separate step
   #     rather than another entry in `app_groups` for four reasons argued at
-  #     bump_producer_locks_for_accepted, the sharpest being that it commits onto
-  #     `accepted` (where a gem repo's PRs are based) while 4d commits onto
-  #     `release` (what QA and prod read). Then ASSERT the effect: no repo may be
+  #     bump_producer_locks_for_accepted, the sharpest being that a producer's
+  #     bump is a DEVELOPMENT fact that rides the NEXT release, while 4d's is a
+  #     DEPLOY fact that `release` carries now. Then ASSERT the effect: no repo may be
   #     left resolving a gem this sweep published older than the published version.
   bump_producer_locks_for_accepted(published_gems)
   assert_no_lock_drift!(app_groups, published_gems)
@@ -5097,11 +5105,10 @@ end
 #   * It was an `&&` chain, and `git merge` exits non-zero on CONFLICT. The chain
 #     HALTED at the merge, so neither the push nor the trailing `checkout main` ran
 #     and the operator was left on a branch they had never seen, mid-conflict.
-#   * That is not an exotic path. This very file documents :diverged as the ROUTINE
-#     outcome on a gem-carrying release (post-#588), and the mechanism is
-#     bump_consumer_locks_for_qa writing Gemfile.lock — the file most likely to have
-#     been touched on accepted too. THE ROUTINE PATH AND THE CONFLICT PATH ARE THE
-#     SAME PATH.
+#   * That is not an exotic path. :diverged follows a consumer lock bump that
+#     landed on `release` alone (bump_consumer_locks_for_qa's diverged path), which
+#     writes Gemfile.lock — the file most likely to have been touched on accepted
+#     too. THE DIVERGED PATH AND THE CONFLICT PATH ARE THE SAME PATH.
 #   * Worst of all on a gem repo: a conflicted merge leaves MODIFIED TRACKED FILES in
 #     the primary, and a gem repo in that state ABORTS the next ship. Advice printed
 #     to unblock one release could wedge the following one.
@@ -5186,9 +5193,9 @@ end
 # safe direction when the wrong call costs merged work. If :diverged verdicts ever
 # start arriving where :ahead is plainly right, this is the first thing to revisit.
 #
-# Since #588 a gem-carrying release legitimately :refutes this: bump_consumer_locks_for_qa
-# commits consumer lock bumps onto `release` during prepare, so the frozen tree is
-# genuinely not accepted's. That is a true refutation, not a fault.
+# A release whose consumer lock bump landed on `release` alone (the diverged path of
+# bump_consumer_locks_for_qa) legitimately :refutes this: the frozen tree is genuinely
+# not accepted's. That is a true refutation, not a fault.
 def tree_absorbed_signal(path, sha)
   tree, ok = sh("git", "-C", path, "rev-parse", "#{sha}^{tree}", capture: true)
   return :unknown unless ok
@@ -5568,7 +5575,7 @@ def allocate_gem_versions!(gem_groups, label: nil)
       step("  gem #{group['repo']}: last published (last v* tag ∪ RubyGems) + the members' bump → rewrite " \
            "#{gem_meta_for(group['repo'])['version_file']} → roll CHANGELOG.md's '## Unreleased' into the " \
            "allocated version → `bundle lock` → ONE commit of all three onto " \
-           "origin/#{ACCEPTED_BRANCH} → batch promote onto origin/#{RELEASE_BRANCH} " \
+           "origin/#{ACCEPTED_BRANCH} → promote onto origin/#{RELEASE_BRANCH} (a fast-forward when contained) " \
            "(skips when already advanced; REFUSES rather than guess)")
     end
     return
@@ -5600,8 +5607,9 @@ def allocate_gem_versions!(gem_groups, label: nil)
 
   # AND THE SAME ONE-WAY PROMOTE CARRIES IT UP. The commit is written on `accepted`,
   # so `release` — which phase 1 preflights and phase 2 publishes from — receives it
-  # the only way anything reaches that branch: the batch `accepted → release` PR, with
-  # every guard that rides it (a RED `accepted`, a blind one, and the misfile guard).
+  # the only way anything reaches that branch: the `accepted → release` promote (a
+  # fast-forward when `release` is contained, the batch PR otherwise), with every
+  # guard that rides it (a RED `accepted`, a blind one, and the misfile guard).
   # Nothing is ever carried DOWN from `release`; that direction was weighed and rejected.
   promoted = plan.map { |entry| entry["repo"] }.uniq
   promote_accepted_to_release!(promoted, label: label) if promoted.any?
@@ -6339,7 +6347,8 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
            "(rewrite the Gemfile pin only if the new version escapes it) → install any new engine migrations " \
            "(<gem>:install:migrations + db:migrate on a throwaway database, so db/schema.rb lands with them) → " \
            "commit + push origin #{ACCEPTED_BRANCH}, then fast-forward origin #{RELEASE_BRANCH} to it " \
-           "(onto #{RELEASE_BRANCH} alone only when the two branches do not share a commit; idempotent)")
+           "(onto #{RELEASE_BRANCH} alone only when the two branches do not share a commit; " \
+           "idempotent; no-op when already current)")
       next
     end
 
@@ -6470,19 +6479,14 @@ end
 #      would need a `qa_evidence: exempt` and a null deploy target to sit there —
 #      i.e. the registry would have to be made false to hold it.
 #
-#   3. THE TARGET BRANCH IS DIFFERENT, and this is the decisive one. The consumer
-#      bump commits onto `release` because the pre-QA gate, QA and prod all read
-#      that tree — it is a DEPLOY fact. The engine's problem is a DEVELOPMENT
-#      fact: its PRs are based on `accepted`, and studio-engine's consumer-ci lane
-#      (`bin/gem-drift-check`) reads the lock in the PR's tree. The ladder is
-#      ONE-WAY — the sweep promotes accepted → release and nothing merges release
-#      or main back DOWN — so a bump landing on the engine's `release` would leave
-#      every open engine PR exactly as red as before. Same operation, opposite
-#      destination: that cannot be one loop. (`bin/release` writes `accepted` in
-#      two other places — the sweep's version commit in `commit_gem_version!`, at
-#      its `HEAD:refs/heads/#{ACCEPTED_BRANCH}` push, and the post-ship rebaseline
-#      in `advance_accepted` — but each is a deliberate, narrow writer and neither
-#      carries a consumer lock, so neither can deliver this bump.)
+#   3. THE MOMENT IS DIFFERENT, and this is the decisive one. The consumer bump
+#      is a DEPLOY fact: it lands on `accepted` and `release` fast-forwards to it
+#      in the same sweep, because the pre-QA gate, QA and prod all read that tree
+#      now. The engine's problem is a DEVELOPMENT fact: its PRs are based on
+#      `accepted`, and studio-engine's consumer-ci lane (`bin/gem-drift-check`)
+#      reads the lock in the PR's tree. Its bump must NOT move the engine's
+#      `release`, which the publish above was built from; it rides the next
+#      release. Same operation, different moment: that cannot be one loop.
 #
 #   4. MEMBERSHIP SCOPE IS DIFFERENT. solana-studio is self-gated, so it MAY
 #      release alone with no app member at all (validate_gems_for_qa says so in

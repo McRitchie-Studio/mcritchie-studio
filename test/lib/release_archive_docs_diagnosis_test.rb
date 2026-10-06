@@ -163,7 +163,7 @@ class ReleaseArchiveDocsDiagnosisTest < Minitest::Test
       { "archived" => [], "kept" => [], "count" => 0 }
     end
 
-    def commit_artifact_to_release(*)
+    def commit_artifact_to_accepted(*)
       puts(#{COMMITTED.inspect})
     end
   RUBY
@@ -269,7 +269,7 @@ class ReleaseArchiveDocsDiagnosisTest < Minitest::Test
 
       refute_predicate status, :success?, "a lost ledger must halt the beat:\n#{out}"
       refute_includes out, COMMITTED,
-                      "commit_artifact_to_release MUST NOT run — this is where the loss " \
+                      "commit_artifact_to_accepted MUST NOT run — this is where the loss " \
                       "becomes permanent on `release`:\n#{out}"
 
       assert_includes report, "ledger check: LOST",

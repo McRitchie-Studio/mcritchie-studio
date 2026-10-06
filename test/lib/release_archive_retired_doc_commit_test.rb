@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Does the archive beat's artifact commit carry a retired doc's REMOVAL to `release`,
+# Does the archive beat's artifact commit carry a retired doc's REMOVAL to `accepted`,
 # or only its archive copy?
 #
 # THE DEFECT (rel-20261006-f6a119, commit e8f121d4). Step 10 of `bin/release archive`
@@ -14,7 +14,7 @@
 #
 # Naming the source in `git add` cannot fix this alone, because by then the path
 # exists on disk again. The fix names the source at the call site, and
-# commit_artifact_to_release reads it as a removal (absent on `main` before the flip)
+# commit_artifact_to_accepted reads it as a removal (absent on `main` before the flip)
 # and `git rm`s it after the ff.
 #
 # WHY A FILE OF ITS OWN: the release CLI files are frozen append hotspots under the
@@ -48,7 +48,7 @@ class ReleaseArchiveRetiredDocCommitTest < Minitest::Test
   # Defined AFTER ISOLATION_STUB, so it replaces that stub's no-op and records what
   # step 10 hands the commit. Still never reaches git.
   RECORD_COMMIT = <<~RUBY
-    def commit_artifact_to_release(repo, paths, message)
+    def commit_artifact_to_accepted(repo, paths, message)
       Array(paths).each { |p| puts("ARTIFACT_PATH " + p.to_s) }
     end
   RUBY
@@ -73,26 +73,26 @@ class ReleaseArchiveRetiredDocCommitTest < Minitest::Test
 
   # ---- [integration] the committed tree holds the doc at exactly one path ------
 
-  # The e8f121d4 shape: the local `release` is behind `main` and predates the doc.
-  def test_integration_stale_local_release_still_commits_the_removal
-    with_fixture(stale_release: true) do |repo, dir|
+  # The e8f121d4 shape: the local target branch is behind `main` and predates the doc.
+  def test_integration_stale_local_accepted_still_commits_the_removal
+    with_fixture(stale_accepted: true) do |repo, dir|
       retire_and_commit(repo, dir, [ARCHIVED, SOURCE])
 
-      tree = release_tree(repo)
-      assert_includes tree, ARCHIVED, "the archive copy must land on release"
-      refute_includes tree, SOURCE, "the live copy must be REMOVED on release, not left beside its archive copy"
-      assert_empty collisions(tree), "release holds a retired doc at two paths: #{collisions(tree).inspect}"
+      tree = accepted_tree(repo)
+      assert_includes tree, ARCHIVED, "the archive copy must land on accepted"
+      refute_includes tree, SOURCE, "the live copy must be REMOVED on accepted, not left beside its archive copy"
+      assert_empty collisions(tree), "accepted holds a retired doc at two paths: #{collisions(tree).inspect}"
     end
   end
 
-  # The common shape: the local `release` already has the doc. The staged deletion rides
+  # The common shape: the local `accepted` already has the doc. The staged deletion rides
   # the flip, so the removal path is already gone from disk. Naming it must not make
   # git abort the batch on an unmatched pathspec.
-  def test_integration_current_local_release_commits_the_move_once
-    with_fixture(stale_release: false) do |repo, dir|
+  def test_integration_current_local_accepted_commits_the_move_once
+    with_fixture(stale_accepted: false) do |repo, dir|
       retire_and_commit(repo, dir, [ARCHIVED, SOURCE])
 
-      tree = release_tree(repo)
+      tree = accepted_tree(repo)
       assert_includes tree, ARCHIVED
       refute_includes tree, SOURCE
       assert_empty collisions(tree)
@@ -109,9 +109,9 @@ class ReleaseArchiveRetiredDocCommitTest < Minitest::Test
          .select { |_live, archived| present[archived] }
   end
 
-  # A bare origin plus a clone. origin/main and origin/release both carry the doc; the
-  # local `release` either matches origin (current) or sits at the seed (stale).
-  def with_fixture(stale_release:)
+  # A bare origin plus a clone. origin/main and origin/accepted both carry the doc; the
+  # local `accepted` either matches origin (current) or sits at the seed (stale).
+  def with_fixture(stale_accepted:)
     Dir.mktmpdir("release-retired-doc") do |dir|
       origin = File.join(dir, "origin.git")
       repo = File.join(dir, "repo")
@@ -124,35 +124,35 @@ class ReleaseArchiveRetiredDocCommitTest < Minitest::Test
       File.write(File.join(repo, "README"), "fixture")
       git(repo, "add", "README")
       git(repo, "commit", "-qm", "seed")
-      git(repo, "branch", "release")
+      git(repo, "branch", "accepted")
 
       FileUtils.mkdir_p(File.join(repo, File.dirname(SOURCE)))
       File.write(File.join(repo, SOURCE), "frozen census\n")
       git(repo, "add", SOURCE)
       git(repo, "commit", "-qm", "file the census")
       git(repo, "push", "-q", "origin", "main")
-      git(repo, "push", "-q", "origin", "main:release")
-      git(repo, "branch", "-f", "release", "main") unless stale_release
+      git(repo, "push", "-q", "origin", "main:accepted")
+      git(repo, "branch", "-f", "accepted", "main") unless stale_accepted
       yield repo, dir
     end
   end
 
   # Retire the doc exactly as DocsArchive does (a staged `git mv`), then run the real
-  # commit_artifact_to_release with `rels` named.
+  # commit_artifact_to_accepted with `rels` named.
   def retire_and_commit(repo, dir, rels)
     FileUtils.mkdir_p(File.join(repo, File.dirname(ARCHIVED)))
     git(repo, "mv", SOURCE, ARCHIVED)
     paths = rels.map { |r| File.join(repo, r) }
     setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) + %(def repo_path(_repo) = #{repo.inspect})
     script = %(ARGV.replace(["--yes"]); load #{BIN.inspect}; #{setup}; ) +
-             %{commit_artifact_to_release("mcritchie-studio", #{paths.inspect}, "ledger: fixture"); puts("DONE")}
+             %{commit_artifact_to_accepted("mcritchie-studio", #{paths.inspect}, "ledger: fixture"); puts("DONE")}
     out, err, status = Open3.capture3(OutboundSeams.env("MCR_PRIMARY_LOCK_DIR" => dir), "ruby", "-e", script)
     assert_predicate status, :success?, "the dance must not crash: #{err}"
-    assert_includes out, "committed", "the artifact commit must land on release\n\n#{out}"
+    assert_includes out, "committed", "the artifact commit must land on accepted\n\n#{out}"
   end
 
-  def release_tree(repo)
-    out, = Open3.capture2("git", "-C", repo, "ls-tree", "-r", "--name-only", "origin/release")
+  def accepted_tree(repo)
+    out, = Open3.capture2("git", "-C", repo, "ls-tree", "-r", "--name-only", "origin/accepted")
     out.lines.map(&:chomp)
   end
 
