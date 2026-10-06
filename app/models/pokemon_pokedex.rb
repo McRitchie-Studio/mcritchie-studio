@@ -413,7 +413,7 @@ class PokemonPokedex
   end
 
   def metadata_task_for_session(session_id)
-    Task.where("metadata->'devops'->>'session_id' = ?", session_id)
+    Task.where(session_id: session_id)
         .order(created_at: :desc, id: :desc)
         .first
   end

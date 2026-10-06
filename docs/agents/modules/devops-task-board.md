@@ -472,6 +472,19 @@ fields, and agents may also write them through the JSON API with a top-level
 `epic_slug` (`--epic`) — and a `devops` write to any of them is a 422; each has
 its own section below.
 
+Four keys live in BOTH places: `pr_url`, `branch`, `approval_status` and
+`session_id` (`Task::DEVOPS_MIRRORED_KEYS`) are devops keys AND indexed task
+columns, because the board sorts on `approval_status` and the merged-PR webhook
+finds a task by `pr_url` and `branch`. Write them exactly as before (`--pr-url`,
+`--branch`, `--approval`, or a `devops` write): the key stays the write surface,
+and every save copies it into its column (`Task#mirror_devops_columns`), so a
+cleared key clears the column. Readers take the column and fall back to the key.
+`approval_status` accepts only `waiting`, `approved`, `changes_requested` or
+`none`; anything else is a 422. Rows saved before the columns existed are copied by
+`bin/rails tasks:backfill_devops_columns` (idempotent; it fails while any row
+still diverges). Retiring a key moves its name into `Task::DEVOPS_COLUMN_KEYS`,
+which only happens once nothing writes the key.
+
 Supported fields:
 
 | Field | Meaning |
