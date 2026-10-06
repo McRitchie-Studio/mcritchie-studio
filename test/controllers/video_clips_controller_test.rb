@@ -139,4 +139,25 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='chunks-empty']", /bin\/find-clips steve-aoki-night-call --tile/
     assert_select "[data-test='chunks-locked']", false, "chunks no longer wait for the cast"
   end
+
+  # bin/digest-video cuts the chunks before anyone is cast: the page lists them,
+  # with the hand-off and the generic prompt, while the cast still waits.
+  test "an unconfirmed video lists the chunks the digest cut, generic prompt and all" do
+    video = NightCallCast.seed!
+    video.update!(duration_ms: 30_000)
+    rows = MusicVideos::ChunkTiler.windows(30_000).map do |w|
+      { "ordinal" => w.ordinal, "start_ms" => w.start_ms, "end_ms" => w.end_ms, "cast_shape" => "unknown",
+        "performer_ordinals" => [], "object_key" => MusicVideos::ObjectKeys.chunk(source_key: video.source_object_key, **w.to_h) }
+    end
+    MusicVideos::ReplaceClips.new(video, rows, kind: "chunk").call
+    log_in_as users(:alex)
+    get music_video_path(video)
+
+    assert_response :success
+    assert_select "[data-test='video-stage']", "Digested"
+    assert_select "[data-test='chunk-row']", 2
+    assert_select "[data-test='chunk-take-state']", /No take yet/
+    assert_select "[data-test='chunks-empty']", false
+    assert_includes response.body, ERB::Util.html_escape(MusicVideos::ClipPrompt.fill(target: nil))
+  end
 end
