@@ -14,7 +14,7 @@ class FormErrorsRenderTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=form-errors][role=alert]" do |boxes|
       classes = boxes.first["class"].split
       assert_includes classes, "text-danger-ink"
-      assert_includes classes, "bg-danger/10"
+      assert_includes classes, "border-danger/40"
       assert_select "p", text: "Title can't be blank"
     end
     assert_no_match(/bg-red-900|text-red-300/, response.body)

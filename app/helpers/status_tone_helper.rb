@@ -14,7 +14,9 @@
 #
 # The roles and their tokens (studio-engine tailwind/studio.tailwind.config.js):
 #   success / warning / danger  fill `bg-<role>`, ink `text-<role>-ink`
-#   primary                     the theme's primary scale
+#   primary                     the theme's primary scale; its chip text is
+#                               `text-heading`, because the primary colour is
+#                               not contrast-derived and fails AA as chip text
 #   muted                       the surface and text ladders
 # There is deliberately no bare `text-success` / `text-warning` /
 # `text-danger`: role colours fail contrast as text, so text uses the ink.
@@ -44,7 +46,7 @@ module StatusToneHelper
       border: "border-danger/40"
     },
     primary: {
-      chip: "bg-primary/10 text-primary border border-primary/40",
+      chip: "bg-primary/10 text-heading border border-primary/40",
       text: "text-primary",
       panel: "bg-primary/10 border border-primary/40",
       fill: "bg-primary",

@@ -9,6 +9,8 @@ class FormErrorsPartialTest < ActionView::TestCase
     Task.new(title: "").tap(&:validate)
   end
 
+  # No tint behind the messages: the danger ink is derived for AA against the
+  # card surface, and a 10% danger tint drops it below 4.5 in dark.
   test "[component] renders one line per message in the danger tokens" do
     task = invalid_task
     render partial: "shared/form_errors", locals: { record: task }
@@ -19,7 +21,7 @@ class FormErrorsPartialTest < ActionView::TestCase
     assert_equal task.errors.full_messages, box.css("p").map(&:text)
 
     classes = box["class"].split
-    %w[bg-danger/10 border-danger/40 text-danger-ink mb-4].each do |klass|
+    %w[border border-danger/40 text-danger-ink mb-4].each do |klass|
       assert_includes classes, klass
     end
   end

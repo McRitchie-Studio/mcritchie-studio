@@ -16,7 +16,7 @@ class StudioThemePolishTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='stage-guide-card'].rounded-lg.bg-surface", minimum: 1
 
     # Stage badges come from status_tone: engine tokens that serve both themes.
-    assert_includes response.body, "bg-primary/10 text-primary border border-primary/40"
+    assert_includes response.body, "bg-primary/10 text-heading border border-primary/40"
     assert_includes response.body, "bg-warning/10 text-warning-ink border border-warning/40"
     refute_includes response.body, "bg-blue-900/50 text-blue-300",
       "task stage badges should not render as dark-only blue pills"

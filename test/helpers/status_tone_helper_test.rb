@@ -4,13 +4,13 @@ class StatusToneHelperTest < ActionView::TestCase
   # A token class: an engine status role, the primary scale, or the surface,
   # text and border ladders. Nothing from a fixed palette (red-700, mint-300)
   # and no dark: variant.
-  TOKEN_CLASS = /\A(border|bg-(success|warning|danger|primary)(\/\d+)?|text-(success|warning|danger)-ink|text-primary|text-muted|bg-surface-alt|bg-inset|border-(success|warning|danger|primary)\/\d+|border-subtle)\z/
+  TOKEN_CLASS = /\A(border|bg-(success|warning|danger|primary)(\/\d+)?|text-(success|warning|danger)-ink|text-primary|text-heading|text-muted|bg-surface-alt|bg-inset|border-(success|warning|danger|primary)\/\d+|border-subtle)\z/
 
   test "[unit] each role maps to itself and returns its chip by default" do
     assert_equal "bg-success/10 text-success-ink border border-success/40", status_tone(:success)
     assert_equal "bg-warning/10 text-warning-ink border border-warning/40", status_tone(:warning)
     assert_equal "bg-danger/10 text-danger-ink border border-danger/40", status_tone(:danger)
-    assert_equal "bg-primary/10 text-primary border border-primary/40", status_tone(:primary)
+    assert_equal "bg-primary/10 text-heading border border-primary/40", status_tone(:primary)
     assert_equal "bg-surface-alt text-muted border border-subtle", status_tone(:muted)
   end
 

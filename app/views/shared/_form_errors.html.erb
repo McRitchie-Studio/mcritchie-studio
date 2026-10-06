@@ -1,13 +1,15 @@
 <%# locals: (record:, spacing: "mb-4", test_id: "form-errors") -%>
 <%#
   A form's validation errors, one line per message, in the danger role's
-  token colours (status_tone), so the box reads in light and dark alike.
+  ink and border (status_tone), so the box reads in light and dark alike. No
+  tint behind the text: the ink is derived for AA against the card surface,
+  and a danger tint under it drops below AA on the dark theme.
   Renders nothing when the record is nil or valid, so a form can render it
   unconditionally. spacing: the margin below the box. test_id: the
   data-test hook a page's tests find the box by.
 %>
 <% if record&.errors&.any? %>
-  <div class="<%= spacing %> p-3 rounded-lg text-sm <%= status_tone(:danger, :panel) %> <%= status_tone(:danger, :text) %>" role="alert" data-test="<%= test_id %>">
+  <div class="<%= spacing %> p-3 rounded-lg text-sm border <%= status_tone(:danger, :border) %> <%= status_tone(:danger, :text) %>" role="alert" data-test="<%= test_id %>">
     <% record.errors.full_messages.each do |message| %>
       <p><%= message %></p>
     <% end %>
