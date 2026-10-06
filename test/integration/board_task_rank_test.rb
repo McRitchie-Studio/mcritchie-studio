@@ -4,6 +4,10 @@ require "test_helper"
 # event-driven rank (Task#ordered → position DESC; a create/stage-move stamps
 # max + 100) puts the freshest card first on BOTH boards.
 class BoardTaskRankTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "deployments column lists the newest task in a stage first" do
     older  = Task.create!(title: "rank older designed card", stage: "designed")
     newer  = Task.create!(title: "rank newer designed card", stage: "designed")

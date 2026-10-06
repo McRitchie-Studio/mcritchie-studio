@@ -1,6 +1,10 @@
 require "test_helper"
 
 class AgentFileLinksTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup do
     Agent.find_or_create_by!(slug: "avi") do |agent|
       agent.name = "Avi"

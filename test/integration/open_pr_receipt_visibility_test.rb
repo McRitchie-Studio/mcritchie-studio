@@ -34,6 +34,10 @@ require "rbconfig"
 # really sends is how the previous cut of this family certified green against a gate
 # that refused 31 of 34 real tasks.
 class OpenPrReceiptVisibilityTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   ENGINE_245 = "https://github.com/McRitchie-Studio/studio-engine/pull/245"
   ENGINE_24  = "https://github.com/McRitchie-Studio/studio-engine/pull/24"
   SOLANA_9   = "https://github.com/McRitchie-Studio/solana-studio/pull/9"

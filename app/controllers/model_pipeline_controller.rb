@@ -31,14 +31,11 @@
 # was the alternative, and it is worse: a silent correction teaches the operator that
 # the board eats his input.
 #
-# ── THE READ IS PUBLIC, EVERY WRITE IS ADMIN ──────────────────────────────────────
+# ── EVERY ACTION IS ADMIN ─────────────────────────────────────────────────────────
 #
-# #index reads rows and renders — it spends nothing, and it shows the same facts the
-# person page and the model page already show without a session. That matches
-# ContentsController and TasksController, whose boards are public reads beside
-# admin-gated writes. The two writes here are admin-gated because they are writes, and
-# because a session costs a member of the public one email address (hub signup is
-# open) and is therefore no control at all.
+# The read and both writes need an admin (AdminWall), like ContentsController and
+# TasksController beside it: a session costs a member of the public one email address
+# (hub signup is open) and is therefore no control at all.
 class ModelPipelineController < ApplicationController
   # The `reorder` action, its `slugs` guard, the 100-gap restamp (delegated to
   # Appearance's Studio::Board::Rankable#reposition!) and the ErrorLog-logging + 422
@@ -48,8 +45,7 @@ class ModelPipelineController < ApplicationController
   board_reorderable model: Appearance, id_attr: :slug, param: :slugs
 
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  skip_before_action :require_authentication, only: [:index]
-  before_action :require_admin, except: [:index]
+  before_action :require_admin
 
   def index
     @board = Appearances::Pipeline.build

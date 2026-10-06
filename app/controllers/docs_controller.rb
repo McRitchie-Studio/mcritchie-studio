@@ -1,6 +1,4 @@
 class DocsController < ApplicationController
-  skip_before_action :require_authentication
-
   DOCS_ROOT = Rails.root.join("docs", "agents")
 
   def index

@@ -17,4 +17,7 @@ class ApplicationController < ActionController::Base
   # Implementations live in Studio::ErrorHandling.
   before_action :verify_session_token
   before_action :set_current_context
+
+  # Default-deny: every action needs an admin unless AdminWall lists it.
+  include AdminWall
 end

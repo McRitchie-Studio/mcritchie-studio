@@ -4,7 +4,11 @@ require "test_helper"
 # enter a session. ui-only shape: assert the rendered avenues and that the Xan
 # avenue targets the learning-heartbeat path.
 class SessionEntryLauncherTest < ActionDispatch::IntegrationTest
-  test "launcher renders for anyone (no auth) with the three avenues" do
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
+  test "launcher renders for an admin with the three avenues" do
     get launcher_path
 
     assert_response :success

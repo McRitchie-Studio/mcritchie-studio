@@ -1,6 +1,10 @@
 module Artists
-  # The cast panel's typeahead: artists by name and alias, plus People not yet
-  # linked to an artist. Ranked exact > prefix > word prefix > contains; at each
+  # The cast panel's naming typeahead ("Who is this on screen?"): artists by
+  # name and alias, plus People not yet linked to an artist, except sports
+  # people (athletes and coaches): those are who REPLACES a performer, picked
+  # in the swap search, and offering them here made naming a footballer as the
+  # on-screen artist one keystroke away. An athlete already linked to an artist
+  # still comes back, as that artist. Ranked exact > prefix > word prefix > contains; at each
   # step a name beats an alias, and an artist beats a bare person on a tie.
   # Every result carries its row facts: a headshot, a vocation and a team
   # (People::SearchRows). An artist with no Person has no headshot or team and
@@ -62,6 +66,8 @@ module Artists
       column = "lower(people.first_name || ' ' || people.last_name)"
       scope = Person.where("#{column} LIKE :c OR lower(people.aliases::text) LIKE :c", c: pattern("%*%"))
                     .where("NOT EXISTS (SELECT 1 FROM artists WHERE artists.person_slug = people.slug)")
+                    .where("people.athlete IS NOT TRUE AND people.coach IS NOT TRUE")
+                    .where("people.primary_vocation IS NULL OR people.primary_vocation NOT IN ('athlete', 'coach')")
       rank = rank_sql(column, NAME_RANKS, fallback: ALIAS_RANKS.last)
       scope.order(Arel.sql("#{rank}, length(#{column})")).limit(POOL)
            .pluck(:slug, :first_name, :last_name, Arel.sql(rank)).map do |slug, first, last, r|

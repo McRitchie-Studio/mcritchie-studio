@@ -7,8 +7,7 @@ class ContentsController < ApplicationController
   board_reorderable model: Content, id_attr: :slug, param: :slugs
 
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  skip_before_action :require_authentication, only: [:index, :show]
-  before_action :require_admin, except: [:index, :show]
+  before_action :require_admin
   before_action :set_content, only: [:show, :edit, :update, :destroy, :hook_step, :script_step, :assets_step, :assemble_step, :post_step, :review_step, :script_agent_step, :assets_agent_step, :assemble_agent_step, :finalize_step, :metadata_step, :generate_lineup_assets, :post_to_x, :post_to_tiktok, :prep_for_tiktok, :use_caption_variant, :mark_posted, :studio_upload_to_tiktok, :set_colorway, :attach_artifact, :approve_artifacts, :draft_x_copy, :post_video_to_x, :resolve_x_post]
 
   def index

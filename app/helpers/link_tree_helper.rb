@@ -2,9 +2,9 @@ module LinkTreeHelper
   def public_link_sections
     sections = []
 
-    # Session wall: Studio/NFL/Directory links show only to signed-in users.
-    # The Apps section below stays public so anyone can reach the satellites.
-    if logged_in?
+    # Studio/NFL/Directory links show only to admins: most of them lead behind
+    # the admin wall (AdminWall). The sections below stay public.
+    if admin?
       sections += [
         { title: "Studio", links: [
           { label: "Dashboard", href: dashboard_path, emoji: "📊", hover_emoji: "📈", desc: "Overview + activity" },

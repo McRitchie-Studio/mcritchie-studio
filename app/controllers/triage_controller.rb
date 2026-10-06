@@ -1,8 +1,6 @@
 class TriageController < ApplicationController
-  # Reading the inbox is open (like the boards); promote/dismiss MINT or retire
-  # board state, so they are operator-only — the same admin gate as task edits.
-  skip_before_action :require_authentication, only: [:index]
-  before_action :require_admin, except: [:index]
+  # Admin-only, reads included (AdminWall): promote/dismiss mint or retire board state.
+  before_action :require_admin
 
   def index
     @findings = TriageFinding.open_findings

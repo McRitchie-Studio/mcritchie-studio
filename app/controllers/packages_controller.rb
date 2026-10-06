@@ -6,8 +6,6 @@
 #                    one column per tier. Admins also see the SOP map there:
 #                    which registered SOP delivers each row.
 class PackagesController < ApplicationController
-  skip_before_action :require_authentication
-
   def index
     @packages = WorkspacePackage.all
   end

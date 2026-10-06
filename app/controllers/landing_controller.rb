@@ -1,6 +1,4 @@
 class LandingController < ApplicationController
-  skip_before_action :require_authentication
-
   def index
     # Google sign-in always lands here. A visitor who started a /build draft
     # while signed out is sent back to it, once.

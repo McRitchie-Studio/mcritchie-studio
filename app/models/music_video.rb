@@ -59,17 +59,18 @@ class MusicVideo < ApplicationRecord
 
   def cinematic? = kind == "cinematic"
 
-  # Performers the operator still owes a recast answer (an athlete and a look,
-  # or "keep as is"). Extras nobody recast owe none.
+  # Performers swapped to an athlete who still waits for a look. Nobody else
+  # owes a recast answer: the swap is off by default.
   def recast_open = video_performers.reject(&:recast_decided?)
 
-  # Every performer has its recast answer: the later pieces' "may we generate".
+  # No swap is left waiting for a look: the later pieces' "may we generate".
   def recast_assigned? = video_performers.any? && recast_open.empty?
 
-  # Ready once the vision pass has left people and each one's card is closed
-  # (VideoPerformer#resolved?).
+  # Ready once the vision pass has left people. Naming artists is optional and
+  # the swap is off by default (and editable after the confirm), so nothing on
+  # a card has to be pressed first.
   def cast_ready?
-    stage == "digested" && video_performers.any? && video_performers.all?(&:resolved?)
+    stage == "digested" && video_performers.any?
   end
 
   def confirm_cast!
@@ -82,12 +83,7 @@ class MusicVideo < ApplicationRecord
 
   def cast_blocker
     return "the cast is already confirmed" if cast_confirmed?
-    return "no performers yet: the vision pass has not posted any" if video_performers.none?
-
-    open = video_performers.reject(&:resolved?).map(&:name)
-    return if open.empty?
-
-    "#{open.to_sentence} #{open.one? ? 'is' : 'are'} neither #{cinematic? ? 'recast, kept as is, an artist' : 'an artist'} nor an extra"
+    "no performers yet: the vision pass has not posted any" if video_performers.none?
   end
 
   # { chunk_ms:, overlap_ms: } the current chunks were cut with (bin/find-clips

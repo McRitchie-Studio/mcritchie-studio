@@ -71,3 +71,4 @@ config/chrome_profiles.yml
 /transcripts/
 /extract/
 /bundles/
+playwright/.auth/

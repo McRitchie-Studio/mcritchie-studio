@@ -4,6 +4,10 @@ require "test_helper"
 # wired to the Alpine toggle, and every card carries its repos + the combined
 # agent/app visibility gate. (The interactive hide/show is the system test.)
 class BoardAppFilterTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   test "deployments renders an app-filter chip per present app, wired to toggleApp" do
     rolio = Task.create!(
       title: "rolio filter chip task",

@@ -1,4 +1,8 @@
 const { test, expect } = require("@playwright/test");
+const { VISITOR } = require("./helpers");
+
+// What a visitor sees: signed out, not the suite's default admin session.
+test.use({ storageState: VISITOR });
 
 // The Google booking frame, links and popup, on this app's own pages.
 //

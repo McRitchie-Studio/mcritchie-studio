@@ -51,15 +51,17 @@ class VideoClipsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "proposed", @video.video_clips.first.status
   end
 
-  test "a clips-ready video keeps its cast locked and says so" do
+  test "a clips-ready video keeps its cast confirmed while a name changes" do
     log_in_as users(:alex)
     decide(1, "approved")
     get music_video_path(@video)
 
     assert_select "[data-test='video-stage']", "Clips ready"
     assert_select "[data-test='cast-confirmed']"
+    # Naming is optional and stays editable after the confirm; the stage does not move back.
     patch music_video_performer_path(@video, 2), params: { clear: "1" }
-    assert @video.video_performers.find_by!(ordinal: 2).extra?, "the cast stays confirmed"
+    assert_not @video.video_performers.find_by!(ordinal: 2).extra?
+    assert_equal "clips_ready", @video.reload.stage, "the cast stays confirmed"
   end
 
   test "a video whose cast is not confirmed shows the clips locked" do

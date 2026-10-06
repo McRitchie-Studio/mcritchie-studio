@@ -5,6 +5,10 @@ require "test_helper"
 # it, the legacy `alex` slug rides the alias into both, and the seat's pages
 # answer under /xan.
 class XanSeatTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   fixtures :agents
 
   # ── Heartbeat attribution ────────────────────────────────────────────────

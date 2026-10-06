@@ -13,6 +13,10 @@ require "test_helper"
 # it silently does nothing. Whether the headers END UP at the right y is geometry, and
 # geometry is settled in a browser.
 class BoardLanePinTest < ActionDispatch::IntegrationTest
+  # The ops pages sit behind the admin wall (AdminWall); these tests read them as
+  # the operator. A test about another viewer signs that session in itself.
+  setup { log_in_as(users(:alex)) }
+
   setup { get deployments_path }
 
   test "every lane header is sticky and named by its stage" do

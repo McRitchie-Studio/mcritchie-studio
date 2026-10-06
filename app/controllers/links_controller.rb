@@ -1,7 +1,6 @@
 class LinksController < ApplicationController
-  # Public link hub — general (non-admin) destinations. Read-only nav page, so
-  # it opts out of the engine's authenticate-by-default before_action.
-  skip_before_action :require_authentication
+  # Public link hub (AdminWall::PUBLIC). The ops sections render for admins only
+  # (LinkTreeHelper#public_link_sections).
 
   def index; end
 end
