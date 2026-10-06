@@ -41,11 +41,14 @@ class GateRun < ApplicationRecord
   TASK_KEYS    = GATES.select { |_, gate| gate["grain"] == "task" }.keys.freeze
   RELEASE_KEYS = GATES.select { |_, gate| gate["grain"] == "release" }.keys.freeze
   SUBJECT_TYPES = %w[task release].freeze
-  # Gates nothing opens any more. Their rows stay valid so history reads and a
-  # stale in-flight row can still close, but no gate list, chip, API route or
-  # bin/gate verb offers them. g1_cert was the local cert, retired for the PR's
-  # settled CI (docs/agents/archive/g1-cert-2026-10-06.md).
-  RETIRED_KEYS = %w[g1_cert].freeze
+  # Gates no producer opens any more. No gate list, card chip or bin/gate verb
+  # offers them; their rows stay valid so history reads and a stale in-flight row
+  # can still close. g1_cert was the local cert, retired for the PR's settled CI
+  # (docs/agents/archive/g1-cert-2026-10-06.md). The board's local-check indicator
+  # still reads its in-flight rows, and the API still accepts the key so that
+  # indicator's fixtures can mint one; both go with the indicator itself.
+  RETIRED_GATES = { "g1_cert" => { "grain" => "task" } }.freeze
+  RETIRED_KEYS = RETIRED_GATES.keys.freeze
 
   # The keys a sops entry keeps (normalize_sop slices to these); `at` is stamped
   # server-side so entries are orderable even when the producer sends none.
@@ -330,6 +333,11 @@ class GateRun < ApplicationRecord
   # ---- reads -----------------------------------------------------------------
 
   # The newest attempt per gate key — what the UI chips render.
+  # The grain of a live or retired gate key; nil for an unknown one.
+  def self.grain_for(key)
+    (GATES[key.to_s] || RETIRED_GATES[key.to_s])&.dig("grain")
+  end
+
   def self.latest_by_key(subject_type:, subject_slug:)
     for_subject(subject_type, subject_slug)
       .order(:attempt, :id)
@@ -384,7 +392,7 @@ class GateRun < ApplicationRecord
   # A task-grain key on a release subject (or vice versa) is a caller bug —
   # reject it loudly rather than render a G1 chip on a release.
   def key_grain_matches_subject_type
-    expected = GATES.dig(key.to_s, "grain")
+    expected = self.class.grain_for(key)
     return if expected.nil? || subject_type.blank? || expected == subject_type
 
     errors.add(:key, "#{key} is a #{expected}-grain gate, not #{subject_type}")

@@ -70,13 +70,17 @@ module Api
         assert_equal "failed", GateRun.last.status
       end
 
-      test "the retired g1_cert gate is refused and mints nothing" do
-        assert_no_difference -> { GateRun.count } do
-          post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", headers: @headers, as: :json
-        end
+      test "the retired g1_cert key still opens a task row for the local-check indicator; an unknown key is refused" do
+        post "/api/v1/gates/task/#{@task.slug}/g1_cert/open", headers: @headers, as: :json
+        assert_response :created
 
-        assert_response :unprocessable_entity
+        assert_equal "task", GateRun.grain_for("g1_cert")
+
+        assert_no_difference -> { GateRun.count } do
+          post "/api/v1/gates/task/#{@task.slug}/g0_nothing/open", headers: @headers, as: :json
+        end
         assert_equal "INVALID_GATE_KEY", response.parsed_body["error_code"]
+        assert_no_match(/g1_cert/, response.parsed_body["error"], "the refusal lists only the live gates")
       end
 
       test "unknown subject 404s without minting rows" do

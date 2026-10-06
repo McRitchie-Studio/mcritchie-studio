@@ -76,13 +76,13 @@ module Api
       end
 
       def validate_key!
-        unless GateRun::KEYS.include?(gate_key)
+        unless GateRun::KEYS.include?(gate_key) || GateRun::RETIRED_KEYS.include?(gate_key)
           return render_error("unknown gate key #{gate_key.inspect} (one of: #{GateRun::KEYS.join(', ')})",
                               error_code: "INVALID_GATE_KEY")
         end
-        return if GateRun::GATES.dig(gate_key, "grain") == subject_type
+        return if GateRun.grain_for(gate_key) == subject_type
 
-        render_error("#{gate_key} is a #{GateRun::GATES.dig(gate_key, 'grain')}-grain gate, not #{subject_type}",
+        render_error("#{gate_key} is a #{GateRun.grain_for(gate_key)}-grain gate, not #{subject_type}",
                      error_code: "GATE_GRAIN_MISMATCH")
       end
 
