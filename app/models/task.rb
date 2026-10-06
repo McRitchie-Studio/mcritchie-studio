@@ -1,32 +1,10 @@
 class Task < ApplicationRecord
   SIZES = %w[small medium large xl].freeze
 
-  # --- Auto-derived actual_size (the "what it really cost" leg of the trio) ---
-  # The size trio is: po_size (Avi's estimate at creation), dev_size (the builder
-  # Pokémon's estimate at claim), and actual_size — the MEASURED outcome, derived
-  # at ship from the task's real usage. po/dev are forecasts; actual is the ground
-  # truth that scores them on the intelligence dashboard.
-  #
-  # SIGNAL: total tokens. We sum tokens_total across the task's TaskEvents — the
-  # measured spine of work the agents actually burned across every stage. Tokens
-  # (not cost, not wall-clock duration) is the cleanest size proxy: cost is just
-  # tokens × a model's per-token price (so it tracks model choice, not work
-  # volume), and duration is dominated by handoff/idle gaps between stages
-  # (wall-clock, not effort). Tokens measure the work itself. Cost and
-  # created_at→completed_at duration are both available on the record if a future
-  # calibration wants to factor them; tokens stay the single, tunable signal here.
-  #
-  # THRESHOLDS: size → the EXCLUSIVE upper bound (in total tokens) of that bucket;
-  # a task lands in the first bucket whose ceiling its token total falls under.
-  # These are deliberately ROUND starting points — the seed board carries no
-  # measured token usage yet, so they can't be fit to data; they're meant to be
-  # re-tuned once real shipped tasks accumulate a token distribution. Kept in one
-  # constant map so that re-tuning is a one-line edit.
-  # actual_size buckets on measured $COST, not token count: cost is ground-truth
-  # correct (priced through UsagePricing), while the token total is dominated
-  # ~98% by cache_read and pinned nearly every task to XL. Ceilings are USD and
-  # TUNABLE — a one-line edit once shipped tasks accumulate a cost distribution
-  # (early prod data: quick fixes < $10, epics $250-500).
+  # actual_size is the measured leg of the size trio (po_size estimate, dev_size
+  # estimate, actual_size outcome), derived at ship from the task's priced cost.
+  # Buckets are USD ceilings (exclusive): cost is priced through UsagePricing,
+  # while raw token totals are dominated by cache reads. Tune here.
   ACTUAL_SIZE_COST_THRESHOLDS = {
     "small"  => 10.0,   # < $10  — a quick, contained change
     "medium" => 50.0,   # < $50  — a normal feature
@@ -34,17 +12,11 @@ class Task < ApplicationRecord
     "xl"     => Float::INFINITY # ≥ $200 — an epic
   }.freeze
 
-  # Two-workflow status model. See docs/agents/system/devops-cycle-design.md.
-  #
-  #   Workflow 1 — Build (feature agent):  designed → building → submitted
-  #   Workflow 2 — Deploy (DevOps):        submitted → reviewed → assembled → shipped
-  #   `submitted` is the shared seam — the feature agent hands off to DevOps there.
-  #   blocked  — NOT a stage: it's an ATTRIBUTE of a `building` task (blocked_at +
-  #              blocked_from + blocked_by + block_kind). A block means "more
-  #              building to do", so a blocked task sits in `building`; #blocked?
-  #              re-derives the live block from those columns.
-  #   archived — terminal resting state: abandoned tickets AND shipped/completed
-  #              work filed away (Archive completed tasks) to close the loop.
+  # Two-workflow status model; see docs/agents/system/devops-cycle-design.md.
+  #   Build:  designed → building → submitted
+  #   Deploy: submitted → reviewed → assembled → shipped
+  # `blocked` is an attribute of a `building` task (blocked_at, blocked_from,
+  # blocked_by, block_kind), not a stage. `archived` is terminal.
   STAGE_LABELS = {
     "designed"  => "Designed",
     "building"  => "Building",
@@ -54,11 +26,8 @@ class Task < ApplicationRecord
     "shipped"   => "Shipped",
     "archived"  => "Archived"
   }.freeze
-  # The ACTIVE (gerund) form of each stage — "what's happening right now" — for UI
-  # that shows a stage still UNDERWAY, where the past-tense noun reads wrong: a card
-  # for the assembled stage in progress says "Assembling", not "Assembled". First
-  # use is the /tasks/:id live timeline card; kept beside STAGE_LABELS so other
-  # surfaces can share it. Use Task.active_stage_label for a safe fallback.
+  # The active (gerund) form of each stage, for UI showing a stage still underway.
+  # Use Task.active_stage_label for a safe fallback.
   STAGE_ACTIVE_LABELS = {
     "designed"  => "Designing",
     "building"  => "Building",
@@ -69,55 +38,34 @@ class Task < ApplicationRecord
     "archived"  => "Archiving"
   }.freeze
   STAGES = STAGE_LABELS.keys.freeze
-  # The two workflows, split at the `submitted` seam (which belongs to both):
-  # Build is the feature agent's, Deploy is DevOps's.
+  # The two workflows split at `submitted`, which belongs to both.
   BUILD_STAGES  = %w[designed building submitted].freeze
-  # The two pipeline gates where a task's Pokémon evolves (one step each): the
-  # successful senior review and the QA-green assemble — Charmander tasks review
-  # as Charmeleon and assemble as Charizard. The value is the evolution stage the
-  # gate leaves the mascot at (devops.mascot_stage), which is what makes a
-  # blocked→resubmitted loop idempotent. See #evolve_stage_mascot.
-  #
-  # They used to sit at submitted/reviewed, and moved out one stage each on
-  # 2026-08-15: submitting is the builder handing work over, not the work being
-  # accepted, so the celebration belongs at the gates that ACCEPT it.
-  #
-  # EVERY line spends its first step at REVIEW (2026-09-20). The review gate used
-  # to be reserved for three-stage families, which parked a one-evolution line
-  # (Pikachu → Raichu) at `assembled` with nothing to show for passing review. A
-  # gate that evolves only some mascots reads as a bug on the board, so both gates
-  # now advance whatever can still evolve: two-form lines reach their final form at
-  # review and coast through assemble, three-stage lines walk both steps as before.
+  # The gates where a task's Pokémon evolves one step: the senior review and the
+  # QA-green assemble. The value is the evolution stage the gate leaves the mascot
+  # at (devops.mascot_stage), which makes a block-and-resubmit loop idempotent.
+  # Every line spends its first step at review, so two-form lines reach their final
+  # form there and coast through assemble. See #evolve_stage_mascot.
   MASCOT_EVOLUTION_GATES = { "reviewed" => 1, "assembled" => 2 }.freeze
   DEPLOY_STAGES = %w[submitted reviewed assembled shipped].freeze
   NEXT_INTENT_STAGE = { "designed" => "building", "building" => "submitted",
                         "submitted" => "reviewed", "reviewed" => "assembled",
                         "assembled" => "shipped" }.freeze
-  # WHERE the task's code physically is, ORTHOGONAL to `stage` (the board
-  # position) — so an interrupted assemble/deploy heartbeat contextualizes itself
-  # from durable state instead of guessing (an interrupted Steffon skips
-  # re-merging a `release` task; an interrupted Avi skips re-ff'ing a `main` one).
-  #   nil        — not merged anywhere (submitted)
-  #   "accepted" — merged onto the accepted branch by review (reviewed, pre-sweep):
-  #                the ladder's first rung. An interrupted Steffon reads this to
-  #                promote accepted→release without re-reviewing. Release#add
-  #                downgrades it to "release" when the task is swept onto an RC.
-  #   "release"  — merged onto the release branch (going through QA)
-  #   "main"     — fast-forwarded into main (going through prod deploy)
+  # Where the task's code is, orthogonal to `stage`, so an interrupted heartbeat
+  # reads durable state instead of guessing:
+  #   nil        — not merged anywhere
+  #   "accepted" — merged onto accepted by review; Release#add moves it to "release"
+  #   "release"  — merged onto the release branch (in QA)
+  #   "main"     — fast-forwarded into main
   MERGED_ACCEPTED = "accepted"
   MERGED_RELEASE  = "release"
   MERGED_MAIN     = "main"
   MERGED_STATES   = [MERGED_ACCEPTED, MERGED_RELEASE, MERGED_MAIN].freeze
-  # Board columns per page. /tasks is the feature-agent lane (the Build workflow;
-  # blocked tasks ride the Building column as a red-glowing attribute, not a
-  # separate lane). /deployments shows the full pipeline as swim lanes — the
-  # Deploy workflow plus the upstream designed/building lanes (drag-and-drop).
-  # The Deploy *workflow* itself (the /stages guide + per-stage kickoffs) stays
-  # DEPLOY_STAGES — the board carrying extra lanes doesn't widen the workflow.
+  # Board columns per page. /tasks is the Build lane (blocked tasks ride Building);
+  # /deployments shows the whole pipeline. The Deploy workflow itself stays
+  # DEPLOY_STAGES.
   TASKS_BOARD_STAGES       = %w[designed building submitted].freeze
   DEPLOYMENTS_BOARD_STAGES = %w[designed building submitted reviewed assembled shipped].freeze
-  # Why a task is blocked (stored in the block_kind column) — lets a heartbeat
-  # agent route it correctly.
+  # Why a task is blocked (the block_kind column), so a heartbeat routes it.
   BLOCK_KINDS = %w[environment rework dependency].freeze
   REVIEW_ROLES = %w[primary light].freeze
   REVIEW_ROLE_ALIASES = {
@@ -155,81 +103,26 @@ class Task < ApplicationRecord
   }.freeze
   REVIEW_STATUSES = %w[started completed failed info].freeze
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
-  # The only stages where a WAITING operator-approval request is meaningful: the
-  # ones where the LOCAL DEMO the request points at is still servable, so somebody
-  # can still act on it. Past this window the request is settled on every save
-  # (#settle_operator_approval_past_request_window). An ALLOW-list, so a stage
-  # added later settles by default. `blocked` is not a stage (Task#block! parks the
-  # task on `building`), so a QA-rework demo can re-request approval.
-  #
-  # `submitted` IS IN THE WINDOW, and that is the whole of the fix for the defect
-  # measured three times on the night of 2026-09-09 (turf PRs 644, 647, 653). The
-  # seam used to sit at `submitted`, which put it one stage BEFORE the thing the
-  # request is about stops existing, and the fast lane straddled it: the documented
-  # build flow tells a builder to set `--approval waiting` with a `--local-url`
-  # BEFORE opening the PR, and the documented `bin/ship` then moved the task to
-  # `submitted` and discarded the request on the way. Following the docs exactly
-  # produced the discard every time, and on PR 644 the thing nobody was asked about
-  # was user-facing copy on a money page shown after a wallet signature.
-  #
-  # THE WINDOW NOW MATCHES THE ARTIFACT. A request says "open this local URL and
-  # look". That URL is served by the task's DESK, and a desk stays up until the
-  # work merges — `bin/agent-worktree cleanup --reclaim` takes a desk once it is
-  # clean AND merged, which is exactly when the task reaches `reviewed`. So the
-  # request now lives precisely as long as the page it points at, and the settle
-  # fires at the `reviewed` boundary where the local demo really has gone away.
-  #
-  # WHAT THIS DOES NOT RELAX. The invariant behind the settle is unchanged — a
-  # waiting badge may exist only where something can clear it — and `submitted`
-  # satisfies it two ways: the operator's verdict is recordable there by any lane
-  # (`--approval approved` / `changes_requested` are legal at every stage), and the
-  # pipeline itself clears it, because review's merge moves the task to `reviewed`,
-  # which is outside this list. The board needed no change to honour it: the float
-  # (the `ordered` scope) and the pulse (#waiting_for_operator_approval?, the card
-  # glow and the WAITING APPROVAL bar) were already stage-agnostic, so the card
-  # simply pulses in the review column instead of never pulsing at all.
-  #
-  # A BOUNCE RE-ARMS FOR FREE. A rework block parks the task on `building` (see
-  # Task#block!, which assigns that stage rather than a `blocked` one), and
-  # `building` is also in this list — so a request that survived the handoff
-  # survives the send-back too and re-pulses without anyone re-asking.
+  # The stages where a waiting operator-approval request means something: the desk
+  # serving its local demo still exists. A desk is reclaimed once merged, which is
+  # `reviewed`, so the request settles there on every save
+  # (#settle_operator_approval_past_request_window). An allow-list, so a new stage
+  # settles by default. A rework block parks the task on `building`, so a request
+  # survives a send-back.
   APPROVAL_REQUEST_STAGES = %w[designed building submitted].freeze
   OPERATOR_APPROVAL_APPROVED = "approved".freeze
   OPERATOR_APPROVAL_CHANGES_REQUESTED = "changes_requested".freeze
-  # The settled/moot resolution. An open "waiting" request is cleared to "none"
-  # the moment a task lands outside APPROVAL_REQUEST_STAGES — at `reviewed` the
-  # work has merged and the desk serving the local demo is reclaimable, so the
-  # request points at nothing. See
-  # #settle_operator_approval_past_request_window. The settle resolves to "none" and never
-  # to "approved" — nobody granted approval, and fabricating a grant would
-  # misreport the acceptance metric.
+  # The settled resolution: a waiting request outside APPROVAL_REQUEST_STAGES
+  # clears to "none", never "approved", because nobody granted it.
   OPERATOR_APPROVAL_NONE = "none".freeze
-  # Request-layer sources that mean the OPERATOR lane rather than the agent lane.
-  # "web" is stamped only by the admin-gated TasksController#update — the board UI.
-  # A BLANK source is an internal/console write (conductor, rails runner, model
-  # callbacks). Every API bearer write stamps its own source via
-  # Api::V1::TasksController#capture_task_event_context ("api" default, "cli" from
-  # bin/task), and that controller clamps a caller-supplied "web" back to "api".
-  # This is ATTRIBUTION only — it keeps a bearer write from labelling itself an
-  # operator action in the TaskEvent trail. It gates no value: every
-  # approval_status, "approved" included, is writable from either lane.
+  # Request sources that mean the operator lane. "web" is stamped only by the
+  # admin-gated TasksController#update; Api::V1::TasksController clamps a
+  # caller-supplied "web" to "api". Attribution only: it gates no approval value.
   OPERATOR_APPROVAL_GRANT_SOURCES = %w[web].freeze
-  # Names that live in a TOP-LEVEL COLUMN and are therefore NOT writable devops
-  # metadata. Each value is the sentence the writer gets back, naming the real home.
-  #
-  # Deleting a name from DEVOPS_SCALAR_KEYS is HALF a retirement: the write stops
-  # landing, but normalize_devops_metadata's `next unless DEVOPS_KEYS.include?`
-  # skips it in silence, so the caller gets a 200 for a write that evaporated.
-  # `release_slug` is what that costs. It stayed a live devops key after the column
-  # arrived, so the two names diverged into disjoint stores — the sweep wrote the
-  # column (Release#record_members), the board form wrote the key, the task page
-  # rendered the key, and bin/conductor read the column. The visible one was inert.
-  # So a retired name RAISES here instead: one decider, and a wrong write is loud.
-  # Both API paths (Api::V1::TasksController#update, TasksController#update) rescue
-  # StandardError into a 422 carrying this message.
-  #
-  # A blank value is still skipped silently — it asserts nothing, so there is
-  # nothing to lose or to correct.
+  # Names that live in a top-level column, so a devops write to them raises with
+  # the sentence below (both controllers rescue into a 422). Without this,
+  # normalize_devops_metadata would skip the key in silence and the column and a
+  # same-named key would diverge. A blank value is still skipped.
   DEVOPS_COLUMN_KEYS = {
     "release_slug" => "the tasks.release_slug column — release membership is recorded by the sweep " \
                       "(Release#record_members), never set by hand",
@@ -237,26 +130,11 @@ class Task < ApplicationRecord
                        "(Release#record_members), never set by hand",
     "block_kind" => "the tasks.block_kind column — stamped server-side by Task#block! " \
                     "(POST /api/v1/tasks/:slug/block)",
-    # Listed the DAY the column got a writer, not later. `dependencies` spent its
-    # whole life read-only-in-practice — a real jsonb column that
-    # Release::Ordering.producer_first topologically sorts on, with no writer
-    # outside tests — and the two docs that told agents to "declare
-    # `dependencies: [<task>]`" described a behaviour nobody could perform. Now
-    # that `--depends-on` writes it, the SHADOW hazard arrives with the writer:
-    # an agent who reads that old sentence and posts it under `devops` would
-    # otherwise get a 200 for a write that reached nothing (normalize_devops_
-    # metadata's `next unless DEVOPS_KEYS.include?` skips an unknown name in
-    # silence), and the conductor would keep sequencing off an empty array. That
-    # is `release_slug`'s incident exactly — a column and a same-named devops key
-    # diverging into disjoint stores, the visible one inert. Naming it here makes
-    # the wrong store a 422 instead, and #shed_column_shadow_keys drops any value
-    # a pre-wiring write already parked there.
+    # `--depends-on` writes the column; #shed_column_shadow_keys drops a value an
+    # older write parked under the devops key.
     "dependencies" => "the tasks.dependencies column — set it with " \
                       "`bin/task update <slug> --depends-on <task-slug>` (repeatable)",
-    # Listed the day the column was born, before any writer could park a shadow
-    # under it. The epic chip and the `?epic=` board filter both read the COLUMN,
-    # so a devops write to this name would be the release_slug incident again: a
-    # value visible on the task page that no chip and no filter ever sees.
+    # The epic chip and the `?epic=` filter read the column, never a devops key.
     "epic_slug" => "the tasks.epic_slug column — set it with " \
                    "`bin/task update <slug> --epic <epic-slug>` (`--epic none` clears it)"
   }.freeze
@@ -276,180 +154,76 @@ class Task < ApplicationRecord
   # glance); agents put their verbose detail in `agent_context`.
   TITLE_WORD_RANGE = (3..5).freeze
   ACCEPTANCE_WORD_RANGE = (5..12).freeze
-  # `abandoned_prs` is the ARCHIVE override's receipt: one entry per PR that was
-  # still OPEN when an operator archived the task anyway with `bin/task move <slug>
-  # archived --force`. Written only by that path (lib/open_pr_guard.rb), never by a
-  # form, and never cleared — it is the difference a later reader needs between a PR
-  # that was DROPPED DELIBERATELY and one that was simply forgotten, which is the
-  # whole defect the open-PR gate closes.
+  # `abandoned_prs` records each PR still open when an operator archived the task
+  # with `--force` (lib/open_pr_guard.rb). Never cleared: it separates a dropped
+  # PR from a forgotten one.
   DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run abandoned_prs
                         fix_forward].freeze
-  # The list keys whose entries are IDENTIFIERS — a name something else looks up —
-  # so a comma inside one entry is always a JOINED LIST and never content. These
-  # split on commas in ARRAY form too; every other list key is stored as posted.
-  #
-  # WHY THE SERVER NEEDS A RULE OF ITS OWN. bin/task already refuses `--repo a,b` at
-  # the terminal (COMMA_FREE_LIST_FLAGS), and that stays the FIRST home: only the CLI
-  # can name the offending FLAG and print a copyable corrected line, and it is where
-  # every joined entry the 2026-09-15 census found had been typed. It guards only
-  # callers that go through it. Anything POSTing /api/v1/tasks directly was
-  # unguarded, and the cost is
-  # measured: a joined `repositories` entry resolves to a phantom repo and ABORTED a
-  # live QA release sweep at step 3a (2026-09-15, sweep-stale-signer-claims) with
-  # nothing promoted, recorded or deployed; a joined `risk_tags` entry matches
-  # Release::BuilderPolicy's blocked_risk_tags and ReviewerSelector::RISK_DOMAINS
-  # never — both compare EXACTLY — so two gates fail OPEN in silence.
-  #
-  # THE VALUE CANNOT BE JUDGED HERE; THE KEY CAN. `["a,b"]` from --repo and `["one
-  # thing, then another"]` from --accept are both one-element arrays, which is why the
-  # CLI reasons about flags. normalize_devops_metadata branches on the KEY, and
-  # bin/task's LIST_FLAGS maps 1:1 onto those keys — so the flag is not a fact this
-  # layer is missing. Measured 2026-09-15: a key-scoped rule fires on --repo's shape,
-  # is silent on --accept's, and is silent on the board form's string (already split).
-  #
-  # WHY SPLIT HERE, WHERE THE CLI REFUSES — a different verdict, argued rather than
-  # inherited, because the CLI's reason does not survive the trip:
-  #   1. The CLI refuses because it can TEACH. It names the flag, prints the corrected
-  #      line, and a human is at the keyboard at the one moment the fix is free. A 422
-  #      teaches a raw caller nothing: the key may be generated rather than typed,
-  #      there is no command line to correct, and there may be no human reading.
-  #   2. A refusal costs the WHOLE write, not the offending key. Both controllers
-  #      rescue into a 422, so a create carrying one joined entry stores NOTHING — a
-  #      caller that does not check the status is left with no task at all, which is a
-  #      second silent failure rather than a lesson.
-  #   3. This method ALREADY splits the same key's STRING form on commas (the board
-  #      form's path). Refusing the array form would make one key's answer depend on
-  #      the JSON type of the payload — a distinction no caller intends and no doc
-  #      states. Splitting converges the two shapes, which is what `normalize` is for.
-  #   4. A split cannot be WRONG for these keys: no repo name, risk tag or PR url
-  #      contains a comma. bin/task's comment concedes this and refuses anyway, on the
-  #      teaching argument — precisely the argument that does not reach this layer.
-  # The two verdicts never contradict each other in practice, because the CLI refusal
-  # runs FIRST for every caller holding a terminal: nobody can learn "this CLI takes
-  # comma lists" from a split they cannot reach. This is a BACKSTOP and does not make
-  # the CLI guard redundant — test/lib/task_comma_list_flags_test.rb pins that one.
-  #
-  # WHAT IS DELIBERATELY LEFT ALONE, and why each:
-  #   acceptance / test_plan / checks_run — PROSE, where a comma is ordinary
-  #     punctuation. 291 / 230 / 1605 board TASKS carry one (360 / 309 / 5883 entries,
-  #     measured 2026-09-16 against production); a blanket rule would shred 6552 real
-  #     entries into fragments, a worse defect than the one being fixed.
-  #   abandoned_prs — the archive override's RECEIPT: prose a human reads months
-  #     later, written by exactly one internal path (OpenPrGuard#record) and never by
-  #     a flag or a form. Splitting one would read as more abandonments than happened,
-  #     the mirror of the newline hazard that writer already defends against.
-  #   fix_forward — identifier-shaped, and a split would be safe. Left alone: a
-  #     joined "carl,steffon" entry names no soul and adds nobody, and bin/task
-  #     fix-forward already splits its --agent list before posting.
-  # The rule is ASSERTED, not merely described here:
-  # test/models/task_devops_identifier_lists_test.rb asks the prose question over the
-  # COMPLEMENT of this constant, so a key wrongly added here fails there as well.
-  #
-  # WHAT IT DOES NOT DO IS BACKFILL. Normalization runs on WRITE, so the 1103 board
-  # tasks already carrying a joined `risk_tags` entry (measured 2026-09-16;
-  # `repositories` is at 0, its one incident having been repaired by hand) stay joined
-  # until something rewrites that key, and their auto-QA and reviewer-domain gates keep
-  # failing open until then. The READ path (#devops_list) is left alone deliberately,
-  # not by omission: splitting there would repair those gates by making the record and
-  # the read disagree, and it would silently re-tag 1103 historical tasks on a
-  # release-gating path. That is a backfill someone signs off on, not a side effect of
-  # a write guard.
+  # List keys whose entries are identifiers, so a comma inside one is a joined list:
+  # these split on commas in array form too. bin/task refuses `--repo a,b` first
+  # (COMMA_FREE_LIST_FLAGS, pinned by test/lib/task_comma_list_flags_test.rb); this
+  # is the backstop for raw API callers, where a joined entry names a phantom repo
+  # or a risk tag no gate matches. Prose keys (acceptance, test_plan, checks_run,
+  # abandoned_prs) keep their commas; test/models/task_devops_identifier_lists_test.rb
+  # checks the complement. Normalization runs on write only; #devops_list does not
+  # split.
   DEVOPS_IDENTIFIER_LIST_KEYS = %w[repositories risk_tags].freeze
-  # Repo-keyed MAPS: { "<repo>" => "<value>" }. `pr_urls` is the per-repo PR url
-  # register — the multi-repo answer to the single-valued `pr_url`.
-  #
-  # WHY IT EXISTS. `pr_url` holds ONE url, and Task#release_repo parses that url
-  # for the repo a release plans against. So a task naming two repos had exactly
-  # one place to record a PR, and the repo it named won: on 2026-08-13
-  # `land-rails-security-patch` carried repositories [mcritchie-studio,
-  # turf-monster] with the HUB's PR url, turf's PR #305 had nowhere to live, and
-  # turf never existed as far as promote/QA/ship were concerned. The task was
-  # stamped shipped+main while turf production still ran the unpatched code.
-  # `pr_url` stays the PRIMARY (every existing reader keeps working); `pr_urls`
-  # is where the SECOND repo's PR finally has a home.
+  # Repo-keyed maps: { "<repo>" => "<value>" }. `pr_urls` holds each repo's PR for a
+  # multi-repo task; `pr_url` stays the primary that every reader uses.
   DEVOPS_MAP_KEYS = %w[pr_urls].freeze
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS + DEVOPS_MAP_KEYS).freeze
   # github.com/<owner>/<repo>/pull/<n> → the repo segment.
   PR_URL_REPO_PATTERN = %r{github\.com/[^/]+/([^/]+)/pull/}
-  # The change shape selects its DoR test contract. Keep in sync with
-  # config/feature_shapes.yml (the source of truth that bin/dor-check reads).
+  # The shape selects the DoR test contract; config/feature_shapes.yml is the source of truth.
   SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical docs test-only].freeze
-  # A task slug as `generate_slug` mints one: `title.parameterize` (lowercase
-  # alphanumerics, hyphens, and the underscore parameterize preserves) or the
-  # `task-<hex>` fallback. Used to validate `dependencies` entries — see
-  # #dependencies_name_real_tasks.
+  # A task slug as #generate_slug mints one; validates `dependencies` entries
+  # (#dependencies_name_real_tasks).
   DEPENDENCY_SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
-  # An epic's slug wears the SAME charset as a task slug — it is the handle the
-  # card's epic chip prints and `/tasks?epic=<slug>` filters on, so it must be
-  # URL-safe and readable by the same rule. There is deliberately no Epic model
-  # behind it (devops-v3-design.md §3): the plan lives with the focus session,
-  # and the board carries only this one optional, indexed column.
+  # An epic slug uses the task-slug charset: the chip prints it and `?epic=` filters
+  # on it. There is no Epic model (devops-v3-design.md §3).
   EPIC_SLUG = DEPENDENCY_SLUG
-  # The value an API writer sends to CLEAR the epic without reaching for JSON
-  # `null` — the CLI's `--epic none` spelling, honoured at the model so every
-  # writer (API, form, console) agrees on what "none" means for this column.
+  # The API spelling that clears the epic, matching the CLI's `--epic none`.
   EPIC_CLEAR_VALUE = "none"
 
-  # Board rank read-model (studio-engine board primitive). Supplies `reposition!`
-  # (the shared reorder write, driven by Studio::Board::Reorderable in the
-  # controller), `board_next_position`, the `board_ordered` scope, and the
-  # `set_initial_position` genesis seed wired below. `board_zone_attr` defaults to
-  # `:stage`, so ranking is per-column exactly as this board always did. Task's own
-  # `ordered` scope (below) EXTENDS `board_ordered` with the operator-approval
-  # priority clause, and `set_stage_timestamp` re-ranks a card to the top of its new
-  # column on a stage move — both are Task-specific and stay here.
+  # Board rank from the engine's board primitive: `reposition!`, `board_next_position`,
+  # `board_ordered` and the `set_initial_position` seed, ranked per stage column.
+  # The `ordered` scope and `set_stage_timestamp` add Task's own rules.
   include Studio::Board::Rankable
   include TaskDerivedFacts
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
-  # Xan's one ship-time grade (Insights::TaskGrader). Destroyed with the task: the
-  # learning it banked lives on as an ActionGrade, so the lesson outlives the grade.
+  # Xan's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
   has_one :task_grade, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_transitions, foreign_key: :task_slug, primary_key: :slug,
                               inverse_of: :task, dependent: :destroy
-  # Forward-only per-action trajectory (AgentAction.capture). Nullify on destroy
-  # so the finest-grain telemetry survives a task teardown as orphaned history.
+  # Per-action trajectory (AgentAction.capture); nullified so it outlives the task.
   has_many :agent_actions, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
   has_many :atomic_actions, class_name: "AgentAction", foreign_key: :task_slug, primary_key: :slug
-  # Agent-narrated activities (AgentActivity.open_activity!/close_activity!) — the
-  # coarse, meaningful layer the raw actions attribute under. Nullify on destroy so
-  # the narrated history survives a task teardown as orphaned activities.
+  # Narrated activities (AgentActivity); nullified so they outlive the task.
   has_many :agent_activities, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
   has_many :atomic_events, class_name: "AgentActivity", foreign_key: :task_slug, primary_key: :slug
-  # Attempt-aware runs of the task-owned testing gates (G1 Cert, G2a/G2b review
-  # lanes) — slug-FK like the spines above, scoped to task-grain subjects.
+  # Runs of the task-owned testing gates (G1 Cert, G2a/G2b review lanes).
   has_many :gate_runs, -> { where(subject_type: "task") },
            foreign_key: :subject_slug, primary_key: :slug, dependent: :delete_all
-  # The per-task REVIEW claim (TaskReviewClaim) — at most one live pr-review session
-  # per submitted task. Slug-FK like everything else; destroyed with the task so a
-  # teardown never strands a claim row behind a gone task.
+  # The per-task review claim (TaskReviewClaim): at most one live pr-review session.
   has_one :review_claim, class_name: "TaskReviewClaim",
           foreign_key: :task_slug, primary_key: :slug, dependent: :destroy
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
   validates :stage, inclusion: { in: STAGES }
-  # `merged` is optional (nil = not merged); when set it must be a known git
-  # location. A typo must be a hard error here (unlike `--agent`), since the
-  # heartbeats' crash-recovery reads it as ground truth.
+  # `merged` is nil or a known git location; heartbeats read it as ground truth.
   validates :merged, inclusion: { in: MERGED_STATES }, allow_nil: true
-  # Naming discipline — enforced wherever the title/acceptance is set or changed
-  # (every create + any update that touches them, all paths). Gated on change, so
-  # existing tasks that don't touch these fields stay grandfathered.
+  # Naming discipline, gated on change so untouched old tasks still save.
   validate :title_within_word_range, if: :title_changed?
   validate :acceptance_bullets_within_word_range, if: :acceptance_changed?
-  # Release ordering's explicit task-to-task edge. Gated on change for the same
-  # reason as the two above — a task saved for any other purpose must not become
-  # unsaveable because a dependency it declared last month has since been
-  # archived away. Writing the field is what has to be right.
+  # Gated on change: a task must stay saveable after a dependency it named is
+  # archived.
   validate :dependencies_name_real_tasks, if: :dependencies_changed?
-  # The epic handle, when present, must be a slug the chip can print and the
-  # `?epic=` filter can match — refused with a 422 through both API paths rather
-  # than stored in a shape the filter would never find again. Normalized
-  # (stripped, lowercased, blank → nil) in #normalize_epic_slug before this runs.
+  # Normalized in #normalize_epic_slug before this runs; a bad slug is a 422.
   validates :epic_slug, format: { with: EPIC_SLUG,
                                   message: "must be a slug — lowercase letters, digits and single " \
                                            "separators (e.g. devops-v3)" },
@@ -463,185 +237,109 @@ class Task < ApplicationRecord
   attr_readonly :slug # the readable handle is set once at creation, then immutable
 
   before_validation :generate_slug, on: :create
-  # EVERY save, not `on: :create` — the field's whole purpose is being edited
-  # later, once the task it must wait on exists. Runs before the validation that
-  # reads it, so the check and the stored value are the same list.
+  # Every save: dependencies are edited later; normalized before validation reads them.
   before_validation :normalize_dependencies
-  # EVERY save, like dependencies: the epic is set and cleared after creation,
-  # and the filter compares the stored column byte-for-byte, so the value must
-  # be canonical before the format validation reads it.
+  # Every save: the epic filter compares the stored column byte for byte.
   before_validation :normalize_epic_slug
   before_validation :default_devops_handles_from_slug, on: :create
-  # Persona BEFORE the Pokémon draw: when a session "acts as" a soul (devops.persona),
-  # stamp the agent's name/color/emoji as the mascot and skip the Pokémon entirely.
+  # Persona before the Pokémon draw: a session acting as a soul wears that soul as its mascot.
   before_validation :sync_persona_identity, on: :create
   before_validation :sync_session_mascot, on: :create
-  # The mascot's DERIVED stamps (shiny/color/emoji) — server-owned, so they must
-  # be re-asserted on every save. See #sync_mascot_display.
+  # Derived mascot stamps (shiny, color, emoji) are server-owned. See #sync_mascot_display.
   before_validation :sync_mascot_display, on: :create
-  # Stamp the app's status-line tint (App#color) from the first repository, so
-  # bin/statusline can color the app slug without DB access. Cheap, idempotent.
+  # The app's status-line tint (App#color), from the first repository, for bin/statusline.
   before_validation :sync_app_identity, on: :create
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
-  # A block is a `building` attribute: advancing OUT of building (to submitted or
-  # beyond) resolves it, so clear the block columns on that forward move. This
-  # keeps blocked_at meaning "currently blocked" — without it, a later return to
-  # building would false-positive as blocked off a stale timestamp.
+  # Leaving `building` forward resolves the block, so blocked_at always means
+  # "currently blocked".
   before_save :clear_block_on_forward_move, if: -> { will_save_change_to_stage? && stage != "building" }
-  # A task ENTERING `submitted` is being offered for review NOW, so any review claim
-  # already sitting on it belongs to a PREVIOUS review — one that ended when the task
-  # left `submitted`. Clear it, or the resubmission after a rework bounce is held out
-  # of `Task.reviewable` until that stale lease expires. Harmless while the review lease
-  # was 120s; a silent multi-hour queue stall now that the review lane carries its own
-  # TTL (ClaimLease::REVIEW_TTL_SECONDS). Measured on the branch that raised it: 205
-  # minutes. See TaskReviewClaim.release_for_new_submission! for why this is the one
-  # transition where an unconsented clear is sound.
+  # Entering `submitted` releases a previous review's claim, or the resubmission
+  # waits out the stale lease. See TaskReviewClaim.release_for_new_submission!.
   after_commit :clear_stale_review_claim_on_submit,
                on: %i[create update],
                if: -> { previous_changes.key?("stage") && stage == "submitted" }
-  # Per-session mascot: re-derive on each build-phase transition (designed/building/
-  # submitted) so a task picked up by a DIFFERENT agent swaps to that session's Pokémon.
-  # FIRST of the mascot callbacks: put the handle back before anything reads it.
-  # sync_session_mascot's redraw guard fires on a blank mascot, so a PATCH that
-  # simply didn't mention the mascot would otherwise swap the task's Pokémon.
-  # See #restore_mascot_identity.
-  # The invariant behind DEVOPS_COLUMN_KEYS, enforced at the LAST gate rather than
-  # only at the door: no task stores a devops key that shadows a column. See
-  # #shed_column_shadow_keys for why the normalizer's raise is not sufficient.
+  # #shed_column_shadow_keys enforces DEVOPS_COLUMN_KEYS at the last gate.
+  # #restore_mascot_identity runs first of the mascot callbacks: a PATCH that omits
+  # the mascot must not trigger a redraw. Then the session mascot re-derives on each
+  # build-stage move, so a new agent's session gets its own Pokémon.
   before_save :shed_column_shadow_keys
   before_save :restore_mascot_identity
   before_save :sync_persona_identity
   before_save :sync_session_mascot, if: -> { will_save_change_to_stage? && Task::BUILD_STAGES.include?(stage) }
-  # Evolution AFTER the session sync: a handoff-resubmit first swaps to the new
-  # session's base Pokémon, then evolves it — so the gate always evolves the
-  # mascot that owns the transition. Runs before the after_update TaskEvent, so
-  # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
-  # Unconditional, and BEFORE the evolution gate: the mascot's shiny/color/emoji
-  # and its consumed gate are server-owned, so a client that rebuilds the hash from
-  # the whitelist drops them. Re-asserting them here — the same
-  # self-healing shape as sync_app_identity below — means the gate check reads a
-  # restored mascot_stage (a wiped one re-opens a spent gate and double-evolves)
-  # and evolve_stage_mascot's own emoji stamp reads a restored mascot_shiny. The
-  # evolved form's color/emoji then belong to evolve_stage_mascot, which stamps
-  # them for the slug it lands on. See #sync_mascot_display.
+  # #sync_mascot_display re-asserts the server-owned mascot keys before the
+  # evolution gate reads them; a wiped mascot_stage would double-evolve. Evolution
+  # runs after the session sync, so the gate evolves the mascot that owns the
+  # transition, and before the TaskEvent, so its snapshot holds the evolved form.
   before_save :sync_mascot_display
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
-  # Unconditional: the settle is a stage INVARIANT re-asserted on every save, not
-  # a transition event. See #settle_operator_approval_past_request_window for the three
-  # leaks the transition shape had.
+  # Unconditional: the settle is a stage invariant re-asserted on every save.
+  # See #settle_operator_approval_past_request_window.
   before_save :settle_operator_approval_past_request_window
   before_save :stamp_operator_approval_request
   before_save :stamp_operator_approval_approved
-  # The cert evidence in devops.checks_run is MACHINE-owned and survives an
-  # author's checks update. Every writer of checks_run — bin/task's PATCH, the
-  # board UI form, a raw API call, the console — lands here, so the guard is on
-  # the model rather than in any one caller. See #preserve_cert_evidence.
+  # Cert evidence in devops.checks_run is machine-owned and survives every writer.
+  # See #preserve_cert_evidence.
   before_save :preserve_cert_evidence
-  # WHO CLAIMED THE BUILD — devops.claimed_session, a server-owned attribution
-  # record (no lease: the desk is the build claim). Stamped on a claim, defended
-  # otherwise, cleared on leaving `building`. See #stamp_build_claim_session.
+  # devops.claimed_session: who claimed the build. Stamped on claim, defended,
+  # cleared on leaving `building`. See #stamp_build_claim_session.
   before_save :stamp_build_claim_session
-  # WHO BUILT THIS is a property of the build CLAIM, not of the transition into
-  # `building`. Registered AFTER stamp_build_claim_session so it reads the
-  # stamped claimer — and, like
-  # its five siblings above, it re-asserts a server-owned devops key on every save
-  # so a client cannot clear it by posting it blank. See #enforce_builder_stamp.
+  # Who built this belongs to the build claim; registered after the claim stamp so
+  # it reads the claimer. See #enforce_builder_stamp.
   before_save :enforce_builder_stamp
-  # One TaskEvent per save that lands a stage: the genesis on create (the default
-  # "designed" stage isn't a dirty change, so this is guard-free) and one per real
-  # transition on update.
+  # One TaskEvent per save that lands a stage: the genesis on create, one per transition.
   after_create :record_genesis_event
   after_update :record_transition_event, if: :saved_change_to_stage?
-  # When a task lands in `shipped`, stamp actual_size from its MEASURED usage.
-  # Registered AFTER record_transition_event so the shipping transition's own
-  # TaskEvent is already on the spine and counted in the token total. See
-  # #autoderive_actual_size — it only fills a BLANK actual_size (never clobbers a
-  # manual size) and never unwinds the ship if derivation fails.
+  # On `shipped`, fill a blank actual_size from measured cost. Registered after
+  # the transition event so that event is counted; never unwinds the ship.
   after_update :autoderive_actual_size, if: :saved_change_to_stage?
-  # ...and once the ship COMMITS, grade it (the learning loop, devops-v3 §9). After
-  # commit so the job reads the committed ship and its actual_size; enqueue only, so
-  # grading can never slow or roll back a ship. See #enqueue_task_grading.
+  # After commit, enqueue the ship's grade (devops-v3 §9); grading never slows or
+  # rolls back a ship. See #enqueue_task_grading.
   after_commit :enqueue_task_grading, on: :update, if: -> { saved_change_to_stage? && stage == "shipped" }
   after_commit :refresh_duration_metrics_for_release_changes, on: %i[create update destroy]
   after_commit :refresh_testing_phases_after_change, on: %i[create update]
-  # Avi auto shirt-sizes a task the instant it enters `designed` WITHOUT a po_size
-  # — on create (the stage a task is BORN in, so the typical trigger is a
-  # `bin/task create` with no --po-size) or a later move INTO designed with the
-  # size still blank. Enqueued async (AviSizingJob) so the sizing runs in PARALLEL
-  # with the build, never blocking the create/move. See #enqueue_avi_sizing_if_designed_unsized.
+  # Avi sizes a task that enters `designed` without a po_size, async (AviSizingJob)
+  # so the build never waits. See #enqueue_avi_sizing_if_designed_unsized.
   after_commit :enqueue_avi_sizing_if_designed_unsized, on: %i[create update]
-  # The /deployments app-ladder row counts tasks PARKED at each branch rung, read
-  # straight from the `merged` column (accepted / release / main), with `archived`
-  # excluded so the main rung can drain. So the ladder moves when — and only when —
-  # one of those two columns moves, which is what this guard says.
-  #
-  # Deliberately NOT folded into DeploymentsBroadcaster.release_modules, even though a
-  # sweep and a ship are what usually change these stamps. That method is documented
-  # as "the Next + Last release modules" and its tests assert the exact slots it
-  # pushes, on the discipline that a caller must not push a card it cannot have
-  # changed. Pushing from here instead keeps that rule intact, fires for a hand-run
-  # `bin/task merged` that no release touched, and cannot double-push on a CI tick
-  # (ci_progress pushes the ladder on its own, for the verdicts rather than the counts).
+  # The /deployments app ladder counts tasks by `merged` rung, excluding archived,
+  # so it is pushed only when one of those columns moves. Kept out of
+  # DeploymentsBroadcaster.release_modules, which pushes only the release slots.
   after_commit :broadcast_app_ladder_if_rung_changed, on: %i[create update destroy]
 
-  # The operator-approval status lives INSIDE the metadata JSON, so flipping it to
-  # "waiting" (an agent requesting a demo review) or clearing it changes no stage
-  # column and writes no TaskEvent — the two spines the live /deployments board
-  # listens on. Without this the WAITING APPROVAL bar only appeared on a full
-  # reload. Broadcast an event-less in-place card replace whenever the DERIVED
-  # approval_status actually changes (a wholesale devops rewrite that echoes the
-  # same value is not a change, so `bin/task update --checks` never spams the board).
+  # approval_status lives in metadata, so changing it writes no stage and no
+  # TaskEvent; push the card when the derived value actually changes.
   after_update_commit :broadcast_operator_approval_change, if: :saved_change_to_approval_status?
-  # The settle at `reviewed` leaves a NOTE addressed to whoever set the request, so
-  # merging over an unanswered request is on the record rather than silent. After
-  # COMMIT, and rescued, so a failed note can never roll back or refuse the move
-  # (Mr. McRitchie, 2026-09-10: surface it, do not block). See
-  # #record_unanswered_approval_request.
+  # The settle at `reviewed` leaves a note for whoever set the request. After
+  # commit and rescued: surface it, never block the move.
+  # See #record_unanswered_approval_request.
   after_commit :record_unanswered_approval_request, on: %i[create update], if: -> { @settled_approval_request }
-  # A block/unblock changes no stage and records NO TaskEvent — Task#block! is a bare
-  # update! — so the live board never heard about it and a blocked card sat unchanged
-  # until something else forced a re-render. That is the one state an operator most
-  # needs to see arrive on its own. Keyed on blocked_at because it is the column that
-  # moves in BOTH directions (nil → time on block, time → nil on unblock), so one
-  # guard covers both without a second callback.
+  # Task#block! records no TaskEvent, so push the card on a block or unblock.
+  # blocked_at moves in both directions, so one guard covers both.
   after_update_commit :broadcast_block_change, if: :saved_change_to_blocked_at?
-  # A destroy fires no TaskEvent, so the live /deployments board never hears about
-  # it — broadcast the card removal explicitly so every viewer's board drops it.
+  # A destroy fires no TaskEvent, so broadcast the card removal.
   after_destroy_commit :broadcast_removal_to_deployments_board
 
   def to_param
     slug
   end
 
-  # `blocked` is NOT a stage — it is an ATTRIBUTE of a `building` task — so a
-  # column-equality filter on it can only ever return zero rows. Route that one
-  # name through the `blocked` scope instead, and keep every real stage on the
-  # column. Without this, `bin/task list --stage blocked` and
-  # `GET /api/v1/tasks?stage=blocked` answered "nothing is blocked" instead of
-  # "that is not a stage" — the query an operator runs to find blocked work.
+  # `blocked` is an attribute, not a stage, so `--stage blocked` routes through the
+  # `blocked` scope rather than returning nothing.
   scope :by_stage, ->(stage) { stage.to_s == "blocked" ? blocked : where(stage: stage) }
-  # A LIVE block is a `building` task carrying an unresolved block marker
-  # (blocked_at set). blocked_at persists as history after the task advances, so
-  # the `building` guard is what keeps the scope to CURRENTLY-blocked tasks.
+  # A live block: a `building` task with blocked_at set. blocked_at persists as
+  # history, so the stage guard keeps this to current blocks.
   scope :blocked, -> { where(stage: "building").where.not(blocked_at: nil) }
   scope :recent, -> { order(created_at: :desc) }
-  # The epic filter both boards and the API index share (`?epic=<slug>`). The
-  # param is normalized through the SAME rule the column was written with, so
-  # `?epic=DevOps-V3` finds the tasks stamped `devops-v3` rather than nothing. A
-  # blank or unparseable value yields an EMPTY scope, never the whole board: an
-  # epic link that resolves to "everything" would read as a working filter.
+  # The epic filter for both boards and the API (`?epic=<slug>`), normalized by the
+  # column's own rule. A blank or bad value yields an empty scope, never the board.
   scope :for_epic, ->(value) {
     normalized = Task.normalize_epic_slug(value)
     normalized ? where(epic_slug: normalized) : none
   }
-  # Board order: highest `position` first, so the freshest task in a column sits
-  # on top. `position` is an event-driven RANK — a create or a stage move stamps
-  # it to (column max + 100), floating that task to the top (see
-  # set_initial_position / set_stage_timestamp). The 100-gaps leave room for a
-  # drag-drop reorder to slot a card between two others without renumbering. This
-  # mirrors the News/Content rank scheme (which Task previously inverted).
+  # Board order: waiting approvals first, then highest `position`. A create or a
+  # stage move stamps position to column max + 100, floating the card to the top;
+  # the gaps let a drag slot a card between two others.
   scope :ordered, -> {
     order(Arel.sql(
       "CASE WHEN metadata -> 'devops' ->> 'approval_status' = '#{OPERATOR_APPROVAL_WAITING}' THEN 1 ELSE 0 END DESC, " \
@@ -649,20 +347,12 @@ class Task < ApplicationRecord
     ))
   }
   scope :requires_migration, -> { where(requires_migration: true) }
-  # Tasks still in play — everything except the two terminal stages, i.e.
-  # designed + building + submitted + reviewed + assembled. A live task's mascot
-  # is "taken"; shipping or archiving returns its Pokémon to the deck. Also the
-  # WIP metric (see .wip_count) — one scope, so the deck and the card can never
-  # disagree about what counts as open work.
+  # Everything but shipped and archived: a live task's mascot is taken, and this is
+  # the WIP metric (.wip_count).
   scope :live, -> { where.not(stage: %w[shipped archived]) }
-  # The load-bearing query of the per-task review claim: submitted PR tasks NOT
-  # already under LIVE review. It's a proper SERVER-SIDE query (NOT EXISTS on
-  # task_review_claims where the lease is still in the future), not a Ruby filter —
-  # the whole point is that many parallel pr-review sessions each ask the board for
-  # the unclaimed-for-review work in one round trip. `claim_expires_at` is a real
-  # datetime column, so it can never be the "corrupt/unparseable" lease ClaimLease
-  # guards for a JSON string claim: NULL (never claimed / released) and a past
-  # expiry (lapsed) both fall through as reviewable; only a future expiry excludes.
+  # Submitted tasks not under a live review claim, as one server-side NOT EXISTS
+  # query so parallel pr-review sessions pop in one round trip. A NULL or past
+  # claim_expires_at is reviewable; only a future expiry excludes.
   scope :reviewable, ->(now: Time.current) {
     by_stage("submitted").where(
       "NOT EXISTS (SELECT 1 FROM task_review_claims trc " \
@@ -671,35 +361,16 @@ class Task < ApplicationRecord
   }
 
   # The verdict of an atomic review pop. `task` is nil when nothing was claimed;
-  # `reason` names why ("claimed" / "none_reviewable" / "no_green_ci").
-  #
-  # `blind_repos` names the repos among the SKIPPED candidates that the board
-  # holds no ingested CI run for at all (Ci::Ingestion). It is a REPORTING field,
-  # never a gate: a blind repo is skipped for exactly the same reason as any
-  # other non-green PR. It exists because `no_green_ci` alone reads as "the
-  # queue is red or still running", which is how an unwired repo's task sat in
-  # `submitted` for days — the pop was right and unreadable at the same time.
-  # `skipped_ci` is what THE BOARD HOLDS for each skipped candidate — its state and
-  # the head SHA that state belongs to. Also reporting-only.
-  #
-  # It exists because the two mechanisms in the review SOP read DIFFERENT SOURCES,
-  # by design: this pop folds our own ingested GithubWorkflowRun rows (never a live
-  # call — see Ci::ReviewGate), while `bin/dor-check --gate-role review` reads
-  # `gh pr checks` LIVE. When the board has not ingested the PR's current tip, the
-  # entry gate says no and gate-zero says yes about the SAME PR, and the task is
-  # unreviewable by the SOP. That happened to auto-mint-level-up-tokens (turf PR
-  # 407), which sat in `submitted` from 2026-08-23 and missed releases on it.
-  #
-  # blind_repos could not describe it: that field fires only when a repo has NO
-  # ingested runs AT ALL, and this repo was wired — it simply had nothing for THIS
-  # head. So the refusal printed no warning and cost a bisect of two CLIs. Naming
-  # the state and the SHA makes the same situation readable in one line.
+  # `reason` is "claimed", "none_reviewable" or "no_green_ci". Two reporting-only
+  # fields: `blind_repos` names skipped repos with no ingested CI at all, and
+  # `skipped_ci` gives each skipped candidate's board CI state and head SHA, since
+  # the pop reads ingested runs (Ci::ReviewGate) while dor-check reads `gh` live.
   ClaimNextResult = Struct.new(:task, :outcome, :reason, :blind_repos, :skipped_ci, keyword_init: true) do
     def claimed?
       task.present?
     end
 
-    # Always an Array — callers built before this field passed no value at all.
+    # Always an Array: older callers pass no value.
     def blind_repo_list
       Array(blind_repos)
     end
@@ -709,30 +380,13 @@ class Task < ApplicationRecord
     end
   end
 
-  # The ATOMIC review pop (relocate-review-selection-to-server): claim the single
-  # highest-ranked reviewable task whose PR CI has concluded GREEN, in one board
-  # transaction, stamping the review lease on it. This relocates the "which task do I
-  # review next" decision bin/pr-review assembled CLIENT-side (reviewable list →
-  # per-PR live `gh` CI read → per-task acquire) into ONE authoritative SERVER pop, so
-  # the UI gets one fast answer and two parallel pr-review sessions never collide.
-  #
-  # Walks `reviewable.ordered` in rank order and, per candidate, in its OWN short
-  # transaction:
-  #   1. re-selects the row `FOR UPDATE SKIP LOCKED`, so two concurrent callers never
-  #      grind the same top task — the loser SKIPS the locked row to the next;
-  #   2. gates on Ci::ReviewGate.green? — :red / :pending / :ci_less / :none are
-  #      SKIPPED, never claimed (a non-green PR is not a review target), and the
-  #      gate reads EVERY repo the task has a PR in, so one green repo can no longer
-  #      pop a task whose second repo is red or still running;
-  #   3. claims it via TaskReviewClaim.acquire, whose per-claim-row lock is the FINAL
-  #      winner-picker — a claim already held by a racer skips to the next candidate.
-  # The first candidate that clears all three is returned; a non-claim commits the
-  # short transaction (releasing its row lock) so an un-green/locked task is never held.
-  #
-  # `ci_status` is the test seam mirroring bin/pr-review's injected_ci_state: a Hash
-  # `{ slug => token }` (or a bare token for the whole wave) applied AS each task's CI
-  # verdict, so a rank/skip unit test drives green vs. not-green per slug without
-  # ingesting GithubWorkflowRun rows. Production passes nil — the real DB fold runs.
+  # The atomic review pop (relocate-review-selection-to-server): claim the top
+  # reviewable task with green CI. Per candidate, in its own short transaction:
+  #   1. re-select `FOR UPDATE SKIP LOCKED`, so a racer skips to the next row;
+  #   2. Ci::ReviewGate.green? over every repo with a PR; non-green is skipped;
+  #   3. TaskReviewClaim.acquire, whose claim-row lock picks the final winner.
+  # `ci_status` is the test seam (`{ slug => token }` or one token for all);
+  # production passes nil.
   def self.claim_next_review(session:, nonce:, label: nil, reviewer: nil, now: Time.current, ci_status: nil)
     ordered_slugs = reviewable(now: now).ordered.pluck(:slug)
     return ClaimNextResult.new(task: nil, outcome: nil, reason: "none_reviewable") if ordered_slugs.empty?
@@ -748,14 +402,9 @@ class Task < ApplicationRecord
         token = ci_status_token(ci_status, slug)
         unless Ci::ReviewGate.green?(task, injected: token)
           skipped_ungreen = true
-          # EVERY repo the skipped task has a PR in, for the blind-repo report below.
-          # The singular read here named repo #1 only, so an unwired SECOND repo —
-          # the repo actually holding the task in `submitted` — was the one thing the
-          # report could not say.
+          # Every repo the skipped task has a PR in, so an unwired second repo is reported.
           skipped_repos.concat(Ci::ReviewGate.repos_for(task))
-          # THE SAME token the gate just judged on. Re-reading without it would let the
-          # report describe a DIFFERENT verdict than the one that caused this skip —
-          # a diagnostic that contradicts the decision it explains is worse than none.
+          # The same token the gate judged on, so the report explains this skip.
           skipped_ci << ci_report_for(task, slug, token)
           next nil # red / pending / ci-less / none — never claim a non-green PR
         end
@@ -773,18 +422,9 @@ class Task < ApplicationRecord
                         blind_repos: blind_repos_among(skipped_repos), skipped_ci: skipped_ci)
   end
 
-  # Which of the just-skipped candidates' repos deliver NO CI to the board at all
-  # — the wiring gap, told apart from a red or still-running build. Reporting
-  # only: the pop's decision is already made, so this can never change what gets
-  # claimed, and a failure here degrades to "no blind repos" rather than taking
-  # the review pop down with it.
-  # What the BOARD holds for one skipped candidate, for reporting only.
-  #
-  # Deliberately tolerant: this runs inside the pop's short transaction, on the
-  # refusal path, purely to explain a decision that has ALREADY been made. It must
-  # never be the reason a pop fails, so any error here degrades to :unreadable
-  # rather than propagating — a diagnostic that can break the thing it describes is
-  # worse than no diagnostic.
+  # What the board holds for one skipped candidate, for reporting only. It runs on
+  # the refusal path inside the pop's transaction, so any error degrades to
+  # "unreadable" rather than failing the pop.
   def self.ci_report_for(task, slug, injected = nil)
     verdict = Ci::ReviewGate.verdict(task, injected: injected)
     { "slug" => slug,
@@ -795,6 +435,8 @@ class Task < ApplicationRecord
     { "slug" => slug, "state" => "unreadable", "sha" => "", "repo" => e.class.name }
   end
 
+  # The skipped repos that deliver no CI to the board at all; reporting only, so an
+  # error degrades to none.
   def self.blind_repos_among(repos)
     return [] if repos.blank?
 
@@ -804,8 +446,7 @@ class Task < ApplicationRecord
     []
   end
 
-  # The injected CI verdict for one slug (test seam) — a per-slug Hash lookup, a bare
-  # token applied to every slug, or nil (no injection → the real Ci::ReviewGate read).
+  # The injected CI verdict for one slug: a Hash lookup, one token for all, or nil.
   def self.ci_status_token(injection, slug)
     return nil if injection.nil?
     return injection[slug] || injection[slug.to_sym] if injection.is_a?(Hash)
@@ -813,122 +454,78 @@ class Task < ApplicationRecord
     injection
   end
 
-  # The tasks that render in a board column. Blocked tasks ARE building tasks now
-  # (a block is a building attribute), so the building column no longer folds in a
-  # separate "blocked" bucket — the stage grouping already carries them.
+  # The tasks in a board column; blocked tasks are building tasks.
   def self.board_column_tasks(tasks_by_stage, stage)
     Array((tasks_by_stage || {})[stage.to_s])
   end
 
-  # How many `shipped` cards a board draws by default. Shipped is HISTORY, and it
-  # was the biggest column on either board — 31 of the 57 cards /deployments drew —
-  # carrying the heaviest crew markup (the 4-slot crew cluster). The cap trims the
-  # RENDER, never the record: the column's "older" link leads to `?stage=shipped`,
-  # which reaches the rest a BOARD_STAGE_LIMIT page at a time.
+  # How many `shipped` cards a board draws by default. The cap trims the render,
+  # not the record: the column's "older" link pages through `?stage=shipped`.
   BOARD_SHIPPED_LIMIT = 12
 
-  # How many cards an EXPLICIT `?stage=<stage>` view draws PER PAGE. That view is the
-  # one path that still reaches the archive, and the board is public, so every page
-  # must be bounded too. It is also the page size, and the only one: no request
-  # parameter can raise it. HOTFIX 2026-09-16 (archived-board-crashes-prod): uncapped, a crawler's two
-  # requests for `?stage=archived` took the 512MB web dyno to 1,220MB and an R15
-  # SIGKILL — production down, twice in 38 seconds (one request: 23,994ms, 3,834
-  # queries). Well above BOARD_SHIPPED_LIMIT, because this is a deliberate ask.
+  # Cards per page on an explicit `?stage=` view, the only path to the archive. No
+  # parameter raises it: the board is public, and an uncapped archive read took
+  # production down (archived-board-crashes-prod).
   BOARD_STAGE_LIMIT = 100
 
-  # The board's default task set: live work in full, plus the freshest slice of
-  # `shipped`, and NEVER `archived`.
-  #
-  # This scope is the page's whole performance story. The boards used to load every
-  # task and let each view pick columns out of the result, so a board drawing 57
-  # cards instantiated 1,212 tasks, 14,170 TaskEvents and 3,742 GateRuns — about 56%
-  # of everything the request allocated, on a dyno already reporting R14. Measured
-  # on production 2026-08-19: 648ms / 511,905 objects unscoped, 25ms / 24,784 scoped.
-  #
-  # `shipped` is capped in SQL rather than trimmed in Ruby afterwards so its
-  # TaskEvents are never instantiated either — the object count is the expensive
-  # half, not the row count. Callers pass an already-ordered, already-preloaded
-  # scope; `ordered` sorts waiting-approval first then position desc, so the kept
-  # slice is the freshest. Returns an Array, not a relation: it is two loads.
+  # The default board set: live work, the freshest BOARD_SHIPPED_LIMIT shipped
+  # cards, never archived. Capped in SQL so the trimmed rows' events and gate runs
+  # are never instantiated. Callers pass an ordered, preloaded scope. Returns an
+  # Array (two loads).
   def self.board_default_tasks(scope = all)
     scope.where.not(stage: %w[archived shipped]).to_a +
       scope.where(stage: "shipped").limit(BOARD_SHIPPED_LIMIT).to_a
   end
 
-  # { stage => true total } for every column board_default_tasks actually trimmed —
-  # empty when nothing was, so a board badge stays a plain number in the common
-  # case. Pass the SAME filtered scope the cards came from, or an agent-filtered
-  # board would advertise the unfiltered total.
+  # { stage => true total } for each column board_default_tasks trimmed, else {}.
+  # Pass the same filtered scope the cards came from.
   def self.board_capped_stage_totals(scope = all)
     shipped = scope.where(stage: "shipped").count
     shipped > BOARD_SHIPPED_LIMIT ? { "shipped" => shipped } : {}
   end
 
-  # An explicit `?stage=<stage>` view: that column only, one BOARD_STAGE_LIMIT page of
-  # it — page 1 is the newest, each later page the next-older slice. Capped in SQL for
-  # the same reason `shipped` is: the preloaded TaskEvents and GateRuns are the
-  # expensive half, so a row off this page must never be instantiated. Paging is what
-  # keeps the older archive browsable WITHOUT a wider read; a crawler that follows the
-  # links walks many bounded pages, never one huge one.
-  #
-  # `id` breaks ties in `ordered` (position and created_at can both repeat), so an
-  # OFFSET page can neither skip a task nor draw one twice. Pass a page already
-  # clamped by board_stage_page. Returns an Array, like board_default_tasks.
+  # One BOARD_STAGE_LIMIT page of an explicit `?stage=` view, newest first, capped
+  # in SQL. `id` breaks ties so OFFSET paging never skips or repeats a task. Pass a
+  # page already clamped by board_stage_page.
   def self.board_stage_tasks(scope, stage, page: 1)
     offset = ([page.to_i, 1].max - 1) * BOARD_STAGE_LIMIT
     scope.where(stage: stage).order(id: :desc).limit(BOARD_STAGE_LIMIT).offset(offset).to_a
   end
 
-  # How many BOARD_STAGE_LIMIT pages a stage holding `total` tasks spans. Never below
-  # 1, so an empty stage still draws its (empty) page.
+  # Pages a stage of `total` tasks spans; at least 1.
   def self.board_stage_page_count(total)
     [(total.to_i + BOARD_STAGE_LIMIT - 1) / BOARD_STAGE_LIMIT, 1].max
   end
 
-  # A requested `?page=` clamped into the pages that exist. Blank, zero, negative,
-  # non-numeric and array params read as page 1; past the end reads as the last page,
-  # so a guessed 10**30 can never hand SQL an OFFSET past bigint.
+  # A requested `?page=` clamped into the pages that exist; junk reads as page 1, so
+  # SQL never gets an OFFSET past bigint.
   def self.board_stage_page(requested, total)
     requested = requested.is_a?(String) || requested.is_a?(Integer) ? requested.to_s.to_i : 1
     requested.clamp(1, board_stage_page_count(total))
   end
 
-  # { stage => true total } when an explicit stage holds more than one page, else
-  # empty — the explicit-stage twin of board_capped_stage_totals. Pass the same
-  # filtered scope, or `total:` when the caller already counted it.
+  # The explicit-stage twin of board_capped_stage_totals.
   def self.board_stage_capped_totals(scope, stage, total: nil)
     total ||= scope.where(stage: stage).count
     total > BOARD_STAGE_LIMIT ? { stage.to_s => total } : {}
   end
 
-  # WIP — how much work is open right now, the DevOps card's sixth tile:
-  # designed + building + submitted + reviewed + assembled. That set IS `live`
-  # (everything but the two terminal stages), so this counts THROUGH the scope
-  # instead of restating the stage list where the two could drift apart.
-  # Deliberately independent of the board's agent/stage filter params: WIP is the
-  # pipeline's total, not the count of whatever the current view has narrowed to.
+  # WIP for the DevOps card: the `live` scope's count, independent of any board
+  # filter.
   def self.wip_count
     live.count
   end
 
-  # The same WIP, split by stage in board order — { "designed" => 3, ... } with
-  # every live stage present, a zero included, so the DevOps card can draw one
-  # segment per stage without guessing which stages exist. One grouped query, and
-  # its sum is #wip_count by construction: both read the `live` scope.
+  # WIP by stage in board order, zeros included; sums to #wip_count since both read
+  # `live`.
   def self.wip_by_stage
     counts = live.group(:stage).count
     (STAGES - %w[shipped archived]).index_with { |stage| counts[stage].to_i }
   end
 
-  # Avi's per-APPLICATION release disposition over the `reviewed` queue — the read
-  # behind the reviewed-stage board marker and the `qa-release` disposition step. It
-  # groups the reviewed candidates by their release application (Task#release_repo) and
-  # reports, per app, whether it rides the next candidate (`included`) and which task
-  # members carry it. An app is `included` only when EVERY one of its reviewed members
-  # is `included_in_release?` — a single member Avi holds out (`included_in_release:
-  # false`) flags its whole app as held from this release, so the marker never says
-  # "shipping" while a member is deliberately ejected. Default is include-all, so a
-  # fresh reviewed queue reports every app included. `scope` is injectable for tests.
+  # Avi's per-app release disposition over the `reviewed` queue (the board marker
+  # and the qa-release step): an app is `included` only when every reviewed member
+  # is included_in_release?, so one held member holds its app.
   def self.reviewed_release_inclusion(scope = where(stage: "reviewed"))
     scope.to_a.group_by(&:release_repo).transform_values do |members|
       { included: members.all?(&:included_in_release?), members: members }
@@ -950,8 +547,7 @@ class Task < ApplicationRecord
     end
   end
 
-  # The mascot slugs currently held by live tasks — the exclusion set the draw
-  # skips so two in-flight tasks never share a Pokémon.
+  # Mascots held by live tasks: the draw skips them so live tasks never share one.
   def self.active_mascots
     live.pluck(:metadata).filter_map { |m| m&.dig("devops", "mascot").presence }
   end
@@ -960,36 +556,10 @@ class Task < ApplicationRecord
     value == true || value.to_s.strip.downcase == "true" || value.to_s.strip == "1"
   end
 
-  # Backfill: give a mascot to every LIVE task that lacks one — for tasks created
-  # before the mascot feature (assign_mascot is create-only) so the existing board
-  # lights up. Idempotent (skips tasks that already have one), unique among live
-  # tasks, written through the normal devops path (not update_column) so it stays a
-  # real, normalized scalar. The exclusion set is hoisted once and grown in memory
-  # (no per-row table re-scan), terminal stages are skipped, and a row that fails to
-  # save is captured to ErrorLog (durable — rolling logs roll off) and skipped so
-  # one bad task can't abort a prod run. Returns the count newly assigned.
-  # One-time sweep for the rows the OLD one-shot settle left behind (the
-  # transition callback fired on the single building→submitted save, so anything
-  # that rewrote devops afterwards restored "waiting" and nothing cleared it —
-  # the request rode to `shipped` and kept flashing WAITING APPROVAL on a
-  # finished card). #settle_operator_approval_past_request_window now holds the invariant
-  # on every save, but a row nobody saves again never gets it.
-  #
-  # Idempotent: only ever "waiting" → "none", only past the seam. update_column
-  # skips callbacks so a historical row is not otherwise disturbed — no
-  # broadcasts, no timestamps, no stage churn. Returns the slugs it settled.
-  #
-  # And DELIBERATELY no approval_request_dropped_at receipt, which is why the drop
-  # is not universally auditable. The receipt exists to tell an agent that the move
-  # IT JUST RAN discarded a live request; these rows were stranded by the old
-  # one-shot settle long ago, and there is no such agent to tell. A backfill
-  # announces nothing, so it records nothing. That reason carries the paragraph
-  # alone — a second one, that today's timestamp "would date it wrong for the one
-  # reader that compares it", was removed on 2026-09-08 as false: the one reader is
-  # bin/task's move warning, which compares the two renderings ACROSS A SINGLE PATCH
-  # (see the receipt's own note on #settle_operator_approval_past_request_window) and is
-  # indifferent to how old either one is.
-  # Driver: `rake tasks:settle_stale_operator_approvals`.
+  # Settles "waiting" requests on rows past the window that nobody saves again.
+  # Idempotent; update_column so a historical row sees no callbacks. Records no
+  # dropped-at receipt: no agent's move discarded these. Driver:
+  # `rake tasks:settle_stale_operator_approvals`.
   def self.settle_stale_operator_approvals!
     settled = []
     where.not(stage: APPROVAL_REQUEST_STAGES).find_each do |task|
@@ -1003,6 +573,9 @@ class Task < ApplicationRecord
     settled
   end
 
+  # Gives every live task without a mascot a unique fresh draw, through the normal
+  # devops path. Idempotent; a failing row goes to ErrorLog and is skipped. Returns
+  # the count assigned.
   def self.backfill_mascots!
     taken = active_mascots.to_set
     assigned = 0
@@ -1015,7 +588,7 @@ class Task < ApplicationRecord
       merged = task.metadata.deep_dup
       backfilled = (merged["devops"] ||= {})
       backfilled["mascot"] = pick.slug
-      # A backfilled mascot is a fresh draw, so it gets its own shiny AND gender roll.
+      # A fresh draw rolls its own shiny and gender.
       backfilled["mascot_shiny"] = Pokemon.roll_shiny?
       backfilled["mascot_gender"] = pick.roll_gender
       task.update!(metadata: merged)
@@ -1030,10 +603,9 @@ class Task < ApplicationRecord
     assigned
   end
 
-  # Migrate a board from the old per-TASK mascots to the per-SESSION rule: every live
-  # task carrying a session_id adopts its session's Pokémon (the first one seen for that
-  # session wins; sessions stay unique among themselves). Session-less tasks keep theirs.
-  # Idempotent; a failed row is captured to ErrorLog and skipped. Returns the count.
+  # Every live task with a session_id adopts its session's Pokémon (first seen
+  # wins). Idempotent; a failing row goes to ErrorLog and is skipped. Returns the
+  # count.
   def self.resync_session_mascots!
     by_session = {}
     shiny_by_session = {}
@@ -1048,10 +620,8 @@ class Task < ApplicationRecord
       next unless slug
       taken << slug
 
-      # The session's shiny roll rides along with its Pokémon: the SessionMascot
-      # row is the truth when present, else the first task seen keeps its flag.
-      # key? (not ||=) because a legitimate `false` must cache too.
-      # Gender rides the same way (it is rolled beside shiny).
+      # Shiny and gender ride with the session's Pokémon: the SessionMascot row wins,
+      # else the first task seen. key? so a `false` caches.
       unless shiny_by_session.key?(sid)
         session_mascot = SessionMascot.find_by(session_id: sid)
         shiny_by_session[sid] = session_mascot ? session_mascot.shiny? : shiny_value?(task.metadata.dig("devops", "mascot_shiny"))
@@ -1092,18 +662,14 @@ class Task < ApplicationRecord
     devops.any?
   end
 
-  # Whether this task's mascot came up SHINY — rolled once at draw time (the
-  # session's SessionMascot roll, adopted here) and stamped server-side as
-  # devops.mascot_shiny alongside mascot_color/emoji.
+  # Whether the mascot is shiny: the session's roll, stamped as devops.mascot_shiny.
   def mascot_shiny?
     self.class.shiny_value?(devops["mascot_shiny"])
   end
 
-  # This task's mascot GENDER — "female", "male", or nil (a genderless species, or
-  # a legacy draw from before the roll). Rolled once at draw time with shiny (the
-  # session's SessionMascot roll, adopted here) and stamped server-side as
-  # devops.mascot_gender. It picks a gender family's form (Nidoran♀ / ♂), the
-  # female sprite, and which evolution branches the gates may offer.
+  # "female", "male" or nil (genderless or an old draw): the session's roll, stamped
+  # as devops.mascot_gender. It picks a gendered form, the female sprite, and which
+  # evolution branches the gates offer.
   def mascot_gender
     Pokemon.normalize_gender(devops["mascot_gender"])
   end
@@ -1116,94 +682,60 @@ class Task < ApplicationRecord
     devops.fetch("shape", "").presence
   end
 
-  # NOTE: there is deliberately no `devops_release_slug`. Release membership is the
-  # `release_slug` COLUMN (the `belongs_to :release` FK, written by the sweep) —
-  # read `task.release_slug`, or `task.release` for the record itself. A
-  # `devops_`-prefixed reader existed here, read a same-named devops key, and fed
-  # the task page a value the release lane never saw. See DEVOPS_COLUMN_KEYS.
+  # There is no `devops_release_slug`: release membership is the `release_slug`
+  # column (`task.release`). See DEVOPS_COLUMN_KEYS.
 
   def devops_worktree_slug
     devops.fetch("worktree_slug", "").presence
   end
 
-  # Free-form verbose detail agents write for each other — no length constraint
-  # (the readability constraints are on title + acceptance).
+  # Free-form detail agents write for each other; no length limit.
   def devops_agent_context
     devops.fetch("agent_context", "").presence
   end
 
-  # The soul who BUILT this task — stamped on any build CLAIM, a re-claim of an
-  # already-`building` task included (see #enforce_builder_stamp), so the reviewer
-  # pool can exclude the builder (a soul shouldn't review their own work). Source
-  # precedence: an explicit soul-slug build-claim actor (`--actor <soul>`), else
-  # the task's soul persona, else its assigned agent_slug — so a bare `bin/task
-  # move <slug> building` records the builder WITHOUT a manual flag whenever the
-  # record names one. nil only when NONE resolves to a soul, and that nil means
-  # "the record does not say" — never "nobody built it". ReviewerSelector also
-  # falls back to a soul actor on the `→ building` TaskEvent, and REFUSES to
-  # auto-select while the answer stays unknown.
+  # The soul who built this task, stamped on any build claim (#enforce_builder_stamp)
+  # so the reviewer pool can exclude it. Precedence: a soul `--actor`, the soul
+  # persona, then agent_slug. nil means the record does not say, and
+  # ReviewerSelector refuses to auto-select on it.
   def devops_built_by
     self.class.canonical_soul(devops.fetch("built_by", "")).presence
   end
 
-  # EVERY soul that WORKED this task, in the order recorded — the answer `built_by`
-  # cannot
-  # give, because it holds one slug and a task can have several authors (a session
-  # limit kills a builder mid-work and another soul finishes it). Append-only and
-  # SERVER-OWNED: it is deliberately not in DEVOPS_KEYS, so a client can neither
-  # write nor shrink it; #enforce_builder_stamp is the only author. ReviewerSelector
-  # excludes the whole set, so a handoff no longer leaves a co-author eligible to
-  # review their own diff.
+  # Every soul that worked this task, in order: a task can have several authors.
+  # Append-only and server-owned (not in DEVOPS_KEYS); #enforce_builder_stamp is the
+  # only writer. ReviewerSelector excludes the whole set.
   def devops_builders
     Array(devops["builders"]).map { |s| self.class.canonical_soul(s) }.select(&:present?).uniq
   end
 
-  # WHO MOVED THE PR HEAD OUTSIDE THE BUILD CLAIM — the reviewer fix-forward (a
-  # "zap"), recorded by `bin/task fix-forward` and posted by bin/pr-review at the
-  # seam where it already PROVES the head moved during review.
-  #
-  # WHY A THIRD AUTHORSHIP MOMENT EXISTS. #builder_roll_call had two — the build
-  # CLAIM and the SUBMIT — and a zap is neither. A reviewer who fixes forward puts
-  # his own commit in the merged diff, so he is an author of that PR; but he makes
-  # no claim and does not submit, so nothing grew the author set. Measured twice on
-  # merged PRs the night of 2026-09-09: on #1321 steffon zapped be5579a5 while
-  # holding the light seat and `bin/reviewer-select` then SEATED STEFFON on a PR
-  # carrying steffon's own commit; on #1322 the reviewer pushed 7113af85 to resolve
-  # a conflict and had to DISCLOSE it in prose, because nothing recorded it.
-  #
-  # This is worse than a blank built_by. A blank set makes the selector fail
-  # CLOSED — it refuses and a human chooses. A set missing its zap author fails
-  # OPEN: populated, confident, and incomplete, so nothing looks wrong.
-  #
-  # ENTRIES THAT NAME A SOUL join `builders` (never `built_by` — a reviewer
-  # recorded as the CURRENT builder of the PR he reviewed is the same defect
-  # inverted; the same rule #reviewer_taking_the_build? already enforces). Entries
-  # that name no soul add nobody.
+  # Who moved the PR head outside the build claim: a reviewer's fix-forward (a
+  # "zap"), recorded by `bin/task fix-forward` from bin/pr-review. A zap author is
+  # an author of the PR, so soul entries join `builders` (never `built_by`); other
+  # entries add nobody. Without it the author set fails open.
   def devops_fix_forward
     Array(devops["fix_forward"]).map { |slug| self.class.canonical_soul(slug) }.reject(&:empty?)
   end
 
-  # --- Session resume (V1: store + display + copy; no enforcement gate) -------
-  # The Claude/Codex session that worked this task, captured by bin/task on
-  # create + on the move to `building` (the claim moment). Lets the operator see
-  # which terminal owns a task (the last-4 on the board + status line) and copy a
-  # command to reopen it.
+  # --- Session resume -------------------------------------------------------
+  # The Claude or Codex session that worked this task, captured by bin/task on
+  # create and on the claim, so the operator can see and reopen it.
   def devops_session_id
     devops.fetch("session_id", "").presence
   end
 
-  # Which CLI the session belongs to; nil is treated as "claude" (the default).
+  # Which CLI the session belongs to; nil means "claude".
   def devops_session_provider
     devops.fetch("session_provider", "").presence
   end
 
-  # Last 4 chars of the session id — the at-a-glance handle. nil when unset.
+  # The last four characters of the session id, or nil.
   def session_id_last4
     id = devops_session_id
     id && id[-4..]
   end
 
-  # The FULL, copyable resume command (provider-aware). nil when no session id.
+  # The full, copyable resume command, or nil.
   def resume_command
     id = devops_session_id
     return nil unless id
@@ -1212,8 +744,7 @@ class Task < ApplicationRecord
     format(RESUME_COMMANDS.fetch(provider, RESUME_COMMANDS["claude"]), id)
   end
 
-  # Truncated display form, e.g. "claude --resume …12ab" (verb + …<last4>).
-  # nil when no session id.
+  # Display form, e.g. "claude --resume …12ab"; nil without a session.
   def resume_command_display
     id = devops_session_id
     return nil unless id
@@ -1222,13 +753,10 @@ class Task < ApplicationRecord
     format(RESUME_COMMANDS.fetch(provider, RESUME_COMMANDS["claude"]), "…#{id[-4..]}")
   end
 
-  # --- Build claim lease fields (legacy readers) -----------------------------
-  # The session id PLUS a per-process nonce, under a TTL (claim_expires_at). The
-  # build claim itself is now the DESK bound to the task (bin/lib/desk_claim.rb):
-  # no lease, no TTL, no renewer — nothing renews these fields for a build, and
-  # bin/statusline renews only the DevOps shift lease. These readers remain for
-  # records that still carry the fields. The lease math lives in ClaimLease
-  # (shared verbatim with the standalone bin/task CLI).
+  # --- Build claim lease fields (legacy readers) ----------------------------
+  # The build claim is the desk bound to the task (bin/lib/desk_claim.rb); nothing
+  # renews these fields for a build. They remain for records that carry them. The
+  # lease math lives in ClaimLease, shared with bin/task.
   def devops_claim
     ClaimLease.from_devops(devops)
   end
@@ -1241,36 +769,26 @@ class Task < ApplicationRecord
     devops.fetch("claim_nonce", "").presence
   end
 
-  # True while a non-expired claim is held — the liveness check the /tasks resume
-  # control reuses ("session looks active in another terminal — resume anyway?").
+  # True while a non-expired claim is held; the /tasks resume control reuses it.
   def claim_live?(now: Time.current)
     ClaimLease.live?(devops, now: now)
   end
 
-  # Seconds since the holder's last heartbeat (nil when unclaimed / no lease).
+  # Seconds since the holder's last heartbeat; nil without a lease.
   def claim_heartbeat_seconds_ago(now: Time.current)
     ClaimLease.heartbeat_age(devops, now: now)
   end
 
-  # --- Review claim lease (the per-TASK review gate) ------------------------
-  # A DIFFERENT lease from the build claim above: this one guards WHO is REVIEWING
-  # the submitted task, stored in its own row (TaskReviewClaim) rather than in the
-  # devops metadata, so many parallel pr-review sessions contend per-task and skip a
-  # task already under live review. True while a non-expired review claim is held —
-  # the liveness fact the `reviewable` scope filters on, exposed per-row for the API.
+  # --- Review claim lease ---------------------------------------------------
+  # Who is reviewing the submitted task, in its own row (TaskReviewClaim). The
+  # liveness fact the `reviewable` scope filters on, per row for the API.
   def review_claim_live?(now: Time.current)
     review_claim&.live?(now: now) || false
   end
 
-  # --- The progress fact (see the long note in ClaimLease) -------------------
-  # `claim_live?` above says only "a terminal is rendering". These say what the
-  # task has actually PRODUCED, read from the durable evidence we already write:
-  # TaskEvents (stage moves, intents, cert checkpoints) and GateRuns (a gate
-  # opening, recording a lane, or closing). No new heartbeat, no new write path —
-  # a wedged agent cannot fake these, because they only exist when work landed.
-  #
-  # nil means UNKNOWN (a task that has produced nothing yet), and unknown always
-  # reads as healthy: never invent trouble from an absence of evidence.
+  # --- Progress (see ClaimLease) --------------------------------------------
+  # What the task has produced, read from TaskEvents and GateRuns, which exist only
+  # when work landed. nil means unknown, and unknown reads as healthy.
   PROGRESS_IN_FLIGHT_BUDGET = 6.hours # past the longest cert ever measured (321m)
 
   def last_progress_event
@@ -1281,8 +799,7 @@ class Task < ApplicationRecord
     last_progress_event&.first
   end
 
-  # What the last durable artifact WAS ("cert started", "moved to building") —
-  # the difference between "no progress in 40m" and a reader who can act on it.
+  # What the last durable artifact was, e.g. "cert started".
   def last_progress_label
     last_progress_event&.at(1)
   end
@@ -1291,22 +808,12 @@ class Task < ApplicationRecord
     ClaimLease.progress_age(last_progress_at, now: now)
   end
 
-  # --- Attribution: progress belongs to whoever PRODUCED it ------------------
-  #
-  # The fields above answer "what has landed on this task". They do NOT answer
-  # "is the holder alive", and on 2026-08-13 the claim gate treated them as if
-  # they did: a challenger ran the (since retired) local cert, which landed a g1_cert
-  # gate row on the task, and the gate refused that same challenger with "last
-  # durable progress ~2m ago (g1_cert passed)" — the challenger's OWN work, quoted
-  # back as proof the holder was working. Unowned progress gets credited to
-  # whoever happens to hold the claim, which is how a lease manufactures its own
-  # evidence.
-  #
-  # So the holder's liveness is asked of the holder's OWN artifacts, and the
-  # newest artifact's owner is published beside it so no reader has to assume.
+  # --- Attribution: progress belongs to whoever produced it -----------------
+  # The holder's liveness is asked of the holder's own artifacts, and the newest
+  # artifact's owner is published beside it, so a challenger's work is never
+  # quoted back as the holder's.
 
-  # Who produced the newest artifact — nil when the row names nobody (an older
-  # row, a plain-shell run). nil is UNKNOWN and must never be read as "the holder".
+  # Who produced the newest artifact; nil is unknown, never "the holder".
   def last_progress_actor
     last_progress_event&.at(2)
   end
@@ -1323,63 +830,33 @@ class Task < ApplicationRecord
     holder_progress_event&.at(1)
   end
 
-  # Seconds since the CLAIM HOLDER last produced something durable. nil means the
-  # holder has produced nothing we can attribute to it — which is a genuinely
-  # different statement from "nothing has happened here", and the claim gate says
-  # so rather than borrowing someone else's work to fill the gap.
+  # Seconds since the claim holder produced something durable; nil when nothing is
+  # attributable to it.
   def holder_progress_seconds_ago(now: Time.current)
     ClaimLease.progress_age(holder_progress_at, now: now)
   end
 
-  # A gate is demonstrably running right now (opened, never closed, and recently
-  # enough to be plausible). Open gate rows latch forever when a run crashes, so
-  # this is BOUNDED — an ancient open gate is not evidence of anything.
-  #
-  # Filtered in Ruby over the SAME association progress_evidence reads, so the board
-  # (which preloads :gate_runs) answers this from loaded rows instead of issuing a
-  # fresh EXISTS on every call — and the card asks two or three times per live desk.
+  # A gate opened recently and not closed. Bounded, because a crashed run latches
+  # open forever. Filters the loaded :gate_runs so the board issues no query.
   def gate_in_flight?(now: Time.current)
     window = (now - PROGRESS_IN_FLIGHT_BUDGET)..now
 
     gate_runs.any? { |gate| gate.finished_at.nil? && gate.started_at.present? && window.cover?(gate.started_at) }
   end
 
-  # --- Reaping: the same rule, pointed the other way -------------------------
-  #
-  # holder_progress_* above answers "what has the holder DEMONSTRABLY produced",
-  # and it is strict on purpose: the refusal MESSAGE may never claim an
-  # unattributed artifact as the holder's, because inventing that owner is the
-  # manufactured evidence this whole family exists to end.
-  #
-  # The REAPING decision obeys the same master rule — never invent evidence —
-  # but it is asserting the OPPOSITE proposition. The message argues the holder
-  # is ALIVE; the heartbeat argues it is GONE. So an unsigned row has to fall on
-  # the opposite side of each: it is not proof the holder worked (the message
-  # must not cite it) and equally not proof the holder didn't (the heartbeat must
-  # not reap on it). A gate run written before bin/gate stamped its session is
-  # exactly such a row, and reading its silence as "not the holder" would evict a
-  # live worker on the strength of a missing field.
-  #
-  # So here an artifact counts as the holder's unless it is DEMONSTRABLY someone
-  # else's. That is what closes the incident: a queued challenger's checkpoint and
-  # g1_cert are stamped with the CHALLENGER's session, so they are demonstrably
-  # not the holder's, and they stop propping up an abandoned lease — while every
-  # unknown still keeps the desk.
+  # --- Reaping --------------------------------------------------------------
+  # Never invent evidence, pointed the other way: the refusal message may not cite
+  # an unsigned artifact as the holder's, and the reaper may not treat one as
+  # someone else's. So for reaping, an artifact counts as the holder's unless
+  # another session demonstrably signed it.
 
-  # Seconds since the newest artifact not demonstrably someone else's. nil when
-  # the task has none at all (known-absent, not unknown — nothing has ever landed
-  # here, by anyone).
+  # Seconds since the newest artifact not signed by someone else; nil when none exist.
   def holder_liveness_seconds_ago(now: Time.current)
     ClaimLease.progress_age(undisowned_progress_event&.first, now: now)
   end
 
-  # A gate that could be the holder's is running right now. Same bounded window as
-  # gate_in_flight?, minus the runs another session signed — the challenger's cert
-  # that renewed an abandoned lease for another 1h29m.
-  #
-  # The channel itself stays: a cert writes NOTHING into the desk for up to the
-  # measured 94-minute p99, so dropping it would reap a holder mid-cert. Filtering
-  # it by actor keeps that protection for the holder and denies it to everyone else.
+  # gate_in_flight?, minus runs another session signed. A cert writes nothing to
+  # the desk while it runs, so the holder's own gate keeps the lease alive.
   def holder_gate_in_flight?(now: Time.current)
     window = (now - PROGRESS_IN_FLIGHT_BUDGET)..now
 
@@ -1389,15 +866,9 @@ class Task < ApplicationRecord
     end
   end
 
-  # Held by a live session, yet nothing durable has landed in a long time.
-  # Informational only — it reclaims nothing and blocks nothing.
-  #
-  # Measured against the HOLDER's own artifacts whenever the holder has any, for
-  # the same reason the claim gate's refusal is: a chip that counts anyone's work
-  # as the holder's says "healthy" the moment a second agent runs a cert on the
-  # task, which is precisely when a reader most needs the truth. Falls back to the
-  # task-wide fact when nothing is attributable, so an older row (no session on
-  # its events) keeps the signal it has rather than going blind.
+  # Held by a live session, yet nothing durable has landed in a while.
+  # Informational only. Measured on the holder's own artifacts when it has any,
+  # else the task-wide fact.
   def claim_progress_quiet?(now: Time.current)
     ClaimLease.quiet?(devops,
                       last_progress_at: holder_progress_at || last_progress_at,
@@ -1426,10 +897,9 @@ class Task < ApplicationRecord
     devops_list("checks_run")
   end
 
-  # The open-PR archive gate's abandonment receipt (lib/open_pr_guard.rb): one line
-  # per PR that `bin/task move <slug> archived --force` deliberately dropped. Its
-  # entire purpose is that a LATER READER can tell a dropped PR from a forgotten
-  # one, so it needs a reader on the surfaces a human actually opens.
+  # The archive override's receipt (lib/open_pr_guard.rb): each PR that
+  # `bin/task move <slug> archived --force` dropped, so a reader can tell dropped
+  # from forgotten.
   def devops_abandoned_prs
     devops_list("abandoned_prs")
   end
@@ -1442,15 +912,11 @@ class Task < ApplicationRecord
     approval_status == OPERATOR_APPROVAL_WAITING
   end
 
-  # The OPERATOR WINDOWS this task carries right now (Devops::Windows, design
-  # section 6) — DERIVED, escalation first: the approval clock from
-  # devops.approval_requested_at while the request is `waiting`, and the
-  # escalation clock from blocked_at on a live dependency block whose summary
-  # leads `Escalated:`. Nothing is stored; the card, the task API and
-  # `bin/task wait-window` all read this one method. `unresolved` is the open
-  # block Activity the board and the API already preload (the summary lives on
-  # it); left nil, a live block looks it up itself — one query, only when there
-  # is a block to read.
+  # The operator windows this task carries now (Devops::Windows), derived, never
+  # stored: the approval clock while a request waits, and the escalation clock on a
+  # live dependency block whose summary leads `Escalated:`. The card, the API and
+  # `bin/task wait-window` all read this. Pass the preloaded `unresolved` block
+  # Activity, or a live block looks it up.
   def operator_windows(unresolved: nil)
     unresolved = unresolved_feedback_activity if unresolved.nil? && blocked?
     Devops::Windows.for_task(self, unresolved: unresolved)
@@ -1464,49 +930,27 @@ class Task < ApplicationRecord
     unresolved_feedback_activity.present?
   end
 
-  # FRESH BUILD OR RESUBMISSION? A `--kind rework` block leaves the task on
-  # `building` (Task#block!), so a bounced task and a never-reviewed one are the same
-  # shape on the board. This is the distinction, and it is answered by the TREE (has
-  # the PR head moved since the bounce?) rather than by #unresolved_feedback?, which
-  # is cleared by an explicit ceremony and not by the work landing. Full rationale and
-  # the three measured instances: Task::Resubmission.
-  #
-  # Board rendering preloads the batch (Task::Resubmission.for_tasks) and passes it in;
-  # a single-card Turbo render, the show page and tests self-query.
-  #
-  # DELIBERATELY NOT MEMOIZED, and that is a correctness rule rather than a
-  # preference. Task broadcasts its card on commit (#broadcast_block_change and the
-  # other after_*_commit hooks render DeploymentsBroadcaster#card_locals), so a
-  # `||=` here is evaluated on the LIVE instance at create/update time — before the
-  # qa_feedback row that makes the task a resubmission exists. That froze `:fresh`
-  # onto the instance, and every later read on it, including the card render, served
-  # the stale verdict. Measured while building this: the model answered :unaddressed
-  # and the instance answered :fresh, in the same test, one line apart. A signal
-  # whose whole job is to stop a reader trusting a stale field must not itself be a
-  # stale field. Callers that need it more than once hold the value (the controller
-  # assigns @resubmission; the boards pass the batch as a local).
+  # Fresh build or resubmission? A rework block leaves the task on `building`, so
+  # the tree answers (has the PR head moved since the bounce?). See
+  # Task::Resubmission; boards pass the batch from Task::Resubmission.for_tasks.
+  # Not memoized: the card broadcasts on commit, before the qa_feedback row exists,
+  # and a memo would freeze `:fresh`. Callers hold the value themselves.
   def resubmission
     Task::Resubmission.for(self)
   end
 
-  # Has this task ever carried a blocking qa_feedback (a QA block), resolved or
-  # not? The "was it ever blocked" half of #block_state — distinct from
-  # #unresolved_feedback? (an OPEN qa_feedback) and #blocked? (a LIVE block, from
-  # the blocked_at column).
+  # Has this task ever carried a qa_feedback block, resolved or not? Distinct from
+  # #unresolved_feedback? (open) and #blocked? (live, from blocked_at).
   def ever_blocked?
     Activity.for_task(self).by_type("qa_feedback").exists?
   end
 
-  # The card's block lifecycle as a tri-state:
-  #   :blocked — a LIVE block (#blocked?, off the blocked_at column) OR an
-  #              unresolved qa_feedback is open (red card)
-  #   :cleared — was blocked, the block is resolved, and it is back in `submitted`
-  #              awaiting a re-review (the light-yellow "look again" card)
-  #   :never   — no live block: never blocked, already re-reviewed past submitted
-  #              (the yellow clears once it advances), or re-blocked (→ :blocked)
-  # Board rendering passes preloaded `unresolved:`/`ever_blocked:` booleans to
-  # avoid N+1; omit them (single-card Turbo render, the show page, tests) and it
-  # self-queries.
+  # The card's block lifecycle:
+  #   :blocked — a live block or an open qa_feedback (red card)
+  #   :cleared — was blocked, resolved, and back in `submitted` for re-review
+  #   :never   — anything else
+  # Boards pass preloaded `unresolved:` and `ever_blocked:` to avoid N+1; omitted,
+  # it queries.
   def block_state(unresolved: nil, ever_blocked: nil)
     unresolved = unresolved_feedback? if unresolved.nil?
     return :blocked if blocked? || unresolved
@@ -1517,70 +961,27 @@ class Task < ApplicationRecord
     :never
   end
 
-  # `events:` rides through to open_intents_for — same parameter-not-sniff contract
-  # as everything else on this path. The boards call this once PER CARD, so on a
-  # column of submitted work it was the last per-card pair of queries left.
+  # `events:` passes through to open_intents_for; boards call this once per card.
   def review_in_progress?(events: nil)
     stage == "submitted" && open_intent_for("reviewed", events: events).present? && review_claim_alive?
   end
 
-  # Is the review lane's face still TRUE? An open intent says a review STARTED; it
-  # cannot say the reviewer is still alive, because an intent only closes when the
-  # →reviewed transition lands. A crashed reviewer therefore left a face on the board
-  # asserting a live review forever. The review CLAIM is the liveness primitive — a
-  # TTL lease its holder heartbeats — so when a claim row exists, defer to it: the
-  # seat empties within the TTL of the reviewer dying, and immediately on a clean
-  # release.
-  #
-  # Claim-less intents still read live, deliberately: `bin/reviewer-select` records
-  # the pair before any reviewer claims, and a hand-run review may never claim at
-  # all. Absent evidence of death is not evidence of death.
-  #
-  # THIS IS THE ONE RULE, and it lives here because there are TWO readers and a
-  # first version of this change hardened only one of them. `review_in_progress?`
-  # is a PREDICATE the board asks; `StageAgentsHelper#in_progress_work` is what
-  # actually DRAWS the face, and it rebuilt the review lane straight from the open
-  # intent — so the seat kept ticking for a dead reviewer even though the predicate
-  # said otherwise. Both now ask this method; a third reader must ask it too.
-  # Reads the `review_claim` ASSOCIATION, not a fresh find_by. The two answer the
-  # same question, but only one of them can be PRELOADED — and this is called once
-  # per card on a column of submitted work, and once per row by the API's `full=1`
-  # index. The find_by fired there regardless of whether a claim existed, so the very
-  # endpoint that serves the busy set carried a claim query per row. Measured while
-  # adding `review_holder`: the N+1 this field exists to remove was already inside
-  # the read meant to replace it.
+  # Is the review lane's face still true? An open intent says a review started; the
+  # review claim, a heartbeated TTL lease, says the reviewer is alive. With a claim
+  # row, defer to it; claim-less intents read live (`bin/reviewer-select` records
+  # the pair before anyone claims). The one rule for both readers:
+  # #review_in_progress? and StageAgentsHelper#in_progress_work. Reads the
+  # preloadable association, not a find_by.
   def review_claim_alive?
     claim = review_claim
     claim.nil? || claim.live?
   end
 
-  # WHO is reviewing this task — the soul holding a LIVE review claim, or nil.
-  #
-  # `review_in_progress?` above is a BOOLEAN that names nobody, and that gap had a
-  # measured price. `bin/reviewer-select --busy-auto` excludes souls who are already
-  # heads-down, but it could only see the mid-BUILD half (stage=building tasks carry
-  # `devops.built_by` on the row itself); a soul mid-REVIEW is on a SUBMITTED task
-  # holding a TaskReviewClaim, and the index served no way to see them. On
-  # 2026-09-22 the conductor overrode the pick BY HAND four times because it named
-  # souls who were mid-review, and one override spent Avi's QA-owner exclusion on
-  # PR #1521.
-  #
-  # The holder was already reachable — GET /api/v1/tasks/<slug>/review_claim returns
-  # it — but at ONE ROUND TRIP PER IN-REVIEW TASK. This serves it from the INDEX, so
-  # a busy set costs one request instead of N. That is the whole point of the field:
-  # a caller that wires the N+1 against the per-task endpoint has not fixed anything.
-  #
-  # THREE STATES, and only the first two are commonly read together:
-  #   a live claim naming a soul  → that slug
-  #   no claim / a lapsed claim   → nil ("nobody is reviewing it", the free case)
-  #   a LIVE claim naming NO soul → nil, and NOT the same fact (see the caveat)
-  # The third is real: `claim_next_review` can take a claim without a reviewer slug,
-  # so `review_in_progress` can be true while this is nil. A caller that needs them
-  # apart must read `review_claim_live?` too — `bin/reviewer-select` does, and warns,
-  # because a mid-review soul it cannot NAME is one it cannot EXCLUDE.
-  #
-  # Reads the `review_claim` ASSOCIATION, never a fresh find_by, so the index can
-  # preload it and serve a page of tasks without a query per row.
+  # The soul holding a live review claim, or nil, served from the index so
+  # `bin/reviewer-select --busy-auto` can exclude mid-review souls in one request.
+  # nil covers both "nobody is reviewing" and a live claim naming no soul
+  # (claim_next_review may take one without a reviewer); read #review_claim_live?
+  # to tell them apart. Reads the preloadable association.
   def review_holder(now: Time.current)
     claim = review_claim
     return nil unless claim&.live?(now: now)
@@ -1588,44 +989,21 @@ class Task < ApplicationRecord
     claim.holder_agent.to_s.strip.presence
   end
 
-  # The two senior reviewers Avi assigned for the `submitted` review (the Deploy
-  # half's review step), each `{ "slug" => ..., "weight" => "primary"|"light" }`
-  # (legacy intents recorded before the rename still read "heavy" — treated as
-  # "primary"),
-  # read off THIS task's own `metadata["reviewers"]`. NOTE: the canonical write
-  # target for the avatars UI is the submitted→reviewed TaskEvent's metadata (see
-  # #stage_event_metadata) — StageAgentsHelper#stage_agent_groups reads the event,
-  # not this. This stays for callers that store the pair on the task itself.
-  # Old-flow tasks that predate the two-senior model have none → empty list.
+  # The review pair stored on the task itself, each `{ "slug", "weight" }` (legacy
+  # "heavy" reads as "primary"). The avatars UI reads the submitted→reviewed
+  # TaskEvent instead (#stage_event_metadata). Empty for old-flow tasks.
   def reviewers
     self.class.normalize_reviewers(metadata["reviewers"])
   end
 
-  # Record an INTENT: an agent (or the two-senior review pair) STARTING the work
-  # that will produce `to_stage`, the moment that work begins — so the board and
-  # the task timeline can show WHO is on it with a live ticker before the
-  # transition lands. Appends a TaskEvent(kind: intent) FROM the current stage TO
-  # to_stage, carrying `actor` (a single owner — Avi at QA, Steffon at ship)
-  # and/or `reviewers` metadata (the primary/light pair at review). Append-only +
-  # current-cycle scoped: only the current stage's immediate next target is
-  # recordable; an identical open intent (same target + same crew) is returned
-  # as-is rather than stacked; and it is a no-op once to_stage has landed in the
-  # current stage cycle. If rework sends a task back to `submitted`, a fresh
-  # `→reviewed` intent can open for that new cycle.
-  #
-  # An intent row is intentionally USAGELESS — it marks work STARTING, not a
-  # completed transition, so it carries no model/tokens/cost. The work the agent
-  # burns between an intent and its transition is captured on the TRANSITION
-  # event instead: the intent SEEDS the per-session usage baseline (bin/task
-  # intent / bin/reviewer-select), and the later move/flip records the delta.
-  #
-  # `qa: true` marks the Avi assembled-QA intent (see
-  # Release::Conductor#record_qa_intent): in the standard flow the merge already
-  # flipped the member to `assembled`, so the QA intent rides toward `shipped`
-  # (superseded by the SHIP, not the merge) and is distinguished from Steffon's ship
-  # intent — same target — by this marker. Idempotency therefore matches on the
-  # FULL identity (target + actor + reviewers + qa), not merely the last intent for
-  # the target, so two distinct open intents toward the same stage never collide.
+  # Record an intent: an agent starting the work that produces `to_stage`, so the
+  # board shows who is on it before the transition lands. Only the current stage's
+  # next target is recordable; an identical open intent is returned rather than
+  # stacked; a no-op once `to_stage` landed this cycle. Intents carry no usage: the
+  # transition records the delta from the baseline the intent seeds.
+  # `qa: true` marks Avi's assembled-QA intent (Release::Conductor#record_qa_intent),
+  # which shares Steffon's ship target, so idempotency matches the full identity
+  # (target, actor, reviewers, qa).
   def record_intent_event(to_stage:, actor: nil, reviewers: nil, source: nil, qa: false)
     to_stage = to_stage.to_s
     return nil unless NEXT_INTENT_STAGE[stage] == to_stage
@@ -1716,72 +1094,22 @@ class Task < ApplicationRecord
     task_events.checkpoints.chronological.to_a.select(&:review_check_in?)
   end
 
-  # The OPEN intent event for `to_stage` (work has STARTED toward that stage but no
-  # later transition into it has landed yet), or nil once it's resolved by a
-  # transition — so a non-nil result means "work is in progress on this stage right
-  # now". Scope is cycle-aware: if QA blocks a task and it re-enters `submitted`,
-  # old review intents from the prior submitted cycle are closed even if no
-  # `→reviewed` transition ever landed, and a fresh review intent can open.
+  # The open intent for `to_stage` (work started, not yet landed), or nil. Cycle
+  # aware: a re-entry into `submitted` closes the prior cycle's review intents.
   def open_intent_for(to_stage, events: nil)
     open_intents_for(to_stage, events: events).last
   end
 
-  # Avi's crew-seat duration, measured from WHEN HE PICKED THE TASK UP rather
-  # than from when review handed the task over.
-  #
-  # The transition's own `seconds_in_from` cannot answer this: it measures back
-  # to the previous TRANSITION by design, so `reviewed -> assembled` is
-  # inherently `assembled_at - reviewed_at` — which is mostly the time the task
-  # sat in the queue waiting for a sweep, not time anyone worked on it. Measured
-  # on rel-20260818-63bdb8, whose four members all assembled at the same second:
-  # 148m, 134m, 120m and 49m. Those four numbers differ ONLY by when each task
-  # entered the lane. Avi ran ONE batch sweep across all four.
-  #
-  # `bin/release prepare` already records an INTENT row the moment it picks a
-  # member up (Release::Conductor#record_qa_intent), so the pickup time exists;
-  # it is simply excluded from `seconds_in_from`, deliberately and correctly —
-  # an intent is the live "who's on it" signal, not a stage boundary, and
-  # widening the transitions scope to include intents would also shorten the
-  # REVIEW seat and rewrite every historical reading. So this reads the intent
-  # directly at render time and leaves that rule untouched.
-  #
-  # EXPECT EVERY MEMBER OF ONE SWEEP TO REPORT THE SAME NUMBER. That is the
-  # honest reading of a batch operation, not a bug.
-  #
-  # nil when there is no pickup row to measure from — a task assembled before
-  # the intent existed, or by a path that records none. The caller falls back to
-  # the transition figure rather than rendering blank.
-  #
-  # `events:` — the caller's already-loaded TaskEvents, when it has them. This is
-  # the board's fast path and the reason the parameter exists: it used to call
-  # `task_events.transitions.where(to_stage: …)`, and a `.where` on a LOADED
-  # association still issues SQL, so the boards' `includes(:task_events)` bought
-  # nothing here. Two queries per assembled/shipped card, 62 of the 149 uncached
-  # queries a production /deployments render made (2026-08-19).
-  #
-  # A PARAMETER, not a peek at `task_events.loaded?`, and that distinction is the
-  # whole safety of this. A loaded association can be STALE: the model stamps its
-  # own transition event on save, so an instance whose rows are later rewritten by
-  # `update_all`, by another instance, or by a replayed fixture still holds the OLD
-  # occurred_at in memory — and reading that silently returns a wrong DURATION
-  # rather than failing. Sniffing `loaded?` would have opted every such caller in
-  # without asking. (Caught by CI: TaskAssembledSeatTest's fixture rewrites the
-  # transition with update_all, and the sniffing version read 30m for a 20m seat.)
-  #
-  # So the default stays SQL — every existing caller reads the truth — and only a
-  # caller holding a genuinely fresh array opts in. The board's is a per-request
-  # preload, which is exactly that.
+  # Avi's crew-seat duration, measured from his pickup (the QA intent from
+  # Release::Conductor#record_qa_intent) rather than from review's hand-off, which
+  # is mostly queue time. Every member of one sweep reports the same number. nil
+  # without a pickup row; the caller falls back to the transition figure.
+  # `events:` is an explicit parameter, never a `task_events.loaded?` sniff: a
+  # loaded association can be stale, so only a caller holding a fresh array (the
+  # board's per-request preload) opts in.
   def assembled_seconds_from_pickup(events: nil)
-    # The assemble MOMENT comes from the transition event, not the assembled_at
-    # column, because the card's cluster is built from task_events and the two
-    # must not be able to disagree. Production stamps both; a caller that
-    # replays events without the column would otherwise silently get nil here
-    # while the card still drew a duration from the same events.
-    #
-    # Filtered in RUBY over the loaded events (see #board_read_events), not with
-    # `.where`: this runs once per assembled/shipped CARD on a board that already
-    # preloaded :task_events, and the two `.where` calls it used to make were 62 of
-    # the 149 uncached queries a production /deployments render issued.
+    # The assemble moment comes from the transition event so the card and the model
+    # agree; filtered in Ruby over loaded events (#board_read_events).
     landed_at = assembled_landing_at(events)
     return nil unless landed_at
 
@@ -1813,33 +1141,19 @@ class Task < ApplicationRecord
     end
   end
 
-  # `chronological.last` in Ruby: newest by (occurred_at, id), matching the scope's
-  # `order(occurred_at: :asc, id: :asc)`. Both columns are NOT NULL in the schema,
-  # so the tuple compare is total.
+  # `chronological.last` in Ruby: newest by (occurred_at, id), both NOT NULL.
   def latest_event(events)
     events.select { |event| yield(event) }.max_by { |event| [event.occurred_at, event.id.to_i] }
   end
 
-  # `events:` — the caller's already-resolved TaskEvents, same contract and same
-  # reasoning as #assembled_seconds_from_pickup above: a PARAMETER with the SQL
-  # default, never a `task_events.loaded?` sniff, because a loaded association can
-  # be stale and a stale read here silently changes WHICH intents count as open.
-  #
-  # That default is what keeps `record_intent_event` safe. This method is its
-  # idempotency guard — a write path — and it calls with no events, so it still
-  # asks the database. Only the board's crew partial, holding a fresh per-request
-  # preload, opts in. That was 2 queries per SUBMITTED and REVIEWED card
-  # (open_intents_for itself, plus current_stage_entry_event re-read per intent).
+  # `events:` follows #assembled_seconds_from_pickup's contract: a parameter with
+  # the SQL default, never a `loaded?` sniff. record_intent_event's idempotency
+  # check calls with no events, so a write path always reads the database.
   def open_intents_for(to_stage, events: nil)
     to_stage = to_stage.to_s
     return [] unless NEXT_INTENT_STAGE[stage] == to_stage
 
-    # Resolved ONCE for the whole rejection pass, not per intent. It used to be
-    # re-read inside intent_started_in_current_stage? for every candidate, which
-    # is a query per intent on the SQL path and pointless work on the array path.
-    # Passed down rather than memoised on the instance, so its lifetime is exactly
-    # this call — the same tight-lifetime rule that made a view-context memo the
-    # wrong answer for release_ci_progress.
+    # Resolved once per call and passed down, never memoized on the instance.
     entry = current_stage_entry_event(events: events)
 
     open_intent_candidates(to_stage, events).reject do |intent|
@@ -1848,8 +1162,7 @@ class Task < ApplicationRecord
     end
   end
 
-  # The →to_stage intents, oldest first — `chronological` in Ruby when the caller
-  # brought its own events.
+  # The →to_stage intents, oldest first.
   def open_intent_candidates(to_stage, events)
     return task_events.intents.where(to_stage: to_stage).chronological.to_a unless events
 
@@ -1857,16 +1170,14 @@ class Task < ApplicationRecord
           .sort_by { |event| [event.occurred_at, event.id.to_i] }
   end
 
-  # The reviewer pair (normalized) recorded on the latest review intent, or nil —
-  # ties the completed →reviewed event back to the pair that actually started.
+  # The normalized pair on the latest review intent, or nil.
   def latest_intent_reviewers(to_stage = "reviewed")
     intent = task_events.intents.where(to_stage: to_stage).chronological.last
     intent && self.class.normalize_reviewers(intent.metadata["reviewers"]).presence
   end
 
-  # Has the target transition already landed in the task's CURRENT stage cycle?
-  # This keeps retries idempotent after the target lands, while still allowing a
-  # reworked task to re-enter `submitted` and open a second `→reviewed` intent.
+  # Has the target landed in the current stage cycle? Keeps retries idempotent while
+  # a reworked task can open a fresh `→reviewed` intent.
   def target_landed_in_current_stage?(to_stage)
     entry = current_stage_entry_event
     landed = task_events.transitions.where(to_stage: to_stage)
@@ -1884,8 +1195,7 @@ class Task < ApplicationRecord
     task_events.transitions.where(to_stage: stage).chronological.last
   end
 
-  # `entry:` is REQUIRED — the caller resolves the stage-entry event once and hands
-  # it in, so this cannot re-query per intent. There is exactly one caller.
+  # `entry:` is required: the caller resolves the stage-entry event once.
   def intent_started_in_current_stage?(intent, entry:)
     return false unless intent.from_stage == stage
     return true if entry.nil?
@@ -1894,13 +1204,8 @@ class Task < ApplicationRecord
       (intent.occurred_at == entry.occurred_at && intent.id.to_i >= entry.id.to_i)
   end
 
-  # An intent is live only while the task remains in its source-stage cycle. It
-  # closes when the target lands OR when any later transition leaves the source
-  # stage (direct QA block, archive, etc.).
-  #
-  # The Ruby branch mirrors the SQL predicate term for term — same OR on the two
-  # stage columns, same strict (occurred_at, id) tiebreak — so the two paths can
-  # only ever agree. `any?` rather than a full select: this is an existence check.
+  # An intent closes when its target lands or any later transition leaves its
+  # source stage. The Ruby branch mirrors the SQL predicate term for term.
   def intent_superseded?(intent, events: nil)
     return superseded_by?(events, intent) if events
 
@@ -1936,45 +1241,25 @@ class Task < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(devops.fetch("requires_release_conductor", false))
   end
 
-  # Per-application RELEASE INCLUSION — Avi's disposition over the `reviewed` queue in
-  # `qa-release`. The DEFAULT is to ship EVERY reviewed task (this reads true when the
-  # flag is unset), so a plain reviewed task rides the next candidate. Avi HOLDS an
-  # application back — when order-of-operations matters, e.g. a gem that must publish
-  # before its consumer, or an app that should wait a release — by marking its reviewed
-  # tasks `included_in_release: false`. That decision is board-visible on the reviewed
-  # stage (the card's inclusion marker) and enforced through the existing sweep controls
-  # (`bin/release prepare --task …` / `bin/release eject`). A blank/absent flag is
-  # included; only an explicit false holds a member out.
+  # Avi's per-app release inclusion in qa-release. Unset reads true, so every
+  # reviewed task rides the next candidate; `included_in_release: false` holds a
+  # member (and its app) out, shown on the card and enforced through
+  # `bin/release prepare --task` and `bin/release eject`.
   def included_in_release?
     ActiveModel::Type::Boolean.new.cast(devops.fetch("included_in_release", true))
   end
 
-  # EVERY ecosystem repo this task ships through — its full release identity, and
-  # the set the Deploy workflow must promote, QA and ship. Ordered: the PRIMARY
-  # repo first (#release_repo, unchanged), then any repo with a recorded PR url,
-  # then the rest of the declared `repositories`.
-  #
-  # THIS IS THE FIX for the 2026-08-13 half-ship. Every release stage read the
-  # SINGULAR #release_repo — the promote list (`bin/release` prepare step 4), the
-  # member plan, the repo plan, the pre-QA gate, the QA deploy and the ship — so a
-  # task's whole release identity collapsed to whichever repo its ONE `pr_url`
-  # named. `land-rails-security-patch` named [mcritchie-studio, turf-monster] with
-  # a hub PR url: turf was never promoted, never QA'd and never shipped, while the
-  # task was stamped shipped+main. Callers that plan work MUST use this; #release_repo
-  # remains only for the single "which repo is this task's home" answers (gem-vs-app
-  # kind, the board's app badge).
+  # Every repo this task ships through, the set the Deploy workflow promotes, QAs
+  # and ships: the primary (#release_repo), then repos with a recorded PR, then the
+  # rest of `repositories`. Callers that plan release work use this, never
+  # #release_repo.
   def release_repos
     ([ release_repo ] + release_pr_urls.keys + devops_repositories).compact_blank.uniq
   end
 
-  # The PRIMARY ecosystem repo this task's PR/branch lives in — the unit the Deploy
-  # workflow classifies as a gem (producer) or an app (consumer). Prefer the
-  # repo parsed from the PR url (github.com/<owner>/<repo>/pull/N), since that's
-  # where the branch actually is; fall back to the declared repositories — for a
-  # `library` shape the gem repo named there, otherwise the first entry.
-  #
-  # NOT the task's release identity when it names more than one repo — see
-  # #release_repos, and never re-derive a promote/deploy set from this.
+  # The primary repo, the unit classified as gem or app: parsed from the PR url,
+  # else the gem repo named (for `library`), else the first repository. Not the
+  # release identity of a multi-repo task; see #release_repos.
   def release_repo
     repo_from_pr_url.presence ||
       if devops_shape == "library"
@@ -1984,21 +1269,9 @@ class Task < ApplicationRecord
       end
   end
 
-  # { "<repo>" => "<pr url>" } for every PR this task landed, the singular
-  # `pr_url` included (keyed by the repo it names). The per-repo register that
-  # gives a second repo's PR somewhere to live — see DEVOPS_MAP_KEYS.
-  #
-  # THE SINGULAR WINS FOR ITS OWN REPO — it is merged in LAST, over any `pr_urls`
-  # entry naming the same repo. That precedence is deliberate. `pr_url` is the
-  # field the rest of the pipeline already acts on: #release_repo parses it,
-  # bin/dor-check and bin/pr-review read it, and ReviewPendingActionsController
-  # links to it. If a map entry could override it, the pipeline would hold two
-  # different PRs for one repo and say nothing about the divergence — and the
-  # obvious operator correction (`bin/task update <slug> --pr-url <right-url>`)
-  # would be silently undone by whatever stale entry was recorded first. One
-  # repo, one authoritative PR, and it is the one every other reader already
-  # sees. This map's job is the repos `pr_url` cannot reach, not a second
-  # opinion about the repo it already names.
+  # { "<repo>" => "<pr url>" } for every PR this task landed. The singular `pr_url`
+  # merges last and wins for its own repo, because the whole pipeline acts on it;
+  # the map holds the repos `pr_url` cannot reach.
   def release_pr_urls
     map = devops.fetch("pr_urls", {})
     map = map.is_a?(Hash) ? map.to_h { |repo, url| [repo.to_s.strip, url.to_s.strip] } : {}
@@ -2008,28 +1281,10 @@ class Task < ApplicationRecord
     map.reject { |repo, url| repo.blank? || url.blank? }
   end
 
-  # The repos this task is EXPECTED to carry its own PR in — the set
-  # #repos_missing_pr_url measures coverage against.
-  #
-  # For an app task that is simply every repo it names: each one needs its own PR
-  # merged onto its own `accepted`, and a repo without one is invisible to the
-  # release lane.
-  #
-  # A GEM task is different IN KIND, and reading `repositories` literally there
-  # produces the exact inversion of the failure this measures. A studio-engine
-  # task names the gem AND the consumers that must pick the new version up —
-  # [studio-engine, mcritchie-studio, turf-monster] — but the work is ONE PR, in
-  # the gem repo. The consumers reach production through a published version and
-  # the conductor's bump, not through a PR the builder opens; those PRs must
-  # never exist. Measured literally, every legitimate engine release would report
-  # both consumers "missing a PR" — refusing the release for the absence of work
-  # nobody is supposed to do, which is the opposite of the hole being closed.
-  #
-  # So a gem task is measured against the GEM repos in play: the gem repos it
-  # names, or (when it names none — the PR lives in a repo `repositories` never
-  # listed) the gem repos it actually recorded a PR for. If neither exists there
-  # is no gem evidence at all, and it falls back to the literal list rather than
-  # reporting full coverage off an empty set.
+  # The repos expected to carry their own PR. An app task: every repo it names. A
+  # gem task is one PR in the gem repo, its consumers reached by a published
+  # version, so it is measured against the gem repos it names, else the gem repos
+  # it recorded a PR for, else the literal list.
   def pr_bearing_repositories
     return devops_repositories unless gem_release?
 
@@ -2040,100 +1295,61 @@ class Task < ApplicationRecord
     recorded_gems.presence || devops_repositories
   end
 
-  # Repos this task is expected to carry a PR in but recorded none for. A
-  # non-empty answer on a multi-repo task is the 2026-08-13 shape exactly: the
-  # work exists in a repo the pipeline has no evidence for, so nothing can prove
-  # its code reached `accepted`.
-  #
-  # IT IS ENFORCED NOW: `Release::Conductor.validate_member_pr_coverage!` (reached
-  # from validate_members!, which every sweep write runs inside its transaction)
-  # raises on a non-empty answer, so a member with a repo the record cannot vouch
-  # for is refused rather than swept. This method IS the rule, delegated to
-  # `Release::SweepPlan.repo_coverage_gap` so the CLI's pre-promote screen and the
-  # record-time backstop answer identically — two spellings of one rule is how the
-  # screen and the guard drift apart.
-  #
-  # Reading `release_repos` rather than `devops_repositories` widens the input to
-  # the task's full release identity (the PR-derived repo included), and the rule's
-  # own `size < 2` guard is why a SINGLE-repo task is never an offender: it cannot
-  # lose a repo it never had a second of, and its missing PR is the review lane's
-  # problem, not the sweep's.
-  #
-  # `release_kind` is passed because A GEM RELEASE IS EXEMPT, and this method is
-  # where that would otherwise bite hardest: `release_pr_urls` keys the singular
-  # `pr_url` by the repo its URL parses to, so a `library` task whose PR lives in
-  # the GEM repo while `repositories` names the CONSUMERS would report EVERY
-  # consumer missing. Live example, 2026-08-14: guard-engine-migration-rollback
-  # names [studio-engine, mcritchie-studio, turf-monster, mcritchie-industries]
-  # behind one studio-engine PR. Refusing that would block every engine release,
-  # for a URL that does not exist — the pipeline authors the consumer's change
-  # itself (bump_consumer_locks_for_qa). See Release::SweepPlan#repo_coverage_gap.
+  # Repos expected to carry a PR that recorded none. Enforced by
+  # Release::Conductor.validate_member_pr_coverage! inside every sweep write, and
+  # delegated to Release::SweepPlan.repo_coverage_gap so the CLI screen and the
+  # backstop share one rule. A single-repo task is never an offender; a gem
+  # release measures against #pr_bearing_repositories.
   def repos_missing_pr_url
     Release::SweepPlan.repo_coverage_gap(repos: release_repos, pr_repos: release_pr_urls.keys,
                                          expected: pr_bearing_repositories)
   end
 
-  # True when this task ships as a published gem rather than a deployed app — a
-  # `library` shape always is, and so is anything whose release_repo is a
-  # registered gem. Drives producer-first ordering and the board 💎 gem badge.
+  # Ships as a published gem: a `library` shape or a registered gem release_repo.
+  # Drives producer-first ordering and the board's gem badge.
   def gem_release?
     devops_shape == "library" || Release::Repos.gem?(release_repo)
   end
 
-  # :gem / :app / :unknown — the member kind the conductor orders + plans by.
+  # :gem, :app or :unknown: the member kind the conductor orders and plans by.
   def release_kind
     return :gem if gem_release?
 
     Release::Repos.kind(release_repo)
   end
 
-  # A LIVE block: the task carries an unresolved block marker (blocked_at set)
-  # while it sits in `building`. blocked_at persists as history after the task
-  # advances (release notes read it), so the `building` gate is what distinguishes
-  # "currently blocked" from "was blocked". #block! sets it; #unblock! clears it.
+  # A live block: blocked_at set while in `building`. blocked_at persists as history
+  # (release notes read it). #block! sets it; #unblock! clears it.
   def blocked?
     blocked_at.present? && stage == "building"
   end
 
-  # Why the task is blocked (environment / rework / dependency) — a real column
-  # now (promoted out of devops), stamped by #block!. `block_kind` is provided by
-  # ActiveRecord; a blank column reads as nil.
+  # `block_kind` (environment, rework, dependency) is a column stamped by #block!.
   def stage_label
     STAGE_LABELS.fetch(stage, stage.to_s.humanize)
   end
 
-  # The active (gerund) label for a stage — e.g. "Assembling" for `assembled` —
-  # for UI showing that stage still in progress. Falls back to the noun label,
-  # then a humanized key, so an unknown stage never blanks out.
+  # The gerund label for a stage in progress, e.g. "Assembling"; falls back to the
+  # noun label, then the humanized key.
   def self.active_stage_label(stage)
     STAGE_ACTIVE_LABELS[stage] || STAGE_LABELS.fetch(stage, stage.to_s.humanize)
   end
 
-  # The MEASURED total tokens for this task — the sum of tokens_total across every
-  # TaskEvent on its spine (a missing token field counts as 0). Feeds the
-  # /intelligence token charts; actual_size now sizes on $cost (see
-  # #derive_actual_size), NOT this. Computed in SQL off a fresh relation so it
-  # never reads a stale loaded-association cache mid-transaction.
+  # Measured tokens across every TaskEvent, for the /intelligence charts (sizing
+  # uses cost). SQL off a fresh relation, so no stale association cache.
   def measured_tokens_total
     TaskEvent.where(task_slug: slug)
              .sum(Arel.sql("COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)"))
   end
 
-  # The MEASURED total cost for this task — the sum of `cost` (USD) across every
-  # TaskEvent on its spine. SQL SUM ignores NULL costs, so an unpriced event
-  # counts as 0; returns a BigDecimal, and 0 when the task has no events. Computed
-  # in SQL off a fresh relation (like #measured_tokens_total) so it never reads a
-  # stale loaded-association cache mid-transaction. Powers the release-notes card.
+  # Measured USD across every TaskEvent (NULL counts as 0); a BigDecimal. SQL off a
+  # fresh relation. Powers the release-notes card.
   def total_cost
     TaskEvent.where(task_slug: slug).sum(:cost)
   end
 
-  # The actual_size this task's measured $COST maps to via ACTUAL_SIZE_COST_THRESHOLDS,
-  # or nil when there's NO measured cost (zero) — an honest "can't size it" rather
-  # than a misleading "small" for a task whose usage was never captured/priced.
-  # Sizes on cost, not tokens: cost is ground-truth priced, while the token total
-  # is ~98% cache_read and pinned everything to XL. Pure (no writes): callers
-  # decide whether to persist it.
+  # The actual_size the measured cost maps to, or nil when there is no cost (never
+  # a misleading "small"). Pure: callers decide whether to persist.
   def derive_actual_size
     cost = total_cost
     return nil if cost.nil? || cost.zero?
@@ -2141,44 +1357,13 @@ class Task < ApplicationRecord
     ACTUAL_SIZE_COST_THRESHOLDS.find { |_size, ceiling| cost < ceiling }&.first
   end
 
-  # Apply a PARTIAL devops write on top of what the task already carries.
-  #
-  # The board UI posts a SUBSET of devops — the fields `tasks/_form.html.erb`
-  # renders, narrowed again by TasksController#task_params' permit list.
-  # Everything else a task carries (`agent_context`, `built_by`, `gem_bump`,
-  # `pr_urls`, the mascot/session keys) is missing from that post because the
-  # form has no field for it, NOT because anyone asked for it to go. Writing the
-  # normalized post over `metadata["devops"]` wholesale — what TasksController
-  # used to do — therefore DELETED every one of them on any edit, silently, with
-  # a 200. `agent_context` is often the only place a task carries its reasoning.
-  #
-  # So the write merges, keyed on WHICH NAMES THE CALLER POSTED rather than on
-  # which values survived normalization:
-  #
-  #   * a name the post does not carry → UNCHANGED (the default is now preserve)
-  #   * a name the post does carry     → AUTHORITATIVE, blank included, so
-  #                                      emptying a field in the browser still
-  #                                      clears it
-  #
-  # KEYING ON THE POSTED NAMES IS WHAT KEEPS BOTH HALVES TRUE AT ONCE, and it is
-  # the whole trick — neither simpler shape works. Merging only the NORMALIZED
-  # hash would preserve everything, but `normalize_devops_metadata` drops blanks,
-  # so a field the operator cleared would read as "unchanged" and NO field could
-  # ever be emptied from the browser. Replacing wholesale destroys every unposted
-  # name. The posted-name set separates "absent" from "present and blank", which
-  # the normalized hash alone cannot express.
-  #
-  # This inverts the default from destroy-unless-listed to preserve-unless-posted,
-  # so a devops key added to the model later survives a board edit WITHOUT anyone
-  # remembering to touch the permit list. The permit list still governs what a
-  # form may WRITE; it no longer governs what survives.
-  #
-  # `& DEVOPS_KEYS` keeps a posted name that is not storable devops from deleting
-  # anything — the permit list carries DEVOPS_COLUMN_KEYS names only so the
-  # normalizer can refuse them out loud, and a refusal must not also be a delete.
-  #
-  # Pure: returns the merged hash and writes nothing. Raises whatever
-  # normalize_devops_metadata raises (both controllers turn that into a 422).
+  # Apply a partial devops write over what the task carries, keyed on the names the
+  # caller posted:
+  #   * a name not posted → unchanged
+  #   * a name posted     → authoritative, blank included, so a field can be cleared
+  # The posted-name set separates "absent" from "present and blank", which the
+  # normalized hash cannot. `& DEVOPS_KEYS` keeps a refused column name from also
+  # deleting. Pure; raises what normalize_devops_metadata raises (a 422 upstream).
   def self.merge_devops_metadata(existing, raw)
     normalized = normalize_devops_metadata(raw)
     posted = raw.to_h.keys.map(&:to_s) & DEVOPS_KEYS
@@ -2186,52 +1371,13 @@ class Task < ApplicationRecord
     (existing || {}).to_h.deep_dup.except(*posted).merge(normalized)
   end
 
-  # Fold a PARTIAL devops post into a task's FULL metadata hash — the ONE
-  # implementation both write paths share.
-  #
-  # WHY IT LIVES ON THE MODEL. This fold used to be a private method on
-  # TasksController (the board form), so the JSON API — the path every agent and
-  # every bin/ script writes through — did not have it, and assigned the metadata
-  # column from the posted params instead. Two controllers, one field name,
-  # OPPOSITE semantics. On 2026-08-30 a one-key PATCH
-  # ({"devops": {"included_in_release": false}}) took a REVIEWED task from 20
-  # devops keys to 8 at HTTP 200 with no warning, and seven of the lost names —
-  # acceptance, agent_context, checks_run, risk_tags among them — existed nowhere
-  # else to restore from. The board keeps no task-version history, so prevention
-  # is the whole remedy. Putting the fold here is what stops the paths drifting
-  # apart again: a new caller gets the merge by construction rather than by
-  # remembering to copy it.
-  #
-  # BOTH halves of the metadata column are preserved:
-  #   * names OUTSIDE "devops" ride through untouched — the API used to replace
-  #     them too, so a devops PATCH silently dropped every other metadata name.
-  #   * names INSIDE "devops" follow merge_devops_metadata's posted-name rule —
-  #     unposted means UNCHANGED, posted-and-blank still CLEARS. Deletion stays
-  #     expressible; it just has to be said out loud instead of happening by
-  #     omission.
-  #
-  # The "devops" key itself is DROPPED when the merge empties it, so a task with
-  # no devops data carries no empty hash — Task#devops? and the show page's
-  # handoff panel both key off presence.
-  #
-  # Pure: returns a new hash and writes nothing. Raises whatever
-  # normalize_devops_metadata raises (both controllers turn that into a 422).
-  # `stage` is the stage the record will HAVE after this save (the posted stage when
-  # the same call moves it, else the stored one). It is what decides whether an
-  # explicitly posted approval REQUEST can be honoured — see
-  # .guard_approval_request_stage!. Defaulted to nil so a caller with no stage in
-  # hand folds exactly as before; the guard is skipped rather than guessing.
-  #
-  # ⚠ `stage` IS A TRAILING POSITIONAL, NOT A KEYWORD, AND MUST STAY ONE. Callers
-  # pass raw_devops as a BRACE-LESS trailing hash (`merge_devops_into_metadata(stored,
-  # "branch" => "feat/x")`). The moment this method accepts ANY keyword, Ruby 3 binds
-  # that bare hash to the keywords instead of to raw_devops, and the call dies with
-  # "wrong number of arguments (given 1, expected 2)" — the argument was not dropped,
-  # it was re-routed. Adding `stage:` as a kwarg reddened four tests in
-  # test/models/task_devops_metadata_merge_test.rb on CI (shard 4, 2026-09-07) that
-  # no local diff-mapped lane runs. bin/task's `api` helper carries the identical
-  # note for the identical reason, and it was ALSO a `stage` that blew it up. One
-  # optional positional keeps every existing call site binding exactly as before.
+  # Fold a partial devops post into the full metadata hash: the one implementation
+  # both write paths share, so the board form and the JSON API cannot diverge.
+  # Names outside "devops" ride through; names inside follow merge_devops_metadata.
+  # An emptied "devops" is dropped (Task#devops? keys off presence). Pure.
+  # `stage` is the stage after this save, for .guard_approval_request_stage!; nil
+  # skips the guard. It must stay a trailing positional: callers pass a brace-less
+  # hash, which Ruby 3 would bind to any keyword.
   def self.merge_devops_into_metadata(metadata, raw_devops, stage = nil)
     guard_approval_request_stage!(raw_devops, stage)
     base = (metadata || {}).to_h.deep_dup
@@ -2244,47 +1390,11 @@ class Task < ApplicationRecord
     base
   end
 
-  # Refuse an approval REQUEST that this save would settle on the way in.
-  #
-  # THE DEFECT THIS CLOSES, measured 2026-09-07 on one task at stage `submitted`,
-  # two writes minutes apart:
-  #
-  #   bin/task update <slug> --approval waiting   -> exit 0, read-back "none"      DROPPED
-  #   bin/task update <slug> --approval approved  -> exit 0, read-back "approved"  LANDED
-  #
-  # The discriminator is neither the stage alone nor the incoming transition: it is
-  # the CONJUNCTION of stage and VALUE. #settle_operator_approval_past_request_window
-  # rewrites ONLY "waiting", and only outside APPROVAL_REQUEST_STAGES, on every
-  # save. So the write returned HTTP 200 and reached nothing.
-  #
-  # THAT PARTICULAR PAIR NO LONGER REPRODUCES, and reading it as a live example is
-  # the one way to misread this note. `submitted` joined APPROVAL_REQUEST_STAGES on
-  # 2026-09-09, so at that stage BOTH lines above now land. The reproduction is kept
-  # because the RULE it isolates is what this guard implements and is unchanged —
-  # only the stage list it is evaluated against moved. Re-run the same pair at
-  # `reviewed` to see it today.
-  #
-  # WHY THAT IS NOT A TIDINESS BUG. approval_status "waiting" is the OPERATOR gate:
-  # a waiting task floats to the top of its stage and pulses on the board, which is
-  # how Mr. McRitchie finds work needing his eyes. A dropped request means the agent
-  # believes it asked, the board never pulses, and the request reaches NOBODY. The
-  # caller cannot detect it either — bin/task's read-back would have to re-read this
-  # one field on purpose, which no standard read-back does.
-  #
-  # THE SETTLE ITSELF IS CORRECT AND STAYS. It holds a real invariant (a waiting
-  # badge may exist only where something can clear it) and it closed three
-  # documented leaks. Raising there instead would break the saves that ask for
-  # NOTHING — a stage move carrying an older request, or a stale wholesale devops
-  # echo — which must keep self-healing silently. Only an EXPLICIT post of
-  # "waiting" is a question, and only a question deserves an answer.
-  #
-  # TWO LAYERS, the shape this file already uses for DEVOPS_COLUMN_KEYS: the front
-  # door raises (normalize_devops_metadata) and the back door silently backstops
-  # (shed_column_shadow_keys). This is the same pair — raise at the fold both write
-  # paths share, and leave the callback as the silent backstop for everything that
-  # does not arrive through it. Both controllers rescue StandardError into a 422,
-  # and bin/task turns any non-2xx into die! — a non-zero exit naming stage and
-  # value, which is the whole remedy.
+  # Refuse an explicit "waiting" post that this save would settle to "none", so the
+  # write fails loudly instead of returning 200 and reaching nobody. Only explicit
+  # posts raise; stage moves and stale echoes still settle silently in the callback,
+  # the same front-door/back-door pair as DEVOPS_COLUMN_KEYS. Both controllers turn
+  # the raise into a 422.
   def self.guard_approval_request_stage!(raw_devops, stage)
     stage = stage.to_s.strip
     return if stage.empty? || APPROVAL_REQUEST_STAGES.include?(stage)
@@ -2293,20 +1403,11 @@ class Task < ApplicationRecord
     return if posted.nil?
     return unless posted.last.to_s.strip.downcase == OPERATOR_APPROVAL_WAITING
 
-    # THE REMEDY COMES FIRST, and it is a write the caller can make NOW — WITHOUT
-    # moving the task. This body twice told the reader the wrong thing. It first
-    # opened with advice for last time ("ask BEFORE handing off") and named no way
-    # out; the fix for that borrowed bin/task's recovery path, which was "move the
-    # task back and ask again" — and ms#1375 retired that from bin/task's warning and
-    # from the board doc as WRONG, because from `reviewed` on the code is already on
-    # `accepted`: the backward move un-merges nothing and only makes the board show
-    # `building` for landed code. This file was not in that diff, so the 422 an agent
-    # RECEIVES kept teaching the move its own CLI and doc had stopped teaching.
-    #
-    # THREE SURFACES, ONE SENTENCE: this message, bin/task's
-    # #warn_dropped_approval_request!, and the board doc's Operator Validation Gate
-    # item 8. Change one and you have made two of them lie — which is exactly how this
-    # one got missed. Pinned verbatim by test/models/task_approval_request_guard_test.rb.
+    # The remedy is a write the caller can make now, never a backward move: from
+    # `reviewed` on, the code is already on accepted. One sentence on three surfaces:
+    # this message, bin/task's #warn_dropped_approval_request!, and the board doc's
+    # Operator Validation Gate item 8. Pinned by
+    # test/models/task_approval_request_guard_test.rb.
     raise ArgumentError,
           "devops.approval_status cannot be set to #{OPERATOR_APPROVAL_WAITING.inspect} at stage " \
           "#{stage} — an approval request is only actionable in " \
@@ -2322,13 +1423,9 @@ class Task < ApplicationRecord
           "through review."
   end
 
-  # The ONE canonical form of an epic handle, shared by the write (the
-  # before_validation callback) and every read that must match it (the
-  # `for_epic` scope behind `?epic=`). Strips, lowercases, and turns blank or
-  # the clear token (`"none"`) into nil so a writer can clear the column without
-  # JSON null. Returns the lowercased string otherwise — VALIDATION, not this
-  # method, decides whether that string is a legal slug, so the refusal can
-  # quote what was sent.
+  # The one canonical epic handle, shared by the write and the `for_epic` read:
+  # strip, downcase, blank or "none" → nil. Validation decides legality, so a
+  # refusal can quote what was sent.
   def self.normalize_epic_slug(value)
     text = value.to_s.strip.downcase
     return nil if text.empty? || text == EPIC_CLEAR_VALUE
@@ -2345,18 +1442,15 @@ class Task < ApplicationRecord
         if DEVOPS_MAP_KEYS.include?(key)
           normalize_devops_map(value)
         elsif DEVOPS_LIST_KEYS.include?(key)
-          # The comma rule is KEY-SCOPED, exactly as bin/task's is FLAG-scoped — see
-          # DEVOPS_IDENTIFIER_LIST_KEYS for which keys, and for why this layer splits
-          # where the CLI refuses.
+          # Key-scoped comma rule; see DEVOPS_IDENTIFIER_LIST_KEYS.
           normalize_devops_list(value, split_commas: DEVOPS_IDENTIFIER_LIST_KEYS.include?(key))
         else
           value.to_s.strip
         end
       next if normalized_value.blank?
 
-      # Column-backed name: refuse LOUDLY and say where it lives. Checked after the
-      # blank guard (a blank asserts nothing) and BEFORE the whitelist, so it can
-      # never decay back into the silent skip this exists to prevent.
+      # A column-backed name raises and names its home. After the blank guard, before
+      # the whitelist, so it never decays into a silent skip.
       if (home = DEVOPS_COLUMN_KEYS[key])
         raise ArgumentError, "devops.#{key} is not writable — it lives in #{home}"
       end
@@ -2366,62 +1460,27 @@ class Task < ApplicationRecord
     end
   end
 
-  # Normalize a repo-keyed map (DEVOPS_MAP_KEYS) into { "<repo>" => "<value>" }.
-  # Two input shapes, because the two writers differ:
-  #   * a HASH ({ "turf-monster" => "https://github.com/.../pull/305" }) — the
-  #     shape the JSON API takes and the only one `bin/task --pr-url-for` writes.
-  #   * a LIST or newline/comma STRING of PR urls — the ergonomic shape, for a
-  #     caller holding bare urls with no repo to hand.
-  #
-  # BOTH SHAPES ARE VALIDATED THE SAME WAY, and the symmetry is the point. The
-  # hash branch used to take its value verbatim, so `{ "turf-monster" => "lol" }`
-  # stored "lol" and #repos_missing_pr_url then reported turf fully covered: the
-  # evidence this key exists to hold, satisfiable by a nonsense string, on the
-  # only path anything actually writes. Every value must parse as
-  # github.com/<owner>/<repo>/pull/<n>, and the entry is KEYED BY THE REPO THE
-  # URL NAMES — so a hash key that disagrees with its url is refused rather than
-  # filing turf's PR under the hub.
-  #
-  # A bad pair RAISES rather than dropping: a silently-skipped PR url is exactly
-  # the failure this key exists to close (see DEVOPS_MAP_KEYS), so a write that
-  # reaches nothing must be loud. Both controllers turn that into a 422 —
-  # Api::V1::TasksController#create/#update rescue StandardError into
-  # render_error (default :unprocessable_entity), and TasksController#create/
-  # #update rescue into an :unprocessable_entity render. The web path only
-  # reaches the normalizer because `pr_urls` is in its permit list; strong params
-  # stripping the key first is what used to make that path 200 for a write that
-  # reached nothing.
+  # Normalize a repo-keyed map (DEVOPS_MAP_KEYS) into { "<repo>" => "<value>" } from
+  # a Hash (the API and `bin/task --pr-url-for`) or a list or string of bare urls.
+  # Both shapes validate alike: each value must parse as a PR url and is keyed by
+  # the repo it names. A bad pair raises (a 422 upstream), since a skipped PR url is
+  # the failure this key exists to close.
   def self.normalize_devops_map(value)
     pairs =
       if value.is_a?(Hash)
         value.to_h.map { |repo, url| normalize_devops_map_pair(repo, url) }
       else
-        # A PR URL IS AN IDENTIFIER, so the list branch splits commas for the same
-        # reason DEVOPS_IDENTIFIER_LIST_KEYS does — and here the joined form LOST
-        # data rather than mangling it. Measured 2026-09-16 before this argument was
-        # passed: ["<turf url>,<hub url>"] stored { "turf-monster" => "<turf
-        # url>,<hub url>" } — turf's url joined into something no reader resolves,
-        # and the HUB'S PR DROPPED ENTIRELY, because one element yields one pair.
-        # That is the 2026-08-13 half-ship shape again (a repo whose PR has nowhere
-        # to live), with #repos_missing_pr_url reporting turf covered by a non-url.
-        #
-        # The HASH branch needs no rule of its own: a pair is keyed by the repo its
-        # URL names, and a key that disagrees already raises below — a comma-joined
-        # key can never agree with the one repo a url names.
+        # A PR url is an identifier, so the list branch splits commas; a joined entry
+        # would drop the second PR. The Hash branch needs no rule: a key must match its
+        # url's repo.
         normalize_devops_list(value, split_commas: true).map { |url| normalize_devops_map_pair(nil, url) }
       end
 
     pairs.compact.to_h
   end
 
-  # One validated `<repo> => <pr url>` pair, or nil when the value is blank.
-  #
-  # A BLANK VALUE DROPS rather than raising, and that is the API-level UNSET: the
-  # writers all send the whole map (read-merge-write), so blanking one value in
-  # it is how a wrong entry gets removed. `bin/task --pr-url-for <repo>=none`
-  # deletes the key client-side for the same reason. A blank asserts nothing, so
-  # there is no url to lose — unlike an unparseable one, which is a real claim
-  # the caller made and got wrong.
+  # One validated `<repo> => <pr url>` pair, or nil for a blank value. A blank is
+  # the unset: writers send the whole map, so blanking a value removes it.
   def self.normalize_devops_map_pair(repo, url)
     repo = repo.to_s.strip
     url = url.to_s.strip
@@ -2442,41 +1501,17 @@ class Task < ApplicationRecord
     [named, url]
   end
 
-  # The repo segment of a GitHub PR url, or nil. Class-level so the map
-  # normalizer (and any caller holding a bare url) shares ONE parser with
-  # Task#repo_from_pr_url, which delegates here.
+  # The repo segment of a GitHub PR url, or nil; Task#repo_from_pr_url delegates here.
   def self.repo_from_pr_url(url)
     url.to_s[PR_URL_REPO_PATTERN, 1]
   end
 
   def self.normalize_devops_list(value, split_commas: false)
-    # THE COMMA RULE IS THE KEY'S, NOT THE PAYLOAD'S. `split_commas` is the caller's
-    # statement that this key's entries are IDENTIFIERS, where a comma can only be a
-    # joined list (DEVOPS_IDENTIFIER_LIST_KEYS carries the argument and the
-    # measurements). Everything else is PROSE, where a comma is ordinary punctuation
-    # and splitting shreds a real entry into fragments. Newlines delimit in both
-    # cases, so the flag chooses the delimiter and nothing else — and BOTH input
-    # shapes read the same flag, so `"a,b"` and `["a,b"]` always agree.
-    #
-    # THE SHAPE USED TO DECIDE, AND IT WAS THE WRONG AXIS — twice, in opposite
-    # directions. Originally both branches were blanket: array split on newlines
-    # only, string on newline AND comma, so the same key answered differently
-    # depending on the JSON type of the payload. Scoping the ARRAY branch to the key
-    # fixed the identifier half and left the string branch blanket, which merely
-    # inverted the inconsistency: `{"acceptance" => "Header stays pinned, even while
-    # scrolling"}` still came back as two criteria. That was REACHABLE FROM THE BOARD,
-    # not just the raw API — app/views/tasks/_form.html.erb posts acceptance,
-    # test_plan and checks_run as "One criterion per line" TEXTAREAS, whose values
-    # arrive here as strings. 292 / 231 / 1616 board tasks carry a legal comma in those
-    # three keys — 6,599 individual entries (measured 2026-09-16 against production),
-    # every one of which a blanket split shreds into fragments.
-    #
-    # WHAT THE STRING BRANCH MUST KEEP DOING: the same form posts `repositories` and
-    # `risk_tags` as single-line text_fields JOINED with ", " (`value: list.join(", ")`),
-    # so those keys still split here — that is what `split_commas: true` is for, and
-    # normalize_devops_map asks for it explicitly so a joined string of PR urls stays a
-    # list of urls. The fix was never "stop the string branch splitting"; it was to
-    # give both branches the one key list.
+    # The comma rule belongs to the key, not the payload: `split_commas` says the
+    # key's entries are identifiers (DEVOPS_IDENTIFIER_LIST_KEYS). Prose keys split on
+    # newlines only; the board form posts them as one-per-line textareas, and posts
+    # `repositories` and `risk_tags` joined with ", ". Both input shapes read the
+    # same flag, so `"a,b"` and `["a,b"]` agree.
     delimiter = split_commas ? /[\n,]/ : "\n"
     parts =
       if value.is_a?(Array)
@@ -2489,16 +1524,10 @@ class Task < ApplicationRecord
          .uniq
   end
 
-  # Normalize a raw reviewers payload — from EITHER the submitted→reviewed
-  # TaskEvent's metadata["reviewers"] (the canonical write target, see
-  # #stage_event_metadata) OR a Task's own metadata["reviewers"] — into uniform
-  # `{ "slug" =>, "weight" => "primary"|"light"|nil }` entries. The weight is
-  # passed through verbatim (role-agnostic), so a legacy "heavy" record still
-  # normalizes — the UI maps it back to "primary" at render (StageAgent#role_label).
-  # Accepts a list of slug strings or of hashes, and tolerates the
-  # agent_slug/review_weight/depth aliases (review_weight is the per-agent key the
-  # souls seed + ReviewerSelector use), so the writer's exact shape isn't
-  # load-bearing. Blank-slug entries drop.
+  # Normalize a reviewers payload (a TaskEvent's or a Task's metadata["reviewers"])
+  # into `{ "slug", "weight" }` entries. Takes slug strings or hashes with the
+  # agent_slug, review_weight and depth aliases; the weight passes through verbatim
+  # (StageAgent#role_label maps legacy "heavy"). Blank slugs drop.
   def self.normalize_reviewers(raw)
     Array(raw).filter_map do |entry|
       if entry.is_a?(Hash)
@@ -2556,21 +1585,15 @@ class Task < ApplicationRecord
   end
 
   def ship!(result_data = {})
-    # Shipping ff's release → main, so the code is now on main — stamp it as the
-    # git-location alongside the board flip (the deploy heartbeat's crash-recovery
-    # signal). See MERGED_STATES.
+    # Shipping fast-forwards release into main, so stamp the git location too (MERGED_STATES).
     update!(stage: "shipped", merged: MERGED_MAIN, result: result_data)
   end
 
-  # --- Block: a `building` attribute, no longer a stage ---------------------
-  # block! marks the task blocked WITHOUT leaving the pipeline: it lands on
-  # `building` (a block means "more building to do") and stamps the block columns
-  # — blocked_at (when), blocked_from (the stage it stalled in), blocked_by (the
-  # agent that raised it), block_kind (why). There is NO →blocked transition, so
-  # the DURABLE block markers are these columns plus the qa_feedback Activity a
-  # caller posts alongside (bin/task block, eject!) — retros/insights/rework-counts
-  # key on those markers, never a vanished stage transition. set_stage_timestamp
-  # skips the build-claim stamp on a block (the blocker isn't the builder).
+  # --- Block: an attribute of `building` -----------------------------------
+  # block! lands the task on `building` and stamps blocked_at, blocked_from,
+  # blocked_by and block_kind. There is no →blocked transition: those columns and
+  # the caller's qa_feedback Activity are the durable markers. The block's
+  # `→ building` move is not a build claim (#set_stage_timestamp).
   def block!(by: nil, kind: nil)
     update!(
       stage: "building",
@@ -2582,8 +1605,7 @@ class Task < ApplicationRecord
   end
 
   # Clear a live block, leaving the task on `building` (the "Resume" action). The
-  # block columns are wiped so #blocked? / the red card / the scope all drop it;
-  # the qa_feedback ledger (ever_blocked? / block mining) is untouched.
+  # qa_feedback ledger is untouched.
   def unblock!
     update!(blocked_at: nil, blocked_by: nil, block_kind: nil, blocked_from: nil)
   end
@@ -2592,10 +1614,8 @@ class Task < ApplicationRecord
     update!(stage: "archived")
   end
 
-  # Recompute this task's testing-phase projection (Task::TestingPhases) — PUBLIC so
-  # the TaskEvent after_create_commit hook can call it on the parent task, mirroring
-  # release.refresh_duration_metrics_safely. update_columns inside refresh! skips
-  # callbacks, so this never re-enters.
+  # Recompute the testing-phase projection (Task::TestingPhases). Public so the
+  # TaskEvent commit hook can call it; refresh! uses update_columns, so no re-entry.
   def refresh_testing_phases!
     Task::TestingPhases.refresh!(self)
   end
@@ -2607,10 +1627,8 @@ class Task < ApplicationRecord
     nil
   end
 
-  # Recompute this task's latest-attempt-per-gate projection (Task::GatesProjection)
-  # — PUBLIC so the GateRun commit hooks can call it on the parent task, mirroring
-  # refresh_testing_phases!. update_columns inside refresh! skips callbacks, so this
-  # never re-enters.
+  # Recompute the latest-attempt-per-gate projection (Task::GatesProjection). Public
+  # for the GateRun commit hooks; no re-entry.
   def refresh_gates!
     Task::GatesProjection.refresh!(self)
   end
@@ -2624,11 +1642,8 @@ class Task < ApplicationRecord
 
   private
 
-  # [[time, label], ...] — the durable artifacts this task has produced. Reads the
-  # LOADED associations when there are any: the board preloads BOTH :task_events and
-  # :gate_runs, so a card's chip costs it no extra query. Off the board (a single
-  # task, the API) each association loads once and is then cached on the record, so
-  # the repeated asks the chip makes still cost nothing further.
+  # [[time, label, actor], ...]: the durable artifacts this task has produced, read
+  # from the loaded associations so a preloaded board card queries nothing.
   def progress_evidence
     evidence = []
 
@@ -2641,18 +1656,13 @@ class Task < ApplicationRecord
     evidence
   end
 
-  # WHO produced a durable artifact, as the record itself names them — the
-  # session stamped in metadata (bin/task checkpoint, bin/gate) first, then
-  # `actor`, which a CLI stage move already fills with the mover's session id and
-  # a block fills with a soul slug. nil when the row names nobody, and nil must
-  # stay nil: a guessed owner is exactly the failure this exists to end.
+  # Who produced an artifact, as the row names it: metadata["session"] first, then
+  # `actor`. nil stays nil; never guess an owner.
   def progress_actor(row)
     row.metadata.to_h["session"].presence || TaskEvent.named_actor(row.actor)
   end
 
-  # The newest artifact produced BY a given session. Filtered in Ruby over the
-  # same loaded associations progress_evidence reads, so a card that preloaded
-  # :task_events and :gate_runs pays nothing extra.
+  # The newest artifact produced by one session, over the same loaded associations.
   def progress_evidence_by(session)
     return [] if session.blank?
 
@@ -2667,22 +1677,9 @@ class Task < ApplicationRecord
     evidence
   end
 
-  # Is this row DEMONSTRABLY not the holder's? True only when the row names a
-  # DIFFERENT SESSION. Everything else answers false — unknown, which protects the
-  # holder (see the reaping note above). With no holder on the claim nothing is
-  # disowned, so the answer degrades to "keep".
-  #
-  # A SOUL SLUG IS NOT A SESSION, and this is the trap worth naming: progress_actor
-  # falls back to `actor`, which a block fills with a soul ("carl") and
-  # bin/pr-review passes soul slugs through. A soul and a session id live in
-  # different namespaces, so `"carl" != "8d632410-…"` is true for a reason that has
-  # nothing to do with WHO acted — comparing them would mark every soul-attributed
-  # row as a stranger's and reap a holder on it. A soul name cannot establish that a
-  # row belongs to a different session, which makes it an unknown like any other.
-  #
-  # The incident is untouched by this: bin/gate and bin/task checkpoint stamp
-  # metadata["session"] with a session id, and progress_actor prefers it, so a
-  # challenger's cert is still demonstrably the challenger's.
+  # True only when the row names a different session; anything unknown protects the
+  # holder. A soul slug is not a session id, so a soul-attributed row is unknown,
+  # not a stranger's.
   def disowned?(row)
     actor = progress_actor(row)
     return false if actor.blank? || claimed_session_id.blank?
@@ -2691,9 +1688,7 @@ class Task < ApplicationRecord
     actor != claimed_session_id
   end
 
-  # The newest artifact not demonstrably someone else's — the reaping counterpart
-  # to progress_evidence_by, over the same loaded associations, so a preloaded
-  # card still pays nothing extra.
+  # The newest artifact not signed by another session, over the loaded associations.
   def undisowned_progress_event
     @undisowned_progress_event ||= begin
       evidence = []
@@ -2712,20 +1707,13 @@ class Task < ApplicationRecord
     case event.kind
     when TaskEvent::CHECKPOINT then checkpoint_label(event)
     when TaskEvent::INTENT     then "intent recorded"
-    # The event's OWN destination, not the task's current stage. The row carries the
-    # fact one column away; reading the task instead reports where the task is NOW,
-    # which is a different (and, once a later move lands, wrong) claim.
+    # The event's own destination, not where the task is now.
     else "moved to #{event.to_stage.presence || stage}"
     end
   end
 
-  # A checkpoint's NAME is its `to_stage` (record_checkpoint_event writes
-  # `to_stage: name`), and checkpoints are NOT cert-only: review check-ins route
-  # through the same spine (`review_primary_complete`), and `bin/task checkpoint
-  # <slug> <name>` takes an arbitrary name. This label used to hardcode "cert", so a
-  # review check-in rendered as "cert passed" — the board naming an artifact it had
-  # never seen, and naming it in the one string the claim gate shows a second agent
-  # deciding whether to take the desk. Read the name off the event.
+  # A checkpoint's name is its `to_stage`, and checkpoints are not cert-only (review
+  # check-ins, `bin/task checkpoint <slug> <name>`), so read the name off the event.
   def checkpoint_label(event)
     name = event.to_stage.to_s.strip.presence || "checkpoint"
     status = event.metadata.to_h["status"].presence
@@ -2739,23 +1727,16 @@ class Task < ApplicationRecord
     "#{gate.key} #{gate.success ? 'passed' : 'failed'}"
   end
 
-  # Refresh the testing-phase projection after a stage transition — the only edit
-  # ON THIS ROW that moves a v2 task-owned phase window (build/ci/review bounds).
-  # The other movers are their own append-only spines and trigger the refresh
-  # themselves: cert checkpoints + review intents via TaskEvent#after_create_commit.
-  # Metadata churn (approval stamps, statusline claim_*, agent_context) moves no v2
-  # window — approval was only a mover for the v1 Operator Acceptance phase, dropped
-  # in VERSION 2 — so it must NOT trigger a rebuild.
-  # Push the app-ladder row when this task's rung membership changed. Destroy always
-  # counts: the row is a COUNT, so a removed task changes it even though no column
-  # "changed" in the saved_change sense. Wrapped by the broadcaster's own
-  # safe_broadcast, so a cable failure can never break the task write.
+  # Push the app-ladder row when rung membership changed; a destroy always counts.
+  # The broadcaster's safe_broadcast keeps a cable failure from breaking the write.
   def broadcast_app_ladder_if_rung_changed
     return unless destroyed? || saved_change_to_merged? || saved_change_to_stage?
 
     DeploymentsBroadcaster.app_ladder
   end
 
+  # Only a stage transition moves a task-owned phase window; TaskEvent and GateRun
+  # refresh their own. Metadata churn does not rebuild.
   def refresh_testing_phases_after_change
     return unless saved_change_to_stage?
 
@@ -2786,10 +1767,7 @@ class Task < ApplicationRecord
     end
   end
 
-  # The repo this task's singular `pr_url` names: github.com/<owner>/<repo>/pull/<n>.
-  # Delegates to the class method so there is genuinely ONE parser — this used to
-  # carry its own literal copy of the regex, which is the duplication extracting
-  # PR_URL_REPO_PATTERN was meant to end.
+  # The repo the singular `pr_url` names, through the one class-level parser.
   def repo_from_pr_url
     self.class.repo_from_pr_url(devops_url("pr"))
   end
@@ -2798,28 +1776,16 @@ class Task < ApplicationRecord
     self.class.normalize_devops_list(devops.fetch(key.to_s, []))
   end
 
-  # Append-only audit spine: one TaskEvent per stage that lands. The deterministic
-  # fields (from/to/occurred_at/seconds_in_from) are computed here from the same
-  # chokepoint that stamps the stage timestamps, so they're server-owned and
-  # exact. The optional attribution (actor/model/tokens/cost) rides in on Current —
-  # set per-transition by the request layer (web) or the CLI's --actor (defaulted
-  # to the mover's own session in bin/task) for the move it just performed — and is
-  # null for model-method and conductor transitions. actor is intentionally NOT
-  # backfilled from devops_session_id: that's the session that CLAIMED the task at
-  # `building`, so inheriting it would mis-attribute later reviewed/assembled/
-  # shipped moves to the build agent. Runs inside the save transaction so a stage
-  # change can never land without its event.
-  # The genesis (Created→Designed) event is intentionally USAGELESS: it fires
-  # inside Task.create — before any session/usage context exists (no build claim,
-  # no transcript, no Current.task_event_*) — so it can only ever carry the
-  # deterministic spine. This is correct by design, NOT a capture gap: the
-  # timeline renders genesis without model/token/cost chips, and the usage
-  # backfill (lib/tasks/task_events.rake) leaves it alone.
+  # The append-only stage spine: one TaskEvent per stage that lands, written inside
+  # the save transaction so a stage change never lands without its event. The
+  # deterministic fields are server-owned; attribution and usage ride in on Current
+  # for the move just made. actor is never backfilled from the build session. The
+  # genesis event carries no usage by design.
   def record_genesis_event
     write_stage_event(from: nil)
   end
 
-  # Drop this task's card from the live /deployments board for every viewer.
+  # Drop this task's card from the live /deployments board.
   def broadcast_removal_to_deployments_board
     DeploymentsBroadcaster.task_removed(slug)
   end
@@ -2828,14 +1794,9 @@ class Task < ApplicationRecord
     write_stage_event(from: stage_before_last_save)
   end
 
-  # Stamp actual_size from the task's measured usage the moment it ships — closing
-  # the size trio (po/dev forecasts vs. the measured actual). Only fills a BLANK
-  # actual_size, so a manually set size (the /sizing editor) is never clobbered;
-  # only persists a real derivation (a no-usage task derives nil → left blank).
-  # Writes via update_column to skip the callback chain (no re-entrancy). The
-  # rescue is INTENTIONALLY swallow-and-log, not re-raise: this runs inside the
-  # ship transition, so a derivation bug must degrade to "no auto-size" rather
-  # than roll the ship back (mirrors stage_event_metadata + backfill_mascots!).
+  # At ship, fill a blank actual_size from measured cost; a manual size is never
+  # overwritten and nil stays blank. update_column skips the callback chain, and the
+  # rescue logs rather than raising, so a derivation bug never rolls back the ship.
   def autoderive_actual_size
     return unless stage == "shipped"
     return if actual_size.present?
@@ -2851,10 +1812,8 @@ class Task < ApplicationRecord
     log.save!
   end
 
-  # after_commit trigger: grade the task the moment it lands in `shipped`
-  # (TaskGradingJob → Insights::TaskGrader). Best-effort like its sibling below: an
-  # enqueue failure is logged, never raised, and the grader is idempotent, so the
-  # learning_loop:backfill task picks up anything a dropped enqueue missed.
+  # Enqueue the ship's grade (TaskGradingJob → Insights::TaskGrader). An enqueue
+  # failure is logged, never raised; `learning_loop:backfill` catches drops.
   def enqueue_task_grading
     TaskGradingJob.perform_later(slug)
   rescue StandardError => e
@@ -2864,16 +1823,9 @@ class Task < ApplicationRecord
     log.save!
   end
 
-  # after_commit trigger: fire Avi's async shirt-sizer the moment a task ENTERS
-  # `designed` with a blank po_size — a fresh create (the birth stage) or a move
-  # back INTO designed that's still unsized. Enqueue only (AviSizingJob owns the
-  # LLM call + attribution) so this never blocks the create/move. Guarded on:
-  #   * stage == "designed" AND po_size blank (never re-size a set task), and
-  #   * the task just entered designed (a fresh row, or a real stage change) — so a
-  #     plain metadata/title edit on an already-designed unsized task doesn't re-fire.
-  # Best-effort: an enqueue failure (e.g. Redis down) is logged, never raised — a
-  # broken queue must not sink task creation. AviSizingJob itself re-guards po_size,
-  # so a duplicate enqueue is a harmless no-op.
+  # Enqueue Avi's sizer when the task just entered `designed` (created or moved)
+  # with a blank po_size; a plain edit never re-fires. A failed enqueue is logged,
+  # never raised; AviSizingJob re-checks po_size, so duplicates are harmless.
   def enqueue_avi_sizing_if_designed_unsized
     return unless stage == "designed"
     return if po_size.present?
@@ -2887,13 +1839,9 @@ class Task < ApplicationRecord
     log.save!
   end
 
-  # The usage columns for a TaskEvent, with cost DERIVED server-side. bin/task mints its
-  # cost in a plain-Ruby process with no ActiveRecord, so it can never see an operator's
-  # rate override (UsagePricing.db_rates returns {} there) — re-deriving here is what
-  # carries a saved rate into task-event cost, and therefore into actual_size on the
-  # sizing dashboard. The CLI's cost stays the FALLBACK: kept for an unpriced model, or
-  # an older CLI that doesn't send the un-folded cache_creation bucket needed to split
-  # the folded tokens_in faithfully.
+  # TaskEvent usage with cost derived here, so an operator's saved rate override
+  # (invisible to the ActiveRecord-free CLI) prices the event. The CLI's cost is
+  # the fallback for an unpriced model or an older CLI.
   def task_event_usage_attrs
     model      = Current.task_event_model.presence
     tokens_in  = Current.task_event_tokens_in
@@ -2918,9 +1866,7 @@ class Task < ApplicationRecord
 
   def write_stage_event(from:)
     occurred = Time.current
-    # Measure the stage duration between TRANSITIONS only — an intent row recorded
-    # mid-stage (review picked, QA started) is the live "who's on it" signal, not a
-    # stage boundary, so it must never shorten seconds_in_from.
+    # Stage duration spans transitions only; an intent is not a stage boundary.
     previous = task_events.transitions.chronological.last
     task_events.create!(
       from_stage: from,
@@ -2928,61 +1874,39 @@ class Task < ApplicationRecord
       occurred_at: occurred,
       seconds_in_from: previous && (occurred - previous.occurred_at).round,
       source: Current.task_event_source,
-      # NEVER blank (devops-v3 §9: 43% of transitions carried no actor). A move with
-      # no caller attribution — a model method, the conductor, a job — is recorded
-      # as TaskEvent::SYSTEM_ACTOR, which authorship readers skip (see
-      # TaskEvent.named_actor) so "system" is never mistaken for a builder or owner.
+      # Never blank: an unattributed move records TaskEvent::SYSTEM_ACTOR, which
+      # authorship readers skip (TaskEvent.named_actor).
       actor: Current.task_event_actor.to_s.strip.presence || TaskEvent::SYSTEM_ACTOR,
       **task_event_usage_attrs,
-      # Merge the review-bypass marker (set only by Conductor.sweep!(override:true)
-      # for `bin/release merge --override`) onto THIS transition, so the review-gate
-      # skip is recorded on the same spine the move writes — not as a second, orphan
-      # event. Absent on every normal move (Current flag nil), so it never widens the
-      # default metadata.
+      # The review-bypass marker (`bin/release merge --override`) rides this
+      # transition; absent on every normal move.
       metadata: stage_event_metadata(from: from)
         .merge(Current.task_event_review_bypass ? { "review_bypassed" => true } : {})
-        # And the BLOCK marker, for the same reason one indirection along: #block!
-        # lands a bounced task on `building`, so a rework block writes a
-        # `→ building` transition whose actor is the BLOCKER. Readers that equate
-        # that transition with a build claim counted the reviewer as an author —
-        # ReviewerSelector#builders read ["shannon", "carl"] after a bounce, so the
-        # reviewer who sent the work back was excluded from the task's own pool and
-        # named in the audit as one of its authors. The actor is right and stays;
-        # what was missing is WHY, and it rides the same event rather than a second
-        # orphan row. See TaskEvent#block_transition?.
+        # The block marker: a rework block's `→ building` move carries the blocker as
+        # actor, and this says why, so readers never count the blocker as an author. See
+        # TaskEvent#block_transition?.
         .merge(block_transition_metadata)
     )
   end
 
-  # The `blocked` marker for a transition written by #block! — empty on every
-  # ordinary move. Keyed on blocked_at moving to a value in the save that just
-  # landed, the same tell #build_claim_save? and #set_stage_timestamp already use
-  # for "this transition is a block, not a claim".
+  # The `blocked` marker for a #block! transition; empty on every ordinary move.
+  # Keyed on blocked_at landing in this save, like #build_claim_save?.
   def block_transition_metadata
     return {} unless saved_change_to_blocked_at? && blocked_at.present?
 
     { "blocked" => true }.merge(block_kind.present? ? { "block_kind" => block_kind } : {})
   end
 
-  # Extra, non-spine event metadata. EVERY staged transition snapshots the mascot
-  # that owned THAT event, so a later rework handoff — or a gate evolution
-  # (#evolve_stage_mascot) — can repaint the current task mascot without
-  # rewriting history: the reviewed card keeps Charmeleon after the task
-  # assembles as Charizard. On the submitted→reviewed transition this
-  # also carries the TWO reviewers (+ primary/light) so the avatars UI can render
-  # WHO reviewed — the single `actor` stays the primary mover. An explicit
-  # Current.task_event_reviewers (set when Avi curated the pair) wins; otherwise
-  # the pair is selected here via ReviewerSelector, so the avatars populate no
-  # matter who drove the move. It NEVER blocks the stage change: a selection error
-  # is logged and the event records the metadata gathered so far.
+  # Non-spine event metadata. Every transition snapshots the mascot that owned it,
+  # so a handoff or evolution repaints the task without rewriting history. The
+  # submitted→reviewed event also carries the reviewer pair for the avatars UI:
+  # Current.task_event_reviewers, else the open intent's pair, else
+  # ReviewerSelector. Never blocks the move: an error is logged.
   def stage_event_metadata(from:)
     metadata = stage_mascot_event_metadata
     return metadata unless from == "submitted" && stage == "reviewed"
 
-    # Prefer the pair that actually STARTED the review (stamped on the open review
-    # intent) so the completed event shows the same two seniors the board showed
-    # ticking; an explicit Current override (Avi curated on the move) still wins,
-    # and an old-flow move with neither falls back to a fresh selection.
+    # The pair that started the review wins over a fresh selection; an explicit override wins over both.
     reviewers = Current.task_event_reviewers.presence ||
                 latest_intent_reviewers("reviewed") ||
                 ReviewerSelector.select(self)
@@ -2997,9 +1921,8 @@ class Task < ApplicationRecord
     return {} unless slug
 
     pokemon = Pokemon.find_by(slug: slug) if Pokemon.table_exists?
-    # A shiny mascot bakes its shiny avatar URL into the snapshot, so historical
-    # events keep the shiny face even after the mascot recycles to another task.
-    # A gendered draw bakes its gender's name and art too (Nidoran♂ wears dex 32).
+    # The snapshot bakes the shiny avatar and the gendered name and art, so history
+    # keeps its face after the mascot recycles.
     snapshot = {
       "slug" => slug,
       "name" => pokemon&.display_name(gender: mascot_gender).presence || slug,
@@ -3019,11 +1942,8 @@ class Task < ApplicationRecord
   def set_stage_timestamp
     case stage
     when "building"
-      # A block! lands the task on `building` too, but it's NOT a fresh build
-      # claim — the blocker isn't the builder, so skip the started_at re-stamp
-      # (#enforce_builder_stamp applies the same exemption to the builder stamp,
-      # which used to live here). A block is detected by blocked_at being set in
-      # this same save.
+      # A block! lands on `building` but is not a fresh claim, so started_at stays
+      # (detected by blocked_at landing in this save).
       self.started_at = Time.current unless will_save_change_to_blocked_at? && blocked_at.present?
     when "submitted" then self.submitted_at = Time.current
     when "reviewed"  then self.reviewed_at  = Time.current
@@ -3031,15 +1951,13 @@ class Task < ApplicationRecord
     when "shipped"   then self.completed_at = Time.current
     when "archived"  then self.archived_at = Time.current
     end
-    # Re-rank to the TOP of the new column on every stage move: max + 100 wins the
-    # `position DESC` sort. The 100-gap keeps room for later drag inserts. (Skip on
-    # create — set_initial_position seeds the genesis rank.)
+    # Re-rank to the top of the new column on every stage move (max + 100);
+    # set_initial_position seeds the rank on create.
     self.position = (Task.where(stage: stage).maximum(:position) || 0) + 100 unless new_record?
   end
 
-  # Clear the live-block columns when the task advances out of `building` — the
-  # block resolved (the fix moved forward). The qa_feedback ledger (ever_blocked?)
-  # is untouched, so the "was blocked" history survives on the durable marker.
+  # Clear the live-block columns when the task advances out of `building`; the
+  # qa_feedback ledger keeps the history.
   def clear_block_on_forward_move
     self.blocked_at = nil
     self.blocked_by = nil
@@ -3047,11 +1965,9 @@ class Task < ApplicationRecord
     self.blocked_from = nil
   end
 
-  # Drop a review claim left over from a PREVIOUS review of this task (see the callback
-  # above). after_commit, not before_save: the claim row is another table taking its own
-  # row lock, and a lock taken inside the task's own save would widen this transaction
-  # for a write that is not part of the task record. Best-effort — a claim we failed to
-  # clear costs a delayed review, while raising here would fail the stage move itself.
+  # Drop a review claim left from a previous review. After commit, so the claim
+  # row's lock stays out of the task's save; best-effort, since raising would fail
+  # the stage move.
   def clear_stale_review_claim_on_submit
     TaskReviewClaim.release_for_new_submission!(slug)
   rescue StandardError => e
@@ -3059,88 +1975,35 @@ class Task < ApplicationRecord
     nil
   end
 
-  # A soul SLUG is a short human handle (carl, shannon) — lowercase letters with
-  # optional internal hyphens, NO digits. That format distinguishes it from a
-  # session id (the UUID `bin/task move <slug> building` defaults the actor to,
-  # which always carries digits), so the check needs no Agent-table lookup and
-  # works before the reviewer souls are seeded.
+  # A soul slug: lowercase letters with optional internal hyphens, no digits. That
+  # shape tells it from a session id with no Agent lookup.
   SOUL_SLUG = /\A[a-z]+(?:-[a-z]+)*\z/
 
-  # THE ROSTER — the souls that actually exist. SOUL_SLUG above answers "does this
-  # LOOK like a handle"; that is a different question from "is this SOMEBODY", and
-  # the gap between them was a live fail-open: `--actor stefon` (one f) matches the
-  # shape, so it stamped as the builder, satisfied every "the builder is known"
-  # check, and excluded NOBODY from the reviewer pool — the fail-closed refusal
-  # lifted by a value identifying no one. A blank builder fails closed and is safe;
-  # a typo'd one failed open and was not.
-  #
-  # IT REGISTERS IDENTITIES, NOT REVIEW SEATS. "Is this somebody" and "may this
-  # soul review" are different questions with different answers, and the second is
-  # asked elsewhere — ReviewerSelector::POOL, plus Agent.metadata["reviewer"]. Most
-  # of this list cannot review anything: turf-monster, mack, mason, pokemon and rex
-  # are all non-reviewing souls. Being here only makes a name ATTRIBUTABLE.
-  #
-  # Reading it as a review register is what kept POKEMON off it until 2026-09-24.
-  # Pokémon is the general builder the operating model routes every task through,
-  # so it is the most prolific author in the ecosystem — and `--agent pokemon` was
-  # accepted by the CLI's shape check and dropped here, silently, leaving the task
-  # `builders: NOT STAMPED` and `bin/reviewer-select` refusing to pick. Measured
-  # against prod that day: soul-character-reference-lane carries agent_slug
-  # "pokemon" with built_by nil and builders []. That refusal was FALSE — Pokémon
-  # is not in POOL, so naming it excludes nobody and no seat is at risk; the record
-  # simply had no word for the party that had plainly done the work.
-  #
-  # The legion objection ("every task gets a fresh mascot, so what does excluding
-  # Pokémon even mean?") argues FOR the entry, not against it. The mascot is
-  # per-task and already recorded separately (devops.mascot); the SOUL is constant.
-  # A per-mascot identity would make every task a brand-new unknown.
-  #
-  # It also retires a placeholder. `--agent mack` was the documented stand-in — a
-  # real soul's slug, borrowed so the selector had someone to exclude — which put
-  # untrue authorship on the record and left genuine Mack rows indistinguishable
-  # from Pokémon ones. `pokemon` produces the identical selection outcome (neither
-  # is in POOL) while recording what actually happened. None of this pre-empts
-  # deriving authors from git (v3 phase 4); it is strictly better until then.
-  #
-  # The static list is the FLOOR, not the whole answer: .soul_roster unions the
-  # seeded Agent slugs over it, so a newly seeded soul validates without a code
-  # change. It is a floor rather than a plain DB read because ReviewerSelector
-  # DEGRADES to built-in defaults with no Agent rows at all (see its header), and a
-  # roster that empties with the DB would turn every soul into an unknown. A soul
-  # added HERE and not to the seed breaks that promise in the other direction, so
-  # keep the two in lockstep — test/models/agents_seed_test.rb asserts both ways.
+  # The roster of souls that exist. SOUL_SLUG asks "does it look like a handle";
+  # this asks "is it somebody", so a typo such as `--actor stefon` cannot stamp a
+  # builder who excludes nobody. It registers identities, not review seats
+  # (ReviewerSelector::POOL decides those), so `pokemon`, the general builder, is
+  # here. The static list is the floor: .soul_roster unions seeded Agent slugs,
+  # and the floor survives a DB outage. Keep it in lockstep with the seed
+  # (test/models/agents_seed_test.rb).
   SOUL_ROSTER = %w[xan avi carl shannon jasper steffon turf-monster mack mason pokemon rex tyrion].freeze
 
-  # RETIRED SLUGS THAT STILL RESOLVE — a READ alias, one release wide. The
-  # orchestrator seat `alex` became `xan` on 2026-09-24 (the human operator takes
-  # the name Alex, so a soul slug reading `alex` would name the owner). The data
-  # migration RenameAlexSoulToXan repointed every STORED `alex` soul value, but a
-  # sticky heartbeat marker, a shell alias, or a `--actor alex` typed from memory
-  # still arrives for a while, and each must land on the seat rather than on
-  # "unknown" — an unknown builder refuses review, and a retired slug that reads
-  # as unknown would refuse it for the wrong reason. Read-only: nothing WRITES
-  # the legacy slug, because every stamp goes through .canonical_soul first.
-  # Retire the entry, and the alias with it, one release after the rename.
+  # Retired slugs that still resolve on read: `alex` became `xan` (the human owner
+  # is Alex). Nothing writes the legacy slug; every stamp goes through
+  # .canonical_soul. Retire the alias one release after the rename.
   SOUL_ALIASES = { "alex" => "xan" }.freeze
 
-  # The slug a soul is recorded under today: a retired alias resolves to its
-  # successor, anything else passes through (stripped). Every writer that stamps
-  # a soul calls this, so the record never carries a retired slug twice.
+  # The slug a soul is recorded under: an alias resolves to its successor, anything
+  # else passes through stripped. Every soul stamp calls this.
   def self.canonical_soul(slug)
     value = slug.to_s.strip
     SOUL_ALIASES.fetch(value, value)
   end
 
-  # Every soul slug this deployment recognises: the static floor plus whatever is
-  # seeded. Any lookup error (no table yet, DB down, mid-migration) degrades to the
-  # floor — which names every real soul on its own, so degrading never turns a real
-  # soul into an unknown NOR an unknown into a soul. That promise is why a new soul
-  # goes in SOUL_ROSTER and not only in the seed: a roster entry that exists only as
-  # an Agent row vanishes in exactly the degraded mode the floor exists for, and the
-  # sentence above would quietly stop being true for it.
-  # Memoized per request/job (Current.soul_roster) — .soul? is asked once per
-  # candidate on every build claim and every reviewer selection, and an unmemoized
-  # roster re-SELECTs the agents table several times per save.
+  # Every soul slug this deployment recognises: the floor plus seeded agents. A
+  # lookup error degrades to the floor, which names every real soul, so a new soul
+  # belongs in SOUL_ROSTER, not only the seed. Memoized per request
+  # (Current.soul_roster).
   def self.soul_roster
     Current.soul_roster ||= begin
       (SOUL_ROSTER + Agent.pluck(:slug).map(&:to_s).select { |s| s.match?(SOUL_SLUG) }).uniq
@@ -3149,62 +2012,29 @@ class Task < ApplicationRecord
     end
   end
 
-  # Is this string a soul that EXISTS — the right shape AND on the roster. The
-  # authorship guards (who built this, who may not review it) ask this; the
-  # session-vs-handle disambiguation in #disowned? still asks SOUL_SLUG alone,
-  # because there a typo'd handle is correctly "not a session id".
-  # A retired alias (SOUL_ALIASES) counts as its successor, so `alex` is a soul
-  # for as long as the alias stands.
+  # A soul that exists: the right shape and on the roster, an alias counting as its
+  # successor. The authorship guards ask this; #disowned? asks SOUL_SLUG alone.
   def self.soul?(slug)
     value = canonical_soul(slug)
     value.match?(SOUL_SLUG) && soul_roster.include?(value)
   end
 
-  # Stamp WHO built this task onto devops.built_by — the soul the reviewer pool
-  # later excludes (ReviewerSelector) so a soul never reviews their own work. The
-  # value MUST be a soul SLUG to match the soul-keyed pool. Resolved by
-  # #builder_to_stamp (precedence below); nil leaves any existing built_by
-  # untouched — never clobbered.
-  #
-  # AN INVARIANT OF THE BUILD CLAIM, not of the transition into `building`. It ran
-  # inside `set_stage_timestamp` (`before_save … if: :stage_changed?`) until
-  # 2026-08-13, and that shape had a silent hole the whole fast lane fell through:
-  # `bin/task begin` leaves the task AT `building`, so the documented recovery —
-  # `bin/task move <slug> building --actor <soul>` — carried no stage change, the
-  # callback never fired, and the stamp no-op'd at exit 0. Two tasks in one day
-  # reached review with `built_by` blank; on one of them `bin/reviewer-select`
-  # picked Carl to review Carl's own PR, and only a human routing reviewers by
-  # hand stopped it. A re-claim IS a claim, so it stamps.
-  #
-  # TWO HALVES, like its siblings above:
-  #   STAMP — on a build CLAIM (#build_claim_save?) resolve and record the builder.
-  #     Keyed on the claim so it stays a claim stamp: a note, a checks update, or
-  #     any other save that happens to carry a soul actor while the task sits in
-  #     `building` must not make that soul the builder.
-  #   DEFEND — on ANY save, carry a stored builder forward. BOTH write paths fold
-  #     through Task.merge_devops_into_metadata since `api-devops-patch-replaces`,
-  #     so a partial PATCH that never mentions built_by now preserves it on its
-  #     own — the merge, not this guard, is what covers omission. What the merge
-  #     does NOT cover is a name posted BLANK: it keys on the POSTED names and
-  #     `normalize_devops_metadata` drops blanks, so
-  #     `{"devops":{"built_by":""}}` deletes the record of who built the task. That
-  #     is this half's remaining job, and it is the whole of it. A regression test
-  #     drives exactly that PATCH — test/integration/builder_stamp_api_test.rb,
-  #     "a client cannot erase the builder by posting it blank"; without it,
-  #     deleting the `|| prior_devops["built_by"]` below passes the whole suite.
+  # Stamp devops.built_by, the soul slug the reviewer pool excludes. An invariant
+  # of the build claim, not of the stage change, so a re-claim at `building`
+  # stamps too. Two halves:
+  #   STAMP  — on a build claim (#build_claim_save?), record #builder_to_stamp.
+  #            Other saves carrying a soul actor do not make a builder.
+  #   DEFEND — on any save, carry the stored builder forward, so a client cannot
+  #            erase it by posting it blank (test/integration/builder_stamp_api_test.rb).
   def enforce_builder_stamp
-    # An explicit devops teardown (the whole hash removed) is left alone — this
-    # guard defends the builder key, not the existence of devops. Same posture as
-    # #stamp_build_claim_session.
+    # An explicit devops teardown is left alone; this defends the key, not the hash.
+    # Same posture as #stamp_build_claim_session.
     return unless metadata.is_a?(Hash) && metadata["devops"].is_a?(Hash)
 
     claim = build_claim_save?
     named = (builder_to_stamp if claim)
-    # A REVIEWER WHO TAKES THE BUILD IS AN AUTHOR, NEVER THE CURRENT BUILDER. `named`
-    # still joins the author set below (over-counting an author over-EXCLUDES, which
-    # refuses rather than seats) but it must not reach built_by: a reviewer recorded
-    # as the builder of the PR he is reviewing is the same defect fully inverted, and
-    # a confidently-wrong author set is worse than a refusing one.
+    # A reviewer who takes the build joins the author set but never becomes built_by:
+    # over-excluding refuses, while a reviewer recorded as builder seats wrongly.
     soul = (named unless reviewer_taking_the_build?(named)) ||
            self.class.canonical_soul(prior_devops["built_by"]).presence
     authors = builder_roll_call(claim, named, soul)
@@ -3223,43 +2053,15 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # THE AUTHOR SET. Returns the authors.
-  #
-  # `built_by` holds ONE soul, but a task can have SEVERAL authors: a session limit
-  # kills a builder mid-work and another soul finishes the job. Rule 1 of
-  # #builder_to_stamp RE-POINTS built_by on an explicit actor, so the handoff
-  # OVERWRITES the first author rather than remembering them — and the reviewer pool
-  # then excludes one of two. Measured 2026-08-30 on TWO tasks in one sitting:
-  # credential-prose-tells-truth reads built_by=avi and agent-flag-silently-drops
-  # reads built_by=steffon, yet ALEX wrote the tests on the first and the whole
-  # rework on the second. `bin/reviewer-select` duly seated Alex as the LIGHT on
-  # Alex's own diff (PR #1081); a hand-passed `--busy alex` was the only thing that
-  # stopped it, and a hand-pass is not a property.
-  #
-  # So `built_by` KEEPS its meaning (the current builder — every existing reader and
-  # the board card are untouched, and nothing needs migrating) and `builders`
-  # ACCUMULATES: append-only, deduped, seeded from whatever built_by already held so
-  # a task stamped before this change still names its author. It is SERVER-OWNED —
-  # deliberately absent from DEVOPS_KEYS, so `normalize_devops_metadata` drops any
-  # client attempt to write it and this callback rebuilds it from the prior record
-  # on every save. A client can no more shrink the author set than forge it.
-  #
-  # A claim or submit that names NO soul adds nobody. The UNNAMED marker that once
-  # recorded such a session (devops.builders_unattributed) is deleted (devops-v3
-  # 4b-ii-b): authors are also derived from git (Task#derived_authors), so a
-  # session-only claim no longer makes the set unknowable.
-  #
-  # TWO authorship moments, not one. Accumulating on the CLAIM alone still misses the
-  # author who never claimed — see the `submit_save?` branch below, which closes that
-  # half and is why this method no longer keys on the claim exclusively.
+  # The author set. `built_by` holds the current builder; `builders` accumulates
+  # every author, append-only and deduped, seeded from the stored built_by. It is
+  # server-owned (not in DEVOPS_KEYS) and rebuilt from the prior record on every
+  # save, so a client cannot shrink or forge it. A claim or submit naming no soul
+  # adds nobody; git-derived authors cover that (Task#derived_authors). Authorship
+  # moments: the claim, the submit, and a fix-forward.
   def builder_roll_call(claim, named, soul)
-    # The STORED built_by joins the set too, and it has to be read separately from
-    # `soul`: on a claim that names a new soul, `soul` IS that new soul, so seeding
-    # from it alone would drop the author already on record — the very overwrite this
-    # exists to prevent, and the only thing a task stamped before `builders` existed
-    # has to give.
-    # Read through the alias (canonical_soul) so a set stamped under a retired
-    # slug and a claim made under its successor dedupe to ONE author.
+    # The stored built_by joins too, read apart from `soul`, which on a re-pointing
+    # claim is already the new soul. Read through canonical_soul so aliases dedupe.
     authors = (Array(prior_devops["builders"]) + [prior_devops["built_by"]])
               .map { |s| self.class.canonical_soul(s) }.select { |s| self.class.soul?(s) }.uniq
     soul = self.class.canonical_soul(soul) if soul
@@ -3268,75 +2070,39 @@ class Task < ApplicationRecord
     if claim
       authors |= [named] if named
     elsif submit_save?
-      # THE AUTHOR IS NOT ALWAYS THE CLAIMER — the half the accumulator above cannot
-      # see. Everything before this point keys on the CLAIM, so a soul who never
-      # claimed the task and wrote the entire diff never enters the set. Measured
-      # 2026-08-30 on PR #1094: shannon's agent claimed the task and was killed by a
-      # session limit with NOTHING committed; ALEX then wrote the whole diff and both
-      # test files, and shipped it. built_by read "shannon" and `builders` held only
-      # shannon, so `bin/reviewer-select` ran happily, excluded a soul who had written
-      # nothing, and left the REAL author in the light pool (alex:0.9968, ranked 3rd).
-      # Jasper drew the seat by luck of the seeded roll; a different roll seats the
-      # author on his own diff and every mechanical check still reports the property
-      # upheld. That is the WORSE failure: the blank-built_by case fails CLOSED and a
-      # human decides, while this one fails CONFIDENTLY WRONG. It is also the standard
-      # shape of a session-limit handover, which happened FOUR times that day.
-      #
-      # So the SUBMIT is an authorship moment too: `--actor <soul>` on the submit
-      # ADDS that soul to the set. A bare submit names nobody and adds nobody.
+      # The author is not always the claimer: after a session-limit handover, a soul
+      # that never claimed writes the diff. `--actor <soul>` on the submit adds that
+      # soul; a bare submit adds nobody.
       actor = Current.task_event_actor.to_s.strip
       authors |= [actor] if self.class.soul?(actor)
     end
 
-    # THE THIRD AUTHORSHIP MOMENT — the REVIEWER FIX-FORWARD (a "zap"), which is
-    # neither of the two above. Both branches key on an act the AUTHOR performs on
-    # his own task: the claim, or the submit. A reviewer who fixes forward performs
-    # neither — he pushes a commit onto someone else's PR branch — so the author set
-    # never grew, while the merged diff plainly carried his work.
-    #
-    # It is folded here rather than in its own callback so it takes the SAME
-    # append-only, server-owned guarantees as every other author: `fix_forward` names
-    # who to ADD and can never shrink the set, and #enforce_builder_stamp keeps it
-    # out of `built_by` for free (only `soul` reaches that field).
-    #
-    # UNCONDITIONAL — not keyed on a transition. The two branches above are keyed on
-    # a save (a claim, a submit) because they read an ACTOR, which only that save
-    # carries. This reads a RECORDED LIST, which is the same fact on every later
-    # save, so re-folding it is idempotent and a task cannot lose its zap author to
-    # an unrelated write. Entries that name no soul are deliberately dropped here and
-    # read by ReviewerSelector instead — see #devops_fix_forward.
+    # The third moment: a reviewer's fix-forward. Folded here for the same
+    # append-only, server-owned guarantees, and kept out of `built_by`. Unconditional:
+    # it reads a recorded list, so re-folding is idempotent. Non-soul entries are
+    # read by ReviewerSelector instead (#devops_fix_forward).
     authors | fix_forward_authors
   end
 
-  # The souls named by `devops.fix_forward`, current save and prior record unioned.
-  # Both halves are needed: the current one so the write that RECORDS a zap stamps on
-  # that same save, the prior one so a later write that posts no `fix_forward` key
-  # cannot drop an author already on record.
+  # Souls named by `devops.fix_forward`, this save and the prior record unioned, so
+  # the recording write stamps and a later write cannot drop one.
   def fix_forward_authors
     current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
     (Array(current["fix_forward"]) + Array(prior_devops["fix_forward"]))
       .map { |slug| slug.to_s.strip }.select { |slug| self.class.soul?(slug) }.uniq
   end
 
-  # True when THIS save hands the build off — the task LANDS on `submitted`. Keyed on
-  # the transition, not on sitting there: the later writes a submitted task takes
-  # (`--checks`, a pr_url stamp, the review's own moves) are not authorship moments,
-  # and treating them as such would let any passing session stamp a handoff.
+  # True when this save lands the task on `submitted`. Keyed on the transition:
+  # later writes to a submitted task are not authorship moments.
   def submit_save?
     stage == "submitted" && will_save_change_to_stage?
   end
 
-  # True when THIS save is a build claim: the task lands (or sits) on `building`
-  # and the save either moves it there or is a PATCH naming `stage: building`
-  # (Current.task_build_claim) — the two shapes `bin/task move <slug> building`
-  # takes, whether or not the stage changes. There is no lease to rewrite any more:
-  # the desk is the build claim (bin/lib/desk_claim.rb).
-  # A block! lands on `building` too but is NOT a build claim: the blocker is not
-  # the builder (detected by blocked_at being set in this same save).
-  #
-  # Neither is the AUTOMATIC write from the session that is REVIEWING this task
-  # (#reviewing_party_renewal?). The block itself was always exempt; the writes that
-  # FOLLOW it were not, and one of them is automatic — see that method.
+  # True when this save is a build claim: the task lands or sits on `building` and
+  # the save moves it there or names `stage: building` (Current.task_build_claim),
+  # the two shapes of `bin/task move <slug> building`. The desk is the build claim
+  # (bin/lib/desk_claim.rb). Not a claim: a block! (blocked_at landing in this
+  # save) or the reviewing session's unnamed write (#reviewing_party_renewal?).
   def build_claim_save?
     return false unless stage == "building"
     return false if will_save_change_to_blocked_at? && blocked_at.present?
@@ -3346,107 +2112,32 @@ class Task < ApplicationRecord
     Current.task_build_claim ? true : false
   end
 
-  # The reviewing session's write that CLAIMS NOTHING — the only one this seam may
-  # swallow.
-  #
-  # #reviewing_party_claim? on its own was too wide. It answers "is this write from
-  # the session reviewing this task", and suppressing on that alone also swallowed a
-  # write that NAMES A SOUL — which is never the automatic heartbeat (that PATCH
-  # carries a `devops` slice and no `event` at all, so Current.task_event_actor is
-  # nil) and always a deliberate `bin/task move <slug> building --actor <soul>`.
-  #
-  # THAT WRITE IS ON THE DOCUMENTED PATH, and dropping it was silent. TWO sites
-  # prescribe exactly that command to a REVIEWER holding this task's review claim, to
-  # repair a wrong or missing author stamp: `bin/reviewer-select` (:446, the durable
-  # fix under its refusal) and pr-review-sop.md (:137). He runs it while holding the
-  # claim because that is the moment he is looking at the refusal, so the repair
-  # no-op'd at exit 0 and the next round refused again.
-  #
-  # A THIRD site prints the same remedy and was never on this path:
-  # bin/lib/review_claim_cli.rb (:690) reports it on a REFUSED claim — TaskReviewClaim
-  # .acquire returns :self_review (task_review_claim.rb:49) BEFORE the row lock, so
-  # that caller holds no claim at all and the pre-fix suppression never applied to him.
-  #
-  # So the rule is stated over the WRITE, not the writer: a claim that names a soul
-  # is an assertion of authorship and is recorded; one that names nobody is a
-  # liveness ping and is not. The reviewer who names HIMSELF is still recorded — as
-  # an AUTHOR only, never as built_by (see #reviewer_taking_the_build?).
+  # The reviewing session's write that names no soul: a liveness ping, swallowed.
+  # A write naming a soul is an assertion of authorship and is recorded, which
+  # keeps the documented `bin/task move <slug> building --actor <soul>` repair
+  # working for a reviewer holding the claim. A reviewer naming himself is
+  # recorded as an author only (#reviewer_taking_the_build?).
   def reviewing_party_renewal?
     return false if self.class.soul?(Current.task_event_actor.to_s.strip)
 
     reviewing_party_claim?
   end
 
-  # THE SEAM BETWEEN A REVIEW WRITE AND A BUILD WRITE — true when the session
-  # named in the INCOMING claim is the one holding this task's LIVE REVIEW claim.
-  #
-  # Nothing used to distinguish the two. A build claim is an assertion of
-  # authorship (`bin/task move <slug> building`); a lease renewal is a liveness
-  # ping. Both arrive as one shape — a devops PATCH that rewrites ClaimLease's
-  # keys — so the old lease-rewrite test read them identically, and any session whose
-  # status line happened to be pointed at a `building` task became a recorded
-  # (unnamed) worker on it.
-  #
-  # That is not hypothetical. `bin/task block <slug> --kind rework` lands the task
-  # back on `building` and repoints the BLOCKING session's feature marker at it, so
-  # bin/statusline fires that session's build-claim heartbeat seconds later. The
-  # claim keys were stripped at `submitted`, so the
-  # heartbeat adopted the free lease, the write named no soul, and #builder_roll_call
-  # stamped `devops.builders_unattributed` with the REVIEWER's session id. The author
-  # set then reads INCOMPLETE and `bin/reviewer-select` refuses the next round —
-  # measured 2026-09-04 on four bounced tasks in one sitting, each needing a
-  # hand-passed `--builder <soul>`. And a hand-pass is not a property: reviewers
-  # who learn to pass it reflexively are exactly how a REAL incomplete author set
-  # gets waved through.
-  #
-  # The board already recorded who is reviewing — TaskReviewClaim, the per-task
-  # review lease every review path takes (`bin/task review-claim acquire` and the
-  # server-side `claim_next_review` pop both funnel through .acquire). It was simply
-  # never consulted when deciding who BUILT. It is a safe answer to ask: .acquire
-  # refuses a review claim by anyone in the author set (.self_review?), so a live
-  # review holder is by construction not an author of this task.
-  #
-  # The CLI half of this fix (bin/task's #heartbeat_may_claim?) stops the renewal
-  # from being sent at all. This half is what makes it a PROPERTY of the board
-  # rather than of one script: a hand-run PATCH, another client, or a future caller
-  # reaching the API directly is judged the same way.
-  #
-  # Suppressing the whole claim — not merely the unattributed branch — is
-  # deliberate for the write this covers. #builder_to_stamp rule 1 re-points
-  # `built_by` to an explicit soul actor, so a reviewer write carrying `--agent carl`
-  # would otherwise record CARL as the builder of a PR he reviewed: the same defect
-  # fully inverted, and a confidently-wrong author set is worse than a refusing one.
-  # That re-point is now blocked at its OWN seam (#reviewer_taking_the_build?), which
-  # is what let this one narrow to the UNNAMED write (#reviewing_party_renewal?) and
-  # stop swallowing the documented `move building --actor <soul>` repair.
-  #
-  # Any lookup failure (no table yet, DB trouble) answers false — the pre-existing
-  # behaviour, which fails CLOSED for review selection.
-  #
-  # Deliberately NOT memoized: one Task instance is saved many times over its life
-  # (a move, then a notes update, then a renewal), a review claim is acquired and
-  # released between them, and a memo taken on the first save would answer for
-  # writes that happen minutes later. One indexed read (task_slug is unique) per
-  # save of a `building` task is the cheaper mistake.
+  # True when the session in the incoming claim holds this task's live review
+  # claim (TaskReviewClaim). A build claim and a lease renewal arrive in one shape,
+  # so this is the seam between them; it keeps a bounced task's reviewer from
+  # becoming a recorded worker. Safe to ask: .acquire refuses a review claim by
+  # any author (.self_review?). bin/task's #heartbeat_may_claim? stops the renewal
+  # client-side; this makes it a property of the board. A lookup failure answers
+  # false. Not memoized: claims come and go between saves of one instance.
   def reviewing_party_claim?
     live_reviewing_party_claim.present?
   end
 
-  # The task's live TaskReviewClaim WHEN the session named in the INCOMING claim is
-  # the one holding it — nil otherwise, and nil on any lookup failure (fails CLOSED
-  # for review selection, the pre-existing posture). The ROW, not a boolean, because
-  # #reviewer_taking_the_build? needs the holder's soul off it.
-  #
-  # Not memoized, for the reason stated above: a review claim is acquired and released
-  # between the many saves one Task instance takes. At most TWO indexed reads
-  # (task_slug is unique) per save of a `building` task, and usually one: a soul ACTOR
-  # short-circuits #reviewing_party_renewal? before it reads at all, and a renewal that
-  # answers TRUE stops the save being a build claim, so #reviewer_taking_the_build? is
-  # then handed nil and returns before reading. The path that pays twice is the
-  # ordinary BARE claim from a session holding no review — a non-soul actor makes read
-  # 1, then #builder_to_stamp resolves a soul from the persona or agent_slug and this
-  # method makes read 2. Perf-trivial on a unique index; stated because a comment that
-  # says "never" is a thing the next caller builds on.
+  # The live TaskReviewClaim when the incoming claim's session holds it, else nil
+  # (nil on lookup failure too). The row, because #reviewer_taking_the_build? reads
+  # its holder. Not memoized, for the reason above; at most two indexed reads per
+  # save of a `building` task.
   def live_reviewing_party_claim
     session = claiming_session.to_s.strip
     return nil if session.empty?
@@ -3461,66 +2152,14 @@ class Task < ApplicationRecord
     nil
   end
 
-  # True when this task's live REVIEW claim cannot CLEAR the soul this save names as
-  # the builder — so devops.built_by must not move to him.
-  #
-  # THREE STATES, not two. The claim is read for its HOLDER, and the answer differs by
-  # what that holder says:
-  #
-  #   no live claim from this session  -> false. An ordinary handoff. Re-point freely;
-  #                                              this seam has nothing to say about it.
-  #   the holder IS this soul          -> true.  A reviewer taking the build of the PR
-  #                                              he is reviewing.
-  #   the claim names NOBODY           -> true.  Blank, OR a value on no roster — a
-  #   (blank or off-roster)                      typo'd --agent names nobody just
-  #                                              as a blank one does, so it cannot
-  #                                              say he is NOT that reviewer,
-  #                                              and guessing costs the author already
-  #                                              on record.
-  #
-  # THE NAMELESS CLAIM IS NOT A CORNER — it is a designed state, reachable at every
-  # door. `--agent` is optional on `bin/task review-claim acquire` AND on the
-  # server-side `claim_next_review` pop (bin/lib/review_claim_cli.rb:185-187 says so
-  # outright), the CLI's own hint prints the acquire without it, and TaskReviewClaim
-  # stores `reviewer.to_s.strip.presence` with no Task.soul? check. A guard that asked
-  # only "does the holder's NAME match?" read that blank as "not the reviewer" and
-  # stamped him — the inversion this method exists to stop, arrived at by the ordinary
-  # path. Measured both ways on a throwaway tree: on the pre-fix shape a nameless claim
-  # gave built_by="carl" where the record held "shannon". This is the same hole the
-  # paragraph below notes in TaskReviewClaim.self_review? — that field is where BOTH
-  # live, which is exactly why a name match alone was never enough to lean on.
-  #
-  # FAILING CLOSED HERE COSTS THE RECORD NOTHING. `named` still joins the author set —
-  # #builder_roll_call folds it into devops.builders whatever this method answers — and
-  # ReviewerSelector#builder_known? is asked over that SET, not over built_by. So the
-  # documented `move building --actor <soul>` repair still clears the refusal it was
-  # printed for, and the soul is still excluded from the seats on this task. The one
-  # thing withheld is the RE-POINT, the half that could name a reviewer as the author
-  # of a diff he only read.
-  #
-  # Do NOT widen it to "any named claim while a review is live". That suppresses the
-  # ordinary handoff too, and it is the mutation that goes 26 red.
-  #
-  # It is narrow by construction: the same SESSION must hold the review claim and
-  # claim the build inside ClaimLease::DEFAULT_TTL_SECONDS, which the SOP forbids
-  # outright (reviewers release on the verdict). But narrow is not impossible, and the
-  # previous shape handled it the one way that must never happen — the whole claim was
-  # dropped, so the session was recorded NEITHER as a builder NOR as an unattributed
-  # one, the author set came out confidently short, and nothing anywhere said so.
-  #
-  # It is RECORDED instead: as an AUTHOR (#builder_roll_call folds `named` into
-  # devops.builders) and never as devops.built_by. That direction is the safe one — an
-  # author over-counted is an author over-EXCLUDED, and Carl yields even the standing
-  # primary seat to the no-self-review rule, so the worst outcome is a pool too small
-  # to seat, which refuses loudly, rather than a soul silently seated on his own diff.
-  # TaskReviewClaim.self_review? cannot be leaned on to prevent any of this: it answers
-  # false on a blank reviewer slug or an unstamped task, which is exactly where the
-  # author set is empty.
-  #
-  # The warning is the other half of "recorded or REFUSED LOUDLY". The board record is
-  # what a human reads; this is what the log carries when someone asks why built_by did
-  # not move — and on the nameless lane it is the ONLY signal there is, so it says
-  # which of the two states it is and how to leave that state.
+  # True when the live review claim cannot clear the soul this save names as
+  # builder, so built_by must not move to it:
+  #   no live claim from this session      → false (an ordinary handoff)
+  #   the holder is this soul              → true  (a reviewer taking the build)
+  #   nameless or off-roster claim holder  → true  (it cannot rule him out)
+  # `--agent` is optional on every acquire, so the nameless claim is a designed
+  # state. `named` still joins devops.builders. Never widen this to any named
+  # claim during a review; that blocks ordinary handoffs.
   def reviewer_taking_the_build?(named)
     return false unless self.class.soul?(named)
 
@@ -3548,10 +2187,8 @@ class Task < ApplicationRecord
     true
   end
 
-  # The session making THIS build claim: the claiming PATCH's event session (bin/task
-  # sends it on every `move building` and `begin` claim), else the event actor when
-  # that is a session id rather than a soul or an operator email (an older CLI's
-  # bare move). nil when the write names no session.
+  # The session making this build claim: the PATCH's event session, else an actor
+  # that is a session id (not a soul or an email). nil when none is named.
   def claiming_session
     session = Current.task_event_session.to_s.strip
     return session if session.present?
@@ -3562,111 +2199,42 @@ class Task < ApplicationRecord
     actor
   end
 
-  # The soul to record as the builder, or nil to leave built_by as-is. Precedence:
-  #   1. The build-claim actor (Current.task_event_actor) when it's a soul SLUG —
-  #      an explicit `--actor <soul>` move (or a web action by a soul). This always
-  #      wins, so a rework re-claim by a different soul RE-POINTS built_by.
-  #   2. else KEEP an existing built_by — a no-actor / non-soul re-claim never
-  #      clobbers a recorded builder (only an explicit --actor re-points it).
-  #   3. else the task's PERSONA (devops.persona) when it's a soul SLUG — a session
-  #      "acting as" a soul, whose face the card already paints as the one working
-  #      this task (see #sync_persona_identity). If the board shows Jasper building
-  #      it, Jasper is the builder.
-  #   4. else the task's assigned agent_slug when it's a soul SLUG — the automatic,
-  #      no-flag default. A bare `bin/task move <slug> building` defaults the actor
-  #      to the session id (a UUID, not a soul), so rule 1 can't fire; backing the
-  #      stamp with the assigned agent records the builder WITHOUT the operator
-  #      passing a flag every time (the FIX behind reviewer-select-exclude). The
-  #      persona/assignee fills only a BLANK built_by (rule 2 guards re-claims).
-  # nil when none apply (non-soul actor, no existing builder, non-soul/blank
-  # persona and agent_slug) — the builder is then genuinely UNKNOWN, and
-  # ReviewerSelector reports it as such so callers can fail closed rather than
-  # read an empty exclusion list as "nobody to exclude".
-  # Every rule below tests .soul? — the ROSTER, not just SOUL_SLUG's shape. A
-  # typo'd `--actor stefon` is not a soul who could have built anything, and
-  # stamping it named a builder that excluded nobody while reading as known. It now
-  # falls through to the later rules, and if none resolve the builder stays blank —
-  # UNKNOWN, which refuses. An unrecognised soul must never do better than silence.
-  # Whatever resolves is stamped CANONICAL (Task.canonical_soul): a claim made as
-  # a retired alias records the successor, so the alias stays read-only.
+  # The soul to record as builder, or nil to leave built_by as is:
+  #   1. a soul actor (`--actor <soul>`): always wins, so a re-claim re-points;
+  #   2. else keep an existing built_by;
+  #   3. else a soul persona (devops.persona; #sync_persona_identity);
+  #   4. else a soul agent_slug, so a bare `move building` still records one
+  #      (reviewer-select-exclude).
+  # Every rule asks .soul?, the roster, so a typo resolves to nothing; nil means
+  # unknown and ReviewerSelector fails closed. The result is canonical.
   def builder_to_stamp
     actor = Current.task_event_actor.presence
     return self.class.canonical_soul(actor) if actor && self.class.soul?(actor)
-    # Rule 2 consults the STORED builder as well as the incoming one: a client that
-    # posts built_by BLANK — or a raw whole-column `metadata:` write, which is
-    # permitted wholesale and folds through nothing — leaves the incoming value
-    # empty, and reading only that would let the persona/assignee default re-point a
-    # builder already on record. Only an explicit soul actor (rule 1) ever re-points.
+    # Rule 2 reads the stored builder too: a blank post or a raw whole-column write
+    # must not let rules 3 and 4 re-point a recorded builder.
     return nil if devops["built_by"].presence || prior_devops["built_by"].presence
 
     [devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
                                             &.then { |slug| self.class.canonical_soul(slug) }
   end
 
-  # `set_initial_position` (the `before_create` genesis seed above) now comes from
-  # Studio::Board::Rankable — a new task lands at the TOP of its column (zone max +
-  # 100 under the `position DESC` sort, 100-spaced to leave drag gaps). The concern's
-  # implementation is byte-for-byte what Task hand-rolled, so it was removed here.
+  # `set_initial_position` (the before_create seed) comes from
+  # Studio::Board::Rankable: a new task lands at the top of its column.
 
-  # A still-open operator-approval REQUEST is settled once the task lands outside
-  # APPROVAL_REQUEST_STAGES — at `reviewed`, where the work has merged onto
-  # `accepted` and the desk serving the local demo is reclaimable, so the request
-  # points at a page nobody can open and its WAITING APPROVAL treatment (the
-  # card_glow "approval" state and the operator-approval status bar, both keyed off
-  # #waiting_for_operator_approval?) must drop. Settled in before_save, so it rides
-  # the SAME UPDATE as whatever write reached this stage — a rollback can never
-  # strand a half-settled card.
-  #
-  # THE SEAM MOVED FROM `submitted` TO `reviewed` on 2026-09-09. It is the same
-  # rule against a corrected boundary, not a relaxation: see APPROVAL_REQUEST_STAGES
-  # for the three measured discards that forced it and for why `submitted` satisfies
-  # the "something can clear it" invariant. Everything below still holds verbatim —
-  # the shape is still an INVARIANT re-asserted on every save, and all three leaks
-  # the transition shape had are still closed, because `reviewed`, `assembled`,
-  # `shipped` and `archived` all remain outside the list.
-  #
-  # An INVARIANT, not a transition event. It was a transition callback
-  # (`entering_submitted_stage?`, fired only on the one save that moved
-  # building → submitted) until 2026-07-27, and that shape leaked three ways —
-  # all three reproduced against the shipped code, all three now regression-tested
-  # below:
-  #
-  #   1. a LATER wholesale devops echo restores it. `bin/task update --checks`
-  #      PATCHes the entire devops hash, and a hash read before the move still
-  #      carries "waiting"; the stage does not change on that write, so the
-  #      transition callback never fired again.
-  #   2. flagging approval AFTER submitting sticks forever — there was no move
-  #      left to settle it.
-  #   3. neither did any LATER move: reviewed / assembled / shipped were not the
-  #      submitted transition, so a restored request rode all the way to SHIPPED.
-  #      That is what the operator saw: a shipped card still flashing WAITING
-  #      APPROVAL, with nothing left in the pipeline that could clear it.
-  #
-  # So the rule is now stated as a property of the STAGE, re-asserted on every
-  # save: a waiting request may exist only in the stages that can act on it.
-  # APPROVAL_REQUEST_STAGES is an ALLOW-list on purpose — a stage added later
-  # settles by default rather than quietly inheriting a badge nothing clears.
-  # (`blocked` is absent because a block is a `building` attribute — Task#block!
-  # parks the task on building — so a QA-rework demo can re-request approval.)
-  #
-  # Only "waiting" is settled — "changes_requested" and an already-"approved"
-  # grant carry their own meaning into review and are left untouched. We resolve
-  # to "none" (a settled, no-badge status), NOT "approved": the operator never
-  # granted approval, so faking a grant would misreport the acceptance metric.
-  # That reason stands on its own. It is a property of THIS transition — a
-  # state-machine settle must not invent an outcome nobody chose — not a rule
-  # about who may write "approved". Since 2026-08-09 any lane may record a grant
-  # the operator gave in words; this settle still never fabricates one.
-  #
-  # Idempotent by construction: once "none" every later save is a no-op.
+  # Settle a waiting operator-approval request once the task is outside
+  # APPROVAL_REQUEST_STAGES: at `reviewed` the desk serving the demo is
+  # reclaimable, so the card's WAITING APPROVAL treatment must drop. An invariant
+  # re-asserted on every save, not a transition event, so a later devops echo or a
+  # late request cannot ride to `shipped`. Only "waiting" settles, and to "none",
+  # never "approved": a settle must not invent an outcome nobody chose. In
+  # before_save, so it rides the same UPDATE. Idempotent.
   def settle_operator_approval_past_request_window
     return if APPROVAL_REQUEST_STAGES.include?(stage)
     return unless approval_status == OPERATOR_APPROVAL_WAITING
 
     merged = metadata.deep_dup
     settled = (merged["devops"] ||= {})
-    # Capture the request BEFORE it settles: the after_commit note needs who asked,
-    # when, and for which page. See #record_unanswered_approval_request.
+    # Capture the request before it settles, for #record_unanswered_approval_request.
     @settled_approval_request = {
       "requested_by" => settled["approval_requested_by"].to_s.strip.presence || approval_requester_fallback,
       "requested_at" => settled["approval_requested_at"].to_s.strip.presence,
@@ -3674,23 +2242,9 @@ class Task < ApplicationRecord
       "stage" => stage
     }
     settled["approval_status"] = OPERATOR_APPROVAL_NONE
-    # LEAVE A RECEIPT. The settle itself is right, but it used to happen in total
-    # silence, and the silence is what cost the operator loop. Reproduced 2026-09-07:
-    # an agent set --approval waiting at `building`, READ IT BACK as "waiting",
-    # ran bin/ship, and the handoff move cleared it to "none" with nothing said —
-    # so the agent believed it had asked, the board never pulsed, and nobody was
-    # ever asked. `local_url` from the same call survived the move, which is what
-    # made it look like the write had worked.
-    #
-    # This stamp is the durable half of the remedy: every caller that drops a request
-    # (CLI, JSON API, board form) leaves it on the record. Its one COMPARING reader is
-    # bin/task's move warning, which compares it ACROSS the stage PATCH to tell a drop
-    # this move caused from one already sitting here. Since 2026-09-10 `bin/task show
-    # --verbose` also prints it beside approval_status, and the settle posts a note
-    # addressed to the setter (#record_unanswered_approval_request). It is still
-    # absent from the task show page's fields and from the card.
-    # Overwritten on each drop on purpose — the useful fact is the LAST time a
-    # request was discarded, not the first.
+    # Leave a receipt, so a dropped request is never silent. bin/task's move warning
+    # compares it across the stage PATCH to tell a drop this move caused; `bin/task
+    # show --verbose` prints it. Overwritten on each drop: the last one matters.
     settled["approval_request_dropped_at"] = Time.current.iso8601
     self.metadata = merged
   end
@@ -3703,17 +2257,15 @@ class Task < ApplicationRecord
     merged = metadata.deep_dup
     approval = (merged["devops"] ||= {})
     approval["approval_requested_at"] ||= Time.current.iso8601
-    # WHO ASKED. The field existed, but no writer ever filled it — bin/task update
-    # sends no actor — so every request reached review anonymous, and the note the
-    # settle leaves had nobody to address. A caller-supplied value still wins.
+    # Who asked, so the settle's note has someone to address; a caller-supplied value
+    # wins.
     approval["approval_requested_by"] = approval["approval_requested_by"].to_s.strip.presence ||
                                         approval_requester_to_stamp
     self.metadata = merged
   end
 
-  # The soul who opened a request: an explicit soul actor on the write, else the
-  # task's recorded builder (Step 4 of building-sop.md is the BUILDER's step), else
-  # its persona or assignee. nil when none is a known soul — never a guess.
+  # The soul who opened a request: a soul actor, else the recorded builder, else
+  # the persona or assignee. nil when none is a known soul.
   def approval_requester_to_stamp
     actor = Current.task_event_actor.presence
     return actor if actor && self.class.soul?(actor)
@@ -3721,22 +2273,16 @@ class Task < ApplicationRecord
     approval_requester_fallback
   end
 
-  # The fallback WITHOUT the actor. At the settle the actor is whoever MERGED, not
-  # whoever asked, so the settle may only use this half.
+  # Without the actor: at the settle, the actor is whoever merged, not whoever asked.
   def approval_requester_fallback
     [devops["built_by"].to_s, devops["persona"].to_s, agent_slug.to_s].find { |slug| self.class.soul?(slug) }
   end
 
-  # THE SETTLE IS NO LONGER SILENT (surface-waiting-request-at-merge, 2026-09-10).
-  # Mr. McRitchie's decision: review may merge while a request is still `waiting` —
-  # nothing refuses — but the merge must not swallow the question. This leaves one
-  # comment on the task, ADDRESSED to the soul that asked, saying the work merged
-  # with the request unanswered and how the operator can still answer. Answering
-  # stays legal at every stage (`--approval approved|changes_requested`).
-  #
-  # Posted after COMMIT, so the note can only follow a settle that really landed,
-  # and rescued to ErrorLog, so a failed note never rolls back the move. The ivar is
-  # cleared first, so a later save of the same object cannot post it twice.
+  # The settle leaves one note addressed to the soul that asked, saying the work
+  # merged unanswered and how the operator can still answer
+  # (surface-waiting-request-at-merge). Review may merge over a waiting request;
+  # it must not swallow it. After commit and rescued to ErrorLog; the ivar clears
+  # first so one object cannot post twice.
   def record_unanswered_approval_request
     request = @settled_approval_request
     @settled_approval_request = nil
@@ -3753,7 +2299,7 @@ class Task < ApplicationRecord
 
   def self.unanswered_approval_note(slug, request)
     setter = request["requested_by"] || "the soul who asked (no setter on record)"
-    # Archiving settles a request too (Task#archive! has no stage guard), and nothing merged.
+    # Archiving settles a request too, and nothing merged.
     how = request["stage"] == "archived" ? "It was archived" : "Review merged it without waiting (merging never blocks on a request)"
     "To #{setter}: this work reached `#{request["stage"]}` with your operator-approval " \
       "request UNANSWERED. #{how}, so the request settled to none. Requested at " \
@@ -3762,12 +2308,9 @@ class Task < ApplicationRecord
       "bin/task update #{slug} --approval approved, or --approval changes_requested."
   end
 
-  # The durable close of the operator-acceptance approval window — stamped the
-  # moment approval flips to "approved", mirroring stamp_operator_approval_request's
-  # open. Still a real release/operator metric (the /deployments approval chip reads
-  # it); it just no longer projects as a task testing phase since VERSION 2.
-  # Runs in before_save so it stamps onto the metadata the controller has already
-  # folded — server-owned, with no client write left that could land after it.
+  # Stamp approval_approved_at when approval flips to "approved", the close of the
+  # window stamp_operator_approval_request opens (the /deployments chip reads it).
+  # before_save, so it lands on the already-folded metadata.
   def stamp_operator_approval_approved
     return unless will_save_change_to_metadata?
     return unless devops["approval_status"] == OPERATOR_APPROVAL_APPROVED
@@ -3779,10 +2322,8 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # True when the just-saved update actually CHANGED the derived approval_status.
-  # Rails' saved_change_to_* only tracks columns, not a scalar nested in the
-  # metadata JSON, so compare the before/after devops.approval_status ourselves.
-  # Gated on saved_change_to_metadata? first so a stage-only save short-circuits.
+  # True when this save changed the derived approval_status. saved_change_to_*
+  # tracks columns, not a JSON scalar, so compare before and after.
   def saved_change_to_approval_status?
     return false unless saved_change_to_metadata?
 
@@ -3802,33 +2343,19 @@ class Task < ApplicationRecord
     DeploymentsBroadcaster.block_change(self)
   end
 
-  # devops.checks_run carries TWO namespaces. The AUTHOR owns the tier tags
-  # ("[unit] bin/rails test ..."), and a checks update REPLACES those — that is the
-  # documented contract. bin/control-check owns the fingerprint-bound control stamp
-  # ("[control@<tree-hash>] ..."), which bin/dor-check grades for the test-only
-  # shape. A write may supersede an evidence LANE only by SUPPLYING evidence for
-  # it; every lane the incoming list does not address is carried forward. The rule
-  # is symmetric (reverse regression 2026-07-20, fast-check-preserves-checks): a
-  # PURE-EVIDENCE write — every incoming line `[lane@fp]` — supplies no author line
-  # and so cannot supersede the author namespace; the tier tags are carried forward
-  # too. (The local cert receipts this rule was written for retired in DevOps v3
-  # phase 2b; the control stamp is the lane that remains.)
-  #
-  # Regression (2026-07-12, hit twice in one session): `bin/task update --checks`
-  # replaced the whole array, so an agent recording its tier-tagged test plan
-  # AFTER certifying silently destroyed its own cert — and dor-check reported
-  # "full-suite: MISSING (never certified for this exact code)" on code it had just
-  # certified green. A gate that lies teaches agents to route around it, and the
-  # fastest way "around" was to hand-write an evidence line, i.e. forge the cert.
-  # This makes the destruction impossible instead of documenting an ordering
-  # workaround. The write rule lives in lib/cert_evidence.rb (shared with the CLI).
+  # devops.checks_run carries two namespaces. The author owns the tier tags
+  # ("[unit] ..."), which a checks update replaces; bin/control-check owns the
+  # "[control@<tree-hash>]" stamp that bin/dor-check grades for test-only. A write
+  # supersedes an evidence lane only by supplying evidence for it, and a
+  # pure-evidence write cannot supersede the author lines
+  # (fast-check-preserves-checks). The rule lives in lib/cert_evidence.rb, shared
+  # with the CLI.
   def preserve_cert_evidence
     return unless will_save_change_to_metadata?
 
     prior = Array((metadata_was || {}).dig("devops", "checks_run"))
     return if prior.empty?
-    # An explicit devops teardown (the whole hash removed) is left alone — this
-    # guard defends the evidence namespace, not the existence of devops.
+    # An explicit devops teardown is left alone; this defends the namespace.
     return unless metadata["devops"].is_a?(Hash)
 
     incoming = Array(metadata.dig("devops", "checks_run"))
@@ -3840,25 +2367,18 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # THE BUILD CLAIM IS THE DESK (devops-v3 piece 4b-i; bin/lib/desk_claim.rb). The
-  # 120s lease it replaced (claimed_session + claim_nonce + claim_expires_at, renewed
-  # by a detached renewer and the status line) is gone. ONE key survives, as an
-  # attribution record rather than a lease: devops.claimed_session names the session
-  # that made the last build claim, which the review-claim seam
-  # (#live_reviewing_party_claim) reads. Nothing expires or renews it.
-  #
-  #   - a BUILD CLAIM save stamps it from #claiming_session;
-  #   - any other save on a `building` task keeps the stored value, so a client
-  #     cannot re-point or erase who claimed (only a claim may);
-  #   - leaving `building` clears it, as the lease's release did.
-  #
-  # RETIRED_LEASE_KEYS are dropped on every save — the one-release tolerance for rows
-  # an older CLI wrote. Readers already treat a missing expiry as unclaimed.
+  # The build claim is the desk (devops-v3 4b-i; bin/lib/desk_claim.rb).
+  # devops.claimed_session survives as attribution, read by
+  # #live_reviewing_party_claim; nothing expires or renews it:
+  #   - a build-claim save stamps it from #claiming_session;
+  #   - any other save on a `building` task keeps the stored value;
+  #   - leaving `building` clears it.
+  # RETIRED_LEASE_KEYS are dropped on every save.
   RETIRED_LEASE_KEYS = %w[claim_nonce claim_expires_at].freeze
 
   def stamp_build_claim_session
     devops = metadata.is_a?(Hash) ? metadata["devops"] : nil
-    # An explicit devops teardown (the whole hash removed) is left alone.
+    # An explicit devops teardown is left alone.
     return unless devops.is_a?(Hash)
 
     updated = devops.except(*RETIRED_LEASE_KEYS)
@@ -3874,17 +2394,15 @@ class Task < ApplicationRecord
     self.metadata = metadata.merge("devops" => updated)
   end
 
-  # The slug is the readable, immutable handle set at creation — it drives the
-  # URL (/tasks/<slug>) and seeds the worktree + branch. Precedence: an explicit
-  # --slug (parameterized), else the (now-terse) title (parameterized +
-  # auto-suffixed), else an opaque task-<hex> last resort. `@custom_slug` records
-  # whether the slug is readable, so the trickle-down only fires for a real handle.
+  # The slug is the readable, immutable handle: it drives /tasks/<slug> and seeds
+  # the worktree and branch. An explicit --slug, else the title (auto-suffixed),
+  # else task-<hex>. `@custom_slug` marks a readable slug for the trickle-down.
   def generate_slug
     explicit = slug.present?
     base = (explicit ? slug : title).to_s.parameterize
     if base.present?
-      # Explicit --slug is left as-is (uniqueness validation surfaces a collision
-      # to the chooser); a title-derived slug auto-suffixes, since short titles repeat.
+      # An explicit --slug stays as is (uniqueness reports a collision); a
+      # title-derived one auto-suffixes.
       self.slug = explicit ? base : unique_slug(base)
       @custom_slug = true
     else
@@ -3904,9 +2422,8 @@ class Task < ApplicationRecord
     candidate
   end
 
-  # Trickle-down: a custom slug seeds worktree_slug + branch (feat/<slug>) when
-  # they aren't given explicitly, so one slug drives the rest. Opaque hex slugs
-  # don't trickle (nothing readable to propagate).
+  # A readable slug seeds worktree_slug and branch (feat/<slug>) when not given; a
+  # hex slug does not.
   def default_devops_handles_from_slug
     return unless @custom_slug
 
@@ -3916,22 +2433,17 @@ class Task < ApplicationRecord
     devops["branch"] = "feat/#{slug}" if devops["branch"].blank?
   end
 
-  # Give every new task a Pokémon mascot — a fun, unique, traitless handle for the
-  # session working it ("Snorlax is building <task>"). Idempotent: an explicit
-  # mascot (the --mascot override) is left alone. Unique among live tasks; the draw
-  # recycles a Pokémon once its task ships or is archived. No-ops gracefully when
-  # the deck isn't seeded (or the table doesn't exist yet) so task creation never
-  # depends on Pokémon being present.
+  # Give the task its session's Pokémon mascot, unique among live tasks. An
+  # explicit --mascot is kept. No-ops when the deck is not seeded.
   def sync_session_mascot
     return unless Pokemon.table_exists?
     self.metadata ||= {}
     devops = (metadata["devops"] ||= {})
-    # A persona (acting as a soul) owns the mascot fields — never overwrite it with
-    # a Pokémon. sync_persona_identity has already stamped the agent's identity.
+    # A persona owns the mascot fields (sync_persona_identity stamped them).
     return if devops["persona"].to_s.strip.present?
     sid = devops["session_id"].to_s
-    # Reassign only when there's no mascot yet, or this session differs from the one
-    # the current mascot belongs to (an agent handoff). A session-less task keeps it.
+    # Redraw only with no mascot yet or on a handoff to a different session; a
+    # session-less task keeps its mascot.
     needs = devops["mascot"].blank? || (sid.present? && devops["mascot_session"].to_s != sid)
     return unless needs
 
@@ -3939,37 +2451,21 @@ class Task < ApplicationRecord
     return unless slug
     devops["mascot"] = slug
     devops["mascot_session"] = sid
-    # Stamp the mascot's signature type color (its least-common type) AND its type
-    # emoji(s) so the status line / context JSON can tint and glyph the ⊙<mascot>
-    # handle without DB access (bin/task and bin/agent-worktree are API clients).
-    # nil/blank when the type colors aren't seeded — the status line then falls
-    # back to its default tint and the 🛠 ⊙ glyphs. A shiny draw is stamped
-    # (server-owned, like color/emoji) and announces itself with a ✨ glyph.
+    # Stamp the signature color, type emoji and shiny flag so bin/statusline and the
+    # context JSON can render the mascot without DB access.
     pokemon = Pokemon.find_by(slug: slug)
     devops["mascot_shiny"] = shiny
     devops["mascot_gender"] = gender
     devops["mascot_color"] = pokemon&.signature_color
     devops["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
-    # A fresh draw starts a fresh line — the new Pokémon hasn't earned any gates.
+    # A fresh draw starts a fresh evolution line.
     devops.delete("mascot_stage")
   end
 
-  # Strip any devops key that shadows a top-level column, on EVERY save. The
-  # normalizer's raise covers the front door (`devops:` params), but two paths walk
-  # around it: `Api::V1::TasksController#task_params` permits `metadata: {}` and
-  # only overrides it when `params[:devops]` is present, so a raw
-  # `{"metadata":{"devops":{"release_slug":"…"}}}` PATCH lands unnormalized; and
-  # rows written BEFORE the retirement already carry the stale value.
-  #
-  # So the rule is enforced twice, deliberately, with different manners:
-  #   • normalize_devops_metadata RAISES — the caller named the wrong home and can
-  #     be told so, which is the whole point of retiring the key loudly.
-  #   • this callback SHEDS in silence — it also runs on saves that never mentioned
-  #     the key (a stage move on a legacy row), and raising there would brick every
-  #     task already carrying the shadow. The value is a fiction either way; the
-  #     invariant is what matters, and this makes the store self-healing.
-  # Net effect: `metadata.devops.release_slug` is unreachable by any path, so the
-  # column is the only place the name can live. Do not "simplify" this to one site.
+  # Strip any devops key that shadows a column, on every save. Two layers on
+  # purpose: normalize_devops_metadata raises at the front door, and this sheds in
+  # silence for paths around it (a raw `metadata:` PATCH, legacy rows), where
+  # raising would brick saves that never named the key. Keep both.
   def shed_column_shadow_keys
     return if metadata.blank?
 
@@ -3979,15 +2475,9 @@ class Task < ApplicationRecord
     DEVOPS_COLUMN_KEYS.each_key { |key| devops.delete(key) }
   end
 
-  # Carry the mascot HANDLE across a client write that dropped it. `mascot` and
-  # `mascot_session` ARE client keys, so the fold now preserves them when a PATCH
-  # simply OMITS them. What still empties them is a name posted BLANK (the fold keys
-  # on the posted names) or a raw whole-column `metadata:` write — and
-  # normalize_devops_metadata already SKIPS blank values, so no client can express
-  # "clear the mascot" through this path anyway. A client that sends a real slug
-  # (the --mascot override) still wins; only silence is undone. Without this a bare
-  # `{"devops":{"worktree_slug":"…"}}` PATCH emptied the mascot, and the next
-  # build-stage save redrew a different Pokémon mid-task.
+  # Carry the mascot handle across a write that blanked it (a blank post or a raw
+  # `metadata:` write), so the next build-stage save does not redraw mid-task. A
+  # real slug (--mascot) still wins.
   def restore_mascot_identity
     return if new_record?
     self.metadata ||= {}
@@ -4000,43 +2490,21 @@ class Task < ApplicationRecord
     end
   end
 
-  # Re-derive the mascot's DISPLAY stamps — shiny, signature color, type emoji(s) —
-  # plus carry its consumed evolution gate forward. These four are server-owned
-  # (deliberately absent from DEVOPS_KEYS) — which is now also what SAVES them from a
-  # v1 devops PATCH, since the fold keys on the posted names INTERSECTED with
-  # DEVOPS_KEYS and so can never drop a name it does not know. What still wipes them
-  # is a client that rebuilds the hash FROM the whitelist — `bin/task`'s
-  # read-modify-write echoes normalize_devops_metadata, which keeps only DEVOPS_KEYS
-  # — or a raw whole-column `metadata:` write, permitted wholesale and folded by
-  # nothing. sync_session_mascot cannot restore them: it runs only
-  # on a build-stage change, and its own `needs` guard short-circuits while `mascot`
-  # (a client key) survives. So they are re-asserted here on EVERY save
-  # — the same shape as sync_app_identity's app_color, which is why app_color never
-  # suffered this. Without it the stamps died on the first bind-task PATCH: the
-  # →designed event snapshot baked the shiny face and every later one baked the
-  # normal sprite, so the board card's second crew slot lost its ✨.
-  #
-  # Shiny is a property of the DRAW, and SessionMascot is that draw's durable home,
-  # so a session-bound task re-derives from it (find_by, never SessionMascot.for —
-  # `for` would CREATE a row and roll a fresh shiny for an unknown session). A
-  # session-less task drew task-locally with nowhere durable to re-read, so its
-  # stamp is carried forward from the pre-save record instead. Non-fatal: a mascot
-  # is decoration, and no task save may die for it.
+  # Re-assert the server-owned mascot stamps (shiny, gender, color, emoji) and the
+  # consumed evolution gate on every save: a whitelist echo or a raw `metadata:`
+  # write drops them, and sync_session_mascot runs only on a build-stage change.
+  # Shiny comes from SessionMascot (find_by, never .for, which would roll a new
+  # one), else the prior record. Non-fatal: a mascot never fails a save.
   def sync_mascot_display
     return unless Pokemon.table_exists?
     self.metadata ||= {}
     devops = (metadata["devops"] ||= {})
-    # A persona (acting as a soul) owns the mascot fields — its name/color/emoji
-    # are an Agent's, not a Pokémon's. sync_persona_identity is authoritative.
+    # A persona owns the mascot fields; sync_persona_identity is authoritative.
     return if devops["persona"].to_s.strip.present?
     return if devops["mascot"].blank?
 
-    # The consumed evolution gate has no derivable source — only the prior record.
-    # Losing it re-opens a spent gate, so a blocked→resubmitted loop evolves twice.
-    # Restored BEFORE evolve_stage_mascot reads it (see the callback order above),
-    # and only for the SAME Pokémon: a handoff redraw deliberately clears the gate
-    # so the new mascot starts a fresh line, and carrying the old one forward would
-    # rob it of its submit evolution.
+    # The consumed gate lives only on the prior record; losing it double-evolves.
+    # Restored only for the same Pokémon: a redraw starts a fresh line.
     if devops["mascot_stage"].nil? && same_mascot_as_prior?(devops) && prior_devops["mascot_stage"]
       devops["mascot_stage"] = prior_devops["mascot_stage"]
     end
@@ -4052,10 +2520,8 @@ class Task < ApplicationRecord
     Rails.logger.warn("[mascot-display] stamp skipped (non-fatal): #{e.class}: #{e.message}")
   end
 
-  # Whether this task's mascot is a shiny draw, cheapest source first: the stamp
-  # already on the record (present unless a client PATCH just wiped it), else the
-  # session's SessionMascot row, else the pre-save record. The SessionMascot read
-  # therefore costs one query only on the saves that follow a wipe.
+  # Shiny, cheapest source first: the stamp on the record, else SessionMascot, else
+  # the prior record.
   def mascot_shiny_source(devops)
     return self.class.shiny_value?(devops["mascot_shiny"]) unless devops["mascot_shiny"].nil?
 
@@ -4068,11 +2534,8 @@ class Task < ApplicationRecord
     same_mascot_as_prior?(devops) && self.class.shiny_value?(prior_devops["mascot_shiny"])
   end
 
-  # The mascot's gender, by the same source order as #mascot_shiny_source: the
-  # stamp on the record, else the session's SessionMascot, else the pre-save
-  # record for the same mascot. KEY presence (not value) decides "stamped",
-  # because nil is a real answer (genderless) that must not re-query every save;
-  # only a client write that dropped the key falls through to the sources.
+  # Gender, in #mascot_shiny_source's order. Key presence decides "stamped", since
+  # nil (genderless) is a real answer.
   def mascot_gender_source(devops)
     return Pokemon.normalize_gender(devops["mascot_gender"]) if devops.key?("mascot_gender")
 
@@ -4085,35 +2548,27 @@ class Task < ApplicationRecord
     same_mascot_as_prior?(devops) ? Pokemon.normalize_gender(prior_devops["mascot_gender"]) : nil
   end
 
-  # The devops hash as it stands in the DB — what a wholesale in-memory replace
-  # has not touched. Empty on create.
+  # The devops hash as stored, untouched by an in-memory replace. Empty on create.
   def prior_devops
     (metadata_was || {})["devops"] || {}
   end
 
-  # Whether this save keeps the mascot the DB already holds. False on create and on
-  # a handoff redraw — the two cases where the prior record describes a DIFFERENT
-  # Pokémon and so must not be carried forward.
+  # Whether this save keeps the stored mascot. False on create and on a redraw,
+  # where the prior record describes a different Pokémon.
   def same_mascot_as_prior?(devops)
     prior = prior_devops["mascot"]
     prior.present? && prior == devops["mascot"]
   end
 
-  # Evolve the TASK's copy of its mascot at a pipeline gate (reviewed/assembled).
-  # Each gate advances the mascot ONE step if it still can — Charmander reviews as
-  # Charmeleon and assembles as Charizard, while Pikachu spends its only step at
-  # REVIEW and arrives at assemble already Raichu. A gate with nowhere left to go is
-  # still consumed, so every line celebrates review and only the lines deep enough
-  # to have more left also celebrate assemble. The SESSION's mascot is untouched:
-  # a session working two tasks keeps its own stable Pokémon while each task's
-  # copy evolves with progress. devops.mascot_stage records the gate consumed, so a blocked→resubmitted
-  # loop never double-evolves; it is not a client (DEVOPS_KEYS) field, so board
-  # updates can't clobber it.
+  # Evolve the task's copy of its mascot one step at a gate (reviewed, assembled),
+  # if it still can; a gate with nowhere to go is still consumed. The session's
+  # mascot is untouched. devops.mascot_stage records the consumed gate, so a
+  # block-and-resubmit loop never double-evolves; it is not a client key.
   def evolve_stage_mascot
     return unless Pokemon.table_exists?
     self.metadata ||= {}
     devops = (metadata["devops"] ||= {})
-    # Personas own the mascot fields (an agent name, not a Pokémon) — never evolve.
+    # A persona never evolves.
     return if devops["persona"].to_s.strip.present?
 
     gate = Task::MASCOT_EVOLUTION_GATES[stage]
@@ -4124,9 +2579,7 @@ class Task < ApplicationRecord
 
     devops["mascot_stage"] = gate
 
-    # Only the branches the mascot's gender allows (Pokemon#evolution_genders): a
-    # female Nidoran evolves to Nidorina, a male one to Nidorino. The gender itself
-    # carries forward unchanged.
+    # Only the branches the mascot's gender allows (Pokemon#evolution_genders).
     evolved = pokemon.evolutions_for(mascot_gender).order(Arel.sql("RANDOM()")).first
     return unless evolved # nowhere to go — the gate is still consumed
 
@@ -4137,13 +2590,9 @@ class Task < ApplicationRecord
     Rails.logger.warn("[mascot-evolution] skipped (non-fatal): #{e.class}: #{e.message}")
   end
 
-  # Persona override: when a task carries devops.persona (an agent slug — "act as
-  # Jasper"), the status-line mascot becomes that SOUL (name + glyph + tint) instead
-  # of the session's Pokémon. Idempotent and re-stamped on every save so it survives
-  # the client's read-modify-write (mascot_color/emoji aren't client keys). An
-  # unknown/blank persona is a no-op, leaving the Pokémon path to run.
-  # Explicit "revert to the session Pokémon" sentinels for devops.persona, so a
-  # mid-task `bin/task update <slug> --persona none` drops the soul. Case-insensitive.
+  # devops.persona (an agent slug, "act as Jasper") makes the mascot that soul
+  # instead of the session's Pokémon, re-stamped on every save. These sentinels
+  # (case-insensitive) clear it: `bin/task update <slug> --persona none`.
   PERSONA_CLEAR = %w[none clear off -].freeze
 
   def sync_persona_identity
@@ -4154,11 +2603,8 @@ class Task < ApplicationRecord
     return if raw.empty?
 
     agent = Agent.find_by(slug: raw.downcase)
-    # Clear (--persona none) OR an unknown soul (a typo): drop the persona AND reset
-    # the mascot so the session's Pokémon is (re)drawn. Niling the mascot first is
-    # required — on a plain update (no stage change) sync_session_mascot's own
-    # before_save guard wouldn't fire, so call it inline to repaint the Pokémon now.
-    # (An unknown soul reverting is the right "your persona didn't take" feedback.)
+    # A clear or an unknown soul drops the persona and redraws the session's Pokémon
+    # inline, since sync_session_mascot's callback fires only on a stage change.
     if PERSONA_CLEAR.include?(raw.downcase) || agent.nil?
       devops.delete("persona")
       devops["mascot"] = nil
@@ -4177,20 +2623,14 @@ class Task < ApplicationRecord
     devops["mascot_emoji"] = agent.emoji
   end
 
-  # Stamp the app's status-line tint from its first repository, so bin/statusline
-  # can color the app slug without DB access (it and bin/agent-worktree are API
-  # clients). app_color is server-owned (not a DEVOPS_KEY), so it's re-derived each
-  # save — never lost to the client's read-modify-write. No-ops when the apps table
-  # isn't present or the repo has no App row (the slug then renders in the default tint).
+  # Stamp devops.app_color from the first repository's App, so bin/statusline can
+  # tint the app slug without DB access. Server-owned and re-derived each save.
   def sync_app_identity
     return unless App.table_exists?
     self.metadata ||= {}
     devops = (metadata["devops"] ||= {})
-    # FIRST repo, deliberately: this paints the status line's app TINT, and a tint is
-    # singular by nature. It is the one `.first` in the multi-repo family that is
-    # cosmetic — the gates read the whole list (bin/dor-check grades a cert per repo),
-    # coverage reads `release_pr_urls` per repo, and `release_repo` is separately
-    # fenced by `release_repos`. Worst case here is repo #1's color.
+    # The first repo on purpose: a tint is singular. Every gate and coverage check
+    # reads the whole list.
     app_slug = self.class.normalize_devops_list(devops["repositories"]).first
     return if app_slug.blank?
 
@@ -4198,14 +2638,9 @@ class Task < ApplicationRecord
     devops["app_color"] = app&.color
   end
 
-  # The Pokémon for a session: ADOPT the session's stable mascot (SessionMascot —
-  # drawn eagerly at session start so the status line shows it in seconds, OR
-  # drawn here on first task when the hook hasn't run). SessionMascot itself reuses
-  # a live peer task's mascot, so every task an agent builds shares its handle.
-  # With no session, draw a one-off so the task isn't mascot-less.
-  # [slug, shiny, gender] for this task's mascot: the session's stable draw (slug,
-  # shiny roll AND gender roll) when a session exists, else a fresh task-local draw
-  # with its own rolls. [nil, false, nil] when nothing can be drawn.
+  # [slug, shiny, gender] for this task's mascot: the session's stable draw
+  # (SessionMascot), else a fresh task-local draw. [nil, false, nil] when nothing
+  # can be drawn.
   def session_mascot_draw(sid)
     if sid.present? && (session_mascot = SessionMascot.for(sid))
       return [session_mascot.mascot_slug, session_mascot.shiny?, session_mascot.gender]
@@ -4219,19 +2654,14 @@ class Task < ApplicationRecord
     text.to_s.split(/\s+/).reject(&:blank?).size
   end
 
-  # True on create (acceptance newly set) and on any update that actually changes
-  # the acceptance list — so untouched existing tasks (and updates to other devops
-  # fields) stay grandfathered. Both sides are normalized before comparing, so a
-  # task whose stored acceptance isn't already in normalized form (e.g. a direct
-  # Task.create! with dupes/embedded newlines) isn't falsely re-validated on an
-  # unrelated devops update.
+  # True when the normalized acceptance list differs from the stored one, so
+  # untouched tasks and other devops updates are not re-validated.
   def acceptance_changed?
     previous = self.class.normalize_devops_list((metadata_was || {}).dig("devops", "acceptance"))
     previous != devops_acceptance
   end
 
-  # Keep titles tight (3-5 words) so they read at a glance and slugify cleanly —
-  # detail belongs in agent_context, not the title.
+  # Titles stay 3-5 words; detail belongs in agent_context.
   def title_within_word_range
     count = word_count(title)
     return if TITLE_WORD_RANGE.cover?(count)
@@ -4240,20 +2670,9 @@ class Task < ApplicationRecord
                        "(was #{count}) — name it tightly; put detail in agent_context")
   end
 
-  # Coerce whatever a writer posted into the shape Release::Ordering reads: a flat
-  # list of task-slug STRINGS.
-  #
-  # WHY COERCION IS NOT OPTIONAL HERE. `Release::Ordering.producer_first` reaches
-  # the field as `Array(task.dependencies)`, and `Array()` is silently generous
-  # about the wrong shapes rather than loud: a Hash becomes `[[k, v]]`, so every
-  # "dependency" is a two-element array that `by_slug.key?` can never match and
-  # the edge simply never fires. A single bare String becomes `["that-slug"]` and
-  # DOES work, which is worse — the writer learns the wrong lesson from a shape
-  # that happens to survive. Both are normalized here, at the one door every
-  # writer passes through, so the reader only ever sees the one shape.
-  #
-  # Order is PRESERVED (it is the operator's stated sequence, and a stable
-  # topological sort reads it) while duplicates and blanks are dropped.
+  # Coerce `dependencies` into the flat list of slug strings Release::Ordering
+  # reads; `Array()` would turn a Hash into pairs that never match. Order is kept
+  # (the operator's sequence); duplicates and blanks drop.
   def normalize_dependencies
     raw = dependencies
     list =
@@ -4266,29 +2685,14 @@ class Task < ApplicationRecord
     self.dependencies = list.flatten.map { |entry| entry.to_s.strip }.reject(&:empty?).uniq
   end
 
-  # Canonicalize the epic handle at the one door every writer passes through
-  # (see Task.normalize_epic_slug). Runs on every save so an API `"none"`, a
-  # padded or upper-cased value, and an empty string all land as the same stored
-  # fact — nil or a lowercase slug — which is what lets the board filter compare
-  # the column directly.
+  # Canonicalize the epic handle on every save (Task.normalize_epic_slug).
   def normalize_epic_slug
     self.epic_slug = self.class.normalize_epic_slug(epic_slug)
   end
 
-  # Every declared dependency must name a REAL, DIFFERENT task.
-  #
-  # An unknown slug is not a harmless typo — it is a write that reaches nothing
-  # and says so nowhere. `producer_first` skips a dependency it cannot find on
-  # purpose (`!by_slug.key?(dep)`), because a dependency outside the release must
-  # not hold a member back; that same clause makes `depends-on: typo-slug`
-  # indistinguishable from "no dependency at all", forever and silently. The
-  # ordering it was declared to enforce simply does not happen, and the operator's
-  # only evidence is a release that shipped in the wrong order.
-  #
-  # A SELF-reference is refused for a related reason: it can never be satisfied
-  # (a task is placed only after its dependencies are), so the pass falls through
-  # to its `index ||= 0` cycle-breaker and takes the head anyway. The declaration
-  # is discarded by a safety valve rather than honored — again, silently.
+  # Every dependency must name a real, different task. Release::Ordering skips an
+  # unknown slug and breaks a self-reference as a cycle, both silently, so the
+  # write is refused instead.
   def dependencies_name_real_tasks
     entries = Array(dependencies)
     return if entries.empty?
@@ -4314,7 +2718,7 @@ class Task < ApplicationRecord
                               "so the sequencing you declared would never happen")
   end
 
-  # Each acceptance bullet stays a readable 5-12 words so the human can follow the story.
+  # Each acceptance bullet stays 5-12 words.
   def acceptance_bullets_within_word_range
     devops_acceptance.each_with_index do |bullet, i|
       count = word_count(bullet)

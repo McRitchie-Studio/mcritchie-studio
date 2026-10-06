@@ -195,8 +195,10 @@ fresh machine mid-bootstrap, which has no `.env` yet. The minted bearer token is
 
 ## Install — hook snippets
 
-The hook command must point at the **primary checkout** (`bin/atomic-capture-hook`),
-not a worktree, so it survives worktree cleanup. Add to `~/.claude/settings.json`:
+The hook command names the **fixed-path tooling** (`/Users/alex/projects/.agents/bin`,
+see [`../modules/fast-lane.md`](../modules/fast-lane.md)), never a checkout: a
+worktree is cleaned up, and a `git checkout` in the hub primary hides a script for
+the length of the checkout. Add to `~/.claude/settings.json`:
 
 ```jsonc
 {
@@ -206,7 +208,7 @@ not a worktree, so it survives worktree cleanup. Add to `~/.claude/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/atomic-capture-hook",
+            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/.agents/bin/atomic-capture-hook",
             "timeout": 5
           }
         ]
@@ -242,7 +244,7 @@ This SUPERSEDES manual narration: `bin/agent-activity start/next` become OVERRID
 (merge/split/annotate a derived span by hand). **To revert to fully-manual narration,
 remove this PreToolUse block** — the whole auto-lifecycle is that one wiring switch.
 
-Add to `~/.claude/settings.json` (command points at the **primary checkout**):
+Add to `~/.claude/settings.json` (command at the fixed path, as above):
 
 ```jsonc
 {
@@ -252,7 +254,7 @@ Add to `~/.claude/settings.json` (command points at the **primary checkout**):
         "hooks": [
           {
             "type": "command",
-            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/atomic-capture-hook",
+            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/.agents/bin/atomic-capture-hook",
             "timeout": 5
           }
         ]
@@ -263,8 +265,9 @@ Add to `~/.claude/settings.json` (command points at the **primary checkout**):
 ```
 
 > **Do not hand-edit the operator's global `~/.claude/settings.json` from a build
-> session.** `bin/install-agent-docs` wires this hook idempotently (pointing at
-> `$RUNTIME_ROOT/bin/atomic-capture-hook`, pruning stale entries) the
+> session.** `bin/install-agent-docs` wires this hook idempotently (at the fixed
+> path, with the hub primary's `bin/` as the fallback until the first ship installs
+> the tooling, pruning every other copy) the
 > same way it wires the status line and SessionStart mascot hook. **Nobody
 > hand-runs that installer** — the wiring lands on the next production ship, via
 > the owned `sync_agent_docs` step of `bin/release ship`. See
@@ -279,7 +282,7 @@ in `~/.codex/hooks.json` as a user fallback:
 
 [[hooks.PostToolUse.hooks]]
 type = "command"
-command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/atomic-capture-hook"
+command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/.agents/bin/atomic-capture-hook"
 timeout = 5
 statusMessage = "Capturing action"
 ```
@@ -300,8 +303,7 @@ and exit 0, both without acting. That refusal is deliberate — `close-open --he
 used to close every open activity and delete three session markers — and it is
 invisible to this hook, whose command line carries no flags.
 
-Add to `~/.claude/settings.json` (command points at the **primary checkout** so it
-survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason —
+Add to `~/.claude/settings.json` (command at the fixed path, as above; **no `matcher`** ⇒ it fires for every end reason —
 `clear`, `resume`, `logout`, `prompt_input_exit`, `bypass_permissions_disabled`,
 `other`):
 
@@ -313,7 +315,7 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
         "hooks": [
           {
             "type": "command",
-            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/agent-activity close-open",
+            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/.agents/bin/agent-activity close-open",
             "timeout": 5
           }
         ]
@@ -325,8 +327,7 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
 
 > **Same rule — do not hand-edit the operator's global settings from a build
 > session.** `bin/install-agent-docs` wires this SessionEnd hook idempotently
-> (pointing at `$RUNTIME_ROOT/bin/agent-activity close-open`, pruning stale
-> entries) the same way it wires the PostToolUse capture hook. **Nobody hand-runs
+> (at the fixed path, pruning every other copy) the same way it wires the PostToolUse capture hook. **Nobody hand-runs
 > that installer** — the wiring lands on the next production ship, via the owned
 > `sync_agent_docs` step of `bin/release ship`. See
 > [`../modules/docs-maintenance.md`](../modules/docs-maintenance.md)
@@ -339,7 +340,7 @@ Codex uses `Stop` for the same teardown:
 
 [[hooks.Stop.hooks]]
 type = "command"
-command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/agent-activity close-open"
+command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/.agents/bin/agent-activity close-open"
 timeout = 5
 ```
 
@@ -468,9 +469,9 @@ and fits the dreams into what is left, degrading on purpose. Procedure:
 
 **Wiring — `bin/install-agent-docs` owns it.** As of the *wire-bank-to-session-bridge*
 task the installer registers this hook idempotently, exactly like the capture +
-SessionEnd hooks: it points the command at `$RUNTIME_ROOT/bin/session-insights`
-(survives worktree cleanup), prunes stale `/.worktrees/.../bin/session-insights`
-copies, appends only when absent, and bakes `ATOMIC_CAPTURE_URL` (default
+SessionEnd hooks: it points the command at the fixed path
+(`/Users/alex/projects/.agents/bin/session-insights`), prunes every other
+`session-insights` copy, appends only when absent, and bakes `ATOMIC_CAPTURE_URL` (default
 `https://mcritchie.studio`, overridable via `AGENT_INSIGHTS_BOARD_URL`) so the
 injected lessons are the curated **prod** bank. The wired Claude `settings.json`
 entry:
@@ -478,7 +479,7 @@ entry:
 ```json
 { "hooks": { "SessionStart": [ { "hooks": [
   { "type": "command", "timeout": 15, "statusMessage": "Loading insights…",
-    "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/session-insights" }
+    "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/.agents/bin/session-insights" }
 ] } ] } }
 ```
 

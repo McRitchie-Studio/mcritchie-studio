@@ -10,6 +10,9 @@
 #   bin/ lib/ config/ + the pure app/models/{release,devops} the scripts load
 #                               -> $PROJECTS_DIR/.agents/tooling/<sha>/   (fast-lane tooling)
 #                               -> $PROJECTS_DIR/.agents/bin              (symlink, atomically swapped)
+#   managed hooks + status line -> $HOME/.claude/settings.json, /etc/codex/requirements.toml
+#                                  or $HOME/.codex/hooks.json, each command at $PROJECTS_DIR/.agents/bin
+#   git credential helper       -> $HOME/.gitconfig credential.https://github.com.helper, same bin/
 #
 # Claude Code auto-loads CLAUDE.md (and its @imports) but NOT AGENTS.md, so both
 # files are required to give every agent the same operating model. This keeps the
@@ -24,14 +27,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The projects root comes from the shared resolver (bin/lib/projects_root.rb), which
+# climbs out of a desk and out of the fixed-path tooling tree alike.
 default_projects_dir() {
-  local candidate
-  candidate="$(cd "$ROOT/.." && pwd)"
-  if [ "$(basename "$candidate")" = ".worktrees" ]; then
-    cd "$candidate/../.." && pwd
-  else
-    printf '%s\n' "$candidate"
-  fi
+  ruby "$ROOT/bin/lib/projects_root.rb" "${BASH_SOURCE[0]}"
 }
 runtime_root() {
   case "$ROOT" in
@@ -231,6 +230,25 @@ TOOLING_KEEP=3
 
 tooling_sha() {
   git -C "$ROOT" rev-parse --verify --quiet HEAD 2>/dev/null
+}
+
+# Is the fixed path installed and intact: the link, a runnable script behind it, and
+# the tree's `.complete` marker. One predicate for the check report and for the bin/
+# the hooks name.
+fast_lane_tooling_installed() {
+  [ -L "$TOOLING_LINK" ] && [ -x "$TOOLING_LINK/ship" ] && [ -f "$TOOLING_LINK/../.complete" ]
+}
+
+# The bin/ every managed hook, the status line and the git credential helper name:
+# the fixed path when it is installed, because no checkout can move it; the hub
+# primary's bin/ only until the first ship installs it. Read AFTER
+# install_fast_lane_tooling has run, so a first install wires the tree it just laid.
+hook_bin_dir() {
+  if fast_lane_tooling_installed; then
+    printf '%s\n' "$TOOLING_LINK"
+  else
+    printf '%s\n' "$RUNTIME_ROOT/bin"
+  fi
 }
 
 # ── SCRIPTS THAT CANNOT RUN FROM THE TOOLING TREE ─────────────────────────────
@@ -433,7 +451,7 @@ prune_fast_lane_tooling() {
 # builder can fix. The gate that BLOCKS is in CI — test/commands/install_fast_lane_tooling_test.rb.
 check_fast_lane_tooling() {
   local target unrunnable
-  if [ -L "$TOOLING_LINK" ] && [ -x "$TOOLING_LINK/ship" ] && [ -f "$TOOLING_LINK/../.complete" ]; then
+  if fast_lane_tooling_installed; then
     target="$(readlink "$TOOLING_LINK")"
     echo "OK: $TOOLING_LINK -> $target (fast-lane tooling installed)"
     unrunnable="$(tooling_rails_booting_scripts "$TOOLING_LINK" | tr '\n' ' ')"
@@ -1059,10 +1077,43 @@ install_codex_user_hook() {
   fi
 }
 
-# Make the Claude Code status line recoverable too — point it at the stable repo
-# script. When installing from a worktree, docs come from that worktree but global
-# hooks must point at the primary checkout so they survive worktree cleanup.
-# Idempotent: only added when absent, so it never clobbers user settings.
+# The global git credential helper for github.com, at the same bin/ as the hooks.
+# `[credential "https://github.com"]` holds an empty reset first (it keeps the generic
+# osxkeychain helper from answering github.com) and then the helper path; the rewrite
+# touches only lines naming THIS helper, through the value-pattern
+# bin/lib/credential_helper_install.rb carries, so the reset survives and a re-run
+# converges on one line. On a config with no reset, the reset is added ahead of the
+# helper. Nothing is rewritten when the helper already reads as wanted.
+install_git_credential_helper() {
+  local gitconfig="$1" helper="$2" key="credential.https://github.com.helper" values ours has_reset
+  note_write "$gitconfig"
+  [ "$MODE" = "manifest" ] && return 0
+  command -v git >/dev/null 2>&1 || return 0
+
+  # `--get-all` exits 1 when the key is absent; an absent key and a bare reset both
+  # read as an empty string, and only one of them already carries the reset.
+  has_reset=no
+  if values="$(git config --file "$gitconfig" --get-all "$key" 2>/dev/null)"; then
+    ours="$(printf '%s\n' "$values" | grep '/gh-app-git-credential$' || true)"
+    [ "$ours" = "$helper" ] && return 0
+    printf '%s\n' "$values" | grep -qx '' && has_reset=yes
+  fi
+
+  mkdir -p "$(dirname "$gitconfig")"
+  if [ "$has_reset" = yes ]; then
+    git config --file "$gitconfig" --replace-all "$key" "$helper" '/gh-app-git-credential$'
+  else
+    git config --file "$gitconfig" --unset-all "$key" '/gh-app-git-credential$' 2>/dev/null || true
+    git config --file "$gitconfig" --add "$key" ""
+    git config --file "$gitconfig" --add "$key" "$helper"
+  fi
+  echo "  $gitconfig ($key -> $helper)"
+}
+
+# The Claude Code status line and hooks name the fixed-path tooling (hook_bin_dir).
+# Idempotent: our entries are repointed or appended once; the operator's own entries
+# are never touched.
+HOOK_BIN="$(hook_bin_dir)"
 settings="$HOME/.claude/settings.json"
 note_write "$settings"
 # The jq blocks below — and the codex hook blocks above — write transient files via
@@ -1073,19 +1124,23 @@ note_write "${TMPDIR:-/tmp}"
 if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
   mkdir -p "$HOME/.claude"
   [ -f "$settings" ] || echo '{}' > "$settings"
+  # The status line: added when absent; repointed when it is OURS (any `…/bin/statusline`,
+  # a desk's or the hub primary's) at another path; a command that is not ours is the
+  # operator's and stays.
+  statusline_cmd="$HOOK_BIN/statusline"
   if ! jq -e '.statusLine' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
-    if jq --arg cmd "$RUNTIME_ROOT/bin/statusline" '.statusLine = {type:"command", command:$cmd, padding:1, refreshInterval:5}' "$settings" > "$tmp"; then
+    if jq --arg cmd "$statusline_cmd" '.statusLine = {type:"command", command:$cmd, padding:1, refreshInterval:5}' "$settings" > "$tmp"; then
       mv "$tmp" "$settings"
-      echo "  $settings (added statusLine -> $RUNTIME_ROOT/bin/statusline)"
+      echo "  $settings (added statusLine -> $statusline_cmd)"
     else
       rm -f "$tmp"
     fi
-  elif jq -e '.statusLine.command | contains("/.worktrees/")' "$settings" >/dev/null 2>&1; then
+  elif jq -e --arg cmd "$statusline_cmd" '(.statusLine.command // "") | (endswith("/bin/statusline") and . != $cmd)' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
-    if jq --arg cmd "$RUNTIME_ROOT/bin/statusline" '.statusLine.command = $cmd' "$settings" > "$tmp"; then
+    if jq --arg cmd "$statusline_cmd" '.statusLine.command = $cmd' "$settings" > "$tmp"; then
       mv "$tmp" "$settings"
-      echo "  $settings (repointed statusLine -> $RUNTIME_ROOT/bin/statusline)"
+      echo "  $settings (repointed statusLine -> $statusline_cmd)"
     else
       rm -f "$tmp"
     fi
@@ -1095,10 +1150,10 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
   # the default app (mcritchie-studio) onto the status line within seconds:
   # bin/task session-mascot seeds the per-session marker before any task exists.
   # Idempotent — appended only when our command isn't already a SessionStart hook,
-  # so it never duplicates our entry or clobbers the user's other hooks. Stale
-  # worktree hooks are pruned because they break after cleanup, and legacy
-  # shell-wrapped mascot commands are pruned so the session only seeds once.
-  hook_cmd="$RUNTIME_ROOT/bin/task session-mascot"
+  # so it never duplicates our entry or clobbers the user's other hooks. Every other
+  # mascot command (a desk's, the hub primary's, a legacy shell wrapper) is pruned
+  # first, so the session seeds once and from the fixed path.
+  hook_cmd="$HOOK_BIN/task session-mascot"
   tmp="$(mktemp)"
   if jq --arg hook_cmd "$hook_cmd" 'if .hooks.SessionStart then
         .hooks.SessionStart |= (
@@ -1133,10 +1188,9 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
 
   # Wire the PostToolUse hook so every tool call streams into the atomic-capture
   # endpoint and a fresh session populates /xan/heartbeat live (Phase B live
-  # capture). Same discipline as the SessionStart mascot hook: point at the
-  # primary checkout (survives worktree cleanup), prune stale worktree copies,
-  # and only append when our command isn't already wired — never clobbering the
-  # user's other PostToolUse hooks. See docs/agents/system/atomic-capture-hook.md.
+  # capture). Same discipline as the SessionStart mascot hook: prune every other
+  # copy of our command, then append ours once at the fixed path — never clobbering
+  # the user's other PostToolUse hooks. See docs/agents/system/atomic-capture-hook.md.
   tmp="$(mktemp)"
   if jq 'if .hooks.PostToolUse then
         .hooks.PostToolUse |= (
@@ -1154,7 +1208,7 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
     rm -f "$tmp"
   fi
 
-  capture_path="$RUNTIME_ROOT/bin/atomic-capture-hook"
+  capture_path="$HOOK_BIN/atomic-capture-hook"
   capture_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $capture_path"
   if ! jq -e --arg path "$capture_path" '[(.hooks.PostToolUse // [])[]?.hooks[]?.command // empty | select(contains($path))] | length > 0' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
@@ -1202,9 +1256,8 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
   # forever: `bin/agent-activity close-open` closes any still-open activity (reading the
   # session id off the SessionEnd stdin payload) with a generic "session ended"
   # outcome, so trailing actions never fall into "Unlabeled". Same discipline as
-  # the PostToolUse hook: point at the primary checkout (survives worktree
-  # cleanup), prune stale worktree copies, and only append when our command isn't
-  # already wired — never clobbering the user's other SessionEnd hooks.
+  # the PostToolUse hook: prune every other copy of our command, append ours once at
+  # the fixed path — never clobbering the user's other SessionEnd hooks.
   tmp="$(mktemp)"
   if jq 'if .hooks.SessionEnd then
         .hooks.SessionEnd |= (
@@ -1222,7 +1275,7 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
     rm -f "$tmp"
   fi
 
-  close_open_path="$RUNTIME_ROOT/bin/agent-activity close-open"
+  close_open_path="$HOOK_BIN/agent-activity close-open"
   close_open_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $close_open_path"
   if ! jq -e --arg path "$close_open_path" '[(.hooks.SessionEnd // [])[]?.hooks[]?.command // empty | select(contains($path))] | length > 0' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
@@ -1240,21 +1293,25 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
   # (bin/session-insights) GETs /api/v1/insights and prints the SessionStart
   # hookSpecificOutput.additionalContext JSON; it is NON-FATAL (empty bank /
   # unreachable board / no token => prints nothing, exits 0), so it can never block
-  # or slow a session start. Same discipline as the mascot SessionStart hook: point
-  # at the primary checkout (survives worktree cleanup), prune stale worktree
-  # copies, only append when absent. It also bakes ATOMIC_CAPTURE_URL into the
-  # command so the injected lessons are the curated PROD bank, exactly like the
-  # capture hook. See docs/agents/system/atomic-capture-hook.md.
+  # or slow a session start. Same discipline as the mascot SessionStart hook: prune
+  # every other insights command (a desk's, the hub primary's), then append ours once
+  # at the fixed path. It also bakes ATOMIC_CAPTURE_URL into the command so the
+  # injected lessons are the curated PROD bank, exactly like the capture hook. See
+  # docs/agents/system/atomic-capture-hook.md.
+  insights_path="$HOOK_BIN/session-insights"
+  insights_cmd="ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL $insights_path"
   tmp="$(mktemp)"
-  if jq 'if .hooks.SessionStart then
+  if jq --arg cmd "$insights_cmd" 'if .hooks.SessionStart then
         .hooks.SessionStart |= (
-          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/session-insights") | not)))))
+          map(.hooks = ((.hooks // []) | map(select(
+            (((.command // "") | contains("/bin/session-insights")) and ((.command // "") != $cmd)) | not
+          ))))
           | map(select(((.hooks // []) | length) > 0))
         )
       else . end' "$settings" > "$tmp"; then
     if ! cmp -s "$settings" "$tmp"; then
       mv "$tmp" "$settings"
-      echo "  $settings (removed stale worktree SessionStart insights hooks)"
+      echo "  $settings (removed stale SessionStart insights hooks)"
     else
       rm -f "$tmp"
     fi
@@ -1262,8 +1319,6 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
     rm -f "$tmp"
   fi
 
-  insights_path="$RUNTIME_ROOT/bin/session-insights"
-  insights_cmd="ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL $insights_path"
   if ! jq -e --arg path "$insights_path" '[(.hooks.SessionStart // [])[]?.hooks[]?.command // empty | select(contains($path))] | length > 0' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
     if jq --arg cmd "$insights_cmd" '.hooks //= {} | .hooks.SessionStart = ((.hooks.SessionStart // []) + [{hooks: [{type: "command", command: $cmd, timeout: 15, statusMessage: "Loading insights…"}]}])' "$settings" > "$tmp"; then
@@ -1288,13 +1343,14 @@ echo "  $codex_config (ensured McRitchie Codex status-line identity)"
 echo "  $ZPROFILE_PATH (ensured agent zsh login shells prepend $RUBY_PATH_PREFIX)"
 
 codex_hooks="$HOME/.codex/hooks.json"
-codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"
+codex_hook_cmd="$HOOK_BIN/codex-session-title"
 # The Codex feed-forward hook mirrors the Claude one: same board (prod via
 # ATOMIC_CAPTURE_URL), same non-fatal bin/session-insights, wired as a second
-# SessionStart hook alongside the mascot.
-codex_insights_cmd="ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL $RUNTIME_ROOT/bin/session-insights"
-codex_capture_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $RUNTIME_ROOT/bin/atomic-capture-hook"
-codex_close_open_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $RUNTIME_ROOT/bin/agent-activity close-open"
+# SessionStart hook alongside the mascot. All four name the fixed path; managed_dir
+# stays the hub primary.
+codex_insights_cmd="ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL $HOOK_BIN/session-insights"
+codex_capture_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $HOOK_BIN/atomic-capture-hook"
+codex_close_open_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $HOOK_BIN/agent-activity close-open"
 codex_requirements_staged="$HOME/.codex/mcritchie-requirements.toml"
 if install_codex_managed_requirements "$CODEX_REQUIREMENTS_PATH" "$codex_hook_cmd" "$RUNTIME_ROOT" "$codex_requirements_staged" "$codex_insights_cmd" "$codex_capture_cmd" "$codex_close_open_cmd"; then
   echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart/PostToolUse/Stop hooks -> $codex_hook_cmd + $codex_insights_cmd + $codex_capture_cmd + $codex_close_open_cmd)"
@@ -1316,6 +1372,10 @@ else
   echo "  Staged managed requirements: $codex_requirements_staged"
   echo "  Install that file as admin, or merge its McRitchie block into $CODEX_REQUIREMENTS_PATH."
 fi
+
+# GIT_CONFIG_GLOBAL is git's own override for the global file; the tests pin it, and an
+# operator who set it reads their git config there.
+install_git_credential_helper "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}" "$HOOK_BIN/gh-app-git-credential"
 
 echo
 echo "Next reads for a fresh agent:"

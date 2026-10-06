@@ -99,29 +99,33 @@ confusion here.
 | **`git`** (https push/fetch) | The global credential helper `bin/gh-app-git-credential` answers from the **shared session** `bin/gh-token` holds, and mints only on a cache miss. Nothing to refresh by hand: a token git rejects comes back as `erase`, which retires that session so the next call mints once |
 | **`gh`** (and any API caller) | Reads an ambient credential. **Goes stale hourly.** This is the one you fix |
 
-Wire the git leg once, globally. **Point it at the INSTALLED helper, never at
-the copy in the repo** — see the box below:
+The git leg is wired globally by the production ship: `bin/install-agent-docs`
+(the owned `sync_agent_docs` step of `bin/release ship`) points the helper at
+the **fixed-path tooling** copy, beside the hooks and status line it wires the
+same way ([`fast-lane.md`](fast-lane.md)). The line it runs:
 
 ```bash
-bin/install-git-credential-helper      # installs the snapshot, then PRINTS the wiring command
-# what it prints — run it as printed:
-git config --global --replace-all credential."https://github.com".helper \
-  "$HOME/.mcritchie/git-credential/current/bin/gh-app-git-credential" '/gh-app-git-credential$'
+git config --file ~/.gitconfig --replace-all credential."https://github.com".helper \
+  "/Users/alex/projects/.agents/bin/gh-app-git-credential" '/gh-app-git-credential$'
 ```
 
 Both halves are load-bearing. `--replace-all` is needed because the real
 `~/.gitconfig` holds two values there (an empty reset, then the helper), and a
 plain set exits 5. The value-pattern keeps the empty reset that stops
-`osxkeychain` answering github.com, and makes a re-run converge on one value.
-Source: `bin/lib/credential_helper_install.rb`.
+`osxkeychain` answering github.com, and makes a re-run converge on one value; on
+a config with no reset the installer adds the reset first. Until the first ship
+installs the tooling, the same line names the hub primary's copy.
 
 > **Why not `<repo>/bin/gh-app-git-credential`?** A working tree moves: `git
 > checkout` unlinks and recreates files, so a push during a checkout dies with
-> `No such file or directory`. The installer copies the helper's closure into
-> `~/.mcritchie/git-credential/versions/<digest>/` behind a stable `current`
-> symlink. It is a SNAPSHOT, so run `bin/install-git-credential-helper --check`
-> and re-install after any change to `bin/gh-token` or the helper. The installer
-> never edits `~/.gitconfig`; it prints the change and its revert.
+> `No such file or directory`. The fixed path is a `git archive` of the shipped
+> tree behind an atomically swapped symlink, which no checkout touches.
+>
+> `bin/install-git-credential-helper` is the by-hand alternative from before the
+> fixed path existed: it snapshots the helper's closure into
+> `~/.mcritchie/git-credential/versions/<digest>/` and PRINTS a wiring line
+> (it never edits `~/.gitconfig`). A line wired that way is repointed to the
+> fixed path by the next ship, so prefer the ship's wiring.
 
 ### Three stores, and they rank
 

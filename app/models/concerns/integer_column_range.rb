@@ -28,8 +28,8 @@
 #      value of it may ever abort the write it rides along with. The incident was
 #      not "telemetry failed to record"; it was "the task did not archive",
 #      because Task#record_transition_event runs `after_update` INSIDE the task's
-#      save transaction (app/models/task.rb:531). A number nothing depends on for
-#      correctness must never be able to roll back a stage change.
+#      save transaction (app/models/task.rb#record_transition_event). A number
+#      nothing depends on for correctness must never be able to roll back a stage change.
 #
 # The ceiling is read from the COLUMN, never hardcoded, so the guard tracks the
 # schema: it is correct before the bigint migration, after it, and after any

@@ -65,9 +65,12 @@ docs (`index.md` → `AGENTS.md`, `claude.md` → `CLAUDE.md`), mirrors
 `rm -rf`s retired ones, rewrites the managed hooks in `~/.claude/settings.json`
 (PostToolUse capture, SessionStart mascot + insights, SessionEnd close-open) and
 their Codex equivalents in `/etc/codex/requirements.toml` or
-`~/.codex/hooks.json`, sets the Codex TUI status line, and appends the Ruby PATH
-block to `~/.zprofile`. Every one of those targets is **global and shared** —
-the operator's live login profile and editor settings included.
+`~/.codex/hooks.json`, each command at the fixed path
+`/Users/alex/projects/.agents/bin`, points the github.com credential helper line
+in `~/.gitconfig` at the same `bin/`, sets the Codex TUI status line, and appends
+the Ruby PATH block to `~/.zprofile`. Every one of those targets is **global and
+shared** — the operator's live login profile, git config and editor settings
+included.
 
 `test/docs/executable_docs_installer_test.rb` holds the set to the two above. It
 sweeps the docs an agent **executes** — every registered SOP in the invocation
