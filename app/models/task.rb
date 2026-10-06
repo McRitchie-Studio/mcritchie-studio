@@ -297,8 +297,8 @@ class Task < ApplicationRecord
   # measured: a joined `repositories` entry resolves to a phantom repo and ABORTED a
   # live QA release sweep at step 3a (2026-09-15, sweep-stale-signer-claims) with
   # nothing promoted, recorded or deployed; a joined `risk_tags` entry matches
-  # Release::BuilderPolicy's blocked_risk_tags and ReviewerSelector::RISK_DOMAINS
-  # never — both compare EXACTLY — so two gates fail OPEN in silence.
+  # ReviewerSelector::RISK_DOMAINS never — it compares EXACTLY — so the gate fails
+  # OPEN in silence.
   #
   # THE VALUE CANNOT BE JUDGED HERE; THE KEY CAN. `["a,b"]` from --repo and `["one
   # thing, then another"]` from --accept are both one-element arrays, which is why the

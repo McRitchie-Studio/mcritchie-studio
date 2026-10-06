@@ -643,26 +643,13 @@ the full e2e + highest tier on the **frozen ship SHA** *before* ship authority i
 exercised — so the deploy gate sits **after test confirmation, before the
 deploy**.
 
-**RC assembly autonomy is the one evolving policy** — so it lives in one
-tunable config file, `config/release_builder.yml`, read by
-`Release::BuilderPolicy`. Current policy:
-
-- **Auto-assemble + auto-deploy-to-QA** only when the reviewed queue is one
-  task, one repo, with no `migration`/`payment`/`solana` risk tag.
-- **Propose for operator confirmation** for an empty queue, multi-task release,
-  cross-repo release, or blocked-risk release. The conductor can draft the plan,
-  but waits before changing release state.
-- Production ship remains **operator-gated by default**
-  (`production_ship.operator_gated` is `true`) for a QA-only run (`pr-review` →
-  Avi's `qa-release`). Xan's **`full-cycle`** launcher is the explicit
-  autonomous production authorization; it uses the same frozen-SHA/test/smoke
-  gates, then passes `--yes` to the production ship command.
-
-Change thresholds in `config/release_builder.yml`, then run
-`bin/rails test test/models/release/builder_policy_test.rb`. This policy only
-decides QA assembly autonomy plus names the autonomous production kickoff;
-ordinary `bin/release ship` remains separately gated unless that kickoff or
-another explicit production rollout prompt grants ship authority.
+**Production ship authority is the one tunable**: `production_ship.mode` in
+`config/release_builder.yml`, read by `Devops::Windows` (`ask`, `timed` or
+`auto`; an explicit `--mode` wins). QA assembly is never automatic; Avi's
+`qa-release` runs it. Xan's **`full-cycle`** launcher is the explicit autonomous
+production authorization; it uses the same frozen-SHA/test/smoke gates, then
+passes `--yes` to the production ship command. Change the mode or the windows in
+`config/release_builder.yml`, then run `bin/rails test test/lib/devops_windows_test.rb`.
 
 ### 1.4 Kickoff commands — board → agent session
 
